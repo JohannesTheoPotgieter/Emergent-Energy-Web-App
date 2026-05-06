@@ -215,6 +215,7 @@ export const TOP_SECTIONS: TopSection[] = [
       "/cashflow", "/cos", "/revenue-tracker", "/finance",
       "/governance/financial-reviews",
       "/program",
+      "/po-approval-board",
       "/payment-request-board", "/payment-batch-manager",
     ]),
     secondary: [
@@ -226,6 +227,7 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Excel vs App", path: "/program/excel-vs-app" },
       { label: "QB Throughput", path: "/finance/quickbooks" },
       { label: "Financial Reviews", path: "/governance/financial-reviews" },
+      { label: "PO Approvals", path: "/po-approval-board" },
       { label: "Payment Requests", path: "/payment-request-board" },
       { label: "Payment Batches", path: "/payment-batch-manager" },
     ],

@@ -337,5 +337,6 @@ export function registerOpsDashboardRoute(app: Express) {
   };
 
   app.options("/api/ops-dashboard", handler);
+  // permission-skip: bearer-token gated via checkBearer; external read-only ops dashboard, not in user permission matrix
   app.get("/api/ops-dashboard", handler);
 }

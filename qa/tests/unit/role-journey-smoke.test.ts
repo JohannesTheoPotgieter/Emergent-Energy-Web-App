@@ -91,7 +91,7 @@ describe("cross-role journey smoke coverage", () => {
   });
 
   it("legacy aliases for core journeys remain intact", () => {
-    expect(legacyAliases.get("/dashboard")).toBe("/gates");
+    expect(legacyAliases.get("/dashboard")).toBe("/execution-board");
     expect(legacyAliases.get("/company-priorities")).toBe("/priorities");
 
     const pmApprovalAlias = PAGE_REGISTRY.find((page) => page.path === "/my-work/approvals");

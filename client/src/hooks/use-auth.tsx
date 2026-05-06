@@ -119,7 +119,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user, 
       isLoading, 
       isAuthenticated: !!user,
-      isAdmin: isSuperAdmin(user?.role, localStorage.getItem("company_role")),
+      // EE-QA-005 — derive admin from the server-supplied user.role only.
+      // Reading localStorage.company_role here previously made the flag stale
+      // when a user was downgraded mid-session; localStorage is now reserved
+      // for the role-lens simulation path inside useAccessMatrix.
+      isAdmin: isSuperAdmin(user?.role),
       isQm: (user?.role || '').toUpperCase() === 'QUALITY_MANAGER',
       login, 
       logout 
