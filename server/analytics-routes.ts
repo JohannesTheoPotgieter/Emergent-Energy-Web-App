@@ -59,6 +59,11 @@ export function registerAnalyticsRoutes(app: Express) {
     }
   });
 
+  app.post("/api/analytics/nav-event", requireAuth, async (req, res) => {
+    // Accepts batched nav events from the client; intentionally no-op (no DB write).
+    res.status(204).end();
+  });
+
   app.get("/api/analytics/velocity", requireAuth, async (req, res) => {
     try {
       const teamId = Number(req.query.team_id || 1);
