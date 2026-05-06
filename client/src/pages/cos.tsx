@@ -14,6 +14,7 @@ import { Tooltip as UiTooltip, TooltipContent, TooltipProvider, TooltipTrigger }
 import { apiRequest, fetchQueryFn, invalidateDashboardQueries } from "@/lib/queryClient";
 import { useFinanceQuery } from "@/lib/finance-trust";
 import { DataTrustBadge } from "@/components/ui/data-trust-badge";
+import { DataSourceBadge } from "@/components/finance/DataSourceBadge";
 import {
   Bar,
   XAxis,
@@ -487,6 +488,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                       <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground">QB</th>
                       <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Recognised</th>
                       <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground" title="Smart Import v2 check_flag column from the source workbook.">Check</th>
+                      <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground" title="Where this row came from: imported from Smart Import v2, edited after import, manually entered, or covered by an admin override.">Source</th>
                       <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Match</th>
                       <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Status</th>
                     </tr>
@@ -521,6 +523,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                             <span className="text-muted-foreground">—</span>
                           )}
                         </td>
+                        <td className="px-3 py-2"><DataSourceBadge source={item.syncSource} /></td>
                         <td className="px-3 py-2"><MatchStatusBadge status={item.matchStatus} /></td>
                         <td className="px-3 py-2"><CosStateBadge state={item.cosState} /></td>
                       </tr>
@@ -551,6 +554,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                       <div className="flex flex-col items-end gap-1 flex-shrink-0">
                         <CosStateBadge state={item.cosState} />
                         <MatchStatusBadge status={item.matchStatus} />
+                        <DataSourceBadge source={item.syncSource} />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-xs">
