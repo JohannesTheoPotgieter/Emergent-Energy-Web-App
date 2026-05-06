@@ -33,6 +33,7 @@ import {
   type BusinessKey,
 } from "./row-matcher";
 import { CANONICAL_SOURCES } from "./planner";
+import { normalizeWithFieldType, normalizeBasic } from "./value-normalization";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -103,16 +104,21 @@ export interface ConflictEngineResult {
 // Value normalization (same logic as row-matcher)
 // ---------------------------------------------------------------------------
 
-function normVal(val: any): string {
-  if (val === null || val === undefined) return "";
-  if (typeof val === "boolean") return val ? "true" : "";
-  if (typeof val === "number") return val === 0 ? "" : String(val);
-  const s = String(val).trim();
-  return s === "0" ? "" : s;
+/**
+ * Field-aware normalisation. When a field name is supplied we apply
+ * numeric tolerance / date-only normalisation so trivial drift (e.g.
+ * 1234.5000001 vs 1234.5, or "2026-05-01" vs "2026-05-01T00:00:00Z")
+ * does not produce a false CONFLICT. Without a field name we keep the
+ * legacy basic behaviour.
+ */
+function normVal(val: any, fieldName?: string): string {
+  return fieldName
+    ? normalizeWithFieldType(val, fieldName)
+    : normalizeBasic(val);
 }
 
 function isBlank(val: any): boolean {
-  return normVal(val) === "";
+  return normalizeBasic(val) === "";
 }
 
 // ---------------------------------------------------------------------------
@@ -128,9 +134,9 @@ export function classifyField(
   current: any,
   uploaded: any,
 ): FieldMerge {
-  const b = normVal(baseline);
-  const c = normVal(current);
-  const f = normVal(uploaded);
+  const b = normVal(baseline, fieldName);
+  const c = normVal(current, fieldName);
+  const f = normVal(uploaded, fieldName);
 
   // Case E: all three same → UNCHANGED
   if (b === c && c === f) {
