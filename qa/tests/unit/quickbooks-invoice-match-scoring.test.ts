@@ -25,6 +25,7 @@ const baseApp: AppInvoiceLike = {
   amountExVat: 150_000,
   counterpartyName: "ABC Electrical",
   poNumber: "PO-7001",
+  description: null,
 };
 
 function qb(partial: Partial<QbCandidateLike>): QbCandidateLike {
@@ -38,6 +39,7 @@ function qb(partial: Partial<QbCandidateLike>): QbCandidateLike {
     qbAmountExVat: null,
     qbBalance: null,
     qbPaymentStatus: null,
+    qbDescription: null,
     ...partial,
   };
 }
@@ -100,7 +102,7 @@ describe("scoreInvoiceMatch — hierarchy", () => {
     expect(result?.warnings).toContain("amount_mismatch");
   });
 
-  it("Tier 4: amount exact + name strong + same month → 78", () => {
+  it("Tier 7: amount exact + name strong + same month → 60", () => {
     const result = scoreInvoiceMatch(
       baseApp,
       qb({
@@ -110,10 +112,10 @@ describe("scoreInvoiceMatch — hierarchy", () => {
         qbTxnDate: "2026-03-28",
       }),
     );
-    expect(result?.confidence).toBe(78);
+    expect(result?.confidence).toBe(60);
   });
 
-  it("Tier 5: name strong + amount within 5% + ±60 days → 62", () => {
+  it("Tier 10: name strong + amount within 5% + ±60 days → 45", () => {
     // baseApp.counterparty = "ABC Electrical" — pair with a name that
     // has Jaccard ≥ 0.6 (token-set match on both 'abc' and 'electrical').
     const result = scoreInvoiceMatch(
@@ -125,7 +127,57 @@ describe("scoreInvoiceMatch — hierarchy", () => {
         qbTxnDate: "2026-04-15", // ~34 days
       }),
     );
-    expect(result?.confidence).toBe(62);
+    expect(result?.confidence).toBe(45);
+  });
+
+  it("Tier 4: description strong + amount exact → 80 (description beats vendor+month)", () => {
+    const result = scoreInvoiceMatch(
+      { ...baseApp, description: "Inverter cage modifications site Bochum" },
+      qb({
+        qbDocNumber: "RANDOM",
+        qbAmountExVat: 150_000,
+        qbCounterpartyName: "Some Other Vendor",
+        qbDescription: "inverter cage modifications bochum plant",
+        qbTxnDate: "2026-09-01",
+      }),
+    );
+    expect(result?.confidence).toBe(80);
+    expect(result?.reasons.some((r) => r.startsWith("description "))).toBe(true);
+  });
+
+  it("Tier 6: description strong only (amount mismatch) → 65", () => {
+    const result = scoreInvoiceMatch(
+      { ...baseApp, description: "Subcontractor deposits milestone" },
+      qb({
+        qbDocNumber: "OTHER",
+        qbAmountExVat: 9_999_999,
+        qbCounterpartyName: "Some Vendor",
+        qbDescription: "subcontractor deposits milestone payment",
+      }),
+    );
+    expect(result?.confidence).toBe(65);
+    expect(result?.warnings).toContain("amount_mismatch");
+  });
+
+  it("description match outranks amount-only match (operator priority)", () => {
+    const app = { ...baseApp, description: "Solar panel batch delivery" };
+    const descCandidate = qb({
+      qbEntityId: "desc",
+      qbDocNumber: "X",
+      qbAmountExVat: 999_999, // amount mismatch
+      qbCounterpartyName: "Other",
+      qbDescription: "solar panel batch delivery invoice",
+    });
+    const amountCandidate = qb({
+      qbEntityId: "amount",
+      qbDocNumber: "Y",
+      qbAmountExVat: 150_000, // amount exact
+      qbCounterpartyName: "Different Co",
+      qbDescription: "totally unrelated text",
+    });
+    const ranked = rankInvoiceMatches(app, [amountCandidate, descCandidate], 5);
+    expect(ranked[0].qbEntityId).toBe("desc");
+    expect(ranked[0].confidence).toBeGreaterThan(ranked[1].confidence);
   });
 
   it("Tier 6 fallback: any name overlap → 45 with vendor_mismatch when sim is low", () => {
@@ -160,7 +212,7 @@ describe("scoreInvoiceMatch — hierarchy", () => {
         qbCounterpartyName: "Solar Maintenance", // shares "solar" only
       }),
     );
-    expect(result?.confidence).toBe(45);
+    expect(result?.confidence).toBe(32);
     expect(result?.warnings).toContain("vendor_mismatch");
     expect(result?.warnings).toContain("amount_mismatch");
   });
