@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { quickbooksInvoiceLinks } from "@shared/schema";
+import { quickbooksInvoiceLinks, type QuickBooksInvoiceLink } from "@shared/schema";
 import { db } from "../db";
 
 /** Minimal projection returned by link lookups — only the fields callers need. */
@@ -59,5 +59,75 @@ export class QuickBooksLinksRepository {
           isNull(quickbooksInvoiceLinks.deletedAt),
         ),
       );
+  }
+
+  async existsActiveLink(
+    appEntityType: "cost_line" | "revenue_line",
+    appEntityId: number,
+  ): Promise<boolean> {
+    const [row] = await this.dbInstance
+      .select({ id: quickbooksInvoiceLinks.id })
+      .from(quickbooksInvoiceLinks)
+      .where(
+        and(
+          eq(quickbooksInvoiceLinks.appEntityType, appEntityType),
+          eq(quickbooksInvoiceLinks.appEntityId, appEntityId),
+          isNull(quickbooksInvoiceLinks.deletedAt),
+        ),
+      )
+      .limit(1);
+    return !!row;
+  }
+
+  async listLinkedQbIds(
+    qbEntityType: "bill" | "invoice",
+    qbRealmId: string,
+    qbEntityIds: string[],
+  ): Promise<Set<string>> {
+    if (qbEntityIds.length === 0) return new Set();
+    const rows = await this.dbInstance
+      .select({ qbEntityId: quickbooksInvoiceLinks.qbEntityId })
+      .from(quickbooksInvoiceLinks)
+      .where(
+        and(
+          eq(quickbooksInvoiceLinks.qbEntityType, qbEntityType),
+          eq(quickbooksInvoiceLinks.qbRealmId, qbRealmId),
+          isNull(quickbooksInvoiceLinks.deletedAt),
+          inArray(quickbooksInvoiceLinks.qbEntityId, qbEntityIds),
+        ),
+      );
+    return new Set(rows.map((r: { qbEntityId: string }) => r.qbEntityId));
+  }
+
+  async getLinkById(id: number): Promise<QuickBooksInvoiceLink | null> {
+    const [row] = await this.dbInstance
+      .select()
+      .from(quickbooksInvoiceLinks)
+      .where(
+        and(
+          eq(quickbooksInvoiceLinks.id, id),
+          isNull(quickbooksInvoiceLinks.deletedAt),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  }
+
+  async listActiveLinkedAppIds(
+    appEntityType: "cost_line" | "revenue_line",
+    appEntityIds: number[],
+  ): Promise<Set<number>> {
+    if (appEntityIds.length === 0) return new Set();
+    const rows = await this.dbInstance
+      .select({ appEntityId: quickbooksInvoiceLinks.appEntityId })
+      .from(quickbooksInvoiceLinks)
+      .where(
+        and(
+          eq(quickbooksInvoiceLinks.appEntityType, appEntityType),
+          inArray(quickbooksInvoiceLinks.appEntityId, appEntityIds),
+          isNull(quickbooksInvoiceLinks.deletedAt),
+        ),
+      );
+    return new Set(rows.map((r: { appEntityId: number }) => r.appEntityId));
   }
 }

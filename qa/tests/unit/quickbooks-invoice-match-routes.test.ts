@@ -70,7 +70,13 @@ describe("invoice-matches — no auto-approve contract", () => {
     // Find handler section: between the find route registration and the next route.
     const findSection = ROUTES.split("/api/quickbooks/invoice-matches/find")[1] ?? "";
     const beforeApprove = findSection.split("/api/quickbooks/invoice-matches/:suggestionId/approve")[0] ?? "";
-    expect(beforeApprove).toContain("quickbooksMatchSuggestions");
+    // After Wave 5.2 (EE-QA-011), the suggestion insert lives in
+    // QuickBooksInvoiceMatchesRepository.createSuggestion. Either form
+    // satisfies the "find creates a suggestion" contract.
+    expect(
+      beforeApprove.includes("quickbooksMatchSuggestions") ||
+        beforeApprove.includes("qbMatchesRepository.createSuggestion"),
+    ).toBe(true);
     expect(beforeApprove).not.toMatch(/db\.insert\(quickbooksInvoiceLinks\)/);
     expect(beforeApprove).not.toMatch(/confirmCostLineLink/);
     expect(beforeApprove).not.toMatch(/confirmRevenueLineLink/);
