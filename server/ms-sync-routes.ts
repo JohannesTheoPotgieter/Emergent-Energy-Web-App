@@ -343,6 +343,40 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
+  app.get("/api/entity-assignments/bulk", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const entityTypeRaw = req.query.entityType;
+      if (typeof entityTypeRaw !== "string") {
+        return res.status(400).json({ error: "entityType query param is required" });
+      }
+      const entityType = mapTaskSourceToEntityType(entityTypeRaw);
+      if (!entityType) {
+        return res.status(400).json({ error: `Unknown entity type: ${entityTypeRaw}` });
+      }
+      const idsRaw = req.query.ids;
+      let ids: number[];
+      if (typeof idsRaw === "string") {
+        ids = idsRaw.split(",").map(Number).filter((id) => Number.isFinite(id) && id > 0);
+      } else if (Array.isArray(idsRaw)) {
+        ids = (idsRaw as string[]).map(Number).filter((id) => Number.isFinite(id) && id > 0);
+      } else {
+        ids = [];
+      }
+      if (ids.length === 0) return res.json({});
+      if (ids.length > 500) {
+        return res.status(400).json({ error: "Too many IDs requested (max 500)" });
+      }
+      const assignmentsMap = await getAssignmentsForEntities(entityType, ids);
+      const result: Record<number, unknown> = {};
+      for (const [id, assigns] of assignmentsMap.entries()) {
+        result[id] = assigns;
+      }
+      return res.json(result);
+    } catch (err: unknown) {
+      throw err;
+    }
+  });
+
   app.get("/api/entity-assignments/:entityType/:entityId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
       const entityType = mapTaskSourceToEntityType(req.params.entityType as string);
