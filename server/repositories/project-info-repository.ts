@@ -1,5 +1,5 @@
-import { eq } from "drizzle-orm";
-import { projectInfo, type InsertProjectInfo, type ProjectInfo } from "@shared/schema";
+import { eq, inArray, sql } from "drizzle-orm";
+import { projectInfo, projectExecutionState, type InsertProjectInfo, type ProjectInfo } from "@shared/schema";
 import { db } from "../db";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "../lib/project-info-sync";
 
@@ -24,6 +24,42 @@ export class ProjectInfoRepository {
       await syncProjectSplitTables(id, fields, this.dbInstance);
     }
     return updated;
+  }
+
+  async listAll(): Promise<ProjectInfo[]> {
+    return this.dbInstance.select().from(projectInfo);
+  }
+
+  /**
+   * All project_info rows joined with project_execution_state. Returns the
+   * raw shape `{ project_info, project_execution_state | null }` so callers
+   * can flatten the way they need (with null-coalescing for projects that
+   * have no execution-state row).
+   */
+  async listAllWithExecutionState(): Promise<Array<{
+    project_info: ProjectInfo;
+    project_execution_state: typeof projectExecutionState.$inferSelect | null;
+  }>> {
+    return this.dbInstance
+      .select()
+      .from(projectInfo)
+      .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
+  }
+
+  async findIdsByNameLike(query: string): Promise<number[]> {
+    const rows = await this.dbInstance
+      .select({ id: projectInfo.id })
+      .from(projectInfo)
+      .where(sql`${projectInfo.projectName} ILIKE ${'%' + query + '%'}`);
+    return rows.map((r: { id: number }) => r.id);
+  }
+
+  async listIdNameByIds(ids: number[]): Promise<Array<{ id: number; projectName: string }>> {
+    if (ids.length === 0) return [];
+    return this.dbInstance
+      .select({ id: projectInfo.id, projectName: projectInfo.projectName })
+      .from(projectInfo)
+      .where(inArray(projectInfo.id, ids));
   }
 
   async upsert(info: InsertProjectInfo, existing: ProjectInfo | undefined): Promise<ProjectInfo> {

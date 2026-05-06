@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { projectInfo, projectExecutionState, type ProjectInfo, smartImportRuns, normalizedCostLines, normalizedRevenueLines, workItems, manualEditFlags } from "@shared/schema";
-import { eq, and, desc, sql, inArray, isNull } from "drizzle-orm";
+import { type ProjectInfo, smartImportRuns } from "@shared/schema";
+import { eq, desc, sql } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import { jsPDF } from "jspdf";
 import { requirePermission } from "./permission-middleware";
@@ -11,6 +11,15 @@ import { getProgrammeDrilldownRows, writeDrilldownExcel } from "./services/repor
 import { requireAuth } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
 import { effectiveRagBucket, computeEffectiveRag } from "@shared/utils/effective-rag";
+import { ProjectInfoRepository } from "./repositories/project-info-repository";
+import { FinanceExpenseEngineRepository } from "./repositories/finance-expense-engine-repository";
+import { WorkManagementRepository } from "./repositories/work-management-repository";
+import { ManualEditFlagsRepository } from "./repositories/manual-edit-flags-repository";
+
+const projectInfoRepository = new ProjectInfoRepository();
+const financeExpenseRepository = new FinanceExpenseEngineRepository();
+const workManagementRepository = new WorkManagementRepository();
+const manualEditFlagsRepository = new ManualEditFlagsRepository();
 
 const ADVANCED_REPORT_TYPES = [
   {
@@ -111,8 +120,7 @@ async function calculateKPIs(month: string): Promise<KPIPayload> {
   const { monthStartStr, monthEndStr } = parsed;
   const startTs = Date.now();
 
-  const allProjectRows = await db.select().from(projectInfo)
-    .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
+  const allProjectRows = await projectInfoRepository.listAllWithExecutionState();
   // BUG-01 follow-up: project_execution_state can be null for projects without
   // an execution state row; spreading null throws TypeError. Coalesce to {}.
   const allProjects = allProjectRows.map((r: any) => ({ ...r.project_info, ...(r.project_execution_state || {}), id: r.project_info.id }));
@@ -318,9 +326,9 @@ export function registerReportRoutes(app: Express) {
       const dateTo = (req.query.dateTo as string | undefined) || null;
 
       const [costRows, planRows, qualityRows] = await Promise.all([
-        db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
-        db.select().from(workItems).where(and(eq(workItems.workstream, "PM"), sql`${workItems.deletedAt} IS NULL`)),
-        db.select().from(projectInfo),
+        financeExpenseRepository.listAllActiveCostLines(),
+        workManagementRepository.listAllPmWorkItems(),
+        projectInfoRepository.listAll(),
       ]);
 
       const inPeriod = (dateValue?: string | null) => {
@@ -495,11 +503,7 @@ export function registerReportRoutes(app: Express) {
 
   /** Helper: check if project data has protected manual edit flags */
   async function getProtectedFieldProjects(): Promise<Set<string>> {
-    const flags = await db.select({ entityType: manualEditFlags.entityType, entityId: manualEditFlags.entityId })
-      .from(manualEditFlags)
-      .where(eq(manualEditFlags.isProtected, true));
-    // Return a set of entity IDs that have protected flags
-    return new Set(flags.map((f: any) => `${f.entityType}::${f.entityId}`));
+    return manualEditFlagsRepository.listProtectedFlagKeys();
   }
 
   /** Helper: build staleness warning */
@@ -534,21 +538,12 @@ export function registerReportRoutes(app: Express) {
     try {
       const projectFilter = req.query.projectName as string | undefined;
 
-      let wiQuery = db.select().from(workItems)
-        .where(and(
-          eq(workItems.workstream, "PM"),
-          eq(workItems.source, "SMART_IMPORT"),
-          sql`${workItems.deletedAt} IS NULL`,
-        ))
-        .orderBy(workItems.projectId, workItems.sourceRow);
-
-      let tasks = await wiQuery;
+      let tasks = await workManagementRepository.listSmartImportPmTasks();
 
       if (projectFilter) {
         tasks = tasks.filter((t: any) => t.projectId != null);
-        const projIds = await db.select({ id: projectInfo.id }).from(projectInfo)
-          .where(sql`${projectInfo.projectName} ILIKE ${'%' + projectFilter + '%'}`);
-        const idSet = new Set(projIds.map((p: any) => p.id));
+        const matchingProjectIds = await projectInfoRepository.findIdsByNameLike(projectFilter);
+        const idSet = new Set(matchingProjectIds);
         tasks = tasks.filter((t: any) => t.projectId != null && idSet.has(t.projectId));
       }
 
@@ -557,11 +552,8 @@ export function registerReportRoutes(app: Express) {
 
       // Get project names for each task
       const projectIdSet = new Set(tasks.filter((t: any) => t.projectId).map((t: any) => t.projectId!));
-      const projects = projectIdSet.size > 0
-        ? await db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo)
-            .where(inArray(projectInfo.id, [...projectIdSet] as number[]))
-        : [];
-      const projNameMap = new Map(projects.map((p: any) => [p.id, p.projectName]));
+      const projects = await projectInfoRepository.listIdNameByIds([...projectIdSet] as number[]);
+      const projNameMap = new Map(projects.map((p) => [p.id, p.projectName]));
 
       const rows = tasks.map((t: any) => {
         const pName = t.projectId ? (projNameMap.get(t.projectId) as string) || "" : "";
@@ -629,7 +621,7 @@ export function registerReportRoutes(app: Express) {
       const projectFilter = req.query.projectName as string | undefined;
       const categoryFilter = req.query.costCategory as string | undefined;
 
-      let costLines = await db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
+      let costLines = await financeExpenseRepository.listAllActiveCostLines();
 
       if (projectFilter) {
         costLines = costLines.filter((c: any) => c.projectName?.toLowerCase().includes(projectFilter.toLowerCase()));
@@ -748,7 +740,7 @@ export function registerReportRoutes(app: Express) {
     try {
       const projectFilter = req.query.projectName as string | undefined;
 
-      const projects = await db.select().from(projectInfo);
+      const projects = await projectInfoRepository.listAll();
       let filtered = projects;
       if (projectFilter) {
         filtered = projects.filter((p: any) => p.projectName?.toLowerCase().includes(projectFilter.toLowerCase()));
@@ -807,23 +799,15 @@ export function registerReportRoutes(app: Express) {
       const resourceFilter = req.query.resource as string | undefined;
       const projectFilter = req.query.projectName as string | undefined;
 
-      let tasks = await db.select().from(workItems)
-        .where(and(
-          eq(workItems.workstream, "PM"),
-          sql`${workItems.deletedAt} IS NULL`,
-          sql`${workItems.ownerName} IS NOT NULL`,
-        ));
+      let tasks = await workManagementRepository.listPmTasksWithOwner();
 
       if (resourceFilter) {
         tasks = tasks.filter((t: any) => t.ownerName?.toLowerCase().includes(resourceFilter.toLowerCase()));
       }
 
       const projectIdSet = new Set(tasks.filter((t: any) => t.projectId).map((t: any) => t.projectId!));
-      const projects = projectIdSet.size > 0
-        ? await db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo)
-            .where(inArray(projectInfo.id, [...projectIdSet] as number[]))
-        : [];
-      const projNameMap = new Map(projects.map((p: any) => [p.id, p.projectName]));
+      const projects = await projectInfoRepository.listIdNameByIds([...projectIdSet] as number[]);
+      const projNameMap = new Map(projects.map((p) => [p.id, p.projectName]));
 
       if (projectFilter) {
         tasks = tasks.filter((t: any) => {
@@ -855,8 +839,8 @@ export function registerReportRoutes(app: Express) {
         r.totalTasks++;
         if (t.status === "Complete" || t.status === "Completed" || t.status === "Done") r.completedTasks++;
         else if (t.status === "In Progress" || t.status === "Active") r.inProgressTasks++;
-        r.plannedHours += t.plannedHours || 0;
-        r.actualHours += t.actualHours || 0;
+        r.plannedHours += (t as any).plannedHours || 0;
+        r.actualHours += (t as any).actualHours || 0;
         const pName = t.projectId ? (projNameMap.get(t.projectId) as string) || "" : "";
         if (pName) r.projects.add(pName);
       }
