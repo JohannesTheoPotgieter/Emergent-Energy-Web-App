@@ -16,6 +16,13 @@ dist
 !.env.example
 !.env.test.example
 
+# ── DB dumps & large local artifacts (never commit; bloats deploy uploads) ─
+*.dump
+*.sql.gz
+*.tar.gz
+backup_*.dump
+drift-report.json
+
 # ── Build & framework artifacts ──────────────────────────────
 server/public
 vite.config.ts.*
