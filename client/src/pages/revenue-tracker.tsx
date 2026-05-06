@@ -47,6 +47,7 @@ import {
   LineChart as LineChartIcon,
 } from "lucide-react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { EmptyState } from "@/components/ui/empty-state";
 
 interface ProjectBreakdown {
   projectName: string;
@@ -360,13 +361,12 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
               </button>
             </div>
           ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
-              <Search className="h-8 w-8 text-muted-foreground" />
-              <span className="text-sm">No line items found</span>
-              <span className="text-xs text-muted-foreground/80 max-w-md text-center">
-                No revenue lines match the current filters for {monthLabel}.
-              </span>
-            </div>
+            <EmptyState
+              icon={Search}
+              title="No line items found"
+              description={`No revenue lines match the current filters for ${monthLabel}. Clear the search or pick a different month / status.`}
+              className="m-6"
+            />
           ) : (
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-card/95 backdrop-blur-md z-10 border-b border-border">
