@@ -33,7 +33,7 @@
  */
 
 import type { Express, Request, Response } from "express";
-import { and, desc, eq, inArray, isNull, ilike, or, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "../db";
@@ -50,15 +50,16 @@ import {
   serverError,
   logApiError,
 } from "../lib/api-error";
-import {
-  invoiceDescriptionPatterns,
-  invoicePatternRules,
-  normalizedCostLines,
-  normalizedRevenueLines,
-  quickbooksDocuments,
-  quickbooksInvoiceLinks,
-  quickbooksMatchSuggestions,
-} from "@shared/schema";
+import { quickbooksMatchSuggestions } from "@shared/schema";
+import { QuickBooksInvoiceMatchesRepository } from "../repositories/quickbooks-invoice-matches-repository";
+import { QuickBooksLinksRepository } from "../repositories/quickbooks-links-repository";
+import { FinanceExpenseEngineRepository } from "../repositories/finance-expense-engine-repository";
+import { FinanceInflowsRepository } from "../repositories/finance-inflows-repository";
+
+const qbMatchesRepository = new QuickBooksInvoiceMatchesRepository();
+const qbLinksRepository = new QuickBooksLinksRepository();
+const financeExpenseRepository = new FinanceExpenseEngineRepository();
+const financeInflowsRepository = new FinanceInflowsRepository();
 import {
   rankInvoiceMatches,
   appSideWarnings,
@@ -390,26 +391,7 @@ function widenDateRange(centerIso: string | null, days: number): { start: string
 async function loadCostLine(
   costLineId: number,
 ): Promise<AppInvoiceLike & { projectId: number | null } | null> {
-  const [row] = await db
-    .select({
-      id: normalizedCostLines.id,
-      projectId: normalizedCostLines.projectId,
-      invoiceNumber: normalizedCostLines.invoiceNumber,
-      invoiceDate: normalizedCostLines.invoiceDate,
-      amountExVat: normalizedCostLines.amountExVat,
-      counterpartyName: normalizedCostLines.counterpartyName,
-      poNumber: normalizedCostLines.poNumber,
-      description: normalizedCostLines.description,
-    })
-    .from(normalizedCostLines)
-    .where(
-      and(
-        eq(normalizedCostLines.id, costLineId),
-        isNull(normalizedCostLines.effectiveTo),
-        isNull(normalizedCostLines.deletedAt),
-      ),
-    )
-    .limit(1);
+  const row = await financeExpenseRepository.getCostLineForMatching(costLineId);
   if (!row) return null;
   return {
     id: row.id,
@@ -426,29 +408,9 @@ async function loadCostLine(
 async function loadRevenueLine(
   revenueLineId: number,
 ): Promise<AppInvoiceLike & { projectId: number | null } | null> {
-  const [row] = await db
-    .select({
-      id: normalizedRevenueLines.id,
-      projectId: normalizedRevenueLines.projectId,
-      invoiceNumber: normalizedRevenueLines.invoiceNumber,
-      invoiceDate: normalizedRevenueLines.invoiceDate,
-      amountExVat: normalizedRevenueLines.amountExVat,
-      // Revenue doesn't carry counterparty on the row — derive from project's
-      // QB customer mapping when available, else null. The matcher uses
-      // counterparty similarity as a tier-3+ signal so this is acceptable.
-      projectName: normalizedRevenueLines.projectName,
-      description: normalizedRevenueLines.description,
-      milestoneName: normalizedRevenueLines.milestoneName,
-    })
-    .from(normalizedRevenueLines)
-    .where(
-      and(
-        eq(normalizedRevenueLines.id, revenueLineId),
-        isNull(normalizedRevenueLines.effectiveTo),
-        isNull(normalizedRevenueLines.deletedAt),
-      ),
-    )
-    .limit(1);
+  // Revenue doesn't carry counterparty on the row — fall back to projectName
+  // for the tier-3 counterparty similarity signal.
+  const row = await financeInflowsRepository.getRevenueLineForMatching(revenueLineId);
   if (!row) return null;
   return {
     id: row.id,
@@ -459,9 +421,7 @@ async function loadRevenueLine(
     counterpartyName: row.projectName ?? null,
     poNumber: null,
     // Revenue lines don't carry a free-text "description" the way cost
-    // lines do — the milestoneName is the most user-meaningful label
-    // (e.g. "Practical Completion"), so prefer it and fall back to the
-    // raw description column for legacy rows that have one.
+    // lines do — milestoneName is the most user-meaningful label.
     description: row.milestoneName ?? row.description ?? null,
   };
 }
@@ -470,18 +430,7 @@ async function hasActiveLink(
   appEntityType: "cost_line" | "revenue_line",
   appEntityId: number,
 ): Promise<boolean> {
-  const [row] = await db
-    .select({ id: quickbooksInvoiceLinks.id })
-    .from(quickbooksInvoiceLinks)
-    .where(
-      and(
-        eq(quickbooksInvoiceLinks.appEntityType, appEntityType),
-        eq(quickbooksInvoiceLinks.appEntityId, appEntityId),
-        isNull(quickbooksInvoiceLinks.deletedAt),
-      ),
-    )
-    .limit(1);
-  return !!row;
+  return qbLinksRepository.existsActiveLink(appEntityType, appEntityId);
 }
 
 async function findQbIdsAlreadyLinked(
@@ -489,19 +438,7 @@ async function findQbIdsAlreadyLinked(
   qbRealmId: string,
   qbEntityIds: string[],
 ): Promise<Set<string>> {
-  if (qbEntityIds.length === 0) return new Set();
-  const rows = await db
-    .select({ qbEntityId: quickbooksInvoiceLinks.qbEntityId })
-    .from(quickbooksInvoiceLinks)
-    .where(
-      and(
-        eq(quickbooksInvoiceLinks.qbEntityType, qbEntityType),
-        eq(quickbooksInvoiceLinks.qbRealmId, qbRealmId),
-        isNull(quickbooksInvoiceLinks.deletedAt),
-        inArray(quickbooksInvoiceLinks.qbEntityId, qbEntityIds),
-      ),
-    );
-  return new Set((rows as Array<{ qbEntityId: string }>).map((r) => r.qbEntityId));
+  return qbLinksRepository.listLinkedQbIds(qbEntityType, qbRealmId, qbEntityIds);
 }
 
 /**
@@ -521,35 +458,8 @@ async function loadLearnedMatchesForCounterparty(
   if (!counterpartyId || candidates.length === 0) return out;
 
   const [numberRules, descriptionRules] = await Promise.all([
-    db
-      .select({
-        id: invoicePatternRules.id,
-        patternType: invoicePatternRules.patternType,
-        patternValue: invoicePatternRules.patternValue,
-        confidenceWeight: invoicePatternRules.confidenceWeight,
-      })
-      .from(invoicePatternRules)
-      .where(
-        and(
-          eq(invoicePatternRules.counterpartyId, counterpartyId),
-          eq(invoicePatternRules.isActive, true),
-          isNull(invoicePatternRules.deletedAt),
-        ),
-      ),
-    db
-      .select({
-        id: invoiceDescriptionPatterns.id,
-        tokenSet: invoiceDescriptionPatterns.tokenSet,
-        confidenceWeight: invoiceDescriptionPatterns.confidenceWeight,
-      })
-      .from(invoiceDescriptionPatterns)
-      .where(
-        and(
-          eq(invoiceDescriptionPatterns.counterpartyId, counterpartyId),
-          eq(invoiceDescriptionPatterns.isActive, true),
-          isNull(invoiceDescriptionPatterns.deletedAt),
-        ),
-      ),
+    qbMatchesRepository.listActiveNumberRulesByCounterparty(counterpartyId),
+    qbMatchesRepository.listActiveDescriptionRulesByCounterparty(counterpartyId),
   ]);
 
   if (numberRules.length === 0 && descriptionRules.length === 0) return out;
@@ -653,48 +563,8 @@ async function bumpLearnedPatternCounters(
     .filter((m) => m.source === "description")
     .map((m) => m.ruleId);
 
-  if (numberRuleIds.length > 0) {
-    if (outcome === "approved") {
-      await db
-        .update(invoicePatternRules)
-        .set({
-          timesConfirmed: sql`${invoicePatternRules.timesConfirmed} + 1`,
-          timesMatched: sql`${invoicePatternRules.timesMatched} + 1`,
-          lastConfirmedAt: new Date(),
-        })
-        .where(inArray(invoicePatternRules.id, numberRuleIds));
-    } else {
-      await db
-        .update(invoicePatternRules)
-        .set({
-          timesOverridden: sql`${invoicePatternRules.timesOverridden} + 1`,
-          timesMatched: sql`${invoicePatternRules.timesMatched} + 1`,
-        })
-        .where(inArray(invoicePatternRules.id, numberRuleIds));
-    }
-  }
-  if (descriptionRuleIds.length > 0) {
-    if (outcome === "approved") {
-      await db
-        .update(invoiceDescriptionPatterns)
-        .set({
-          timesConfirmed: sql`${invoiceDescriptionPatterns.timesConfirmed} + 1`,
-          timesMatched: sql`${invoiceDescriptionPatterns.timesMatched} + 1`,
-          lastConfirmedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(inArray(invoiceDescriptionPatterns.id, descriptionRuleIds));
-    } else {
-      await db
-        .update(invoiceDescriptionPatterns)
-        .set({
-          timesOverridden: sql`${invoiceDescriptionPatterns.timesOverridden} + 1`,
-          timesMatched: sql`${invoiceDescriptionPatterns.timesMatched} + 1`,
-          updatedAt: new Date(),
-        })
-        .where(inArray(invoiceDescriptionPatterns.id, descriptionRuleIds));
-    }
-  }
+  await qbMatchesRepository.incrementNumberRuleCounter(numberRuleIds, outcome);
+  await qbMatchesRepository.incrementDescriptionRuleCounter(descriptionRuleIds, outcome);
 }
 
 function billsToCandidates(
@@ -845,20 +715,10 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
         //     Cost-line scope only — revenue lines don't carry a
         //     counterpartyId on the row itself.
         if (body.scope === "cost") {
-          const [cpRow] = await db
-            .select({ counterpartyId: normalizedCostLines.counterpartyId })
-            .from(normalizedCostLines)
-            .where(
-              and(
-                eq(normalizedCostLines.id, app.id),
-                isNull(normalizedCostLines.effectiveTo),
-                isNull(normalizedCostLines.deletedAt),
-              ),
-            )
-            .limit(1);
-          if (cpRow?.counterpartyId) {
+          const cpId = await financeExpenseRepository.getCostLineCounterpartyId(app.id);
+          if (cpId) {
             const learned = await loadLearnedMatchesForCounterparty(
-              cpRow.counterpartyId,
+              cpId,
               candidates,
             );
             if (learned.size > 0) {
@@ -947,17 +807,14 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
         const warnings = appSideWarnings(app, body.scope, appActiveLink);
 
         // 6. Persist suggestion run for audit + replay
-        const [suggestion] = await db
-          .insert(quickbooksMatchSuggestions)
-          .values({
-            scope: body.scope === "cost" ? "expense_invoice" : "incoming_invoice",
-            qbRealmId,
-            appEntityId: app.id,
-            appEntityLabel: `${app.invoiceNumber ?? "(no invoice #)"} · ${app.counterpartyName ?? "—"}`,
-            candidates: annotated as unknown as object,
-            requestedBy: userId,
-          })
-          .returning({ id: quickbooksMatchSuggestions.id });
+        const suggestion = await qbMatchesRepository.createSuggestion({
+          scope: body.scope === "cost" ? "expense_invoice" : "incoming_invoice",
+          qbRealmId,
+          appEntityId: app.id,
+          appEntityLabel: `${app.invoiceNumber ?? "(no invoice #)"} · ${app.counterpartyName ?? "—"}`,
+          candidates: annotated,
+          requestedBy: userId,
+        });
 
         logAuditFromReq(req, {
           entityType: "qb_invoice_match_suggestion",
@@ -1013,11 +870,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
         const body = req.body as z.infer<typeof approveBodySchema>;
         const userId = getEffectiveUser(req)?.id ?? null;
 
-        const [suggestion] = await db
-          .select()
-          .from(quickbooksMatchSuggestions)
-          .where(eq(quickbooksMatchSuggestions.id, suggestionId))
-          .limit(1);
+        const suggestion = await qbMatchesRepository.getSuggestionById(suggestionId);
         if (!suggestion) return sendError(res, notFound("Suggestion"));
         if (suggestion.acceptedAt) {
           return sendError(res, conflict("Suggestion already accepted."));
@@ -1041,22 +894,9 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
         if (!appEntityId) return sendError(res, badRequest("Suggestion has no app entity reference"));
 
         // Resolve project — needed by confirm*Link helpers
-        let projectId: number | null = null;
-        if (isCost) {
-          const [row] = await db
-            .select({ projectId: normalizedCostLines.projectId })
-            .from(normalizedCostLines)
-            .where(and(eq(normalizedCostLines.id, appEntityId), isNull(normalizedCostLines.effectiveTo)))
-            .limit(1);
-          projectId = row?.projectId ?? null;
-        } else {
-          const [row] = await db
-            .select({ projectId: normalizedRevenueLines.projectId })
-            .from(normalizedRevenueLines)
-            .where(and(eq(normalizedRevenueLines.id, appEntityId), isNull(normalizedRevenueLines.effectiveTo)))
-            .limit(1);
-          projectId = row?.projectId ?? null;
-        }
+        const projectId = isCost
+          ? await financeExpenseRepository.getCostLineProjectId(appEntityId)
+          : await financeInflowsRepository.getRevenueLineProjectId(appEntityId);
 
         // Build the QB summary expected by confirm*Link helpers.
         // Task #142 — when the caller supplies `lineAllocations`, route via
@@ -1090,27 +930,19 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
             const allocations = await Promise.all(
               body.lineAllocations.map(async (a) => {
                 if (a.appEntityType === "cost_line") {
-                  const [r] = await db
-                    .select({ projectId: normalizedCostLines.projectId })
-                    .from(normalizedCostLines)
-                    .where(and(eq(normalizedCostLines.id, a.appEntityId), isNull(normalizedCostLines.effectiveTo)))
-                    .limit(1);
+                  const allocProjectId = await financeExpenseRepository.getCostLineProjectId(a.appEntityId);
                   return {
                     appEntityType: "cost_line" as const,
                     appEntityId: a.appEntityId,
-                    projectId: r?.projectId ?? null,
+                    projectId: allocProjectId,
                     allocatedAmountExVat: a.allocatedAmountExVat,
                   };
                 } else {
-                  const [r] = await db
-                    .select({ projectId: normalizedRevenueLines.projectId })
-                    .from(normalizedRevenueLines)
-                    .where(and(eq(normalizedRevenueLines.id, a.appEntityId), isNull(normalizedRevenueLines.effectiveTo)))
-                    .limit(1);
+                  const allocProjectId = await financeInflowsRepository.getRevenueLineProjectId(a.appEntityId);
                   return {
                     appEntityType: "revenue_line" as const,
                     appEntityId: a.appEntityId,
-                    projectId: r?.projectId ?? null,
+                    projectId: allocProjectId,
                     allocatedAmountExVat: a.allocatedAmountExVat,
                   };
                 }
@@ -1198,11 +1030,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           // The legacy `mapVendor` / `mapCustomer` body flags remain
           // accepted for backward compatibility but no longer trigger
           // immediate writes — they're informational only.
-          const [createdLink] = await db
-            .select()
-            .from(quickbooksInvoiceLinks)
-            .where(eq(quickbooksInvoiceLinks.id, createdLinkId))
-            .limit(1);
+          const createdLink = await qbLinksRepository.getLinkById(createdLinkId);
           let proposals: Awaited<ReturnType<typeof listPendingProposalsForLink>> = [];
           if (createdLink) {
             const appCtx: AppRowContext | null = isCost
@@ -1231,15 +1059,11 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           }
 
           // Mark suggestion accepted
-          await db
-            .update(quickbooksMatchSuggestions)
-            .set({
-              acceptedAt: new Date(),
-              acceptedBy: userId,
-              acceptedQbId: chosen.qbEntityId,
-              acceptedConfidence: String(chosen.confidence) as unknown as never,
-            })
-            .where(eq(quickbooksMatchSuggestions.id, suggestionId));
+          await qbMatchesRepository.markAccepted(suggestionId, {
+            qbEntityId: chosen.qbEntityId,
+            confidence: chosen.confidence,
+            decidedByUserId: userId,
+          });
 
           if (projectId) {
             refreshProjectMetricsAsync(projectId);
@@ -1377,35 +1201,10 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
         const limit = Math.min(20, Math.max(1, Number(req.query.limit) || 10));
         const projectId = req.query.projectId ? Number(req.query.projectId) : null;
         if (!q || q.length < 2) return res.json({ items: [] });
-        const like = `%${q}%`;
         if (scope === "cost") {
-          const rows = await db
-            .select({
-              id: normalizedCostLines.id,
-              invoiceNumber: normalizedCostLines.invoiceNumber,
-              invoiceDate: normalizedCostLines.invoiceDate,
-              amountExVat: normalizedCostLines.amountExVat,
-              counterpartyName: normalizedCostLines.counterpartyName,
-              projectId: normalizedCostLines.projectId,
-              projectName: normalizedCostLines.projectName,
-            })
-            .from(normalizedCostLines)
-            .where(
-              and(
-                isNull(normalizedCostLines.effectiveTo),
-                isNull(normalizedCostLines.deletedAt),
-                projectId ? eq(normalizedCostLines.projectId, projectId) : sql`true`,
-                or(
-                  ilike(normalizedCostLines.invoiceNumber, like),
-                  ilike(normalizedCostLines.counterpartyName, like),
-                  ilike(normalizedCostLines.projectName, like),
-                ),
-              ),
-            )
-            .orderBy(desc(normalizedCostLines.invoiceDate))
-            .limit(limit);
+          const rows = await financeExpenseRepository.searchCostLinesByText(q, projectId, limit);
           return res.json({
-            items: (rows as Array<typeof rows[number]>).map((r) => ({
+            items: rows.map((r) => ({
               appEntityType: "cost_line" as const,
               appEntityId: r.id,
               invoiceNumber: r.invoiceNumber,
@@ -1417,31 +1216,9 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
             })),
           });
         } else {
-          const rows = await db
-            .select({
-              id: normalizedRevenueLines.id,
-              invoiceNumber: normalizedRevenueLines.invoiceNumber,
-              invoiceDate: normalizedRevenueLines.invoiceDate,
-              amountExVat: normalizedRevenueLines.amountExVat,
-              projectId: normalizedRevenueLines.projectId,
-              projectName: normalizedRevenueLines.projectName,
-            })
-            .from(normalizedRevenueLines)
-            .where(
-              and(
-                isNull(normalizedRevenueLines.effectiveTo),
-                isNull(normalizedRevenueLines.deletedAt),
-                projectId ? eq(normalizedRevenueLines.projectId, projectId) : sql`true`,
-                or(
-                  ilike(normalizedRevenueLines.invoiceNumber, like),
-                  ilike(normalizedRevenueLines.projectName, like),
-                ),
-              ),
-            )
-            .orderBy(desc(normalizedRevenueLines.invoiceDate))
-            .limit(limit);
+          const rows = await financeInflowsRepository.searchRevenueLinesByText(q, projectId, limit);
           return res.json({
-            items: (rows as Array<typeof rows[number]>).map((r) => ({
+            items: rows.map((r) => ({
               appEntityType: "revenue_line" as const,
               appEntityId: r.id,
               invoiceNumber: r.invoiceNumber,
@@ -1484,11 +1261,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
         const body = req.body as z.infer<typeof approveMultiBodySchema>;
         const userId = getEffectiveUser(req)?.id ?? null;
 
-        const [suggestion] = await db
-          .select()
-          .from(quickbooksMatchSuggestions)
-          .where(eq(quickbooksMatchSuggestions.id, suggestionId))
-          .limit(1);
+        const suggestion = await qbMatchesRepository.getSuggestionById(suggestionId);
         if (!suggestion) return sendError(res, notFound("Suggestion"));
         if (suggestion.acceptedAt) {
           return sendError(res, conflict("Suggestion already accepted."));
@@ -1544,27 +1317,19 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
             const allocations = await Promise.all(
               block.lineAllocations.map(async (a) => {
                 if (a.appEntityType === "cost_line") {
-                  const [r] = await db
-                    .select({ projectId: normalizedCostLines.projectId })
-                    .from(normalizedCostLines)
-                    .where(and(eq(normalizedCostLines.id, a.appEntityId), isNull(normalizedCostLines.effectiveTo)))
-                    .limit(1);
+                  const allocProjectId = await financeExpenseRepository.getCostLineProjectId(a.appEntityId);
                   return {
                     appEntityType: "cost_line" as const,
                     appEntityId: a.appEntityId,
-                    projectId: r?.projectId ?? null,
+                    projectId: allocProjectId,
                     allocatedAmountExVat: a.allocatedAmountExVat,
                   };
                 } else {
-                  const [r] = await db
-                    .select({ projectId: normalizedRevenueLines.projectId })
-                    .from(normalizedRevenueLines)
-                    .where(and(eq(normalizedRevenueLines.id, a.appEntityId), isNull(normalizedRevenueLines.effectiveTo)))
-                    .limit(1);
+                  const allocProjectId = await financeInflowsRepository.getRevenueLineProjectId(a.appEntityId);
                   return {
                     appEntityType: "revenue_line" as const,
                     appEntityId: a.appEntityId,
-                    projectId: r?.projectId ?? null,
+                    projectId: allocProjectId,
                     allocatedAmountExVat: a.allocatedAmountExVat,
                   };
                 }
@@ -1611,6 +1376,12 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
         }
 
         // ---- Phase 2: write every block + suggestion-accept in ONE outer tx.
+        // TODO(EE-QA-011): lift this transaction into a repo-owned helper that
+        // accepts the validated block inputs and runs the writes + claim CAS
+        // inside a single Drizzle transaction. Not lint-blocked today (the
+        // repository-pattern lint rule only matches db.{select,insert,update,
+        // delete}, not db.transaction). See Wave 5.1's setParentBatch for the
+        // pattern.
         const firstChosen = candidates[body.allocations[0]!.candidateIndex]!;
         const txOutcome = await db.transaction(async (tx: any) => {
           const results: Array<{
@@ -1736,11 +1507,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
         const body = req.body as z.infer<typeof rejectBodySchema>;
         const userId = getEffectiveUser(req)?.id ?? null;
 
-        const [suggestion] = await db
-          .select()
-          .from(quickbooksMatchSuggestions)
-          .where(eq(quickbooksMatchSuggestions.id, suggestionId))
-          .limit(1);
+        const suggestion = await qbMatchesRepository.getSuggestionById(suggestionId);
         if (!suggestion) return sendError(res, notFound("Suggestion"));
         if (suggestion.acceptedAt) {
           return sendError(res, conflict("Suggestion was already accepted; cannot reject."));
@@ -1749,14 +1516,10 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           return sendError(res, conflict("Suggestion already rejected."));
         }
 
-        await db
-          .update(quickbooksMatchSuggestions)
-          .set({
-            rejectedAt: new Date(),
-            rejectedBy: userId,
-            rejectionReason: body.reason,
-          })
-          .where(eq(quickbooksMatchSuggestions.id, suggestionId));
+        await qbMatchesRepository.markRejected(suggestionId, {
+          reason: body.reason,
+          decidedByUserId: userId,
+        });
 
         // Phase 2 — decay any rules that contributed to this suggestion's
         // top-ranked candidate. Reject = timesOverridden++ across all
@@ -1825,19 +1588,11 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
         // Resolve project
         let projectId: number | null = null;
         if (isCost) {
-          const [row] = await db
-            .select({ projectId: normalizedCostLines.projectId })
-            .from(normalizedCostLines)
-            .where(and(eq(normalizedCostLines.id, body.appEntityId), isNull(normalizedCostLines.effectiveTo)))
-            .limit(1);
+          const row = await financeExpenseRepository.getCostLineForMatching(body.appEntityId);
           if (!row) return sendError(res, notFound("Cost line"));
           projectId = row.projectId ?? null;
         } else {
-          const [row] = await db
-            .select({ projectId: normalizedRevenueLines.projectId })
-            .from(normalizedRevenueLines)
-            .where(and(eq(normalizedRevenueLines.id, body.appEntityId), isNull(normalizedRevenueLines.effectiveTo)))
-            .limit(1);
+          const row = await financeInflowsRepository.getRevenueLineForMatching(body.appEntityId);
           if (!row) return sendError(res, notFound("Revenue line"));
           projectId = row.projectId ?? null;
         }
@@ -1870,21 +1625,18 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
 
           // Persist as an accepted suggestion with manualOverride=true so the
           // override is reproducible from the audit trail.
-          const [persisted] = await db
-            .insert(quickbooksMatchSuggestions)
-            .values({
-              scope: isCost ? "expense_invoice" : "incoming_invoice",
-              qbRealmId: status.realmId,
-              appEntityId: body.appEntityId,
-              appEntityLabel: "manual override",
-              candidates: [] as unknown as object,
-              requestedBy: userId,
-              acceptedAt: new Date(),
-              acceptedBy: userId,
-              acceptedQbId: body.qbEntityId,
-              manualOverride: true,
-            })
-            .returning({ id: quickbooksMatchSuggestions.id });
+          const persisted = await qbMatchesRepository.createSuggestion({
+            scope: isCost ? "expense_invoice" : "incoming_invoice",
+            qbRealmId: status.realmId,
+            appEntityId: body.appEntityId,
+            appEntityLabel: "manual override",
+            candidates: [],
+            requestedBy: userId,
+            acceptedAt: new Date(),
+            acceptedBy: userId,
+            acceptedQbId: body.qbEntityId,
+            manualOverride: true,
+          });
 
           logAuditFromReq(req, {
             entityType: "qb_invoice_match_suggestion",
@@ -1932,16 +1684,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           return sendError(res, badRequest("Invalid linkId"));
         }
 
-        const [link] = await db
-          .select()
-          .from(quickbooksInvoiceLinks)
-          .where(
-            and(
-              eq(quickbooksInvoiceLinks.id, linkId),
-              isNull(quickbooksInvoiceLinks.deletedAt),
-            ),
-          )
-          .limit(1);
+        const link = await qbLinksRepository.getLinkById(linkId);
         if (!link) return sendError(res, notFound("Link"));
 
         const isBill = link.qbEntityType === "bill";
@@ -1976,27 +1719,17 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
         // Update / upsert the QB document snapshot so the cached payment
         // fields are kept fresh across requests. Best-effort.
         try {
-          const [doc] = await db
-            .select({ id: quickbooksDocuments.id })
-            .from(quickbooksDocuments)
-            .where(
-              and(
-                eq(quickbooksDocuments.qbEntityId, link.qbEntityId),
-                eq(quickbooksDocuments.qbRealmId, link.qbRealmId),
-                eq(quickbooksDocuments.qbEntityType, link.qbEntityType),
-                isNull(quickbooksDocuments.deletedAt),
-              ),
-            )
-            .limit(1);
-          if (doc) {
-            await db
-              .update(quickbooksDocuments)
-              .set({
-                qbBalance: balance !== null ? (String(balance) as unknown as never) : null,
-                qbPaymentStatus: paymentStatus === "unknown" ? null : paymentStatus,
-                updatedAt: new Date(),
-              })
-              .where(eq(quickbooksDocuments.id, doc.id));
+          const docId = await qbMatchesRepository.getQbDocumentId(
+            link.qbEntityId,
+            link.qbRealmId,
+            link.qbEntityType,
+          );
+          if (docId !== null) {
+            await qbMatchesRepository.updateQbDocumentBalance(
+              docId,
+              balance,
+              paymentStatus === "unknown" ? null : paymentStatus,
+            );
           }
         } catch (e) {
           // Non-fatal — the response below is still useful.
@@ -2058,11 +1791,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
 
         for (const item of body.items) {
           try {
-            const [suggestion] = await db
-              .select()
-              .from(quickbooksMatchSuggestions)
-              .where(eq(quickbooksMatchSuggestions.id, item.suggestionId))
-              .limit(1);
+            const suggestion = await qbMatchesRepository.getSuggestionById(item.suggestionId);
 
             if (!suggestion) {
               results.push({ suggestionId: item.suggestionId, outcome: "skipped", reason: "suggestion_not_found" });
@@ -2134,12 +1863,8 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
 
             // Safety gate 4: cost lines must have a PO number
             if (isCost) {
-              const [clRow] = await db
-                .select({ poNumber: normalizedCostLines.poNumber })
-                .from(normalizedCostLines)
-                .where(and(eq(normalizedCostLines.id, appEntityId), isNull(normalizedCostLines.effectiveTo)))
-                .limit(1);
-              if (!clRow?.poNumber || !String(clRow.poNumber).trim()) {
+              const poNumber = await financeExpenseRepository.getCostLinePoNumber(appEntityId);
+              if (!poNumber || !String(poNumber).trim()) {
                 results.push({ suggestionId: item.suggestionId, outcome: "skipped", reason: "no_po" });
                 skippedCount++;
                 continue;
@@ -2147,22 +1872,9 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
             }
 
             // Resolve project
-            let projectId: number | null = null;
-            if (isCost) {
-              const [row] = await db
-                .select({ projectId: normalizedCostLines.projectId })
-                .from(normalizedCostLines)
-                .where(and(eq(normalizedCostLines.id, appEntityId), isNull(normalizedCostLines.effectiveTo)))
-                .limit(1);
-              projectId = row?.projectId ?? null;
-            } else {
-              const [row] = await db
-                .select({ projectId: normalizedRevenueLines.projectId })
-                .from(normalizedRevenueLines)
-                .where(and(eq(normalizedRevenueLines.id, appEntityId), isNull(normalizedRevenueLines.effectiveTo)))
-                .limit(1);
-              projectId = row?.projectId ?? null;
-            }
+            const projectId: number | null = isCost
+              ? await financeExpenseRepository.getCostLineProjectId(appEntityId)
+              : await financeInflowsRepository.getRevenueLineProjectId(appEntityId);
 
             // Attempt to create the link — this is the final atomic guard
             try {
@@ -2216,11 +1928,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
               // Persist cascade proposals so the bulk path matches the
               // single-approve UX — every downstream change goes through
               // the proposals inbox and never silently mutates app data.
-              const [createdLink] = await db
-                .select()
-                .from(quickbooksInvoiceLinks)
-                .where(eq(quickbooksInvoiceLinks.id, createdLinkId))
-                .limit(1);
+              const createdLink = await qbLinksRepository.getLinkById(createdLinkId);
               let proposalCount = 0;
               if (createdLink) {
                 const appCtx = isCost
@@ -2253,15 +1961,11 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
                 }
               }
 
-              await db
-                .update(quickbooksMatchSuggestions)
-                .set({
-                  acceptedAt: new Date(),
-                  acceptedBy: userId,
-                  acceptedQbId: chosen.qbEntityId,
-                  acceptedConfidence: String(chosen.confidence) as unknown as never,
-                })
-                .where(eq(quickbooksMatchSuggestions.id, item.suggestionId));
+              await qbMatchesRepository.markAccepted(item.suggestionId, {
+                qbEntityId: chosen.qbEntityId,
+                confidence: chosen.confidence,
+                decidedByUserId: userId,
+              });
 
               if (projectId) {
                 refreshProjectMetricsAsync(projectId);
@@ -2366,17 +2070,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
 
         for (const item of body.items) {
           try {
-            const [suggestion] = await db
-              .select({
-                id: quickbooksMatchSuggestions.id,
-                scope: quickbooksMatchSuggestions.scope,
-                appEntityId: quickbooksMatchSuggestions.appEntityId,
-                acceptedAt: quickbooksMatchSuggestions.acceptedAt,
-                rejectedAt: quickbooksMatchSuggestions.rejectedAt,
-              })
-              .from(quickbooksMatchSuggestions)
-              .where(eq(quickbooksMatchSuggestions.id, item.suggestionId))
-              .limit(1);
+            const suggestion = await qbMatchesRepository.getSuggestionStatusById(item.suggestionId);
 
             if (!suggestion) {
               results.push({ suggestionId: item.suggestionId, outcome: "skipped", reason: "suggestion_not_found" });
@@ -2394,14 +2088,10 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
               continue;
             }
 
-            await db
-              .update(quickbooksMatchSuggestions)
-              .set({
-                rejectedAt: new Date(),
-                rejectedBy: userId,
-                rejectionReason: item.reason,
-              })
-              .where(eq(quickbooksMatchSuggestions.id, item.suggestionId));
+            await qbMatchesRepository.markRejected(item.suggestionId, {
+              reason: item.reason,
+              decidedByUserId: userId,
+            });
 
             logAuditFromReq(req, {
               entityType: "qb_invoice_match_suggestion",
@@ -2623,35 +2313,8 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
 
         // 1. Find candidate app cost lines: have a counterparty with at
         //    least one active pattern rule, and have NO active QB link.
-        //    Subqueries avoid pulling thousands of rows just to filter.
-        const counterpartiesWithRules = db
-          .selectDistinct({ counterpartyId: invoicePatternRules.counterpartyId })
-          .from(invoicePatternRules)
-          .where(
-            and(
-              eq(invoicePatternRules.isActive, true),
-              isNull(invoicePatternRules.deletedAt),
-            ),
-          );
-        const counterpartiesWithDescPatterns = db
-          .selectDistinct({ counterpartyId: invoiceDescriptionPatterns.counterpartyId })
-          .from(invoiceDescriptionPatterns)
-          .where(
-            and(
-              eq(invoiceDescriptionPatterns.isActive, true),
-              isNull(invoiceDescriptionPatterns.deletedAt),
-            ),
-          );
-        const numberRuleCpIds = (await counterpartiesWithRules).map(
-          (r: { counterpartyId: number | null }) => r.counterpartyId,
-        );
-        const descRuleCpIds = (await counterpartiesWithDescPatterns).map(
-          (r: { counterpartyId: number | null }) => r.counterpartyId,
-        );
-        const cpIdSet = new Set<number>();
-        for (const id of numberRuleCpIds) if (id !== null) cpIdSet.add(id);
-        for (const id of descRuleCpIds) if (id !== null) cpIdSet.add(id);
-        if (cpIdSet.size === 0) {
+        const cpIds = await qbMatchesRepository.listCounterpartiesWithActiveRules();
+        if (cpIds.length === 0) {
           return res.json({
             ok: true,
             docsScanned: 0,
@@ -2663,69 +2326,17 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           });
         }
 
-        const cpIds = Array.from(cpIdSet);
         // Active cost lines tied to those counterparties
-        const candidateRows = await db
-          .select({
-            id: normalizedCostLines.id,
-            projectId: normalizedCostLines.projectId,
-            invoiceNumber: normalizedCostLines.invoiceNumber,
-            invoiceDate: normalizedCostLines.invoiceDate,
-            amountExVat: normalizedCostLines.amountExVat,
-            counterpartyName: normalizedCostLines.counterpartyName,
-            poNumber: normalizedCostLines.poNumber,
-            description: normalizedCostLines.description,
-            counterpartyId: normalizedCostLines.counterpartyId,
-          })
-          .from(normalizedCostLines)
-          .where(
-            and(
-              inArray(normalizedCostLines.counterpartyId, cpIds),
-              isNull(normalizedCostLines.effectiveTo),
-              isNull(normalizedCostLines.deletedAt),
-            ),
-          )
-          .limit(limit);
+        const candidateRows = await financeExpenseRepository.listCostLinesByCounterpartyIds(cpIds, limit);
 
         // 2. Filter out app rows that are already linked OR have a pending
         //    auto-suggestion already in the queue.
-        const candidateIds = candidateRows.map(
-          (r: { id: number }) => r.id,
+        const candidateIds = candidateRows.map((r) => r.id);
+        const linkedAppIds = await qbLinksRepository.listActiveLinkedAppIds("cost_line", candidateIds);
+        const pendingAppIds = await qbMatchesRepository.listAppEntityIdsWithPendingSuggestion(
+          "expense_invoice",
+          candidateIds,
         );
-        const linkedAppIds = new Set<number>();
-        const pendingAppIds = new Set<number>();
-        if (candidateIds.length > 0) {
-          const linkedRows = await db
-            .select({ appEntityId: quickbooksInvoiceLinks.appEntityId })
-            .from(quickbooksInvoiceLinks)
-            .where(
-              and(
-                eq(quickbooksInvoiceLinks.appEntityType, "cost_line"),
-                inArray(quickbooksInvoiceLinks.appEntityId, candidateIds),
-                isNull(quickbooksInvoiceLinks.deletedAt),
-              ),
-            );
-          for (const r of linkedRows as Array<{ appEntityId: number }>) {
-            linkedAppIds.add(r.appEntityId);
-          }
-          const pendingRows = await db
-            .select({ appEntityId: quickbooksMatchSuggestions.appEntityId })
-            .from(quickbooksMatchSuggestions)
-            .where(
-              and(
-                eq(quickbooksMatchSuggestions.scope, "expense_invoice"),
-                inArray(
-                  quickbooksMatchSuggestions.appEntityId,
-                  candidateIds,
-                ),
-                isNull(quickbooksMatchSuggestions.acceptedAt),
-                isNull(quickbooksMatchSuggestions.rejectedAt),
-              ),
-            );
-          for (const r of pendingRows as Array<{ appEntityId: number | null }>) {
-            if (r.appEntityId !== null) pendingAppIds.add(r.appEntityId);
-          }
-        }
         const eligibleRows = candidateRows.filter(
           (r: { id: number }) =>
             !linkedAppIds.has(r.id) && !pendingAppIds.has(r.id),
@@ -2778,18 +2389,15 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           // already grabbed this QB doc.
           if (linkedQbIds.has(top.qbEntityId)) continue;
 
-          const [suggestion] = await db
-            .insert(quickbooksMatchSuggestions)
-            .values({
-              scope: "expense_invoice",
-              qbRealmId,
-              appEntityId: row.id,
-              appEntityLabel: `${row.invoiceNumber ?? "(no invoice #)"} · ${row.counterpartyName ?? "—"}`,
-              candidates: ranked as unknown as object,
-              requestedBy: userId,
-              autoGenerated: true,
-            })
-            .returning({ id: quickbooksMatchSuggestions.id });
+          const suggestion = await qbMatchesRepository.createSuggestion({
+            scope: "expense_invoice",
+            qbRealmId,
+            appEntityId: row.id,
+            appEntityLabel: `${row.invoiceNumber ?? "(no invoice #)"} · ${row.counterpartyName ?? "—"}`,
+            candidates: ranked,
+            requestedBy: userId,
+            autoGenerated: true,
+          });
           if (suggestion) {
             createdSuggestionIds.push(suggestion.id);
             suggestionsCreated++;
@@ -2808,7 +2416,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           changesJson: {
             threshold,
             limit,
-            counterpartiesWithRules: cpIdSet.size,
+            counterpartiesWithRules: cpIds.length,
             candidatesScanned: candidateRows.length,
             eligible: eligibleRows.length,
             qbDocsScanned: unlinkedQbCandidates.length,
@@ -2848,11 +2456,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
         if (!Number.isFinite(id) || id <= 0) {
           return sendError(res, badRequest("Invalid suggestion id"));
         }
-        const [suggestion] = await db
-          .select()
-          .from(quickbooksMatchSuggestions)
-          .where(eq(quickbooksMatchSuggestions.id, id))
-          .limit(1);
+        const suggestion = await qbMatchesRepository.getSuggestionById(id);
         if (!suggestion) return sendError(res, notFound("Suggestion"));
         if (suggestion.acceptedAt || suggestion.rejectedAt) {
           return res.status(410).json({
@@ -2913,25 +2517,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
     requirePermission("financials", "view"),
     async (_req: Request, res: Response) => {
       try {
-        const rows = await db
-          .select({
-            id: quickbooksMatchSuggestions.id,
-            scope: quickbooksMatchSuggestions.scope,
-            appEntityId: quickbooksMatchSuggestions.appEntityId,
-            appEntityLabel: quickbooksMatchSuggestions.appEntityLabel,
-            candidates: quickbooksMatchSuggestions.candidates,
-            requestedAt: quickbooksMatchSuggestions.requestedAt,
-          })
-          .from(quickbooksMatchSuggestions)
-          .where(
-            and(
-              eq(quickbooksMatchSuggestions.autoGenerated, true),
-              isNull(quickbooksMatchSuggestions.acceptedAt),
-              isNull(quickbooksMatchSuggestions.rejectedAt),
-            ),
-          )
-          .orderBy(desc(quickbooksMatchSuggestions.requestedAt))
-          .limit(100);
+        const rows = await qbMatchesRepository.listPendingAutoSuggestions(100);
 
         const summarised = rows.map(
           (r: {

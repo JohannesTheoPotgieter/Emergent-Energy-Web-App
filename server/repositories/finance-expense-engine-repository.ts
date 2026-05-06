@@ -1,4 +1,4 @@
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, desc, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { softCloseByProjectName } from "../lib/temporal-helpers";
 import { selectWinningExpenseRows } from "../lib/expense-row-selector";
 import { computeCostEvidence } from "../lib/finance/qb-allocation";
@@ -288,5 +288,162 @@ export class FinanceExpenseEngineRepository {
       const { adaptCostToExpense } = await import("../lib/data-merge");
       return adaptCostToExpense(inserted[0], inserted[0].projectName) as any;
     });
+  }
+
+  // ── QB invoice-matching reads (active rows only) ──
+
+  async getCostLineForMatching(id: number): Promise<{
+    id: number;
+    projectId: number | null;
+    invoiceNumber: string | null;
+    invoiceDate: string | null;
+    amountExVat: string | null;
+    counterpartyName: string | null;
+    poNumber: string | null;
+    description: string | null;
+  } | null> {
+    const [row] = await this.dbInstance
+      .select({
+        id: normalizedCostLines.id,
+        projectId: normalizedCostLines.projectId,
+        invoiceNumber: normalizedCostLines.invoiceNumber,
+        invoiceDate: normalizedCostLines.invoiceDate,
+        amountExVat: normalizedCostLines.amountExVat,
+        counterpartyName: normalizedCostLines.counterpartyName,
+        poNumber: normalizedCostLines.poNumber,
+        description: normalizedCostLines.description,
+      })
+      .from(normalizedCostLines)
+      .where(
+        and(
+          eq(normalizedCostLines.id, id),
+          isNull(normalizedCostLines.effectiveTo),
+          isNull(normalizedCostLines.deletedAt),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  }
+
+  async getCostLineProjectId(id: number): Promise<number | null> {
+    const [row] = await this.dbInstance
+      .select({ projectId: normalizedCostLines.projectId })
+      .from(normalizedCostLines)
+      .where(
+        and(
+          eq(normalizedCostLines.id, id),
+          isNull(normalizedCostLines.effectiveTo),
+        ),
+      )
+      .limit(1);
+    return row?.projectId ?? null;
+  }
+
+  async getCostLineCounterpartyId(id: number): Promise<number | null> {
+    const [row] = await this.dbInstance
+      .select({ counterpartyId: normalizedCostLines.counterpartyId })
+      .from(normalizedCostLines)
+      .where(
+        and(
+          eq(normalizedCostLines.id, id),
+          isNull(normalizedCostLines.effectiveTo),
+          isNull(normalizedCostLines.deletedAt),
+        ),
+      )
+      .limit(1);
+    return row?.counterpartyId ?? null;
+  }
+
+  async getCostLinePoNumber(id: number): Promise<string | null> {
+    const [row] = await this.dbInstance
+      .select({ poNumber: normalizedCostLines.poNumber })
+      .from(normalizedCostLines)
+      .where(
+        and(
+          eq(normalizedCostLines.id, id),
+          isNull(normalizedCostLines.effectiveTo),
+        ),
+      )
+      .limit(1);
+    return row?.poNumber ?? null;
+  }
+
+  async searchCostLinesByText(
+    query: string,
+    projectId: number | null,
+    limit: number,
+  ): Promise<Array<{
+    id: number;
+    invoiceNumber: string | null;
+    invoiceDate: string | null;
+    amountExVat: string | null;
+    counterpartyName: string | null;
+    projectId: number | null;
+    projectName: string | null;
+  }>> {
+    const like = `%${query}%`;
+    return this.dbInstance
+      .select({
+        id: normalizedCostLines.id,
+        invoiceNumber: normalizedCostLines.invoiceNumber,
+        invoiceDate: normalizedCostLines.invoiceDate,
+        amountExVat: normalizedCostLines.amountExVat,
+        counterpartyName: normalizedCostLines.counterpartyName,
+        projectId: normalizedCostLines.projectId,
+        projectName: normalizedCostLines.projectName,
+      })
+      .from(normalizedCostLines)
+      .where(
+        and(
+          isNull(normalizedCostLines.effectiveTo),
+          isNull(normalizedCostLines.deletedAt),
+          projectId ? eq(normalizedCostLines.projectId, projectId) : sql`true`,
+          or(
+            ilike(normalizedCostLines.invoiceNumber, like),
+            ilike(normalizedCostLines.counterpartyName, like),
+            ilike(normalizedCostLines.projectName, like),
+          ),
+        ),
+      )
+      .orderBy(desc(normalizedCostLines.invoiceDate))
+      .limit(limit);
+  }
+
+  async listCostLinesByCounterpartyIds(
+    counterpartyIds: number[],
+    limit: number,
+  ): Promise<Array<{
+    id: number;
+    projectId: number | null;
+    invoiceNumber: string | null;
+    invoiceDate: string | null;
+    amountExVat: string | null;
+    counterpartyName: string | null;
+    poNumber: string | null;
+    description: string | null;
+    counterpartyId: number | null;
+  }>> {
+    if (counterpartyIds.length === 0) return [];
+    return this.dbInstance
+      .select({
+        id: normalizedCostLines.id,
+        projectId: normalizedCostLines.projectId,
+        invoiceNumber: normalizedCostLines.invoiceNumber,
+        invoiceDate: normalizedCostLines.invoiceDate,
+        amountExVat: normalizedCostLines.amountExVat,
+        counterpartyName: normalizedCostLines.counterpartyName,
+        poNumber: normalizedCostLines.poNumber,
+        description: normalizedCostLines.description,
+        counterpartyId: normalizedCostLines.counterpartyId,
+      })
+      .from(normalizedCostLines)
+      .where(
+        and(
+          inArray(normalizedCostLines.counterpartyId, counterpartyIds),
+          isNull(normalizedCostLines.effectiveTo),
+          isNull(normalizedCostLines.deletedAt),
+        ),
+      )
+      .limit(limit);
   }
 }
