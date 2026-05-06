@@ -26,7 +26,7 @@ const SECTION_HELP_TEXT: Partial<Record<SectionKey, string>> = {
   HSE: "HSE Dashboard",
   QUALITY: "Quality Dashboard, Commissioning",
   REPORTS: "Report Center, Programme Reports, PM Monthly, Engineering Monthly, Performance, CEO Dashboard, COO Dashboard",
-  ADMIN: "Roles & Permissions, Smart Import, Audit Log, Processes & SOPs, Templates, Recovery",
+  ADMIN: "General: Settings, Roles & Permissions, Smart Import, Audit Log, Phase Templates, Recovery, Pending Approvals. System: Workflow Config, Stage Lifecycle, Import Control, Data Migration, Engineering Audit Log, and more. Integrations: Pipedrive, QuickBooks, SharePoint. Knowledge: Processes & SOPs, Documents, Training, Leaderboard",
 };
 
 function basePath(path: string) {
