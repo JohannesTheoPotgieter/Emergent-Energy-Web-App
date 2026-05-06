@@ -8,6 +8,13 @@ export interface UserRoleSummary {
   role: string;
 }
 
+export interface AssignableUserRow {
+  id: number;
+  name: string;
+  username: string;
+  role: string;
+}
+
 export class UsersRepository {
   private _dbInstance?: typeof db;
 
@@ -59,5 +66,17 @@ export class UsersRepository {
       .from(users)
       .where(eq(users.id, id));
     return row?.name ?? null;
+  }
+
+  async listAssignableByRole(role: string): Promise<AssignableUserRow[]> {
+    return this.dbInstance
+      .select({
+        id: users.id,
+        name: users.name,
+        username: users.username,
+        role: users.role,
+      })
+      .from(users)
+      .where(eq(users.role, role));
   }
 }
