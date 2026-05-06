@@ -1,6 +1,12 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { users, type InsertUser, type User } from "@shared/schema";
 import { db } from "../db";
+
+export interface UserRoleSummary {
+  id: number;
+  name: string;
+  role: string;
+}
 
 export class UsersRepository {
   private _dbInstance?: typeof db;
@@ -37,5 +43,21 @@ export class UsersRepository {
       })
       .returning();
     return created;
+  }
+
+  async listByRoles(roles: string[]): Promise<UserRoleSummary[]> {
+    if (roles.length === 0) return [];
+    return this.dbInstance
+      .select({ id: users.id, name: users.name, role: users.role })
+      .from(users)
+      .where(inArray(users.role, roles));
+  }
+
+  async getNameById(id: number): Promise<string | null> {
+    const [row] = await this.dbInstance
+      .select({ name: users.name })
+      .from(users)
+      .where(eq(users.id, id));
+    return row?.name ?? null;
   }
 }
