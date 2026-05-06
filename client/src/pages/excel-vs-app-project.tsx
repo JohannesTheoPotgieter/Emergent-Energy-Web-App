@@ -219,9 +219,24 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
         toast({ title: "Approval requested", description: `Submitted ${count} entr${count === 1 ? "y" : "ies"} for approval.` });
       } else {
         const count = json.resolved as number;
+        const failed = (json.failed as number | undefined) ?? 0;
         const actionLabel = json.action === "accept_excel" ? "set to workbook value" : "kept with reason";
         setResolveNotice({ count, action: actionLabel });
-        toast({ title: "Changes resolved", description: `${count} entr${count === 1 ? "y" : "ies"} ${actionLabel}.` });
+        if (json.status === "partial" && failed > 0) {
+          toast({
+            title: "Partially resolved",
+            description: `${count} entr${count === 1 ? "y" : "ies"} ${actionLabel}. ${failed} could not be saved — re-submit the unresolved selection to retry.`,
+            variant: "destructive",
+          });
+        } else if (json.status === "failed") {
+          toast({
+            title: "Resolution failed",
+            description: `0 of ${count + failed} entries saved. Please retry — the operation is safe to re-run.`,
+            variant: "destructive",
+          });
+        } else {
+          toast({ title: "Changes resolved", description: `${count} entr${count === 1 ? "y" : "ies"} ${actionLabel}.` });
+        }
       }
       setSelected(new Map());
       setReason("");
