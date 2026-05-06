@@ -78,20 +78,29 @@ export function SmartImportBulkIntro({
 
 export interface BulkResultProject {
   projectName: string;
-  status: "committed" | "skipped" | "failed";
+  status: "committed" | "skipped" | "failed" | "conflicts_pending";
   error?: string;
+  /** Number of unresolved 3-way conflicts (only set when status === "conflicts_pending"). */
+  conflictCount?: number;
 }
 
 interface SmartImportBulkResultNextProps {
   projects: BulkResultProject[];
   onViewProject?: (projectName: string) => void;
   onRetry?: (projectName: string) => void;
+  /**
+   * Called when the operator clicks "Resolve conflicts (N)" on a row that
+   * came back with `status === "conflicts_pending"`. The parent opens a
+   * dialog with the per-field decision UI and re-commits the run.
+   */
+  onResolveConflicts?: (projectName: string) => void;
 }
 
 export function SmartImportBulkResultNext({
   projects,
   onViewProject,
   onRetry,
+  onResolveConflicts,
 }: SmartImportBulkResultNextProps) {
   const committed = projects.filter((p) => p.status === "committed");
 
@@ -124,11 +133,20 @@ export function SmartImportBulkResultNext({
                 <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
               ) : p.status === "skipped" ? (
                 <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+              ) : p.status === "conflicts_pending" ? (
+                <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
               ) : (
                 <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
               )}
               <span className="flex-1 min-w-0 truncate text-sm font-medium">{p.projectName}</span>
-              {p.error && (
+              {p.status === "conflicts_pending" && (
+                <span className="text-xs text-amber-700 max-w-[260px] truncate" title="App and source workbook both changed the same fields">
+                  {p.conflictCount
+                    ? `${p.conflictCount} conflict${p.conflictCount === 1 ? "" : "s"} need a decision`
+                    : "Conflicts need a decision"}
+                </span>
+              )}
+              {p.status !== "conflicts_pending" && p.error && (
                 <span className="text-xs text-red-600 max-w-[240px] truncate" title={p.error}>
                   {p.error}
                 </span>
@@ -143,6 +161,16 @@ export function SmartImportBulkResultNext({
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                     {BULK_LABELS.result.viewProjectAction}
+                  </button>
+                )}
+                {p.status === "conflicts_pending" && onResolveConflicts && (
+                  <button
+                    type="button"
+                    onClick={() => onResolveConflicts(p.projectName)}
+                    data-testid={`btn-resolve-conflicts-${idx}`}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-2 py-1 rounded border border-amber-200"
+                  >
+                    Resolve conflicts{p.conflictCount ? ` (${p.conflictCount})` : ""}
                   </button>
                 )}
                 {p.status === "failed" && onRetry && (
