@@ -112,5 +112,38 @@ export default [
       ],
     },
   },
+  // ── EE-QA-017: legacy Excel parser / scheduler — no NEW imports ─
+  //
+  // server/excelParser.ts and server/importPipeline.ts are the legacy
+  // pre-Smart-Import-v2 modules. The 4 existing call sites are tracked
+  // for migration as a structural workstream; this rule prevents new
+  // call sites from accumulating in the meantime. To migrate a caller,
+  // delete the entry from the allowlist below and switch the file to
+  // server/imports/* (Smart Import v2).
+  {
+    files: ['server/**/*.{ts,tsx}'],
+    ignores: [
+      'server/excelParser.ts',
+      'server/importPipeline.ts',
+      'server/routes/imports-admin-extracted-routes.ts',
+      'server/departments/admin-routes.ts',
+      'server/bootstrap/start-runtime-services.ts',
+      'server/bootstrap/environment-status.ts',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/excelParser', '**/importPipeline'],
+              message:
+                'EE-QA-017 — server/excelParser.ts and server/importPipeline.ts are deprecated (Smart Import v2 lives in server/imports/). Do not add new callers; the 4 existing legacy call sites are explicitly allow-listed and tracked for migration.',
+            },
+          ],
+        },
+      ],
+    },
+  },
   prettierConfig,
 ];
