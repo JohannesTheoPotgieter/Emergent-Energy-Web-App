@@ -130,4 +130,25 @@ export class QuickBooksLinksRepository {
       );
     return new Set(rows.map((r: { appEntityId: number }) => r.appEntityId));
   }
+
+  /**
+   * Bulk listing of all active links for a given (appEntityType,
+   * qbEntityType) pair — used by COS / revenue tracker, reconciliation,
+   * and month-detail endpoints that need every link of a given shape.
+   */
+  async listActiveLinksByPair(
+    appEntityType: "cost_line" | "revenue_line",
+    qbEntityType: "bill" | "invoice",
+  ): Promise<QuickBooksInvoiceLink[]> {
+    return this.dbInstance
+      .select()
+      .from(quickbooksInvoiceLinks)
+      .where(
+        and(
+          eq(quickbooksInvoiceLinks.appEntityType, appEntityType),
+          eq(quickbooksInvoiceLinks.qbEntityType, qbEntityType),
+          isNull(quickbooksInvoiceLinks.deletedAt),
+        ),
+      );
+  }
 }
