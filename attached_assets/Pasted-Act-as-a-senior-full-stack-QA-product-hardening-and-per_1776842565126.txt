@@ -1,0 +1,296 @@
+Act as a senior full-stack QA, product hardening, and permissions audit engineer working inside our actual codebase and GitHub-linked project.
+
+You have access to:
+- the full Replit codebase
+- linked GitHub repo history and current branch state
+- database schema
+- frontend routes, components, forms, tables, modals, dashboards
+- backend routes, handlers, services, middleware, permission checks
+- current navigation, role logic, and UI visibility rules
+
+Your job:
+Perform a full functional hardening pass of the Emergent Energy app and prove whether CRUD, roles, permissions, and route protection actually work across the app.
+
+This is not a visual QA pass.
+This is a functional trust pass.
+
+Business context to preserve:
+- This is an operational app for a South African solar EPC.
+- The project is the system spine.
+- Frontend, backend, database, permissions, navigation, and reporting must align.
+- SharePoint is a major source of truth for documents.
+- Pipedrive is the CRM.
+- Matriarch handles O&M handover and downstream operations.
+- Compliance and HSE only begin after PD hands over to PM.
+- Do not break existing business rules or working functionality.
+
+Critical business rules to preserve:
+- Do not casually redefine Excel-derived finance logic.
+- COS is only realised when an invoice is captured under actuals.
+- An invoice without a PO is a red flag.
+- Payment receipt date drives revenue realisation where defined.
+- Real workflow is PD → PM → execution → handover.
+- Do not expose UI that implies a workflow the backend does not actually support.
+
+Non-negotiable audit rules:
+1. Inspect before changing.
+2. Do not guess intended behavior where code, permissions, or workflow contradict each other.
+3. Where intended behavior is unclear, derive it from:
+   - existing role definitions
+   - permission config
+   - current navigation structure
+   - backend enforcement
+   - database entities and relationships
+   - known business rules in code/comments/docs
+4. If still unclear, flag as ambiguity. Do not invent.
+5. Do not do broad refactors in this pass.
+6. Prefer small safe fixes.
+7. If something is broken and cannot be safely fixed now, hide it safely instead of leaving misleading UI live.
+
+Hard requirements:
+A. BUILD A COMPLETE APP INVENTORY
+Create a full inventory of:
+- routes/pages
+- modules
+- nav items
+- tabs
+- modals/drawers
+- forms
+- tables
+- dashboards
+- detail panels
+- quick actions
+- bulk actions
+- import/export flows
+- approval actions
+- status transitions
+
+For each item, map:
+- screen/module name
+- route
+- main component
+- backend endpoint(s)
+- DB table/entity touched
+- roles that can see it
+- roles that can act on it
+
+B. VERIFY REAL CRUD, NOT ASSUMED CRUD
+For every screen where CRUD is intended, test and prove:
+- Create works
+- Read/view works
+- Update works
+- Delete/archive/deactivate works where intended
+- record persists correctly
+- record reloads correctly
+- related tables/views update correctly
+- validation works
+- error handling works
+- optimistic UI does not lie
+- stale state is not shown after save
+- success state is real, not fake
+
+If CRUD is partial, say exactly which letters work and which do not.
+Do not mark a screen “CRUD working” unless it is proven.
+
+C. VERIFY ROLE + PERMISSION ALIGNMENT END TO END
+Audit all roles:
+- CEO
+- COO
+- Head of Project Development
+- CFO
+- Program Manager
+- Program Finance Manager
+- Construction Manager
+- Quality Manager
+- Engineer
+- Project Manager
+- Project Developer
+
+For each role, verify alignment across:
+1. sidebar/top nav visibility
+2. page access
+3. button/action visibility
+4. API permission enforcement
+5. backend middleware / guards
+6. data-level restrictions if any
+7. report/dashboard access
+8. lens views
+9. create/edit/delete authority
+
+Find mismatches between:
+- what the UI shows
+- what the route allows
+- what the API allows
+- what the role config says
+- what the business logic implies
+
+Do not accept frontend hiding as security.
+If a route or API can still be hit directly, it is not fixed.
+
+D. IDENTIFY BROKEN OR MISLEADING FUNCTIONALITY
+Find:
+- dead buttons
+- placeholder actions
+- incomplete flows
+- fake save states
+- buttons with no backend
+- routes with empty screens
+- components wired to wrong data
+- duplicate actions
+- misleading labels
+- views visible to wrong roles
+- partially implemented features pretending to be live
+- nav items pointing to unstable or unfinished modules
+
+For every such item decide:
+- safe to fix now
+- unsafe to fix now
+- must hide now
+
+E. SAFE HIDE RULES
+If a feature is not working as intended and cannot be safely fixed in this pass, hide it safely:
+- remove nav exposure
+- remove button exposure
+- guard route access
+- guard backend/API access if required
+- preserve underlying code/data unless removal is explicitly necessary
+- do not break adjacent screens
+- document exact hide method used
+
+Preferred hide methods:
+- feature flag
+- permission-based visibility
+- route guard
+- backend action guard
+- explicit “not enabled” state only if honest and controlled
+
+Do not leave zombie UI.
+
+F. TEST METHOD
+Use a combination of:
+- code inspection
+- route/component tracing
+- backend endpoint tracing
+- DB model tracing
+- actual runtime testing
+- role simulation / impersonation
+- browser-level interaction testing where available
+
+Do not rely on code inspection alone if runtime validation is possible.
+Do not rely on runtime clicking alone if backend/permission tracing is needed.
+
+G. ISSUE CLASSIFICATION
+Classify every issue as one of:
+1. UX/UI issue
+2. Data issue
+3. Workflow/process issue
+4. Permissions/role issue
+5. Technical/code issue
+6. Governance/control issue
+
+Also assign:
+- severity: critical / high / medium / low
+- confidence: high / medium / low
+- safe fix now? yes/no
+- hide now? yes/no
+
+H. IMPLEMENTATION RULES
+This pass is for hardening, not product redesign.
+So:
+- apply safe fixes now
+- apply safe hides now
+- do not change core business logic unless clearly broken and proven
+- do not silently rewrite permissions models
+- do not remove features without documenting them
+- do not create fake data assumptions
+- do not say “fixed” without retesting
+
+I. OUTPUT FORMAT
+Return everything in chat only.
+No files.
+
+Return these sections exactly:
+
+1. SCREEN + ROUTE INVENTORY
+For each screen:
+- module
+- route
+- component
+- actions present
+- intended CRUD
+- roles with access
+- endpoints used
+- DB entities touched
+
+2. CRUD VERIFICATION MATRIX
+For each screen:
+- create: pass/fail/partial
+- read: pass/fail/partial
+- update: pass/fail/partial
+- delete/archive: pass/fail/partial/not intended
+- evidence
+- root cause if failed
+- safe fix now? yes/no
+- hide now? yes/no
+
+3. ROLE + PERMISSION MATRIX
+For each role:
+- expected visible modules
+- actual visible modules
+- expected actions
+- actual actions
+- unauthorized exposure
+- missing access where it should exist
+- backend enforcement gaps
+- recommended exact fix
+
+4. BROKEN OR MISLEADING FUNCTIONALITY TO HIDE NOW
+For each item:
+- item name
+- location
+- why misleading/broken
+- user risk
+- safest hide method
+- whether backend guard also required
+
+5. SAFE FIXES APPLIED NOW
+List exact changes made:
+- frontend
+- backend
+- permissions
+- routes
+- validation
+- state handling
+- error handling
+- guards
+
+6. ITEMS NOT FIXED
+For each:
+- why not fixed
+- risk
+- recommended next step
+- whether hidden
+
+7. RETEST RESULTS
+Retest all changed areas and confirm:
+- CRUD works where intended
+- broken functions are hidden where needed
+- roles and permissions align in UI and backend
+- no adjacent working flow was broken
+
+8. FINAL TRUTH CHECK
+State plainly:
+- what is now trustworthy
+- what is still not trustworthy
+- what should not be shown to users yet
+
+Definition of done:
+- No misleading live functionality remains in tested areas
+- CRUD works where intended and is proven
+- roles and permissions align across UI, route, API, and backend guards
+- unstable functionality is either fixed or hidden
+- all claims are evidence-based, not assumed
+
+Be blunt.
+Do not polish the truth.
+Do not give optimistic summaries that hide broken trust.

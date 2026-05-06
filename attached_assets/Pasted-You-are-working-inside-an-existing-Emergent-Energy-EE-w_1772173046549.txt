@@ -1,0 +1,165 @@
+You are working inside an existing Emergent Energy (EE) web application (already in production / working).
+
+NON-NEGOTIABLE RULES
+1) Do NOT break anything existing. No regressions. No broken dashboards. No broken imports. No broken permissions.
+2) Do NOT rename, delete, or repurpose existing tables/columns/routes/components.
+3) Additive only. Reuse existing functionality first. Only create new functionality where it is truly missing.
+4) Before you code, inspect the current codebase to discover existing:
+   - database schema (Project table, finance tables, quality tables, engineering tables)
+   - existing “Project Overview” page structure (tabs, cards, drilldowns)
+   - existing RBAC/permissions logic
+   - existing dashboard/aggregation patterns
+5) If a requirement is unclear, do not assume. Implement a safe default and leave clear TODO + “needs decision” note.
+6) Use feature flags if available; if not, ensure the new pages are isolated and don’t affect users until they navigate there.
+
+BUSINESS GOAL
+Add a Portfolio Management tool so we can group multiple projects under:
+- same Client (NOTE: there is currently NO Client object; “client name” may or may not exist on Project)
+- same Portfolio
+- same Rollout Plan
+and manage/report on them together.
+
+CONSTRAINTS (confirmed)
+- A Project can belong to ONLY ONE Portfolio.
+- Moving a Project from one Portfolio to another is COO-only action.
+
+WHERE IT MUST LIVE (NAV + SECTIONS)
+Use the existing left navigation structure and add Portfolio links in these places:
+- PROJECT MANAGEMENT section: add “Portfolio Dashboard” and “Portfolios” (or a single “Portfolios” entry that lands on dashboard)
+- PROJECT FINANCE section: add “Portfolio Dashboard” (finance view)
+- GOVERNANCE section (Quality): add “Portfolio Dashboard” (quality view)
+Keep icons/naming consistent with current style.
+
+PORTFOLIO EXPERIENCE MUST MIRROR PROJECT EXPERIENCE
+There is an existing “Project Summary / Project Overview” with tabs:
+- Project Management (includes Finance)
+- Quality
+- Engineering
+Create the SAME concept for Portfolio:
+- Portfolio Overview page with tabs:
+  1) Project Management (includes Finance)
+  2) Quality
+  3) Engineering
+This Portfolio Overview must show rollups and drilldowns into the included projects.
+
+REUSE EXISTING FUNCTIONALITY FIRST
+- If the app already has a dashboard card component, reuse it.
+- If the app already has a table component with sorting/filtering, reuse it.
+- If project finance metrics exist (cashflow/COS/revenue), reuse those same computed fields and aggregate them for portfolio rollups.
+- If quality data exists, reuse it and roll it up.
+- If engineering status exists, reuse it and roll it up.
+DO NOT invent new finance formulas or “approximate” missing values.
+
+DATA MODEL (MINIMAL + SAFE)
+You MUST first check if Project already has a client name field (e.g. client_name, customer, client, off_taker, etc).
+- If Project already has a client field, use it for display and filtering.
+- If Project does NOT have client anywhere, then Portfolio will carry “client_name” as a string and projects inherit it only by assignment (no backfill).
+
+Create new tables/entities ADDITIVELY:
+1) portfolios
+   - id
+   - name
+   - client_name (string, nullable)
+   - status (align to existing enums if possible)
+   - owner_user_id (Program Manager / responsible)
+   - notes/description (optional)
+   - created_by, updated_by, timestamps
+2) portfolio_rollout_plans
+   - id
+   - portfolio_id (FK)
+   - name
+   - notes
+   - created_by/updated_by/timestamps
+3) portfolio_rollout_phases (optional but recommended)
+   - id
+   - rollout_plan_id (FK)
+   - phase_name
+   - start_date, end_date (optional)
+   - targets optional (kwp, revenue) ONLY if easy; otherwise leave fields but don’t require
+   - sort_order
+4) project_portfolio_assignment (preferred approach to avoid breaking imports)
+   - project_id (UNIQUE)
+   - portfolio_id (FK)
+   - assigned_by, assigned_at
+   - moved_by, moved_at (for COO-only moves, audit trail)
+Enforce UNIQUE(project_id) so a project cannot be in two portfolios.
+
+CORE FUNCTIONALITY (MVP)
+A) Portfolio CRUD
+- Create/edit/close portfolio
+- Set: name, client_name (if used), status, owner, notes
+
+B) Assign projects
+- In Portfolio Overview → “Add Projects” flow:
+  - list projects user has access to (Program Manager at minimum)
+  - if project already assigned to another portfolio:
+      - show which portfolio it’s in
+      - block by default
+      - offer “Move project” only if user is COO (COO-only)
+- Remove project from portfolio (Program Manager/COO)
+
+C) Rollout plan
+- Portfolio Overview → Rollout Plan editor/view:
+  - add phases and optional dates
+  - simple timeline list is fine; no need for fancy Gantt unless already in app
+
+D) Portfolio dashboards (three contexts)
+Create one underlying portfolios dashboard page and allow “view modes”:
+1) Project Management view mode
+   - portfolio list with: client_name, #projects, schedule health, finance health, overall status
+2) Finance view mode
+   - portfolio list with finance rollups:
+     - total revenue, total COS, total GP, cashflow forecast totals (only if these exist in project finance)
+     - exceptions list (portfolios with negative GP, overdue invoices, etc) only if fields exist
+3) Quality view mode
+   - portfolio list with quality rollups:
+     - NCR/snags/open issues counts, QA gate completion (only if exists)
+If quality/engineering modules do not yet have structured data, show “Not configured” empty states, not fake numbers.
+
+PORTFOLIO ROLLUP RULES (SAFE + CONSERVATIVE)
+- Numeric rollups = SUM of project-level computed numbers (reuse existing logic).
+- Status rollups (schedule/quality/engineering):
+  - If ANY project is “At Risk/Blocked/Overdue” → portfolio is “At Risk”
+  - Else if ANY project is “In Progress” → portfolio is “In Progress”
+  - Else → “On Track/Complete” aligned with existing app conventions.
+You must discover and reuse the app’s existing status values.
+
+API / BACKEND
+- Add new endpoints/services consistent with the existing backend style:
+  - GET /portfolios (with filters)
+  - GET /portfolios/:id (detail incl. included projects)
+  - POST/PUT portfolio CRUD
+  - POST assign project to portfolio
+  - POST move project between portfolios (COO-only)
+  - DELETE remove project from portfolio
+  - GET portfolio rollups (aggregates)
+Do NOT modify existing project endpoints.
+
+UI / NAVIGATION REQUIREMENTS
+- Add nav entries under:
+  - PROJECT MANAGEMENT → Portfolio Dashboard (or Portfolios)
+  - PROJECT FINANCE → Portfolio Dashboard
+  - GOVERNANCE/Quality → Portfolio Dashboard
+- Portfolio Overview page must include drill-down links into each Project’s existing overview page.
+
+PERMISSIONS
+- You must use the existing RBAC system.
+- Add a permission check for COO-only “Move project between portfolios”.
+- Program Manager can create/edit portfolios and assign/remove projects.
+- Finance and Quality can view their dashboards + relevant portfolio tabs.
+If role names differ, map to existing ones—do not invent.
+
+DELIVERABLES (MANDATORY)
+1) Before coding: output the exact file list you will add/change.
+2) Explain what existing components/services you are reusing.
+3) Implement schema migrations (new tables only), APIs, UI pages, navigation.
+4) Add tests (or at minimum a manual test checklist if no test framework exists).
+5) Provide rollback plan (how to revert migrations/pages safely).
+
+FIRST STEP (DO THIS NOW)
+- Scan the codebase and answer these in your output BEFORE making changes:
+  1) Does Project already store a client/customer name anywhere? If yes, where.
+  2) Where do project finance rollup numbers come from (tables/views/services)?
+  3) Where does quality data come from (if present)?
+  4) Where does engineering status data come from (if present)?
+Then proceed with implementation using reuse-first approach.

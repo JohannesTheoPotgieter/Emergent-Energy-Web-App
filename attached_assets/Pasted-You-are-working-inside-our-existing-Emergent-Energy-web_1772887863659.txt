@@ -1,0 +1,439 @@
+You are working inside our existing Emergent Energy web application.
+
+Your job is to implement a full UX and relationship-layer upgrade across the project modules, with special focus on making Procurement the central commercial execution screen for buying, delivery, invoice capture, and related financial integration.
+
+CRITICAL NON-NEGOTIABLE RULES
+- Do not break any current working functionality.
+- Do not remove existing routes, APIs, tables, calculations, KPIs, or screens unless explicitly proven unused and safely redirected.
+- Do not rebuild the database structure from scratch.
+- Work on top of the current database structure, current KPI logic, current project spine, current APIs, and current permissions.
+- Preserve all existing project data.
+- Reuse current working functionality wherever possible instead of creating duplicates.
+- If any new relation tables or metadata are required, they must be backward-compatible.
+- Do not create another disconnected module for financial integration. Merge relevant functionality into Procurement and connect it properly to the existing financial views.
+
+PRIMARY GOAL
+Create a simpler, world-class project control UX where users can:
+1. Easily understand how project functions speak to each other
+2. Navigate between related records quickly
+3. Manage operational source records easily
+4. Use Procurement as the main commercial operations hub
+5. Still access all current functionality and KPIs
+6. Trust that current working logic, DB structure, and reports are not broken
+
+CONTEXT
+Current project-level modules/tabs include:
+- Project Plan
+- Board
+- Calendar
+- Inflows
+- Expenditure
+- COS
+- Revenue
+- GP
+- Cashflow
+- Subcontractors
+- Procurement
+- RAID
+- Changes
+- Commissioning
+- History
+
+Current issues:
+- Too many flat tabs create cognitive overload
+- It is not obvious how modules connect
+- The user cannot easily manage the project as one connected system
+- Generate PO and Capture Invoice / deliverable functionality is fragmented
+- Financial integration screens are separate and create unnecessary switching
+- The user wants Procurement to become the commercial action screen, not just a static list
+
+IMPORTANT USER REQUIREMENT
+Ensure that:
+- Generate PO functionality is merged into Procurement
+- Capture Invoice functionality is merged into Procurement
+- Capture existing deliverable / already-created deliverable functionality is merged into Procurement where relevant
+- Relevant financial integration screens/functions are merged into Procurement where operationally appropriate
+- This must be done in this implementation, not in a later prompt
+- This needs to work and feel coherent
+
+PHASE 1 — ANALYZE CURRENT FOUNDATION FIRST
+Before changing UI, inspect and map the actual implementation:
+- current database structure for project modules
+- current project object / project spine
+- current procurement-related tables and services
+- current PO generation logic
+- current invoice capture logic
+- current deliverable capture/upload logic
+- current financial integration screens and their underlying data/services
+- current KPI logic and data sources
+- current routes/navigation
+- current permissions / role behavior
+- what is already working and must not be disturbed
+
+Do not guess.
+Trace the current code, data flow, and services first.
+
+Build an internal map of:
+- operational source objects
+- derived financial/KPI views
+- module dependencies
+- existing relationships that can be surfaced rather than recreated
+- functions that can be moved/merged into Procurement without duplicating logic
+
+PHASE 2 — SIMPLIFY TOP-LEVEL PROJECT NAVIGATION WITHOUT REMOVING FUNCTIONALITY
+Keep all current screens alive, but simplify top-level navigation by grouping modules into clear work areas.
+
+Implement grouped project navigation such as:
+
+DELIVERY
+- Project Plan
+- Board
+- Calendar
+- Commissioning
+
+COMMERCIAL
+- Procurement
+- Expenditure
+- Inflows
+- COS
+- Revenue
+- GP
+- Cashflow
+
+CONTROL
+- RAID
+- Changes
+- History
+
+PARTNERS
+- Subcontractors
+
+Rules:
+- Existing routes/screens must still work
+- Grouping is a UX improvement, not a destructive restructure
+- Reduce clutter and cognitive load
+- The user must still be able to reach every current function
+
+PHASE 3 — CREATE A RELATIONSHIP-AWARE UX LAYER
+On each major module page, show in a simple, obvious way:
+1. What this module is for
+2. What upstream records feed it
+3. What downstream records/KPIs it affects
+4. What linked records exist
+5. What actions the user can take next
+
+Examples:
+PROCUREMENT:
+- Purpose: buy, track, receive, and financially connect materials/services
+- Connected to: plan tasks, subcontractors/suppliers, expenditure, changes, commissioning
+- Impacts: delivery readiness, committed cost, actual cost timing, cashflow, COS, project completion
+
+EXPENDITURE:
+- Purpose: track actual/committed spend
+- Connected to: procurement, invoices, plan, changes
+- Impacts: COS, GP, cashflow
+
+PLAN:
+- Purpose: sequence and manage project execution
+- Connected to: procurement, subcontractors, RAID, changes, commissioning
+- Impacts: timeline, readiness, milestone completion
+
+This relationship context must be visible in the UI, not hidden in documentation.
+
+PHASE 4 — MAKE PROCUREMENT THE COMMERCIAL EXECUTION HUB
+This is the most important part.
+
+Refactor the Procurement screen so it becomes the operational hub for:
+- procurement requests/items/packages
+- generate PO
+- supplier/subcontractor commercial records
+- delivery / goods receipt / deliverable tracking
+- invoice capture
+- financial matching and visibility
+- linked project/task/change references
+
+DO NOT create duplicate functionality.
+Move/merge current working logic into Procurement by reusing the existing services where possible.
+
+REQUIRED PROCUREMENT SCREEN STRUCTURE
+Create a clean Procurement workspace with clear sub-sections or internal tabs/panels such as:
+
+1. OVERVIEW
+Show:
+- open procurement items
+- POs pending issue
+- overdue deliveries
+- goods/services received not invoiced
+- invoices captured not matched
+- late supplier items
+- procurement items affecting critical plan tasks
+- procurement-linked changes
+- committed value vs invoiced value if supported by current logic
+
+2. REQUESTS / ITEMS
+Manage procurement line items or packages
+Fields should reuse current data model where possible:
+- item/package reference
+- description
+- category
+- supplier/subcontractor
+- linked task/milestone
+- required on site date / needed by date
+- quantity
+- unit / rate / value
+- status
+- buyer/owner
+- linked change
+- linked deliverables/invoices
+
+3. PURCHASE ORDERS
+MERGE GENERATE PO FUNCTIONALITY HERE
+Requirements:
+- users can generate PO from procurement items/packages inside Procurement
+- reuse current PO generation logic and templates where possible
+- do not keep PO generation elsewhere as the primary operational screen
+- preserve any current working output/document generation
+- allow viewing PO status
+- link PO to procurement item(s), supplier, project, task, and expenditure/invoice where relevant
+- support one PO to many items if current model allows
+- show issue date, expected delivery, PO value, supplier, status
+
+4. DELIVERIES / RECEIPTS / DELIVERABLES
+MERGE CAPTURE DELIVERABLE / RECEIPT FUNCTIONALITY HERE
+Requirements:
+- allow user to capture that goods/services/deliverables have been received or completed
+- if there is already a deliverable capture/upload feature elsewhere, move/merge it here instead of duplicating it
+- support attaching/uploading or linking existing deliverables already created in the app where relevant
+- show received date, received qty/value if applicable, receipt status, notes, and linked evidence/documents
+- make it easy to see:
+  - ordered not yet received
+  - partially received
+  - received not invoiced
+  - received and invoiced
+
+5. INVOICES / AP CAPTURE
+MERGE CAPTURE INVOICE FUNCTIONALITY HERE
+Requirements:
+- move/merge current invoice capture into Procurement
+- reuse existing invoice capture logic, validations, and integrations where possible
+- do not create a second invoice system
+- allow invoice capture against:
+  - PO
+  - procurement item/package
+  - supplier
+  - project
+  - linked receipt/deliverable where applicable
+- show invoice date, supplier, invoice number, value, status, linked PO, linked expenditure impact
+- support attaching invoice documents if current logic supports this
+- clearly show unmatched / partially matched / fully matched state
+
+6. MATCHING / COMMERCIAL TRACEABILITY
+Inside Procurement, add a clear traceability flow:
+Need -> PO -> Delivery/Deliverable -> Invoice -> Financial impact
+
+Support matching logic and visibility between:
+- procurement item and PO
+- PO and receipt/deliverable
+- PO and invoice
+- receipt/deliverable and invoice
+- invoice and expenditure entry / financial impact
+- procurement item and linked plan task
+- procurement item and linked change
+
+Do not invent fake accounting logic.
+Use current financial/expenditure integration where it already exists.
+
+PHASE 5 — MERGE RELEVANT FINANCIAL INTEGRATION FUNCTIONS INTO PROCUREMENT
+Inspect the current financial integration screens and move/merge into Procurement all functions that are operationally part of procurement execution.
+
+Examples of functionality that should live inside Procurement if already present elsewhere:
+- invoice capture
+- PO-to-expenditure linkage
+- committed vs invoiced visibility
+- delivery/receipt vs invoice visibility
+- procurement-related financial status indicators
+- supplier spend visibility for the procurement workflow
+- procurement-linked cost impact context
+
+IMPORTANT BOUNDARY
+Do NOT destroy the existing Expenditure / COS / Revenue / GP / Cashflow screens.
+Those must remain available as current control/reporting views.
+
+But where the operational action belongs in Procurement, bring that action into Procurement and let those other screens remain derived/analytical where appropriate.
+
+This means:
+- Procurement = do the work
+- Expenditure / COS / Cashflow etc. = see the commercial/financial effect
+
+PHASE 6 — LINKED RECORDS ACROSS MODULES
+Build a linked-record experience across modules using current database objects where possible.
+
+Operational source records that should be linkable:
+- project task / milestone
+- procurement item/package
+- purchase order
+- delivery / receipt / deliverable
+- invoice
+- expenditure item
+- inflow item where relevant
+- change record
+- RAID item
+- commissioning item
+- subcontractor/supplier
+
+Important links to support:
+- task <-> procurement item
+- task <-> PO
+- task <-> delivery/receipt
+- task <-> change
+- task <-> commissioning item
+- procurement item <-> PO
+- procurement item <-> delivery/receipt/deliverable
+- procurement item <-> invoice
+- procurement item <-> expenditure item
+- procurement item <-> supplier/subcontractor
+- PO <-> invoice
+- PO <-> delivery/receipt
+- invoice <-> expenditure item
+- procurement item / PO / invoice <-> change where relevant
+- commissioning item <-> procurement record where missing materials or delivery readiness matters
+
+Use relation tables only where needed and in a backward-compatible way.
+
+UI behavior:
+For selected records, show a Linked Records panel/drawer with:
+- linked record counts
+- link existing
+- create linked record
+- open linked record
+- unlink (permission based)
+- quick navigation to connected modules
+
+PHASE 7 — KEEP CURRENT KPIs AND MAKE THEM EASIER TO UNDERSTAND
+Do not replace current KPI logic unless there is a real bug.
+
+Instead:
+- surface current KPIs more clearly
+- show KPI context near related modules
+- explain KPI drivers through linked records
+
+Examples:
+PROCUREMENT should surface:
+- open procurement items
+- overdue items
+- ordered not delivered
+- delivered not invoiced
+- invoiced not matched where relevant
+- procurement items affecting critical path
+- procurement value by supplier if supported
+- procurement-related change impact
+- committed vs actual where supported by current data
+
+EXPENDITURE should still remain available as its current screen, but it should clearly reconcile with procurement-linked invoice / cost source records where current logic supports it.
+
+CASHFLOW / COS / GP / REVENUE should remain as current views, but show clear traceability back to source records where possible.
+
+PHASE 8 — PROJECT CONTROL HEADER
+At the top of the project area, add a clean project control header that gives a simple operating picture using current data/KPIs.
+
+Show:
+- core project context
+- high-level KPI summary from existing logic
+- alert strip with linked module issues
+- quick counts by module
+
+Examples:
+- overdue plan tasks
+- late procurement items
+- open changes
+- received not invoiced
+- invoices not matched
+- blocked commissioning items
+- unresolved RAID items
+- pending inflow actions
+
+This header must help the user understand the project as a connected system.
+
+PHASE 9 — UX RULES
+The UX must be easy for a normal person to understand.
+
+Requirements:
+- fewer top-level choices
+- clearer grouping
+- obvious relationship cues
+- obvious next action buttons
+- row-level badges/counts for linked records
+- “open related record” shortcuts
+- breadcrumb/back-to-source behavior
+- simple language in labels
+- no dead buttons
+- no duplicate entry points for the same core action
+- no hidden logic that makes the user guess where to work
+
+Do not make this feel like an admin backend.
+Make it feel like a professional EPC project control tool.
+
+PHASE 10 — ROLE AND GOVERNANCE SAFETY
+Do not break current role permissions.
+
+Examples:
+- users may view linked records without editing all of them
+- PO generation remains permission controlled
+- invoice capture remains permission controlled
+- finance-sensitive edits remain controlled
+- procurement edits remain role-based
+- change approvals remain governed by current rules
+
+PHASE 11 — TECHNICAL IMPLEMENTATION RULES
+- use current DB structure wherever possible
+- preserve current APIs/services unless refactor is needed for clean reuse
+- do not duplicate source data
+- do not create competing invoice or PO logic
+- if legacy screens/functions are merged into Procurement, keep backwards compatibility and safe redirects where needed
+- preserve all current routes or redirect safely
+- keep stable IDs and current reconciliation logic
+- ensure KPI/reporting outputs still match current logic
+
+PHASE 12 — TESTING
+Test and validate all of the following:
+1. all current module pages still load
+2. all current working KPI values still reconcile
+3. Procurement now includes working Generate PO functionality
+4. Procurement now includes working Capture Invoice functionality
+5. Procurement now includes working deliverable/receipt capture or linking
+6. no duplicate functionality causes conflicting records
+7. linked-record navigation works across modules
+8. Expenditure/COS/Cashflow views still work and still reconcile
+9. role permissions still work
+10. no existing working routes are broken
+11. procurement-to-financial traceability works clearly in the UX
+12. the user can manage procurement operations from Procurement without bouncing between disconnected screens
+
+DELIVERABLES REQUIRED
+1. Implement the UX simplification and grouped navigation
+2. Keep current DB structure and working logic intact
+3. Make Procurement the commercial execution hub
+4. Merge Generate PO into Procurement
+5. Merge Capture Invoice into Procurement
+6. Merge existing deliverable/receipt capture into Procurement where relevant
+7. Merge relevant financial integration functionality into Procurement where operationally appropriate
+8. Add linked-record capability in a backward-compatible way
+9. Surface current KPIs more clearly in context
+10. Add a project control header / relationship-aware UX
+11. Provide a concise changelog
+12. Provide a relationship map summary showing how modules now connect in the UX
+13. Flag any assumptions clearly before making structural changes
+
+QUALITY BAR
+This must feel like a professional EPC project control system.
+Simple to understand.
+Easy to navigate.
+Easy to manage.
+Easy to see how modules affect each other.
+Procurement must become the practical commercial workspace.
+No broken current functionality.
+No duplicate truth.
+No messy rewrite.
+No extra disconnected screens.
+
+Start by tracing the current database structure, KPI logic, routes, PO/invoice/deliverable flows, and financial integration screens first, then implement the UX and Procurement-centered merge carefully on top of that.

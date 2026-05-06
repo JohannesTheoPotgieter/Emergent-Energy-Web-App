@@ -1,0 +1,382 @@
+Act as a senior product engineer, finance systems analyst, and QA lead working inside the existing Emergent Energy web app repository. Work carefully. Verify before changing anything. Do not break working finance logic, permissions, routes, or screens.
+
+OBJECTIVE
+Refactor and harden the Finance > Cost of Sales screen end to end:
+- summary cards
+- recon grid
+- detail drilldown
+- trend view
+- tracker gap / maintenance view
+Then duplicate the same architecture, UX pattern, maintenance capability, and trust model for Revenue, while preserving the existing approved revenue calculation already in the app.
+
+NON-NEGOTIABLE RULES
+1. Do not invent new finance logic.
+2. Do not silently change company business rules.
+3. Do not mix App, QuickBooks, and Budget numbers in the same metric unless the metric is explicitly a reconciliation metric.
+4. Do not use UI colours as the source of truth. Use underlying dates, statuses, and data fields. Colour may reflect status, not define it.
+5. Do not leave half-working buttons, fake totals, placeholder actions, or misleading labels in the UI.
+6. Do not create duplicate logic in multiple places if a shared finance adapter/service can safely own it.
+7. Do not rely on shell-only or DB-only maintenance for normal operations. Authorised users must be able to maintain reconciliation from the screen.
+8. If current code conflicts with the requested business rules, stop and report the conflict clearly before changing calculations.
+9. No mock data. No fake fallbacks. No “best effort” totals.
+10. Every clicked number must reconcile exactly to its drilldown total for the same scope.
+
+PHASE 1 — FINDINGS REPORT BEFORE CODING
+First inspect the current codebase and return a concise findings report before implementation. Do not skip this.
+
+Map the current implementation for COS and Revenue:
+- pages / routes
+- components
+- chart components
+- data hooks
+- API endpoints
+- backend services / adapters
+- DB tables and joins
+- any QB linkage / reconciliation tables
+- any budget data source
+- any tracker gap logic
+- any maintenance actions already present
+
+For each of these current UI areas, identify exactly where the data comes from:
+- FY Budget
+- FY Planned
+- FY Realised
+- FY QuickBooks
+- Recon Grid
+- Trend
+- Detail drilldown
+- Tracker Gap
+- Revenue equivalent views
+
+Specifically answer:
+1. Which metrics currently pull from App data only?
+2. Which metrics currently pull from QB data only?
+3. Where are App and QB mixed incorrectly?
+4. Does clicking a monthly total currently open detail that sums exactly to that total?
+5. Does Tracker Gap currently allow real maintenance from the UI, or is it mainly passive?
+6. Are there silent fallbacks, null fallbacks, or duplicate calculation paths?
+7. Are month boundaries, date parsing, or timezone issues likely?
+8. Are there permissions mismatches between view and edit actions?
+9. Which current functionality is half-built, misleading, or should be hidden until fixed?
+
+After the findings report, then implement.
+
+BUSINESS RULES TO ENFORCE FOR COS
+Use existing approved company logic wherever it already matches these rules.
+
+Definitions:
+A. COS Planned
+- App data only
+- Includes relevant COS lines in scope for the selected filters / period from the application tracker/state
+- Planned is not QB
+- Planned is not Budget
+- Planned is not inferred from QB
+
+B. COS Committed
+- App data only
+- Includes lines where an invoice exists on the app/tracker line
+- But the relevant financial recognition state is not yet realised
+- This usually corresponds to future / deferred / red-state logic in the tracker, but use the underlying status/date fields, not colour alone
+
+C. COS Realised
+- App data only
+- Includes lines that meet the existing approved COS realised rule in the tracker/app
+- Preserve the company rule that COS is only realised when an invoice is captured under actuals
+- Realised must not borrow from QB actuals
+
+D. QuickBooks COS
+- QB data only
+- Never used as fallback for Planned, Committed, or Realised
+
+E. Budget
+- Budget only
+- Never used as fallback for App or QB rows
+
+F. Variance metrics
+- These may compare the above sources, but the source rows themselves must stay pure
+
+Also preserve:
+- an invoice without a PO is a red flag
+- payment receipt/payment date drives cashflow logic, not COS realisation, unless an existing approved rule explicitly says otherwise in current business logic
+
+If there is any conflict between current code and these rules, stop and report the exact conflict before changing the calculation path.
+
+REQUIRED METRIC ORDERING
+Wherever these metrics are shown in ordered stacks, grids, trend legends, or grouped drilldowns, the order must be:
+
+1. COS Planned
+2. COS Committed
+3. COS Realised
+4. QuickBooks COS
+5. Budget
+6. Variance to Budget
+7. Variance to Budget %
+
+For card ordering:
+- if the UI supports stacked cards, Budget must sit directly below QuickBooks
+- if the UI remains single-row, Budget must appear immediately after QuickBooks in logical ordering
+
+RECON GRID REQUIREMENTS
+Refactor the Recon Grid to be trustworthy and easy to read.
+
+Requirements:
+1. Show monthly values across FY
+2. Show YTD total per row
+3. Support project filtering and global filtering consistently
+4. Every displayed number must be clickable unless intentionally disabled
+5. Clicking a number must open drilldown filtered to that exact scope
+6. Drilldown total must exactly equal the clicked number
+7. Each row must be clearly labelled by source:
+   - App
+   - QB
+   - Budget
+   - Reconciliation / Variance
+8. No row may mix source logic invisibly
+9. Handle negative values correctly
+10. Preserve export correctness if export exists
+
+DETAIL DRILLDOWN REQUIREMENTS
+The current detail view is too messy. Rebuild it so it looks professional, readable, and maintainable.
+
+When any number is clicked, open a drilldown modal or drawer pre-filtered to the exact scope:
+- metric
+- source
+- period
+- project selection
+- current top-level filters
+- status / match state where relevant
+
+The detail header must show:
+- metric name
+- source type
+- month or date range
+- active project filter
+- row count
+- exact total
+
+The detail table must:
+- be readable on normal desktop widths
+- use sticky headers
+- align currency columns properly
+- use consistent DD/MM/YYYY or ISO-style internal parsing but render user-facing dates cleanly
+- show human-readable project, supplier/customer, invoice, QB bill, PO, amount, recognised date, status, match state, source
+- use sensible column widths
+- avoid text collisions and unreadable truncation
+- have clear empty states
+- have loading and error states
+- have server-safe pagination or virtualisation if needed for large datasets
+
+Detail filters must support:
+- project
+- supplier/vendor/customer
+- invoice number
+- QB bill number
+- PO number
+- date range
+- class / tag / strategy
+- source type
+- match state
+- recognised / planned / committed state
+
+Detail actions, where permitted, must support:
+- link
+- relink
+- unlink with reason
+- confirm suggestion
+- ignore with reason
+- edit relevant mapped metadata
+- refresh / requery without stale totals
+
+TREND VIEW REQUIREMENTS
+Refactor Trend so each of the main COS rows renders as columns by month:
+
+Required monthly column series:
+- COS Planned
+- COS Committed
+- COS Realised
+- QuickBooks COS
+- Budget
+
+Also add:
+- a line on a secondary axis for running YTD variance to budget %
+- this line must show whether the year is on track against budget
+- tooltips must show monthly value and running YTD value
+- tooltips must also show variance to budget and variance %
+- legend labels must be exact and not misleading
+- negative values must render clearly
+- month sequencing must match the FY used by the app
+
+TRACKER GAP / MAINTENANCE VIEW REQUIREMENTS
+This screen must become an active maintenance and reconciliation workspace, not a passive report.
+
+Required capabilities:
+1. Search, filter, and maintain COS records from the screen
+2. Link QB bill to tracker item
+3. Relink existing matches
+4. Unlink with mandatory reason
+5. Ignore with mandatory reason
+6. Confirm suggested match
+7. Bulk confirm only where safety criteria are met
+8. Edit mapped metadata where allowed
+9. Show audit history per reconciliation item
+
+Required categories:
+- exact match
+- suggested match
+- unmatched
+- ignored
+- no class / no mapping
+- conflicting match
+- tracker gap / open gap
+
+MATCHING / SUGGESTION ENGINE REQUIREMENTS
+Implement or improve a suggestion flow for QB reconciliation against tracker items.
+
+Required ranking order:
+1. exact invoice number match
+2. invoice number + amount match
+3. supplier/vendor + amount + close date proximity
+4. PO + amount
+5. fuzzy invoice text similarity
+6. other controlled fallback only if explicitly explained in code comments and UI reason
+
+Each suggestion must show:
+- suggested tracker record
+- confidence score or confidence band
+- reason for suggestion
+- fields matched
+- any conflicting fields
+
+Rules:
+- suggested matches must NEVER auto-post into finance truth without human confirmation
+- exact matches may be pre-surfaced but still need a safe confirmation workflow unless an existing approved workflow already exists
+- every mutation must write an audit trail:
+  - actor
+  - timestamp
+  - previous state
+  - new state
+  - reason / note
+  - confidence at time of confirmation
+
+DATA MODEL / API HARDENING
+Review whether current tables and API contracts are enough. Add only what is needed.
+
+Support cleanly where required:
+- source_type
+- recognition_state
+- reconciliation_status
+- matched_record_id
+- suggestion_confidence
+- suggestion_reason
+- override_reason
+- ignore_reason
+- audit history
+- lineage to tracker / QB source / budget source
+
+Rules:
+- migrations must be safe
+- no destructive migration without explicit justification
+- preserve old data
+- backfill carefully
+- document any one-time repair scripts separately from the app logic
+
+PERMISSIONS
+Enforce clean permission boundaries:
+- view-only users may inspect
+- authorised finance/admin users may link, relink, unlink, ignore, edit mappings, and confirm suggestions
+- disabled actions must show intentional disabled states, not disappear mysteriously unless role design requires hiding
+- permissions must match the app’s current role model and not create side-door edit access
+
+REVENUE SCREEN PARITY
+After COS is fixed, duplicate the same UX and reconciliation architecture for Revenue:
+- source separation
+- recon grid
+- trend chart
+- drilldown parity
+- maintenance workspace
+- matching / suggestion flow where relevant
+- audit trail
+- permission gating
+
+Critical rule:
+- do NOT rewrite the revenue calculation
+- use the existing approved revenue calculation already in the app
+- mirror the COS architecture and UX pattern, not necessarily the identical field names
+
+UX / TRUST RULES
+Review the screenshots and current app behavior and clean up the following:
+- unreadable detail rows
+- poor alignment
+- confusing match labels
+- weak visual distinction between App / QB / Budget / matched / suggested / unmatched
+- inconsistent spacing
+- poor empty states
+- dead buttons
+- hidden non-working actions
+- visual clutter
+
+Where something exists but is not truly working:
+- either complete it properly
+- or hide/disable it clearly until complete
+Do not leave “confidence theatre” in the UI.
+
+TESTING / QA — REQUIRED
+Add or update tests covering at minimum:
+1. metric derivation for Planned / Committed / Realised / QB / Budget
+2. source separation
+3. clicked value equals drilldown total
+4. project filter parity across cards, grid, trend, and detail
+5. monthly boundary handling for FY periods
+6. negative and zero value handling
+7. suggestion ranking
+8. manual confirmation workflow
+9. audit trail persistence
+10. permission gating
+11. no-regression for existing finance logic
+12. revenue parity
+
+Also run a manual QA pass for:
+- stale cache after mutation
+- sorting
+- searching
+- exporting
+- large dataset performance
+- duplicate records
+- timezone/date parsing
+- row totals vs YTD totals
+- hidden fallbacks
+- mismatched month labels
+- misaligned permissions
+
+DELIVERABLE FORMAT
+Respond in this exact structure:
+1. Findings report
+2. Confirmed business-rule conflicts, if any
+3. Implementation plan
+4. Files changed
+5. DB / API changes
+6. Tests added or updated
+7. Screens or functions hidden because they were misleading or incomplete
+8. Remaining risks
+9. What was deliberately not changed
+
+STOP CONDITIONS
+Stop and report before continuing if any of these are true:
+- current code conflicts with the stated COS business rules
+- current revenue calculation is unclear or duplicated in conflicting places
+- a migration risks corrupting finance history
+- you cannot guarantee clicked totals equal drilldown totals
+- permissions are inconsistent and need product decision before safe implementation
+
+DEFINITION OF DONE
+This work is only done when:
+- App Planned / Committed / Realised are App-only
+- QuickBooks COS is QB-only
+- Budget is Budget-only
+- all main numbers drill through exactly
+- drilldown is readable and professional
+- tracker gap is maintainable from the screen
+- suggestions are controlled and auditable
+- permissions are clean
+- revenue mirrors the same trust model
+- no misleading functionality remains visible

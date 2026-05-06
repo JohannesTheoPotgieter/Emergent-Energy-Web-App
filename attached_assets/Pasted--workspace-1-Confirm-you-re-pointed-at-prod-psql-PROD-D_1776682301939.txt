@@ -1,0 +1,93 @@
+~/workspace$ # 1. Confirm you're pointed at prod
+psql "$PROD_DATABASE_URL" -c "select current_database(), inet_server_addr();"
+# expect: host = ep-damp-dawn-ajbdpxyq...
+
+# 2. Re-run, watching for COMMIT vs ROLLBACK at the end of each
+psql "$PROD_DATABASE_URL" -f script/dedupe-cost-lines.sql           2>&1 | tee dedupe.log
+psql "$PROD_DATABASE_URL" -f script/close-stacked-snapshots.sql     2>&1 | tee stacked.log
+
+# 3. Backfill — first dry-run, inspect, THEN apply
+DATABASE_URL="$PROD_DATABASE_URL" tsx script/backfill-work-items-external-ref.ts
+cat tmp/backfill-external-ref-report.json | head -50
+DATABASE_URL="$PROD_DATABASE_URL" tsx script/backfill-work-items-external-ref.ts --apply
+ current_database | inet_server_addr 
+------------------+------------------
+ heliumdb         | 
+(1 row)
+
+BEGIN
+--- BEFORE: duplicate group summary ---
+ duplicate_groups | rows_to_soft_delete | inflation_zar 
+------------------+---------------------+---------------
+                0 |                     |              
+(1 row)
+
+UPDATE 0
+--- AFTER: residual duplicate groups (should be zero) ---
+ remaining_duplicate_groups 
+----------------------------
+                          0
+(1 row)
+
+--- Sample of soft-deleted rows ---
+   id   |   project_name   |           invoice_number            | invoice_date | amount_zar |         deleted_at         
+--------+------------------+-------------------------------------+--------------+------------+----------------------------
+ 285983 | Superspar Ph2    | BDL Solar - IN000770                | 2026-02-28   |       1116 | 2026-04-20 10:45:55.90999
+ 285981 | Superspar Ph2    | BDL Solar - IN000769                | 2026-02-28   |       1116 | 2026-04-20 10:45:55.90999
+ 285980 | Steelpark        | Leading Edge Energy INV-0197        | 2026-03-31   |      12461 | 2026-04-20 10:45:55.90999
+ 285954 | Riverside Mall   | Leading Edge - INV-0194             | 2026-03-31   |       2208 | 2026-04-20 10:45:55.90999
+ 285953 | Riverside Mall   | Leading Edge - INV-0193             | 2026-03-31   |       4417 | 2026-04-20 10:45:55.90999
+ 285670 | Mondi            | Kwickspace - DC-INV8188K            | 2026-03-31   |     159110 | 2026-04-20 10:45:55.90999
+ 285577 | Coega Steels Ph2 | Bayview Construction: Inv 338202501 | 2025-08-31   |     220568 | 2026-04-20 10:45:55.90999
+ 285575 | Coega Steels Ph2 | Bayview Construction: Inv 338202501 | 2025-08-31   |     220568 | 2026-04-20 10:45:55.90999
+ 285516 | Mondi            | DC-INV8188K                         | 2026-05-31   |     159110 | 2026-04-17 12:38:40.096769
+ 285505 | Lynnridge Mall   | Auxilio Dei - INV 032               | 2025-07-31   |      22750 | 2026-04-17 12:38:40.096769
+(10 rows)
+
+COMMIT
+BEGIN
+--- BEFORE: cost-line active-row inflation per project ---
+psql:script/close-stacked-snapshots.sql:69: ERROR:  function to_char(text, unknown) does not exist
+LINE 11:                 || COALESCE(to_char(ncl.amount_ex_vat, 'FM99...
+                                     ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+psql:script/close-stacked-snapshots.sql:110: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+psql:script/close-stacked-snapshots.sql:150: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+--- AFTER: cost-line active-row check (to_close should be 0) ---
+psql:script/close-stacked-snapshots.sql:177: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+ROLLBACK
+[DB] Auto-detected Replit PostgreSQL: host=helium, db=heliumdb
+[DB] Testing PostgreSQL connection to helium...
+[DB] ✓ Using PostgreSQL (host: helium)
+[DB] ✓ work_items engineering columns verified
+[DB] ✓ entity_assignments table verified
+[backfill-external-ref] mode=dry-run
+[backfill-external-ref] FATAL TypeError: Cannot convert undefined or null to object
+    at Function.entries (<anonymous>)
+    at orderSelectedFields (/home/runner/workspace/node_modules/src/utils.ts:80:16)
+    at <anonymous> (/home/runner/workspace/node_modules/src/utils.ts:91:19)
+    at Array.reduce (<anonymous>)
+    at orderSelectedFields (/home/runner/workspace/node_modules/src/utils.ts:80:32)
+    at <anonymous> (/home/runner/workspace/node_modules/src/pg-core/query-builders/select.ts:1087:23)
+    at Object.startActiveSpan (/home/runner/workspace/node_modules/src/tracing.ts:27:11)
+    at PgSelectBase._prepare (/home/runner/workspace/node_modules/src/pg-core/query-builders/select.ts:1086:17)
+    at <anonymous> (/home/runner/workspace/node_modules/src/pg-core/query-builders/select.ts:1120:16)
+    at Object.startActiveSpan (/home/runner/workspace/node_modules/src/tracing.ts:27:11)
+cat: tmp/backfill-external-ref-report.json: No such file or directory
+[DB] Auto-detected Replit PostgreSQL: host=helium, db=heliumdb
+[DB] Testing PostgreSQL connection to helium...
+[DB] ✓ Using PostgreSQL (host: helium)
+[DB] ✓ work_items engineering columns verified
+[DB] ✓ entity_assignments table verified
+[backfill-external-ref] mode=apply
+[backfill-external-ref] FATAL TypeError: Cannot convert undefined or null to object
+    at Function.entries (<anonymous>)
+    at orderSelectedFields (/home/runner/workspace/node_modules/src/utils.ts:80:16)
+    at <anonymous> (/home/runner/workspace/node_modules/src/utils.ts:91:19)
+    at Array.reduce (<anonymous>)
+    at orderSelectedFields (/home/runner/workspace/node_modules/src/utils.ts:80:32)
+    at <anonymous> (/home/runner/workspace/node_modules/src/pg-core/query-builders/select.ts:1087:23)
+    at Object.startActiveSpan (/home/runner/workspace/node_modules/src/tracing.ts:27:11)
+    at PgSelectBase._prepare (/home/runner/workspace/node_modules/src/pg-core/query-builders/select.ts:1086:17)
+    at <anonymous> (/home/runner/workspace/node_modules/src/pg-core/query-builders/select.ts:1120:16)
+    at Object.startActiveSpan (/home/runner/workspace/node_modules/src/tracing.ts:27:11)

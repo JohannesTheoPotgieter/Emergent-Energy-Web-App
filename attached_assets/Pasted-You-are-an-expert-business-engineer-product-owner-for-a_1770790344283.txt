@@ -1,0 +1,196 @@
+You are an expert business engineer + product owner for a South African C&I solar EPC. You are working inside an existing web app that mirrors an Excel “Program Dashboard”. The dashboard is not “done” until it can PLAN, FORECAST, and CONTROL three things:
+
+1) Resource Utilisation (PMs, Installers, Suppliers) + Dates + Regions
+2) Cashflow Planning + Forecasting (weekly)
+3) COS Realisation Planning + Outstanding + Forecasting
+
+NON-NEGOTIABLE PRINCIPLE
+Everything must be driven by imported underlying data (hidden sheets / imported tables). Manual inputs are allowed ONLY where the data does not exist, and must be clearly marked as “Plan/Assumption” fields with audit trail.
+
+YOUR FIRST OUTPUT (BEFORE CODING)
+Create a “Planning Requirements Spec” markdown file in the repo with:
+- Feature list
+- Inputs (which tables/columns drive each feature)
+- Calculations
+- UI screens and interactions
+- Data quality rules
+- Tests you’ll write
+
+DATA MODEL (ASSUME THE IMPORTED TABLES EXIST)
+Imported tables (example names, adjust to match repo):
+- ProjectInfo (ProjectName, Info, InfoValue)
+- ProgramPlan (ProjectName, TaskNumber, TaskDescription, ActualStartDate, ActualEndDate, ActualDurationDays, Actual%Complete, Expected%Complete)
+- ProgramExpense (ProjectName, ExpenseCategory, ExpenseLineItem, ExpenseActualTotal, ExpensePONumber, ExpenseInvoiceNumber, ExpenseInvoicedDate, ExpensePaymentDate, COSAmount, RevenueAmount, TrackerLocator)
+- ProgramInflows (ProjectName, MilestoneDescription, MilestoneAmount, MilestoneInvoiceNumber, MilestoneInvoiceRaisedDate, PaymentRecievedDate, MilestoneRequirement, MilestoneCompleted)
+
+You must also support adding these planning dimensions if not already present in imported data:
+- Region (per project)
+- PM owner (per project)
+- Installer (per project phase or task)
+- Key suppliers (per project or per expense line)
+If these do not exist in the import tables, create a “Planning Overrides” table in the DB with:
+- entity_type (project / task / expense / milestone)
+- entity_id (stable ID)
+- field_name (region/pm/installer/supplier/etc)
+- value
+- effective_from, effective_to (optional)
+- created_by, created_at
+This avoids editing the imported source data and gives governance.
+
+FEATURE SET 1 — RESOURCE UTILISATION (PM / INSTALLERS / SUPPLIERS) + PROJECT DATES + REGIONS
+
+A) Project Master Planning View
+Create a “Planning Board” view with:
+- Filter bar: FY, region, PM, installer, status, project, date range
+- Main table (one row per project) with:
+  - ProjectName
+  - Region
+  - PM
+  - Installer (primary)
+  - Key Suppliers (top 3 by spend or selected)
+  - Construction Start / Commissioning / Client Handover (baseline + forecast)
+  - Current % complete, expected % complete, delta
+  - “Risk flags” (missing dates, missing PM, missing region, negative float, etc.)
+Rules:
+- Dates come from ProgramPlan where possible (task-derived like Excel).
+- Add “Baseline Dates” and “Forecast Dates” as plan fields where needed.
+- Show baseline vs forecast vs actual with clear tags.
+
+B) Resource Utilisation Engine
+You must implement capacity planning for:
+- PM capacity (e.g., max active projects, or weighted workload)
+- Installer capacity (teams available per week, or kWp/week capacity)
+- Supplier capacity/risk (lead times, max deliveries per week/month)
+
+Minimum viable model (do not overcomplicate):
+- Define “resource demand” per project per week:
+  - PM demand: 1 unit per active project per week (or a weight by phase)
+  - Installer demand: planned kWp/week from Size and schedule OR entered planned kWp/week
+  - Supplier demand: planned procurement spend per week OR planned delivery events per week
+- Define “resource capacity” per resource per week:
+  - PM: capacity units/week (configurable)
+  - Installer: kWp/week or team-days/week (configurable)
+  - Supplier: max spend/week or delivery slots/week (configurable)
+
+Output:
+- Utilisation heatmap by week (demand vs capacity)
+- Over-allocation alerts (demand > capacity)
+- Suggested moves: identify which projects could shift (based on float) to resolve overload
+
+UI:
+- A “Resource View” with tabs: PM / Installers / Suppliers
+- Each tab shows a weekly timeline (like Cashflow) with:
+  - capacity line
+  - demand bars
+  - red highlight where overloaded
+- Click a week → see contributing projects → allow moving forecast dates (with change log)
+
+FEATURE SET 2 — CASHFLOW PLANNING + FORECASTING (WEEKLY)
+Goal: not only show actuals, but forecast future cash by week and show if we go negative.
+
+A) Cashflow Inputs
+Actuals (from imported data):
+- Inflows actual = ProgramInflows where PaymentRecievedDate in week
+- Outflows actual = ProgramExpense where ExpensePaymentDate in week
+
+Forecasts:
+- Inflow forecast:
+  - If milestone invoice raised date exists but payment date missing, forecast receipt = invoiceRaisedDate + payment_terms_days (configurable by client/funder)
+  - If neither date exists, forecast using milestone “planned date” derived from ProgramPlan (e.g., commissioning/handover tasks) OR manually entered milestone forecast date
+- Outflow forecast:
+  - If invoice date exists but payment date missing, forecast payment = invoiceDate + supplier_terms_days (configurable by supplier/category)
+  - If neither exists, forecast based on planned procurement curve: allocate remaining forecast COS spend across weeks between construction start and commissioning (simple linear or weighted curve)
+- Operational OPEX budget:
+  - monthly budget inputs allocated across weeks in each month
+
+B) Cashflow Outputs (Weekly)
+For each week:
+- Opening balance (manual starting point + rolling)
+- Actual inflows/outflows
+- Forecast inflows/outflows
+- Closing balance (actual + forecast)
+- “Minimum balance” alert for any week < threshold
+- “Runway” (weeks until negative, if forecast stays)
+
+UI:
+- Toggle: Actual only / Actual + Forecast
+- Toggle: Conservative vs Aggressive assumptions (payment terms days)
+- Drilldown per week: list forecast items with confidence level:
+  - High: invoice exists
+  - Medium: milestone exists, planned date exists
+  - Low: allocation curve based
+
+Testing:
+- Unit tests for forecast logic with sample milestones/invoices
+- Parity-like tests ensuring actuals match Excel, and forecast follows the defined rules
+
+FEATURE SET 3 — COS REALISATION PLANNING (REALIZED / OUTSTANDING / FORECAST)
+Goal: see COS like a control tower:
+- What’s committed (PO)
+- What’s invoiced
+- What’s paid
+- What’s still outstanding
+- What will be realised in future months/weeks
+
+A) COS State Machine (per expense line)
+Classify each ProgramExpense line into one state:
+1) Planned (exists as planned cost only; no PO)
+2) Committed (PO number exists; no invoice)
+3) Invoiced (invoice exists; not paid)
+4) Paid (payment date exists)
+Also track:
+- Amount planned (ExpenseActualTotal or COSAmount depending on meaning in dataset)
+- Amount realised = Paid amounts
+- Amount outstanding = (Committed + Invoiced) not yet paid
+- Amount forecast = planned schedule for remaining amounts
+
+B) COS Realisation Views
+1) COS Control Dashboard (top cards)
+- Total planned COS (FY)
+- Total committed (PO)
+- Total invoiced
+- Total paid (realised)
+- Total outstanding (committed+invoiced not paid)
+- Forecast paid next 4/8/12 weeks
+2) COS by Project table:
+- Planned / Committed / Invoiced / Paid / Outstanding / Forecast next 4 weeks
+- GP impact estimate: compare forecast COS vs forecast REV
+3) COS timeline:
+- Weekly or monthly stacked view: Paid actual vs Forecast
+- Filters: project, supplier, category, region, PM
+
+C) Forecasting COS Realisation
+Rules (simple, configurable):
+- If invoice exists and no payment date: forecast payment = invoiceDate + terms_days_by_supplier_or_category
+- If PO exists and no invoice: forecast invoice date based on lead time curve or planned date window; then apply terms
+- If neither exists: allocate remaining planned COS across weeks based on project phase window
+
+Governance:
+- Every manual override (terms days, supplier mapping, project plan curve) must be logged.
+- Provide “Data Gaps” report:
+  - missing PO where should exist
+  - missing supplier mapping
+  - invalid dates
+  - duplicate invoice numbers, etc.
+
+ACCEPTANCE CRITERIA (DEFINITION OF DONE)
+- A single “Program Dashboard” section contains:
+  1) Planning Board (dates/regions/resource owners)
+  2) Resource Utilisation (PM/Installers/Suppliers) with overload alerts + move capability
+  3) Cashflow (actual + forecast) with confidence scoring and weekly drilldowns
+  4) COS Realisation (state machine + forecast) with outstanding vs realised clearly shown
+- All calculations are in a central calculation engine/module (not scattered in UI).
+- Automated tests:
+  - unit tests for state classification and forecasts
+  - integration tests for endpoints and filters
+  - e2e smoke tests for critical flows
+- UX is sleek, consistent, and “Emergent Energy themed” (use repo brand assets; if missing, create a clean theme system with tokens and apply across tables/cards/charts).
+- Provide a short “Operating Manual” markdown doc explaining:
+  - what inputs drive what outputs
+  - how to adjust assumptions safely (terms, capacities)
+  - what the dashboard cannot know (and how to fill the gaps)
+
+START NOW
+Step 1: audit current app features and data model.
+Step 2: write the Planning Requirements Spec + a gap list.
+Step 3: implement in small increments with tests.

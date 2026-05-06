@@ -1,0 +1,320 @@
+You are working inside an EXISTING Replit web app repo (do not rebuild from scratch).
+
+Goal
+Migrate away from ClickUp and run ALL work inside this web app:
+- Projects + full lifecycle (PD → PM → close-out)
+- One unified Task system used by all departments
+- Engineering deliverables + version control + approvals
+- Quality checklist (Excel template parity) + evidence + approvals
+- Bright RED warnings (no hard blocks) + cross-department notifications
+- SharePoint folder picker for saving/uploading files into the correct project folders
+- Add ONE “Engineering Program Manager” login/role for allocation/admin, protected by a popup access code = 2026 (via Replit Secrets)
+
+IMPORTANT: Use our existing task statuses EXACTLY as below.
+
+Hard constraints
+- Do not remove or break any existing functionality.
+- No placeholder code. No placeholder buttons. No fake pages. Everything must be wired end-to-end.
+- Follow existing repo conventions (routing, API, DB/ORM, auth, UI components).
+- SharePoint folder/file identity must use Graph IDs (siteId/driveId/itemId), not just names.
+- NO hard blocks. Only BRIGHT RED warnings and acknowledgement logs.
+
+Task Statuses (must match current)
+Use this status set for Tasks (and optionally Deliverables if repo prefers a unified model):
+- TO DO
+- IN PROGRESS
+- HOLD
+- PROJECTS ASSISTANCE
+- NEEDS APPROVAL
+- QC APPROVED
+- PROVIDE FEEDBACK
+- OPERATIONAL APPROVAL
+- COMPLETE
+
+Status meaning (enforce in UI + rules)
+- TO DO: not started
+- IN PROGRESS: active work
+- HOLD: blocked (must capture hold reason)
+- PROJECTS ASSISTANCE: support work requested by Projects/PM team (must link to project + requester)
+- NEEDS APPROVAL: submitted for review/approval (must set approver)
+- PROVIDE FEEDBACK: reviewer returned with comments (must store feedback)
+- QC APPROVED: quality sign-off complete (by Quality role)
+- OPERATIONAL APPROVAL: ops/program/COO sign-off where required (role-based)
+- COMPLETE: closed
+
+Step 0: Inspect repo
+- Identify stack (Next.js/React/Node expected), DB/ORM, auth/roles patterns.
+- Identify existing tables/models for Project, User, and any Plan/Task concepts.
+- Identify current SharePoint/Graph integration code (if any).
+- Identify existing “flags/issues/warnings/notifications” patterns (extend them; don’t duplicate).
+
+Core design principles
+1) One Project spine = single source of truth.
+2) Tasks are the daily work engine for all departments.
+3) Deliverables + approvals + evidence are the “truth layer” that prevents wrong versions on site.
+4) Bright red Warnings are objects with owners + SLAs + audit (not just UI colors).
+5) Notifications are event-driven + throttled + role-routed (so people don’t mute it).
+
+Modules to implement / integrate
+
+A) Projects + Lifecycle
+- Project has Phase (PD, Planning&Design, Construction, Commissioning, Handover, Close-out) and a Project Team.
+- Add Project Team Membership:
+  - project_id, user_id, role_on_project (PM/Engineer/QM/etc)
+
+B) Project Plan (schedule spine)
+- Plan items: tasks/milestones with dates.
+- Keep Plan as schedule truth. Do NOT duplicate Plan into Tasks.
+- Link Tasks to Plan items.
+
+C) Tasks (replacing ClickUp)
+Create a unified Task object used by all departments (Engineering, Quality, PD, PM, Procurement, Construction, Commissioning, Handover).
+Task fields (minimum):
+- id
+- project_id (required)
+- title, description
+- phase (required)
+- primary_workstream (required: PD/Engineering/Quality/PM/Procurement/Construction/Commissioning/Handover)
+- status (must be one of the statuses above)
+- priority (Low/Med/High/Urgent)
+- owner_user_id (required)
+- watchers (many-to-many)
+- requester_user_id (nullable; required if status=PROJECTS ASSISTANCE)
+- start_date, due_date
+- completed_at
+- hold_reason (required if HOLD)
+- approval_required (bool)
+- approver_user_id (required if NEEDS APPROVAL)
+- dependencies (basic)
+- comments with @mentions + audit
+
+Required linking (integration discipline):
+Every Task must link to at least ONE of:
+- plan_item_id (project plan task/milestone)
+- deliverable_id (engineering output)
+- quality_item_instance_id (checklist item)
+If missing after creation, auto-create a MED warning (“Orphan task”) assigned to Engineering Program Manager (or PM for non-engineering tasks).
+
+D) Engineering Deliverables Register (truth layer)
+Deliverable object per project with versioning + explicit approved file pointers.
+Deliverable fields:
+- id, project_id
+- deliverable_type (library-driven)
+- phase
+- owner_user_id
+- reviewer_user_id (senior engineer)
+- qc_reviewer_user_id (quality manager)
+- status (use same statuses OR use a dedicated deliverable_status but map to the same meanings)
+- version_number (v1, v2…)
+- change_reason (required when superseding an approved version)
+- impact_json (cost/schedule/scope/quality flags)
+- sharepoint_folder_ref (siteId/driveId/itemId)
+- approved_file_refs (one or more explicit file pointers)
+- created_at, updated_at
+
+Deliverable workflow using your statuses:
+- IN PROGRESS → NEEDS APPROVAL → (PROVIDE FEEDBACK or QC APPROVED) → OPERATIONAL APPROVAL (if required) → COMPLETE
+- If PROVIDE FEEDBACK: must store feedback comments; returns to IN PROGRESS when changes started.
+- QC APPROVED must be performed by Quality role.
+- OPERATIONAL APPROVAL must be performed by Eng Program Manager/COO/Program (configurable).
+
+E) Quality Checklist (Excel parity + integration)
+Implement the checklist template from Project Checklist_Template_V1.xlsx:
+- Template → Project Checklist Instance
+- Item instances with Start/End, Approved, Working Days, Evidence links, Risk questions
+- Approvals are audited (who/when)
+- Link checklist items to Tasks and/or Deliverables
+
+No hard blocks. Only warnings.
+
+F) SharePoint folder picker + file saving (very important)
+Everywhere files matter (Tasks, Deliverables, Quality Evidence, Handover) implement:
+- “Choose Folder” button (Graph folder picker)
+- Upload file into the chosen folder
+- Store file metadata with Graph IDs:
+  - siteId, driveId, folderItemId, fileItemId, name, webUrl, uploadedBy, uploadedAt
+- Default folder suggestion based on:
+  - Project + Phase + Workstream + Deliverable Type
+- Users can override by choosing folder.
+- Do NOT scatter uploads in random places; always upload to SharePoint and store pointers.
+
+G) Warning Engine (bright red only, no blocks)
+Warnings are objects with owners, due dates, severity, and audit.
+Warning fields:
+- id, project_id
+- severity (HIGH/MED/LOW)
+- type (overdue_task | missing_approval | missing_evidence | orphan_task | milestone_risk | invalid_dates | deliverable_version_risk | folder_mismatch | risk_trigger)
+- title, description
+- status (open | in_progress | resolved | accepted_risk)
+- owner_user_id
+- due_date
+- linked_task_id (nullable)
+- linked_plan_item_id (nullable)
+- linked_deliverable_id (nullable)
+- linked_quality_item_instance_id (nullable)
+- created_at, updated_at
+WarningEvent audit:
+- warning_id, event_type, note, actor_user_id, created_at
+
+Warning rules (minimum)
+1) Task overdue:
+- due_date < today AND status != COMPLETE → MED (or HIGH if phase is Commissioning/Handover)
+2) Milestone due soon risk:
+- plan milestone due within 7 days AND linked deliverables not QC APPROVED (or not COMPLETE) → HIGH
+3) Missing evidence:
+- quality item approved OR deliverable QC APPROVED but no evidence/approved_file_refs → HIGH
+4) Orphan task:
+- task missing link to plan/deliverable/quality after 24h → MED (owner: Eng Program Manager)
+5) Invalid dates:
+- end < start → HIGH
+6) Folder mismatch:
+- file uploaded outside configured project folder map for HO-critical evidence → HIGH
+7) Review stuck:
+- status=NEEDS APPROVAL older than 2 working days → MED; escalate if milestone due soon
+
+Acknowledgement (not a block)
+- When someone completes a plan milestone with HIGH warnings open:
+  - show a bright red modal listing warnings
+  - allow “Proceed anyway”
+  - log acknowledgement event (who/when + optional reason)
+  - warnings remain open until fixed/accepted risk
+
+H) Notifications Engine (cross-department routing)
+Implement event-driven notifications with throttling:
+Events:
+- task.assigned, task.mentioned, task.status_changed, task.due_soon, task.overdue
+- deliverable.submitted_for_approval (NEEDS APPROVAL)
+- deliverable.feedback_requested (PROVIDE FEEDBACK)
+- deliverable.qc_approved (QC APPROVED)
+- warning.created, warning.escalated, warning.resolved, warning.acknowledged
+- milestone.completed_with_open_high_warnings
+
+Notification delivery:
+- In-app notification center (required)
+- Email optional now, but design the engine to support it later
+
+Routing rules (minimum)
+- Task owner + watchers: assignment, mentions, due soon/overdue
+- Approver: when status moves to NEEDS APPROVAL
+- Quality Manager: when anything hits NEEDS APPROVAL for QC, or missing evidence HIGH warnings
+- Engineering Program Manager: all HIGH warnings linked to Engineering, orphan tasks, milestones at risk
+- PM/Program: milestone due soon with HIGH warnings, or milestone completed with HIGH warnings
+
+Throttling:
+- No repeated overdue spam more than 1/day per item
+- Digest option every 2 hours per project if many events
+
+Roles / Logins
+Create/ensure roles:
+- ADMIN
+- QUALITY_MANAGER
+- ENG_PROGRAM_MANAGER
+- VIEWER
+(Keep existing roles if present; add these if missing.)
+
+ENG_PROGRAM_MANAGER requirements (your key ask)
+- One login/role for engineering department program manager who does:
+  - task allocation (assign/reassign, bulk update)
+  - template application (engineering lifecycle + ad-hoc)
+  - warning ownership and escalation
+  - operational approvals where required
+- Must have popup access code like admin.
+- Access code MUST come from Replit Secrets:
+  - EPM_ACCESS_CODE="2026"
+- Do NOT hardcode 2026 anywhere in code.
+- Implement rate limiting + lockout:
+  - 5 failed attempts → lock 15 minutes
+- Log success/fail attempts (audit).
+- Challenge pass stored in server-verified session/signed cookie.
+- Enforce challenge server-side for sensitive EPM endpoints and EPM routes.
+
+QUALITY_MANAGER popup (if already requested previously in repo)
+- If the app already has a similar admin popup pattern, implement QM popup the same way using:
+  - QM_ACCESS_CODE="2026" (via secrets)
+If QM popup already exists, keep it and do not break it.
+
+Engineering templates (required)
+1) Engineering Project Lifecycle Template
+- Creates tasks + deliverables + links across phases
+- Must link to plan milestones and to quality checklist items where relevant
+2) Engineering Ad-Hoc Ticket Template
+- For RFIs, design changes, commissioning issues, NCRs
+- Must force linking to project + plan + (deliverable or quality)
+
+Engineering Program Manager dashboard (must exist)
+Route: /engineering/dashboard (or repo convention)
+Widgets:
+- Team workload (by engineer): due this week, overdue, on HOLD, in NEEDS APPROVAL, in PROVIDE FEEDBACK
+- Milestones at risk (next 14 days): milestone + linked deliverables status + HIGH warnings count
+- Deliverables pipeline: IN PROGRESS / NEEDS APPROVAL / PROVIDE FEEDBACK / QC APPROVED / OPERATIONAL APPROVAL / COMPLETE
+- Warning control tower: HIGH warnings sorted by age and milestone proximity; assign owners + due dates
+- Orphan tasks list + bulk linking tools
+
+Department views (cross-department integration)
+Provide filtered “boards”/views (same task table, different filters):
+- Engineering Board
+- Quality Board (approvals + evidence + warnings)
+- PM Board
+- Procurement Board
+- Construction/Commissioning Board
+Each view must show:
+- status (your set)
+- linked plan milestone
+- linked deliverable / checklist
+- warning badges (bright red counts)
+
+API routes (RBAC enforced)
+Tasks:
+- CRUD tasks, comments, watchers, bulk update, dependencies
+Plan linking:
+- link/unlink task to plan item
+Deliverables:
+- create/revise, submit for approval, provide feedback, QC approve, operational approve, set approved file pointer
+Quality:
+- checklist instance, item updates, approvals, evidence links, risk answers
+Warnings:
+- list/filter, assign owner, set due date, acknowledge, resolve, accept risk
+Notifications:
+- list unread/read, mark read, preferences
+SharePoint:
+- folder picker endpoint (Graph)
+- upload endpoint (uploads to chosen folder)
+- list folder files endpoint (optional)
+
+Secrets (Replit Secrets)
+- EPM_ACCESS_CODE=2026
+- (optional) QM_ACCESS_CODE=2026
+- MS Graph/Entra secrets already used in repo (do not change without need)
+
+UX requirements
+- Bright red warnings must be visually unavoidable.
+- Bulk edit and quick assign are non-negotiable (otherwise ClickUp users revolt).
+- Folder selection must be easy and consistent everywhere.
+- Always show “current approved deliverable version” clearly.
+- Audit trails must exist for approvals and warning acknowledgements.
+
+Definition of Done (acceptance checks)
+- ENG_PROGRAM_MANAGER login exists and is RBAC-protected.
+- On entering /engineering/* EPM routes, popup access code appears; validates using secret; lockout works.
+- Tasks use EXACT statuses listed above.
+- Tasks can be linked to plan items and quality items and deliverables.
+- SharePoint folder picker + upload works and stores file pointers by Graph IDs.
+- Deliverables have explicit approved file pointers and versioning.
+- Quality checklist functions (Excel parity) and links to tasks/deliverables.
+- Warning engine creates HIGH/MED warnings correctly and shows them cross-department.
+- Notifications fire and route correctly with throttling.
+- No hard blocks exist (milestones can be completed with acknowledgement).
+
+Implementation sequence (do it in this order)
+1) RBAC + ENG_PROGRAM_MANAGER role
+2) EPM popup challenge (server-verified) + lockout + audit
+3) Task engine updates: status set + linking + bulk actions
+4) SharePoint folder picker + upload + file pointer storage
+5) Deliverables register + versioning + approval workflow using statuses
+6) Quality checklist integration + evidence + approvals
+7) Warning engine (rules + UI surfaces)
+8) Notifications engine + in-app inbox + routing + throttling
+9) Engineering dashboard + department boards/views
+10) README: secrets, roles, how to test, workflows
+
+Now implement this by adapting to the repo’s existing patterns and schema without breaking anything.

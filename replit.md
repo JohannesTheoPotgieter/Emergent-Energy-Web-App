@@ -20,7 +20,8 @@ An internal operations platform for a South African C&I solar EPC company, strea
 - **Client Source:** `client/src/`
 - **Server Source:** `server/src/`
 - **Shared Code:** `shared/` (e.g., `shared/schema/*.ts` for DB schema, `shared/permissions/` for permission definitions, `shared/phases.ts` for canonical phase cycle, `shared/config/kpi-registry.ts` for KPI definitions, `shared/config/qb-allocations.ts` for QuickBooks allocation rules)
-- **Database Migrations:** `migrations/` (output dir for `drizzle-kit generate`; recreated on demand — was purged to slim deploy uploads)
+- **Database Migrations:** `drizzle/`
+- **QA & Tests:** `qa/`
 - **Public Assets:** `client/public/`
 - **Theme Files:** Defined via CSS variables in `client/src/index.css` and `tailwind.config.ts`.
 - **API Contracts:** Defined implicitly by Zod schemas in `server/src/api/` and `shared/schema/`.
@@ -50,7 +51,6 @@ An internal operations platform for a South African C&I solar EPC company, strea
 Preferred communication style: Simple, everyday language.
 
 ## Gotchas
-- **Deploy upload size matters.** Replit autoscale ships the entire workspace. Do NOT re-add large dirs to the repo (`attached_assets/`, `qa/`, `docs/`, raw `migrations/*.sql`, `drift-report.json`) — they were purged to keep publishes fast. Agent-uploaded files in chat should not be checked in.
 - Always run `npm run typecheck` before committing to catch type errors early.
 - Database migrations must be additive; use `drizzle-kit generate` and review generated SQL carefully before pushing.
 - Changes to `shared/schema` require corresponding Drizzle Kit commands.

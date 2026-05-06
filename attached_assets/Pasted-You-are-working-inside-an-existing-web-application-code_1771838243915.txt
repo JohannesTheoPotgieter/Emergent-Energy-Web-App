@@ -1,0 +1,296 @@
+You are working inside an existing web application codebase. DO NOT assume the tech stack, database, ORM, routing, auth, or UI library. First inspect the repository and reuse the existing patterns, architecture, components, theme, and conventions.
+
+Goal: Add a new module called “Program Manager Task Register” (TR Register) that functions as both a list and board for the Program Manager. This register must support linking TR items to projects. When a TR item is linked to a project, the system must create a High Priority task for the Project Manager of that project, and keep traceable links between TR item ↔ created PM task(s). Additionally, implement “Auto Link Suggestions” to propose likely projects for a TR item (review/confirm required before creating anything).
+
+Hard rules:
+- No placeholder UI, no placeholder code, no fake tables. Implement fully using the repo’s existing conventions.
+- Maintain the app’s current look and feel. Keep the theme consistent.
+- Must be production-ready: permissions, validation, audit trail, and idempotent seed.
+- Where details are unknown, infer them by inspecting the codebase (models, routes, auth middleware, UI components, existing “Projects” and “Tasks” modules). Only if the codebase truly doesn’t contain what’s needed, add the smallest missing pieces.
+
+--------------------------------------------------------------------
+1) DATA MODEL (match existing database/ORM pattern)
+--------------------------------------------------------------------
+Create a new entity/table/model for TR items, and link tables where needed.
+
+TRItem fields (minimum required):
+- id (internal UUID/ID)
+- trId (string, unique, e.g. “TR026”)
+- department (enum/string)
+- actionDescription (string)
+- ragStatus (enum: Red | Amber | Green)  // manual
+- owners (array of strings OR relational join table; must support multiple owners)
+- support (array of strings OR relational join table; must support multiple support names)
+- dateRaised (date)
+- dueDate (date)
+- status (enum: Active | Completed) + allow extension if app already has a broader status enum; but map these values.
+- dateCompleted (date, nullable)
+- outcomeComments (text, nullable)
+- supportingInfo (text, nullable; can store links or short notes)
+- createdAt, createdBy
+- updatedAt, updatedBy
+
+Linking:
+- TRItem ↔ Project is MANY-TO-MANY (a single TR can relate to multiple projects).
+- Store TRItemProjectLink with fields:
+  - id
+  - trItemId
+  - projectId
+  - autoCreatedPmTaskId (nullable, references whatever task system exists)
+  - linkStatus (enum: Linked | TaskCreated | Done) (or similar)
+  - createdAt/By, updatedAt/By
+
+Auto-link suggestion tracking (small but important):
+- Store TRItemProjectSuggestionDecision with fields (or embed in TRItemProjectLink metadata if your pattern prefers):
+  - id
+  - trItemId
+  - projectId
+  - decision (enum: Suggested | Accepted | Rejected | Suppressed)
+  - score (number)
+  - rationale (text)
+  - decidedAt, decidedBy
+
+Audit trail must follow existing app convention.
+
+--------------------------------------------------------------------
+2) PERMISSIONS (reuse existing role system)
+--------------------------------------------------------------------
+Implement permission gates using the app’s existing auth/roles.
+- Admin/COO: Full access.
+- Program Manager role (or closest existing role): Full CRUD + link projects + manage seed/import + run suggestions.
+- Project Manager: Can update the generated PM tasks in the project module; TR editing should be limited unless the PM is listed as Owner (at minimum allow them to add comments).
+
+If the app does not have “Program Manager” role explicitly, reuse the closest existing role or create it in the same style as existing roles (minimal change).
+
+--------------------------------------------------------------------
+3) UI / UX
+--------------------------------------------------------------------
+Add a navigation entry and a page:
+- “Program Manager Register” (TR Register)
+
+Provide two tabs:
+A) LIST VIEW
+- Table with columns:
+  TR ID | Department | Action/Description | RAG | Owner(s) | Support | Date Raised | Due Date | Status | Date Completed | Outcome/Comments | Supporting Info | Linked Projects Count
+- Filters:
+  RAG, Status, Department, Owner, Due date range, Overdue toggle, Linked/Unlinked toggle, Project filter (search project name)
+- Sort:
+  due date, RAG, status
+- Quick actions per row:
+  View/Edit, Link Projects, Suggest Links, Mark Completed (must enforce completion rules below)
+
+B) BOARD VIEW
+- Kanban grouped by Status:
+  Active | Completed
+  (If the app already supports richer statuses, adapt but keep a clean default.)
+- Card shows:
+  TR ID, short title, RAG pill, due date + overdue indicator, owners, linked projects count
+- Card actions:
+  Open, Link Projects, Suggest Links
+
+TR ITEM DETAIL DRAWER / PAGE
+- Full fields editable (based on role)
+- Section “Linked Projects”
+  - Add/remove project links
+  - For each linked project show:
+    project name + assigned PM + link status + link to created PM task (if created)
+- Section “Auto Link Suggestions”
+  - Button: “Generate Suggestions”
+  - List top suggestions with score and rationale
+  - Multi-select + Confirm to link
+  - Reject/Suppress options (store decisions to avoid spamming same suggestions)
+
+--------------------------------------------------------------------
+4) LINK-TO-PROJECT BEHAVIOUR (core requirement)
+--------------------------------------------------------------------
+When Program Manager links a TR item to a project (manual or via confirmed suggestion):
+
+Step 1: Create the link record TRItemProjectLink.
+Step 2: Create a High Priority task inside that Project’s task system for the Project Manager assigned to that project.
+- Task title: “[TR026] <Action/Description>”
+- Priority: High
+- Due date: TR due date
+- Description: include TR detail summary + deep link back to TR item
+- Assignee: project’s assigned Project Manager (infer from project record)
+- Tag/Label: “Program Register” (or closest existing tag mechanism)
+
+Store the created task’s ID in TRItemProjectLink.autoCreatedPmTaskId, and update linkStatus accordingly.
+
+Important: NEVER auto-create tasks without explicit user confirmation.
+- Suggestions must NOT create any link/task until the user confirms.
+
+Sync rules (minimum):
+- If TR due date changes: update all auto-created PM tasks due dates.
+- If PM task is marked Completed: mark that TRItemProjectLink linkStatus as Done.
+- TR item can only be marked Completed if:
+  - all linked project PM tasks are Completed OR there are zero linked projects
+  - AND outcomeComments is not empty
+  - set dateCompleted automatically on completion
+
+Avoid drift:
+- Keep TR as source of truth for RAG and narrative fields.
+- Keep PM task as source of truth for execution status.
+
+--------------------------------------------------------------------
+5) AUTO LINK SUGGESTIONS (new requirement)
+--------------------------------------------------------------------
+Add “Auto Link Suggestions” that proposes likely projects for a TR item.
+
+Goals:
+- Suggest projects quickly and safely.
+- Explain WHY each project is suggested (rationale).
+- Require review/confirm before linking and task creation.
+- Learn from Accept/Reject/Suppress decisions to avoid repeating noise.
+
+Data sources to use for suggestions (infer actual fields by inspecting repo):
+- Project name/title
+- Project site name (if present)
+- Client name (if present)
+- Project code/reference (if present)
+- Any tags/keywords already stored on projects
+- (Optional) historical accepted links for similar TR keywords (lightweight)
+
+Suggestion algorithm (implement without external services unless repo already uses one):
+1) Build a TR “search text” blob from:
+   - actionDescription
+   - department
+   - outcomeComments
+   - supportingInfo
+   - trId
+2) Extract candidate keywords:
+   - tokenize, lower-case, trim punctuation
+   - keep tokens length >= 3
+   - remove very common stop-words (a small local list is fine)
+   - preserve proper nouns by also extracting TitleCase chunks and acronyms
+3) Special parsing for multi-site lines:
+   - If outcomeComments contains multiple lines (e.g. TR031), treat each line as a potential project/site keyword.
+4) Scoring (simple, explainable):
+   - +50 exact substring match between TR text and project name/site/client/code
+   - +20 token overlap count (unique tokens) capped
+   - +15 if TR contains a known “project anchor token” that matches project (e.g. “Mondi”, “Coega”, “China Town”, “Westway”, “Dipula”, “Shoprite”, “Boundary Terraces”, “Blackheath”, “Paddock”, “Randfontein”, “Tsakane”, “Sibasa”, “Pretoria North”, “Trident”)
+   - +10 if any full line (from TR031-style lists) fuzzy-matches project site/name
+   - -100 if project already linked to this TR
+   - -50 if user previously rejected this suggestion for this TR
+   - -999 if user suppressed this project for this TR (do not show)
+5) Fuzzy match:
+   - Use a lightweight fuzzy approach that matches existing repo conventions (e.g. trigram similarity, Levenshtein, or existing util in codebase).
+   - If no fuzzy utility exists, implement a minimal one in a shared util module.
+6) Output:
+   - Return top N (default 5–8) suggestions sorted by score.
+   - For each: project display label + score + rationale bullets (e.g. “Matched token: mondi”, “Matched line: Boundary Terraces”, “Substring match in client name”).
+7) UX:
+   - “Generate Suggestions” runs server-side (so it can access DB) and returns results.
+   - User can:
+     - Confirm (creates TRItemProjectLink + PM task)
+     - Reject (store decision)
+     - Suppress (store decision and hide in future)
+   - Provide a “Regenerate” that re-runs scoring and respects decisions.
+
+Safety / guardrails:
+- Never link or create tasks automatically.
+- Show a confirmation modal summarizing what will happen: “Link TR041 to Project X and create High Priority task assigned to <PM> due <date>”.
+- If project has no assigned PM (based on actual schema), block creation and show a required action: “Assign PM to project first” (or use existing assignment workflow).
+
+--------------------------------------------------------------------
+6) IMPORT + INITIAL SEED (must include data below)
+--------------------------------------------------------------------
+Add an admin/program-manager-only “Import / Seed” section on the TR Register page (or in settings if that’s how the app works).
+
+Provide:
+A) Seed runner (one-click):
+- Loads the provided seed dataset (below) into the database.
+- Must be IDEMPOTENT:
+  - Use trId as natural key.
+  - If a record exists, update fields (upsert).
+  - Do not create duplicates.
+- Track a seedBatch/version (e.g. “pm-register-seed-v1”) so we can re-run safely.
+
+B) CSV import (optional but preferred):
+- Accept CSV with the columns matching the Excel header:
+  ID, Department, Action/Description, RAG Status, Owner, Support, Date Raised, Due Date, Status, Date Completed, Outcome/Comments, Supporting Info
+- Parse Owner and Support comma-separated into arrays.
+- Parse dates like “28-Jan” with a configurable default year.
+
+DATE PARSING RULE:
+- The seed/import data includes day-month without year (e.g. “28-Jan”).
+- Implement parse that uses env/config TR_DEFAULT_YEAR (integer) with fallback to current year.
+- For this seed, default TR_DEFAULT_YEAR should be set to 2026 unless the app already has a better way to infer the year. Do not hardcode; make it configurable.
+
+--------------------------------------------------------------------
+7) SEED DATA (use exactly this as initial dataset)
+--------------------------------------------------------------------
+Seed dataset (JSON). Owners/support should be stored as arrays (split on comma, trimmed). “-” means empty.
+
+[
+  {"trId":"TR026","department":"Finance","actionDescription":"Magic Company Tracker & COS","ragStatus":"Red","owners":["Roedolph"],"support":[],"dateRaised":"28-Jan","dueDate":"30-Jan","status":"Completed","dateCompleted":"15-Feb","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR024","department":"Matriarch","actionDescription":"Fenner Fire","ragStatus":"Red","owners":["Johannes"],"support":["Roedolph"],"dateRaised":"28-Jan","dueDate":"04-Feb","status":"Active","dateCompleted":"","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR003","department":"Construction","actionDescription":"Mayo Macs AC & DC Rework","ragStatus":"Green","owners":["Roedolph"],"support":["Peet"],"dateRaised":"14-Jan","dueDate":"16-Jan","status":"Completed","dateCompleted":"15-Jan","outcomeComments":"Interrogate the cost of MG","supportingInfo":""},
+  {"trId":"TR004","department":"Fedgroup","actionDescription":"Fedgroup Handover Documents","ragStatus":"Amber","owners":["Roedolph","Peet"],"support":["Johannes"],"dateRaised":"13-Jan","dueDate":"05-Feb","status":"Completed","dateCompleted":"08-Feb","outcomeComments":"Dipula and other funded deals. Check Fedgroup dashboard for progress","supportingInfo":""},
+  {"trId":"TR023","department":"Matriarch","actionDescription":"Leeu Estate POA","ragStatus":"Red","owners":["Johannes"],"support":["Roedolph"],"dateRaised":"22-Jan","dueDate":"06-Feb","status":"Completed","dateCompleted":"15-Feb","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR006","department":"Construction","actionDescription":"Dipula - Updated PC Inspection for ACE","ragStatus":"Green","owners":["Roedolph"],"support":["Peet"],"dateRaised":"14-Jan","dueDate":"15-Jan","status":"Completed","dateCompleted":"15-Jan","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR007","department":"Planning","actionDescription":"Swellengrebel BDP Commission clarification","ragStatus":"Green","owners":["Roedolph"],"support":["Cole"],"dateRaised":"14-Jan","dueDate":"15-Jan","status":"Completed","dateCompleted":"15-Jan","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR008","department":"Fedgroup","actionDescription":"Mondi Construction Manager - Appointment letter","ragStatus":"Green","owners":["Johannes"],"support":["Roedolph"],"dateRaised":"13-Jan","dueDate":"16-Jan","status":"Completed","dateCompleted":"26-Jan","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR029","department":"Planning","actionDescription":"AdHoc Tracker","ragStatus":"Green","owners":["Roedolph"],"support":[],"dateRaised":"30-Jan","dueDate":"06-Feb","status":"Completed","dateCompleted":"15-Feb","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR010","department":"Planning","actionDescription":"Set up Westway Tracker","ragStatus":"Green","owners":["Roedolph"],"support":[],"dateRaised":"14-Jan","dueDate":"15-Jan","status":"Completed","dateCompleted":"15-Jan","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR011","department":"Finance","actionDescription":"STD Bank Invoices","ragStatus":"Green","owners":["Roedolph"],"support":["Tasneema"],"dateRaised":"15-Jan","dueDate":"24-Jan","status":"Completed","dateCompleted":"26-Jan","outcomeComments":"Invoices are being rejected on the COUPA portal, need to escelate to Avashnee.","supportingInfo":""},
+  {"trId":"TR012","department":"Compliance","actionDescription":"PR Eng sign off Rural Retail Portfolio","ragStatus":"Green","owners":["Peet"],"support":[],"dateRaised":"14-Jan","dueDate":"16-Jan","status":"Completed","dateCompleted":"28-Jan","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR013","department":"Planning","actionDescription":"Koogan Plastics Timeline","ragStatus":"Green","owners":["Roedolph"],"support":[],"dateRaised":"15-Jan","dueDate":"23-Jan","status":"Completed","dateCompleted":"19-Jan","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR014","department":"Finance","actionDescription":"The Engineering Hub Check and Balance","ragStatus":"Green","owners":["Roedolph"],"support":[],"dateRaised":"15-Jan","dueDate":"21-Jan","status":"Completed","dateCompleted":"22-Jan","outcomeComments":"Sent an email to them, waiting for feedback","supportingInfo":""},
+  {"trId":"TR015","department":"Planning","actionDescription":"Coega Steel Phase 2 - Quote validation","ragStatus":"Green","owners":["Roedolph"],"support":["Mizelda"],"dateRaised":"19-Jan","dueDate":"24-Jan","status":"Completed","dateCompleted":"28-Jan","outcomeComments":"Check Tanaka's email","supportingInfo":""},
+  {"trId":"TR016","department":"Finance","actionDescription":"Coega Steel Project Tracker Expense dates up date","ragStatus":"Red","owners":["Roedolph"],"support":["Mizelda"],"dateRaised":"19-Jan","dueDate":"21-Jan","status":"Completed","dateCompleted":"21-Jan","outcomeComments":"Check in with Johannes if anything unclear","supportingInfo":""},
+  {"trId":"TR017","department":"Finance","actionDescription":"Project Expenses Overdue","ragStatus":"Amber","owners":["Mizelda"],"support":["Roedolph","Johannes"],"dateRaised":"19-Jan","dueDate":"21-Jan","status":"Completed","dateCompleted":"26-Jan","outcomeComments":"We need to please update the trackers so that the R5m amount is lowered, i will go ahead and assist where i can","supportingInfo":""},
+  {"trId":"TR018","department":"Planning","actionDescription":"Switchboard orders","ragStatus":"Red","owners":["Roedolph"],"support":[],"dateRaised":"20-Jan","dueDate":"24-Jan","status":"Completed","dateCompleted":"22-Jan","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR019","department":"Finance","actionDescription":"Shoprite Mini Bredarsdorp & Superspar Despatch - Schletter Structure","ragStatus":"Red","owners":["Roedolph"],"support":["Peet"],"dateRaised":"20-Jan","dueDate":"21-Jan","status":"Completed","dateCompleted":"21-Jan","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR020","department":"Finance","actionDescription":"Pretoria North schletter credit note","ragStatus":"Green","owners":["Roedolph"],"support":["Mizelda"],"dateRaised":"20-Jan","dueDate":"28-Jan","status":"Completed","dateCompleted":"30-Jan","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR035","department":"Planning","actionDescription":"Mondi - Confirmation email of change requests","ragStatus":"Red","owners":["Roedolph"],"support":["Peet"],"dateRaised":"10-Feb","dueDate":"11-Feb","status":"Active","dateCompleted":"","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR022","department":"Engineering","actionDescription":"Update engineering board with allocated panels","ragStatus":"Amber","owners":["Roedolph"],"support":[],"dateRaised":"21-Jan","dueDate":"21-Jan","status":"Completed","dateCompleted":"22-Jan","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR009","department":"Finance","actionDescription":"Linear Plastics Retention Certificate","ragStatus":"Amber","owners":["Johannes"],"support":["Roedolph"],"dateRaised":"14-Jan","dueDate":"13-Feb","status":"Active","dateCompleted":"","outcomeComments":"Followed up again with Johan today","supportingInfo":""},
+  {"trId":"TR032","department":"Construction","actionDescription":"Coega Steel - Completion Certificate","ragStatus":"Amber","owners":["Peet"],"support":["Roedolph"],"dateRaised":"02-Feb","dueDate":"13-Feb","status":"Completed","dateCompleted":"13-Feb","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR036","department":"Planning","actionDescription":"Update email about whatsapp group change & Photo folder","ragStatus":"Green","owners":["Roedolph"],"support":[],"dateRaised":"10-Feb","dueDate":"13-Feb","status":"Completed","dateCompleted":"16-Feb","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR037","department":"Planning","actionDescription":"Boundary Terraces RMA for Breaker","ragStatus":"Green","owners":["Roedolph"],"support":[],"dateRaised":"11-Feb","dueDate":"18-Feb","status":"Active","dateCompleted":"","outcomeComments":"Breaker must be dropped off at office then taken to SWB","supportingInfo":""},
+  {"trId":"TR027","department":"Planning","actionDescription":"Westway viability","ragStatus":"Green","owners":["Roedolph"],"support":[],"dateRaised":"28-Jan","dueDate":"05-Feb","status":"Completed","dateCompleted":"08-Feb","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR028","department":"Construction","actionDescription":"Shoprite Sibasa damage to roof and rectification plan","ragStatus":"Red","owners":["Roedolph"],"support":[],"dateRaised":"30-Jan","dueDate":"30-Jan","status":"Completed","dateCompleted":"02-Feb","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR039","department":"Planning","actionDescription":"Structural and roof sheeting inspection at Paddock","ragStatus":"Red","owners":["Roedolph"],"support":["Megan"],"dateRaised":"17-Feb","dueDate":"18-Feb","status":"Active","dateCompleted":"","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR030","department":"Construction","actionDescription":"Pimville QC Issues","ragStatus":"Red","owners":["Peet"],"support":["Roedolph"],"dateRaised":"30-Jan","dueDate":"06-Feb","status":"Completed","dateCompleted":"10-Feb","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR031","department":"Planning","actionDescription":"Justin Project Review","ragStatus":"Red","owners":["Roedolph"],"support":["Peet"],"dateRaised":"02-Feb","dueDate":"04-Feb","status":"Completed","dateCompleted":"06-Feb","outcomeComments":"7 th Avenue\nBlackheath Park\nBoundary Terraces\nUpper East Side Cable Calcualtion\nChina Town AdHoc","supportingInfo":""},
+  {"trId":"TR040","department":"Engineering","actionDescription":"Corporate Park metering site visit","ragStatus":"Amber","owners":["Roedolph"],"support":["Tanaka"],"dateRaised":"17-Feb","dueDate":"19-Feb","status":"Active","dateCompleted":"","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR033","department":"Planning","actionDescription":"Tracker Template Update","ragStatus":"Amber","owners":["Roedolph"],"support":["Peet"],"dateRaised":"09-Feb","dueDate":"23-Feb","status":"Completed","dateCompleted":"15-Feb","outcomeComments":"Picture","supportingInfo":""},
+  {"trId":"TR002","department":"Finance","actionDescription":"Trident steel Close Out","ragStatus":"Red","owners":["Roedolph"],"support":["Peet"],"dateRaised":"24-Nov","dueDate":"20-Feb","status":"Active","dateCompleted":"","outcomeComments":"Fixing the COCs.\nMeeting about final milestones - Requested from the client\nSSEG Updates","supportingInfo":""},
+  {"trId":"TR005","department":"Finance","actionDescription":"Randfontein & Tsakane VO impact and outcome","ragStatus":"Amber","owners":["Roedolph"],"support":["Peet"],"dateRaised":"14-Jan","dueDate":"20-Feb","status":"Active","dateCompleted":"","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR001","department":"Planning","actionDescription":"MSA facelist for contractors.","ragStatus":"Green","owners":["Roedolph","Johannes"],"support":["Peet"],"dateRaised":"12-Jan","dueDate":"28-Feb","status":"Active","dateCompleted":"","outcomeComments":"","supportingInfo":"Picture"},
+  {"trId":"TR021","department":"Compliance","actionDescription":"RMA Tracker with Keith","ragStatus":"Amber","owners":["Roedolph"],"support":["Johannes"],"dateRaised":"20-Jan","dueDate":"28-Feb","status":"Active","dateCompleted":"","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR025","department":"Matriarch","actionDescription":"Dipula O&M Handover Docs","ragStatus":"Amber","owners":["Roedolph"],"support":["Keith"],"dateRaised":"28-Jan","dueDate":"28-Feb","status":"Active","dateCompleted":"","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR034","department":"Construction","actionDescription":"China Town Phase 1 remediation & Handover Pack","ragStatus":"Amber","owners":["Roedolph"],"support":["Justin"],"dateRaised":"10-Feb","dueDate":"03-Mar","status":"Active","dateCompleted":"","outcomeComments":"","supportingInfo":""},
+  {"trId":"TR038","department":"Planning","actionDescription":"Dean's email about the MV work at Coega","ragStatus":"Green","owners":["Roedolph"],"support":[],"dateRaised":"12-Feb","dueDate":"30-Mar","status":"Active","dateCompleted":"","outcomeComments":"This is for the cable swop for the MV","supportingInfo":""},
+  {"trId":"TR041","department":"Planning","actionDescription":"Mondi - Email about JA Electrical's LOG","ragStatus":"Red","owners":["Roedolph"],"support":[],"dateRaised":"23-Feb","dueDate":"23-Feb","status":"Active","dateCompleted":"","outcomeComments":"","supportingInfo":""}
+]
+
+--------------------------------------------------------------------
+8) TESTS / QA (match repo conventions)
+--------------------------------------------------------------------
+Add automated checks consistent with the repo:
+- Seed idempotency (running twice does not duplicate)
+- Permission checks (PM register page restricted)
+- Linking creates a PM task and stores ID
+- Due date change updates linked PM tasks
+- Completion rule enforcement
+- Suggestion algorithm returns stable, explainable results and respects Rejected/Suppressed decisions
+
+--------------------------------------------------------------------
+9) DELIVERABLES
+--------------------------------------------------------------------
+Implement the full feature end-to-end:
+- DB migrations/models
+- API routes/services
+- UI pages/components
+- Seed runner
+- Import tool (at least seed runner is mandatory)
+- Auto Link Suggestions (mandatory)
+- Permissions
+- Tests
+
+After implementation, output:
+- Where the new module lives (routes/pages)
+- How to run the seed (UI button + any CLI script if used)
+- Any env var needed (TR_DEFAULT_YEAR) and its default behaviour
+- A short explanation of the suggestion scoring and where to tweak anchor tokens/weights

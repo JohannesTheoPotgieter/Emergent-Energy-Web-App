@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PD Module Training Guide — Part 2 | Emergent Energy</title>
+<link rel="stylesheet" href="ee-styles.css">
+</head>
+<body>
+<div class="page">
+
+<div class="doc-header">
+  <img src="assets/emergent-logo.png" alt="Emergent Energy">
+  <div class="doc-meta">
+    <strong>Training &amp; SOP Guide</strong>
+    EE-SOP-PD-001 | Version 1.0<br>
+    Part 2 of 4 — Ticket Creation &amp; Management
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h1 id="create">5. Creating a PD Ticket (Step-by-Step)</h1>
+<!-- ============================================================ -->
+
+<p>Creating a ticket is a <strong>3-step wizard</strong>. You must complete each step before moving to the next.</p>
+
+<div class="callout callout-info">
+  <span class="icon">&#x2139;&#xFE0F;</span>
+  <div><strong>Who can create tickets?</strong>
+  <span class="role-tag role-pd">Project Developer</span>
+  <span class="role-tag role-admin">COO / CEO / Admin</span></div>
+</div>
+
+<h2>How to Start</h2>
+<p>Click the <strong>"+ New PD Ticket"</strong> button from the Dashboard or Tickets page.</p>
+
+<!-- STEP 1 -->
+<h2>Step 1 of 3 — Select a Client</h2>
+
+<div class="wireframe">
+ ┌──────────────────────────────────────────────────────────────────┐
+ │  ← Back to Tickets                                              │
+ │                                                                  │
+ │  Create PD Ticket                                                │
+ │  ● Step 1: Client  ──▸  ○ Step 2: Project  ──▸  ○ Step 3: Details│
+ │                                                                  │
+ │  ┌──────────────────────────────────────────────────────────────┐│
+ │  │  🏢 Select or Create Client                                 ││
+ │  │                                                              ││
+ │  │  🔍 [Search existing clients...                    ]         ││
+ │  │                                                              ││
+ │  │  ┌────────────────────────────────────────────┐              ││
+ │  │  │  Acme Solar Holdings          EE-C0001     │  ← click    ││
+ │  │  │  Beta Manufacturing           EE-C0002     │    to       ││
+ │  │  │  Cape Town Metro              EE-C0003     │    select   ││
+ │  │  └────────────────────────────────────────────┘              ││
+ │  │                                                              ││
+ │  │  ─────────── or ───────────                                  ││
+ │  │  [+ Create New Client]                                       ││
+ │  └──────────────────────────────────────────────────────────────┘│
+ │                                                            [Next]│
+ └──────────────────────────────────────────────────────────────────┘
+</div>
+
+<div class="step-box">
+  <div class="step-number">1</div>
+  <div class="step-content">
+    <h4>Search for the client</h4>
+    <p>Start typing the client name. The list filters as you type. Click on a client to select it.</p>
+  </div>
+</div>
+
+<div class="step-box">
+  <div class="step-number">2</div>
+  <div class="step-content">
+    <h4>Client not found? Create a new one</h4>
+    <p>Click <strong>"+ Create New Client"</strong>, type the name, and click <strong>"Create Client"</strong>. The system generates a unique Client ID (e.g. EE-C0042) automatically.</p>
+  </div>
+</div>
+
+<div class="step-box">
+  <div class="step-number">3</div>
+  <div class="step-content">
+    <h4>Click Next</h4>
+    <p>Once a client is selected (shown in a green box), click <strong>Next</strong> to proceed.</p>
+  </div>
+</div>
+
+<!-- STEP 2 -->
+<h2>Step 2 of 3 — Map to a Project</h2>
+
+<div class="wireframe">
+ ┌──────────────────────────────────────────────────────────────────┐
+ │  ● Step 1: Client ✓  ──▸  ● Step 2: Project  ──▸  ○ Step 3     │
+ │                                                                  │
+ │  ┌──────────────────────────────────────────────────────────────┐│
+ │  │  📁 Map to Project                                          ││
+ │  │                                                              ││
+ │  │  🔍 [Search existing projects...                   ]         ││
+ │  │                                                              ││
+ │  │  ┌────────────────────────────────────────────┐              ││
+ │  │  │  Solar Park Alpha         [PM Active]      │              ││
+ │  │  │  Warehouse Beta           [PD Active]      │              ││
+ │  │  │  Mall Gamma               [—]              │              ││
+ │  │  └────────────────────────────────────────────┘              ││
+ │  │                                                              ││
+ │  │  ─────────── or ───────────                                  ││
+ │  │  [+ Create New Project]                                      ││
+ │  │                                                              ││
+ │  │  ⚠ Project linkage required                                 ││
+ │  │  Every PD ticket must be linked to a project for lifecycle   ││
+ │  │  tracking and handover.                                      ││
+ │  └──────────────────────────────────────────────────────────────┘│
+ │                                                    [Back] [Next] │
+ └──────────────────────────────────────────────────────────────────┘
+</div>
+
+<div class="callout callout-warning">
+  <span class="icon">&#x26A0;&#xFE0F;</span>
+  <div><strong>Every ticket MUST be linked to a project</strong>
+  This is required for lifecycle tracking and handover. You cannot skip this step.</div>
+</div>
+
+<div class="step-box">
+  <div class="step-number">1</div>
+  <div class="step-content">
+    <h4>Search for the project</h4>
+    <p>Type the project name. The list shows matching projects with their current phase.</p>
+  </div>
+</div>
+
+<div class="step-box">
+  <div class="step-number">2</div>
+  <div class="step-content">
+    <h4>Creating a new project?</h4>
+    <p>If the project doesn't exist, click <strong>"+ Create New Project"</strong>. The system will warn you if a similar project name already exists to avoid duplicates.</p>
+  </div>
+</div>
+
+<!-- STEP 3 -->
+<h2>Step 3 of 3 — Ticket Details</h2>
+
+<div class="wireframe">
+ ┌──────────────────────────────────────────────────────────────────┐
+ │  ● Step 1 ✓  ──▸  ● Step 2 ✓  ──▸  ● Step 3: Details           │
+ │  Client: Acme Solar  |  Project: Solar Park Alpha               │
+ │                                                                  │
+ │  ┌─────────────────────────┐  ┌─────────────────────────┐       │
+ │  │ Project/Site Name *     │  │ Request Type *           │       │
+ │  │ [Solar Park Alpha    ]  │  │ [▾ Cost Proposal      ]  │       │
+ │  ├─────────────────────────┤  ├─────────────────────────┤       │
+ │  │ Priority                │  │ Due Date *              │       │
+ │  │ [▾ Medium            ]  │  │ [📅 2026-04-15       ]  │       │
+ │  ├─────────────────────────┤  ├─────────────────────────┤       │
+ │  │ Funding Type            │  │ Size (kWp)              │       │
+ │  │ [▾ PPA              ]   │  │ [250                 ]  │       │
+ │  ├─────────────────────────┤  ├─────────────────────────┤       │
+ │  │ Province                │  │ Designer                │       │
+ │  │ [▾ Western Cape     ]   │  │ [▾ John Smith       ]   │       │
+ │  └─────────────────────────┘  └─────────────────────────┘       │
+ │                                                                  │
+ │  Site Details                                                    │
+ │  [✓] Bills/Tariff   [✓] Metering   [ ] Site Inspection          │
+ │  [ ] Batteries      [ ] Diesel Gen [ ] Roof Replacement         │
+ │  [✓] HSE Discussed                                              │
+ │                                                                  │
+ │  Financial Estimates (Optional)                                  │
+ │  ┌────────────────────┐  ┌────────────────────┐                 │
+ │  │ Est. Value (R)     │  │ Est. Cost (R)      │                 │
+ │  │ [2,500,000      ]  │  │ [1,800,000      ]  │                 │
+ │  └────────────────────┘  └────────────────────┘                 │
+ │  Margin: R 700,000 (28.0%)                                      │
+ │                                                                  │
+ │  Engineering Tasks to Spawn                          [3/4]       │
+ │  [Select All] [Deselect All]                                     │
+ │  ┌────────────────────────────────────────────────┐             │
+ │  │ [✓] Prepare Cost Proposal Document    [High]   │             │
+ │  │ [✓] Review Site Technical Data        [Medium] │             │
+ │  │ [✓] Financial Model &amp; Pricing          [High]   │             │
+ │  │ [ ] Client Presentation Pack          [Medium] │             │
+ │  └────────────────────────────────────────────────┘             │
+ │                                                                  │
+ │                                     [Back]  [✓ Create PD Ticket] │
+ └──────────────────────────────────────────────────────────────────┘
+</div>
+
+<h3>Required Fields (marked with *)</h3>
+<table>
+  <thead><tr><th>Field</th><th>What to Enter</th></tr></thead>
+  <tbody>
+    <tr><td>Project / Site Name</td><td>The name of the site or project</td></tr>
+    <tr><td>Request Type</td><td>What kind of work: Cost Proposal, IFC Planning, Site Assessment, Feasibility Study, Grid Application, Design Review, Battery Assessment, or Full EPC</td></tr>
+    <tr><td>Due Date</td><td>When this ticket should be completed (for SLA tracking)</td></tr>
+  </tbody>
+</table>
+
+<h3>Optional but Recommended</h3>
+<ul>
+  <li><strong>Priority</strong> — Critical, High, Medium (default), or Low</li>
+  <li><strong>Size (kWp)</strong> — System size helps engineers scope work</li>
+  <li><strong>Financial Estimates</strong> — Estimated project value and cost. Margin calculates automatically.</li>
+  <li><strong>Engineering Tasks</strong> — Pre-built task templates appear based on Request Type. Select which tasks to spawn.</li>
+</ul>
+
+<div class="callout callout-success">
+  <span class="icon">&#x2705;</span>
+  <div><strong>What happens when you click "Create PD Ticket"?</strong>
+  <ol>
+    <li>The ticket is created with a unique ID</li>
+    <li>Selected engineering tasks are automatically spawned as work items</li>
+    <li>The ticket status starts as "Draft" (or "In Progress" if tasks were spawned)</li>
+    <li>You're taken to the ticket detail page</li>
+  </ol>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h1 id="tickets">6. The Tickets List</h1>
+<!-- ============================================================ -->
+
+<p>The Tickets page shows all PD tickets you have access to, with powerful filtering.</p>
+
+<div class="wireframe">
+ ┌──────────────────────────────────────────────────────────────────┐
+ │  ✏ PD Tickets                                       [+ New Ticket]│
+ │                                                                  │
+ │  🔍 [Search tickets...] [▾ Status] [▾ Priority] [▾ Type]        │
+ │                                                                  │
+ │ ┌────────┬────────┬──────┬──────┬────────┬───────┬──────┬───────┐│
+ │ │Project │Client  │Type  │Prior.│Status  │Due    │Tasks │Action ││
+ │ ├────────┼────────┼──────┼──────┼────────┼───────┼──────┼───────┤│
+ │ │▌Alpha  │Acme    │CP    │●High │●Active │Apr 15 │██ 3/4│2 left ││
+ │ │▌Beta   │Metro   │IFC   │●Med  │●Draft  │Apr 10 │░░ 0/5│Start  ││
+ │ │▌Gamma  │—       │Feas. │●Crit │●Active │Mar 20 │██ 4/4│Ready! ││
+ │ │  ⚠ Overdue — 3 days                                          ││
+ │ └────────┴────────┴──────┴──────┴────────┴───────┴──────┴───────┘│
+ └──────────────────────────────────────────────────────────────────┘
+</div>
+
+<h2>6.1 Filtering</h2>
+<ul>
+  <li><strong>Search box</strong> — Searches across project name, client name, and developer name</li>
+  <li><strong>Status dropdown</strong> — Filter by: Draft, In Progress, On Hold, Completed, Cancelled</li>
+  <li><strong>Priority dropdown</strong> — Filter by: Critical, High, Medium, Low</li>
+  <li><strong>Type dropdown</strong> — Filter by request type (Cost Proposal, IFC Planning, etc.)</li>
+</ul>
+
+<h2>6.2 Understanding the Table</h2>
+<table>
+  <thead><tr><th>Column</th><th>What It Shows</th></tr></thead>
+  <tbody>
+    <tr><td>Project / Site</td><td>The ticket name (bold). Overdue rows have a red left border.</td></tr>
+    <tr><td>Client</td><td>Client name, or "—" if not linked</td></tr>
+    <tr><td>Request Type</td><td>Type of work requested (badge)</td></tr>
+    <tr><td>Priority</td><td>Color-coded: <span class="badge badge-red">Critical</span> <span class="badge badge-amber">High</span> <span class="badge badge-blue">Medium</span> <span class="badge badge-slate">Low</span></td></tr>
+    <tr><td>Status</td><td><span class="badge badge-violet">Draft</span> <span class="badge badge-blue">In Progress</span> <span class="badge badge-amber">On Hold</span> <span class="badge badge-green">Completed</span></td></tr>
+    <tr><td>Due Date</td><td>Due date. Red text + "X days overdue" badge if past due.</td></tr>
+    <tr><td>Tasks</td><td>Progress bar showing completed/total tasks</td></tr>
+    <tr><td>Next Action</td><td>What needs to happen next (auto-calculated)</td></tr>
+  </tbody>
+</table>
+
+<div class="callout callout-info">
+  <span class="icon">&#x2139;&#xFE0F;</span>
+  <div><strong>Overdue tickets always appear first</strong>
+  The list automatically sorts overdue tickets to the top so you never miss them.</div>
+</div>
+
+<!-- ============================================================ -->
+<h1 id="detail">7. Ticket Detail Page</h1>
+<!-- ============================================================ -->
+
+<p>Click any ticket row to open its detail page. Here you can see everything about a ticket and edit it.</p>
+
+<div class="wireframe">
+ ┌──────────────────────────────────────────────────────────────────┐
+ │  ← Back                                                         │
+ │                                                                  │
+ │  ✏ Solar Park Alpha  [Cost Proposal] [●In Progress] [●High] #42│
+ │                                                        [Edit ✏] │
+ │                                                                  │
+ │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐           │
+ │  │ Client   │ │ Project  │ │Days Prog.│ │Days Given│           │
+ │  │ Acme     │ │ Alpha  ↗ │ │   23d    │ │   45d    │           │
+ │  ├──────────┤ ├──────────┤ ├──────────┤ ├──────────┤           │
+ │  │Developer │ │ Designer │ │ Funding  │ │Size (kWp)│           │
+ │  │ Jane Doe │ │ J. Smith │ │   PPA    │ │   250    │           │
+ │  └──────────┘ └──────────┘ └──────────┘ └──────────┘           │
+ │                                                                  │
+ │  [Bills ✓] [Metering ✓] [HSE ✓]                                │
+ │                                                                  │
+ │  Financial Estimates                                             │
+ │  Value: R 2,500,000  Cost: R 1,800,000  Margin: R 700,000 (28%)│
+ │                                                                  │
+ │  ┌──────────────────────────────────────────────────────────────┐│
+ │  │  📋 Engineering Tasks                               [4]     ││
+ │  │  Overall Progress ████████████████░░░░ 75%                   ││
+ │  │  ✓ 3 Complete  ● 1 In Progress  ○ 0 To Do                  ││
+ │  │                                                              ││
+ │  │  Task                  Status   Priority  Due      % Done   ││
+ │  │  ✓ Cost Proposal Doc   Done     High      Apr 15   100%    ││
+ │  │  ✓ Site Technical      Done     Medium    Apr 15   100%    ││
+ │  │  ✓ Financial Model     Done     High      Apr 15   100%    ││
+ │  │  ● Client Pack         Active   Medium    Apr 15    40%    ││
+ │  └──────────────────────────────────────────────────────────────┘│
+ │                                                                  │
+ │  ┌──────────────────────────────────────────────────────────────┐│
+ │  │  📊 Deliverables &amp; Activity                          [5]     ││
+ │  │  • Status changed (status) Draft → In Progress   Mar 15    ││
+ │  │  • Task created — Cost Proposal Document          Mar 15    ││
+ │  └──────────────────────────────────────────────────────────────┘│
+ └──────────────────────────────────────────────────────────────────┘
+</div>
+
+<h2>7.1 Editing a Ticket</h2>
+
+<div class="step-box">
+  <div class="step-number">1</div>
+  <div class="step-content">
+    <h4>Click "Edit" in the top-right corner</h4>
+    <p>The page switches to edit mode. Fields become editable.</p>
+  </div>
+</div>
+
+<div class="step-box">
+  <div class="step-number">2</div>
+  <div class="step-content">
+    <h4>Change the fields you need</h4>
+    <p>You can update: Status, Priority, Due Date, Reworks count, Linked Project, Comments, and Financial Estimates.</p>
+  </div>
+</div>
+
+<div class="step-box">
+  <div class="step-number">3</div>
+  <div class="step-content">
+    <h4>Click "Save"</h4>
+    <p>Changes are saved immediately. A confirmation toast appears. Click "Cancel" to discard changes.</p>
+  </div>
+</div>
+
+<h2>7.2 Spawning Engineering Tasks</h2>
+<p>If tasks haven't been spawned yet, you'll see a <strong>"Spawn Tasks"</strong> button. Click it to create work items based on the ticket's request type.</p>
+
+<div class="callout callout-warning">
+  <span class="icon">&#x26A0;&#xFE0F;</span>
+  <div><strong>Tasks can only be spawned once</strong>
+  After spawning, the button disappears. The spawned tasks appear in the Engineering Tasks section and are also visible in the Engineering module.</div>
+</div>
+
+<h2>7.3 Understanding the Tasks Section</h2>
+<ul>
+  <li><strong>Progress bar</strong> — Shows overall completion percentage</li>
+  <li><strong>Status counts</strong> — How many tasks are Complete, In Progress, On Hold, To Do</li>
+  <li><strong>Click any task row</strong> — Jumps to the Engineering Tasks page for that specific task</li>
+  <li><strong>Overdue tasks</strong> — Highlighted with red background</li>
+  <li><strong>On Hold tasks</strong> — Show the hold reason in orange text</li>
+</ul>
+
+<div class="doc-footer">
+  <span>Emergent Energy (Pty) Ltd | Confidential</span>
+  <span>EE-SOP-PD-001 v1.0 — Part 2 of 4</span>
+</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,149 @@
+You are working inside our existing web application.
+
+GOAL
+Upgrade the existing “Emergent Energy Info” module into an interactive Operating System map:
+- Lifecycle Overview (company lifecycle stages)
+- Department Drilldown
+- Process Detail (step-by-step SOP)
+All of this must be built using the EXISTING information infrastructure (lifecycles and departments already exist in-app).
+
+CRITICAL RULES
+- Do NOT break any existing functionality.
+- Reuse existing database tables, models, and UI components in “Emergent Energy Info” wherever possible.
+- Do NOT recreate lifecycle stages or departments if they already exist.
+- FIRST: inspect the existing Info data model and content. Then map/extend it.
+- If any key uncertainty exists (where lifecycle is stored, how nodes are typed, how roles are stored), STOP and ask me before implementing.
+- All changes must be backwards compatible. No destructive migrations without explicit confirmation.
+
+WHAT YOU MUST DO FIRST (DISCOVERY STEP)
+1) Locate the existing “Emergent Energy Info” infrastructure:
+   - existing tables/models for lifecycle + departments
+   - existing node/detail storage
+   - existing linking/graph logic (if any)
+   - existing role/permission system
+2) Produce a “reuse plan”:
+   - Exactly which existing tables/models will be used for:
+     lifecycle, departments, processes, process steps, templates, tool links, edges/relationships
+   - Identify gaps that require minimal new tables/fields.
+Only then start implementation.
+
+DATA MODEL REQUIREMENTS (MINIMAL-CHANGE EXTENSIONS)
+We already have lifecycle + departments. Use them as the source of truth.
+
+A) PROCESS ENTITIES (prefer to represent as existing “Info Nodes”)
+- Ensure there is a way to represent:
+  - Process (belongs to a Department; appears in one or more lifecycle stages)
+  - ProcessStep (ordered steps under a Process)
+  - Tool references (ClickUp/SharePoint/Excel/etc.)
+  - Template references (in-app page content and/or external link)
+  - Links/Edges between nodes (“handover to”, “feeds”, “depends on”)
+
+IMPLEMENTATION GUIDANCE:
+- If the current Info system already supports typed nodes:
+  - Use nodeType values like: LifecycleStage, Department, Process, Step, Tool, Template
+- If typed nodes do NOT exist:
+  - Add the smallest possible “type” field or a lightweight metadata JSON on the existing Info entity.
+- For steps:
+  - Prefer storing steps as child nodes or as structured JSON under a Process node (whichever matches the existing architecture best).
+- For templates:
+  - Support in-app markdown content OR external URL (SharePoint link).
+  - Do NOT implement file storage now unless it already exists.
+
+B) PLACEHOLDERS / TEMPLATE SHELLS
+- Allow authorized users (see permissions below) to create:
+  - empty Process shells under a Department
+  - empty SOP shells under a Process with a standard structure:
+    Purpose, Triggers, Inputs, Steps, Outputs, RACI, Tools, Templates, Review cadence
+- Do NOT auto-fill company-specific facts unless they already exist in the Info content.
+
+PERMISSIONS (CONFIGURABLE BY COO)
+Implement a permissions configuration layer for this module:
+- I (COO) must be able to set per-page or per-section permissions:
+  - View
+  - Create
+  - Edit
+  - Delete
+for each role.
+
+Requirements:
+1) Integrate with the existing roles/permissions system (do NOT invent a parallel auth system).
+2) Provide an admin UI (COO-only) called “Permissions Manager” inside Emergent Info:
+   - Select a scope (Lifecycle Overview / Department pages / Process pages / Templates Library)
+   - Choose role(s)
+   - Toggle View/Create/Edit/Delete
+3) Default policy:
+   - COO: full permissions
+   - Others: view-only
+4) Enforce permissions both:
+   - Frontend (hide buttons/actions)
+   - Backend (API guards so users can’t bypass)
+
+UI / UX REQUIREMENTS (EASY, ACTIVE, INTERACTIVE)
+Build 3 screens inside Emergent Energy Info. Keep it clean and fast.
+
+1) Lifecycle Overview Screen
+- Shows lifecycle stages in order (timeline/roadmap UI).
+- Each stage shows involved departments + key processes (chips/cards).
+- Interactive filters: by department, role, tool, status (draft/active).
+- Click stage => filters results.
+- Click department => Department Drilldown.
+- Click process => Process Detail.
+
+2) Department Drilldown Screen
+- Shows department header + summary.
+- Process list grouped by lifecycle stage.
+- Search + filters (stage, role, tool, status).
+- Optional relationship view:
+  - If your existing app already has a node graph view, reuse it here.
+  - Otherwise implement a simple interactive “map” view using the existing node/link concept (no heavy custom engine).
+
+3) Process Detail Screen (SOP)
+- Shows: purpose, triggers, inputs, outputs, RACI, tools, templates, review cadence.
+- Shows ordered steps with:
+  - step title/description
+  - inputs/outputs
+  - RACI roles
+  - tools + templates links
+- If missing: show “Create SOP Shell” button (only if permission allows).
+- Breadcrumbs: Lifecycle > Department > Process.
+
+4) Templates Library
+- Searchable list of templates.
+- Templates link to processes/steps.
+- Support: internal page template (markdown) + external URL link.
+
+CONTENT MIGRATION / MAPPING (REQUIRED)
+- Crawl existing Emergent Info content to identify:
+  - lifecycle stages (should already exist)
+  - departments (should already exist)
+  - processes and any process-like nodes/details
+- Map these into the new screens WITHOUT deleting original content.
+- If some process content exists only as free-text details, keep it and display it under the relevant process.
+- Provide a one-time mapping script that is idempotent (safe to run twice).
+- Output a report showing:
+  - what was mapped automatically
+  - what could not be mapped and needs manual assignment
+
+ACCEPTANCE TESTS (MUST IMPLEMENT)
+- Lifecycles and departments shown come from existing data (not duplicated).
+- Users see only actions allowed by Permissions Manager.
+- Backend rejects unauthorized edits/deletes.
+- Lifecycle -> Department -> Process navigation works.
+- Placeholders can be created (authorized users only).
+- Existing Emergent Info node/detail pages still work and are accessible.
+- Mapping script does not corrupt or delete existing Info data.
+
+DELIVERABLES
+1) Minimal code changes with small blast radius.
+2) DB migration(s) ONLY if unavoidable; otherwise reuse existing schema.
+3) Idempotent mapping script + mapping report output.
+4) README for admins: how to manage permissions + create process placeholders + build SOPs.
+5) A list of assumptions made + any questions you still need answered.
+
+IMPORTANT:
+Before coding, you MUST show the reuse plan:
+- where lifecycle is stored
+- where departments are stored
+- how info nodes are structured
+- how permissions are stored/enforced
+Then proceed with implementation.

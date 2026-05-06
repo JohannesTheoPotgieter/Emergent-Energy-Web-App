@@ -1,0 +1,131 @@
+<role>
+You are a senior full-stack engineer and RBAC/navigation auditor working on the existing Emergent Energy web app.
+</role>
+
+<context>
+This is the Emergent Energy operational web app.
+
+The app uses role-based navigation and entity permissions.
+
+The current approved display navigation appears to be:
+Home | Projects | Gates | Finance | Departments | Reports | Admin
+
+Relevant files to inspect first:
+- client/src/config/app-navigation.ts
+- client/src/config/page-registry.ts
+- shared/schema/users.ts
+- shared/permissions/registry.ts
+- server/permission-middleware.ts
+- server/services/role-template-service.ts
+- all admin roles/permissions UI files
+- all tests related to permissions, navigation, routes, auth, and admin roles
+
+Known business requirement:
+Every user must see navigation that matches their role and permissions.
+The Roles & Permissions admin UI must reflect the same truth as the actual app navigation.
+Frontend visibility and backend route access must not drift.
+No user should see a section, page, button, or report they cannot access.
+No user should be blocked from a page their role is meant to access.
+</context>
+
+<instructions>
+1. First inspect the current implementation.
+   Do not change code yet.
+
+2. Build a full audit map showing:
+   - every company role from COMPANY_ROLES
+   - every role alias from ROLE_PERMISSION_ALIASES
+   - every top nav section from DISPLAY_TOP_NAV
+   - every underlying section key from SECTION_KEYS
+   - every visible section from ROLE_VISIBLE_SECTIONS
+   - every page from PAGE_REGISTRY
+   - every permissionEntity used by each page
+   - every entity from ENTITY_REGISTRY
+   - every backend route using requirePermission or requireAuthority
+   - every user-level override mechanism
+
+3. Check for drift between:
+   - DISPLAY_TOP_NAV
+   - TOP_SECTIONS
+   - ROLE_VISIBLE_SECTIONS
+   - APP_SECTIONS
+   - WORKSTREAM_VISIBILITY_DEFAULTS
+   - DEFAULT_ROLE_PERMISSIONS, if present
+   - role templates
+   - entity registry defaults
+   - admin roles UI
+   - actual backend route guards
+
+4. Specifically verify:
+   - Reports only appears for roles that should see Reports.
+   - Admin only appears for COO_ADMIN and CEO_ADMIN unless explicitly configured otherwise.
+   - Program Finance Manager visibility matches the approved business rules.
+   - Finance users see finance tools but not admin tools.
+   - Engineers see Engineering/Quality where intended but not Finance/Admin unless explicitly allowed.
+   - Project Delivery roles see project execution tools.
+   - Project Development roles see PD tools.
+   - HSE/SSEG roles are not orphaned or hidden by old section mapping.
+   - Legacy aliases redirect correctly but do not create duplicate nav items.
+   - Hidden pages remain reachable only when permission allows.
+   - The admin roles screen shows the same nav sections and permission entities that the app actually uses.
+
+5. Find all hardcoded role checks.
+   Replace brittle checks with canonical permission/section helpers where safe.
+   Do not remove valid business-specific checks without explaining why.
+
+6. Implement fixes so there is one clear chain of truth:
+   role → sections → nav visibility → page access → backend permission → admin UI display.
+
+7. Add or update tests.
+   At minimum include:
+   - unit tests for buildVisibleTopSections
+   - tests for each COMPANY_ROLE against expected top nav labels
+   - tests that every PAGE_REGISTRY permissionEntity exists in ENTITY_REGISTRY or is intentionally ungated/public
+   - tests that every DISPLAY_TOP_NAV item can resolve at least one accessible path for each allowed role
+   - tests that Admin does not appear for non-admin roles
+   - tests that Reports does not appear for roles without REPORTS section
+   - tests for user override precedence
+   - tests for backend requirePermission denial/allow cases
+
+8. Add a developer-facing audit report in docs.
+   Name it:
+   docs/roles-permissions-navigation-audit-YYYY-MM-DD.md
+
+9. The report must include:
+   - current source-of-truth files
+   - detected drift
+   - fixes made
+   - roles affected
+   - pages affected
+   - tests added
+   - remaining risks
+   - any business decisions still needed from COO
+
+10. Run typecheck and tests.
+    Fix failures caused by your changes.
+</instructions>
+
+<constraints>
+- Do not rename existing role codes unless a migration is included and justified.
+- Do not rename section keys casually. The repo notes that PORTFOLIO is a stable DB identifier.
+- Do not break legacy redirects.
+- Do not widen permissions silently.
+- Do not hide permissions silently.
+- Do not bypass backend enforcement just to make the UI look correct.
+- Preserve Emergent business rules.
+- If the code has conflicting sources of truth, surface the conflict before resolving it.
+- Keep all changes production-minded.
+- If unsure, document the uncertainty and choose the safer permission-restrictive option.
+</constraints>
+
+<output_format>
+Return:
+1. Audit summary
+2. Drift table
+3. Implementation summary
+4. Files changed
+5. Tests added
+6. Role-by-role nav matrix
+7. Remaining risks
+8. Commands run and results
+</output_format>

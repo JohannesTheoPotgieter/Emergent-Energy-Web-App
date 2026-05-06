@@ -1,0 +1,225 @@
+You are working on the existing Emergent Energy web application. DO NOT break any existing working functionality. Implement everything below in a modular way (new modules + feature flags + migrations) so current dashboards, projects, and existing task logic still work.
+
+GOAL
+Create “Engineering Task Templates” for the following stages and allow engineers to instantiate them per project, track completion, and upload/store deliverables into the engineer’s locally synced SharePoint folder structure by selecting a folder via folder browsing inside the app.
+
+STAGES (TEMPLATES)
+Create templates for these Engineering stages (these are not generic tasks; they are structured checklists with required outputs):
+1) First Assessment (Pre-Costing Engineering Filter)
+2) Cost Proposal (Technical model + commercial backbone)
+3) Project Engineer – Execution Phase, split into:
+   3A) IFC Planning
+   3B) Construction Support
+   3C) Handover Pack (HO Pack)
+
+EACH STAGE TEMPLATE MUST INCLUDE
+- Stage purpose (short text)
+- Inputs (list)
+- Tasks (detailed task list)
+- Required outputs / deliverables (list)
+- RACI (A/R/C/I roles)
+- Failure modes (list)
+- “Stage Gate” rule: stage cannot be marked complete unless all “required” tasks are complete AND all “required deliverables” are present.
+
+TASK LISTS (MUST MATCH EXACTLY)
+Template: FIRST ASSESSMENT
+Tasks:
+- Site Technical Feasibility Review (roof orientation/tilt, shading risk visual, roof area estimate, structural risk flags, grid capacity check)
+- Rough System Sizing (kWp estimate from area, inverter sizing logic, export constraint assumption)
+- Red Flag Identification (asbestos, weak supply, shading heavy, wind region, etc.)
+Required outputs/deliverables:
+- Feasibility note (text record in app)
+- Go / Conditional Go / No Go decision
+RACI:
+- Responsible: Engineer
+- Accountable: Tanaka (Design Lead)
+- Consulted: HoPD
+- Informed: COO
+Failure modes: overdesign too early; PD sells before structural risks flagged; no red-flag log
+
+Template: COST PROPOSAL
+Tasks:
+- Detailed PV Modelling (Helioscope layout, PV*SOL model, shading analysis, string config, loss assumptions)
+- Electrical Design (prelim SLD, inverter selection, AC combiner logic, protection philosophy, metering design)
+- Grid Compliance Pre-Check (NRS alignment, inverter cert, export limitation strategy)
+- Structural Allowance Assumption (kg/m² loading calc, ballast vs penetration, placeholder risk)
+- Costing Input Sheet Completion (BOS quantities, cable length estimates, mounting selection, labour assumptions)
+Required outputs/deliverables:
+- CP pack deliverable set (yield summary, prelim SLD, assumption register)
+RACI:
+- Responsible: Design Engineer
+- Accountable: Tanaka
+- Consulted: Project Finance
+- Informed: COO + HoPD
+Failure modes: undocumented assumptions; overstated yield; grid risk not priced
+
+Template: IFC PLANNING (Project Engineer)
+Tasks:
+- Final site visit + measurements
+- Confirm inverter room layout
+- Confirm cable routing
+- Confirm mounting detail
+- Final SLD (IFC)
+- Earthing design
+- Protection settings finalization
+- Detailed cable schedules
+- String layouts
+Required outputs/deliverables:
+- IFC Drawing Pack
+- BOQ Freeze confirmation
+- Technical issue log
+RACI:
+- Responsible: Project Engineer
+- Accountable: Tanaka
+- Consulted: PM + CM
+- Informed: COO
+Failure mode: IFC not frozen → change orders explode
+
+Template: CONSTRUCTION SUPPORT (Project Engineer)
+Tasks:
+- Respond to RFIs
+- Approve substitutions
+- Review installation photos
+- Verify inverter settings
+- Grid witness testing support
+- Commissioning sheet review
+- Snag list technical close-out
+Required outputs/deliverables:
+- RFI log
+- Approved substitutions register
+- Commissioning review signoff
+RACI:
+- Responsible: Project Engineer
+- Accountable: Tanaka
+- Consulted: PM + CM
+- Informed: COO
+Failure modes: site changes without signoff; as-built differs; commissioning data missing
+
+Template: HANDOVER PACK (HO PACK)
+Tasks:
+- As-built SLD
+- As-built layout drawings
+- Cable schedule final
+- Datasheets (as installed)
+- CoCs
+- Test reports
+- Commissioning sheets
+- PR report
+- SSEG approval (if applicable)
+- O&M manual
+- Warranty register
+- Final performance summary
+Stage QA workflow:
+- Internal QA Review (Dean) REQUIRED
+- Final Technical Signoff (Tanaka) REQUIRED
+- PM issues to client (informational step)
+Required outputs/deliverables:
+- Complete HO Pack deliverable set with versioning
+RACI:
+- Responsible: Project Engineer (pack compilation)
+- Accountable: Tanaka (final signoff)
+- Consulted: Dean (QA)
+- Informed: PM + COO
+Failure modes: missing CoCs; as-built mismatch; no version control; rushed for invoice milestone
+
+DATA MODEL (DO NOT BREAK EXISTING)
+Add new tables/entities and relate to existing Project (Project remains the spine):
+- EngineeringStageTemplate
+  - id, name, purpose, inputs[], raci, failureModes[], stageGateRules, createdBy, version, isActive
+- EngineeringTaskTemplate
+  - id, stageTemplateId, title, description, isRequired, sequence, defaultOwnerRole
+- EngineeringDeliverableTemplate
+  - id, stageTemplateId, name, description, isRequired, allowedFileTypes, requiredCount (default 1)
+- ProjectEngineeringStage (instantiated per project)
+  - id, projectId, stageTemplateId, status (Not Started/In Progress/Blocked/Ready for Review/Complete), startedAt, completedAt, createdBy
+- ProjectEngineeringTask
+  - id, projectEngineeringStageId, taskTemplateId, status, ownerUserId, notes, dueDate, completedAt
+- ProjectEngineeringDeliverable
+  - id, projectEngineeringStageId, deliverableTemplateId, fileName, fileSize, mimeType, storageRef, uploadedBy, uploadedAt, versionTag, notes
+- ProjectEngineeringApprovals (for Dean/Tanaka signoff)
+  - id, projectEngineeringStageId, approverRole, approverUserId, status (Pending/Approved/Rejected), comments, updatedAt
+
+STAGE AUTO-CREATION
+- Add a button on a Project called “Generate Engineering Checklist”
+- When clicked: instantiate all five stages above in order for that project.
+- Allow generating a single stage too (for ad hoc), but default is full set.
+
+STAGE GATING RULES
+- A stage can only be marked “Complete” if:
+  - all required tasks = Complete AND
+  - all required deliverables have at least requiredCount files uploaded AND
+  - for HO Pack stage: Dean QA Approved AND Tanaka Signoff Approved
+- If not satisfied: show exactly what’s missing.
+
+UI/UX REQUIREMENTS (KEEP IT SIMPLE)
+- On each Project page, add an “Engineering” tab:
+  - Left: stage list with statuses + progress % (tasks done / total)
+  - Right: stage details (purpose, inputs, tasks checklist, deliverables upload, approvals)
+- Tasks should be checkboxes with expandable details and comment thread per task.
+- Deliverables section should show required deliverables, uploaded files, and versioning.
+- Add a “Stage Pack Export” action (see file storage section below).
+
+PERMISSIONS (DO NOT CHANGE EXISTING PERMISSIONS)
+Add rules only for this new module:
+- Engineers can:
+  - view + edit engineering tasks/deliverables for projects they are assigned to
+  - upload deliverables
+  - request review (set stage to “Ready for Review”)
+- Dean (Quality Manager) can:
+  - do QA approval/rejection for HO Pack stage
+  - view deliverables
+- Tanaka can:
+  - approve/reject final technical signoff (especially HO Pack)
+  - edit templates (optional: only if COO allows)
+- COO can:
+  - create/edit/activate/deactivate templates
+  - override stage gate (with mandatory reason logged)
+- PM can:
+  - view status + deliverables list
+  - cannot edit engineering tasks (unless they also have an engineering role)
+
+FILE STORAGE + “SAVE TO SHAREPOINT FOLDER STRUCTURE ON PC”
+Implement a “Save Pack to Folder” workflow:
+- On any stage, provide a button: “Save Stage Pack to Folder”
+- Use the browser File System Access API:
+  - user selects a folder using a folder picker
+  - app creates (or uses) a standard folder structure:
+    /<Project Code or Project Name>/
+      /Engineering/
+        /01 First Assessment/
+        /02 Cost Proposal/
+        /03 IFC Planning/
+        /04 Construction Support/
+        /05 Handover Pack/
+- For the selected stage:
+  - create that stage folder if missing
+  - save all uploaded deliverables for that stage into that folder
+  - also save a generated “Stage Summary” JSON and a human-readable PDF/HTML summary (purpose, inputs, tasks status, approvals)
+- IMPORTANT: If the browser does not support File System Access API:
+  - fallback to “Download ZIP” that mirrors the same folder structure.
+
+NOTE: This approach works for SharePoint if the engineer selects a locally synced SharePoint/OneDrive folder path. Do NOT attempt direct SharePoint API upload unless configured later.
+
+NON-BREAKING IMPLEMENTATION REQUIREMENTS
+- Put all new functionality behind a feature flag: engineeringTemplatesEnabled (default ON for admin/COO only until toggled).
+- Add migrations safely.
+- Do not rename existing routes/components. Add new ones.
+- Add tests for stage gating and pack export.
+
+ACCEPTANCE TESTS (MUST PASS)
+1) Create template set and see it in “Template Admin” (COO only).
+2) On a project, click “Generate Engineering Checklist” → all stages + tasks appear in correct order.
+3) Try to complete a stage with missing required deliverables → blocked with clear missing list.
+4) Upload a deliverable to Cost Proposal stage → visible in stage + stored in app.
+5) Click “Save Stage Pack to Folder” → choose a folder → files are written into correct structure.
+6) HO Pack stage cannot complete without Dean + Tanaka approvals.
+7) Existing project dashboards and existing task functionality still behave exactly as before.
+
+DELIVERABLES FOR THIS IMPLEMENTATION
+- DB migrations
+- Backend services + APIs for templates, stage instantiation, task updates, deliverable uploads, approvals, export
+- Frontend pages/components: Engineering tab on Project, Template Admin, Approvals UI, Export UI
+- Feature flagging + role checks
+- Automated tests for gating and export fallback
+
+If any data fields needed to link “engineer assigned to project” are missing in the current DB, DO NOT GUESS. Surface exactly what field exists today and adapt to it, or create a minimal join table without breaking current auth logic.
