@@ -1,3 +1,11 @@
+/**
+ * @deprecated EE-QA-017 — legacy import scheduler / pipeline. Smart Import v2
+ * (`server/imports/`) is the canonical pipeline. Do not import from this module
+ * in new code; an ESLint `no-restricted-imports` rule blocks new call sites.
+ * The 2 existing scheduler call sites (`server/bootstrap/start-runtime-services.ts`
+ * for `startScheduler`, `server/bootstrap/environment-status.ts` for
+ * `getSchedulerStatus`) are explicitly allow-listed and tracked for migration.
+ */
 import crypto from "crypto";
 import { storage } from "./storage";
 import { downloadFileContent, detectChanges, downloadSingleFile, getFileMetadata } from "./sharepoint";

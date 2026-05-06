@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { requireAuth } from "../auth-context";
+import { ApiError, badRequest, serverError, sendError } from "../lib/api-error";
 import { evaluateRevenueArStatus } from "../lib/finance/revenue-ar-status";
 import { computeMarginPct } from "../lib/finance/margin";
 import { setFinanceTrustHeaders, buildTrustMeta } from "../lib/finance-trust/envelope";
@@ -455,12 +456,20 @@ export function registerDashboardRoutes(app: Express) {
 
       const summary = await getFinancialSummary({ period, from, to });
       res.json(summary);
-    } catch (error: any) {
-      const status = error?.status === 400 ? 400 : 500;
-      if (status === 500) console.error("Financial summary API error:", error);
-      res.status(status).json({
-        error: status === 400 ? error.message : "Failed to fetch financial summary",
-      });
+    } catch (error: unknown) {
+      // EE-QA-011 residual — never leak raw err.message / err.stack in a
+      // JSON response. ApiError instances are passed through (the global
+      // handler already sanitises them); other errors become a generic
+      // 500 with a sanitised message.
+      if (error instanceof ApiError) {
+        return sendError(res, error);
+      }
+      const status = (error as { status?: number } | null)?.status === 400 ? 400 : 500;
+      if (status === 400) {
+        return sendError(res, badRequest("Invalid financial summary parameters"));
+      }
+      console.error("Financial summary API error:", error);
+      return sendError(res, serverError("Failed to fetch financial summary"));
     }
   });
 
