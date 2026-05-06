@@ -290,6 +290,21 @@ export class FinanceExpenseEngineRepository {
     });
   }
 
+  /**
+   * All current cost-line rows. Filters historical snapshots
+   * (`isNull(effectiveTo)`) and soft-deletes. Used by report builders
+   * that need the full active population.
+   */
+  async listAllActiveCostLines(): Promise<Array<typeof normalizedCostLines.$inferSelect>> {
+    return this.dbInstance
+      .select()
+      .from(normalizedCostLines)
+      .where(and(
+        isNull(normalizedCostLines.effectiveTo),
+        isNull(normalizedCostLines.deletedAt),
+      ));
+  }
+
   // ── QB invoice-matching reads (active rows only) ──
 
   async getCostLineForMatching(id: number): Promise<{
