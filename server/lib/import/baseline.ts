@@ -329,11 +329,28 @@ export async function loadBaselineFromSnapshots(
   // (mapped where needed). Snapshot wins over live where present;
   // missing snapshot keys leave the live value as the baseline. This
   // matches `merge-engine.ts:154` (`importSnapshot ?? existingRow`).
+  // Skip null/undefined snapshot values in the overlay. A snapshot
+  // explicitly stores `null` for any tracked field that was empty in
+  // the workbook at last import (see `buildSnapshot` in
+  // commit-executor.ts) — but treating that null as "the baseline value
+  // really was empty" is wrong. Many production rows carry snapshots
+  // recorded by older imports whose tracked-field set was smaller, so
+  // newly-tracked fields appear as explicit-null in the snapshot even
+  // though the file at the time DID populate them. Overwriting the
+  // live value with that null collapses the baseline to "empty" and
+  // produces hundreds of phantom 3-way conflicts (the user then sees
+  // BASELINE: empty / YOUR EDIT: <real value> / SOURCE: <file value>
+  // for fields they never edited). Falling back to the live value at
+  // the field level — instead of the row level — matches the writer
+  // engine's intent (`importSnapshot ?? existingRow` at merge-engine.ts
+  // :154) and keeps the planner and writer aligned so the conflict
+  // count doesn't bounce when the executor re-checks.
   const planTasks = planLive.map((r: typeof planLive[number]) => {
     const out: Record<string, any> = { ...r };
     const snap = planSnapById.get(r.id);
     if (snap) {
       for (const [k, v] of Object.entries(snap)) {
+        if (v === null || v === undefined) continue;
         const normKey = PLAN_SNAPSHOT_TO_NORM[k] ?? k;
         out[normKey] = v;
       }
@@ -344,14 +361,24 @@ export async function loadBaselineFromSnapshots(
   const revenueLines = revenueLive.map((r: typeof revenueLive[number]) => {
     const out: Record<string, any> = { ...r };
     const snap = revenueSnapById.get(r.id);
-    if (snap) Object.assign(out, snap);
+    if (snap) {
+      for (const [k, v] of Object.entries(snap)) {
+        if (v === null || v === undefined) continue;
+        out[k] = v;
+      }
+    }
     return out;
   });
 
   const costLines = costLive.map((r: typeof costLive[number]) => {
     const out: Record<string, any> = { ...r };
     const snap = costSnapById.get(r.id);
-    if (snap) Object.assign(out, snap);
+    if (snap) {
+      for (const [k, v] of Object.entries(snap)) {
+        if (v === null || v === undefined) continue;
+        out[k] = v;
+      }
+    }
     return out;
   });
 

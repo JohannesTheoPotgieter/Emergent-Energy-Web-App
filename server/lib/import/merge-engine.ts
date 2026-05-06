@@ -144,15 +144,23 @@ export function mergeRow(input: MergeRowInput): RowMergeResult {
   for (const field of fields) {
     const fileVal = (fileRow[field] ?? null) as FieldValue;
     const dbVal = (existingRow[field] ?? null) as FieldValue;
+    // Snapshot lookup degrades at the FIELD level, not the row level.
     // When the snapshot is missing entirely (legacy row imported before
-    // 3-way merge was introduced), treat the snapshot value as equal to
-    // the current DB value. That degrades gracefully — a divergence
-    // between file and db will be classified as `accept_file` (i.e. we
-    // assume the DB hasn't been manually edited yet). Once the row has
-    // been re-imported once, the snapshot is populated and subsequent
-    // imports use the full 3-way logic.
-    const snapSource = importSnapshot ?? existingRow;
-    const snapVal = (snapSource[field] ?? null) as FieldValue;
+    // 3-way merge was introduced), the snapshot value falls back to the
+    // current DB value so a divergence between file and db is classified
+    // as `accept_file` instead of a phantom conflict. The same fallback
+    // applies per-field when the snapshot exists but doesn't carry a
+    // value for this field — either the field is newer than the
+    // snapshot (the tracked-fields list grew between imports) or the
+    // file at the time legitimately had no value, both of which used
+    // to surface as 'BASELINE: empty / YOUR EDIT: <real> / SOURCE:
+    // <file>' phantom conflicts. The planner mirror of this fallback
+    // lives in `loadBaselineFromSnapshots` (baseline.ts) — both engines
+    // must use the same field-level rule or the planner and writer
+    // produce different conflict counts and the wizard bounces between
+    // them with "More conflicts found".
+    const snapRaw = importSnapshot ? importSnapshot[field] : undefined;
+    const snapVal = (snapRaw === null || snapRaw === undefined ? dbVal : snapRaw) as FieldValue;
 
     const fileChanged = !valuesEqual(fileVal, snapVal);
     const dbChanged = !valuesEqual(dbVal, snapVal);
