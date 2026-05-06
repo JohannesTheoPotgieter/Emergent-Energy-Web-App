@@ -60,6 +60,8 @@ import { apiRequest } from "@/lib/queryClient";
 import { isApiError } from "@/lib/api-error";
 import { formatRand } from "@/lib/safeMoney";
 import { checkQbAllocationSum } from "@shared/config/qb-allocations";
+import { QbAutoSuggestInbox } from "./QbAutoSuggestInbox";
+import { QbCascadeProposalsPanel } from "./QbCascadeProposalsPanel";
 
 import {
   type FindResponse,
@@ -133,6 +135,9 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
   const [scope, setScope] = useState<Scope>(defaultScope);
   const [search, setSearch] = useState("");
   const [laneFilter, setLaneFilter] = useState<RowLane | "all">("all");
+  /** Most recently-approved link in this session — drives the cascade
+   *  proposals panel below the workbench rows. Cleared by the user. */
+  const [lastApprovedLinkId, setLastApprovedLinkId] = useState<number | null>(null);
 
   // Per-row state — ref kept only for async function stale-closure avoidance
   const [rows, setRows] = useState<WorkbenchRow[]>([]);
@@ -314,14 +319,22 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
           ...(vars.lineAllocations ? { lineAllocations: vars.lineAllocations } : {}),
         },
       );
-      return res.json() as Promise<{ linkId: number }>;
+      return res.json() as Promise<{ linkId: number; proposals?: unknown[] }>;
     },
     onSuccess: (data, vars) => {
-      toast({ title: "Match approved", description: `Link #${data.linkId} created.` });
+      const proposalCount = Array.isArray(data.proposals) ? data.proposals.length : 0;
+      toast({
+        title: "Match approved",
+        description:
+          proposalCount > 0
+            ? `Link #${data.linkId} created — ${proposalCount} proposed update${proposalCount === 1 ? "" : "s"} below.`
+            : `Link #${data.linkId} created — QB and app already agree.`,
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/quickbooks/links"] });
       const row = rowsRef.current.find((r) => r.findResult?.suggestionId === vars.suggestionId);
       if (row) updateRow(row.id, { status: "approved" });
       setDrawerRowId(null);
+      setLastApprovedLinkId(data.linkId);
     },
     onError: (err: Error) => {
       const isConflict = isApiError(err) && err.status === 409;
@@ -588,6 +601,56 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
           </Button>
         </div>
       </div>
+
+      <QbAutoSuggestInbox
+        onReview={async (suggestionId) => {
+          // Open a temporary drawer-friendly path: load the suggestion,
+          // jump scope if needed, find the matching workbench row, and
+          // open its drawer.
+          try {
+            const res = await apiRequest(
+              "GET",
+              `/api/quickbooks/invoice-matches/suggestions/${suggestionId}`,
+            );
+            const data = (await res.json()) as { scope: "cost" | "revenue"; app: { id: number } };
+            if (data.scope !== scope) setScope(data.scope);
+            const row = rowsRef.current.find((r) => r.appLine.id === data.app.id);
+            if (row) {
+              setDrawerRowId(row.id);
+            } else {
+              toast({
+                title: "Reviewing suggestion",
+                description:
+                  "Open the Workbench scope that matches this suggestion — the row may not be in the current view.",
+              });
+            }
+          } catch (err) {
+            const message = err instanceof Error ? err.message : "Failed to load suggestion";
+            toast({ title: "Review failed", description: message, variant: "destructive" });
+          }
+        }}
+      />
+
+      {lastApprovedLinkId !== null && (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-muted-foreground">
+              Link #{lastApprovedLinkId} — review proposed cascades before
+              they touch app data.
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setLastApprovedLinkId(null)}
+              data-testid="button-dismiss-proposals-workbench"
+            >
+              <X className="h-3 w-3 mr-1" />
+              Hide
+            </Button>
+          </div>
+          <QbCascadeProposalsPanel linkId={lastApprovedLinkId} />
+        </div>
+      )}
 
       {/* ── Search + filters ──────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">

@@ -97,6 +97,11 @@ import {
 } from "./services/quickbooks-cascade-service";
 import { recordIntegrationRun } from "./services/integration-health-service";
 import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
+import {
+  detectAndPersistProposals,
+  loadCostLineContext,
+  loadRevenueLineContext,
+} from "./services/quickbooks-cascade-proposals-service";
 import { db } from "./db";
 import {
   counterparties,
@@ -614,7 +619,35 @@ export function registerQuickBooksRoutes(app: Express): void {
         if (link.projectId) {
           refreshProjectMetricsAsync(link.projectId);
         }
-        res.status(201).json({ link });
+
+        // Cascade detector — emit proposals for any QB-vs-app divergence.
+        let proposals: Awaited<ReturnType<typeof detectAndPersistProposals>> = [];
+        try {
+          const appCtx = await loadCostLineContext(costLineId);
+          if (appCtx) {
+            proposals = await detectAndPersistProposals({
+              link,
+              app: appCtx,
+              qb: {
+                qbEntityType: "bill",
+                qbEntityId: billSummary.id,
+                qbRealmId: link.qbRealmId,
+                qbDocNumber: billSummary.docNumber ?? null,
+                qbTxnDate: billSummary.txnDate ?? null,
+                qbAmountExVat: billSummary.qbAmountExVat ?? billSummary.totalAmount ?? null,
+                qbAmountIncVat: billSummary.qbAmountIncVat ?? null,
+                qbTaxAmount: billSummary.qbTaxAmount ?? null,
+                qbCounterpartyId: billSummary.vendorId ?? null,
+                qbCounterpartyName: billSummary.vendorName ?? null,
+              },
+              createdBy: user?.id ?? null,
+            });
+          }
+        } catch (detectErr) {
+          console.error("[quickbooks][POST /links] cascade detector failed", detectErr);
+        }
+
+        res.status(201).json({ link, proposals });
       } catch (inner) {
         if (handleLinkConflict(res, inner)) {
           logAuditFromReq(req, {
@@ -837,6 +870,36 @@ export function registerQuickBooksRoutes(app: Express): void {
         if (previous.projectId && previous.projectId !== link.projectId) {
           refreshProjectMetricsAsync(previous.projectId);
         }
+
+        // Run the cascade detector against the freshly-pointed link so the
+        // reviewer sees the proposed updates for the new QB doc.
+        try {
+          const appCtx =
+            previous.appEntityType === "cost_line"
+              ? await loadCostLineContext(previous.appEntityId)
+              : await loadRevenueLineContext(previous.appEntityId);
+          if (appCtx) {
+            await detectAndPersistProposals({
+              link,
+              app: appCtx,
+              qb: {
+                qbEntityType: body.qbEntityType,
+                qbEntityId: body.qbEntityId,
+                qbRealmId: body.qbRealmId,
+                qbDocNumber: body.qbDocNumber ?? null,
+                qbTxnDate: body.qbTxnDate ?? null,
+                qbAmountExVat: body.qbAmountExVat ?? null,
+                qbCounterpartyId: null,
+                qbCounterpartyName: body.qbCounterpartyName ?? null,
+              },
+              createdBy: userId,
+            });
+          }
+        } catch (detectErr) {
+          // Detector is best-effort — log but don't fail the relink.
+          console.error("[quickbooks][force-relink] cascade detector failed", detectErr);
+        }
+
         logAuditFromReq(req, {
           entityType: "quickbooks_invoice_link",
           entityId: String(link.id),
