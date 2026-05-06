@@ -242,16 +242,32 @@ export function mergeRow(
 // ---------------------------------------------------------------------------
 
 /**
- * Build a lookup map from the last committed import's normalization data,
- * keyed by business key, so we can find the baseline value for any matched row.
+ * Composite baseline lookup. We index baseline rows BOTH by business key
+ * AND by canonical-row id, because the matcher pairs a file row to a DB
+ * row via the externalRef pre-pass even when their business keys diverge
+ * (e.g. user renamed a task). In that case `mr.businessKey` is the FILE
+ * row's key and the baseline row (built from the DB row's snapshot)
+ * lives under the DB row's key — so a key-only lookup misses, baseline
+ * comes back null, and every field falsely classifies as CONFLICT with
+ * `BASELINE: empty`. Preferring the by-id lookup (when both sides have
+ * an id) closes that gap. The by-key map is retained as a fallback for
+ * the legacy `summaryJson.normalization` baseline path, whose rows don't
+ * carry DB ids.
  */
+export interface BaselineLookup {
+  byBusinessKey: Map<string, Record<string, any>>;
+  byRowId: Map<number, Record<string, any>>;
+}
+
 export function buildBaselineLookup(
   section: SectionType,
   projectId: number,
   baselineNormalization: NormalizationResult | null,
   generateBusinessKey: (section: SectionType, projectId: number, row: Record<string, any>) => BusinessKey,
-): Map<string, Record<string, any>> {
-  if (!baselineNormalization) return new Map();
+): BaselineLookup {
+  const byBusinessKey = new Map<string, Record<string, any>>();
+  const byRowId = new Map<number, Record<string, any>>();
+  if (!baselineNormalization) return { byBusinessKey, byRowId };
 
   let rows: Record<string, any>[];
   switch (section) {
@@ -260,12 +276,15 @@ export function buildBaselineLookup(
     case "EXPENDITURE": rows = baselineNormalization.costLines; break;
   }
 
-  const map = new Map<string, Record<string, any>>();
   for (const row of rows) {
     const bk = generateBusinessKey(section, projectId, row);
-    map.set(bk.key, row);
+    byBusinessKey.set(bk.key, row);
+    const id = (row as any).id;
+    if (typeof id === "number" && Number.isFinite(id)) {
+      byRowId.set(id, row);
+    }
   }
-  return map;
+  return { byBusinessKey, byRowId };
 }
 
 // ---------------------------------------------------------------------------
@@ -275,7 +294,7 @@ export function buildBaselineLookup(
 export function mergeSection(
   section: SectionType,
   matchedRows: MatchedRow[],
-  baselineLookup: Map<string, Record<string, any>>,
+  baselineLookup: BaselineLookup,
 ): SectionConflictSummary {
   const rows: RowMergeResult[] = [];
   let conflictRowCount = 0;
@@ -297,7 +316,17 @@ export function mergeSection(
     // still correct because the executor consumes `rowUid`, not the
     // baseline key. A future enhancement could store per-rowUid baselines
     // in the snapshot.
-    const baselineRow = baselineLookup.get(mr.businessKey.key) || null;
+    // Prefer id-based lookup: the matcher pairs file<->DB rows by
+    // externalRef in addition to business key (see row-matcher.ts S001
+    // dual-key pre-pass), so `mr.businessKey` may be the file row's key
+    // while the baseline row lives under the DB row's key. The id is
+    // unambiguous when both sides have one. Fall back to the business
+    // key for the legacy `summaryJson.normalization` baseline path,
+    // whose rows have no DB id.
+    const baselineRow =
+      (mr.existingRowId != null ? baselineLookup.byRowId.get(mr.existingRowId) : undefined)
+      ?? baselineLookup.byBusinessKey.get(mr.businessKey.key)
+      ?? null;
     const result = mergeRow(section, mr, baselineRow);
     rows.push(result);
 

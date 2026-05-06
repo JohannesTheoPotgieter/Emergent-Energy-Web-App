@@ -55,6 +55,7 @@ Preferred communication style: Simple, everyday language.
 - Database migrations must be additive; use `drizzle-kit generate` and review generated SQL carefully before pushing.
 - Changes to `shared/schema` require corresponding Drizzle Kit commands.
 - Smart Import conflict resolution requires careful user intervention for 3-way merges.
+- **Smart Import baseline lookup is id-first**, not business-key-first. The S001 externalRef pre-pass in `row-matcher.ts` can pair a file row to a DB row whose business keys differ (e.g. renamed task) — `mr.businessKey` then holds the FILE row's key while the baseline row lives under the DB row's key. `buildBaselineLookup` (server/lib/import/conflict-engine.ts) returns both `byRowId` and `byBusinessKey`; `mergeSection` MUST prefer `mr.existingRowId` and fall back to business key only for the legacy `summaryJson.normalization` baseline path. Reverting to a key-only lookup re-introduces the "BASELINE: empty" false-conflict bug.
 
 ## Pointers
 - **React Query Docs:** _Populate as you build_
