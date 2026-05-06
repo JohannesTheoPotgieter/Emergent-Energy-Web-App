@@ -25,7 +25,7 @@ ENABLE_STARTUP_SCHEMA_REPAIR = "true"
 [deployment]
 deploymentTarget = "autoscale"
 build = ["sh", "-c", "npm run build && npm run db:migrate"]
-run = ["sh", "-c", "npm run start"]
+run = ["npm", "run", "start"]
 
 [workflows]
 runButton = "Project"
