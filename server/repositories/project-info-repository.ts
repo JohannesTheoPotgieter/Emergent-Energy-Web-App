@@ -27,16 +27,16 @@ export class ProjectInfoRepository {
   }
 
   /**
-   * NOTE: also added in Waves 5.4/5.5 (PRs #820/#821); resolve any merge
-   * collision by keeping a single copy.
+   * Project-name only listing for the active project_info population.
+   * Used by tracker-gap endpoints that build a project-name universe.
+   *
+   * NOTE: similar method exists in Wave 5.4 (`listAll()`) returning
+   * full rows; this is the projection-only variant.
    */
-  async findIdByProjectName(projectName: string): Promise<number | null> {
-    const [row] = await this.dbInstance
-      .select({ id: projectInfo.id })
-      .from(projectInfo)
-      .where(eq(projectInfo.projectName, projectName))
-      .limit(1);
-    return row?.id ?? null;
+  async listAllProjectNames(): Promise<Array<{ name: string | null }>> {
+    return this.dbInstance
+      .select({ name: projectInfo.projectName })
+      .from(projectInfo);
   }
 
   async upsert(info: InsertProjectInfo, existing: ProjectInfo | undefined): Promise<ProjectInfo> {
