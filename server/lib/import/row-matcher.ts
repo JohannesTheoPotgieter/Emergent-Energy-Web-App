@@ -21,6 +21,8 @@
  *   Budget and amount are compared as fields, never part of identity.
  */
 
+import { normalizeWithFieldType, normalizeBasic } from "./value-normalization";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -246,15 +248,18 @@ export function expenditureBusinessKey(
 
 /**
  * Normalize a value for comparison.
- * Treats null, undefined, empty string, false, and 0 as equivalent empty values
- * to avoid false positives when comparing file vs DB rows.
+ *
+ * When a field name is supplied this delegates to the field-aware
+ * normaliser, which adds numeric tolerance (|a−b| < 0.005 on Rand /
+ * quantity / pct fields) and date-only normalisation (YYYY-MM-DD,
+ * dropping time-of-day and timezone). Without a field name it falls
+ * back to the legacy "treat null/undefined/0/blank as equivalent"
+ * behaviour so the duplicate-group similarity scorer is unaffected.
  */
-function normalizeForCompare(val: any): string {
-  if (val === null || val === undefined) return "";
-  if (typeof val === "boolean") return val ? "true" : "";
-  if (typeof val === "number") return val === 0 ? "" : String(val);
-  const s = String(val).trim();
-  return s === "0" ? "" : s;
+function normalizeForCompare(val: any, fieldName?: string): string {
+  return fieldName
+    ? normalizeWithFieldType(val, fieldName)
+    : normalizeBasic(val);
 }
 
 /** Compare two rows field-by-field, ignoring import metadata fields */
@@ -265,8 +270,8 @@ export function compareFields(
 ): ChangedField[] {
   const changed: ChangedField[] = [];
   for (const field of compareFieldNames) {
-    const fileVal = normalizeForCompare(fileRow[field]);
-    const existingVal = normalizeForCompare(existingRow[field]);
+    const fileVal = normalizeForCompare(fileRow[field], field);
+    const existingVal = normalizeForCompare(existingRow[field], field);
     if (fileVal !== existingVal) {
       changed.push({
         fieldName: field,
