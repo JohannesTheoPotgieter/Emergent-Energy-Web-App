@@ -210,8 +210,12 @@ export async function sendExcelUpdateRequest(input: ExcelUpdateRequestInput): Pr
 
   let emailSent = false;
   try {
+    const cc = input.requesterEmail && input.requesterEmail.includes("@")
+      ? [input.requesterEmail]
+      : undefined;
     await sendMail({
       to: recipients.map(r => r.email),
+      cc,
       subject: mail.subject,
       body: mail.bodyHtml,
       bodyType: "HTML",
@@ -227,6 +231,11 @@ export async function sendExcelUpdateRequest(input: ExcelUpdateRequestInput): Pr
     : "excel_update_required_request_approval";
   for (const r of recipients) {
     try {
+      // No relatedEntityType/Id passed: per user decision (2026-05-05) we
+      // do NOT throttle this notification. Each operator resolve action
+      // is an explicit signal and must surface every time, even on
+      // repeat clicks against the same project within the 10-minute
+      // notification-service throttle window.
       const created = await createNotification({
         recipientUserId: r.id,
         eventType,
@@ -234,8 +243,6 @@ export async function sendExcelUpdateRequest(input: ExcelUpdateRequestInput): Pr
         body: mail.bodyText,
         projectId: input.projectId,
         projectName: input.projectName,
-        relatedEntityType: input.requestId != null ? "financial_edit_requests" : "excel_vs_app_resolve",
-        relatedEntityId: input.requestId ?? input.projectId,
       });
       if (created) notifications++;
     } catch (err: any) {
