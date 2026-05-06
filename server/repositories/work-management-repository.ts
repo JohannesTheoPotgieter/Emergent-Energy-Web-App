@@ -486,4 +486,50 @@ export class WorkManagementRepository {
       }
     });
   }
+
+  /**
+   * All non-deleted PM workstream work items, regardless of source. Used by
+   * cross-program reporting that needs every PM-owned task.
+   */
+  async listAllPmWorkItems(): Promise<WorkItem[]> {
+    return this.dbInstance
+      .select()
+      .from(workItems)
+      .where(and(
+        eq(workItems.workstream, "PM"),
+        isNull(workItems.deletedAt),
+      ));
+  }
+
+  /**
+   * PM workstream work items sourced from the Smart Import pipeline. These
+   * are the rows that back the legacy "project plan" surface and the
+   * project-plan / quality / resource-allocation reports.
+   */
+  async listSmartImportPmTasks(): Promise<WorkItem[]> {
+    return this.dbInstance
+      .select()
+      .from(workItems)
+      .where(and(
+        eq(workItems.workstream, "PM"),
+        eq(workItems.source, "SMART_IMPORT"),
+        isNull(workItems.deletedAt),
+      ));
+  }
+
+  /**
+   * PM tasks (any source) joined with their owner, used by the resource
+   * allocation report. The owner name is denormalized on `work_items` so
+   * no join is required — the dedicated method exists so callers don't
+   * have to reach into the schema themselves.
+   */
+  async listPmTasksWithOwner(): Promise<WorkItem[]> {
+    return this.dbInstance
+      .select()
+      .from(workItems)
+      .where(and(
+        eq(workItems.workstream, "PM"),
+        isNull(workItems.deletedAt),
+      ));
+  }
 }

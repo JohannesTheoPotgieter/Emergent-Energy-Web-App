@@ -75,4 +75,21 @@ export class UsersRepository {
       .from(users)
       .where(inArray(users.id, ids));
   }
+
+  /**
+   * Users that can be assigned to a given role. Returns the slim shape the
+   * `/api/pm-assignable-users` and `/api/pd-assignable-users` endpoints
+   * expose to the client (id, name, username, role).
+   */
+  async listAssignableByRole(role: string): Promise<AssignableUserRow[]> {
+    return this.dbInstance
+      .select({
+        id: users.id,
+        name: users.name,
+        username: users.username,
+        role: users.role,
+      })
+      .from(users)
+      .where(eq(users.role, role));
+  }
 }

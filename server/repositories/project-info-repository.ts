@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, ilike, inArray } from "drizzle-orm";
 import { projectInfo, projectExecutionState, type InsertProjectInfo, type ProjectInfo } from "@shared/schema";
 import { db } from "../db";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "../lib/project-info-sync";
@@ -82,5 +82,41 @@ export class ProjectInfoRepository {
     const [created] = await this.dbInstance.insert(projectInfo).values(insertFields).returning();
     await syncProjectSplitTablesAfterInsert(created.id, insertFields as any, this.dbInstance);
     return created;
+  }
+
+  /**
+   * All `project_info` rows. Used by reporting surfaces that want every
+   * known project (with phase/RAG/owner fields) without paying for the
+   * `project_execution_state` left-join.
+   */
+  async listAll(): Promise<ProjectInfo[]> {
+    return this.dbInstance.select().from(projectInfo);
+  }
+
+  /**
+   * Case-insensitive substring search on `project_name`, returning just
+   * the matching ids. Used by the reports module to filter work items by
+   * a project-name fragment supplied via query string.
+   */
+  async findIdsByNameLike(filter: string): Promise<number[]> {
+    if (!filter) return [];
+    const rows = await this.dbInstance
+      .select({ id: projectInfo.id })
+      .from(projectInfo)
+      .where(ilike(projectInfo.projectName, `%${filter}%`));
+    return rows.map((r: { id: number }) => r.id);
+  }
+
+  /**
+   * Bulk id → projectName projection. Used by reports that need to map
+   * `work_items.projectId` values back to the human-readable project name
+   * without paying for a full `select(projectInfo)` per row.
+   */
+  async listIdNameByIds(ids: number[]): Promise<Array<{ id: number; projectName: string }>> {
+    if (ids.length === 0) return [];
+    return this.dbInstance
+      .select({ id: projectInfo.id, projectName: projectInfo.projectName })
+      .from(projectInfo)
+      .where(inArray(projectInfo.id, ids));
   }
 }
