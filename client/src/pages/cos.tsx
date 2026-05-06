@@ -14,6 +14,7 @@ import { Tooltip as UiTooltip, TooltipContent, TooltipProvider, TooltipTrigger }
 import { apiRequest, fetchQueryFn, invalidateDashboardQueries } from "@/lib/queryClient";
 import { useFinanceQuery } from "@/lib/finance-trust";
 import { DataTrustBadge } from "@/components/ui/data-trust-badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   Bar,
   XAxis,
@@ -462,15 +463,12 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
               </button>
             </div>
           ) : filtered.length === 0 ? (
-            <div className="p-12 flex flex-col items-center justify-center gap-2 text-center">
-              <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
-                <Inbox className="h-6 w-6 text-muted-foreground" />
-              </div>
-              <p className="text-sm font-medium">No cost lines</p>
-              <p className="text-xs text-muted-foreground max-w-md">
-                No rows match the current filters for {monthLabel}. Try clearing the search or switching the status filter.
-              </p>
-            </div>
+            <EmptyState
+              icon={Inbox}
+              title="No cost lines"
+              description={`No rows match the current filters for ${monthLabel}. Try clearing the search or switching the status filter.`}
+              className="m-6"
+            />
           ) : (
             <>
               {/* Desktop table */}
