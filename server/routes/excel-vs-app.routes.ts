@@ -340,10 +340,12 @@ export function registerExcelVsAppRoutes(app: Express): void {
             actorRole: actorRole ?? null,
             actorUserId: actorId,
           });
-          // Fire-and-forget: ask the workbook owners to update Excel so it
-          // re-establishes itself as source of truth. Mailer swallows its
-          // own failures — never fails the resolve response.
-          void sendExcelUpdateRequest({
+          // Ask the workbook owners to update Excel so it re-establishes
+          // itself as source of truth. Awaited so the response carries
+          // the email/bell outcome — useful for FE testers and the
+          // metrics surface. The mailer never throws (failures are
+          // logged inside).
+          const mail = await sendExcelUpdateRequest({
             projectId,
             projectName,
             resolveAction: "keep_app",
@@ -354,7 +356,7 @@ export function registerExcelVsAppRoutes(app: Express): void {
             requesterName: req.user?.name ?? null,
             requesterEmail: req.user?.email ?? null,
           });
-          res.json({ status: "ok", action: body.action, resolved });
+          res.json({ status: "ok", action: body.action, resolved, mail });
           return;
         }
 
@@ -408,7 +410,7 @@ export function registerExcelVsAppRoutes(app: Express): void {
           actorRole: actorRole ?? null,
           actorUserId: actorId,
         });
-        void sendExcelUpdateRequest({
+        const mail = await sendExcelUpdateRequest({
           projectId,
           projectName,
           resolveAction: "request_approval",
@@ -425,6 +427,7 @@ export function registerExcelVsAppRoutes(app: Express): void {
           requestId: saved.id,
           action: body.action,
           submitted: body.entries.length,
+          mail,
         });
       } catch (err) {
         if (err instanceof ApiError) throw err;
