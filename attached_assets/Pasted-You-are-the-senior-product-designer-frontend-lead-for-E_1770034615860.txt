@@ -1,0 +1,99 @@
+You are the senior product designer + frontend lead for Emergent Energy’s Program Dashboard app.
+
+Goal
+Rework the Project Plan screen UI to be clearer, faster to use, and “COO/PM readable”.
+The data + scheduling logic already exists. This task is primarily UI/UX + Gantt readability.
+Look & feel can improve, but keep the same tab naming and keep all existing functionality.
+
+What to improve (current pain)
+- The Task Grid is too sparse and hard to scan.
+- The Gantt is not intuitive and does not default to a “full project lifetime” view.
+- Missing columns: % Complete and Expected % Complete.
+- Critical path is present but not visually obvious in the Gantt and grid.
+
+Non-negotiable UI outcomes
+1) Add 2 columns to the Task Grid:
+   - % Complete (actual)
+   - Expected % Complete
+   Show as a compact progress display (number + small bar).
+2) Improve the Gantt readability:
+   - Must default to “Fit to project” (full project lifetime visible).
+   - Must allow zoom levels (Week / Month / Quarter) + horizontal scroll.
+   - Must have a “Today” vertical line.
+   - Must show task progress on the bar (fill to % complete).
+   - Must show expected progress (a thin marker line or dashed overlay).
+   - Critical path tasks must be visually distinct (outline + icon or stronger styling).
+3) Better information density + scan-ability:
+   - Sticky first columns (No. + Task Name).
+   - Row hover, subtle zebra striping, tighter row height.
+   - Search + quick filters (Critical only, Late tasks, Blocked, etc).
+   - Summary strip at top that shows: Project Start, Project Finish, Duration, # Tasks, # Critical, Overall % Complete vs Expected.
+
+Layout recommendation (implement this)
+- Keep existing tabs: Task Grid | Gantt Chart | Dependencies | Changes.
+- In Task Grid tab:
+  - Add a “Split View” toggle:
+    - OFF: grid only
+    - ON: grid top + gantt bottom (or side-by-side with resizable splitter on wide screens)
+  - Default Split View ON for desktop.
+- In Gantt tab:
+  - Full-width Gantt with an optional small “overview minimap” timeline at the top.
+  - Toolbar: Fit to project, Zoom (Week/Month/Quarter), Jump to Today, Show Critical only toggle.
+
+Data requirements for the new columns
+- % Complete (actual): use existing field if already available.
+- Expected % Complete: use existing field if available.
+- If expected % is missing on a row:
+  - Compute expected % from planned dates (today vs planned start/end):
+    expected = clamp((today - planned_start) / (planned_end - planned_start), 0..1) * 100
+  - If planned dates missing, leave blank and show “—”.
+
+Gantt “Fit to lifetime” behavior
+- Compute range:
+  - minStart = min(planned_start across visible tasks)
+  - maxEnd = max(planned_end across visible tasks)
+  - Add padding (e.g. 7–14 days) on both sides
+- On initial load, set the gantt viewport to that range.
+- “Fit to project” button re-applies this.
+- “Jump to Today” centers today in the viewport (without changing zoom).
+
+Visual rules (EE theme)
+- Green + white theme.
+- Do NOT make it loud. Make it readable.
+- Use clear badges:
+  - Critical path badge (e.g. “CRIT”)
+  - Late/at-risk badge if planned end < today AND % complete < 100%
+- Dates must be consistent and SA-friendly (e.g. 09 Sep 25).
+
+Interaction rules
+- Hovering a task row highlights the matching bar in the Gantt and vice versa.
+- Clicking a row opens a side panel (or modal) with:
+  - Task details
+  - Dates
+  - % complete vs expected
+  - Dependencies (predecessors/successors)
+  - Slack (if computed)
+- Keep the screen fast. Virtualize if needed.
+
+Implementation notes (pick practical libraries)
+- Use a reliable React Gantt component that supports:
+  - custom task rendering (progress fill + expected marker)
+  - programmatic control of viewport (fit/zoom)
+- If current Gantt lib can’t do this cleanly, replace it with one that can.
+- Keep the data wiring unchanged: do not break current task fetching, critical path calc, or dependency display.
+
+Acceptance tests (must pass before you stop)
+1) Task Grid shows % Complete and Expected % Complete for Bolt Ave.
+2) Gantt opens with full project lifetime visible (no manual scrolling needed).
+3) Fit to project works after filters/zoom changes.
+4) Zoom Week/Month/Quarter works and keeps tasks readable.
+5) Today line is visible.
+6) Progress fill shows correctly on bars for tasks with actual %.
+7) Expected marker shows correctly for tasks with expected % (or computed expected).
+8) Hovering a grid row highlights the Gantt bar, and clicking a Gantt bar highlights the grid row.
+9) Critical path tasks are visually obvious in both grid and Gantt.
+
+Deliverable
+- Updated Project Plan UI with the above.
+- Keep tabs and existing functionality.
+- Provide a short note in README: “How to use the Project Plan view (Fit, Zoom, Progress)”.

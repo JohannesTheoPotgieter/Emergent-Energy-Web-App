@@ -1,0 +1,203 @@
+You are working inside an existing Replit web app repo.
+
+Goal
+- Implement a SharePoint Excel “Import Model (Snapshot)” with a Change Ledger.
+- Add RBAC with two roles: ADMIN and VIEWER.
+- VIEWER can only read (ledger + snapshots).
+- ADMIN can read + configure + trigger imports + manage users/roles.
+
+Hard constraints
+- Do not remove or break any existing functionality.
+- No placeholder code. No placeholder buttons. No fake pages. Everything must be wired end-to-end.
+- If something is missing (DB, auth, API route, UI component), implement it fully.
+- Treat SharePoint file identity as source of truth (siteId + driveId + itemId), not file name.
+
+Assumptions (only if repo doesn’t already dictate this)
+- Stack: Next.js (or React) + Node backend.
+- DB: Postgres (use Prisma if not already present).
+- Auth: Microsoft Entra ID (Azure AD) because we need SharePoint/Graph access.
+If the repo already has a different stack, adapt to it and keep the same patterns.
+
+Deliverables (must all exist and work)
+1) RBAC / Auth
+- Implement authentication using Microsoft Entra ID.
+- Map users to roles using ONE of:
+  A) Entra group membership claim -> ADMIN / VIEWER
+  B) Local DB table “users” with role column, seeded by first admin
+- Protect routes:
+  - VIEWER: can access Ledger + Snapshots pages only (read-only).
+  - ADMIN: can access everything, including Admin pages and import actions.
+- Add a simple “Access Denied” page for forbidden routes.
+
+2) Database schema + migrations
+Create these tables (names can differ, but structure must match):
+
+sp_files
+- id (pk)
+- site_id
+- drive_id
+- item_id (unique with site_id+drive_id)
+- path
+- file_name
+- last_seen_etag
+- last_seen_ctag
+- sp_last_modified_at
+- sp_last_modified_by_name
+- sp_last_modified_by_email
+- is_active (default true)
+- created_at, updated_at
+
+import_runs
+- id (pk)
+- trigger_type (schedule/manual/webhook)
+- started_at
+- finished_at
+- status (running/success/partial/fail)
+- delta_token_used (nullable)
+- triggered_by (user id or “system”)
+- summary_json (nullable)
+
+change_ledger
+- id (pk)
+- run_id (fk -> import_runs)
+- file_id (fk -> sp_files)
+- event_type (created/modified/deleted/renamed)
+- old_etag (nullable)
+- new_etag (nullable)
+- sp_modified_at
+- sp_modified_by_name
+- sp_modified_by_email
+- detected_at
+- import_status (pending/imported/failed/skipped)
+- snapshot_id (nullable fk -> snapshots)
+- error_code (nullable)
+- error_message (nullable)
+
+snapshots
+- id (pk)
+- file_id (fk -> sp_files)
+- imported_at
+- source_etag (or version id)
+- content_hash (sha256)
+- row_count_total (int, nullable if not applicable)
+- parser_version (string)
+- storage_ref (nullable)
+- created_at
+
+snapshot_metrics (lightweight “fingerprint”)
+- id (pk)
+- snapshot_id (fk -> snapshots)
+- table_name (sheet/table)
+- row_count
+- checksum (string)
+- min_date (nullable)
+- max_date (nullable)
+- totals_json (nullable)
+
+3) SharePoint / Graph integration (change detection)
+- Implement change detection on a specific SharePoint folder using Microsoft Graph.
+- Preferred: delta query on the drive folder. Store and reuse delta token.
+- Acceptable: scheduled polling of folder children + compare eTag/cTag.
+- For every changed item:
+  - Upsert into sp_files using (site_id, drive_id, item_id)
+  - Insert a change_ledger row with old/new etag, modifiedBy, modifiedAt, status=pending
+
+4) Import pipeline (snapshot)
+- For each pending change_ledger row, run import:
+  - Download the Excel bytes from Graph using item_id
+  - Compute sha256 content_hash
+  - Create a snapshots row (immutable)
+  - Parse Excel into meaningful extracted data (adapt to existing import logic in repo)
+  - Compute snapshot_metrics (at least row_count per sheet, and a checksum per sheet)
+  - Update change_ledger row: import_status=imported, snapshot_id set
+- On failure:
+  - Update change_ledger row: import_status=failed, error_message populated
+  - import_runs status becomes partial/fail appropriately
+
+5) Admin UI (ADMIN only)
+Pages (or equivalent routes):
+- /admin/settings
+  - Configure SharePoint target: siteId, driveId, folderItemId (or folder path)
+  - Test connection button (real, not placeholder)
+  - Save settings to DB or secure config store
+- /admin/runs
+  - List import_runs with status and summary
+  - Drill into a run to see associated change_ledger entries
+- /admin/users (if using local role management)
+  - Assign role ADMIN/VIEWER
+- /admin/actions
+  - “Run import now” (manual trigger)
+  - “Retry failed imports” (retries only failed rows)
+
+6) Viewer UI (VIEWER + ADMIN)
+Pages:
+- /ledger
+  - Table view of change_ledger with filters:
+    - date range
+    - file
+    - modified by
+    - event type
+    - import status
+  - Each row links to /ledger/[id]
+- /ledger/[id]
+  - Shows full event detail + linked snapshot (if imported)
+- /snapshots
+  - List snapshots, filter by file and date
+- /snapshots/[id]
+  - Show snapshot metadata + snapshot_metrics table
+  - Show “what changed” at least at fingerprint level (row_count delta + checksum changed yes/no compared to previous snapshot for same file)
+
+7) API routes + guards
+- Implement server routes/endpoints for:
+  - GET /api/ledger (viewer)
+  - GET /api/ledger/:id (viewer)
+  - GET /api/snapshots (viewer)
+  - GET /api/snapshots/:id (viewer)
+  - POST /api/admin/import/run (admin)
+  - POST /api/admin/import/retry-failed (admin)
+  - GET/POST /api/admin/settings (admin)
+  - GET/POST /api/admin/users (admin if local roles)
+- Every endpoint must enforce RBAC.
+- Return clear error messages.
+
+8) Scheduling
+- Add a scheduled import trigger (every 15–60 mins) that:
+  - Runs change detection
+  - Processes pending ledger rows
+- Also keep manual admin trigger.
+
+9) Secrets / config
+- Use Replit Secrets for:
+  - AZURE_TENANT_ID
+  - AZURE_CLIENT_ID
+  - AZURE_CLIENT_SECRET (if using app-only)
+  - NEXTAUTH_SECRET (if applicable)
+- Never hardcode secrets.
+
+10) UX requirements
+- Clean, modern, simple UI.
+- The ledger page must make it obvious:
+  - what changed
+  - who changed it
+  - whether import succeeded
+  - which snapshot the system is using
+- No clutter. No complex workflows hidden behind 6 clicks.
+
+Definition of Done (acceptance checks)
+- Login works.
+- VIEWER cannot access any /admin route or admin API endpoints.
+- ADMIN can configure SharePoint folder and successfully test connection.
+- Change detection creates ledger rows when a file is modified in SharePoint.
+- Import creates snapshots and updates ledger rows.
+- Snapshot metrics show on snapshot detail page.
+- Manual “Run import now” works.
+- Retry failed imports works.
+- All existing app features still work.
+
+Now:
+1) Inspect the repo and identify the current stack and patterns.
+2) Implement the above using the repo’s conventions.
+3) Commit changes in coherent chunks.
+4) Provide a short README section: setup, required secrets, how to run, how to test roles.
+
+Start with RBAC/auth + DB schema, then Graph integration, then UI pages.

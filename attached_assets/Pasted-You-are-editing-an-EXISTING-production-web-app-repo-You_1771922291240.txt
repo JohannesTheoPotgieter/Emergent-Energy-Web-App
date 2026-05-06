@@ -1,0 +1,144 @@
+You are editing an EXISTING production web app repo. Your job is to implement a “Bootstrap Import + New Data Spine + Rollups + Safe Cutover” with ZERO regression. You are not allowed to hand-wave, simplify, or skip steps. No placeholder code. No “TODO”. No fake buttons. No mock endpoints.
+
+ABSOLUTE RULES
+1) DO NOT break existing functionality. Legacy paths must keep working until cutover.
+2) DO NOT guess data. If unclear/dirty, quarantine and mark needs_review. Ask me targeted questions only when blocking.
+3) Import must be IDEMPOTENT. Running it again must not duplicate anything.
+4) Project is the spine. Everything references project_key.
+5) Dashboards must remain COMPLETE and correct after cutover. No blank widgets. No partial data.
+6) Keep current look & feel. Improve UX only where specified.
+
+STEP 0 — REQUIRED FIRST OUTPUT (before writing code)
+Scan the repo and output:
+A) Current stack (frontend, backend, DB, ORM, auth)
+B) Current “Project” entity: where it lives (models/tables), unique identifiers, and related entities
+C) Current dashboards list + which queries/endpoints feed them
+D) Current data import/ETL paths (if any)
+E) Proposed exact change list: files/modules you will touch and new files you will add
+Then start coding.
+
+GOAL
+Implement a one-off Bootstrap Import that reads ALL ACTIVE projects from a source folder of files, loads into a NEW canonical database structure (Project spine), then rebuilds DERIVED rollups that power dashboards (task → project → portfolio/program → exec dashboards). Add validation, audit logs, quarantines, and a feature-flag cutover so we can switch dashboards safely.
+
+DATA LAYERS (MANDATORY)
+Create 3 layers and keep them separate:
+1) STAGING (raw): store extracted data from source files without forcing perfection.
+2) CANONICAL (truth): normalized tables used by the app.
+3) DERIVED (rollups): precomputed KPI/summary tables used by dashboards.
+
+DATABASE (MANDATORY)
+Add migrations. Do NOT delete or rename legacy tables.
+Add these minimum tables (names can vary but concept must match):
+- import_runs: id, started_at, finished_at, status, triggered_by_user_id, discovered_count, imported_count, updated_count, skipped_count, quarantined_count, errors_count, logs_ref
+- staging_projects (and staging_tasks/milestones if applicable): import_run_id, source_path, source_modified_at, source_hash, raw_json, parse_status, error_reason
+- projects (canonical): project_key (unique), name, client_id, site_id, status, pm_user_id (if applicable), needs_review boolean, created_at, updated_at
+- derived_project_kpis: project_key (unique), fields required by current dashboards
+- derived_portfolio_kpis / derived_rag_summary: fields required by current dashboards
+Add indexes for project_key + all FKs used in dashboard queries.
+
+PROJECT KEY (NON-NEGOTIABLE)
+Define a stable unique project_key.
+- Prefer existing unique ID logic already used in the app.
+- If inconsistent, implement deterministic strategy (e.g., normalized client+site+contract-id) and STOP to ask me with examples before proceeding.
+
+ACTIVE PROJECTS DEFINITION (NON-NEGOTIABLE)
+Determine how “active” is defined.
+- If the repo already has an “active” rule, reuse it.
+- If not, implement a conservative default (e.g., not in Closed/Handed Over/Cancelled) AND STOP to ask me to confirm with examples if uncertain.
+
+BOOTSTRAP IMPORT PIPELINE (MANDATORY)
+Admin-only flow with these steps in this exact sequence:
+
+1) DISCOVER
+- Enumerate the configured source folder.
+- Identify ACTIVE projects only.
+- Output discovered list + count.
+
+2) STAGING LOAD
+- Parse each source file.
+- Write to staging tables with source metadata:
+  source_path, source_modified_at, source_hash (or equivalent), import_run_id, imported_at.
+- If parsing fails or mapping unknown, still write raw_json and error_reason.
+
+3) CANONICAL UPSERT
+- Transform staging → canonical.
+- Use UPSERT with unique constraints (project_key etc.).
+- Never duplicate projects/tasks on re-run.
+- If required fields missing / duplicate key collision / unknown mapping:
+  - Mark canonical record needs_review=true
+  - Record details in staging error_reason
+  - Do NOT let bad data poison rollups.
+
+4) DERIVED REBUILD
+- Recompute ALL rollup tables used by dashboards from canonical.
+- Rollups must exclude needs_review by default OR include with explicit warning flags shown in UI.
+
+5) VALIDATION
+Store validation results linked to import_run. Minimum checks:
+- discovered_count == (imported+updated+skipped) OR explain discrepancies in report
+- no duplicate project_key
+- dashboard smoke: each dashboard endpoint returns non-empty payload and required fields
+- rollup integrity: portfolio totals align to sum(project_kpis) where applicable
+- sample check: pick 10 random projects and confirm required fields present
+
+6) IMPORT REPORT
+Admin-only UI page showing:
+- run id, status, timestamps, triggered_by
+- discovered/imported/updated/skipped/quarantined/errors
+- quarantined list with error_reason + links to raw_json
+- validation results with pass/fail
+- download report JSON/CSV
+
+IDEMPOTENCY (MANDATORY)
+- Use DB unique constraints + UPSERT.
+- For staging, prevent duplicate insert when same (source_path + source_modified_at OR source_hash) for same import_run.
+- Keep audit trail: you must be able to answer “where did this number come from?” from the UI.
+
+FEATURE FLAG CUTOVER (MANDATORY)
+Add env/config flag: USE_NEW_DASHBOARD_ROLLUPS (default false).
+- When false: dashboards use legacy queries.
+- When true: dashboards read DERIVED tables built from canonical.
+Add an Admin-only toggle in Settings (writes to server-side config table or env-backed setting depending on app design).
+Rollback = toggle off. Must work instantly.
+
+DASHBOARDS (NON-NEGOTIABLE)
+You must identify every dashboard and ensure it remains complete after cutover.
+- Map each existing dashboard widget → required fields → derived table fields.
+- Implement derived queries so the UI shows the same (or better) data.
+- Home screen company priorities must still show for ALL roles, unchanged.
+
+SECURITY & PERMISSIONS (MANDATORY)
+- Bootstrap Import + toggle visible to Admin/COO only.
+- Log which user triggered import.
+- No other roles can trigger import, view raw staging, or change flag.
+
+UI/UX (MANDATORY)
+- Keep theme.
+- Put Bootstrap Import under Admin → Reports or Admin → Data.
+- Flow:
+  a) “Scan source folder” (shows discovered active projects)
+  b) “Run import” (shows progress, run id)
+  c) “View report” (shows results + quarantines + validations)
+No confusing navigation. No dummy buttons.
+
+IMPLEMENTATION QUALITY (MANDATORY)
+- Modular code. Import logic in its own module/service.
+- No large refactors unrelated to this feature.
+- Add tests where repo already uses tests; otherwise add at least basic integration/smoke tests for endpoints used by dashboards.
+- Add a RUNBOOK markdown in repo:
+  - How to run in staging
+  - How to run in prod
+  - How to rollback
+  - How to handle quarantines
+  - How to re-run safely
+
+STOP CONDITIONS (YOU MUST STOP AND ASK ME)
+Only stop to ask me if ALL three are true:
+1) It blocks correctness (e.g., project_key ambiguity, “active” definition ambiguity, source file format unknown),
+2) You have concrete examples from the repo/data to show me,
+3) You propose 1–2 options and ask me to pick.
+
+Otherwise proceed.
+
+NOW DO IT
+Start with STEP 0 output, then implement end-to-end.```

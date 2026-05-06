@@ -1,0 +1,820 @@
+
+> rest-express@1.0.0 dev
+> node script/with-node-env.cjs development tsx server/index.ts
+
+{"level":"info","message":"[cache] In-memory cache backend active (set REDIS_URL for Redis)","timestamp":"2026-04-30T07:58:47.856Z"}
+[DB] Testing PostgreSQL connection to helium...
+[DB] ✓ Using PostgreSQL (host: helium)
+[DB] ✓ work_items engineering columns verified
+[DB] ✓ entity_assignments table verified
+7:58:48 AM [express] Session schema auto-create enabled (startup schema repair is on)
+7:58:48 AM [express] CSRF enabled for [POST, PUT, PATCH, DELETE], exempt routes loaded: 6 (auth: 3, webhooks: 2, health: 1)
+7:58:48 AM [Startup:Schema] Runtime schema sync is disabled — schema is owned by ./migrations/*.sql (shared/schema.ts is the Drizzle mirror). Production startup is read-only.
+[auth-context] loadRevokedTokensFromDb failed (non-fatal): DrizzleQueryError: Failed query: select "id", "token_digest", "revoked_at", "expires_at" from "revoked_tokens" where "revoked_tokens"."expires_at" > $1
+params: 2026-04-30T07:58:48.977Z
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 3 lines matching cause stack trace ...
+    at async bootstrap (/home/runner/workspace/server/index.ts:118:3) {
+  query: 'select "id", "token_digest", "revoked_at", "expires_at" from "revoked_tokens" where "revoked_tokens"."expires_at" > $1',
+  params: [ '2026-04-30T07:58:48.977Z' ],
+  cause: error: relation "revoked_tokens" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async loadRevokedTokensFromDb (/home/runner/workspace/server/auth-context.ts:128:32)
+      at async runStartupOrchestrator (/home/runner/workspace/server/bootstrap/startup-orchestrator.ts:64:5)
+      at async bootstrap (/home/runner/workspace/server/index.ts:118:3) {
+    length: 113,
+    severity: 'ERROR',
+    code: '42P01',
+    detail: undefined,
+    hint: undefined,
+    position: '62',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '1452',
+    routine: 'parserOpenTable'
+  }
+}
+{"level":"info","message":"[job-queue] In-memory queue backend active (set REDIS_URL for BullMQ)","timestamp":"2026-04-30T07:58:49.055Z"}
+[Lifecycle] RAG audit table and columns ensured
+[permissions] requireRole([CFO,CEO_ADMIN,COO_ADMIN]) is a legacy gate. Prefer requirePermission(entity, action) — see docs/permissions.md.
+[permissions] requireRole([COO_ADMIN,CEO_ADMIN,CFO,PROGRAM_FINANCE_MANAGER,ACCOUNTANT,PROGRAM_MANAGER]) is a legacy gate. Prefer requirePermission(entity, action) — see docs/permissions.md.
+[permissions] requireRole([COO_ADMIN,CEO_ADMIN,CFO,PROGRAM_FINANCE_MANAGER]) is a legacy gate. Prefer requirePermission(entity, action) — see docs/permissions.md.
+[permissions] requireRole([COO_ADMIN,CEO_ADMIN]) is a legacy gate. Prefer requirePermission(entity, action) — see docs/permissions.md.
+[permissions] requireRole([COO_ADMIN,CEO_ADMIN,CCO,CFO,PROGRAM_MANAGER,PROGRAM_FINANCE_MANAGER,CONSTRUCTION_MANAGER,ENGINEERING_MANAGER,QUALITY_MANAGER,PROJECT_MANAGER_SITE,PROJECT_DEVELOPER,KEY_ACCOUNTS_MANAGER,ACCOUNTANT]) is a legacy gate. Prefer requirePermission(entity, action) — see docs/permissions.md.
+7:58:51 AM [Startup:Routes] All route groups registered
+[Monthly Report Scheduler] Starting scheduler (checks every hour)
+[NotificationScheduler] Starting — checks every 60 minutes
+[cos-period-lock] Auto-lock scheduler registered (daily + 1 immediate run).
+[MS Sync] Periodic sync started (every 15 minutes)
+[DashboardRefresh] cycle complete: refreshed=2, failed=1
+[DashboardRefresh] failed: company_overview (618ms)
+7:58:53 AM [Startup] [Startup] dbMode=postgres
+7:58:53 AM [Startup] [Startup] flags={"startupMaintenanceEnabled":false,"startupSchemaRepairEnabled":true,"startupDataSeedEnabled":false,"startupBackfillEnabled":false,"startupSessionResetEnabled":false,"startupSyncEnabled":true,"runtimeMaintenanceEnabled":false,"runtimeMutationsActive":false}
+7:58:53 AM [Startup] [Startup] maintenance=skipped
+7:58:53 AM [Startup] [Startup] backfills=skipped
+7:58:53 AM [Startup] [Startup] seeds=skipped
+7:58:53 AM [Startup] [Startup] routes=registered
+7:58:53 AM [Startup] [Startup] runtime=import-scheduler, monthly-report-scheduler, notification-trigger-scheduler, cos-period-lock-scheduler, integration-registry-seed(inserted=0), dashboard-refresh-scheduler, alert-dispatcher-worker, task-reminder-scheduler, periodic-sync
+7:58:53 AM [Startup] serving on port 5000
+7:59:13 AM [express] GET /api/version 200 in 12ms
+7:59:13 AM [express] GET /api/auth/me 304 in 5ms
+7:59:14 AM [express] GET /api/notifications/unread-count 304 in 12ms
+7:59:14 AM [express] GET /api/priorities 304 in 76ms
+7:59:14 AM [express] GET /api/lifecycle-board/execution-dashboard 200 in 193ms
+7:59:14 AM [express] GET /api/my-work/all-tasks 304 in 152ms
+7:59:14 AM [express] GET /api/home/do-next 200 in 7ms
+7:59:14 AM [express] GET /api/auth/permissions 304 in 9ms
+7:59:14 AM [express] GET /api/feature-flags/rollout 304 in 8ms
+[API Error] GET /api/admin/screen-settings [traceId=f3dae166-39ac-4c98-b032-0921ae630551]: {
+  name: 'Error',
+  message: 'Failed query: select "screen_id", "is_enabled", "updated_at", "updated_by_user_id" from "app_screen_settings"\n' +
+    'params: ',
+  stack: 'Error: Failed query: select "screen_id", "is_enabled", "updated_at", "updated_by_user_id" from "app_screen_settings"\n' +
+    'params: \n' +
+    '    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+    '    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)\n' +
+    '    at async <anonymous> (/home/runner/workspace/server/routes/admin-screen-settings.routes.ts:30:24)'
+}
+[API Error] Unhandled: {
+  name: 'Error',
+  message: 'Failed query: select "screen_id", "is_enabled", "updated_at", "updated_by_user_id" from "app_screen_settings"\n' +
+    'params: ',
+  stack: 'Error: Failed query: select "screen_id", "is_enabled", "updated_at", "updated_by_user_id" from "app_screen_settings"\n' +
+    'params: \n' +
+    '    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+    '    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)\n' +
+    '    at async <anonymous> (/home/runner/workspace/server/routes/admin-screen-settings.routes.ts:30:24)'
+}
+7:59:14 AM [express] GET /api/admin/screen-settings 500 in 10ms
+[NotificationScheduler] Initial check complete — 0 notifications sent
+7:59:44 AM [express] GET /api/notifications/unread-count 304 in 6ms
+[TaskReminder] initial pass error: DrizzleQueryError: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."deleted_at" is null and "work_items"."end_date" IS NOT NULL and "work_items"."end_date"::date < $1::date) limit $2
+params: 2026-05-02,2000
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    at async runTaskReminderPass (/home/runner/workspace/server/services/task-reminder-dispatcher.ts:163:22) {
+  query: 'select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."deleted_at" is null and "work_items"."end_date" IS NOT NULL and "work_items"."end_date"::date < $1::date) limit $2',
+  params: [ '2026-05-02', 2000 ],
+  cause: error: column "lead" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async runTaskReminderPass (/home/runner/workspace/server/services/task-reminder-dispatcher.ts:163:22) {
+    length: 106,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '1327',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+8:00:14 AM [express] GET /api/notifications/unread-count 304 in 6ms
+8:01:24 AM [express] GET /api/version 200 in 11ms
+8:01:24 AM [express] GET /api/auth/me 304 in 8ms
+8:01:25 AM [express] GET /api/notifications/unread-count 304 in 12ms
+8:01:25 AM [express] GET /api/priorities 304 in 38ms
+8:01:25 AM [express] GET /api/auth/permissions 304 in 59ms
+8:01:25 AM [express] GET /api/home/do-next 200 in 59ms
+8:01:25 AM [express] GET /api/my-work/all-tasks 304 in 206ms
+8:01:25 AM [express] GET /api/lifecycle-board/execution-dashboard 200 in 226ms
+8:01:25 AM [express] GET /api/feature-flags/rollout 304 in 7ms
+[API Error] GET /api/admin/screen-settings [traceId=840b8669-05b0-4529-bfbc-4044141f5e12]: {
+  name: 'Error',
+  message: 'Failed query: select "screen_id", "is_enabled", "updated_at", "updated_by_user_id" from "app_screen_settings"\n' +
+    'params: ',
+  stack: 'Error: Failed query: select "screen_id", "is_enabled", "updated_at", "updated_by_user_id" from "app_screen_settings"\n' +
+    'params: \n' +
+    '    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+    '    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)\n' +
+    '    at async <anonymous> (/home/runner/workspace/server/routes/admin-screen-settings.routes.ts:30:24)'
+}
+[API Error] Unhandled: {
+  name: 'Error',
+  message: 'Failed query: select "screen_id", "is_enabled", "updated_at", "updated_by_user_id" from "app_screen_settings"\n' +
+    'params: ',
+  stack: 'Error: Failed query: select "screen_id", "is_enabled", "updated_at", "updated_by_user_id" from "app_screen_settings"\n' +
+    'params: \n' +
+    '    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+    '    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)\n' +
+    '    at async <anonymous> (/home/runner/workspace/server/routes/admin-screen-settings.routes.ts:30:24)'
+}
+8:01:25 AM [express] GET /api/admin/screen-settings 500 in 8ms
+8:06:24 AM [express] GET /api/version 200 in 54ms
+8:06:36 AM [express] GET /api/notifications/unread-count 304 in 5ms
+8:07:07 AM [express] GET /api/notifications/unread-count 304 in 4ms
+[TOKEN-ENC] Encountered unencrypted token in database — re-encrypt on next token refresh.
+[DashboardRefresh] cycle complete: refreshed=2, failed=1
+[DashboardRefresh] failed: company_overview (115ms)
+[MS Auth] Silent token refresh failed: invalid_grant: AADSTS50173: The provided grant has expired due to it being revoked, a fresh auth token is needed. The user might have changed or reset their password. The grant was issued on '2025-09-03T13:12:01.4833978Z' and the TokensValidFrom date (before which tokens are not valid) for this user is '2026-04-08T12:23:10.0000000Z'. Trace ID: c07e65ac-177c-43f2-ba03-5a2e696b0400 Correlation ID: 85963b59-c06b-4fd2-bdb8-a22a4c1d8dc5 Timestamp: 2026-04-30 08:13:51Z
+[TOKEN-ENC] Encountered unencrypted token in database — re-encrypt on next token refresh.
+[MS Auth] Silent token refresh failed: invalid_grant: AADSTS50173: The provided grant has expired due to it being revoked, a fresh auth token is needed. The user might have changed or reset their password. The grant was issued on '2025-09-03T13:12:01.4833978Z' and the TokensValidFrom date (before which tokens are not valid) for this user is '2026-04-08T12:23:10.0000000Z'. Trace ID: b08b6678-5855-4ba3-bfd0-df42116f3100 Correlation ID: 05928754-c8a8-45cd-a4c0-6a04fec6dceb Timestamp: 2026-04-30 08:13:51Z
+[TOKEN-ENC] Encountered unencrypted token in database — re-encrypt on next token refresh.
+[MS Auth] Silent token refresh failed: invalid_grant: AADSTS50173: The provided grant has expired due to it being revoked, a fresh auth token is needed. The user might have changed or reset their password. The grant was issued on '2025-09-03T13:12:01.4833978Z' and the TokensValidFrom date (before which tokens are not valid) for this user is '2026-04-08T12:23:10.0000000Z'. Trace ID: b08b6678-5855-4ba3-bfd0-df421e6f3100 Correlation ID: ffc6f4eb-5b85-4300-a2b6-06c8e06ee072 Timestamp: 2026-04-30 08:13:52Z
+[MS Sync] User 34: calendar=0, email=0, teams=0
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[MS Token] Successfully refreshed token for user 33
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[MS Sync] User 33: calendar=19, email=58, teams=25
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[MS Token] Successfully refreshed token for user 27
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[MS Sync] User 27: calendar=100, email=70, teams=23
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[MS Token] Successfully refreshed token for user 36
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[MS Sync] User 36: calendar=82, email=70, teams=25
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[MS Sync] User 25: calendar=129, email=51, teams=24
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[MS Sync] User 31: calendar=47, email=51, teams=23
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[MS Token] Successfully refreshed token for user 29
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[MS Sync] User 29: calendar=63, email=70, teams=25
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[MS Sync] User 26: calendar=149, email=70, teams=25
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[MS Sync] User 28: calendar=99, email=70, teams=25
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[TOKEN-ENC] TOKEN_ENCRYPTION_KEY not set — using insecure dev fallback. Set this env var before production deployment.
+[MS Sync] User 32: calendar=83, email=56, teams=24
+8:22:26 AM [vite] (client) hmr update /src/index.css
+8:22:26 AM [vite] (client) hmr update /src/index.css (x2)
+8:22:26 AM [vite] (client) hmr update /src/index.css (x3)
+8:22:26 AM [vite] (client) hmr update /src/index.css (x4)
+8:22:26 AM [vite] (client) hmr update /src/index.css (x5)
+8:22:26 AM [vite] (client) hmr update /src/index.css (x6)
+8:22:26 AM [vite] (client) hmr update /src/index.css (x7)
+8:22:26 AM [vite] (client) hmr update /src/index.css (x8)
+8:22:26 AM [vite] (client) hmr update /src/index.css (x9)
+8:22:26 AM [vite] (client) hmr update /src/index.css (x10)
+8:22:26 AM [vite] (client) hmr update /src/index.css (x11)
+8:22:38 AM [express] GET /api/version 200 in 6ms
+8:22:38 AM [express] GET /api/auth/me 304 in 5ms
+8:22:38 AM [express] GET /api/notifications/unread-count 304 in 13ms
+8:22:39 AM [express] GET /api/priorities 304 in 347ms
+8:22:39 AM [express] GET /api/feature-flags/rollout 304 in 278ms
+8:22:39 AM [express] GET /api/home/do-next 200 in 290ms
+8:22:39 AM [express] GET /api/auth/permissions 304 in 74ms
+8:22:39 AM [express] GET /api/lifecycle-board/execution-dashboard 200 in 382ms
+8:22:39 AM [express] GET /api/my-work/all-tasks 304 in 380ms
+[API Error] GET /api/admin/screen-settings [traceId=8e0cd6a5-8952-47b9-b482-eb7161d8a60e]: {
+  name: 'Error',
+  message: 'Failed query: select "screen_id", "is_enabled", "updated_at", "updated_by_user_id" from "app_screen_settings"\n' +
+    'params: ',
+  stack: 'Error: Failed query: select "screen_id", "is_enabled", "updated_at", "updated_by_user_id" from "app_screen_settings"\n' +
+    'params: \n' +
+    '    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+    '    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)\n' +
+    '    at async <anonymous> (/home/runner/workspace/server/routes/admin-screen-settings.routes.ts:30:24)'
+}
+[API Error] Unhandled: {
+  name: 'Error',
+  message: 'Failed query: select "screen_id", "is_enabled", "updated_at", "updated_by_user_id" from "app_screen_settings"\n' +
+    'params: ',
+  stack: 'Error: Failed query: select "screen_id", "is_enabled", "updated_at", "updated_by_user_id" from "app_screen_settings"\n' +
+    'params: \n' +
+    '    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+    '    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)\n' +
+    '    at async <anonymous> (/home/runner/workspace/server/routes/admin-screen-settings.routes.ts:30:24)'
+}
+8:22:39 AM [express] GET /api/admin/screen-settings 500 in 8ms
+8:23:09 AM [express] GET /api/notifications/unread-count 304 in 7ms
+8:23:22 AM [vite] (client) hmr update /src/index.css (x12)
+8:23:22 AM [vite] (client) hmr update /src/index.css (x13)
+8:23:22 AM [vite] (client) hmr update /src/index.css (x14)
+8:23:22 AM [vite] (client) hmr update /src/index.css (x15)
+8:23:22 AM [vite] (client) hmr update /src/index.css (x16)
+8:23:22 AM [vite] (client) hmr update /src/index.css (x17)
+8:23:22 AM [vite] (client) hmr update /src/index.css (x18)
+8:23:22 AM [vite] (client) hmr update /src/index.css (x19)
+8:23:22 AM [vite] (client) hmr update /src/index.css (x20)
+8:23:22 AM [vite] (client) hmr update /src/index.css (x21)
+8:23:22 AM [vite] (client) hmr update /src/index.css (x22)
+8:23:22 AM [vite] (client) hmr update /src/index.css (x23)
+8:23:22 AM [vite] (client) hmr update /src/index.css (x24)
+8:23:22 AM [vite] (client) hmr update /src/index.css (x25)
+8:23:22 AM [vite] (client) hmr update /src/index.css (x26)
+8:23:22 AM [vite] (client) hmr update /src/index.css (x27)
+8:23:22 AM [vite] (client) hmr update /src/index.css (x28)
+8:23:22 AM [vite] (client) hmr update /src/index.css (x29)
+8:23:22 AM [vite] (client) hmr update /src/index.css (x30)
+8:23:22 AM [vite] (client) hmr update /src/index.css (x31)
+8:23:22 AM [vite] (client) hmr update /src/index.css (x32)
+8:23:22 AM [vite] (client) hmr update /src/index.css (x33)
+8:23:22 AM [vite] (client) hmr update /src/index.css (x34)
+8:23:22 AM [vite] (client) hmr update /src/index.css (x35)
+8:25:09 AM [express] GET /api/eng/team-members 304 in 12ms
+[dept-projects] rawPlans failed: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."source" = $2 and "work_items"."deleted_at" is null) order by "work_items"."created_at" desc
+params: PM,SMART_IMPORT
+[dept-projects] allExpenses failed: Failed query: select "id", "project_id", "project_name", "cost_category", "counterparty_id", "counterparty_name", "counterparty_type", "description", "amount_ex_vat", "amount_ex_vat_legacy", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "approved_date", "paid_date", "paid_date_font_color", "paid_date_confirmed", "po_number", "cos_realised", "cashflow_confirmed", "cost_line_status", "source_sheet", "source_row", "import_run_id", "turnaround_days", "pattern_rule_id", "pattern_classified_at", "pattern_inferred_type", "no_revenue_linked", "budget_qty", "budget_rate", "budget_total", "budget_cos", "revenue_recognition_amount", "forecast_payment_date", "admin_date_override", "admin_date_override_reason", "admin_date_override_by", "admin_date_override_at", "sub_project_name", "cos_status_override", "cos_status_override_by", "cos_status_override_at", "cos_status_override_reason", "created_at", "updated_at", "deleted_at", "effective_from", "effective_to", "snapshot_run_id", "idempotency_key", "category_key", "category_allocation_id", "actual_qty", "actual_rate", "comments", "check_flag", "saving_overrun", "usd_exchange_rate", "price_per_watt", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "normalized_cost_lines" where ("normalized_cost_lines"."effective_to" is null and "normalized_cost_lines"."deleted_at" is null)
+params: 
+[dept-projects] allOpTasks failed: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where "work_items"."deleted_at" is null
+params: 
+[Engineering] Error: DrizzleQueryError: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc
+params: ENG
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)
+    at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21) {
+  query: 'select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc',
+  params: [ 'ENG' ],
+  cause: error: column "lead" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)
+      at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21) {
+    length: 106,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '1327',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[API Error] Unhandled: {
+  name: 'Error',
+  message: 'Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc\n' +
+    'params: ENG',
+  stack: 'Error: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc\n' +
+    'params: ENG\n' +
+    '    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+    '    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)\n' +
+    '    at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)\n' +
+    '    at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21)'
+}
+8:25:09 AM [express] GET /api/eng/tasks 500 in 56ms
+8:25:09 AM [express] GET /api/feature-flags/rollout 304 in 31ms
+[dept-projects] rawInflows failed: Failed query: select "id", "project_id", "project_name", "description", "milestone_name", "milestone_no", "milestone_percent", "amount_ex_vat", "vat", "amount_ex_vat_legacy", "vat_legacy", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "expected_payment_date", "paid_date", "paid_date_font_color", "paid_date_confirmed", "in_bank_date", "status", "source_sheet", "source_row", "import_run_id", "turnaround_days", "admin_date_override", "admin_date_override_reason", "admin_date_override_by", "admin_date_override_at", "sub_project_name", "milestone_notes", "cell_format", "row_hash", "import_snapshot", "manual_overrides", "created_at", "updated_at", "deleted_at", "effective_from", "effective_to", "snapshot_run_id" from "normalized_revenue_lines" where ("normalized_revenue_lines"."effective_to" is null and "normalized_revenue_lines"."deleted_at" is null)
+params: 
+8:25:09 AM [express] GET /api/projects-summary 200 in 95ms
+8:25:09 AM [express] GET /api/notifications/unread-count 304 in 6ms
+[Engineering] Error: DrizzleQueryError: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc
+params: ENG
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)
+    at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21) {
+  query: 'select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc',
+  params: [ 'ENG' ],
+  cause: error: column "lead" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)
+      at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21) {
+    length: 106,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '1327',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[API Error] Unhandled: {
+  name: 'Error',
+  message: 'Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc\n' +
+    'params: ENG',
+  stack: 'Error: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc\n' +
+    'params: ENG\n' +
+    '    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+    '    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)\n' +
+    '    at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)\n' +
+    '    at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21)'
+}
+8:25:10 AM [express] GET /api/eng/tasks 500 in 8ms
+[Engineering] Error: DrizzleQueryError: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc
+params: ENG
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)
+    at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21) {
+  query: 'select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc',
+  params: [ 'ENG' ],
+  cause: error: column "lead" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)
+      at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21) {
+    length: 106,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '1327',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[API Error] Unhandled: {
+  name: 'Error',
+  message: 'Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc\n' +
+    'params: ENG',
+  stack: 'Error: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc\n' +
+    'params: ENG\n' +
+    '    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+    '    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)\n' +
+    '    at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)\n' +
+    '    at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21)'
+}
+8:25:13 AM [express] GET /api/eng/tasks 500 in 7ms
+8:25:39 AM [express] GET /api/notifications/unread-count 304 in 6ms
+8:26:10 AM [express] GET /api/notifications/unread-count 304 in 15ms
+[Engineering] Error: DrizzleQueryError: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc
+params: ENG
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)
+    at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21) {
+  query: 'select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc',
+  params: [ 'ENG' ],
+  cause: error: column "lead" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)
+      at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21) {
+    length: 106,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '1327',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[API Error] Unhandled: {
+  name: 'Error',
+  message: 'Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc\n' +
+    'params: ENG',
+  stack: 'Error: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc\n' +
+    'params: ENG\n' +
+    '    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+    '    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)\n' +
+    '    at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)\n' +
+    '    at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21)'
+}
+8:26:13 AM [express] GET /api/eng/tasks 500 in 25ms
+[Engineering] Error: DrizzleQueryError: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc
+params: ENG
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)
+    at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21) {
+  query: 'select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc',
+  params: [ 'ENG' ],
+  cause: error: column "lead" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)
+      at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21) {
+    length: 106,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '1327',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[API Error] Unhandled: {
+  name: 'Error',
+  message: 'Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc\n' +
+    'params: ENG',
+  stack: 'Error: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc\n' +
+    'params: ENG\n' +
+    '    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+    '    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)\n' +
+    '    at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)\n' +
+    '    at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21)'
+}
+8:26:14 AM [express] GET /api/eng/tasks 500 in 18ms
+[Engineering] Error: DrizzleQueryError: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc
+params: ENG
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)
+    at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21) {
+  query: 'select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc',
+  params: [ 'ENG' ],
+  cause: error: column "lead" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)
+      at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21) {
+    length: 106,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '1327',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[API Error] Unhandled: {
+  name: 'Error',
+  message: 'Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc\n' +
+    'params: ENG',
+  stack: 'Error: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc\n' +
+    'params: ENG\n' +
+    '    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+    '    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)\n' +
+    '    at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)\n' +
+    '    at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21)'
+}
+8:26:17 AM [express] GET /api/eng/tasks 500 in 18ms
+8:26:40 AM [express] GET /api/notifications/unread-count 304 in 6ms
+8:27:06 AM [express] GET /api/feature-flags/rollout 304 in 22ms
+[Engineering] Error: DrizzleQueryError: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc
+params: ENG
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 2 lines matching cause stack trace ...
+    at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:2328:55) {
+  query: 'select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc',
+  params: [ 'ENG' ],
+  cause: error: column "lead" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)
+      at async Promise.all (index 0)
+      at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:2328:55) {
+    length: 106,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '1327',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[API Error] Unhandled: {
+  name: 'Error',
+  message: 'Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc\n' +
+    'params: ENG',
+  stack: 'Error: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc\n' +
+    'params: ENG\n' +
+    '    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+    '    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)\n' +
+    '    at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)\n' +
+    '    at async Promise.all (index 0)\n' +
+    '    at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:2328:55)'
+}
+8:27:06 AM [express] GET /api/eng/dashboard/overview 500 in 12ms
+[Engineering] Error: DrizzleQueryError: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc
+params: ENG
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)
+    at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21) {
+  query: 'select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc',
+  params: [ 'ENG' ],
+  cause: error: column "lead" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)
+      at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21) {
+    length: 106,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '1327',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[API Error] Unhandled: {
+  name: 'Error',
+  message: 'Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc\n' +
+    'params: ENG',
+  stack: 'Error: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc\n' +
+    'params: ENG\n' +
+    '    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+    '    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)\n' +
+    '    at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)\n' +
+    '    at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21)'
+}
+8:27:06 AM [express] GET /api/eng/tasks 500 in 8ms
+8:27:06 AM [express] GET /api/eng/team-members 304 in 17ms
+[dept-projects] rawPlans failed: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."source" = $2 and "work_items"."deleted_at" is null) order by "work_items"."created_at" desc
+params: PM,SMART_IMPORT
+[dept-projects] allOpTasks failed: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where "work_items"."deleted_at" is null
+params: 
+[dept-projects] rawInflows failed: Failed query: select "id", "project_id", "project_name", "description", "milestone_name", "milestone_no", "milestone_percent", "amount_ex_vat", "vat", "amount_ex_vat_legacy", "vat_legacy", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "expected_payment_date", "paid_date", "paid_date_font_color", "paid_date_confirmed", "in_bank_date", "status", "source_sheet", "source_row", "import_run_id", "turnaround_days", "admin_date_override", "admin_date_override_reason", "admin_date_override_by", "admin_date_override_at", "sub_project_name", "milestone_notes", "cell_format", "row_hash", "import_snapshot", "manual_overrides", "created_at", "updated_at", "deleted_at", "effective_from", "effective_to", "snapshot_run_id" from "normalized_revenue_lines" where ("normalized_revenue_lines"."effective_to" is null and "normalized_revenue_lines"."deleted_at" is null)
+params: 
+[dept-projects] allExpenses failed: Failed query: select "id", "project_id", "project_name", "cost_category", "counterparty_id", "counterparty_name", "counterparty_type", "description", "amount_ex_vat", "amount_ex_vat_legacy", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "approved_date", "paid_date", "paid_date_font_color", "paid_date_confirmed", "po_number", "cos_realised", "cashflow_confirmed", "cost_line_status", "source_sheet", "source_row", "import_run_id", "turnaround_days", "pattern_rule_id", "pattern_classified_at", "pattern_inferred_type", "no_revenue_linked", "budget_qty", "budget_rate", "budget_total", "budget_cos", "revenue_recognition_amount", "forecast_payment_date", "admin_date_override", "admin_date_override_reason", "admin_date_override_by", "admin_date_override_at", "sub_project_name", "cos_status_override", "cos_status_override_by", "cos_status_override_at", "cos_status_override_reason", "created_at", "updated_at", "deleted_at", "effective_from", "effective_to", "snapshot_run_id", "idempotency_key", "category_key", "category_allocation_id", "actual_qty", "actual_rate", "comments", "check_flag", "saving_overrun", "usd_exchange_rate", "price_per_watt", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "normalized_cost_lines" where ("normalized_cost_lines"."effective_to" is null and "normalized_cost_lines"."deleted_at" is null)
+params: 
+8:27:06 AM [express] GET /api/projects-summary 304 in 72ms
+[Engineering] Error: DrizzleQueryError: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc
+params: ENG
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)
+    at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21) {
+  query: 'select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc',
+  params: [ 'ENG' ],
+  cause: error: column "lead" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)
+      at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21) {
+    length: 106,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '1327',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[API Error] Unhandled: {
+  name: 'Error',
+  message: 'Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc\n' +
+    'params: ENG',
+  stack: 'Error: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc\n' +
+    'params: ENG\n' +
+    '    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+    '    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)\n' +
+    '    at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)\n' +
+    '    at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21)'
+}
+8:27:08 AM [express] GET /api/eng/tasks 500 in 7ms
+[Engineering] Error: DrizzleQueryError: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc
+params: ENG
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)
+    at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21) {
+  query: 'select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc',
+  params: [ 'ENG' ],
+  cause: error: column "lead" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)
+      at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21) {
+    length: 106,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '1327',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[API Error] Unhandled: {
+  name: 'Error',
+  message: 'Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc\n' +
+    'params: ENG',
+  stack: 'Error: Failed query: select "id", "client_id", "project_id", "workstream", "type", "source", "title", "description", "status", "priority", "start_date", "end_date", "duration", "percent_complete", "expected_pct_complete", "wbs_code", "outline_number", "indent_level", "parent_id", "is_milestone", "phase", "owner_user_id", "owner_name", "is_shared", "external_ref", "legacy_table", "legacy_id", "source_row", "source_sheet", "import_run_id", "created_by", "created_at", "updated_at", "deleted_at", "scheduled_date", "scheduled_start_time", "scheduled_end_time", "baseline_start", "baseline_end", "baseline_duration", "task_mode", "actual_start", "actual_end", "actual_duration", "sort_order", "estimate_minutes", "task_category", "is_recurring", "recurrence_frequency", "recurrence_interval", "recurrence_days_of_week", "recurrence_end_date", "recurrence_parent_id", "sub_project_name", "hold_reason", "blocked_type", "approval_required", "linked_plan_item_id", "linked_deliverable_id", "linked_quality_item_instance_id", "completed_at", "tracking_rag", "task_type_tag", "blocker_reason", "engineering_ticket_id", "bucket", "pinned_today", "pinned_week", "source_email_id", "source_email_subject", "next_step", "definition_of_done", "completion_note", "funding_type", "size_kwp", "province", "gps_coordinates", "batteries_needed", "battery_size", "lead", "resource_1", "resource_2", "tracker_comments", "work_days", "cell_format", "row_hash", "import_snapshot", "manual_overrides" from "work_items" where ("work_items"."workstream" = $1 and "work_items"."deleted_at" is null) order by "work_items"."sort_order" asc, "work_items"."id" asc\n' +
+    'params: ENG\n' +
+    '    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+    '    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)\n' +
+    '    at async listEngineeringWorkItems (/home/runner/workspace/server/work-items-adapter.ts:682:17)\n' +
+    '    at async <anonymous> (/home/runner/workspace/server/engineering-routes.ts:577:21)'
+}
+8:27:10 AM [express] GET /api/eng/tasks 500 in 7ms
+8:27:10 AM [express] GET /api/notifications/unread-count 304 in 7ms

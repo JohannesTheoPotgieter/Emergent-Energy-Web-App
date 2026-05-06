@@ -1,0 +1,129 @@
+{
+  "sourceTables": {
+    "users": {
+      "purpose": "User accounts and authentication",
+      "keyColumns": ["id", "username", "name", "role", "email"],
+      "foreignKeys": []
+    },
+    "project_info": {
+      "purpose": "Central project spine - all projects",
+      "keyColumns": ["id", "projectName", "pm", "pd", "phase", "systemSize", "is_active"],
+      "foreignKeys": ["phase_updated_by_user_id -> users.id"],
+      "relationships": ["1:N program_expense", "1:N program_inflows", "1:N project_plan", "1:N normalized_*"]
+    },
+    "program_expense": {
+      "purpose": "Project expenditure/cost lines",
+      "keyColumns": ["id", "projectName", "supplier", "amount", "status", "invoiceDate", "paidDate"],
+      "foreignKeys": []
+    },
+    "program_inflows": {
+      "purpose": "Project revenue/income lines",
+      "keyColumns": ["id", "projectName", "milestoneAmount", "revenueAmount", "status"],
+      "foreignKeys": []
+    },
+    "project_plan": {
+      "purpose": "Project plan tasks and milestones",
+      "keyColumns": ["id", "projectName", "taskName", "actualStart", "actualEnd", "percentComplete", "durationDays"],
+      "foreignKeys": []
+    },
+    "operational_tasks": {
+      "purpose": "Cross-functional operational tasks",
+      "keyColumns": ["id", "title", "status", "priority", "owner", "dueDate"],
+      "foreignKeys": ["project_id -> project_info.id", "owner -> users.id"]
+    },
+    "deliverables": {
+      "purpose": "File deliverables with approval workflow",
+      "keyColumns": ["id", "title", "status", "owner", "reviewer"],
+      "foreignKeys": ["project_id -> project_info.id", "owner -> users.id", "reviewer -> users.id"]
+    },
+    "engineering_tasks": {
+      "purpose": "Engineering-specific task tracking",
+      "keyColumns": ["id", "title", "status", "assignee", "project_id"],
+      "foreignKeys": ["project_id -> project_info.id"]
+    },
+    "project_eng_stages": {
+      "purpose": "Engineering stage gate instances per project",
+      "keyColumns": ["id", "project_id", "stage_template_id", "status"],
+      "foreignKeys": ["project_id -> project_info.id", "stage_template_id -> eng_stage_templates.id"]
+    },
+    "upload_metadata": {
+      "purpose": "File upload tracking",
+      "keyColumns": ["id", "filename", "uploaded_by"],
+      "foreignKeys": ["uploaded_by -> users.id"]
+    },
+    "smart_import_runs": {
+      "purpose": "Smart import pipeline runs",
+      "keyColumns": ["id", "project_id", "status", "uploaded_by"],
+      "foreignKeys": ["project_id -> project_info.id", "uploaded_by -> users.id"]
+    },
+    "pd_tickets": {
+      "purpose": "Project development tickets",
+      "keyColumns": ["id", "title", "status", "priority", "requestType"],
+      "foreignKeys": []
+    },
+    "portfolios": {
+      "purpose": "Portfolio grouping of projects",
+      "keyColumns": ["id", "name", "client"],
+      "foreignKeys": []
+    },
+    "ee_info_nodes": {
+      "purpose": "Knowledge base / OS Map nodes",
+      "keyColumns": ["id", "slug", "title", "nodeType", "departmentSlug", "sopData"],
+      "foreignKeys": ["parentNodeId -> ee_info_nodes.id"]
+    },
+    "cashflow_points": {
+      "purpose": "Cash flow data points",
+      "keyColumns": ["id", "projectName", "weekStart", "inflow", "outflow"],
+      "foreignKeys": []
+    },
+    "role_permissions": {
+      "purpose": "Dynamic role permission overrides",
+      "keyColumns": ["id", "role", "permissions"],
+      "foreignKeys": []
+    }
+  },
+  "normalizationTables": {
+    "normalized_plan_tasks": {
+      "purpose": "Canonical plan tasks from Smart Import",
+      "source": "project_plan via smart_import_runs",
+      "foreignKeys": ["project_id -> project_info.id", "import_run_id -> smart_import_runs.id"]
+    },
+    "normalized_revenue_lines": {
+      "purpose": "Canonical revenue lines from Smart Import",
+      "source": "program_inflows via smart_import_runs",
+      "foreignKeys": ["project_id -> project_info.id", "import_run_id -> smart_import_runs.id"]
+    },
+    "normalized_cost_lines": {
+      "purpose": "Canonical cost lines from Smart Import",
+      "source": "program_expense via smart_import_runs",
+      "foreignKeys": ["project_id -> project_info.id", "import_run_id -> smart_import_runs.id"]
+    }
+  },
+  "derivedTables": {
+    "derived_project_kpis": {
+      "purpose": "Pre-computed project-level KPIs",
+      "sources": ["normalized_plan_tasks", "normalized_revenue_lines", "normalized_cost_lines"],
+      "note": "NOT used by portfolio endpoints - they compute live"
+    },
+    "derived_portfolio_kpis": {
+      "purpose": "Pre-computed portfolio-level KPIs",
+      "sources": ["project_info", "program_expense", "program_inflows"],
+      "note": "NOT used by portfolio endpoints - they compute live"
+    },
+    "derived_rag_summary": {
+      "purpose": "RAG status summary counts",
+      "sources": ["project_info", "project_plan"]
+    },
+    "project_revenue_summary": {
+      "purpose": "Revenue vs expenditure summary per project",
+      "sources": ["program_expense", "program_inflows"]
+    }
+  },
+  "overrideTables": {
+    "expenditure_overrides": "Manual corrections to expense data",
+    "revenue_tracking_overrides": "Manual corrections to revenue data",
+    "project_plan_overrides": "Plan task hierarchy and field overrides",
+    "change_sets": "Audit trail for data mutations",
+    "field_changes": "Individual field change records within change_sets"
+  }
+}

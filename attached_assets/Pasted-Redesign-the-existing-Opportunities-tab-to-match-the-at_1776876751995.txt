@@ -1,0 +1,92 @@
+Redesign the existing Opportunities tab to match the attached mockup as closely as possible in look and feel only.
+
+Critical rule:
+Do NOT add new functionality, new data models, new backend routes, new permissions, new calculations, or new workflow logic.
+This is a presentation-layer redesign only.
+Preserve all existing business logic, filters, API calls, hooks, mutations, button actions, permissions, and state handling exactly as they are unless a visual-only refactor requires component cleanup.
+
+What I want:
+1. A clean two-panel layout:
+- Left panel: compact opportunity list
+- Right panel: selected opportunity detail view
+
+2. Visual style:
+- Professional, modern, quiet UI
+- Light grey page background
+- White cards
+- Thin soft borders
+- Subtle shadows
+- Rounded corners
+- Tight spacing discipline
+- Clear hierarchy
+- Green accent aligned to Emergent feel
+- Small muted helper text
+- Stronger bold titles
+- No clutter, no oversized controls, no “template demo” feeling
+
+3. Left panel design:
+- Opportunity cards stacked vertically
+- Each card should show:
+  - small project/opportunity ID
+  - status pill
+  - bold project name
+  - muted subtitle with client/site and size/capacity
+  - value / margin / owner metadata in one line
+  - slim horizontal progress/readiness bar
+  - small count badges where already supported
+- Tabs/filter row at top should be clean and compact
+
+4. Right panel design:
+- Header card for selected opportunity with:
+  - source badge
+  - status
+  - value / margin / owner metadata
+  - action buttons aligned right
+- Then separate section cards below for:
+  - internal readiness
+  - open requests
+  - activity
+- Each section must feel structured and easy to scan
+
+5. Internal readiness styling:
+- Group rows by department with light section headers
+- Each checklist row should feel like a clean task row:
+  - item name left
+  - status badge right
+  - existing action buttons right-aligned
+- Improve spacing, alignment, and readability
+- Do not invent actions that do not already exist
+
+6. Open requests styling:
+- Show each request as a clean row/card with:
+  - department
+  - request title
+  - assignee / owner
+  - due date / age if already available
+  - status badge
+- Keep existing click actions only
+
+7. Activity styling:
+- Threaded activity area with compact avatar/initial circles
+- Better typography and spacing
+- Cleaner reply box
+- Keep all existing posting logic exactly as-is
+
+8. Constraints:
+- No backend changes unless absolutely required for a pure presentation refactor
+- No breaking current CRUD, filters, selection logic, or permissions
+- No placeholder fake data
+- If mockup includes a visual element not supported by current logic, either map it to existing data or omit it
+- Keep responsive behaviour sane for desktop first, then tablet
+- Reuse existing components where sensible, but clean up inconsistent styling
+
+9. Before changing anything:
+- Inspect the current Opportunities tab component tree
+- Identify what is UI-only vs logic-bearing
+- Keep a short note of any risky coupling before editing
+
+10. Deliverables:
+- Updated Opportunities tab UI
+- Short summary of files changed
+- Clear note confirming that no business logic or workflow behaviour was changed
+- List of anything from the mockup that was intentionally excluded because it would require new functionality

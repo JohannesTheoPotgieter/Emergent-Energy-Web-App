@@ -1,0 +1,489 @@
+You are working on an existing operational web application for Emergent Energy, a project-based solar EPC company.
+
+The application is already live and functional, but it has bugs, inconsistencies, and small workflow breaks. When individual fixes are made, they sometimes solve one problem but unintentionally break another part of the system.
+
+Your task is to perform a COMPLETE SYSTEM AUDIT, FULL TESTING, DEFECT IDENTIFICATION, CONTROLLED FIXING, AND REGRESSION TESTING of the entire application so the system becomes stable, consistent, and trustworthy.
+
+The application must behave like a single coherent operating system, not a set of disconnected screens.
+
+Do not redesign the system randomly.
+
+Do not make assumptions about business rules.
+
+Do not break existing working functionality.
+
+Treat this as a production stabilization exercise.
+
+⸻
+
+CORE OBJECTIVE
+
+You must:
+	1.	Understand the entire system first
+	2.	Map how data flows through the system
+	3.	Create a full testing checklist
+	4.	Test every screen and feature
+	5.	Identify and log every defect
+	6.	Fix root causes, not symptoms
+	7.	Retest everything affected
+	8.	Produce a system readiness report
+
+Leave no stone unturned.
+
+⸻
+
+CRITICAL SYSTEM PRINCIPLE
+
+This application must be trusted by users.
+
+Users should learn that if they want something done correctly, they must do it through the application front end.
+
+Therefore:
+
+All actions must be possible through the UI.
+Admins must be able to correct data through the UI.
+The system must not rely on manual database edits.
+All logic must run consistently across the application.
+
+The application must feel stable, predictable, and reliable.
+
+⸻
+
+ADMIN CONTROL REQUIREMENT
+
+An administrator must be able to fix issues through the front end.
+
+Admins should be able to:
+
+edit records
+correct data
+re-run imports
+reassign tasks
+fix workflow mistakes
+correct project data
+fix task types
+fix viewer assignments
+correct reporting inputs
+
+The system must not require backend intervention for normal operational corrections.
+
+⸻
+
+STEP 1 – SYSTEM DISCOVERY
+
+Before changing anything, inspect and document the system.
+
+Identify:
+
+all database tables
+core data tables
+derived or reporting tables
+table relationships
+primary keys
+foreign keys
+API endpoints
+shared services
+all front-end pages
+routes
+tabs
+modals
+forms
+dashboards
+role permissions
+integrations
+
+Also identify all core modules including:
+
+project management
+engineering
+quality
+facility department
+task management
+smart import
+reporting dashboards
+My Tasks
+Microsoft integrations
+
+⸻
+
+STEP 2 – DEPENDENCY MAP
+
+Create a clear map of how the system works.
+
+For example:
+
+project master data
+feeds task engine
+feeds department workflows
+feeds dashboards
+feeds reporting
+
+smart import
+feeds normalized data tables
+feeds reporting
+feeds dashboards
+
+task engine
+feeds My Tasks
+feeds department workflows
+feeds reporting
+
+viewer assignments
+affect task visibility
+affect My Tasks
+
+Microsoft integration
+affects login
+identity
+calendar
+files
+
+Do not change anything until this dependency map is understood.
+
+⸻
+
+STEP 3 – BUILD A FULL TEST PLAN
+
+Create a QA test matrix covering every module.
+
+Each test must include:
+
+module
+screen
+user action
+expected result
+actual result
+pass or fail
+defect reference
+
+⸻
+
+STEP 4 – TEST THE ENTIRE APPLICATION
+
+Test every screen and every workflow.
+
+This includes:
+
+authentication
+navigation
+project management
+engineering workflows
+quality workflows
+facility department workflows
+task engine
+My Tasks
+reporting dashboards
+smart import
+Microsoft integrations
+permissions
+
+Check every button, every tab, every form, and every route.
+
+Look for:
+
+broken buttons
+dead links
+blank pages
+incorrect calculations
+missing data
+permission errors
+workflow breaks
+inconsistent UI behaviour
+
+⸻
+
+SMART IMPORT TESTING
+
+Smart import is critical.
+
+Test the entire import process including:
+
+file uploads
+field mapping
+data normalization
+duplicate handling
+invalid data
+missing values
+incorrect headers
+incorrect project references
+
+Ensure:
+
+data writes correctly
+reporting updates correctly
+errors are clearly shown
+imports cannot silently corrupt data
+
+⸻
+
+REPORTING ACCURACY
+
+Every report must be traceable.
+
+For every metric identify:
+
+source data table
+transformation logic
+API response
+display component
+
+Verify:
+
+totals
+filters
+date logic
+grouping
+no duplicate records
+no missing joins
+no stale data
+
+If reporting accuracy cannot be proven, flag it.
+
+⸻
+
+TASK ENGINE TESTING
+
+Test all task behavior:
+
+task creation
+task editing
+task assignment
+multi assignment
+due dates
+status changes
+comments
+attachments
+project linkage
+department linkage
+filters and sorting
+
+⸻
+
+TASK TYPE SWITCHING
+
+Task detail must allow switching between:
+
+personal task
+engineering task
+plan task
+quality task
+
+Verify:
+
+switching does not lose data
+fields change correctly
+permissions remain correct
+My Tasks updates correctly
+
+⸻
+
+VIEWER ASSIGNMENT
+
+Tasks must support assigning viewers.
+
+Expected behavior:
+
+viewers can track task progress
+viewers appear in My Tasks
+viewer access is separate from assignee access
+
+Test:
+
+viewer only
+viewer plus assignee
+multiple viewers
+viewer removal
+
+⸻
+
+MY TASKS
+
+Test that My Tasks correctly shows:
+
+assigned tasks
+personal tasks
+viewer tasks
+department tasks
+
+Verify filtering, status updates, due dates, and project linkage.
+
+My Tasks must always show the correct task state.
+
+⸻
+
+ENGINEERING WORKFLOWS
+
+Test engineering task templates and workflows.
+
+Verify:
+
+task creation
+deliverables
+assignments
+status tracking
+project linkage
+permissions
+
+⸻
+
+FACILITY DEPARTMENT
+
+Test all facility workflows including:
+
+task intake
+project linking
+workflow progression
+reporting
+assignment
+
+⸻
+
+QUALITY WORKFLOWS
+
+Test quality module functionality including:
+
+quality tasks
+inspections
+issue tracking
+quality dashboards
+permissions
+
+⸻
+
+PROJECT MANAGEMENT
+
+Test project manager functionality including:
+
+project dashboards
+project details
+task linkage
+project status tracking
+handover flows
+document linkage
+
+⸻
+
+MICROSOFT INTEGRATION
+
+Test Microsoft integrations including:
+
+authentication
+Outlook
+Teams
+SharePoint
+file access
+
+Verify proper handling of:
+
+token failures
+disconnected accounts
+permission errors
+
+Failures must be handled gracefully.
+
+⸻
+
+ERROR HANDLING
+
+Across the entire application validate:
+
+loading states
+empty states
+validation messages
+API errors
+network failures
+import failures
+permission errors
+
+The application must fail gracefully and clearly.
+
+No blank screens.
+No silent failures.
+
+⸻
+
+DEFECT REGISTER
+
+Create a defect register with:
+
+issue ID
+module
+screen
+severity
+root cause
+fix strategy
+status
+
+⸻
+
+FIXING STRATEGY
+
+Fix issues in this order:
+
+foundation data
+API logic
+permissions
+business rules
+workflows
+user interface
+
+Never patch the UI if the root cause is deeper.
+
+⸻
+
+REGRESSION TESTING
+
+After each fix:
+
+retest the affected feature
+retest dependent workflows
+update the QA matrix
+
+A fix is only complete when regression testing passes.
+
+⸻
+
+OUTPUT FILES
+
+Generate the following files in the project:
+
+SYSTEM_AUDIT.md
+system architecture and dependency map
+
+QA_TEST_MATRIX.md
+complete testing checklist
+
+DEFECT_REGISTER.md
+all identified issues
+
+RELEASE_READINESS.md
+system stability summary
+
+⸻
+
+SUCCESS CRITERIA
+
+The task is complete only when:
+
+every screen has been tested
+every workflow has been tested
+all defects are logged
+root causes are fixed
+regression tests pass
+reporting is accurate
+smart import works correctly
+task switching works correctly
+viewer assignment works correctly
+My Tasks is accurate
+the system fails gracefully
+the system behaves consistently
+
+The application must be stable, predictable, and trustworthy.
+
+Users must learn that if something must be done correctly, it should be done through the application front end.
+
+The system should operate as one coherent platform that administrators can manage and correct through the UI.
+
+Do not stop when the system runs.
+
+Stop when the system is reliable.

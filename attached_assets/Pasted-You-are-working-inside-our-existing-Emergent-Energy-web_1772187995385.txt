@@ -1,0 +1,191 @@
+You are working inside our existing Emergent Energy web application codebase.
+
+GOAL
+Create a NEW “Project Development” section in the web app (new left-nav group + pages) to replace our current Microsoft Lists PD capture, while keeping our core rule:
+- Project remains the spine (tasks + reporting attach to Project)
+- Client ID is generated in the application, and a Client can have multiple Projects
+- PD tickets can map to an existing Project or create a new Project
+- Creating a PD ticket spawns Engineering tasks based on Request Type
+- PD must see Engineering “deliverables” from those tasks directly on the PD ticket
+- Only Project Developers can create PD tickets
+- Reuse existing infrastructure where possible, do not break anything
+
+NON-NEGOTIABLE GUARDRAILS
+- Do NOT break any existing functionality.
+- Reuse existing infrastructure wherever possible (Projects, Tasks, templates, permissions, dashboards, audit logs).
+- Do NOT refactor unrelated code.
+- Do NOT touch approval functionality (logic/workflow/schema/UI). Treat approvals as “do not touch”.
+- Do NOT make assumptions. If anything is unclear, ASK ME before implementing.
+- Prefer additive changes: new tables/fields/routes/components that don’t change existing behaviour.
+- Backward compatible DB migrations only.
+
+CREATE A NEW APP SECTION: “PROJECT DEVELOPMENT”
+Add a new left navigation section called “Project Development” with at minimum these pages:
+1) Project Development Dashboard (summary + filters)
+2) PD Tickets (list view)
+3) Create PD Ticket (form)
+4) PD Ticket Detail (single ticket with spawned tasks + deliverables)
+
+PD TICKET FIELDS (from our existing Microsoft List export / spreadsheet)
+Build the PD Ticket create/edit form to capture these fields (same names or close mapping):
+- Client (text, but must map to an internal Client entity with generated Client ID)
+- Project / Site Name (NEW REQUIRED FIELD — needed for matching rule client + site name)
+- Due Date (date/time)
+- Request Type (choice)
+- Priority (choice)
+- Status (choice)
+- Number of Reworks (number)
+- Project Developer (person)
+- Designer (person)
+- Funding Type (choice)
+- Size in kWp (number)
+- Province (choice)
+- GPS co-ordinates (text)
+- Bills or Tariff data? (yes/no)
+- Metering data available? (yes/no)
+- Site inspection form (yes/no or link)  [use existing attachment/link patterns if present]
+- Working schedule (text)
+- Batteries needed? (yes/no)
+- Battery Size (number)
+- Diesel Gen/Integration needed (yes/no)
+- Roof replacement needed? (yes/no)
+- HSE Discussed (yes/no)
+- Comments (multi-line)
+- Date Added (auto)
+- Days in progress (calculated: today - date added)
+- Days give to Complete (calculated: due date - date added)
+- ClickUpSynced (boolean, optional; do not implement ClickUp sync unless it already exists)
+
+IMPORTANT: Do not attempt SharePoint integration as the primary UI. The capture must be inside the web app.
+
+CORE BUSINESS RULES
+1) CLIENT ID + CLIENTS
+- Client ID generation lives in the application.
+- Implement a lightweight Client entity so a Client can have multiple Projects.
+- Do NOT bloat the system: keep Client entity minimal.
+
+2) PROJECT AS SPINE
+- Engineering tasks always attach to a Project.
+- PD Tickets must map to a Project (existing or newly created).
+
+3) PD TICKET CREATION FLOW (NO ASSUMPTIONS)
+When a Project Developer creates a PD ticket:
+Step 1: Select/Create Client
+- Provide typeahead auto-suggest for existing Clients by name (case-insensitive).
+- If no suitable match, allow “Create new Client”.
+- On creation, generate Client ID inside the app.
+
+Step 2: Map to existing Project OR create new Project
+- Provide typeahead auto-suggest for existing Projects.
+- Matching logic: client name + project/site name (typed in the ticket).
+- Always show suggestions; do NOT auto-link without user confirmation.
+- Allow “Create new Project” using existing project creation logic (minimal required fields, reuse existing flow).
+- Ensure the created/selected Project is linked to the selected Client (client_id), if projects can store this.
+
+Step 3: Capture PD fields and Save ticket
+
+4) TASK SPAWNING FROM REQUEST TYPE
+On PD ticket creation (at save-time, not on page load to avoid duplicates):
+- Spawn Engineering tasks based on the PD ticket “Request Type”.
+- Reuse existing task infrastructure and template system.
+- If templates do not exist, create them (minimal, additive).
+- Spawned tasks MUST be linked to:
+  - project_id (required)
+  - pd_ticket_id (required; add FK to tasks or a join table, whichever is safest with existing structure)
+- Do NOT change task statuses, approval flows, or existing engineering workflow.
+
+5) PD MUST SEE ENGINEERING DELIVERABLES ON THE PD TICKET
+On PD Ticket Detail page, show:
+- Ticket fields + linked Client + linked Project
+- Spawned Engineering tasks list:
+  - status, assignee(s), priority, due date, last updated
+- Deliverables panel:
+  - Show latest task updates/comments from the existing task activity feed
+  - If tasks already support attachments/links, surface those as deliverables too (do not invent new storage)
+If attachments/links are not currently supported, STOP and ask me before adding storage.
+
+6) PERMISSIONS (STRICT)
+- Only “Project Developer” role can create PD tickets.
+- Project Developers can view/edit their own tickets (unless ticket is moved into a locked/complete status if such a concept already exists).
+- COO can view/edit all tickets.
+- Engineers can view PD ticket context for tasks they are assigned to, but should primarily work via tasks.
+
+DATABASE / MODELS (MINIMAL, BACKWARD COMPATIBLE)
+A) clients table (lightweight)
+- id (Client ID generated in app)
+- name (string)
+- created_at, created_by, updated_at, updated_by
+
+B) pd_tickets table
+- id
+- client_id (FK clients)
+- client_name_snapshot (string)
+- project_id (FK projects; nullable until mapped/created, but should be required to finalize/save if tasks will spawn)
+- project_site_name (string, REQUIRED)
+- all PD fields above
+- created_by, created_at, updated_at
+
+C) tasks linkage to PD
+- Add pd_ticket_id FK to tasks OR create task_pd_ticket join table
+- Choose the safest option given existing schema. Do not break current task queries.
+
+VIEWS / UI REQUIREMENTS (PROJECT DEVELOPMENT SECTION)
+1) Project Development Dashboard
+- Counters: Total PD tickets, Active, Overdue, Due this week, On hold (if PD status supports), Completed
+- Filters: Status, Priority, Request Type, Project Developer, Designer, Client, Province
+- “Create PD Ticket” CTA
+
+2) PD Tickets List
+- Table/list with: Client, Project/Site, Request Type, Priority, Status, Due Date, Days in progress, Project Developer, Designer
+- Quick search
+- Row click opens PD Ticket Detail
+
+3) PD Ticket Detail
+- Header: Client + Project/Site + Status/Priority/Due
+- Linked Project button (opens project page)
+- Spawned tasks section + deliverables section (as above)
+
+DUPLICATE PREVENTION (IMPORTANT)
+- Ensure PD ticket save spawns tasks exactly once.
+- Implement a “tasks_spawned_at” timestamp or boolean on pd_ticket, or check existing spawned tasks count before spawning.
+- If a user edits a PD ticket after creation, do NOT respawn tasks unless explicitly requested via a controlled action (and only if safe). Default: no respawn.
+
+ACCEPTANCE TESTS (MUST PASS)
+1) New navigation:
+- “Project Development” appears in left nav.
+- Dashboard, PD Tickets list, Create PD Ticket, PD Ticket Detail routes work.
+
+2) Create PD ticket:
+- As Project Developer, I can create a PD ticket in the web app.
+- I can select an existing Client or create a new Client (Client ID generated in app).
+- I can map to an existing Project or create a new Project.
+- Auto-suggest works for client and project based on client + project/site name.
+- On save, the ticket is created and visible in list.
+
+3) Task spawning:
+- On ticket creation, tasks are spawned based on Request Type and linked to the Project.
+- Spawned tasks are visible from the PD Ticket Detail page.
+- No duplicate tasks are created if I refresh or reopen.
+
+4) Deliverables:
+- Engineer updates a spawned task; PD can see the update on the PD Ticket Detail deliverables panel.
+
+5) Permissions:
+- Non-Project-Developer cannot create PD tickets.
+- COO can view/edit all PD tickets.
+- No regressions to existing Engineering/Project/Finance/Approval areas.
+
+IMPLEMENTATION APPROACH (SAFE)
+1) Audit existing code: tasks, templates, project creation, RBAC.
+2) Add models/migrations (clients, pd_tickets, task linkage) additively.
+3) Build Project Development section routes/pages using existing UI components.
+4) Implement create flow (client + project mapping).
+5) Implement task spawning with idempotency.
+6) Implement PD deliverables panel by reading existing task activity/attachments.
+7) Run acceptance tests and provide a short changelog + files touched.
+
+STOP AND ASK ME IF UNCLEAR
+- How “Project Developer” and “COO” roles are named in RBAC
+- Whether tasks already support attachments/links and where they are stored
+- Where project creation logic lives and required project fields
+- Whether projects already have client reference (client_id or client_name)

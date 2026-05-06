@@ -1,0 +1,565 @@
+You are working inside an existing production web application. Do not break any current functionality. Do not rename existing routes, components, or database tables unless absolutely necessary. Work incrementally and keep backward compatibility.
+
+Goal
+
+Upgrade the Project Detail → Tasks experience to feel and behave like Microsoft Project:
+
+Left pane: MS Project-style hierarchical task grid (WBS) with inline editing.
+
+Right pane: Gantt chart synced to the grid (drag to move/resize tasks).
+
+Top KPI cards (3): Total tasks, Done tasks, Average % complete — live + filter-aware.
+
+Add a toggle: Split View (default) vs List View (fallback to existing list UI).
+
+Enforce role + project ownership permissions: PM can edit only their projects; COO can edit all; others read-only.
+
+Step 1 — Inspect (mandatory)
+
+Inspect current codebase for:
+
+Project detail page component(s)
+
+Existing tasks model/table(s)
+
+Existing APIs for tasks
+
+Existing roles + user-to-role mapping
+
+How a project is assigned to a PM (field names / relationships)
+
+Output a short “Found vs Missing” summary in your response before coding:
+
+What tables exist
+
+What endpoints exist
+
+What components will be extended
+
+What new tables/fields are required (minimal changes)
+
+Then proceed to implementation.
+
+Step 2 — Data model (minimal change, add only what’s missing)
+
+We need tasks to support MS Project behaviour.
+
+If a tasks table already exists, extend it. If not, create it.
+
+Required task fields
+
+id, projectId
+
+name, description (optional)
+
+status (Not Started / In Progress / Blocked / Done)
+
+percentComplete (0–100)
+
+startDate, endDate (dates)
+
+durationDays (computed ok)
+
+isMilestone (boolean; milestone forces start=end)
+
+assignedToUserId (nullable)
+
+parentId (nullable) for hierarchy
+
+wbsCode (string like “1”, “1.1”, “2.3”)
+
+sortOrder (number)
+
+baselineStartDate, baselineEndDate (nullable)
+
+actualStartDate, actualEndDate (nullable)
+
+createdAt, updatedAt
+
+Dependencies
+
+Create join table if not existing:
+task_dependencies
+
+id
+
+predecessorTaskId
+
+successorTaskId
+
+type (FS/SS/FF/SF) default FS
+
+lagDays integer default 0
+
+Migration
+
+If tasks already exist in another format:
+
+Migrate without deleting anything.
+
+Flat list becomes parentId = null, generate wbsCode and sortOrder.
+
+Step 3 — API (must enforce permissions)
+
+Implement/extend endpoints:
+
+GET /api/projects/:projectId/tasks
+Returns tasks + dependencies in a structure that supports hierarchy + ordering.
+
+POST /api/projects/:projectId/tasks
+Create task (optionally under parentId).
+
+PATCH /api/tasks/:taskId
+Update fields (name/status/%/dates/assigned/milestone).
+
+POST /api/tasks/:taskId/indent and /outdent
+Update parentId and regenerate WBS codes for affected subtree.
+
+POST /api/tasks/:taskId/move
+Reorder within siblings (updates sortOrder).
+
+POST /api/tasks/dependency
+Add dependency (block cycles).
+
+DELETE /api/tasks/dependency/:id
+Remove dependency.
+
+POST /api/projects/:projectId/tasks/baseline/set
+Copy current start/end into baseline fields.
+
+Permission rules (enforced in API)
+
+COO: can edit any project tasks.
+
+PM: can edit only tasks for projects where they are the assigned PM.
+
+Everyone else: read-only.
+
+Return 403 on violation. UI must also disable editing when read-only.
+
+Step 4 — UI: MS Project Split View
+Layout
+
+On Project Detail → Tasks tab:
+
+Keep existing tabs/navigation.
+
+Replace current list-only view with:
+
+Top: KPI strip + filters/search (sticky)
+
+Body: split pane
+
+Left: Task Grid
+
+Right: Gantt
+
+Split pane resizable divider.
+
+Add toggle:
+
+“Split View” (default on)
+
+“List View” (renders existing task list exactly as-is)
+
+KPI cards (three sections)
+
+Compute from current filtered task set:
+
+Total Tasks (default leaf tasks only; include
+
+you know all the questions from history please ensure you create it easy to copy paste
+
+Got it. Here’s the clean, copy-paste Replit prompt. No extra chatter. It includes the stuff from our history: one tenant, MS365 login context, SharePoint is source of truth, role mapping exists, real-time, calendar stays user-facing, tasks are app-owned, don’t break anything, foundation import data cascades, and PM-only for On-the-Go mode.
+
+✅ REPLIT PROMPT (COPY/PASTE)
+
+You are working inside an existing production web application for Emergent Energy. Do not break any existing functionality. Do not rename existing routes, tables, or components unless absolutely required. Work incrementally. Keep backward compatibility. The app has one Microsoft 365 tenant with multiple users, and role mapping already exists in the app.
+
+Objective
+
+Upgrade the Project Detail → Tasks experience into an MS Project-style split view:
+
+Left: Task Breakdown Grid (WBS hierarchy, MS Project feel)
+
+Right: Gantt Chart (interactive, draggable)
+
+Fully synced, real-time updates, role-based permissions, and uses the project as the spine (foundation data import cascades into everything).
+
+This must be easy and fast for Project Managers, and must support PM “On-the-Go Mode” (mobile optimized) that is PM role only and can be toggled on/off.
+
+A) NON-NEGOTIABLE RULES
+
+Do not break existing project detail page tabs (Tasks, Board, Calendar, Gantt, Key Dates, Revenue, Expenditure, COS, Cashflow, Subcontractors, History).
+
+Tasks are app-owned (stored/managed in app DB).
+Calendar remains user-facing (meetings can still exist but do not replace tasks).
+
+SharePoint is the source of truth for documents (keep existing SharePoint browsing/upload logic as-is; do not move documents into DB).
+
+Real-time sync behavior: updates should reflect immediately for other users viewing the project (use existing real-time approach if present; otherwise implement lightweight polling or websockets without breaking anything).
+
+Role + project assignment enforcement:
+
+COO: edit all projects
+
+Project Manager: edit only projects assigned to them
+
+Everyone else: default read-only (unless existing permission system grants more)
+
+B) STEP 1 — INSPECT FIRST (MANDATORY)
+
+Before coding, scan the repo and output a concise “FOUND vs MISSING” summary:
+
+Where Project Detail page is implemented
+
+Existing tasks schema (tables/fields)
+
+Existing tasks API routes
+
+Existing user-role mapping + project PM assignment field(s)
+
+Existing real-time mechanism (if any)
+
+Existing “On-the-Go mode” mechanism (if any)
+
+Only after that summary, implement the upgrade.
+
+C) STEP 2 — DATA MODEL (MINIMAL CHANGES)
+
+We need MS Project behavior. If tasks already exist, extend them. If not, create new tables.
+
+Required Task Fields
+
+Each task must support:
+
+id
+
+projectId
+
+name
+
+description (nullable)
+
+status enum: NOT_STARTED, IN_PROGRESS, BLOCKED, DONE
+
+percentComplete int 0–100
+
+startDate date
+
+endDate date
+
+durationDays (computed ok)
+
+isMilestone boolean (milestone forces startDate=endDate)
+
+assignedToUserId nullable
+
+priority (reuse existing if present)
+
+escalation (reuse existing if present)
+
+parentId nullable (hierarchy)
+
+wbsCode string like 1, 1.1, 2.3.4
+
+sortOrder number
+
+baselineStartDate nullable
+
+baselineEndDate nullable
+
+actualStartDate nullable
+
+actualEndDate nullable
+
+timestamps
+
+Dependencies (Required)
+
+Create join table if not existing:
+task_dependencies
+
+id
+
+predecessorTaskId
+
+successorTaskId
+
+type enum FS/SS/FF/SF (default FS)
+
+lagDays int default 0
+
+Migration
+
+If tasks exist in another format:
+
+migrate without deleting old fields
+
+generate wbsCode, sortOrder
+
+flat list → parentId = null
+
+D) STEP 3 — API (WITH PERMISSIONS)
+
+Implement or extend these endpoints:
+
+GET /api/projects/:projectId/tasks
+
+Returns tasks + dependencies
+
+Include hierarchical structure and stable ordering
+
+POST /api/projects/:projectId/tasks
+
+Create task; accepts optional parentId
+
+PATCH /api/tasks/:taskId
+
+Update fields (name/status/%/dates/assigned/milestone/etc.)
+
+POST /api/tasks/:taskId/indent
+
+POST /api/tasks/:taskId/outdent
+
+Updates hierarchy
+
+Regenerates wbsCode for affected subtree
+
+POST /api/tasks/:taskId/move
+
+Reorder task among siblings (updates sortOrder)
+
+POST /api/tasks/dependency
+
+Add dependency (prevent cycles)
+
+DELETE /api/tasks/dependency/:dependencyId
+
+Remove dependency
+
+POST /api/projects/:projectId/tasks/baseline/set
+
+Copy current start/end → baseline start/end for all tasks
+
+Permission enforcement
+
+Must enforce in API:
+
+COO: full edit
+
+PM: edit only if they are PM on that project
+
+else: read-only, return 403
+
+E) STEP 4 — UI: MS PROJECT SPLIT VIEW
+Where
+
+On Project Detail → Tasks tab:
+
+Add a toggle:
+
+Split View (default)
+
+List View (renders existing Tasks UI unchanged)
+
+Layout
+
+Split View must be:
+
+Top sticky header area
+
+KPI cards
+
+Search + filters
+
+Quick actions (create task/milestone, indent/outdent, baseline)
+
+Body
+
+Resizable split pane
+
+Left: Task Grid
+
+Right: Gantt
+
+KPI “3 Sections” (must be accurate + filter-aware)
+
+Compute from the currently filtered set:
+
+Total Tasks
+
+Done Tasks
+
+Average % Complete
+Rules:
+
+Default counts leaf tasks (toggle to include summary tasks if needed)
+
+Average % complete is weighted by duration if possible
+
+Clicking KPI applies shortcut filter (e.g., Done → show Done)
+
+Filters
+
+Search (name, WBS, assigned)
+
+Status filter
+
+Priority filter
+
+Assigned-to filter
+Persist per user (localStorage ok if no settings table exists)
+
+F) LEFT PANE — TASK GRID (MS PROJECT FEEL)
+Columns minimum:
+
+WBS
+
+Task Name (inline edit)
+
+Status (dropdown)
+
+% Complete (inline)
+
+Start
+
+Finish
+
+Duration
+
+Predecessors (basic UI picker or simple string parser optional)
+
+Assigned To
+
+Milestone checkbox
+
+Behaviors
+
+Expand/collapse summary tasks
+
+Indent / outdent (buttons + keyboard: Tab / Shift+Tab)
+
+Reorder tasks among siblings (drag handle)
+
+Parent rollups:
+
+Parent start = min child start
+
+Parent finish = max child finish
+
+Parent % = weighted average by duration (or simple average)
+
+Parent status derived
+
+Create:
+
+Insert task below
+
+Add child task
+
+Add milestone
+
+Validate:
+
+endDate >= startDate
+
+milestone forces start=end
+
+prevent dependency cycles
+
+G) RIGHT PANE — GANTT (INTERACTIVE)
+
+Use a reputable MIT-licensed React Gantt library (e.g. gantt-task-react) unless an existing one is already installed.
+
+Must support
+
+Day / Week / Month scale toggle
+
+Today vertical line
+
+Milestones as diamonds
+
+Drag bar to move dates (updates DB)
+
+Drag edges to resize duration (updates DB)
+
+Selection sync:
+
+select in grid highlights in gantt and scrolls into view
+
+select in gantt highlights in grid
+
+Dependencies:
+
+at minimum, allow creating FS dependencies (UI interaction or modal)
+
+Optional but recommended:
+
+“Auto-shift successors” toggle (ON by default) to respect FS dependencies
+
+H) PM “ON-THE-GO MODE” (PM ROLE ONLY)
+
+Implement a mobile-first condensed mode accessible from Project Detail:
+
+Only visible to Project Manager role (and COO)
+
+Toggle: “On-the-Go Mode” ↔ “Full Detail Mode”
+
+On-the-Go shows:
+
+Today/This Week tasks
+
+Quick update: status, % complete, notes, blockers
+
+Quick add task + milestone
+
+Minimal fields, no heavy admin feel
+
+Must not remove or hide Full Mode for desktop users.
+
+I) INTEGRATION GUARDRAILS
+
+Do not change existing Calendar behavior (calendar is user-managed; tasks remain app-owned).
+
+Do not break SharePoint folder browsing/upload flows.
+
+Ensure project foundation import remains the spine (tasks must remain tied to projectId and cascade into dashboards).
+
+J) TESTING / QA (REQUIRED)
+
+Add a QA checklist and tests (where repo supports):
+
+Create/rename task
+
+Indent/outdent and WBS regeneration
+
+Drag dates in gantt updates grid + DB
+
+Create dependency + cycle prevention
+
+Permissions: non-PM cannot edit
+
+KPI accuracy under filters
+
+On-the-Go mode only for PM/COO
+
+K) DEFINITION OF DONE
+
+This is only done when:
+
+Split view exists and feels like MS Project (grid left, gantt right, resizable)
+
+Tasks are hierarchical with WBS + indent/outdent
+
+Gantt edits persist and sync both ways
+
+Dependencies persist and no cycles allowed
+
+KPI cards are accurate and filter-aware
+
+PM On-the-Go mode exists and is PM-only
+
+Nothing else in Project Detail breaks
+
+Proceed now: produce the “FOUND vs MISSING” summary, then implement.

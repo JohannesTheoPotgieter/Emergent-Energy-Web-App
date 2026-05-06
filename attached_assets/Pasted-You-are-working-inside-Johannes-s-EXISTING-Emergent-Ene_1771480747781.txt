@@ -1,0 +1,215 @@
+You are working inside Johannes’s EXISTING Emergent Energy (EE) web app repo on Replit.
+Goal: Improve the “My Tool” screen UI/UX + perceived performance, WITHOUT breaking ANY existing functionality or logic.
+
+NON-NEGOTIABLE RULES
+1) Do NOT change underlying behavior of My Tool features (tasks, planner, email list, priorities, next actions). UI/UX and wiring improvements only.
+2) No placeholders. No dead buttons. If a control is visible, it must work.
+3) Keep EE theme: white base, EE green accents, subtle gray borders, clean typography. BRIGHT RED only for true warnings (blocked/overdue).
+4) The screen must feel fast: minimize re-renders, virtualize long lists, optimistic updates where safe.
+5) One scroll strategy: avoid multiple nested scroll containers unless absolutely necessary.
+6) Front-end-first: anything a COO needs daily should be doable via UI (no database edits).
+
+STEP 0 — DISCOVERY (MANDATORY)
+Before changing code, create /docs/MY_TOOL_UI_DISCOVERY.md with:
+- Current component tree for My Tool
+- Data sources for: tasks list, planner events, email list, priorities, next actions
+- Current state management (Context/Redux/Zustand/etc) and why rerenders happen
+- Which components are currently scrollable and where layout breaks at smaller widths
+- Performance hotspots (use React DevTools profiler if available)
+- What existing routes/modules depend on My Tool components (to avoid regressions)
+
+STOP CONDITION
+If you cannot confidently identify how current features work, STOP after discovery and list questions.
+
+DELIVERABLES
+A) New My Tool layout: 3-pane + context drawer with resizable panels
+B) Focus Mode toggle (single-lane execution view)
+C) Command Palette (Ctrl+K) + upgraded Quick Add with parsing + linking
+D) Email → Task one-click conversion flow
+E) Priority → Task bundle starter flow
+F) “COO Command Strip” replacing empty/duplicate right-side widgets
+G) Responsive behavior for <1200px and <900px
+H) Performance upgrades: virtualization, memoization, optimistic updates, caching, skeletons
+I) No regressions: all existing My Tool functions still work
+
+========================================
+A) LAYOUT REWORK (KEEP FUNCTIONALITY, IMPROVE UX)
+Implement a new layout for the My Tool page:
+
+1) Left Sidebar remains (existing navigation).
+2) Main content becomes a 3-pane layout:
+   - Center Pane (Primary): Today execution view
+     - Open Tasks + Daily Planner (calendar timeline)
+     - Pinned / In Progress / Planned / Blocked / Done as a compact segmented control
+   - Right Pane (Context Panel): SINGLE dynamic panel (not stacked cards)
+     - When a task is clicked: show task details + linked project/module + approvals + attachments
+     - When an email is clicked: show email preview + actions (convert to task, link project)
+     - When a priority is clicked: show details + “break into tasks”
+   - Optional Left-Center Mini Pane (Secondary) OR tabbed mode:
+     - Email list can be tabbed or collapsible to reduce clutter
+
+3) Replace the current confusing “No priorities/actions yet” area with a “COO Command Strip”
+   - Always visible at top-right (or top of main area)
+   - Contains ONLY:
+     - Next Actions (max 5)
+     - Approvals Needed (QC / Ops / Finance)
+     - Blockers (BRIGHT RED)
+     - Overdue Today (BRIGHT RED)
+   - Each item is clickable and navigates to the underlying item.
+
+4) Resizable panels
+   - Implement drag handles for center/right pane width.
+   - Persist widths in localStorage per user role/session (do not require backend changes).
+
+5) One-scroll strategy
+   - Prefer: center pane scrolls, header/sidebar sticky.
+   - Avoid multiple independent scrollbars inside cards.
+   - If absolutely needed (email list), keep only ONE additional scroll region and document why.
+
+========================================
+B) FOCUS MODE
+Add a Focus Mode toggle on My Tool:
+- Focus Mode collapses Email and Context panes.
+- Shows only:
+  - Today tasks
+  - Daily Planner
+  - COO Command Strip
+- Remember Focus Mode state in localStorage.
+
+========================================
+C) COMMAND PALETTE + QUICK ADD (POWER USER UX)
+Implement Ctrl+K Command Palette:
+- Search across:
+  - projects
+  - tasks
+  - priorities
+  - emails (subject/sender)
+  - navigation routes
+- Actions:
+  - Create task
+  - Create priority
+  - Jump to project
+  - Link email to task
+- Must be keyboard-first, minimal UI.
+
+Upgrade Quick Add:
+- Parse lightweight commands:
+  - “t <task> #project:<name> due:<date> owner:<role>”
+  - “p <priority> dept:<dept>”
+  - “e <note> #project:<name>”
+- If parsing fails, still create a plain task (no errors).
+- Provide inline suggestions/autocomplete for project names and roles.
+
+Do NOT break existing quick add functionality; extend it.
+
+========================================
+D) EMAIL → TASK (ONE CLICK)
+In the Email context panel:
+- Add “Create Task from Email” action.
+- Auto-fill task title = email subject.
+- Store a reference to the email (message id/url if available).
+- Prompt for:
+  - project (typeahead)
+  - module (Engineering / Quality / PM / Finance)
+  - optional due date/priority
+- Create task and immediately show it in the tasks list (optimistic UI).
+- Ensure no dead ends: after creation, show “Open task” and “Link to project” status.
+
+========================================
+E) PRIORITY → TASK BUNDLE
+In Priority context panel:
+- Add “Break into tasks” action.
+- Opens a mini-wizard:
+  - suggested 3–5 tasks (editable)
+  - assigns owners (optional)
+  - sets due dates (optional)
+- On confirm:
+  - create tasks linked to the priority
+  - show them in open tasks list
+- If user cancels, nothing changes.
+
+========================================
+F) COO LENS WIDGET (EXCEPTIONS ONLY)
+Add a collapsible “COO Lens” widget (default collapsed) on My Tool:
+- “Top risks today” (max 3):
+  - projects with overdue items / blockers / approvals pending
+- “Finance alerts” (exceptions only):
+  - show BRIGHT RED if a rule is violated (use existing logic outputs; do not recalc)
+- “Milestones next 7 days” (if milestone data exists)
+If data sources do not exist, hide the section (no placeholders).
+
+========================================
+G) RESPONSIVE DESIGN
+Breakpoints:
+- <1200px:
+  - Right context panel becomes a slide-over drawer.
+- <900px:
+  - Email collapses into a tab (“Tasks / Calendar / Inbox”).
+- Mobile:
+  - Minimal bottom nav (Home/Tasks/Calendar/Inbox/Projects) if app supports mobile; otherwise ensure My Tool remains usable.
+
+No horizontal squeeze. No tiny cards. Avoid multi-column overload on small screens.
+
+========================================
+H) PERFORMANCE / REACTIVENESS (MUST IMPLEMENT)
+1) Virtualize lists:
+- Open Tasks list
+- Email list
+- Priorities list
+Use react-window or equivalent already in stack.
+
+2) Prevent rerender storms:
+- Memoize heavy components (React.memo)
+- Use useMemo/useCallback correctly
+- Normalize state selectors (if Redux/Zustand) to avoid broad subscriptions
+
+3) Optimistic updates:
+- Task status changes should update instantly and rollback on failure.
+- Show subtle toast on failure.
+
+4) Loading states:
+- Use skeleton loaders instead of spinners.
+- Cache day view data in memory so returning to My Tool is instant.
+
+5) Visible sync indicator:
+- Keep “DATA AS OF …” and add small status dot:
+  - green = fresh
+  - gray = unknown
+  - red = sync error
+Do not fake freshness; only show green if data timestamps are verified.
+
+========================================
+I) QA / REGRESSION REQUIREMENTS
+Create /docs/MY_TOOL_UI_TEST_PLAN.md with:
+- List of all existing My Tool features + how to test each.
+- Before/after checks:
+  - tasks create/edit/status change
+  - planner drag/drop (if exists)
+  - email selection + preview
+  - priorities create/edit
+  - next actions update
+  - navigation still works
+- Performance checks:
+  - verify list virtualization
+  - verify no obvious rerender loops
+
+No regressions tolerated.
+
+IMPLEMENTATION ORDER
+1) Discovery doc + profiling
+2) New layout skeleton with existing components slotted in (no behavior change)
+3) Context panel behavior (task/email/priority selection)
+4) COO Command Strip + wiring
+5) Focus Mode
+6) Command Palette + Quick Add upgrades
+7) Email → Task + Priority → Task bundle
+8) Responsive breakpoints
+9) Virtualization + memoization + optimistic updates + skeletons
+10) Test plan + regression testing
+
+FINAL CHECK
+After implementation, ensure:
+- No “empty” panels that contradict other panels
+- No dead UI controls
+- BRIGHT RED only for real warnings
+- My Tool looks premium, minimal, EE-branded, and is faster to use as COO
