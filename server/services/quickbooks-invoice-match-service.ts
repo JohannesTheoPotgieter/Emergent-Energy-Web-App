@@ -9,12 +9,22 @@
  * hidden coupling with the connector / DB.
  *
  * SCORING HIERARCHY (highest first)
- *   1. Already linked (route layer detects via DB; matcher returns 100)
- *   2. Exact invoice number (normalized) + amount within tolerance        → 95
- *   3. Exact invoice number only                                          → 85
- *   4. Amount within tolerance + counterparty Jaccard ≥ 0.6 + same month  → 78
- *   5. Counterparty Jaccard ≥ 0.6 + amount within 5% + ±60 days           → 62
- *   6. Counterparty Jaccard > 0 (any amount)                              → 45
+ *   Priority order — INVOICE NUMBER → DESCRIPTION → AMOUNT → VENDOR NAME
+ *
+ *   1.  Already linked (route layer detects via DB; matcher returns 100)
+ *   2.  Exact invoice number (normalized) + amount within tolerance        → 95
+ *   3.  Exact invoice number only                                          → 85
+ *   4.  Description Jaccard ≥ 0.6 + amount within tolerance                → 80
+ *   5.  Description Jaccard ≥ 0.6 + amount within 5%                       → 72
+ *   6.  Description Jaccard ≥ 0.6 (any amount)                             → 65
+ *   7.  Amount within tolerance + counterparty Jaccard ≥ 0.6 + same month  → 60
+ *   8.  Description Jaccard ≥ 0.3 + amount within tolerance                → 58
+ *   9.  Amount within tolerance only                                       → 55
+ *  10.  Counterparty Jaccard ≥ 0.6 + amount within 5% + ±60 days           → 45
+ *  11.  Amount within 5% only                                              → 40
+ *  12.  Description Jaccard ≥ 0.3 (any amount)                             → 35
+ *  13.  Counterparty Jaccard > 0 (any amount)                              → 32
+ *  14.  Learned-pattern hit only (no other signal)                         → 28
  *
  * THRESHOLDS (consumed by frontend banding):
  *   - 90+ : high confidence (still requires user approval)
@@ -117,8 +127,22 @@ const AMOUNT_FUZZY_REL = 0.05;
 /** Counterparty token overlap below this is treated as "not the same vendor". */
 const NAME_SIM_FLOOR = 0.6;
 
-/** Date proximity in days for tier 5. */
+/** Date proximity in days for tier 10. */
 const DATE_PROXIMITY_DAYS = 60;
+
+/**
+ * Description / memo token-set Jaccard ≥ this counts as a "strong"
+ * description match — same Jaccard floor as counterparty so behaviour is
+ * predictable for reviewers.
+ */
+const DESC_SIM_STRONG = 0.6;
+
+/**
+ * Lower threshold — a "partial" description hit. Surfaces as a low-tier
+ * reason so reviewers can still see when memo language overlaps weakly
+ * (e.g. one shared meaningful token like "diesel" or "milestone").
+ */
+const DESC_SIM_FUZZY = 0.3;
 
 // =========================================================================
 // Pure helpers (no Date/Intl side effects, deterministic)
@@ -202,6 +226,16 @@ export function scoreInvoiceMatch(
   const sim = nameSimilarity(app.counterpartyName, qb.qbCounterpartyName);
   const nameStrong = sim >= NAME_SIM_FLOOR;
 
+  // Description / memo similarity — same token-set Jaccard helper used for
+  // counterparty names. Compares the app line's free-text description
+  // (vendor description for cost lines, milestone/description for revenue)
+  // against the QB doc's memo / PrivateNote. Promoted above the amount
+  // tiers per the operator-requested priority order:
+  //   invoice number → description → amount → vendor name.
+  const descSim = nameSimilarity(app.description, qb.qbDescription);
+  const descStrong = descSim >= DESC_SIM_STRONG;
+  const descFuzzy = descSim >= DESC_SIM_FUZZY;
+
   const monthMatch = sameMonth(app.invoiceDate, qb.qbTxnDate);
   const dayDiff = daysBetween(app.invoiceDate, qb.qbTxnDate);
   const dateClose = dayDiff !== null && dayDiff <= DATE_PROXIMITY_DAYS;
@@ -219,46 +253,87 @@ export function scoreInvoiceMatch(
     reasons.push("invoice number exact match");
     if (!amountFuzzy) warnings.push("amount_mismatch");
   }
-  // Tier 4 — amount exact + name strong + same month
+  // Tier 4 — strong description match + amount exact
+  else if (descStrong && amountExact) {
+    confidence = 80;
+    reasons.push(
+      `description ${Math.round(descSim * 100)}% match`,
+      "amount within R0.01",
+    );
+  }
+  // Tier 5 — strong description match + amount fuzzy
+  else if (descStrong && amountFuzzy) {
+    confidence = 72;
+    reasons.push(
+      `description ${Math.round(descSim * 100)}% match`,
+      "amount within 5%",
+    );
+  }
+  // Tier 6 — strong description match only
+  else if (descStrong) {
+    confidence = 65;
+    reasons.push(`description ${Math.round(descSim * 100)}% match`);
+    warnings.push("amount_mismatch");
+  }
+  // Tier 7 — amount exact + name strong + same month
   else if (amountExact && nameStrong && monthMatch) {
-    confidence = 78;
+    confidence = 60;
     reasons.push("amount within R0.01", `vendor ${Math.round(sim * 100)}% match`, "same month");
   }
-  // Tier 4b — amount exact only (no name/month required)
+  // Tier 8 — partial description match + amount exact
+  // (placed ABOVE the amount-only tier so a partial memo hit still
+  //  outranks a same-amount candidate with unrelated text — preserves
+  //  the operator-requested invoice → description → amount ordering
+  //  even for fuzzy description matches.)
+  else if (descFuzzy && amountExact) {
+    confidence = 58;
+    reasons.push(
+      `description ${Math.round(descSim * 100)}% partial`,
+      "amount within R0.01",
+    );
+  }
+  // Tier 9 — amount exact only (no name/month/description required)
   else if (amountExact) {
-    confidence = 68;
+    confidence = 55;
     reasons.push("amount within R0.01");
     if (!nameStrong) warnings.push("vendor_not_matched");
   }
-  // Tier 5 — name strong + amount fuzzy + ±60 days
+  // Tier 10 — name strong + amount fuzzy + ±60 days
   else if (nameStrong && amountFuzzy && dateClose) {
-    confidence = 62;
+    confidence = 45;
     reasons.push(
       `vendor ${Math.round(sim * 100)}% match`,
       "amount within 5%",
       `${dayDiff}d apart`,
     );
   }
-  // Tier 5b — amount fuzzy only (no name required)
+  // Tier 11 — amount fuzzy only (no name required)
   else if (amountFuzzy) {
-    confidence = 50;
+    confidence = 40;
     reasons.push("amount within 5%");
     if (!nameStrong) warnings.push("vendor_not_matched");
   }
-  // Tier 6 — any name overlap (lowest)
+  // Tier 12 — partial description match only
+  else if (descFuzzy) {
+    confidence = 35;
+    reasons.push(`description ${Math.round(descSim * 100)}% partial`);
+    warnings.push("amount_mismatch");
+    if (!nameStrong) warnings.push("vendor_not_matched");
+  }
+  // Tier 13 — any name overlap (lowest direct-signal tier)
   else if (sim > 0) {
-    confidence = 45;
+    confidence = 32;
     reasons.push(`vendor ${Math.round(sim * 100)}% match`);
     if (!amountFuzzy) warnings.push("amount_mismatch");
     if (sim < NAME_SIM_FLOOR) warnings.push("vendor_mismatch");
   }
-  // Tier 6.5 — learned-pattern match with zero other signal. Common when a
+  // Tier 14 — learned-pattern match with zero other signal. Common when a
   // vendor's QB record carries a different name than the app counterparty
   // but the memo / invoice-prefix matches a fingerprint we've already
   // approved. Surfaces as a low-confidence candidate with the learned
   // reason — the reviewer still has the call.
   else if ((qb.learnedPatternMatches ?? []).length > 0) {
-    confidence = 40;
+    confidence = 28;
     reasons.push("learned pattern match (no other signal)");
     if (!amountFuzzy) warnings.push("amount_mismatch");
     warnings.push("vendor_mismatch");
