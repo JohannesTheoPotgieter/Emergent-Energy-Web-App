@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { projectInfo, type InsertProjectInfo, type ProjectInfo } from "@shared/schema";
+import { projectInfo, projectExecutionState, type InsertProjectInfo, type ProjectInfo } from "@shared/schema";
 import { db } from "../db";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "../lib/project-info-sync";
 
@@ -24,6 +24,33 @@ export class ProjectInfoRepository {
       await syncProjectSplitTables(id, fields, this.dbInstance);
     }
     return updated;
+  }
+
+  /**
+   * All project_info rows joined with project_execution_state. Returns the
+   * raw shape `{ project_info, project_execution_state | null }` so callers
+   * can flatten the way they need.
+   *
+   * NOTE: also added independently in Wave 5.4 (PR #820); resolve any
+   * merge collision by keeping a single copy.
+   */
+  async listAllWithExecutionState(): Promise<Array<{
+    project_info: ProjectInfo;
+    project_execution_state: typeof projectExecutionState.$inferSelect | null;
+  }>> {
+    return this.dbInstance
+      .select()
+      .from(projectInfo)
+      .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
+  }
+
+  async findIdByProjectName(projectName: string): Promise<number | null> {
+    const [row] = await this.dbInstance
+      .select({ id: projectInfo.id })
+      .from(projectInfo)
+      .where(eq(projectInfo.projectName, projectName))
+      .limit(1);
+    return row?.id ?? null;
   }
 
   async upsert(info: InsertProjectInfo, existing: ProjectInfo | undefined): Promise<ProjectInfo> {
