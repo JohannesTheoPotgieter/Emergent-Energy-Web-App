@@ -6,7 +6,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Link, useSearch, useLocation } from "wouter";
@@ -51,7 +50,6 @@ import {
   Inbox,
   Calendar,
   MessageSquare,
-  AlertCircle,
   ChevronRight,
   ExternalLink,
   Info,
@@ -133,6 +131,39 @@ interface DoNextResponse {
   totalBeforeCap: number;
 }
 
+/** Canonical drill-down destinations for KPI cards. Keeps every home-screen
+ * card tied to the source-of-truth page so users can always click through to
+ * the underlying records. */
+const KPI_HREF: Record<string, string> = {
+  "Active Projects": "/projects",
+  "Total Projects": "/projects",
+  "Red RAG": "/execution-board?rag=Red",
+  "Behind Plan": "/execution-board?behindPlanOnly=true",
+  "Avg Progress": "/execution-board",
+  "Eng. Blockers": "/execution-board?engineeringBlockersOnly=true",
+  "Quality Warnings": "/execution-board?qualityIssuesOnly=true",
+  "Pending Approvals": "/pm/approvals",
+  "Approvals Due": "/pm/approvals",
+  "Inflow (FY)": "/cos/analysis",
+  "Inflow Received (FY)": "/cos/analysis",
+  "Received Inflow (FY)": "/cos/analysis",
+  "Planned Revenue (FY)": "/cos/analysis",
+  "Gross Margin": "/cos/analysis",
+  "Gross Profit": "/cos/analysis",
+  "Gross Profit (FY)": "/cos/analysis",
+  "Open Expenditure": "/cos",
+  "Open Expenditure (FY)": "/cos",
+  "Paid Expenditure": "/cos",
+  "Overdue Inflow": "/cos/analysis",
+  "Open Incidents": "/execution-board",
+  "Corrective Actions Due": "/execution-board",
+  "Safety Compliance": "/execution-board",
+  "Inspections Overdue": "/execution-board",
+  "Applications Pending": "/execution-board",
+  "Queries Outstanding": "/execution-board",
+  "Rejections Open": "/execution-board",
+};
+
 /**
  * Build a compact set of KPI cards from execution-dashboard data,
  * selected by the role's config kpi keys as a guide.
@@ -142,6 +173,7 @@ function getKpiCards(
   kpis: any,
   stats: any,
   isLoading: boolean,
+  navigate: (path: string) => void,
 ) {
   const kpiKeyMap: Record<string, { label: string; value: string | number; icon: React.ReactNode }> = {
     revenue_vs_target: { label: "Inflow Received (FY)", value: money(kpis.receivedInflowFy), icon: <DollarSign className="w-4 h-4" /> },
@@ -201,32 +233,41 @@ function getKpiCards(
     }
   }
 
-  return cards.slice(0, 4).map((card) => (
-    <Card key={card.label} className="border-border/50">
-      <CardContent className="p-3.5">
-        <div className="flex items-center gap-1.5 text-muted-foreground mb-1.5">
-          {card.icon}
-          <span className="text-[11px] uppercase tracking-wide">{card.label}</span>
-        </div>
-        {isLoading ? (
-          <Skeleton className="h-5 w-20" />
-        ) : (
-          <p className="text-base font-semibold font-mono text-foreground">{card.value}</p>
-        )}
-      </CardContent>
-    </Card>
-  ));
+  return cards.slice(0, 4).map((card) => {
+    const href = KPI_HREF[card.label];
+    const clickable = Boolean(href);
+    return (
+      <Card
+        key={card.label}
+        className={`border-border/50 ${clickable ? "cursor-pointer hover:border-primary/40 transition-colors" : ""}`}
+        onClick={clickable ? () => navigate(href!) : undefined}
+        data-testid={`kpi-card-${card.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+      >
+        <CardContent className="p-3.5">
+          <div className="flex items-center gap-1.5 text-muted-foreground mb-1.5">
+            {card.icon}
+            <span className="text-[11px] uppercase tracking-wide">{card.label}</span>
+          </div>
+          {isLoading ? (
+            <Skeleton className="h-5 w-20" />
+          ) : (
+            <p className="text-base font-semibold font-mono text-foreground">{card.value}</p>
+          )}
+        </CardContent>
+      </Card>
+    );
+  });
 }
 
 export default function HomePage() {
   const { user } = useAuth();
   const searchString = useSearch();
+  const [, setLocation] = useLocation();
   const urlTab = new URLSearchParams(searchString).get("tab") as HomeTab | null;
   const [activeTab, setActiveTab] = useState<HomeTab>(urlTab || "actions");
   const [autoTabApplied, setAutoTabApplied] = useState<boolean>(Boolean(urlTab));
   const [prioritiesExpanded, setPrioritiesExpanded] = useState(false);
   const [expandedAttention, setExpandedAttention] = useState<string | null>(null);
-  const [overdueDrill, setOverdueDrill] = useState<"ap" | "ar" | null>(null);
 
   const { data: dashData, isLoading: dashLoading, isError: dashIsError, error: dashError } = useQuery<any>({
     queryKey: ["/api/lifecycle-board/execution-dashboard"],
@@ -251,15 +292,6 @@ export default function HomePage() {
       const res = await apiRequest("GET", "/api/my-work/all-tasks");
       return res.json();
     },
-  });
-
-  const { data: overdueData, isLoading: overdueLoading } = useQuery<any>({
-    queryKey: ["/api/lifecycle-board/overdue-payments"],
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/lifecycle-board/overdue-payments");
-      return res.json();
-    },
-    enabled: overdueDrill !== null,
   });
 
   // Do Next — central, role-aware action strip. Single source of truth replaces
@@ -317,8 +349,6 @@ export default function HomePage() {
 
   const kpis = dashData?.kpis || {};
   const isLoading = dashLoading;
-  const currentOverdue = overdueDrill === "ap" ? overdueData?.outflow : overdueDrill === "ar" ? overdueData?.inflow : null;
-  const overdueRows = currentOverdue?.items || [];
 
   // Pre-select the most useful starting tab for this role once the dashboard
   // data is in (we need pendingApprovals to know if Approvals is the right
@@ -429,11 +459,24 @@ export default function HomePage() {
   const visiblePriorities = companyPriorities?.slice(0, 3) || [];
   const hiddenPriorities = companyPriorities?.slice(3) || [];
 
-  /** Render a single KPI metric card */
-  function kpiCard(label: string, value: string | number, icon: React.ReactNode, opts?: { color?: string; scopeLabel?: string; onClick?: () => void; helpText?: React.ReactNode }) {
-    const isClickable = Boolean(opts?.onClick);
+  /** Render a single KPI metric card.
+   *
+   * Every card on the home screen should drill into the source of truth.
+   * Pass either an explicit `onClick` (for in-page drill modals like AP/AR
+   * overdue) or an `href` for navigation; if neither is supplied we fall
+   * back to the canonical drill destination from `KPI_HREF[label]`. */
+  function kpiCard(label: string, value: string | number, icon: React.ReactNode, opts?: { color?: string; scopeLabel?: string; onClick?: () => void; href?: string; helpText?: React.ReactNode }) {
+    const fallbackHref = opts?.href ?? KPI_HREF[label];
+    const navigateClick = !opts?.onClick && fallbackHref ? () => setLocation(fallbackHref) : undefined;
+    const handleClick = opts?.onClick ?? navigateClick;
+    const isClickable = Boolean(handleClick);
     return (
-      <Card key={label} className={`border-border/50 ${isClickable ? "cursor-pointer hover:border-primary/40 transition-colors" : ""}`} onClick={opts?.onClick}>
+      <Card
+        key={label}
+        className={`border-border/50 ${isClickable ? "cursor-pointer hover:border-primary/40 transition-colors" : ""}`}
+        onClick={handleClick}
+        data-testid={`kpi-card-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+      >
         <CardContent className="p-3.5">
           <div className="flex items-center gap-1.5 text-muted-foreground mb-1.5">
             {icon}
@@ -463,9 +506,16 @@ export default function HomePage() {
   }
 
   /** Render a KPI card with planned vs actual values */
-  function kpiCardDual(label: string, planned: string | number, actual: string | number, icon: React.ReactNode, opts?: { color?: string }) {
+  function kpiCardDual(label: string, planned: string | number, actual: string | number, icon: React.ReactNode, opts?: { color?: string; href?: string }) {
+    const fallbackHref = opts?.href ?? KPI_HREF[label];
+    const isClickable = Boolean(fallbackHref);
     return (
-      <Card key={label} className="border-border/50">
+      <Card
+        key={label}
+        className={`border-border/50 ${isClickable ? "cursor-pointer hover:border-primary/40 transition-colors" : ""}`}
+        onClick={isClickable ? () => setLocation(fallbackHref!) : undefined}
+        data-testid={`kpi-card-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+      >
         <CardContent className="p-3.5">
           <div className="flex items-center gap-1.5 text-muted-foreground mb-1.5">
             {icon}
@@ -636,34 +686,6 @@ export default function HomePage() {
                       {kpiCard("Behind Plan", kpis.projectsBehindPlan ?? "\u2014", <Clock className="w-4 h-4" />, { color: Number(kpis.projectsBehindPlan) > 0 ? "text-amber-600" : undefined })}
                     </div>
                   </div>
-                  <div>
-                    <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Financial Snapshot</h2>
-                    <div className="grid grid-cols-3 gap-2">
-                      {kpiCardDual("Inflows (FY)", money(kpis.plannedRevenueFy), money(kpis.receivedInflowFy), <DollarSign className="w-4 h-4" />)}
-                      {kpiCardDual("Gross Profit (FY)", money(kpis.grossProfitFy), money(kpis.receivedInflowFy - kpis.paidExpenditureFy), <TrendingUp className="w-4 h-4" />)}
-                      {kpiCardDual("COS (FY)", money(kpis.plannedExpenditureFy), money(kpis.paidExpenditureFy), <DollarSign className="w-4 h-4" />)}
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 mt-2">
-                      {kpiCard("AP Overdue (Outflows)", money(kpis.overdueOutflowFy), <AlertCircle className="w-4 h-4" />, {
-                        color: kpis.overdueOutflowFy > 0 ? "text-red-600" : undefined,
-                        onClick: () => setOverdueDrill("ap"),
-                        helpText: (
-                          <span>
-                            Includes only AP invoices (with invoice number) still unpaid as of today. Overdue means Approved Date is before today and not settled (paidDateConfirmed, COS Realised, or black paid-date marker). Uses current financial year live data only; planned rows and settled rows are excluded.
-                          </span>
-                        ),
-                      })}
-                      {kpiCard("AR Overdue (Inflows)", money(kpis.overdueInflowFy), <AlertCircle className="w-4 h-4" />, {
-                        color: kpis.overdueInflowFy > 0 ? "text-amber-600" : undefined,
-                        onClick: () => setOverdueDrill("ar"),
-                        helpText: (
-                          <span>
-                            Includes only AR invoices (with invoice number) still unreceived as of today. Overdue means Expected Payment Date is before today and not settled (paidDateConfirmed, inBankDate, or black paid-date marker). Uses current financial year live data only; planned rows and settled rows are excluded.
-                          </span>
-                        ),
-                      })}
-                    </div>
-                  </div>
                 </div>
                 <div className="lg:col-span-2">
                   <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Your Workspace</h2>
@@ -818,7 +840,7 @@ export default function HomePage() {
                 <div className="lg:col-span-3">
                   <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Key Metrics</h2>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {getKpiCards(config, kpis, stats, isLoading)}
+                    {getKpiCards(config, kpis, stats, isLoading, setLocation)}
                   </div>
                 </div>
               </div>
@@ -873,74 +895,6 @@ export default function HomePage() {
         </Suspense>
       )}
 
-      <Dialog open={overdueDrill !== null} onOpenChange={(open) => !open && setOverdueDrill(null)}>
-        <DialogContent className="max-w-6xl">
-          <DialogHeader>
-            <DialogTitle>{overdueDrill === "ap" ? "AP Overdue (Outflows) details" : "AR Overdue (Inflows) details"}</DialogTitle>
-          </DialogHeader>
-          {overdueLoading ? (
-            <Skeleton className="h-52 w-full" />
-          ) : (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-sm">
-                <p className="text-muted-foreground">
-                  Total outstanding: <span className="font-semibold text-foreground">{money(currentOverdue?.totalAmount || 0)}</span> · {currentOverdue?.count || 0} item(s)
-                </p>
-                <p className="text-muted-foreground">As of {overdueData?.asOfDate || "today"}</p>
-              </div>
-              {(currentOverdue?.missingDueDateCount || 0) > 0 && (
-                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
-                  {currentOverdue?.missingDueDateCount} item(s) were excluded because due date is missing, so overdue cannot be calculated reliably.
-                </p>
-              )}
-              {overdueRows.length === 0 ? (
-                <div className="text-sm text-muted-foreground border rounded p-4">
-                  {(currentOverdue?.missingDueDateCount || 0) > 0
-                    ? "No overdue items found in usable records. Remaining records are missing due dates."
-                    : "No overdue items found — all items are settled or not yet due."}
-                </div>
-              ) : (
-                <div className="max-h-[60vh] overflow-auto border rounded">
-                  <table className="w-full text-xs">
-                    <thead className="bg-muted sticky top-0">
-                      <tr>
-                        <th className="text-left px-2 py-2">Project</th>
-                        <th className="text-left px-2 py-2">{overdueDrill === "ap" ? "Supplier" : "Client"}</th>
-                        <th className="text-left px-2 py-2">Invoice #</th>
-                        <th className="text-left px-2 py-2">Invoice Date</th>
-                        <th className="text-left px-2 py-2">Due Date</th>
-                        <th className="text-right px-2 py-2">Outstanding</th>
-                        <th className="text-right px-2 py-2">Days Overdue</th>
-                        <th className="text-left px-2 py-2">Owner / PM</th>
-                        <th className="text-left px-2 py-2">Status</th>
-                        <th className="text-left px-2 py-2">Link</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {overdueRows.map((row: any) => (
-                        <tr key={row.id} className="border-t">
-                          <td className="px-2 py-1.5">{row.projectName || "—"}</td>
-                          <td className="px-2 py-1.5">{row.counterparty || "—"}</td>
-                          <td className="px-2 py-1.5">{row.invoiceNumber || "—"}</td>
-                          <td className="px-2 py-1.5">{row.invoiceDate || "—"}</td>
-                          <td className="px-2 py-1.5">{row.dueDate || "—"}</td>
-                          <td className="px-2 py-1.5 text-right font-mono">{money(row.outstandingAmount || 0)}</td>
-                          <td className="px-2 py-1.5 text-right">{row.daysOverdue ?? 0}</td>
-                          <td className="px-2 py-1.5">{row.owner || "—"}</td>
-                          <td className="px-2 py-1.5">{row.status || "Open"}</td>
-                          <td className="px-2 py-1.5">
-                            {row.recordLink ? <Link href={row.recordLink}><span className="text-primary hover:underline cursor-pointer">Open</span></Link> : "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </PageShell>
   );
 }
