@@ -32,6 +32,34 @@ export function threeWayMergeEnabled(): boolean {
   return !(norm === "false" || norm === "0" || norm === "no" || norm === "off");
 }
 
+/**
+ * **USE_SNAPSHOT_BASELINE** — when ON, the planner / 3-way conflict gate
+ * builds its baseline (B) from the per-row `import_snapshot` JSONB on
+ * each canonical table instead of `smartImportRuns.summaryJson.normalization`
+ * from the last committed run.
+ *
+ * Why: the writer engine (merge-engine.ts) already uses `import_snapshot`
+ * as its baseline. The planner using `summaryJson.normalization` meant
+ * the two engines disagreed on B — the writer would surface "More
+ * conflicts found" 409s for fields the planner had auto-resolved,
+ * causing the user-visible loop reported on Mondi/Bree imports.
+ *
+ * Aligning both engines on the same per-row snapshot baseline closes
+ * that gap. `import_snapshot` is also refreshed on every commit AND
+ * every manual cell edit, so the baseline correctly reflects the last
+ * "ground truth" the user saw — unlike the summaryJson baseline, which
+ * is anchored to whatever file was last imported.
+ *
+ * Default: ON. Turn off via:
+ *   export USE_SNAPSHOT_BASELINE=false
+ */
+export function snapshotBaselineEnabled(): boolean {
+  const raw = process.env.USE_SNAPSHOT_BASELINE;
+  if (raw === undefined || raw === "") return true; // default ON
+  const norm = raw.trim().toLowerCase();
+  return !(norm === "false" || norm === "0" || norm === "no" || norm === "off");
+}
+
 export interface ImportMetrics {
   importRunId: number;
   projectId: number;

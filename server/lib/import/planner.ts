@@ -11,7 +11,7 @@
  */
 
 import type { NormalizationResult } from "./normalizer";
-import { detectImportMode, loadCurrentPlanRows, loadCurrentRevenueRows, loadCurrentCostRows, loadBaselineNormalization } from "./baseline";
+import { detectImportMode, loadCurrentPlanRows, loadCurrentRevenueRows, loadCurrentCostRows, loadBaselineForPlanner } from "./baseline";
 import type { ImportMode } from "./baseline";
 import { runConflictEngine, type ConflictEngineResult, type ConflictSummary } from "./conflict-engine";
 
@@ -199,7 +199,7 @@ export async function runImportPlanner(
     loadCurrentPlanRows(projectId),
     loadCurrentRevenueRows(projectId),
     loadCurrentCostRows(projectId),
-    loadBaselineNormalization(projectId),
+    loadBaselineForPlanner(projectId),
   ]);
 
   if (!baselineNormalization) {

@@ -36,7 +36,7 @@ import { writePlanIncremental, writeRevenueIncremental, writeExpenditureIncremen
 import { newImportMetrics, emitImportMetrics, threeWayMergeEnabled } from "./lib/import/feature-flags";
 import { matchRows, generateBusinessKey, type SectionType, type MatchedRow } from "./lib/import/row-matcher";
 import { runConflictEngine, type RowMergeResult } from "./lib/import/conflict-engine";
-import { loadCurrentPlanRows, loadCurrentRevenueRows, loadCurrentCostRows, loadBaselineNormalization, detectImportMode } from "./lib/import/baseline";
+import { loadCurrentPlanRows, loadCurrentRevenueRows, loadCurrentCostRows, loadBaselineForPlanner, detectImportMode } from "./lib/import/baseline";
 import {
   smartImportRuns,
   importIssues,
@@ -2409,7 +2409,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         loadCurrentPlanRows(projectId),
         loadCurrentRevenueRows(projectId),
         loadCurrentCostRows(projectId),
-        baselineInfo.importMode === "INCREMENTAL" ? loadBaselineNormalization(projectId) : Promise.resolve(null),
+        baselineInfo.importMode === "INCREMENTAL" ? loadBaselineForPlanner(projectId) : Promise.resolve(null),
       ]);
 
       // Run row matching per section
