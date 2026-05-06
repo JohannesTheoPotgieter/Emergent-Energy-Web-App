@@ -398,7 +398,30 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
           </div>
         </div>
 
-        <QbAutoSuggestInbox />
+        <QbAutoSuggestInbox
+          onReview={async (suggestionId) => {
+            try {
+              const res = await apiRequest(
+                "GET",
+                `/api/quickbooks/invoice-matches/suggestions/${suggestionId}`,
+              );
+              const data = (await res.json()) as FindResponse;
+              setScope(data.scope);
+              setSelectedAppLine({
+                id: data.app.id,
+                invoiceNumber: data.app.invoiceNumber,
+                counterpartyName: data.app.counterpartyName,
+                amountExVat: data.app.amountExVat,
+                invoiceDate: data.app.invoiceDate,
+                projectId: data.app.projectId,
+              });
+              setFindResult(data);
+            } catch (err) {
+              const message = err instanceof Error ? err.message : "Failed to load suggestion";
+              toast({ title: "Review failed", description: message, variant: "destructive" });
+            }
+          }}
+        />
 
         {showSearch && (
           <div className="space-y-2">
