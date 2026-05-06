@@ -343,7 +343,7 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.get("/api/entity-assignments/bulk", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/entity-assignments/bulk", jwtAuth, requireAuth, requirePermission("my_work", "view"), async (req: Request, res: Response) => {
     try {
       const entityTypeRaw = req.query.entityType;
       if (typeof entityTypeRaw !== "string") {

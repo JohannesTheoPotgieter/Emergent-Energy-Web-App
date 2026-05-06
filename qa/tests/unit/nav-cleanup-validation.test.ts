@@ -413,7 +413,9 @@ describe("legacy redirects remain intact", () => {
   const aliases = new Map(LEGACY_REDIRECTS.map((r) => [r.path, r.redirectTo]));
 
   it("canonical redirects are unchanged", () => {
-    expect(aliases.get("/dashboard")).toBe("/gates");
+    // /dashboard now points to /execution-board (canonical company surface).
+    // Bookmarks that say "open the dashboard" land on something dashboard-shaped.
+    expect(aliases.get("/dashboard")).toBe("/execution-board");
     expect(aliases.get("/revenue")).toBe("/revenue-tracker");
     expect(aliases.get("/company-priorities")).toBe("/priorities");
     expect(aliases.get("/exceptions")).toBe("/gates/exceptions");
