@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { and, desc, eq, inArray, isNull, not, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, not, or, sql } from "drizzle-orm";
 import {
   workItems,
   workItemAssignments,
@@ -300,4 +300,175 @@ export class WorkManagementRepository {
   async createMytoolTimeblock(data: InsertMytoolTimeblock): Promise<MytoolTimeblock> { const now = new Date(); const [created] = await this.dbInstance.insert(mytoolTimeblocks).values({ ...data, createdAt: now, updatedAt: now }).returning(); return created; }
   async updateMytoolTimeblock(id: number, data: Partial<InsertMytoolTimeblock>): Promise<MytoolTimeblock> { const [updated] = await this.dbInstance.update(mytoolTimeblocks).set({ ...data, updatedAt: new Date() }).where(eq(mytoolTimeblocks.id, id)).returning(); return updated; }
   async deleteMytoolTimeblock(id: number): Promise<void> { await this.dbInstance.delete(mytoolTimeblocks).where(eq(mytoolTimeblocks.id, id)); }
+
+  // ── Plan structure helpers (PM workstream over work_items) ──
+
+  async listPmTopLevelWbsCodes(projectId: number): Promise<string[]> {
+    const rows = await this.dbInstance
+      .select({ wbsCode: workItems.wbsCode })
+      .from(workItems)
+      .where(and(
+        eq(workItems.projectId, projectId),
+        eq(workItems.workstream, "PM"),
+        isNull(workItems.deletedAt),
+        isNull(workItems.parentId),
+      ))
+      .orderBy(desc(workItems.id));
+    return rows.map((r: { wbsCode: string | null }) => r.wbsCode).filter((c: string | null): c is string => Boolean(c));
+  }
+
+  async getMaxSortOrder(projectId: number): Promise<number> {
+    const rows = await this.dbInstance
+      .select({ maxSort: sql<number>`COALESCE(MAX(${workItems.sortOrder}), 0)` })
+      .from(workItems)
+      .where(and(
+        eq(workItems.projectId, projectId),
+        isNull(workItems.deletedAt),
+      ));
+    return Number(rows[0]?.maxSort ?? 0);
+  }
+
+  async createPmMilestone(input: {
+    projectId: number;
+    title: string;
+    wbsCode: string;
+    sortOrder: number;
+    createdBy: number | null;
+  }): Promise<{ id: number; wbsCode: string }> {
+    const [created] = await this.dbInstance.insert(workItems).values({
+      projectId: input.projectId,
+      workstream: "PM",
+      source: "UI",
+      title: input.title,
+      status: "Not Started",
+      priority: "Normal",
+      startDate: null,
+      endDate: null,
+      duration: 0,
+      percentComplete: 0,
+      wbsCode: input.wbsCode,
+      indentLevel: 0,
+      parentId: null,
+      isMilestone: true,
+      createdBy: input.createdBy,
+      taskMode: "auto",
+      sortOrder: input.sortOrder,
+    } as InsertWorkItem).returning();
+    return { id: created.id, wbsCode: input.wbsCode };
+  }
+
+  async getIndentLevel(id: number): Promise<number> {
+    const rows = await this.dbInstance
+      .select({ indentLevel: workItems.indentLevel })
+      .from(workItems)
+      .where(eq(workItems.id, id));
+    return rows[0]?.indentLevel ?? 0;
+  }
+
+  async setParentAndIndent(id: number, parentId: number, indentLevel: number): Promise<void> {
+    await this.dbInstance
+      .update(workItems)
+      .set({ parentId, indentLevel, updatedAt: new Date() })
+      .where(eq(workItems.id, id));
+  }
+
+  async markAsMilestoneIfNot(id: number): Promise<void> {
+    await this.dbInstance
+      .update(workItems)
+      .set({ isMilestone: true, updatedAt: new Date() })
+      .where(and(eq(workItems.id, id), eq(workItems.isMilestone, false)));
+  }
+
+  async clearParent(id: number): Promise<void> {
+    await this.dbInstance
+      .update(workItems)
+      .set({ parentId: null, indentLevel: 0, updatedAt: new Date() })
+      .where(eq(workItems.id, id));
+  }
+
+  async clearParentByParentId(parentId: number): Promise<void> {
+    await this.dbInstance
+      .update(workItems)
+      .set({ parentId: null, indentLevel: 0, updatedAt: new Date() })
+      .where(eq(workItems.parentId, parentId));
+  }
+
+  async softDeleteWorkItem(id: number): Promise<void> {
+    const now = new Date();
+    await this.dbInstance
+      .update(workItems)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(eq(workItems.id, id));
+  }
+
+  async setParentBatch(parentWorkItemId: number, workItemIds: number[]): Promise<void> {
+    if (workItemIds.length === 0) return;
+    await this.dbInstance.transaction(async (tx: typeof db) => {
+      const parentItem = await tx
+        .select({ indentLevel: workItems.indentLevel })
+        .from(workItems)
+        .where(eq(workItems.id, parentWorkItemId));
+      const parentIndent = parentItem[0]?.indentLevel ?? 0;
+      const now = new Date();
+      for (const wiId of workItemIds) {
+        await tx
+          .update(workItems)
+          .set({ parentId: parentWorkItemId, indentLevel: parentIndent + 1, updatedAt: now })
+          .where(eq(workItems.id, wiId));
+      }
+      await tx
+        .update(workItems)
+        .set({ isMilestone: true, updatedAt: now })
+        .where(and(eq(workItems.id, parentWorkItemId), eq(workItems.isMilestone, false)));
+    });
+  }
+
+  async setSortOrders(items: Array<{ id: number; sortOrder: number }>): Promise<void> {
+    if (items.length === 0) return;
+    await this.dbInstance.transaction(async (tx: typeof db) => {
+      const now = new Date();
+      for (const item of items) {
+        await tx
+          .update(workItems)
+          .set({ sortOrder: item.sortOrder, updatedAt: now })
+          .where(eq(workItems.id, item.id));
+      }
+    });
+  }
+
+  async listPmWbsTree(projectId: number): Promise<Array<{
+    id: number;
+    parentId: number | null;
+    wbsCode: string | null;
+    sortOrder: number | null;
+  }>> {
+    const rows = await this.dbInstance
+      .select({
+        id: workItems.id,
+        parentId: workItems.parentId,
+        wbsCode: workItems.wbsCode,
+        sortOrder: workItems.sortOrder,
+      })
+      .from(workItems)
+      .where(and(
+        eq(workItems.projectId, projectId),
+        eq(workItems.workstream, "PM"),
+        isNull(workItems.deletedAt),
+      ))
+      .orderBy(asc(workItems.sortOrder), asc(workItems.id));
+    return rows;
+  }
+
+  async applyWbsRenumber(updates: Array<{ id: number; wbsCode: string; indentLevel: number }>): Promise<void> {
+    if (updates.length === 0) return;
+    await this.dbInstance.transaction(async (tx: typeof db) => {
+      const now = new Date();
+      for (const u of updates) {
+        await tx
+          .update(workItems)
+          .set({ wbsCode: u.wbsCode, indentLevel: u.indentLevel, updatedAt: now })
+          .where(eq(workItems.id, u.id));
+      }
+    });
+  }
 }

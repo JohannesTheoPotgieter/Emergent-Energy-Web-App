@@ -16,8 +16,8 @@
 import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { db } from "../db";
-import { eq, and, sql, isNull, desc, asc, inArray } from "drizzle-orm";
-import { users, notifications, workItems, workItemAssignments } from "@shared/schema";
+import { eq, inArray } from "drizzle-orm";
+import { workItems } from "@shared/schema";
 import { OVERRIDE_CATEGORIES } from "@shared/schema";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
@@ -27,6 +27,13 @@ import { recordManualEditFlag } from "../lib/manual-edit-flag";
 import { isWorkItemsEnabled, getAllWorkItemsForPlanTab } from "../work-items-adapter";
 import { convertWorkItemTypeInPlace, WorkItemConversionError } from "../services/work-item-conversion-service";
 import { paramStr } from "../lib/req-params";
+import { UsersRepository } from "../repositories/users-repository";
+import { NotificationsRepository } from "../repositories/notifications-repository";
+import { WorkManagementRepository } from "../repositories/work-management-repository";
+
+const usersRepository = new UsersRepository();
+const notificationsRepository = new NotificationsRepository();
+const workManagementRepository = new WorkManagementRepository();
 
 // ── Plan change notification helpers (moved from routes.ts) ──
 
@@ -39,20 +46,18 @@ async function sendPlanChangeNotifications(
   changeDetails: { field?: string; oldValue?: string; newValue?: string; tasks?: string[]; operation?: string }[]
 ) {
   try {
-    const recipients = await db.select({ id: users.id, name: users.name, role: users.role })
-      .from(users)
-      .where(inArray(users.role, PLAN_CHANGE_NOTIFY_ROLES));
+    const recipients = await usersRepository.listByRoles(PLAN_CHANGE_NOTIFY_ROLES);
 
     if (recipients.length === 0) return;
 
-    const [changedByUser] = changedByUserId
-      ? await db.select({ name: users.name }).from(users).where(eq(users.id, changedByUserId))
-      : [{ name: "System" }];
+    const changedByName = changedByUserId
+      ? (await usersRepository.getNameById(changedByUserId)) ?? "Unknown"
+      : "System";
 
-    const detailsJson = JSON.stringify({ projectName, changedBy: changedByUser?.name || "Unknown", changes: changeDetails, timestamp: new Date().toISOString() });
+    const detailsJson = JSON.stringify({ projectName, changedBy: changedByName, changes: changeDetails, timestamp: new Date().toISOString() });
     for (const recipient of recipients) {
       if (recipient.id === changedByUserId) continue;
-      await db.insert(notifications).values({
+      await notificationsRepository.create({
         recipientUserId: recipient.id,
         eventType: "plan_change",
         title: `Plan updated: ${projectName}`,
@@ -230,54 +235,27 @@ export function registerPlanningExtractedRoutes(app: Express): void {
           const projectId = projectInfoRow?.id || null;
           if (!projectId) return res.status(400).json({ error: "Project not found" });
 
-          const existingItems = await db.select({ wbsCode: workItems.wbsCode })
-            .from(workItems)
-            .where(and(
-              projectId ? eq(workItems.projectId, projectId) : sql`false`,
-              eq(workItems.workstream, "PM"),
-              isNull(workItems.deletedAt),
-              isNull(workItems.parentId),
-            ))
-            .orderBy(desc(workItems.id));
+          const existingWbsCodes = await workManagementRepository.listPmTopLevelWbsCodes(projectId);
 
           let nextTopLevelNum = 1;
-          for (const item of existingItems) {
-            if (item.wbsCode) {
-              const topLevel = parseInt(item.wbsCode.split('.')[0]);
-              if (!isNaN(topLevel) && topLevel >= nextTopLevelNum) {
-                nextTopLevelNum = topLevel + 1;
-              }
+          for (const wbsCode of existingWbsCodes) {
+            const topLevel = parseInt(wbsCode.split('.')[0]);
+            if (!isNaN(topLevel) && topLevel >= nextTopLevelNum) {
+              nextTopLevelNum = topLevel + 1;
             }
           }
           const newWbsCode = String(nextTopLevelNum);
 
-          const maxSort = await db.select({ maxSort: sql`COALESCE(MAX(sort_order), 0)` })
-            .from(workItems)
-            .where(and(
-              projectId ? eq(workItems.projectId, projectId) : sql`false`,
-              isNull(workItems.deletedAt),
-            ));
-          const nextSortOrder = (Number((maxSort[0] as any)?.maxSort) || 0) + 10;
+          const maxSort = await workManagementRepository.getMaxSortOrder(projectId);
+          const nextSortOrder = maxSort + 10;
 
-          const [newMilestone] = await db.insert(workItems).values({
+          const newMilestone = await workManagementRepository.createPmMilestone({
             projectId,
-            workstream: "PM",
-            source: "UI",
             title,
-            status: "Not Started",
-            priority: "Normal",
-            startDate: null,
-            endDate: null,
-            duration: 0,
-            percentComplete: 0,
             wbsCode: newWbsCode,
-            indentLevel: 0,
-            parentId: null,
-            isMilestone: true,
-            createdBy: userId,
-            taskMode: "auto",
             sortOrder: nextSortOrder,
-          }).returning();
+            createdBy: userId,
+          });
 
           notifyStructureChange(`New milestone created: "${title}".`);
           return res.json({ message: "Milestone created", workItemId: newMilestone.id, wbsCode: newWbsCode });
@@ -542,6 +520,9 @@ export function registerPlanningExtractedRoutes(app: Express): void {
         const projectId = projectInfoRow?.id || null;
         if (!projectId) return res.status(400).json({ error: "Project not found" });
 
+        // TODO(EE-QA-011): move this db.transaction + inline tx repo into
+        // WorkManagementRepository.runConversionTransaction; not lint-blocked
+        // today (rule scope is db.{select,insert,update,delete} only).
         try {
           await db.transaction(async (tx: any) => {
             const repo = {
@@ -619,6 +600,8 @@ export function registerPlanningExtractedRoutes(app: Express): void {
         const projectId = projectInfoRow?.id || null;
         if (!projectId) return res.status(400).json({ error: "Project not found" });
 
+        // TODO(EE-QA-011): see convertToMilestoneWI — same transaction-driven
+        // inline repo, same follow-up to lift into WorkManagementRepository.
         try {
           await db.transaction(async (tx: any) => {
             const repo = {
@@ -676,14 +659,9 @@ export function registerPlanningExtractedRoutes(app: Express): void {
         const { workItemId, parentWorkItemId } = data || {};
         if (!workItemId || !parentWorkItemId) return res.status(400).json({ error: "workItemId and parentWorkItemId required" });
         if (workItemId === parentWorkItemId) return res.status(400).json({ error: "Cannot indent a task under itself" });
-        const parentItem = await db.select({ indentLevel: workItems.indentLevel }).from(workItems).where(eq(workItems.id, parentWorkItemId));
-        const parentIndent = parentItem[0]?.indentLevel ?? 0;
-        await db.update(workItems)
-          .set({ parentId: parentWorkItemId, indentLevel: parentIndent + 1, updatedAt: new Date() })
-          .where(eq(workItems.id, workItemId));
-        await db.update(workItems)
-          .set({ isMilestone: true, updatedAt: new Date() })
-          .where(and(eq(workItems.id, parentWorkItemId), eq(workItems.isMilestone, false)));
+        const parentIndent = await workManagementRepository.getIndentLevel(parentWorkItemId);
+        await workManagementRepository.setParentAndIndent(workItemId, parentWorkItemId, parentIndent + 1);
+        await workManagementRepository.markAsMilestoneIfNot(parentWorkItemId);
         notifyStructureChange(`Task indented under parent.`);
         return res.json({ message: "Task indented" });
       }
@@ -691,9 +669,7 @@ export function registerPlanningExtractedRoutes(app: Express): void {
       if (operation === "outdentWI") {
         const { workItemId } = data || {};
         if (!workItemId) return res.status(400).json({ error: "workItemId required" });
-        await db.update(workItems)
-          .set({ parentId: null, indentLevel: 0, updatedAt: new Date() })
-          .where(eq(workItems.id, workItemId));
+        await workManagementRepository.clearParent(workItemId);
         notifyStructureChange(`Task outdented to top level.`);
         return res.json({ message: "Task outdented" });
       }
@@ -705,18 +681,7 @@ export function registerPlanningExtractedRoutes(app: Express): void {
         }
         const safeIds = workItemIds.filter((id: number) => id !== parentWorkItemId);
         if (safeIds.length === 0) return res.status(400).json({ error: "No valid tasks after excluding parent" });
-        await db.transaction(async (tx: any) => {
-          const parentItem = await tx.select({ indentLevel: workItems.indentLevel }).from(workItems).where(eq(workItems.id, parentWorkItemId));
-          const parentIndent = parentItem[0]?.indentLevel ?? 0;
-          for (const wiId of safeIds) {
-            await tx.update(workItems)
-              .set({ parentId: parentWorkItemId, indentLevel: parentIndent + 1, updatedAt: new Date() })
-              .where(eq(workItems.id, wiId));
-          }
-          await tx.update(workItems)
-            .set({ isMilestone: true, updatedAt: new Date() })
-            .where(and(eq(workItems.id, parentWorkItemId), eq(workItems.isMilestone, false)));
-        });
+        await workManagementRepository.setParentBatch(parentWorkItemId, safeIds);
         notifyStructureChange(`${safeIds.length} task(s) grouped under parent.`);
         return res.json({ message: `${safeIds.length} tasks grouped` });
       }
@@ -725,9 +690,7 @@ export function registerPlanningExtractedRoutes(app: Express): void {
         const { workItemIds } = data || {};
         if (!Array.isArray(workItemIds)) return res.status(400).json({ error: "workItemIds[] required" });
         for (const wiId of workItemIds) {
-          await db.update(workItems)
-            .set({ parentId: null, indentLevel: 0, updatedAt: new Date() })
-            .where(eq(workItems.id, wiId));
+          await workManagementRepository.clearParent(wiId);
         }
         notifyStructureChange(`${workItemIds.length} task(s) ungrouped.`);
         return res.json({ message: `${workItemIds.length} tasks ungrouped` });
@@ -738,11 +701,9 @@ export function registerPlanningExtractedRoutes(app: Express): void {
         if (!Array.isArray(items) || items.length === 0) {
           return res.status(400).json({ error: "items[] with {workItemId, sortOrder} required" });
         }
-        for (const item of items) {
-          await db.update(workItems)
-            .set({ sortOrder: item.sortOrder, updatedAt: new Date() })
-            .where(eq(workItems.id, item.workItemId));
-        }
+        await workManagementRepository.setSortOrders(
+          items.map((item: { workItemId: number; sortOrder: number }) => ({ id: item.workItemId, sortOrder: item.sortOrder }))
+        );
         notifyStructureChange(`${items.length} task(s) reordered.`);
         return res.json({ message: `Reordered ${items.length} tasks` });
       }
@@ -752,20 +713,11 @@ export function registerPlanningExtractedRoutes(app: Express): void {
         const projectId = projectInfoRow?.id || null;
         if (!projectId) return res.status(400).json({ error: "Project not found" });
 
-        const allItems = await db.select({
-          id: workItems.id,
-          parentId: workItems.parentId,
-          wbsCode: workItems.wbsCode,
-          sortOrder: workItems.sortOrder,
-        }).from(workItems).where(and(
-          eq(workItems.projectId, projectId),
-          eq(workItems.workstream, "PM"),
-          isNull(workItems.deletedAt),
-        )).orderBy(asc(workItems.sortOrder), asc(workItems.id));
+        const allItems = await workManagementRepository.listPmWbsTree(projectId);
 
-        const childMap = new Map<number | null, any[]>();
+        const childMap = new Map<number | null, typeof allItems>();
         for (const item of allItems) {
-          const parent = item.parentId || null;
+          const parent = item.parentId ?? null;
           if (!childMap.has(parent)) childMap.set(parent, []);
           childMap.get(parent)!.push(item);
         }
@@ -773,7 +725,7 @@ export function registerPlanningExtractedRoutes(app: Express): void {
         const updates: Array<{ id: number; wbsCode: string; indentLevel: number }> = [];
         const assignWbs = (parentId: number | null, prefix: string, depth: number) => {
           const children = childMap.get(parentId) || [];
-          children.forEach((child: any, idx: number) => {
+          children.forEach((child, idx: number) => {
             const num = prefix ? `${prefix}.${idx + 1}` : String(idx + 1);
             updates.push({ id: child.id, wbsCode: num, indentLevel: depth });
             assignWbs(child.id, num, depth + 1);
@@ -781,11 +733,7 @@ export function registerPlanningExtractedRoutes(app: Express): void {
         };
         assignWbs(null, "", 0);
 
-        for (const u of updates) {
-          await db.update(workItems)
-            .set({ wbsCode: u.wbsCode, indentLevel: u.indentLevel, updatedAt: new Date() })
-            .where(eq(workItems.id, u.id));
-        }
+        await workManagementRepository.applyWbsRenumber(updates);
         notifyStructureChange(`WBS renumbered for ${updates.length} tasks.`);
         return res.json({ message: `Renumbered ${updates.length} tasks` });
       }
@@ -793,12 +741,8 @@ export function registerPlanningExtractedRoutes(app: Express): void {
       if (operation === "deleteMilestoneWI") {
         const { workItemId } = data || {};
         if (!workItemId) return res.status(400).json({ error: "workItemId required" });
-        await db.update(workItems)
-          .set({ parentId: null, indentLevel: 0, updatedAt: new Date() })
-          .where(eq(workItems.parentId, workItemId));
-        await db.update(workItems)
-          .set({ deletedAt: new Date(), updatedAt: new Date() })
-          .where(eq(workItems.id, workItemId));
+        await workManagementRepository.clearParentByParentId(workItemId);
+        await workManagementRepository.softDeleteWorkItem(workItemId);
         notifyStructureChange(`Milestone deleted and children ungrouped.`);
         return res.json({ message: "Milestone deleted and children ungrouped" });
       }
