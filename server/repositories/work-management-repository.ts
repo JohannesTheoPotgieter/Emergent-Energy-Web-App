@@ -301,38 +301,18 @@ export class WorkManagementRepository {
   async updateMytoolTimeblock(id: number, data: Partial<InsertMytoolTimeblock>): Promise<MytoolTimeblock> { const [updated] = await this.dbInstance.update(mytoolTimeblocks).set({ ...data, updatedAt: new Date() }).where(eq(mytoolTimeblocks.id, id)).returning(); return updated; }
   async deleteMytoolTimeblock(id: number): Promise<void> { await this.dbInstance.delete(mytoolTimeblocks).where(eq(mytoolTimeblocks.id, id)); }
 
-  // ── Reporting reads (PM workstream slices) ──
-
-  async listAllPmWorkItems(): Promise<WorkItem[]> {
+  /**
+   * All non-deleted work_items rows for a single project — full-row shape
+   * so callers can project as needed (financial-integration warnings,
+   * sync-status readouts, critical-path probes).
+   */
+  async listByProjectIdNonDeleted(projectId: number): Promise<WorkItem[]> {
     return this.dbInstance
       .select()
       .from(workItems)
       .where(and(
-        eq(workItems.workstream, "PM"),
-        sql`${workItems.deletedAt} IS NULL`,
-      ));
-  }
-
-  async listSmartImportPmTasks(): Promise<WorkItem[]> {
-    return this.dbInstance
-      .select()
-      .from(workItems)
-      .where(and(
-        eq(workItems.workstream, "PM"),
-        eq(workItems.source, "SMART_IMPORT"),
-        sql`${workItems.deletedAt} IS NULL`,
-      ))
-      .orderBy(workItems.projectId, workItems.sourceRow);
-  }
-
-  async listPmTasksWithOwner(): Promise<WorkItem[]> {
-    return this.dbInstance
-      .select()
-      .from(workItems)
-      .where(and(
-        eq(workItems.workstream, "PM"),
-        sql`${workItems.deletedAt} IS NULL`,
-        sql`${workItems.ownerName} IS NOT NULL`,
+        eq(workItems.projectId, projectId),
+        isNull(workItems.deletedAt),
       ));
   }
 
