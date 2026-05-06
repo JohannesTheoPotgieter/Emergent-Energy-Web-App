@@ -1,8 +1,17 @@
+/**
+ * @deprecated EE-QA-017 — legacy Excel parser. Smart Import v2 (`server/imports/`)
+ * is the canonical importer. Do not import from this module in new code; an
+ * ESLint `no-restricted-imports` rule blocks new call sites. The 4 existing
+ * legacy call sites (`server/routes/imports-admin-extracted-routes.ts`,
+ * `server/departments/admin-routes.ts`, `server/bootstrap/start-runtime-services.ts`,
+ * `server/bootstrap/environment-status.ts`) are explicitly allow-listed and
+ * tracked for migration as a structural workstream.
+ */
 import ExcelJS from "exceljs";
-import type { 
-  InsertProjectInfo, 
-  InsertProgramExpense, 
-  InsertProgramInflows, 
+import type {
+  InsertProjectInfo,
+  InsertProgramExpense,
+  InsertProgramInflows,
   InsertProjectPlan,
   InsertCashflowPoint,
   InsertFinanceRevenueMonthly,

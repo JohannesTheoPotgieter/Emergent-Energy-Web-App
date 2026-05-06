@@ -169,6 +169,29 @@ export type InsertProgramInflows = Partial<Omit<ProgramInflows, "id" | "createdA
   projectId: number;
 };
 
+// ============================================================================
+// EE-QA-024 — canonical aliases for the legacy PE/PI compatibility shapes.
+//
+// New code should reference `ExpenseLine` / `InflowLine` (and the matching
+// `Insert*` types) rather than the historical `ProgramExpense` /
+// `ProgramInflows` names. Both are still the same compatibility shape — the
+// aliases simply remove the misleading "Program*" prefix from new call sites
+// (the underlying tables `program_expense` / `program_inflows` were dropped
+// by migration 20260414, see comment block at top of this file).
+//
+// The 20 existing legacy call sites still reference Program(Expense|Inflows)
+// directly. They are tracked for a mechanical rename as a structural
+// workstream — see audit/EE-QA-Assessment-2026-05-06.md § EE-QA-024.
+// ============================================================================
+
+/** Canonical name for the PE-shape compatibility view. New code must use this. */
+export type ExpenseLine = ProgramExpense;
+export type InsertExpenseLine = InsertProgramExpense;
+
+/** Canonical name for the PI-shape compatibility view. New code must use this. */
+export type InflowLine = ProgramInflows;
+export type InsertInflowLine = InsertProgramInflows;
+
 // ===================== PROJECT PLAN =====================
 
 export const projectPlan = pgTable("project_plan", {
