@@ -51,6 +51,8 @@ import {
   logApiError,
 } from "../lib/api-error";
 import {
+  invoiceDescriptionPatterns,
+  invoicePatternRules,
   normalizedCostLines,
   normalizedRevenueLines,
   quickbooksDocuments,
@@ -62,8 +64,21 @@ import {
   appSideWarnings,
   type AppInvoiceLike,
   type QbCandidateLike,
+  type LearnedPatternMatch,
   type ScoredCandidate,
 } from "../services/quickbooks-invoice-match-service";
+import {
+  detectAndPersistProposals,
+  loadCostLineContext,
+  loadRevenueLineContext,
+  acceptProposal,
+  declineProposal,
+  listPendingProposalsForLink,
+  ProposalApplyError,
+  type AppRowContext,
+  type QbDocSnapshot,
+} from "../services/quickbooks-cascade-proposals-service";
+import { refreshProjectMetricsAsync } from "../services/dashboard-metrics";
 import {
   confirmCostLineLink,
   confirmRevenueLineLink,
@@ -73,8 +88,6 @@ import {
   getSiblingLinksForQbEntity,
   billRawToSummary,
   invoiceRawToSummary,
-  upsertVendorMapping,
-  upsertCustomerMapping,
   QuickBooksApproveValidationError,
   QuickBooksLinkConflictError,
   QuickBooksAllocationToleranceError,
@@ -491,6 +504,199 @@ async function findQbIdsAlreadyLinked(
   return new Set((rows as Array<{ qbEntityId: string }>).map((r) => r.qbEntityId));
 }
 
+/**
+ * Phase 2 — load active per-counterparty pattern rules and check each QB
+ * candidate's invoice number / memo against them. Returns a `Map<qbEntityId,
+ * LearnedPatternMatch[]>` so the scorer can lift candidates that match a
+ * known fingerprint into a higher tier ("learned: PREFIX SOL-" etc.).
+ *
+ * Cheap on the hot path — one query for the invoice-number rules, one for
+ * the description token rules. Both indexed on counterpartyId.
+ */
+async function loadLearnedMatchesForCounterparty(
+  counterpartyId: number | null | undefined,
+  candidates: QbCandidateLike[],
+): Promise<Map<string, LearnedPatternMatch[]>> {
+  const out = new Map<string, LearnedPatternMatch[]>();
+  if (!counterpartyId || candidates.length === 0) return out;
+
+  const [numberRules, descriptionRules] = await Promise.all([
+    db
+      .select({
+        id: invoicePatternRules.id,
+        patternType: invoicePatternRules.patternType,
+        patternValue: invoicePatternRules.patternValue,
+        confidenceWeight: invoicePatternRules.confidenceWeight,
+      })
+      .from(invoicePatternRules)
+      .where(
+        and(
+          eq(invoicePatternRules.counterpartyId, counterpartyId),
+          eq(invoicePatternRules.isActive, true),
+          isNull(invoicePatternRules.deletedAt),
+        ),
+      ),
+    db
+      .select({
+        id: invoiceDescriptionPatterns.id,
+        tokenSet: invoiceDescriptionPatterns.tokenSet,
+        confidenceWeight: invoiceDescriptionPatterns.confidenceWeight,
+      })
+      .from(invoiceDescriptionPatterns)
+      .where(
+        and(
+          eq(invoiceDescriptionPatterns.counterpartyId, counterpartyId),
+          eq(invoiceDescriptionPatterns.isActive, true),
+          isNull(invoiceDescriptionPatterns.deletedAt),
+        ),
+      ),
+  ]);
+
+  if (numberRules.length === 0 && descriptionRules.length === 0) return out;
+
+  const normNum = (s: string | null | undefined) =>
+    (s ?? "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+  const tokensFor = (s: string | null | undefined) => {
+    if (!s) return new Set<string>();
+    return new Set(
+      s
+        .replace(/[^a-zA-Z0-9 ]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase()
+        .split(" ")
+        .filter((t) => t.length >= 3),
+    );
+  };
+  const jaccard = (a: Set<string>, b: Set<string>) => {
+    if (a.size === 0 || b.size === 0) return 0;
+    let inter = 0;
+    for (const t of a) if (b.has(t)) inter++;
+    const union = a.size + b.size - inter;
+    return union === 0 ? 0 : inter / union;
+  };
+
+  for (const c of candidates) {
+    const matches: LearnedPatternMatch[] = [];
+
+    // Invoice-number rules
+    const docNum = normNum(c.qbDocNumber);
+    for (const rule of numberRules) {
+      if (!docNum) break;
+      const ruleNum = normNum(rule.patternValue);
+      if (rule.patternType === "PREFIX" && ruleNum && docNum.startsWith(ruleNum)) {
+        matches.push({
+          source: "invoice_number",
+          ruleId: rule.id,
+          similarity: 1,
+          label: `${rule.patternType} ${rule.patternValue}`,
+        });
+        break; // one invoice-number match is enough — avoid double-counting
+      }
+      if (rule.patternType === "REGEX") {
+        try {
+          if (new RegExp(rule.patternValue, "i").test(c.qbDocNumber ?? "")) {
+            matches.push({
+              source: "invoice_number",
+              ruleId: rule.id,
+              similarity: 1,
+              label: `regex /${rule.patternValue}/`,
+            });
+            break;
+          }
+        } catch {
+          /* malformed regex — skip */
+        }
+      }
+    }
+
+    // Description-token rules
+    const candTokens = tokensFor(c.qbDescription);
+    if (candTokens.size > 0) {
+      for (const rule of descriptionRules) {
+        const ruleTokens = new Set(
+          (Array.isArray(rule.tokenSet) ? (rule.tokenSet as string[]) : []) as string[],
+        );
+        const sim = jaccard(candTokens, ruleTokens);
+        if (sim >= 0.6) {
+          matches.push({
+            source: "description",
+            ruleId: rule.id,
+            similarity: sim,
+            label: `memo ${Math.round(sim * 100)}% match`,
+          });
+          break; // one description match is enough
+        }
+      }
+    }
+
+    if (matches.length > 0) out.set(c.qbEntityId, matches);
+  }
+
+  return out;
+}
+
+/**
+ * Phase 2 — bump per-rule counters when a learned-pattern-boosted candidate
+ * is approved or rejected. Splits the matches by source so the right table
+ * is updated. Idempotent on re-run within a single approve.
+ */
+async function bumpLearnedPatternCounters(
+  matches: LearnedPatternMatch[] | undefined,
+  outcome: "approved" | "rejected",
+): Promise<void> {
+  if (!matches || matches.length === 0) return;
+  const numberRuleIds = matches
+    .filter((m) => m.source === "invoice_number")
+    .map((m) => m.ruleId);
+  const descriptionRuleIds = matches
+    .filter((m) => m.source === "description")
+    .map((m) => m.ruleId);
+
+  if (numberRuleIds.length > 0) {
+    if (outcome === "approved") {
+      await db
+        .update(invoicePatternRules)
+        .set({
+          timesConfirmed: sql`${invoicePatternRules.timesConfirmed} + 1`,
+          timesMatched: sql`${invoicePatternRules.timesMatched} + 1`,
+          lastConfirmedAt: new Date(),
+        })
+        .where(inArray(invoicePatternRules.id, numberRuleIds));
+    } else {
+      await db
+        .update(invoicePatternRules)
+        .set({
+          timesOverridden: sql`${invoicePatternRules.timesOverridden} + 1`,
+          timesMatched: sql`${invoicePatternRules.timesMatched} + 1`,
+        })
+        .where(inArray(invoicePatternRules.id, numberRuleIds));
+    }
+  }
+  if (descriptionRuleIds.length > 0) {
+    if (outcome === "approved") {
+      await db
+        .update(invoiceDescriptionPatterns)
+        .set({
+          timesConfirmed: sql`${invoiceDescriptionPatterns.timesConfirmed} + 1`,
+          timesMatched: sql`${invoiceDescriptionPatterns.timesMatched} + 1`,
+          lastConfirmedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(inArray(invoiceDescriptionPatterns.id, descriptionRuleIds));
+    } else {
+      await db
+        .update(invoiceDescriptionPatterns)
+        .set({
+          timesOverridden: sql`${invoiceDescriptionPatterns.timesOverridden} + 1`,
+          timesMatched: sql`${invoiceDescriptionPatterns.timesMatched} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(inArray(invoiceDescriptionPatterns.id, descriptionRuleIds));
+    }
+  }
+}
+
 function billsToCandidates(
   rawBills: unknown,
 ): QbCandidateLike[] {
@@ -592,6 +798,36 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           return sendError(res, notFound(body.scope === "cost" ? "Cost line" : "Revenue line"));
         }
 
+        // Already-linked rows are not candidates for re-matching. Once
+        // linked, the only way to repoint the link is the admin-only
+        // POST /api/quickbooks/links/:id/force-relink endpoint. Returning
+        // an empty candidate list here keeps the auto-suggest path
+        // idempotent — no stacking suggestions, no "approve same link
+        // twice" footgun.
+        const appAlreadyLinked = await hasActiveLink(
+          body.scope === "cost" ? "cost_line" : "revenue_line",
+          app.id,
+        );
+        if (appAlreadyLinked) {
+          return res.json({
+            suggestionId: null,
+            scope: body.scope,
+            app: {
+              id: app.id,
+              invoiceNumber: app.invoiceNumber,
+              invoiceDate: app.invoiceDate,
+              amountExVat: app.amountExVat,
+              counterpartyName: app.counterpartyName,
+              poNumber: app.poNumber ?? null,
+              projectId: app.projectId,
+              description: app.description ?? null,
+            },
+            warnings: { no_po: false, already_linked: true },
+            candidates: [],
+            alreadyLinked: true,
+          });
+        }
+
         // 2. Load candidate population — fetch ALL QB docs so invoice-number
         //    and amount matches aren't silently excluded by a date window.
         //    Date differences are surfaced as warnings instead of filters.
@@ -602,6 +838,37 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
         } else {
           const invoicesRaw = await getInvoices();
           candidates = invoicesToCandidates(invoicesRaw);
+        }
+
+        // 2b. Phase 2 — annotate candidates with learned-pattern matches for
+        //     the app row's counterparty so tier-2.5 fires in the scorer.
+        //     Cost-line scope only — revenue lines don't carry a
+        //     counterpartyId on the row itself.
+        if (body.scope === "cost") {
+          const [cpRow] = await db
+            .select({ counterpartyId: normalizedCostLines.counterpartyId })
+            .from(normalizedCostLines)
+            .where(
+              and(
+                eq(normalizedCostLines.id, app.id),
+                isNull(normalizedCostLines.effectiveTo),
+                isNull(normalizedCostLines.deletedAt),
+              ),
+            )
+            .limit(1);
+          if (cpRow?.counterpartyId) {
+            const learned = await loadLearnedMatchesForCounterparty(
+              cpRow.counterpartyId,
+              candidates,
+            );
+            if (learned.size > 0) {
+              candidates = candidates.map((c) =>
+                learned.has(c.qbEntityId)
+                  ? { ...c, learnedPatternMatches: learned.get(c.qbEntityId) }
+                  : c,
+              );
+            }
+          }
         }
 
         // 3. Score
@@ -634,7 +901,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
             siblingByQbId.set(qbId, summary);
           }),
         );
-        const annotated = ranked.map((c) => {
+        const annotatedAll = ranked.map((c) => {
           const sib = siblingByQbId.get(c.qbEntityId)!;
           const otherAppLinkedElsewhere = sib.links.some(
             (l) =>
@@ -664,6 +931,13 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
             },
           };
         });
+        // Drop candidates whose QB doc is already fully linked to other app
+        // rows. The user explicitly asked that already-linked items not be
+        // re-tried for matching — reviewers must use the admin force-relink
+        // path to repoint an existing link.
+        const annotated = annotatedAll.filter(
+          (c) => !c.qbAlreadyLinkedElsewhere,
+        );
 
         // 5. App-side warnings (per row, not per candidate)
         const appActiveLink = await hasActiveLink(
@@ -916,58 +1190,45 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
             createdLinkId = link.id;
           }
 
-          // Vendor / customer mapping — only executed when the caller opts in.
-          // Lock policy is enforced: a locked mapping is not silently overwritten;
-          // a 409 is returned so the caller must use the admin unlock endpoint first.
-          const suggestionRealmId = suggestion.qbRealmId;
-          const mappingResult: {
-            vendorMapped?: boolean;
-            customerMapped?: boolean;
-          } = {};
-
-          if (isCost && body.mapVendor && chosen.qbCounterpartyId) {
-            // Load counterpartyId from the cost line (required by vendor mapping table).
-            const [clRow] = await db
-              .select({ counterpartyId: normalizedCostLines.counterpartyId })
-              .from(normalizedCostLines)
-              .where(eq(normalizedCostLines.id, appEntityId))
-              .limit(1);
-            if (clRow?.counterpartyId) {
-              const vmResult = await upsertVendorMapping({
-                qbVendorId: chosen.qbCounterpartyId,
-                qbVendorName: chosen.qbCounterpartyName ?? null,
-                qbRealmId: suggestionRealmId,
-                counterpartyId: clRow.counterpartyId,
-                notes: body.notes ?? null,
+          // The link itself is now persisted. Every downstream cascade
+          // (vendor / customer mapping, counterpartyId backfill, paid_date
+          // overwrite, recon-ignore clear, name-alias learn, etc.) is
+          // recorded as a `qb_link_proposed_cascades` row in `pending`
+          // status. The reviewer accepts/declines each from the drawer.
+          // The legacy `mapVendor` / `mapCustomer` body flags remain
+          // accepted for backward compatibility but no longer trigger
+          // immediate writes — they're informational only.
+          const [createdLink] = await db
+            .select()
+            .from(quickbooksInvoiceLinks)
+            .where(eq(quickbooksInvoiceLinks.id, createdLinkId))
+            .limit(1);
+          let proposals: Awaited<ReturnType<typeof listPendingProposalsForLink>> = [];
+          if (createdLink) {
+            const appCtx: AppRowContext | null = isCost
+              ? await loadCostLineContext(appEntityId)
+              : await loadRevenueLineContext(appEntityId);
+            if (appCtx) {
+              const qbSnapshot: QbDocSnapshot = {
+                qbEntityType: isCost ? "bill" : "invoice",
+                qbEntityId: chosen.qbEntityId,
+                qbRealmId: suggestion.qbRealmId,
+                qbDocNumber: chosen.qbDocNumber,
+                qbTxnDate: chosen.qbTxnDate,
+                qbAmountExVat: chosen.qbAmountExVat,
+                qbPaymentStatus: chosen.qbPaymentStatus,
+                qbBalance: chosen.qbBalance,
+                qbCounterpartyId: chosen.qbCounterpartyId,
+                qbCounterpartyName: chosen.qbCounterpartyName,
+              };
+              proposals = await detectAndPersistProposals({
+                link: createdLink,
+                app: appCtx,
+                qb: qbSnapshot,
                 createdBy: userId,
               });
-              if (vmResult.wasLocked) {
-                return res.status(409).json({
-                  error: "mapping_locked",
-                  message: "Vendor mapping is locked — ask an admin to unlock it first.",
-                });
-              }
-              mappingResult.vendorMapped = true;
             }
           }
-
-          if (isRevenue && body.mapCustomer && chosen.qbCounterpartyId && projectId) {
-            await upsertCustomerMapping({
-              projectId,
-              qbCustomerId: chosen.qbCounterpartyId,
-              qbCustomerName: chosen.qbCounterpartyName ?? null,
-              qbRealmId: suggestionRealmId,
-              notes: body.notes ?? null,
-              createdBy: userId,
-            });
-            mappingResult.customerMapped = true;
-          }
-
-          const mappingRequested = {
-            mapVendor: !!body.mapVendor,
-            mapCustomer: !!body.mapCustomer,
-            ...mappingResult,
-          };
 
           // Mark suggestion accepted
           await db
@@ -979,6 +1240,19 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
               acceptedConfidence: String(chosen.confidence) as unknown as never,
             })
             .where(eq(quickbooksMatchSuggestions.id, suggestionId));
+
+          if (projectId) {
+            refreshProjectMetricsAsync(projectId);
+          }
+
+          // Phase 2 — bump learned-pattern rule counters when the chosen
+          // candidate was lifted by a per-counterparty fingerprint. Approval
+          // = positive feedback (timesConfirmed++), so future bills matching
+          // the same shape get progressively stronger boosts.
+          await bumpLearnedPatternCounters(
+            (chosen as ScoredCandidate).learnedPatternMatches,
+            "approved",
+          );
 
           logAuditFromReq(req, {
             entityType: "qb_invoice_match_suggestion",
@@ -995,7 +1269,8 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
               warnings: chosen.warnings,
               linkId: createdLinkId,
               notes: body.notes ?? null,
-              mappingRequested,
+              proposalCount: proposals.length,
+              proposalTypes: proposals.map((p) => p.proposalType),
               lineAllocations: body.lineAllocations ?? null,
               allocationTolerance: allocationToleranceMeta,
             },
@@ -1004,7 +1279,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           return res.status(201).json({
             ok: true,
             linkId: createdLinkId,
-            mappingRequested,
+            proposals,
             allocationTolerance: allocationToleranceMeta,
           });
         } catch (inner) {
@@ -1483,6 +1758,17 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           })
           .where(eq(quickbooksMatchSuggestions.id, suggestionId));
 
+        // Phase 2 — decay any rules that contributed to this suggestion's
+        // top-ranked candidate. Reject = timesOverridden++ across all
+        // matched rules; if the override ratio crosses 30% the matcher
+        // will eventually stop boosting the same shape.
+        const candidatesInSuggestion =
+          (suggestion.candidates as unknown as ScoredCandidate[]) ?? [];
+        const top = candidatesInSuggestion[0];
+        if (top) {
+          await bumpLearnedPatternCounters(top.learnedPatternMatches, "rejected");
+        }
+
         logAuditFromReq(req, {
           entityType: "qb_invoice_match_suggestion",
           entityId: String(suggestionId),
@@ -1764,6 +2050,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           outcome: RowOutcome;
           linkId?: number;
           reason?: string;
+          proposalCount?: number;
         }> = [];
         let approvedCount = 0;
         let skippedCount = 0;
@@ -1926,6 +2213,46 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
                 createdLinkId = link.id;
               }
 
+              // Persist cascade proposals so the bulk path matches the
+              // single-approve UX — every downstream change goes through
+              // the proposals inbox and never silently mutates app data.
+              const [createdLink] = await db
+                .select()
+                .from(quickbooksInvoiceLinks)
+                .where(eq(quickbooksInvoiceLinks.id, createdLinkId))
+                .limit(1);
+              let proposalCount = 0;
+              if (createdLink) {
+                const appCtx = isCost
+                  ? await loadCostLineContext(appEntityId)
+                  : await loadRevenueLineContext(appEntityId);
+                if (appCtx) {
+                  const candidateAny = chosen as ScoredCandidate & {
+                    qbCounterpartyId?: string | null;
+                    qbPaymentStatus?: string | null;
+                    qbBalance?: number | null;
+                  };
+                  const proposals = await detectAndPersistProposals({
+                    link: createdLink,
+                    app: appCtx,
+                    qb: {
+                      qbEntityType: isCost ? "bill" : "invoice",
+                      qbEntityId: chosen.qbEntityId,
+                      qbRealmId: suggestion.qbRealmId,
+                      qbDocNumber: chosen.qbDocNumber,
+                      qbTxnDate: chosen.qbTxnDate,
+                      qbAmountExVat: chosen.qbAmountExVat,
+                      qbPaymentStatus: candidateAny.qbPaymentStatus ?? null,
+                      qbBalance: candidateAny.qbBalance ?? null,
+                      qbCounterpartyId: candidateAny.qbCounterpartyId ?? null,
+                      qbCounterpartyName: chosen.qbCounterpartyName,
+                    },
+                    createdBy: userId,
+                  });
+                  proposalCount = proposals.length;
+                }
+              }
+
               await db
                 .update(quickbooksMatchSuggestions)
                 .set({
@@ -1935,6 +2262,15 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
                   acceptedConfidence: String(chosen.confidence) as unknown as never,
                 })
                 .where(eq(quickbooksMatchSuggestions.id, item.suggestionId));
+
+              if (projectId) {
+                refreshProjectMetricsAsync(projectId);
+              }
+
+              await bumpLearnedPatternCounters(
+                (chosen as ScoredCandidate).learnedPatternMatches,
+                "approved",
+              );
 
               logAuditFromReq(req, {
                 entityType: "qb_invoice_match_suggestion",
@@ -1949,10 +2285,11 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
                   confidence: chosen.confidence,
                   linkId: createdLinkId,
                   notes: item.notes ?? null,
+                  proposalCount,
                 },
               });
 
-              results.push({ suggestionId: item.suggestionId, outcome: "approved", linkId: createdLinkId });
+              results.push({ suggestionId: item.suggestionId, outcome: "approved", linkId: createdLinkId, proposalCount });
               approvedCount++;
             } catch (inner) {
               if (inner instanceof QuickBooksLinkConflictError) {
@@ -2091,6 +2428,543 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
       } catch (err) {
         logApiError("qb.invoice_match.bulk_reject", err);
         return sendError(res, serverError("Failed to bulk reject matches."));
+      }
+    },
+  );
+
+  // ========================================================================
+  // Cascade proposal endpoints
+  // ========================================================================
+  //
+  // After approve / bulk-approve / cascade-commit creates a link, the
+  // detector emits one `qb_link_proposed_cascades` row per app-side
+  // mutation it would propose (vendor mapping, paid_date overwrite, etc.).
+  // The reviewer accepts each from the drawer; nothing on the app side is
+  // mutated without an explicit accept. Decline records the reviewer's
+  // choice so the inbox stops nagging.
+
+  // GET /api/quickbooks/invoice-matches/links/:linkId/proposals
+  //    — return all pending proposals for a given link.
+  app.get(
+    "/api/quickbooks/invoice-matches/links/:linkId/proposals",
+    requireAuth,
+    requirePermission("financials", "view"),
+    async (req: Request, res: Response) => {
+      try {
+        const linkId = Number(req.params.linkId);
+        if (!Number.isFinite(linkId) || linkId <= 0) {
+          return sendError(res, badRequest("Invalid linkId"));
+        }
+        const proposals = await listPendingProposalsForLink(linkId);
+        return res.json({ linkId, proposals });
+      } catch (err) {
+        logApiError("qb.cascade_proposals.list", err);
+        return sendError(res, serverError("Failed to load proposals."));
+      }
+    },
+  );
+
+  // POST /api/quickbooks/invoice-matches/proposals/:id/accept
+  //    body: { note?: string }
+  // POST /api/quickbooks/invoice-matches/proposals/:id/decline
+  //    body: { note?: string }
+  const proposalActionBody = z.object({
+    note: z.string().max(500).optional(),
+  });
+
+  app.post(
+    "/api/quickbooks/invoice-matches/proposals/:id/accept",
+    requireAuth,
+    requirePermission("financials", "edit"),
+    validateBody(proposalActionBody),
+    async (req: Request, res: Response) => {
+      try {
+        const id = Number(req.params.id);
+        if (!Number.isFinite(id) || id <= 0) {
+          return sendError(res, badRequest("Invalid proposal id"));
+        }
+        const body = req.body as z.infer<typeof proposalActionBody>;
+        const userId = getEffectiveUser(req)?.id ?? null;
+        try {
+          const updated = await acceptProposal({
+            proposalId: id,
+            userId,
+            note: body.note ?? null,
+          });
+          if (updated.projectId) {
+            refreshProjectMetricsAsync(updated.projectId);
+          }
+          logAuditFromReq(req, {
+            entityType: "qb_link_proposed_cascade",
+            entityId: String(id),
+            action: "qb.cascade_proposal.accept",
+            source: "UI",
+            changesJson: {
+              proposalType: updated.proposalType,
+              fieldName: updated.fieldName,
+              targetTable: updated.targetTable,
+              targetId: updated.targetId,
+              linkId: updated.linkId,
+              appValue: updated.appValue,
+              qbValue: updated.qbValue,
+              note: body.note ?? null,
+            },
+          });
+          return res.json({ ok: true, proposal: updated });
+        } catch (inner) {
+          if (inner instanceof ProposalApplyError) {
+            return res.status(409).json({
+              error: "proposal_apply_failed",
+              code: inner.code,
+              message: inner.message,
+            });
+          }
+          throw inner;
+        }
+      } catch (err) {
+        logApiError("qb.cascade_proposals.accept", err);
+        return sendError(res, serverError("Failed to accept proposal."));
+      }
+    },
+  );
+
+  app.post(
+    "/api/quickbooks/invoice-matches/proposals/:id/decline",
+    requireAuth,
+    requirePermission("financials", "edit"),
+    validateBody(proposalActionBody),
+    async (req: Request, res: Response) => {
+      try {
+        const id = Number(req.params.id);
+        if (!Number.isFinite(id) || id <= 0) {
+          return sendError(res, badRequest("Invalid proposal id"));
+        }
+        const body = req.body as z.infer<typeof proposalActionBody>;
+        const userId = getEffectiveUser(req)?.id ?? null;
+        try {
+          const updated = await declineProposal({
+            proposalId: id,
+            userId,
+            note: body.note ?? null,
+          });
+          logAuditFromReq(req, {
+            entityType: "qb_link_proposed_cascade",
+            entityId: String(id),
+            action: "qb.cascade_proposal.decline",
+            source: "UI",
+            changesJson: {
+              proposalType: updated.proposalType,
+              fieldName: updated.fieldName,
+              linkId: updated.linkId,
+              note: body.note ?? null,
+            },
+          });
+          return res.json({ ok: true, proposal: updated });
+        } catch (inner) {
+          if (inner instanceof ProposalApplyError) {
+            return res.status(409).json({
+              error: "proposal_apply_failed",
+              code: inner.code,
+              message: inner.message,
+            });
+          }
+          throw inner;
+        }
+      } catch (err) {
+        logApiError("qb.cascade_proposals.decline", err);
+        return sendError(res, serverError("Failed to decline proposal."));
+      }
+    },
+  );
+
+  // ========================================================================
+  // Phase 3 — auto-suggest engine
+  // ========================================================================
+  //
+  // Iterates over unlinked app cost lines whose counterparty has at least
+  // one active learned-pattern rule (Phase 2 invoice-number prefix or
+  // description-token fingerprint), finds their best QuickBooks bill
+  // match using the same scorer the manual /find flow uses, and writes a
+  // `quickbooks_match_suggestions` row when the top candidate scores
+  // ≥ threshold. The reviewer still has to Approve from the inbox — the
+  // engine never auto-creates links.
+  //
+  // Skips any (app row, QB doc) pair that's already linked, and dedupes
+  // against pending suggestions for the same app row so re-running the
+  // engine doesn't stack duplicates.
+
+  const autoSuggestBodySchema = z.object({
+    threshold: z.number().int().min(60).max(100).optional(),
+    /** Cap on app rows scanned per run. Defaults to 200 to avoid runaway
+     *  on a fresh sync. */
+    limit: z.number().int().min(1).max(500).optional(),
+  });
+
+  app.post(
+    "/api/quickbooks/invoice-matches/auto-suggest/run",
+    requireAuth,
+    requirePermission("financials", "edit"),
+    validateBody(autoSuggestBodySchema),
+    async (req: Request, res: Response) => {
+      try {
+        const body = req.body as z.infer<typeof autoSuggestBodySchema>;
+        const threshold = body.threshold ?? 85;
+        const limit = body.limit ?? 200;
+        const userId = getEffectiveUser(req)?.id ?? null;
+
+        const status = await getQuickBooksConnectionStatus();
+        if (!status.connected || !status.realmId) {
+          return sendError(
+            res,
+            new ApiError(409, "quickbooks_not_connected", "QuickBooks is not connected"),
+          );
+        }
+        const qbRealmId = status.realmId;
+
+        // 1. Find candidate app cost lines: have a counterparty with at
+        //    least one active pattern rule, and have NO active QB link.
+        //    Subqueries avoid pulling thousands of rows just to filter.
+        const counterpartiesWithRules = db
+          .selectDistinct({ counterpartyId: invoicePatternRules.counterpartyId })
+          .from(invoicePatternRules)
+          .where(
+            and(
+              eq(invoicePatternRules.isActive, true),
+              isNull(invoicePatternRules.deletedAt),
+            ),
+          );
+        const counterpartiesWithDescPatterns = db
+          .selectDistinct({ counterpartyId: invoiceDescriptionPatterns.counterpartyId })
+          .from(invoiceDescriptionPatterns)
+          .where(
+            and(
+              eq(invoiceDescriptionPatterns.isActive, true),
+              isNull(invoiceDescriptionPatterns.deletedAt),
+            ),
+          );
+        const numberRuleCpIds = (await counterpartiesWithRules).map(
+          (r: { counterpartyId: number | null }) => r.counterpartyId,
+        );
+        const descRuleCpIds = (await counterpartiesWithDescPatterns).map(
+          (r: { counterpartyId: number | null }) => r.counterpartyId,
+        );
+        const cpIdSet = new Set<number>();
+        for (const id of numberRuleCpIds) if (id !== null) cpIdSet.add(id);
+        for (const id of descRuleCpIds) if (id !== null) cpIdSet.add(id);
+        if (cpIdSet.size === 0) {
+          return res.json({
+            ok: true,
+            docsScanned: 0,
+            candidatesScanned: 0,
+            suggestionsCreated: 0,
+            skippedAlreadyLinked: 0,
+            skippedAlreadyPending: 0,
+            message: "No counterparties with active pattern rules — nothing to auto-suggest.",
+          });
+        }
+
+        const cpIds = Array.from(cpIdSet);
+        // Active cost lines tied to those counterparties
+        const candidateRows = await db
+          .select({
+            id: normalizedCostLines.id,
+            projectId: normalizedCostLines.projectId,
+            invoiceNumber: normalizedCostLines.invoiceNumber,
+            invoiceDate: normalizedCostLines.invoiceDate,
+            amountExVat: normalizedCostLines.amountExVat,
+            counterpartyName: normalizedCostLines.counterpartyName,
+            poNumber: normalizedCostLines.poNumber,
+            description: normalizedCostLines.description,
+            counterpartyId: normalizedCostLines.counterpartyId,
+          })
+          .from(normalizedCostLines)
+          .where(
+            and(
+              inArray(normalizedCostLines.counterpartyId, cpIds),
+              isNull(normalizedCostLines.effectiveTo),
+              isNull(normalizedCostLines.deletedAt),
+            ),
+          )
+          .limit(limit);
+
+        // 2. Filter out app rows that are already linked OR have a pending
+        //    auto-suggestion already in the queue.
+        const candidateIds = candidateRows.map(
+          (r: { id: number }) => r.id,
+        );
+        const linkedAppIds = new Set<number>();
+        const pendingAppIds = new Set<number>();
+        if (candidateIds.length > 0) {
+          const linkedRows = await db
+            .select({ appEntityId: quickbooksInvoiceLinks.appEntityId })
+            .from(quickbooksInvoiceLinks)
+            .where(
+              and(
+                eq(quickbooksInvoiceLinks.appEntityType, "cost_line"),
+                inArray(quickbooksInvoiceLinks.appEntityId, candidateIds),
+                isNull(quickbooksInvoiceLinks.deletedAt),
+              ),
+            );
+          for (const r of linkedRows as Array<{ appEntityId: number }>) {
+            linkedAppIds.add(r.appEntityId);
+          }
+          const pendingRows = await db
+            .select({ appEntityId: quickbooksMatchSuggestions.appEntityId })
+            .from(quickbooksMatchSuggestions)
+            .where(
+              and(
+                eq(quickbooksMatchSuggestions.scope, "expense_invoice"),
+                inArray(
+                  quickbooksMatchSuggestions.appEntityId,
+                  candidateIds,
+                ),
+                isNull(quickbooksMatchSuggestions.acceptedAt),
+                isNull(quickbooksMatchSuggestions.rejectedAt),
+              ),
+            );
+          for (const r of pendingRows as Array<{ appEntityId: number | null }>) {
+            if (r.appEntityId !== null) pendingAppIds.add(r.appEntityId);
+          }
+        }
+        const eligibleRows = candidateRows.filter(
+          (r: { id: number }) =>
+            !linkedAppIds.has(r.id) && !pendingAppIds.has(r.id),
+        );
+
+        // 3. Pull all QB bills once, candidate-ify, drop already-linked.
+        const billsRaw = await getBills();
+        const allQbCandidates = billsToCandidates(billsRaw);
+        const linkedQbIds = await findQbIdsAlreadyLinked(
+          "bill",
+          qbRealmId,
+          allQbCandidates.map((c) => c.qbEntityId),
+        );
+        const unlinkedQbCandidates = allQbCandidates.filter(
+          (c) => !linkedQbIds.has(c.qbEntityId),
+        );
+
+        let suggestionsCreated = 0;
+        const createdSuggestionIds: number[] = [];
+
+        for (const row of eligibleRows) {
+          const app: AppInvoiceLike = {
+            id: row.id,
+            invoiceNumber: row.invoiceNumber,
+            invoiceDate: row.invoiceDate ? String(row.invoiceDate) : null,
+            amountExVat: amountToNumber(row.amountExVat),
+            counterpartyName: row.counterpartyName,
+            poNumber: row.poNumber,
+            description: row.description,
+          };
+
+          // Annotate candidates with learned-pattern matches for THIS row's
+          // counterparty (Phase 2 tier-2.5 boost is the whole point of the
+          // engine — without it we'd recreate manual /find).
+          const learned = await loadLearnedMatchesForCounterparty(
+            row.counterpartyId,
+            unlinkedQbCandidates,
+          );
+          const enriched = unlinkedQbCandidates.map((c) =>
+            learned.has(c.qbEntityId)
+              ? { ...c, learnedPatternMatches: learned.get(c.qbEntityId) }
+              : c,
+          );
+
+          const ranked = rankInvoiceMatches(app, enriched, 5);
+          const top = ranked[0];
+          if (!top || top.confidence < threshold) continue;
+
+          // De-dupe: don't re-insert if (during this run) another row
+          // already grabbed this QB doc.
+          if (linkedQbIds.has(top.qbEntityId)) continue;
+
+          const [suggestion] = await db
+            .insert(quickbooksMatchSuggestions)
+            .values({
+              scope: "expense_invoice",
+              qbRealmId,
+              appEntityId: row.id,
+              appEntityLabel: `${row.invoiceNumber ?? "(no invoice #)"} · ${row.counterpartyName ?? "—"}`,
+              candidates: ranked as unknown as object,
+              requestedBy: userId,
+              autoGenerated: true,
+            })
+            .returning({ id: quickbooksMatchSuggestions.id });
+          if (suggestion) {
+            createdSuggestionIds.push(suggestion.id);
+            suggestionsCreated++;
+            // Reserve the QB doc for this app row so two runs of the same
+            // engine pass don't both target it. (No DB-level reservation —
+            // the linkedQbIds set is a per-pass guard only.)
+            linkedQbIds.add(top.qbEntityId);
+          }
+        }
+
+        logAuditFromReq(req, {
+          entityType: "qb_invoice_match_suggestion",
+          entityId: "auto_suggest",
+          action: "qb.invoice_match.auto_suggest_run",
+          source: "UI",
+          changesJson: {
+            threshold,
+            limit,
+            counterpartiesWithRules: cpIdSet.size,
+            candidatesScanned: candidateRows.length,
+            eligible: eligibleRows.length,
+            qbDocsScanned: unlinkedQbCandidates.length,
+            suggestionsCreated,
+            createdSuggestionIds,
+          },
+        });
+
+        return res.json({
+          ok: true,
+          docsScanned: unlinkedQbCandidates.length,
+          candidatesScanned: eligibleRows.length,
+          skippedAlreadyLinked: linkedAppIds.size,
+          skippedAlreadyPending: pendingAppIds.size,
+          suggestionsCreated,
+          createdSuggestionIds,
+        });
+      } catch (err) {
+        logApiError("qb.invoice_match.auto_suggest_run", err);
+        return sendError(res, serverError("Auto-suggest run failed."));
+      }
+    },
+  );
+
+  // GET /api/quickbooks/invoice-matches/suggestions/:id
+  // Fetches a previously-persisted suggestion shaped exactly like the
+  // /find response so the inbox "Review" button can re-render the same
+  // candidate list without forcing a fresh /find call. Pending only —
+  // accepted/rejected suggestions return 410 Gone.
+  app.get(
+    "/api/quickbooks/invoice-matches/suggestions/:id",
+    requireAuth,
+    requirePermission("financials", "view"),
+    async (req: Request, res: Response) => {
+      try {
+        const id = Number(req.params.id);
+        if (!Number.isFinite(id) || id <= 0) {
+          return sendError(res, badRequest("Invalid suggestion id"));
+        }
+        const [suggestion] = await db
+          .select()
+          .from(quickbooksMatchSuggestions)
+          .where(eq(quickbooksMatchSuggestions.id, id))
+          .limit(1);
+        if (!suggestion) return sendError(res, notFound("Suggestion"));
+        if (suggestion.acceptedAt || suggestion.rejectedAt) {
+          return res.status(410).json({
+            error: "gone",
+            message: suggestion.acceptedAt
+              ? "Suggestion was already approved."
+              : "Suggestion was already rejected.",
+          });
+        }
+
+        const isCost = suggestion.scope === "expense_invoice";
+        const appEntityId = suggestion.appEntityId;
+        const app = isCost && appEntityId
+          ? await loadCostLine(appEntityId)
+          : appEntityId
+            ? await loadRevenueLine(appEntityId)
+            : null;
+        if (!app || appEntityId === null) {
+          return sendError(res, notFound("App entity for suggestion"));
+        }
+
+        const candidates = (suggestion.candidates as unknown as ScoredCandidate[]) ?? [];
+        const warnings = appSideWarnings(
+          app,
+          isCost ? "cost" : "revenue",
+          await hasActiveLink(isCost ? "cost_line" : "revenue_line", appEntityId),
+        );
+
+        return res.json({
+          suggestionId: suggestion.id,
+          scope: isCost ? "cost" : "revenue",
+          app: {
+            id: app.id,
+            invoiceNumber: app.invoiceNumber,
+            invoiceDate: app.invoiceDate,
+            amountExVat: app.amountExVat,
+            counterpartyName: app.counterpartyName,
+            poNumber: app.poNumber ?? null,
+            projectId: app.projectId,
+            description: app.description ?? null,
+          },
+          warnings,
+          candidates,
+        });
+      } catch (err) {
+        logApiError("qb.invoice_match.suggestion_replay", err);
+        return sendError(res, serverError("Failed to load suggestion."));
+      }
+    },
+  );
+
+  // GET /api/quickbooks/invoice-matches/auto-suggest/pending
+  // Lists pending system-generated (or recently-created) suggestions so
+  // the dashboard can render an inbox count. Ordered by requestedAt desc.
+  app.get(
+    "/api/quickbooks/invoice-matches/auto-suggest/pending",
+    requireAuth,
+    requirePermission("financials", "view"),
+    async (_req: Request, res: Response) => {
+      try {
+        const rows = await db
+          .select({
+            id: quickbooksMatchSuggestions.id,
+            scope: quickbooksMatchSuggestions.scope,
+            appEntityId: quickbooksMatchSuggestions.appEntityId,
+            appEntityLabel: quickbooksMatchSuggestions.appEntityLabel,
+            candidates: quickbooksMatchSuggestions.candidates,
+            requestedAt: quickbooksMatchSuggestions.requestedAt,
+          })
+          .from(quickbooksMatchSuggestions)
+          .where(
+            and(
+              eq(quickbooksMatchSuggestions.autoGenerated, true),
+              isNull(quickbooksMatchSuggestions.acceptedAt),
+              isNull(quickbooksMatchSuggestions.rejectedAt),
+            ),
+          )
+          .orderBy(desc(quickbooksMatchSuggestions.requestedAt))
+          .limit(100);
+
+        const summarised = rows.map(
+          (r: {
+            id: number;
+            scope: string;
+            appEntityId: number | null;
+            appEntityLabel: string | null;
+            candidates: unknown;
+            requestedAt: Date;
+          }) => {
+            const candidates = (r.candidates as ScoredCandidate[] | null) ?? [];
+            const top = candidates[0];
+            return {
+              id: r.id,
+              scope: r.scope,
+              appEntityId: r.appEntityId,
+              appEntityLabel: r.appEntityLabel,
+              requestedAt: r.requestedAt,
+              topConfidence: top?.confidence ?? null,
+              topQbDocNumber: top?.qbDocNumber ?? null,
+              topQbCounterpartyName: top?.qbCounterpartyName ?? null,
+              candidateCount: candidates.length,
+              hasLearnedPatternMatch: candidates.some(
+                (c) => Array.isArray(c.learnedPatternMatches) && c.learnedPatternMatches.length > 0,
+              ),
+            };
+          },
+        );
+
+        return res.json({ pending: summarised, total: summarised.length });
+      } catch (err) {
+        logApiError("qb.invoice_match.auto_suggest_pending", err);
+        return sendError(res, serverError("Failed to load pending suggestions."));
       }
     },
   );
