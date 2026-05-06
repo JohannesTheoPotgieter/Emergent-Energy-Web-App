@@ -326,20 +326,6 @@ export class FinanceInflowsRepository {
       .limit(limit);
   }
 
-  /**
-   * NOTE: also added in Wave 5.5 (PR #821); resolve any merge collision
-   * by keeping a single copy.
-   */
-  async listAllActiveRevenueLines(): Promise<Array<typeof normalizedRevenueLines.$inferSelect>> {
-    return this.dbInstance
-      .select()
-      .from(normalizedRevenueLines)
-      .where(and(
-        isNull(normalizedRevenueLines.effectiveTo),
-        isNull(normalizedRevenueLines.deletedAt),
-      ));
-  }
-
   async listActiveRevenueLineProjectNames(): Promise<Array<{ name: string | null }>> {
     return this.dbInstance
       .select({ name: normalizedRevenueLines.projectName })

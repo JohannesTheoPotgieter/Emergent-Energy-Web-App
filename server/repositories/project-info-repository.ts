@@ -44,6 +44,20 @@ export class ProjectInfoRepository {
       .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
   }
 
+  /**
+   * Project-name-only projection of `project_info`. Used by reconciliation
+   * surfaces (cost-side, revenue-side, QB class/customer overrides) that
+   * just need the universe of known project names without paying for a
+   * full row read. Mirrors the shape used by
+   * `listActiveCostLineProjectNames` / `listActiveRevenueLineProjectNames`
+   * so the call sites can union them with `Set<string>` semantics.
+   */
+  async listAllProjectNames(): Promise<Array<{ name: string | null }>> {
+    return this.dbInstance
+      .select({ name: projectInfo.projectName })
+      .from(projectInfo);
+  }
+
   async findIdByProjectName(projectName: string): Promise<number | null> {
     const [row] = await this.dbInstance
       .select({ id: projectInfo.id })
