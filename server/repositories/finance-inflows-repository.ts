@@ -310,4 +310,108 @@ export class FinanceInflowsRepository {
       .orderBy(desc(normalizedRevenueLines.invoiceDate))
       .limit(limit);
   }
+
+  /**
+   * NOTE: also added in Wave 5.5 (PR #821); resolve any merge collision
+   * by keeping a single copy.
+   */
+  async listAllActiveRevenueLines(): Promise<Array<typeof normalizedRevenueLines.$inferSelect>> {
+    return this.dbInstance
+      .select()
+      .from(normalizedRevenueLines)
+      .where(and(
+        isNull(normalizedRevenueLines.effectiveTo),
+        isNull(normalizedRevenueLines.deletedAt),
+      ));
+  }
+
+  async listActiveRevenueLineProjectNames(): Promise<Array<{ name: string | null }>> {
+    return this.dbInstance
+      .select({ name: normalizedRevenueLines.projectName })
+      .from(normalizedRevenueLines)
+      .where(and(
+        isNull(normalizedRevenueLines.effectiveTo),
+        isNull(normalizedRevenueLines.deletedAt),
+      ));
+  }
+
+  async listActiveRevenueLinesForTrackerGap(): Promise<Array<{
+    id: number;
+    projectName: string | null;
+    invoiceNumber: string | null;
+    invoiceDate: string | null;
+    amountExVat: string | null;
+  }>> {
+    return this.dbInstance
+      .select({
+        id: normalizedRevenueLines.id,
+        projectName: normalizedRevenueLines.projectName,
+        invoiceNumber: normalizedRevenueLines.invoiceNumber,
+        invoiceDate: normalizedRevenueLines.invoiceDate,
+        amountExVat: normalizedRevenueLines.amountExVat,
+      })
+      .from(normalizedRevenueLines)
+      .where(and(
+        isNull(normalizedRevenueLines.effectiveTo),
+        isNull(normalizedRevenueLines.deletedAt),
+      ));
+  }
+
+  async updateRevenueLineAdminDateOverride(
+    inflowId: number,
+    fields: {
+      adminDateOverride: string | null;
+      adminDateOverrideReason: string | null;
+      adminDateOverrideBy: number | null;
+      adminDateOverrideAt: Date | null;
+    },
+  ): Promise<typeof normalizedRevenueLines.$inferSelect | null> {
+    const [updated] = await this.dbInstance
+      .update(normalizedRevenueLines)
+      .set(fields)
+      .where(and(
+        eq(normalizedRevenueLines.id, inflowId),
+        isNull(normalizedRevenueLines.effectiveTo),
+      ))
+      .returning();
+    return updated ?? null;
+  }
+
+  /**
+   * Sync inBank state by (projectName, sourceRow). Used when finance
+   * tracker overrides flip a milestone's paid state and the canonical
+   * column needs to mirror the new state.
+   */
+  async updateInBankByProjectAndRow(args: {
+    projectName: string;
+    sourceRow: number;
+    paidDateConfirmed: boolean;
+    paidDateFontColor: string;
+    paidDate: string | null;
+    inBankDate: string | null;
+  }): Promise<void> {
+    await this.dbInstance
+      .update(normalizedRevenueLines)
+      .set({
+        paidDateConfirmed: args.paidDateConfirmed,
+        paidDateFontColor: args.paidDateFontColor,
+        paidDate: args.paidDate,
+        inBankDate: args.inBankDate,
+      })
+      .where(and(
+        eq(normalizedRevenueLines.projectName, args.projectName),
+        eq(normalizedRevenueLines.sourceRow, args.sourceRow),
+        isNull(normalizedRevenueLines.effectiveTo),
+      ));
+  }
+
+  async updatePaidDateFontColorById(id: number, paidDateFontColor: string): Promise<void> {
+    await this.dbInstance
+      .update(normalizedRevenueLines)
+      .set({ paidDateFontColor })
+      .where(and(
+        eq(normalizedRevenueLines.id, id),
+        isNull(normalizedRevenueLines.effectiveTo),
+      ));
+  }
 }
