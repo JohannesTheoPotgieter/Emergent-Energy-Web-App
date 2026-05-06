@@ -21,6 +21,8 @@ import {
   SmartImportPathChooser, UPLOAD_LABELS,
   SmartImportBulkIntro,
   SmartImportBulkResultNext,
+  BulkConflictDialog,
+  type V2ConflictRow,
   BULK_LABELS,
 } from "@/components/smart-import";
 
@@ -3602,9 +3604,13 @@ export interface PendingRun {
 export interface BulkCommitResult {
   runId: number;
   projectName: string;
-  status: "committed" | "skipped" | "failed";
+  status: "committed" | "skipped" | "failed" | "conflicts_pending";
   counts?: any;
   error?: string;
+  /** Populated when status === "conflicts_pending" — payload from the
+   *  server's `v2_conflicts_detected` 409 envelope. The bulk panel uses
+   *  these to drive the per-file conflict resolution dialog. */
+  conflicts?: V2ConflictRow[];
 }
 
 export interface SmartImportRunHistoryItem {
@@ -3782,23 +3788,47 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
     const total = committableRuns.length;
     const BATCH_SIZE = 3;
 
+    let conflictsPending = 0;
+
     for (let i = 0; i < committableRuns.length; i += BATCH_SIZE) {
       const batch = committableRuns.slice(i, i + BATCH_SIZE);
       const batchResults = await Promise.allSettled(
         batch.map(async (run) => {
           try {
+            // Bulk default: forceCommit + forceRecreate + acknowledgeEqualDate.
+            // We deliberately do NOT pass preserveManualEdits here — when the
+            // app and the source workbook diverge on the same cell we want
+            // the v2 conflict envelope to surface so the operator can pick
+            // a winner per field via the BulkConflictDialog. preserveManualEdits
+            // would silently keep every app value, which is unsafe when the
+            // operator actually wants the source workbook to win on a subset.
             const res = await fetch(`/api/smart-import/${run.id}/commit`, {
               method: "POST",
               headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-              body: JSON.stringify({ preserveManualEdits: true, forceCommit: true, acknowledgeEqualDate: true, forceRecreate: true }),
+              // acknowledgeManualEdits: bulk operators are explicitly
+              // doing a sweeping recommit; the legacy
+              // `manual_edits_warning` 409 is acknowledged by default so
+              // it doesn't dead-end the bulk row. Per-field ambiguity
+              // (true 3-way merges) still surfaces via the v2 envelope
+              // and the BulkConflictDialog below.
+              body: JSON.stringify({ forceCommit: true, acknowledgeEqualDate: true, forceRecreate: true, acknowledgeManualEdits: true }),
             });
             if (res.ok) {
               const data = await res.json();
               return { runId: run.id, projectName: run.projectName, status: "committed" as const, counts: data.counts };
-            } else {
-              const err = await res.json().catch(() => ({ error: "Commit failed" }));
-              return { runId: run.id, projectName: run.projectName, status: "failed" as const, error: err.error || "Commit failed" };
             }
+            const err = await res.json().catch(() => ({ error: "Commit failed" }));
+            // 3-way merge surfaced unresolved conflicts — capture the
+            // payload so the operator can resolve via BulkConflictDialog.
+            if (err?.error === "v2_conflicts_detected" && Array.isArray(err.conflicts)) {
+              return {
+                runId: run.id,
+                projectName: run.projectName,
+                status: "conflicts_pending" as const,
+                conflicts: err.conflicts as V2ConflictRow[],
+              };
+            }
+            return { runId: run.id, projectName: run.projectName, status: "failed" as const, error: err.error || "Commit failed" };
           } catch {
             return { runId: run.id, projectName: run.projectName, status: "failed" as const, error: "Network error" };
           }
@@ -3809,6 +3839,7 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
         const val = result.status === "fulfilled" ? result.value : { runId: 0, projectName: "Unknown", status: "failed" as const, error: "Unexpected error" };
         results.push(val);
         if (val.status === "committed") committed++;
+        else if (val.status === "conflicts_pending") conflictsPending++;
         else failed++;
       }
       setProgress(Math.round(((i + batch.length) / total) * 100));
@@ -3817,11 +3848,92 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
     setProgress(100);
     setCommitDone(true);
     setCommitResults(results);
+    const pendingSuffix = conflictsPending > 0 ? `, ${conflictsPending} need conflict review` : "";
     toast({
       title: "Bulk Commit Complete",
-      description: `${committed} committed, ${failed} failed out of ${total}`,
+      description: `${committed} committed, ${failed} failed${pendingSuffix} out of ${total}`,
     });
     setCommitting(false);
+  };
+
+  // ── Per-file conflict resolution (Option 1) ───────────────────────────
+  // When a bulk commit returns `v2_conflicts_detected` for a project, the
+  // result row exposes a "Resolve conflicts (N)" button that opens this
+  // dialog. The operator picks Keep / Accept per field, then we re-submit
+  // that single run with `v2ConflictResolutions` and update the per-file
+  // result in place.
+  const [activeConflictRunId, setActiveConflictRunId] = useState<number | null>(null);
+  const [resolvingConflicts, setResolvingConflicts] = useState(false);
+  const activeConflictResult = activeConflictRunId
+    ? commitResults.find((r) => r.runId === activeConflictRunId && r.status === "conflicts_pending")
+    : null;
+
+  const handleOpenConflictResolver = (projectName: string) => {
+    const hit = commitResults.find((r) => r.projectName === projectName && r.status === "conflicts_pending");
+    if (hit) setActiveConflictRunId(hit.runId);
+  };
+
+  const handleResolveAndRecommit = async (
+    decisions: Record<string, "keep_app" | "accept_file">,
+  ) => {
+    if (!activeConflictResult) return;
+    setResolvingConflicts(true);
+    try {
+      const res = await fetch(`/api/smart-import/${activeConflictResult.runId}/commit`, {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          forceCommit: true,
+          acknowledgeEqualDate: true,
+          forceRecreate: true,
+          acknowledgeManualEdits: true,
+          v2ConflictResolutions: decisions,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCommitResults((prev) =>
+          prev.map((r) =>
+            r.runId === activeConflictResult.runId
+              ? { ...r, status: "committed" as const, counts: data.counts, conflicts: undefined, error: undefined }
+              : r,
+          ),
+        );
+        setActiveConflictRunId(null);
+        toast({
+          title: "Conflicts resolved",
+          description: `${activeConflictResult.projectName} committed successfully.`,
+        });
+      } else {
+        const err = await res.json().catch(() => ({ error: "Commit failed" }));
+        if (err?.error === "v2_conflicts_detected" && Array.isArray(err.conflicts)) {
+          // New conflicts surfaced (rare — e.g. concurrent edit). Refresh
+          // the dialog with the new payload instead of closing it.
+          setCommitResults((prev) =>
+            prev.map((r) =>
+              r.runId === activeConflictResult.runId
+                ? { ...r, conflicts: err.conflicts as V2ConflictRow[] }
+                : r,
+            ),
+          );
+          toast({
+            title: "More conflicts found",
+            description: "The data changed while you were resolving — please review the updated list.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Commit failed",
+            description: err.message || err.error || "Commit failed",
+            variant: "destructive",
+          });
+        }
+      }
+    } catch {
+      toast({ title: "Network error", description: "Could not re-submit the commit.", variant: "destructive" });
+    } finally {
+      setResolvingConflicts(false);
+    }
   };
 
   if (loading) {
@@ -3855,6 +3967,7 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
     const committed = commitResults.filter(r => r.status === "committed");
     const failed = commitResults.filter(r => r.status === "failed");
     const skipped = commitResults.filter(r => r.status === "skipped");
+    const conflictsPending = commitResults.filter(r => r.status === "conflicts_pending");
     return (
       <div className="space-y-4" data-testid="bulk-commit-results">
         <Card className="bg-card rounded-xl shadow-sm">
@@ -3863,9 +3976,9 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
               <CheckCircle2 className="w-8 h-8 text-emerald-600" />
             </div>
             <h3 className="text-lg font-semibold text-emerald-700" data-testid="text-bulk-success">
-              {failed.length === 0
+              {failed.length === 0 && conflictsPending.length === 0
                 ? BULK_LABELS.result.titleCommittedOnly
-                : committed.length === 0
+                : committed.length === 0 && conflictsPending.length === 0
                   ? BULK_LABELS.result.titleFailedOnly
                   : BULK_LABELS.result.titleMixed}
             </h3>
@@ -3873,6 +3986,11 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
               <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 px-3 py-1" data-testid="badge-committed-count">
                 {committed.length} Committed
               </Badge>
+              {conflictsPending.length > 0 && (
+                <Badge className="bg-amber-50 text-amber-700 border-amber-200 px-3 py-1" data-testid="badge-conflicts-count">
+                  {conflictsPending.length} Need conflict review
+                </Badge>
+              )}
               {skipped.length > 0 && (
                 <Badge className="bg-amber-50 text-amber-700 border-amber-200 px-3 py-1" data-testid="badge-skipped-count">
                   {skipped.length} Skipped
@@ -3893,12 +4011,16 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
               projectName: r.projectName,
               status: r.status,
               error: r.error ? safeStr(r.error) : undefined,
+              conflictCount: r.conflicts
+                ? r.conflicts.reduce((sum, row) => sum + (row.fields?.length ?? 0), 0)
+                : undefined,
             }))}
             onViewProject={(name) => navigate(`/projects?name=${encodeURIComponent(name)}`)}
             onRetry={(name) => {
               const hit = pendingRuns.find(p => p.projectName === name);
               if (hit) onSwitchToWizard(hit.id);
             }}
+            onResolveConflicts={handleOpenConflictResolver}
           />
         )}
 
@@ -3910,6 +4032,18 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
             {BULK_LABELS.result.uploadMoreAction}
           </Button>
         </div>
+
+        {activeConflictResult && (
+          <BulkConflictDialog
+            open={true}
+            projectName={activeConflictResult.projectName}
+            runId={activeConflictResult.runId}
+            conflicts={activeConflictResult.conflicts ?? []}
+            busy={resolvingConflicts}
+            onClose={() => { if (!resolvingConflicts) setActiveConflictRunId(null); }}
+            onResolve={handleResolveAndRecommit}
+          />
+        )}
       </div>
     );
   }
