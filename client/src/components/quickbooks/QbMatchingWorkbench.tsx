@@ -858,9 +858,15 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
                     </div>
                   </td>
 
-                  {/* App counterparty */}
+                  {/* App counterparty (cost) / milestone (revenue) — header
+                      label flips with `scope` above. For revenue rows the
+                      `description` field carries the milestone name (set in
+                      sourceLines mapping), since revenue lines have no
+                      per-line counterparty column. */}
                   <td className="px-2 py-1.5 max-w-[10rem] truncate">
-                    {row.appLine.counterpartyName ?? "—"}
+                    {(scope === "cost"
+                      ? row.appLine.counterpartyName
+                      : row.appLine.description) ?? "—"}
                   </td>
 
                   {/* App amount */}
