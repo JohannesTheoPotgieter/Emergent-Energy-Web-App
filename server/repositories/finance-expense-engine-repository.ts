@@ -464,4 +464,72 @@ export class FinanceExpenseEngineRepository {
       )
       .limit(limit);
   }
+
+  /**
+   * NOTE: also added in Waves 5.4/5.5 (PRs #820/#821); resolve any merge
+   * collision by keeping a single copy.
+   */
+  async listAllActiveCostLines(): Promise<Array<typeof normalizedCostLines.$inferSelect>> {
+    return this.dbInstance
+      .select()
+      .from(normalizedCostLines)
+      .where(and(
+        isNull(normalizedCostLines.effectiveTo),
+        isNull(normalizedCostLines.deletedAt),
+      ));
+  }
+
+  async listActiveCostLineProjectNames(): Promise<Array<{ name: string | null }>> {
+    return this.dbInstance
+      .select({ name: normalizedCostLines.projectName })
+      .from(normalizedCostLines)
+      .where(and(
+        isNull(normalizedCostLines.effectiveTo),
+        isNull(normalizedCostLines.deletedAt),
+      ));
+  }
+
+  async listActiveCostLinesForTrackerGap(): Promise<Array<{
+    id: number;
+    projectName: string;
+    invoiceNumber: string | null;
+    invoiceDate: string | null;
+    amountExVat: string | null;
+    counterpartyName: string | null;
+  }>> {
+    return this.dbInstance
+      .select({
+        id: normalizedCostLines.id,
+        projectName: normalizedCostLines.projectName,
+        invoiceNumber: normalizedCostLines.invoiceNumber,
+        invoiceDate: normalizedCostLines.invoiceDate,
+        amountExVat: normalizedCostLines.amountExVat,
+        counterpartyName: normalizedCostLines.counterpartyName,
+      })
+      .from(normalizedCostLines)
+      .where(and(
+        isNull(normalizedCostLines.effectiveTo),
+        isNull(normalizedCostLines.deletedAt),
+      ));
+  }
+
+  async updateCostLineAdminDateOverride(
+    expenseId: number,
+    fields: {
+      adminDateOverride: string | null;
+      adminDateOverrideReason: string | null;
+      adminDateOverrideBy: number | null;
+      adminDateOverrideAt: Date | null;
+    },
+  ): Promise<typeof normalizedCostLines.$inferSelect | null> {
+    const [updated] = await this.dbInstance
+      .update(normalizedCostLines)
+      .set(fields)
+      .where(and(
+        eq(normalizedCostLines.id, expenseId),
+        isNull(normalizedCostLines.effectiveTo),
+      ))
+      .returning();
+    return updated ?? null;
+  }
 }
