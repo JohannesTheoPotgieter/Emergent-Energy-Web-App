@@ -96,6 +96,12 @@ import {
   type SuggestScope,
 } from "./services/quickbooks-cascade-service";
 import { recordIntegrationRun } from "./services/integration-health-service";
+import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
+import {
+  detectAndPersistProposals,
+  loadCostLineContext,
+  loadRevenueLineContext,
+} from "./services/quickbooks-cascade-proposals-service";
 import { db } from "./db";
 import {
   counterparties,
@@ -610,7 +616,38 @@ export function registerQuickBooksRoutes(app: Express): void {
             matchType: body.matchType ?? "manual",
           },
         });
-        res.status(201).json({ link });
+        if (link.projectId) {
+          refreshProjectMetricsAsync(link.projectId);
+        }
+
+        // Cascade detector — emit proposals for any QB-vs-app divergence.
+        let proposals: Awaited<ReturnType<typeof detectAndPersistProposals>> = [];
+        try {
+          const appCtx = await loadCostLineContext(costLineId);
+          if (appCtx) {
+            proposals = await detectAndPersistProposals({
+              link,
+              app: appCtx,
+              qb: {
+                qbEntityType: "bill",
+                qbEntityId: billSummary.id,
+                qbRealmId: link.qbRealmId,
+                qbDocNumber: billSummary.docNumber ?? null,
+                qbTxnDate: billSummary.txnDate ?? null,
+                qbAmountExVat: billSummary.qbAmountExVat ?? billSummary.totalAmount ?? null,
+                qbAmountIncVat: billSummary.qbAmountIncVat ?? null,
+                qbTaxAmount: billSummary.qbTaxAmount ?? null,
+                qbCounterpartyId: billSummary.vendorId ?? null,
+                qbCounterpartyName: billSummary.vendorName ?? null,
+              },
+              createdBy: user?.id ?? null,
+            });
+          }
+        } catch (detectErr) {
+          console.error("[quickbooks][POST /links] cascade detector failed", detectErr);
+        }
+
+        res.status(201).json({ link, proposals });
       } catch (inner) {
         if (handleLinkConflict(res, inner)) {
           logAuditFromReq(req, {
@@ -704,7 +741,11 @@ export function registerQuickBooksRoutes(app: Express): void {
     },
   );
 
-  app.delete("/api/quickbooks/links/:id", requireAuth, requirePermission("financials", "edit"), async (req, res) => {
+  // Once a QB link is established, breaking it is an admin-only action so
+  // finance can't accidentally re-shuffle reconciled allocations. The
+  // canonical "I want to repoint this link" flow is the new POST
+  // /api/quickbooks/links/:id/force-relink endpoint, which is also admin-only.
+  app.delete("/api/quickbooks/links/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id <= 0) {
@@ -715,6 +756,9 @@ export function registerQuickBooksRoutes(app: Express): void {
       if (!previous) {
         res.status(404).json({ error: "not_found", message: "Link not found" });
         return;
+      }
+      if (previous.projectId) {
+        refreshProjectMetricsAsync(previous.projectId);
       }
       // Task #142 — surface remaining sibling allocation so the caller can
       // immediately reflect "X of Y still allocated" without an extra round
@@ -760,6 +804,126 @@ export function registerQuickBooksRoutes(app: Express): void {
       res.status(500).json({ error: "quickbooks_link_delete_failed", message });
     }
   });
+
+  // POST /api/quickbooks/links/:id/force-relink
+  //
+  // Admin-only re-point. Soft-deletes the existing link and creates a new
+  // one against a different QB doc (or, less commonly, a different app
+  // entity) in a single transaction. This is the only sanctioned way to
+  // override the 1:1 invariant — finance roles get a 409 from the regular
+  // approve flow when an active link already exists. Audit row carries
+  // both the previous and new link payload so the trail is unambiguous.
+  app.post(
+    "/api/quickbooks/links/:id/force-relink",
+    requireAuth,
+    requireAdmin,
+    async (req, res) => {
+      try {
+        const id = Number(req.params.id);
+        if (!Number.isFinite(id) || id <= 0) {
+          res.status(400).json({ error: "bad_request", message: "Invalid link id" });
+          return;
+        }
+        const body = (req.body ?? {}) as {
+          qbEntityType?: "bill" | "invoice";
+          qbEntityId?: string;
+          qbRealmId?: string;
+          qbDocNumber?: string | null;
+          qbTxnDate?: string | null;
+          qbAmountExVat?: number | null;
+          qbCounterpartyName?: string | null;
+          notes?: string | null;
+          reason?: string | null;
+        };
+        if (!body.qbEntityType || !body.qbEntityId || !body.qbRealmId) {
+          res.status(400).json({
+            error: "bad_request",
+            message: "qbEntityType, qbEntityId and qbRealmId are required",
+          });
+          return;
+        }
+        const previous = await softDeleteLink(id);
+        if (!previous) {
+          res.status(404).json({ error: "not_found", message: "Link not found" });
+          return;
+        }
+        const userId = getEffectiveUser(req)?.id ?? null;
+        const link = await createOrUpdateLink({
+          projectId: previous.projectId ?? null,
+          appEntityType: previous.appEntityType as "cost_line" | "revenue_line",
+          appEntityId: previous.appEntityId,
+          qbEntityType: body.qbEntityType,
+          qbEntityId: body.qbEntityId,
+          qbRealmId: body.qbRealmId,
+          qbDocNumber: body.qbDocNumber ?? null,
+          qbTxnDate: body.qbTxnDate ?? null,
+          qbAmount: body.qbAmountExVat ?? null,
+          qbCounterpartyName: body.qbCounterpartyName ?? null,
+          matchType: "manual",
+          notes: body.notes ?? null,
+          confirmedBy: userId,
+          allocatedAmountExVat: body.qbAmountExVat ?? null,
+        });
+        if (link.projectId) {
+          refreshProjectMetricsAsync(link.projectId);
+        }
+        if (previous.projectId && previous.projectId !== link.projectId) {
+          refreshProjectMetricsAsync(previous.projectId);
+        }
+
+        // Run the cascade detector against the freshly-pointed link so the
+        // reviewer sees the proposed updates for the new QB doc.
+        try {
+          const appCtx =
+            previous.appEntityType === "cost_line"
+              ? await loadCostLineContext(previous.appEntityId)
+              : await loadRevenueLineContext(previous.appEntityId);
+          if (appCtx) {
+            await detectAndPersistProposals({
+              link,
+              app: appCtx,
+              qb: {
+                qbEntityType: body.qbEntityType,
+                qbEntityId: body.qbEntityId,
+                qbRealmId: body.qbRealmId,
+                qbDocNumber: body.qbDocNumber ?? null,
+                qbTxnDate: body.qbTxnDate ?? null,
+                qbAmountExVat: body.qbAmountExVat ?? null,
+                qbCounterpartyId: null,
+                qbCounterpartyName: body.qbCounterpartyName ?? null,
+              },
+              createdBy: userId,
+            });
+          }
+        } catch (detectErr) {
+          // Detector is best-effort — log but don't fail the relink.
+          console.error("[quickbooks][force-relink] cascade detector failed", detectErr);
+        }
+
+        logAuditFromReq(req, {
+          entityType: "quickbooks_invoice_link",
+          entityId: String(link.id),
+          action: "quickbooks.link.force_relink",
+          source: "UI",
+          changesJson: {
+            previousLinkId: id,
+            previousQbEntityType: previous.qbEntityType,
+            previousQbEntityId: previous.qbEntityId,
+            previousQbDocNumber: previous.qbDocNumber,
+            newQbEntityType: body.qbEntityType,
+            newQbEntityId: body.qbEntityId,
+            newQbDocNumber: body.qbDocNumber,
+            reason: body.reason ?? null,
+          },
+        });
+        res.status(201).json({ link });
+      } catch (err) {
+        if (handleLinkConflict(res, err)) return;
+        const message = err instanceof Error ? err.message : "Failed to force-relink";
+        res.status(500).json({ error: "quickbooks_force_relink_failed", message });
+      }
+    },
+  );
 
   // ---- DISABLED: QuickBooks mark-realised bypass (hardening) ----
   //
