@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { projectInfo, projectExecutionState, type InsertProjectInfo, type ProjectInfo } from "@shared/schema";
 import { db } from "../db";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "../lib/project-info-sync";
@@ -27,16 +27,30 @@ export class ProjectInfoRepository {
   }
 
   /**
-   * Project-name only listing for the active project_info population.
-   * Used by tracker-gap endpoints that build a project-name universe.
+   * All project_info rows joined with project_execution_state. Returns the
+   * raw shape `{ project_info, project_execution_state | null }` so callers
+   * can flatten the way they need.
    *
-   * NOTE: similar method exists in Wave 5.4 (`listAll()`) returning
-   * full rows; this is the projection-only variant.
+   * NOTE: also added independently in Wave 5.4 (PR #820); resolve any
+   * merge collision by keeping a single copy.
    */
-  async listAllProjectNames(): Promise<Array<{ name: string | null }>> {
+  async listAllWithExecutionState(): Promise<Array<{
+    project_info: ProjectInfo;
+    project_execution_state: typeof projectExecutionState.$inferSelect | null;
+  }>> {
     return this.dbInstance
-      .select({ name: projectInfo.projectName })
-      .from(projectInfo);
+      .select()
+      .from(projectInfo)
+      .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
+  }
+
+  async findIdByProjectName(projectName: string): Promise<number | null> {
+    const [row] = await this.dbInstance
+      .select({ id: projectInfo.id })
+      .from(projectInfo)
+      .where(eq(projectInfo.projectName, projectName))
+      .limit(1);
+    return row?.id ?? null;
   }
 
   async upsert(info: InsertProjectInfo, existing: ProjectInfo | undefined): Promise<ProjectInfo> {

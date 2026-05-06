@@ -292,8 +292,11 @@ export class FinanceExpenseEngineRepository {
 
   /**
    * All current cost-line rows. Filters historical snapshots
-   * (`isNull(effectiveTo)`) and soft-deletes. Used by report builders
-   * that need the full active population.
+   * (`isNull(effectiveTo)`) and soft-deletes. Used by report/aggregation
+   * builders that need the full active population.
+   *
+   * NOTE: also added independently in Wave 5.4 (PR #820); resolve any
+   * merge collision by keeping a single copy.
    */
   async listAllActiveCostLines(): Promise<Array<typeof normalizedCostLines.$inferSelect>> {
     return this.dbInstance
