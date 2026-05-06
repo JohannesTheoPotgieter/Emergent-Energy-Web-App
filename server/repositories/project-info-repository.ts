@@ -26,40 +26,17 @@ export class ProjectInfoRepository {
     return updated;
   }
 
-  async listAll(): Promise<ProjectInfo[]> {
-    return this.dbInstance.select().from(projectInfo);
-  }
-
   /**
-   * All project_info rows joined with project_execution_state. Returns the
-   * raw shape `{ project_info, project_execution_state | null }` so callers
-   * can flatten the way they need (with null-coalescing for projects that
-   * have no execution-state row).
+   * NOTE: also added in Waves 5.4/5.5 (PRs #820/#821); resolve any merge
+   * collision by keeping a single copy.
    */
-  async listAllWithExecutionState(): Promise<Array<{
-    project_info: ProjectInfo;
-    project_execution_state: typeof projectExecutionState.$inferSelect | null;
-  }>> {
-    return this.dbInstance
-      .select()
-      .from(projectInfo)
-      .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
-  }
-
-  async findIdsByNameLike(query: string): Promise<number[]> {
-    const rows = await this.dbInstance
+  async findIdByProjectName(projectName: string): Promise<number | null> {
+    const [row] = await this.dbInstance
       .select({ id: projectInfo.id })
       .from(projectInfo)
-      .where(sql`${projectInfo.projectName} ILIKE ${'%' + query + '%'}`);
-    return rows.map((r: { id: number }) => r.id);
-  }
-
-  async listIdNameByIds(ids: number[]): Promise<Array<{ id: number; projectName: string }>> {
-    if (ids.length === 0) return [];
-    return this.dbInstance
-      .select({ id: projectInfo.id, projectName: projectInfo.projectName })
-      .from(projectInfo)
-      .where(inArray(projectInfo.id, ids));
+      .where(eq(projectInfo.projectName, projectName))
+      .limit(1);
+    return row?.id ?? null;
   }
 
   async upsert(info: InsertProjectInfo, existing: ProjectInfo | undefined): Promise<ProjectInfo> {
