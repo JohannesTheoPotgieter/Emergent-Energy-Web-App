@@ -237,6 +237,11 @@ export const queryClient = new QueryClient({
         if (error instanceof ApiError) {
           if (!error.retryable) return false;
           if (error.status === 401 || error.status === 403 || error.status === 404) return false;
+          // Retrying on 429 with the default exponential delay still hits the
+          // same 60s window, multiplying load and producing the cascade we
+          // observed in the prod console (every page-load query failing in
+          // turn). Treat as terminal — the global handler surfaces a toast.
+          if (error.status === 429) return false;
         }
         if (error instanceof Error && error.message.startsWith("401")) return false;
         return failureCount < 2;

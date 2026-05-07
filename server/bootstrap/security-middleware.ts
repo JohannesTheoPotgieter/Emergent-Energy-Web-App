@@ -22,9 +22,15 @@ const AUTH_ENDPOINTS = new Set([
   "/api/auth/microsoft/callback",
 ]);
 
-// General API rate limiting (less strict than auth)
+// General API rate limiting (less strict than auth).
+//
+// Keyed per-user when a session/JWT identifies them, otherwise per-IP. Project
+// detail pages can fan out 10–15 concurrent queries on first paint; on shared
+// egress (corporate NAT, Replit proxy) a 200/min IP cap was being exhausted by
+// a single user navigating a few pages. 600/min is comfortably above observed
+// p99 burst (~80) while still blocking abusive clients.
 const API_WINDOW_MS = 60 * 1000; // 1 minute
-const API_MAX_REQUESTS = 200; // 200 requests per minute per IP
+const API_MAX_REQUESTS = 600;
 const apiLimiterStore = new Map<string, RateLimitEntry>();
 
 const LARGE_JSON_ROUTES = new Set([
@@ -151,10 +157,21 @@ function generalApiRateLimit(req: Request, res: Response, next: NextFunction): v
     return;
   }
 
+  // Prefer the bearer-token identity over IP so multiple users behind one
+  // egress IP (corporate NAT, Replit proxy) don't share a budget. We do a
+  // fast JWT verify here — the auth middleware that decorates req.user runs
+  // *after* this rate-limit gate, so we can't read req.user. Falls back to
+  // IP for unauthenticated traffic, where brute-force protection matters.
+  const authHeader = req.headers.authorization;
+  let userId: string | null = null;
+  if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
+    const decoded = verifyToken(authHeader.slice(7));
+    if (decoded?.userId != null) userId = String(decoded.userId);
+  }
   const ip = typeof req.headers["x-forwarded-for"] === "string"
     ? req.headers["x-forwarded-for"].split(",")[0].trim()
     : req.ip;
-  const key = `api:${ip}`;
+  const key = userId !== null ? `api:user:${userId}` : `api:ip:${ip}`;
   const now = Date.now();
 
   if (apiLimiterStore.size > 10000) {
@@ -171,12 +188,20 @@ function generalApiRateLimit(req: Request, res: Response, next: NextFunction): v
   }
 
   if (current.count >= API_MAX_REQUESTS) {
-    res.status(429).json({ message: "Too many requests. Please slow down." });
+    const retryAfterSec = Math.max(1, Math.ceil((current.resetAt - now) / 1000));
+    res.setHeader("Retry-After", String(retryAfterSec));
+    res.setHeader("X-RateLimit-Limit", String(API_MAX_REQUESTS));
+    res.setHeader("X-RateLimit-Remaining", "0");
+    res.setHeader("X-RateLimit-Reset", String(Math.ceil(current.resetAt / 1000)));
+    res.status(429).json({ message: "Too many requests. Please slow down.", retryAfter: retryAfterSec });
     return;
   }
 
   current.count += 1;
   current.lastSeenAt = now;
+  res.setHeader("X-RateLimit-Limit", String(API_MAX_REQUESTS));
+  res.setHeader("X-RateLimit-Remaining", String(API_MAX_REQUESTS - current.count));
+  res.setHeader("X-RateLimit-Reset", String(Math.ceil(current.resetAt / 1000)));
   next();
 }
 
@@ -193,14 +218,23 @@ export function applySecurityAndParsingMiddleware(app: Express): void {
   const isReplit = !!(process.env.REPLIT_DOMAINS || process.env.REPLIT_DEV_DOMAIN || process.env.REPL_ID);
   const isProduction = process.env.NODE_ENV === "production";
 
-  // Helmet provides secure defaults for many HTTP headers including CSP
+  // Helmet provides secure defaults for many HTTP headers including CSP.
+  //
+  // font-src policy — long-term:
+  //   The app bundles Inter / Barlow / JetBrains Mono via @fontsource (woff2
+  //   files emitted to /assets/* — same-origin, covered by 'self'). Tailwind
+  //   v4 + the Replit dev banner can also pull fonts from gstatic and
+  //   occasionally inline them as data: URIs. Fonts are an extremely low
+  //   exfiltration vector vs. scripts, so we allow `https:` to absorb any
+  //   third-party font URL injected by tooling without producing a
+  //   user-visible CSP violation. Scripts and connect-src remain enumerated.
   const cspDirectives: Record<string, string[]> = isProduction
     ? {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         imgSrc: ["'self'", "data:", "blob:"],
-        fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
+        fontSrc: ["'self'", "https:", "data:"],
         connectSrc: ["'self'"],
         frameSrc: ["'none'"],
         objectSrc: ["'none'"],
@@ -212,7 +246,7 @@ export function applySecurityAndParsingMiddleware(app: Express): void {
         scriptSrc: ["'self'", "'unsafe-inline'"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         imgSrc: ["'self'", "data:", "blob:"],
-        fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
+        fontSrc: ["'self'", "https:", "data:"],
         connectSrc: ["'self'", "ws:", "wss:"],
         workerSrc: ["'self'", "blob:"],
         frameSrc: ["'none'"],
