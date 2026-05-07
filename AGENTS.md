@@ -25,11 +25,12 @@
 
 ## Business Rule Invariants — NEVER VIOLATE
 1. COS is only realised when an invoice is captured under actuals.
-2. An invoice without a PO must have `no_po_flag = true` and be logged in audit.
-3. Payment receipt date drives revenue realisation logic.
-4. Every query against a snapshot table MUST include `isNull(table.effectiveTo)`.
-5. No approval bypass can exist without an entry in `server/audit-logger.ts`.
-6. The PD → PM handover gate must be explicitly approved before lifecycle advances.
+2. Payment receipt date drives revenue realisation logic.
+3. Every query against a snapshot table MUST include `isNull(table.effectiveTo)`.
+4. No approval bypass can exist without an entry in `server/audit-logger.ts`.
+5. The PD → PM handover gate must be explicitly approved before lifecycle advances.
+
+Footnote: The no-PO rule was withdrawn by the owner on 2026-05-07. Invoices may exist without POs.
 
 ## Security Rules
 - Do NOT read, log, or relay any file in `server/secrets/` or `.env`
