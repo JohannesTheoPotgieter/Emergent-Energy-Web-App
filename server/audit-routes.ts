@@ -4,11 +4,12 @@ import { changeSets, fieldChanges, auditEvents, OVERRIDE_CATEGORIES } from "@sha
 import { eq, desc, and, sql, gte, lte, or, like, count } from "drizzle-orm";
 import { requireAuth } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
+import { requirePermission } from "./permission-middleware";
 import { parseIntParam } from "./lib/req-params";
 
 export function registerAuditRoutes(app: Express) {
   // Project History Timeline - get all ChangeSets for a specific project
-  app.get("/api/audit/project-history/:projectId", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/audit/project-history/:projectId", requireAuth, requirePermission("activity_log", "view"), async (req: Request, res: Response) => {
     const projectId = parseIntParam(req.params.projectId);
     if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
 
@@ -42,7 +43,7 @@ export function registerAuditRoutes(app: Express) {
   });
 
   // Project history by project name
-  app.get("/api/audit/project-history-by-name/:projectName", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/audit/project-history-by-name/:projectName", requireAuth, requirePermission("activity_log", "view"), async (req: Request, res: Response) => {
     const projectName = decodeURIComponent(req.params.projectName as string);
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
@@ -74,7 +75,7 @@ export function registerAuditRoutes(app: Express) {
   });
 
   // Get ChangeSet detail with field changes (drill-down)
-  app.get("/api/audit/changeset/:id", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/audit/changeset/:id", requireAuth, requirePermission("activity_log", "view"), async (req: Request, res: Response) => {
     const id = parseIntParam(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 

@@ -86,15 +86,16 @@ export class FinanceInflowsRepository {
     return this._dbInstance || db;
   }
 
+  /**
+   * Misleading-name alias kept for the ~15 existing call sites that still
+   * read inflows via the legacy "ProgramInflows" identifier. The actual
+   * source is `normalized_revenue_lines` with the snapshot guard applied —
+   * identical to {@link getAllRevenueLinesForCashflow}. New call sites
+   * should use that method instead so the source is obvious at the call.
+   * @deprecated Use {@link getAllRevenueLinesForCashflow} instead.
+   */
   async getAllProgramInflows(): Promise<any[]> {
-    const { adaptRevenueToInflow, createNameResolver } = await import("../lib/data-merge");
-    const [revLines, piRows] = await Promise.all([
-      this.dbInstance.select().from(normalizedRevenueLines).where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))),
-      this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
-    ]);
-    const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
-    return resolveRevenueRowProjectNames(revLines as any[], piRows as any[], "[getAllProgramInflows]")
-      .map(({ row, name }) => adaptRevenueToInflow(row, resolve(name)));
+    return this.getAllRevenueLinesForCashflow();
   }
 
   async getAllRevenueLinesForCashflow(): Promise<any[]> {

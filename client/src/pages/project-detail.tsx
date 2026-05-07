@@ -74,6 +74,7 @@ import { useProjectDetail, useProjectPlan, useProjectQuality, useProjectEngineer
 import type { ProjectPermissions } from "@shared/api-types/project-v2";
 import { buildProjectSummaryChipDestinations, type ProjectSummaryChipKey } from "@/lib/project-summary-chip-navigation";
 import { findProjectById, findProjectByName } from "@/lib/project-route-identity";
+import { RelatedDepartmentLinks } from "@/components/project/RelatedDepartmentLinks";
 
 const PHASE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   P0_FIRST_ASSESSMENT: { bg: "bg-muted", text: "text-foreground", border: "border-border" },
@@ -1766,6 +1767,8 @@ export default function ProjectDetailPage() {
           }</span>
         </div>
       </div>
+
+      <RelatedDepartmentLinks projectId={projectInfoId ?? null} projectName={projectName ?? null} />
 
       {/* ════════════════════════════════════════════════════════════
            PROJECT MANAGEMENT DEPARTMENT

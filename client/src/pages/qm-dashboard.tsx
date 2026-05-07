@@ -66,6 +66,7 @@ import { useRolloutFlag } from "@/hooks/use-rollout-flag";
 import type { NextAction, BlockerInfo } from "@/hooks/use-guidance";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { ApprovalQueueCard } from "@/components/controlled-documents";
+import { NcrLegacyDeepLinkBanner } from "@/components/quality/NcrLegacyDeepLinkBanner";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
 import { QualityTab } from "@/components/tabs/QualityTab";
@@ -576,6 +577,7 @@ export default function QmDashboardPage() {
           </>
         )}
       />
+      <NcrLegacyDeepLinkBanner />
 
       {microWalkthroughEnabled ? <MicroWalkthrough screenId="qm-dashboard" steps={qmWalkthroughSteps} /> : null}
       <ActionBar nextAction={qmNextAction} blockers={qmBlockers} />

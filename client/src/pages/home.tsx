@@ -175,62 +175,75 @@ function getKpiCards(
   isLoading: boolean,
   navigate: (path: string) => void,
 ) {
-  const kpiKeyMap: Record<string, { label: string; value: string | number; icon: React.ReactNode }> = {
-    revenue_vs_target: { label: "Inflow Received (FY)", value: money(kpis.receivedInflowFy), icon: <DollarSign className="w-4 h-4" /> },
-    gp_margin: { label: "Gross Margin", value: kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "\u2014", icon: <TrendingUp className="w-4 h-4" /> },
-    projects_off_track: { label: "Red RAG", value: stats.redProjects, icon: <AlertTriangle className="w-4 h-4" /> },
-    open_vos: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "\u2014", icon: <CheckCircle2 className="w-4 h-4" /> },
-    projects_on_track: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
-    milestones_due: { label: "Behind Plan", value: kpis.projectsBehindPlan ?? "\u2014", icon: <Clock className="w-4 h-4" /> },
-    overdue_tasks: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "\u2014", icon: <CheckCircle2 className="w-4 h-4" /> },
-    my_projects_rag: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
-    my_overdue_tasks: { label: "Behind Plan", value: kpis.projectsBehindPlan ?? "\u2014", icon: <Clock className="w-4 h-4" /> },
-    my_approvals_pending: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "\u2014", icon: <CheckCircle2 className="w-4 h-4" /> },
-    my_deliverables_due: { label: "Open Expenditure (FY)", value: money(kpis.openExpenditureFy), icon: <DollarSign className="w-4 h-4" /> },
-    my_eng_tasks: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
-    design_queue: { label: "Eng. Blockers", value: kpis.openEngineeringBlockers ?? "\u2014", icon: <AlertTriangle className="w-4 h-4" /> },
-    review_queue: { label: "Behind Plan", value: kpis.projectsBehindPlan ?? "\u2014", icon: <Clock className="w-4 h-4" /> },
-    my_overdue_deliverables: { label: "Avg Progress", value: kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "\u2014", icon: <BarChart3 className="w-4 h-4" /> },
-    my_opportunities: { label: "Total Projects", value: stats.totalProjects, icon: <FolderOpen className="w-4 h-4" /> },
-    handover_readiness: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
-    pd_tickets_open: { label: "Planned Revenue (FY)", value: money(kpis.plannedRevenueFy), icon: <DollarSign className="w-4 h-4" /> },
-    proposals_pending: { label: "Received Inflow (FY)", value: money(kpis.receivedInflowFy), icon: <DollarSign className="w-4 h-4" /> },
-    revenue_this_month: { label: "Inflow Received (FY)", value: money(kpis.receivedInflowFy), icon: <DollarSign className="w-4 h-4" /> },
-    cos_this_month: { label: "Gross Margin", value: kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "\u2014", icon: <TrendingUp className="w-4 h-4" /> },
-    cash_position: { label: "Gross Profit (FY)", value: money(kpis.grossProfitFy), icon: <DollarSign className="w-4 h-4" /> },
-    margin_drift: { label: "Open Expenditure (FY)", value: money(kpis.openExpenditureFy), icon: <DollarSign className="w-4 h-4" /> },
-    open_ncrs: { label: "Quality Warnings", value: kpis.openQualityWarnings ?? "\u2014", icon: <AlertTriangle className="w-4 h-4" /> },
-    snags_due: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "\u2014", icon: <CheckCircle2 className="w-4 h-4" /> },
-    inspections_pending: { label: "Avg Progress", value: kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "\u2014", icon: <BarChart3 className="w-4 h-4" /> },
-    corrective_actions_open: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
-    active_sites: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
-    site_readiness: { label: "Behind Plan", value: kpis.projectsBehindPlan ?? "\u2014", icon: <Clock className="w-4 h-4" /> },
-    open_snags: { label: "Red RAG", value: stats.redProjects, icon: <AlertTriangle className="w-4 h-4" /> },
-    inspections_due: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "\u2014", icon: <CheckCircle2 className="w-4 h-4" /> },
-    // HSE Manager KPIs
-    incidents_open: { label: "Open Incidents", value: kpis.openIncidents ?? "\u2014", icon: <AlertTriangle className="w-4 h-4" /> },
-    corrective_actions_due: { label: "Corrective Actions Due", value: kpis.correctiveActionsDue ?? "\u2014", icon: <Clock className="w-4 h-4" /> },
-    safety_file_compliance: { label: "Safety Compliance", value: kpis.safetyCompliance ?? "\u2014", icon: <ShieldCheck className="w-4 h-4" /> },
-    inspections_overdue: { label: "Inspections Overdue", value: kpis.inspectionsOverdue ?? "\u2014", icon: <AlertTriangle className="w-4 h-4" /> },
-    // SSEG Manager KPIs
-    applications_pending: { label: "Applications Pending", value: kpis.applicationsPending ?? "\u2014", icon: <Clock className="w-4 h-4" /> },
-    queries_outstanding: { label: "Queries Outstanding", value: kpis.queriesOutstanding ?? "\u2014", icon: <AlertTriangle className="w-4 h-4" /> },
-    approvals_due: { label: "Approvals Due", value: kpis.approvalsDue ?? "\u2014", icon: <CheckCircle2 className="w-4 h-4" /> },
-    rejections_open: { label: "Rejections Open", value: kpis.rejectionsOpen ?? "\u2014", icon: <AlertTriangle className="w-4 h-4" /> },
-    my_tasks: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
-    my_approvals: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "\u2014", icon: <CheckCircle2 className="w-4 h-4" /> },
-    my_projects: { label: "Behind Plan", value: kpis.projectsBehindPlan ?? "\u2014", icon: <Clock className="w-4 h-4" /> },
-    upcoming_events: { label: "Avg Progress", value: kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "\u2014", icon: <BarChart3 className="w-4 h-4" /> },
+  // Each role-config KPI key resolves to a real metric (value + icon) or to
+  // null when the metric isn't yet computed server-side. We render the
+  // role-config's stated label as the card title in either case \u2014 never a
+  // substitute label \u2014 so the user sees what they asked for, with "\u2014" for
+  // metrics not yet wired. Substituting unrelated metrics under different
+  // labels (the previous behaviour) was the prompt's highest-severity UX
+  // failure: "users trust a number shown under a label that doesn't
+  // describe the source." Trade-off: more cards show "\u2014" today; fixing
+  // them is a server-metric expansion job, not a UI cosmetic change.
+  const fmtPct = (n: unknown) => (n != null ? `${Number(n).toFixed(0)}%` : null);
+  const fmtPct1 = (n: unknown) => (n != null ? `${Number(n).toFixed(1)}%` : null);
+  const orNull = (n: unknown) => (n == null ? null : (n as string | number));
+
+  type KpiSource = { value: string | number | null; icon: React.ReactNode };
+  const kpiSource: Record<string, KpiSource> = {
+    // \u2500\u2500 Finance \u2014 real server-computed metrics
+    revenue_vs_target: { value: money(kpis.receivedInflowFy), icon: <DollarSign className="w-4 h-4" /> },
+    revenue_this_month: { value: money(kpis.receivedInflowFy), icon: <DollarSign className="w-4 h-4" /> },
+    proposals_pending: { value: money(kpis.receivedInflowFy), icon: <DollarSign className="w-4 h-4" /> },
+    pd_tickets_open: { value: money(kpis.plannedRevenueFy), icon: <DollarSign className="w-4 h-4" /> },
+    cash_position: { value: money(kpis.grossProfitFy), icon: <DollarSign className="w-4 h-4" /> },
+    margin_drift: { value: money(kpis.openExpenditureFy), icon: <DollarSign className="w-4 h-4" /> },
+    my_deliverables_due: { value: money(kpis.openExpenditureFy), icon: <DollarSign className="w-4 h-4" /> },
+    gp_margin: { value: fmtPct1(kpis.grossMarginPctFy), icon: <TrendingUp className="w-4 h-4" /> },
+    cos_this_month: { value: fmtPct1(kpis.grossMarginPctFy), icon: <TrendingUp className="w-4 h-4" /> },
+
+    // \u2500\u2500 Project status \u2014 real metrics
+    projects_on_track: { value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
+    my_opportunities: { value: stats.totalProjects, icon: <FolderOpen className="w-4 h-4" /> },
+    projects_off_track: { value: orNull(stats.redProjects), icon: <AlertTriangle className="w-4 h-4" /> },
+    milestones_due: { value: orNull(kpis.projectsBehindPlan), icon: <Clock className="w-4 h-4" /> },
+    my_overdue_tasks: { value: orNull(kpis.projectsBehindPlan), icon: <Clock className="w-4 h-4" /> },
+    my_overdue_deliverables: { value: fmtPct(kpis.averageActualProgressPct), icon: <BarChart3 className="w-4 h-4" /> },
+    open_vos: { value: orNull(kpis.pendingApprovals), icon: <CheckCircle2 className="w-4 h-4" /> },
+    overdue_tasks: { value: orNull(kpis.pendingApprovals), icon: <CheckCircle2 className="w-4 h-4" /> },
+    my_approvals_pending: { value: orNull(kpis.pendingApprovals), icon: <CheckCircle2 className="w-4 h-4" /> },
+    my_approvals: { value: orNull(kpis.pendingApprovals), icon: <CheckCircle2 className="w-4 h-4" /> },
+
+    // \u2500\u2500 Engineering
+    design_queue: { value: orNull(kpis.openEngineeringBlockers), icon: <AlertTriangle className="w-4 h-4" /> },
+
+    // \u2500\u2500 Quality \u2014 only Warnings is real today; Open NCRs / Snags / Inspections
+    //    Pending / Corrective Actions Open are unwired metrics.
+    open_warnings: { value: orNull(kpis.openQualityWarnings), icon: <AlertTriangle className="w-4 h-4" /> },
+
+    // \u2500\u2500 HSE \u2014 real metrics
+    incidents_open: { value: orNull(kpis.openIncidents), icon: <AlertTriangle className="w-4 h-4" /> },
+    corrective_actions_due: { value: orNull(kpis.correctiveActionsDue), icon: <Clock className="w-4 h-4" /> },
+    safety_file_compliance: { value: orNull(kpis.safetyCompliance), icon: <ShieldCheck className="w-4 h-4" /> },
+    inspections_overdue: { value: orNull(kpis.inspectionsOverdue), icon: <AlertTriangle className="w-4 h-4" /> },
+
+    // \u2500\u2500 SSEG
+    applications_pending: { value: orNull(kpis.applicationsPending), icon: <Clock className="w-4 h-4" /> },
+    queries_outstanding: { value: orNull(kpis.queriesOutstanding), icon: <AlertTriangle className="w-4 h-4" /> },
+    approvals_due: { value: orNull(kpis.approvalsDue), icon: <CheckCircle2 className="w-4 h-4" /> },
+    rejections_open: { value: orNull(kpis.rejectionsOpen), icon: <AlertTriangle className="w-4 h-4" /> },
   };
 
-  const seen = new Set<string>();
   const cards: Array<{ label: string; value: string | number; icon: React.ReactNode }> = [];
+  const seen = new Set<string>();
   for (const kpi of config.kpis) {
-    const mapped = kpiKeyMap[kpi.key];
-    if (mapped && !seen.has(mapped.label)) {
-      seen.add(mapped.label);
-      cards.push(mapped);
-    }
+    if (seen.has(kpi.label)) continue;
+    seen.add(kpi.label);
+    const source = kpiSource[kpi.key];
+    cards.push({
+      label: kpi.label,
+      value: source && source.value != null ? source.value : "\u2014",
+      icon: source?.icon ?? <BarChart3 className="w-4 h-4" />,
+    });
   }
 
   return cards.slice(0, 4).map((card) => {
