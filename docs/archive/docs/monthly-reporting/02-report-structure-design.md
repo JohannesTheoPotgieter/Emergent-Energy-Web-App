@@ -1,5 +1,8 @@
 # Monthly Management Report — Structure & Design Document
 
+> **DEPRECATED — finance rules superseded.**
+> The "COS Realised = invoiceDateConfirmed = true AND invoiceNumber IS NOT NULL" definition in this file is **incomplete** — the current canonical rule (AGENT_GUARDRAILS § 3.2) is invoice captured AND invoice-date cell colour BLACK. Revenue realisation now uses the cost-to-cost COS-ratio formula (§ 3.3). Treat as historical reference only.
+
 **Date:** 2026-03-23
 **Depends on:** `01-schema-verification-report.md` (schema verification)
 **Purpose:** Define the layout, data sources, API design, and UI components for the Monthly Management Report feature.
