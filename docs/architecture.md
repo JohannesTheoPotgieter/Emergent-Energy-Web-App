@@ -1,5 +1,7 @@
 # Architecture
 
+*Last verified: 2026-05-07. Owner: Johannes Theo Potgieter (COO).*
+
 ## System overview
 Emergent Energy is a full-stack operations platform for project delivery, finance visibility, quality, engineering, and governance workflows.
 
