@@ -200,13 +200,13 @@ describe("cell-edit invariant — Plan", () => {
     expect(out.tracked).toEqual([["startDate", "2026-05-01"]]);
   });
 
-  it("percentComplete (tracked) routes through unchanged", () => {
+  it("endDate (tracked) routes through unchanged", () => {
     const out = splitFields(
-      { percentComplete: 75 },
+      { endDate: "2026-05-15" },
       legacyToCanonical,
       trackedPlan,
     );
-    expect(out.tracked).toEqual([["percentComplete", 75]]);
+    expect(out.tracked).toEqual([["endDate", "2026-05-15"]]);
   });
 
   it("parentId / sortOrder / structural metadata is NOT tracked", () => {
@@ -219,11 +219,21 @@ describe("cell-edit invariant — Plan", () => {
     expect(out.untracked).toEqual({ parentId: 42, sortOrder: 10, indentLevel: 1 });
   });
 
+  it("percentComplete is NOT tracked after 2026-05-07 narrowing per § 9.3", () => {
+    const out = splitFields(
+      { percentComplete: 75 },
+      legacyToCanonical,
+      trackedPlan,
+    );
+    expect(out.tracked).toEqual([]);
+    expect(out.untracked).toEqual({ percentComplete: 75 });
+  });
+
   it("mixed tracked + structural payload splits correctly", () => {
     const out = splitFields(
       {
         startDate: "2026-05-01",
-        percentComplete: 50,
+        endDate: "2026-05-15",
         parentId: 1,
         workstream: "PM",
       },
@@ -231,7 +241,7 @@ describe("cell-edit invariant — Plan", () => {
       trackedPlan,
     );
     const trackedKeys = out.tracked.map(([k]) => k).sort();
-    expect(trackedKeys).toEqual(["percentComplete", "startDate"]);
+    expect(trackedKeys).toEqual(["endDate", "startDate"]);
     expect(out.untracked).toEqual({ parentId: 1, workstream: "PM" });
   });
 });
