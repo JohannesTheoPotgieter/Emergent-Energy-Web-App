@@ -90,6 +90,8 @@ const MODERN_MIGRATION_PROBES: Record<
   "0053_qb_match_suggestions_auto_generated": (c) =>
     columnExists(c, "quickbooks_match_suggestions", "auto_generated"),
   "0054_role_upgrade_tables": (c) => tableExists(c, "role_lens_profiles"),
+  "0055_qb_documents_payment_status": (c) =>
+    columnExists(c, "quickbooks_documents", "qb_balance"),
 };
 
 async function tableExists(client: Client, table: string): Promise<boolean> {

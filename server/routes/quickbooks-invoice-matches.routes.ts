@@ -166,12 +166,16 @@ function classifyApproveError(err: unknown): {
   // unexpected territory we should fix in code.
   const anyErr = err as { code?: string; constraint?: string; message?: string; stack?: string; name?: string };
   if (anyErr && typeof anyErr === "object" && typeof anyErr.code === "string" && /^\d{5}$/.test(anyErr.code)) {
+    // Postgres / Drizzle error. The message can contain the full SQL text +
+    // params — never surface that to the client. Send only the constraint
+    // (safe identifier) and the SQLSTATE; the full driver message stays in
+    // the server log (errorMessage / stack below).
     const constraint = anyErr.constraint ? ` (${anyErr.constraint})` : "";
     return {
       statusCode: 500,
       code: "database_error",
       reason: `pg_${anyErr.code}`,
-      message: `Database error${constraint}: ${anyErr.message ?? "unknown"}`,
+      message: `Database error${constraint} — see server logs.`,
       errorName: anyErr.name ?? "DatabaseError",
       errorMessage: anyErr.message ?? "unknown",
       stack: anyErr.stack,
@@ -179,11 +183,15 @@ function classifyApproveError(err: unknown): {
   }
 
   if (err instanceof Error) {
+    // Unexpected non-Api, non-validation Error (e.g. driver "Failed query: …"
+    // wrappers that include the full SQL text). Do NOT pass err.message
+    // through to the client — keep the toast generic and let the structured
+    // log hold the full detail.
     return {
       statusCode: 500,
       code: "approve_failed",
       reason: "unexpected_error",
-      message: err.message || "Failed to approve match.",
+      message: "Failed to approve match — see server logs.",
       errorName: err.name,
       errorMessage: err.message,
       stack: err.stack,
