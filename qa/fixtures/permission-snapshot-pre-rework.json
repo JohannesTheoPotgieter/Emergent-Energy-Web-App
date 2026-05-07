@@ -10395,7 +10395,7 @@
       "create": true,
       "edit": true,
       "approve": true,
-      "override": false,
+      "override": true,
       "delete": false
     },
     "handover_acceptance": {
