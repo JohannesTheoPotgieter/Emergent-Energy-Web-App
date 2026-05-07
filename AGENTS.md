@@ -9,15 +9,16 @@
 - Testing: Vitest, Playwright, Supertest
 
 ## Commands
-- Type check: `npm run check`
-- Unit tests: `npm run test`
-- API tests: `npm run test:api`
-- Route check: `npm run check:routes-migration`
-- Duplicate routes: `npm run check:duplicate-routes`
-- Generate migration: `npm run db:generate`
-- `npm run db:migrate` — see `docs/AGENT_GUARDRAILS.md` § 6 (default: agents do not run; per-session user approval required).
-- Lint: `npm run lint`
-- Format: `npm run format`
+- `npm run build`
+- `npm run check`
+- `npm run test`
+- `npm run test:api`
+- `npm run check:routes-migration`
+- `npm run check:duplicate-routes`
+- `npm run db:generate`
+- `npm run db:migrate` — See docs/AGENT_GUARDRAILS.md § 6.
+- `npm run lint`
+- `npm run format`
 
 ## File Patterns
 - New route files go in: `server/routes/<name>.routes.ts`
@@ -27,22 +28,16 @@
 - Client pages: `client/src/pages/`
 - Client components: `client/src/components/`
 
-## Business Rule Invariants — NEVER VIOLATE
-1. COS is only realised when an invoice is captured under actuals.
-2. Payment receipt date drives revenue realisation logic.
-3. Every query against a snapshot table MUST include `isNull(table.effectiveTo)`.
-4. No approval bypass can exist without an entry in `server/audit-logger.ts`.
-5. The PD → PM handover gate must be explicitly approved before lifecycle advances.
-
-Footnote: The no-PO rule was withdrawn by the owner on 2026-05-07. Invoices may exist without POs.
+## Business Rule Invariants
+Business Rule Invariants — see docs/AGENT_GUARDRAILS.md § 3, § 3A.
 
 ## Security Rules
-- Do NOT read, log, or relay any file in `server/secrets/` or `.env`
-- Do NOT run `env`, `printenv`, `cat .env`, or equivalent
-- Do NOT run any `DROP TABLE` or destructive migration without my explicit approval
-- Do NOT install new npm packages without listing them and getting my approval first
+Security Rules — see docs/AGENT_GUARDRAILS.md § 5, § 5A.
 
 ## Scope Rules
 - If you notice something out of scope, log it in CODEX_FINDINGS.md and continue
 - Do NOT refactor code you were not asked to change
 - Do NOT rename variables outside the target file
+
+## Verification
+Last verified: 2026-05-07. Owner: Johannes Theo Potgieter (COO).
