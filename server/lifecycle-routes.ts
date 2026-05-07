@@ -2320,6 +2320,20 @@ export function registerLifecycleRoutes(app: Express) {
         // DELETE FROM project_info hits pd_tickets_project_id_fkey.
         await safeDel(sql`DELETE FROM phase_template_application WHERE project_id = ${pId}`);
         await safeDel(sql`DELETE FROM execution_gate_log WHERE project_id = ${pId}`);
+        // Clear every child table that FKs into smart_import_runs.id
+        // BEFORE deleting smart_import_runs itself — otherwise the
+        // smart_import_runs DELETE fails silently inside safeDel and
+        // the final DELETE FROM project_info hits
+        // smart_import_runs_project_id_fkey ("Key (id)=(N) is still
+        // referenced from table 'smart_import_runs'"). Tables that
+        // FK to smart_import_runs.id without ON DELETE CASCADE/SET
+        // NULL: normalized_plan_tasks, import_logs,
+        // conflict_resolution_log. (import_issues was already cleared
+        // up top via subquery; *_summary*.snapshot_run_id columns are
+        // ON DELETE SET NULL and don't need explicit cleanup.)
+        await safeDel(sql`DELETE FROM normalized_plan_tasks WHERE import_run_id IN (SELECT id FROM smart_import_runs WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM import_logs WHERE import_run_id IN (SELECT id FROM smart_import_runs WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM conflict_resolution_log WHERE import_run_id IN (SELECT id FROM smart_import_runs WHERE project_id = ${pId})`);
         await safeDel(sql`DELETE FROM smart_import_runs WHERE project_id = ${pId}`);
         await safeDel(sql`DELETE FROM project_portfolio_assignments WHERE project_id = ${pId}`);
         await safeDel(sql`DELETE FROM teams_chat_groups WHERE project_id = ${pId}`);
