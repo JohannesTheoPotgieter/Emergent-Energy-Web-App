@@ -3,12 +3,12 @@
 
 # Emergent Energy Web App — Claude Code Context
 
+**Last verified:** 2026-05-07. Owner: Johannes Theo Potgieter (COO).
+
 Internal operations platform for a South African C&I solar EPC company.
 Full-stack TypeScript monorepo: React 19 + Vite (client) + Express 5 (server) +
 Drizzle ORM + PostgreSQL. Hosted on Replit. See `replit.md` for full architecture
 and `docs/architecture.md` for the architecture baseline.
-
-**Last verified:** 2026-04-15 (see "Keeping this file fresh" at bottom)
 
 ## Commands
 
@@ -63,81 +63,27 @@ qa/release-gate.ts  Must pass before any release
 - `@shared/` → `shared/`
 - `@assets/` → `attached_assets/`
 
-## Schema Rules — CRITICAL
+## Pointers to canonical guardrails
 
-- **Source of truth is `shared/schema/*.ts` (26 domain files).** `shared/schema.ts`
-  is only a barrel re-export — do NOT add tables there.
-- When adding a table, edit the relevant domain file: `finance.ts`, `projects.ts`,
-  `users.ts`, `engineering.ts`, `tasks.ts`, `quality.ts`, `imports.ts`, etc.
-- Do not create route-local interfaces that duplicate inferred schema types. Use
-  `typeof table.$inferSelect` or `$inferInsert`, or the exported `Insert*`/`*`
-  types next to each table definition.
-- Drizzle version: `drizzle-orm@0.45.2` with `drizzle-zod@0.7.0`.
+Substantive rules live in `docs/AGENT_GUARDRAILS.md`. Do not duplicate them here.
 
-## Database Rules — CRITICAL
-
-- **ORM:** Drizzle. Avoid raw SQL unless unavoidable; when you do, use
-  `sql` tagged template + parameters — never string interpolation.
-- **Dual-mode:** PostgreSQL in prod via `DATABASE_URL`; `better-sqlite3` fallback
-  in dev. **Avoid PostgreSQL-specific syntax** (`::` casts, certain enum tricks,
-  `RETURNING` edge cases) unless guarded — it breaks the SQLite dev path.
-- **Snapshot tables — `effective_to IS NULL` guard:** Any aggregate query over
-  the following tables MUST filter out historical snapshots with
-  `isNull(table.effectiveTo)` (Drizzle) or `effective_to IS NULL` (raw SQL).
-  Failing to do so double-counts history.
-  - `normalizedCostLines` (current — use this)
-  - `normalizedRevenueLines` (current — use this)
-  - `cashflowPoints`
-  - `financeRevenueMonthly`
-  - `financeCosMonthly`
-  - `categoryRevenueAllocations`
-  - `projectRevenueSummary`
-  - Note: `ProgramExpense` / `ProgramInflows` are **deprecated PE/PI type shapes**
-    in `shared/schema/finance.ts` — do not use for new code; use
-    `normalizedCostLines` / `normalizedRevenueLines` instead.
-- **Migrations location:** `/migrations/` at the repo root. The current
-  baseline is `0000_baseline_20260419.sql`; new migrations are generated
-  next to it by `npm run db:generate`. Do NOT hand-write migrations — the
-  journal (`migrations/meta/_journal.json`) is the source of truth for
-  what Drizzle considers applied. Do NOT put migrations in
-  `server/migrations/` — that directory only holds one-off TS scripts.
-- **Historical migrations:** the 225 pre-baseline migrations live in
-  `migrations/archive/` for reference only. They are NOT re-applied by
-  any tooling; prod DBs already contain their effects. See
-  `migrations/archive/README.md`.
-- **Schema-drift CI guard:** `npm run db:check` runs `drizzle-kit generate`
-  in a sandbox and fails if it would produce a new SQL file — meaning the
-  schema and the committed migrations are out of sync. The CI workflows
-  run this on every PR.
-- **Migrations policy:** Additive only. Every new migration must use
-  `IF NOT EXISTS` / `IF EXISTS` guards. Never destructively
-  `ALTER TABLE … DROP` or `RENAME` without an explicit multi-step safe-
-  migration plan.
-- **`work_items`:** Writes go directly to `public.work_items` via Drizzle. The
-  writable-view architecture was retired (see
-  `migrations/20260409_retire_work_items_view.sql`). The files
-  `server/work-items-adapter.ts` and `server/work-items-backfill.ts` are legacy
-  — read-only reference; do not extend them for new features.
-- **Repository layer:** CRUD in routes must go through `server/repositories/*`.
-  Route files must not call `db.select()` / `db.insert()` directly.
-
-## Authentication & RBAC
-
-- **Primary:** Microsoft SSO via Azure MSAL (`@azure/msal-node`).
-- **Fallback:** username/password (`bcryptjs`).
-- **Secrets:** Azure Key Vault in production (`@azure/keyvault-secrets`).
-- **Authoritative role list:** `shared/schema/users.ts` — `COMPANY_ROLES`
-  constant (currently 16 roles: COO_ADMIN, CEO_ADMIN, CCO, CFO, PROGRAM_MANAGER,
-  PROGRAM_FINANCE_MANAGER, CONSTRUCTION_MANAGER, QUALITY_MANAGER,
-  ENGINEERING_MANAGER, KEY_ACCOUNTS_MANAGER, ACCOUNTANT, ENGINEER,
-  PROJECT_MANAGER_SITE, PROJECT_DEVELOPER, HSE_MANAGER, SSEG_MANAGER).
-  Always read this file — never hardcode the list.
-- **Server-side enforcement:** Use `requireAuth` from
-  `server/middleware/requireAuth.ts` and `requireRole` from
-  `server/middleware/requireRole.ts`. Do NOT implement client-side-only
-  permission checks for sensitive actions.
-- **Session:** `express-session` with role stored; MS identity maps via
-  `ms_user_id` / email.
+- **Schema rules:** see `docs/AGENT_GUARDRAILS.md` § 6.
+- **Database & migrations:** see `docs/AGENT_GUARDRAILS.md` § 6. Snapshot-table
+  `effectiveTo IS NULL` guard is HARD — § 3.1.
+- **Auth & RBAC:** see `docs/AGENT_GUARDRAILS.md` § 5. 16 company roles as of
+  2026-05-07. Always read `shared/schema/users.ts` `COMPANY_ROLES` constant —
+  never hardcode.
+- **Frontend stack:** React 19 + Vite + wouter + TanStack Query v5 + React Hook
+  Form + shadcn/ui (New York) + Tailwind v4 (white + emerald `#16A34A`). Boundary
+  rules: see `docs/AGENT_GUARDRAILS.md`.
+- **Smart Import v2:** see `docs/AGENT_GUARDRAILS.md` § 9 (load-bearing engine
+  rules) and § 3.5–3.7 (HARD line-ID + planned-vs-actual rules).
+- **Microsoft 365 integrations:** see `docs/AGENT_GUARDRAILS.md` § 4B and § 5.
+  Metadata only — never store bodies / attachments (HARD § 5A).
+- **TypeScript:** avoid `any` / `@ts-ignore`. See `docs/AGENT_GUARDRAILS.md` § 8.
+- **Security:** see `docs/AGENT_GUARDRAILS.md` § 5 and § 5A (hard refusals).
+- **Testing:** write tests in `qa/tests/`. Targeted runs during iteration;
+  `npm run qa:full-proof` is release-only.
 
 ## API Style
 
@@ -152,27 +98,18 @@ qa/release-gate.ts  Must pass before any release
 - **Validation:** validate all request bodies with Zod (`validateBody` middleware
   in `server/middleware/validateBody.ts`).
 
-## Frontend Rules
+## Schema patterns to know
 
-- **State:** TanStack React Query v5 for server state. React local state for UI.
-- **Forms:** React Hook Form + `@hookform/resolvers` + Zod schemas.
-- **Components:** shadcn/ui (New York style) + Radix UI primitives + Lucide icons.
-- **Styling:** Tailwind CSS v4. Theme: white + emerald (`#16A34A`).
-  Fonts: Barlow / Inter / JetBrains Mono.
-- **Routing:** `wouter` (lightweight — NOT React Router). SPA only; no RSC.
+Three current vs deprecated surfaces agents currently miss:
 
-## Smart Import v2 (Excel) Rules
-
-- **Current pipeline:** `server/smart-import-routes.ts` + `server/imports/`.
-  See `docs/smart-import-v2-spec.md`, `smart-import-v2-operator-guide.md`, and
-  `smart-import-v2-known-limitations.md`.
-- `server/excelParser.ts` and `server/importPipeline.ts` are **legacy** — do not
-  extend for new Smart Import v2 work; reference only.
-- **Projects upsert by `projectCode`.** NEVER wipe other projects on import.
-- **Line IDs are hash-based** (`expense_line_id`, `inflow_line_id`) — preserve
-  them across imports.
-- **Overrides/scenarios are stored separately with an audit trail.** Never
-  overwrite imported baseline rows with override values.
+- ✅ `email_project_links` and `teams_project_links` are the canonical
+  comms-to-project tables. Use these for any new comms ingestion. Do not
+  invent parallel "messages" / "activity" / "mentions" tables. See
+  `docs/AGENT_GUARDRAILS.md` § 4B.
+- ✅ `managed_documents` + `folder_taxonomy` + `project_folders` are the
+  current document-management surface. New document features attach here.
+- 🚫 `controlled_documents`, `controlled_document_types`, and
+  `project_sharepoint_roots` are DEPRECATED. Do not extend.
 
 ## Local QA: mock connectors
 
@@ -188,44 +125,6 @@ qa/release-gate.ts  Must pass before any release
   Adjust them when the UI needs new realistic data for a scenario.
 - Prod is strictly `NODE_ENV`-gated — the flag has no effect there.
 
-## Microsoft 365 Integration
-
-- **Graph client:** `@microsoft/microsoft-graph-client` via
-  `server/ms-account-service.ts`.
-- **Sync service:** `server/ms-sync-service.ts` (delta queries + subscriptions).
-- **SharePoint intake:** `server/sharepoint-list.ts` → Engineering Support
-  "Proposals Pipeline" list. Sync is **COO-only**, manual trigger (Pull/Push).
-- **NEVER store full email bodies or file contents in the DB.** Store metadata
-  + deep links only. Full attachments live in SharePoint/Outlook.
-- Mock connector is available for dev/test when Graph tokens are unavailable.
-
-## TypeScript Rules
-
-- Avoid `any`. Use Drizzle-inferred types from `shared/schema/*` or add to
-  `server/types/`. See `server/TYPING_GUIDE.md` for server conventions.
-- ES modules everywhere in source. Server builds to CJS for prod (see
-  `script/build.ts`); dev runs under `tsx`.
-- Run `npm run check` (or `check:client` for frontend-only changes) after any
-  batch of edits. Do NOT silence errors with `@ts-ignore` or `as any`.
-
-## Security Rules
-
-- NEVER commit `.env*`. All prod secrets go through Azure Key Vault.
-- Bank detail fields are encrypted — follow the pattern in
-  `scripts/encrypt-existing-bank-details.ts`.
-- Input validation with Zod at all system boundaries (request bodies,
-  file uploads, external API payloads).
-- `helmet` + CSRF middleware are configured in `server/middleware/` — don't
-  disable them.
-
-## Testing Rules
-
-- Write tests in `qa/tests/`.
-- Prefer targeted single-test runs during iteration — the full suite is slow.
-- API tests require the `script/run-with-app.ts` wrapper (starts server first).
-- Before release, `npm run qa:full-proof` must pass (`qa/release-gate.ts`
-  enforces this).
-
 ## CI Rules
 
 - **Authoritative PR workflow:** `.github/workflows/pr-checks.yml` on
@@ -234,21 +133,14 @@ qa/release-gate.ts  Must pass before any release
   → `npm run release:gate` (`SKIP_SMOKE_TESTS=true` in CI).
 - **Push workflow:** `.github/workflows/ci.yml` runs on `push` to `main` only
   and mirrors the same gate logic for post-merge confidence.
-- **Unit tests** (`npm run test`) run on every PR — no Postgres needed. A new
-  regression in any pinned invariant (finance math, error leaks, schema
-  drift, route inventory) fails at this stage.
 - **Schema-drift guard** (`npm run db:check`) — runs `drizzle-kit generate`
   in a sandbox; fails any PR that edited `shared/schema/*.ts` without a
   matching new migration file.
-- **Replit deploy health is NOT CI health.** Replit deploy uses `.replit`
-  (`npm run build` / `npm run start`) and can be green while PR checks are red.
-  Treat GitHub PR checks as merge authority.
-- **Branch protection on `main`** is configured via GitHub UI. Docs in this
-  repo can describe intent, but only the GitHub settings are authoritative.
+- **Replit deploy health is NOT CI health.** Treat GitHub PR checks as merge
+  authority.
 - **Auth rate-limit loopback exemption** — `127.0.0.1` / `::1` are exempt
-  from the auth rate-limiter when `NODE_ENV !== "production"`, so local
-  `npm run test:api` and dev flows aren't blocked after 20 logins. The gate
-  is strictly NODE_ENV-based — prod is always rate-limited.
+  from the auth rate-limiter when `NODE_ENV !== "production"`. Prod is always
+  rate-limited.
 
 ## Working With This Codebase — Rules for Claude
 
@@ -259,7 +151,7 @@ qa/release-gate.ts  Must pass before any release
    (files changed, schema changes, migrations, RBAC, tests) and wait for
    approval before writing code.
 3. **Trust canonical files over CLAUDE.md for volatile facts.** If this file
-   disagrees with the actual role list in `shared/schema/users.ts:77`, the
+   disagrees with the actual role list in `shared/schema/users.ts`, the
    schema file wins.
 4. **Do not run the full test suite during iteration.** Use targeted runs;
    `npm run qa:full-proof` is for release only.
@@ -277,23 +169,30 @@ qa/release-gate.ts  Must pass before any release
 - ❌ Import `requireRole` from `server/permission-middleware.ts`
   (correct path is `server/middleware/requireRole.ts`).
 - ❌ Skip `isNull(effectiveTo)` on snapshot-table aggregate queries.
-- ❌ Store full email bodies / attachment content in the DB.
 - ❌ Silence TypeScript errors with `as any` or `@ts-ignore`.
 - ❌ Run `npm run qa:full-proof` during normal iteration (too slow).
+- ❌ Build a parallel comms / messages / activity table without `projectId`
+  + `phaseAtLinkTime` (use `email_project_links` / `teams_project_links`).
+- ❌ Mutate `phaseAtLinkTime` after creation (HARD — corrupts history).
+- ❌ Extend `controlled_documents` / `controlled_document_types` /
+  `project_sharepoint_roots` (deprecated; use `managed_documents` +
+  `folder_taxonomy` + `project_folders`).
+- ❌ Store email bodies, attachment bytes, message contents, or transcripts
+  in the DB (HARD — § 5A).
+- ❌ Skip the canonical comms tables when ingesting from a new source
+  (WhatsApp, Slack) — follow the email/teams `_project_links` shape.
 
 ## Keeping This File Fresh
 
-This file encodes facts that will drift. Re-verify each section when any of
-the following change:
+This file is now a thin pointer. Re-verify when any of the following change:
 
-- `shared/schema/users.ts` `COMPANY_ROLES` constant → update role list.
-- Schema temporal columns (`effectiveTo`) → update snapshot-table list.
+- `shared/schema/users.ts` `COMPANY_ROLES` count → update the role-count line.
 - Route-file migration progress (`server/routes/` vs `server/*-routes.ts`) →
   update API Style section.
-- Migration retirements (view retirements, legacy-file deprecations) →
-  update Database Rules / Do NOT sections.
-- Smart Import v2 pipeline location → update Excel Rules section.
+- A new current/deprecated schema surface emerges → update Schema patterns
+  to know.
+- A guardrails section in `docs/AGENT_GUARDRAILS.md` is renumbered → update
+  the pointer line.
 
-**To refresh:** re-run the same checks used when this file was first drafted
-(see `docs/claude-code-mastery-guide.md` § "Keeping CLAUDE.md fresh"), bump
-the `Last verified` date at the top, and commit.
+**To refresh:** reconcile pointers against `docs/AGENT_GUARDRAILS.md`, bump the
+`Last verified` date at the top, and commit.
