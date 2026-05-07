@@ -1,37 +1,4 @@
-// ============================================================
-// BARREL RE-EXPORT FILE
-// ============================================================
-// This file re-exports all domain schema files so that existing
-// imports from "@shared/schema" continue to work unchanged.
-//
-// Domain files live in shared/schema/ directory:
-//   users.ts, projects.ts, finance.ts, engineering.ts,
-//   tasks.ts, quality.ts, mytool.ts, imports.ts,
-//   legacy.ts, collaboration.ts
-// ============================================================
-
-export * from "./schema/users";
-export * from "./schema/projects";
-export * from "./schema/finance";
-export * from "./schema/engineering";
-export * from "./schema/tasks";
-export * from "./schema/quality";
-export * from "./schema/mytool";
-export * from "./schema/imports";
-export * from "./schema/legacy";
-export * from "./schema/collaboration";
-export * from "./schema/soft-delete";
-export * from "./schema/construction";
-export * from "./schema/hse";
-export * from "./schema/handover";
-export * from "./schema/stage-lifecycle";
-export * from "./schema/stage-data";
-export * from "./schema/stage-collaboration";
-export * from "./schema/collaboration-workflow";
-export * from "./schema/integrations";
-export * from "./schema/dashboard-snapshots";
-export * from "./schema/task-reminders";
-export * from "./schema/documents";
-export * from "./schema/email-links";
-export * from "./schema/pending-approvals";
-export * from "./schema/app-settings";
+// Thin re-export. The canonical barrel lives at shared/schema/index.ts.
+// Kept so existing `from "@shared/schema"` imports continue to resolve here
+// (file beats directory under bundler resolution).
+export * from "./schema/index";
