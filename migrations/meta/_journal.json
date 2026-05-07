@@ -386,6 +386,13 @@
       "when": 1778037529426,
       "tag": "0050_qb_invoice_links_allocations",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1778400000000,
+      "tag": "0054_role_upgrade_tables",
+      "breakpoints": true
     }
   ]
 }
