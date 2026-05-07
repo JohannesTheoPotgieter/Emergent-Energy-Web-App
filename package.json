@@ -19,6 +19,7 @@
     "db:migrate": "tsx scripts/drizzle-bootstrap.ts && drizzle-kit migrate",
     "db:check": "tsx scripts/db-check-drift.ts",
     "reconcile:priority-links": "tsx scripts/reconcile-priority-links.ts",
+    "diagnose:blast-radius:paiddate": "tsx scripts/blast-radius-paiddate.ts",
     "test": "vitest run -c qa/vitest.config.ts --exclude 'qa/tests/api/**' --exclude 'qa/tests/e2e/**' --exclude 'qa/tests/integration/**'",
     "test:api": "tsx script/run-with-app.ts \"vitest run -c qa/vitest.config.ts qa/tests/api\"",
     "test:smoke": "tsx script/run-with-app.ts \"playwright test -c qa/playwright.config.ts qa/tests/e2e/smoke.spec.ts\"",
