@@ -139,10 +139,15 @@ const FINANCE_CONFIG: RoleDashboardConfig = {
 };
 
 const QUALITY_CONFIG: RoleDashboardConfig = {
+  // open_warnings is the only quality metric with a real server-side count today.
+  // Open NCRs, Snags Due, Inspections Pending, Corrective Actions Open need
+  // dashboard endpoints before they can show real numbers — they render "—"
+  // until then rather than substituting an unrelated count under a misleading
+  // label (Phase 5 NAME-007 / NAME-008).
   kpis: [
+    { key: "open_warnings", label: "Open Quality Warnings" },
     { key: "open_ncrs", label: "Open NCRs" },
     { key: "snags_due", label: "Snags Due" },
-    { key: "inspections_pending", label: "Inspections Pending" },
     { key: "corrective_actions_open", label: "Corrective Actions Open" },
   ],
   attentionPriority: ["overdue_ncrs", "quality_gate_blocks", "overdue_snags", "inspection_failures"],

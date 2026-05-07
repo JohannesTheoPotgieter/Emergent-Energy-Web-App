@@ -17,6 +17,7 @@ export const RagStatus = {
   red: "red",
   amber: "amber",
   green: "green",
+  unknown: "unknown",
 } as const;
 
 export const ProjectStatusLabels: Record<string, string> = {
@@ -38,4 +39,5 @@ export const RagStatusLabels: Record<string, string> = {
   [RagStatus.red]: "Red",
   [RagStatus.amber]: "Amber",
   [RagStatus.green]: "Green",
+  [RagStatus.unknown]: "Unknown",
 };
