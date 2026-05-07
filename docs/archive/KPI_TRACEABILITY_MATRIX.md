@@ -1,5 +1,8 @@
 # Emergent Energy Dashboard — KPI Traceability Matrix
 
+> **DEPRECATED — finance rules superseded.**
+> The realised-vs-planned definitions below (group inflows by `invoiceRaisedDate`, classify by payment state) conflate inflow with revenue. The current canonical rules in `docs/AGENT_GUARDRAILS.md` are: COS realisation = invoice captured + invoice-date BLACK (§ 3.2); revenue realisation = cost-to-cost COS-ratio formula (§ 3.3); inflows = receipt-date BLACK (§ 3.4); outflows = actual-payment-date BLACK (§ 3.4). Treat as historical reference only.
+
 ## Audit Date: 2026-03-06
 
 ---

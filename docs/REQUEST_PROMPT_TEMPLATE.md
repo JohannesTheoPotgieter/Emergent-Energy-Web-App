@@ -137,8 +137,9 @@ Finance dashboard.
 - server/work-items-adapter.ts, server/work-items-backfill.ts (retired)
 - Any other server route files
 ## Invariants touched
-- [x] § 3.1 COS realisation rule — endpoint reads realised COS only; does not project
-- [x] § 3.4 Snapshot guard — `normalizedCostLines` query MUST include
+- [x] § 3.2 COS realisation rule — endpoint reads realised COS only (invoice captured + invoice-date BLACK per § 3.2 / § 3.7); does not project, does not realise on capture alone
+- [x] § 3.3 Revenue realisation rule — if any revenue figure is computed, use the cost-to-cost COS-ratio formula; never trigger revenue from receipt date / invoice date / milestone
+- [x] § 3.1 Snapshot guard — `normalizedCostLines` query MUST include
       isNull(normalizedCostLines.effectiveTo)
 - [x] § 4 Spine — attach to project_info.id; reuse audit_events if I write any
 - [x] § 5 Security — gate via requireRole(["PROGRAM_FINANCE_MANAGER","CFO","COO_ADMIN"])
@@ -156,7 +157,7 @@ Finance dashboard.
   - Snapshot guard: insert a closed snapshot row (effectiveTo NOT NULL) and verify
     the response excludes it
 ## Risk flags
-- [x] Touches finance reads — snapshot guard required (§ 3.4)
+- [x] Touches finance reads — snapshot guard required (§ 3.1)
 ## Plan first — wait for my approval
 ```
 ---

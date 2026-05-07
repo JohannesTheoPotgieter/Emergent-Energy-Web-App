@@ -1,5 +1,8 @@
 # KPI TRACEABILITY MATRIX
 
+> **DEPRECATED — finance rules superseded.**
+> The COS-Realised definition below ("`expenseInvoiceNumber` non-empty AND `expenseInvoicedDate` non-empty, no date validation") is **incomplete** — the current canonical rule (AGENT_GUARDRAILS § 3.2) requires invoice captured AND invoice-date cell colour BLACK. Revenue Realised % is derived via the cost-to-cost COS-ratio formula (§ 3.3). Treat as historical reference only.
+
 **Date:** 2026-03-19
 **Scope:** All key business metrics displayed on the Project Detail page
 **Method:** Source-to-UI tracing via codebase analysis

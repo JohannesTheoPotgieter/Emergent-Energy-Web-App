@@ -54,17 +54,35 @@ Every read query against a snapshot table MUST include `isNull(table.effectiveTo
 Snapshot tables today: `normalizedCostLines`, `normalizedRevenueLines`, `cashflowPoints`, `financeRevenueMonthly`, `financeCosMonthly`, `categoryRevenueAllocations`, `projectRevenueSummary`.
 Verify the live list with `grep -rln "effective_to" shared/schema/` before aggregate work. The list grows when new temporal tables ship.
 ### 3.2 COS realisation formula
-**COS is only realised when an invoice is captured under actuals in QuickBooks.** No projection, no snapshot, no override realises COS. This is the formula, not a workflow rule. Code that adds COS from any other source is wrong.
+**A COS line is realised when BOTH conditions are true: (a) an invoice is captured against the line, AND (b) the invoice-date cell colour on the workbook line is BLACK.** Black is the canonical confirmed-actual signal across every date column (§ 3.7). A RED invoice-date means projected / unconfirmed — the line is NOT realised even if an invoice number is present. Either condition alone is not enough. No projection, no snapshot, no other override realises COS. This is the formula, not a workflow rule. Code that realises COS from any other source — including invoice capture without the black-colour gate — is wrong.
+The canonical predicate is `isCanonicalCosRealised()` in `server/lib/finance/cos-realisation.ts`. All read paths must go through it. The colour is the signal at import; the app stores the derived realised flag against the actual-date row (see § 3.7).
 If a user wants to record an expected cost, that's a *projection*, a *budget line*, or a *forecast* — different fields, different reports. Never a realised COS.
 ### 3.3 Revenue realisation formula
-**Payment receipt date drives revenue realisation.** Revenue is not realised on invoice date, contract date, or any other date. The receipt date is what the calculation reads. Code that uses any other date for the realisation calculation is wrong.
-Invoice issuance, contract signature, milestone completion — all of these can drive *expected* revenue, *forecast* revenue, or workflow gates. None of them realise revenue.
+**Revenue realisation is derived from realised COS via the cost-to-cost percentage-of-completion method.** Per line item:
+```
+revenueRealised_line = (actualCOS_line / totalCOScosted_project) × totalRevenueCosted_project
+```
+Where:
+- `actualCOS_line` — the realised COS amount on the line per § 3.2 (zero if the line is not realised under the black-colour + invoice rule).
+- `totalCOScosted_project` — the project's total budgeted/costed COS (sum across all costed cost lines).
+- `totalRevenueCosted_project` — the project's total budgeted/costed revenue.
+Aggregated to the project: `Σ revenueRealised_line` across all lines (unrealised lines contribute zero because `actualCOS_line` is zero).
+Revenue is **not** realised on payment receipt date, invoice date, contract date, or milestone completion. Those drive *expected* revenue, *forecast* revenue, *cash inflow* (§ 3.4), or *workflow gates* — never the realisation figure. Code that triggers revenue realisation from any signal other than the COS-ratio formula above is wrong.
+**Inflow ≠ revenue.** Cash inflow (§ 3.4) reads payment receipt date — that is correct for cash, not for revenue realisation. The two surfaces must not be conflated in any KPI tile, dashboard, or report.
 ### 3.4 Inflows and outflows formulas
+Cashflow is **cash**, not revenue (see § 3.3 — they are different surfaces and must not be conflated). Both inflow and outflow realisation use the **uniform date-colour signal** from § 3.7: BLACK = confirmed / realised, RED = pending / forecast.
 The cashflow point series (`cashflowPoints`) and inflow/outflow projections must be derived from the canonical sources only:
-- **Inflows:** payment receipts (realised) + scheduled receipts (forecast). Never derived from invoices in isolation.
-- **Outflows:** captured supplier invoices (realised) + committed POs without invoices yet (forecast) + payroll-pattern outflows (forecast).
+- **Inflows (cash in):** revenue-line **payment-receipt-date** with cell colour as the realised signal:
+    - **BLACK** = received (realised inflow)
+    - **RED** = expected but not received (forecast / scheduled receipt)
+  Never derived from invoices in isolation. This is the receipt-date rule for *cash*, not for revenue (which is computed per § 3.3).
+- **Outflows (cash out):** cost-line **actual-payment-date** with cell colour as the realised signal:
+    - **BLACK** = paid (realised outflow)
+    - **RED** = not paid (forecast / committed outflow)
+  Plus committed POs without an invoice yet (forecast) and payroll-pattern outflows (forecast).
 - **Cashflow ramp / variance / scenario calculations** read from the snapshot tables in § 3.1 and must apply the snapshot guard.
-Any new dashboard, report, or KPI touching inflows/outflows/cashflow must use these definitions. Inventing a parallel definition because it's "easier for this view" produces numbers that disagree with QuickBooks and breaks Six Rule #3 (cross-system reconciliation) — except here it's data corruption, not a workflow violation, so there's no override path.
+**Cash ≠ recognition.** A cost line can be COS-realised under § 3.2 (invoice captured + invoice-date BLACK) while its actual-payment-date is still RED — cost recognised, cash not yet paid. The two states must be tracked separately in any cashflow / P&L view.
+Any new dashboard, report, or KPI touching inflows/outflows/cashflow must use these definitions. Inventing a parallel definition because it's "easier for this view" produces numbers that disagree with QuickBooks and breaks Six Rule #3 (cross-system reconciliation) — here it's data corruption, not a workflow violation, so there's no override path.
 ### 3.5 Smart Import line-ID stability
 `expense_line_id` and `inflow_line_id` are hash-based and must be stable across re-imports. Changing the hash inputs orphans every existing override. See § 9 for the engine-level rules.
 ### 3.6 Smart Import field-level snapshot fallback
@@ -75,7 +93,16 @@ The program plan in the Excel workbook carries **both planned and actual dates**
 - **Planned dates are preserved in the Excel replica view only.** The replica is read-back / visual comparison surface; it is not a second source of truth for app data.
 - **Realisation calculations (§ 3.2 COS, § 3.3 Revenue, § 3.4 Cashflow) read actuals.** Reading planned dates for any realisation calculation is wrong — same class of error as reading the wrong column.
 Why this is HARD: pulling planned dates into the actuals fields silently shifts the entire project state. Wrong stage, wrong gates, wrong cashflow. The app's read-back to the user becomes an unverifiable mirror of "what was planned" rather than "what happened". This is data corruption, not a workflow choice.
-**Realisation signal — date colour:** in the Excel program plan, specific cell colours mark a date as *payment confirmed* or *revenue realised*. The import reads colour as the canonical realisation signal; the app stores the derived realised flag against the actual date row. Loss of colour fidelity during import (or during any future re-import / round-trip) is a hard regression — the realisation signal must survive the round-trip.
+**Realisation signal — date colour (uniform across every date column):** the Excel program plan uses cell colour on every date column as the canonical realisation signal. The rule is the same everywhere it appears:
+- **BLACK** = confirmed / realised (the actual happened — invoice issued, payment received, payment made).
+- **RED** = pending / forecast (the date is planned or expected; the actual has not happened).
+
+The rule applies uniformly to:
+1. **Invoice-date** on cost lines — drives COS realisation per § 3.2 (BLACK + invoice captured = realised).
+2. **Actual-payment-date** on cost lines — drives outflow realisation per § 3.4 (BLACK = paid, RED = unpaid).
+3. **Payment-receipt-date** on revenue lines — drives inflow realisation per § 3.4 (BLACK = received, RED = expected).
+
+The import reads colour as the canonical signal; the app stores the derived realised flag against the actual-date row. Loss of colour fidelity during import (or during any future re-import / round-trip) is a hard regression — the realisation signal must survive the round-trip.
 **Open challenge to be resolved by owner:** date colour is a fragile signal (lost on copy/paste, lost on PDF export, lost across Excel versions). The current rule is "colour is canonical at import time" — but once imported, the app should store the realisation as a derived `realised: bool` + `realisation_method: 'colour' | 'manual' | …` so the app never depends on colour after the import boundary. **Confirm with owner before any agent extends colour-handling code.**
 ---
 ## 3A. Business-workflow invariants — SOFT rules with override paths
@@ -162,8 +189,8 @@ The app must refuse, no override path:
 ### Data corruption / financial-formula integrity
 The app must refuse, no override path:
 - Reading a snapshot table without the `effectiveTo IS NULL` guard (§ 3.1) — produces wrong totals
-- Realising COS from anything other than a captured invoice under actuals (§ 3.2)
-- Realising revenue using anything other than payment receipt date (§ 3.3)
+- Realising COS from anything other than (invoice captured + invoice-date cell colour BLACK) per § 3.2
+- Realising revenue using anything other than the cost-to-cost COS-ratio formula in § 3.3 (no invoice-date / receipt-date / contract-date / milestone triggers for revenue)
 - Inflows / outflows / cashflow series derived from non-canonical sources (§ 3.4)
 - Changing Smart Import line-ID hash inputs (§ 3.5) — orphans every existing override
 - Reverting Smart Import baseline lookup to key-only or snapshot fallback to row-level (§ 9) — re-introduces shipped bugs
@@ -201,8 +228,8 @@ For anything that crosses tool boundaries (e.g. Replit Agent making a schema cha
 ### 8.1 HARD refusals — no override path (security + data corruption)
 The app blocks and the agent refuses. These mirror § 5A.
 - ❌ Skip `isNull(effectiveTo)` on snapshot-table aggregate queries — produces wrong totals (§ 3.1).
-- ❌ Realise COS from anything other than a captured invoice under actuals (§ 3.2).
-- ❌ Realise revenue from any date other than payment receipt (§ 3.3).
+- ❌ Realise COS from anything other than (invoice captured + invoice-date cell colour BLACK) per § 3.2.
+- ❌ Realise revenue from any signal other than the § 3.3 cost-to-cost COS-ratio formula (no invoice-date / receipt-date / contract-date / milestone triggers).
 - ❌ Derive inflows / outflows / cashflow from non-canonical sources (§ 3.4).
 - ❌ Change Smart Import line-ID hash inputs (`expense_line_id`, `inflow_line_id`) — orphans every existing override (§ 3.5).
 - ❌ Revert Smart Import baseline lookup to key-only, or snapshot fallback to row-level — re-introduces shipped bugs (§ 9).

@@ -1,5 +1,8 @@
 # Smart Import — Code Audit & Financial Rules Verification
 
+> **DEPRECATED — finance rules superseded.**
+> The COS-realised definition below ("invoice exists AND invoice date exists") is **incomplete**. The current canonical rule (AGENT_GUARDRAILS § 3.2) requires invoice captured AND invoice-date cell colour BLACK. Revenue / inflow / outflow definitions in this file are also superseded by §§ 3.3, 3.4, and 3.7. Treat as historical reference only.
+
 ## STEP 1 — FINDINGS SUMMARY
 
 ### 1. What the Smart Import Does (Step by Step)
