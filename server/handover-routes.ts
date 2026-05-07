@@ -13,6 +13,13 @@ import { computePdPmSubmitBlockers, getProjectDevelopmentWorkspace } from "./ser
 import { requirePermission } from "./permission-middleware";
 import { notifyHandoverSubmitted, notifyHandoverAccepted, notifyHandoverRejected } from "./services/notification-service";
 import { PM_REVIEW_ROLES } from "@shared/roles/pd-roles";
+import { findEntityRegistry } from "@shared/permissions/registry";
+import { evaluateHandoverAcceptDecision } from "./lib/handover-accept-override-eval";
+
+// Snapshotted at module init from the canonical entity registry. Plan v3 § 2.5 / D.6 #1.
+const HANDOVER_OVERRIDE_ROLES: ReadonlySet<string> = new Set(
+  findEntityRegistry("handover")?.override_roles ?? [],
+);
 import { z } from "zod";
 import { jwtAuth, requireAuth } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
@@ -962,9 +969,17 @@ export function registerHandoverRoutes(app: Express) {
         handover,
       });
       const missingItems = computePdPmSubmitBlockers({ project, handover, workspace });
-      if (missingItems.length > 0) {
-        return res.status(400).json({ error: "Cannot accept handover: mandatory sections are incomplete.", missingItems });
+      const decision = evaluateHandoverAcceptDecision({
+        userRole: user?.role,
+        missingItems,
+        rawOverrideReason: req.body?.override_reason,
+        overrideRoles: HANDOVER_OVERRIDE_ROLES,
+      });
+      if (decision.kind === "reject") {
+        return res.status(decision.status).json(decision.body);
       }
+      const overrideApplied = decision.kind === "accept_with_override";
+      const overrideReason = overrideApplied ? decision.reason : null;
       await db.update(projectPdPmHandover).set({
         status: "ACCEPTED",
         handoverStatusText: "Accepted",
@@ -999,9 +1014,20 @@ export function registerHandoverRoutes(app: Express) {
       logAuditFromReq(req, {
         entityType: "pd_pm_handover",
         entityId: String(projectId),
-        action: "accepted",
+        action: overrideApplied ? "accepted_with_override" : "accepted",
         projectName: project?.projectName,
-        changesJson: { acceptedBy: user?.name, fromPhase: project?.phase || null, toPhase: "PM Active" },
+        changesJson: {
+          acceptedBy: user?.name,
+          fromPhase: project?.phase || null,
+          toPhase: "PM Active",
+          ...(overrideApplied
+            ? {
+                overrideApplied: true,
+                overrideReason,
+                missingItemsAtAccept: missingItems,
+              }
+            : {}),
+        },
       });
       // Notify PD team about acceptance
       try {
@@ -1046,7 +1072,14 @@ export function registerHandoverRoutes(app: Express) {
         console.warn("[handover] Safety File auto-seed failed (non-blocking):", seedErr);
       }
 
-      res.json({ success: true, status: "ACCEPTED", safetyFileSeeded });
+      res.json({
+        success: true,
+        status: "ACCEPTED",
+        safetyFileSeeded,
+        ...(overrideApplied
+          ? { override_applied: true, override_reason: overrideReason }
+          : {}),
+      });
     } catch (err: any) {
       console.error("[handover] accept error:", err);
       res.status(500).json({ error: "Could not accept handover. Likely reason: your PM permission is missing or the handover is incomplete. Refresh, verify access, and retry." });
