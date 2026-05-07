@@ -146,25 +146,36 @@ describe("valuesEqual semantics align with conflict-policy", () => {
   });
 });
 
-describe("PR2A canonical fields participate in conflict detection", () => {
-  it("PLAN compare list includes lead, resource_1, resource_2, tracker_comments, work_days", () => {
-    expect(PLAN_COMPARE_FIELDS).toContain("lead");
-    expect(PLAN_COMPARE_FIELDS).toContain("resource1");
-    expect(PLAN_COMPARE_FIELDS).toContain("resource2");
-    expect(PLAN_COMPARE_FIELDS).toContain("trackerComments");
-    expect(PLAN_COMPARE_FIELDS).toContain("workDays");
+// 2026-05-07 narrowing per § 9.3 of the playbook (and
+// shared/excel-vs-app/contract.ts): the Excel-vs-App compare scope is
+// locked to dates, amounts, row add/delete, and date-colour signals.
+// PR2A canonical fields (status / owner / %complete / lead /
+// resource* / trackerComments / workDays / milestoneNotes / comments
+// / checkFlag / savingOverrun / usdExchangeRate / pricePerWatt /
+// milestonePercent) are NOT tracked. These guard tests fail fast if
+// a future change re-expands the compare scope without updating
+// shared/excel-vs-app/contract.ts.
+describe("Compare lists are narrowed per § 9.3 (2026-05-07) — PR2A fields are NOT tracked", () => {
+  it("PLAN compare list excludes lead, resource1, resource2, trackerComments, workDays", () => {
+    expect(PLAN_COMPARE_FIELDS).not.toContain("lead");
+    expect(PLAN_COMPARE_FIELDS).not.toContain("resource1");
+    expect(PLAN_COMPARE_FIELDS).not.toContain("resource2");
+    expect(PLAN_COMPARE_FIELDS).not.toContain("trackerComments");
+    expect(PLAN_COMPARE_FIELDS).not.toContain("workDays");
   });
-  it("REVENUE compare list includes milestoneNotes", () => {
-    expect(REVENUE_COMPARE_FIELDS).toContain("milestoneNotes");
+  it("REVENUE compare list excludes milestoneNotes (text/identifier, not date/amount)", () => {
+    expect(REVENUE_COMPARE_FIELDS).not.toContain("milestoneNotes");
   });
-  it("EXPENDITURE compare list includes actualQty, actualRate, comments, checkFlag, savingOverrun, usdExchangeRate, pricePerWatt", () => {
+  it("EXPENDITURE compare list excludes comments, checkFlag, savingOverrun, usdExchangeRate, pricePerWatt", () => {
+    // actualQty / actualRate ARE tracked (numeric line totals → amounts).
     expect(EXPENDITURE_COMPARE_FIELDS).toContain("actualQty");
     expect(EXPENDITURE_COMPARE_FIELDS).toContain("actualRate");
-    expect(EXPENDITURE_COMPARE_FIELDS).toContain("comments");
-    expect(EXPENDITURE_COMPARE_FIELDS).toContain("checkFlag");
-    expect(EXPENDITURE_COMPARE_FIELDS).toContain("savingOverrun");
-    expect(EXPENDITURE_COMPARE_FIELDS).toContain("usdExchangeRate");
-    expect(EXPENDITURE_COMPARE_FIELDS).toContain("pricePerWatt");
+    // The text / metadata fields are not.
+    expect(EXPENDITURE_COMPARE_FIELDS).not.toContain("comments");
+    expect(EXPENDITURE_COMPARE_FIELDS).not.toContain("checkFlag");
+    expect(EXPENDITURE_COMPARE_FIELDS).not.toContain("savingOverrun");
+    expect(EXPENDITURE_COMPARE_FIELDS).not.toContain("usdExchangeRate");
+    expect(EXPENDITURE_COMPARE_FIELDS).not.toContain("pricePerWatt");
   });
 });
 

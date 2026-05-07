@@ -33,36 +33,41 @@ function buildSnapshot(
 }
 
 describe("backfill-import-snapshot — buildSnapshot", () => {
+  // Tracked-field set narrowed 2026-05-07 per § 9.3 (see
+  // shared/excel-vs-app/contract.ts). Inputs below use only currently
+  // tracked fields; PR2A text/metadata fields (duration, ownerName,
+  // percentComplete, milestoneNotes, milestonePercent, usdExchangeRate
+  // etc.) are deliberately excluded.
   it("PLAN: emits one entry per tracked field, defaulting missing keys to null", () => {
     const fileRow = {
       startDate: "2026-05-01",
       endDate: "2026-05-15",
-      duration: 14,
-      ownerName: "Jane",
+      baselineStart: "2026-04-25",
       // unrelated / non-tracked fields ignored
       taskNo: "1.2",
+      ownerName: "Jane",
       randomMetadata: "ignored",
     };
     const snap = buildSnapshot(fileRow, PLAN_TRACKED_FIELDS);
     expect(Object.keys(snap).sort()).toEqual([...PLAN_TRACKED_FIELDS].sort());
     expect(snap.startDate).toBe("2026-05-01");
     expect(snap.endDate).toBe("2026-05-15");
-    expect(snap.duration).toBe(14);
-    expect(snap.ownerName).toBe("Jane");
+    expect(snap.baselineStart).toBe("2026-04-25");
     // Untracked field absent from output.
     expect("taskNo" in snap).toBe(false);
+    expect("ownerName" in snap).toBe(false);
     expect("randomMetadata" in snap).toBe(false);
     // Tracked field absent from input → null.
     expect(snap.actualStart).toBeNull();
-    expect(snap.percentComplete).toBeNull();
+    expect(snap.actualEnd).toBeNull();
   });
 
   it("REVENUE: full-row snapshot matches the tracked-field set", () => {
     const fileRow = {
       amountExVat: "50000.00",
       vat: "7500.00",
-      milestonePercent: 25,
-      invoiceNumber: "INV-001",
+      milestonePercent: 25, // not tracked — should be ignored
+      invoiceNumber: "INV-001", // not tracked
       invoiceDate: "2026-04-15",
       paidDate: "2026-05-01",
     };
@@ -70,36 +75,39 @@ describe("backfill-import-snapshot — buildSnapshot", () => {
     expect(Object.keys(snap).sort()).toEqual([...REVENUE_TRACKED_FIELDS].sort());
     expect(snap.amountExVat).toBe("50000.00");
     expect(snap.invoiceDate).toBe("2026-04-15");
-    expect(snap.milestoneNotes).toBeNull(); // not in input
+    expect(snap.expectedPaymentDate).toBeNull(); // tracked but not in input
+    expect("milestonePercent" in snap).toBe(false);
+    expect("invoiceNumber" in snap).toBe(false);
   });
 
   it("EXPENDITURE: full-row snapshot matches the tracked-field set", () => {
     const fileRow = {
       amountExVat: "1500.00",
       budgetTotal: "2000.00",
-      invoiceNumber: "INV-100",
-      poNumber: "PO-50",
-      counterpartyName: "Supplier Co.",
+      invoiceNumber: "INV-100", // not tracked
+      poNumber: "PO-50", // not tracked
+      counterpartyName: "Supplier Co.", // not tracked
       cosRealised: true,
     };
     const snap = buildSnapshot(fileRow, EXPENDITURE_TRACKED_FIELDS);
     expect(Object.keys(snap).sort()).toEqual([...EXPENDITURE_TRACKED_FIELDS].sort());
     expect(snap.amountExVat).toBe("1500.00");
     expect(snap.cosRealised).toBe(true);
-    expect(snap.usdExchangeRate).toBeNull();
+    expect(snap.forecastPaymentDate).toBeNull();
     expect(snap.actualQty).toBeNull();
+    expect("usdExchangeRate" in snap).toBe(false); // dropped per 2026-05-07 narrowing
   });
 
   it("undefined values normalise to null", () => {
     const fileRow: Record<string, unknown> = {
       startDate: "2026-05-01",
       endDate: undefined,
-      duration: undefined,
+      baselineStart: undefined,
     };
     const snap = buildSnapshot(fileRow, PLAN_TRACKED_FIELDS);
     expect(snap.startDate).toBe("2026-05-01");
     expect(snap.endDate).toBeNull();
-    expect(snap.duration).toBeNull();
+    expect(snap.baselineStart).toBeNull();
   });
 
   it("null values stay null (operator-cleared)", () => {
