@@ -35,7 +35,7 @@ export function useUserNames() {
   const { data: users = [] } = useQuery<UserRecord[]>({
     queryKey: ["users-list"],
     queryFn: async () => {
-      const res = await fetch("/api/users", {
+      const res = await fetch("/api/users/assignable", {
         headers: getAuthHeaders(),
         credentials: "include",
       });
