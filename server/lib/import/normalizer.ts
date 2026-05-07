@@ -1209,7 +1209,8 @@ function extractSubProjectFromCategory(category: string | null): string | null {
   return null;
 }
 
-function extractCostLines(
+/** Exported for unit testing. Internal — public API is `normalizeData`. */
+export function extractCostLines(
   data: any[][],
   mapping: MappingResult,
   sheetName: string,
@@ -1600,14 +1601,7 @@ function extractCostLines(
     const revenueRecognitionAmount = revenueRecogCol >= 0 ? parseNumber(row[revenueRecogCol]) : null;
     const forecastPaymentDate = forecastPayDateCol >= 0 ? parseDate(row[forecastPayDateCol]) : null;
 
-    if (!paidDate && forecastPaymentDate) {
-      paidDate = forecastPaymentDate;
-      if (ws && forecastPayDateCol >= 0) {
-        const fc = getCellFontColor(ws, i, forecastPayDateCol);
-        paidDateFontColor = fc.color;
-        paidDateConfirmed = fc.isBlack;
-      }
-    }
+    // § 3.7 HARD: paidDate is actuals — never fall back to forecastPaymentDate.
 
     // S07: COS realisation requires a valid (non-placeholder) invoice AND non-zero actual amount.
     // Placeholder invoices (TBC, Pending, N/A, etc.) do not count as captured supplier invoices.
