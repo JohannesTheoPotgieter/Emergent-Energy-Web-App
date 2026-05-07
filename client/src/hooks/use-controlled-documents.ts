@@ -74,7 +74,7 @@ export function useProjectDocumentDetail(projectId: number | null, typeKey: stri
 
 export function useApprovalQueue() {
   return useQuery<{ userId: number; rows: ApprovalQueueRow[] }>({
-    queryKey: ["/api/approvals/queue"],
+    queryKey: ["/api/managed-document-approvals/queue"],
     queryFn: getQueryFn({ on401: "throw" }),
     refetchInterval: 60_000, // poll every minute — fresh for the "Waiting on me" card
   });
@@ -110,7 +110,7 @@ export function useSubmitDocument(projectId: number) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [`/api/projects/${projectId}/controlled-documents`] });
-      qc.invalidateQueries({ queryKey: ["/api/approvals/queue"] });
+      qc.invalidateQueries({ queryKey: ["/api/managed-document-approvals/queue"] });
     },
   });
 }
@@ -123,7 +123,7 @@ export function useApproveDocument() {
       return res.json();
     },
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ["/api/approvals/queue"] });
+      qc.invalidateQueries({ queryKey: ["/api/managed-document-approvals/queue"] });
       if (vars.projectId) {
         qc.invalidateQueries({ queryKey: [`/api/projects/${vars.projectId}/controlled-documents`] });
       }
@@ -139,7 +139,7 @@ export function useRejectDocument() {
       return res.json();
     },
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ["/api/approvals/queue"] });
+      qc.invalidateQueries({ queryKey: ["/api/managed-document-approvals/queue"] });
       if (vars.projectId) {
         qc.invalidateQueries({ queryKey: [`/api/projects/${vars.projectId}/controlled-documents`] });
       }
@@ -155,7 +155,7 @@ export function useRecallDocument() {
       return res.json();
     },
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ["/api/approvals/queue"] });
+      qc.invalidateQueries({ queryKey: ["/api/managed-document-approvals/queue"] });
       if (vars.projectId) {
         qc.invalidateQueries({ queryKey: [`/api/projects/${vars.projectId}/controlled-documents`] });
       }
