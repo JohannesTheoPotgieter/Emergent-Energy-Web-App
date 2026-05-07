@@ -393,6 +393,13 @@
       "when": 1778400000000,
       "tag": "0054_role_upgrade_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1778500000000,
+      "tag": "0055_qb_documents_payment_status",
+      "breakpoints": true
     }
   ]
 }
