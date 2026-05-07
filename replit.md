@@ -1,3 +1,6 @@
+> Read `docs/AGENT_GUARDRAILS.md` first. This file holds tool-specific
+> guidance only.
+
 # Emergent Energy Web App
 An internal operations platform for a South African C&I solar EPC company, streamlining project lifecycle management, centralizing data, and providing critical business insights.
 

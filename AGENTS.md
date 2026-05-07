@@ -1,3 +1,6 @@
+> Read `docs/AGENT_GUARDRAILS.md` first. This file holds tool-specific
+> guidance only.
+
 # AGENTS.md — Emergent Energy Web App
 
 ## Stack
@@ -11,7 +14,8 @@
 - API tests: `npm run test:api`
 - Route check: `npm run check:routes-migration`
 - Duplicate routes: `npm run check:duplicate-routes`
-- Generate migration: `npm run db:generate` (NEVER run `npm run db:migrate` — that is done manually)
+- Generate migration: `npm run db:generate`
+- `npm run db:migrate` — see `docs/AGENT_GUARDRAILS.md` § 6 (default: agents do not run; per-session user approval required).
 - Lint: `npm run lint`
 - Format: `npm run format`
 
@@ -35,7 +39,6 @@ Footnote: The no-PO rule was withdrawn by the owner on 2026-05-07. Invoices may 
 ## Security Rules
 - Do NOT read, log, or relay any file in `server/secrets/` or `.env`
 - Do NOT run `env`, `printenv`, `cat .env`, or equivalent
-- Do NOT run `npm run db:migrate` — generate only
 - Do NOT run any `DROP TABLE` or destructive migration without my explicit approval
 - Do NOT install new npm packages without listing them and getting my approval first
 
