@@ -128,10 +128,10 @@ export function ProjectRaidTab({ projectId, projectName }: ProjectRaidTabProps) 
     enabled: !!projectId,
   });
 
-  const { data: users = [] } = useQuery<{ id: number; fullName: string; username: string }[]>({
+  const { data: users = [] } = useQuery<{ id: number; name?: string; username: string }[]>({
     queryKey: ["users-list"],
     queryFn: async () => {
-      const res = await fetch("/api/users", { headers: getAuthHeaders(), credentials: "include" });
+      const res = await fetch("/api/users/assignable", { headers: getAuthHeaders(), credentials: "include" });
       if (!res.ok) throw new Error("Failed to load users");
       return res.json();
     },
@@ -176,7 +176,7 @@ export function ProjectRaidTab({ projectId, projectName }: ProjectRaidTabProps) 
 
   const userOptions = users.map((u: any) => ({
     value: String(u.id),
-    label: u.fullName || u.full_name || u.username || `User ${u.id}`,
+    label: u.name || u.fullName || u.full_name || u.username || `User ${u.id}`,
   }));
 
   if (isLoading) {

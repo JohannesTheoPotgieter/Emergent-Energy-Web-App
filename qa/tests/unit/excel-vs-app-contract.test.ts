@@ -24,75 +24,54 @@ import {
 } from "@shared/excel-vs-app/contract";
 
 describe("Excel-vs-App contract — tracked field lists", () => {
-  it("PLAN list pins the canonical fields", () => {
+  // Narrowed 2026-05-07 — see contract.ts header comment for the
+  // full rationale. Diff page now only surfaces dates, amounts, row
+  // add/delete (handled at row level by the planner) and the date-
+  // colour signal (encoded into the *Confirmed flags by the
+  // normaliser).
+
+  it("PLAN list pins the canonical fields (dates only)", () => {
     expect([...PLAN_TRACKED_FIELDS]).toEqual([
       "startDate",
       "endDate",
-      "duration",
+      "baselineStart",
+      "baselineEnd",
       "actualStart",
       "actualEnd",
-      "actualDuration",
-      "ownerName",
-      "status",
-      "percentComplete",
-      "expectedPctComplete",
-      "description",
-      "isMilestone",
-      "outlineNumber",
-      "lead",
-      "resource1",
-      "resource2",
-      "trackerComments",
-      "workDays",
     ]);
   });
 
-  it("REVENUE list pins the canonical fields", () => {
+  it("REVENUE list pins the canonical fields (dates + amounts + colour)", () => {
     expect([...REVENUE_TRACKED_FIELDS]).toEqual([
       "amountExVat",
       "vat",
-      "milestonePercent",
-      "invoiceNumber",
       "invoiceDate",
       "expectedPaymentDate",
       "paidDate",
       "inBankDate",
-      "status",
       "invoiceDateConfirmed",
       "paidDateConfirmed",
-      "milestoneNotes",
     ]);
   });
 
-  it("EXPENDITURE list pins the canonical fields", () => {
+  it("EXPENDITURE list pins the canonical fields (dates + amounts + colour)", () => {
     expect([...EXPENDITURE_TRACKED_FIELDS]).toEqual([
       "amountExVat",
       "budgetQty",
       "budgetRate",
       "budgetTotal",
       "budgetCos",
-      "invoiceNumber",
+      "actualQty",
+      "actualRate",
+      "revenueRecognitionAmount",
       "invoiceDate",
       "approvedDate",
       "paidDate",
       "forecastPaymentDate",
-      "poNumber",
-      "costCategory",
-      "status",
-      "counterpartyName",
-      "revenueRecognitionAmount",
       "invoiceDateConfirmed",
       "paidDateConfirmed",
       "cosRealised",
       "cashflowConfirmed",
-      "noRevenueLinked",
-      "actualQty",
-      "actualRate",
-      "comments",
-      "checkFlag",
-      "savingOverrun",
-      "usdExchangeRate",
-      "pricePerWatt",
     ]);
   });
 

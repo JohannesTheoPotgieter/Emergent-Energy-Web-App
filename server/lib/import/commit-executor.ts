@@ -482,30 +482,38 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
     "comment", "isMilestone", "parentTaskNo",
   ];
 
-  // Map from work_items column names → normalizer field names
-  const WI_FIELD_MAP: Record<string, string> = {
-    startDate: "startDate", endDate: "endDate", duration: "durationDays",
-    actualStart: "actualStartDate", actualEnd: "actualEndDate", actualDuration: "actualDurationDays",
-    ownerName: "owner", status: "status", percentComplete: "pctComplete",
-    expectedPctComplete: "expectedPctComplete", description: "comment",
-    isMilestone: "isMilestone", outlineNumber: "parentTaskNo",
-  };
-
   // PR2C — translate a normalizer fileRow into the merge-engine's field
   // domain. The engine compares against `work_items` columns (e.g.
-  // `ownerName`, `outlineNumber`), but the fileRow uses normalizer field
-  // names (e.g. `owner`, `parentTaskNo`). Project the file row through
-  // WI_FIELD_MAP so both sides of the merge speak the same vocabulary.
+  // `startDate`, `baselineStart`), but the fileRow uses normalizer field
+  // names (e.g. `actualStartDate`, `durationDays`). Project the file row
+  // so both sides of the merge speak the same vocabulary.
+  //
+  // 2026-05-07 product change (COO):
+  //   - Primary date columns (startDate / endDate) now read
+  //     `actual ?? planned` from the file. The merge-engine sees the
+  //     same precedence the executor's INSERT path writes, so an
+  //     incremental update to a row with an actual date will surface
+  //     the actual value as the file-side of the 3-way merge.
+  //   - baselineStart / baselineEnd preserve the planned values verbatim
+  //     so the Excel replica can mirror the workbook's planned column
+  //     and the diff catches workbook edits to planned dates.
+  //   - Non-date fields (status / owner / %complete / description /
+  //     milestone / outline / lead / resource* / trackerComments /
+  //     workDays) were dropped from PLAN_TRACKED_FIELDS in the
+  //     contract, so they are no longer projected here.
   function planFileRowForMerge(fileRow: Record<string, unknown>): Record<string, FieldValue> {
-    const out: Record<string, FieldValue> = {};
-    for (const [wiCol, normField] of Object.entries(WI_FIELD_MAP)) {
-      out[wiCol] = toFieldValue(fileRow[normField]);
-    }
-    // PR2A passthrough fields match column names 1:1.
-    for (const f of ["lead", "resource1", "resource2", "trackerComments", "workDays"]) {
-      out[f] = toFieldValue(fileRow[f]);
-    }
-    return out;
+    const planStart = fileRow.startDate;
+    const planEnd = fileRow.endDate;
+    const actualStart = fileRow.actualStartDate;
+    const actualEnd = fileRow.actualEndDate;
+    return {
+      startDate: toFieldValue(actualStart ?? planStart),
+      endDate: toFieldValue(actualEnd ?? planEnd),
+      baselineStart: toFieldValue(planStart),
+      baselineEnd: toFieldValue(planEnd),
+      actualStart: toFieldValue(actualStart),
+      actualEnd: toFieldValue(actualEnd),
+    };
   }
 
   // Set of row-hashes seen in this import (any classification). End-of-pass
@@ -747,9 +755,23 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
             title: fileRow.taskName,
             description: fileRow.comment || null,
             status: fileRow.status || "Not Started",
-            startDate: fileRow.startDate || fileRow.actualStartDate || null,
-            endDate: fileRow.endDate || fileRow.actualEndDate || null,
-            duration: fileRow.durationDays || fileRow.actualDurationDays || null,
+            // Date precedence (per user product change 2026-05-07):
+            //   - Primary date columns (startDate/endDate/duration)
+            //     prefer ACTUAL when present, fall back to planned.
+            //     This is what every "displayed" date in the app
+            //     reads, so the app now reflects ground truth from
+            //     the workbook's actual columns.
+            //   - Planned dates are still preserved verbatim in
+            //     baselineStart/baselineEnd/baselineDuration so the
+            //     Excel replica can mirror the workbook's
+            //     planned + actual side-by-side layout, and so
+            //     planned values are never lost.
+            startDate: fileRow.actualStartDate || fileRow.startDate || null,
+            endDate: fileRow.actualEndDate || fileRow.endDate || null,
+            duration: fileRow.actualDurationDays || fileRow.durationDays || null,
+            baselineStart: fileRow.startDate || null,
+            baselineEnd: fileRow.endDate || null,
+            baselineDuration: fileRow.durationDays || null,
             actualStart: fileRow.actualStartDate || null,
             actualEnd: fileRow.actualEndDate || null,
             actualDuration: fileRow.actualDurationDays || null,
@@ -796,9 +818,17 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
           description: fileRow.comment || null,
           status: fileRow.status || "Not Started",
           priority: null,
-          startDate: fileRow.startDate || fileRow.actualStartDate || null,
-          endDate: fileRow.endDate || fileRow.actualEndDate || null,
-          duration: fileRow.durationDays || fileRow.actualDurationDays || null,
+          // Date precedence — see matching block in the UPDATE path
+          // above. Primary date columns prefer ACTUAL when present;
+          // planned values are preserved in baseline* columns so
+          // they're never lost and so the Excel replica can show
+          // both side-by-side.
+          startDate: fileRow.actualStartDate || fileRow.startDate || null,
+          endDate: fileRow.actualEndDate || fileRow.endDate || null,
+          duration: fileRow.actualDurationDays || fileRow.durationDays || null,
+          baselineStart: fileRow.startDate || null,
+          baselineEnd: fileRow.endDate || null,
+          baselineDuration: fileRow.durationDays || null,
           actualStart: fileRow.actualStartDate || null,
           actualEnd: fileRow.actualEndDate || null,
           actualDuration: fileRow.actualDurationDays || null,

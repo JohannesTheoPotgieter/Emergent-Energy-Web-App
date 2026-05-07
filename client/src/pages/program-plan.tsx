@@ -50,6 +50,16 @@ interface ProgramPlanResponse {
     startDate: string | null;
     endDate: string | null;
     duration: number | null;
+    // Mirror-the-workbook columns (per 2026-05-07 product change):
+    // import populates baseline* with the workbook's PLANNED dates
+    // and actual* with the workbook's ACTUAL dates so the replica
+    // can show both side-by-side, the same way the source sheet does.
+    baselineStart: string | null;
+    baselineEnd: string | null;
+    baselineDuration: number | null;
+    actualStart: string | null;
+    actualEnd: string | null;
+    actualDuration: number | null;
     percentComplete: number | null;
     expectedPctComplete: number | null;
     workDays: number | null;
@@ -142,8 +152,10 @@ export function ProgramPlanContent({ projectId }: { projectId: number }) {
                 <TableHead>OWNER</TableHead>
                 <TableHead>COMMENTS</TableHead>
                 <TableHead>LEAD</TableHead>
-                <TableHead>START</TableHead>
-                <TableHead>END</TableHead>
+                <TableHead>PLANNED START</TableHead>
+                <TableHead>ACTUAL START</TableHead>
+                <TableHead>PLANNED END</TableHead>
+                <TableHead>ACTUAL END</TableHead>
                 <TableHead>DAYS</TableHead>
                 <TableHead>% DONE</TableHead>
                 <TableHead>% Forecasted</TableHead>
@@ -177,8 +189,17 @@ export function ProgramPlanContent({ projectId }: { projectId: number }) {
                     <TableCell style={styleForCell(t.cellFormat, "ownerName")}>{t.ownerName ?? "—"}</TableCell>
                     <TableCell style={styleForCell(t.cellFormat, "trackerComments")} className="max-w-xs truncate">{t.trackerComments ?? "—"}</TableCell>
                     <TableCell style={styleForCell(t.cellFormat, "lead")}>{t.lead ?? "—"}</TableCell>
-                    <TableCell style={styleForCell(t.cellFormat, "startDate")}>{fmtDate(t.startDate)}</TableCell>
-                    <TableCell style={styleForCell(t.cellFormat, "endDate")}>{fmtDate(t.endDate)}</TableCell>
+                    {/* Planned dates come from the workbook's Planned Start/End
+                        columns, stored on baselineStart/baselineEnd. Actual
+                        dates come from Actual Start/End. The single
+                        startDate/endDate column on work_items now carries
+                        actual ?? planned (the "primary" date the rest of the
+                        app displays) so this view falls back to startDate
+                        when the actual column wasn't filled by the import. */}
+                    <TableCell style={styleForCell(t.cellFormat, "baselineStart")}>{fmtDate(t.baselineStart ?? t.startDate)}</TableCell>
+                    <TableCell style={styleForCell(t.cellFormat, "actualStart")}>{fmtDate(t.actualStart)}</TableCell>
+                    <TableCell style={styleForCell(t.cellFormat, "baselineEnd")}>{fmtDate(t.baselineEnd ?? t.endDate)}</TableCell>
+                    <TableCell style={styleForCell(t.cellFormat, "actualEnd")}>{fmtDate(t.actualEnd)}</TableCell>
                     <TableCell style={styleForCell(t.cellFormat, "duration")} className="text-right">{num(t.duration)}</TableCell>
                     <TableCell style={styleForCell(t.cellFormat, "percentComplete")} className="text-right">{pct(t.percentComplete)}</TableCell>
                     <TableCell style={styleForCell(t.cellFormat, "expectedPctComplete")} className="text-right">{pct(t.expectedPctComplete)}</TableCell>
@@ -189,7 +210,7 @@ export function ProgramPlanContent({ projectId }: { projectId: number }) {
                 );
               })}
               {data.tasks.length === 0 && (
-                <TableRow><TableCell colSpan={13} className="text-center text-sm text-muted-foreground">No tasks yet.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={15} className="text-center text-sm text-muted-foreground">No tasks yet.</TableCell></TableRow>
               )}
             </TableBody>
           </Table>

@@ -505,11 +505,11 @@ function CreateChangeRequestDialog({
   const [costImpact, setCostImpact] = useState("");
   const [scheduleImpactDays, setScheduleImpactDays] = useState("");
 
-  const { data: users = [] } = useQuery<{ id: number; username: string; fullName?: string }[]>({
+  const { data: users = [] } = useQuery<{ id: number; name?: string; username: string }[]>({
     queryKey: ["users-list"],
     queryFn: async () => {
       const token = localStorage.getItem("auth_token");
-      const res = await fetch("/api/users", {
+      const res = await fetch("/api/users/assignable", {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         credentials: "include",
       });
@@ -521,7 +521,7 @@ function CreateChangeRequestDialog({
 
   const userOptions = users.map((u) => ({
     value: String(u.id),
-    label: u.fullName || u.username,
+    label: u.name || u.username,
   }));
 
   const createMutation = useMutation({
