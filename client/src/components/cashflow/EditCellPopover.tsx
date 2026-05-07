@@ -2,7 +2,17 @@ import { useState, useEffect } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, RotateCcw } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Loader2, RotateCcw, AlertTriangle } from "lucide-react";
 
 interface EditCellPopoverProps {
   trigger: React.ReactNode;
@@ -41,6 +51,7 @@ export function EditCellPopover({
   const [value, setValue] = useState(currentValue?.toString() ?? "0");
   const [reason, setReason] = useState(defaultReason ?? "");
   const [error, setError] = useState<string | null>(null);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -65,6 +76,13 @@ export function EditCellPopover({
   };
 
   const handleReset = () => {
+    // PERM-007 — clearing an override re-cascades the computed value forward
+    // and recalculates every closing balance. Confirm before firing.
+    setResetConfirmOpen(true);
+  };
+
+  const handleResetConfirmed = () => {
+    setResetConfirmOpen(false);
     if (onResetToComputed) {
       onResetToComputed();
       setOpen(false);
@@ -187,6 +205,29 @@ export function EditCellPopover({
           </div>
         </div>
       </PopoverContent>
+      <AlertDialog open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>
+        <AlertDialogContent data-testid={`${testIdPrefix}-reset-confirm`}>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              Reset to computed value?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This clears the manual override for {weekLabel} ({fieldLabel}). The computed value cascades forward and every closing balance after this week is recalculated. The previous override stays in the override history.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid={`${testIdPrefix}-reset-cancel`}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600/40"
+              onClick={handleResetConfirmed}
+              data-testid={`${testIdPrefix}-reset-confirm-action`}
+            >
+              Reset
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Popover>
   );
 }

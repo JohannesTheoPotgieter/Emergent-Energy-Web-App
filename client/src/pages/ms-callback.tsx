@@ -2,6 +2,8 @@ import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { setAuthToken } from "@/lib/api";
 import { Loader2 } from "lucide-react";
+import { ROLE_LANDING_PAGE } from "@/config/page-registry";
+import { normalizeRoleForPermissions } from "@shared/schema";
 
 export default function MsCallbackPage() {
   const [, setLocation] = useLocation();
@@ -25,7 +27,9 @@ export default function MsCallbackPage() {
         const data = await res.json();
         setAuthToken(data.token);
         localStorage.setItem("company_role", data.user.role);
-        window.location.href = "/";
+        const role = normalizeRoleForPermissions(data.user.role);
+        const landing = role ? ROLE_LANDING_PAGE[role] : null;
+        window.location.href = landing || "/";
       })
       .catch(() => {
         setLocation("/auth/login?error=ms_auth_failed");

@@ -241,6 +241,35 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
       if (existing.length === 0) return res.status(404).json({ error: "Not found" });
       const old = existing[0];
 
+      // EE-QA-PERM-006 — once an invoice is "approved", financial fields
+      // (amount, vat, date, linked PO/supplier) must not change silently.
+      // Without this guard a user with procurement:edit could re-state an
+      // approved invoice and the new amount would propagate into project
+      // actuals via syncInvoiceCaptureToActuals below. Require the request
+      // to transition status off "approved" in the same call before the
+      // financial fields can be edited.
+      const FINANCIAL_FIELDS = ['amount', 'vatAmount', 'invoiceDate', 'linkedPoId', 'supplierId'] as const;
+      if (old.status === 'approved') {
+        const changedFinancials = FINANCIAL_FIELDS.filter((f) => {
+          const incoming = (req.body as Record<string, unknown>)[f];
+          return incoming !== undefined && incoming !== (old as Record<string, unknown>)[f];
+        });
+        const isMovingOffApproved = req.body.status !== undefined && req.body.status !== 'approved';
+        if (changedFinancials.length > 0 && !isMovingOffApproved) {
+          logAuditFromReq(req, {
+            entityType: "invoice_capture",
+            entityId: String(id),
+            action: "update_blocked_approved_lock",
+            changesJson: { blockedFields: changedFinancials, attempted: req.body },
+          });
+          return res.status(409).json({
+            error: "approved_invoice_locked",
+            message: "This invoice is approved. Move it back to a non-approved status before editing the amount, VAT, invoice date, linked PO, or supplier.",
+            blockedFields: changedFinancials,
+          });
+        }
+      }
+
       const updates: Record<string, unknown> = { updatedAt: new Date() };
       const fields = ['supplierId', 'invoiceNumber', 'invoiceDate', 'amount', 'vatAmount', 'linkedPoId', 'linkedProcurementItemId', 'status', 'notes'];
       for (const f of fields) {

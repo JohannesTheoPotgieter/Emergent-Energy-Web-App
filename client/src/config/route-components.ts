@@ -138,6 +138,7 @@ const GatesHandoversPage = lazyWithRetry(() => import("@/pages/gates/gates-hando
 const GatesQueriesPage = lazyWithRetry(() => import("@/pages/gates/gates-queries"));
 const GatesCommitmentsPage = lazyWithRetry(() => import("@/pages/gates/gates-commitments"));
 const PendingApprovalsPage = lazyWithRetry(() => import("@/pages/pending-approvals"));
+const NcrLegacyRedirect = lazyWithRetry(() => import("@/pages/ncr-legacy-redirect"));
 
 /**
  * Maps PageRegistryEntry.routeComponentKey → the lazy-loaded page component.
@@ -272,6 +273,7 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   AdminEmailLinkerDevPage,
   HandoverLivePage,
   PendingApprovalsPage,
+  NcrLegacyRedirect,
 };
 
 export const ROUTE_COMPONENT_KEYS: ReadonlySet<string> = new Set(Object.keys(ROUTE_COMPONENTS));

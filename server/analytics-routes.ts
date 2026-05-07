@@ -5,11 +5,14 @@ import { requireAuth } from "./auth-context";
 import { requirePermission } from "./permission-middleware";
 
 export function registerAnalyticsRoutes(app: Express) {
-  app.get("/api/analytics/portfolio-health", requireAuth, async (_req, res) => {
+  app.get("/api/analytics/portfolio-health", requireAuth, requirePermission("execution_board", "view"), async (_req, res) => {
     try {
+      // NAME-010 — surface unrated projects as 'Unknown' rather than defaulting
+      // to 'Amber'. Amber-by-default conflates "no rating yet" with "PM flagged
+      // amber risk" and inflates aggregate Amber counts on COO/CEO dashboards.
       const rows = await db.execute(sql`
         SELECT id, project_name as name,
-               COALESCE(NULLIF(overall_rag,''),'Amber') as rag,
+               COALESCE(NULLIF(overall_rag,''),'Unknown') as rag,
                COALESCE(total_project_value, 0) as budget
         FROM project_info
         ORDER BY total_project_value DESC
