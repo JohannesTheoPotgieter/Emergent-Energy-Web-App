@@ -538,8 +538,14 @@ require registration with the relevant network service provider.
 |                                                                      |
 | An invoice without a PO is a red flag.                               |
 |                                                                      |
-| COS is not realised until the invoice is captured under actuals in   |
-| QuickBooks. Cash flow forecasting depends on this discipline.        |
+| COS is realised only when BOTH conditions are met: an invoice is     |
+| captured against the line AND the invoice-date cell colour on the    |
+| workbook line is BLACK (the confirmed-actual signal). Either         |
+| condition alone is not enough. Revenue realisation is then derived   |
+| from realised COS via the cost-to-cost ratio                         |
+| (revenueRealised\_line = (actualCOS\_line / totalCOScosted\_project) |
+| × totalRevenueCosted\_project). Cash flow forecasting depends on     |
+| this discipline.                                                     |
 +----------------------------------------------------------------------+
 ### SUBSTITUTION APPROVAL WORKFLOW
 Component substitutions happen --- out-of-stock, lead-time, price
