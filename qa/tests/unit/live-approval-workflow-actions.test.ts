@@ -34,8 +34,11 @@ describe("live approval workflow actions", () => {
   });
 
   it("retains backend audit/event logging for handover and financial decisions", () => {
-    expect(handoverRoutes).toContain('logAuditFromReq(req, { entityType: "pd_pm_handover"');
-    expect(handoverRoutes).toContain('action: "accepted"');
+    expect(handoverRoutes).toContain('entityType: "pd_pm_handover"');
+    // Accept action is now override-aware (PR #847 / Plan v3 § 2.5):
+    // ternary chooses between "accepted" and "accepted_with_override".
+    expect(handoverRoutes).toContain('"accepted_with_override"');
+    expect(handoverRoutes).toContain('"accepted"');
     expect(handoverRoutes).toContain('action: "rejected"');
 
     expect(financialService).toContain("createProjectEvent({");
