@@ -747,9 +747,23 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
             title: fileRow.taskName,
             description: fileRow.comment || null,
             status: fileRow.status || "Not Started",
-            startDate: fileRow.startDate || fileRow.actualStartDate || null,
-            endDate: fileRow.endDate || fileRow.actualEndDate || null,
-            duration: fileRow.durationDays || fileRow.actualDurationDays || null,
+            // Date precedence (per user product change 2026-05-07):
+            //   - Primary date columns (startDate/endDate/duration)
+            //     prefer ACTUAL when present, fall back to planned.
+            //     This is what every "displayed" date in the app
+            //     reads, so the app now reflects ground truth from
+            //     the workbook's actual columns.
+            //   - Planned dates are still preserved verbatim in
+            //     baselineStart/baselineEnd/baselineDuration so the
+            //     Excel replica can mirror the workbook's
+            //     planned + actual side-by-side layout, and so
+            //     planned values are never lost.
+            startDate: fileRow.actualStartDate || fileRow.startDate || null,
+            endDate: fileRow.actualEndDate || fileRow.endDate || null,
+            duration: fileRow.actualDurationDays || fileRow.durationDays || null,
+            baselineStart: fileRow.startDate || null,
+            baselineEnd: fileRow.endDate || null,
+            baselineDuration: fileRow.durationDays || null,
             actualStart: fileRow.actualStartDate || null,
             actualEnd: fileRow.actualEndDate || null,
             actualDuration: fileRow.actualDurationDays || null,
@@ -796,9 +810,17 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
           description: fileRow.comment || null,
           status: fileRow.status || "Not Started",
           priority: null,
-          startDate: fileRow.startDate || fileRow.actualStartDate || null,
-          endDate: fileRow.endDate || fileRow.actualEndDate || null,
-          duration: fileRow.durationDays || fileRow.actualDurationDays || null,
+          // Date precedence — see matching block in the UPDATE path
+          // above. Primary date columns prefer ACTUAL when present;
+          // planned values are preserved in baseline* columns so
+          // they're never lost and so the Excel replica can show
+          // both side-by-side.
+          startDate: fileRow.actualStartDate || fileRow.startDate || null,
+          endDate: fileRow.actualEndDate || fileRow.endDate || null,
+          duration: fileRow.actualDurationDays || fileRow.durationDays || null,
+          baselineStart: fileRow.startDate || null,
+          baselineEnd: fileRow.endDate || null,
+          baselineDuration: fileRow.durationDays || null,
           actualStart: fileRow.actualStartDate || null,
           actualEnd: fileRow.actualEndDate || null,
           actualDuration: fileRow.actualDurationDays || null,
