@@ -45,81 +45,91 @@ export type DiffSection = "PLAN" | "REVENUE" | "EXPENDITURE";
 // the snapshot test in `qa/tests/unit/excel-vs-app-contract.test.ts`
 // will fail until you accept the new fixture.
 
-/** Plan-section tracked fields (work_items). Includes the PR2A
- *  tracker columns alongside the legacy compare list. */
+// 2026-05-07 — narrowing per COO instruction:
+//   "On the Excel-vs-App comparison only things to compare are dates,
+//    amounts, deleted entries vs added entries, date colour (confirms
+//    payment or realisation)."
+//
+// What was dropped and why:
+//   - Status / owner / %complete / description / milestone / outline /
+//     lead / resource* / trackerComments / workDays / milestoneNotes
+//     / invoiceNumber / poNumber / costCategory / counterpartyName /
+//     comments / checkFlag / savingOverrun / usdExchangeRate /
+//     pricePerWatt / noRevenueLinked / milestonePercent — these
+//     are text / identifier / status / derived metadata, not dates
+//     or amounts. The COO explicitly does not want drift on them
+//     surfaced on the diff page.
+//
+// What date-colour comparison maps to:
+//   - In the Tracker, a date cell is RED when the date is unconfirmed
+//     (planned / forecast) and BLACK when the date is confirmed
+//     (paid / realised). The normaliser already encodes that signal
+//     into the `*Confirmed` boolean columns
+//     (`paidDateConfirmed`, `invoiceDateConfirmed`, `cosRealised`,
+//     `cashflowConfirmed` — see normalizer.ts:classifyColorHex), so
+//     comparing those flags IS comparing the colour. They stay in
+//     the tracked list for that reason — they are the date-colour.
+//
+// Row add / delete (workbook vs app):
+//   - The planner already tracks "missing from upload" rows and the
+//     diff page already exposes added rows as new-row entries. No
+//     changes needed for that here — it isn't a per-field drift, it's
+//     a row-level operation.
+
+/** Plan-section tracked fields (work_items) — DATES ONLY. */
 export const PLAN_TRACKED_FIELDS = [
+  // Primary (actual ?? planned) — what the rest of the app displays.
   "startDate",
   "endDate",
-  "duration",
+  // Planned values, preserved by the import (see commit-executor.ts
+  // 2026-05-07 product change). Tracked so the diff catches workbook
+  // edits to planned dates.
+  "baselineStart",
+  "baselineEnd",
+  // Pure-actual columns from the workbook.
   "actualStart",
   "actualEnd",
-  "actualDuration",
-  "ownerName",
-  "status",
-  "percentComplete",
-  "expectedPctComplete",
-  "description",
-  "isMilestone",
-  "outlineNumber",
-  // PR2A tracker columns.
-  "lead",
-  "resource1",
-  "resource2",
-  "trackerComments",
-  "workDays",
 ] as const;
 
-/** Revenue-section tracked fields (normalized_revenue_lines). Manual-
- *  flag protection (`*Confirmed`) MUST flow through the merge engine
- *  so manual edits become conflicts when the workbook would change
- *  them. */
+/** Revenue-section tracked fields (normalized_revenue_lines) —
+ *  DATES + AMOUNTS + DATE-COLOUR (= *Confirmed flags). */
 export const REVENUE_TRACKED_FIELDS = [
+  // Amounts.
   "amountExVat",
   "vat",
-  "milestonePercent",
-  "invoiceNumber",
+  // Dates.
   "invoiceDate",
   "expectedPaymentDate",
   "paidDate",
   "inBankDate",
-  "status",
+  // Date-colour signal: black = confirmed/realised, red = unconfirmed.
   "invoiceDateConfirmed",
   "paidDateConfirmed",
-  // PR2A tracker column.
-  "milestoneNotes",
 ] as const;
 
-/** Expenditure-section tracked fields (normalized_cost_lines). */
+/** Expenditure-section tracked fields (normalized_cost_lines) —
+ *  DATES + AMOUNTS + DATE-COLOUR (= *Confirmed flags). */
 export const EXPENDITURE_TRACKED_FIELDS = [
+  // Amounts (incl. budget components and qty/rate that resolve to
+  // monetary line totals).
   "amountExVat",
   "budgetQty",
   "budgetRate",
   "budgetTotal",
   "budgetCos",
-  "invoiceNumber",
+  "actualQty",
+  "actualRate",
+  "revenueRecognitionAmount",
+  // Dates.
   "invoiceDate",
   "approvedDate",
   "paidDate",
   "forecastPaymentDate",
-  "poNumber",
-  "costCategory",
-  "status",
-  "counterpartyName",
-  "revenueRecognitionAmount",
-  // Manual-flag protection — see REVENUE_TRACKED_FIELDS comment.
+  // Date-colour signal: black = confirmed/realised, red = unconfirmed.
   "invoiceDateConfirmed",
   "paidDateConfirmed",
   "cosRealised",
   "cashflowConfirmed",
-  "noRevenueLinked",
-  // PR2A tracker columns.
-  "actualQty",
-  "actualRate",
-  "comments",
-  "checkFlag",
-  "savingOverrun",
-  "usdExchangeRate",
-  "pricePerWatt",
 ] as const;
 
 export const TRACKED_FIELDS_BY_SECTION: Record<DiffSection, readonly string[]> = {
