@@ -5,7 +5,7 @@ import { requireAuth } from "./auth-context";
 import { requirePermission } from "./permission-middleware";
 
 export function registerAnalyticsRoutes(app: Express) {
-  app.get("/api/analytics/portfolio-health", requireAuth, async (_req, res) => {
+  app.get("/api/analytics/portfolio-health", requireAuth, requirePermission("execution_board", "view"), async (_req, res) => {
     try {
       const rows = await db.execute(sql`
         SELECT id, project_name as name,

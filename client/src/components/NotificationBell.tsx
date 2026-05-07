@@ -31,15 +31,20 @@ function getNotificationEntityPath(notification: Notification): string | null {
   const id = String(notification.entityId);
   if (!id) return null;
 
+  // Map entity types to real registered routes (PAGE_REGISTRY). Older
+  // mappings (`/approvals/:id`, `/finance/invoices/:id`, `/procurement/po/:id`,
+  // `/projects/:id`) all 404'd because none were registered. Each entry
+  // below points to a surface that exists today; ids that lookup-by-id
+  // require a route param go via the canonical path.
   switch (notification.entityType) {
     case "approval":
-      return `/approvals/${id}`;
+      return `/pm/approvals?id=${encodeURIComponent(id)}`;
     case "invoice":
-      return `/finance/invoices/${id}`;
+      return `/finance/quickbooks?invoice=${encodeURIComponent(id)}`;
     case "po":
-      return `/procurement/po/${id}`;
+      return `/po-approval-board?id=${encodeURIComponent(id)}`;
     case "project":
-      return `/projects/${id}`;
+      return `/project/id/${encodeURIComponent(id)}`;
     default:
       return null;
   }
