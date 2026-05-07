@@ -287,39 +287,41 @@ export function compareFields(
 // Fields to compare per section (excluding identity and metadata fields)
 // ---------------------------------------------------------------------------
 
+// 2026-05-07 — narrowed to align with the diff contract
+// (`shared/excel-vs-app/contract.ts`). The conflict engine and
+// the executor merge engine now operate on the same set of fields,
+// so the planner cannot surface a conflict the executor wouldn't
+// also produce, and vice-versa. See contract.ts for the rationale
+// (dates, amounts, date-colour-confirmed flags only).
+
 export const PLAN_COMPARE_FIELDS = [
+  // Plan section uses normalizer field names (not work_items column
+  // names); these map to the contract's tracked fields:
+  //   normalizer.startDate / endDate / durationDays         → planned source
+  //   normalizer.actualStartDate / actualEndDate / actualDurationDays → actual source
+  // Both sides of the executor's `actual ?? planned` precedence flow
+  // through these inputs, so changes to either trigger a diff.
   "startDate", "endDate", "durationDays",
   "actualStartDate", "actualEndDate", "actualDurationDays",
-  "owner", "status", "pctComplete", "expectedPctComplete",
-  "comment", "isMilestone", "parentTaskNo",
-  // Tracker columns wired in PR2A (synonym split). Conflict detection
-  // now extends to manual edits on these fields too — previously a user
-  // edit on Lead / Resource 1 / Resource 2 / Tracker Comments / Work Days
-  // would be silently overwritten on re-import because they weren't on
-  // this list.
-  "lead", "resource1", "resource2", "trackerComments", "workDays",
 ];
 
 export const REVENUE_COMPARE_FIELDS = [
-  "amountExVat", "vat", "milestonePercent", "invoiceNumber", "invoiceDate",
-  "expectedPaymentDate", "paidDate", "inBankDate", "status",
-  // Tracker col R wired in PR2A — manual edits on Milestone Notes &
-  // Comments now produce a conflict instead of being silently lost.
-  "milestoneNotes",
+  // Amounts.
+  "amountExVat", "vat",
+  // Dates.
+  "invoiceDate", "expectedPaymentDate", "paidDate", "inBankDate",
+  // Date-colour signal: black = confirmed/realised, red = unconfirmed.
+  "invoiceDateConfirmed", "paidDateConfirmed",
 ];
 
 export const EXPENDITURE_COMPARE_FIELDS = [
+  // Amounts.
   "amountExVat", "budgetQty", "budgetRate", "budgetTotal", "budgetCos",
-  "invoiceNumber", "invoiceDate", "approvedDate", "paidDate",
-  "forecastPaymentDate", "poNumber", "costCategory", "status",
-  "counterpartyName", "revenueRecognitionAmount",
-  // Tracker columns wired in PR2A. Conflict detection extends to:
-  // actual-side QTY / Rate (previously colliding with budget pane),
-  // line comments (col AA), CHECK validation flag (col V),
-  // Saving / Overrun (col Z, occasionally manually overridden), and the
-  // sidebar values USD Exchange Rate / Price per Watt (cols AB-AE).
-  "actualQty", "actualRate", "comments", "checkFlag",
-  "savingOverrun", "usdExchangeRate", "pricePerWatt",
+  "actualQty", "actualRate", "revenueRecognitionAmount",
+  // Dates.
+  "invoiceDate", "approvedDate", "paidDate", "forecastPaymentDate",
+  // Date-colour signal: black = confirmed/realised, red = unconfirmed.
+  "invoiceDateConfirmed", "paidDateConfirmed", "cosRealised", "cashflowConfirmed",
 ];
 
 // ---------------------------------------------------------------------------
