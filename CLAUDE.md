@@ -1,3 +1,6 @@
+> Read `docs/AGENT_GUARDRAILS.md` first. This file holds tool-specific
+> guidance only.
+
 # Emergent Energy Web App — Claude Code Context
 
 Internal operations platform for a South African C&I solar EPC company.
@@ -29,9 +32,8 @@ and `docs/architecture.md` for the architecture baseline.
 - `npm run db:generate` — After editing `shared/schema/*.ts`, run this with
   `--name=<short_snake_case>` to produce a new migration file next to the
   baseline.
-- `npm run db:migrate` — Apply pending migrations in order (tracked via
-  `migrations/meta/_journal.json` + the `__drizzle_migrations` table on the
-  target DB).
+- `npm run db:migrate` — see `docs/AGENT_GUARDRAILS.md` § 6 (default:
+  agents do not run; per-session user approval required).
 - `npm run db:check` — CI guard. Fails if `shared/schema/*.ts` was edited
   without a matching new migration file. Invoked on every PR.
 

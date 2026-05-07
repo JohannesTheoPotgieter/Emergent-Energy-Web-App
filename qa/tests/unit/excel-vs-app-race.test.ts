@@ -135,8 +135,8 @@ d("Excel-vs-App race conditions (DB-backed)", () => {
       helpers.applyManualOverride({
         table: "normalized_cost_lines",
         rowId: costRowId,
-        fieldName: "invoiceNumber",
-        value: "INV-NEW",
+        fieldName: "paidDate",
+        value: "2026-05-01",
         editedBy: 2,
       }),
     ]);
@@ -147,13 +147,18 @@ d("Excel-vs-App race conditions (DB-backed)", () => {
     // a write could clobber a sibling field's entry — this test
     // catches that regression. If it fails, the helper needs a
     // SELECT…FOR UPDATE or a JSONB merge expression.
+    // Note: 2026-05-07 — `invoiceNumber` was dropped from
+    // EXPENDITURE_TRACKED_FIELDS (diff narrowing per COO instruction),
+    // so this test now uses `paidDate` as the second field. The
+    // race-condition assertion is what's being pinned, not the
+    // specific fields.
     expect(overrides.amountExVat).toBeDefined();
-    expect(overrides.invoiceNumber).toBeDefined();
+    expect(overrides.paidDate).toBeDefined();
     expect(overrides.amountExVat.value).toBe("1700.00");
-    expect(overrides.invoiceNumber.value).toBe("INV-NEW");
+    expect(overrides.paidDate.value).toBe("2026-05-01");
 
     await helpers.clearManualOverride("normalized_cost_lines", costRowId, "amountExVat");
-    await helpers.clearManualOverride("normalized_cost_lines", costRowId, "invoiceNumber");
+    await helpers.clearManualOverride("normalized_cost_lines", costRowId, "paidDate");
   });
 
   it("parallel apply + clear on same field: row stays consistent (last-write-wins)", async () => {

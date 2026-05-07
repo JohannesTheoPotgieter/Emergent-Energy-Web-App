@@ -1,12 +1,19 @@
+> Read `docs/AGENT_GUARDRAILS.md` first. This file holds tool-specific
+> guidance only.
+
 # Emergent Energy Web App
+
+Last verified: 2026-05-07
+Owner: Johannes Theo Potgieter (COO)
+
 An internal operations platform for a South African C&I solar EPC company, streamlining project lifecycle management, centralizing data, and providing critical business insights.
 
 ## Run & Operate
 - **Run Dev Server:** `npm run dev`
 - **Build:** `npm run build`
-- **Typecheck:** `npm run typecheck`
+- **Typecheck:** `npm run check`
 - **Codegen (Drizzle Kit):** `drizzle-kit generate`
-- **DB Push (Drizzle Kit):** `ddrizzle-kit push`
+- **DB Push (Drizzle Kit):** `npm run db:push`
 - **Required Env Vars:** Azure MSAL credentials, Key Vault URI, database connection string.
 
 ## Stack
@@ -18,13 +25,13 @@ An internal operations platform for a South African C&I solar EPC company, strea
 
 ## Where things live
 - **Client Source:** `client/src/`
-- **Server Source:** `server/src/`
+- **Server Source:** `server/`
 - **Shared Code:** `shared/` (e.g., `shared/schema/*.ts` for DB schema, `shared/permissions/` for permission definitions, `shared/phases.ts` for canonical phase cycle, `shared/config/kpi-registry.ts` for KPI definitions, `shared/config/qb-allocations.ts` for QuickBooks allocation rules)
-- **Database Migrations:** `drizzle/`
+- **Database Migrations:** `/migrations/` at repo root
 - **QA & Tests:** `qa/`
 - **Public Assets:** `client/public/`
 - **Theme Files:** Defined via CSS variables in `client/src/index.css` and `tailwind.config.ts`.
-- **API Contracts:** Defined implicitly by Zod schemas in `server/src/api/` and `shared/schema/`.
+- **API Contracts:** Defined implicitly by Zod schemas in `server/routes/<name>.routes.ts` (new) or `server/*-routes.ts` (legacy) and `shared/schema/`.
 
 ## Architecture decisions
 - **Monorepo Structure:** Separates client, server, shared code, and tooling for streamlined development and consistent dependencies.
