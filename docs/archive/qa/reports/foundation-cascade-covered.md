@@ -1,5 +1,8 @@
 # Foundation → KPI → Dashboard Cascade Validation
 
+> **DEPRECATED — finance rules superseded.**
+> The COS / revenue / inflow / outflow definitions described below are superseded by the canonical formulas in `docs/AGENT_GUARDRAILS.md` §§ 3.2, 3.3, 3.4, and 3.7 (BLACK/RED date-colour signal). Treat this file as historical reference only.
+
 ## Cascade Chain: Source Data → Calculation → API → Dashboard
 
 ### 1. Project Completion (Act% / Expected% / Delta)
