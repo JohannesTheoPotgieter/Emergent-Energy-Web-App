@@ -1,45 +1,44 @@
 /**
- * Drizzle bootstrap — seeds `drizzle.__drizzle_migrations` so that
- * `drizzle-kit migrate` is safe to run against an existing schema.
+ * Drizzle bootstrap — seeds (and repairs) `drizzle.__drizzle_migrations`
+ * so that `drizzle-kit migrate` is safe to run against an existing
+ * schema that was historically managed by `drizzle-kit push`.
  *
- * Background. This project historically used `drizzle-kit push` and
- * relied on `ENABLE_STARTUP_SCHEMA_REPAIR=true` to keep prod aligned
- * with `shared/schema/*.ts`. The deploy build was recently changed to
- * `npm run build && npm run db:migrate`. `drizzle-kit migrate` tracks
- * applied migrations in `drizzle.__drizzle_migrations`, but on a DB
- * that was previously managed by `push`, that table is empty. The
- * migrator would then try to apply ALL 56 historical migrations
- * (including the non-idempotent baseline `0000_baseline_20260419.sql`,
- * whose own header explicitly says "DO NOT re-apply this baseline to
- * prod") and crash on the first `CREATE TYPE` / `CREATE TABLE`.
+ * Background. This project used `drizzle-kit push` + startup schema
+ * repair to keep prod aligned with `shared/schema/*.ts`. The deploy
+ * build was changed to `npm run build && npm run db:migrate`. The
+ * migrator records applied entries in `drizzle.__drizzle_migrations`,
+ * but on a push-managed DB that table is empty, so the migrator would
+ * try to apply ALL historical migrations (including the non-idempotent
+ * baseline `0000_baseline_*.sql` whose own header explicitly says
+ * "DO NOT re-apply this baseline to prod") and crash.
  *
- * What this script does.
- *  1. Opens a pg connection using DATABASE_URL.
+ * What this script does — schema-aware backfill.
+ *  1. Connects with DATABASE_URL.
  *  2. Detects whether the DB already has the application schema by
- *     checking for a small set of well-known core tables (project_info
- *     and users). If neither exists we treat it as a fresh DB and bail
- *     out — drizzle-kit migrate will run from scratch in the normal
- *     way.
- *  3. Ensures the `drizzle` schema and `drizzle.__drizzle_migrations`
- *     table exist (created with the same shape drizzle-kit creates).
- *  4. If the table is non-empty, leaves it alone (someone else has
- *     already bootstrapped it; drizzle-kit will pick up any newer
- *     entries on its own).
- *  5. Otherwise reads `migrations/meta/_journal.json`, computes
- *     `crypto.createHash('sha256').update(<raw file contents>)` for
- *     each entry — matching drizzle-orm/migrator.js exactly — and
- *     INSERTs one row per journal entry, with `created_at = entry.when`
- *     so the next `drizzle-kit migrate` call sees the latest applied
- *     entry as more recent than every existing journal entry and
- *     proceeds to apply only NEW entries added after this point.
+ *     probing for core tables (project_info, users). If neither
+ *     exists this is a fresh DB and we bail out — `drizzle-kit
+ *     migrate` will run the baseline normally.
+ *  3. Ensures `drizzle.__drizzle_migrations` exists.
+ *  4. Walks every journal entry. For each entry whose tag has a
+ *     "canary probe" defined in MODERN_MIGRATION_PROBES, the entry is
+ *     marked applied ONLY when the probe confirms the DDL artifact
+ *     (table / column) actually exists. Entries without a probe are
+ *     "presumed applied" — they belong to the baseline rebuild and
+ *     prod has been running them via push for months.
+ *  5. Repair pass. If a row for a probed tag already exists in
+ *     `__drizzle_migrations` but the canary is missing, the row is
+ *     DELETED so `drizzle-kit migrate` will re-apply it. This recovers
+ *     from the previous (over-eager) bootstrap that backfilled every
+ *     tag unconditionally and caused 0050+ migrations to be skipped.
  *
- * Run directly via `tsx scripts/drizzle-bootstrap.ts`. The deploy
- * build chains it before `drizzle-kit migrate` (see package.json
- * `db:migrate` script).
+ * To register a new modern migration, add an entry to
+ * MODERN_MIGRATION_PROBES with the tag and a probe function. Probes
+ * MUST be cheap, idempotent, and SELECT-only.
  *
- * Idempotent: safe to run repeatedly. On a freshly bootstrapped DB it
- * is a no-op. On a brand-new DB (no app schema present) it is also a
- * no-op so dev/CI flows are unaffected.
+ * Run via `tsx scripts/drizzle-bootstrap.ts`. The deploy build chains
+ * it before `drizzle-kit migrate` (see package.json `db:migrate`).
+ *
+ * Idempotent: safe to run repeatedly.
  */
 
 import { createHash } from "node:crypto";
@@ -63,6 +62,68 @@ interface Journal {
   entries: JournalEntry[];
 }
 
+/**
+ * Probes for migrations added AFTER the journal rebuild. Each probe
+ * returns true iff the migration's signature DDL artifact already
+ * exists in the live DB.
+ *
+ * Tags NOT listed here are treated as "presumed applied" (baseline +
+ * pre-rebuild history). Add an entry whenever a new migration ships.
+ *
+ * Always-applied migrations (pure `DROP IF EXISTS` etc. that are safe
+ * to run repeatedly and have no schema artifact to probe) can use
+ * `() => Promise.resolve(true)` so they get backfilled normally.
+ */
+const MODERN_MIGRATION_PROBES: Record<
+  string,
+  (client: Client) => Promise<boolean>
+> = {
+  "0050_qb_invoice_links_allocations": (c) =>
+    columnExists(c, "quickbooks_invoice_links", "allocated_amount_ex_vat"),
+  // Pure DROP VIEW IF EXISTS — always safe to (re-)run, but also safe
+  // to mark applied unconditionally so the migrator never bothers.
+  "0051_drop_legacy_claude_view_on_app_db": () => Promise.resolve(true),
+  "0051_qb_link_proposed_cascades": (c) =>
+    tableExists(c, "qb_link_proposed_cascades"),
+  "0052_invoice_description_patterns": (c) =>
+    tableExists(c, "invoice_description_patterns"),
+  "0053_qb_match_suggestions_auto_generated": (c) =>
+    columnExists(c, "quickbooks_match_suggestions", "auto_generated"),
+  "0054_role_upgrade_tables": (c) => tableExists(c, "role_lens_profiles"),
+};
+
+async function tableExists(client: Client, table: string): Promise<boolean> {
+  const res = await client.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_name = $1
+     ) AS exists;`,
+    [table],
+  );
+  return res.rows[0]?.exists === true;
+}
+
+async function columnExists(
+  client: Client,
+  table: string,
+  column: string,
+): Promise<boolean> {
+  const res = await client.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2
+     ) AS exists;`,
+    [table, column],
+  );
+  return res.rows[0]?.exists === true;
+}
+
+async function hashForEntry(entry: JournalEntry): Promise<string> {
+  const sqlPath = path.join(MIGRATIONS_DIR, `${entry.tag}.sql`);
+  const sql = await readFile(sqlPath, "utf-8");
+  return createHash("sha256").update(sql).digest("hex");
+}
+
 async function main(): Promise<void> {
   const url = process.env.DATABASE_URL;
   if (!url) {
@@ -81,7 +142,7 @@ async function main(): Promise<void> {
   await client.connect();
   try {
     // Step 1 — Detect existing app schema. If neither core table
-    // exists this is a fresh DB; let `drizzle-kit migrate` run the
+    // exists this is a fresh DB; let drizzle-kit migrate run the
     // baseline as designed.
     const probe = await client.query<{ exists: boolean }>(
       `SELECT EXISTS (
@@ -99,8 +160,8 @@ async function main(): Promise<void> {
       return;
     }
 
-    // Step 2 — Ensure the drizzle bookkeeping table exists with the
-    // same shape drizzle-kit creates internally.
+    // Step 2 — Ensure drizzle bookkeeping table exists (same shape
+    // drizzle-kit creates internally).
     await client.query(`CREATE SCHEMA IF NOT EXISTS "drizzle";`);
     await client.query(
       `CREATE TABLE IF NOT EXISTS "drizzle"."__drizzle_migrations" (
@@ -110,45 +171,118 @@ async function main(): Promise<void> {
        );`,
     );
 
-    // Step 3 — If the table already has rows, do not touch it. Either
-    // a previous bootstrap ran or drizzle-kit migrate has been used
-    // before; either way the migrator can take it from here.
-    const countRes = await client.query<{ count: string }>(
-      `SELECT count(*)::text AS count FROM "drizzle"."__drizzle_migrations";`,
-    );
-    const existing = Number(countRes.rows[0]?.count ?? "0");
-    if (existing > 0) {
-      console.log(
-        `[drizzle-bootstrap] __drizzle_migrations already has ${existing} row(s); leaving it alone.`,
-      );
-      return;
+    // Step 3 — Pre-compute hashes + probe results for every journal
+    // entry so we can decide insert / delete / leave-alone per row.
+    const planned: Array<{
+      entry: JournalEntry;
+      hash: string;
+      shouldBeApplied: boolean;
+      probed: boolean;
+    }> = [];
+    for (const entry of journal.entries) {
+      const hash = await hashForEntry(entry);
+      const probeFn = MODERN_MIGRATION_PROBES[entry.tag];
+      let shouldBeApplied: boolean;
+      let probed = false;
+      if (probeFn) {
+        shouldBeApplied = await probeFn(client);
+        probed = true;
+      } else {
+        // Presumed applied (pre-rebuild history baked into 0000 baseline).
+        shouldBeApplied = true;
+      }
+      planned.push({ entry, hash, shouldBeApplied, probed });
     }
 
-    // Step 4 — Backfill every journal entry with the matching SHA256
-    // hash (same recipe as node_modules/drizzle-orm/migrator.js:
-    // `crypto.createHash('sha256').update(query).digest('hex')`). The
-    // hash is over the raw file contents — no normalisation, no
-    // statement-breakpoint splitting.
+    // Step 4 — Read current __drizzle_migrations state.
+    const existingRes = await client.query<{ id: number; hash: string }>(
+      `SELECT id, hash FROM "drizzle"."__drizzle_migrations";`,
+    );
+    const existingByHash = new Map<string, number>();
+    for (const row of existingRes.rows) {
+      existingByHash.set(row.hash, row.id);
+    }
+
+    // Step 5 — Compute the watermark.
+    //
+    // The pg dialect's migrate() helper applies any journal entry whose
+    // `when` is strictly greater than `MAX(created_at)` from the
+    // bookkeeping table (see node_modules/drizzle-orm/pg-core/dialect.js
+    // — `select ... order by created_at desc limit 1`). So per-row
+    // hash-matching is irrelevant: only the watermark matters.
+    //
+    // Strategy: find the EARLIEST `when` among probed-as-missing
+    // entries. The watermark must end up strictly less than that value
+    // so drizzle replays it (and every later journal entry, in order).
+    // All modern migrations are required to be idempotent (IF NOT
+    // EXISTS / DO blocks) per CLAUDE.md, so re-applying entries whose
+    // canary already passed is a safe no-op.
+    const missingProbed = planned.filter((p) => p.probed && !p.shouldBeApplied);
+    const cutoffWhen =
+      missingProbed.length > 0
+        ? Math.min(...missingProbed.map((p) => p.entry.when))
+        : Number.POSITIVE_INFINITY;
+
+    // Step 6 — Apply plan inside a transaction.
+    //   * DELETE every existing row with created_at >= cutoffWhen so
+    //     the watermark drops below the earliest pending migration.
+    //   * INSERT entries with when < cutoffWhen that aren't already
+    //     recorded (presumed-applied baseline + any probed-and-present
+    //     entries that happen to predate the cutoff).
+    let inserted = 0;
+    let deleted = 0;
+    let alreadyOk = 0;
+
     await client.query("BEGIN");
     try {
-      for (const entry of journal.entries) {
-        const sqlPath = path.join(MIGRATIONS_DIR, `${entry.tag}.sql`);
-        const sql = await readFile(sqlPath, "utf-8");
-        const hash = createHash("sha256").update(sql).digest("hex");
+      if (Number.isFinite(cutoffWhen)) {
+        const delRes = await client.query(
+          `DELETE FROM "drizzle"."__drizzle_migrations" WHERE created_at >= $1;`,
+          [cutoffWhen],
+        );
+        deleted = delRes.rowCount ?? 0;
+        // Refresh local view of what's still recorded.
+        for (const [hash, _id] of existingByHash) {
+          const row = planned.find((p) => p.hash === hash);
+          if (row && row.entry.when >= cutoffWhen) {
+            existingByHash.delete(hash);
+          }
+        }
+      }
+
+      for (const item of planned) {
+        if (item.entry.when >= cutoffWhen) {
+          // Will be (re-)applied by drizzle-kit migrate. Skip insert.
+          continue;
+        }
+        if (existingByHash.has(item.hash)) {
+          alreadyOk++;
+          continue;
+        }
         await client.query(
           `INSERT INTO "drizzle"."__drizzle_migrations" (hash, created_at) VALUES ($1, $2);`,
-          [hash, entry.when],
+          [item.hash, item.entry.when],
         );
+        inserted++;
       }
       await client.query("COMMIT");
-      console.log(
-        `[drizzle-bootstrap] Backfilled ${journal.entries.length} migration entries. ` +
-          "Subsequent drizzle-kit migrate runs will only apply NEW entries.",
-      );
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;
     }
+
+    for (const m of missingProbed) {
+      console.log(
+        `[drizzle-bootstrap] PENDING ${m.entry.tag} (when=${m.entry.when}): ` +
+          `canary missing — drizzle-kit migrate will apply it.`,
+      );
+    }
+    console.log(
+      `[drizzle-bootstrap] Done. inserted=${inserted} deleted=${deleted} ` +
+        `already_ok=${alreadyOk} pending=${missingProbed.length} ` +
+        `cutoff_when=${Number.isFinite(cutoffWhen) ? cutoffWhen : "none"} ` +
+        `total_journal=${planned.length}.`,
+    );
   } finally {
     await client.end();
   }
