@@ -24,6 +24,7 @@ import { requireAuth } from "../middleware/requireAuth";
 import { requirePermission } from "../permission-middleware";
 import { trackerReplicaRepository } from "../repositories/tracker-replica-repository";
 import { ApiError, badRequest, notFound, serverError } from "../lib/api-error";
+import { withTrust } from "../lib/finance-trust/envelope";
 
 const projectIdParam = z.coerce.number().int().positive();
 
@@ -60,6 +61,10 @@ export function registerTrackerReplicaRoutes(app: Express): void {
           projectId,
           summary,
           milestones,
+          trust: withTrust(res, {
+            sourceLayer: "canonical",
+            canonicalTable: "normalized_revenue_lines, tracker_revenue_summary",
+          }),
         });
       } catch (err) {
         if (err instanceof ApiError) throw err;
@@ -108,6 +113,10 @@ export function registerTrackerReplicaRoutes(app: Express): void {
           costLines,
           actualBatches,
           header: { usdExchangeRate, pricePerWatt },
+          trust: withTrust(res, {
+            sourceLayer: "canonical",
+            canonicalTable: "normalized_cost_lines, normalized_cost_line_actuals",
+          }),
         });
       } catch (err) {
         if (err instanceof ApiError) throw err;

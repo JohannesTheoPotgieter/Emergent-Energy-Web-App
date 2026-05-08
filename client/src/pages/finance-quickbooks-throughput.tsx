@@ -30,6 +30,7 @@ import { apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
 import { isApiError } from "@/lib/api-error";
 import { formatRand } from "@/lib/safeMoney";
 import { FinanceShell } from "@/components/layout/FinanceShell";
+import { FinanceTrustStrip } from "@/components/finance/FinanceTrustStrip";
 import { useAuth } from "@/hooks/use-auth";
 import { SuggestMatchesDialog } from "@/components/quickbooks/SuggestMatchesDialog";
 import { QbMatchingWorkbench } from "@/components/quickbooks/QbMatchingWorkbench";
@@ -2002,10 +2003,42 @@ export default function FinanceQuickBooksThroughputPage() {
   if (statusLoading) return <FinanceShell><PageSkeleton lines={5} /></FinanceShell>;
 
   const isConnected = status?.connected ?? false;
+  const trustLinkStatus: "linked" | "partial" | "unmatched" | "unknown" =
+    !isConnected
+      ? "unmatched"
+      : status?.health === "healthy"
+        ? "linked"
+        : status?.health === "stale" || status?.isStale
+          ? "partial"
+          : status?.health === "failing"
+            ? "unmatched"
+            : "unknown";
+  const trustMetrics = [
+    {
+      label: "Sync age",
+      value: formatRelativeAge(status?.ageMs ?? null),
+      tone: (status?.isStale ? "warning" : "default") as "warning" | "default",
+      testId: "trust-qb-sync-age",
+    },
+    ...(status?.lastFailureCode
+      ? [{
+          label: "Last failure",
+          value: status.lastFailureCode,
+          tone: "critical" as const,
+          testId: "trust-qb-last-failure",
+        }]
+      : []),
+  ];
 
   return (
     <FinanceShell>
       <div className="space-y-4">
+        <FinanceTrustStrip
+          source={status?.companyName ? `QuickBooks · ${status.companyName}` : "QuickBooks"}
+          lastImportDate={status?.lastSuccessfulSyncAt ?? "Unknown"}
+          quickBooksLinkStatus={trustLinkStatus}
+          metrics={trustMetrics}
+        />
         {/* Header — connection state + Sync Now */}
         <Card>
           <CardContent className="p-4 flex items-center justify-between flex-wrap gap-3">
