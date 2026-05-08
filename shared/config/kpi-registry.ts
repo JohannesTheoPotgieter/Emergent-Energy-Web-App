@@ -338,7 +338,7 @@ export const KPI_REGISTRY: KpiDefinition[] = [
     weight: 20,
     normalization: "percentage_vs_target",
     unit: "R",
-    higherIsBetter: false,
+    higherIsBetter: true,
   },
   {
     kpiKey: "fin_gross_margin_vs_target",
