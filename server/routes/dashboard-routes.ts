@@ -482,13 +482,16 @@ export function registerDashboardRoutes(app: Express) {
         role.includes("ADMIN") ? "Admin focus" :
         role.includes("PROJECT") || role.includes("PM") ? "PM focus" : "General";
 
+      // Real per-user task / approval / mention queries are not yet wired up
+      // (see T1.x audit, defect 1). Until they are, return empty arrays so
+      // the UI shows an honest empty state rather than fabricated rows.
       res.json({
-        overdueTasks: [{ id: 1, title: "Review delayed milestone: Solar Farm Alpha", link: "/my-work/tasks" }],
-        dueTodayTasks: [{ id: 2, title: "Approve contractor invoice INV-3442", link: "/approvals" }],
-        upcomingTasks: [{ id: 3, title: "Prepare weekly status update", link: "/execution-board" }],
-        pendingApprovals: [{ id: 4, title: "CAPEX change request #128", link: "/approvals" }],
-        recentMentions: [{ id: 5, title: "@you in Engineering blocker thread", link: "/teams-chats" }],
-        assignedProjects: [{ id: 6, title: "Solar Farm Alpha", link: "/projects/1" }],
+        overdueTasks: [],
+        dueTodayTasks: [],
+        upcomingTasks: [],
+        pendingApprovals: [],
+        recentMentions: [],
+        assignedProjects: [],
         roleView,
       });
     } catch (error) {
