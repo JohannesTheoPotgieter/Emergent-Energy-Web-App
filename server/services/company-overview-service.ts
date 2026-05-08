@@ -604,13 +604,50 @@ export async function getCompanyOverviewData() {
   ]);
 
   // --- Finance ---
-  // Revenue target placeholder (use total planned as target proxy)
+  // Total all-time planned (used as the "annual" denominator for legacy
+  // tile fields). Kept for backwards compatibility with other parts of
+  // the response payload — not used for KPI vs-target calculations.
   const totalPlannedRevenue = revenueRows
     .filter((r) => activeProjectIds.has(r.projectId))
     .reduce((sum, r) => sum + toNum(r.amountExVat), 0);
 
   const totalPlannedCost = costRows
     .filter((r) => activeProjectIds.has(r.projectId))
+    .reduce((sum, r) => sum + toNum(r.amountExVat), 0);
+
+  // FYTD-anchored targets per T1.x audit Surprise 3.
+  // Previous behaviour: targets were the all-time totalPlanned values
+  // multiplied by a magic constant (0.75 for revenue/COS, 0.7 for cash).
+  // Same denominator regardless of whether it was September (FY start)
+  // or August (FY end), so "vs target" was too easy late and too hard
+  // early.
+  //
+  // New behaviour: target = sum of plan-dated lines whose plan date
+  // falls in [fyStart, today]. Anchored to captured forecasts, not a
+  // multiplier on annual.
+  //
+  // Date columns:
+  //   • Revenue / Cash collected: expectedPaymentDate (the captured
+  //     plan-date for cash receipt).
+  //   • COS: invoiceDate when set (recognition has occurred), else
+  //     forecastPaymentDate as a forward-looking proxy.
+  const isInFytdToToday = (d: string | null | undefined): boolean =>
+    !!(d && /^\d{4}-\d{2}-\d{2}/.test(d) && d >= fyStart && d <= today);
+
+  const revenuePlannedFytd = revenueRows
+    .filter((r) =>
+      activeProjectIds.has(r.projectId) &&
+      isInFytdToToday((r as any).expectedPaymentDate),
+    )
+    .reduce((sum, r) => sum + toNum(r.amountExVat), 0);
+
+  const costPlannedFytd = costRows
+    .filter((r) => {
+      if (!activeProjectIds.has(r.projectId)) return false;
+      const planDate =
+        (r as any).invoiceDate || (r as any).forecastPaymentDate;
+      return isInFytdToToday(planDate);
+    })
     .reduce((sum, r) => sum + toNum(r.amountExVat), 0);
 
   // Overdue debtors (revenue expected but not received, past date)
@@ -664,9 +701,9 @@ export async function getCompanyOverviewData() {
     revenueRows.filter((r) => activeProjectIds.has(r.projectId) && !r.effectiveTo && nullAmountWithInvoice(r)).length;
 
   const finKpis = new Map<string, { actual: number | null; target?: number | null }>([
-    ["fin_revenue_vs_target", { actual: realisedRevenueFytd, target: totalPlannedRevenue * 0.75 }], // Revenue realised (COS-ratio)
-    ["fin_cash_collected_vs_target", { actual: cashReceivedFytd, target: totalPlannedRevenue * 0.7 }], // Cash received
-    ["fin_cos_vs_target", { actual: realisedCostFytd, target: totalPlannedCost * 0.75 }], // COS realised (invoice-based)
+    ["fin_revenue_vs_target", { actual: realisedRevenueFytd, target: revenuePlannedFytd }], // Revenue realised (COS-ratio) vs FYTD-anchored plan
+    ["fin_cash_collected_vs_target", { actual: cashReceivedFytd, target: revenuePlannedFytd }], // Cash received vs FYTD-anchored plan
+    ["fin_cos_vs_target", { actual: realisedCostFytd, target: costPlannedFytd }], // COS realised (invoice-based) vs FYTD-anchored plan
     ["fin_gross_margin_vs_target", { actual: realisedGrossMarginPct, target: targetMarginPct }], // Realised GP%
     ["fin_overdue_debtors", { actual: overdueDebtorValue }],
   ]);
