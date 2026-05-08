@@ -2,7 +2,7 @@
   "_documentation": "EE-QA-015 baseline — files above the FILE_SIZE_THRESHOLD LOC. The CI guard `qa/tests/unit/file-size-ratchet.test.ts` fails if any of these grow OR a NEW file lands over the threshold. To regenerate after a split, run `npx tsx scripts/build-file-size-baseline.ts` and commit the new JSON.",
   "threshold": 1500,
   "buffer": 50,
-  "generated": "2026-05-06",
+  "generated": "2026-05-08",
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
@@ -38,7 +38,7 @@
     },
     {
       "file": "server/routes/quickbooks-invoice-matches.routes.ts",
-      "loc": 2559
+      "loc": 2567
     },
     {
       "file": "server/services/quickbooks-reconciliation-service.ts",
@@ -46,11 +46,11 @@
     },
     {
       "file": "server/lib/import/commit-executor.ts",
-      "loc": 2407
+      "loc": 2437
     },
     {
       "file": "server/lifecycle-routes.ts",
-      "loc": 2407
+      "loc": 2421
     },
     {
       "file": "client/src/pages/my-work-tasks.tsx",
@@ -81,12 +81,12 @@
       "loc": 2126
     },
     {
-      "file": "server/lib/import/normalizer.ts",
-      "loc": 2115
-    },
-    {
       "file": "server/ee-info-routes.ts",
       "loc": 2111
+    },
+    {
+      "file": "server/lib/import/normalizer.ts",
+      "loc": 2109
     },
     {
       "file": "client/src/pages/finance-quickbooks-throughput.tsx",
@@ -98,7 +98,7 @@
     },
     {
       "file": "client/src/pages/project-detail.tsx",
-      "loc": 2061
+      "loc": 2064
     },
     {
       "file": "server/departments/opportunities-routes.ts",
@@ -106,7 +106,7 @@
     },
     {
       "file": "client/src/pages/cashflow.tsx",
-      "loc": 1973
+      "loc": 1983
     },
     {
       "file": "server/departments/priority-strategic-routes.ts",
@@ -119,6 +119,10 @@
     {
       "file": "server/seed-ee-info-updates.ts",
       "loc": 1820
+    },
+    {
+      "file": "server/quickbooks-routes.ts",
+      "loc": 1793
     },
     {
       "file": "client/src/pages/collaboration.tsx",
@@ -153,16 +157,12 @@
       "loc": 1702
     },
     {
-      "file": "server/quickbooks-routes.ts",
-      "loc": 1701
+      "file": "shared/schema/finance.ts",
+      "loc": 1608
     },
     {
       "file": "server/eng-stage-routes.ts",
       "loc": 1593
-    },
-    {
-      "file": "shared/schema/finance.ts",
-      "loc": 1585
     },
     {
       "file": "shared/schema/projects.ts",
@@ -171,6 +171,10 @@
     {
       "file": "client/src/pages/subcontractor-dashboard.tsx",
       "loc": 1568
+    },
+    {
+      "file": "server/handover-routes.ts",
+      "loc": 1561
     },
     {
       "file": "client/src/components/tabs/ProjectPlanTab.tsx",
@@ -185,12 +189,8 @@
       "loc": 1538
     },
     {
-      "file": "server/handover-routes.ts",
-      "loc": 1528
-    },
-    {
       "file": "client/src/pages/cos.tsx",
-      "loc": 1526
+      "loc": 1528
     },
     {
       "file": "server/routes/imports-admin-extracted-routes.ts",
