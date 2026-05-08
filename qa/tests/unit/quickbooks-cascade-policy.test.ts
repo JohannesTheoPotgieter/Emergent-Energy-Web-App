@@ -46,27 +46,34 @@ describe("Task #30 — suggest-matches scope is restricted to customer + vendor"
 });
 
 describe("Task #30 — lock policy is enforced on legacy mutate endpoints", () => {
-  it("customer-mappings POST checks lockedAt and rejects non-admins with 403 mapping_locked", () => {
+  // 2026-05-08 (Plan v3 § 2.7 / D.6 #3): the legacy `!isAdminRequest(req)` hard
+  // refusal was softened to the override-with-reason pattern. Each site now
+  // calls evaluateQbMappingLockDecision and branches on `lockDecision?.kind`.
+  // The "mapping_locked" string is now produced by the helper (see
+  // server/lib/quickbooks-mapping-lock-eval.ts) and surfaced on the 403 reject
+  // path; these regexes pin the new pattern so the lock policy can't silently
+  // regress to "anyone can overwrite".
+  it("customer-mappings POST gates locked rows via the override-with-reason helper", () => {
     expect(QB_ROUTES).toMatch(
-      /app\.post\("\/api\/quickbooks\/customer-mappings"[\s\S]*?lockedExisting\?\.lockedAt && !isAdminRequest\(req\)[\s\S]*?"mapping_locked"/,
+      /app\.post\("\/api\/quickbooks\/customer-mappings"[\s\S]*?lockedExisting\?\.lockedAt[\s\S]*?evaluateQbMappingLockDecision[\s\S]*?lockDecision\?\.kind === "reject"/,
     );
   });
 
-  it("customer-mappings DELETE checks lockedAt before soft-delete", () => {
+  it("customer-mappings DELETE gates locked rows via the override-with-reason helper", () => {
     expect(QB_ROUTES).toMatch(
-      /app\.delete\("\/api\/quickbooks\/customer-mappings\/:id"[\s\S]*?pre\?\.lockedAt && !isAdminRequest\(req\)[\s\S]*?"mapping_locked"/,
+      /app\.delete\("\/api\/quickbooks\/customer-mappings\/:id"[\s\S]*?pre\?\.lockedAt[\s\S]*?evaluateQbMappingLockDecision[\s\S]*?lockDecision\?\.kind === "reject"/,
     );
   });
 
-  it("vendor-mappings POST checks lockedAt and rejects non-admins", () => {
+  it("vendor-mappings POST gates locked rows via the override-with-reason helper", () => {
     expect(QB_ROUTES).toMatch(
-      /app\.post\(\s*"\/api\/quickbooks\/vendor-mappings"[\s\S]*?existing\?\.lockedAt && !isAdminRequest\(req\)[\s\S]*?"mapping_locked"/,
+      /app\.post\(\s*"\/api\/quickbooks\/vendor-mappings"[\s\S]*?existing\?\.lockedAt[\s\S]*?evaluateQbMappingLockDecision[\s\S]*?lockDecision\?\.kind === "reject"/,
     );
   });
 
-  it("vendor-mappings DELETE checks lockedAt before soft-delete", () => {
+  it("vendor-mappings DELETE gates locked rows via the override-with-reason helper", () => {
     expect(QB_ROUTES).toMatch(
-      /app\.delete\(\s*"\/api\/quickbooks\/vendor-mappings\/:id"[\s\S]*?pre\?\.lockedAt && !isAdminRequest\(req\)[\s\S]*?"mapping_locked"/,
+      /app\.delete\(\s*"\/api\/quickbooks\/vendor-mappings\/:id"[\s\S]*?pre\?\.lockedAt[\s\S]*?evaluateQbMappingLockDecision[\s\S]*?lockDecision\?\.kind === "reject"/,
     );
   });
 });
