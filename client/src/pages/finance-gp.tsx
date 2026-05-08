@@ -70,6 +70,33 @@ interface FinanceLinesResponse {
   total: MonthlyRow;
 }
 
+interface ReconCheckResponse {
+  projectId: number;
+  fyStart: string | null;
+  fyEnd: string | null;
+  lineCount: number;
+  linelevel: { revenue: number; cos: number; gp: number };
+  persisted: { revenue: number; cos: number; rowCount: number; nonNullRevenueRowCount: number };
+  drift: { revenue: number; cos: number; revenuePerLine: number; detected: boolean };
+}
+
+interface PortfolioProjectTotals {
+  projectId: number;
+  cos: number;
+  revenue: number;
+  gp: number;
+  gpPct: number | null;
+  count: number;
+}
+
+interface PortfolioResponse {
+  projectIds: number[];
+  byProject: PortfolioProjectTotals[];
+  monthly: MonthlyRow[];
+  unrecognised: MonthlyRow;
+  total: MonthlyRow;
+}
+
 interface ProjectSummaryRow {
   project_name: string;
   has_tracker_import?: boolean;
@@ -287,6 +314,96 @@ function CategoryRow({
   );
 }
 
+function DriftCard({ projectId }: { projectId: number }) {
+  const { data } = useQuery<ReconCheckResponse>({
+    queryKey: [`/api/finance/recon-check/${projectId}`],
+    queryFn: fetchQueryFn(`/api/finance/recon-check/${projectId}`),
+    enabled: Number.isFinite(projectId),
+    staleTime: 60_000,
+  });
+
+  if (!data) return null;
+  const tone = data.drift.detected ? "border-amber-300 bg-amber-50/40" : "border-emerald-300 bg-emerald-50/40";
+  const driftAbs = Math.abs(data.drift.revenue);
+  return (
+    <Card className={tone}>
+      <CardContent className="p-4 flex items-start gap-3">
+        <AlertTriangle className={data.drift.detected ? "h-5 w-5 text-amber-600 mt-0.5" : "h-5 w-5 text-emerald-600 mt-0.5"} />
+        <div className="text-sm space-y-1">
+          <div className="font-medium">
+            Dual-write parity {data.drift.detected ? "— drift detected" : "— in sync"}
+          </div>
+          <div className="text-muted-foreground">
+            Line-level (§ 3.3) Revenue {money(data.linelevel.revenue)} · persisted Revenue {money(data.persisted.revenue)} ·
+            {" "}drift {money(driftAbs)} ({money(data.drift.revenuePerLine)}/line across {data.lineCount} lines).
+            {data.drift.detected && " Some drift is expected — legacy persisted column uses a project-scoped formula vs § 3.3 category-scoped. Investigate if absolute drift is large."}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PortfolioSummaryCard({ projectIds }: { projectIds: number[] }) {
+  const queryString = projectIds.length > 0 ? `?projectIds=${projectIds.join(",")}` : "";
+  const { data, isLoading } = useQuery<PortfolioResponse>({
+    queryKey: [`/api/finance/lines${queryString}`],
+    queryFn: fetchQueryFn(`/api/finance/lines${queryString}`),
+    enabled: projectIds.length > 0,
+    staleTime: 60_000,
+  });
+
+  if (projectIds.length === 0) return null;
+  if (isLoading || !data) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Company-wide GP</CardTitle>
+        </CardHeader>
+        <CardContent className="p-6 flex items-center text-muted-foreground">
+          <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Aggregating {projectIds.length} project(s)…
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const total = data.total;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">
+          Company-wide GP — {data.byProject.length} project(s)
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+          <div>
+            <div className="text-xs text-muted-foreground">Revenue</div>
+            <div className="text-xl font-semibold tabular-nums">{money(total.revenue)}</div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">COS</div>
+            <div className="text-xl font-semibold tabular-nums">{money(total.cos)}</div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">GP</div>
+            <div className="text-xl font-semibold tabular-nums">{money(total.gp)}</div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">Margin %</div>
+            <div className="text-xl font-semibold tabular-nums">{pct(total.gpPct)}</div>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Σ projects (Σ lines perLineRevenue) — § 3.3.1, no cross-project pooling. Includes only
+          projects whose category J has been populated; missing-J projects contribute zero rather
+          than a wrong number.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 function ProjectGpView({ projectId, projectName }: { projectId: number; projectName: string }) {
   const { data, trust, isLoading, isError, refetch } = useFinanceQuery<FinanceLinesResponse>({
     queryKey: [`/api/finance/lines/${projectId}`],
@@ -351,6 +468,8 @@ function ProjectGpView({ projectId, projectName }: { projectId: number; projectN
         </div>
         <DataTrustBadge trust={trust} />
       </header>
+
+      <DriftCard projectId={projectId} />
 
       <section className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <GpKpiCard
@@ -536,6 +655,8 @@ export default function FinanceGpPage() {
           </CardContent>
         </Card>
       )}
+
+      <PortfolioSummaryCard projectIds={projectsWithLines.map((p) => p.projectId)} />
 
       <Card>
         <CardHeader>
