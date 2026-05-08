@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { type ProjectInfo, smartImportRuns } from "@shared/schema";
-import { eq, desc, sql } from "drizzle-orm";
+import { type ProjectInfo, smartImportRuns, ncrReports, qcWarning, qcPostmortem, qcPostmortemSummary } from "@shared/schema";
+import { and, count, eq, desc, inArray, isNull, not, sql } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import { jsPDF } from "jspdf";
 import { requirePermission } from "./permission-middleware";
@@ -735,7 +735,10 @@ export function registerReportRoutes(app: Express) {
   });
 
   // === 3. QUALITY REPORT ===
-  // Quality is tracked via RAG status on projects. No separate quality_metrics table exists.
+  // Plan v3 / T3-4: this endpoint previously read only project_info.ragStatus
+  // and disclaimed quality data. The 13 quality tables now flow into the
+  // report: open NCR count, NCR severity breakdown, open quality warnings
+  // by type, and the latest postmortem score per project.
   app.get("/api/reports/quality", requireAuth, requirePermission("reports", "view"), async (req, res) => {
     try {
       const projectFilter = req.query.projectName as string | undefined;
@@ -749,6 +752,87 @@ export function registerReportRoutes(app: Express) {
       const importInfo = await getLastImportInfo();
       const protectedFields = await getProtectedFieldProjects();
 
+      const projectIds = filtered.map((p: any) => p.id).filter((id): id is number => typeof id === "number");
+
+      // Open NCRs by project + severity. Closed and waived do not count.
+      const ncrRows = projectIds.length > 0
+        ? await db
+            .select({
+              projectId: ncrReports.projectId,
+              severity: ncrReports.severity,
+              status: ncrReports.status,
+              count: count(ncrReports.id),
+            })
+            .from(ncrReports)
+            .where(and(
+              inArray(ncrReports.projectId, projectIds),
+              not(inArray(ncrReports.status, ["closed", "waived"] as any)),
+            ))
+            .groupBy(ncrReports.projectId, ncrReports.severity, ncrReports.status)
+        : [];
+
+      const ncrByProject = new Map<number, { open: number; bySeverity: Record<string, number>; byStatus: Record<string, number> }>();
+      for (const r of ncrRows) {
+        const pid = r.projectId as number;
+        const cur = ncrByProject.get(pid) ?? { open: 0, bySeverity: {}, byStatus: {} };
+        const c = Number(r.count ?? 0);
+        cur.open += c;
+        cur.bySeverity[r.severity as string] = (cur.bySeverity[r.severity as string] ?? 0) + c;
+        cur.byStatus[r.status as string] = (cur.byStatus[r.status as string] ?? 0) + c;
+        ncrByProject.set(pid, cur);
+      }
+
+      // Open quality warnings — group by warning type for visibility.
+      const warningRows = projectIds.length > 0
+        ? await db
+            .select({
+              projectId: qcWarning.projectId,
+              warningType: qcWarning.warningType,
+              count: count(qcWarning.id),
+            })
+            .from(qcWarning)
+            .where(and(
+              inArray(qcWarning.projectId, projectIds),
+              eq(qcWarning.status, "open"),
+            ))
+            .groupBy(qcWarning.projectId, qcWarning.warningType)
+        : [];
+
+      const warningsByProject = new Map<number, { open: number; byType: Record<string, number> }>();
+      for (const w of warningRows) {
+        const pid = w.projectId as number;
+        const cur = warningsByProject.get(pid) ?? { open: 0, byType: {} };
+        const c = Number(w.count ?? 0);
+        cur.open += c;
+        cur.byType[w.warningType as string] = c;
+        warningsByProject.set(pid, cur);
+      }
+
+      // Latest postmortem score per project. The summary table carries the
+      // scores; the parent qc_postmortem holds projectId + completedAt.
+      const postmortems = projectIds.length > 0
+        ? await db
+            .select({
+              projectId: qcPostmortem.projectId,
+              contractorQualityScore: qcPostmortemSummary.contractorQualityScore,
+              engineeringQualityScore: qcPostmortemSummary.engineeringQualityScore,
+              redFlag: qcPostmortemSummary.redFlag,
+              completedAt: qcPostmortem.completedAt,
+            })
+            .from(qcPostmortemSummary)
+            .innerJoin(qcPostmortem, eq(qcPostmortem.id, qcPostmortemSummary.postmortemId))
+            .where(inArray(qcPostmortem.projectId, projectIds))
+            .orderBy(desc(qcPostmortem.completedAt))
+        : [];
+
+      const latestPostmortem = new Map<number, typeof postmortems[number]>();
+      for (const pm of postmortems) {
+        const pid = pm.projectId;
+        if (pid != null && !latestPostmortem.has(pid)) {
+          latestPostmortem.set(pid, pm);
+        }
+      }
+
       const rows = filtered.map((p: any) => {
         const lastImport = importInfo.get(p.projectName);
         const staleness = checkStaleness(lastImport?.committedAt);
@@ -757,6 +841,11 @@ export function registerReportRoutes(app: Express) {
           ragStatus: (p as any).ragStatus || (p as any).rag,
           inDlp: (p as any).inDlp,
         });
+
+        const ncr = ncrByProject.get(p.id) ?? { open: 0, bySeverity: {}, byStatus: {} };
+        const warn = warningsByProject.get(p.id) ?? { open: 0, byType: {} };
+        const pm = latestPostmortem.get(p.id);
+
         return {
           projectName: p.projectName,
           phase: (p as any).phase || (p as any).executionPhase || null,
@@ -766,6 +855,16 @@ export function registerReportRoutes(app: Express) {
           sizeKwp: p.sizeKwp,
           pd: p.pd,
           pm: p.pm,
+          openNcrCount: ncr.open,
+          ncrCriticalCount: ncr.bySeverity["critical"] ?? 0,
+          ncrMajorCount: ncr.bySeverity["major"] ?? 0,
+          ncrMinorCount: ncr.bySeverity["minor"] ?? 0,
+          openWarningCount: warn.open,
+          warningsByType: warn.byType,
+          latestContractorQualityScore: pm?.contractorQualityScore ?? null,
+          latestEngineeringQualityScore: pm?.engineeringQualityScore ?? null,
+          latestPostmortemRedFlag: pm?.redFlag ?? null,
+          latestPostmortemAt: pm?.completedAt ?? null,
           lastImportAt: lastImport?.committedAt || null,
           isStale: staleness.isStale,
           daysSinceImport: staleness.daysSinceImport,
@@ -778,6 +877,13 @@ export function registerReportRoutes(app: Express) {
           { header: "Project", key: "projectName", width: 30 },
           { header: "Phase", key: "phase", width: 15 },
           { header: "RAG Status", key: "ragStatus", width: 12 },
+          { header: "Open NCRs", key: "openNcrCount", width: 11 },
+          { header: "NCR Critical", key: "ncrCriticalCount", width: 12 },
+          { header: "NCR Major", key: "ncrMajorCount", width: 11 },
+          { header: "NCR Minor", key: "ncrMinorCount", width: 11 },
+          { header: "Open Warnings", key: "openWarningCount", width: 14 },
+          { header: "Contractor Quality Score", key: "latestContractorQualityScore", width: 22 },
+          { header: "Engineering Quality Score", key: "latestEngineeringQualityScore", width: 22 },
           { header: "Size (kWp)", key: "sizeKwp", width: 12 },
           { header: "PD", key: "pd", width: 20 },
           { header: "PM", key: "pm", width: 20 },
@@ -785,7 +891,21 @@ export function registerReportRoutes(app: Express) {
         ], rows);
       }
 
-      res.json({ data: rows, meta: { count: rows.length, stalenessThresholdDays: STALENESS_THRESHOLD_DAYS } });
+      const totals = rows.reduce((acc, r) => {
+        acc.openNcrCount += r.openNcrCount;
+        acc.openWarningCount += r.openWarningCount;
+        acc.ncrCriticalCount += r.ncrCriticalCount;
+        return acc;
+      }, { openNcrCount: 0, openWarningCount: 0, ncrCriticalCount: 0 });
+
+      res.json({
+        data: rows,
+        meta: {
+          count: rows.length,
+          totals,
+          stalenessThresholdDays: STALENESS_THRESHOLD_DAYS,
+        },
+      });
     } catch (err: unknown) {
       console.error("[Reports] Quality report error:", (err instanceof Error ? err.message : String(err)));
       throw err;

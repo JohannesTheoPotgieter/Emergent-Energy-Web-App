@@ -23,11 +23,24 @@ describe("NCR data model containment", () => {
     expect(bootstrap).toContain("quality-ncr-routes");
   });
 
-  it("NCR table creation is guarded to run only once", () => {
+  it("NCR tables are now Drizzle-canonical (Plan v3 § T3-2)", () => {
+    // Pre-Plan-v3 the route file contained a `ncrTablesEnsured` guard
+    // around a runtime `CREATE TABLE IF NOT EXISTS`. T3-2 moved the
+    // schema into shared/schema/quality.ts under Drizzle, with the
+    // migration file owning DDL. Verify both anchors.
+    const schema = read("shared/schema/quality.ts");
+    expect(schema).toContain('pgTable("ncr_reports"');
+    expect(schema).toContain("ncrStatusEnum");
+    expect(schema).toContain("waived");
+    const migrations = fs
+      .readdirSync(path.join(process.cwd(), "migrations"))
+      .filter((f) => f.endsWith(".sql"));
+    const ncrMigration = migrations.find((f) => f.toLowerCase().includes("ncr"));
+    expect(ncrMigration, "expected an ncr migration file").toBeDefined();
+    // The legacy ensureNcrTables() shim must remain (so existing imports
+    // do not break) but must no longer carry the ncrTablesEnsured guard.
     const ncr = read("server/quality-ncr-routes.ts");
-    expect(ncr).toContain("ncrTablesEnsured");
-    expect(ncr).toContain("if (ncrTablesEnsured) return;");
-    expect(ncr).toContain("ncrTablesEnsured = true;");
+    expect(ncr).toContain("export async function ensureNcrTables");
   });
 
   it("NCR reports table includes related_checklist_item_id for quality integration", () => {

@@ -1,7 +1,7 @@
 import { Express, Request, Response } from "express";
 import { db } from "./db";
-import { eq, sql } from "drizzle-orm";
-import { procurementItems, approvals } from "@shared/schema";
+import { and, eq, inArray, not, sql } from "drizzle-orm";
+import { procurementItems, approvals, ncrReports } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
@@ -202,6 +202,33 @@ export function registerProcurementRoutes(app: Express): void {
         const poRows = rowsFromResult(poCheck);
         if (poRows.length === 0) {
           return res.status(400).json({ error: "Linked purchase order not found" });
+        }
+      }
+
+      // Plan v3 / T3-3: payment holdback per playbook § 5.10.
+      // When NCRs are open against this project, refuse to advance the
+      // procurement payment status into a release state (`approved`,
+      // `scheduled`, `paid`). `on_hold`, `pending_approval`,
+      // `not_applicable` remain freely writable so users can park the
+      // line while waiting on NCR closure.
+      if (req.body.paymentStatus !== undefined && old.projectId != null) {
+        const releaseStates = new Set(["approved", "scheduled", "paid"]);
+        if (releaseStates.has(String(req.body.paymentStatus))) {
+          const openNcrs = await db
+            .select({ id: ncrReports.id, title: ncrReports.title, status: ncrReports.status })
+            .from(ncrReports)
+            .where(and(
+              eq(ncrReports.projectId, old.projectId),
+              not(inArray(ncrReports.status, ["closed", "waived"] as any)),
+            ));
+          if (openNcrs.length > 0) {
+            return res.status(400).json({
+              error: "ncr_holdback",
+              message: `Payment cannot be advanced to '${req.body.paymentStatus}' while ${openNcrs.length} NCR(s) remain open or unwaived on this project (playbook § 5.10).`,
+              openNcrCount: openNcrs.length,
+              openNcrs: openNcrs.slice(0, 5),
+            });
+          }
         }
       }
 
