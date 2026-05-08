@@ -1,10 +1,25 @@
 // ============================================================
 // STAGE EXCEPTION SERVICE — Exception/bypass workflow
 // ============================================================
+//
+// TODO (status-casing alignment) — PRE-EXISTING bug, surfaced by D.5:
+// this service writes UPPERCASE status values ('REQUESTED', 'APPROVED',
+// 'APPROVED_WITH_CONDITIONS', 'REJECTED', 'CLOSED') while
+// shared/schema/stage-lifecycle.ts EXCEPTION_STATUSES (line 145) is
+// canonically LOWERCASE per the C6 migration 20260413_status_casing.
+// The column default on `project_stage_exceptions.status` is also
+// lowercase ('requested'), so existing rows are mixed.
+//
+// D.5 (β) propagates this mismatch into project_stage_exception_history.
+// Resolving it cleanly needs a separate PR with: (1) service edit to
+// emit lowercase, (2) data migration to normalise existing rows, and
+// (3) UI / consumer alignment check. Documented as known tech debt
+// rather than fixed in-place here.
 
 import { and, eq, sql } from "drizzle-orm";
 import {
   projectStageExceptions,
+  projectStageExceptionHistory,
   projectStageDecisions,
   projectStageInstances,
   type InsertProjectStageException,
@@ -27,20 +42,32 @@ export interface CreateExceptionParams {
 }
 
 export async function createException(params: CreateExceptionParams): Promise<ProjectStageException> {
-  const [exception] = await db.insert(projectStageExceptions).values({
-    projectId: params.projectId,
-    stageCode: params.stageCode,
-    requirementCode: params.requirementCode || null,
-    reasonText: params.reasonText,
-    riskLevel: params.riskLevel,
-    mitigationText: params.mitigationText || null,
-    ownerUserId: params.ownerUserId,
-    status: 'REQUESTED',
-    closeoutDueDate: params.closeoutDueDate || null,
-    downstreamBlockingStage: params.downstreamBlockingStage || null,
-  }).returning();
+  return db.transaction(async (tx: typeof db) => {
+    const [exception] = await tx.insert(projectStageExceptions).values({
+      projectId: params.projectId,
+      stageCode: params.stageCode,
+      requirementCode: params.requirementCode || null,
+      reasonText: params.reasonText,
+      riskLevel: params.riskLevel,
+      mitigationText: params.mitigationText || null,
+      ownerUserId: params.ownerUserId,
+      status: 'REQUESTED',
+      closeoutDueDate: params.closeoutDueDate || null,
+      downstreamBlockingStage: params.downstreamBlockingStage || null,
+    }).returning();
 
-  return exception;
+    // Plan v3 § 2.3 / D.5 (β): seed the transition history with the
+    // initial REQUESTED state so post-hoc reviews can replay every flip.
+    await tx.insert(projectStageExceptionHistory).values({
+      exceptionId: exception.id,
+      fromStatus: null,
+      toStatus: 'REQUESTED',
+      changedByUserId: params.ownerUserId,
+      reason: params.reasonText,
+    });
+
+    return exception;
+  });
 }
 
 // ── Approve ─────────────────────────────────────────────────
@@ -62,35 +89,46 @@ export async function approveException(
 
   const newStatus = conditions ? 'APPROVED_WITH_CONDITIONS' : 'APPROVED';
 
-  await db
-    .update(projectStageExceptions)
-    .set({
-      status: newStatus,
-      approverUserId,
-      conditionsText: conditions || null,
-      approvedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(eq(projectStageExceptions.id, exceptionId));
+  return db.transaction(async (tx: typeof db) => {
+    await tx
+      .update(projectStageExceptions)
+      .set({
+        status: newStatus,
+        approverUserId,
+        conditionsText: conditions || null,
+        approvedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(projectStageExceptions.id, exceptionId));
 
-  // Log decision
-  await db.insert(projectStageDecisions).values({
-    projectId: existing.projectId,
-    stageCode: existing.stageCode,
-    decisionType: 'EXCEPTION_GRANTED',
-    decisionSummary: `Exception approved for ${existing.requirementCode || 'stage requirement'}${conditions ? ' with conditions' : ''}`,
-    decidedByUserId: approverUserId,
-    decidedDate: new Date(),
-    rationale: conditions || existing.reasonText,
-    relatedExceptionId: exceptionId,
+    // Stage-level decision row (existing canonical for stage gates).
+    await tx.insert(projectStageDecisions).values({
+      projectId: existing.projectId,
+      stageCode: existing.stageCode,
+      decisionType: 'EXCEPTION_GRANTED',
+      decisionSummary: `Exception approved for ${existing.requirementCode || 'stage requirement'}${conditions ? ' with conditions' : ''}`,
+      decidedByUserId: approverUserId,
+      decidedDate: new Date(),
+      rationale: conditions || existing.reasonText,
+      relatedExceptionId: exceptionId,
+    });
+
+    // Per-exception transition history (Plan v3 § 2.3 / D.5).
+    await tx.insert(projectStageExceptionHistory).values({
+      exceptionId,
+      fromStatus: existing.status,
+      toStatus: newStatus,
+      changedByUserId: approverUserId,
+      reason: conditions || null,
+    });
+
+    const [updated] = await tx
+      .select()
+      .from(projectStageExceptions)
+      .where(eq(projectStageExceptions.id, exceptionId));
+
+    return updated;
   });
-
-  const [updated] = await db
-    .select()
-    .from(projectStageExceptions)
-    .where(eq(projectStageExceptions.id, exceptionId));
-
-  return updated;
 }
 
 // ── Reject ──────────────────────────────────────────────────
@@ -107,34 +145,45 @@ export async function rejectException(
 
   if (!existing) throw new Error(`Exception ${exceptionId} not found`);
 
-  await db
-    .update(projectStageExceptions)
-    .set({
-      status: 'REJECTED',
-      approverUserId,
-      conditionsText: reason,
-      updatedAt: new Date(),
-    })
-    .where(eq(projectStageExceptions.id, exceptionId));
+  return db.transaction(async (tx: typeof db) => {
+    await tx
+      .update(projectStageExceptions)
+      .set({
+        status: 'REJECTED',
+        approverUserId,
+        conditionsText: reason,
+        updatedAt: new Date(),
+      })
+      .where(eq(projectStageExceptions.id, exceptionId));
 
-  // Log decision
-  await db.insert(projectStageDecisions).values({
-    projectId: existing.projectId,
-    stageCode: existing.stageCode,
-    decisionType: 'EXCEPTION_DENIED',
-    decisionSummary: `Exception rejected for ${existing.requirementCode || 'stage requirement'}: ${reason}`,
-    decidedByUserId: approverUserId,
-    decidedDate: new Date(),
-    rationale: reason,
-    relatedExceptionId: exceptionId,
+    // Stage-level decision row (existing canonical for stage gates).
+    await tx.insert(projectStageDecisions).values({
+      projectId: existing.projectId,
+      stageCode: existing.stageCode,
+      decisionType: 'EXCEPTION_DENIED',
+      decisionSummary: `Exception rejected for ${existing.requirementCode || 'stage requirement'}: ${reason}`,
+      decidedByUserId: approverUserId,
+      decidedDate: new Date(),
+      rationale: reason,
+      relatedExceptionId: exceptionId,
+    });
+
+    // Per-exception transition history (Plan v3 § 2.3 / D.5).
+    await tx.insert(projectStageExceptionHistory).values({
+      exceptionId,
+      fromStatus: existing.status,
+      toStatus: 'REJECTED',
+      changedByUserId: approverUserId,
+      reason,
+    });
+
+    const [updated] = await tx
+      .select()
+      .from(projectStageExceptions)
+      .where(eq(projectStageExceptions.id, exceptionId));
+
+    return updated;
   });
-
-  const [updated] = await db
-    .select()
-    .from(projectStageExceptions)
-    .where(eq(projectStageExceptions.id, exceptionId));
-
-  return updated;
 }
 
 // ── Close ───────────────────────────────────────────────────
@@ -143,21 +192,39 @@ export async function closeException(
   exceptionId: number,
   actorUserId: number,
 ): Promise<ProjectStageException> {
-  await db
-    .update(projectStageExceptions)
-    .set({
-      status: 'CLOSED',
-      closedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(eq(projectStageExceptions.id, exceptionId));
-
-  const [updated] = await db
+  const [existing] = await db
     .select()
     .from(projectStageExceptions)
     .where(eq(projectStageExceptions.id, exceptionId));
+  if (!existing) throw new Error(`Exception ${exceptionId} not found`);
 
-  return updated;
+  return db.transaction(async (tx: typeof db) => {
+    await tx
+      .update(projectStageExceptions)
+      .set({
+        status: 'CLOSED',
+        closedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(projectStageExceptions.id, exceptionId));
+
+    // Per-exception transition history (Plan v3 § 2.3 / D.5).
+    // closeException doesn't write to project_stage_decisions; this is
+    // now the canonical record of the close event.
+    await tx.insert(projectStageExceptionHistory).values({
+      exceptionId,
+      fromStatus: existing.status,
+      toStatus: 'CLOSED',
+      changedByUserId: actorUserId,
+    });
+
+    const [updated] = await tx
+      .select()
+      .from(projectStageExceptions)
+      .where(eq(projectStageExceptions.id, exceptionId));
+
+    return updated;
+  });
 }
 
 // ── Queries ─────────────────────────────────────────────────
