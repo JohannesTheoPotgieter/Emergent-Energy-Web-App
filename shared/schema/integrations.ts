@@ -13,6 +13,7 @@
 import { pgTable, text, integer, timestamp, serial, jsonb, decimal, uniqueIndex, index, boolean } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
+import { users } from "./users";
 import { z } from "zod";
 
 export const INTEGRATION_AUTH_TYPES = ["api_key", "oauth2", "basic", "none"] as const;
@@ -708,6 +709,32 @@ export const insertQbLinkProposedCascadeSchema = createInsertSchema(
 } as any);
 export type InsertQbLinkProposedCascade = z.infer<typeof insertQbLinkProposedCascadeSchema>;
 export type QbLinkProposedCascade = typeof qbLinkProposedCascades.$inferSelect;
+
+/**
+ * Transition history for `qb_link_proposed_cascades` — Plan v3 § 2.3 / D.5 (β).
+ *
+ * QB cascade proposals trigger downstream mutations when accepted (via
+ * applyMutation in the cascade-proposals service). The parent carries
+ * `resolvedBy / resolvedAt / resolutionNote` for the latest decision;
+ * this table is the canonical transition trail.
+ */
+export const qbLinkProposedCascadeHistory = pgTable("qb_link_proposed_cascade_history", {
+  id: serial("id").primaryKey(),
+  cascadeId: integer("cascade_id").notNull().references(() => qbLinkProposedCascades.id, { onDelete: "cascade" }),
+  fromStatus: text("from_status"),
+  toStatus: text("to_status").notNull(),
+  changedByUserId: integer("changed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  changedByRole: text("changed_by_role"),
+  changedAt: timestamp("changed_at").notNull().defaultNow(),
+  reason: text("reason"),
+  detailsJson: jsonb("details_json"),
+}, (table) => ({
+  cascadeIdIdx: index("qlpch_cascade_id_idx").on(table.cascadeId),
+}));
+
+export const insertQbLinkProposedCascadeHistorySchema = createInsertSchema(qbLinkProposedCascadeHistory).omit({ id: true, changedAt: true } as any);
+export type InsertQbLinkProposedCascadeHistory = z.infer<typeof insertQbLinkProposedCascadeHistorySchema>;
+export type QbLinkProposedCascadeHistory = typeof qbLinkProposedCascadeHistory.$inferSelect;
 
 // ===================== SEED LIST =====================
 
