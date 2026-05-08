@@ -18,6 +18,7 @@ import {
 } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
+import { recordAudit } from "./api/v2/services/audit-service";
 import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
@@ -2586,6 +2587,16 @@ export async function recalculateWarnings(projectName: string): Promise<number> 
     : [];
   const planLinks = await db.select().from(qcPlanLink).where(eq(qcPlanLink.projectName, projectName));
 
+  // Plan v3 § T3-4: capture how many warnings get auto-resolved by this
+  // recompute so the canonical audit_events row carries before+after.
+  const resolvedRows = await db
+    .select({ id: qcWarning.id, warningType: qcWarning.warningType })
+    .from(qcWarning)
+    .where(and(
+      eq(qcWarning.projectName, projectName),
+      sql`${qcWarning.status} = 'open'`,
+    ));
+
   await db.delete(qcWarning).where(and(
     eq(qcWarning.projectName, projectName),
     sql`${qcWarning.status} = 'open'`
@@ -2686,6 +2697,23 @@ export async function recalculateWarnings(projectName: string): Promise<number> 
 
   if (newWarnings.length) {
     await db.insert(qcWarning).values(newWarnings);
+  }
+
+  // Single canonical audit row per recompute — captures the delta even
+  // when recalculate is fired-and-forgot from a mutation handler.
+  if (resolvedRows.length > 0 || newWarnings.length > 0) {
+    await recordAudit({
+      actorRole: "SYSTEM",
+      entityType: "qc_warning_recalc",
+      entityId: projectName,
+      action: "RECALCULATE_WARNINGS",
+      projectName,
+      changesJson: {
+        autoResolvedCount: resolvedRows.length,
+        createdCount: newWarnings.length,
+        createdTypes: Array.from(new Set(newWarnings.map((w) => w.warningType))),
+      },
+    });
   }
 
   return newWarnings.length;

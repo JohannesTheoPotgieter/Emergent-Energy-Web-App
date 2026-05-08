@@ -32,6 +32,7 @@ import {
   type ReleasedForState,
 } from "@shared/schema/engineering";
 import { logAuditFromReq } from "./audit-logger";
+import { recordAudit } from "./api/v2/services/audit-service";
 import { sendError } from "./lib/api-error";
 import { createEngineeringWorkItem, updateEngineeringWorkItem } from "./work-items-adapter";
 import { jwtAuth, requireAuth } from "./auth-context";
@@ -380,6 +381,15 @@ export function registerEngStageRoutes(app: Express) {
       }
 
       logAuditFromReq(req, { entityType: "eng_project_stage", entityId: String(projectId), action: "create", projectName: project.projectName, changesJson: { description: "Engineering stages generated", stagesCreated: result.stagesCreated, stageDetails: result.stageDetails } });
+      await recordAudit({
+        actorRole: (user as any)?.role,
+        userId: user.id,
+        entityType: "eng_project_stage",
+        entityId: String(projectId),
+        action: "GENERATE_ENG_STAGES",
+        projectName: project.projectName,
+        changesJson: { stagesCreated: result.stagesCreated, stageNames: stageNames ?? null },
+      });
       res.json({ success: true, ...result });
     } catch (err: any) {
       console.error("[EngStages] Generate error:", err.message);
@@ -825,6 +835,14 @@ export function registerEngStageRoutes(app: Express) {
           releasedForAfter: "issued_for_construction",
         },
       });
+      await recordAudit({
+        actorRole: (user as any)?.role,
+        userId: user.id,
+        entityType: "eng_deliverable",
+        entityId: String(id),
+        action: "ISSUE_FOR_CONSTRUCTION",
+        changesJson: { fileName: deliverable.fileName, versionTag: deliverable.versionTag, releasedForBefore: current, releasedForAfter: "issued_for_construction" },
+      });
 
       res.json({ success: true, releasedFor: "issued_for_construction" });
     } catch (err: any) {
@@ -880,6 +898,14 @@ export function registerEngStageRoutes(app: Express) {
           releasedForBefore: current,
           releasedForAfter: "as_built",
         },
+      });
+      await recordAudit({
+        actorRole: (user as any)?.role,
+        userId: user.id,
+        entityType: "eng_deliverable",
+        entityId: String(id),
+        action: "MARK_AS_BUILT",
+        changesJson: { fileName: deliverable.fileName, releasedForBefore: current, releasedForAfter: "as_built" },
       });
 
       res.json({ success: true, releasedFor: "as_built" });
@@ -1008,6 +1034,15 @@ export function registerEngStageRoutes(app: Express) {
       }
 
       logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(id), action: status === "approved" ? "approve" : "reject", projectName: projName, changesJson: { description: `Stage gate ${status}`, stageName: stage?.templateName, approverRole: approval.approverRole } });
+      await recordAudit({
+        actorRole: (user as any)?.role,
+        userId: user.id,
+        entityType: "eng_stage_gate",
+        entityId: String(id),
+        action: status === "approved" ? "APPROVE_STAGE_GATE" : "REJECT_STAGE_GATE",
+        projectName: projName,
+        changesJson: { status, stageName: stage?.templateName, approverRole: approval.approverRole },
+      });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
@@ -1019,11 +1054,13 @@ export function registerEngStageRoutes(app: Express) {
   app.post("/api/eng-stages/stages/:stageId/complete", jwtAuth, requireAuth, requirePermission("eng_stages", "approve"), async (req: Request, res: Response) => {
     try {
       const stageId = parseIntParam(req.params.stageId);
+      const user = getUser(req);
 
       const [stage] = await db.select({
         id: projectEngStages.id,
         stageTemplateId: projectEngStages.stageTemplateId,
         status: projectEngStages.status,
+        projectId: projectEngStages.projectId,
         stageGateRules: engStageTemplates.stageGateRules,
         templateName: engStageTemplates.name,
       })
@@ -1180,6 +1217,14 @@ export function registerEngStageRoutes(app: Express) {
       }
 
       logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(stageId), action: "approve", changesJson: { description: "Stage completed", stageName: stage.templateName } });
+      await recordAudit({
+        actorRole: (user as any)?.role,
+        userId: user.id,
+        entityType: "eng_stage_gate",
+        entityId: String(stageId),
+        action: "COMPLETE_ENG_STAGE",
+        changesJson: { stageName: stage.templateName, projectId: stage.projectId },
+      });
 
       // Notify project team members + PM about stage completion
       try {
@@ -1264,6 +1309,14 @@ export function registerEngStageRoutes(app: Express) {
       }
 
       logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(stageId), action: "override", changesJson: { description: "Stage override completed", reason } });
+      await recordAudit({
+        actorRole: (user as any)?.role,
+        userId: user.id,
+        entityType: "eng_stage_gate",
+        entityId: String(stageId),
+        action: "OVERRIDE_ENG_STAGE",
+        changesJson: { reason, override_applied: true },
+      });
 
       // If this is the Handover Pack stage, log commissioning unlock
       const [overrideStageInfo] = await db.select({ projectId: projectEngStages.projectId, name: engStageTemplates.name })
