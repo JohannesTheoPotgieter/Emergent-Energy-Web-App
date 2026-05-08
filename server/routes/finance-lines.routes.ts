@@ -352,4 +352,97 @@ export function registerFinanceLinesRoutes(app: Express): void {
       }
     },
   );
+
+  /**
+   * Dual-write parity diagnostic.
+   *
+   *   GET /api/finance/recon-check/:projectId
+   *
+   * Compares the canonical line-level revenue derivation (§ 3.3) against
+   * the persisted `revenue_recognition_amount` values written by the
+   * Smart Import normalizer. Returns the project total from each source
+   * and the absolute drift.
+   *
+   * The two are dual-written today (per the agreed PR-1 architecture):
+   * the normalizer continues to populate the legacy column for any
+   * legacy reader, while new readers consume the line-level API.
+   * If the two ever diverge, one of them is wrong and the COO needs
+   * to know — this endpoint surfaces that drift on demand.
+   *
+   * Drift > R 1 per line on average is the soft threshold; the
+   * endpoint exposes raw numbers and lets the caller decide.
+   *
+   * Note: persisted `revenue_recognition_amount` lives on BOTH
+   * `normalized_cost_lines` (text, project-scoped legacy formula) and
+   * `normalized_cost_line_actuals` (decimal, also project-scoped at
+   * the time of import). We sum the actuals child column because that
+   * matches the line-grain the new API uses.
+   */
+  app.get(
+    "/api/finance/recon-check/:projectId",
+    requireAuth,
+    requirePermission("financials", "view"),
+    async (req: Request, res: Response) => {
+      try {
+        const projectId = parseProjectId(req.params.projectId);
+        const fyStart = parseIsoDate(req.query.fyStart, "fyStart");
+        const fyEnd = parseIsoDate(req.query.fyEnd, "fyEnd");
+        if (fyStart && fyEnd && fyStart > fyEnd) {
+          throw badRequest("fyStart must be on or before fyEnd", { fyStart, fyEnd });
+        }
+
+        const lines = await repo.getProjectFinanceLines(projectId, { fyStart, fyEnd });
+
+        // Line-level (canonical) totals from the new path.
+        const linelevel = lines.reduce(
+          (acc, l) => ({
+            revenue: acc.revenue + l.perLineRevenue,
+            cos: acc.cos + l.actualTotal,
+            gp: acc.gp + l.perLineGp,
+          }),
+          { revenue: 0, cos: 0, gp: 0 },
+        );
+
+        // Persisted totals via the repository (which keeps the snapshot
+        // guard and column lookups in one place — see § 3.3.2 single
+        // read path). The actuals child has a decimal column written by
+        // the Smart Import normalizer at write time. The fyStart/fyEnd
+        // window is the same `invoice_date` (col T) the line-level path
+        // uses, so the two totals are directly comparable.
+        const persisted = await repo.getPersistedRevenueRecognitionTotals(projectId, {
+          fyStart,
+          fyEnd,
+        });
+
+        const driftRevenue = linelevel.revenue - persisted.revenue;
+        const driftCos = linelevel.cos - persisted.cos;
+        const lineCount = lines.length;
+        const driftRevenuePerLine = lineCount > 0 ? driftRevenue / lineCount : 0;
+
+        res.json({
+          projectId,
+          fyStart: fyStart ?? null,
+          fyEnd: fyEnd ?? null,
+          lineCount,
+          linelevel,
+          persisted,
+          drift: {
+            revenue: driftRevenue,
+            cos: driftCos,
+            revenuePerLine: driftRevenuePerLine,
+            // Convenience flag for UI: > R 1 per line is "drift detected".
+            // Threshold is intentionally generous because legacy persisted
+            // values use a project-scoped formula, not the category-scoped
+            // one in § 3.3, so some drift is expected and informational.
+            detected: Math.abs(driftRevenuePerLine) > 1,
+          },
+        });
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        const wrapped = serverError("Failed to compute recon parity");
+        (wrapped as unknown as { cause?: unknown }).cause = err;
+        throw wrapped;
+      }
+    },
+  );
 }
