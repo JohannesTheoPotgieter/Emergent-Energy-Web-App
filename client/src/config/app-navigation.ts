@@ -224,6 +224,7 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "COS", path: "/cos" },
       { label: "COS Analysis", path: "/cos/analysis" },
       { label: "Revenue", path: "/revenue-tracker" },
+      { label: "GP", path: "/finance/gp/company" },
       { label: "Excel vs App", path: "/program/excel-vs-app" },
       { label: "QB Throughput", path: "/finance/quickbooks" },
       { label: "Financial Reviews", path: "/governance/financial-reviews" },
