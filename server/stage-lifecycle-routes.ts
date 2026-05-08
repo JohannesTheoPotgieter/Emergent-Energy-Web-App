@@ -42,6 +42,19 @@ import {
   projectStageDecisions,
 } from "@shared/schema";
 import { parseIntParam } from "./lib/req-params";
+import { findEntityRegistry } from "@shared/permissions/registry";
+import { evaluateStageAdvanceDecision } from "./lib/stage-advance-override-eval";
+
+// Plan v3 § 2.6 / D.6 #2 — snapshotted at module init from the canonical
+// entity registry. COO/CEO are the default-path admins (reason optional);
+// any other role in stage_gate.override_roles must supply a reason.
+const STAGE_ADVANCE_DEFAULT_ROLES: ReadonlySet<string> = new Set([
+  "COO_ADMIN",
+  "CEO_ADMIN",
+]);
+const STAGE_ADVANCE_OVERRIDE_ROLES: ReadonlySet<string> = new Set(
+  findEntityRegistry("stage_gate")?.override_roles ?? [],
+);
 
 function getUser(req: Request): { id: number; role: string } {
   const user = (req as any).user;
@@ -208,12 +221,21 @@ export function registerStageLifecycleRoutes(app: Express): void {
         const projectId = parseProjectId(req, res);
         if (!projectId) return;
         const user = getUser(req);
-        const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
-        if (!ADMIN_ROLES.includes(user.role)) {
-          return res.status(403).json({ error: "Only admin roles can advance stages" });
+        const decision = evaluateStageAdvanceDecision({
+          userRole: user.role,
+          rawReason: req.body?.reason,
+          defaultRoles: STAGE_ADVANCE_DEFAULT_ROLES,
+          overrideRoles: STAGE_ADVANCE_OVERRIDE_ROLES,
+        });
+        if (decision.kind === "reject") {
+          return res.status(decision.status).json(decision.body);
         }
+        const overrideApplied = decision.kind === "advance_with_override";
+        const reason = overrideApplied
+          ? `[OVERRIDE BY ${user.role}] ${decision.reason}`
+          : decision.reason ?? undefined;
+
         const targetStageCode = p(req.params.targetStageCode);
-        const { reason } = req.body || {};
 
         // Terminal stages must go through their dedicated endpoints so the
         // Hold/Done contract (preserve previous_phase, flip project_status,
@@ -234,7 +256,12 @@ export function registerStageLifecycleRoutes(app: Express): void {
           actorRole: user.role,
           reason,
         });
-        res.json(result);
+        res.json({
+          ...result,
+          ...(overrideApplied
+            ? { override_applied: true, override_reason: decision.reason }
+            : {}),
+        });
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         console.error("[stage-lifecycle] advance-to error:", msg);
