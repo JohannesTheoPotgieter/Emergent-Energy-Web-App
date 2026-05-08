@@ -16,7 +16,7 @@
  * Excel BOQ row that was settled across N invoices yields N API rows).
  */
 
-import { and, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import {
   categoryRevenueAllocations,
   normalizedCostLineActuals,
@@ -246,6 +246,65 @@ export class FinanceLineLevelRepository {
     ]);
 
     return deriveFinanceLinesFromRows(actualsRows, parentRows, allocationRows, opts);
+  }
+
+  /**
+   * Reads the persisted `revenue_recognition_amount` column on the
+   * actuals child for one project, aggregated to a single project total.
+   * Used by the dual-write parity diagnostic to compare against the
+   * canonical line-level revenue sum (§ 3.3 formula).
+   *
+   * Snapshot guard applied. The optional fyStart/fyEnd window filters on
+   * the same `invoice_date` (col T) the line-level path uses, so the
+   * two totals are directly comparable.
+   */
+  async getPersistedRevenueRecognitionTotals(
+    projectId: number,
+    opts: GetProjectFinanceLinesOptions = {},
+  ): Promise<{
+    revenue: number;
+    cos: number;
+    rowCount: number;
+    nonNullRevenueRowCount: number;
+  }> {
+    const rows = await this.dbInstance
+      .select({
+        invoiceDate: normalizedCostLineActuals.invoiceDate,
+        revenueRecognitionAmount: normalizedCostLineActuals.revenueRecognitionAmount,
+        actualTotal: normalizedCostLineActuals.actualTotal,
+      })
+      .from(normalizedCostLineActuals)
+      .where(
+        and(
+          eq(normalizedCostLineActuals.projectId, projectId),
+          isNull(normalizedCostLineActuals.effectiveTo),
+          isNull(normalizedCostLineActuals.deletedAt),
+        ),
+      );
+
+    let revenue = 0;
+    let cos = 0;
+    let rowCount = 0;
+    let nonNullRevenueRowCount = 0;
+    for (const r of rows) {
+      const iso = r.invoiceDate ? String(r.invoiceDate).slice(0, 10) : null;
+      if (opts.fyStart && (!iso || iso < opts.fyStart)) continue;
+      if (opts.fyEnd && (!iso || iso > opts.fyEnd)) continue;
+
+      rowCount += 1;
+      if (r.revenueRecognitionAmount != null) {
+        const v = Number(r.revenueRecognitionAmount);
+        if (Number.isFinite(v)) {
+          revenue += v;
+          nonNullRevenueRowCount += 1;
+        }
+      }
+      if (r.actualTotal != null) {
+        const v = Number(r.actualTotal);
+        if (Number.isFinite(v)) cos += v;
+      }
+    }
+    return { revenue, cos, rowCount, nonNullRevenueRowCount };
   }
 }
 
