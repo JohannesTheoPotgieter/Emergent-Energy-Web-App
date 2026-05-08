@@ -291,57 +291,36 @@ export class FinanceExpenseEngineRepository {
   }
 
   /**
-   * All current cost-line rows. Filters historical snapshots
-   * (`isNull(effectiveTo)`) and soft-deletes. Used by report/aggregation
-   * builders that need the full active population.
+   * All current cost-line rows. Returns ONE synthesized row per
+   * `normalized_cost_line_actuals` (child) row with parent metadata
+   * spread in. This is the canonical line-level data path — every
+   * consumer (COS tracker, Revenue tracker, cashflow, reports) reads
+   * cost lines at line grain so split-paid invoices count as N rows
+   * matching Excel column Q per row.
    *
-   * NOTE: also added independently in Wave 5.4 (PR #820); resolve any
-   * merge collision by keeping a single copy.
+   * Field provenance (matches AGENT_GUARDRAILS § 3.3):
+   *   - `amountExVat` = child.actualTotal (col Q)
+   *   - `invoiceDate` = child.invoiceDate (col T — recognition date)
+   *   - `invoiceNumber`, `poNumber` = child (fallback parent)
+   *   - `paidDate` = child.financePaymentDate when present (col W),
+   *     else parent.paidDate
+   *   - `id` = parent.id (so QB link lookups continue to resolve;
+   *     children of the same parent share the id, harmless because
+   *     the legacy bucketing only does `Map.has(id)` checks)
+   *   - All other fields (projectName, costCategory, invoiceDate-
+   *     FontColor, invoiceDateConfirmed, paidDateFontColor, paidDate-
+   *     Confirmed, status overrides) come from the parent — the
+   *     colour signal is stored at parent grain in today's data
+   *     model.
+   *
+   * Cost lines with NO actuals child are emitted as the parent row
+   * unchanged (budget-only lines that haven't been settled yet).
+   * Otherwise the Planned bucket would silently empty out.
+   *
+   * Snapshot-guarded (`isNull(effectiveTo)`) on both tables and
+   * soft-delete-aware.
    */
   async listAllActiveCostLines(): Promise<Array<typeof normalizedCostLines.$inferSelect>> {
-    if (process.env.LINE_LEVEL_COS_TRACKER === "on") {
-      return this.listAllActiveCostLinesLineLevel();
-    }
-    return this.dbInstance
-      .select()
-      .from(normalizedCostLines)
-      .where(and(
-        isNull(normalizedCostLines.effectiveTo),
-        isNull(normalizedCostLines.deletedAt),
-      ));
-  }
-
-  /**
-   * Line-level cutover variant — returns ONE synthesized row per
-   * `normalized_cost_line_actuals` (child) row, with parent metadata
-   * spread in for the fields the legacy COS / Revenue trackers read.
-   *
-   * Gated behind the `LINE_LEVEL_COS_TRACKER=on` env flag. Default
-   * is OFF — production keeps the parent-row data path until the
-   * COO and Programme Finance have signed off on the per-line
-   * Mondi numbers post-import.
-   *
-   * What changes when the flag is on:
-   *   - Row `amountExVat` comes from `actualTotal` on the child
-   *     (so split-paid invoices count as N rows, not 1).
-   *   - Row `invoiceDate` and `invoiceNumber` come from the child
-   *     (so the recognition month matches Excel column T per row).
-   *   - Row `paidDate` comes from the child's `financePaymentDate`
-   *     when present (per-actual cash date), else parent's paidDate.
-   *   - Row `id` stays the parent's id so QB link lookups continue
-   *     to resolve. Two children of the same parent share an id —
-   *     the legacy bucketing uses id only for `Map.has(id)` checks
-   *     so duplication is harmless.
-   *   - Other fields (projectName, projectId, costCategory,
-   *     invoiceDateFontColor, invoiceDateConfirmed, paidDateFontColor,
-   *     paidDateConfirmed, status overrides) come from the parent.
-   *
-   * Cost lines with NO actuals child are still emitted (as the
-   * parent row, unchanged) — these are budget-only lines that
-   * haven't been settled yet. Otherwise the planned bucket would
-   * silently empty out.
-   */
-  async listAllActiveCostLinesLineLevel(): Promise<Array<typeof normalizedCostLines.$inferSelect>> {
     const [parents, actuals] = await Promise.all([
       this.dbInstance
         .select()
