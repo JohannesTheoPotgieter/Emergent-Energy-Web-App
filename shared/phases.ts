@@ -55,7 +55,7 @@ export const PHASES: ReadonlyArray<CanonicalPhase> = [
   { code: 'S03_SIGNATURE_FINANCIAL_CLOSE', label: 'Financial Close',          displayNumber: 3,    ownerRole: 'PD',          isHandover: false, isSequential: true,  isTerminal: false },
   { code: 'S04_PLANNING',                  label: 'Planning',                 displayNumber: 4,    ownerRole: 'PM',          isHandover: false, isSequential: true,  isTerminal: false },
   { code: 'S06_CONSTRUCTION',              label: 'Construction',             displayNumber: 5,    ownerRole: 'PM',          isHandover: false, isSequential: true,  isTerminal: false },
-  { code: 'S07_COMMISSIONING',             label: 'Commissioning',            displayNumber: 6,    ownerRole: 'ENGINEERING', isHandover: false, isSequential: true,  isTerminal: false },
+  { code: 'S07_COMMISSIONING',             label: 'Commissioning & QA',       displayNumber: 6,    ownerRole: 'ENGINEERING', isHandover: false, isSequential: true,  isTerminal: false },
   { code: 'S08_OM_HANDOVER',               label: 'O&M Handover',             displayNumber: 7,    ownerRole: 'PM',          isHandover: true,  isSequential: true,  isTerminal: false },
   { code: 'S09_CLIENT_HANDOVER',           label: 'Client Handover',          displayNumber: 8,    ownerRole: 'PM',          isHandover: true,  isSequential: true,  isTerminal: false },
   { code: 'S10_POST_HANDOVER_REVIEW',      label: '3 Months Post HO Review',  displayNumber: 9,    ownerRole: 'PM',          isHandover: true,  isSequential: true,  isTerminal: false },
@@ -130,6 +130,9 @@ const PHASE_ALIASES: Readonly<Record<string, StageCode>> = {
   'pd-pm handover':               'S03_SIGNATURE_FINANCIAL_CLOSE',
   'financial review':             'S02_DESIGN_COST_PROPOSAL',
   'qa':                           'S07_COMMISSIONING',
+  // 2026-05-08 — S07 label was renamed 'Commissioning' → 'Commissioning & QA'.
+  // Keep the legacy short string as an alias for backwards compat.
+  'commissioning':                'S07_COMMISSIONING',
   'handover':                     'S08_OM_HANDOVER',
   'om handover':                  'S08_OM_HANDOVER',
   'commercial close out':         'S10_POST_HANDOVER_REVIEW',

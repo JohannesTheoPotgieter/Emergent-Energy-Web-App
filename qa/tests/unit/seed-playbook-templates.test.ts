@@ -25,6 +25,7 @@ const MIGRATION_PATH = path.join(
 const SQL = fs.readFileSync(MIGRATION_PATH, "utf8");
 
 const EXPECTED_TEMPLATES: ReadonlyArray<{ name: string; phase: string }> = [
+  // 13 playbook companion templates (docs/operating-model/playbook-v2.0.md:1233-1253)
   { name: "First Assessment Checklist", phase: "S01_FIRST_ASSESSMENT" },
   { name: "Feasibility Assumptions Register", phase: "S02_DESIGN_COST_PROPOSAL" },
   { name: "Cost Proposal Approval Sheet", phase: "S02_DESIGN_COST_PROPOSAL" },
@@ -38,24 +39,30 @@ const EXPECTED_TEMPLATES: ReadonlyArray<{ name: string; phase: string }> = [
   { name: "3-Month Post-HO Review", phase: "S10_POST_HANDOVER_REVIEW" },
   { name: "Compliance Handover", phase: "S9B_COMPLIANCE_HANDOVER" },
   { name: "Hold / Blocked Register", phase: "S_HOLD" },
+  // 5 additional operational templates surfaced during PR #852 review
+  { name: "Project Brief Template", phase: "S04_PLANNING" },
+  { name: "Commissioning Document", phase: "S07_COMMISSIONING" },
+  { name: "Pre-Commissioning Red Team Review", phase: "S06_CONSTRUCTION" },
+  { name: "Post-Works-Complete Red Team Review", phase: "S07_COMMISSIONING" },
+  { name: "Project Introduction", phase: "S04_PLANNING" },
 ];
 
 describe("0056_seed_playbook_templates — structure", () => {
-  it("contains exactly 13 INSERT statements", () => {
+  it("contains exactly 18 INSERT statements", () => {
     const inserts = SQL.match(/INSERT INTO phase_template/g) ?? [];
-    expect(inserts.length).toBe(13);
+    expect(inserts.length).toBe(18);
   });
 
-  it("contains exactly 13 WHERE NOT EXISTS idempotency guards", () => {
+  it("contains exactly 18 WHERE NOT EXISTS idempotency guards", () => {
     const guards = SQL.match(/WHERE NOT EXISTS\s*\(/g) ?? [];
-    expect(guards.length).toBe(13);
+    expect(guards.length).toBe(18);
   });
 
   it("each INSERT pairs with a guard (no unguarded INSERT slipped through)", () => {
     // Split on INSERT statements; every block except the first prologue
     // should contain a `WHERE NOT EXISTS`.
     const blocks = SQL.split(/INSERT INTO phase_template/).slice(1);
-    expect(blocks.length).toBe(13);
+    expect(blocks.length).toBe(18);
     for (const block of blocks) {
       expect(block, `INSERT block missing WHERE NOT EXISTS:\n${block.slice(0, 200)}`)
         .toMatch(/WHERE NOT EXISTS/);
