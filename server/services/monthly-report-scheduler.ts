@@ -10,6 +10,7 @@ import { monthlyReportSnapshots } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { generatePmReportData } from "./pm-monthly-report-service";
 import { generateEngineeringReportData } from "./engineering-monthly-report-service";
+import { logAudit } from "../audit-logger";
 
 let schedulerInterval: ReturnType<typeof setInterval> | null = null;
 let lastCheckedDate = "";
@@ -45,14 +46,15 @@ async function generateMonthlyReport(reportType: "pm" | "engineering", month: st
     ? await generatePmReportData(month)
     : await generateEngineeringReportData(month);
 
+  let inserted: { id: number } | undefined;
   try {
-    await db.insert(monthlyReportSnapshots).values({
+    [inserted] = await db.insert(monthlyReportSnapshots).values({
       reportType,
       reportMonth: month,
       status: "draft",
       data,
       generatedAt: new Date(),
-    });
+    }).returning({ id: monthlyReportSnapshots.id });
   } catch (err: unknown) {
     // Handle unique constraint violation (race condition — another instance already created it)
     if ((err instanceof Error ? err.message : String(err))?.includes("unique") || (err instanceof Error ? err.message : String(err))?.includes("duplicate") || (err as any).code === "23505") {
@@ -61,6 +63,23 @@ async function generateMonthlyReport(reportType: "pm" | "engineering", month: st
     }
     throw err;
   }
+
+  // Emit audit event so the auto-generated report appears in the audit
+  // timeline alongside review / publish / regenerate transitions per
+  // T1.x audit Finding B.
+  logAudit({
+    entityType: "monthly_report",
+    ...(inserted ? { entityId: String(inserted.id) } : {}),
+    action: "auto_generate",
+    actorRole: "system",
+    source: "SYSTEM",
+    changesJson: {
+      report_type: reportType,
+      report_month: month,
+      status: "draft",
+      trigger: "scheduler_first_of_month",
+    },
+  }).catch(() => {});
 
   console.log(`[Monthly Report Scheduler] Auto-generated ${reportType} draft report for ${month}`);
   return true;

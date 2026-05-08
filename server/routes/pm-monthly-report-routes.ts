@@ -11,6 +11,7 @@ import { generatePmReportData } from "../services/pm-monthly-report-service";
 import { requireAuth, validateMonth, computeKpiDeltas, computeReportFreshness } from "./monthly-report-shared";
 import { getPmDrilldownRows, writeDrilldownExcel } from "../services/report-drilldown-service";
 import { parseIntParam } from "../lib/req-params";
+import { logAuditFromReq } from "../audit-logger";
 
 const REPORT_TYPE = "pm";
 
@@ -146,6 +147,18 @@ export function registerPmMonthlyReportRoutes(app: Express) {
         updatedAt: new Date(),
       }).where(eq(monthlyReportSnapshots.id, id));
 
+      logAuditFromReq(req, {
+        entityType: "monthly_report",
+        entityId: String(id),
+        action: "review",
+        changesJson: {
+          report_type: REPORT_TYPE,
+          report_month: snapshot.reportMonth,
+          from_status: "draft",
+          to_status: "reviewed",
+        },
+      });
+
       res.json({ success: true, status: "reviewed" });
     } catch (err: unknown) {
       console.error("[PM Monthly Report] Review error:", (err instanceof Error ? err.message : String(err)));
@@ -172,6 +185,18 @@ export function registerPmMonthlyReportRoutes(app: Express) {
         updatedAt: new Date(),
       }).where(eq(monthlyReportSnapshots.id, id));
 
+      logAuditFromReq(req, {
+        entityType: "monthly_report",
+        entityId: String(id),
+        action: "publish",
+        changesJson: {
+          report_type: REPORT_TYPE,
+          report_month: snapshot.reportMonth,
+          from_status: "reviewed",
+          to_status: "published",
+        },
+      });
+
       res.json({ success: true, status: "published" });
     } catch (err: unknown) {
       console.error("[PM Monthly Report] Publish error:", (err instanceof Error ? err.message : String(err)));
@@ -195,6 +220,18 @@ export function registerPmMonthlyReportRoutes(app: Express) {
         updatedAt: new Date(),
       }).where(eq(monthlyReportSnapshots.id, id));
 
+      logAuditFromReq(req, {
+        entityType: "monthly_report",
+        entityId: String(id),
+        action: "revert",
+        changesJson: {
+          report_type: REPORT_TYPE,
+          report_month: snapshot.reportMonth,
+          from_status: "reviewed",
+          to_status: "draft",
+        },
+      });
+
       res.json({ success: true, status: "draft" });
     } catch (err: unknown) {
       console.error("[PM Monthly Report] Revert error:", (err instanceof Error ? err.message : String(err)));
@@ -216,6 +253,17 @@ export function registerPmMonthlyReportRoutes(app: Express) {
         regeneratedAt: new Date(),
         updatedAt: new Date(),
       }).where(eq(monthlyReportSnapshots.id, id));
+
+      logAuditFromReq(req, {
+        entityType: "monthly_report",
+        entityId: String(id),
+        action: "regenerate",
+        changesJson: {
+          report_type: REPORT_TYPE,
+          report_month: snapshot.reportMonth,
+          status: "draft",
+        },
+      });
 
       const [updated] = await db.select().from(monthlyReportSnapshots).where(and(eq(monthlyReportSnapshots.id, id), eq(monthlyReportSnapshots.reportType, REPORT_TYPE))).limit(1);
       res.json({
