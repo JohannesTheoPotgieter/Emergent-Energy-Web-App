@@ -3,7 +3,7 @@
 // add explicit ': any' to .map/.filter callback params on db result rows.
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { sql, eq, and, inArray, desc } from "drizzle-orm";
+import { sql, eq, and, inArray, desc, isNull } from "drizzle-orm";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -107,7 +107,7 @@ export async function generateEngStagesForProject(
     }).returning({ id: projectEngStages.id });
 
     const taskTemplates = await db.select().from(engTaskTemplates)
-      .where(eq(engTaskTemplates.stageTemplateId, template.id))
+      .where(and(eq(engTaskTemplates.stageTemplateId, template.id), isNull(engTaskTemplates.deletedAt)))
       .orderBy(engTaskTemplates.sequence);
 
     for (const tt of taskTemplates) {
@@ -164,8 +164,8 @@ export function registerEngStageRoutes(app: Express) {
 
       const result = [];
       for (const t of templates) {
-        const taskCount = await db.select({ count: sql<number>`count(*)` }).from(engTaskTemplates).where(eq(engTaskTemplates.stageTemplateId, t.id));
-        const delCount = await db.select({ count: sql<number>`count(*)` }).from(engDeliverableTemplates).where(eq(engDeliverableTemplates.stageTemplateId, t.id));
+        const taskCount = await db.select({ count: sql<number>`count(*)` }).from(engTaskTemplates).where(and(eq(engTaskTemplates.stageTemplateId, t.id), isNull(engTaskTemplates.deletedAt)));
+        const delCount = await db.select({ count: sql<number>`count(*)` }).from(engDeliverableTemplates).where(and(eq(engDeliverableTemplates.stageTemplateId, t.id), isNull(engDeliverableTemplates.deletedAt)));
         result.push({
           ...t,
           taskCount: Number(taskCount[0]?.count || 0),
@@ -186,8 +186,8 @@ export function registerEngStageRoutes(app: Express) {
       const [template] = await db.select().from(engStageTemplates).where(eq(engStageTemplates.id, id));
       if (!template) return res.status(404).json({ error: "Template not found" });
 
-      const tasks = await db.select().from(engTaskTemplates).where(eq(engTaskTemplates.stageTemplateId, id)).orderBy(engTaskTemplates.sequence);
-      const deliverables = await db.select().from(engDeliverableTemplates).where(eq(engDeliverableTemplates.stageTemplateId, id));
+      const tasks = await db.select().from(engTaskTemplates).where(and(eq(engTaskTemplates.stageTemplateId, id), isNull(engTaskTemplates.deletedAt))).orderBy(engTaskTemplates.sequence);
+      const deliverables = await db.select().from(engDeliverableTemplates).where(and(eq(engDeliverableTemplates.stageTemplateId, id), isNull(engDeliverableTemplates.deletedAt)));
 
       res.json({ template, tasks, deliverables });
     } catch (err: any) {
@@ -219,7 +219,7 @@ export function registerEngStageRoutes(app: Express) {
       const stageTemplateId = parseIntParam(req.params.id);
       const { title, description, isRequired, sequence, defaultOwnerRole } = req.body;
       if (!title) return res.status(400).json({ error: "Title is required" });
-      const maxSeq = await db.select({ max: sql<number>`COALESCE(MAX(sequence), 0)` }).from(engTaskTemplates).where(eq(engTaskTemplates.stageTemplateId, stageTemplateId));
+      const maxSeq = await db.select({ max: sql<number>`COALESCE(MAX(sequence), 0)` }).from(engTaskTemplates).where(and(eq(engTaskTemplates.stageTemplateId, stageTemplateId), isNull(engTaskTemplates.deletedAt)));
       const [task] = await db.insert(engTaskTemplates).values({
         stageTemplateId,
         title,
@@ -526,7 +526,7 @@ export function registerEngStageRoutes(app: Express) {
 
       const deliverableTemplatesForStage = await db.select()
         .from(engDeliverableTemplates)
-        .where(eq(engDeliverableTemplates.stageTemplateId, stage.stageTemplateId));
+        .where(and(eq(engDeliverableTemplates.stageTemplateId, stage.stageTemplateId), isNull(engDeliverableTemplates.deletedAt)));
 
       const uploadedDeliverables = await db.select()
         .from(projectEngDeliverables)
@@ -1054,7 +1054,7 @@ export function registerEngStageRoutes(app: Express) {
 
       if (rules.requireAllDeliverables) {
         const delTemplates = await db.select().from(engDeliverableTemplates)
-          .where(eq(engDeliverableTemplates.stageTemplateId, stage.stageTemplateId));
+          .where(and(eq(engDeliverableTemplates.stageTemplateId, stage.stageTemplateId), isNull(engDeliverableTemplates.deletedAt)));
 
         const uploaded = await db.select({ deliverableTemplateId: projectEngDeliverables.deliverableTemplateId })
           .from(projectEngDeliverables)
@@ -1092,7 +1092,7 @@ export function registerEngStageRoutes(app: Express) {
       // templates are unaffected.
       if (rules.requireIfcIssuance) {
         const delTemplates = await db.select().from(engDeliverableTemplates)
-          .where(eq(engDeliverableTemplates.stageTemplateId, stage.stageTemplateId));
+          .where(and(eq(engDeliverableTemplates.stageTemplateId, stage.stageTemplateId), isNull(engDeliverableTemplates.deletedAt)));
         const uploadedIfc = await db.select({
           deliverableTemplateId: projectEngDeliverables.deliverableTemplateId,
           releasedFor: projectEngDeliverables.releasedFor,
@@ -1119,7 +1119,7 @@ export function registerEngStageRoutes(app: Express) {
       // state `as_built` (not just IFC) for the stage to be marked complete.
       if (rules.requireAsBuilt) {
         const delTemplates = await db.select().from(engDeliverableTemplates)
-          .where(eq(engDeliverableTemplates.stageTemplateId, stage.stageTemplateId));
+          .where(and(eq(engDeliverableTemplates.stageTemplateId, stage.stageTemplateId), isNull(engDeliverableTemplates.deletedAt)));
         const uploadedAb = await db.select({
           deliverableTemplateId: projectEngDeliverables.deliverableTemplateId,
           releasedFor: projectEngDeliverables.releasedFor,
