@@ -123,9 +123,13 @@ function mapWorkItemsToNormalizedFormat(items: WorkItem[], projectName: string, 
       startDate: wi.startDate,
       endDate: wi.endDate,
       durationDays: wi.duration,
-      actualStartDate: wi.actualStart || wi.startDate,
-      actualEndDate: wi.actualEnd || wi.endDate,
-      actualDurationDays: wi.actualDuration || wi.duration,
+      // § 3.7 HARD: actuals fields hold actuals only. NEVER fall back
+      // to planned dates — that would silently shift the perceived
+      // programme. Null means "actual not yet known" — let the UI
+      // render an em-dash or "not started".
+      actualStartDate: wi.actualStart,
+      actualEndDate: wi.actualEnd,
+      actualDurationDays: wi.actualDuration,
       owner: effectiveAssignees && effectiveAssignees.length > 0 ? effectiveAssignees[0] : null,
       assignees: effectiveAssignees,
       assigneeUserId: wi.ownerUserId,
@@ -431,8 +435,9 @@ export async function getAllPMWorkItemsAsProjectPlan(): Promise<any[]> {
       title: wi.title,
       taskNo: wi.wbsCode,
       rowNumber: rowNum,
-      actualStart: wi.actualStart || wi.startDate,
-      actualEnd: wi.actualEnd || wi.endDate,
+      // § 3.7 HARD: actuals fields hold actuals only. Never fall back to planned.
+      actualStart: wi.actualStart,
+      actualEnd: wi.actualEnd,
       actualPctComplete: wi.percentComplete,
       expectedPctComplete: null,
       durationDays: wi.duration,

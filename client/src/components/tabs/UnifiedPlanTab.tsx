@@ -95,6 +95,26 @@ const getHolidaysForYear = (y: number) => {
   return _holidayCache.get(y)!;
 };
 
+/**
+ * Display-time date pair for a task. Returns the *displayed* start / finish
+ * for Gantt bars, project-duration calcs and parent rollups.
+ *
+ * § 3.7 HARD: actual fields hold actuals only — server-side
+ * `work-items-adapter.ts` exposes `actualStartDate`/`actualEndDate` as null
+ * when no actual exists. For visual continuity (a Gantt bar has to render
+ * something), the client falls back to planned dates here. This fallback
+ * is **display-only** — never write the result back to the actual fields,
+ * never propagate it to a finance / variance / cashflow surface, never
+ * persist it. Compare against the actuals fields directly when you need to
+ * answer "did this actually happen yet?".
+ */
+const displayRange = (t: { actualStartDate?: string | null; actualEndDate?: string | null; startDate?: string | null; dueDate?: string | null }) => ({
+  start: t.actualStartDate || t.startDate || null,
+  end: t.actualEndDate || t.dueDate || null,
+  isActualStart: t.actualStartDate != null,
+  isActualEnd: t.actualEndDate != null,
+});
+
 const countWorkingDays = (startDate: Date, endDate: Date): number => {
   if (startDate >= endDate) return 0;
   let count = 0;
@@ -1173,8 +1193,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     let earliestStart: Date | null = null;
     let latestEnd: Date | null = null;
     for (const t of source) {
-      const s = t.actualStartDate || t.startDate;
-      const e = t.actualEndDate || t.dueDate;
+      const { start: s, end: e } = displayRange(t);
       if (s) {
         const sd = new Date(s);
         if (!isNaN(sd.getTime()) && (!earliestStart || sd < earliestStart)) earliestStart = sd;
@@ -1198,8 +1217,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     let minDate: Date | null = null;
     let maxDate: Date | null = null;
     for (const t of tasks) {
-      const s = t.actualStartDate || t.startDate;
-      const e = t.actualEndDate || t.dueDate;
+      const { start: s, end: e } = displayRange(t);
       if (s) {
         const d = new Date(s);
         if (isValid(d) && (!minDate || d < minDate)) minDate = d;
@@ -1262,8 +1280,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       let totalDuration = 0;
 
       for (const c of children) {
-        const cs = c.actualStartDate || c.startDate;
-        const ce = c.actualEndDate || c.dueDate;
+        const { start: cs, end: ce } = displayRange(c);
         if (cs && (!minStart || cs < minStart)) minStart = cs;
         if (ce && (!maxFinish || ce > maxFinish)) maxFinish = ce;
         const cDur = (() => {
@@ -1303,8 +1320,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
   const todayOffset = differenceInDays(today, ganttRange.start) * dayWidth;
 
   const getBarStyle = useCallback((task: any) => {
-    const s = task.actualStartDate || task.startDate;
-    const e = task.actualEndDate || task.dueDate;
+    const { start: s, end: e } = displayRange(task);
     if (!s || !e) return null;
     const startD = new Date(s);
     const endD = new Date(e);
@@ -2150,12 +2166,13 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                   const isDragging = dragTaskId === task.id;
                   const dropClass = getDropIndicatorClass(task.id);
 
-                  const taskStart = rollup?.start || task.actualStartDate || task.startDate || null;
-                  const taskFinish = rollup?.finish || task.actualEndDate || task.dueDate || null;
+                  const _taskRange = displayRange(task);
+                  const taskStart = rollup?.start || _taskRange.start;
+                  const taskFinish = rollup?.finish || _taskRange.end;
                   const taskDuration = (() => {
                     if (rollup) return rollup.duration;
-                    const s = task.actualStartDate || task.startDate;
-                    const e = task.actualEndDate || task.dueDate;
+                    const s = _taskRange.start;
+                    const e = _taskRange.end;
                     if (s && e) {
                       const sd = new Date(s);
                       const ed = new Date(e);

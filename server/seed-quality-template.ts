@@ -86,6 +86,22 @@ export async function seedQualityTemplate() {
           { itemName: "Subcontractor Roof entry report inspected", isEvidenceRequired: true },
         ],
       },
+      // Playbook § 5.6 hard QA hold points — torque records, IR tests,
+      // Voc readings, photos. Each is evidence-required so the warning
+      // engine fires `missing_evidence` if approved without proof.
+      {
+        groupName: "QA hold points (§ 5.6)", sortOrder: 1,
+        items: [
+          { itemName: "Torque records uploaded — DC connections (per row / combiner)", isEvidenceRequired: true },
+          { itemName: "Torque records uploaded — AC connections (DB / inverter terminals)", isEvidenceRequired: true },
+          { itemName: "Insulation resistance (IR) test report — DC strings", isEvidenceRequired: true },
+          { itemName: "Insulation resistance (IR) test report — AC final circuits", isEvidenceRequired: true },
+          { itemName: "Voc / Isc readings recorded per string", isEvidenceRequired: true },
+          { itemName: "Earthing continuity test report", isEvidenceRequired: true },
+          { itemName: "Photos uploaded — array layout, terminations, labelling, signage", isEvidenceRequired: true },
+          { itemName: "QM / Construction Manager sign-off on hold-point pack", isEvidenceRequired: true },
+        ],
+      },
     ],
     commissioning: [
       {
