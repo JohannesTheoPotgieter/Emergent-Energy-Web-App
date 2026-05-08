@@ -2,6 +2,7 @@ import { and, asc, count, desc, eq, ilike, inArray, isNull, sql } from "drizzle-
 import { db } from "../../../db";
 import { auditEvents, invoiceCaptures, normalizedCostLines, normalizedRevenueLines, procurementItems, projectEngDeliverables, projectEngStages, projectInfo, projectPhaseHistory, projectRevenueSummary, qcChecklist, qcItemInstance, smartImportRuns, workItems, workItemPm, workItemEngineering, workItemScheduling, users, counterparties, projectExecutionState, projectSettings, projectTeamMembers, dashboardProjectMetrics, qcWarning, qcItemEvidence, priorityProjects } from "@shared/schema";
 import { syncProjectSplitTables } from "../../../lib/project-info-sync";
+import { recordAudit } from "../services/audit-service";
 
 export async function listProjects(params: { q?: string; page: number; pageSize: number; sortBy?: string; sortDir: "asc" | "desc"; scopeProjectIds?: Set<number> | null; priorityId?: number }) {
   const filters = [isNull(projectExecutionState.deletedAt)];
@@ -57,6 +58,13 @@ export async function transitionProjectToConstruction(projectId: number, userId:
       .where(eq(projectInfo.id, projectId))
       .returning();
     await syncProjectSplitTables(projectId, constructionFields, tx);
+    await recordAudit({
+      userId,
+      entityType: "project",
+      entityId: String(projectId),
+      action: "TRANSITION_TO_CONSTRUCTION",
+      changesJson: { fromPhase, toPhase: "Construction", reason },
+    });
     return updated;
   });
 }

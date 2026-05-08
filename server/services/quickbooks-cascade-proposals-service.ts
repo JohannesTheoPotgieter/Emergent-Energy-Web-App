@@ -24,6 +24,7 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { db } from "../db";
+import { recordAudit } from "../api/v2/services/audit-service";
 import {
   counterparties,
   importQbVariances,
@@ -809,6 +810,20 @@ export async function acceptProposal(args: AcceptArgs): Promise<QbLinkProposedCa
         proposalType: proposal.proposalType,
         linkId: proposal.linkId,
         importRunId: args.importRunId ?? null,
+      },
+    });
+    await recordAudit({
+      userId: args.userId ?? undefined,
+      entityType: "qb_cascade_proposal",
+      entityId: String(proposal.id),
+      action: "ACCEPT_QB_CASCADE",
+      changesJson: {
+        proposalType: proposal.proposalType,
+        linkId: proposal.linkId,
+        fromStatus: proposal.status,
+        toStatus: "accepted",
+        importRunId: args.importRunId ?? null,
+        note: args.note ?? null,
       },
     });
     return row!;

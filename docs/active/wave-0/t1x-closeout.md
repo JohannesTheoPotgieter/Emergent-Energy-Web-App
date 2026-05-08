@@ -3,7 +3,9 @@
 **Date:** 2026-05-08
 **Phase:** Plan v3 § 3 (Reporting Trust)
 **Audience:** Johannes (COO) + future agents running T2 / T3 / similar trust audits
-**Companion docs:** `docs/active/wave-0/t1x-reporting-findings.md` (the audit itself), `docs/AGENT_GUARDRAILS.md` § 3 (financial-formula HARD rules)
+**Companion docs:** `docs/active/wave-0/t1x-reporting-findings.md` (the audit itself), `docs/active/wave-0/decisions-log.md` (the non-code decisions), `docs/active/wave-0/remediation-decision.md` (Track A § 1.4 outcome), `docs/AGENT_GUARDRAILS.md` § 3 (financial-formula HARD rules)
+
+> **Note on `findings.md`:** Plan v3 § 0.4 referenced a single `docs/active/wave-0/findings.md` produced by the Wave 0 audit. That broad doc has been superseded by the per-pillar findings files (`t1x-reporting-findings.md`, plus T2 / T3 once they land). The narrower per-pillar shape proved easier to triage and fix-PR against. No separate consolidated findings doc is planned.
 
 This is institutional memory for the audit → triage → 8-PR fix flow that closed § 3.1 → § 3.3 in one working day. It exists so the next trust audit (T2 inventory, T3 cashflow scenario, future portfolio-level audits) starts from the patterns that worked, not from a blank page.
 

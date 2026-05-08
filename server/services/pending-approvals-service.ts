@@ -8,6 +8,7 @@ import {
   type PendingApprovalKind,
   type PendingApprovalStatus,
 } from "@shared/schema";
+import { recordAudit } from "../api/v2/services/audit-service";
 
 export type ProposeApprovalInput = {
   kind: PendingApprovalKind;
@@ -173,6 +174,13 @@ export async function approvePending(id: number, decidedByUserId: number): Promi
       changedByUserId: decidedByUserId,
       detailsJson: { kind: row.kind, appliedRecordId },
     });
+    await recordAudit({
+      userId: decidedByUserId,
+      entityType: "pending_approval",
+      entityId: String(id),
+      action: "APPROVE_PENDING",
+      changesJson: { kind: row.kind, fromStatus: row.status, toStatus: "approved", appliedRecordId },
+    });
     return approved;
   });
 }
@@ -206,6 +214,13 @@ export async function rejectPending(id: number, decidedByUserId: number, reason:
       changedByUserId: decidedByUserId,
       reason,
       detailsJson: { kind: row.kind },
+    });
+    await recordAudit({
+      userId: decidedByUserId,
+      entityType: "pending_approval",
+      entityId: String(id),
+      action: "REJECT_PENDING",
+      changesJson: { kind: row.kind, fromStatus: row.status, toStatus: "rejected", reason },
     });
     return rejected;
   });
