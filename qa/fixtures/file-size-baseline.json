@@ -26,15 +26,15 @@
     },
     {
       "file": "client/src/components/tabs/UnifiedPlanTab.tsx",
-      "loc": 2977
+      "loc": 2994
+    },
+    {
+      "file": "server/quality-routes.ts",
+      "loc": 2848
     },
     {
       "file": "client/src/pages/projects.tsx",
       "loc": 2814
-    },
-    {
-      "file": "server/quality-routes.ts",
-      "loc": 2693
     },
     {
       "file": "server/routes/quickbooks-invoice-matches.routes.ts",
@@ -81,16 +81,16 @@
       "loc": 2126
     },
     {
+      "file": "client/src/pages/finance-quickbooks-throughput.tsx",
+      "loc": 2120
+    },
+    {
       "file": "server/ee-info-routes.ts",
       "loc": 2111
     },
     {
       "file": "server/lib/import/normalizer.ts",
       "loc": 2109
-    },
-    {
-      "file": "client/src/pages/finance-quickbooks-throughput.tsx",
-      "loc": 2087
     },
     {
       "file": "client/src/pages/lifecycle-board.tsx",
@@ -114,19 +114,19 @@
     },
     {
       "file": "client/src/components/TaskDetailDrawer.tsx",
-      "loc": 1898
+      "loc": 1901
     },
     {
       "file": "server/seed-ee-info-updates.ts",
       "loc": 1820
     },
     {
-      "file": "server/quickbooks-routes.ts",
-      "loc": 1793
-    },
-    {
       "file": "client/src/pages/collaboration.tsx",
       "loc": 1788
+    },
+    {
+      "file": "server/quickbooks-routes.ts",
+      "loc": 1787
     },
     {
       "file": "server/departments/exco-routes.ts",
@@ -153,6 +153,10 @@
       "loc": 1719
     },
     {
+      "file": "server/eng-stage-routes.ts",
+      "loc": 1715
+    },
+    {
       "file": "client/src/pages/project-lifecycle.tsx",
       "loc": 1702
     },
@@ -161,16 +165,16 @@
       "loc": 1608
     },
     {
-      "file": "server/eng-stage-routes.ts",
-      "loc": 1593
-    },
-    {
       "file": "shared/schema/projects.ts",
       "loc": 1577
     },
     {
       "file": "client/src/pages/subcontractor-dashboard.tsx",
       "loc": 1568
+    },
+    {
+      "file": "server/services/stage-lifecycle-service.ts",
+      "loc": 1565
     },
     {
       "file": "server/handover-routes.ts",
@@ -182,10 +186,6 @@
     },
     {
       "file": "server/services/gate-auto-evaluator-service.ts",
-      "loc": 1538
-    },
-    {
-      "file": "server/services/stage-lifecycle-service.ts",
       "loc": 1538
     },
     {

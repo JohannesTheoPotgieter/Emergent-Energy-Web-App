@@ -592,8 +592,34 @@ export async function getCompanyOverviewData() {
     ? (evidenceComplete.length / stageRequirements.length) * 100
     : 0;
 
-  // Repeat defect rate (simplified: snags marked as recurring)
-  const repeatDefectRate = 0; // No repeat flag in current snag model
+  // Repeat defect rate — heuristic: % of (projectId, warningType) pairs
+  // that have a resolved warning AND another open or resolved warning of
+  // the same shape later. The auto-resolve flow in `recalculateWarnings`
+  // closes a warning when its underlying condition clears, so a second
+  // occurrence is a true re-firing of the defect.
+  const totalProjectTypeKeys = new Set<string>();
+  const repeatProjectTypeKeys = new Set<string>();
+  const firstSeenByKey = new Map<string, number>();
+  const sortedWarnings = [...qcWarnings].sort((a, b) => {
+    const at = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return at - bt;
+  });
+  for (const w of sortedWarnings) {
+    if (w.projectId == null || !w.warningType) continue;
+    const key = `${w.projectId}:${w.warningType}`;
+    totalProjectTypeKeys.add(key);
+    const ts = w.createdAt ? new Date(w.createdAt).getTime() : 0;
+    const prev = firstSeenByKey.get(key);
+    if (prev != null && ts > prev) {
+      repeatProjectTypeKeys.add(key);
+    } else {
+      firstSeenByKey.set(key, ts);
+    }
+  }
+  const repeatDefectRate = totalProjectTypeKeys.size > 0
+    ? (repeatProjectTypeKeys.size / totalProjectTypeKeys.size) * 100
+    : 0;
 
   const qualKpis = new Map<string, { actual: number | null; target?: number | null }>([
     ["qual_red_team_pass_rate", { actual: qualityPassRate }],

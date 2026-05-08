@@ -28,6 +28,7 @@ import {
   type TrafficLight,
 } from "@shared/schema";
 import { db } from "../db";
+import { recordAudit } from "../api/v2/services/audit-service";
 import {
   canTransition,
   computeReadinessPct,
@@ -821,6 +822,15 @@ export async function transitionStageStatus(params: TransitionParams): Promise<P
     rationale: reason || null,
   });
 
+  await recordAudit({
+    actorRole,
+    userId: actorUserId,
+    entityType: "stage",
+    entityId: `${projectId}:${stageCode}`,
+    action: isAdmin ? "STAGE_OVERRIDE_STATUS" : "TRANSITION_STAGE_STATUS",
+    changesJson: { projectId, stageCode, fromStatus: currentStatus, toStatus: newStatus, reason: reason ?? null, isOverride: isAdmin === true },
+  });
+
   // B1: capture stage gate evidence snapshot for post-mortem. Non-blocking.
   if (newStatus === 'approved' || newStatus === 'progressed') {
     const transitionType = isAdmin
@@ -1260,6 +1270,15 @@ export async function advanceToStage(params: {
 
   await syncCurrentStage(projectId);
 
+  await recordAudit({
+    actorRole: params.actorRole,
+    userId: actorUserId,
+    entityType: "project",
+    entityId: String(projectId),
+    action: "ADVANCE_TO_STAGE",
+    changesJson: { projectId, targetStageCode, skippedStages: skipped, reason: reason ?? null },
+  });
+
   return { skipped, currentStage: targetStageCode };
 }
 
@@ -1531,6 +1550,14 @@ export async function markProjectDone(params: TerminalTransitionParams): Promise
     decidedByUserId: actorUserId,
     decidedDate: now,
     rationale: reason ?? 'Closed via terminal Done branch',
+  });
+
+  await recordAudit({
+    userId: actorUserId,
+    entityType: "project",
+    entityId: String(projectId),
+    action: "MARK_PROJECT_DONE",
+    changesJson: { projectId, reason: reason ?? null },
   });
 
   return { stageInstanceId: doneInstance.id };

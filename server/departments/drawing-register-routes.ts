@@ -15,6 +15,7 @@ import {
   type DrawingStatus,
 } from "@shared/schema/engineering";
 import { logAuditFromReq } from "../audit-logger";
+import { recordAudit } from "../api/v2/services/audit-service";
 import { getEffectiveUser } from "../auth-context";
 import { requireRole } from "./shared-middleware";
 
@@ -147,6 +148,14 @@ router.patch("/api/drawings/:id", requireAuth, requireRole(...DRAWING_WRITE_ROLE
           from,
           to,
         },
+      });
+      await recordAudit({
+        actorRole: (user as any)?.role,
+        userId: user?.id,
+        entityType: "drawing_register",
+        entityId: String(id),
+        action: to === "ifc" ? "ISSUE_DRAWING_FOR_CONSTRUCTION" : to === "as_built" ? "MARK_DRAWING_AS_BUILT" : "TRANSITION_DRAWING_STATUS",
+        changesJson: { drawingNumber: existing.drawingNumber, from, to },
       });
     }
 

@@ -15,6 +15,7 @@ import {
   type InsertOmHandover,
 } from "@shared/schema";
 import { db } from "../db";
+import { recordAudit } from "../api/v2/services/audit-service";
 
 /**
  * Roles allowed to mark an O&M handover as COMPLETE via the
@@ -162,6 +163,14 @@ export async function markOmHandoverComplete(params: {
       changedByUserId: params.userId,
       changedByRole: params.userRole,
       detailsJson: { actualHandoverDate: updated.actualHandoverDate },
+    });
+    await recordAudit({
+      actorRole: params.userRole ?? undefined,
+      userId: params.userId ?? undefined,
+      entityType: "om_handover",
+      entityId: String(params.id),
+      action: "MARK_COMPLETE",
+      changesJson: { fromStatus: existing.status, toStatus: "completed", actualHandoverDate: updated.actualHandoverDate },
     });
     return updated as OmHandover;
   });

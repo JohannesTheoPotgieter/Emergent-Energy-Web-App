@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { users } from "./users";
 import { projectInfo } from "./projects";
+import { counterparties } from "./finance";
 
 // ===================== QUALITY MODULE TABLES =====================
 
@@ -345,4 +346,79 @@ export const evidenceOverrideRecords = pgTable("evidence_override_records", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export type EvidenceOverrideRecord = typeof evidenceOverrideRecords.$inferSelect;
+
+// ===================== NCR (Non-Conformance Report) =====================
+// Plan v3 Track D / T3-2: NCRs were previously created by `CREATE TABLE
+// IF NOT EXISTS` in `server/quality-ncr-routes.ts:ensureNcrTables()` —
+// off-Drizzle, no FKs, no phase / sub-contractor / checklist linkage,
+// no waived state. This is the canonical Drizzle-defined surface.
+//
+// Status state machine: open → investigating → corrective_action →
+// verification → closed | waived.  `waived` is reachable from any
+// non-closed state when an authorised user records a waiver reason; it
+// is terminal alongside closed.
+
+export const ncrStatusEnum = pgEnum('ncr_status', [
+  'open',
+  'investigating',
+  'corrective_action',
+  'verification',
+  'closed',
+  'waived',
+]);
+
+export const ncrSeverityEnum = pgEnum('ncr_severity', [
+  'minor',
+  'major',
+  'critical',
+]);
+
+export const ncrReports = pgTable("ncr_reports", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  /** Phase at the moment the NCR was raised — never mutated. § 4B intent. */
+  phaseAtRaiseTime: text("phase_at_raise_time"),
+  /** Optional sub-contractor counterparty (raised against). */
+  subcontractorId: integer("subcontractor_id").references(() => counterparties.id, { onDelete: "set null" }),
+  /** Optional QC checklist item that surfaced this NCR. */
+  relatedChecklistItemId: integer("related_checklist_item_id").references(() => qcItemInstance.id, { onDelete: "set null" }),
+  reportedBy: integer("reported_by").notNull().references(() => users.id, { onDelete: "set null" }),
+  assignedTo: integer("assigned_to").references(() => users.id, { onDelete: "set null" }),
+  closedByUserId: integer("closed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  severity: ncrSeverityEnum("severity").notNull().default('major'),
+  status: ncrStatusEnum("status").notNull().default('open'),
+  rootCause: text("root_cause"),
+  correctiveAction: text("corrective_action"),
+  preventiveAction: text("preventive_action"),
+  /** Required when status transitions to 'waived'. Captured for audit. */
+  waiverReason: text("waiver_reason"),
+  dueDate: text("due_date"),
+  closedAt: timestamp("closed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertNcrReportSchema = createInsertSchema(ncrReports).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertNcrReport = z.infer<typeof insertNcrReportSchema>;
+export type NcrReport = typeof ncrReports.$inferSelect;
+
+export const ncrAttachments = pgTable("ncr_attachments", {
+  id: serial("id").primaryKey(),
+  ncrId: integer("ncr_id").notNull().references(() => ncrReports.id, { onDelete: 'cascade' }),
+  filePath: text("file_path").notNull(),
+  fileName: text("file_name").notNull(),
+  uploadedBy: integer("uploaded_by").notNull().references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export type NcrAttachment = typeof ncrAttachments.$inferSelect;
+
+export const ncrComments = pgTable("ncr_comments", {
+  id: serial("id").primaryKey(),
+  ncrId: integer("ncr_id").notNull().references(() => ncrReports.id, { onDelete: 'cascade' }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "set null" }),
+  comment: text("comment").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export type NcrComment = typeof ncrComments.$inferSelect;
 

@@ -126,8 +126,11 @@ export default function TaskDetailDrawer({
         const allTasks: any[] = Array.isArray(raw) ? raw : (raw.tasks || []);
         const match = allTasks.find((t: any) => t.id === taskId);
         if (!match) return null;
-        const startD = match.startDate || match.actualStart || match.actualStartDate || null;
-        const endD = match.dueDate || match.actualEnd || match.actualEndDate || null;
+        // § 3.7 HARD: actuals are the truth when known. Display falls back to
+        // planned only when no actual exists; previous order showed planned
+        // even when an actual was recorded.
+        const startD = match.actualStart ?? match.actualStartDate ?? match.startDate ?? null;
+        const endD = match.actualEnd ?? match.actualEndDate ?? match.dueDate ?? null;
         let computedDuration = match.plannedDurationDays || match.durationDays || 0;
         if (!computedDuration && startD && endD) {
           const sd = new Date(startD);

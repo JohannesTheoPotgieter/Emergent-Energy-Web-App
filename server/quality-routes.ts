@@ -18,6 +18,9 @@ import {
 } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
+import { recordAudit } from "./api/v2/services/audit-service";
+import { canOverride } from "@shared/permissions/authoriser-matrix";
+import { evidenceOverrideRecords } from "@shared/schema";
 import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
@@ -106,11 +109,33 @@ function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
   res.status(403).json({ error: "forbidden", message: "Admin or Engineering Program Manager access required" });
 }
 
-// Notifications feature removed - createQmNotification is now a no-op
+// Plan v3 § T3-4: the original notifications feature was removed but the
+// QM dashboard still needs to know "what would we have alerted about?"
+// This shim records the intended notification to audit_events under a
+// SYSTEM source so a future notification system can replay, and so an
+// auditor can answer "did the warning engine notify the right person?"
+// Returns null because no real notification is dispatched today.
 async function createQmNotification(
-  _recipientUserId: number, _eventType: string, _title: string, _body: string | null,
-  _opts: { projectName?: string; linkedTaskId?: number; } = {}
+  recipientUserId: number,
+  eventType: string,
+  title: string,
+  body: string | null,
+  opts: { projectName?: string; linkedTaskId?: number } = {},
 ) {
+  try {
+    await recordAudit({
+      actorRole: "SYSTEM",
+      userId: recipientUserId,
+      entityType: "qm_notification",
+      entityId: String(recipientUserId),
+      action: `NOTIFY_${eventType.toUpperCase()}`,
+      projectName: opts.projectName,
+      changesJson: { title, body, linkedTaskId: opts.linkedTaskId ?? null },
+    });
+  } catch {
+    // Don't fail the calling flow if audit insertion fails — this shim is
+    // observability, not correctness-critical.
+  }
   return null;
 }
 
@@ -920,12 +945,24 @@ export function registerQualityRoutes(app: Express) {
         }
       }
 
+      // Plan v3 § D.G — softening: COO/CEO with override_reason can also
+      // act on review/fail-to-pass transitions; without override, only
+      // QM Manager / admin per the original gate.
+      const qcOverrideReason = typeof req.body?.override_reason === "string"
+        ? req.body.override_reason.trim()
+        : "";
+      const qcOverrideAllowed = qcOverrideReason.length > 0 && canOverride(getUserRole(req) ?? "", "quality");
+
       if (qmStatus === "pass") {
         if (existing && (existing.qmStatus === "review" || existing.qmStatus === "fail")) {
           const role = getUserRole(req);
           const isQmManager = isAdminRole(role) || role === "quality_manager" || role === "QUALITY_MANAGER";
-          if (!isQmManager) {
-            return res.status(403).json({ error: "forbidden", message: "Only QM Manager can move items from Review or Failed back to Pass" });
+          if (!isQmManager && !qcOverrideAllowed) {
+            return res.status(403).json({
+              error: "forbidden",
+              message: "Only QM Manager can move items from Review or Failed back to Pass",
+              hint: "Pass override_reason as a COO/CEO to override.",
+            });
           }
         }
       }
@@ -943,7 +980,10 @@ export function registerQualityRoutes(app: Express) {
       if (qmStatus !== undefined) {
         updates.qmStatus = qmStatus;
         if (qmStatus === "pass") {
-          // Evidence-required gate: prevent pass when required evidence is missing
+          // Evidence-required gate: prevent pass when required evidence is missing.
+          // Plan v3 § D.G softening: COO/CEO with override_reason can pass without
+          // evidence; the override is captured in evidence_override_records and
+          // emits a canonical audit row.
           if (existing) {
             const [tmpl] = await db.select().from(qcTemplateItem).where(eq(qcTemplateItem.id, existing.templateItemId));
             if (tmpl?.isEvidenceRequired) {
@@ -956,7 +996,37 @@ export function registerQualityRoutes(app: Express) {
                 evidenceCount: evidenceRows.length,
               });
               if (blockReason) {
-                return res.status(400).json({ error: "evidence_required", message: blockReason });
+                if (!qcOverrideAllowed) {
+                  return res.status(400).json({
+                    error: "evidence_required",
+                    message: blockReason,
+                    hint: "Pass override_reason as a COO/CEO to record an evidence-required override (audited).",
+                  });
+                }
+                const overrideUser = getUser(req);
+                const projectIdForOverride = (existing as any).projectId ?? null;
+                if (projectIdForOverride != null) {
+                  await db.insert(evidenceOverrideRecords).values({
+                    projectId: projectIdForOverride,
+                    completionType: "qc_item_pass",
+                    sourceType: "qc_item_instance",
+                    sourceRef: String(itemId),
+                    scorePercent: evidenceRows.length > 0 ? 100 : 0,
+                    thresholdPercent: 100,
+                    reason: qcOverrideReason,
+                    authorizedByUserId: overrideUser.id,
+                    authorizedByName: overrideUser.name ?? null,
+                    authorizedByRole: getUserRole(req) ?? null,
+                  });
+                }
+                await recordAudit({
+                  actorRole: getUserRole(req) ?? "UNKNOWN",
+                  userId: overrideUser.id,
+                  entityType: "qc_item_instance",
+                  entityId: String(itemId),
+                  action: "OVERRIDE_EVIDENCE_REQUIRED",
+                  changesJson: { override_applied: true, reason: qcOverrideReason, evidenceCount: evidenceRows.length },
+                });
               }
             }
           }
@@ -1031,16 +1101,27 @@ export function registerQualityRoutes(app: Express) {
       const { approved, comment } = req.body;
       const [existing] = await db.select().from(qcItemInstance).where(eq(qcItemInstance.id, itemId));
 
+      // Plan v3 § D.G — softening: COO/CEO with override_reason may
+      // bypass the QM-Manager-only and evidence-required guards on the
+      // dedicated approve endpoint as well.
+      const approveOverrideReason = typeof req.body?.override_reason === "string"
+        ? req.body.override_reason.trim()
+        : "";
+      const approveOverrideAllowed = approveOverrideReason.length > 0 && canOverride(getUserRole(req) ?? "", "quality");
       if (approved) {
         if (existing && (existing.qmStatus === "review" || existing.qmStatus === "fail")) {
           const role = getUserRole(req);
           const isQmManager = isAdminRole(role) || role === "quality_manager" || role === "QUALITY_MANAGER";
-          if (!isQmManager) {
-            return res.status(403).json({ error: "forbidden", message: "Only Quality Manager or Admin can approve items in Review or Failed status" });
+          if (!isQmManager && !approveOverrideAllowed) {
+            return res.status(403).json({
+              error: "forbidden",
+              message: "Only Quality Manager or Admin can approve items in Review or Failed status",
+              hint: "Pass override_reason as a COO/CEO to override.",
+            });
           }
         }
 
-        // Evidence-required gate: prevent approval when required evidence is missing
+        // Evidence-required gate: prevent approval when required evidence is missing.
         if (existing) {
           const [tmpl] = await db.select().from(qcTemplateItem).where(eq(qcTemplateItem.id, existing.templateItemId));
           if (tmpl?.isEvidenceRequired) {
@@ -1053,7 +1134,37 @@ export function registerQualityRoutes(app: Express) {
               evidenceCount: evidenceRows.length,
             });
             if (blockReason) {
-              return res.status(400).json({ error: "evidence_required", message: blockReason });
+              if (!approveOverrideAllowed) {
+                return res.status(400).json({
+                  error: "evidence_required",
+                  message: blockReason,
+                  hint: "Pass override_reason as a COO/CEO to record an evidence-required override (audited).",
+                });
+              }
+              const overrideUser = getUser(req);
+              const projectIdForOverride = (existing as any).projectId ?? null;
+              if (projectIdForOverride != null) {
+                await db.insert(evidenceOverrideRecords).values({
+                  projectId: projectIdForOverride,
+                  completionType: "qc_item_approve",
+                  sourceType: "qc_item_instance",
+                  sourceRef: String(itemId),
+                  scorePercent: evidenceRows.length > 0 ? 100 : 0,
+                  thresholdPercent: 100,
+                  reason: approveOverrideReason,
+                  authorizedByUserId: overrideUser.id,
+                  authorizedByName: overrideUser.name ?? null,
+                  authorizedByRole: getUserRole(req) ?? null,
+                });
+              }
+              await recordAudit({
+                actorRole: getUserRole(req) ?? "UNKNOWN",
+                userId: overrideUser.id,
+                entityType: "qc_item_instance",
+                entityId: String(itemId),
+                action: "OVERRIDE_EVIDENCE_REQUIRED",
+                changesJson: { override_applied: true, reason: approveOverrideReason, evidenceCount: evidenceRows.length },
+              });
             }
           }
         }
@@ -2576,6 +2687,17 @@ export async function recalculateWarnings(projectName: string): Promise<number> 
   const [checklist] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, projectName));
   if (!checklist) return 0;
 
+  // Plan v3 § T3 — warnings are now stamped with an ownerUserId so the QM
+  // dashboard can show who needs to act. Default routing: project PM if
+  // available, otherwise null. Type-specific routing (HSE → HSE_MANAGER,
+  // etc.) can layer on top in a future pass.
+  const [project] = await db
+    .select({ id: schema.projectInfo.id, pmUserId: schema.projectInfo.pmUserId })
+    .from(schema.projectInfo)
+    .where(eq(schema.projectInfo.projectName, projectName))
+    .limit(1);
+  const defaultOwnerUserId = project?.pmUserId ?? null;
+
   const items = await db.select().from(qcItemInstance).where(eq(qcItemInstance.checklistId, checklist.id));
   const templateItems = items.length
     ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.id, items.map((i: any) => i.templateItemId)))
@@ -2585,6 +2707,16 @@ export async function recalculateWarnings(projectName: string): Promise<number> 
     ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.id, riskAnswers.map((r: any) => r.templateRiskQuestionId)))
     : [];
   const planLinks = await db.select().from(qcPlanLink).where(eq(qcPlanLink.projectName, projectName));
+
+  // Plan v3 § T3-4: capture how many warnings get auto-resolved by this
+  // recompute so the canonical audit_events row carries before+after.
+  const resolvedRows = await db
+    .select({ id: qcWarning.id, warningType: qcWarning.warningType })
+    .from(qcWarning)
+    .where(and(
+      eq(qcWarning.projectName, projectName),
+      sql`${qcWarning.status} = 'open'`,
+    ));
 
   await db.delete(qcWarning).where(and(
     eq(qcWarning.projectName, projectName),
@@ -2604,6 +2736,7 @@ export async function recalculateWarnings(projectName: string): Promise<number> 
         title: `Overdue: ${tmpl?.itemName || 'Unknown item'}`,
         description: `Item was due ${item.endDate} but has not been approved`,
         relatedItemInstanceId: item.id,
+        ownerUserId: defaultOwnerUserId,
       });
     }
 
@@ -2613,6 +2746,7 @@ export async function recalculateWarnings(projectName: string): Promise<number> 
         title: `Invalid dates: ${tmpl?.itemName || 'Unknown item'}`,
         description: `End date (${item.endDate}) is before start date (${item.startDate})`,
         relatedItemInstanceId: item.id,
+        ownerUserId: defaultOwnerUserId,
       });
     }
 
@@ -2624,6 +2758,7 @@ export async function recalculateWarnings(projectName: string): Promise<number> 
           title: `Missing evidence: ${tmpl.itemName}`,
           description: `Item is approved but required evidence has not been uploaded`,
           relatedItemInstanceId: item.id,
+          ownerUserId: defaultOwnerUserId,
         });
       }
     }
@@ -2642,6 +2777,7 @@ export async function recalculateWarnings(projectName: string): Promise<number> 
         projectName, severity: question.triggerSeverity || "Medium", warningType: "risk_trigger",
         title: `Risk: ${question.questionText.substring(0, 80)}`,
         description: question.questionText,
+        ownerUserId: defaultOwnerUserId,
       });
     }
   }
@@ -2666,6 +2802,7 @@ export async function recalculateWarnings(projectName: string): Promise<number> 
             description: `Task "${task.taskNo || task.highLevelProgramme}" is 100% complete but linked quality item "${tmpl?.itemName}" has not been approved`,
             relatedPlanItemId: task.id,
             relatedItemInstanceId: linkedItem.id,
+            ownerUserId: (task as any).assigneeUserId ?? defaultOwnerUserId,
           });
         } else if (task.actualEnd) {
           const taskEndDate = new Date(task.actualEnd);
@@ -2677,6 +2814,7 @@ export async function recalculateWarnings(projectName: string): Promise<number> 
               description: `Linked checklist item "${tmpl?.itemName}" is not approved, but milestone is due in ${daysUntil} days`,
               relatedPlanItemId: task.id,
               relatedItemInstanceId: linkedItem.id,
+              ownerUserId: (task as any).assigneeUserId ?? defaultOwnerUserId,
             });
           }
         }
@@ -2686,6 +2824,23 @@ export async function recalculateWarnings(projectName: string): Promise<number> 
 
   if (newWarnings.length) {
     await db.insert(qcWarning).values(newWarnings);
+  }
+
+  // Single canonical audit row per recompute — captures the delta even
+  // when recalculate is fired-and-forgot from a mutation handler.
+  if (resolvedRows.length > 0 || newWarnings.length > 0) {
+    await recordAudit({
+      actorRole: "SYSTEM",
+      entityType: "qc_warning_recalc",
+      entityId: projectName,
+      action: "RECALCULATE_WARNINGS",
+      projectName,
+      changesJson: {
+        autoResolvedCount: resolvedRows.length,
+        createdCount: newWarnings.length,
+        createdTypes: Array.from(new Set(newWarnings.map((w) => w.warningType))),
+      },
+    });
   }
 
   return newWarnings.length;

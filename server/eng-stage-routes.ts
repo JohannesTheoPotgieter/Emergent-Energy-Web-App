@@ -3,7 +3,7 @@
 // add explicit ': any' to .map/.filter callback params on db result rows.
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { sql, eq, and, inArray, desc } from "drizzle-orm";
+import { sql, eq, and, inArray, desc, isNull } from "drizzle-orm";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -32,6 +32,8 @@ import {
   type ReleasedForState,
 } from "@shared/schema/engineering";
 import { logAuditFromReq } from "./audit-logger";
+import { recordAudit } from "./api/v2/services/audit-service";
+import { canOverride } from "@shared/permissions/authoriser-matrix";
 import { sendError } from "./lib/api-error";
 import { createEngineeringWorkItem, updateEngineeringWorkItem } from "./work-items-adapter";
 import { jwtAuth, requireAuth } from "./auth-context";
@@ -107,7 +109,7 @@ export async function generateEngStagesForProject(
     }).returning({ id: projectEngStages.id });
 
     const taskTemplates = await db.select().from(engTaskTemplates)
-      .where(eq(engTaskTemplates.stageTemplateId, template.id))
+      .where(and(eq(engTaskTemplates.stageTemplateId, template.id), isNull(engTaskTemplates.deletedAt)))
       .orderBy(engTaskTemplates.sequence);
 
     for (const tt of taskTemplates) {
@@ -164,8 +166,8 @@ export function registerEngStageRoutes(app: Express) {
 
       const result = [];
       for (const t of templates) {
-        const taskCount = await db.select({ count: sql<number>`count(*)` }).from(engTaskTemplates).where(eq(engTaskTemplates.stageTemplateId, t.id));
-        const delCount = await db.select({ count: sql<number>`count(*)` }).from(engDeliverableTemplates).where(eq(engDeliverableTemplates.stageTemplateId, t.id));
+        const taskCount = await db.select({ count: sql<number>`count(*)` }).from(engTaskTemplates).where(and(eq(engTaskTemplates.stageTemplateId, t.id), isNull(engTaskTemplates.deletedAt)));
+        const delCount = await db.select({ count: sql<number>`count(*)` }).from(engDeliverableTemplates).where(and(eq(engDeliverableTemplates.stageTemplateId, t.id), isNull(engDeliverableTemplates.deletedAt)));
         result.push({
           ...t,
           taskCount: Number(taskCount[0]?.count || 0),
@@ -186,8 +188,8 @@ export function registerEngStageRoutes(app: Express) {
       const [template] = await db.select().from(engStageTemplates).where(eq(engStageTemplates.id, id));
       if (!template) return res.status(404).json({ error: "Template not found" });
 
-      const tasks = await db.select().from(engTaskTemplates).where(eq(engTaskTemplates.stageTemplateId, id)).orderBy(engTaskTemplates.sequence);
-      const deliverables = await db.select().from(engDeliverableTemplates).where(eq(engDeliverableTemplates.stageTemplateId, id));
+      const tasks = await db.select().from(engTaskTemplates).where(and(eq(engTaskTemplates.stageTemplateId, id), isNull(engTaskTemplates.deletedAt))).orderBy(engTaskTemplates.sequence);
+      const deliverables = await db.select().from(engDeliverableTemplates).where(and(eq(engDeliverableTemplates.stageTemplateId, id), isNull(engDeliverableTemplates.deletedAt)));
 
       res.json({ template, tasks, deliverables });
     } catch (err: any) {
@@ -219,7 +221,7 @@ export function registerEngStageRoutes(app: Express) {
       const stageTemplateId = parseIntParam(req.params.id);
       const { title, description, isRequired, sequence, defaultOwnerRole } = req.body;
       if (!title) return res.status(400).json({ error: "Title is required" });
-      const maxSeq = await db.select({ max: sql<number>`COALESCE(MAX(sequence), 0)` }).from(engTaskTemplates).where(eq(engTaskTemplates.stageTemplateId, stageTemplateId));
+      const maxSeq = await db.select({ max: sql<number>`COALESCE(MAX(sequence), 0)` }).from(engTaskTemplates).where(and(eq(engTaskTemplates.stageTemplateId, stageTemplateId), isNull(engTaskTemplates.deletedAt)));
       const [task] = await db.insert(engTaskTemplates).values({
         stageTemplateId,
         title,
@@ -356,30 +358,71 @@ export function registerEngStageRoutes(app: Express) {
       const existingStages = await db.select({ id: projectEngStages.id, stageTemplateId: projectEngStages.stageTemplateId })
         .from(projectEngStages).where(eq(projectEngStages.projectId, projectId));
 
-      if (!stageTemplateId && existingStages.length > 0) {
+      // Plan v3 § D.G — softening the "already generated" idempotency guards.
+      // COO / CEO with an override_reason can request regeneration; without
+      // override, the 409 still fires.
+      const overrideReason = typeof req.body?.override_reason === "string"
+        ? req.body.override_reason.trim()
+        : "";
+      const overrideAllowed = overrideReason.length > 0 && canOverride(user.role, "eng_stages");
+
+      if (!stageTemplateId && existingStages.length > 0 && !overrideAllowed) {
         const activeTemplates = await db.select({ id: engStageTemplates.id })
           .from(engStageTemplates).where(eq(engStageTemplates.isActive, true));
         const existingTemplateIds = new Set(existingStages.map((s: any) => s.stageTemplateId));
         const remaining = activeTemplates.filter((t: any) => !existingTemplateIds.has(t.id));
         if (remaining.length === 0) {
-          return res.status(409).json({ error: "Engineering stages have already been generated for this project" });
+          return res.status(409).json({
+            error: "Engineering stages have already been generated for this project",
+            hint: "Pass override_reason as a COO/CEO to regenerate (idempotent — existing stages are kept).",
+          });
         }
       }
 
-      if (stageTemplateId) {
+      if (stageTemplateId && !overrideAllowed) {
         const alreadyExists = existingStages.some((s: any) => s.stageTemplateId === stageTemplateId);
         if (alreadyExists) {
-          return res.status(409).json({ error: "This engineering stage has already been generated for this project" });
+          return res.status(409).json({
+            error: "This engineering stage has already been generated for this project",
+            hint: "Pass override_reason as a COO/CEO to bypass the duplicate-template guard.",
+          });
         }
       }
 
       const result = await generateEngStagesForProject(projectId, user.id, stageNames);
 
-      if (result.stagesCreated === 0) {
-        return res.status(409).json({ error: "All stages already generated or no active templates" });
+      if (result.stagesCreated === 0 && !overrideAllowed) {
+        return res.status(409).json({
+          error: "All stages already generated or no active templates",
+          hint: "Pass override_reason as a COO/CEO to record an audited no-op.",
+        });
+      }
+      if (overrideAllowed) {
+        await recordAudit({
+          actorRole: user.role,
+          userId: user.id,
+          entityType: "eng_project_stage",
+          entityId: String(projectId),
+          action: "OVERRIDE_REGENERATE_ENG_STAGES",
+          projectName: project.projectName,
+          changesJson: {
+            override_applied: true,
+            reason: overrideReason,
+            stagesCreated: result.stagesCreated,
+          },
+        });
       }
 
       logAuditFromReq(req, { entityType: "eng_project_stage", entityId: String(projectId), action: "create", projectName: project.projectName, changesJson: { description: "Engineering stages generated", stagesCreated: result.stagesCreated, stageDetails: result.stageDetails } });
+      await recordAudit({
+        actorRole: (user as any)?.role,
+        userId: user.id,
+        entityType: "eng_project_stage",
+        entityId: String(projectId),
+        action: "GENERATE_ENG_STAGES",
+        projectName: project.projectName,
+        changesJson: { stagesCreated: result.stagesCreated, stageNames: stageNames ?? null },
+      });
       res.json({ success: true, ...result });
     } catch (err: any) {
       console.error("[EngStages] Generate error:", err.message);
@@ -526,7 +569,7 @@ export function registerEngStageRoutes(app: Express) {
 
       const deliverableTemplatesForStage = await db.select()
         .from(engDeliverableTemplates)
-        .where(eq(engDeliverableTemplates.stageTemplateId, stage.stageTemplateId));
+        .where(and(eq(engDeliverableTemplates.stageTemplateId, stage.stageTemplateId), isNull(engDeliverableTemplates.deletedAt)));
 
       const uploadedDeliverables = await db.select()
         .from(projectEngDeliverables)
@@ -573,13 +616,29 @@ export function registerEngStageRoutes(app: Express) {
       const effectiveHasDeliverable = hasDeliverable !== undefined ? hasDeliverable : existingTask.hasDeliverable;
       const effectiveStatus = status !== undefined ? status : existingTask.status;
 
+      // Plan v3 § D.G — softening the deliverable-required and
+      // deliverable-must-be-approved guards. A COO / CEO with an
+      // override_reason can complete the task; the original gate stays
+      // for everyone else and the override path writes a canonical audit row.
+      const taskOverrideReason = typeof req.body?.override_reason === "string"
+        ? req.body.override_reason.trim()
+        : "";
+      const taskOverrideAllowed = taskOverrideReason.length > 0 && canOverride(user.role, "eng_stages");
+      let taskOverrideTriggered: "missing_deliverable" | "deliverable_not_approved" | null = null;
+
       if (effectiveStatus === "complete" && effectiveHasDeliverable) {
         const taskDeliverables = await db.select()
           .from(projectEngDeliverables)
           .where(eq(projectEngDeliverables.projectEngTaskId, taskId));
         if (taskDeliverables.length === 0) {
           if (status === "complete") {
-            return res.status(400).json({ error: "This task requires a deliverable to be uploaded before it can be completed." });
+            if (!taskOverrideAllowed) {
+              return res.status(400).json({
+                error: "This task requires a deliverable to be uploaded before it can be completed.",
+                hint: "Pass override_reason as a COO/CEO to complete without a deliverable.",
+              });
+            }
+            taskOverrideTriggered = "missing_deliverable";
           }
           if (hasDeliverable === true && existingTask.status === "complete") {
             const revertUpdates: any = { hasDeliverable: true, status: "pending", completedAt: null, completedBy: null };
@@ -590,7 +649,13 @@ export function registerEngStageRoutes(app: Express) {
           const hasApproved = taskDeliverables.some((d: any) => d.approvalStatus === "approved");
           if (!hasApproved) {
             if (status === "complete") {
-              return res.status(400).json({ error: "The deliverable for this task must be approved before it can be completed." });
+              if (!taskOverrideAllowed) {
+                return res.status(400).json({
+                  error: "The deliverable for this task must be approved before it can be completed.",
+                  hint: "Pass override_reason as a COO/CEO to complete with an unapproved deliverable.",
+                });
+              }
+              taskOverrideTriggered = "deliverable_not_approved";
             }
             if (hasDeliverable === true && existingTask.status === "complete") {
               const revertUpdates: any = { hasDeliverable: true, status: "pending", completedAt: null, completedBy: null };
@@ -599,6 +664,20 @@ export function registerEngStageRoutes(app: Express) {
             }
           }
         }
+      }
+      if (taskOverrideTriggered) {
+        await recordAudit({
+          actorRole: user.role,
+          userId: user.id,
+          entityType: "eng_task",
+          entityId: String(taskId),
+          action: "OVERRIDE_TASK_COMPLETION_GATE",
+          changesJson: {
+            override_applied: true,
+            triggeredBy: taskOverrideTriggered,
+            reason: taskOverrideReason,
+          },
+        });
       }
 
       const updates: any = {};
@@ -825,6 +904,14 @@ export function registerEngStageRoutes(app: Express) {
           releasedForAfter: "issued_for_construction",
         },
       });
+      await recordAudit({
+        actorRole: (user as any)?.role,
+        userId: user.id,
+        entityType: "eng_deliverable",
+        entityId: String(id),
+        action: "ISSUE_FOR_CONSTRUCTION",
+        changesJson: { fileName: deliverable.fileName, versionTag: deliverable.versionTag, releasedForBefore: current, releasedForAfter: "issued_for_construction" },
+      });
 
       res.json({ success: true, releasedFor: "issued_for_construction" });
     } catch (err: any) {
@@ -880,6 +967,14 @@ export function registerEngStageRoutes(app: Express) {
           releasedForBefore: current,
           releasedForAfter: "as_built",
         },
+      });
+      await recordAudit({
+        actorRole: (user as any)?.role,
+        userId: user.id,
+        entityType: "eng_deliverable",
+        entityId: String(id),
+        action: "MARK_AS_BUILT",
+        changesJson: { fileName: deliverable.fileName, releasedForBefore: current, releasedForAfter: "as_built" },
       });
 
       res.json({ success: true, releasedFor: "as_built" });
@@ -1008,6 +1103,15 @@ export function registerEngStageRoutes(app: Express) {
       }
 
       logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(id), action: status === "approved" ? "approve" : "reject", projectName: projName, changesJson: { description: `Stage gate ${status}`, stageName: stage?.templateName, approverRole: approval.approverRole } });
+      await recordAudit({
+        actorRole: (user as any)?.role,
+        userId: user.id,
+        entityType: "eng_stage_gate",
+        entityId: String(id),
+        action: status === "approved" ? "APPROVE_STAGE_GATE" : "REJECT_STAGE_GATE",
+        projectName: projName,
+        changesJson: { status, stageName: stage?.templateName, approverRole: approval.approverRole },
+      });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
@@ -1019,11 +1123,13 @@ export function registerEngStageRoutes(app: Express) {
   app.post("/api/eng-stages/stages/:stageId/complete", jwtAuth, requireAuth, requirePermission("eng_stages", "approve"), async (req: Request, res: Response) => {
     try {
       const stageId = parseIntParam(req.params.stageId);
+      const user = getUser(req);
 
       const [stage] = await db.select({
         id: projectEngStages.id,
         stageTemplateId: projectEngStages.stageTemplateId,
         status: projectEngStages.status,
+        projectId: projectEngStages.projectId,
         stageGateRules: engStageTemplates.stageGateRules,
         templateName: engStageTemplates.name,
       })
@@ -1054,7 +1160,7 @@ export function registerEngStageRoutes(app: Express) {
 
       if (rules.requireAllDeliverables) {
         const delTemplates = await db.select().from(engDeliverableTemplates)
-          .where(eq(engDeliverableTemplates.stageTemplateId, stage.stageTemplateId));
+          .where(and(eq(engDeliverableTemplates.stageTemplateId, stage.stageTemplateId), isNull(engDeliverableTemplates.deletedAt)));
 
         const uploaded = await db.select({ deliverableTemplateId: projectEngDeliverables.deliverableTemplateId })
           .from(projectEngDeliverables)
@@ -1092,7 +1198,7 @@ export function registerEngStageRoutes(app: Express) {
       // templates are unaffected.
       if (rules.requireIfcIssuance) {
         const delTemplates = await db.select().from(engDeliverableTemplates)
-          .where(eq(engDeliverableTemplates.stageTemplateId, stage.stageTemplateId));
+          .where(and(eq(engDeliverableTemplates.stageTemplateId, stage.stageTemplateId), isNull(engDeliverableTemplates.deletedAt)));
         const uploadedIfc = await db.select({
           deliverableTemplateId: projectEngDeliverables.deliverableTemplateId,
           releasedFor: projectEngDeliverables.releasedFor,
@@ -1119,7 +1225,7 @@ export function registerEngStageRoutes(app: Express) {
       // state `as_built` (not just IFC) for the stage to be marked complete.
       if (rules.requireAsBuilt) {
         const delTemplates = await db.select().from(engDeliverableTemplates)
-          .where(eq(engDeliverableTemplates.stageTemplateId, stage.stageTemplateId));
+          .where(and(eq(engDeliverableTemplates.stageTemplateId, stage.stageTemplateId), isNull(engDeliverableTemplates.deletedAt)));
         const uploadedAb = await db.select({
           deliverableTemplateId: projectEngDeliverables.deliverableTemplateId,
           releasedFor: projectEngDeliverables.releasedFor,
@@ -1180,6 +1286,14 @@ export function registerEngStageRoutes(app: Express) {
       }
 
       logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(stageId), action: "approve", changesJson: { description: "Stage completed", stageName: stage.templateName } });
+      await recordAudit({
+        actorRole: (user as any)?.role,
+        userId: user.id,
+        entityType: "eng_stage_gate",
+        entityId: String(stageId),
+        action: "COMPLETE_ENG_STAGE",
+        changesJson: { stageName: stage.templateName, projectId: stage.projectId },
+      });
 
       // Notify project team members + PM about stage completion
       try {
@@ -1264,6 +1378,14 @@ export function registerEngStageRoutes(app: Express) {
       }
 
       logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(stageId), action: "override", changesJson: { description: "Stage override completed", reason } });
+      await recordAudit({
+        actorRole: (user as any)?.role,
+        userId: user.id,
+        entityType: "eng_stage_gate",
+        entityId: String(stageId),
+        action: "OVERRIDE_ENG_STAGE",
+        changesJson: { reason, override_applied: true },
+      });
 
       // If this is the Handover Pack stage, log commissioning unlock
       const [overrideStageInfo] = await db.select({ projectId: projectEngStages.projectId, name: engStageTemplates.name })

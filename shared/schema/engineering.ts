@@ -149,6 +149,8 @@ export const engTaskTemplates = pgTable("eng_task_templates", {
   isRequired: boolean("is_required").notNull().default(true),
   sequence: integer("sequence").notNull().default(0),
   defaultOwnerRole: text("default_owner_role"),
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: integer("deleted_by").references(() => users.id, { onDelete: "set null" }),
 });
 export const insertEngTaskTemplateSchema = createInsertSchema(engTaskTemplates).omit({ id: true } as any);
 export type InsertEngTaskTemplate = z.infer<typeof insertEngTaskTemplateSchema>;
@@ -162,6 +164,8 @@ export const engDeliverableTemplates = pgTable("eng_deliverable_templates", {
   isRequired: boolean("is_required").notNull().default(true),
   allowedFileTypes: text("allowed_file_types").array(),
   requiredCount: integer("required_count").notNull().default(1),
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: integer("deleted_by").references(() => users.id, { onDelete: "set null" }),
 });
 export const insertEngDeliverableTemplateSchema = createInsertSchema(engDeliverableTemplates).omit({ id: true } as any);
 export type InsertEngDeliverableTemplate = z.infer<typeof insertEngDeliverableTemplateSchema>;

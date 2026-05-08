@@ -147,10 +147,16 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "sharepointIntake", path: "/admin/sharepoint-intake", label: "SharePoint Intake", iconKey: "Cloud", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "SharePointIntakePage" },
   { id: "quality", path: "/quality", label: "Quality", iconKey: "ShieldCheck", navGroup: "QUALITY", permissionEntity: "quality", showInSidebar: true, routeComponentKey: "QmDashboardPage", roleLandingEligibility: ["QUALITY_MANAGER"] },
   { id: "qualityDashboardV2", path: "/quality/dashboard", label: "Quality Dashboard (Project)", type: "alias", permissionEntity: "quality", redirectTo: "/quality" },
-  { id: "qualityNcrList", path: "/quality/ncrs", label: "NCR List (Legacy)", type: "alias", permissionEntity: "quality", showInSidebar: false, redirectTo: "/quality" },
-  // Legacy NCR detail deep links: forward to /quality with the id preserved
+  // NCR backend is live: ncr_reports is now Drizzle-canonical
+  // (shared/schema/quality.ts), the routes in server/quality-ncr-routes.ts
+  // are actively maintained and emit audit_events. The DEDICATED UI page
+  // has not yet been (re)built; until then, deep links land on the QM
+  // dashboard at /quality which surfaces NCR count / severity via the
+  // Programme Quality report and (forthcoming) the dashboard tile.
+  { id: "qualityNcrList", path: "/quality/ncrs", label: "NCRs (redirects to QM dashboard)", type: "alias", permissionEntity: "quality", showInSidebar: false, redirectTo: "/quality" },
+  // NCR detail deep links: forward to /quality with the id preserved
   // as ?ncr=<id> so external bookmarks/email/Teams links don't lose context.
-  { id: "qualityNcrDetail", path: "/quality/ncr/:id", label: "NCR Detail (Legacy)", permissionEntity: "quality", showInSidebar: false, routeComponentKey: "NcrLegacyRedirect" },
+  { id: "qualityNcrDetail", path: "/quality/ncr/:id", label: "NCR Detail (redirects)", permissionEntity: "quality", showInSidebar: false, routeComponentKey: "NcrLegacyRedirect" },
   { id: "engineering", path: "/engineering", label: "Engineering", iconKey: "Wrench", navGroup: "ENGINEERING", permissionEntity: "engineering", showInSidebar: true, routeComponentKey: "EngineeringDashboardPage", roleLandingEligibility: ["ENGINEERING_MANAGER", "ENGINEER"] },
   { id: "engineeringTasks", path: "/engineering/tasks", label: "Task Board", iconKey: "ListTodo", navGroup: "ENGINEERING", permissionEntity: "eng_tasks", showInSidebar: true, routeComponentKey: "EngineeringTasksPage" },
   { id: "engineeringStandup", path: "/engineering/standup", label: "Engineering Standup", iconKey: "Users", navGroup: "ENGINEERING", permissionEntity: "standups", showInSidebar: true, routeComponentKey: "EngineeringStandupPage" },
