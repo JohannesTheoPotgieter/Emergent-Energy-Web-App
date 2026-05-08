@@ -92,8 +92,11 @@ export function registerCashflow2026Routes(app: Express) {
           // Bottom-up: only aggregate leaf-node (item) rows, matching project-detail level logic
           if (expense.rowType !== 'item') continue;
           if (projectFilter && expense.projectName !== projectFilter) continue;
-          // Use effective payment date: actual, then computed forecast, then forecast, then invoice date
-          const d = expense.expensePaymentDate || (expense as any).computedForecastPaymentDate || (expense as any).forecastPaymentDate || (expense as any).expenseInvoicedDate || null;
+          // Cash-event date per § 3.4: actual payment, then computed forecast,
+          // then forecast. Invoice date is recognition, not cash, so it is
+          // NOT in the fallback chain. Rows without any payment-class date
+          // are excluded from the weekly cash bucket.
+          const d = expense.expensePaymentDate || (expense as any).computedForecastPaymentDate || (expense as any).forecastPaymentDate || null;
           if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
           const amt = parseFloat((expense as any).quotedTotal || expense.expenseActualTotal || (expense as any).budgetTotal || '0') || 0;
           if (d >= weekStart && d < weekEnd && amt > 0) {
