@@ -134,6 +134,24 @@ function sumTotals(rows: ProjectTotals[]): MonthlyReconRow {
   };
 }
 
+interface ReconGridProjectRow {
+  projectId: number;
+  cos: number;
+  revenue: number;
+  gp: number;
+  gpPct: number | null;
+}
+
+interface ReconGridMonth {
+  monthKey: string;
+  cos: number;
+  revenue: number;
+  gp: number;
+  gpPct: number | null;
+  count: number;
+  byProject: ReconGridProjectRow[];
+}
+
 export function registerFinanceLinesRoutes(app: Express): void {
   const repo = new FinanceLineLevelRepository();
 
@@ -440,6 +458,147 @@ export function registerFinanceLinesRoutes(app: Express): void {
       } catch (err) {
         if (err instanceof ApiError) throw err;
         const wrapped = serverError("Failed to compute recon parity");
+        (wrapped as unknown as { cause?: unknown }).cause = err;
+        throw wrapped;
+      }
+    },
+  );
+
+  /**
+   * Line-level recon grid — stepping stone for the
+   * /api/cos-tracker + /api/revenue-tracker cutover.
+   *
+   *   GET /api/finance/recon-grid?projectIds=1,2,3&fyStart&fyEnd
+   *
+   * Returns monthly recon rows sourced exclusively from the line-level
+   * derivation (§ 3.3). Each row has a `byProject` breakdown with
+   * project totals for that month. Shape is intentionally minimal so a
+   * future cutover PR can write a thin server-side adapter to emit
+   * the legacy /api/cos-tracker shape from this data, OR a thin
+   * client-side adapter that consumes this endpoint directly for new
+   * recon-grid surfaces.
+   *
+   * The legacy /api/cos-tracker remains in place. It currently groups
+   * on `normalizedCostLines.invoiceDate` (parent), which is close to
+   * but not identical to this endpoint's grouping on
+   * `normalizedCostLineActuals.invoiceDate` (child) — the difference
+   * matters for split-paid lines and is the whole point of the cutover.
+   */
+  app.get(
+    "/api/finance/recon-grid",
+    requireAuth,
+    requirePermission("financials", "view"),
+    async (req: Request, res: Response) => {
+      try {
+        const projectIds = parseProjectIdList(req.query.projectIds);
+        const fyStart = parseIsoDate(req.query.fyStart, "fyStart");
+        const fyEnd = parseIsoDate(req.query.fyEnd, "fyEnd");
+        if (fyStart && fyEnd && fyStart > fyEnd) {
+          throw badRequest("fyStart must be on or before fyEnd", { fyStart, fyEnd });
+        }
+        if (projectIds.length === 0) {
+          throw badRequest("projectIds is required (comma-separated)", { projectIds: "" });
+        }
+
+        const lines = await repo.getPortfolioFinanceLines(projectIds, { fyStart, fyEnd });
+
+        // Aggregate by (monthKey, projectId) so each month carries its
+        // per-project breakdown — directly suitable for the existing
+        // recon-grid expand-by-project UX.
+        const monthMap = new Map<string, ReconGridMonth>();
+        const ensure = (key: string): ReconGridMonth => {
+          let row = monthMap.get(key);
+          if (!row) {
+            row = {
+              monthKey: key,
+              cos: 0,
+              revenue: 0,
+              gp: 0,
+              gpPct: null,
+              count: 0,
+              byProject: [],
+            };
+            monthMap.set(key, row);
+          }
+          return row;
+        };
+
+        const projectKey = (monthKey: string, projectId: number) => `${monthKey}::${projectId}`;
+        const byProjectMap = new Map<string, ReconGridProjectRow>();
+
+        for (const l of lines) {
+          const key = l.recognitionMonth ?? "unrecognised";
+          const row = ensure(key);
+          row.cos += l.actualTotal;
+          row.revenue += l.perLineRevenue;
+          row.gp += l.perLineGp;
+          row.count += 1;
+
+          const pkey = projectKey(key, l.projectId);
+          let pr = byProjectMap.get(pkey);
+          if (!pr) {
+            pr = {
+              projectId: l.projectId,
+              cos: 0,
+              revenue: 0,
+              gp: 0,
+              gpPct: null,
+            };
+            byProjectMap.set(pkey, pr);
+            row.byProject.push(pr);
+          }
+          pr.cos += l.actualTotal;
+          pr.revenue += l.perLineRevenue;
+          pr.gp += l.perLineGp;
+        }
+
+        for (const row of monthMap.values()) {
+          row.gpPct = row.revenue !== 0 ? row.gp / row.revenue : null;
+          for (const pr of row.byProject) {
+            pr.gpPct = pr.revenue !== 0 ? pr.gp / pr.revenue : null;
+          }
+          row.byProject.sort((a, b) => b.revenue - a.revenue);
+        }
+
+        const sortedMonths = Array.from(monthMap.values())
+          .filter((r) => r.monthKey !== "unrecognised")
+          .sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+        const unrec = monthMap.get("unrecognised") ?? null;
+
+        const total: ReconGridMonth = {
+          monthKey: "total",
+          cos: 0,
+          revenue: 0,
+          gp: 0,
+          gpPct: null,
+          count: 0,
+          byProject: [],
+        };
+        for (const r of sortedMonths) {
+          total.cos += r.cos;
+          total.revenue += r.revenue;
+          total.gp += r.gp;
+          total.count += r.count;
+        }
+        if (unrec) {
+          total.cos += unrec.cos;
+          total.revenue += unrec.revenue;
+          total.gp += unrec.gp;
+          total.count += unrec.count;
+        }
+        total.gpPct = total.revenue !== 0 ? total.gp / total.revenue : null;
+
+        res.json({
+          projectIds,
+          fyStart: fyStart ?? null,
+          fyEnd: fyEnd ?? null,
+          monthly: sortedMonths,
+          unrecognised: unrec,
+          total,
+        });
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        const wrapped = serverError("Failed to compute recon grid");
         (wrapped as unknown as { cause?: unknown }).cause = err;
         throw wrapped;
       }
