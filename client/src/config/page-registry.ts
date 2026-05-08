@@ -123,7 +123,8 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "cos", path: "/cos", label: "COS", iconKey: "TrendingUp", navGroup: "FINANCE", permissionEntity: "cos", showInSidebar: true, routeComponentKey: "CostTracker" },
   { id: "cosAnalysis", path: "/cos/analysis", label: "COS Analysis", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "cos", showInSidebar: true, routeComponentKey: "CosAnalysisPage" },
   { id: "revenueTracker", path: "/revenue-tracker", label: "Revenue", iconKey: "TrendingUp", navGroup: "FINANCE", permissionEntity: "revenue_tracker", showInSidebar: true, routeComponentKey: "RevenueTrackerPage" },
-  { id: "financeGp", path: "/finance/gp", label: "GP Tracking", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceGpPage" },
+  { id: "financeGpCompany", path: "/finance/gp/company", label: "Company GP", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceGpCompanyPage" },
+  { id: "financeGp", path: "/finance/gp", label: "GP — by project", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceGpPage" },
   // Per-project Tracker replicas — read-only views that render the source
   // workbook 1:1 with font/fill fidelity. Not in the sidebar; reached from
   // project-level navigation. Permission scope mirrors the existing finance
