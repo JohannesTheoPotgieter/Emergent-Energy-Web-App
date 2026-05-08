@@ -18,6 +18,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/drizzle-bootstrap.ts && drizzle-kit migrate",
     "db:check": "tsx scripts/db-check-drift.ts",
+    "check:agent-docs": "tsx scripts/check-agent-docs.ts",
     "reconcile:priority-links": "tsx scripts/reconcile-priority-links.ts",
     "diagnose:blast-radius:paiddate": "tsx scripts/blast-radius-paiddate.ts",
     "test": "vitest run -c qa/vitest.config.ts --exclude 'qa/tests/api/**' --exclude 'qa/tests/e2e/**' --exclude 'qa/tests/integration/**'",

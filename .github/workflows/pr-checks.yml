@@ -33,6 +33,11 @@ jobs:
       # Schema-drift guard (Phase 3b). Fails the build if shared/schema/*.ts
       # was edited without a corresponding new migration under /migrations/.
       - run: npm run db:check
+      # Agent-docs freshness gate (Plan v3 § 2.8 / D.9). Fails the build if
+      # docs/AGENT_GUARDRAILS.md `Last verified` is older than 90 days, the
+      # CLAUDE.md role-count claim doesn't match COMPANY_ROLES, or the § 3.1
+      # snapshot-table list drifts from shared/schema/*.ts.
+      - run: npm run check:agent-docs
       # Unit tests (Phase 4). No Postgres, no live server — pure vitest over
       # qa/tests/unit/. Any regression in finance math, error-leak guards,
       # schema invariants, or other pinned contracts fails PRs here.
