@@ -1312,7 +1312,7 @@ export const ENTITY_REGISTRY: EntityRegistryEntry[] = [
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO'],
-    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
