@@ -25,8 +25,8 @@
 --   8  Commissioning Readiness Gate      → S06_CONSTRUCTION              (exit-from-Construction gate; mirrors #6 pattern — readiness gates live in the outgoing phase)
 --   9  O&M Handover to Matriarch         → S08_OM_HANDOVER               (Stage 7)
 --  10  Client Handover Checklist         → S09_CLIENT_HANDOVER           (Stage 8)
---  11  3-Month Post-HO Review            → S09_CLIENT_HANDOVER           (post-handover review tied to client HO)
---  12  Compliance Handover               → S09_CLIENT_HANDOVER           (legal-to-operate pack, ships with client HO)
+--  11  3-Month Post-HO Review            → S10_POST_HANDOVER_REVIEW      (Stage 9 — canonical phase added 2026-04-24, migration 0030)
+--  12  Compliance Handover               → S9B_COMPLIANCE_HANDOVER       (Stage 10 — canonical phase added 2026-04-24, migration 0030)
 --  13  Hold / Blocked Register           → S_HOLD                        (terminal phase template)
 
 -- 1. First Assessment Checklist
@@ -111,18 +111,18 @@ WHERE NOT EXISTS (
 
 -- 11. 3-Month Post-HO Review
 INSERT INTO phase_template (phase, name, version, is_active, created_at, updated_at)
-SELECT 'S09_CLIENT_HANDOVER', '3-Month Post-HO Review', 1, TRUE, now(), now()
+SELECT 'S10_POST_HANDOVER_REVIEW', '3-Month Post-HO Review', 1, TRUE, now(), now()
 WHERE NOT EXISTS (
   SELECT 1 FROM phase_template
-  WHERE phase = 'S09_CLIENT_HANDOVER' AND name = '3-Month Post-HO Review' AND version = 1
+  WHERE phase = 'S10_POST_HANDOVER_REVIEW' AND name = '3-Month Post-HO Review' AND version = 1
 );
 
 -- 12. Compliance Handover
 INSERT INTO phase_template (phase, name, version, is_active, created_at, updated_at)
-SELECT 'S09_CLIENT_HANDOVER', 'Compliance Handover', 1, TRUE, now(), now()
+SELECT 'S9B_COMPLIANCE_HANDOVER', 'Compliance Handover', 1, TRUE, now(), now()
 WHERE NOT EXISTS (
   SELECT 1 FROM phase_template
-  WHERE phase = 'S09_CLIENT_HANDOVER' AND name = 'Compliance Handover' AND version = 1
+  WHERE phase = 'S9B_COMPLIANCE_HANDOVER' AND name = 'Compliance Handover' AND version = 1
 );
 
 -- 13. Hold / Blocked Register
