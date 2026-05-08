@@ -21,14 +21,14 @@
  * Per-cell font + fill rendering via `styleForCell` against `cell_format`.
  */
 import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { useParams } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { fetchQueryFn } from "@/lib/queryClient";
 import { styleForCell } from "@/lib/tracker-cell-format";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Loader2, AlertTriangle } from "lucide-react";
+import { useFinanceQuery } from "@/lib/finance-trust";
+import { DataTrustBadge } from "@/components/ui/data-trust-badge";
 
 interface ExpenditureBreakdownResponse {
   projectId: number;
@@ -95,9 +95,9 @@ function fmtDate(v: string | null): string {
 }
 
 export function ExpenditureBreakdownContent({ projectId }: { projectId: number }) {
-  const { data, isLoading, error } = useQuery<ExpenditureBreakdownResponse>({
+  const { data, trust, isLoading, isError } = useFinanceQuery<ExpenditureBreakdownResponse>({
     queryKey: [`/api/tracker-replica/${projectId}/expenditure-breakdown`],
-    queryFn: fetchQueryFn(`/api/tracker-replica/${projectId}/expenditure-breakdown`),
+    url: `/api/tracker-replica/${projectId}/expenditure-breakdown`,
     enabled: Number.isFinite(projectId),
   });
 
@@ -114,12 +114,17 @@ export function ExpenditureBreakdownContent({ projectId }: { projectId: number }
   if (isLoading) {
     return <div className="p-8 flex items-center text-muted-foreground"><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Loading…</div>;
   }
-  if (error || !data) {
+  if (isError || !data) {
     return <div className="p-8 text-red-600">Failed to load expenditure breakdown.</div>;
   }
 
   return (
     <div className="space-y-6" data-testid="expenditure-breakdown-content">
+      {trust && (
+        <div className="flex justify-end">
+          <DataTrustBadge trust={trust} />
+        </div>
+      )}
       <Card>
         <CardContent className="p-4 grid grid-cols-2 gap-6 text-sm">
           <div>

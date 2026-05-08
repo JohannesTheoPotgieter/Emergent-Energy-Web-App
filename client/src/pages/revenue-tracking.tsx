@@ -14,14 +14,14 @@
  *   - yellow fill = concern / risk
  *   - black / no fill = confirmed (default)
  */
-import { useQuery } from "@tanstack/react-query";
 import { useParams } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { fetchQueryFn } from "@/lib/queryClient";
 import { styleForCell } from "@/lib/tracker-cell-format";
 import { Loader2 } from "lucide-react";
+import { useFinanceQuery } from "@/lib/finance-trust";
+import { DataTrustBadge } from "@/components/ui/data-trust-badge";
 
 interface RevenueTrackingResponse {
   projectId: number;
@@ -68,16 +68,16 @@ function fmtDate(v: string | null): string {
 }
 
 export function RevenueTrackingContent({ projectId }: { projectId: number }) {
-  const { data, isLoading, error } = useQuery<RevenueTrackingResponse>({
+  const { data, trust, isLoading, isError } = useFinanceQuery<RevenueTrackingResponse>({
     queryKey: [`/api/tracker-replica/${projectId}/revenue-tracking`],
-    queryFn: fetchQueryFn(`/api/tracker-replica/${projectId}/revenue-tracking`),
+    url: `/api/tracker-replica/${projectId}/revenue-tracking`,
     enabled: Number.isFinite(projectId),
   });
 
   if (isLoading) {
     return <div className="p-8 flex items-center text-muted-foreground"><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Loading…</div>;
   }
-  if (error || !data) {
+  if (isError || !data) {
     return <div className="p-8 text-red-600">Failed to load revenue tracking.</div>;
   }
 
@@ -91,6 +91,11 @@ export function RevenueTrackingContent({ projectId }: { projectId: number }) {
 
   return (
     <div className="space-y-6" data-testid="revenue-tracking-content">
+      {trust && (
+        <div className="flex justify-end">
+          <DataTrustBadge trust={trust} />
+        </div>
+      )}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">High-level Project Revenue Tracking</CardTitle>
