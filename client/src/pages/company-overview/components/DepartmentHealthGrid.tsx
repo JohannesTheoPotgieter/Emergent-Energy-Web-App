@@ -47,6 +47,9 @@ const RAG_COLORS: Record<RagStatus, { bg: string; text: string; border: string; 
   green: { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200", dot: "bg-emerald-500" },
   amber: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200", dot: "bg-amber-500" },
   red: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200", dot: "bg-red-500" },
+  // "grey" = no data / unknown. Per T1.x audit Surprise 1 a department
+  // with no data should not render as red.
+  grey: { bg: "bg-slate-50", text: "text-slate-600", border: "border-slate-200", dot: "bg-slate-400" },
 };
 
 function KpiChip({ kpi }: { kpi: KpiScore }) {
@@ -106,7 +109,7 @@ export function DepartmentHealthGrid({
 
         return (
           <Link key={ds.department} href={DEPT_LINKS[ds.department]}>
-            <Card className={`border-border/50 hover:shadow-sm transition-all cursor-pointer ${ds.rag === "red" ? "border-l-4 border-l-red-500" : ds.rag === "amber" ? "border-l-4 border-l-amber-400" : "border-l-4 border-l-emerald-500"}`}>
+            <Card className={`border-border/50 hover:shadow-sm transition-all cursor-pointer ${ds.rag === "red" ? "border-l-4 border-l-red-500" : ds.rag === "amber" ? "border-l-4 border-l-amber-400" : ds.rag === "grey" ? "border-l-4 border-l-slate-300" : "border-l-4 border-l-emerald-500"}`}>
               <CardContent className="p-4">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-2">
