@@ -11,7 +11,7 @@ export type Department =
   | "Quality"
   | "Finance";
 
-export type RagStatus = "green" | "amber" | "red";
+export type RagStatus = "green" | "amber" | "red" | "grey";
 
 export type NormalizationMethod =
   | "percentage_vs_target"     // actual / target * 100
@@ -499,7 +499,11 @@ export function calculateDepartmentScore(
   return {
     department,
     score: departmentScore,
-    rag: departmentScore != null ? scoreToRag(departmentScore) : "red",
+    // No data → "grey" (unknown), not "red". Per T1.x audit Surprise 1:
+    // a department with no data is not "performing badly", it's
+    // "we don't know yet". Treating null as red miscolours fresh
+    // tenants and provisional KPIs.
+    rag: departmentScore != null ? scoreToRag(departmentScore) : "grey",
     kpis,
     dataAvailable: hasAnyData,
     provisional,
@@ -524,7 +528,8 @@ export function calculateCompanyScore(
     weightTotal += weight;
   }
 
-  if (weightTotal === 0) return { score: null, rag: "red" };
+  // No department data at all → "grey" per Surprise 1.
+  if (weightTotal === 0) return { score: null, rag: "grey" };
 
   const score = Math.round(weightedSum / weightTotal);
   return { score, rag: scoreToRag(score) };
