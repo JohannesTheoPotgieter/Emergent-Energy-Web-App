@@ -170,21 +170,36 @@ export async function getCompanyOverviewData() {
   let realisedCostFytd = 0;
 
   // Revenue / cash received aggregation
+  // Two distinct FY-window questions per § 3.4:
+  //   • Revenue recognition window: any available date (paid → in-bank →
+  //     expected → invoice fallback). Measures invoiced/captured revenue.
+  //   • Cash window: paidDate / inBankDate ONLY. No fallback to invoice/
+  //     expected dates — those are not cash events.
   for (const row of revenueRows) {
     if (!activeProjectIds.has(row.projectId)) continue;
     const amount = toNum(row.amountExVat);
-    const dateRef = (row as any).paidDate || (row as any).inBankDate || (row as any).expectedPaymentDate || (row as any).invoiceDate;
-    if (isInFy(dateRef)) {
+
+    const recognitionDate =
+      (row as any).paidDate ||
+      (row as any).inBankDate ||
+      (row as any).expectedPaymentDate ||
+      (row as any).invoiceDate;
+    if (isInFy(recognitionDate)) {
       totalRevenueFytd += amount;
-      if (isRevenueSettled({
+    }
+
+    const cashDate = (row as any).paidDate || (row as any).inBankDate;
+    if (
+      isInFy(cashDate) &&
+      isRevenueSettled({
         status: (row as any).status,
         paidDate: (row as any).paidDate,
         inBankDate: (row as any).inBankDate,
         paidDateConfirmed: (row as any).paidDateConfirmed,
         paidDateFontColor: (row as any).paidDateFontColor,
-      })) {
-        cashReceivedFytd += amount;
-      }
+      })
+    ) {
+      cashReceivedFytd += amount;
     }
   }
 
@@ -197,17 +212,15 @@ export async function getCompanyOverviewData() {
   for (const row of costRows) {
     if (!activeProjectIds.has(row.projectId)) continue;
     const amount = toNum(row.amountExVat);
-    const dateRef = (row as any).paidDate || (row as any).invoiceDate || (row as any).approvedDate;
 
     // Project-level COS totals (all time) for ratio denominator
     projectTotalCos.set(row.projectId, (projectTotalCos.get(row.projectId) || 0) + amount);
 
-    if (isInFy(dateRef)) {
+    // Cost recognition FY-window: paid → invoice → approved fallback
+    const recognitionDate =
+      (row as any).paidDate || (row as any).invoiceDate || (row as any).approvedDate;
+    if (isInFy(recognitionDate)) {
       totalCostFytd += amount;
-      // Cash paid = confirmed payment date
-      if ((row as any).paidDate) {
-        cashPaidFytd += amount;
-      }
       const realised = getCosRealisedAmountForNclRow(
         row as any,
         assignedByCostLineId.get(row.id) ?? null,
@@ -216,6 +229,12 @@ export async function getCompanyOverviewData() {
         realisedCostFytd += realised;
         projectRealisedCos.set(row.projectId, (projectRealisedCos.get(row.projectId) || 0) + realised);
       }
+    }
+
+    // Cash paid FY-window: paidDate ONLY per § 3.4. No fallback.
+    const paidDate = (row as any).paidDate;
+    if (paidDate && isInFy(paidDate)) {
+      cashPaidFytd += amount;
     }
   }
 
