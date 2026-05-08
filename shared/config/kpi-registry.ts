@@ -313,11 +313,18 @@ export const KPI_REGISTRY: KpiDefinition[] = [
   },
 
   // ─── Finance ───────────────────────────────────────────────────────
+  // Weights re-balanced per T1.x audit Surprise 2 (Option B). The previous
+  // weights had three COS-derived KPIs (revenue, COS, GP) totalling 65/100,
+  // so a single bad import moved 65% of Finance score together. The
+  // independent signals (cash collected, overdue debtors) only carried
+  // 35/100 — under-weighted relative to their day-to-day importance.
+  // New balance: COS-derived 45 (revenue 15 + COS 15 + GP 15), independent
+  // 55 (cash 30 + debtors 25). Cash & AR drive a majority.
   {
     kpiKey: "fin_revenue_vs_target",
     kpiName: "Revenue Actual vs FYTD Target",
     department: "Finance",
-    weight: 25,
+    weight: 15,
     normalization: "percentage_vs_target",
     unit: "R",
     higherIsBetter: true,
@@ -326,7 +333,7 @@ export const KPI_REGISTRY: KpiDefinition[] = [
     kpiKey: "fin_cash_collected_vs_target",
     kpiName: "Cash Collected vs FYTD Target",
     department: "Finance",
-    weight: 20,
+    weight: 30,
     normalization: "percentage_vs_target",
     unit: "R",
     higherIsBetter: true,
@@ -335,7 +342,7 @@ export const KPI_REGISTRY: KpiDefinition[] = [
     kpiKey: "fin_cos_vs_target",
     kpiName: "COS Realised vs FYTD Target",
     department: "Finance",
-    weight: 20,
+    weight: 15,
     normalization: "percentage_vs_target",
     unit: "R",
     higherIsBetter: false,
@@ -344,7 +351,7 @@ export const KPI_REGISTRY: KpiDefinition[] = [
     kpiKey: "fin_gross_margin_vs_target",
     kpiName: "Gross Margin % vs Target",
     department: "Finance",
-    weight: 20,
+    weight: 15,
     normalization: "percentage_vs_target",
     unit: "%",
     higherIsBetter: true,
@@ -353,7 +360,7 @@ export const KPI_REGISTRY: KpiDefinition[] = [
     kpiKey: "fin_overdue_debtors",
     kpiName: "Overdue Debtors",
     department: "Finance",
-    weight: 15,
+    weight: 25,
     normalization: "inverse_count",
     inverseCeiling: 10000000, // R10M ceiling
     unit: "R",
