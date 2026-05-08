@@ -382,6 +382,32 @@ export const insertProjectStageExceptionSchema = createInsertSchema(projectStage
 export type InsertProjectStageException = z.infer<typeof insertProjectStageExceptionSchema>;
 export type ProjectStageException = typeof projectStageExceptions.$inferSelect;
 
+/**
+ * Transition history for `project_stage_exceptions` — Plan v3 § 2.3 / D.5 (β).
+ *
+ * Captures every status flip on a stage exception (requested → approved →
+ * closed → reopened → ...) so the trail survives even if the entity is
+ * later re-decided. Parent entity carries the LATEST state; this table
+ * is the canonical history.
+ */
+export const projectStageExceptionHistory = pgTable("project_stage_exception_history", {
+  id: serial("id").primaryKey(),
+  exceptionId: integer("exception_id").notNull().references(() => projectStageExceptions.id, { onDelete: "cascade" }),
+  fromStatus: text("from_status"),
+  toStatus: text("to_status").notNull(),
+  changedByUserId: integer("changed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  changedByRole: text("changed_by_role"),
+  changedAt: timestamp("changed_at").notNull().defaultNow(),
+  reason: text("reason"),
+  detailsJson: jsonb("details_json"),
+}, (table) => ({
+  exceptionIdIdx: index("pseh_exception_id_idx").on(table.exceptionId),
+}));
+
+export const insertProjectStageExceptionHistorySchema = createInsertSchema(projectStageExceptionHistory).omit({ id: true, changedAt: true } as any);
+export type InsertProjectStageExceptionHistory = z.infer<typeof insertProjectStageExceptionHistorySchema>;
+export type ProjectStageExceptionHistory = typeof projectStageExceptionHistory.$inferSelect;
+
 // ===================== PROJECT STAGE DEPENDENCIES =====================
 // Cross-department waiting-on tracking
 
