@@ -5,6 +5,7 @@ import { registerTemplateGovernanceRoutes } from './template-governance-routes';
 import { registerQuickBooksRoutes } from '../quickbooks-routes';
 import { registerQuickBooksInvoiceMatchRoutes } from './quickbooks-invoice-matches.routes';
 import { registerFinanceTrustRoutes } from './finance-trust-routes';
+import { registerFinanceLinesRoutes } from './finance-lines.routes';
 import { registerPdIntakeRoutes } from './pd-intake.routes';
 // D6 Phase 5 — `registerControlledDocumentRoutes` is the legacy
 // controlled-documents flow. The Document Management v2 rebuild routes
@@ -33,6 +34,7 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerQuickBooksRoutes(app);
   registerQuickBooksInvoiceMatchRoutes(app);
   registerFinanceTrustRoutes(app);
+  registerFinanceLinesRoutes(app);
   registerPdIntakeRoutes(app);
   // registerControlledDocumentRoutes(app); — retired in D6 Phase 5.
   registerImpactRoutes(app);

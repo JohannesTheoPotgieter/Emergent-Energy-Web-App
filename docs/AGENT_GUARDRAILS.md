@@ -57,18 +57,53 @@ Verify the live list with `grep -rln "effective_to" shared/schema/` before aggre
 **A COS line is realised when BOTH conditions are true: (a) an invoice is captured against the line, AND (b) the invoice-date cell colour on the workbook line is BLACK.** Black is the canonical confirmed-actual signal across every date column (§ 3.7). A RED invoice-date means projected / unconfirmed — the line is NOT realised even if an invoice number is present. Either condition alone is not enough. No projection, no snapshot, no other override realises COS. This is the formula, not a workflow rule. Code that realises COS from any other source — including invoice capture without the black-colour gate — is wrong.
 The canonical predicate is `isCanonicalCosRealised()` in `server/lib/finance/cos-realisation.ts`. All read paths must go through it. The colour is the signal at import; the app stores the derived realised flag against the actual-date row (see § 3.7).
 If a user wants to record an expected cost, that's a *projection*, a *budget line*, or a *forecast* — different fields, different reports. Never a realised COS.
-### 3.3 Revenue realisation formula
-**Revenue realisation is derived from realised COS via the cost-to-cost percentage-of-completion method.** Per line item:
+### 3.3 Revenue recognition formula — category-scoped per-line POC
+
+**Revenue recognition is derived per cost line via category-scoped percentage-of-completion. The formula is the same one the source-of-truth Excel workbook uses on the `Expenditure Breakdown` sheet (column U).** Per actuals row:
+
 ```
-revenueRealised_line = (actualCOS_line / totalCOScosted_project) × totalRevenueCosted_project
+perLineRevenue = (line.actualTotal / category.totalActualTotal) × category.revenueAllocation
 ```
-Where:
-- `actualCOS_line` — the realised COS amount on the line per § 3.2 (zero if the line is not realised under the black-colour + invoice rule).
-- `totalCOScosted_project` — the project's total budgeted/costed COS (sum across all costed cost lines).
-- `totalRevenueCosted_project` — the project's total budgeted/costed revenue.
-Aggregated to the project: `Σ revenueRealised_line` across all lines (unrealised lines contribute zero because `actualCOS_line` is zero).
-Revenue is **not** realised on payment receipt date, invoice date, contract date, or milestone completion. Those drive *expected* revenue, *forecast* revenue, *cash inflow* (§ 3.4), or *workflow gates* — never the realisation figure. Code that triggers revenue realisation from any signal other than the COS-ratio formula above is wrong.
-**Inflow ≠ revenue.** Cash inflow (§ 3.4) reads payment receipt date — that is correct for cash, not for revenue realisation. The two surfaces must not be conflated in any KPI tile, dashboard, or report.
+
+Where, **scoped to a single project** (never pooled across projects — see § 3.3.1):
+
+- `line.actualTotal` — the actual cost amount on the actuals row (`normalized_cost_line_actuals.actual_total`, Excel column Q). Realised or not — the per-line revenue exists as soon as the actual cost exists. The realisation signal in § 3.2 / § 3.7 (BLACK = confirmed) governs *when the line is counted as realised* in bucket aggregations, **not** whether `perLineRevenue` is computed.
+- `category.totalActualTotal` — `SUM(actual_total)` over all live (`effective_to IS NULL`) actuals rows whose parent cost line resolves to the same `category_allocation_id` for this project (Excel column X on the category header row).
+- `category.revenueAllocation` — `category_revenue_allocations.revenue_allocation` for that category, snapshot-guarded (Excel column J on the category header row).
+
+**Per-line GP** = `perLineRevenue − line.actualTotal`. **GP %** = `perLineGp / perLineRevenue` if `perLineRevenue ≠ 0` else null.
+
+**Recognition date (the bucket date for both Revenue and COS)** is `normalized_cost_line_actuals.invoice_date` (Excel column T — Invoice Raised Date). It is NOT `forecastPaymentDate` (planned), NOT `paidDate` (cash), NOT `contractDate`, NOT a milestone completion. Code that buckets revenue or COS on any other date is wrong.
+
+**Edge cases (HARD — must be handled exactly):**
+- `category.totalActualTotal == 0` → `perLineRevenue = 0`. Emit a warning to the import audit log naming the category.
+- Line has no `category_allocation_id` (orphan) → `perLineRevenue = 0`. Flag the line via the existing `import_warnings` channel.
+- `category.revenueAllocation` is null/zero → `perLineRevenue = 0`. The project surfaces an "allocation missing" badge. The app must NOT silently render `GP = -cost`.
+
+#### 3.3.1 Aggregation rule — sum of lines, never pooled
+
+Aggregates of revenue, COS, and GP **must** be computed as the sum of the per-line values produced by the formula above. The following pooled forms are **forbidden** and produce the wrong number whenever category mixes differ between projects:
+
+```
+WRONG:  portfolio_revenue = (Σ Q_all_projects / Σ X_all_projects) × Σ J_all_projects
+RIGHT:  portfolio_revenue = Σ_projects ( Σ_lines perLineRevenue )
+```
+
+Project totals must equal the sum across that project's lines. Portfolio totals must equal the sum across each project's project total. There is no "portfolio category" — categories are scoped to a single project.
+
+The algebraic identity `Σ perLineGp ≡ Σ perLineRevenue − Σ line.actualTotal` must hold within rounding for every aggregation; if a code path makes it diverge, fail loudly rather than silently rounding.
+
+#### 3.3.2 Single read path
+
+`server/repositories/finance-line-level-repository.ts` is the **only** place per-line revenue/GP is computed. Every higher-level aggregation (FY card, monthly recon grid, Revenue / COS / GP page totals, dashboards, KPIs) consumes its output and sums. Do not re-implement the formula elsewhere.
+
+The legacy persisted `revenue_recognition_amount` columns on `normalized_cost_lines` and `normalized_cost_line_actuals` are kept dual-write for one cycle (the normalizer continues to populate them) and an audit test asserts persisted ↔ derived parity within R 1. They are deprecated; new readers must not consume them.
+
+#### 3.3.3 What is NOT a revenue trigger
+
+Revenue is **not** recognised on payment receipt date, milestone completion, contract date, or invoice payment. Those drive *cash inflow* (§ 3.4) or *workflow gates* — never the recognition figure.
+
+**Inflow ≠ revenue.** Cash inflow (§ 3.4) reads payment receipt date with cell colour as the realisation signal — correct for cash, wrong for revenue recognition. The two surfaces must not be conflated in any KPI tile, dashboard, or report.
 ### 3.4 Inflows and outflows formulas
 Cashflow is **cash**, not revenue (see § 3.3 — they are different surfaces and must not be conflated). Both inflow and outflow realisation use the **uniform date-colour signal** from § 3.7: BLACK = confirmed / realised, RED = pending / forecast.
 The cashflow point series (`cashflowPoints`) and inflow/outflow projections must be derived from the canonical sources only:
@@ -190,7 +225,7 @@ The app must refuse, no override path:
 The app must refuse, no override path:
 - Reading a snapshot table without the `effectiveTo IS NULL` guard (§ 3.1) — produces wrong totals
 - Realising COS from anything other than (invoice captured + invoice-date cell colour BLACK) per § 3.2
-- Realising revenue using anything other than the cost-to-cost COS-ratio formula in § 3.3 (no invoice-date / receipt-date / contract-date / milestone triggers for revenue)
+- Recognising revenue using anything other than the category-scoped per-line POC formula in § 3.3 — `perLineRevenue = (line.actualTotal / category.totalActualTotal) × category.revenueAllocation`, summed across actuals rows scoped to a single project (no invoice-date / receipt-date / contract-date / milestone triggers; no cross-project pooling per § 3.3.1)
 - Inflows / outflows / cashflow series derived from non-canonical sources (§ 3.4)
 - Changing Smart Import line-ID hash inputs (§ 3.5) — orphans every existing override
 - Reverting Smart Import baseline lookup to key-only or snapshot fallback to row-level (§ 9) — re-introduces shipped bugs
@@ -229,7 +264,7 @@ For anything that crosses tool boundaries (e.g. Replit Agent making a schema cha
 The app blocks and the agent refuses. These mirror § 5A.
 - ❌ Skip `isNull(effectiveTo)` on snapshot-table aggregate queries — produces wrong totals (§ 3.1).
 - ❌ Realise COS from anything other than (invoice captured + invoice-date cell colour BLACK) per § 3.2.
-- ❌ Realise revenue from any signal other than the § 3.3 cost-to-cost COS-ratio formula (no invoice-date / receipt-date / contract-date / milestone triggers).
+- ❌ Recognise revenue from any signal other than the § 3.3 category-scoped per-line POC formula (no invoice-date / receipt-date / contract-date / milestone triggers; no cross-project pooling per § 3.3.1; aggregates always equal the sum of per-line values).
 - ❌ Derive inflows / outflows / cashflow from non-canonical sources (§ 3.4).
 - ❌ Change Smart Import line-ID hash inputs (`expense_line_id`, `inflow_line_id`) — orphans every existing override (§ 3.5).
 - ❌ Revert Smart Import baseline lookup to key-only, or snapshot fallback to row-level — re-introduces shipped bugs (§ 9).

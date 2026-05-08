@@ -77,6 +77,14 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci --prefer-offline --no-audit
+      # Provision the test database BEFORE the turbo run so DB-gated unit
+      # tests (e.g. qa/tests/unit/v2-finance-cashflow-db.test.ts) have a
+      # real schema in `beforeAll`. The cache restore on main can mask
+      # the missing-schema bug for unchanged-input commits, so any PR
+      # that invalidates the cache used to fail at `npx turbo run test`.
+      # Push the schema, seed the test users, then let turbo run.
+      - run: npm run db:push
+      - run: npm run seed:test-users
       - uses: actions/cache@v4
         with:
           path: |
@@ -89,11 +97,6 @@ jobs:
             turbo-compile-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-
       - run: npx turbo run build test --cache-dir=.turbo
         if: hashFiles('**/*.test.ts') != ''
-      # Provision the test database: push the Drizzle schema, then seed the
-      # users that the API tests log in as (johannes / eon / opsmanager31).
-      # Without these steps, /api/auth/login returns 401 in CI.
-      - run: npm run db:push
-      - run: npm run seed:test-users
       # Non-cacheable integration steps (need a live server + DB)
       - run: npm run test:api
       - run: npm run release:gate
