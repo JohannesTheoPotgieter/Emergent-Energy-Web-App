@@ -31,19 +31,23 @@ import crypto from "crypto";
 import type { Express, Request, Response } from "express";
 import { requireAuth, getEffectiveUser } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
-import { normalizeRoleForPermissions } from "@shared/schema";
+import { findEntityRegistry } from "@shared/permissions/registry";
+import { evaluateQbMappingLockDecision } from "./lib/quickbooks-mapping-lock-eval";
 
-// Lock-policy helper: once a mapping is locked (by an admin via the
+// Lock-policy: once a mapping is locked (by an admin via the
 // "Suggest matches" cascade or the unlock-then-relock flow), only an
-// admin role can subsequently change or clear it. financials:edit alone
-// is no longer sufficient. See Task #30 — prevents non-admin editors
-// from silently overwriting reviewed/approved mappings.
-const QB_ADMIN_ROLES = new Set(["COO_ADMIN", "CEO_ADMIN"]);
-function isAdminRequest(req: Request): boolean {
-  const raw = req.user?.role;
-  const normalized = normalizeRoleForPermissions(raw);
-  return QB_ADMIN_ROLES.has(raw ?? "") || QB_ADMIN_ROLES.has(normalized);
-}
+// authorised role can subsequently change or clear it. financials:edit
+// alone is no longer sufficient. See Task #30 — prevents non-admin
+// editors from silently overwriting reviewed/approved mappings.
+//
+// Plan v3 § 2.7 / D.6 #3: COO/CEO keep their reason-optional default
+// path (QB_ADMIN_ROLES below); CFO and PROGRAM_FINANCE_MANAGER (sourced
+// from financials.override_roles in the registry) gain an override-
+// with-reason path. See server/lib/quickbooks-mapping-lock-eval.ts.
+const QB_ADMIN_ROLES: ReadonlySet<string> = new Set(["COO_ADMIN", "CEO_ADMIN"]);
+const QB_LOCK_OVERRIDE_ROLES: ReadonlySet<string> = new Set(
+  findEntityRegistry("financials")?.override_roles ?? [],
+);
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import {
@@ -1005,14 +1009,24 @@ export function registerQuickBooksRoutes(app: Express): void {
         .from(qbcm)
         .where(and(eq(qbcm.projectId, projectId), isNull(qbcm.deletedAt)))
         .limit(1);
-      if (lockedExisting?.lockedAt && !isAdminRequest(req)) {
-        res.status(403).json({
-          error: "mapping_locked",
-          message: "This mapping is locked. Ask an admin to unlock or change it.",
-          mappingId: lockedExisting.id,
+      const lockDecision = lockedExisting?.lockedAt
+        ? evaluateQbMappingLockDecision({
+            userRole: req.user?.role,
+            rawOverrideReason: req.body?.override_reason,
+            defaultRoles: QB_ADMIN_ROLES,
+            overrideRoles: QB_LOCK_OVERRIDE_ROLES,
+          })
+        : null;
+      if (lockDecision?.kind === "reject") {
+        res.status(lockDecision.status).json({
+          ...lockDecision.body,
+          mappingId: lockedExisting!.id,
         });
         return;
       }
+      const overrideApplied = lockDecision?.kind === "proceed_with_override";
+      const overrideReason =
+        lockDecision?.kind === "proceed_with_override" ? lockDecision.reason : null;
       const user = getEffectiveUser(req);
       const mapping = await upsertCustomerMapping({
         projectId,
@@ -1025,7 +1039,9 @@ export function registerQuickBooksRoutes(app: Express): void {
       logAuditFromReq(req, {
         entityType: "quickbooks_customer_mapping",
         entityId: String(mapping.id),
-        action: "quickbooks.mapping.upsert",
+        action: overrideApplied
+          ? "quickbooks.mapping.upsert_with_override"
+          : "quickbooks.mapping.upsert",
         source: "UI",
         changesJson: {
           projectId,
@@ -1033,9 +1049,21 @@ export function registerQuickBooksRoutes(app: Express): void {
           qbCustomerId: mapping.qbCustomerId,
           qbCustomerName: mapping.qbCustomerName,
           qbRealmId: mapping.qbRealmId,
+          ...(overrideApplied
+            ? {
+                lockOverridden: true,
+                overrideApplied: true,
+                overrideReason,
+              }
+            : {}),
         },
       });
-      res.status(201).json({ mapping });
+      res.status(201).json({
+        mapping,
+        ...(overrideApplied
+          ? { override_applied: true, override_reason: overrideReason }
+          : {}),
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to save mapping";
       res.status(500).json({ error: "quickbooks_mapping_save_failed", message });
@@ -1056,13 +1084,21 @@ export function registerQuickBooksRoutes(app: Express): void {
         .from(qbcm)
         .where(eq(qbcm.id, id))
         .limit(1);
-      if (pre?.lockedAt && !isAdminRequest(req)) {
-        res.status(403).json({
-          error: "mapping_locked",
-          message: "This mapping is locked. Ask an admin to unlock or remove it.",
-        });
+      const lockDecision = pre?.lockedAt
+        ? evaluateQbMappingLockDecision({
+            userRole: req.user?.role,
+            rawOverrideReason: req.body?.override_reason,
+            defaultRoles: QB_ADMIN_ROLES,
+            overrideRoles: QB_LOCK_OVERRIDE_ROLES,
+          })
+        : null;
+      if (lockDecision?.kind === "reject") {
+        res.status(lockDecision.status).json(lockDecision.body);
         return;
       }
+      const overrideApplied = lockDecision?.kind === "proceed_with_override";
+      const overrideReason =
+        lockDecision?.kind === "proceed_with_override" ? lockDecision.reason : null;
       const previous = await softDeleteCustomerMapping(id);
       if (!previous) {
         res.status(404).json({ error: "not_found", message: "Mapping not found" });
@@ -1071,7 +1107,9 @@ export function registerQuickBooksRoutes(app: Express): void {
       logAuditFromReq(req, {
         entityType: "quickbooks_customer_mapping",
         entityId: String(id),
-        action: "quickbooks.mapping.unmap",
+        action: overrideApplied
+          ? "quickbooks.mapping.unmap_with_override"
+          : "quickbooks.mapping.unmap",
         source: "UI",
         changesJson: {
           projectId: previous.projectId,
@@ -1079,9 +1117,17 @@ export function registerQuickBooksRoutes(app: Express): void {
           qbCustomerId: previous.qbCustomerId,
           qbCustomerName: previous.qbCustomerName,
           qbRealmId: previous.qbRealmId,
+          ...(overrideApplied
+            ? { lockOverridden: true, overrideApplied: true, overrideReason }
+            : {}),
         },
       });
-      res.json({ ok: true });
+      res.json({
+        ok: true,
+        ...(overrideApplied
+          ? { override_applied: true, override_reason: overrideReason }
+          : {}),
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to delete mapping";
       res.status(500).json({ error: "quickbooks_mapping_delete_failed", message });
@@ -1161,15 +1207,25 @@ export function registerQuickBooksRoutes(app: Express): void {
           .limit(1);
 
         // Lock policy: a locked vendor mapping can only be modified by an
-        // admin. financials:edit alone is no longer sufficient.
-        if (existing?.lockedAt && !isAdminRequest(req)) {
-          res.status(403).json({
-            error: "mapping_locked",
-            message: "This vendor mapping is locked. Ask an admin to unlock or change it.",
-            mappingId: existing.id,
+        // admin OR an authorised role with override_reason. Plan v3 § 2.7.
+        const lockDecision = existing?.lockedAt
+          ? evaluateQbMappingLockDecision({
+              userRole: req.user?.role,
+              rawOverrideReason: req.body?.override_reason,
+              defaultRoles: QB_ADMIN_ROLES,
+              overrideRoles: QB_LOCK_OVERRIDE_ROLES,
+            })
+          : null;
+        if (lockDecision?.kind === "reject") {
+          res.status(lockDecision.status).json({
+            ...lockDecision.body,
+            mappingId: existing!.id,
           });
           return;
         }
+        const overrideApplied = lockDecision?.kind === "proceed_with_override";
+        const overrideReason =
+          lockDecision?.kind === "proceed_with_override" ? lockDecision.reason : null;
 
         let row;
         if (existing) {
@@ -1202,17 +1258,29 @@ export function registerQuickBooksRoutes(app: Express): void {
         logAuditFromReq(req, {
           entityType: "quickbooks_vendor_mapping",
           entityId: String(row.id),
-          action: existing ? "quickbooks.vendor_mapping.update" : "quickbooks.vendor_mapping.create",
+          action: overrideApplied
+            ? (existing
+                ? "quickbooks.vendor_mapping.update_with_override"
+                : "quickbooks.vendor_mapping.create_with_override")
+            : (existing ? "quickbooks.vendor_mapping.update" : "quickbooks.vendor_mapping.create"),
           source: "UI",
           changesJson: {
             qbVendorId,
             qbVendorName,
             counterpartyId,
             counterpartyName,
+            ...(overrideApplied
+              ? { lockOverridden: true, overrideApplied: true, overrideReason }
+              : {}),
           },
         });
 
-        res.json({ mapping: row });
+        res.json({
+          mapping: row,
+          ...(overrideApplied
+            ? { override_applied: true, override_reason: overrideReason }
+            : {}),
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to save vendor mapping";
         res.status(500).json({ error: "quickbooks_vendor_mapping_save_failed", message });
@@ -1238,13 +1306,21 @@ export function registerQuickBooksRoutes(app: Express): void {
           .from(quickbooksVendorMappings)
           .where(eq(quickbooksVendorMappings.id, id))
           .limit(1);
-        if (pre?.lockedAt && !isAdminRequest(req)) {
-          res.status(403).json({
-            error: "mapping_locked",
-            message: "This vendor mapping is locked. Ask an admin to unlock or remove it.",
-          });
+        const lockDecision = pre?.lockedAt
+          ? evaluateQbMappingLockDecision({
+              userRole: req.user?.role,
+              rawOverrideReason: req.body?.override_reason,
+              defaultRoles: QB_ADMIN_ROLES,
+              overrideRoles: QB_LOCK_OVERRIDE_ROLES,
+            })
+          : null;
+        if (lockDecision?.kind === "reject") {
+          res.status(lockDecision.status).json(lockDecision.body);
           return;
         }
+        const overrideApplied = lockDecision?.kind === "proceed_with_override";
+        const overrideReason =
+          lockDecision?.kind === "proceed_with_override" ? lockDecision.reason : null;
         const [row] = await db
           .update(quickbooksVendorMappings)
           .set({ deletedAt: new Date(), updatedAt: new Date() })
@@ -1257,14 +1333,24 @@ export function registerQuickBooksRoutes(app: Express): void {
         logAuditFromReq(req, {
           entityType: "quickbooks_vendor_mapping",
           entityId: String(id),
-          action: "quickbooks.vendor_mapping.unmap",
+          action: overrideApplied
+            ? "quickbooks.vendor_mapping.unmap_with_override"
+            : "quickbooks.vendor_mapping.unmap",
           source: "UI",
           changesJson: {
             qbVendorId: row.qbVendorId,
             counterpartyId: row.counterpartyId,
+            ...(overrideApplied
+              ? { lockOverridden: true, overrideApplied: true, overrideReason }
+              : {}),
           },
         });
-        res.json({ ok: true });
+        res.json({
+          ok: true,
+          ...(overrideApplied
+            ? { override_applied: true, override_reason: overrideReason }
+            : {}),
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to delete vendor mapping";
         res.status(500).json({ error: "quickbooks_vendor_mapping_delete_failed", message });
