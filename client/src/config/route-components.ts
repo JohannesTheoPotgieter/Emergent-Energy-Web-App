@@ -139,6 +139,7 @@ const GatesQueriesPage = lazyWithRetry(() => import("@/pages/gates/gates-queries
 const GatesCommitmentsPage = lazyWithRetry(() => import("@/pages/gates/gates-commitments"));
 const PendingApprovalsPage = lazyWithRetry(() => import("@/pages/pending-approvals"));
 const NcrLegacyRedirect = lazyWithRetry(() => import("@/pages/ncr-legacy-redirect"));
+const FinanceGpPage = lazyWithRetry(() => import("@/pages/finance-gp"));
 
 /**
  * Maps PageRegistryEntry.routeComponentKey → the lazy-loaded page component.
@@ -250,6 +251,7 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   FinanceQuickBooksLinksPage,
   FinanceQuickBooksCustomerMappingPage,
   FinanceQuickBooksThroughputPage,
+  FinanceGpPage,
   AdminBackfillPage,
   AdminWorkItemLinkagePage,
   AdminWorkflowConfigPage,
