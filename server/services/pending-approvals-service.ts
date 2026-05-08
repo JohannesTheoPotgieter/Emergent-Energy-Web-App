@@ -2,6 +2,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   pendingApprovals,
+  pendingApprovalHistory,
   PENDING_APPROVAL_KINDS,
   type PendingApproval,
   type PendingApprovalKind,
@@ -95,50 +96,85 @@ export async function approvePending(id: number, decidedByUserId: number): Promi
 
   const handler = HANDLERS.get(row.kind as PendingApprovalKind);
   if (!handler) {
-    const [updated] = await db
-      .update(pendingApprovals)
-      .set({
-        status: "failed",
-        applyError: `No handler registered for kind '${row.kind}'`,
-        decidedAt: new Date(),
-        decidedByUserId,
-        updatedAt: new Date(),
-      })
-      .where(eq(pendingApprovals.id, id))
-      .returning();
-    return updated;
+    return db.transaction(async (tx: typeof db) => {
+      const [updated] = await tx
+        .update(pendingApprovals)
+        .set({
+          status: "failed",
+          applyError: `No handler registered for kind '${row.kind}'`,
+          decidedAt: new Date(),
+          decidedByUserId,
+          updatedAt: new Date(),
+        })
+        .where(eq(pendingApprovals.id, id))
+        .returning();
+      // Plan v3 § 2.3 / D.5 (β): canonical transition history.
+      await tx.insert(pendingApprovalHistory).values({
+        pendingApprovalId: id,
+        fromStatus: row.status,
+        toStatus: "failed",
+        changedByUserId: decidedByUserId,
+        reason: `No handler registered for kind '${row.kind}'`,
+        detailsJson: { kind: row.kind },
+      });
+      return updated;
+    });
   }
 
+  // The handler runs OUTSIDE the transaction so external side effects
+  // (e.g., SharePoint writes, Pipedrive calls) aren't held in a long
+  // open transaction. The status flip + history insert are then wrapped
+  // together in a single short transaction.
   let appliedRecordId: string;
   try {
     appliedRecordId = await handler(row.payload as Record<string, unknown>, { decidedByUserId });
   } catch (err: any) {
-    const [failed] = await db
+    return db.transaction(async (tx: typeof db) => {
+      const errorMessage = err?.message ?? String(err);
+      const [failed] = await tx
+        .update(pendingApprovals)
+        .set({
+          status: "failed",
+          applyError: errorMessage,
+          decidedAt: new Date(),
+          decidedByUserId,
+          updatedAt: new Date(),
+        })
+        .where(eq(pendingApprovals.id, id))
+        .returning();
+      await tx.insert(pendingApprovalHistory).values({
+        pendingApprovalId: id,
+        fromStatus: row.status,
+        toStatus: "failed",
+        changedByUserId: decidedByUserId,
+        reason: errorMessage,
+        detailsJson: { kind: row.kind, errorSource: "handler_threw" },
+      });
+      return failed;
+    });
+  }
+
+  return db.transaction(async (tx: typeof db) => {
+    const [approved] = await tx
       .update(pendingApprovals)
       .set({
-        status: "failed",
-        applyError: err?.message ?? String(err),
+        status: "approved",
+        appliedRecordId,
         decidedAt: new Date(),
         decidedByUserId,
         updatedAt: new Date(),
       })
       .where(eq(pendingApprovals.id, id))
       .returning();
-    return failed;
-  }
-
-  const [approved] = await db
-    .update(pendingApprovals)
-    .set({
-      status: "approved",
-      appliedRecordId,
-      decidedAt: new Date(),
-      decidedByUserId,
-      updatedAt: new Date(),
-    })
-    .where(eq(pendingApprovals.id, id))
-    .returning();
-  return approved;
+    await tx.insert(pendingApprovalHistory).values({
+      pendingApprovalId: id,
+      fromStatus: row.status,
+      toStatus: "approved",
+      changedByUserId: decidedByUserId,
+      detailsJson: { kind: row.kind, appliedRecordId },
+    });
+    return approved;
+  });
 }
 
 export async function rejectPending(id: number, decidedByUserId: number, reason: string | null): Promise<PendingApproval> {
@@ -150,18 +186,29 @@ export async function rejectPending(id: number, decidedByUserId: number, reason:
   if (!row) throw new Error(`pending approval #${id} not found`);
   if (row.status !== "pending") throw new Error(`pending approval #${id} already ${row.status}`);
 
-  const [rejected] = await db
-    .update(pendingApprovals)
-    .set({
-      status: "rejected",
-      rejectionReason: reason,
-      decidedAt: new Date(),
-      decidedByUserId,
-      updatedAt: new Date(),
-    })
-    .where(eq(pendingApprovals.id, id))
-    .returning();
-  return rejected;
+  return db.transaction(async (tx: typeof db) => {
+    const [rejected] = await tx
+      .update(pendingApprovals)
+      .set({
+        status: "rejected",
+        rejectionReason: reason,
+        decidedAt: new Date(),
+        decidedByUserId,
+        updatedAt: new Date(),
+      })
+      .where(eq(pendingApprovals.id, id))
+      .returning();
+    // Plan v3 § 2.3 / D.5 (β): canonical transition history.
+    await tx.insert(pendingApprovalHistory).values({
+      pendingApprovalId: id,
+      fromStatus: row.status,
+      toStatus: "rejected",
+      changedByUserId: decidedByUserId,
+      reason,
+      detailsJson: { kind: row.kind },
+    });
+    return rejected;
+  });
 }
 
 export async function listPendingApprovals(opts: {

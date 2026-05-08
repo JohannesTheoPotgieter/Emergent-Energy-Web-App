@@ -9,6 +9,7 @@
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import {
   omHandovers,
+  omHandoverHistory,
   OM_HANDOVER_CHECKLIST,
   type OmHandover,
   type InsertOmHandover,
@@ -138,19 +139,32 @@ export async function markOmHandoverComplete(params: {
   const today = new Date();
   const todayIso = today.toISOString().slice(0, 10);
 
-  const [updated] = await db
-    .update(omHandovers)
-    .set({
-      status: "completed",
-      actualHandoverDate: existing.actualHandoverDate ?? todayIso,
-      markedCompleteByUserId: params.userId,
-      markedCompleteByRole: params.userRole,
-      markedCompleteAt: today,
-      updatedAt: today,
-    })
-    .where(eq(omHandovers.id, params.id))
-    .returning();
-  return updated as OmHandover;
+  // Plan v3 § 2.3 / D.5 (β): write a transition history row alongside the
+  // entity update inside a single transaction so the history can never
+  // diverge from the latest state.
+  return db.transaction(async (tx: typeof db) => {
+    const [updated] = await tx
+      .update(omHandovers)
+      .set({
+        status: "completed",
+        actualHandoverDate: existing.actualHandoverDate ?? todayIso,
+        markedCompleteByUserId: params.userId,
+        markedCompleteByRole: params.userRole,
+        markedCompleteAt: today,
+        updatedAt: today,
+      })
+      .where(eq(omHandovers.id, params.id))
+      .returning();
+    await tx.insert(omHandoverHistory).values({
+      omHandoverId: params.id,
+      fromStatus: existing.status,
+      toStatus: "completed",
+      changedByUserId: params.userId,
+      changedByRole: params.userRole,
+      detailsJson: { actualHandoverDate: updated.actualHandoverDate },
+    });
+    return updated as OmHandover;
+  });
 }
 
 /**

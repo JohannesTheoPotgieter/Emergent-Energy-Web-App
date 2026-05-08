@@ -32,6 +32,7 @@ import {
   normalizedCostLines,
   normalizedRevenueLines,
   qbLinkProposedCascades,
+  qbLinkProposedCascadeHistory,
   qbReconIgnores,
   qbRevenueReconIgnores,
   quickbooksCustomerMappings,
@@ -797,6 +798,19 @@ export async function acceptProposal(args: AcceptArgs): Promise<QbLinkProposedCa
       })
       .where(eq(qbLinkProposedCascades.id, proposal.id))
       .returning();
+    // Plan v3 § 2.3 / D.5 (β): canonical transition history.
+    await tx.insert(qbLinkProposedCascadeHistory).values({
+      cascadeId: proposal.id,
+      fromStatus: proposal.status,
+      toStatus: "accepted",
+      changedByUserId: args.userId,
+      reason: args.note ?? null,
+      detailsJson: {
+        proposalType: proposal.proposalType,
+        linkId: proposal.linkId,
+        importRunId: args.importRunId ?? null,
+      },
+    });
     return row!;
   });
 
@@ -812,18 +826,32 @@ export async function declineProposal(args: AcceptArgs): Promise<QbLinkProposedC
       "already_resolved",
     );
   }
-  const [row] = await db
-    .update(qbLinkProposedCascades)
-    .set({
-      status: "declined",
-      resolvedBy: args.userId,
-      resolvedAt: new Date(),
-      resolutionNote: args.note,
-      updatedAt: new Date(),
-    })
-    .where(eq(qbLinkProposedCascades.id, proposal.id))
-    .returning();
-  return row!;
+  return db.transaction(async (tx: typeof db) => {
+    const [row] = await tx
+      .update(qbLinkProposedCascades)
+      .set({
+        status: "declined",
+        resolvedBy: args.userId,
+        resolvedAt: new Date(),
+        resolutionNote: args.note,
+        updatedAt: new Date(),
+      })
+      .where(eq(qbLinkProposedCascades.id, proposal.id))
+      .returning();
+    // Plan v3 § 2.3 / D.5 (β): canonical transition history.
+    await tx.insert(qbLinkProposedCascadeHistory).values({
+      cascadeId: proposal.id,
+      fromStatus: proposal.status,
+      toStatus: "declined",
+      changedByUserId: args.userId,
+      reason: args.note ?? null,
+      detailsJson: {
+        proposalType: proposal.proposalType,
+        linkId: proposal.linkId,
+      },
+    });
+    return row!;
+  });
 }
 
 // =========================================================================

@@ -190,6 +190,30 @@ export type InsertOmHandover = z.infer<typeof insertOmHandoverSchema>;
 export type OmHandover = typeof omHandovers.$inferSelect;
 
 /**
+ * Transition history for `omHandovers` — Plan v3 § 2.3 / D.5 (β).
+ *
+ * Records every state change on an om_handover row. The parent entity
+ * carries `markedCompleteByUserId / Role / At` for the latest state;
+ * this table captures the FULL transition trail (scheduled → in_progress →
+ * completed → reopened → ...) for forensic audit. Written by service
+ * layer alongside the entity update inside a single transaction.
+ */
+export const omHandoverHistory = pgTable("om_handover_history", {
+  id: serial("id").primaryKey(),
+  omHandoverId: integer("om_handover_id").notNull().references(() => omHandovers.id, { onDelete: "cascade" }),
+  fromStatus: text("from_status"),
+  toStatus: text("to_status").notNull(),
+  changedByUserId: integer("changed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  changedByRole: text("changed_by_role"),
+  changedAt: timestamp("changed_at").notNull().defaultNow(),
+  reason: text("reason"),
+  detailsJson: jsonb("details_json"),
+});
+export const insertOmHandoverHistorySchema = createInsertSchema(omHandoverHistory).omit({ id: true, changedAt: true } as any);
+export type InsertOmHandoverHistory = z.infer<typeof insertOmHandoverHistorySchema>;
+export type OmHandoverHistory = typeof omHandoverHistory.$inferSelect;
+
+/**
  * The canonical readiness checklist keys and their human-readable labels.
  * Mirrors stage8DataSchema exactly so the O&M handover module and the
  * Stage 8 workspace surface the same items.
