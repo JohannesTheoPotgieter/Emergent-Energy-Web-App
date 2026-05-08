@@ -32,7 +32,7 @@ const EXPECTED_TEMPLATES: ReadonlyArray<{ name: string; phase: string }> = [
   { name: "PD-to-PM Handover", phase: "S03_SIGNATURE_FINANCIAL_CLOSE" },
   { name: "Construction Readiness Gate", phase: "S04_PLANNING" },
   { name: "HSE File Checklist", phase: "S04_PLANNING" },
-  { name: "Commissioning Readiness Gate", phase: "S07_COMMISSIONING" },
+  { name: "Commissioning Readiness Gate", phase: "S06_CONSTRUCTION" },
   { name: "O&M Handover to Matriarch", phase: "S08_OM_HANDOVER" },
   { name: "Client Handover Checklist", phase: "S09_CLIENT_HANDOVER" },
   { name: "3-Month Post-HO Review", phase: "S09_CLIENT_HANDOVER" },
