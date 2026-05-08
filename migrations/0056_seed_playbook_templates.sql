@@ -22,7 +22,7 @@
 --   5  PD-to-PM Handover                 → S03_SIGNATURE_FINANCIAL_CLOSE (playbook: "Trigger artefact at FC")
 --   6  Construction Readiness Gate       → S04_PLANNING                  (playbook: "Stage 4 exit gate")
 --   7  HSE File Checklist                → S04_PLANNING                  (playbook: "before site work commences")
---   8  Commissioning Readiness Gate      → S07_COMMISSIONING             (playbook: "Stage 6 entry gate"; code S07)
+--   8  Commissioning Readiness Gate      → S06_CONSTRUCTION              (exit-from-Construction gate; mirrors #6 pattern — readiness gates live in the outgoing phase)
 --   9  O&M Handover to Matriarch         → S08_OM_HANDOVER               (Stage 7)
 --  10  Client Handover Checklist         → S09_CLIENT_HANDOVER           (Stage 8)
 --  11  3-Month Post-HO Review            → S09_CLIENT_HANDOVER           (post-handover review tied to client HO)
@@ -87,10 +87,10 @@ WHERE NOT EXISTS (
 
 -- 8. Commissioning Readiness Gate
 INSERT INTO phase_template (phase, name, version, is_active, created_at, updated_at)
-SELECT 'S07_COMMISSIONING', 'Commissioning Readiness Gate', 1, TRUE, now(), now()
+SELECT 'S06_CONSTRUCTION', 'Commissioning Readiness Gate', 1, TRUE, now(), now()
 WHERE NOT EXISTS (
   SELECT 1 FROM phase_template
-  WHERE phase = 'S07_COMMISSIONING' AND name = 'Commissioning Readiness Gate' AND version = 1
+  WHERE phase = 'S06_CONSTRUCTION' AND name = 'Commissioning Readiness Gate' AND version = 1
 );
 
 -- 9. O&M Handover to Matriarch
