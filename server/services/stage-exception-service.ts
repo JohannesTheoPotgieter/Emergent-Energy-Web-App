@@ -26,6 +26,7 @@ import {
   type ProjectStageException,
 } from "@shared/schema";
 import { db } from "../db";
+import { recordAudit } from "../api/v2/services/audit-service";
 
 // ── Create ──────────────────────────────────────────────────
 
@@ -122,6 +123,20 @@ export async function approveException(
       reason: conditions || null,
     });
 
+    await recordAudit({
+      userId: approverUserId,
+      entityType: "stage_exception",
+      entityId: String(exceptionId),
+      action: "APPROVE_EXCEPTION",
+      changesJson: {
+        projectId: existing.projectId,
+        stageCode: existing.stageCode,
+        fromStatus: existing.status,
+        toStatus: newStatus,
+        conditions: conditions ?? null,
+      },
+    });
+
     const [updated] = await tx
       .select()
       .from(projectStageExceptions)
@@ -175,6 +190,20 @@ export async function rejectException(
       toStatus: 'REJECTED',
       changedByUserId: approverUserId,
       reason,
+    });
+
+    await recordAudit({
+      userId: approverUserId,
+      entityType: "stage_exception",
+      entityId: String(exceptionId),
+      action: "REJECT_EXCEPTION",
+      changesJson: {
+        projectId: existing.projectId,
+        stageCode: existing.stageCode,
+        fromStatus: existing.status,
+        toStatus: "REJECTED",
+        reason,
+      },
     });
 
     const [updated] = await tx
