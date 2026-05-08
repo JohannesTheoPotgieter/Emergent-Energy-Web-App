@@ -33,6 +33,7 @@ import {
 } from "@shared/schema/engineering";
 import { logAuditFromReq } from "./audit-logger";
 import { recordAudit } from "./api/v2/services/audit-service";
+import { canOverride } from "@shared/permissions/authoriser-matrix";
 import { sendError } from "./lib/api-error";
 import { createEngineeringWorkItem, updateEngineeringWorkItem } from "./work-items-adapter";
 import { jwtAuth, requireAuth } from "./auth-context";
@@ -357,27 +358,59 @@ export function registerEngStageRoutes(app: Express) {
       const existingStages = await db.select({ id: projectEngStages.id, stageTemplateId: projectEngStages.stageTemplateId })
         .from(projectEngStages).where(eq(projectEngStages.projectId, projectId));
 
-      if (!stageTemplateId && existingStages.length > 0) {
+      // Plan v3 § D.G — softening the "already generated" idempotency guards.
+      // COO / CEO with an override_reason can request regeneration; without
+      // override, the 409 still fires.
+      const overrideReason = typeof req.body?.override_reason === "string"
+        ? req.body.override_reason.trim()
+        : "";
+      const overrideAllowed = overrideReason.length > 0 && canOverride(user.role, "eng_stages");
+
+      if (!stageTemplateId && existingStages.length > 0 && !overrideAllowed) {
         const activeTemplates = await db.select({ id: engStageTemplates.id })
           .from(engStageTemplates).where(eq(engStageTemplates.isActive, true));
         const existingTemplateIds = new Set(existingStages.map((s: any) => s.stageTemplateId));
         const remaining = activeTemplates.filter((t: any) => !existingTemplateIds.has(t.id));
         if (remaining.length === 0) {
-          return res.status(409).json({ error: "Engineering stages have already been generated for this project" });
+          return res.status(409).json({
+            error: "Engineering stages have already been generated for this project",
+            hint: "Pass override_reason as a COO/CEO to regenerate (idempotent — existing stages are kept).",
+          });
         }
       }
 
-      if (stageTemplateId) {
+      if (stageTemplateId && !overrideAllowed) {
         const alreadyExists = existingStages.some((s: any) => s.stageTemplateId === stageTemplateId);
         if (alreadyExists) {
-          return res.status(409).json({ error: "This engineering stage has already been generated for this project" });
+          return res.status(409).json({
+            error: "This engineering stage has already been generated for this project",
+            hint: "Pass override_reason as a COO/CEO to bypass the duplicate-template guard.",
+          });
         }
       }
 
       const result = await generateEngStagesForProject(projectId, user.id, stageNames);
 
-      if (result.stagesCreated === 0) {
-        return res.status(409).json({ error: "All stages already generated or no active templates" });
+      if (result.stagesCreated === 0 && !overrideAllowed) {
+        return res.status(409).json({
+          error: "All stages already generated or no active templates",
+          hint: "Pass override_reason as a COO/CEO to record an audited no-op.",
+        });
+      }
+      if (overrideAllowed) {
+        await recordAudit({
+          actorRole: user.role,
+          userId: user.id,
+          entityType: "eng_project_stage",
+          entityId: String(projectId),
+          action: "OVERRIDE_REGENERATE_ENG_STAGES",
+          projectName: project.projectName,
+          changesJson: {
+            override_applied: true,
+            reason: overrideReason,
+            stagesCreated: result.stagesCreated,
+          },
+        });
       }
 
       logAuditFromReq(req, { entityType: "eng_project_stage", entityId: String(projectId), action: "create", projectName: project.projectName, changesJson: { description: "Engineering stages generated", stagesCreated: result.stagesCreated, stageDetails: result.stageDetails } });
@@ -583,13 +616,29 @@ export function registerEngStageRoutes(app: Express) {
       const effectiveHasDeliverable = hasDeliverable !== undefined ? hasDeliverable : existingTask.hasDeliverable;
       const effectiveStatus = status !== undefined ? status : existingTask.status;
 
+      // Plan v3 § D.G — softening the deliverable-required and
+      // deliverable-must-be-approved guards. A COO / CEO with an
+      // override_reason can complete the task; the original gate stays
+      // for everyone else and the override path writes a canonical audit row.
+      const taskOverrideReason = typeof req.body?.override_reason === "string"
+        ? req.body.override_reason.trim()
+        : "";
+      const taskOverrideAllowed = taskOverrideReason.length > 0 && canOverride(user.role, "eng_stages");
+      let taskOverrideTriggered: "missing_deliverable" | "deliverable_not_approved" | null = null;
+
       if (effectiveStatus === "complete" && effectiveHasDeliverable) {
         const taskDeliverables = await db.select()
           .from(projectEngDeliverables)
           .where(eq(projectEngDeliverables.projectEngTaskId, taskId));
         if (taskDeliverables.length === 0) {
           if (status === "complete") {
-            return res.status(400).json({ error: "This task requires a deliverable to be uploaded before it can be completed." });
+            if (!taskOverrideAllowed) {
+              return res.status(400).json({
+                error: "This task requires a deliverable to be uploaded before it can be completed.",
+                hint: "Pass override_reason as a COO/CEO to complete without a deliverable.",
+              });
+            }
+            taskOverrideTriggered = "missing_deliverable";
           }
           if (hasDeliverable === true && existingTask.status === "complete") {
             const revertUpdates: any = { hasDeliverable: true, status: "pending", completedAt: null, completedBy: null };
@@ -600,7 +649,13 @@ export function registerEngStageRoutes(app: Express) {
           const hasApproved = taskDeliverables.some((d: any) => d.approvalStatus === "approved");
           if (!hasApproved) {
             if (status === "complete") {
-              return res.status(400).json({ error: "The deliverable for this task must be approved before it can be completed." });
+              if (!taskOverrideAllowed) {
+                return res.status(400).json({
+                  error: "The deliverable for this task must be approved before it can be completed.",
+                  hint: "Pass override_reason as a COO/CEO to complete with an unapproved deliverable.",
+                });
+              }
+              taskOverrideTriggered = "deliverable_not_approved";
             }
             if (hasDeliverable === true && existingTask.status === "complete") {
               const revertUpdates: any = { hasDeliverable: true, status: "pending", completedAt: null, completedBy: null };
@@ -609,6 +664,20 @@ export function registerEngStageRoutes(app: Express) {
             }
           }
         }
+      }
+      if (taskOverrideTriggered) {
+        await recordAudit({
+          actorRole: user.role,
+          userId: user.id,
+          entityType: "eng_task",
+          entityId: String(taskId),
+          action: "OVERRIDE_TASK_COMPLETION_GATE",
+          changesJson: {
+            override_applied: true,
+            triggeredBy: taskOverrideTriggered,
+            reason: taskOverrideReason,
+          },
+        });
       }
 
       const updates: any = {};
