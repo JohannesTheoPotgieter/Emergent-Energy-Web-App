@@ -5,7 +5,7 @@ import { computeCostEvidence } from "../lib/finance/qb-allocation";
 import { getAssignedEvidenceByCostLineIds } from "../lib/finance/qb-allocation-read";
 import { logAudit } from "../audit-logger";
 import {
-  normalizedCostLines, projectInfo,
+  normalizedCostLines, normalizedCostLineActuals, projectInfo,
   type ProgramExpense, type InsertProgramExpense,
 } from "@shared/schema";
 import { db } from "../db";
@@ -299,6 +299,9 @@ export class FinanceExpenseEngineRepository {
    * merge collision by keeping a single copy.
    */
   async listAllActiveCostLines(): Promise<Array<typeof normalizedCostLines.$inferSelect>> {
+    if (process.env.LINE_LEVEL_COS_TRACKER === "on") {
+      return this.listAllActiveCostLinesLineLevel();
+    }
     return this.dbInstance
       .select()
       .from(normalizedCostLines)
@@ -306,6 +309,64 @@ export class FinanceExpenseEngineRepository {
         isNull(normalizedCostLines.effectiveTo),
         isNull(normalizedCostLines.deletedAt),
       ));
+  }
+
+  /**
+   * Line-level cutover variant — returns ONE synthesized row per
+   * `normalized_cost_line_actuals` (child) row, with parent metadata
+   * spread in for the fields the legacy COS / Revenue trackers read.
+   *
+   * Gated behind the `LINE_LEVEL_COS_TRACKER=on` env flag. Default
+   * is OFF — production keeps the parent-row data path until the
+   * COO and Programme Finance have signed off on the per-line
+   * Mondi numbers post-import.
+   *
+   * What changes when the flag is on:
+   *   - Row `amountExVat` comes from `actualTotal` on the child
+   *     (so split-paid invoices count as N rows, not 1).
+   *   - Row `invoiceDate` and `invoiceNumber` come from the child
+   *     (so the recognition month matches Excel column T per row).
+   *   - Row `paidDate` comes from the child's `financePaymentDate`
+   *     when present (per-actual cash date), else parent's paidDate.
+   *   - Row `id` stays the parent's id so QB link lookups continue
+   *     to resolve. Two children of the same parent share an id —
+   *     the legacy bucketing uses id only for `Map.has(id)` checks
+   *     so duplication is harmless.
+   *   - Other fields (projectName, projectId, costCategory,
+   *     invoiceDateFontColor, invoiceDateConfirmed, paidDateFontColor,
+   *     paidDateConfirmed, status overrides) come from the parent.
+   *
+   * Cost lines with NO actuals child are still emitted (as the
+   * parent row, unchanged) — these are budget-only lines that
+   * haven't been settled yet. Otherwise the planned bucket would
+   * silently empty out.
+   */
+  async listAllActiveCostLinesLineLevel(): Promise<Array<typeof normalizedCostLines.$inferSelect>> {
+    const [parents, actuals] = await Promise.all([
+      this.dbInstance
+        .select()
+        .from(normalizedCostLines)
+        .where(and(
+          isNull(normalizedCostLines.effectiveTo),
+          isNull(normalizedCostLines.deletedAt),
+        )),
+      this.dbInstance
+        .select({
+          costLineId: normalizedCostLineActuals.costLineId,
+          actualTotal: normalizedCostLineActuals.actualTotal,
+          poNumber: normalizedCostLineActuals.poNumber,
+          invoiceNumber: normalizedCostLineActuals.invoiceNumber,
+          invoiceDate: normalizedCostLineActuals.invoiceDate,
+          financePaymentDate: normalizedCostLineActuals.financePaymentDate,
+        })
+        .from(normalizedCostLineActuals)
+        .where(and(
+          isNull(normalizedCostLineActuals.effectiveTo),
+          isNull(normalizedCostLineActuals.deletedAt),
+        )),
+    ]);
+
+    return mergeLineLevelCostLines(parents, actuals as ChildActualRow[]);
   }
 
   // ── QB invoice-matching reads (active rows only) ──
@@ -518,4 +579,53 @@ export class FinanceExpenseEngineRepository {
       .returning();
     return updated ?? null;
   }
+}
+
+/**
+ * Pure helper backing `listAllActiveCostLinesLineLevel`. Exported for
+ * unit testing without a live DB. Preserves the legacy shape exactly
+ * so downstream consumers (the COS / Revenue tracker bucketing in
+ * server/departments/finance-routes.ts) don't need code changes when
+ * the cutover flag flips.
+ */
+export interface ChildActualRow {
+  costLineId: number;
+  actualTotal: string | number | null;
+  poNumber: string | null;
+  invoiceNumber: string | null;
+  invoiceDate: string | Date | null;
+  financePaymentDate: string | Date | null;
+}
+
+export function mergeLineLevelCostLines<P extends { id: number }>(
+  parents: readonly P[],
+  actuals: readonly ChildActualRow[],
+): P[] {
+  const childrenByParent = new Map<number, ChildActualRow[]>();
+  for (const a of actuals) {
+    const arr = childrenByParent.get(a.costLineId) ?? [];
+    arr.push(a);
+    childrenByParent.set(a.costLineId, arr);
+  }
+
+  const out: P[] = [];
+  for (const parent of parents) {
+    const children = childrenByParent.get(parent.id);
+    if (!children || children.length === 0) {
+      out.push(parent);
+      continue;
+    }
+    for (const child of children) {
+      const p = parent as unknown as Record<string, unknown>;
+      out.push({
+        ...parent,
+        amountExVat: child.actualTotal != null ? String(child.actualTotal) : p.amountExVat,
+        poNumber: child.poNumber ?? p.poNumber ?? null,
+        invoiceNumber: child.invoiceNumber ?? p.invoiceNumber ?? null,
+        invoiceDate: child.invoiceDate ?? p.invoiceDate ?? null,
+        paidDate: child.financePaymentDate ?? p.paidDate ?? null,
+      } as P);
+    }
+  }
+  return out;
 }
