@@ -114,6 +114,17 @@ const inWindow = (iso: string | null, fyStart?: string, fyEnd?: string): boolean
 };
 
 /**
+ * Normalise a category key for fallback matching.
+ *
+ * The Smart Import normaliser produces keys like "1. Panels" via
+ * `normalizeCategoryKey`; both `category_revenue_allocations.category_key`
+ * and `normalized_cost_lines.category_key` should agree. We still
+ * defensively trim and lower-case here so a casing or whitespace drift
+ * in legacy data doesn't break the fallback.
+ */
+const normalizeKey = (raw: string): string => raw.trim().toLowerCase();
+
+/**
  * Bucket classification — matches the existing taxonomy used by Revenue /
  * COS / GP recon grids:
  *
@@ -365,15 +376,49 @@ export function deriveFinanceLinesFromRows(
   const allocationById = new Map<number, FinanceLineAllocationRowInput>();
   for (const a of allocationRows) allocationById.set(a.id, a);
 
-  // X — SUM(actualTotal) per (projectId, categoryAllocationId), scoped to
-  // each project independently (§ 3.3.1 — never pooled across projects).
+  // Fallback resolution by (projectId, categoryKey) against active
+  // allocations. Each Smart Import re-import soft-closes existing
+  // allocations (§ 3.1) and inserts new ones with new IDs; if S10
+  // doesn't fully relink the parent's `categoryAllocationId` FK, the
+  // FK ends up pointing to a soft-closed (now-historical) row that
+  // the snapshot guard correctly excludes from `allocationById`. The
+  // category key is stable across re-imports though, so we can recover
+  // by looking up the active allocation for the same project + key.
+  // Without this fallback, GP silently shows zero for every line on
+  // every re-import.
+  const allocationByProjectKey = new Map<string, FinanceLineAllocationRowInput>();
+  for (const a of allocationRows) {
+    const k = a.categoryKey ? `${a.projectId}::${normalizeKey(a.categoryKey)}` : null;
+    if (k) allocationByProjectKey.set(k, a);
+  }
+
+  // Resolve each parent to an active allocation: prefer the FK when it
+  // points to a live row, fall back to (projectId, categoryKey).
+  const parentResolvedAllocId = new Map<number, number | null>();
+  for (const parent of parentRows) {
+    let allocId: number | null = null;
+    if (parent.categoryAllocationId != null && allocationById.has(parent.categoryAllocationId)) {
+      allocId = parent.categoryAllocationId;
+    } else if (parent.categoryKey) {
+      const fallback = allocationByProjectKey.get(
+        `${parent.projectId}::${normalizeKey(parent.categoryKey)}`,
+      );
+      if (fallback) allocId = fallback.id;
+    }
+    parentResolvedAllocId.set(parent.id, allocId);
+  }
+
+  // X — SUM(actualTotal) per (projectId, resolved allocationId), scoped
+  // to each project independently (§ 3.3.1 — never pooled across
+  // projects). Uses the resolved allocation so a stale FK doesn't fan
+  // a category into multiple buckets.
   const categoryTotalsKey = (projectId: number, allocationId: number) =>
     `${projectId}:${allocationId}`;
   const categoryTotalActuals = new Map<string, number>();
   for (const a of actualsRows) {
     const parent = parentById.get(a.costLineId);
     if (!parent) continue;
-    const allocId = parent.categoryAllocationId;
+    const allocId = parentResolvedAllocId.get(parent.id);
     if (allocId == null) continue;
     const k = categoryTotalsKey(a.projectId, allocId);
     categoryTotalActuals.set(k, (categoryTotalActuals.get(k) ?? 0) + toNum(a.actualTotal));
@@ -386,7 +431,7 @@ export function deriveFinanceLinesFromRows(
     if (!inWindow(invoiceRaisedDate, opts.fyStart, opts.fyEnd)) continue;
 
     const actualTotal = toNum(a.actualTotal);
-    const allocId = parent?.categoryAllocationId ?? null;
+    const allocId = parent ? parentResolvedAllocId.get(parent.id) ?? null : null;
     const allocation = allocId != null ? allocationById.get(allocId) ?? null : null;
     const categoryTotalActualTotal = allocId != null
       ? categoryTotalActuals.get(categoryTotalsKey(a.projectId, allocId)) ?? 0
@@ -400,7 +445,16 @@ export function deriveFinanceLinesFromRows(
     if (parent == null) {
       warning = "orphan_actuals_row_no_parent";
     } else if (allocId == null) {
-      warning = "missing_category_allocation_linkage";
+      // Distinguish "parent has nothing to lookup with" from "parent had a
+      // key/FK but no matching active allocation exists". The first is a
+      // data-quality issue at import time; the second is what the page
+      // banner surfaces as "missing column J".
+      const hasFk = parent.categoryAllocationId != null;
+      const hasKey = !!(parent.categoryKey && parent.categoryKey.trim());
+      warning =
+        hasFk || hasKey
+          ? "category_revenue_allocation_missing"
+          : "missing_category_allocation_linkage";
     } else if (categoryRevenueAllocation == null || categoryRevenueAllocation === 0) {
       warning = "category_revenue_allocation_missing";
     } else if (categoryTotalActualTotal === 0) {
