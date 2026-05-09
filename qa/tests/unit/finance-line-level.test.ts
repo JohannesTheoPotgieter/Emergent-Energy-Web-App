@@ -217,14 +217,32 @@ describe("deriveFinanceLinesFromRows — edge cases", () => {
     expect(lines[0].derivationWarning).toBe("category_total_actual_zero");
   });
 
-  it("perLineRevenue = 0 when category allocation row is missing", () => {
+  it("perLineRevenue = 0 when no allocation rows exist (parent had FK + key but allocations table is empty)", () => {
     const lines = deriveFinanceLinesFromRows(actuals, parents, []); // no allocations
     expect(lines.every((l) => l.perLineRevenue === 0)).toBe(true);
+    // Parent has both FK and categoryKey, but neither resolves because
+    // `allocationRows` is empty. The right warning is the workbook-level
+    // "missing J" surface, not the import-linkage one.
     expect(lines.every((l) => l.derivationWarning === "category_revenue_allocation_missing")).toBe(true);
   });
 
-  it("perLineRevenue = 0 when parent has no categoryAllocationId", () => {
+  it("falls back to categoryKey when categoryAllocationId is null but key matches", () => {
+    // After the re-import-FK-stale fix: a parent with no FK but a valid
+    // categoryKey should resolve to the active allocation by key. This is
+    // the production fix for "GP page is empty after re-import".
     const orphanedParents = parents.map((p) => ({ ...p, categoryAllocationId: null }));
+    const lines = deriveFinanceLinesFromRows(actuals, orphanedParents, allocations);
+    expect(lines.every((l) => l.derivationWarning === null)).toBe(true);
+    expect(lines.every((l) => l.perLineRevenue > 0)).toBe(true);
+  });
+
+  it("perLineRevenue = 0 when parent has no FK AND no categoryKey", () => {
+    // True orphan: parent can't be linked to any allocation by either path.
+    const orphanedParents = parents.map((p) => ({
+      ...p,
+      categoryAllocationId: null,
+      categoryKey: null,
+    }));
     const lines = deriveFinanceLinesFromRows(actuals, orphanedParents, allocations);
     expect(lines.every((l) => l.perLineRevenue === 0)).toBe(true);
     expect(lines.every((l) => l.derivationWarning === "missing_category_allocation_linkage")).toBe(true);
@@ -259,6 +277,169 @@ describe("deriveFinanceLinesFromRows — edge cases", () => {
     const may = agg.byMonth.find((m) => m.monthKey === "2026-05")!;
     expect(apr.revenue + may.revenue).toBeCloseTo(80000, 4);
     expect(apr.count + may.count).toBe(3);
+  });
+});
+
+describe("deriveFinanceLinesFromRows — re-import FK fallback (stale categoryAllocationId)", () => {
+  /**
+   * Reproduces the production failure mode after a Smart Import re-import:
+   *
+   *   1. Old `category_revenue_allocations` rows are soft-closed (effectiveTo
+   *      set), new rows are inserted with new IDs.
+   *   2. S10 should re-link parent cost lines to the new IDs but for any
+   *      reason fails to (transaction error, partial run, edge case).
+   *   3. Each parent's `categoryAllocationId` now points to a soft-closed
+   *      row that the snapshot guard in the repository correctly excludes
+   *      from `allocationRows` — so the FK looks dangling.
+   *
+   * Without the fallback, every line would compute perLineRevenue = 0 and
+   * the GP page would render empty even though the workbook column J is
+   * populated. With the fallback we resolve the active allocation by
+   * (projectId, categoryKey) and the math comes out right.
+   */
+  it("resolves an active allocation via (projectId, categoryKey) when the FK is stale", () => {
+    // The active allocation has id=200; the parent's stale FK points at id=99
+    // (a soft-closed row that's not in `allocationRows`).
+    const activeAlloc: FinanceLineAllocationRowInput = {
+      id: 200,
+      projectId: PROJECT_A,
+      categoryKey: "1. Panels",
+      categoryName: "Panels",
+      categoryNumber: "1",
+      revenueAllocation: "60000",
+    };
+    const staleParents: FinanceLineParentRowInput[] = [
+      {
+        id: 1,
+        projectId: PROJECT_A,
+        categoryAllocationId: 99, // stale — points at soft-closed allocation
+        categoryKey: "1. Panels",
+        costCategory: "Panels",
+        description: "1.1 Panels",
+        budgetTotal: "10000",
+        forecastPaymentDate: null,
+        paidDate: null,
+        paidDateConfirmed: null,
+      },
+    ];
+    const acts: FinanceLineActualsRowInput[] = [
+      {
+        id: 100,
+        costLineId: 1,
+        projectId: PROJECT_A,
+        actualTotal: "10000",
+        poNumber: null,
+        invoiceNumber: "INV-1",
+        invoiceDate: "2026-04-15",
+        financePaymentDate: null,
+        description: null,
+        qty: null,
+        rate: null,
+      },
+    ];
+
+    const lines = deriveFinanceLinesFromRows(acts, staleParents, [activeAlloc]);
+    expect(lines).toHaveLength(1);
+    const line = lines[0];
+
+    // Should NOT be flagged "missing_category_allocation_linkage".
+    expect(line.derivationWarning).toBeNull();
+
+    // Resolved to the active allocation by category key.
+    expect(line.categoryAllocationId).toBe(200);
+    expect(line.categoryName).toBe("Panels");
+    expect(line.categoryRevenueAllocation).toBe(60000);
+    expect(line.categoryTotalActualTotal).toBe(10000);
+    expect(line.perLineRevenue).toBeCloseTo(60000, 4); // (10000/10000)*60000
+  });
+
+  it("category-key matching is whitespace and case insensitive", () => {
+    const activeAlloc: FinanceLineAllocationRowInput = {
+      id: 300,
+      projectId: PROJECT_A,
+      categoryKey: "1. Panels",
+      categoryName: "Panels",
+      categoryNumber: "1",
+      revenueAllocation: "60000",
+    };
+    const parents: FinanceLineParentRowInput[] = [
+      {
+        id: 1,
+        projectId: PROJECT_A,
+        categoryAllocationId: null, // never linked
+        categoryKey: "  1. PANELS  ", // legacy/casing/whitespace drift
+        costCategory: "Panels",
+        description: null,
+        budgetTotal: null,
+        forecastPaymentDate: null,
+        paidDate: null,
+        paidDateConfirmed: null,
+      },
+    ];
+    const acts: FinanceLineActualsRowInput[] = [
+      {
+        id: 100,
+        costLineId: 1,
+        projectId: PROJECT_A,
+        actualTotal: "5000",
+        poNumber: null,
+        invoiceNumber: null,
+        invoiceDate: "2026-04-15",
+        financePaymentDate: null,
+        description: null,
+        qty: null,
+        rate: null,
+      },
+    ];
+
+    const lines = deriveFinanceLinesFromRows(acts, parents, [activeAlloc]);
+    expect(lines[0].derivationWarning).toBeNull();
+    expect(lines[0].categoryAllocationId).toBe(300);
+    expect(lines[0].perLineRevenue).toBeCloseTo(60000, 4);
+  });
+
+  it("fallback is per-project — does not match a same-key allocation in a different project", () => {
+    const projAAlloc: FinanceLineAllocationRowInput = {
+      id: 400,
+      projectId: PROJECT_A,
+      categoryKey: "1. Panels",
+      categoryName: "Panels",
+      categoryNumber: "1",
+      revenueAllocation: "60000",
+    };
+    const projBParent: FinanceLineParentRowInput = {
+      id: 1,
+      projectId: PROJECT_B, // different project
+      categoryAllocationId: null,
+      categoryKey: "1. Panels", // same key
+      costCategory: "Panels",
+      description: null,
+      budgetTotal: null,
+      forecastPaymentDate: null,
+      paidDate: null,
+      paidDateConfirmed: null,
+    };
+    const acts: FinanceLineActualsRowInput[] = [
+      {
+        id: 100,
+        costLineId: 1,
+        projectId: PROJECT_B,
+        actualTotal: "5000",
+        poNumber: null,
+        invoiceNumber: null,
+        invoiceDate: "2026-04-15",
+        financePaymentDate: null,
+        description: null,
+        qty: null,
+        rate: null,
+      },
+    ];
+
+    const lines = deriveFinanceLinesFromRows(acts, [projBParent], [projAAlloc]);
+    // Project B has no allocation matching its key — fallback must NOT
+    // pick up project A's allocation. § 3.3.1 cross-project rule.
+    expect(lines[0].derivationWarning).toBe("category_revenue_allocation_missing");
+    expect(lines[0].perLineRevenue).toBe(0);
   });
 });
 
