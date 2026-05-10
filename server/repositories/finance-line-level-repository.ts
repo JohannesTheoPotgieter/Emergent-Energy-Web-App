@@ -66,6 +66,25 @@ export interface FinanceLine {
   perLineGp: number;
   perLineGpPct: number | null;
 
+  /**
+   * Per-line BUDGET / PLANNED values, computed analogously to the
+   * actual values but using the planned cost (col G — `budget_total`)
+   * and the category planned total (col I —
+   * `category_revenue_allocations.budget_total`):
+   *
+   *   plannedRevenue = (line.budgetTotal / category.budgetTotal)
+   *                    × category.revenueAllocation
+   *   plannedGp      = plannedRevenue − line.budgetTotal
+   *
+   * Used by the GP page to surface the FY budget / plan even when
+   * actuals haven't been imported yet, mirroring how the COS / Revenue
+   * trackers can show planned numbers without realised ones.
+   */
+  plannedActualTotal: number;
+  plannedRevenue: number;
+  plannedGp: number;
+  plannedGpPct: number | null;
+
   /** Bucket classification (matches existing FY card / recon grid taxonomy). */
   bucket: FinanceLineBucket;
 
@@ -253,6 +272,9 @@ export class FinanceLineLevelRepository {
           categoryName: categoryRevenueAllocations.categoryName,
           categoryNumber: categoryRevenueAllocations.categoryNumber,
           revenueAllocation: categoryRevenueAllocations.revenueAllocation,
+          // Excel col I — SUM of G across the category, used as the
+          // denominator on the planned-side formula.
+          budgetTotal: categoryRevenueAllocations.budgetTotal,
         })
         .from(categoryRevenueAllocations)
         .where(
@@ -373,6 +395,14 @@ export interface FinanceLineAllocationRowInput {
   categoryName: string;
   categoryNumber: string;
   revenueAllocation: string | number | null;
+  /**
+   * Category planned cost total (Excel col I on the category header
+   * row — `SUM(G6:G19)` for that category). Used as the denominator
+   * for the planned-side `(G/I)*J` formula. Optional because legacy
+   * allocations may not have it populated; in that case planned
+   * values fall back to zero.
+   */
+  budgetTotal?: string | number | null;
 }
 
 /**
@@ -486,6 +516,20 @@ export function deriveFinanceLinesFromRows(
     categoryTotalActuals.set(k, (categoryTotalActuals.get(k) ?? 0) + toNum(a.actualTotal));
   }
 
+  // Planned-side denominator — SUM(budgetTotal) per (projectId,
+  // resolved allocationId) computed from parent rows. We prefer this
+  // sum-from-lines value over `category_revenue_allocations.budgetTotal`
+  // (col I) when it's available because Smart Import doesn't always
+  // populate I; whereas col G (per-line budgetTotal) is always
+  // populated for budgeted lines.
+  const categoryTotalBudget = new Map<string, number>();
+  for (const parent of parentRows) {
+    const allocId = parentResolvedAllocId.get(parent.id);
+    if (allocId == null) continue;
+    const k = categoryTotalsKey(parent.projectId, allocId);
+    categoryTotalBudget.set(k, (categoryTotalBudget.get(k) ?? 0) + toNum(parent.budgetTotal));
+  }
+
   const lines: FinanceLine[] = [];
   for (const a of actualsRows) {
     const parent = parentById.get(a.costLineId);
@@ -529,6 +573,27 @@ export function deriveFinanceLinesFromRows(
     const perLineGpPct = perLineRevenue !== 0 ? perLineGp / perLineRevenue : null;
     const paidDateConfirmed = parent?.paidDateConfirmed ?? null;
 
+    // Planned-side derivation — same shape as the actual formula but
+    // using line.budgetTotal (col G) and category.budgetTotal-from-G
+    // as the denominator. Falls back to allocation.budgetTotal (col I)
+    // when the parent-summed value is zero. When neither is available,
+    // plannedRevenue/Gp resolve to zero — same edge-case philosophy as
+    // the actual formula in § 3.3.
+    const plannedActualTotal = toNum(parent?.budgetTotal);
+    let plannedRevenue = 0;
+    if (allocation && categoryRevenueAllocation && categoryRevenueAllocation > 0) {
+      const summedBudget = allocId != null
+        ? categoryTotalBudget.get(categoryTotalsKey(a.projectId, allocId)) ?? 0
+        : 0;
+      const allocationBudget = toNum(allocation.budgetTotal);
+      const denominator = summedBudget > 0 ? summedBudget : allocationBudget;
+      if (denominator > 0) {
+        plannedRevenue = (plannedActualTotal / denominator) * categoryRevenueAllocation;
+      }
+    }
+    const plannedGp = plannedRevenue - plannedActualTotal;
+    const plannedGpPct = plannedRevenue !== 0 ? plannedGp / plannedRevenue : null;
+
     lines.push({
       lineId: a.id,
       parentLineId: a.costLineId,
@@ -554,6 +619,10 @@ export function deriveFinanceLinesFromRows(
       perLineRevenue,
       perLineGp,
       perLineGpPct,
+      plannedActualTotal,
+      plannedRevenue,
+      plannedGp,
+      plannedGpPct,
       bucket: classifyBucket(a.poNumber ?? null, a.invoiceNumber ?? null, paidDateConfirmed),
       recognitionMonth: monthKey(invoiceRaisedDate),
       derivationWarning: warning,
@@ -571,6 +640,33 @@ export function deriveFinanceLinesFromRows(
  */
 export interface MonthlyReconRow {
   monthKey: string;
+  /** Actual sums (existing fields — kept for back-compat). */
+  cos: number;
+  revenue: number;
+  gp: number;
+  gpPct: number | null;
+  count: number;
+  /**
+   * Planned / Budget sums computed from `line.budgetTotal` (col G) +
+   * `(G/I)*J`. These let the page show a forecast even when no actuals
+   * exist yet.
+   */
+  plannedCos: number;
+  plannedRevenue: number;
+  plannedGp: number;
+  plannedGpPct: number | null;
+  /**
+   * Realised-only sums (lines where `bucket === "realised"`). These
+   * give the FY card "realised" tile its number.
+   */
+  realisedCos: number;
+  realisedRevenue: number;
+  realisedGp: number;
+  realisedGpPct: number | null;
+}
+
+export interface BucketRollup {
+  bucket: FinanceLineBucket;
   cos: number;
   revenue: number;
   gp: number;
@@ -578,75 +674,107 @@ export interface MonthlyReconRow {
   count: number;
 }
 
+const emptyMonth = (key: string): MonthlyReconRow => ({
+  monthKey: key,
+  cos: 0,
+  revenue: 0,
+  gp: 0,
+  gpPct: null,
+  count: 0,
+  plannedCos: 0,
+  plannedRevenue: 0,
+  plannedGp: 0,
+  plannedGpPct: null,
+  realisedCos: 0,
+  realisedRevenue: 0,
+  realisedGp: 0,
+  realisedGpPct: null,
+});
+
+const finalizeMonth = (row: MonthlyReconRow): MonthlyReconRow => ({
+  ...row,
+  gpPct: row.revenue !== 0 ? row.gp / row.revenue : null,
+  plannedGpPct: row.plannedRevenue !== 0 ? row.plannedGp / row.plannedRevenue : null,
+  realisedGpPct: row.realisedRevenue !== 0 ? row.realisedGp / row.realisedRevenue : null,
+});
+
 export function aggregateLinesByMonth(lines: FinanceLine[]): {
   byMonth: MonthlyReconRow[];
   unrecognised: MonthlyReconRow;
   total: MonthlyReconRow;
+  byBucket: BucketRollup[];
 } {
   const buckets = new Map<string, MonthlyReconRow>();
   const ensure = (key: string): MonthlyReconRow => {
     let row = buckets.get(key);
     if (!row) {
-      row = { monthKey: key, cos: 0, revenue: 0, gp: 0, gpPct: null, count: 0 };
+      row = emptyMonth(key);
       buckets.set(key, row);
     }
     return row;
   };
 
-  let totalCos = 0;
-  let totalRevenue = 0;
-  let totalGp = 0;
-  let totalCount = 0;
-  let unrecCos = 0;
-  let unrecRevenue = 0;
-  let unrecGp = 0;
-  let unrecCount = 0;
+  const total = emptyMonth("total");
+  const unrecognised = emptyMonth("unrecognised");
+  const bucketRollup = new Map<FinanceLineBucket, BucketRollup>();
+  const ensureBucket = (b: FinanceLineBucket): BucketRollup => {
+    let row = bucketRollup.get(b);
+    if (!row) {
+      row = { bucket: b, cos: 0, revenue: 0, gp: 0, gpPct: null, count: 0 };
+      bucketRollup.set(b, row);
+    }
+    return row;
+  };
 
   for (const line of lines) {
-    if (line.recognitionMonth) {
-      const row = ensure(line.recognitionMonth);
-      row.cos += line.actualTotal;
-      row.revenue += line.perLineRevenue;
-      row.gp += line.perLineGp;
-      row.count += 1;
-    } else {
-      unrecCos += line.actualTotal;
-      unrecRevenue += line.perLineRevenue;
-      unrecGp += line.perLineGp;
-      unrecCount += 1;
+    const target = line.recognitionMonth ? ensure(line.recognitionMonth) : unrecognised;
+
+    target.cos += line.actualTotal;
+    target.revenue += line.perLineRevenue;
+    target.gp += line.perLineGp;
+    target.count += 1;
+    target.plannedCos += line.plannedActualTotal;
+    target.plannedRevenue += line.plannedRevenue;
+    target.plannedGp += line.plannedGp;
+    if (line.bucket === "realised") {
+      target.realisedCos += line.actualTotal;
+      target.realisedRevenue += line.perLineRevenue;
+      target.realisedGp += line.perLineGp;
     }
-    totalCos += line.actualTotal;
-    totalRevenue += line.perLineRevenue;
-    totalGp += line.perLineGp;
-    totalCount += 1;
+
+    total.cos += line.actualTotal;
+    total.revenue += line.perLineRevenue;
+    total.gp += line.perLineGp;
+    total.count += 1;
+    total.plannedCos += line.plannedActualTotal;
+    total.plannedRevenue += line.plannedRevenue;
+    total.plannedGp += line.plannedGp;
+    if (line.bucket === "realised") {
+      total.realisedCos += line.actualTotal;
+      total.realisedRevenue += line.perLineRevenue;
+      total.realisedGp += line.perLineGp;
+    }
+
+    const br = ensureBucket(line.bucket);
+    br.cos += line.actualTotal;
+    br.revenue += line.perLineRevenue;
+    br.gp += line.perLineGp;
+    br.count += 1;
   }
 
-  const finalize = (row: MonthlyReconRow): MonthlyReconRow => ({
-    ...row,
-    gpPct: row.revenue !== 0 ? row.gp / row.revenue : null,
-  });
-
   const byMonth = Array.from(buckets.values())
-    .map(finalize)
+    .map(finalizeMonth)
     .sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+
+  const byBucket: BucketRollup[] = Array.from(bucketRollup.values()).map((b) => ({
+    ...b,
+    gpPct: b.revenue !== 0 ? b.gp / b.revenue : null,
+  }));
 
   return {
     byMonth,
-    unrecognised: finalize({
-      monthKey: "unrecognised",
-      cos: unrecCos,
-      revenue: unrecRevenue,
-      gp: unrecGp,
-      gpPct: null,
-      count: unrecCount,
-    }),
-    total: finalize({
-      monthKey: "total",
-      cos: totalCos,
-      revenue: totalRevenue,
-      gp: totalGp,
-      gpPct: null,
-      count: totalCount,
-    }),
+    unrecognised: finalizeMonth(unrecognised),
+    total: finalizeMonth(total),
+    byBucket,
   };
 }

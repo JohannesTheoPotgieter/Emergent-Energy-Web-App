@@ -95,6 +95,14 @@ interface ProjectTotals {
   gp: number;
   gpPct: number | null;
   count: number;
+  plannedCos: number;
+  plannedRevenue: number;
+  plannedGp: number;
+  plannedGpPct: number | null;
+  realisedCos: number;
+  realisedRevenue: number;
+  realisedGp: number;
+  realisedGpPct: number | null;
 }
 
 function summariseLinesByProject(lines: FinanceLine[]): ProjectTotals[] {
@@ -102,27 +110,50 @@ function summariseLinesByProject(lines: FinanceLine[]): ProjectTotals[] {
   for (const l of lines) {
     let row = byProject.get(l.projectId);
     if (!row) {
-      row = { projectId: l.projectId, cos: 0, revenue: 0, gp: 0, gpPct: null, count: 0 };
+      row = {
+        projectId: l.projectId,
+        cos: 0, revenue: 0, gp: 0, gpPct: null, count: 0,
+        plannedCos: 0, plannedRevenue: 0, plannedGp: 0, plannedGpPct: null,
+        realisedCos: 0, realisedRevenue: 0, realisedGp: 0, realisedGpPct: null,
+      };
       byProject.set(l.projectId, row);
     }
     row.cos += l.actualTotal;
     row.revenue += l.perLineRevenue;
     row.gp += l.perLineGp;
     row.count += 1;
+    row.plannedCos += l.plannedActualTotal;
+    row.plannedRevenue += l.plannedRevenue;
+    row.plannedGp += l.plannedGp;
+    if (l.bucket === "realised") {
+      row.realisedCos += l.actualTotal;
+      row.realisedRevenue += l.perLineRevenue;
+      row.realisedGp += l.perLineGp;
+    }
   }
   return Array.from(byProject.values()).map((r) => ({
     ...r,
     gpPct: r.revenue !== 0 ? r.gp / r.revenue : null,
+    plannedGpPct: r.plannedRevenue !== 0 ? r.plannedGp / r.plannedRevenue : null,
+    realisedGpPct: r.realisedRevenue !== 0 ? r.realisedGp / r.realisedRevenue : null,
   }));
 }
 
 function sumTotals(rows: ProjectTotals[]): MonthlyReconRow {
   let cos = 0, revenue = 0, gp = 0, count = 0;
+  let plannedCos = 0, plannedRevenue = 0, plannedGp = 0;
+  let realisedCos = 0, realisedRevenue = 0, realisedGp = 0;
   for (const r of rows) {
     cos += r.cos;
     revenue += r.revenue;
     gp += r.gp;
     count += r.count;
+    plannedCos += r.plannedCos;
+    plannedRevenue += r.plannedRevenue;
+    plannedGp += r.plannedGp;
+    realisedCos += r.realisedCos;
+    realisedRevenue += r.realisedRevenue;
+    realisedGp += r.realisedGp;
   }
   return {
     monthKey: "total",
@@ -131,6 +162,14 @@ function sumTotals(rows: ProjectTotals[]): MonthlyReconRow {
     gp,
     gpPct: revenue !== 0 ? gp / revenue : null,
     count,
+    plannedCos,
+    plannedRevenue,
+    plannedGp,
+    plannedGpPct: plannedRevenue !== 0 ? plannedGp / plannedRevenue : null,
+    realisedCos,
+    realisedRevenue,
+    realisedGp,
+    realisedGpPct: realisedRevenue !== 0 ? realisedGp / realisedRevenue : null,
   };
 }
 
