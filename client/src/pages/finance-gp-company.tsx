@@ -38,6 +38,14 @@ interface MonthlyRow {
   gp: number;
   gpPct: number | null;
   count: number;
+  plannedCos?: number;
+  plannedRevenue?: number;
+  plannedGp?: number;
+  plannedGpPct?: number | null;
+  realisedCos?: number;
+  realisedRevenue?: number;
+  realisedGp?: number;
+  realisedGpPct?: number | null;
 }
 
 interface PortfolioProjectTotals {
@@ -47,6 +55,14 @@ interface PortfolioProjectTotals {
   gp: number;
   gpPct: number | null;
   count: number;
+  plannedCos?: number;
+  plannedRevenue?: number;
+  plannedGp?: number;
+  plannedGpPct?: number | null;
+  realisedCos?: number;
+  realisedRevenue?: number;
+  realisedGp?: number;
+  realisedGpPct?: number | null;
 }
 
 interface PortfolioResponse {
@@ -199,15 +215,39 @@ interface MetricRow {
   key: string;
   label: string;
   emphasis?: boolean;
+  group?: "planned" | "actual" | "realised";
   format: (v: number) => string;
   getValue: (m: MonthlyRow) => number;
 }
 
+/**
+ * Metric grid mirrors the Revenue / COS pages — three groups (Planned,
+ * Actual, Realised) with Revenue / COS / GP / Margin % rows in each.
+ *
+ *   Planned  — col G + (G/I)*J — what the workbook says we'll do
+ *   Actual   — col Q + (Q/X)*J — what's been imported so far
+ *   Realised — same formula, but only lines with paid-confirmed bucket
+ *
+ * "Budget" in finance language = Planned for this dataset (the FY26
+ * budget came from the workbook's category J column).
+ */
 const METRIC_ROWS: MetricRow[] = [
-  { key: "revenue", label: "Revenue", format: formatRand, getValue: (m) => m.revenue },
-  { key: "cos", label: "COS", format: formatRand, getValue: (m) => m.cos },
-  { key: "gp", label: "GP", emphasis: true, format: formatRand, getValue: (m) => m.gp },
-  { key: "gpPct", label: "Margin %", format: (v) => formatPct(v), getValue: (m) => m.gpPct ?? 0 },
+  // Planned / Budget block
+  { key: "plannedRevenue", group: "planned", label: "Budget Revenue", format: formatRand, getValue: (m) => m.plannedRevenue ?? 0 },
+  { key: "plannedCos", group: "planned", label: "Budget COS", format: formatRand, getValue: (m) => m.plannedCos ?? 0 },
+  { key: "plannedGp", group: "planned", label: "Budget GP", emphasis: true, format: formatRand, getValue: (m) => m.plannedGp ?? 0 },
+  { key: "plannedGpPct", group: "planned", label: "Budget Margin %", format: (v) => formatPct(v), getValue: (m) => m.plannedGpPct ?? 0 },
+  // Actual block
+  { key: "revenue", group: "actual", label: "Actual Revenue", format: formatRand, getValue: (m) => m.revenue },
+  { key: "cos", group: "actual", label: "Actual COS", format: formatRand, getValue: (m) => m.cos },
+  { key: "gp", group: "actual", label: "Actual GP", emphasis: true, format: formatRand, getValue: (m) => m.gp },
+  { key: "gpPct", group: "actual", label: "Actual Margin %", format: (v) => formatPct(v), getValue: (m) => m.gpPct ?? 0 },
+  // Realised block
+  { key: "realisedRevenue", group: "realised", label: "Realised Revenue", format: formatRand, getValue: (m) => m.realisedRevenue ?? 0 },
+  { key: "realisedCos", group: "realised", label: "Realised COS", format: formatRand, getValue: (m) => m.realisedCos ?? 0 },
+  { key: "realisedGp", group: "realised", label: "Realised GP", emphasis: true, format: formatRand, getValue: (m) => m.realisedGp ?? 0 },
+  { key: "realisedGpPct", group: "realised", label: "Realised Margin %", format: (v) => formatPct(v), getValue: (m) => m.realisedGpPct ?? 0 },
+  // Trailing line count
   { key: "count", label: "Lines", format: (v) => v.toLocaleString("en-ZA"), getValue: (m) => m.count },
 ];
 
@@ -269,6 +309,14 @@ export default function FinanceGpCompanyPage() {
             gp: 0,
             gpPct: null,
             count: 0,
+            plannedCos: 0,
+            plannedRevenue: 0,
+            plannedGp: 0,
+            plannedGpPct: null,
+            realisedCos: 0,
+            realisedRevenue: 0,
+            realisedGp: 0,
+            realisedGpPct: null,
           },
       ),
     [fyMonths, monthlyByKey],
@@ -359,53 +407,52 @@ export default function FinanceGpCompanyPage() {
 
         <KPIStrip className="grid-cols-2 lg:grid-cols-4">
           <FyKpiCard
-            testId="revenue"
-            label="FY Revenue"
-            source="App"
+            testId="budget-gp"
+            label="FY Budget GP"
+            source="Budget"
             icon={Wallet}
             iconBg="bg-emerald-50 text-emerald-700 border border-emerald-200"
             accent="text-emerald-700"
-            fyValue={total.revenue}
-            lastValue={lastMonth?.revenue ?? 0}
-            prevValue={prevMonth?.revenue ?? 0}
-            description="(Q / X) × J — § 3.3"
+            fyValue={total.plannedGp ?? 0}
+            lastValue={lastMonth?.plannedGp ?? 0}
+            prevValue={prevMonth?.plannedGp ?? 0}
+            description={`Margin ${formatPct(total.plannedGpPct)} · (G/I) × J − G`}
           />
           <FyKpiCard
-            testId="cos"
-            label="FY COS"
-            source="App"
+            testId="planned-gp"
+            label="FY Planned GP"
+            source="Budget"
             icon={ListChecks}
             iconBg="bg-emerald-50 text-emerald-700 border border-emerald-200"
             accent="text-emerald-700"
-            fyValue={total.cos}
-            lastValue={lastMonth?.cos ?? 0}
-            prevValue={prevMonth?.cos ?? 0}
-            description="Σ actuals.actual_total"
+            fyValue={total.plannedGp ?? 0}
+            lastValue={lastMonth?.plannedGp ?? 0}
+            prevValue={prevMonth?.plannedGp ?? 0}
+            description={`Margin ${formatPct(total.plannedGpPct)} · workbook plan`}
           />
           <FyKpiCard
-            testId="gp"
-            label="FY GP"
-            source="Derived"
+            testId="actual-gp"
+            label="FY Actual GP"
+            source="App"
             icon={TrendingUp}
             iconBg="bg-foreground/8 text-foreground"
             accent="text-foreground"
             fyValue={total.gp}
             lastValue={lastMonth?.gp ?? 0}
             prevValue={prevMonth?.gp ?? 0}
-            description="Revenue − COS"
+            description={`Margin ${formatPct(total.gpPct)} · imported actuals`}
           />
           <FyKpiCard
-            testId="margin"
-            label="FY Margin"
-            source="Derived"
+            testId="realised-gp"
+            label="FY Realised GP"
+            source="App"
             icon={PieChart}
             iconBg="bg-slate-100 text-slate-700"
             accent="text-slate-800"
-            fyValue={total.gpPct ?? 0}
-            lastValue={lastMonth?.gpPct ?? 0}
-            prevValue={prevMonth?.gpPct ?? 0}
-            format={(v) => formatPct(v)}
-            description="GP / Revenue"
+            fyValue={total.realisedGp ?? 0}
+            lastValue={lastMonth?.realisedGp ?? 0}
+            prevValue={prevMonth?.realisedGp ?? 0}
+            description={`Margin ${formatPct(total.realisedGpPct)} · paid-confirmed only`}
           />
         </KPIStrip>
 
@@ -431,21 +478,17 @@ export default function FinanceGpCompanyPage() {
                 </tr>
               </thead>
               <tbody>
-                {METRIC_ROWS.map((row) => {
-                  const fyTotal =
-                    row.key === "gpPct"
-                      ? total.gpPct ?? 0
-                      : row.key === "count"
-                      ? total.count
-                      : row.key === "revenue"
-                      ? total.revenue
-                      : row.key === "cos"
-                      ? total.cos
-                      : total.gp;
+                {METRIC_ROWS.map((row, idx) => {
+                  // Sniff FY total directly from the same getter to avoid
+                  // hard-coded key checks; total is a MonthlyRow-shaped
+                  // object so the same getValue works.
+                  const fyTotalValue = row.key === "count" ? total.count : row.getValue(total);
+                  const prevGroup = idx > 0 ? METRIC_ROWS[idx - 1].group : undefined;
+                  const isNewGroup = row.group && row.group !== prevGroup;
                   return (
                     <tr
                       key={row.key}
-                      className={`border-b last:border-0 ${row.emphasis ? "bg-emerald-50/40 font-semibold" : ""}`}
+                      className={`border-b last:border-0 ${row.emphasis ? "bg-emerald-50/40 font-semibold" : ""} ${isNewGroup ? "border-t-2 border-t-border/70" : ""}`}
                       data-testid={`row-${row.key}`}
                     >
                       <td className="sticky left-0 z-10 bg-card px-3 sm:px-5 py-2 sm:py-3 text-left text-foreground border-r border-border">
@@ -457,11 +500,11 @@ export default function FinanceGpCompanyPage() {
                           className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono whitespace-nowrap"
                           data-testid={`cell-${row.key}-${m.monthKey}`}
                         >
-                          {row.getValue(m) === 0 && row.key !== "gpPct" ? "" : row.format(row.getValue(m))}
+                          {row.getValue(m) === 0 && !row.key.endsWith("GpPct") && row.key !== "gpPct" ? "" : row.format(row.getValue(m))}
                         </td>
                       ))}
                       <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono whitespace-nowrap bg-muted/30 sticky right-0 border-l border-border">
-                        {row.format(fyTotal)}
+                        {row.format(fyTotalValue)}
                       </td>
                     </tr>
                   );
@@ -483,16 +526,16 @@ export default function FinanceGpCompanyPage() {
                     Project
                   </th>
                   <th className="px-2 sm:px-4 py-2 sm:py-3 text-right font-semibold text-muted-foreground uppercase tracking-wider text-[10px] sm:text-[11px]">
-                    Revenue
+                    Budget GP
                   </th>
                   <th className="px-2 sm:px-4 py-2 sm:py-3 text-right font-semibold text-muted-foreground uppercase tracking-wider text-[10px] sm:text-[11px]">
-                    COS
+                    Actual GP
                   </th>
                   <th className="px-2 sm:px-4 py-2 sm:py-3 text-right font-semibold text-muted-foreground uppercase tracking-wider text-[10px] sm:text-[11px]">
-                    GP
+                    Realised GP
                   </th>
                   <th className="px-2 sm:px-4 py-2 sm:py-3 text-right font-semibold text-muted-foreground uppercase tracking-wider text-[10px] sm:text-[11px]">
-                    Margin
+                    Margin (Act)
                   </th>
                   <th className="px-2 sm:px-4 py-2 sm:py-3 text-right font-semibold text-muted-foreground uppercase tracking-wider text-[10px] sm:text-[11px]">
                     Lines
@@ -523,9 +566,9 @@ export default function FinanceGpCompanyPage() {
                         </Badge>
                       )}
                     </td>
-                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono">{formatRand(p.revenue)}</td>
-                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono">{formatRand(p.cos)}</td>
+                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono">{formatRand(p.plannedGp ?? 0)}</td>
                     <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono">{formatRand(p.gp)}</td>
+                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono">{formatRand(p.realisedGp ?? 0)}</td>
                     <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono">{formatPct(p.gpPct)}</td>
                     <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-muted-foreground">{p.count}</td>
                     <td className="px-2 sm:px-4 py-2 sm:py-3 text-right">
