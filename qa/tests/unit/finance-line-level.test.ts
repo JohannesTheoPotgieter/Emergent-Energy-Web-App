@@ -10,6 +10,7 @@ import { describe, it, expect } from "vitest";
 import {
   aggregateLinesByMonth,
   deriveFinanceLinesFromRows,
+  synthesizeActualsForParents,
   type FinanceLineActualsRowInput,
   type FinanceLineAllocationRowInput,
   type FinanceLineParentRowInput,
@@ -440,6 +441,225 @@ describe("deriveFinanceLinesFromRows — re-import FK fallback (stale categoryAl
     // pick up project A's allocation. § 3.3.1 cross-project rule.
     expect(lines[0].derivationWarning).toBe("category_revenue_allocation_missing");
     expect(lines[0].perLineRevenue).toBe(0);
+  });
+});
+
+describe("synthesizeActualsForParents — parents without actuals child", () => {
+  /**
+   * Reproduces the production case the user just hit on /finance/gp:
+   * 65 projects, 11 with cost data, 14 actuals rows total — but most
+   * cost data is on parent rows that have NO actuals child yet
+   * (budget-only or pre-Wave-0 imports). Without synthesis, the GP
+   * page renders all-zero. With synthesis, parent-only lines surface
+   * with their cost contributing to COS and (when allocation is
+   * present) to revenue + GP.
+   */
+  it("emits a synthesized line for every parent that has no actuals child", () => {
+    // Parent 1 has a real child; parent 2 doesn't.
+    const parents: FinanceLineParentRowInput[] = [
+      {
+        id: 1,
+        projectId: PROJECT_A,
+        categoryAllocationId: ALLOC_PANELS,
+        categoryKey: "1. Panels",
+        costCategory: "Panels",
+        description: "1.1 Panels — has child",
+        budgetTotal: "10000",
+        forecastPaymentDate: null,
+        paidDate: null,
+        paidDateConfirmed: null,
+        amountExVat: "8000",
+        invoiceDate: "2026-04-15",
+        invoiceNumber: "PARENT-INV-1",
+        poNumber: "PARENT-PO-1",
+      },
+      {
+        id: 2,
+        projectId: PROJECT_A,
+        categoryAllocationId: ALLOC_PANELS,
+        categoryKey: "1. Panels",
+        costCategory: "Panels",
+        description: "1.2 Panels — no child",
+        budgetTotal: "12000",
+        forecastPaymentDate: null,
+        paidDate: null,
+        paidDateConfirmed: null,
+        amountExVat: "12000",
+        invoiceDate: "2026-05-15",
+        invoiceNumber: "PARENT-INV-2",
+        poNumber: "PARENT-PO-2",
+      },
+    ];
+    const realChildren: FinanceLineActualsRowInput[] = [
+      {
+        id: 100,
+        costLineId: 1,
+        projectId: PROJECT_A,
+        actualTotal: "8000",
+        poNumber: "CHILD-PO-1",
+        invoiceNumber: "CHILD-INV-1",
+        invoiceDate: "2026-04-15",
+        financePaymentDate: null,
+        description: null,
+        qty: null,
+        rate: null,
+      },
+    ];
+
+    const synthesized = synthesizeActualsForParents(realChildren, parents);
+    expect(synthesized).toHaveLength(2);
+
+    // Original child preserved.
+    const original = synthesized.find((a) => a.id === 100);
+    expect(original).toBeDefined();
+    expect(original!.invoiceNumber).toBe("CHILD-INV-1");
+
+    // Synthesized row for parent 2 (no child).
+    const synth = synthesized.find((a) => a.costLineId === 2);
+    expect(synth).toBeDefined();
+    expect(synth!.id).toBe(-2); // negative id
+    expect(synth!.actualTotal).toBe("12000");
+    expect(synth!.invoiceDate).toBe("2026-05-15");
+    expect(synth!.invoiceNumber).toBe("PARENT-INV-2");
+    expect(synth!.poNumber).toBe("PARENT-PO-2");
+  });
+
+  it("does NOT synthesize for parents that already have at least one child (no double-count)", () => {
+    const parent: FinanceLineParentRowInput = {
+      id: 1,
+      projectId: PROJECT_A,
+      categoryAllocationId: ALLOC_PANELS,
+      categoryKey: "1. Panels",
+      costCategory: "Panels",
+      description: "split-paid",
+      budgetTotal: "10000",
+      forecastPaymentDate: null,
+      paidDate: null,
+      paidDateConfirmed: null,
+      amountExVat: "10000",
+      invoiceDate: "2026-04-15",
+      invoiceNumber: "PARENT-INV-1",
+      poNumber: null,
+    };
+    const children: FinanceLineActualsRowInput[] = [
+      {
+        id: 1,
+        costLineId: 1,
+        projectId: PROJECT_A,
+        actualTotal: "6000",
+        poNumber: null,
+        invoiceNumber: "INV-A",
+        invoiceDate: "2026-04-15",
+        financePaymentDate: null,
+        description: null,
+        qty: null,
+        rate: null,
+      },
+      {
+        id: 2,
+        costLineId: 1,
+        projectId: PROJECT_A,
+        actualTotal: "4000",
+        poNumber: null,
+        invoiceNumber: "INV-B",
+        invoiceDate: "2026-05-15",
+        financePaymentDate: null,
+        description: null,
+        qty: null,
+        rate: null,
+      },
+    ];
+
+    const synthesized = synthesizeActualsForParents(children, [parent]);
+    expect(synthesized).toHaveLength(2); // just the real children, no synth
+    expect(synthesized.every((a) => a.id > 0)).toBe(true);
+  });
+
+  it("end-to-end: parent-only cost contributes to COS, revenue, and GP via the formula", () => {
+    // Two parents in the same Panels category, one with a child, one
+    // without. Both should contribute to category total X.
+    const allocs: FinanceLineAllocationRowInput[] = [
+      {
+        id: ALLOC_PANELS,
+        projectId: PROJECT_A,
+        categoryKey: "1. Panels",
+        categoryName: "Panels",
+        categoryNumber: "1",
+        revenueAllocation: "100000",
+      },
+    ];
+    const parents: FinanceLineParentRowInput[] = [
+      {
+        id: 1,
+        projectId: PROJECT_A,
+        categoryAllocationId: ALLOC_PANELS,
+        categoryKey: "1. Panels",
+        costCategory: "Panels",
+        description: "with child",
+        budgetTotal: "20000",
+        forecastPaymentDate: null,
+        paidDate: null,
+        paidDateConfirmed: null,
+        amountExVat: "20000",
+        invoiceDate: "2026-04-15",
+        invoiceNumber: "INV-1",
+        poNumber: null,
+      },
+      {
+        id: 2,
+        projectId: PROJECT_A,
+        categoryAllocationId: ALLOC_PANELS,
+        categoryKey: "1. Panels",
+        costCategory: "Panels",
+        description: "parent-only",
+        budgetTotal: "30000",
+        forecastPaymentDate: null,
+        paidDate: null,
+        paidDateConfirmed: null,
+        amountExVat: "30000",
+        invoiceDate: "2026-05-15",
+        invoiceNumber: "INV-2",
+        poNumber: null,
+      },
+    ];
+    const realChildren: FinanceLineActualsRowInput[] = [
+      {
+        id: 1,
+        costLineId: 1,
+        projectId: PROJECT_A,
+        actualTotal: "20000",
+        poNumber: null,
+        invoiceNumber: "INV-1",
+        invoiceDate: "2026-04-15",
+        financePaymentDate: null,
+        description: null,
+        qty: null,
+        rate: null,
+      },
+    ];
+
+    const synthesized = synthesizeActualsForParents(realChildren, parents);
+    const lines = deriveFinanceLinesFromRows(synthesized, parents, allocs);
+
+    // Both parents contribute to category X (= 20000 + 30000 = 50000).
+    expect(lines).toHaveLength(2);
+    for (const l of lines) {
+      expect(l.categoryTotalActualTotal).toBe(50000);
+    }
+    const childLine = lines.find((l) => l.parentLineId === 1)!;
+    const parentOnlyLine = lines.find((l) => l.parentLineId === 2)!;
+
+    // (20000 / 50000) * 100000 = 40000
+    expect(childLine.actualTotal).toBe(20000);
+    expect(childLine.perLineRevenue).toBeCloseTo(40000, 4);
+    // (30000 / 50000) * 100000 = 60000
+    expect(parentOnlyLine.actualTotal).toBe(30000);
+    expect(parentOnlyLine.perLineRevenue).toBeCloseTo(60000, 4);
+
+    const totalCos = lines.reduce((s, l) => s + l.actualTotal, 0);
+    const totalRev = lines.reduce((s, l) => s + l.perLineRevenue, 0);
+    expect(totalCos).toBe(50000);
+    expect(totalRev).toBeCloseTo(100000, 4);
   });
 });
 
