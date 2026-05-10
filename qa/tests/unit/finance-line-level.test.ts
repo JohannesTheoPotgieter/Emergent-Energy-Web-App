@@ -444,6 +444,110 @@ describe("deriveFinanceLinesFromRows — re-import FK fallback (stale categoryAl
   });
 });
 
+describe("planned-side derivation — uses budgetTotal (G) + category G-sum + J", () => {
+  it("computes plannedRevenue, plannedGp, plannedGpPct per line", () => {
+    // Two lines in the same category. Budget totals: 30k + 70k = 100k.
+    // Allocation J = 200k. Per-line planned revenue = (G/100k) * 200k.
+    const allocs: FinanceLineAllocationRowInput[] = [
+      { id: 1, projectId: 99, categoryKey: "1. Panels", categoryName: "Panels", categoryNumber: "1", revenueAllocation: "200000", budgetTotal: "100000" },
+    ];
+    const ps: FinanceLineParentRowInput[] = [
+      { id: 10, projectId: 99, categoryAllocationId: 1, categoryKey: "1. Panels", costCategory: "Panels", description: "L1", budgetTotal: "30000", forecastPaymentDate: null, paidDate: null, paidDateConfirmed: null, amountExVat: null, invoiceDate: null, invoiceNumber: null, poNumber: null },
+      { id: 11, projectId: 99, categoryAllocationId: 1, categoryKey: "1. Panels", costCategory: "Panels", description: "L2", budgetTotal: "70000", forecastPaymentDate: null, paidDate: null, paidDateConfirmed: null, amountExVat: null, invoiceDate: null, invoiceNumber: null, poNumber: null },
+    ];
+    const acts: FinanceLineActualsRowInput[] = [
+      // Synthesized — id is negative since no real children. Use the
+      // synthesizeActualsForParents helper inline.
+      ...synthesizeActualsForParents([], ps),
+    ];
+
+    const lines = deriveFinanceLinesFromRows(acts, ps, allocs);
+    const l1 = lines.find((l) => l.parentLineId === 10)!;
+    const l2 = lines.find((l) => l.parentLineId === 11)!;
+
+    // Planned-side math: (G / 100k) * 200k.
+    expect(l1.plannedActualTotal).toBe(30000);
+    expect(l1.plannedRevenue).toBeCloseTo(60000, 4);   // (30000/100000)*200000
+    expect(l1.plannedGp).toBeCloseTo(30000, 4);
+    expect(l1.plannedGpPct).toBeCloseTo(0.5, 4);
+
+    expect(l2.plannedActualTotal).toBe(70000);
+    expect(l2.plannedRevenue).toBeCloseTo(140000, 4);
+    expect(l2.plannedGp).toBeCloseTo(70000, 4);
+  });
+
+  it("plannedRevenue = 0 when there are no budgeted parents (denominator zero)", () => {
+    const allocs: FinanceLineAllocationRowInput[] = [
+      { id: 1, projectId: 99, categoryKey: "1. Panels", categoryName: "Panels", categoryNumber: "1", revenueAllocation: "200000", budgetTotal: null },
+    ];
+    const ps: FinanceLineParentRowInput[] = [
+      { id: 10, projectId: 99, categoryAllocationId: 1, categoryKey: "1. Panels", costCategory: "Panels", description: "L1", budgetTotal: null, forecastPaymentDate: null, paidDate: null, paidDateConfirmed: null, amountExVat: null, invoiceDate: null, invoiceNumber: null, poNumber: null },
+    ];
+    const acts: FinanceLineActualsRowInput[] = synthesizeActualsForParents([], ps);
+    const lines = deriveFinanceLinesFromRows(acts, ps, allocs);
+    expect(lines[0].plannedActualTotal).toBe(0);
+    expect(lines[0].plannedRevenue).toBe(0);
+    expect(lines[0].plannedGp).toBe(0);
+  });
+
+  it("falls back to allocation.budgetTotal (col I) if parent G-sum is 0", () => {
+    // Parents have null budgetTotal but the allocation has col I populated.
+    const allocs: FinanceLineAllocationRowInput[] = [
+      { id: 1, projectId: 99, categoryKey: "1. Panels", categoryName: "Panels", categoryNumber: "1", revenueAllocation: "200000", budgetTotal: "100000" },
+    ];
+    // Parent has actualTotal but no budgetTotal — actuals path drives revenue
+    // because formula needs a non-zero denominator. Planned path should
+    // still get to use allocation.budgetTotal.
+    const ps: FinanceLineParentRowInput[] = [
+      { id: 10, projectId: 99, categoryAllocationId: 1, categoryKey: "1. Panels", costCategory: "Panels", description: "L1", budgetTotal: null, forecastPaymentDate: null, paidDate: null, paidDateConfirmed: null, amountExVat: "30000", invoiceDate: null, invoiceNumber: null, poNumber: null },
+    ];
+    const acts: FinanceLineActualsRowInput[] = synthesizeActualsForParents([], ps);
+    const lines = deriveFinanceLinesFromRows(acts, ps, allocs);
+    // plannedActualTotal stays 0 because parent.budgetTotal is null;
+    // plannedRevenue also stays 0 because the formula multiplies by it.
+    expect(lines[0].plannedActualTotal).toBe(0);
+    expect(lines[0].plannedRevenue).toBe(0);
+  });
+});
+
+describe("aggregateLinesByMonth — bucket rollup + planned/realised totals", () => {
+  it("rolls up cos/revenue/gp by bucket and exposes planned + realised on monthly rows", () => {
+    const allocs: FinanceLineAllocationRowInput[] = [
+      { id: 1, projectId: 99, categoryKey: "1. Panels", categoryName: "Panels", categoryNumber: "1", revenueAllocation: "100000", budgetTotal: "100000" },
+    ];
+    // 3 parents. 1 realised (paid confirmed), 1 unrealised, 1 budget-only.
+    const ps: FinanceLineParentRowInput[] = [
+      { id: 1, projectId: 99, categoryAllocationId: 1, categoryKey: "1. Panels", costCategory: "Panels", description: "realised", budgetTotal: "30000", forecastPaymentDate: null, paidDate: "2026-04-15", paidDateConfirmed: true, amountExVat: "30000", invoiceDate: "2026-04-15", invoiceNumber: "INV-1", poNumber: "PO-1" },
+      { id: 2, projectId: 99, categoryAllocationId: 1, categoryKey: "1. Panels", costCategory: "Panels", description: "unrealised", budgetTotal: "20000", forecastPaymentDate: null, paidDate: null, paidDateConfirmed: false, amountExVat: "20000", invoiceDate: "2026-05-15", invoiceNumber: "INV-2", poNumber: "PO-2" },
+      { id: 3, projectId: 99, categoryAllocationId: 1, categoryKey: "1. Panels", costCategory: "Panels", description: "budget-only", budgetTotal: "50000", forecastPaymentDate: null, paidDate: null, paidDateConfirmed: null, amountExVat: null, invoiceDate: null, invoiceNumber: null, poNumber: null },
+    ];
+    const acts = synthesizeActualsForParents([], ps);
+    const lines = deriveFinanceLinesFromRows(acts, ps, allocs);
+    const agg = aggregateLinesByMonth(lines);
+
+    // Bucket rollup
+    const realisedBucket = agg.byBucket.find((b) => b.bucket === "realised");
+    const unrealisedBucket = agg.byBucket.find((b) => b.bucket === "unrealised");
+    const plannedBucket = agg.byBucket.find((b) => b.bucket === "planned");
+    expect(realisedBucket?.cos).toBe(30000);
+    expect(unrealisedBucket?.cos).toBe(20000);
+    expect(plannedBucket?.count).toBe(1); // budget-only line
+
+    // Realised totals on the total row (only the realised line)
+    expect(agg.total.realisedCos).toBe(30000);
+    expect(agg.total.cos).toBe(50000); // realised + unrealised (planned has no actual)
+
+    // Planned totals: sum of all parent budgetTotal = 30k + 20k + 50k = 100k
+    expect(agg.total.plannedCos).toBe(100000);
+    // Planned revenue: each line's plannedRevenue using (G/X)*J
+    // L1: (30k/100k)*100k = 30k
+    // L2: (20k/100k)*100k = 20k
+    // L3: (50k/100k)*100k = 50k
+    expect(agg.total.plannedRevenue).toBeCloseTo(100000, 4);
+    expect(agg.total.plannedGp).toBeCloseTo(0, 4); // 100k revenue - 100k cost
+  });
+});
+
 describe("synthesizeActualsForParents — parents without actuals child", () => {
   /**
    * Reproduces the production case the user just hit on /finance/gp:
