@@ -229,6 +229,13 @@ export class FinanceLineLevelRepository {
           forecastPaymentDate: normalizedCostLines.forecastPaymentDate,
           paidDate: normalizedCostLines.paidDate,
           paidDateConfirmed: normalizedCostLines.paidDateConfirmed,
+          // Extra fields for parent-only synthesis when a parent has no
+          // actuals child yet (e.g., budget-only lines, or lines whose
+          // actuals weren't imported into the child table).
+          amountExVat: normalizedCostLines.amountExVat,
+          invoiceDate: normalizedCostLines.invoiceDate,
+          invoiceNumber: normalizedCostLines.invoiceNumber,
+          poNumber: normalizedCostLines.poNumber,
         })
         .from(normalizedCostLines)
         .where(
@@ -256,7 +263,8 @@ export class FinanceLineLevelRepository {
         ),
     ]);
 
-    return deriveFinanceLinesFromRows(actualsRows, parentRows, allocationRows, opts);
+    const synthesizedActuals = synthesizeActualsForParents(actualsRows, parentRows);
+    return deriveFinanceLinesFromRows(synthesizedActuals, parentRows, allocationRows, opts);
   }
 
   /**
@@ -347,6 +355,15 @@ export interface FinanceLineParentRowInput {
   forecastPaymentDate: string | Date | null;
   paidDate: string | Date | null;
   paidDateConfirmed: boolean | null;
+  // Fields populated by the repository's parent-row projection so the
+  // method can synthesize "lines" for parents that have no actuals
+  // child yet. Optional on the interface because pure-helper unit
+  // tests that don't exercise the synthesis path don't need to set
+  // them.
+  amountExVat?: string | number | null;
+  invoiceDate?: string | Date | null;
+  invoiceNumber?: string | null;
+  poNumber?: string | null;
 }
 
 export interface FinanceLineAllocationRowInput {
@@ -356,6 +373,51 @@ export interface FinanceLineAllocationRowInput {
   categoryName: string;
   categoryNumber: string;
   revenueAllocation: string | number | null;
+}
+
+/**
+ * Synthesize a fake `actuals child` row for every parent that has no
+ * real child, using parent-level fields. The repository wraps this
+ * call before invoking `deriveFinanceLinesFromRows` so the GP page
+ * surfaces budget-only and not-yet-imported-actuals data instead of
+ * silently rendering nothing.
+ *
+ * Parents that DO have children are not synthesized — their real
+ * child rows already represent the cost. No double-counting.
+ *
+ * Mirrors the parent-fallback in `mergeLineLevelCostLines` used by
+ * the COS / Revenue tracker cutover so all three surfaces show the
+ * same numbers.
+ *
+ * Synthesized rows use a negative `id` derived from the parent id so
+ * they don't collide with real `normalized_cost_line_actuals.id`
+ * values (those are positive `serial`).
+ */
+export function synthesizeActualsForParents(
+  actualsRows: readonly FinanceLineActualsRowInput[],
+  parentRows: readonly FinanceLineParentRowInput[],
+): FinanceLineActualsRowInput[] {
+  const parentsWithChildren = new Set<number>();
+  for (const a of actualsRows) parentsWithChildren.add(a.costLineId);
+
+  const out: FinanceLineActualsRowInput[] = [...actualsRows];
+  for (const parent of parentRows) {
+    if (parentsWithChildren.has(parent.id)) continue;
+    out.push({
+      id: -parent.id,
+      costLineId: parent.id,
+      projectId: parent.projectId,
+      actualTotal: parent.amountExVat ?? null,
+      poNumber: parent.poNumber ?? null,
+      invoiceNumber: parent.invoiceNumber ?? null,
+      invoiceDate: (parent.invoiceDate as string | Date | null) ?? null,
+      financePaymentDate: (parent.paidDate as string | Date | null) ?? null,
+      description: parent.description ?? null,
+      qty: null,
+      rate: null,
+    });
+  }
+  return out;
 }
 
 /**
