@@ -177,7 +177,7 @@ function DeleteConfirmDialog({
 
 // ── Formatters ────────────────────────────────────────────────────────────
 
-function fmtR(val: number | null | undefined): string {
+export function fmtR(val: number | null | undefined): string {
   if (val == null) return "—";
   const abs = Math.abs(val);
   const sign = val < 0 ? "-" : "";
@@ -186,17 +186,17 @@ function fmtR(val: number | null | undefined): string {
   return `${sign}R ${Math.round(abs).toLocaleString()}`;
 }
 
-function fmtPct(val: number | null | undefined): string {
+export function fmtPct(val: number | null | undefined): string {
   if (val == null) return "—";
   return `${(val * 100).toFixed(1)}%`;
 }
 
-function fmtDate(val: string | null | undefined): string {
+export function fmtDate(val: string | null | undefined): string {
   if (!val) return "—";
   return val.substring(0, 10);
 }
 
-function gpColor(val: number | null | undefined): string {
+export function gpColor(val: number | null | undefined): string {
   if (val == null) return "text-muted-foreground";
   if (val >= 0.2) return "text-emerald-700 font-semibold";
   if (val >= 0) return "text-emerald-600";
@@ -205,9 +205,9 @@ function gpColor(val: number | null | undefined): string {
 
 // ── KPI Cards ─────────────────────────────────────────────────────────────
 
-function KpiCard({ label, value, icon: Icon, accent }: { label: string; value: number; icon: React.ComponentType<{ className?: string }>; accent: string }) {
+function KpiCard({ label, value, icon: Icon, accent, testId }: { label: string; value: number; icon: React.ComponentType<{ className?: string }>; accent: string; testId?: string }) {
   return (
-    <Card className="border-border shadow-sm">
+    <Card className="border-border shadow-sm" data-testid={testId}>
       <CardContent className="p-4">
         <div className="flex items-center gap-2 mb-2">
           <div className={`h-7 w-7 rounded-lg flex items-center justify-center ${accent}`}>
@@ -215,7 +215,7 @@ function KpiCard({ label, value, icon: Icon, accent }: { label: string; value: n
           </div>
           <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
         </div>
-        <p className="text-2xl font-bold tabular-nums">{value}</p>
+        <p className="text-2xl font-bold tabular-nums" data-testid={testId ? `${testId}-value` : undefined}>{value}</p>
       </CardContent>
     </Card>
   );
@@ -301,11 +301,13 @@ function InlineEditCell({
   onSave,
   canEdit,
   placeholder = "—",
+  testId,
 }: {
   value: string | null;
   onSave: (v: string) => void;
   canEdit: boolean;
   placeholder?: string;
+  testId?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value || "");
@@ -326,6 +328,8 @@ function InlineEditCell({
         onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
         className="h-6 text-xs w-full min-w-[80px] py-0 px-1"
         autoFocus
+        aria-label={testId ?? "Inline edit field"}
+        data-testid={testId ? `${testId}-input` : undefined}
       />
     );
   }
@@ -334,6 +338,8 @@ function InlineEditCell({
       type="button"
       className="text-left hover:text-emerald-700 hover:underline underline-offset-2 decoration-dashed transition-colors w-full"
       onClick={() => { setDraft(value || ""); setEditing(true); }}
+      data-testid={testId ? `${testId}-trigger` : undefined}
+      aria-label={testId ? `Edit ${testId}` : "Edit value"}
     >
       {value || <span className="text-muted-foreground/60 italic text-[10px]">{placeholder}</span>}
     </button>
@@ -392,16 +398,18 @@ function ProjectsTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
-          <label className="text-xs font-medium text-muted-foreground">Data up to:</label>
+          <label htmlFor="cutoff-month" className="text-xs font-medium text-muted-foreground">Data up to:</label>
           <Input
+            id="cutoff-month"
             type="month"
             value={cutoff}
             onChange={(e) => setCutoff(e.target.value)}
             className="h-8 w-36 text-xs"
             placeholder="All data"
+            data-testid="input-cutoff-month"
           />
           {cutoff && (
-            <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => setCutoff("")}>
+            <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => setCutoff("")} data-testid="btn-cutoff-clear">
               <X className="h-3.5 w-3.5" />
             </Button>
           )}
@@ -436,6 +444,8 @@ function ProjectsTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
                   key={label}
                   className={`px-2 py-2 text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap ${sticky ? "sticky left-0 z-10 bg-muted/95 text-left min-w-[140px] border-r border-border" : "text-right text-muted-foreground"} ${key ? "cursor-pointer select-none hover:text-foreground" : "text-muted-foreground"}`}
                   onClick={key ? () => toggleSort(key) : undefined}
+                  data-testid={key ? `th-sort-${key}` : undefined}
+                  aria-sort={key ? (sortKey === key ? (sortAsc ? "ascending" : "descending") : "none") : undefined}
                 >
                   {label}{key && <SortIcon k={key} />}
                 </th>
@@ -456,6 +466,7 @@ function ProjectsTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
                     onSave={(v) => editMutation.mutate({ projectName: p.projectName, field: "province", value: v || null })}
                     canEdit={canEdit}
                     placeholder="Province"
+                    testId={`cell-province-${p.projectId}`}
                   />
                 </td>
                 <td className="px-2 py-2 text-right text-muted-foreground whitespace-nowrap">{p.sizeKwp > 0 ? p.sizeKwp.toLocaleString() : "—"}</td>
@@ -465,6 +476,7 @@ function ProjectsTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
                     onSave={(v) => editMutation.mutate({ projectName: p.projectName, field: "projectType", value: v || null })}
                     canEdit={canEdit}
                     placeholder="Type"
+                    testId={`cell-type-${p.projectId}`}
                   />
                 </td>
                 <td className="px-2 py-2 text-right min-w-[90px]">
@@ -473,6 +485,7 @@ function ProjectsTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
                     onSave={(v) => editMutation.mutate({ projectName: p.projectName, field: "fundingType", value: v || null })}
                     canEdit={canEdit}
                     placeholder="Funding"
+                    testId={`cell-funding-${p.projectId}`}
                   />
                 </td>
                 <td className="px-2 py-2 text-right text-muted-foreground whitespace-nowrap">{fmtDate(p.startDate)}</td>
@@ -569,7 +582,7 @@ function PipelineTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
           {totalRev > 0 && <Badge variant="secondary" className="text-[11px] text-emerald-700 bg-emerald-50">Total: {fmtR(totalRev)}</Badge>}
         </div>
         {canEdit && !adding && (
-          <Button size="sm" variant="outline" onClick={() => setAdding(true)} className="gap-1.5 h-8">
+          <Button size="sm" variant="outline" onClick={() => setAdding(true)} className="gap-1.5 h-8" data-testid="btn-add-pipeline">
             <Plus className="h-3.5 w-3.5" /> Add Deal
           </Button>
         )}
@@ -587,7 +600,7 @@ function PipelineTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
           <tbody className="divide-y divide-border/40">
             {adding && (
               <tr className="bg-emerald-50/30">
-                <td className="px-1 py-1"><Input value={form.projectName} onChange={(e) => setForm((f) => ({ ...f, projectName: e.target.value }))} placeholder="Project name" className="h-7 text-xs" autoFocus /></td>
+                <td className="px-1 py-1"><Input value={form.projectName} onChange={(e) => setForm((f) => ({ ...f, projectName: e.target.value }))} placeholder="Project name" className="h-7 text-xs" autoFocus data-testid="input-pipeline-name" /></td>
                 <td className="px-1 py-1"><Input value={form.projectDeveloper} onChange={(e) => setForm((f) => ({ ...f, projectDeveloper: e.target.value }))} placeholder="BD" className="h-7 text-xs w-24" /></td>
                 <td className="px-1 py-1"><Input value={form.location} onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))} placeholder="Location" className="h-7 text-xs w-24" /></td>
                 <td className="px-1 py-1"><Input type="number" value={form.sizeKwp} onChange={(e) => setForm((f) => ({ ...f, sizeKwp: e.target.value }))} placeholder="kWp" className="h-7 text-xs w-20 text-right" /></td>
@@ -598,8 +611,8 @@ function PipelineTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
                 <td className="px-1 py-1"><Input type="number" value={form.forecastGpPct} onChange={(e) => setForm((f) => ({ ...f, forecastGpPct: e.target.value }))} placeholder="0.00–1.00" className="h-7 text-xs w-20 text-right" /></td>
                 <td className="px-1 py-1"><Input value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Notes" className="h-7 text-xs w-32" /></td>
                 <td className="px-1 py-1 whitespace-nowrap">
-                  <Button size="sm" className="h-6 px-2 text-[10px] mr-1" onClick={() => createMut.mutate(form)} disabled={!form.projectName || createMut.isPending}>Save</Button>
-                  <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => setAdding(false)}>Cancel</Button>
+                  <Button size="sm" className="h-6 px-2 text-[10px] mr-1" onClick={() => createMut.mutate(form)} disabled={!form.projectName || createMut.isPending} data-testid="btn-pipeline-add-save">Save</Button>
+                  <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => setAdding(false)} data-testid="btn-pipeline-add-cancel">Cancel</Button>
                 </td>
               </tr>
             )}
@@ -626,12 +639,12 @@ function PipelineTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
                     {canEdit && (
                       isEditing ? (
                         <span className="flex gap-1 justify-end">
-                          <Button size="sm" className="h-6 px-2 text-[10px]" onClick={() => updateMut.mutate({ id: r.id, data: editForm })} disabled={updateMut.isPending}>Save</Button>
-                          <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => setEditId(null)}>Cancel</Button>
+                          <Button size="sm" className="h-6 px-2 text-[10px]" onClick={() => updateMut.mutate({ id: r.id, data: editForm })} disabled={updateMut.isPending} data-testid={`btn-pipeline-edit-save-${r.id}`}>Save</Button>
+                          <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => setEditId(null)} data-testid={`btn-pipeline-edit-cancel-${r.id}`}>Cancel</Button>
                         </span>
                       ) : (
                         <span className="flex gap-1 justify-end">
-                          <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => { setEditId(r.id); setEditForm({}); }}><Pencil className="h-3 w-3" /></Button>
+                          <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => { setEditId(r.id); setEditForm({}); }} data-testid={`btn-edit-pipeline-${r.id}`}><Pencil className="h-3 w-3" /></Button>
                           <Button size="sm" variant="ghost" className="h-6 px-2 text-destructive hover:text-destructive" onClick={() => setPendingDelete({ id: r.id, label: r.projectName || "this deal" })} data-testid={`btn-delete-pipeline-${r.id}`}><Trash2 className="h-3 w-3" /></Button>
                         </span>
                       )
@@ -702,7 +715,7 @@ function LostDealsTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
           {totalLost > 0 && <Badge variant="secondary" className="text-[11px] text-destructive bg-destructive/10">Value lost: {fmtR(totalLost)}</Badge>}
         </div>
         {canEdit && !adding && (
-          <Button size="sm" variant="outline" onClick={() => setAdding(true)} className="gap-1.5 h-8">
+          <Button size="sm" variant="outline" onClick={() => setAdding(true)} className="gap-1.5 h-8" data-testid="btn-add-lost-deal">
             <Plus className="h-3.5 w-3.5" /> Add Lost Deal
           </Button>
         )}
@@ -720,15 +733,15 @@ function LostDealsTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
           <tbody className="divide-y divide-border/40">
             {adding && (
               <tr className="bg-destructive/5">
-                <td className="px-1 py-1"><Input value={form.dealName} onChange={(e) => setForm((f) => ({ ...f, dealName: e.target.value }))} placeholder="Deal name" className="h-7 text-xs" autoFocus /></td>
+                <td className="px-1 py-1"><Input value={form.dealName} onChange={(e) => setForm((f) => ({ ...f, dealName: e.target.value }))} placeholder="Deal name" className="h-7 text-xs" autoFocus data-testid="input-lost-deal-name" /></td>
                 <td className="px-1 py-1"><Input type="number" value={form.dealValue} onChange={(e) => setForm((f) => ({ ...f, dealValue: e.target.value }))} placeholder="0" className="h-7 text-xs w-28 text-right" /></td>
                 <td className="px-1 py-1"><Input value={form.businessDeveloper} onChange={(e) => setForm((f) => ({ ...f, businessDeveloper: e.target.value }))} placeholder="BD" className="h-7 text-xs w-24" /></td>
                 <td className="px-1 py-1"><Input value={form.lostReason} onChange={(e) => setForm((f) => ({ ...f, lostReason: e.target.value }))} placeholder="Reason" className="h-7 text-xs w-32" /></td>
                 <td className="px-1 py-1"><Input type="date" value={form.lostDate} onChange={(e) => setForm((f) => ({ ...f, lostDate: e.target.value }))} className="h-7 text-xs w-32" /></td>
                 <td className="px-1 py-1"><Input value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Notes" className="h-7 text-xs w-32" /></td>
                 <td className="px-1 py-1 whitespace-nowrap">
-                  <Button size="sm" className="h-6 px-2 text-[10px] mr-1" onClick={() => createMut.mutate(form)} disabled={!form.dealName || createMut.isPending}>Save</Button>
-                  <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => setAdding(false)}>Cancel</Button>
+                  <Button size="sm" className="h-6 px-2 text-[10px] mr-1" onClick={() => createMut.mutate(form)} disabled={!form.dealName || createMut.isPending} data-testid="btn-lost-deal-add-save">Save</Button>
+                  <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => setAdding(false)} data-testid="btn-lost-deal-add-cancel">Cancel</Button>
                 </td>
               </tr>
             )}
@@ -746,12 +759,12 @@ function LostDealsTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
                     {canEdit && (
                       isEditing ? (
                         <span className="flex gap-1 justify-end">
-                          <Button size="sm" className="h-6 px-2 text-[10px]" onClick={() => updateMut.mutate({ id: r.id, data: editForm })} disabled={updateMut.isPending}>Save</Button>
-                          <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => setEditId(null)}>Cancel</Button>
+                          <Button size="sm" className="h-6 px-2 text-[10px]" onClick={() => updateMut.mutate({ id: r.id, data: editForm })} disabled={updateMut.isPending} data-testid={`btn-lost-deal-edit-save-${r.id}`}>Save</Button>
+                          <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => setEditId(null)} data-testid={`btn-lost-deal-edit-cancel-${r.id}`}>Cancel</Button>
                         </span>
                       ) : (
                         <span className="flex gap-1 justify-end">
-                          <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => { setEditId(r.id); setEditForm({}); }}><Pencil className="h-3 w-3" /></Button>
+                          <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => { setEditId(r.id); setEditForm({}); }} data-testid={`btn-edit-lost-deal-${r.id}`}><Pencil className="h-3 w-3" /></Button>
                           <Button size="sm" variant="ghost" className="h-6 px-2 text-destructive hover:text-destructive" onClick={() => setPendingDelete({ id: r.id, label: r.dealName || "this deal" })} data-testid={`btn-delete-lost-deal-${r.id}`}><Trash2 className="h-3 w-3" /></Button>
                         </span>
                       )
@@ -849,8 +862,9 @@ export default function FyeRevenueTrackingPage() {
           />
 
           <div className="flex items-center gap-2 flex-wrap">
-            <label className="text-xs font-medium text-muted-foreground whitespace-nowrap">Financial Year:</label>
+            <label htmlFor="select-fye-year" className="text-xs font-medium text-muted-foreground whitespace-nowrap">Financial Year:</label>
             <select
+              id="select-fye-year"
               value={activeFye}
               onChange={(e) => setFye(Number(e.target.value))}
               className="h-8 px-2 text-sm border border-border rounded-lg bg-card hover:bg-muted/50 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-300"
@@ -869,9 +883,9 @@ export default function FyeRevenueTrackingPage() {
             <div className="col-span-3 flex items-center gap-2 py-3 text-muted-foreground text-sm"><Loader2 className="h-4 w-4 animate-spin" />Loading KPIs…</div>
           ) : (
             <>
-              <KpiCard label="Brought In" value={kpis?.broughtIn ?? 0} icon={Briefcase} accent="bg-emerald-100 text-emerald-700" />
-              <KpiCard label="Signed" value={kpis?.signed ?? 0} icon={CheckCircle2} accent="bg-foreground/10 text-foreground" />
-              <KpiCard label="Total" value={kpis?.total ?? 0} icon={Users} accent="bg-emerald-50 text-emerald-600 border border-emerald-200" />
+              <KpiCard label="Brought In" value={kpis?.broughtIn ?? 0} icon={Briefcase} accent="bg-emerald-100 text-emerald-700" testId="kpi-brought-in" />
+              <KpiCard label="Signed" value={kpis?.signed ?? 0} icon={CheckCircle2} accent="bg-foreground/10 text-foreground" testId="kpi-signed" />
+              <KpiCard label="Total" value={kpis?.total ?? 0} icon={Users} accent="bg-emerald-50 text-emerald-600 border border-emerald-200" testId="kpi-total" />
             </>
           )}
           {fyTotals && (
