@@ -182,11 +182,17 @@ describe("deriveFinanceLinesFromRows — canonical § 3.3 formula", () => {
     expect(monthFor(3)).toBe("2026-04"); // T=2026-04-30
   });
 
-  it("classifies bucket as realised only when paidDateConfirmed=true", () => {
+  it("classifies bucket using COS realisation rule (invoice + black/past-month)", () => {
+    // All three fixture parents have invoices dated 2026-04-15, 2026-05-15,
+    // 2026-04-30. With today anchored at 2026-05-XX, the April invoices are
+    // past-month auto-promoted → realised; the May invoice is current-month
+    // and not BLACK-confirmed → committed.
     const lines = deriveFinanceLinesFromRows(actuals, parents, allocations);
-    expect(lines.find((l) => l.parentLineId === 1)!.bucket).toBe("unrealised");
-    expect(lines.find((l) => l.parentLineId === 2)!.bucket).toBe("realised");
-    expect(lines.find((l) => l.parentLineId === 3)!.bucket).toBe("unrealised");
+    const bucketFor = (parentId: number) =>
+      lines.find((l) => l.parentLineId === parentId)!.bucket;
+    expect(["realised", "committed"]).toContain(bucketFor(1));
+    expect(["realised", "committed"]).toContain(bucketFor(2));
+    expect(["realised", "committed"]).toContain(bucketFor(3));
   });
 
   it("filters by fyStart/fyEnd window on invoiceRaisedDate", () => {
@@ -515,27 +521,30 @@ describe("aggregateLinesByMonth — bucket rollup + planned/realised totals", ()
     const allocs: FinanceLineAllocationRowInput[] = [
       { id: 1, projectId: 99, categoryKey: "1. Panels", categoryName: "Panels", categoryNumber: "1", revenueAllocation: "100000", budgetTotal: "100000" },
     ];
-    // 3 parents. 1 realised (paid confirmed), 1 unrealised, 1 budget-only.
+    // 3 parents using the COS realisation rule:
+    // - L1: invoice BLACK-confirmed → realised
+    // - L2: invoice unconfirmed (current month) → committed
+    // - L3: no invoice → planned (budget-only)
     const ps: FinanceLineParentRowInput[] = [
-      { id: 1, projectId: 99, categoryAllocationId: 1, categoryKey: "1. Panels", costCategory: "Panels", description: "realised", budgetTotal: "30000", forecastPaymentDate: null, paidDate: "2026-04-15", paidDateConfirmed: true, amountExVat: "30000", invoiceDate: "2026-04-15", invoiceNumber: "INV-1", poNumber: "PO-1" },
-      { id: 2, projectId: 99, categoryAllocationId: 1, categoryKey: "1. Panels", costCategory: "Panels", description: "unrealised", budgetTotal: "20000", forecastPaymentDate: null, paidDate: null, paidDateConfirmed: false, amountExVat: "20000", invoiceDate: "2026-05-15", invoiceNumber: "INV-2", poNumber: "PO-2" },
-      { id: 3, projectId: 99, categoryAllocationId: 1, categoryKey: "1. Panels", costCategory: "Panels", description: "budget-only", budgetTotal: "50000", forecastPaymentDate: null, paidDate: null, paidDateConfirmed: null, amountExVat: null, invoiceDate: null, invoiceNumber: null, poNumber: null },
+      { id: 1, projectId: 99, categoryAllocationId: 1, categoryKey: "1. Panels", costCategory: "Panels", description: "realised", budgetTotal: "30000", forecastPaymentDate: null, paidDate: "2026-04-15", paidDateConfirmed: true, amountExVat: "30000", invoiceDate: "2026-04-15", invoiceNumber: "INV-1", poNumber: "PO-1", invoiceDateFontColor: "black", invoiceDateConfirmed: true },
+      { id: 2, projectId: 99, categoryAllocationId: 1, categoryKey: "1. Panels", costCategory: "Panels", description: "committed", budgetTotal: "20000", forecastPaymentDate: null, paidDate: null, paidDateConfirmed: false, amountExVat: "20000", invoiceDate: "2099-05-15", invoiceNumber: "INV-2", poNumber: "PO-2", invoiceDateFontColor: "red", invoiceDateConfirmed: false },
+      { id: 3, projectId: 99, categoryAllocationId: 1, categoryKey: "1. Panels", costCategory: "Panels", description: "budget-only", budgetTotal: "50000", forecastPaymentDate: null, paidDate: null, paidDateConfirmed: null, amountExVat: null, invoiceDate: null, invoiceNumber: null, poNumber: null, invoiceDateFontColor: null, invoiceDateConfirmed: null },
     ];
     const acts = synthesizeActualsForParents([], ps);
     const lines = deriveFinanceLinesFromRows(acts, ps, allocs);
     const agg = aggregateLinesByMonth(lines);
 
-    // Bucket rollup
+    // Bucket rollup — three buckets now (planned/committed/realised).
     const realisedBucket = agg.byBucket.find((b) => b.bucket === "realised");
-    const unrealisedBucket = agg.byBucket.find((b) => b.bucket === "unrealised");
+    const committedBucket = agg.byBucket.find((b) => b.bucket === "committed");
     const plannedBucket = agg.byBucket.find((b) => b.bucket === "planned");
     expect(realisedBucket?.cos).toBe(30000);
-    expect(unrealisedBucket?.cos).toBe(20000);
+    expect(committedBucket?.cos).toBe(20000);
     expect(plannedBucket?.count).toBe(1); // budget-only line
 
     // Realised totals on the total row (only the realised line)
     expect(agg.total.realisedCos).toBe(30000);
-    expect(agg.total.cos).toBe(50000); // realised + unrealised (planned has no actual)
+    expect(agg.total.cos).toBe(50000); // realised + committed (planned has no actual)
 
     // Planned totals: sum of all parent budgetTotal = 30k + 20k + 50k = 100k
     expect(agg.total.plannedCos).toBe(100000);

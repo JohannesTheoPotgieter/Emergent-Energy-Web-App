@@ -24,7 +24,7 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 
-export type FinanceLineBucket = "planned" | "committed" | "unrealised" | "realised";
+export type FinanceLineBucket = "planned" | "committed" | "realised";
 
 export interface FinanceLine {
   /** Identity of the actuals child row (`normalized_cost_line_actuals.id`). */
@@ -144,28 +144,42 @@ const inWindow = (iso: string | null, fyStart?: string, fyEnd?: string): boolean
 const normalizeKey = (raw: string): string => raw.trim().toLowerCase();
 
 /**
- * Bucket classification — matches the existing taxonomy used by Revenue /
- * COS / GP recon grids:
+ * Bucket classification — matches the COS / Revenue tracker taxonomy
+ * (canonical COS realisation per § 3.2: invoice captured + invoice-date
+ * BLACK-confirmed, with past-month auto-promote for closed months).
  *
- *   planned      — no PO yet (the line is still budget-only)
- *   committed    — PO captured but no invoice yet
- *   unrealised   — invoice captured but paid-date not BLACK-confirmed
- *   realised     — paid-date BLACK-confirmed (cash has moved)
+ *   planned    — no invoice yet
+ *   committed  — invoice captured but unconfirmed (RED) and current/future month
+ *   realised   — invoice captured + (BLACK-confirmed OR past-month with invoice)
  *
- * Realisation here is the *cash* signal on column W per § 3.7. The COS
- * realisation predicate (§ 3.2 — invoice + invoice-date BLACK) is a
- * separate concern owned by `isCanonicalCosRealised` and is consumed by
- * higher layers when they need that distinction.
+ * The fourth `unrealised` bucket from earlier iterations is folded back
+ * into `committed` to align with how the COS tab classifies lines.
+ * Realised numbers now match the COS / REV tabs exactly.
  */
 const classifyBucket = (
-  poNumber: string | null,
   invoiceNumber: string | null,
-  paidDateConfirmed: boolean | null,
+  invoiceDateFontColor: string | null,
+  invoiceDateConfirmed: boolean | null,
+  recognitionMonth: string | null,
+  currentMonthKey: string,
 ): FinanceLineBucket => {
-  if (paidDateConfirmed === true) return "realised";
-  if (invoiceNumber && invoiceNumber.trim()) return "unrealised";
-  if (poNumber && poNumber.trim()) return "committed";
-  return "planned";
+  const hasInvoice = !!(invoiceNumber && invoiceNumber.trim());
+  if (!hasInvoice) return "planned";
+
+  // Past-month auto-promote: a closed month with an invoice IS the
+  // confirmation, matching the COS tracker's currentMonthKey logic.
+  const isPastMonth = recognitionMonth != null && recognitionMonth < currentMonthKey;
+  const confirmed =
+    invoiceDateFontColor?.toLowerCase() === "black" ||
+    invoiceDateConfirmed === true ||
+    isPastMonth;
+
+  return confirmed ? "realised" : "committed";
+};
+
+const todayMonthKey = (): string => {
+  const d = new Date();
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 };
 
 export class FinanceLineLevelRepository {
@@ -255,6 +269,10 @@ export class FinanceLineLevelRepository {
           invoiceDate: normalizedCostLines.invoiceDate,
           invoiceNumber: normalizedCostLines.invoiceNumber,
           poNumber: normalizedCostLines.poNumber,
+          // Realisation signal (col T cell colour) — aligns the
+          // realised bucket with the COS tracker's classification.
+          invoiceDateFontColor: normalizedCostLines.invoiceDateFontColor,
+          invoiceDateConfirmed: normalizedCostLines.invoiceDateConfirmed,
         })
         .from(normalizedCostLines)
         .where(
@@ -386,6 +404,10 @@ export interface FinanceLineParentRowInput {
   invoiceDate?: string | Date | null;
   invoiceNumber?: string | null;
   poNumber?: string | null;
+  // Realisation signal (col T cell colour, BLACK = confirmed) per § 3.2.
+  // Used by the bucket classifier to align with the COS tracker.
+  invoiceDateFontColor?: string | null;
+  invoiceDateConfirmed?: boolean | null;
 }
 
 export interface FinanceLineAllocationRowInput {
@@ -462,6 +484,10 @@ export function deriveFinanceLinesFromRows(
   allocationRows: readonly FinanceLineAllocationRowInput[],
   opts: GetProjectFinanceLinesOptions = {},
 ): FinanceLine[] {
+  // Anchor for past-month auto-promote in `classifyBucket`. Closed
+  // months with an invoice are treated as realised, matching the COS
+  // tracker's `currentMonthKey` logic.
+  const currentMonthKey = todayMonthKey();
   const parentById = new Map<number, FinanceLineParentRowInput>();
   for (const p of parentRows) parentById.set(p.id, p);
 
@@ -623,7 +649,13 @@ export function deriveFinanceLinesFromRows(
       plannedRevenue,
       plannedGp,
       plannedGpPct,
-      bucket: classifyBucket(a.poNumber ?? null, a.invoiceNumber ?? null, paidDateConfirmed),
+      bucket: classifyBucket(
+        a.invoiceNumber ?? null,
+        parent?.invoiceDateFontColor ?? null,
+        parent?.invoiceDateConfirmed ?? null,
+        monthKey(invoiceRaisedDate),
+        currentMonthKey,
+      ),
       recognitionMonth: monthKey(invoiceRaisedDate),
       derivationWarning: warning,
     });
