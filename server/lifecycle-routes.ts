@@ -1051,66 +1051,69 @@ export function registerLifecycleRoutes(app: Express) {
       // Helpers matching program-dashboard logic
       const hasText = (v: any) => typeof v === 'string' && v.trim().length > 0;
 
-      const rawPlanTasks = await getAllPMWorkItemsAsProjectPlan();
-      // Group plan tasks by project for leaf-task identification
-      const planTasksByNorm = new Map<string, any[]>();
-      const planFyItemsByNorm = new Map<string, number>();
-      for (const wi of rawPlanTasks as any[]) {
-        if (!wi.projectName) continue;
-        const norm = normalizeName(wi.projectName);
-        if (!planTasksByNorm.has(norm)) planTasksByNorm.set(norm, []);
-        planTasksByNorm.get(norm)!.push(wi);
+      // Direct query: includes parentId + expectedPctComplete for proper leaf detection
+      // (getAllPMWorkItemsAsProjectPlan always returns expectedPctComplete=null and no parentId,
+      //  so this replaces it with a precise query matching the project-routes.ts approach)
+      const rawPlanTasks = await db.select({
+        id: workItems.id,
+        projectId: workItems.projectId,
+        percentComplete: workItems.percentComplete,
+        expectedPctComplete: workItems.expectedPctComplete,
+        parentId: workItems.parentId,
+        wbsCode: workItems.wbsCode,
+        startDate: workItems.startDate,
+        endDate: workItems.endDate,
+        isMilestone: workItems.isMilestone,
+      }).from(workItems).where(and(
+        eq(workItems.workstream, "PM"),
+        sql`${workItems.source} = 'SMART_IMPORT'`,
+        isNull(workItems.deletedAt),
+      ));
 
-        const planMembershipDate = pickFirstPopulatedDate(wi, [
-          "plannedStart",
-          "plannedEnd",
-          "expectedStart",
-          "expectedEnd",
-          "actualStart",
-          "actualEnd",
-        ]);
-        if (isDateInRange(planMembershipDate, fy.start, fy.end)) {
-          planFyItemsByNorm.set(norm, (planFyItemsByNorm.get(norm) || 0) + 1);
-        }
+      // Group by projectId for per-project computation
+      const planTasksByProjectId = new Map<number, typeof rawPlanTasks>();
+      for (const wi of rawPlanTasks) {
+        if (!wi.projectId) continue;
+        if (!planTasksByProjectId.has(wi.projectId)) planTasksByProjectId.set(wi.projectId, []);
+        planTasksByProjectId.get(wi.projectId)!.push(wi);
       }
 
-      // Compute leaf-task simple-average progress per project (matching UnifiedPlanTab)
-      const todayMs = new Date(today).getTime();
+      const planFyItemsByNorm = new Map<string, number>();
       const planByNorm = new Map<string, { weightedPct: number; totalWeight: number; weightedExpPct: number; totalExpWeight: number; fyItems: number }>();
-      for (const [norm, tasks] of planTasksByNorm) {
-        // Filter out section headers
-        const SECTION_HEADERS = ['no.', 'no', '#'];
-        const filtered = tasks.filter((t: any) => {
-          const tn = (t.taskNo || '').toString().toLowerCase().trim();
-          return !SECTION_HEADERS.includes(tn);
-        });
+      const todayMs = new Date(today).getTime();
 
-        // Identify parent rows via parentRowNumber and indent level
-        const parentRows = new Set<number>();
-        for (const t of filtered) {
-          if (t.parentRowNumber) parentRows.add(t.parentRowNumber);
-        }
-        for (let i = 0; i < filtered.length - 1; i++) {
-          const currIndent = (filtered[i] as any).indentLevel ?? 0;
-          const nextIndent = (filtered[i + 1] as any).indentLevel ?? 0;
-          if (nextIndent > currIndent && filtered[i].rowNumber) {
-            parentRows.add(filtered[i].rowNumber);
-          }
-        }
-        const leafTasks = filtered.filter((t: any) => !t.rowNumber || !parentRows.has(t.rowNumber));
-        const items = leafTasks.length > 0 ? leafTasks : filtered;
+      for (const project of activeProjects) {
+        const norm = normalizeName(project.projectName);
+        const tasks = planTasksByProjectId.get(project.id);
+        if (!tasks || tasks.length === 0) continue;
+
+        // FY membership: any task with a date inside the financial year
+        const fyItemCount = tasks.filter(t => {
+          const d = t.startDate ?? t.endDate;
+          return d && isDateInRange(String(d).slice(0, 10), fy.start, fy.end);
+        }).length;
+        planFyItemsByNorm.set(norm, fyItemCount);
+
+        // Parent detection: tasks whose id appears as parentId of another task are parents
+        const parentIds = new Set(tasks.filter(t => t.parentId != null).map(t => t.parentId as number));
+
+        const leafTasks = tasks.filter(t => {
+          if (t.isMilestone) return false;
+          return !parentIds.has(t.id);
+        });
+        const items = leafTasks.length > 0 ? leafTasks : tasks.filter(t => !t.isMilestone);
 
         let actualSum = 0;
         let expSum = 0;
         let expCount = 0;
         for (const t of items) {
-          actualSum += t.actualPctComplete !== null && t.actualPctComplete !== undefined ? Number(t.actualPctComplete) : 0;
+          actualSum += t.percentComplete !== null && t.percentComplete !== undefined ? Number(t.percentComplete) : 0;
           if (t.expectedPctComplete != null) {
             expSum += Number(t.expectedPctComplete);
             expCount++;
           } else {
-            const s = (t.actualStart || t.startDate || '').slice(0, 10);
-            const e = (t.actualEnd || t.endDate || '').slice(0, 10);
+            const s = t.startDate ? String(t.startDate).slice(0, 10) : null;
+            const e = t.endDate ? String(t.endDate).slice(0, 10) : null;
             if (s && e && /^\d{4}-\d{2}-\d{2}/.test(s) && /^\d{4}-\d{2}-\d{2}/.test(e)) {
               const sMs = new Date(s).getTime();
               const eMs = new Date(e).getTime();
@@ -1129,7 +1132,7 @@ export function registerLifecycleRoutes(app: Express) {
           totalWeight: items.length,
           weightedExpPct: expSum,
           totalExpWeight: expCount,
-          fyItems: planFyItemsByNorm.get(norm) || 0,
+          fyItems: fyItemCount,
         });
       }
 
