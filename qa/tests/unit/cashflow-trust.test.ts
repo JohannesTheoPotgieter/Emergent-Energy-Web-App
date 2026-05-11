@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { computeDateShiftDays, isQbDivergent, isRowStale } from "./cashflow-trust-helpers";
+import { effectiveAllocatedAmountExVat } from "@shared/config/qb-allocations";
 
 // ---------------------------------------------------------------------------
 // Pure helpers tested here (no DOM, no server, no DB).
@@ -66,6 +67,44 @@ describe("isQbDivergent", () => {
   it("suppresses divergence when taxUncertain is true", () => {
     // Mondi-sized gap but QB VAT info is absent — badge should NOT fire.
     expect(isQbDivergent(5_700_000, 3_500_000, true)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bidirectional divergence — App→QB uses allocatedAmountExVat, QB→App uses
+// the full bill/invoice total. effectiveAllocatedAmountExVat handles both
+// the post-Task-#142 (explicit allocated slice) and legacy (qbAmount = 100%)
+// link shapes.
+// ---------------------------------------------------------------------------
+
+describe("qbDivergence — bidirectional linking", () => {
+  it("App→QB explicit link: diverges against allocated slice, not QB bill total", () => {
+    // Mondi R700k + 261 Bree R300k both linked to the same QB bill of R1M.
+    const mondiLink = { allocatedAmountExVat: "700000", qbAmount: "1000000" };
+    const breeLink  = { allocatedAmountExVat: "300000", qbAmount: "1000000" };
+
+    // Each app amount matches its allocated slice → no divergence.
+    expect(isQbDivergent(700_000, effectiveAllocatedAmountExVat(mondiLink))).toBe(false);
+    expect(isQbDivergent(300_000, effectiveAllocatedAmountExVat(breeLink))).toBe(false);
+    // Comparing against the full QB total instead would wrongly flag both:
+    expect(isQbDivergent(700_000, 1_000_000)).toBe(true);
+  });
+
+  it("App→QB explicit link: flags genuine divergence on the allocated slice", () => {
+    // App says R800k but the approved allocation was R700k → real problem.
+    const link = { allocatedAmountExVat: "700000", qbAmount: "1000000" };
+    expect(isQbDivergent(800_000, effectiveAllocatedAmountExVat(link))).toBe(true);
+  });
+
+  it("QB→App heuristic match: compares against full QB total (1:1 assumed)", () => {
+    expect(isQbDivergent(73_000, 73_000)).toBe(false);
+    expect(isQbDivergent(73_000, 30_000)).toBe(true);
+  });
+
+  it("legacy link (pre-Task-#142): effectiveAllocatedAmountExVat falls back to qbAmount", () => {
+    const legacyLink = { allocatedAmountExVat: "0", qbAmount: "500000" };
+    expect(effectiveAllocatedAmountExVat(legacyLink)).toBe(500_000);
+    expect(isQbDivergent(500_000, effectiveAllocatedAmountExVat(legacyLink))).toBe(false);
   });
 });
 
