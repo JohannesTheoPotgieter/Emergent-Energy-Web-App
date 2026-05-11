@@ -43,6 +43,58 @@ import {
   normalizedCostLines,
   projectInfo,
 } from "@shared/schema";
+import { STATIC_COS_BUDGET_FY26 } from "../lib/calculations/financeUtils";
+import { storage } from "../storage";
+
+/**
+ * Monthly budget figures keyed by `YYYY-MM`. Matches what the COS / REV
+ * tabs show as Budget: COS uses `STATIC_COS_BUDGET_FY26` overlaid with
+ * manual entries; Revenue is manual-only (no static). Surfaced on the
+ * GP company response so the page can render a "Budget" row whose
+ * numbers reconcile to the existing trackers.
+ */
+interface BudgetByMonth {
+  cos: Record<string, number>;
+  revenue: Record<string, number>;
+}
+
+async function loadBudgetByMonth(): Promise<BudgetByMonth> {
+  const [cosManual, revManual] = await Promise.all([
+    storage.getTrackerMonthlyManual("COS"),
+    storage.getTrackerMonthlyManual("REV"),
+  ]);
+  const cosManualMap = new Map(
+    cosManual.map((e: { monthKey: string; budget: string | null }) => [
+      e.monthKey,
+      e.budget != null ? Number(e.budget) : null,
+    ]),
+  );
+  const revManualMap = new Map(
+    revManual.map((e: { monthKey: string; budget: string | null }) => [
+      e.monthKey,
+      e.budget != null ? Number(e.budget) : null,
+    ]),
+  );
+
+  const cos: Record<string, number> = {};
+  const revenue: Record<string, number> = {};
+  // Iterate over the static COS budget keys to seed the FY26 frame —
+  // any month present in static or manual will appear.
+  const monthKeys = new Set<string>([
+    ...Object.keys(STATIC_COS_BUDGET_FY26),
+    ...cosManualMap.keys(),
+    ...revManualMap.keys(),
+  ]);
+  for (const mk of monthKeys) {
+    const manualCos = cosManualMap.get(mk);
+    cos[mk] = manualCos != null && Number.isFinite(manualCos)
+      ? manualCos
+      : (STATIC_COS_BUDGET_FY26[mk] ?? 0);
+    const manualRev = revManualMap.get(mk);
+    revenue[mk] = manualRev != null && Number.isFinite(manualRev) ? manualRev : 0;
+  }
+  return { cos, revenue };
+}
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_PORTFOLIO_PROJECTS = 200;
@@ -248,7 +300,10 @@ export function registerFinanceLinesRoutes(app: Express): void {
           throw badRequest("projectIds is required (comma-separated)", { projectIds: "" });
         }
 
-        const lines = await repo.getPortfolioFinanceLines(projectIds, { fyStart, fyEnd });
+        const [lines, budget] = await Promise.all([
+          repo.getPortfolioFinanceLines(projectIds, { fyStart, fyEnd }),
+          loadBudgetByMonth(),
+        ]);
         const byProject = summariseLinesByProject(lines);
         const portfolioTotal = sumTotals(byProject);
         const monthly = aggregateLinesByMonth(lines);
@@ -261,6 +316,10 @@ export function registerFinanceLinesRoutes(app: Express): void {
           monthly: monthly.byMonth,
           unrecognised: monthly.unrecognised,
           total: portfolioTotal,
+          // Static COS budget overlaid with manual entries + manual
+          // revenue entries — matches what the COS / REV tabs show as
+          // Budget. Keys are YYYY-MM.
+          budgetByMonth: budget,
         });
       } catch (err) {
         if (err instanceof ApiError) throw err;

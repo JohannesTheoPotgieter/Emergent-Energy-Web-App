@@ -65,12 +65,18 @@ interface PortfolioProjectTotals {
   realisedGpPct?: number | null;
 }
 
+interface BudgetByMonth {
+  cos: Record<string, number>;
+  revenue: Record<string, number>;
+}
+
 interface PortfolioResponse {
   projectIds: number[];
   byProject: PortfolioProjectTotals[];
   monthly: MonthlyRow[];
   unrecognised: MonthlyRow;
   total: MonthlyRow;
+  budgetByMonth?: BudgetByMonth;
 }
 
 interface CategoryHealthEntry {
@@ -215,34 +221,47 @@ interface MetricRow {
   key: string;
   label: string;
   emphasis?: boolean;
-  group?: "planned" | "actual" | "realised";
+  group?: "budget" | "planned" | "realised";
   format: (v: number) => string;
-  getValue: (m: MonthlyRow) => number;
+  getValue: (m: MonthlyRow, budget: BudgetByMonth | undefined) => number;
 }
 
+const budgetRev = (m: MonthlyRow, budget: BudgetByMonth | undefined): number =>
+  budget?.revenue[m.monthKey] ?? 0;
+const budgetCos = (m: MonthlyRow, budget: BudgetByMonth | undefined): number =>
+  budget?.cos[m.monthKey] ?? 0;
+const budgetGp = (m: MonthlyRow, budget: BudgetByMonth | undefined): number =>
+  budgetRev(m, budget) - budgetCos(m, budget);
+const budgetMargin = (m: MonthlyRow, budget: BudgetByMonth | undefined): number => {
+  const r = budgetRev(m, budget);
+  return r !== 0 ? budgetGp(m, budget) / r : 0;
+};
+
 /**
- * Metric grid mirrors the Revenue / COS pages — three groups (Planned,
- * Actual, Realised) with Revenue / COS / GP / Margin % rows in each.
+ * Metric grid mirrors the Revenue / COS pages — three groups (Budget,
+ * Planned, Realised) with Revenue / COS / GP / Margin % rows in each.
  *
- *   Planned  — col G + (G/I)*J — what the workbook says we'll do
- *   Actual   — col Q + (Q/X)*J — what's been imported so far
- *   Realised — same formula, but only lines with paid-confirmed bucket
- *
- * "Budget" in finance language = Planned for this dataset (the FY26
- * budget came from the workbook's category J column).
+ *   Budget   — STATIC_COS_BUDGET_FY26 + manual entries (same source the
+ *              COS / Revenue tabs use, so numbers reconcile)
+ *   Planned  — Σ line.actualTotal + Σ (Q/X)*J across every line — the
+ *              full app baseline matching what the COS tab calls
+ *              "Planned" (realised + committed + planned-no-invoice)
+ *   Realised — Σ same, but only lines where bucket = "realised"
+ *              (invoice + invoice-date BLACK / past-month auto-promote,
+ *              matching the COS tab's Realised number)
  */
 const METRIC_ROWS: MetricRow[] = [
-  // Planned / Budget block
-  { key: "plannedRevenue", group: "planned", label: "Budget Revenue", format: formatRand, getValue: (m) => m.plannedRevenue ?? 0 },
-  { key: "plannedCos", group: "planned", label: "Budget COS", format: formatRand, getValue: (m) => m.plannedCos ?? 0 },
-  { key: "plannedGp", group: "planned", label: "Budget GP", emphasis: true, format: formatRand, getValue: (m) => m.plannedGp ?? 0 },
-  { key: "plannedGpPct", group: "planned", label: "Budget Margin %", format: (v) => formatPct(v), getValue: (m) => m.plannedGpPct ?? 0 },
-  // Actual block
-  { key: "revenue", group: "actual", label: "Actual Revenue", format: formatRand, getValue: (m) => m.revenue },
-  { key: "cos", group: "actual", label: "Actual COS", format: formatRand, getValue: (m) => m.cos },
-  { key: "gp", group: "actual", label: "Actual GP", emphasis: true, format: formatRand, getValue: (m) => m.gp },
-  { key: "gpPct", group: "actual", label: "Actual Margin %", format: (v) => formatPct(v), getValue: (m) => m.gpPct ?? 0 },
-  // Realised block
+  // Budget block (from STATIC_COS_BUDGET_FY26 + manual entries)
+  { key: "budgetRevenue", group: "budget", label: "Budget Revenue", format: formatRand, getValue: budgetRev },
+  { key: "budgetCos", group: "budget", label: "Budget COS", format: formatRand, getValue: budgetCos },
+  { key: "budgetGp", group: "budget", label: "Budget GP", emphasis: true, format: formatRand, getValue: budgetGp },
+  { key: "budgetMargin", group: "budget", label: "Budget Margin %", format: (v) => formatPct(v), getValue: budgetMargin },
+  // Planned block (was "Actual" — renamed to match COS / Revenue terminology)
+  { key: "revenue", group: "planned", label: "Planned Revenue", format: formatRand, getValue: (m) => m.revenue },
+  { key: "cos", group: "planned", label: "Planned COS", format: formatRand, getValue: (m) => m.cos },
+  { key: "gp", group: "planned", label: "Planned GP", emphasis: true, format: formatRand, getValue: (m) => m.gp },
+  { key: "gpPct", group: "planned", label: "Planned Margin %", format: (v) => formatPct(v), getValue: (m) => m.gpPct ?? 0 },
+  // Realised block — bucket = "realised" only
   { key: "realisedRevenue", group: "realised", label: "Realised Revenue", format: formatRand, getValue: (m) => m.realisedRevenue ?? 0 },
   { key: "realisedCos", group: "realised", label: "Realised COS", format: formatRand, getValue: (m) => m.realisedCos ?? 0 },
   { key: "realisedGp", group: "realised", label: "Realised GP", emphasis: true, format: formatRand, getValue: (m) => m.realisedGp ?? 0 },
@@ -324,6 +343,32 @@ export default function FinanceGpCompanyPage() {
 
   const lastMonth = fyMonthRows[fyMonthRows.length - 1] ?? null;
   const prevMonth = fyMonthRows[fyMonthRows.length - 2] ?? null;
+
+  // Add a synthetic `total` key to the per-month budget so the FY-total
+  // column on Budget rows can look up via the same getter as monthly
+  // cells. Margin % FY total = (Σ revenue − Σ cos) / Σ revenue, which
+  // falls out of the formula when revenue["total"] and cos["total"] are
+  // the sums.
+  const budgetWithFy: BudgetByMonth | undefined = useMemo(() => {
+    if (!data?.budgetByMonth) return undefined;
+    const cos = { ...data.budgetByMonth.cos };
+    const revenue = { ...data.budgetByMonth.revenue };
+    cos.total = Object.values(data.budgetByMonth.cos).reduce((s, v) => s + (Number.isFinite(v) ? v : 0), 0);
+    revenue.total = Object.values(data.budgetByMonth.revenue).reduce((s, v) => s + (Number.isFinite(v) ? v : 0), 0);
+    return { cos, revenue };
+  }, [data?.budgetByMonth]);
+
+  const fyBudgetGp = (budgetWithFy?.revenue.total ?? 0) - (budgetWithFy?.cos.total ?? 0);
+  const fyBudgetMargin =
+    budgetWithFy && budgetWithFy.revenue.total !== 0
+      ? fyBudgetGp / budgetWithFy.revenue.total
+      : null;
+  const lastBudgetMonth = lastMonth?.monthKey;
+  const prevBudgetMonth = prevMonth?.monthKey;
+  const budgetGpAtMonth = (mk: string | undefined): number =>
+    mk && budgetWithFy
+      ? (budgetWithFy.revenue[mk] ?? 0) - (budgetWithFy.cos[mk] ?? 0)
+      : 0;
 
   const rankedProjects = useMemo(() => {
     if (!data) return [] as Array<PortfolioProjectTotals & { projectName: string; status: CategoryHealthEntry["status"] | "unknown" }>;
@@ -413,46 +458,47 @@ export default function FinanceGpCompanyPage() {
             icon={Wallet}
             iconBg="bg-emerald-50 text-emerald-700 border border-emerald-200"
             accent="text-emerald-700"
-            fyValue={total.plannedGp ?? 0}
-            lastValue={lastMonth?.plannedGp ?? 0}
-            prevValue={prevMonth?.plannedGp ?? 0}
-            description={`Margin ${formatPct(total.plannedGpPct)} · (G/I) × J − G`}
+            fyValue={fyBudgetGp}
+            lastValue={budgetGpAtMonth(lastBudgetMonth)}
+            prevValue={budgetGpAtMonth(prevBudgetMonth)}
+            description={`Margin ${formatPct(fyBudgetMargin)} · static + manual entries`}
           />
           <FyKpiCard
             testId="planned-gp"
             label="FY Planned GP"
-            source="Budget"
+            source="App"
             icon={ListChecks}
             iconBg="bg-emerald-50 text-emerald-700 border border-emerald-200"
             accent="text-emerald-700"
-            fyValue={total.plannedGp ?? 0}
-            lastValue={lastMonth?.plannedGp ?? 0}
-            prevValue={prevMonth?.plannedGp ?? 0}
-            description={`Margin ${formatPct(total.plannedGpPct)} · workbook plan`}
-          />
-          <FyKpiCard
-            testId="actual-gp"
-            label="FY Actual GP"
-            source="App"
-            icon={TrendingUp}
-            iconBg="bg-foreground/8 text-foreground"
-            accent="text-foreground"
             fyValue={total.gp}
             lastValue={lastMonth?.gp ?? 0}
             prevValue={prevMonth?.gp ?? 0}
-            description={`Margin ${formatPct(total.gpPct)} · imported actuals`}
+            description={`Margin ${formatPct(total.gpPct)} · full app baseline`}
           />
           <FyKpiCard
             testId="realised-gp"
             label="FY Realised GP"
             source="App"
-            icon={PieChart}
-            iconBg="bg-slate-100 text-slate-700"
-            accent="text-slate-800"
+            icon={TrendingUp}
+            iconBg="bg-foreground/8 text-foreground"
+            accent="text-foreground"
             fyValue={total.realisedGp ?? 0}
             lastValue={lastMonth?.realisedGp ?? 0}
             prevValue={prevMonth?.realisedGp ?? 0}
-            description={`Margin ${formatPct(total.realisedGpPct)} · paid-confirmed only`}
+            description={`Margin ${formatPct(total.realisedGpPct)} · invoice + BLACK confirmed`}
+          />
+          <FyKpiCard
+            testId="planned-margin"
+            label="FY Planned Margin"
+            source="Derived"
+            icon={PieChart}
+            iconBg="bg-slate-100 text-slate-700"
+            accent="text-slate-800"
+            fyValue={total.gpPct ?? 0}
+            lastValue={lastMonth?.gpPct ?? 0}
+            prevValue={prevMonth?.gpPct ?? 0}
+            format={(v) => formatPct(v)}
+            description="Planned GP / Planned Revenue"
           />
         </KPIStrip>
 
@@ -479,10 +525,12 @@ export default function FinanceGpCompanyPage() {
               </thead>
               <tbody>
                 {METRIC_ROWS.map((row, idx) => {
-                  // Sniff FY total directly from the same getter to avoid
-                  // hard-coded key checks; total is a MonthlyRow-shaped
-                  // object so the same getValue works.
-                  const fyTotalValue = row.key === "count" ? total.count : row.getValue(total);
+                  // Sniff FY total: budget rows look up `total` in the
+                  // budget map (synthesized below); line-derived rows
+                  // read from the `total` MonthlyRow via the getter.
+                  const totalRow: MonthlyRow = { ...total, monthKey: "total" };
+                  const fyTotalValue =
+                    row.key === "count" ? total.count : row.getValue(totalRow, budgetWithFy);
                   const prevGroup = idx > 0 ? METRIC_ROWS[idx - 1].group : undefined;
                   const isNewGroup = row.group && row.group !== prevGroup;
                   return (
@@ -494,15 +542,18 @@ export default function FinanceGpCompanyPage() {
                       <td className="sticky left-0 z-10 bg-card px-3 sm:px-5 py-2 sm:py-3 text-left text-foreground border-r border-border">
                         {row.label}
                       </td>
-                      {fyMonthRows.map((m) => (
-                        <td
-                          key={m.monthKey}
-                          className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono whitespace-nowrap"
-                          data-testid={`cell-${row.key}-${m.monthKey}`}
-                        >
-                          {row.getValue(m) === 0 && !row.key.endsWith("GpPct") && row.key !== "gpPct" ? "" : row.format(row.getValue(m))}
-                        </td>
-                      ))}
+                      {fyMonthRows.map((m) => {
+                        const v = row.getValue(m, budgetWithFy);
+                        return (
+                          <td
+                            key={m.monthKey}
+                            className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono whitespace-nowrap"
+                            data-testid={`cell-${row.key}-${m.monthKey}`}
+                          >
+                            {v === 0 && !row.key.endsWith("GpPct") && !row.key.endsWith("Margin") && row.key !== "gpPct" ? "" : row.format(v)}
+                          </td>
+                        );
+                      })}
                       <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono whitespace-nowrap bg-muted/30 sticky right-0 border-l border-border">
                         {row.format(fyTotalValue)}
                       </td>
@@ -526,16 +577,13 @@ export default function FinanceGpCompanyPage() {
                     Project
                   </th>
                   <th className="px-2 sm:px-4 py-2 sm:py-3 text-right font-semibold text-muted-foreground uppercase tracking-wider text-[10px] sm:text-[11px]">
-                    Budget GP
-                  </th>
-                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-right font-semibold text-muted-foreground uppercase tracking-wider text-[10px] sm:text-[11px]">
-                    Actual GP
+                    Planned GP
                   </th>
                   <th className="px-2 sm:px-4 py-2 sm:py-3 text-right font-semibold text-muted-foreground uppercase tracking-wider text-[10px] sm:text-[11px]">
                     Realised GP
                   </th>
                   <th className="px-2 sm:px-4 py-2 sm:py-3 text-right font-semibold text-muted-foreground uppercase tracking-wider text-[10px] sm:text-[11px]">
-                    Margin (Act)
+                    Margin
                   </th>
                   <th className="px-2 sm:px-4 py-2 sm:py-3 text-right font-semibold text-muted-foreground uppercase tracking-wider text-[10px] sm:text-[11px]">
                     Lines
@@ -546,7 +594,7 @@ export default function FinanceGpCompanyPage() {
               <tbody>
                 {rankedProjects.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-3 sm:px-5 py-6 text-center text-muted-foreground">
+                    <td colSpan={6} className="px-3 sm:px-5 py-6 text-center text-muted-foreground">
                       No projects with lines yet.
                     </td>
                   </tr>
@@ -566,7 +614,6 @@ export default function FinanceGpCompanyPage() {
                         </Badge>
                       )}
                     </td>
-                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono">{formatRand(p.plannedGp ?? 0)}</td>
                     <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono">{formatRand(p.gp)}</td>
                     <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono">{formatRand(p.realisedGp ?? 0)}</td>
                     <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono">{formatPct(p.gpPct)}</td>
