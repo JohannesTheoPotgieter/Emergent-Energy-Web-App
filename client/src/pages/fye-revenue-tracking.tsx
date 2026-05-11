@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo } from "react";
 import { FinanceShell } from "@/components/layout/FinanceShell";
 import { SectionHeader } from "@/components/layout/page-shell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -8,6 +8,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { fetchQueryFn, apiRequest } from "@/lib/queryClient";
 import { usePermission } from "@/hooks/use-permissions";
 import {
@@ -126,6 +136,43 @@ interface KpiResponse {
 interface YearsResponse {
   years: number[];
   currentFye: number;
+}
+
+// ── Delete Confirmation Dialog ────────────────────────────────────────────
+
+function DeleteConfirmDialog({
+  open,
+  label,
+  onOpenChange,
+  onConfirm,
+}: {
+  open: boolean;
+  label: string;
+  onOpenChange: (v: boolean) => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Remove entry?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This will permanently delete <strong>{label}</strong>. This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            onClick={onConfirm}
+            data-testid="btn-confirm-delete"
+          >
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────
@@ -487,6 +534,7 @@ function PipelineTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
   const [form, setForm] = useState({ ...EMPTY_PIPELINE });
   const [editId, setEditId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<Partial<PipelineRow>>({});
+  const [pendingDelete, setPendingDelete] = useState<{ id: number; label: string } | null>(null);
 
   const queryKey = ["/api/fye-revenue-tracking/pipeline", fye];
   const { data: rows = [], isLoading } = useQuery<PipelineRow[]>({
@@ -584,7 +632,7 @@ function PipelineTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
                       ) : (
                         <span className="flex gap-1 justify-end">
                           <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => { setEditId(r.id); setEditForm({}); }}><Pencil className="h-3 w-3" /></Button>
-                          <Button size="sm" variant="ghost" className="h-6 px-2 text-destructive hover:text-destructive" onClick={() => { if (confirm(`Remove "${r.projectName}"?`)) deleteMut.mutate(r.id); }}><Trash2 className="h-3 w-3" /></Button>
+                          <Button size="sm" variant="ghost" className="h-6 px-2 text-destructive hover:text-destructive" onClick={() => setPendingDelete({ id: r.id, label: r.projectName || "this deal" })} data-testid={`btn-delete-pipeline-${r.id}`}><Trash2 className="h-3 w-3" /></Button>
                         </span>
                       )
                     )}
@@ -598,6 +646,13 @@ function PipelineTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
           </tbody>
         </table>
       </div>
+
+      <DeleteConfirmDialog
+        open={pendingDelete !== null}
+        label={pendingDelete?.label ?? ""}
+        onOpenChange={(v) => { if (!v) setPendingDelete(null); }}
+        onConfirm={() => { if (pendingDelete) deleteMut.mutate(pendingDelete.id); setPendingDelete(null); }}
+      />
     </div>
   );
 }
@@ -612,6 +667,7 @@ function LostDealsTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
   const [form, setForm] = useState({ ...EMPTY_LOST });
   const [editId, setEditId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<Partial<LostDealRow>>({});
+  const [pendingDelete, setPendingDelete] = useState<{ id: number; label: string } | null>(null);
 
   const queryKey = ["/api/fye-revenue-tracking/lost-deals", fye];
   const { data: rows = [], isLoading } = useQuery<LostDealRow[]>({
@@ -696,7 +752,7 @@ function LostDealsTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
                       ) : (
                         <span className="flex gap-1 justify-end">
                           <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => { setEditId(r.id); setEditForm({}); }}><Pencil className="h-3 w-3" /></Button>
-                          <Button size="sm" variant="ghost" className="h-6 px-2 text-destructive hover:text-destructive" onClick={() => { if (confirm(`Remove "${r.dealName}"?`)) deleteMut.mutate(r.id); }}><Trash2 className="h-3 w-3" /></Button>
+                          <Button size="sm" variant="ghost" className="h-6 px-2 text-destructive hover:text-destructive" onClick={() => setPendingDelete({ id: r.id, label: r.dealName || "this deal" })} data-testid={`btn-delete-lost-deal-${r.id}`}><Trash2 className="h-3 w-3" /></Button>
                         </span>
                       )
                     )}
@@ -710,6 +766,13 @@ function LostDealsTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
           </tbody>
         </table>
       </div>
+
+      <DeleteConfirmDialog
+        open={pendingDelete !== null}
+        label={pendingDelete?.label ?? ""}
+        onOpenChange={(v) => { if (!v) setPendingDelete(null); }}
+        onConfirm={() => { if (pendingDelete) deleteMut.mutate(pendingDelete.id); setPendingDelete(null); }}
+      />
     </div>
   );
 }
