@@ -188,7 +188,7 @@ export function useExecutionDataProvider(setLocation: (to: string) => void) {
       outflowRiskProjects: fp.filter((p) => p.outflowRisk).length,
       overdueInflowFy: fp.reduce((s, p) => s + (p.overdueInflowFy || 0), 0),
       overdueOutflowFy: fp.reduce((s, p) => s + (p.overdueOutflowFy || 0), 0),
-      onScheduleRate: fp.length > 0 ? Number(((fp.filter((p) => (p.actualProgressPct ?? 0) >= (p.expectedProgressPct ?? 0) - 5).length / fp.length) * 100).toFixed(1)) : 0,
+      onScheduleRate: fp.length > 0 ? Number(((fp.filter((p) => !p.behindPlan).length / fp.length) * 100).toFixed(1)) : 0,
       contractCompleteness: fp.length > 0 ? Number(((fp.filter((p) => p.cpSigned && p.signedStatus === "SIGNED").length / fp.length) * 100).toFixed(1)) : 0,
     };
   }, [filteredProjects]);
