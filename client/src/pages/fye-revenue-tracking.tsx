@@ -38,6 +38,16 @@ import {
   AlertCircle,
   Loader2,
 } from "lucide-react";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -237,6 +247,78 @@ const DASH_ROW_DEFS = [
   { key: "gp-actual",    section: "gp",      field: "actualForecast" as keyof MonthBucket, label: "Actual / Forecast GP",   class: "text-foreground font-bold" },
   { key: "gp-pipeline",  section: "gp",      field: "pipeline" as keyof MonthBucket,       label: "Pipeline GP",            class: "text-foreground/70" },
 ] as const;
+
+// ── Cumulative tracking charts ─────────────────────────────────────────────
+
+function fmt(value: number) {
+  if (Math.abs(value) >= 1_000_000) return `R${(value / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(value) >= 1_000) return `R${(value / 1_000).toFixed(0)}k`;
+  return `R${value.toFixed(0)}`;
+}
+
+interface ChartPoint {
+  label: string;
+  budget: number;
+  actualForecast: number;
+  actual: number | null;
+  pipeline: number;
+}
+
+function buildCumulative(months: DashboardMonth[], section: "revenue" | "gp"): ChartPoint[] {
+  let budgetAcc = 0, afAcc = 0, actualAcc = 0, pipelineAcc = 0;
+  return months.map((m) => {
+    const b = m[section];
+    budgetAcc += b.budget;
+    afAcc += b.actualForecast;
+    actualAcc += b.actual ?? 0;
+    pipelineAcc += b.pipeline;
+    return {
+      label: m.label,
+      budget: budgetAcc,
+      actualForecast: afAcc,
+      actual: b.actual !== null ? actualAcc : null,
+      pipeline: pipelineAcc,
+    };
+  });
+}
+
+function TrackingChart({
+  title,
+  data,
+}: {
+  title: string;
+  data: ChartPoint[];
+}) {
+  return (
+    <div className="flex-1 min-w-0">
+      <p className="text-xs font-semibold text-slate-700 mb-2 pl-1">{title}</p>
+      <ResponsiveContainer width="100%" height={220}>
+        <LineChart data={data} margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+          <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+          <YAxis tickFormatter={fmt} tick={{ fontSize: 10 }} width={56} />
+          <Tooltip formatter={(v: number) => fmt(v)} />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          <Line type="monotone" dataKey="budget" name="Budget" stroke="#94a3b8" strokeDasharray="5 3" dot={false} strokeWidth={1.5} />
+          <Line type="monotone" dataKey="actualForecast" name="Actual + Forecast" stroke="#16a34a" dot={false} strokeWidth={2} />
+          <Line type="monotone" dataKey="actual" name="Actual" stroke="#2563eb" dot={false} strokeWidth={2} connectNulls={false} />
+          <Line type="monotone" dataKey="pipeline" name="Pipeline" stroke="#d97706" strokeDasharray="3 2" dot={false} strokeWidth={1.5} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function FyeTrackingCharts({ months }: { months: DashboardMonth[] }) {
+  const revenueData = useMemo(() => buildCumulative(months, "revenue"), [months]);
+  const gpData = useMemo(() => buildCumulative(months, "gp"), [months]);
+  return (
+    <div className="px-4 pt-4 pb-2 border-b border-border flex gap-6 flex-wrap">
+      <TrackingChart title="Revenue Tracking (Cumulative)" data={revenueData} />
+      <TrackingChart title="GP Tracking (Cumulative)" data={gpData} />
+    </div>
+  );
+}
 
 function DashboardGrid({ months }: { months: DashboardMonth[] }) {
   const now = new Date();
@@ -967,7 +1049,10 @@ export default function FyeRevenueTrackingPage() {
                 ) : dashError ? (
                   <PageError title="Dashboard error" message={dashErr instanceof Error ? dashErr.message : "Failed to load"} />
                 ) : dashData ? (
-                  <DashboardGrid months={dashData.months} />
+                  <>
+                    <FyeTrackingCharts months={dashData.months} />
+                    <DashboardGrid months={dashData.months} />
+                  </>
                 ) : null}
               </CardContent>
             </Card>

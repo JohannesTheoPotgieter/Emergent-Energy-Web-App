@@ -729,11 +729,13 @@ router.get(
           totalCosByProject.set(pn, (totalCosByProject.get(pn) || 0) + actualAmt);
         }
 
-        // FYE-specific budget COS: use best date to determine which FYE this expense belongs to
+        // FYE-specific budget COS: use best date to determine which FYE this expense belongs to.
+        // Lines with no date at all are included unconditionally — they represent planned budget
+        // entries that haven't been dated yet but are still valid project budget.
         if (budgetAmt === 0) continue;
         const budgetDate = exp.expenseInvoicedDate || exp.computedForecastPaymentDate || exp.forecastPaymentDate;
         const budgetMk = extractMonthKey(budgetDate);
-        if (budgetMk && budgetMk >= fyeStart && budgetMk <= effectiveEnd) {
+        if (!budgetMk || (budgetMk >= fyeStart && budgetMk <= effectiveEnd)) {
           budgetCosByProject.set(pn, (budgetCosByProject.get(pn) || 0) + budgetAmt);
         }
       }
