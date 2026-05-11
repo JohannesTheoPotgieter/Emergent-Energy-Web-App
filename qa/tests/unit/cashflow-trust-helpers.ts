@@ -1,1 +1,1 @@
-export { isImportStale as isRowStale, computeDateShiftDays, isQbDivergent } from "@shared/lib/cashflow-trust";
+export { isImportStale as isRowStale, computeDateShiftDays, isQbDivergent, paymentTermsMissing } from "@shared/lib/cashflow-trust";

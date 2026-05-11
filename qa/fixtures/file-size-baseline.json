@@ -6,7 +6,7 @@
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
-      "loc": 7732
+      "loc": 7747
     },
     {
       "file": "client/src/pages/EngineeringTasksPage.tsx",
@@ -94,7 +94,7 @@
     },
     {
       "file": "client/src/pages/cashflow.tsx",
-      "loc": 2094
+      "loc": 2108
     },
     {
       "file": "client/src/pages/lifecycle-board.tsx",

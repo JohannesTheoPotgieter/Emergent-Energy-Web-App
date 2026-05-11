@@ -192,5 +192,6 @@ export function adaptRevenueToInflow(rev: NormalizedRevenueLine, resolvedName: s
     milestoneNotes: (rev as any).milestoneNotes ?? null,
     cellFormat: (rev as any).cellFormat ?? null,
     _isNormalized: true,
+    snapshotRunCommittedAt: (rev as any).snapshotRunCommittedAt ?? null,
   };
 }

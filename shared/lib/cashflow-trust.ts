@@ -20,3 +20,18 @@ export function isQbDivergent(
   if (taxUncertain) return false;
   return Math.abs(appAmount - qbAmount) > 100;
 }
+
+/**
+ * True when a cost line is Committed or Invoiced but has no forecast payment
+ * date. Payment terms are managed as an Excel formula; the app can surface
+ * missing terms as a warning signal without trying to compute them.
+ */
+export function paymentTermsMissing(row: {
+  computedState: string;
+  forecastPaymentDate: string | null | undefined;
+}): boolean {
+  return (
+    (row.computedState === "Committed" || row.computedState === "Invoiced") &&
+    !row.forecastPaymentDate
+  );
+}
