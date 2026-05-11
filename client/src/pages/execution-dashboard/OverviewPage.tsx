@@ -6,7 +6,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { formatCurrencyCompact } from "@/lib/execution-dashboard";
 import {
   Activity, TrendingDown, DollarSign,
-  ArrowRight, CheckCircle2, XCircle, Banknote,
+  ArrowRight, CheckCircle2, XCircle, Banknote, Clock,
 } from "lucide-react";
 import { useExecutionData } from "./use-execution-data";
 
@@ -16,36 +16,56 @@ export default function OverviewPage() {
   const [scheduleSheetOpen, setScheduleSheetOpen] = useState(false);
   const [contractSheetOpen, setContractSheetOpen] = useState(false);
 
+  const behindCount = kpis.projectsBehindPlan;
+  const onScheduleCount = filteredProjects.filter(
+    (p) => (p.actualProgressPct ?? 0) >= (p.expectedProgressPct ?? 0) - 5,
+  ).length;
+  const fullySignedCount = filteredProjects.filter(
+    (p) => p.cpSigned && p.signedStatus === "SIGNED",
+  ).length;
+
   return (
     <div className="space-y-6">
-      {/* 6 Program Metrics KPI tiles */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* 7 KPI tiles — 2 cols sm, 4 cols lg */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 
-        {/* 1 — On Schedule Rate */}
+        {/* 1 — Behind Schedule count */}
+        <KpiTile
+          label="Projects Behind Schedule"
+          value={String(behindCount)}
+          valueClass={behindCount === 0 ? "text-emerald-600" : behindCount <= 2 ? "text-amber-600" : "text-red-600"}
+          sub={`${onScheduleCount} of ${filteredProjects.length} projects on track`}
+          icon={<Clock className="w-5 h-5 text-red-600" />}
+          iconBg="bg-red-100"
+          cta="View all projects"
+          onClick={() => setScheduleSheetOpen(true)}
+        />
+
+        {/* 2 — On Schedule Rate */}
         <KpiTile
           label="On Schedule Rate"
           value={`${kpis.onScheduleRate}%`}
           valueClass={kpis.onScheduleRate >= 70 ? "text-emerald-600" : kpis.onScheduleRate >= 50 ? "text-amber-600" : "text-red-600"}
-          sub={`${filteredProjects.filter((p) => (p.actualProgressPct ?? 0) >= (p.expectedProgressPct ?? 0) - 5).length} of ${filteredProjects.length} projects on schedule`}
+          sub={`${onScheduleCount} of ${filteredProjects.length} projects within ±5% tolerance`}
           icon={<Activity className="w-5 h-5 text-emerald-600" />}
           iconBg="bg-emerald-100"
           cta="View schedule breakdown"
           onClick={() => setScheduleSheetOpen(true)}
         />
 
-        {/* 2 — Contract Completeness */}
+        {/* 3 — Contract Completeness */}
         <KpiTile
           label="Contract Completeness"
           value={`${kpis.contractCompleteness}%`}
           valueClass={kpis.contractCompleteness >= 80 ? "text-emerald-600" : kpis.contractCompleteness >= 50 ? "text-amber-600" : "text-red-600"}
-          sub={`${filteredProjects.filter((p) => p.cpSigned && p.signedStatus === "SIGNED").length} of ${filteredProjects.length} projects fully signed`}
+          sub={`${fullySignedCount} of ${filteredProjects.length} projects CP + EPC signed`}
           icon={<CheckCircle2 className="w-5 h-5 text-blue-600" />}
           iconBg="bg-blue-100"
           cta="View contract status"
           onClick={() => setContractSheetOpen(true)}
         />
 
-        {/* 3 — Revenue Outstanding This Month */}
+        {/* 4 — Revenue Outstanding This Month */}
         <KpiTile
           label="Rev Outstanding This Month"
           value={formatCurrencyCompact(dashboard?.kpis.revenueOutstandingThisMonth ?? 0)}
@@ -57,7 +77,7 @@ export default function OverviewPage() {
           onClick={() => setLocation("/execution-board/finance")}
         />
 
-        {/* 4 — COS Outstanding This Month */}
+        {/* 5 — COS Outstanding This Month */}
         <KpiTile
           label="COS Outstanding This Month"
           value={formatCurrencyCompact(dashboard?.kpis.cosOutstandingThisMonth ?? 0)}
@@ -69,24 +89,24 @@ export default function OverviewPage() {
           onClick={() => setLocation("/execution-board/finance")}
         />
 
-        {/* 5 — Inflows This Week */}
+        {/* 6 — Inflows This Week */}
         <KpiTile
           label="Inflows This Week"
           value={formatCurrencyCompact(dashboard?.kpis.projectInflowsThisWeek ?? 0)}
           valueClass="text-blue-600"
-          sub="Expected project cashflow inflows for Mon–Sun this week"
+          sub="Cashflow inflows expected Mon–Sun this week"
           icon={<Banknote className="w-5 h-5 text-blue-600" />}
           iconBg="bg-blue-100"
           cta="View Finance"
           onClick={() => setLocation("/execution-board/finance")}
         />
 
-        {/* 6 — Outflows This Week */}
+        {/* 7 — Outflows This Week */}
         <KpiTile
           label="Outflows This Week"
           value={formatCurrencyCompact(dashboard?.kpis.projectOutflowsThisWeek ?? 0)}
           valueClass="text-red-600"
-          sub="Expected project cashflow outflows for Mon–Sun this week"
+          sub="Cashflow outflows expected Mon–Sun this week"
           icon={<TrendingDown className="w-5 h-5 text-red-600" />}
           iconBg="bg-red-100"
           cta="View Finance"
@@ -94,41 +114,51 @@ export default function OverviewPage() {
         />
       </div>
 
-      {/* On Schedule drill-down Sheet */}
+      {/* All Projects / Schedule drill-down Sheet */}
       <Sheet open={scheduleSheetOpen} onOpenChange={setScheduleSheetOpen}>
-        <SheetContent className="sm:max-w-[800px] w-full overflow-y-auto">
+        <SheetContent className="sm:max-w-[900px] w-full overflow-y-auto">
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2">
-              <Activity className="w-5 h-5 text-emerald-500" />
-              Schedule Status — {kpis.onScheduleRate}% On Schedule
+              <Clock className="w-5 h-5 text-red-500" />
+              All Projects — Schedule Status
             </SheetTitle>
           </SheetHeader>
-          <div className="mt-3 grid grid-cols-3 gap-2">
+
+          {/* Summary strip */}
+          <div className="mt-3 grid grid-cols-4 gap-2">
+            <div className="bg-slate-50 rounded-lg border p-2 text-center">
+              <p className="text-[10px] text-muted-foreground font-medium">TOTAL</p>
+              <p className="text-xl font-bold">{filteredProjects.length}</p>
+            </div>
             <div className="bg-emerald-50 rounded-lg border border-emerald-200 p-2 text-center">
               <p className="text-[10px] text-emerald-700 font-medium">ON SCHEDULE</p>
-              <p className="text-xl font-bold text-emerald-600">
-                {filteredProjects.filter((p) => (p.actualProgressPct ?? 0) >= (p.expectedProgressPct ?? 0) - 5).length}
-              </p>
+              <p className="text-xl font-bold text-emerald-600">{onScheduleCount}</p>
             </div>
             <div className="bg-red-50 rounded-lg border border-red-200 p-2 text-center">
-              <p className="text-[10px] text-red-700 font-medium">BEHIND PLAN</p>
-              <p className="text-xl font-bold text-red-600">{kpis.projectsBehindPlan}</p>
+              <p className="text-[10px] text-red-700 font-medium">BEHIND</p>
+              <p className="text-xl font-bold text-red-600">{behindCount}</p>
             </div>
-            <div className="bg-slate-50 rounded-lg border border-slate-200 p-2 text-center">
-              <p className="text-[10px] text-slate-700 font-medium">TOTAL PROJECTS</p>
-              <p className="text-xl font-bold text-slate-600">{filteredProjects.length}</p>
+            <div className="bg-blue-50 rounded-lg border border-blue-200 p-2 text-center">
+              <p className="text-[10px] text-blue-700 font-medium">ON SCHEDULE RATE</p>
+              <p className="text-xl font-bold text-blue-600">{kpis.onScheduleRate}%</p>
             </div>
           </div>
+
+          <p className="text-[10px] text-muted-foreground mt-2 px-0.5">
+            "Behind" = actual progress more than 5 pp below expected. Sorted worst variance first.
+          </p>
+
           <div className="mt-3 border rounded-lg overflow-auto max-h-[65vh]">
             <table className="w-full text-sm">
-              <thead className="bg-muted/50 sticky top-0">
-                <tr className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                  <th className="text-left py-2 px-3 font-medium">Project</th>
-                  <th className="text-left py-2 px-3 font-medium hidden sm:table-cell">PM</th>
-                  <th className="text-right py-2 px-3 font-medium">Actual %</th>
-                  <th className="text-right py-2 px-3 font-medium">Expected %</th>
-                  <th className="text-right py-2 px-3 font-medium">Variance</th>
-                  <th className="text-center py-2 px-3 font-medium">Status</th>
+              <thead className="bg-muted/50 sticky top-0 z-10">
+                <tr className="text-[11px] uppercase tracking-wider text-muted-foreground border-b">
+                  <th className="text-left py-2.5 px-3 font-medium">Project</th>
+                  <th className="text-left py-2.5 px-3 font-medium hidden md:table-cell">PM</th>
+                  <th className="text-left py-2.5 px-3 font-medium hidden lg:table-cell">Phase</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Actual %</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Expected %</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Variance</th>
+                  <th className="text-center py-2.5 px-3 font-medium">Status</th>
                   <th className="w-8"></th>
                 </tr>
               </thead>
@@ -141,23 +171,28 @@ export default function OverviewPage() {
                     return (
                       <tr
                         key={p.projectId}
-                        className="border-t border-border/40 hover:bg-muted/30 cursor-pointer"
+                        className={`border-t border-border/40 hover:bg-muted/30 cursor-pointer ${!onSchedule ? "bg-red-50/30" : ""}`}
                         onClick={() => { openProject(p, "plan"); setScheduleSheetOpen(false); }}
                       >
-                        <td className="py-2 px-3 font-medium truncate max-w-[200px]">{p.projectName}</td>
-                        <td className="py-2 px-3 text-xs text-muted-foreground hidden sm:table-cell">{p.pm || "—"}</td>
-                        <td className="py-2 px-3 text-right tabular-nums font-medium">{p.actualProgressPct ?? "—"}%</td>
-                        <td className="py-2 px-3 text-right tabular-nums text-muted-foreground">{p.expectedProgressPct ?? "—"}%</td>
-                        <td className={`py-2 px-3 text-right tabular-nums font-medium ${variance < 0 ? "text-red-600" : variance > 0 ? "text-emerald-600" : "text-muted-foreground"}`}>
+                        <td className="py-2.5 px-3 font-medium truncate max-w-[180px]">{p.projectName}</td>
+                        <td className="py-2.5 px-3 text-xs text-muted-foreground hidden md:table-cell">{p.pm || "—"}</td>
+                        <td className="py-2.5 px-3 text-xs text-muted-foreground hidden lg:table-cell">{p.executionPhase || "—"}</td>
+                        <td className="py-2.5 px-3 text-right tabular-nums font-semibold">
+                          {p.actualProgressPct != null ? `${p.actualProgressPct}%` : "—"}
+                        </td>
+                        <td className="py-2.5 px-3 text-right tabular-nums text-muted-foreground">
+                          {p.expectedProgressPct != null ? `${p.expectedProgressPct}%` : "—"}
+                        </td>
+                        <td className={`py-2.5 px-3 text-right tabular-nums font-semibold ${variance < -5 ? "text-red-600" : variance < 0 ? "text-amber-600" : variance > 0 ? "text-emerald-600" : "text-muted-foreground"}`}>
                           {p.scheduleVariancePct != null ? `${variance > 0 ? "+" : ""}${variance}%` : "—"}
                         </td>
-                        <td className="py-2 px-3 text-center">
+                        <td className="py-2.5 px-3 text-center">
                           {onSchedule
                             ? <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px]">On Schedule</Badge>
                             : <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">Behind Plan</Badge>}
                         </td>
-                        <td className="py-2 px-1 text-center">
-                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0">
+                        <td className="py-2.5 px-1 text-center">
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600">
                             <ArrowRight className="w-4 h-4" />
                           </Button>
                         </td>
@@ -176,15 +211,13 @@ export default function OverviewPage() {
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-blue-500" />
-              Contract Completeness — {kpis.contractCompleteness}% Complete
+              Contract Completeness — {kpis.contractCompleteness}%
             </SheetTitle>
           </SheetHeader>
           <div className="mt-3 grid grid-cols-3 gap-2">
             <div className="bg-emerald-50 rounded-lg border border-emerald-200 p-2 text-center">
               <p className="text-[10px] text-emerald-700 font-medium">FULLY SIGNED</p>
-              <p className="text-xl font-bold text-emerald-600">
-                {filteredProjects.filter((p) => p.cpSigned && p.signedStatus === "SIGNED").length}
-              </p>
+              <p className="text-xl font-bold text-emerald-600">{fullySignedCount}</p>
             </div>
             <div className="bg-amber-50 rounded-lg border border-amber-200 p-2 text-center">
               <p className="text-[10px] text-amber-700 font-medium">PARTIAL</p>
@@ -199,16 +232,16 @@ export default function OverviewPage() {
               </p>
             </div>
           </div>
-          <p className="text-[10px] text-muted-foreground mt-2 px-1">CP = Cost Proposal signed · EPC = Contract status SIGNED</p>
+          <p className="text-[10px] text-muted-foreground mt-2 px-0.5">CP = Cost Proposal signed · EPC = Contract status SIGNED</p>
           <div className="mt-3 border rounded-lg overflow-auto max-h-[65vh]">
             <table className="w-full text-sm">
               <thead className="bg-muted/50 sticky top-0">
-                <tr className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                  <th className="text-left py-2 px-3 font-medium">Project</th>
-                  <th className="text-left py-2 px-3 font-medium hidden sm:table-cell">PM</th>
-                  <th className="text-center py-2 px-3 font-medium">CP Signed</th>
-                  <th className="text-center py-2 px-3 font-medium">EPC Contract</th>
-                  <th className="text-center py-2 px-3 font-medium">Status</th>
+                <tr className="text-[11px] uppercase tracking-wider text-muted-foreground border-b">
+                  <th className="text-left py-2.5 px-3 font-medium">Project</th>
+                  <th className="text-left py-2.5 px-3 font-medium hidden sm:table-cell">PM</th>
+                  <th className="text-center py-2.5 px-3 font-medium">CP Signed</th>
+                  <th className="text-center py-2.5 px-3 font-medium">EPC Contract</th>
+                  <th className="text-center py-2.5 px-3 font-medium">Status</th>
                   <th className="w-8"></th>
                 </tr>
               </thead>
@@ -229,27 +262,27 @@ export default function OverviewPage() {
                         className="border-t border-border/40 hover:bg-muted/30 cursor-pointer"
                         onClick={() => { openProject(p); setContractSheetOpen(false); }}
                       >
-                        <td className="py-2 px-3 font-medium truncate max-w-[200px]">{p.projectName}</td>
-                        <td className="py-2 px-3 text-xs text-muted-foreground hidden sm:table-cell">{p.pm || "—"}</td>
-                        <td className="py-2 px-3 text-center">
+                        <td className="py-2.5 px-3 font-medium truncate max-w-[200px]">{p.projectName}</td>
+                        <td className="py-2.5 px-3 text-xs text-muted-foreground hidden sm:table-cell">{p.pm || "—"}</td>
+                        <td className="py-2.5 px-3 text-center">
                           {p.cpSigned
                             ? <CheckCircle2 className="w-4 h-4 text-emerald-600 mx-auto" />
                             : <XCircle className="w-4 h-4 text-red-400 mx-auto" />}
                         </td>
-                        <td className="py-2 px-3 text-center">
+                        <td className="py-2.5 px-3 text-center">
                           <Badge className={`text-[10px] ${p.signedStatus === "SIGNED" ? "bg-emerald-100 text-emerald-700" : p.signedStatus === "PENDING" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
                             {p.signedStatus}
                           </Badge>
                         </td>
-                        <td className="py-2 px-3 text-center">
+                        <td className="py-2.5 px-3 text-center">
                           {complete
                             ? <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px]">Complete</Badge>
                             : partial
                               ? <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px]">Partial</Badge>
                               : <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">Unsigned</Badge>}
                         </td>
-                        <td className="py-2 px-1 text-center">
-                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0">
+                        <td className="py-2.5 px-1 text-center">
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600">
                             <ArrowRight className="w-4 h-4" />
                           </Button>
                         </td>
