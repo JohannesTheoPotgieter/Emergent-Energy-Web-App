@@ -53,8 +53,10 @@ import {
 
 interface MonthBucket {
   budget: number;
+  adjustedBudget: number;
   actualForecast: number;
   actual: number | null;
+  capturedData: number;
   pipeline: number;
 }
 
@@ -234,18 +236,27 @@ function KpiCard({ label, value, icon: Icon, accent, testId }: { label: string; 
 
 // ── Dashboard Grid ─────────────────────────────────────────────────────────
 
+// Five-series layout mirrors the FYE Revenue Tracking workbook's
+// "Dashboard 2026" sheet 1:1 — Budget · Adjusted Budget · Actual + Forecast ·
+// Actual · Captured Data — for Revenue, COS and Gross Profit.
 const DASH_ROW_DEFS = [
-  { key: "rev-budget",   section: "revenue", field: "budget" as keyof MonthBucket,        label: "Budget Revenue",         class: "text-emerald-700/70" },
-  { key: "rev-actual",   section: "revenue", field: "actualForecast" as keyof MonthBucket, label: "Actual / Forecast Rev",  class: "text-emerald-700 font-semibold" },
-  { key: "rev-pipeline", section: "revenue", field: "pipeline" as keyof MonthBucket,       label: "Pipeline Revenue",       class: "text-emerald-600/70" },
-  { key: "sep-1",        section: null,       field: null,                                  label: "",                       class: "" },
-  { key: "cos-budget",   section: "cos",     field: "budget" as keyof MonthBucket,         label: "Budget COS",             class: "text-amber-700/70" },
-  { key: "cos-actual",   section: "cos",     field: "actualForecast" as keyof MonthBucket, label: "Actual / Forecast COS",  class: "text-amber-700 font-semibold" },
-  { key: "cos-pipeline", section: "cos",     field: "pipeline" as keyof MonthBucket,       label: "Pipeline COS",           class: "text-amber-600/70" },
-  { key: "sep-2",        section: null,       field: null,                                  label: "",                       class: "" },
-  { key: "gp-budget",    section: "gp",      field: "budget" as keyof MonthBucket,         label: "Budget GP",              class: "text-foreground/70" },
-  { key: "gp-actual",    section: "gp",      field: "actualForecast" as keyof MonthBucket, label: "Actual / Forecast GP",   class: "text-foreground font-bold" },
-  { key: "gp-pipeline",  section: "gp",      field: "pipeline" as keyof MonthBucket,       label: "Pipeline GP",            class: "text-foreground/70" },
+  { key: "rev-budget",     section: "revenue", field: "budget" as keyof MonthBucket,         label: "Budget Revenue",          class: "text-emerald-700/60" },
+  { key: "rev-adjusted",   section: "revenue", field: "adjustedBudget" as keyof MonthBucket, label: "Adjusted Budget Revenue", class: "text-emerald-700/80" },
+  { key: "rev-actual-fc",  section: "revenue", field: "actualForecast" as keyof MonthBucket, label: "Actual + Forecast Rev",   class: "text-emerald-700 font-semibold" },
+  { key: "rev-actual",     section: "revenue", field: "actual" as keyof MonthBucket,         label: "Actual Revenue",          class: "text-emerald-700" },
+  { key: "rev-captured",   section: "revenue", field: "capturedData" as keyof MonthBucket,   label: "Captured Data Rev",       class: "text-emerald-600/80" },
+  { key: "sep-1",          section: null,       field: null,                                  label: "",                        class: "" },
+  { key: "cos-budget",     section: "cos",     field: "budget" as keyof MonthBucket,         label: "Budget COS",              class: "text-amber-700/60" },
+  { key: "cos-adjusted",   section: "cos",     field: "adjustedBudget" as keyof MonthBucket, label: "Adjusted Budget COS",     class: "text-amber-700/80" },
+  { key: "cos-actual-fc",  section: "cos",     field: "actualForecast" as keyof MonthBucket, label: "Actual + Forecast COS",   class: "text-amber-700 font-semibold" },
+  { key: "cos-actual",     section: "cos",     field: "actual" as keyof MonthBucket,         label: "Actual COS",              class: "text-amber-700" },
+  { key: "cos-captured",   section: "cos",     field: "capturedData" as keyof MonthBucket,   label: "Captured Data COS",       class: "text-amber-600/80" },
+  { key: "sep-2",          section: null,       field: null,                                  label: "",                        class: "" },
+  { key: "gp-budget",      section: "gp",      field: "budget" as keyof MonthBucket,         label: "Budget GP",               class: "text-foreground/60" },
+  { key: "gp-adjusted",    section: "gp",      field: "adjustedBudget" as keyof MonthBucket, label: "Adjusted Budget GP",      class: "text-foreground/80" },
+  { key: "gp-actual-fc",   section: "gp",      field: "actualForecast" as keyof MonthBucket, label: "Actual + Forecast GP",    class: "text-foreground font-bold" },
+  { key: "gp-actual",      section: "gp",      field: "actual" as keyof MonthBucket,         label: "Actual GP",               class: "text-foreground font-semibold" },
+  { key: "gp-captured",    section: "gp",      field: "capturedData" as keyof MonthBucket,   label: "Captured Data GP",        class: "text-foreground/80" },
 ] as const;
 
 // ── Cumulative tracking charts ─────────────────────────────────────────────

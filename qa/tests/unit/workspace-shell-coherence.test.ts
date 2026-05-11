@@ -3,7 +3,11 @@ import { PAGE_REGISTRY } from "@/config/page-registry";
 
 describe("workspace shell coherence", () => {
   it("registers key workspace pages with sidebar visibility", () => {
-    const sidebarPageIds = ["clients", "myWork", "projects", "cashflow"];
+    // Aligned to the COO-spec nav (2026-05-11): six top-level tabs only. The
+    // Clients page (Project Development surface) is no longer in the default
+    // sidebar — it is hidden behind Functionality Control. Any page kept here
+    // must be one of the canonical six-tab destinations.
+    const sidebarPageIds = ["myWork", "projects", "cashflow", "engineering", "quality"];
 
     for (const id of sidebarPageIds) {
       const page = PAGE_REGISTRY.find((p) => p.id === id);

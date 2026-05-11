@@ -26,16 +26,20 @@ describe("gates top-nav section", () => {
   });
 
   it("highlights Gates for gate routes, including commitments and legacy aliases", () => {
+    // The COO-spec nav (2026-05-11) no longer surfaces "Projects" or "Gates"
+    // as a top-level tab; both move behind Functionality Control. The Gates
+    // TopSection is retained for path-matching so any code that re-enables it
+    // still highlights correctly.
     const gates = getSection("Gates");
-    const projects = getSection("Projects");
+    const projectDelivery = getSection("Project Delivery");
 
     expect(gates.match("/gates")).toBe(true);
     expect(gates.match("/gates/commitments")).toBe(true);
     expect(gates.match("/dashboard")).toBe(true);
     expect(gates.match("/exceptions")).toBe(true);
 
-    expect(projects.match("/gates")).toBe(false);
-    expect(projects.match("/gates/commitments")).toBe(false);
+    expect(projectDelivery.match("/gates")).toBe(false);
+    expect(projectDelivery.match("/gates/commitments")).toBe(false);
   });
 
   it("shows Gates for PORTFOLIO and also for PROJECT_DELIVERY holders", () => {
