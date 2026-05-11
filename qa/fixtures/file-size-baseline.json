@@ -6,7 +6,7 @@
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
-      "loc": 7732
+      "loc": 7729
     },
     {
       "file": "client/src/pages/EngineeringTasksPage.tsx",
@@ -45,12 +45,12 @@
       "loc": 2505
     },
     {
-      "file": "server/lib/import/commit-executor.ts",
-      "loc": 2437
+      "file": "server/lifecycle-routes.ts",
+      "loc": 2461
     },
     {
-      "file": "server/lifecycle-routes.ts",
-      "loc": 2421
+      "file": "server/lib/import/commit-executor.ts",
+      "loc": 2437
     },
     {
       "file": "client/src/pages/my-work-tasks.tsx",
@@ -103,6 +103,10 @@
     {
       "file": "client/src/pages/project-detail.tsx",
       "loc": 2064
+    },
+    {
+      "file": "client/src/pages/cashflow.tsx",
+      "loc": 2048
     },
     {
       "file": "server/departments/opportunities-routes.ts",
