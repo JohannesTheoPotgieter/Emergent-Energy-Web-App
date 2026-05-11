@@ -16,10 +16,8 @@ export default function OverviewPage() {
   const [scheduleSheetOpen, setScheduleSheetOpen] = useState(false);
   const [contractSheetOpen, setContractSheetOpen] = useState(false);
 
-  const behindCount = kpis.projectsBehindPlan;
-  const onScheduleCount = filteredProjects.filter(
-    (p) => (p.actualProgressPct ?? 0) >= (p.expectedProgressPct ?? 0) - 5,
-  ).length;
+  const behindCount = kpis.projectsBehindPlan;               // server boolean — canonical
+  const onScheduleCount = filteredProjects.length - behindCount; // always sums to total
   const fullySignedCount = filteredProjects.filter(
     (p) => p.cpSigned && p.signedStatus === "SIGNED",
   ).length;
@@ -166,7 +164,7 @@ export default function OverviewPage() {
                 {[...filteredProjects]
                   .sort((a, b) => ((a.scheduleVariancePct ?? 0) - (b.scheduleVariancePct ?? 0)))
                   .map((p) => {
-                    const onSchedule = (p.actualProgressPct ?? 0) >= (p.expectedProgressPct ?? 0) - 5;
+                    const onSchedule = !p.behindPlan; // same source as tile values
                     const variance = p.scheduleVariancePct ?? 0;
                     return (
                       <tr
