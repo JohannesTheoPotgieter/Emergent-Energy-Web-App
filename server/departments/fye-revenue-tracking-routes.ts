@@ -376,27 +376,9 @@ router.get(
       const fye = parseInt(String(req.query.fye || getCurrentFye()), 10);
       const monthKeys = getFyeMonthKeys(fye);
 
-      // 1. Budget data from fye_budgets (may be empty if not yet entered)
-      const budgetRevByMonth: Record<string, number> = {};
-      const budgetCosByMonth: Record<string, number> = {};
-      try {
-        const budgetRows = await fyeTrackingRepository.listBudgetTotalsByFye(String(fye));
-
-        for (const b of budgetRows) {
-          const amt = safeNum(b.amount);
-          if (b.budgetType === "revenue") {
-            budgetRevByMonth[b.monthKey] = (budgetRevByMonth[b.monthKey] || 0) + amt;
-          } else if (b.budgetType === "cos") {
-            budgetCosByMonth[b.monthKey] = (budgetCosByMonth[b.monthKey] || 0) + amt;
-          }
-        }
-      } catch {
-        // fye_budgets table may not exist yet
-      }
-
-      // 2. Load inflows + expenses + COS overrides for COS-ratio revenue allocation
-      //    Canonical source: normalized_revenue_lines + normalized_cost_lines.
-      //    computedForecast* fields are v1-legacy and not populated by the v2 pipeline — return NULL.
+      // 1. Load inflows + expenses + COS overrides for COS-ratio revenue allocation.
+      //    Budget Revenue + Budget COS are derived from import data (same source as Projects tab),
+      //    not from the fye_budgets manual-entry table.
       const [revLineRows, costLineRows, cosOverrideMap] = await Promise.all([
         financeInflowsRepository.listAllActiveRevenueLines(),
         financeExpenseRepository.listAllActiveCostLines(),
@@ -426,10 +408,35 @@ router.get(
       }));
       enrichWithOverrides(allExpenses, cosOverrideMap);
 
-      // 3. Actual Revenue via COS-ratio allocation (matches Revenue Tracker)
+      // 2. Budget Revenue per month — planned payment date from revenue milestone lines.
+      const budgetRevByMonth: Record<string, number> = {};
+      for (const inf of allInflows) {
+        const amt = safeNum(inf.milestoneAmount);
+        if (amt === 0) continue;
+        const revDate = inf.plannedPaymentDate || inf.invoiceRaisedDate || inf.paymentReceivedDate;
+        const mk = extractMonthKey(revDate);
+        if (mk && monthKeys.includes(mk)) {
+          budgetRevByMonth[mk] = (budgetRevByMonth[mk] || 0) + amt;
+        }
+      }
+
+      // 3. Budget COS per month — budget_total from cost lines, bucketed by best available date.
+      const budgetCosByMonth: Record<string, number> = {};
+      for (const exp of allExpenses) {
+        if (exp.rowType !== "item" && exp.rowType != null) continue;
+        const budgetAmt = safeNum(exp.budgetTotal);
+        if (budgetAmt === 0) continue;
+        const budgetDate = exp.expenseInvoicedDate || exp.computedForecastPaymentDate || exp.forecastPaymentDate;
+        const mk = extractMonthKey(budgetDate);
+        if (mk && monthKeys.includes(mk)) {
+          budgetCosByMonth[mk] = (budgetCosByMonth[mk] || 0) + budgetAmt;
+        }
+      }
+
+      // 4. Actual Revenue via COS-ratio allocation (matches Revenue Tracker)
       const actualRevByMonth = buildCosRatioRevenue(allInflows, allExpenses as any, monthKeys);
 
-      // 4. Actual COS using expenseActualTotal only (standardized)
+      // 5. Actual COS using expenseActualTotal only (standardized)
       const actualCosByMonth = buildCosByMonth(allExpenses as any, monthKeys);
 
       // Determine current month key for actual vs forecast split
