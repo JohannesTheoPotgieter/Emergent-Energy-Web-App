@@ -150,6 +150,8 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
     usdExchangeRate: (cost as any).usdExchangeRate ?? null,
     pricePerWatt: (cost as any).pricePerWatt ?? null,
     cellFormat: (cost as any).cellFormat ?? null,
+    importSnapshot: (cost as any).importSnapshot ?? null,
+    counterpartyId: (cost as any).counterpartyId ?? null,
   };
 }
 
