@@ -834,19 +834,20 @@ export function registerLifecycleRoutes(app: Express) {
       const lcTodayMs = new Date(todayDate).getTime();
       const planByNorm = new Map<string, { total: number; weightedPct: number; totalWeight: number; weightedExpPct: number; totalExpWeight: number }>();
       for (const [norm, tasks] of lcPlanTasksByNorm) {
-        // Identify parent rows via parentRowNumber and indent level
-        const parentRows = new Set<number>();
+        // WBS-based parent detection — Smart Import never sets parentRowNumber/indentLevel
+        // so those fields are always absent; WBS prefix-stripping is the only reliable method.
+        const parentWbs = new Set<string>();
         for (const t of tasks) {
-          if ((t as any).parentRowNumber) parentRows.add((t as any).parentRowNumber);
+          const wbs = (t.taskNo || '').toString().trim();
+          if (!wbs || !wbs.includes('.')) continue;
+          const parts = wbs.split('.');
+          parts.pop();
+          parentWbs.add(parts.join('.'));
         }
-        for (let i = 0; i < tasks.length - 1; i++) {
-          const currIndent = (tasks[i] as any).indentLevel ?? 0;
-          const nextIndent = (tasks[i + 1] as any).indentLevel ?? 0;
-          if (nextIndent > currIndent && tasks[i].rowNumber) {
-            parentRows.add(tasks[i].rowNumber!);
-          }
-        }
-        const leafTasks = tasks.filter((t: any) => !t.rowNumber || !parentRows.has(t.rowNumber));
+        const leafTasks = tasks.filter((t: any) => {
+          const wbs = (t.taskNo || '').toString().trim();
+          return !wbs || !parentWbs.has(wbs);
+        });
         const items = leafTasks.length > 0 ? leafTasks : tasks;
 
         let actualSum = 0;
@@ -1086,10 +1087,16 @@ export function registerLifecycleRoutes(app: Express) {
         const tasks = planTasksByProjectId.get(project.id);
         if (!tasks || tasks.length === 0) continue;
 
-        // Strip section-header rows (wbsCode = 'no.' / 'no' / '#') — same as plan tab
+        // Strip section-header rows AND rows with no WBS + no dates.
+        // Matches planning-tasks-routes.ts:256-265 which the plan tab uses.
         const filtered = tasks.filter(t => {
           const wbs = (t.wbsCode || '').toString().toLowerCase().trim();
-          return !PLAN_SECTION_HEADERS.has(wbs);
+          if (PLAN_SECTION_HEADERS.has(wbs)) return false;
+          const hasWbs = t.wbsCode && String(t.wbsCode).trim().length > 0;
+          const hasStart = t.startDate && String(t.startDate).trim().length > 0;
+          const hasEnd = t.endDate && String(t.endDate).trim().length > 0;
+          if (!hasWbs && !hasStart && !hasEnd) return false;
+          return true;
         });
 
         // FY membership: any task with a date inside the financial year

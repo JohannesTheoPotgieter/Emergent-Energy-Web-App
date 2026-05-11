@@ -964,8 +964,20 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
       };
 
       if (projectWorkItems.length > 0) {
+        // Exclude section-header rows and blank rows (matching plan tab filter)
+        const PLAN_SECTION_HEADERS_PR = new Set(['no.', 'no', '#']);
+        const nonHeaderItems = projectWorkItems.filter((wi: any) => {
+          if (wi.type === 'milestone') return false;
+          const wbs = (wi.wbs_code || '').toString().toLowerCase().trim();
+          if (PLAN_SECTION_HEADERS_PR.has(wbs)) return false;
+          const hasWbs = wi.wbs_code && String(wi.wbs_code).trim().length > 0;
+          const hasStart = wi.start_date && String(wi.start_date).trim().length > 0;
+          const hasEnd = wi.end_date && String(wi.end_date).trim().length > 0;
+          if (!hasWbs && !hasStart && !hasEnd) return false;
+          return true;
+        });
         // Build parent-child map from WBS codes to identify leaf tasks
-        const wbsSet = new Set(projectWorkItems.filter((wi: any) => wi.type !== 'milestone').map((wi: any) => wi.wbs_code).filter(Boolean));
+        const wbsSet = new Set(nonHeaderItems.map((wi: any) => wi.wbs_code).filter(Boolean));
         const parentWbs = new Set<string>();
         for (const wbs of wbsSet) {
           const parts = String(wbs).split('.');
@@ -973,12 +985,11 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
             parentWbs.add(parts.slice(0, -1).join('.'));
           }
         }
-        const leafItems = projectWorkItems.filter((wi: any) => {
-          if (wi.type === 'milestone') return false;
+        const leafItems = nonHeaderItems.filter((wi: any) => {
           return !wi.wbs_code || !parentWbs.has(String(wi.wbs_code));
         });
 
-        const items = leafItems.length > 0 ? leafItems : projectWorkItems.filter((wi: any) => wi.type !== 'milestone');
+        const items = leafItems.length > 0 ? leafItems : nonHeaderItems;
         let actualSum = 0;
         let expSum = 0;
         let expCount = 0;
