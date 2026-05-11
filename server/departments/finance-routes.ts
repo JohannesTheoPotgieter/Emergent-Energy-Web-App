@@ -162,7 +162,7 @@ import {
   deriveOutflowsQbStatus,
   resolveQbMatch,
 } from "../lib/quickbooks-status";
-import { QuickBooksLinksRepository, type QbLinkRef } from "../repositories/quickbooks-links-repository";
+import { QuickBooksLinksRepository } from "../repositories/quickbooks-links-repository";
 import { computeDateShiftDays, isQbDivergent } from "@shared/lib/cashflow-trust";
 
 const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
@@ -1360,15 +1360,9 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
         : match.qbMatchConfidence === "low"
           ? "low_confidence"
           : null;
-      // Explicit link → compare app amount against the allocated ex-VAT slice
-      // (which may be a fraction of the QB bill total in many-to-many splits).
-      // Heuristic match → compare against the full QB bill total (1:1 assumed).
-      const qbCompareAmount = outflowLink
-        ? effectiveAllocatedAmountExVat(outflowLink)
-        : match.matched?.totalAmount ?? null;
       const qbDivergence = !!match.matched && isQbDivergent(
         row.expenseActualTotal !== null ? Number(row.expenseActualTotal) : null,
-        qbCompareAmount,
+        match.matched.totalAmount,
         match.matched.taxUncertain,
       );
       return {
@@ -1402,12 +1396,9 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
         : match.qbMatchConfidence === "low"
           ? "low_confidence"
           : null;
-      const qbCompareAmount = inflowLink
-        ? effectiveAllocatedAmountExVat(inflowLink)
-        : match.matched?.totalAmount ?? null;
       const qbDivergence = !!match.matched && isQbDivergent(
         row.milestoneAmount !== null ? Number(row.milestoneAmount) : null,
-        qbCompareAmount,
+        match.matched.totalAmount,
         match.matched.taxUncertain,
       );
       return {

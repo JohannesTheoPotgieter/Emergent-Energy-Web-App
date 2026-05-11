@@ -71,51 +71,6 @@ describe("isQbDivergent", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bidirectional divergence — App→QB uses allocatedAmountExVat, QB→App uses
-// the full bill/invoice total. effectiveAllocatedAmountExVat handles both
-// the post-Task-#142 (explicit allocated slice) and legacy (qbAmount = 100%)
-// link shapes.
-// ---------------------------------------------------------------------------
-
-describe("qbDivergence — bidirectional linking", () => {
-  it("App→QB explicit link: diverges against allocated slice, not QB bill total", () => {
-    // Mondi R700k + 261 Bree R300k both linked to the same QB bill of R1M.
-    // Each link has allocatedAmountExVat = their slice.
-    const mondiLink = { allocatedAmountExVat: "700000", qbAmount: "1000000" };
-    const breeLink  = { allocatedAmountExVat: "300000", qbAmount: "1000000" };
-
-    // Mondi app amount matches its allocated slice → no divergence.
-    expect(isQbDivergent(700_000, effectiveAllocatedAmountExVat(mondiLink))).toBe(false);
-    // 261 Bree app amount matches its slice → no divergence.
-    expect(isQbDivergent(300_000, effectiveAllocatedAmountExVat(breeLink))).toBe(false);
-    // If we had mistakenly compared against the full QB total (R1M) instead,
-    // both would wrongly show divergence:
-    expect(isQbDivergent(700_000, 1_000_000)).toBe(true);
-  });
-
-  it("App→QB explicit link: flags genuine divergence on the allocated slice", () => {
-    // App says R800k but the approved allocation was R700k → real problem.
-    const link = { allocatedAmountExVat: "700000", qbAmount: "1000000" };
-    expect(isQbDivergent(800_000, effectiveAllocatedAmountExVat(link))).toBe(true);
-  });
-
-  it("QB→App heuristic match: compares against full QB total (1:1 assumed)", () => {
-    // No explicit link — heuristic picked up the QB invoice.
-    // App R73k vs QB total R73k → no divergence.
-    expect(isQbDivergent(73_000, 73_000)).toBe(false);
-    // App R73k vs QB total R30k → divergence.
-    expect(isQbDivergent(73_000, 30_000)).toBe(true);
-  });
-
-  it("legacy link (pre-Task-#142): effectiveAllocatedAmountExVat falls back to qbAmount", () => {
-    // Pre-#142 rows have allocatedAmountExVat = 0 but qbAmount carries the value.
-    const legacyLink = { allocatedAmountExVat: "0", qbAmount: "500000" };
-    expect(effectiveAllocatedAmountExVat(legacyLink)).toBe(500_000);
-    expect(isQbDivergent(500_000, effectiveAllocatedAmountExVat(legacyLink))).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // paymentTermsMissing logic — tests the rule that drives the "No terms" badge.
 // Rule: a row fires when computedState is Committed or Invoiced AND there is
 // no forecastPaymentDate. Supplier lookup (counterpartyId) is irrelevant —
