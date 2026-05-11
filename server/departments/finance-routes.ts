@@ -1110,7 +1110,9 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
       return max === null || at > max ? at : max;
     }, null);
     const summaryMissingTermsCount = itemExpenses.filter(
-      (e: any) => !!e.forecastPaymentDate && !e.counterpartyId
+      (e: any) =>
+        (e.computedState === "Committed" || e.computedState === "Invoiced") &&
+        !e.forecastPaymentDate
     ).length;
     const summaryShiftedLineCount = itemExpenses.filter((e: any) => {
       const days = computeDateShiftDays(
@@ -1227,7 +1229,8 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
             ? new Date((e as any).createdAt).toISOString()
             : null,
           paymentTermsMissing:
-            !!((e as any).forecastPaymentDate) && !(e as any).counterpartyId,
+            ((e as any).computedState === "Committed" || (e as any).computedState === "Invoiced") &&
+            !((e as any).forecastPaymentDate),
           forecastDateShiftDays: computeDateShiftDays(
             ((e as any).importSnapshot as Record<string, unknown> | null)
               ?.forecastPaymentDate,

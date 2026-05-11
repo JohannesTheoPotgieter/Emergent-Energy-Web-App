@@ -703,9 +703,9 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                                       <span className="cursor-help text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-orange-50 text-orange-800 border-orange-300" data-testid={`signal-terms-missing-outflow-${weekStart}-${i}`}>No terms</span>
                                     </TooltipTrigger>
                                     <TooltipContent className="max-w-xs">
-                                      <p className="font-medium text-xs">Supplier missing in Excel tracker</p>
+                                      <p className="font-medium text-xs">Payment terms formula missing</p>
                                       <p className="mt-1 text-[11px] text-muted-foreground">
-                                        {out.rowNumber ? `Row ${out.rowNumber} in ` : ""}{out.projectName} tracker has a forecast date but no supplier name — add it to the Supplier column and re-import.
+                                        {out.rowNumber ? `Row ${out.rowNumber} in ` : ""}{out.projectName} tracker is committed or invoiced but has no forecast payment date — add a payment terms formula in the Forecast Payment Date column and re-import.
                                       </p>
                                     </TooltipContent>
                                   </UiTooltip>
