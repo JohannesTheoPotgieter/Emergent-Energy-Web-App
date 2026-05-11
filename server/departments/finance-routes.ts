@@ -163,7 +163,7 @@ import {
   resolveQbMatch,
 } from "../lib/quickbooks-status";
 import { QuickBooksLinksRepository, type QbLinkRef } from "../repositories/quickbooks-links-repository";
-import { computeDateShiftDays, isQbDivergent } from "@shared/lib/cashflow-trust";
+import { computeDateShiftDays, isQbDivergent, paymentTermsMissing } from "@shared/lib/cashflow-trust";
 
 const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
 
@@ -1114,9 +1114,7 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
       return max === null || at > max ? at : max;
     }, null);
     const summaryMissingTermsCount = itemExpenses.filter(
-      (e: any) =>
-        (e.computedState === "Committed" || e.computedState === "Invoiced") &&
-        !e.forecastPaymentDate
+      (e: any) => paymentTermsMissing(e)
     ).length;
     const summaryShiftedLineCount = itemExpenses.filter((e: any) => {
       const days = computeDateShiftDays(
@@ -1234,9 +1232,7 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
           lastImportedAt: ((e as any).snapshotRunCommittedAt || (e as any).createdAt)
             ? new Date((e as any).snapshotRunCommittedAt ?? (e as any).createdAt).toISOString()
             : null,
-          paymentTermsMissing:
-            ((e as any).computedState === "Committed" || (e as any).computedState === "Invoiced") &&
-            !((e as any).forecastPaymentDate),
+          paymentTermsMissing: paymentTermsMissing(e as any),
           forecastDateShiftDays: computeDateShiftDays(
             ((e as any).importSnapshot as Record<string, unknown> | null)
               ?.forecastPaymentDate,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeDateShiftDays, isQbDivergent, isRowStale } from "./cashflow-trust-helpers";
+import { computeDateShiftDays, isQbDivergent, isRowStale, paymentTermsMissing } from "./cashflow-trust-helpers";
 import { effectiveAllocatedAmountExVat } from "@shared/config/qb-allocations";
 
 // ---------------------------------------------------------------------------
@@ -114,10 +114,6 @@ describe("qbDivergence — bidirectional linking", () => {
 // no forecastPaymentDate. Supplier lookup (counterpartyId) is irrelevant —
 // the payment terms formula lives in Excel.
 // ---------------------------------------------------------------------------
-
-function paymentTermsMissing(row: { computedState: string; forecastPaymentDate: string | null }): boolean {
-  return (row.computedState === "Committed" || row.computedState === "Invoiced") && !row.forecastPaymentDate;
-}
 
 describe("paymentTermsMissing", () => {
   it("fires for Mondi Committed row with no forecast date", () => {
