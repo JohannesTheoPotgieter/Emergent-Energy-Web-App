@@ -22,6 +22,7 @@ import {
   cashflowPoints,
   financeRevenueMonthly,
   financeCosMonthly,
+  projectExecutionState,
 } from "@shared/schema";
 import { getAllPMWorkItemsAsProjectPlan } from "../work-items-adapter";
 import { isDateBlack } from "../lib/calculations/stateClassifier";
@@ -95,6 +96,13 @@ export interface ProgramDashboardResult {
     cosPlannedMonth: number;
     cosRealisedMonth: number;
     currentMonth: string;
+    // Excel Program Dashboard parity additions
+    onScheduleRate: number;
+    contractCompleteness: number;
+    revenueOutstandingThisMonth: number;
+    cosOutstandingThisMonth: number;
+    projectInflowsThisWeek: number;
+    projectOutflowsThisWeek: number;
   };
   actionCenter: {
     projectsBehindPlan: any[];
@@ -179,6 +187,20 @@ export async function getProgramDashboardData(
         // Guard: skips historical snapshots where effectiveTo IS NOT NULL (finance_cos_monthly)
         db.select().from(financeCosMonthly).where(isNull(financeCosMonthly.effectiveTo)),
       ]);
+
+  // Fetch contract-signed state for all projects (used for Excel-parity contractCompleteness KPI).
+  // cpSigned (cost proposal) and signedStatus (EPC contract) live on projectExecutionState.
+  const execStateRows: Array<{ projectId: number; cpSigned: boolean; signedStatus: string }> = opts.inputs
+    ? []
+    : await db
+        .select({ projectId: projectExecutionState.projectId, cpSigned: projectExecutionState.cpSigned, signedStatus: projectExecutionState.signedStatus })
+        .from(projectExecutionState)
+        .then((rows: Array<{ projectId: number; cpSigned: boolean; signedStatus: string }>) =>
+          rows.map((r) => ({ projectId: r.projectId, cpSigned: r.cpSigned ?? false, signedStatus: r.signedStatus ?? 'NONE' })));
+  const execStateByProjectId = new Map<number, { cpSigned: boolean; signedStatus: string }>();
+  for (const r of execStateRows) {
+    execStateByProjectId.set(r.projectId, { cpSigned: r.cpSigned, signedStatus: r.signedStatus });
+  }
 
   // manualOverrides overlay — empty by design (overlay removed in 2026-03-30 migration)
   const revOverrides: Array<{ projectName: string; rowNumber: string; overrideValue: string }> = [];
@@ -450,6 +472,72 @@ export async function getProgramDashboardData(
   const visibleProjectIds = new Set(projects.map((p: any) => Number(p.projectId)).filter((id: number) => Number.isFinite(id)));
   const visibleProjectInfo = scopedProjectInfo.filter((info: any) => visibleProjectIds.has(Number(info.id)));
 
+  // ── Excel Program Dashboard parity KPIs ─────────────────────────────────
+
+  // On Schedule Rate (C3): % of visible projects where actual >= expected - 5%
+  const onScheduleCount = projects.filter((p: any) => p.actualProgressPct >= p.expectedProgressPct - 5).length;
+  const onScheduleRate = projects.length > 0 ? (onScheduleCount / projects.length) * 100 : 0;
+
+  // Contract Completeness (E3): % with CP signed AND EPC contract signed.
+  // cpSigned (boolean) = cost proposal; signedStatus = 'SIGNED' = EPC contract.
+  // allProjectInfo already contains these from the left-join with project_execution_state.
+  // For visible projects only, use execStateByProjectId (more reliable than merged allProjectInfo).
+  const visibleWithBothSigned = [...visibleProjectIds].filter((id) => {
+    // Prefer the dedicated execStateByProjectId lookup; fall back to allProjectInfo merge.
+    const es = execStateByProjectId.get(id);
+    if (es) return es.cpSigned && es.signedStatus === 'SIGNED';
+    const info = projectById.get(id);
+    return info && info.cpSigned && info.signedStatus === 'SIGNED';
+  }).length;
+  const contractCompleteness = visibleProjectIds.size > 0
+    ? (visibleWithBothSigned / visibleProjectIds.size) * 100
+    : 0;
+
+  // Revenue Outstanding this Month (F9): invoiced this month, not yet received.
+  let revenueOutstandingThisMonth = 0;
+  for (const r of revenueRows) {
+    if (!visibleProjectNames.has(String(r.projectName || '').toLowerCase())) continue;
+    const invoiceDateKey = (r.invoiceDate || '').slice(0, 10);
+    if (!invoiceDateKey || invoiceDateKey.slice(0, 7) !== currentMonthKey) continue;
+    const amt = toNum(r.amountExVat);
+    const overrideInBank = inBankOverrideSet.has(`${r.projectName}::${r.sourceRow}`);
+    const received = overrideInBank || isRevenueSettled({
+      paidDate: r.paidDate,
+      paidDateConfirmed: r.paidDateConfirmed,
+      paidDateFontColor: r.paidDateFontColor,
+      inBankDate: r.inBankDate,
+      manualInBank: overrideInBank ? 1 : null,
+    });
+    if (!received) revenueOutstandingThisMonth += amt;
+  }
+
+  // COS Outstanding this Month (G9): planned COS this month minus realised COS this month.
+  const cosOutstandingThisMonth = cosPlannedMonth - cosRealisedMonth;
+
+  // Project Inflows/Outflows this Week (D9, E9): from cashflow_points for current week.
+  // Week start = Monday of the current week.
+  const currentDay = new Date(`${today}T00:00:00`);
+  const dow = currentDay.getDay();
+  const daysToMonday = dow === 0 ? -6 : 1 - dow;
+  const weekStart = new Date(currentDay);
+  weekStart.setDate(weekStart.getDate() + daysToMonday);
+  const currentWeekKey = weekStart.toISOString().slice(0, 10);
+
+  let projectInflowsThisWeek = 0;
+  let projectOutflowsThisWeek = 0;
+  for (const cp of cashflowPointRows) {
+    if (!visibleProjectNames.has(String(cp.projectName || '').toLowerCase())) continue;
+    const pointKey = (cp.pointDate || '').slice(0, 10);
+    if (pointKey !== currentWeekKey) continue;
+    const seriesLower = String(cp.seriesName || '').toLowerCase();
+    const val = toNum(cp.value);
+    if (seriesLower.includes('inflow') || seriesLower.includes('planned revenue') || seriesLower === 'actual + planned revenue') {
+      projectInflowsThisWeek += val;
+    } else if (seriesLower.includes('outflow') || seriesLower.includes('planned expenditure') || seriesLower === 'actual + planned expenditure') {
+      projectOutflowsThisWeek += val;
+    }
+  }
+
   const monthLabel = (monthKey: string) => {
     try { return format(new Date(`${monthKey}-01T00:00:00`), "MMM yyyy"); } catch { return monthKey; }
   };
@@ -613,6 +701,36 @@ export async function getProgramDashboardData(
         averageProgress: row.projectCount ? row._progressSum / row.projectCount : 0,
       }));
 
+    // Build a lookup: pm → project dates for commissioning/client handover/pd→site avg.
+    // Uses visibleProjectInfo for the most up-to-date planned dates.
+    const pmDateAccumulators = new Map<string, {
+      commissioningThisMonth: number;
+      clientHandoverThisMonth: number;
+      _pdToSiteDaysSum: number;
+      _pdToSiteCount: number;
+    }>();
+    for (const info of visibleProjectInfo) {
+      const pmKey = String(info.pm || 'Unassigned');
+      if (!pmDateAccumulators.has(pmKey)) {
+        pmDateAccumulators.set(pmKey, { commissioningThisMonth: 0, clientHandoverThisMonth: 0, _pdToSiteDaysSum: 0, _pdToSiteCount: 0 });
+      }
+      const acc = pmDateAccumulators.get(pmKey)!;
+      // Commissioning due this month: use actual if present, else planned
+      const commDate = toDateKey(info.commissioningActual || info.commissioningDate);
+      if (commDate && commDate.slice(0, 7) === currentMonthKey) acc.commissioningThisMonth += 1;
+      // Client handover due this month
+      const chDate = toDateKey(info.clientHandoverActual || info.clientHandoverDate);
+      if (chDate && chDate.slice(0, 7) === currentMonthKey) acc.clientHandoverThisMonth += 1;
+      // PD Handover → Site Establishment avg days (Excel E12 formula)
+      const pdDate = toDateKey(info.pdHandoverActual || info.pdHandoverDate);
+      const siteDate = toDateKey(info.constructionStartActual || info.constructionStartDate);
+      if (pdDate && siteDate && siteDate >= pdDate) {
+        const diffDays = Math.round((new Date(`${siteDate}T00:00:00`).getTime() - new Date(`${pdDate}T00:00:00`).getTime()) / 86400000);
+        acc._pdToSiteDaysSum += diffDays;
+        acc._pdToSiteCount += 1;
+      }
+    }
+
     const pmSummaryMap = new Map<string, any>();
     for (const project of projects) {
       const key = String(project.pm || 'Unassigned');
@@ -632,13 +750,22 @@ export async function getProgramDashboardData(
     }
     const pmSummaryRows = Array.from(pmSummaryMap.values())
       .sort((a: any, b: any) => b.contractValue - a.contractValue)
-      .map((row: any) => ({
-        owner: row.owner, projectCount: row.projectCount, contractValue: row.contractValue,
-        behindPlanCount: row.behindPlanCount,
-        onScheduleRate: row.projectCount ? (row._onScheduleCount / row.projectCount) * 100 : 0,
-        openInflow: row.openInflow, openExpenditure: row.openExpenditure,
-        averageProgress: row.projectCount ? row._progressSum / row.projectCount : 0,
-      }));
+      .map((row: any) => {
+        const dateAcc = pmDateAccumulators.get(row.owner);
+        return {
+          owner: row.owner, projectCount: row.projectCount, contractValue: row.contractValue,
+          behindPlanCount: row.behindPlanCount,
+          onScheduleRate: row.projectCount ? (row._onScheduleCount / row.projectCount) * 100 : 0,
+          openInflow: row.openInflow, openExpenditure: row.openExpenditure,
+          averageProgress: row.projectCount ? row._progressSum / row.projectCount : 0,
+          // Excel Program Dashboard PM table parity (columns C12, D12, E12)
+          commissioningThisMonth: dateAcc?.commissioningThisMonth ?? 0,
+          clientHandoverThisMonth: dateAcc?.clientHandoverThisMonth ?? 0,
+          avgPdToSiteDays: dateAcc && dateAcc._pdToSiteCount > 0
+            ? Math.round(dateAcc._pdToSiteDaysSum / dateAcc._pdToSiteCount)
+            : null,
+        };
+      });
 
     const milestonePipelineMap = new Map<string, any>();
     const milestoneFields = [
@@ -729,14 +856,17 @@ export async function getProgramDashboardData(
       {
         id: "pmSummary",
         label: "PM Delivery Breakdown",
-        description: "Operational PM view built from the filtered project population.",
+        description: "Operational PM view: active projects, on-schedule rate, commissioning & handover due this month, and avg PD→Site days (Excel Program Dashboard PM table).",
         dimensionKey: "owner", dimensionLabel: "PM",
         defaultChartType: "bar", allowedChartTypes: ["bar", "line", "area", "composed"],
         metrics: [
-          { key: "projectCount", label: "Projects", format: "number", color: "#2563eb" },
+          { key: "projectCount", label: "Active Projects", format: "number", color: "#2563eb" },
           { key: "onScheduleRate", label: "On Schedule Rate", format: "percent", color: "#0f766e" },
           { key: "behindPlanCount", label: "Slipping Projects", format: "number", color: "#dc2626" },
-          { key: "contractValue", label: "Contract Value", format: "currency", color: "#7c3aed" },
+          { key: "commissioningThisMonth", label: "Commissioning This Month", format: "number", color: "#f97316" },
+          { key: "clientHandoverThisMonth", label: "Handover This Month", format: "number", color: "#7c3aed" },
+          { key: "avgPdToSiteDays", label: "Avg PD→Site Days", format: "number", color: "#0891b2" },
+          { key: "contractValue", label: "Contract Value", format: "currency", color: "#475569" },
         ],
         rows: pmSummaryRows,
       },
@@ -862,6 +992,12 @@ export async function getProgramDashboardData(
       cosPlannedMonth,
       cosRealisedMonth,
       currentMonth: currentMonthKey,
+      onScheduleRate,
+      contractCompleteness,
+      revenueOutstandingThisMonth,
+      cosOutstandingThisMonth,
+      projectInflowsThisWeek,
+      projectOutflowsThisWeek,
     },
     actionCenter: {
       projectsBehindPlan: behind,
