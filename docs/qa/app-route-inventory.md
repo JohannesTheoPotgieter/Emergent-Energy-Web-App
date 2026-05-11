@@ -1,10 +1,10 @@
 # App Route Inventory
 
-**Generated** 2026-05-04T09:51:21.423Z by `script/test-routes.ts`. Do not hand-edit — regenerate with `npm run test:routes`.
+**Generated** 2026-05-11T12:05:19.965Z by `script/test-routes.ts`. Do not hand-edit — regenerate with `npm run test:routes`.
 
 Source: `client/src/config/page-registry.ts`
 
-Total registered paths: 172
+Total registered paths: 176
 
 | Path | Title | Nav group | Permission |
 |------|-------|-----------|------------|
@@ -45,7 +45,7 @@ Total registered paths: 172
 | `/cashflow` | — | FINANCE | cashflow |
 | `/cashflow-forecast` | — | — | cashflow |
 | `/cashflow/analysis` | — | FINANCE | cashflow |
-| `/ceo` | — | MY_WORK | execution_board |
+| `/ceo` | — | REPORTS | execution_board |
 | `/clients` | — | PROJECTS | pd_clients |
 | `/clients/:clientId` | — | — | pd_clients |
 | `/clients/:clientId/project/:projectId` | — | — | pd_clients |
@@ -58,7 +58,7 @@ Total registered paths: 172
 | `/company-overview` | — | PORTFOLIO | execution_board |
 | `/company-priorities` | — | — | — |
 | `/company/team` | — | PORTFOLIO | company_team |
-| `/coo` | — | MY_WORK | execution_board |
+| `/coo` | — | REPORTS | execution_board |
 | `/cos` | — | FINANCE | cos |
 | `/cos-control` | — | — | cos |
 | `/cos/analysis` | — | FINANCE | cos |
@@ -77,9 +77,12 @@ Total registered paths: 172
 | `/execution-board/program` | — | — | execution_board |
 | `/execution-dashboard` | — | PROJECT_MANAGEMENT | execution_board |
 | `/feedback` | — | KNOWLEDGE | feedback |
+| `/finance/gp` | — | FINANCE | financials |
+| `/finance/gp/company` | — | FINANCE | financials |
 | `/finance/quickbooks` | — | FINANCE | financials |
 | `/finance/quickbooks-customer-mapping` | — | FINANCE | financials |
 | `/finance/quickbooks-links` | — | FINANCE | financials |
+| `/fye-revenue-tracking` | — | FINANCE | fye_revenue_tracking |
 | `/gates` | — | GATES | lifecycle |
 | `/gates/blocked` | — | GATES | lifecycle |
 | `/gates/client-updates` | — | GATES | lifecycle |
@@ -88,7 +91,7 @@ Total registered paths: 172
 | `/gates/handovers` | — | GATES | lifecycle |
 | `/gates/queries` | — | GATES | lifecycle |
 | `/gates/ready` | — | GATES | lifecycle |
-| `/governance/financial-reviews` | — | PROJECT_MANAGEMENT | approvals |
+| `/governance/financial-reviews` | — | FINANCE | approvals |
 | `/handover` | — | PROJECT_MANAGEMENT | handover |
 | `/handover-control` | — | PROJECT_MANAGEMENT | handover |
 | `/handover/:projectId/live` | — | — | projects |
@@ -114,8 +117,8 @@ Total registered paths: 172
 | `/my-work/tasks` | — | MY_WORK | my_tool |
 | `/my-work/teams` | — | MY_WORK | teams_chat |
 | `/opportunities` | — | PROJECT_DEVELOPMENT | pd_dashboard |
-| `/payment-batch-manager` | — | PROJECT_MANAGEMENT | procurement |
-| `/payment-request-board` | — | PROJECT_MANAGEMENT | procurement |
+| `/payment-batch-manager` | — | FINANCE | procurement |
+| `/payment-request-board` | — | FINANCE | procurement |
 | `/pd` | — | PROJECT_DEVELOPMENT | pd_dashboard |
 | `/pd/handover/:projectId` | — | — | handover |
 | `/pd/reports` | — | — | pd_dashboard |
@@ -167,6 +170,7 @@ Total registered paths: 172
 | `/reports/pm/monthly/:month/project/:projectId` | — | — | reports |
 | `/reports/pm/monthly/compare` | — | — | reports |
 | `/reports/pm/monthly/history` | — | — | reports |
+| `/reports/program-wide-assessment` | — | REPORTS | excel_vs_app |
 | `/reports/programme` | — | REPORTS | reports |
 | `/revenue` | — | — | — |
 | `/revenue-tracker` | — | FINANCE | revenue_tracker |
