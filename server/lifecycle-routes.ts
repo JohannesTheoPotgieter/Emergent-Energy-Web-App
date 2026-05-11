@@ -1051,19 +1051,17 @@ export function registerLifecycleRoutes(app: Express) {
       // Helpers matching program-dashboard logic
       const hasText = (v: any) => typeof v === 'string' && v.trim().length > 0;
 
-      // Direct query: includes parentId + expectedPctComplete for proper leaf detection
-      // (getAllPMWorkItemsAsProjectPlan always returns expectedPctComplete=null and no parentId,
-      //  so this replaces it with a precise query matching the project-routes.ts approach)
+      // Direct query: includes wbsCode + expectedPctComplete for WBS-based parent detection
+      // Smart Import never sets parentId FK, so WBS prefix-stripping is the only reliable
+      // parent detector — matching the approach in planning-tasks-routes.ts lines 583-588.
       const rawPlanTasks = await db.select({
         id: workItems.id,
         projectId: workItems.projectId,
         percentComplete: workItems.percentComplete,
         expectedPctComplete: workItems.expectedPctComplete,
-        parentId: workItems.parentId,
         wbsCode: workItems.wbsCode,
         startDate: workItems.startDate,
         endDate: workItems.endDate,
-        isMilestone: workItems.isMilestone,
       }).from(workItems).where(and(
         eq(workItems.workstream, "PM"),
         sql`${workItems.source} = 'SMART_IMPORT'`,
@@ -1081,27 +1079,43 @@ export function registerLifecycleRoutes(app: Express) {
       const planFyItemsByNorm = new Map<string, number>();
       const planByNorm = new Map<string, { weightedPct: number; totalWeight: number; weightedExpPct: number; totalExpWeight: number; fyItems: number }>();
       const todayMs = new Date(today).getTime();
+      const PLAN_SECTION_HEADERS = new Set(['no.', 'no', '#']);
 
       for (const project of activeProjects) {
         const norm = normalizeName(project.projectName);
         const tasks = planTasksByProjectId.get(project.id);
         if (!tasks || tasks.length === 0) continue;
 
+        // Strip section-header rows (wbsCode = 'no.' / 'no' / '#') — same as plan tab
+        const filtered = tasks.filter(t => {
+          const wbs = (t.wbsCode || '').toString().toLowerCase().trim();
+          return !PLAN_SECTION_HEADERS.has(wbs);
+        });
+
         // FY membership: any task with a date inside the financial year
-        const fyItemCount = tasks.filter(t => {
+        const fyItemCount = filtered.filter(t => {
           const d = t.startDate ?? t.endDate;
           return d && isDateInRange(String(d).slice(0, 10), fy.start, fy.end);
         }).length;
         planFyItemsByNorm.set(norm, fyItemCount);
 
-        // Parent detection: tasks whose id appears as parentId of another task are parents
-        const parentIds = new Set(tasks.filter(t => t.parentId != null).map(t => t.parentId as number));
+        // WBS-based parent detection: build set of WBS prefixes that are parents
+        // e.g. tasks with wbs "1.1" and "1.2" make "1" a parent wbs
+        const parentWbs = new Set<string>();
+        for (const t of filtered) {
+          const wbs = (t.wbsCode || '').toString().trim();
+          if (!wbs || !wbs.includes('.')) continue;
+          const parts = wbs.split('.');
+          parts.pop();
+          parentWbs.add(parts.join('.'));
+        }
 
-        const leafTasks = tasks.filter(t => {
-          if (t.isMilestone) return false;
-          return !parentIds.has(t.id);
+        // Leaf tasks: wbsCode not in parentWbs (or no wbsCode — treated as leaf)
+        const leafTasks = filtered.filter(t => {
+          const wbs = (t.wbsCode || '').toString().trim();
+          return !wbs || !parentWbs.has(wbs);
         });
-        const items = leafTasks.length > 0 ? leafTasks : tasks.filter(t => !t.isMilestone);
+        const items = leafTasks.length > 0 ? leafTasks : filtered;
 
         let actualSum = 0;
         let expSum = 0;
