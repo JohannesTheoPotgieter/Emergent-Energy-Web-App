@@ -122,6 +122,7 @@ interface CashflowTrustSummary {
   lastImportDate: string | null;
   missingTermsCount: number;
   shiftedLineCount: number;
+  quickBooksLinkStatus: "linked" | "partial" | "unmatched" | "unknown";
 }
 
 interface DetailInflow {
@@ -1242,7 +1243,7 @@ export default function CashflowPage() {
       <FinanceTrustStrip
         source={cashflowTrust?.canonicalTable ?? "canonical"}
         lastImportDate={cashflowSummary?.lastImportDate ?? "Unknown"}
-        quickBooksLinkStatus="unknown"
+        quickBooksLinkStatus={cashflowSummary?.quickBooksLinkStatus ?? "unknown"}
         metrics={[
           {
             label: "Unresolved drift",

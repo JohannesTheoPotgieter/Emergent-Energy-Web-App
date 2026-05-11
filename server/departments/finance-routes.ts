@@ -925,7 +925,7 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
       : null;
     const isFiltered = projectFilters !== null && projectFilters.size > 0;
 
-    const [allExpenses, rawInflows, manualBalances, opexBudgets, opexWeeklyOverrides, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
+    const [allExpenses, rawInflows, manualBalances, opexBudgets, opexWeeklyOverrides, allTaskLinks, allOpTasks, allPlanTasks, qbConnectionStatus] = await Promise.all([
       storage.getAllCostLinesForCashflow(),
       storage.getAllRevenueLinesForCashflow(),
       storage.getAllCashflowWeeklyManual(),
@@ -934,6 +934,7 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
       storage.getAllMilestoneTaskLinks(),
       storage.getAllOperationalTasks(),
       storage.getAllProjectPlans(),
+      getQuickBooksConnectionStatus().catch(() => null),
     ]);
 
     const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlanTasks);
@@ -1124,10 +1125,18 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
       );
       return days !== null && Math.abs(days) > 14;
     }).length;
+    const quickBooksLinkStatus: "linked" | "partial" | "unmatched" | "unknown" =
+      !qbConnectionStatus ? "unknown"
+      : qbConnectionStatus.health === "healthy" && !qbConnectionStatus.isStale ? "linked"
+      : qbConnectionStatus.health === "failing" ? "unmatched"
+      : qbConnectionStatus.health === "stale" || qbConnectionStatus.isStale ? "partial"
+      : "unknown";
+
     const summary = {
       lastImportDate: summaryLastImportDate,
       missingTermsCount: summaryMissingTermsCount,
       shiftedLineCount: summaryShiftedLineCount,
+      quickBooksLinkStatus,
     };
 
     const overrideInEffect = weeks.some(
