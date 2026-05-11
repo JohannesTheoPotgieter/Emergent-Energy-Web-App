@@ -162,7 +162,7 @@ import {
   deriveOutflowsQbStatus,
   resolveQbMatch,
 } from "../lib/quickbooks-status";
-import { QuickBooksLinksRepository } from "../repositories/quickbooks-links-repository";
+import { QuickBooksLinksRepository, type QbLinkRef } from "../repositories/quickbooks-links-repository";
 import { computeDateShiftDays, isQbDivergent } from "@shared/lib/cashflow-trust";
 
 const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
@@ -1281,8 +1281,8 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
     let qbEnrichmentError: string | null = null;
     let billCandidates: any[] = [];
     let invoiceCandidates: any[] = [];
-    let outflowLinks: { appEntityId: number; qbEntityId: string }[] = [];
-    let inflowLinks: { appEntityId: number; qbEntityId: string }[] = [];
+    let outflowLinks: QbLinkRef[] = [];
+    let inflowLinks: QbLinkRef[] = [];
 
     try {
       // Scope QB queries to a generous window around the viewed week to avoid
@@ -1336,15 +1336,17 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
       qbEnrichmentError = error?.message ? String(error.message) : "QuickBooks enrichment failed";
     }
 
-    const outflowLinkById = new Map<number, string>();
-    for (const link of outflowLinks) outflowLinkById.set(link.appEntityId, link.qbEntityId);
-    const inflowLinkById = new Map<number, string>();
-    for (const link of inflowLinks) inflowLinkById.set(link.appEntityId, link.qbEntityId);
+    // Carry the full QbLinkRef so downstream divergence checks can use the
+    // per-line allocatedAmountExVat instead of the QB bill's full total.
+    const outflowLinkById = new Map<number, typeof outflowLinks[0]>();
+    for (const link of outflowLinks) outflowLinkById.set(link.appEntityId, link);
+    const inflowLinkById = new Map<number, typeof inflowLinks[0]>();
+    for (const link of inflowLinks) inflowLinkById.set(link.appEntityId, link);
 
     const enrichedOutflows = outflows.map((row: any) => {
-      const linkedQbId = outflowLinkById.get(Number(row.expenseId));
+      const outflowLink = outflowLinkById.get(Number(row.expenseId));
       const match = resolveQbMatch({
-        linkedTransactionId: linkedQbId ?? row.qbTransactionId ?? null,
+        linkedTransactionId: outflowLink?.qbEntityId ?? row.qbTransactionId ?? null,
         invoiceNumber: row.expenseInvoiceNumber ?? null,
         projectName: row.projectName ?? null,
         counterpartyName: row.supplierName ?? null,
@@ -1358,9 +1360,14 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
         : match.qbMatchConfidence === "low"
           ? "low_confidence"
           : null;
+      // Explicit link → compare against the allocated ex-VAT slice for this
+      // app line. Heuristic match → compare against the full QB total (1:1).
+      const qbCompareAmount = outflowLink
+        ? effectiveAllocatedAmountExVat(outflowLink)
+        : match.matched?.totalAmount ?? null;
       const qbDivergence = !!match.matched && isQbDivergent(
         row.expenseActualTotal !== null ? Number(row.expenseActualTotal) : null,
-        match.matched.totalAmount,
+        qbCompareAmount,
         match.matched.taxUncertain,
       );
       return {
@@ -1378,9 +1385,9 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
     });
 
     const enrichedInflows = inflows.map((row: any) => {
-      const linkedQbId = inflowLinkById.get(Number(row.inflowId));
+      const inflowLink = inflowLinkById.get(Number(row.inflowId));
       const match = resolveQbMatch({
-        linkedTransactionId: linkedQbId ?? row.qbTransactionId ?? null,
+        linkedTransactionId: inflowLink?.qbEntityId ?? row.qbTransactionId ?? null,
         invoiceNumber: row.milestoneInvoiceNumber ?? null,
         projectName: row.projectName ?? null,
         counterpartyName: row.customerName ?? null,
@@ -1394,9 +1401,12 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
         : match.qbMatchConfidence === "low"
           ? "low_confidence"
           : null;
+      const qbCompareAmount = inflowLink
+        ? effectiveAllocatedAmountExVat(inflowLink)
+        : match.matched?.totalAmount ?? null;
       const qbDivergence = !!match.matched && isQbDivergent(
         row.milestoneAmount !== null ? Number(row.milestoneAmount) : null,
-        match.matched.totalAmount,
+        qbCompareAmount,
         match.matched.taxUncertain,
       );
       return {

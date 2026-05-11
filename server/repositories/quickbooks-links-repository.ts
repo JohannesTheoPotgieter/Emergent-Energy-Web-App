@@ -6,6 +6,10 @@ import { db } from "../db";
 export interface QbLinkRef {
   appEntityId: number;
   qbEntityId: string;
+  /** ex-VAT slice of the QB doc allocated to this app line (post-Task #142). */
+  allocatedAmountExVat: string | null;
+  /** Snapshot of the QB doc total at link-creation time (pre-Task #142 rows). */
+  qbAmount: string | null;
 }
 
 export class QuickBooksLinksRepository {
@@ -21,7 +25,8 @@ export class QuickBooksLinksRepository {
 
   /**
    * Find active QB links for a set of cost-line IDs.
-   * Returns only (appEntityId, qbEntityId) — the minimum needed for matching.
+   * Returns (appEntityId, qbEntityId, allocatedAmountExVat, qbAmount) — the
+   * fields needed both for transaction matching and per-line divergence checks.
    */
   async getActiveCostLineLinks(entityIds: number[]): Promise<QbLinkRef[]> {
     if (entityIds.length === 0) return [];
@@ -29,6 +34,8 @@ export class QuickBooksLinksRepository {
       .select({
         appEntityId: quickbooksInvoiceLinks.appEntityId,
         qbEntityId: quickbooksInvoiceLinks.qbEntityId,
+        allocatedAmountExVat: quickbooksInvoiceLinks.allocatedAmountExVat,
+        qbAmount: quickbooksInvoiceLinks.qbAmount,
       })
       .from(quickbooksInvoiceLinks)
       .where(
@@ -42,7 +49,7 @@ export class QuickBooksLinksRepository {
 
   /**
    * Find active QB links for a set of revenue-line IDs.
-   * Returns only (appEntityId, qbEntityId) — the minimum needed for matching.
+   * Returns (appEntityId, qbEntityId, allocatedAmountExVat, qbAmount).
    */
   async getActiveRevenueLineLinks(entityIds: number[]): Promise<QbLinkRef[]> {
     if (entityIds.length === 0) return [];
@@ -50,6 +57,8 @@ export class QuickBooksLinksRepository {
       .select({
         appEntityId: quickbooksInvoiceLinks.appEntityId,
         qbEntityId: quickbooksInvoiceLinks.qbEntityId,
+        allocatedAmountExVat: quickbooksInvoiceLinks.allocatedAmountExVat,
+        qbAmount: quickbooksInvoiceLinks.qbAmount,
       })
       .from(quickbooksInvoiceLinks)
       .where(
