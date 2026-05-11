@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ragBadgeClasses, severityStyle } from "@/lib/status-colors";
 import {
   formatCurrencyCompact,
@@ -13,7 +14,7 @@ import {
   Activity, AlertCircle, AlertTriangle, ChevronDown, ChevronUp,
   TrendingUp, TrendingDown, DollarSign,
   Shield, FileWarning, Clock, Users,
-  ArrowRight, BarChart3,
+  ArrowRight, BarChart3, CheckCircle2, XCircle, CalendarDays, Banknote,
 } from "lucide-react";
 import { useExecutionData } from "./use-execution-data";
 import { displayPmName, isValidPmName } from "@/lib/pm-validation";
@@ -41,9 +42,11 @@ function queueColor(queue: string) {
 }
 
 export default function OverviewPage() {
-  const { kpis, filteredProjects, actionRows, openProject, ragDistribution, fyLabel } = useExecutionData();
+  const { kpis, filteredProjects, actionRows, openProject, ragDistribution, fyLabel, dashboard } = useExecutionData();
   const [, setLocation] = useLocation();
   const [collapsedQueues, setCollapsedQueues] = useState<Set<string>>(new Set());
+  const [scheduleSheetOpen, setScheduleSheetOpen] = useState(false);
+  const [contractSheetOpen, setContractSheetOpen] = useState(false);
 
   const toggleQueue = (queue: string) => {
     setCollapsedQueues((prev) => {
@@ -219,7 +222,121 @@ export default function OverviewPage() {
         <KpiCard icon={<BarChart3 className="w-4 h-4 text-emerald-600" />} iconBg="bg-emerald-100" label="Gross Profit (Planned)" value={formatCurrencyCompact(kpis.grossProfitFy)} sub={`Planned Margin: ${kpis.grossMarginPctFy ?? "—"}% · Based on planned revenue vs planned expenditure`} />
       </div>
 
-      {/* 3. TOP PROBLEM PROJECTS */}
+      {/* 3. PROGRAM METRICS — Excel Program Dashboard parity KPIs */}
+      <Card className="border-emerald-200/60 bg-emerald-50/20">
+        <CardContent className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <BarChart3 className="w-4 h-4 text-emerald-600" />
+            <h3 className="text-sm font-semibold">Program Metrics</h3>
+            <Badge variant="outline" className="text-[10px] text-emerald-700 border-emerald-300">Excel parity</Badge>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {/* On Schedule Rate */}
+            <div
+              className="bg-white rounded-lg border border-border/60 p-3 cursor-pointer hover:shadow-md hover:border-emerald-300 transition-all group"
+              onClick={() => setScheduleSheetOpen(true)}
+            >
+              <div className="flex items-center gap-2 mb-1.5">
+                <div className="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
+                  <Activity className="w-4 h-4 text-emerald-600" />
+                </div>
+                <span className="text-[10px] text-muted-foreground font-medium leading-tight">On Schedule Rate</span>
+              </div>
+              <p className={`text-lg font-bold tabular-nums ${kpis.onScheduleRate >= 70 ? "text-emerald-600" : kpis.onScheduleRate >= 50 ? "text-amber-600" : "text-red-600"}`}>
+                {kpis.onScheduleRate}%
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-0.5 group-hover:text-emerald-600 transition-colors">Click to drill down →</p>
+            </div>
+
+            {/* Contract Completeness */}
+            <div
+              className="bg-white rounded-lg border border-border/60 p-3 cursor-pointer hover:shadow-md hover:border-emerald-300 transition-all group"
+              onClick={() => setContractSheetOpen(true)}
+            >
+              <div className="flex items-center gap-2 mb-1.5">
+                <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                </div>
+                <span className="text-[10px] text-muted-foreground font-medium leading-tight">Contract Completeness</span>
+              </div>
+              <p className={`text-lg font-bold tabular-nums ${kpis.contractCompleteness >= 80 ? "text-emerald-600" : kpis.contractCompleteness >= 50 ? "text-amber-600" : "text-red-600"}`}>
+                {kpis.contractCompleteness}%
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-0.5 group-hover:text-emerald-600 transition-colors">CP + EPC signed →</p>
+            </div>
+
+            {/* Revenue Outstanding This Month */}
+            <div
+              className="bg-white rounded-lg border border-border/60 p-3 cursor-pointer hover:shadow-md hover:border-amber-300 transition-all group"
+              onClick={() => setLocation("/execution-board/finance")}
+            >
+              <div className="flex items-center gap-2 mb-1.5">
+                <div className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
+                  <DollarSign className="w-4 h-4 text-amber-600" />
+                </div>
+                <span className="text-[10px] text-muted-foreground font-medium leading-tight">Rev Outstanding (Month)</span>
+              </div>
+              <p className="text-lg font-bold tabular-nums text-amber-600">
+                {formatCurrencyCompact(dashboard?.kpis.revenueOutstandingThisMonth ?? 0)}
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-0.5 group-hover:text-amber-600 transition-colors">View Finance →</p>
+            </div>
+
+            {/* COS Outstanding This Month */}
+            <div
+              className="bg-white rounded-lg border border-border/60 p-3 cursor-pointer hover:shadow-md hover:border-orange-300 transition-all group"
+              onClick={() => setLocation("/execution-board/finance")}
+            >
+              <div className="flex items-center gap-2 mb-1.5">
+                <div className="w-7 h-7 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
+                  <TrendingDown className="w-4 h-4 text-orange-600" />
+                </div>
+                <span className="text-[10px] text-muted-foreground font-medium leading-tight">COS Outstanding (Month)</span>
+              </div>
+              <p className="text-lg font-bold tabular-nums text-orange-600">
+                {formatCurrencyCompact(dashboard?.kpis.cosOutstandingThisMonth ?? 0)}
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-0.5 group-hover:text-orange-600 transition-colors">View Finance →</p>
+            </div>
+
+            {/* Inflows This Week */}
+            <div
+              className="bg-white rounded-lg border border-border/60 p-3 cursor-pointer hover:shadow-md hover:border-blue-300 transition-all group"
+              onClick={() => setLocation("/execution-board/finance")}
+            >
+              <div className="flex items-center gap-2 mb-1.5">
+                <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
+                  <Banknote className="w-4 h-4 text-blue-600" />
+                </div>
+                <span className="text-[10px] text-muted-foreground font-medium leading-tight">Inflows This Week</span>
+              </div>
+              <p className="text-lg font-bold tabular-nums text-blue-600">
+                {formatCurrencyCompact(dashboard?.kpis.projectInflowsThisWeek ?? 0)}
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-0.5 group-hover:text-blue-600 transition-colors">View Finance →</p>
+            </div>
+
+            {/* Outflows This Week */}
+            <div
+              className="bg-white rounded-lg border border-border/60 p-3 cursor-pointer hover:shadow-md hover:border-red-300 transition-all group"
+              onClick={() => setLocation("/execution-board/finance")}
+            >
+              <div className="flex items-center gap-2 mb-1.5">
+                <div className="w-7 h-7 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
+                  <TrendingDown className="w-4 h-4 text-red-600" />
+                </div>
+                <span className="text-[10px] text-muted-foreground font-medium leading-tight">Outflows This Week</span>
+              </div>
+              <p className="text-lg font-bold tabular-nums text-red-600">
+                {formatCurrencyCompact(dashboard?.kpis.projectOutflowsThisWeek ?? 0)}
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-0.5 group-hover:text-red-600 transition-colors">View Finance →</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 4. TOP PROBLEM PROJECTS */}
       {topProblemProjects.length > 0 && (
         <Card className="border-border/60">
           <CardContent className="p-4">
@@ -270,7 +387,7 @@ export default function OverviewPage() {
         </Card>
       )}
 
-      {/* 4. OPERATIONAL EXCEPTION PANELS */}
+      {/* 5. OPERATIONAL EXCEPTION PANELS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Portfolio by Phase */}
         <Card className="border-border/60">
@@ -375,6 +492,161 @@ export default function OverviewPage() {
           </CardContent>
         </Card>
       </div>
+      {/* On Schedule drill-down Sheet */}
+      <Sheet open={scheduleSheetOpen} onOpenChange={setScheduleSheetOpen}>
+        <SheetContent className="sm:max-w-[800px] w-full overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <Activity className="w-5 h-5 text-emerald-500" />
+              Schedule Status — {kpis.onScheduleRate}% On Schedule
+            </SheetTitle>
+          </SheetHeader>
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <div className="bg-emerald-50 rounded-lg border border-emerald-200 p-2 text-center">
+              <p className="text-[10px] text-emerald-700 font-medium">ON SCHEDULE</p>
+              <p className="text-xl font-bold text-emerald-600">{filteredProjects.filter((p) => (p.actualProgressPct ?? 0) >= (p.expectedProgressPct ?? 0) - 5).length}</p>
+            </div>
+            <div className="bg-red-50 rounded-lg border border-red-200 p-2 text-center">
+              <p className="text-[10px] text-red-700 font-medium">BEHIND PLAN</p>
+              <p className="text-xl font-bold text-red-600">{kpis.projectsBehindPlan}</p>
+            </div>
+            <div className="bg-slate-50 rounded-lg border border-slate-200 p-2 text-center">
+              <p className="text-[10px] text-slate-700 font-medium">TOTAL PROJECTS</p>
+              <p className="text-xl font-bold text-slate-600">{filteredProjects.length}</p>
+            </div>
+          </div>
+          <div className="mt-3 border rounded-lg overflow-auto max-h-[65vh]">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 sticky top-0">
+                <tr className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                  <th className="text-left py-2 px-3 font-medium">Project</th>
+                  <th className="text-left py-2 px-3 font-medium hidden sm:table-cell">PM</th>
+                  <th className="text-right py-2 px-3 font-medium">Actual %</th>
+                  <th className="text-right py-2 px-3 font-medium">Expected %</th>
+                  <th className="text-right py-2 px-3 font-medium">Variance</th>
+                  <th className="text-center py-2 px-3 font-medium">Status</th>
+                  <th className="w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...filteredProjects]
+                  .sort((a, b) => ((a.scheduleVariancePct ?? 0) - (b.scheduleVariancePct ?? 0)))
+                  .map((p) => {
+                    const onSchedule = (p.actualProgressPct ?? 0) >= (p.expectedProgressPct ?? 0) - 5;
+                    const variance = p.scheduleVariancePct ?? 0;
+                    return (
+                      <tr
+                        key={p.projectId}
+                        className="border-t border-border/40 hover:bg-muted/30 cursor-pointer"
+                        onClick={() => { openProject(p, "plan"); setScheduleSheetOpen(false); }}
+                      >
+                        <td className="py-2 px-3 font-medium truncate max-w-[200px]">{p.projectName}</td>
+                        <td className="py-2 px-3 text-xs text-muted-foreground hidden sm:table-cell">{p.pm || "—"}</td>
+                        <td className="py-2 px-3 text-right tabular-nums font-medium">{p.actualProgressPct ?? "—"}%</td>
+                        <td className="py-2 px-3 text-right tabular-nums text-muted-foreground">{p.expectedProgressPct ?? "—"}%</td>
+                        <td className={`py-2 px-3 text-right tabular-nums font-medium ${variance < 0 ? "text-red-600" : variance > 0 ? "text-emerald-600" : "text-muted-foreground"}`}>
+                          {p.scheduleVariancePct != null ? `${variance > 0 ? "+" : ""}${variance}%` : "—"}
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          {onSchedule
+                            ? <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px]">On Schedule</Badge>
+                            : <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">Behind Plan</Badge>}
+                        </td>
+                        <td className="py-2 px-1 text-center">
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0"><ArrowRight className="w-4 h-4" /></Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Contract Completeness drill-down Sheet */}
+      <Sheet open={contractSheetOpen} onOpenChange={setContractSheetOpen}>
+        <SheetContent className="sm:max-w-[800px] w-full overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-blue-500" />
+              Contract Completeness — {kpis.contractCompleteness}% Complete
+            </SheetTitle>
+          </SheetHeader>
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <div className="bg-emerald-50 rounded-lg border border-emerald-200 p-2 text-center">
+              <p className="text-[10px] text-emerald-700 font-medium">FULLY SIGNED</p>
+              <p className="text-xl font-bold text-emerald-600">{filteredProjects.filter((p) => p.cpSigned && p.signedStatus === "SIGNED").length}</p>
+            </div>
+            <div className="bg-amber-50 rounded-lg border border-amber-200 p-2 text-center">
+              <p className="text-[10px] text-amber-700 font-medium">PARTIALLY SIGNED</p>
+              <p className="text-xl font-bold text-amber-600">{filteredProjects.filter((p) => (p.cpSigned || p.signedStatus !== "NONE") && !(p.cpSigned && p.signedStatus === "SIGNED")).length}</p>
+            </div>
+            <div className="bg-red-50 rounded-lg border border-red-200 p-2 text-center">
+              <p className="text-[10px] text-red-700 font-medium">UNSIGNED</p>
+              <p className="text-xl font-bold text-red-600">{filteredProjects.filter((p) => !p.cpSigned && p.signedStatus === "NONE").length}</p>
+            </div>
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-2">CP = Cost Proposal · EPC = EPC Contract (signedStatus = SIGNED)</p>
+          <div className="mt-3 border rounded-lg overflow-auto max-h-[65vh]">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 sticky top-0">
+                <tr className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                  <th className="text-left py-2 px-3 font-medium">Project</th>
+                  <th className="text-left py-2 px-3 font-medium hidden sm:table-cell">PM</th>
+                  <th className="text-center py-2 px-3 font-medium">CP Signed</th>
+                  <th className="text-center py-2 px-3 font-medium">EPC Contract</th>
+                  <th className="text-center py-2 px-3 font-medium">Status</th>
+                  <th className="w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...filteredProjects]
+                  .sort((a, b) => {
+                    const aComplete = a.cpSigned && a.signedStatus === "SIGNED";
+                    const bComplete = b.cpSigned && b.signedStatus === "SIGNED";
+                    if (aComplete !== bComplete) return aComplete ? 1 : -1;
+                    return (a.projectName || "").localeCompare(b.projectName || "");
+                  })
+                  .map((p) => {
+                    const complete = p.cpSigned && p.signedStatus === "SIGNED";
+                    const partial = (p.cpSigned || p.signedStatus !== "NONE") && !complete;
+                    return (
+                      <tr
+                        key={p.projectId}
+                        className="border-t border-border/40 hover:bg-muted/30 cursor-pointer"
+                        onClick={() => { openProject(p); setContractSheetOpen(false); }}
+                      >
+                        <td className="py-2 px-3 font-medium truncate max-w-[200px]">{p.projectName}</td>
+                        <td className="py-2 px-3 text-xs text-muted-foreground hidden sm:table-cell">{p.pm || "—"}</td>
+                        <td className="py-2 px-3 text-center">
+                          {p.cpSigned
+                            ? <CheckCircle2 className="w-4 h-4 text-emerald-600 mx-auto" />
+                            : <XCircle className="w-4 h-4 text-red-400 mx-auto" />}
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          <Badge className={`text-[10px] ${p.signedStatus === "SIGNED" ? "bg-emerald-100 text-emerald-700" : p.signedStatus === "PENDING" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
+                            {p.signedStatus}
+                          </Badge>
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          {complete
+                            ? <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px]">Complete</Badge>
+                            : partial
+                              ? <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px]">Partial</Badge>
+                              : <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">Unsigned</Badge>}
+                        </td>
+                        <td className="py-2 px-1 text-center">
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0"><ArrowRight className="w-4 h-4" /></Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

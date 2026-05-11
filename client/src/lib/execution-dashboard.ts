@@ -30,6 +30,8 @@ export interface ExecutionDashboardProject {
   criticalActionCount: number;
   overdueInflowFy: number;
   overdueOutflowFy: number;
+  cpSigned: boolean;
+  signedStatus: string;
 }
 
 export interface ExecutionDashboardResponse {
@@ -54,6 +56,12 @@ export interface ExecutionDashboardResponse {
     openQualityWarnings: number;
     pendingApprovals: number;
     staleImports: number;
+    onScheduleRate: number;
+    contractCompleteness: number;
+    revenueOutstandingThisMonth: number;
+    cosOutstandingThisMonth: number;
+    projectInflowsThisWeek: number;
+    projectOutflowsThisWeek: number;
   };
   actionCenter: {
     queues: string[];
