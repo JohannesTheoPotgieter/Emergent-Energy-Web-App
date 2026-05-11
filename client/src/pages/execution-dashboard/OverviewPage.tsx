@@ -1,403 +1,451 @@
-import React, { useState, useMemo } from "react";
-import { useLocation } from "wouter";
-import { Card, CardContent } from "@/components/ui/card";
+import React, { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ragBadgeClasses, severityStyle } from "@/lib/status-colors";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { formatCurrencyCompact, formatCurrencyFull } from "@/lib/execution-dashboard";
 import {
-  formatCurrencyCompact,
-  formatDate,
-} from "@/lib/execution-dashboard";
-
-import {
-  Activity, AlertCircle, AlertTriangle, ChevronDown, ChevronUp,
-  TrendingUp, TrendingDown, DollarSign,
-  Shield, FileWarning, Clock, Users,
-  ArrowRight, BarChart3,
+  Activity, TrendingDown, DollarSign,
+  ArrowRight, CheckCircle2, XCircle, Banknote, Clock,
 } from "lucide-react";
 import { useExecutionData } from "./use-execution-data";
-import { displayPmName, isValidPmName } from "@/lib/pm-validation";
-
-function queueIcon(queue: string) {
-  const q = queue?.toLowerCase();
-  if (q.includes("inflow")) return <DollarSign className="w-4 h-4 text-blue-500" />;
-  if (q.includes("expenditure") || q.includes("cos")) return <TrendingDown className="w-4 h-4 text-orange-500" />;
-  if (q.includes("behind") || q.includes("plan")) return <Clock className="w-4 h-4 text-red-500" />;
-  if (q.includes("engineering")) return <Shield className="w-4 h-4 text-violet-500" />;
-  if (q.includes("quality")) return <FileWarning className="w-4 h-4 text-amber-500" />;
-  if (q.includes("approval")) return <Users className="w-4 h-4 text-emerald-500" />;
-  return <AlertCircle className="w-4 h-4 text-slate-500" />;
-}
-
-function queueColor(queue: string) {
-  const q = queue?.toLowerCase();
-  if (q.includes("inflow")) return "border-l-blue-500 bg-blue-50/30";
-  if (q.includes("expenditure") || q.includes("cos")) return "border-l-orange-500 bg-orange-50/30";
-  if (q.includes("behind") || q.includes("plan")) return "border-l-red-500 bg-red-50/30";
-  if (q.includes("engineering")) return "border-l-violet-500 bg-violet-50/30";
-  if (q.includes("quality")) return "border-l-amber-500 bg-amber-50/30";
-  if (q.includes("approval")) return "border-l-emerald-500 bg-emerald-50/30";
-  return "border-l-slate-400 bg-slate-50/30";
-}
 
 export default function OverviewPage() {
-  const { kpis, filteredProjects, actionRows, openProject, ragDistribution, fyLabel } = useExecutionData();
-  const [, setLocation] = useLocation();
-  const [collapsedQueues, setCollapsedQueues] = useState<Set<string>>(new Set());
+  const { kpis, filteredProjects, openProject, dashboard } = useExecutionData();
+  const [scheduleSheetOpen, setScheduleSheetOpen] = useState(false);
+  const [contractSheetOpen, setContractSheetOpen] = useState(false);
+  const [revenueSheetOpen, setRevenueSheetOpen] = useState(false);
+  const [cosSheetOpen, setCosSheetOpen] = useState(false);
 
-  const toggleQueue = (queue: string) => {
-    setCollapsedQueues((prev) => {
-      const next = new Set(prev);
-      if (next.has(queue)) next.delete(queue); else next.add(queue);
-      return next;
-    });
-  };
-
-  const EXCLUDED_QUEUES = new Set(["Inflow at Risk", "Expenditure / COS at Risk"]);
-
-  const filteredActionRows = useMemo(
-    () => actionRows.filter((r) => !EXCLUDED_QUEUES.has(r.queue || "")),
-    [actionRows],
-  );
-
-  const groupedActions = useMemo(() => {
-    const groups: Record<string, typeof actionRows> = {};
-    for (const row of filteredActionRows) {
-      const key = row.queue || "Other";
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(row);
-    }
-    return groups;
-  }, [filteredActionRows]);
-
-  // Top problem projects: sorted by criticalActionCount, showing red/amber first
-  const topProblemProjects = useMemo(() => {
-    return [...filteredProjects]
-      .filter((p) => p.criticalActionCount > 0 || p.rag === "Red" || p.behindPlan || p.inflowRisk || p.outflowRisk)
-      .sort((a, b) => {
-        const ragOrder: Record<string, number> = { Red: 0, Amber: 1, Green: 2, Unknown: 3 };
-        const ragDiff = (ragOrder[a.rag] ?? 3) - (ragOrder[b.rag] ?? 3);
-        if (ragDiff !== 0) return ragDiff;
-        return b.criticalActionCount - a.criticalActionCount;
-      })
-      .slice(0, 10);
-  }, [filteredProjects]);
-
-  // Phase distribution
-  const phaseDistribution = useMemo(() => {
-    const dist: Record<string, number> = {};
-    for (const p of filteredProjects) {
-      const phase = p.executionPhase || "Unassigned";
-      dist[phase] = (dist[phase] || 0) + 1;
-    }
-    return Object.entries(dist).sort((a, b) => b[1] - a[1]);
-  }, [filteredProjects]);
+  const behindCount = kpis.projectsBehindPlan;               // server boolean — canonical
+  const onScheduleCount = filteredProjects.length - behindCount; // always sums to total
+  const fullySignedCount = filteredProjects.filter(
+    (p) => p.cpSigned && p.signedStatus === "SIGNED",
+  ).length;
 
   return (
-    <div className="space-y-5">
-      {/* 1. ACTION CENTER — visual center of gravity */}
-      <Card className="border-border/60">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 text-red-500" />
-              <h2 className="text-base font-semibold">Action Center</h2>
-              <Badge variant="outline" className="text-xs ml-1">{filteredActionRows.length} items</Badge>
-            </div>
-          </div>
+    <div className="space-y-6">
+      {/* 7 KPI tiles — 2 cols sm, 4 cols lg */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 
-          {filteredActionRows.length === 0 ? (
-            <div className="text-center py-8">
-              <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-3">
-                <Activity className="w-6 h-6 text-emerald-500" />
-              </div>
-              <p className="text-sm font-medium text-emerald-700">No exceptions — portfolio is on track</p>
-              <p className="text-xs text-muted-foreground mt-1">All projects within normal operating parameters</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {Object.entries(groupedActions).map(([queue, rows]) => {
-                const isCollapsed = collapsedQueues.has(queue);
-                const criticalCount = rows.filter((r) => r.severity?.toLowerCase() === "critical").length;
-                return (
-                  <div key={queue} className={`rounded-lg border border-l-4 overflow-hidden ${queueColor(queue)}`}>
-                    <button
-                      onClick={() => toggleQueue(queue)}
-                      className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/40 transition-colors"
+        {/* 1 — Behind Schedule count */}
+        <KpiTile
+          label="Projects Behind Schedule"
+          value={String(behindCount)}
+          valueClass={behindCount === 0 ? "text-emerald-600" : behindCount <= 2 ? "text-amber-600" : "text-red-600"}
+          sub={`${onScheduleCount} of ${filteredProjects.length} projects on track`}
+          icon={<Clock className="w-5 h-5 text-red-600" />}
+          iconBg="bg-red-100"
+          cta="View all projects"
+          onClick={() => setScheduleSheetOpen(true)}
+        />
+
+        {/* 2 — On Schedule Rate */}
+        <KpiTile
+          label="On Schedule Rate"
+          value={`${kpis.onScheduleRate}%`}
+          valueClass={kpis.onScheduleRate >= 70 ? "text-emerald-600" : kpis.onScheduleRate >= 50 ? "text-amber-600" : "text-red-600"}
+          sub={`${onScheduleCount} of ${filteredProjects.length} projects within ±5% tolerance`}
+          icon={<Activity className="w-5 h-5 text-emerald-600" />}
+          iconBg="bg-emerald-100"
+          cta="View schedule breakdown"
+          onClick={() => setScheduleSheetOpen(true)}
+        />
+
+        {/* 3 — Contract Completeness */}
+        <KpiTile
+          label="Contract Completeness"
+          value={`${kpis.contractCompleteness}%`}
+          valueClass={kpis.contractCompleteness >= 80 ? "text-emerald-600" : kpis.contractCompleteness >= 50 ? "text-amber-600" : "text-red-600"}
+          sub={`${fullySignedCount} of ${filteredProjects.length} projects CP + EPC signed`}
+          icon={<CheckCircle2 className="w-5 h-5 text-blue-600" />}
+          iconBg="bg-blue-100"
+          cta="View contract status"
+          onClick={() => setContractSheetOpen(true)}
+        />
+
+        {/* 4 — Revenue Outstanding This Month */}
+        <KpiTile
+          label="Rev Outstanding This Month"
+          value={formatCurrencyCompact(dashboard?.kpis.revenueOutstandingThisMonth ?? 0)}
+          valueClass="text-amber-600"
+          sub="Revenue planned but not yet received this month · all active projects"
+          icon={<DollarSign className="w-5 h-5 text-amber-600" />}
+          iconBg="bg-amber-100"
+          cta="View by project"
+          onClick={() => setRevenueSheetOpen(true)}
+        />
+
+        {/* 5 — COS Outstanding This Month */}
+        <KpiTile
+          label="COS Outstanding This Month"
+          value={formatCurrencyCompact(dashboard?.kpis.cosOutstandingThisMonth ?? 0)}
+          valueClass="text-orange-600"
+          sub="Cost of sales planned but not yet paid this month · all active projects"
+          icon={<TrendingDown className="w-5 h-5 text-orange-600" />}
+          iconBg="bg-orange-100"
+          cta="View by project"
+          onClick={() => setCosSheetOpen(true)}
+        />
+
+        {/* 6 — Inflows This Week */}
+        <KpiTile
+          label="Revenue Inflows This Week"
+          value={formatCurrencyCompact(dashboard?.kpis.projectInflowsThisWeek ?? 0)}
+          valueClass="text-blue-600"
+          sub="Cashflow revenue series expected Mon–Sun this week · all active projects"
+          icon={<Banknote className="w-5 h-5 text-blue-600" />}
+          iconBg="bg-blue-100"
+          cta="View by project"
+          onClick={() => setRevenueSheetOpen(true)}
+        />
+
+        {/* 7 — Outflows This Week */}
+        <KpiTile
+          label="Expenditure Outflows This Week"
+          value={formatCurrencyCompact(dashboard?.kpis.projectOutflowsThisWeek ?? 0)}
+          valueClass="text-red-600"
+          sub="Cashflow expenditure series expected Mon–Sun this week · all active projects"
+          icon={<TrendingDown className="w-5 h-5 text-red-600" />}
+          iconBg="bg-red-100"
+          cta="View by project"
+          onClick={() => setCosSheetOpen(true)}
+        />
+      </div>
+
+      {/* Revenue outstanding drill-down Sheet */}
+      <Sheet open={revenueSheetOpen} onOpenChange={setRevenueSheetOpen}>
+        <SheetContent className="sm:max-w-[860px] w-full overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <DollarSign className="w-5 h-5 text-amber-500" />
+              Revenue &amp; Cashflow — By Project
+            </SheetTitle>
+          </SheetHeader>
+          <p className="text-[11px] text-muted-foreground mt-2">
+            Sorted by open revenue (largest first). Figures are for the current financial year across all active projects regardless of active filters.
+          </p>
+          <div className="mt-3 border rounded-lg overflow-auto max-h-[72vh]">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 sticky top-0 z-10">
+                <tr className="text-[11px] uppercase tracking-wider text-muted-foreground border-b">
+                  <th className="text-left py-2.5 px-3 font-medium">Project</th>
+                  <th className="text-left py-2.5 px-3 font-medium hidden sm:table-cell">PM</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Planned Rev</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Received</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Open</th>
+                  <th className="w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...filteredProjects]
+                  .sort((a, b) => (b.openInflowFy ?? 0) - (a.openInflowFy ?? 0))
+                  .map((p) => (
+                    <tr
+                      key={p.projectId}
+                      className="border-t border-border/40 hover:bg-muted/30 cursor-pointer"
+                      onClick={() => { openProject(p, "revenue"); setRevenueSheetOpen(false); }}
                     >
-                      {queueIcon(queue)}
-                      <span className="text-sm font-semibold flex-1">{queue}</span>
-                      <Badge variant="outline" className="text-[10px] font-medium">{rows.length} {rows.length === 1 ? "issue" : "issues"}</Badge>
-                      {criticalCount > 0 && <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">{criticalCount} critical</Badge>}
-                      {isCollapsed ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronUp className="w-4 h-4 text-muted-foreground" />}
-                    </button>
-                    {!isCollapsed && (
-                      <div className="bg-white/60 border-t overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                              <th className="text-left py-2 px-4 font-medium">Project</th>
-                              <th className="text-left py-2 px-4 font-medium">Issue</th>
-                              <th className="text-left py-2 px-4 font-medium">Severity</th>
-                              <th className="text-left py-2 px-4 font-medium">Owner</th>
-                              <th className="text-left py-2 px-4 font-medium">Due</th>
-                              <th className="text-right py-2 px-4 font-medium w-16"></th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {rows.map((r, idx) => {
-                              const sev = severityStyle(r.severity);
-                              return (
-                                <tr key={`${r.projectId}-${idx}`} className="border-t border-border/40 hover:bg-white/80 transition-colors">
-                                  <td className="py-2.5 px-4 font-medium text-foreground">{r.projectName}</td>
-                                  <td className="py-2.5 px-4 text-muted-foreground max-w-[300px] truncate">{r.issueTitle}</td>
-                                  <td className="py-2.5 px-4">
-                                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium border ${sev.bg} ${sev.text}`}>
-                                      <span className={`w-1.5 h-1.5 rounded-full ${sev.dot}`} />
-                                      {r.severity}
-                                    </span>
-                                  </td>
-                                  <td className="py-2.5 px-4 text-muted-foreground">{isValidPmName(r.owner) ? r.owner : <span className="text-amber-600 italic">Unassigned</span>}</td>
-                                  <td className="py-2.5 px-4 text-muted-foreground tabular-nums">{formatDate(r.dueDate)}</td>
-                                  <td className="py-2.5 px-4 text-right">
-                                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600" onClick={() => setLocation(r.link)}>
-                                      <ArrowRight className="w-4 h-4" />
-                                    </Button>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* 2. KPI STRIP — reduced to 8 action-driving tiles */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {/* Compact RAG distribution — replaces 3 separate color tiles + active projects */}
-        <Card className="border-border/60">
-          <CardContent className="p-3">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                <Activity className="w-4 h-4 text-slate-600" />
-              </div>
-              <span className="text-[10px] text-muted-foreground font-medium leading-tight">RAG Distribution</span>
-            </div>
-            <div className="flex items-center gap-3 text-sm font-bold tabular-nums">
-              <span className="text-red-600">{kpis.projectsRed}R</span>
-              <span className="text-amber-600">{kpis.projectsAmber}A</span>
-              <span className="text-emerald-600">{kpis.projectsGreen}G</span>
-            </div>
-            <div className="flex h-1.5 rounded-full overflow-hidden mt-2 bg-muted">
-              {kpis.activeDashboardProjects > 0 && (
-                <>
-                  <div className="bg-red-500" style={{ width: `${(kpis.projectsRed / kpis.activeDashboardProjects) * 100}%` }} />
-                  <div className="bg-amber-500" style={{ width: `${(kpis.projectsAmber / kpis.activeDashboardProjects) * 100}%` }} />
-                  <div className="bg-emerald-500" style={{ width: `${(kpis.projectsGreen / kpis.activeDashboardProjects) * 100}%` }} />
-                </>
-              )}
-            </div>
-            <p className="text-[10px] text-muted-foreground mt-1">{kpis.activeDashboardProjects} active projects</p>
-          </CardContent>
-        </Card>
-        <KpiCard icon={<Clock className="w-4 h-4 text-red-600" />} iconBg="bg-red-100" label="Behind Plan" value={kpis.projectsBehindPlan} valueClass="text-red-600" />
-        <KpiCard icon={<Users className="w-4 h-4 text-blue-600" />} iconBg="bg-blue-100" label="Pending Approvals" value={kpis.pendingApprovals} />
-        <KpiCard icon={<Shield className="w-4 h-4 text-violet-600" />} iconBg="bg-violet-100" label="Open Blockers" value={kpis.openEngineeringBlockers + kpis.openQualityWarnings} sub={`${kpis.openEngineeringBlockers} eng + ${kpis.openQualityWarnings} quality`} />
-      </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <KpiCard icon={<TrendingUp className="w-4 h-4 text-emerald-600" />} iconBg="bg-emerald-100" label={`Revenue (${fyLabel})`} value={formatCurrencyCompact(kpis.plannedRevenueFy)} sub={`Received: ${formatCurrencyCompact(kpis.receivedInflowFy)}`} />
-        <KpiCard icon={<DollarSign className="w-4 h-4 text-amber-600" />} iconBg="bg-amber-100" label="Revenue Outstanding" value={formatCurrencyCompact(kpis.openInflowFy)} valueClass="text-amber-600" />
-        <KpiCard icon={<DollarSign className="w-4 h-4 text-amber-600" />} iconBg="bg-amber-100" label="Expense Outstanding" value={formatCurrencyCompact(kpis.openExpenditureFy)} valueClass="text-amber-600" />
-        <KpiCard icon={<BarChart3 className="w-4 h-4 text-emerald-600" />} iconBg="bg-emerald-100" label="Gross Profit (Planned)" value={formatCurrencyCompact(kpis.grossProfitFy)} sub={`Planned Margin: ${kpis.grossMarginPctFy ?? "—"}% · Based on planned revenue vs planned expenditure`} />
-      </div>
-
-      {/* 3. TOP PROBLEM PROJECTS */}
-      {topProblemProjects.length > 0 && (
-        <Card className="border-border/60">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <AlertCircle className="w-4 h-4 text-red-500" />
-              <h3 className="text-sm font-semibold">Top Problem Projects</h3>
-              <Badge variant="outline" className="text-xs">{topProblemProjects.length}</Badge>
-            </div>
-            <div className="rounded-lg border border-border/60 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
-                    <th className="text-left py-2 px-3 font-medium">Project</th>
-                    <th className="text-left py-2 px-2 font-medium hidden sm:table-cell">PM</th>
-                    <th className="text-center py-2 px-2 font-medium">RAG</th>
-                    <th className="text-left py-2 px-2 font-medium hidden md:table-cell">Phase</th>
-                    <th className="text-right py-2 px-2 font-medium hidden lg:table-cell">Margin</th>
-                    <th className="text-center py-2 px-2 font-medium">Issues</th>
-                    <th className="w-8 py-2 px-1"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topProblemProjects.map((p) => (
-                    <tr key={p.projectId} className="border-t border-border/40 hover:bg-muted/30 cursor-pointer transition-colors" onClick={() => openProject(p)}>
-                      <td className="py-2 px-3 font-medium truncate max-w-[200px]">{p.projectName}</td>
-                      <td className={`py-2 px-2 text-xs hidden sm:table-cell ${isValidPmName(p.pm) ? "text-muted-foreground" : "text-amber-600 italic"}`}>{displayPmName(p.pm) || "—"}</td>
-                      <td className="py-2 px-2 text-center"><Badge className={`text-[10px] ${ragBadgeClasses(p.rag)}`}>{p.rag}</Badge></td>
-                      <td className="py-2 px-2 text-muted-foreground text-xs hidden md:table-cell">{p.executionPhase || "—"}</td>
-                      <td className="py-2 px-2 text-right tabular-nums text-xs hidden lg:table-cell">{p.grossMarginPctFy === null ? "—" : `${p.grossMarginPctFy}%`}</td>
-                      <td className="py-2 px-2 text-center">
-                        {p.criticalActionCount > 0 ? (
-                          <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">{p.criticalActionCount}</Badge>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">0</span>
-                        )}
+                      <td className="py-2.5 px-3 font-medium truncate max-w-[180px]">{p.projectName}</td>
+                      <td className="py-2.5 px-3 text-xs text-muted-foreground hidden sm:table-cell">{p.pm || "—"}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums text-muted-foreground">{formatCurrencyCompact(p.plannedRevenueFy)}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums text-emerald-600 font-semibold">{formatCurrencyCompact(p.receivedInflowFy)}</td>
+                      <td className={`py-2.5 px-3 text-right tabular-nums font-bold ${p.openInflowFy > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+                        {formatCurrencyCompact(p.openInflowFy)}
                       </td>
-                      <td className="py-2 px-1 text-center">
-                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600" onClick={(e) => { e.stopPropagation(); openProject(p); }}>
+                      <td className="py-2.5 px-1 text-center">
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600">
                           <ArrowRight className="w-4 h-4" />
                         </Button>
                       </td>
                     </tr>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+              </tbody>
+              <tfoot className="bg-muted/40 border-t-2 border-border sticky bottom-0">
+                <tr className="text-[11px] font-semibold">
+                  <td className="py-2 px-3" colSpan={2}>Total ({filteredProjects.length} projects)</td>
+                  <td className="py-2 px-3 text-right tabular-nums">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.plannedRevenueFy, 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-emerald-600">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.receivedInflowFy, 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-amber-600">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.openInflowFy, 0))}</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </SheetContent>
+      </Sheet>
 
-      {/* 4. OPERATIONAL EXCEPTION PANELS */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        {/* Portfolio by Phase */}
-        <Card className="border-border/60">
-          <CardContent className="p-4">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Portfolio by Phase</h3>
-            <div className="space-y-2">
-              {phaseDistribution.map(([phase, count]) => {
-                const pct = Math.round((count / (filteredProjects.length || 1)) * 100);
-                return (
-                  <div key={phase}>
-                    <div className="flex justify-between text-xs mb-0.5">
-                      <span className="truncate font-medium">{phase}</span>
-                      <span className="text-muted-foreground ml-2">{count} ({pct}%)</span>
-                    </div>
-                    <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                      <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* RAG Distribution */}
-        <Card className="border-border/60">
-          <CardContent className="p-4">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">RAG Distribution</h3>
-            <div className="space-y-2">
-              {Object.entries(ragDistribution).map(([rag, count]) => {
-                const pct = Math.round((count / (filteredProjects.length || 1)) * 100);
-                const colors: Record<string, string> = { Red: "bg-red-500", Amber: "bg-amber-500", Green: "bg-emerald-500", Unknown: "bg-slate-400" };
-                return (
-                  <div key={rag}>
-                    <div className="flex justify-between text-xs mb-0.5">
-                      <span className="font-medium">{rag}</span>
-                      <span className="text-muted-foreground">{count} ({pct}%)</span>
-                    </div>
-                    <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                      <div className={`h-full rounded-full ${colors[rag] || colors.Unknown}`} style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Decision Queue */}
-        <Card className="border-border/60">
-          <CardContent className="p-4">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Decision Queue</h3>
-            {kpis.pendingApprovals === 0 ? (
-              <p className="text-xs text-muted-foreground">No pending decisions</p>
-            ) : (
-              <div className="space-y-1.5">
-                {actionRows
-                  .filter((r) => r.queue?.toLowerCase().includes("approval"))
-                  .slice(0, 5)
-                  .map((r, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs group cursor-pointer" onClick={() => setLocation(r.link)}>
-                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${r.severity === "critical" ? "bg-red-500" : "bg-amber-500"}`} />
-                      <span className="truncate group-hover:text-emerald-600 transition-colors">{r.projectName}: {r.issueTitle}</span>
-                    </div>
+      {/* COS outstanding drill-down Sheet */}
+      <Sheet open={cosSheetOpen} onOpenChange={setCosSheetOpen}>
+        <SheetContent className="sm:max-w-[860px] w-full overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <TrendingDown className="w-5 h-5 text-orange-500" />
+              Cost of Sales &amp; Expenditure — By Project
+            </SheetTitle>
+          </SheetHeader>
+          <p className="text-[11px] text-muted-foreground mt-2">
+            Sorted by open expenditure (largest first). Figures are for the current financial year across all active projects regardless of active filters.
+          </p>
+          <div className="mt-3 border rounded-lg overflow-auto max-h-[72vh]">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 sticky top-0 z-10">
+                <tr className="text-[11px] uppercase tracking-wider text-muted-foreground border-b">
+                  <th className="text-left py-2.5 px-3 font-medium">Project</th>
+                  <th className="text-left py-2.5 px-3 font-medium hidden sm:table-cell">PM</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Planned COS</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Paid</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Open</th>
+                  <th className="w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...filteredProjects]
+                  .sort((a, b) => (b.openExpenditureFy ?? 0) - (a.openExpenditureFy ?? 0))
+                  .map((p) => (
+                    <tr
+                      key={p.projectId}
+                      className="border-t border-border/40 hover:bg-muted/30 cursor-pointer"
+                      onClick={() => { openProject(p, "expenditure"); setCosSheetOpen(false); }}
+                    >
+                      <td className="py-2.5 px-3 font-medium truncate max-w-[180px]">{p.projectName}</td>
+                      <td className="py-2.5 px-3 text-xs text-muted-foreground hidden sm:table-cell">{p.pm || "—"}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums text-muted-foreground">{formatCurrencyCompact(p.plannedExpenditureFy)}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums text-emerald-600 font-semibold">{formatCurrencyCompact(p.paidExpenditureFy)}</td>
+                      <td className={`py-2.5 px-3 text-right tabular-nums font-bold ${p.openExpenditureFy > 0 ? "text-orange-600" : "text-emerald-600"}`}>
+                        {formatCurrencyCompact(p.openExpenditureFy)}
+                      </td>
+                      <td className="py-2.5 px-1 text-center">
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600">
+                          <ArrowRight className="w-4 h-4" />
+                        </Button>
+                      </td>
+                    </tr>
                   ))}
-                {kpis.pendingApprovals > 5 && (
-                  <p className="text-[10px] text-muted-foreground">+{kpis.pendingApprovals - 5} more</p>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              </tbody>
+              <tfoot className="bg-muted/40 border-t-2 border-border sticky bottom-0">
+                <tr className="text-[11px] font-semibold">
+                  <td className="py-2 px-3" colSpan={2}>Total ({filteredProjects.length} projects)</td>
+                  <td className="py-2 px-3 text-right tabular-nums">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.plannedExpenditureFy, 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-emerald-600">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.paidExpenditureFy, 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-orange-600">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.openExpenditureFy, 0))}</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </SheetContent>
+      </Sheet>
 
-        {/* Cash / Exposure Alert */}
-        <Card className="border-border/60">
-          <CardContent className="p-4">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Cash / Exposure Alerts</h3>
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Inflow Risk Projects</span>
-                <span className={`font-medium ${kpis.inflowRiskProjects > 0 ? "text-red-600" : "text-emerald-600"}`}>{kpis.inflowRiskProjects}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Outflow Risk Projects</span>
-                <span className={`font-medium ${kpis.outflowRiskProjects > 0 ? "text-red-600" : "text-emerald-600"}`}>{kpis.outflowRiskProjects}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Revenue Outstanding</span>
-                <span className="font-medium text-amber-600">{formatCurrencyCompact(kpis.openInflowFy)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Expense Outstanding</span>
-                <span className="font-medium text-amber-600">{formatCurrencyCompact(kpis.openExpenditureFy)}</span>
-              </div>
-              <div className="flex justify-between border-t pt-1.5">
-                <span className="text-muted-foreground">Margin Variance</span>
-                <span className={`font-medium ${(kpis.marginVariancePct ?? 0) < 0 ? "text-red-600" : "text-emerald-600"}`}>
-                  {kpis.marginVariancePct !== null ? `${kpis.marginVariancePct > 0 ? "+" : ""}${kpis.marginVariancePct}%` : "—"}
-                </span>
-              </div>
+      {/* All Projects / Schedule drill-down Sheet */}
+      <Sheet open={scheduleSheetOpen} onOpenChange={setScheduleSheetOpen}>
+        <SheetContent className="sm:max-w-[900px] w-full overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <Clock className="w-5 h-5 text-red-500" />
+              All Projects — Schedule Status
+            </SheetTitle>
+          </SheetHeader>
+
+          {/* Summary strip */}
+          <div className="mt-3 grid grid-cols-4 gap-2">
+            <div className="bg-slate-50 rounded-lg border p-2 text-center">
+              <p className="text-[10px] text-muted-foreground font-medium">TOTAL</p>
+              <p className="text-xl font-bold">{filteredProjects.length}</p>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+            <div className="bg-emerald-50 rounded-lg border border-emerald-200 p-2 text-center">
+              <p className="text-[10px] text-emerald-700 font-medium">ON SCHEDULE</p>
+              <p className="text-xl font-bold text-emerald-600">{onScheduleCount}</p>
+            </div>
+            <div className="bg-red-50 rounded-lg border border-red-200 p-2 text-center">
+              <p className="text-[10px] text-red-700 font-medium">BEHIND</p>
+              <p className="text-xl font-bold text-red-600">{behindCount}</p>
+            </div>
+            <div className="bg-blue-50 rounded-lg border border-blue-200 p-2 text-center">
+              <p className="text-[10px] text-blue-700 font-medium">ON SCHEDULE RATE</p>
+              <p className="text-xl font-bold text-blue-600">{kpis.onScheduleRate}%</p>
+            </div>
+          </div>
+
+          <p className="text-[10px] text-muted-foreground mt-2 px-0.5">
+            "Behind" = actual progress more than 5 pp below expected. Sorted worst variance first.
+          </p>
+
+          <div className="mt-3 border rounded-lg overflow-auto max-h-[65vh]">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 sticky top-0 z-10">
+                <tr className="text-[11px] uppercase tracking-wider text-muted-foreground border-b">
+                  <th className="text-left py-2.5 px-3 font-medium">Project</th>
+                  <th className="text-left py-2.5 px-3 font-medium hidden md:table-cell">PM</th>
+                  <th className="text-left py-2.5 px-3 font-medium hidden lg:table-cell">Phase</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Actual %</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Expected %</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Variance</th>
+                  <th className="text-center py-2.5 px-3 font-medium">Status</th>
+                  <th className="w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...filteredProjects]
+                  .sort((a, b) => ((a.scheduleVariancePct ?? 0) - (b.scheduleVariancePct ?? 0)))
+                  .map((p) => {
+                    const onSchedule = !p.behindPlan; // same source as tile values
+                    const variance = p.scheduleVariancePct ?? 0;
+                    return (
+                      <tr
+                        key={p.projectId}
+                        className={`border-t border-border/40 hover:bg-muted/30 cursor-pointer ${!onSchedule ? "bg-red-50/30" : ""}`}
+                        onClick={() => { openProject(p, "plan"); setScheduleSheetOpen(false); }}
+                      >
+                        <td className="py-2.5 px-3 font-medium truncate max-w-[180px]">{p.projectName}</td>
+                        <td className="py-2.5 px-3 text-xs text-muted-foreground hidden md:table-cell">{p.pm || "—"}</td>
+                        <td className="py-2.5 px-3 text-xs text-muted-foreground hidden lg:table-cell">{p.executionPhase || "—"}</td>
+                        <td className="py-2.5 px-3 text-right tabular-nums font-semibold">
+                          {p.actualProgressPct != null ? `${p.actualProgressPct}%` : "—"}
+                        </td>
+                        <td className="py-2.5 px-3 text-right tabular-nums text-muted-foreground">
+                          {p.expectedProgressPct != null ? `${p.expectedProgressPct}%` : "—"}
+                        </td>
+                        <td className={`py-2.5 px-3 text-right tabular-nums font-semibold ${variance < -5 ? "text-red-600" : variance < 0 ? "text-amber-600" : variance > 0 ? "text-emerald-600" : "text-muted-foreground"}`}>
+                          {p.scheduleVariancePct != null ? `${variance > 0 ? "+" : ""}${variance}%` : "—"}
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          {onSchedule
+                            ? <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px]">On Schedule</Badge>
+                            : <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">Behind Plan</Badge>}
+                        </td>
+                        <td className="py-2.5 px-1 text-center">
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600">
+                            <ArrowRight className="w-4 h-4" />
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Contract Completeness drill-down Sheet */}
+      <Sheet open={contractSheetOpen} onOpenChange={setContractSheetOpen}>
+        <SheetContent className="sm:max-w-[800px] w-full overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-blue-500" />
+              Contract Completeness — {kpis.contractCompleteness}%
+            </SheetTitle>
+          </SheetHeader>
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <div className="bg-emerald-50 rounded-lg border border-emerald-200 p-2 text-center">
+              <p className="text-[10px] text-emerald-700 font-medium">FULLY SIGNED</p>
+              <p className="text-xl font-bold text-emerald-600">{fullySignedCount}</p>
+            </div>
+            <div className="bg-amber-50 rounded-lg border border-amber-200 p-2 text-center">
+              <p className="text-[10px] text-amber-700 font-medium">PARTIAL</p>
+              <p className="text-xl font-bold text-amber-600">
+                {filteredProjects.filter((p) => (p.cpSigned || p.signedStatus !== "NONE") && !(p.cpSigned && p.signedStatus === "SIGNED")).length}
+              </p>
+            </div>
+            <div className="bg-red-50 rounded-lg border border-red-200 p-2 text-center">
+              <p className="text-[10px] text-red-700 font-medium">UNSIGNED</p>
+              <p className="text-xl font-bold text-red-600">
+                {filteredProjects.filter((p) => !p.cpSigned && p.signedStatus === "NONE").length}
+              </p>
+            </div>
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-2 px-0.5">CP = Cost Proposal signed · EPC = Contract status SIGNED</p>
+          <div className="mt-3 border rounded-lg overflow-auto max-h-[65vh]">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 sticky top-0">
+                <tr className="text-[11px] uppercase tracking-wider text-muted-foreground border-b">
+                  <th className="text-left py-2.5 px-3 font-medium">Project</th>
+                  <th className="text-left py-2.5 px-3 font-medium hidden sm:table-cell">PM</th>
+                  <th className="text-center py-2.5 px-3 font-medium">CP Signed</th>
+                  <th className="text-center py-2.5 px-3 font-medium">EPC Contract</th>
+                  <th className="text-center py-2.5 px-3 font-medium">Status</th>
+                  <th className="w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...filteredProjects]
+                  .sort((a, b) => {
+                    const aComplete = a.cpSigned && a.signedStatus === "SIGNED";
+                    const bComplete = b.cpSigned && b.signedStatus === "SIGNED";
+                    if (aComplete !== bComplete) return aComplete ? 1 : -1;
+                    return (a.projectName || "").localeCompare(b.projectName || "");
+                  })
+                  .map((p) => {
+                    const complete = p.cpSigned && p.signedStatus === "SIGNED";
+                    const partial = (p.cpSigned || p.signedStatus !== "NONE") && !complete;
+                    return (
+                      <tr
+                        key={p.projectId}
+                        className="border-t border-border/40 hover:bg-muted/30 cursor-pointer"
+                        onClick={() => { openProject(p); setContractSheetOpen(false); }}
+                      >
+                        <td className="py-2.5 px-3 font-medium truncate max-w-[200px]">{p.projectName}</td>
+                        <td className="py-2.5 px-3 text-xs text-muted-foreground hidden sm:table-cell">{p.pm || "—"}</td>
+                        <td className="py-2.5 px-3 text-center">
+                          {p.cpSigned
+                            ? <CheckCircle2 className="w-4 h-4 text-emerald-600 mx-auto" />
+                            : <XCircle className="w-4 h-4 text-red-400 mx-auto" />}
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <Badge className={`text-[10px] ${p.signedStatus === "SIGNED" ? "bg-emerald-100 text-emerald-700" : p.signedStatus === "PENDING" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
+                            {p.signedStatus}
+                          </Badge>
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          {complete
+                            ? <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px]">Complete</Badge>
+                            : partial
+                              ? <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px]">Partial</Badge>
+                              : <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">Unsigned</Badge>}
+                        </td>
+                        <td className="py-2.5 px-1 text-center">
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600">
+                            <ArrowRight className="w-4 h-4" />
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
 
-function KpiCard({ icon, iconBg, label, value, sub, valueClass }: {
+function KpiTile({
+  label, value, valueClass, sub, icon, iconBg, cta, onClick,
+}: {
+  label: string;
+  value: string;
+  valueClass?: string;
+  sub: string;
   icon: React.ReactNode;
   iconBg: string;
-  label: string;
-  value: React.ReactNode;
-  sub?: string;
-  valueClass?: string;
+  cta: string;
+  onClick: () => void;
 }) {
   return (
-    <Card className="border-border/60">
-      <CardContent className="p-3">
-        <div className="flex items-center gap-2 mb-1.5">
-          <div className={`w-7 h-7 rounded-lg ${iconBg} flex items-center justify-center shrink-0`}>{icon}</div>
-          <span className="text-[10px] text-muted-foreground font-medium leading-tight">{label}</span>
+    <button
+      onClick={onClick}
+      className="w-full text-left bg-white rounded-xl border border-border/60 p-5 hover:shadow-md hover:border-emerald-300 transition-all group"
+    >
+      <div className="flex items-center gap-3 mb-3">
+        <div className={`w-9 h-9 rounded-lg ${iconBg} flex items-center justify-center shrink-0`}>
+          {icon}
         </div>
-        <p className={`text-lg font-bold tabular-nums ${valueClass || ""}`}>{value}</p>
-        {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
-      </CardContent>
-    </Card>
+        <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide leading-tight">{label}</span>
+      </div>
+      <p className={`text-3xl font-bold tabular-nums ${valueClass || ""}`}>{value}</p>
+      <p className="text-xs text-muted-foreground mt-1.5 leading-snug">{sub}</p>
+      <p className="text-[11px] font-medium text-emerald-600 mt-3 group-hover:underline">{cta} →</p>
+    </button>
   );
 }
-
