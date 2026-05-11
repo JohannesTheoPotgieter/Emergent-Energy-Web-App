@@ -1,9 +1,8 @@
 import React, { useState } from "react";
-import { useLocation } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { formatCurrencyCompact } from "@/lib/execution-dashboard";
+import { formatCurrencyCompact, formatCurrencyFull } from "@/lib/execution-dashboard";
 import {
   Activity, TrendingDown, DollarSign,
   ArrowRight, CheckCircle2, XCircle, Banknote, Clock,
@@ -12,9 +11,10 @@ import { useExecutionData } from "./use-execution-data";
 
 export default function OverviewPage() {
   const { kpis, filteredProjects, openProject, dashboard } = useExecutionData();
-  const [, setLocation] = useLocation();
   const [scheduleSheetOpen, setScheduleSheetOpen] = useState(false);
   const [contractSheetOpen, setContractSheetOpen] = useState(false);
+  const [revenueSheetOpen, setRevenueSheetOpen] = useState(false);
+  const [cosSheetOpen, setCosSheetOpen] = useState(false);
 
   const behindCount = kpis.projectsBehindPlan;               // server boolean — canonical
   const onScheduleCount = filteredProjects.length - behindCount; // always sums to total
@@ -68,11 +68,11 @@ export default function OverviewPage() {
           label="Rev Outstanding This Month"
           value={formatCurrencyCompact(dashboard?.kpis.revenueOutstandingThisMonth ?? 0)}
           valueClass="text-amber-600"
-          sub="Revenue planned but not yet received in current month"
+          sub="Revenue planned but not yet received this month · all active projects"
           icon={<DollarSign className="w-5 h-5 text-amber-600" />}
           iconBg="bg-amber-100"
-          cta="View Finance"
-          onClick={() => setLocation("/execution-board/finance")}
+          cta="View by project"
+          onClick={() => setRevenueSheetOpen(true)}
         />
 
         {/* 5 — COS Outstanding This Month */}
@@ -80,37 +80,161 @@ export default function OverviewPage() {
           label="COS Outstanding This Month"
           value={formatCurrencyCompact(dashboard?.kpis.cosOutstandingThisMonth ?? 0)}
           valueClass="text-orange-600"
-          sub="Cost of sales planned but not yet paid in current month"
+          sub="Cost of sales planned but not yet paid this month · all active projects"
           icon={<TrendingDown className="w-5 h-5 text-orange-600" />}
           iconBg="bg-orange-100"
-          cta="View Finance"
-          onClick={() => setLocation("/execution-board/finance")}
+          cta="View by project"
+          onClick={() => setCosSheetOpen(true)}
         />
 
         {/* 6 — Inflows This Week */}
         <KpiTile
-          label="Inflows This Week"
+          label="Revenue Inflows This Week"
           value={formatCurrencyCompact(dashboard?.kpis.projectInflowsThisWeek ?? 0)}
           valueClass="text-blue-600"
-          sub="Cashflow inflows expected Mon–Sun this week"
+          sub="Cashflow revenue series expected Mon–Sun this week · all active projects"
           icon={<Banknote className="w-5 h-5 text-blue-600" />}
           iconBg="bg-blue-100"
-          cta="View Finance"
-          onClick={() => setLocation("/execution-board/finance")}
+          cta="View by project"
+          onClick={() => setRevenueSheetOpen(true)}
         />
 
         {/* 7 — Outflows This Week */}
         <KpiTile
-          label="Outflows This Week"
+          label="Expenditure Outflows This Week"
           value={formatCurrencyCompact(dashboard?.kpis.projectOutflowsThisWeek ?? 0)}
           valueClass="text-red-600"
-          sub="Cashflow outflows expected Mon–Sun this week"
+          sub="Cashflow expenditure series expected Mon–Sun this week · all active projects"
           icon={<TrendingDown className="w-5 h-5 text-red-600" />}
           iconBg="bg-red-100"
-          cta="View Finance"
-          onClick={() => setLocation("/execution-board/finance")}
+          cta="View by project"
+          onClick={() => setCosSheetOpen(true)}
         />
       </div>
+
+      {/* Revenue outstanding drill-down Sheet */}
+      <Sheet open={revenueSheetOpen} onOpenChange={setRevenueSheetOpen}>
+        <SheetContent className="sm:max-w-[860px] w-full overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <DollarSign className="w-5 h-5 text-amber-500" />
+              Revenue &amp; Cashflow — By Project
+            </SheetTitle>
+          </SheetHeader>
+          <p className="text-[11px] text-muted-foreground mt-2">
+            Sorted by open revenue (largest first). Figures are for the current financial year across all active projects regardless of active filters.
+          </p>
+          <div className="mt-3 border rounded-lg overflow-auto max-h-[72vh]">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 sticky top-0 z-10">
+                <tr className="text-[11px] uppercase tracking-wider text-muted-foreground border-b">
+                  <th className="text-left py-2.5 px-3 font-medium">Project</th>
+                  <th className="text-left py-2.5 px-3 font-medium hidden sm:table-cell">PM</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Planned Rev</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Received</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Open</th>
+                  <th className="w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...filteredProjects]
+                  .sort((a, b) => (b.openInflowFy ?? 0) - (a.openInflowFy ?? 0))
+                  .map((p) => (
+                    <tr
+                      key={p.projectId}
+                      className="border-t border-border/40 hover:bg-muted/30 cursor-pointer"
+                      onClick={() => { openProject(p, "revenue"); setRevenueSheetOpen(false); }}
+                    >
+                      <td className="py-2.5 px-3 font-medium truncate max-w-[180px]">{p.projectName}</td>
+                      <td className="py-2.5 px-3 text-xs text-muted-foreground hidden sm:table-cell">{p.pm || "—"}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums text-muted-foreground">{formatCurrencyCompact(p.plannedRevenueFy)}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums text-emerald-600 font-semibold">{formatCurrencyCompact(p.receivedInflowFy)}</td>
+                      <td className={`py-2.5 px-3 text-right tabular-nums font-bold ${p.openInflowFy > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+                        {formatCurrencyCompact(p.openInflowFy)}
+                      </td>
+                      <td className="py-2.5 px-1 text-center">
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600">
+                          <ArrowRight className="w-4 h-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+              <tfoot className="bg-muted/40 border-t-2 border-border sticky bottom-0">
+                <tr className="text-[11px] font-semibold">
+                  <td className="py-2 px-3" colSpan={2}>Total ({filteredProjects.length} projects)</td>
+                  <td className="py-2 px-3 text-right tabular-nums">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.plannedRevenueFy, 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-emerald-600">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.receivedInflowFy, 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-amber-600">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.openInflowFy, 0))}</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* COS outstanding drill-down Sheet */}
+      <Sheet open={cosSheetOpen} onOpenChange={setCosSheetOpen}>
+        <SheetContent className="sm:max-w-[860px] w-full overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <TrendingDown className="w-5 h-5 text-orange-500" />
+              Cost of Sales &amp; Expenditure — By Project
+            </SheetTitle>
+          </SheetHeader>
+          <p className="text-[11px] text-muted-foreground mt-2">
+            Sorted by open expenditure (largest first). Figures are for the current financial year across all active projects regardless of active filters.
+          </p>
+          <div className="mt-3 border rounded-lg overflow-auto max-h-[72vh]">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 sticky top-0 z-10">
+                <tr className="text-[11px] uppercase tracking-wider text-muted-foreground border-b">
+                  <th className="text-left py-2.5 px-3 font-medium">Project</th>
+                  <th className="text-left py-2.5 px-3 font-medium hidden sm:table-cell">PM</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Planned COS</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Paid</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Open</th>
+                  <th className="w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...filteredProjects]
+                  .sort((a, b) => (b.openExpenditureFy ?? 0) - (a.openExpenditureFy ?? 0))
+                  .map((p) => (
+                    <tr
+                      key={p.projectId}
+                      className="border-t border-border/40 hover:bg-muted/30 cursor-pointer"
+                      onClick={() => { openProject(p, "expenditure"); setCosSheetOpen(false); }}
+                    >
+                      <td className="py-2.5 px-3 font-medium truncate max-w-[180px]">{p.projectName}</td>
+                      <td className="py-2.5 px-3 text-xs text-muted-foreground hidden sm:table-cell">{p.pm || "—"}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums text-muted-foreground">{formatCurrencyCompact(p.plannedExpenditureFy)}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums text-emerald-600 font-semibold">{formatCurrencyCompact(p.paidExpenditureFy)}</td>
+                      <td className={`py-2.5 px-3 text-right tabular-nums font-bold ${p.openExpenditureFy > 0 ? "text-orange-600" : "text-emerald-600"}`}>
+                        {formatCurrencyCompact(p.openExpenditureFy)}
+                      </td>
+                      <td className="py-2.5 px-1 text-center">
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600">
+                          <ArrowRight className="w-4 h-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+              <tfoot className="bg-muted/40 border-t-2 border-border sticky bottom-0">
+                <tr className="text-[11px] font-semibold">
+                  <td className="py-2 px-3" colSpan={2}>Total ({filteredProjects.length} projects)</td>
+                  <td className="py-2 px-3 text-right tabular-nums">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.plannedExpenditureFy, 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-emerald-600">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.paidExpenditureFy, 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-orange-600">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.openExpenditureFy, 0))}</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* All Projects / Schedule drill-down Sheet */}
       <Sheet open={scheduleSheetOpen} onOpenChange={setScheduleSheetOpen}>
