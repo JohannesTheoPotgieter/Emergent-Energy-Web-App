@@ -5,7 +5,7 @@ import { computeCostEvidence } from "../lib/finance/qb-allocation";
 import { getAssignedEvidenceByCostLineIds } from "../lib/finance/qb-allocation-read";
 import { logAudit } from "../audit-logger";
 import {
-  normalizedCostLines, normalizedCostLineActuals, projectInfo,
+  normalizedCostLines, normalizedCostLineActuals, projectInfo, smartImportRuns,
   type ProgramExpense, type InsertProgramExpense,
 } from "@shared/schema";
 import { db } from "../db";
@@ -92,9 +92,30 @@ export class FinanceExpenseEngineRepository {
       this.dbInstance.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
       this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
     ]);
-    const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
 
-    const enrichedRows = await this.attachAllocationEvidence(costLines as any[]);
+    // Build snapshotRunId → committedAt map so rows that haven't changed
+    // between imports still report the most-recent import timestamp (not their
+    // original createdAt, which never updates for stable rows).
+    const runIds = [...new Set(
+      costLines.map((r: any) => r.snapshotRunId).filter((id: any) => id != null) as number[],
+    )];
+    const committedAtByRunId = new Map<number, string | null>();
+    if (runIds.length > 0) {
+      const runRows = await this.dbInstance
+        .select({ id: smartImportRuns.id, committedAt: smartImportRuns.committedAt })
+        .from(smartImportRuns)
+        .where(inArray(smartImportRuns.id, runIds));
+      for (const r of runRows) {
+        committedAtByRunId.set(r.id, r.committedAt ? new Date(r.committedAt).toISOString() : null);
+      }
+    }
+    const costLinesWithTs = costLines.map((r: any) => ({
+      ...r,
+      snapshotRunCommittedAt: committedAtByRunId.get(r.snapshotRunId) ?? null,
+    }));
+
+    const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
+    const enrichedRows = await this.attachAllocationEvidence(costLinesWithTs as any[]);
     const attributed = resolveCostRowProjectNames(enrichedRows as any[], piRows as any[], "[getAllCostLinesForCashflow]");
     const adapted = attributed.map(({ row, name }) => adaptCostToExpense(row, resolve(name)));
     const { winners, diagnostics } = selectWinningExpenseRows(adapted);

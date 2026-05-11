@@ -6,7 +6,7 @@
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
-      "loc": 7729
+      "loc": 7732
     },
     {
       "file": "client/src/pages/EngineeringTasksPage.tsx",
@@ -93,16 +93,16 @@
       "loc": 2109
     },
     {
+      "file": "client/src/pages/cashflow.tsx",
+      "loc": 2094
+    },
+    {
       "file": "client/src/pages/lifecycle-board.tsx",
       "loc": 2082
     },
     {
       "file": "client/src/pages/project-detail.tsx",
       "loc": 2064
-    },
-    {
-      "file": "client/src/pages/cashflow.tsx",
-      "loc": 2048
     },
     {
       "file": "server/departments/opportunities-routes.ts",

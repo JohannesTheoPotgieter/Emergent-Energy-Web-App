@@ -163,6 +163,7 @@ import {
   resolveQbMatch,
 } from "../lib/quickbooks-status";
 import { QuickBooksLinksRepository } from "../repositories/quickbooks-links-repository";
+import { computeDateShiftDays, isQbDivergent } from "@shared/lib/cashflow-trust";
 
 const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
 
@@ -1105,12 +1106,16 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
     console.log(`[Cashflow2026] Expenses: ${allExpenses.length} total (${normalizedCount} normalized, ${legacyCount} legacy), ${itemCount} items. Outflows YTD: ${totalOutflowsYtd.toFixed(0)} (actual ${actualOutflowsYtd.toFixed(0)}, forecast ${forecastOutflowsYtd.toFixed(0)})`);
 
     const summaryLastImportDate = itemExpenses.reduce<string | null>((max, e: any) => {
-      const at = e.createdAt ? new Date(e.createdAt).toISOString() : null;
+      const at = (e.snapshotRunCommittedAt || e.createdAt)
+        ? new Date(e.snapshotRunCommittedAt ?? e.createdAt).toISOString()
+        : null;
       if (!at) return max;
       return max === null || at > max ? at : max;
     }, null);
     const summaryMissingTermsCount = itemExpenses.filter(
-      (e: any) => !!e.forecastPaymentDate && !e.counterpartyId
+      (e: any) =>
+        (e.computedState === "Committed" || e.computedState === "Invoiced") &&
+        !e.forecastPaymentDate
     ).length;
     const summaryShiftedLineCount = itemExpenses.filter((e: any) => {
       const days = computeDateShiftDays(
@@ -1158,12 +1163,6 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
     res.status(500).json({ error: "Failed to fetch cashflow 2026 data", message: "Failed to fetch cashflow 2026 data" });
   }
 });
-
-function computeDateShiftDays(prev: unknown, curr: unknown): number | null {
-  if (typeof prev !== "string" || typeof curr !== "string") return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(prev) || !/^\d{4}-\d{2}-\d{2}$/.test(curr)) return null;
-  return Math.round((new Date(curr).getTime() - new Date(prev).getTime()) / 864e5);
-}
 
 router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow", "view"), async (req, res) => {
   try {
@@ -1222,11 +1221,13 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
           dateSource: dateInfo.source,
           expenseActualTotal: amountBreakdown.amount,
           supplierName: e.supplierName || null,
-          lastImportedAt: (e as any).createdAt
-            ? new Date((e as any).createdAt).toISOString()
+          rowNumber: (e as any).rowNumber ?? null,
+          lastImportedAt: ((e as any).snapshotRunCommittedAt || (e as any).createdAt)
+            ? new Date((e as any).snapshotRunCommittedAt ?? (e as any).createdAt).toISOString()
             : null,
           paymentTermsMissing:
-            !!((e as any).forecastPaymentDate) && !(e as any).counterpartyId,
+            ((e as any).computedState === "Committed" || (e as any).computedState === "Invoiced") &&
+            !((e as any).forecastPaymentDate),
           forecastDateShiftDays: computeDateShiftDays(
             ((e as any).importSnapshot as Record<string, unknown> | null)
               ?.forecastPaymentDate,
@@ -1268,8 +1269,8 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
           daysToReceipt,
           isOverride: inf.effectiveDate !== inf.paymentReceivedDate,
           customerName: inf.customerName || null,
-          lastImportedAt: (inf as any).createdAt
-            ? new Date((inf as any).createdAt).toISOString()
+          lastImportedAt: ((inf as any).snapshotRunCommittedAt || (inf as any).createdAt)
+            ? new Date((inf as any).snapshotRunCommittedAt ?? (inf as any).createdAt).toISOString()
             : null,
         };
       });
@@ -1307,6 +1308,7 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
         counterpartyName: b.vendorName ?? null,
         txnDate: b.txnDate ?? null,
         statusDate: b.txnDate ?? null,
+        taxUncertain: b.taxUncertain ?? false,
       }));
       invoiceCandidates = (invoicesRaw?.QueryResponse?.Invoice ?? []).map(invoiceRawToSummary).map((inv: any) => ({
         id: String(inv.id),
@@ -1316,6 +1318,7 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
         counterpartyName: inv.customerName ?? null,
         txnDate: inv.txnDate ?? null,
         statusDate: inv.txnDate ?? null,
+        taxUncertain: inv.taxUncertain ?? false,
       }));
 
       const outflowIds = outflows.map((o: any) => Number(o.expenseId)).filter((id: number) => Number.isFinite(id));
@@ -1355,11 +1358,11 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
         : match.qbMatchConfidence === "low"
           ? "low_confidence"
           : null;
-      const qbDivergence =
-        !!match.matched &&
-        match.matched.totalAmount !== null &&
-        row.expenseActualTotal !== null &&
-        Math.abs(Number(row.expenseActualTotal) - Number(match.matched.totalAmount)) > 100;
+      const qbDivergence = !!match.matched && isQbDivergent(
+        row.expenseActualTotal !== null ? Number(row.expenseActualTotal) : null,
+        match.matched.totalAmount,
+        match.matched.taxUncertain,
+      );
       return {
         ...row,
         qbStatus,
@@ -1391,11 +1394,11 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
         : match.qbMatchConfidence === "low"
           ? "low_confidence"
           : null;
-      const qbDivergence =
-        !!match.matched &&
-        match.matched.totalAmount !== null &&
-        row.milestoneAmount !== null &&
-        Math.abs(Number(row.milestoneAmount) - Number(match.matched.totalAmount)) > 100;
+      const qbDivergence = !!match.matched && isQbDivergent(
+        row.milestoneAmount !== null ? Number(row.milestoneAmount) : null,
+        match.matched.totalAmount,
+        match.matched.taxUncertain,
+      );
       return {
         ...row,
         qbStatus,
