@@ -1104,6 +1104,27 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
     diagnostics.forecastOutflowsYtd = forecastOutflowsYtd;
     console.log(`[Cashflow2026] Expenses: ${allExpenses.length} total (${normalizedCount} normalized, ${legacyCount} legacy), ${itemCount} items. Outflows YTD: ${totalOutflowsYtd.toFixed(0)} (actual ${actualOutflowsYtd.toFixed(0)}, forecast ${forecastOutflowsYtd.toFixed(0)})`);
 
+    const summaryLastImportDate = itemExpenses.reduce<string | null>((max, e: any) => {
+      const at = e.createdAt ? new Date(e.createdAt).toISOString() : null;
+      if (!at) return max;
+      return max === null || at > max ? at : max;
+    }, null);
+    const summaryMissingTermsCount = itemExpenses.filter(
+      (e: any) => !!e.forecastPaymentDate && !e.counterpartyId
+    ).length;
+    const summaryShiftedLineCount = itemExpenses.filter((e: any) => {
+      const days = computeDateShiftDays(
+        (e.importSnapshot as Record<string, unknown> | null)?.forecastPaymentDate,
+        e.forecastPaymentDate,
+      );
+      return days !== null && Math.abs(days) > 14;
+    }).length;
+    const summary = {
+      lastImportDate: summaryLastImportDate,
+      missingTermsCount: summaryMissingTermsCount,
+      shiftedLineCount: summaryShiftedLineCount,
+    };
+
     const overrideInEffect = weeks.some(
       (w: any) => w.hasManualOverride === true || w.hasOpexOverride === true || w.hasAvailPayOverride === true,
     );
@@ -1119,6 +1140,7 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
     if (includeDebug) {
       return res.json({
         weeks,
+        summary,
         nullCount: cashflowNullCount,
         debug: {
           ...diagnostics,
@@ -1130,12 +1152,18 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
       });
     }
 
-    res.json(weeks);
+    res.json({ weeks, summary });
   } catch (error) {
     console.error("Cashflow 2026 error:", error);
     res.status(500).json({ error: "Failed to fetch cashflow 2026 data", message: "Failed to fetch cashflow 2026 data" });
   }
 });
+
+function computeDateShiftDays(prev: unknown, curr: unknown): number | null {
+  if (typeof prev !== "string" || typeof curr !== "string") return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(prev) || !/^\d{4}-\d{2}-\d{2}$/.test(curr)) return null;
+  return Math.round((new Date(curr).getTime() - new Date(prev).getTime()) / 864e5);
+}
 
 router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow", "view"), async (req, res) => {
   try {
@@ -1194,6 +1222,16 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
           dateSource: dateInfo.source,
           expenseActualTotal: amountBreakdown.amount,
           supplierName: e.supplierName || null,
+          lastImportedAt: (e as any).createdAt
+            ? new Date((e as any).createdAt).toISOString()
+            : null,
+          paymentTermsMissing:
+            !!((e as any).forecastPaymentDate) && !(e as any).counterpartyId,
+          forecastDateShiftDays: computeDateShiftDays(
+            ((e as any).importSnapshot as Record<string, unknown> | null)
+              ?.forecastPaymentDate,
+            (e as any).forecastPaymentDate,
+          ),
         };
       });
 
@@ -1230,6 +1268,9 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
           daysToReceipt,
           isOverride: inf.effectiveDate !== inf.paymentReceivedDate,
           customerName: inf.customerName || null,
+          lastImportedAt: (inf as any).createdAt
+            ? new Date((inf as any).createdAt).toISOString()
+            : null,
         };
       });
 
@@ -1314,6 +1355,11 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
         : match.qbMatchConfidence === "low"
           ? "low_confidence"
           : null;
+      const qbDivergence =
+        !!match.matched &&
+        match.matched.totalAmount !== null &&
+        row.expenseActualTotal !== null &&
+        Math.abs(Number(row.expenseActualTotal) - Number(match.matched.totalAmount)) > 100;
       return {
         ...row,
         qbStatus,
@@ -1324,6 +1370,7 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
         qbMatchType: match.qbMatchType,
         qbUncertain,
         qbUncertainReason,
+        qbDivergence,
       };
     });
 
@@ -1344,6 +1391,11 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
         : match.qbMatchConfidence === "low"
           ? "low_confidence"
           : null;
+      const qbDivergence =
+        !!match.matched &&
+        match.matched.totalAmount !== null &&
+        row.milestoneAmount !== null &&
+        Math.abs(Number(row.milestoneAmount) - Number(match.matched.totalAmount)) > 100;
       return {
         ...row,
         qbStatus,
@@ -1354,6 +1406,7 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
         qbMatchType: match.qbMatchType,
         qbUncertain,
         qbUncertainReason,
+        qbDivergence,
       };
     });
 
