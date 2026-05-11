@@ -4,10 +4,9 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db, getDbMode } from "./db";
 import { eq, sql, inArray, desc, and, isNull } from "drizzle-orm";
-import { projectInfo, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns, projectExecutionState, projectPhaseHistory, projectPdPmHandover, phaseTemplate } from "@shared/schema";
+import { projectInfo, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns, projectExecutionState, projectPhaseHistory, phaseTemplate } from "@shared/schema";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
-import { generateEngStagesForProject } from "./eng-stage-routes";
 import { logAuditFromReq } from "./audit-logger";
 import { requirePermission } from "./permission-middleware";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
@@ -326,6 +325,129 @@ function buildOverdueFinanceLedger(params: {
     ap: { totalAmount: apTotal, count: apItems.length, missingDueDateCount: apMissingDueDate, items: apItems },
     ar: { totalAmount: arTotal, count: arItems.length, missingDueDateCount: arMissingDueDate, items: arItems },
   };
+}
+
+/**
+ * Canonical phase-transition propagator.
+ *
+ * Side effects ONLY — does not write `projectInfo.phase` itself (caller is
+ * expected to have done that and called `syncProjectSplitTables`). Handles
+ * everything downstream of a successful phase change so that all entry
+ * points produce identical state:
+ *   - Stage instances: prior → PROGRESSED, current → IN_PROGRESS
+ *   - project_execution_state: currentStageCode + gateStatus + readinessPct
+ *   - project_phase_history audit row
+ *   - project.stage_changed event
+ *   - Async dashboard metric refresh
+ *
+ * Deliberately does NOT auto-spawn handover drafts, engineering stages,
+ * tickets, approvals, or any other user-facing work items. Phase moves
+ * are pure state changes (per Johannes, 2026-05-08).
+ */
+async function propagatePhaseSideEffects(opts: {
+  projectId: number;
+  canonicalPhase: string;
+  fromPhase: string | null;
+  actor: { actorUserId: number | null; actorRole: string | null };
+}): Promise<void> {
+  const { projectId: id, canonicalPhase, fromPhase, actor } = opts;
+  const userId = actor.actorUserId || null;
+
+  try {
+    await initializeProjectStages(id);
+    const mappedStage = resolveStageFromPhase(canonicalPhase);
+    const isCompleted = isFullyCompletedPhase(canonicalPhase);
+    const priorStageCodes = isCompleted
+      ? ([...STAGE_CODES] as string[])
+      : (stagesBefore(mappedStage) as string[]);
+
+    if (priorStageCodes.length > 0) {
+      await db.update(projectStageInstances)
+        .set({ stageStatus: "PROGRESSED", readinessPct: 100, completedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(projectStageInstances.projectId, id), inArray(projectStageInstances.stageCode, priorStageCodes)));
+    }
+    if (!isCompleted) {
+      await db.update(projectStageInstances)
+        .set({ stageStatus: "IN_PROGRESS", startedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(projectStageInstances.projectId, id), eq(projectStageInstances.stageCode, mappedStage)));
+    }
+    await db.update(projectExecutionState)
+      .set({
+        currentStageCode: isCompleted ? "S10_POST_HANDOVER_REVIEW" : mappedStage,
+        gateStatus: isCompleted ? "PROGRESSED" : "IN_PROGRESS",
+        gateReadinessPct: isCompleted ? 100 : 0,
+        updatedAt: new Date(),
+      })
+      .where(eq(projectExecutionState.projectId, id));
+  } catch (stageErr: any) {
+    console.warn("[lifecycle-board] Stage lifecycle sync error (non-fatal):", stageErr.message);
+  }
+
+  await db.insert(projectPhaseHistory).values({
+    projectId: id,
+    fromPhase: fromPhase || null,
+    toPhase: canonicalPhase,
+    changedByUserId: userId,
+    reason: `Phase changed from ${fromPhase || "unknown"} to ${canonicalPhase}`,
+  });
+
+  await createProjectEvent({
+    projectId: id,
+    eventType: "project.stage_changed",
+    actorUserId: actor.actorUserId,
+    actorRole: actor.actorRole,
+    sourceEntityType: "project_info",
+    sourceEntityId: String(id),
+    summary: `Stage changed from ${fromPhase || "unknown"} to ${canonicalPhase}`,
+    details: { fromPhase, toPhase: canonicalPhase },
+    idempotencyKey: `phase:${id}:${fromPhase || ""}:${canonicalPhase}`,
+  });
+
+  refreshProjectMetricsAsync(id);
+}
+
+/**
+ * Single canonical "apply a phase transition" routine. Used by all entry
+ * points that mutate phase on an EXISTING project (drag/drop on board,
+ * generic project edit, promote-existing) so they cannot drift.
+ *
+ * Returns `{ allowed: false, evaluation }` when a stage gate blocks the
+ * move — caller is responsible for translating to a 409 response.
+ */
+async function applyPhaseTransition(opts: {
+  projectId: number;
+  canonicalPhase: string;
+  fromPhase: string | null;
+  actor: { actorUserId: number | null; actorRole: string | null };
+  extraFields?: Record<string, any>;
+}): Promise<
+  | { allowed: false; evaluation: Awaited<ReturnType<typeof evaluateStageGate>> }
+  | { allowed: true; evaluation: Awaited<ReturnType<typeof evaluateStageGate>>; updated: typeof projectInfo.$inferSelect }
+> {
+  const { projectId: id, canonicalPhase, fromPhase, actor, extraFields = {} } = opts;
+  const userId = actor.actorUserId || null;
+
+  const evaluation = await evaluateStageGate({
+    projectId: id,
+    targetStage: canonicalPhase,
+    actorUserId: actor.actorUserId,
+    actorRole: actor.actorRole,
+  });
+  if (!evaluation.allowed) return { allowed: false, evaluation };
+
+  const stageTransitionFields = {
+    ...extraFields,
+    phase: canonicalPhase,
+    phaseUpdatedAt: new Date(),
+    phaseUpdatedByUserId: userId,
+    updatedAt: new Date(),
+  };
+  const [updated] = await db.update(projectInfo).set(stageTransitionFields).where(eq(projectInfo.id, id)).returning();
+  await syncProjectSplitTables(id, stageTransitionFields);
+
+  await propagatePhaseSideEffects({ projectId: id, canonicalPhase, fromPhase, actor });
+
+  return { allowed: true, evaluation, updated };
 }
 
 export function registerLifecycleRoutes(app: Express) {
@@ -1588,32 +1710,36 @@ export function registerLifecycleRoutes(app: Express) {
       const allProjects = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo);
       const normTarget = normalizeName(cleanName);
       const existing = allProjects.find((p: any) => normalizeName(p.projectName) === normTarget);
-      if (existing) {
-        const targetPhase = canonicalPhase;
-        const promoteFields = {
-          phase: targetPhase,
-          isActive: true,
-          phaseUpdatedAt: new Date(),
-          phaseUpdatedByUserId: userId,
-        };
-        await db.update(projectInfo).set(promoteFields).where(eq(projectInfo.id, existing.id));
-        await syncProjectSplitTables(existing.id, promoteFields);
+      const actor = actorFromReq(req);
 
-        const promoteStageNames = PHASE_TO_ENG_STAGES[targetPhase];
-        if (promoteStageNames && promoteStageNames.length > 0 && userId) {
-          try {
-            const result = await generateEngStagesForProject(existing.id, userId, promoteStageNames);
-            if (result.stagesCreated > 0) {
-              console.log(`[lifecycle-board] Auto-generated eng stages for re-activated project ${existing.id}: ${result.stageDetails.join(", ")}`);
-            }
-          } catch (err: any) {
-            console.warn("[lifecycle-board] Eng stage auto-generation on promote error (non-fatal):", err.message);
-          }
+      if (existing) {
+        const [existingFull] = await db.select().from(projectInfo).where(eq(projectInfo.id, existing.id));
+
+        const promoteResult = await applyPhaseTransition({
+          projectId: existing.id,
+          canonicalPhase,
+          fromPhase: existingFull?.phase || null,
+          actor,
+          extraFields: { isActive: true },
+        });
+
+        if (!promoteResult.allowed) {
+          const evaluation = promoteResult.evaluation;
+          return res.status(409).json({
+            error: "stage_gate_failed",
+            message: "Promote blocked because required gate checks are incomplete",
+            gate: {
+              projectId: existing.id,
+              gateName: evaluation.gateName,
+              fromStage: evaluation.fromStage,
+              targetStage: evaluation.targetStage,
+              missingItems: evaluation.missingItems,
+              canOverride: STAGE_GATE_OVERRIDE_ROLES.includes(actor.actorRole || ""),
+            },
+          });
         }
 
-        const [updated] = await db.select().from(projectInfo).where(eq(projectInfo.id, existing.id));
-        logAuditFromReq(req, { entityType: "lifecycle", entityId: String(existing.id), action: "update", projectName: cleanName, changesJson: { description: "Engineering project promoted (existing)", phase: targetPhase } });
-        const actor = actorFromReq(req);
+        logAuditFromReq(req, { entityType: "lifecycle", entityId: String(existing.id), action: "update", projectName: cleanName, changesJson: { description: "Engineering project promoted (existing)", phase: canonicalPhase } });
         await createProjectEvent({
           projectId: existing.id,
           eventType: "project.created",
@@ -1621,13 +1747,17 @@ export function registerLifecycleRoutes(app: Express) {
           actorRole: actor.actorRole,
           sourceEntityType: "project_info",
           sourceEntityId: String(existing.id),
-          summary: `Project promoted into engineering lifecycle (${targetPhase})`,
-          details: { phase: targetPhase, mode: "promote_existing" },
-          idempotencyKey: `project-promote-existing:${existing.id}:${targetPhase}`,
+          summary: `Project promoted into engineering lifecycle (${canonicalPhase})`,
+          details: { phase: canonicalPhase, mode: "promote_existing" },
+          idempotencyKey: `project-promote-existing:${existing.id}:${canonicalPhase}`,
         });
-        return res.json(updated);
+        return res.json(promoteResult.updated);
       }
 
+      // New project path: stage gate is skipped (nothing to gate against on a
+      // brand-new row), but full propagation still runs via
+      // propagatePhaseSideEffects so stage instances, exec state stage code,
+      // history, events and metrics are all consistent with the other paths.
       const promoteInsertFields = {
         projectName: cleanName,
         phase: canonicalPhase,
@@ -1638,29 +1768,23 @@ export function registerLifecycleRoutes(app: Express) {
       const [created] = await db.insert(projectInfo).values(promoteInsertFields).returning();
       await syncProjectSplitTablesAfterInsert(created.id, promoteInsertFields);
 
-      const targetPhase = canonicalPhase;
-      const stageNames = PHASE_TO_ENG_STAGES[targetPhase];
-      if (stageNames && stageNames.length > 0 && userId) {
-        try {
-          const result = await generateEngStagesForProject(created.id, userId, stageNames);
-          if (result.stagesCreated > 0) {
-            console.log(`[lifecycle-board] Auto-generated eng stages for promoted project ${created.id}: ${result.stageDetails.join(", ")}`);
-          }
-        } catch (err: any) {
-          console.warn("[lifecycle-board] Eng stage auto-generation on promote error (non-fatal):", err.message);
-        }
-      }
+      await propagatePhaseSideEffects({
+        projectId: created.id,
+        canonicalPhase,
+        fromPhase: null,
+        actor,
+      });
 
-      logAuditFromReq(req, { entityType: "lifecycle", entityId: String(created.id), action: "create", projectName: cleanName, changesJson: { description: "Engineering project promoted (new)", phase: targetPhase } });
+      logAuditFromReq(req, { entityType: "lifecycle", entityId: String(created.id), action: "create", projectName: cleanName, changesJson: { description: "Engineering project promoted (new)", phase: canonicalPhase } });
       await createProjectEvent({
         projectId: created.id,
         eventType: "project.created",
-        actorUserId: actorFromReq(req).actorUserId,
-        actorRole: actorFromReq(req).actorRole,
+        actorUserId: actor.actorUserId,
+        actorRole: actor.actorRole,
         sourceEntityType: "project_info",
         sourceEntityId: String(created.id),
-        summary: `Project created in engineering lifecycle (${targetPhase})`,
-        details: { phase: targetPhase, mode: "promote_new" },
+        summary: `Project created in engineering lifecycle (${canonicalPhase})`,
+        details: { phase: canonicalPhase, mode: "promote_new" },
         idempotencyKey: `project-created:${created.id}`,
       });
       res.json(created);
@@ -1683,6 +1807,38 @@ export function registerLifecycleRoutes(app: Express) {
       if (!existing) return res.status(404).json({ error: "Project not found" });
 
       const { sizeKwp, pd, pm, pmUserId, contractValue, escalationLevel, phase, ragStatus, projectName: newName } = req.body;
+
+      // Phase changes go through the canonical applyPhaseTransition routine
+      // so the generic edit dialog produces identical state to a drag/drop on
+      // the lifecycle board (stage instances, exec state stage code, history,
+      // events, metric refresh, AND stage-gate evaluation).
+      const phaseChanging = phase !== undefined && phase !== existing.phase;
+      if (phaseChanging) {
+        const canonicalPhase = requireCanonicalLifecyclePhase(phase);
+        const actor = actorFromReq(req);
+        const phaseResult = await applyPhaseTransition({
+          projectId: id,
+          canonicalPhase,
+          fromPhase: existing.phase,
+          actor,
+        });
+        if (!phaseResult.allowed) {
+          const evaluation = phaseResult.evaluation;
+          return res.status(409).json({
+            error: "stage_gate_failed",
+            message: "Stage transition blocked because required gate checks are incomplete",
+            gate: {
+              projectId: id,
+              gateName: evaluation.gateName,
+              fromStage: evaluation.fromStage,
+              targetStage: evaluation.targetStage,
+              missingItems: evaluation.missingItems,
+              canOverride: STAGE_GATE_OVERRIDE_ROLES.includes(actor.actorRole || ""),
+            },
+          });
+        }
+      }
+
       const updates: Record<string, any> = { updatedAt: new Date() };
 
       if (newName !== undefined && newName.trim() && newName.trim() !== existing.projectName) {
@@ -1697,11 +1853,6 @@ export function registerLifecycleRoutes(app: Express) {
       if (contractValue !== undefined) updates.contractValue = contractValue || null;
       if (escalationLevel !== undefined) updates.escalationLevel = (escalationLevel && escalationLevel !== "none") ? escalationLevel : null;
       if (ragStatus !== undefined) updates.ragStatus = (ragStatus && ragStatus !== "none") ? ragStatus : null;
-      if (phase !== undefined && phase !== existing.phase) {
-        updates.phase = requireCanonicalLifecyclePhase(phase);
-        updates.phaseUpdatedAt = new Date();
-        updates.phaseUpdatedByUserId = ((req as any).user as any)?.id || null;
-      }
 
       const [updated] = await db.update(projectInfo).set(updates).where(eq(projectInfo.id, id)).returning();
       await syncProjectSplitTables(id, updates);
@@ -1817,16 +1968,16 @@ export function registerLifecycleRoutes(app: Express) {
       if (!existing) return res.status(404).json({ error: "Project not found" });
 
       const actor = actorFromReq(req);
-      const userId = actor.actorUserId || null;
 
-      const evaluation = await evaluateStageGate({
+      const result = await applyPhaseTransition({
         projectId: id,
-        targetStage: canonicalPhase,
-        actorUserId: actor.actorUserId,
-        actorRole: actor.actorRole,
+        canonicalPhase,
+        fromPhase: existing.phase,
+        actor,
       });
 
-      if (!evaluation.allowed) {
+      if (!result.allowed) {
+        const evaluation = result.evaluation;
         return res.status(409).json({
           error: "stage_gate_failed",
           message: "Stage transition blocked because required gate checks are incomplete",
@@ -1841,119 +1992,8 @@ export function registerLifecycleRoutes(app: Express) {
         });
       }
 
-      const stageTransitionFields = {
-        phase: canonicalPhase,
-        phaseUpdatedAt: new Date(),
-        phaseUpdatedByUserId: userId,
-        updatedAt: new Date(),
-      };
-      const [updated] = await db.update(projectInfo).set(stageTransitionFields).where(eq(projectInfo.id, id)).returning();
-      await syncProjectSplitTables(id, stageTransitionFields);
-
-      // Sync stage lifecycle: ensure stage instances exist and current stage is set
-      try {
-        await initializeProjectStages(id); // idempotent — skips existing
-
-        const mappedStage = resolveStageFromPhase(canonicalPhase);
-        const isCompleted = isFullyCompletedPhase(canonicalPhase);
-
-        // Mark all prior stages as PROGRESSED
-        const priorStageCodes = isCompleted
-          ? ([...STAGE_CODES] as string[])
-          : (stagesBefore(mappedStage) as string[]);
-
-        if (priorStageCodes.length > 0) {
-          await db.update(projectStageInstances)
-            .set({ stageStatus: "PROGRESSED", readinessPct: 100, completedAt: new Date(), updatedAt: new Date() })
-            .where(and(eq(projectStageInstances.projectId, id), inArray(projectStageInstances.stageCode, priorStageCodes)));
-        }
-
-        // Set current stage to IN_PROGRESS (unless fully completed)
-        if (!isCompleted) {
-          await db.update(projectStageInstances)
-            .set({ stageStatus: "IN_PROGRESS", startedAt: new Date(), updatedAt: new Date() })
-            .where(and(eq(projectStageInstances.projectId, id), eq(projectStageInstances.stageCode, mappedStage)));
-        }
-
-        // Update execution state with the mapped stage code
-        await db.update(projectExecutionState)
-          .set({
-            currentStageCode: isCompleted ? "S10_POST_HANDOVER_REVIEW" : mappedStage,
-            gateStatus: isCompleted ? "PROGRESSED" : "IN_PROGRESS",
-            gateReadinessPct: isCompleted ? 100 : 0,
-            updatedAt: new Date(),
-          })
-          .where(eq(projectExecutionState.projectId, id));
-      } catch (stageErr: any) {
-        console.warn("[lifecycle-board] Stage lifecycle sync error (non-fatal):", stageErr.message);
-      }
-
-      // Record phase transition in dedicated history table
-      await db.insert(projectPhaseHistory).values({
-        projectId: id,
-        fromPhase: existing.phase || null,
-        toPhase: canonicalPhase,
-        changedByUserId: userId,
-        reason: `Phase changed from ${existing.phase || "unknown"} to ${canonicalPhase}`,
-      });
-
-      // Auto-create PD→PM handover DRAFT when project reaches the handover stage.
-      // Post-merge: the trigger phase set includes the legacy PD-PM codes plus the
-      // merged S03 Financial Close, since the handover is now a sub-step of S03.
-      const PD_PM_HANDOVER_PHASES = [
-        "Financial Close",
-        "Planning",
-      ];
-      if (PD_PM_HANDOVER_PHASES.includes(canonicalPhase)) {
-        try {
-          const existingHandover = await db.select({ id: projectPdPmHandover.id })
-            .from(projectPdPmHandover)
-            .where(eq(projectPdPmHandover.projectId, id))
-            .limit(1);
-          if (existingHandover.length === 0) {
-            await db.insert(projectPdPmHandover).values({
-              projectId: id,
-              status: "DRAFT",
-              pdOwner: existing.pd || null,
-              pmOwner: existing.pm || null,
-              deliverables: {},
-            });
-            console.log(`[lifecycle-board] Auto-created PD→PM handover DRAFT for project ${id}`);
-          }
-        } catch (err: any) {
-          console.warn("[lifecycle-board] Handover auto-creation error (non-fatal):", err.message);
-        }
-      }
-
-      let engStagesResult: any = null;
-      const stageNames = PHASE_TO_ENG_STAGES[canonicalPhase];
-      if (stageNames && stageNames.length > 0 && userId) {
-        try {
-          engStagesResult = await generateEngStagesForProject(id, userId, stageNames);
-          if (engStagesResult.stagesCreated > 0) {
-            console.log(`[lifecycle-board] Auto-generated eng stages for project ${id}: ${engStagesResult.stageDetails.join(", ")}`);
-          }
-        } catch (err: any) {
-          console.warn("[lifecycle-board] Eng stage auto-generation error (non-fatal):", err.message);
-        }
-      }
-
-      logAuditFromReq(req, { entityType: "project_lifecycle", entityId: String(id), action: "update", projectName: updated.projectName, changesJson: { description: "Phase changed", fromPhase: existing.phase, toPhase: canonicalPhase } });
-      await createProjectEvent({
-        projectId: id,
-        eventType: "project.stage_changed",
-        actorUserId: actor.actorUserId,
-        actorRole: actor.actorRole,
-        sourceEntityType: "project_info",
-        sourceEntityId: String(id),
-        summary: `Stage changed from ${existing.phase || "unknown"} to ${canonicalPhase}`,
-        details: { fromPhase: existing.phase, toPhase: canonicalPhase, engStagesCreated: engStagesResult?.stagesCreated || 0 },
-        idempotencyKey: `phase:${id}:${existing.phase || ""}:${canonicalPhase}`,
-      });
-      res.json({ ...updated, engStagesResult });
-
-      // Prompt 12: Refresh materialized dashboard metrics after phase change
-      refreshProjectMetricsAsync(id);
+      logAuditFromReq(req, { entityType: "project_lifecycle", entityId: String(id), action: "update", projectName: result.updated.projectName, changesJson: { description: "Phase changed", fromPhase: existing.phase, toPhase: canonicalPhase } });
+      res.json(result.updated);
     } catch (err: any) {
       console.error("[lifecycle-board] PATCH phase error:", err);
       if (String(err?.message || "").includes("lifecycle phase") || String(err?.message || "").includes("phase is required")) {
