@@ -22,6 +22,10 @@ vi.mock("@/hooks/use-permissions", () => ({
   usePermission: vi.fn(),
 }));
 
+vi.mock("@/hooks/use-toast", () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
+
 // ── Imports ───────────────────────────────────────────────────────────────────
 
 import FyeRevenueTrackingPage, {
