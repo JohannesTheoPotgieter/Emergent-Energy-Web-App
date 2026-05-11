@@ -15,7 +15,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 function read(rel: string): string {
-  return fs.readFileSync(path.join(process.cwd(), rel), "utf8");
+  return fs.readFileSync(path.join(process.cwd(), rel), "utf8").replace(/\r\n/g, "\n");
 }
 
 const QB_ROUTES = read("server/quickbooks-routes.ts");

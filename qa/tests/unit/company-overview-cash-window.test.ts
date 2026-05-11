@@ -17,7 +17,7 @@ describe("company-overview cash FY-window separation (T1.x defect 2)", () => {
   const source = fs.readFileSync(
     path.resolve(process.cwd(), "server/services/company-overview-service.ts"),
     "utf8",
-  );
+  ).replace(/\r\n/g, "\n");
 
   it("separates recognition vs cash FY-window variables", () => {
     expect(source).toContain("recognitionDate");

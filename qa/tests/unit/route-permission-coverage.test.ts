@@ -68,7 +68,7 @@ function scan(): string[] {
       if (SKIP_MARKER.test(window)) continue;
       if (GUARD_TOKENS.some((t) => window.includes(t))) continue;
       if (isAllowed(route)) continue;
-      const rel = path.relative(process.cwd(), file);
+      const rel = path.relative(process.cwd(), file).replace(/\\/g, "/");
       out.push(`${rel}:${method.toUpperCase()} ${route}`);
     }
   }

@@ -25,7 +25,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 function read(relPath: string): string {
-  return fs.readFileSync(path.join(process.cwd(), relPath), "utf8");
+  return fs.readFileSync(path.join(process.cwd(), relPath), "utf8").replace(/\r\n/g, "\n");
 }
 
 describe("Bulk conflict resolution — components & exports", () => {

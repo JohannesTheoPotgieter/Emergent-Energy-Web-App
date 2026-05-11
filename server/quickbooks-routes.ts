@@ -155,13 +155,35 @@ function handleLinkConflict(res: Response, err: unknown): boolean {
 
 type SessionWithQbState = Request["session"] & { qbState?: string };
 
+function quickBooksFailure(
+  res: Response,
+  context: string,
+  status: number,
+  errorCode: string,
+  message: string,
+  err: unknown,
+): void {
+  logApiError(context, err);
+  res.status(status).json({ error: errorCode, message });
+}
+
+function quickBooksServerFailure(
+  res: Response,
+  context: string,
+  errorCode: string,
+  message: string,
+  err: unknown,
+): void {
+  quickBooksFailure(res, context, 500, errorCode, message, err);
+}
+
 function notConnectedResponse(res: Response, err: unknown): void {
   const message = err instanceof Error ? err.message : "QuickBooks error";
   if (/not connected/i.test(message)) {
-    res.status(409).json({ error: "quickbooks_not_connected", message });
+    quickBooksFailure(res, "quickbooks.integration.not_connected", 409, "quickbooks_not_connected", "QuickBooks is not connected", err);
     return;
   }
-  res.status(502).json({ error: "quickbooks_api_error", message });
+  quickBooksFailure(res, "quickbooks.integration.api_error", 502, "quickbooks_api_error", "QuickBooks request failed", err);
 }
 
 export function registerQuickBooksRoutes(app: Express): void {
@@ -183,8 +205,7 @@ export function registerQuickBooksRoutes(app: Express): void {
       const url = getAuthorizationUrl(state);
       res.redirect(url);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to start QuickBooks auth";
-      res.status(500).json({ error: "quickbooks_auth_failed", message });
+      quickBooksServerFailure(res, "quickbooks.oauth.start", "quickbooks_auth_failed", "Failed to start QuickBooks authorization", err);
     }
   });
 
@@ -258,13 +279,17 @@ export function registerQuickBooksRoutes(app: Express): void {
       });
       res.redirect(`/admin/quickbooks?quickbooks=connected`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "QuickBooks callback failed";
+      const message = "QuickBooks callback failed";
+      logApiError("quickbooks.oauth.callback", err);
       logAuditFromReq(req, {
         entityType: "quickbooks_integration",
         entityId: "quickbooks",
         action: "quickbooks.oauth.failed",
         source: "SETTINGS",
-        changesJson: { reason: "exchange_failed", message },
+        changesJson: {
+          reason: "exchange_failed",
+          message: err instanceof Error ? err.message : String(err),
+        },
       });
       res.redirect(`/admin/quickbooks?quickbooks=error&message=${encodeURIComponent(message)}`);
     }
@@ -277,8 +302,7 @@ export function registerQuickBooksRoutes(app: Express): void {
       const status = await getQuickBooksConnectionStatus();
       res.json(status);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load status";
-      res.status(500).json({ error: "quickbooks_status_failed", message });
+      quickBooksServerFailure(res, "quickbooks.status", "quickbooks_status_failed", "Failed to load QuickBooks status", err);
     }
   });
 
@@ -302,7 +326,7 @@ export function registerQuickBooksRoutes(app: Express): void {
         source: "SETTINGS",
         changesJson: { error: message },
       });
-      res.status(500).json({ error: "quickbooks_disconnect_failed", message });
+      quickBooksServerFailure(res, "quickbooks.disconnect", "quickbooks_disconnect_failed", "Failed to disconnect QuickBooks", err);
     }
   });
 
@@ -322,6 +346,7 @@ export function registerQuickBooksRoutes(app: Express): void {
     async (req, res) => {
       const startedAt = new Date();
       const errors: string[] = [];
+      const errorDetails: string[] = [];
       let recordsProcessed = 0;
 
       const safeCall = async <T>(label: string, fn: () => Promise<T>): Promise<T | null> => {
@@ -330,7 +355,9 @@ export function registerQuickBooksRoutes(app: Express): void {
           return result;
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
-          errors.push(`${label}: ${message}`);
+          logApiError(`quickbooks.sync_now.${label}`, err);
+          errorDetails.push(`${label}: ${message}`);
+          errors.push(`${label}: failed`);
           return null;
         }
       };
@@ -369,7 +396,7 @@ export function registerQuickBooksRoutes(app: Express): void {
           status,
           recordsProcessed,
           errorCode: errors.length > 0 ? "partial_sync_errors" : null,
-          errorDetail: errors.length > 0 ? errors.join(" | ").slice(0, 1000) : null,
+          errorDetail: errorDetails.length > 0 ? errorDetails.join(" | ").slice(0, 1000) : null,
         });
       } catch (err) {
         // Logging is best-effort — don't block the response.
@@ -432,8 +459,7 @@ export function registerQuickBooksRoutes(app: Express): void {
 
         res.json({ events });
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to load sync log";
-        res.status(500).json({ error: "quickbooks_sync_log_failed", message });
+        quickBooksServerFailure(res, "quickbooks.sync_log", "quickbooks_sync_log_failed", "Failed to load QuickBooks sync log", err);
       }
     },
   );
@@ -552,8 +578,7 @@ export function registerQuickBooksRoutes(app: Express): void {
       const links = await fetchProjectLinks(projectId);
       res.json({ links });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to fetch links";
-      res.status(500).json({ error: "quickbooks_links_failed", message });
+      quickBooksServerFailure(res, "quickbooks.links.project", "quickbooks_links_failed", "Failed to fetch QuickBooks links", err);
     }
   });
 
@@ -565,8 +590,7 @@ export function registerQuickBooksRoutes(app: Express): void {
       const links = await listAllLinks(Number.isFinite(limit) ? limit : 500);
       res.json({ links });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to list links";
-      res.status(500).json({ error: "quickbooks_links_failed", message });
+      quickBooksServerFailure(res, "quickbooks.links.list", "quickbooks_links_failed", "Failed to list QuickBooks links", err);
     }
   });
 
@@ -671,8 +695,7 @@ export function registerQuickBooksRoutes(app: Express): void {
         throw inner;
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to create link";
-      res.status(500).json({ error: "quickbooks_link_failed", message });
+      quickBooksServerFailure(res, "quickbooks.links.create", "quickbooks_link_failed", "Failed to create QuickBooks link", err);
     }
   });
 
@@ -731,13 +754,22 @@ export function registerQuickBooksRoutes(app: Express): void {
         res.json({ success: true, ...result });
       } catch (err) {
         if (err instanceof QuickBooksUnavailableError) {
-          return sendError(res, new ApiError(503, "quickbooks_unavailable", err.message));
+          logApiError("quickbooks.cost_allocation.bulk_assign.unavailable", err);
+          return sendError(
+            res,
+            new ApiError(503, "quickbooks_unavailable", "QuickBooks is unavailable. Reconnect QuickBooks or try again later."),
+          );
         }
         if (err instanceof QuickBooksBillNotFoundError) {
-          return sendError(res, new ApiError(404, "quickbooks_bill_not_found", err.message));
+          logApiError("quickbooks.cost_allocation.bulk_assign.bill_not_found", err);
+          return sendError(
+            res,
+            new ApiError(404, "quickbooks_bill_not_found", "The selected QuickBooks bill could not be found."),
+          );
         }
         if (err instanceof Error && /Over-assignment blocked/i.test(err.message)) {
-          return sendError(res, conflict(err.message));
+          logApiError("quickbooks.cost_allocation.bulk_assign.over_assignment", err);
+          return sendError(res, conflict("Over-assignment blocked"));
         }
         logApiError("quickbooks.cost_allocation.bulk_assign", err);
         return sendError(res, serverError("Failed to save QuickBooks cost allocations."));
@@ -804,8 +836,7 @@ export function registerQuickBooksRoutes(app: Express): void {
         },
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to delete link";
-      res.status(500).json({ error: "quickbooks_link_delete_failed", message });
+      quickBooksServerFailure(res, "quickbooks.links.delete", "quickbooks_link_delete_failed", "Failed to delete QuickBooks link", err);
     }
   });
 
@@ -923,8 +954,7 @@ export function registerQuickBooksRoutes(app: Express): void {
         res.status(201).json({ link });
       } catch (err) {
         if (handleLinkConflict(res, err)) return;
-        const message = err instanceof Error ? err.message : "Failed to force-relink";
-        res.status(500).json({ error: "quickbooks_force_relink_failed", message });
+        quickBooksServerFailure(res, "quickbooks.links.force_relink", "quickbooks_force_relink_failed", "Failed to force-relink QuickBooks evidence", err);
       }
     },
   );
@@ -963,8 +993,7 @@ export function registerQuickBooksRoutes(app: Express): void {
       const projects = await listProjectsWithMappings();
       res.json({ projects });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load mappings";
-      res.status(500).json({ error: "quickbooks_mappings_failed", message });
+      quickBooksServerFailure(res, "quickbooks.customer_mappings.list", "quickbooks_mappings_failed", "Failed to load QuickBooks mappings", err);
     }
   });
 
@@ -982,8 +1011,7 @@ export function registerQuickBooksRoutes(app: Express): void {
         const mapping = await getCustomerMappingForProject(projectId);
         res.json({ mapping });
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to load mapping";
-        res.status(500).json({ error: "quickbooks_mapping_failed", message });
+        quickBooksServerFailure(res, "quickbooks.customer_mappings.project", "quickbooks_mapping_failed", "Failed to load QuickBooks mapping", err);
       }
     },
   );
@@ -1065,8 +1093,7 @@ export function registerQuickBooksRoutes(app: Express): void {
           : {}),
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to save mapping";
-      res.status(500).json({ error: "quickbooks_mapping_save_failed", message });
+      quickBooksServerFailure(res, "quickbooks.customer_mappings.save", "quickbooks_mapping_save_failed", "Failed to save QuickBooks mapping", err);
     }
   });
 
@@ -1129,8 +1156,7 @@ export function registerQuickBooksRoutes(app: Express): void {
           : {}),
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to delete mapping";
-      res.status(500).json({ error: "quickbooks_mapping_delete_failed", message });
+      quickBooksServerFailure(res, "quickbooks.customer_mappings.delete", "quickbooks_mapping_delete_failed", "Failed to delete QuickBooks mapping", err);
     }
   });
 
@@ -1160,8 +1186,7 @@ export function registerQuickBooksRoutes(app: Express): void {
           .where(isNull(quickbooksVendorMappings.deletedAt));
         res.json({ mappings: rows });
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to load vendor mappings";
-        res.status(500).json({ error: "quickbooks_vendor_mappings_failed", message });
+        quickBooksServerFailure(res, "quickbooks.vendor_mappings.list", "quickbooks_vendor_mappings_failed", "Failed to load QuickBooks vendor mappings", err);
       }
     },
   );
@@ -1282,8 +1307,7 @@ export function registerQuickBooksRoutes(app: Express): void {
             : {}),
         });
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to save vendor mapping";
-        res.status(500).json({ error: "quickbooks_vendor_mapping_save_failed", message });
+        quickBooksServerFailure(res, "quickbooks.vendor_mappings.save", "quickbooks_vendor_mapping_save_failed", "Failed to save QuickBooks vendor mapping", err);
       }
     },
   );
@@ -1352,8 +1376,7 @@ export function registerQuickBooksRoutes(app: Express): void {
             : {}),
         });
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to delete vendor mapping";
-        res.status(500).json({ error: "quickbooks_vendor_mapping_delete_failed", message });
+        quickBooksServerFailure(res, "quickbooks.vendor_mappings.delete", "quickbooks_vendor_mapping_delete_failed", "Failed to delete QuickBooks vendor mapping", err);
       }
     },
   );
@@ -1463,8 +1486,7 @@ export function registerQuickBooksRoutes(app: Express): void {
         throw inner;
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to create link";
-      res.status(500).json({ error: "quickbooks_revenue_link_failed", message });
+      quickBooksServerFailure(res, "quickbooks.revenue_links.create", "quickbooks_revenue_link_failed", "Failed to create QuickBooks revenue link", err);
     }
   });
 
@@ -1475,8 +1497,7 @@ export function registerQuickBooksRoutes(app: Express): void {
       const costLines = await searchCostLines(q, Number.isFinite(limit) ? limit : 50);
       res.json({ costLines });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Search failed";
-      res.status(500).json({ error: "quickbooks_search_failed", message });
+      quickBooksServerFailure(res, "quickbooks.cost_lines.search", "quickbooks_search_failed", "QuickBooks cost-line search failed", err);
     }
   });
 
@@ -1487,8 +1508,7 @@ export function registerQuickBooksRoutes(app: Express): void {
       const revenueLines = await searchRevenueLines(q, Number.isFinite(limit) ? limit : 50);
       res.json({ revenueLines });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Search failed";
-      res.status(500).json({ error: "quickbooks_search_failed", message });
+      quickBooksServerFailure(res, "quickbooks.revenue_lines.search", "quickbooks_search_failed", "QuickBooks revenue-line search failed", err);
     }
   });
 
@@ -1591,8 +1611,7 @@ export function registerQuickBooksRoutes(app: Express): void {
 
         res.json({ suggestion, candidates });
       } catch (err) {
-        const message = err instanceof Error ? err.message : "suggest failed";
-        res.status(500).json({ error: "suggest_matches_failed", message });
+        quickBooksServerFailure(res, "quickbooks.suggest_matches", "suggest_matches_failed", "Failed to suggest QuickBooks matches", err);
       }
     },
   );
@@ -1656,8 +1675,7 @@ export function registerQuickBooksRoutes(app: Express): void {
 
         res.json({ cascadeRunId: cascadeRun.id, candidate: chosen, preview });
       } catch (err) {
-        const message = err instanceof Error ? err.message : "preview failed";
-        res.status(500).json({ error: "preview_cascade_failed", message });
+        quickBooksServerFailure(res, "quickbooks.suggest_matches.preview_cascade", "preview_cascade_failed", "Failed to preview QuickBooks cascade", err);
       }
     },
   );
@@ -1743,8 +1761,7 @@ export function registerQuickBooksRoutes(app: Express): void {
         }
         return res.status(400).json({ error: "unsupported_scope" });
       } catch (err) {
-        const message = err instanceof Error ? err.message : "accept failed";
-        res.status(500).json({ error: "accept_cascade_failed", message });
+        quickBooksServerFailure(res, "quickbooks.suggest_matches.accept", "accept_cascade_failed", "Failed to accept QuickBooks cascade", err);
       }
     },
   );
@@ -1770,8 +1787,7 @@ export function registerQuickBooksRoutes(app: Express): void {
         if (!row) return res.status(404).json({ error: "mapping_not_found" });
         res.json({ ok: true, mappingId: row.id });
       } catch (err) {
-        const message = err instanceof Error ? err.message : "unlock failed";
-        res.status(500).json({ error: "unlock_failed", message });
+        quickBooksServerFailure(res, "quickbooks.mappings.unlock", "unlock_failed", "Failed to unlock QuickBooks mapping", err);
       }
     },
   );

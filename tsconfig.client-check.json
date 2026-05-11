@@ -2,7 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "tsBuildInfoFile": "./.cache/tsconfig.client-check.tsbuildinfo",
-    "typeRoots": ["./node_modules/@types", "./node_modules/vite"]
+    "types": ["node", "vite/client"]
   },
   "include": [
     "client/src/**/*.ts",
