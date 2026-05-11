@@ -1457,18 +1457,18 @@ export function registerLifecycleRoutes(app: Express) {
       weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
       const weekStartKey = weekStart.toISOString().slice(0, 10);
       const weekEndKey = weekEnd.toISOString().slice(0, 10);
-      const cashflowRows = await db.select({ seriesName: cashflowPoints.seriesName, value: cashflowPoints.value, date: cashflowPoints.date })
+      const cashflowRows = await db.select({ seriesName: cashflowPoints.seriesName, value: cashflowPoints.value, pointDate: cashflowPoints.pointDate })
         .from(cashflowPoints)
         .where(isNull(cashflowPoints.effectiveTo));
       let projectInflowsThisWeek = 0;
       let projectOutflowsThisWeek = 0;
       for (const row of cashflowRows) {
-        const d = row.date ? String(row.date).slice(0, 10) : null;
+        const d = row.pointDate ? String(row.pointDate).slice(0, 10) : null;
         if (!d || d < weekStartKey || d > weekEndKey) continue;
         const val = parseFloat(String(row.value ?? "0")) || 0;
         const series = (row.seriesName ?? "").toLowerCase();
-        if (series.includes("inflow")) projectInflowsThisWeek += val;
-        else if (series.includes("outflow")) projectOutflowsThisWeek += val;
+        if (series.includes("revenue")) projectInflowsThisWeek += val;
+        else if (series.includes("expenditure")) projectOutflowsThisWeek += val;
       }
 
       const overrideInEffect = costLines.some((row: any) => {
