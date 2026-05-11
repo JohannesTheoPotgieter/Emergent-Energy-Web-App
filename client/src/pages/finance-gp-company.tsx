@@ -112,12 +112,13 @@ function formatPct(val: number | null | undefined): string {
   return `${(val * 100).toFixed(1)}%`;
 }
 
-const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const SHORT_MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
+/** "SEP 2025" — matches the column header format on the COS / Revenue tabs. */
 function fmtMonthLabel(monthKey: string): string {
   if (!/^\d{4}-\d{2}$/.test(monthKey)) return monthKey;
   const [y, m] = monthKey.split("-");
-  return `${SHORT_MONTHS[Number(m) - 1]} '${y.slice(2)}`;
+  return `${SHORT_MONTHS[Number(m) - 1]} ${y}`;
 }
 
 const FY_START = "2025-09";
@@ -251,21 +252,21 @@ const budgetMargin = (m: MonthlyRow, budget: BudgetByMonth | undefined): number 
  *              matching the COS tab's Realised number)
  */
 const METRIC_ROWS: MetricRow[] = [
-  // Budget block (from STATIC_COS_BUDGET_FY26 + manual entries)
-  { key: "budgetRevenue", group: "budget", label: "Budget Revenue", format: formatRand, getValue: budgetRev },
-  { key: "budgetCos", group: "budget", label: "Budget COS", format: formatRand, getValue: budgetCos },
-  { key: "budgetGp", group: "budget", label: "Budget GP", emphasis: true, format: formatRand, getValue: budgetGp },
-  { key: "budgetMargin", group: "budget", label: "Budget Margin %", format: (v) => formatPct(v), getValue: budgetMargin },
-  // Planned block (was "Actual" — renamed to match COS / Revenue terminology)
-  { key: "revenue", group: "planned", label: "Planned Revenue", format: formatRand, getValue: (m) => m.revenue },
-  { key: "cos", group: "planned", label: "Planned COS", format: formatRand, getValue: (m) => m.cos },
-  { key: "gp", group: "planned", label: "Planned GP", emphasis: true, format: formatRand, getValue: (m) => m.gp },
-  { key: "gpPct", group: "planned", label: "Planned Margin %", format: (v) => formatPct(v), getValue: (m) => m.gpPct ?? 0 },
-  // Realised block — bucket = "realised" only
-  { key: "realisedRevenue", group: "realised", label: "Realised Revenue", format: formatRand, getValue: (m) => m.realisedRevenue ?? 0 },
-  { key: "realisedCos", group: "realised", label: "Realised COS", format: formatRand, getValue: (m) => m.realisedCos ?? 0 },
-  { key: "realisedGp", group: "realised", label: "Realised GP", emphasis: true, format: formatRand, getValue: (m) => m.realisedGp ?? 0 },
-  { key: "realisedGpPct", group: "realised", label: "Realised Margin %", format: (v) => formatPct(v), getValue: (m) => m.realisedGpPct ?? 0 },
+  // Budget block — same source as COS/REV tabs' "Budget (Manual)" row.
+  { key: "budgetRevenue", group: "budget", label: "Revenue Budget", format: formatRand, getValue: budgetRev },
+  { key: "budgetCos", group: "budget", label: "COS Budget", format: formatRand, getValue: budgetCos },
+  { key: "budgetGp", group: "budget", label: "GP Budget", emphasis: true, format: formatRand, getValue: budgetGp },
+  { key: "budgetMargin", group: "budget", label: "Margin % Budget", format: (v) => formatPct(v), getValue: budgetMargin },
+  // Planned block — matches COS / REV "Planned" rows verbatim.
+  { key: "revenue", group: "planned", label: "Revenue Planned", format: formatRand, getValue: (m) => m.revenue },
+  { key: "cos", group: "planned", label: "COS Planned", format: formatRand, getValue: (m) => m.cos },
+  { key: "gp", group: "planned", label: "GP Planned", emphasis: true, format: formatRand, getValue: (m) => m.gp },
+  { key: "gpPct", group: "planned", label: "Margin % Planned", format: (v) => formatPct(v), getValue: (m) => m.gpPct ?? 0 },
+  // Realised block — matches COS / REV "Realised" rows verbatim.
+  { key: "realisedRevenue", group: "realised", label: "Revenue Realised", format: formatRand, getValue: (m) => m.realisedRevenue ?? 0 },
+  { key: "realisedCos", group: "realised", label: "COS Realised", format: formatRand, getValue: (m) => m.realisedCos ?? 0 },
+  { key: "realisedGp", group: "realised", label: "GP Realised", emphasis: true, format: formatRand, getValue: (m) => m.realisedGp ?? 0 },
+  { key: "realisedGpPct", group: "realised", label: "Margin % Realised", format: (v) => formatPct(v), getValue: (m) => m.realisedGpPct ?? 0 },
   // Trailing line count
   { key: "count", label: "Lines", format: (v) => v.toLocaleString("en-ZA"), getValue: (m) => m.count },
 ];
