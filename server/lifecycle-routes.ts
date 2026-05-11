@@ -4,7 +4,7 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db, getDbMode } from "./db";
 import { eq, sql, inArray, desc, and, isNull } from "drizzle-orm";
-import { projectInfo, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns, projectExecutionState, projectPhaseHistory, phaseTemplate } from "@shared/schema";
+import { projectInfo, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns, projectExecutionState, projectPhaseHistory, phaseTemplate, cashflowPoints } from "@shared/schema";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { logAuditFromReq } from "./audit-logger";
@@ -1042,6 +1042,8 @@ export function registerLifecycleRoutes(app: Express) {
         ragStatus: projectExecutionState.ragStatus,
         archivedStatus: projectExecutionState.archivedStatus,
         phase: projectExecutionState.phase,
+        cpSigned: projectExecutionState.cpSigned,
+        signedStatus: projectExecutionState.signedStatus,
       })).from(projectInfo)
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
         .where(eq(projectExecutionState.archivedStatus, "ACTIVE"));
@@ -1398,6 +1400,8 @@ export function registerLifecycleRoutes(app: Express) {
           openQualityWarningCount: openQuality.length,
           pendingApprovalCount: projectApprovals.length,
           criticalActionCount,
+          cpSigned: project.cpSigned ?? false,
+          signedStatus: project.signedStatus ?? "NONE",
         });
       }
 
@@ -1407,6 +1411,65 @@ export function registerLifecycleRoutes(app: Express) {
       const receivedInflow = projectRows.reduce((s, p) => s + p.receivedInflowFy, 0);
       const plannedExpenditure = projectRows.reduce((s, p) => s + p.plannedExpenditureFy, 0);
       const paidExpenditure = projectRows.reduce((s, p) => s + p.paidExpenditureFy, 0);
+
+      // Excel Program Dashboard parity KPIs
+      const onScheduleCount = projectRows.filter((p) => !p.behindPlan).length;
+      const onScheduleRate = projectRows.length > 0 ? Number(((onScheduleCount / projectRows.length) * 100).toFixed(1)) : 0;
+      const contractsCompleteCount = projectRows.filter((p) => p.cpSigned && p.signedStatus === "SIGNED").length;
+      const contractCompleteness = projectRows.length > 0 ? Number(((contractsCompleteCount / projectRows.length) * 100).toFixed(1)) : 0;
+
+      const currentMonthKey = today.slice(0, 7);
+      let revenueOutstandingThisMonth = 0;
+      for (const row of revenueLines) {
+        const dateKey = pickFirstPopulatedDate(row as any, ["expectedPaymentDate", "invoiceDate", "paidDate", "inBankDate"]);
+        if (!dateKey || !dateKey.startsWith(currentMonthKey)) continue;
+        const amount = parseFloat((row as any).amountExVat || "0") || 0;
+        const paidDateIsPast = !!(row as any).paidDate && (row as any).paidDate <= today;
+        const received = (paidDateIsPast && ((row as any).paidDateConfirmed === true || (row as any).paidDateFontColor === 'black')) || !!(row as any).inBankDate;
+        if (!received) revenueOutstandingThisMonth += amount;
+      }
+
+      let cosPlannedMonth = 0;
+      let cosRealisedMonth = 0;
+      for (const row of costLines) {
+        const dateKey = pickFirstPopulatedDate(row as any, ["approvedDate", "invoiceDate", "paidDate"]);
+        if (!dateKey || !dateKey.startsWith(currentMonthKey)) continue;
+        const amount = parseFloat((row as any).amountExVat || "0") || 0;
+        const costPaidDateIsPast = !!(row as any).paidDate && (row as any).paidDate <= today;
+        const COS_REALISED_OVERRIDES_LOCAL = OVERRIDE_REALISED;
+        const COS_NOT_REALISED_OVERRIDES_LOCAL = OVERRIDE_NOT_REALISED;
+        const cosOverride = String((row as any).cosStatusOverride ?? "").trim().toUpperCase();
+        let paid: boolean;
+        if (COS_REALISED_OVERRIDES_LOCAL.has(cosOverride)) paid = costPaidDateIsPast;
+        else if (COS_NOT_REALISED_OVERRIDES_LOCAL.has(cosOverride)) paid = false;
+        else paid = costPaidDateIsPast && ((row as any).paidDateConfirmed === true || (row as any).paidDateFontColor === 'black');
+        cosPlannedMonth += amount;
+        if (paid) cosRealisedMonth += amount;
+      }
+      const cosOutstandingThisMonth = cosPlannedMonth - cosRealisedMonth;
+
+      // Inflows / outflows this week from cashflow_points
+      const nowDate = new Date(today);
+      const dayOfWeek = nowDate.getUTCDay(); // 0=Sun
+      const weekStart = new Date(nowDate);
+      weekStart.setUTCDate(nowDate.getUTCDate() - ((dayOfWeek + 6) % 7)); // Mon
+      const weekEnd = new Date(weekStart);
+      weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
+      const weekStartKey = weekStart.toISOString().slice(0, 10);
+      const weekEndKey = weekEnd.toISOString().slice(0, 10);
+      const cashflowRows = await db.select({ seriesName: cashflowPoints.seriesName, value: cashflowPoints.value, pointDate: cashflowPoints.pointDate })
+        .from(cashflowPoints)
+        .where(isNull(cashflowPoints.effectiveTo));
+      let projectInflowsThisWeek = 0;
+      let projectOutflowsThisWeek = 0;
+      for (const row of cashflowRows) {
+        const d = row.pointDate ? String(row.pointDate).slice(0, 10) : null;
+        if (!d || d < weekStartKey || d > weekEndKey) continue;
+        const val = parseFloat(String(row.value ?? "0")) || 0;
+        const series = (row.seriesName ?? "").toLowerCase();
+        if (series.includes("revenue")) projectInflowsThisWeek += val;
+        else if (series.includes("expenditure")) projectOutflowsThisWeek += val;
+      }
 
       const overrideInEffect = costLines.some((row: any) => {
         const raw = row.cosStatusOverride;
@@ -1440,6 +1503,13 @@ export function registerLifecycleRoutes(app: Express) {
           openQualityWarnings: projectRows.reduce((s, p) => s + p.openQualityWarningCount, 0),
           pendingApprovals: projectRows.reduce((s, p) => s + p.pendingApprovalCount, 0),
           staleImports: projectRows.filter((p) => p.importFreshness !== "Fresh").length,
+          // Excel Program Dashboard parity KPIs
+          onScheduleRate,
+          contractCompleteness,
+          revenueOutstandingThisMonth,
+          cosOutstandingThisMonth,
+          projectInflowsThisWeek,
+          projectOutflowsThisWeek,
         },
         overdueDefinitions: {
           asOfDate: today,
