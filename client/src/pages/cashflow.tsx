@@ -1193,6 +1193,11 @@ export default function CashflowPage() {
           </Badge>
         )}
       </div>
+      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs text-slate-700" data-testid="cashflow-trust-note">
+        <p>Cashflow actuals use payment received / paid dates.</p>
+        <p className="mt-1">Forecast dates may use planned-payment fallback where no canonical payment date exists.</p>
+        <p className="mt-1 text-slate-600">Use forecast values as planning data until reconciled.</p>
+      </div>
       <FinanceTrustStrip
         source={cashflowTrust?.canonicalTable ?? "canonical"}
         lastImportDate={cashflowSummary?.lastImportDate ?? "Unknown"}
