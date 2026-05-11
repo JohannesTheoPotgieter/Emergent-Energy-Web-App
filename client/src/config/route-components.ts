@@ -19,6 +19,7 @@ const ProjectsSummary = lazyWithRetry(() => import("@/pages/projects"));
 const CashflowPage = lazyWithRetry(() => import("@/pages/cashflow"));
 const CashflowAnalysisPage = lazyWithRetry(() => import("@/pages/cashflow-analysis"));
 const RevenueTrackerPage = lazyWithRetry(() => import("@/pages/revenue-tracker"));
+const FyeRevenueTrackingPage = lazyWithRetry(() => import("@/pages/fye-revenue-tracking"));
 const RevenueTrackingReplicaPage = lazyWithRetry(() => import("@/pages/revenue-tracking"));
 const ExpenditureBreakdownReplicaPage = lazyWithRetry(() => import("@/pages/expenditure-breakdown"));
 const ProgramPlanReplicaPage = lazyWithRetry(() => import("@/pages/program-plan"));
@@ -162,6 +163,7 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   CostTracker,
   CosAnalysisPage,
   RevenueTrackerPage,
+  FyeRevenueTrackingPage,
   RevenueTrackingReplicaPage,
   ExpenditureBreakdownReplicaPage,
   ProgramPlanReplicaPage,
