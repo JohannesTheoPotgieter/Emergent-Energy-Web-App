@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useEffect, useRef, Fragment } from "rea
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { extractTrustHeaders, type FinanceTrustMeta } from "@/lib/finance-trust";
 import { DataTrustBadge } from "@/components/ui/data-trust-badge";
+import { FinanceTrustStrip, isStaleImport } from "@/components/finance/FinanceTrustStrip";
 import {
   Tooltip as UiTooltip,
   TooltipContent,
@@ -117,6 +118,12 @@ interface BalanceHistoryEntry {
   changedBy: string | null;
 }
 
+interface CashflowTrustSummary {
+  lastImportDate: string | null;
+  missingTermsCount: number;
+  shiftedLineCount: number;
+}
+
 interface DetailInflow {
   inflowId: number;
   projectName: string;
@@ -131,10 +138,12 @@ interface DetailInflow {
   milestoneAmount: number;
   invoiceRaisedDate: string;
   daysToReceipt: number;
+  lastImportedAt?: string | null;
   qbStatus?: "confirmed" | "unlinked";
   qbDocNumber?: string | null;
   qbAmount?: number | null;
   qbPaymentStatus?: "paid" | "partial" | "unpaid" | null;
+  qbDivergence?: boolean;
 }
 
 interface DetailOutflow {
@@ -151,10 +160,14 @@ interface DetailOutflow {
   adminDateOverrideAt: string | null;
   expenseActualTotal: number;
   paymentStatus: string;
+  lastImportedAt?: string | null;
+  paymentTermsMissing?: boolean;
+  forecastDateShiftDays?: number | null;
   qbStatus?: "confirmed" | "unlinked";
   qbDocNumber?: string | null;
   qbAmount?: number | null;
   qbPaymentStatus?: "paid" | "partial" | "unpaid" | null;
+  qbDivergence?: boolean;
 }
 
 interface WeekDetail {
@@ -468,6 +481,7 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                         <th className="text-right px-3 py-2 font-medium text-muted-foreground">Amount</th>
                         <th className="text-right px-3 py-2 font-medium text-muted-foreground">Days</th>
                         <th className="text-left px-3 py-2 font-medium text-muted-foreground">QB</th>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Signals</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -528,6 +542,19 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                               </span>
                             )}
                           </td>
+                          <td className="px-3 py-2" data-testid={`signals-cell-inflow-${weekStart}-${i}`}>
+                            <span className="inline-flex flex-wrap gap-1">
+                              {inf.lastImportedAt && isStaleImport(inf.lastImportedAt) && (
+                                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-amber-50 text-amber-800 border-amber-300" title={`Last imported: ${inf.lastImportedAt}`} data-testid={`signal-stale-inflow-${weekStart}-${i}`}>Stale</span>
+                              )}
+                              {inf.hasAdminOverride && (
+                                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-violet-50 text-violet-800 border-violet-300" title={inf.adminDateOverrideReason ? `Override: ${inf.adminDateOverrideReason}` : "Date override applied"} data-testid={`signal-override-inflow-${weekStart}-${i}`}>Override</span>
+                              )}
+                              {inf.qbDivergence && (
+                                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-rose-50 text-rose-800 border-rose-300" title="App amount differs from QuickBooks by more than R100" data-testid={`signal-qb-divergence-inflow-${weekStart}-${i}`}>≠ QB</span>
+                              )}
+                            </span>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -562,6 +589,7 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                         <th className="text-center px-3 py-2 font-medium text-muted-foreground">Status</th>
                         <th className="text-right px-3 py-2 font-medium text-muted-foreground">Amount</th>
                         <th className="text-left px-3 py-2 font-medium text-muted-foreground">QB</th>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Signals</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -633,6 +661,25 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                                 Unmatched
                               </span>
                             )}
+                          </td>
+                          <td className="px-3 py-2" data-testid={`signals-cell-outflow-${weekStart}-${i}`}>
+                            <span className="inline-flex flex-wrap gap-1">
+                              {out.lastImportedAt && isStaleImport(out.lastImportedAt) && (
+                                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-amber-50 text-amber-800 border-amber-300" title={`Last imported: ${out.lastImportedAt}`} data-testid={`signal-stale-outflow-${weekStart}-${i}`}>Stale</span>
+                              )}
+                              {out.paymentTermsMissing && (
+                                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-orange-50 text-orange-800 border-orange-300" title="Forecast date set but no payment terms (counterparty) linked" data-testid={`signal-terms-missing-outflow-${weekStart}-${i}`}>No terms</span>
+                              )}
+                              {out.forecastDateShiftDays != null && Math.abs(out.forecastDateShiftDays) > 14 && (
+                                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-amber-50 text-amber-800 border-amber-300" title={`Forecast date shifted ${out.forecastDateShiftDays > 0 ? "+" : ""}${out.forecastDateShiftDays} days since last import`} data-testid={`signal-date-shift-outflow-${weekStart}-${i}`}>Shifted {out.forecastDateShiftDays > 0 ? "+" : ""}{Math.round(out.forecastDateShiftDays / 7)}w</span>
+                              )}
+                              {out.hasAdminOverride && (
+                                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-violet-50 text-violet-800 border-violet-300" title={out.adminDateOverrideReason ? `Override: ${out.adminDateOverrideReason}` : "Date override applied"} data-testid={`signal-override-outflow-${weekStart}-${i}`}>Override</span>
+                              )}
+                              {out.qbDivergence && (
+                                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-rose-50 text-rose-800 border-rose-300" title="App amount differs from QuickBooks by more than R100" data-testid={`signal-qb-divergence-outflow-${weekStart}-${i}`}>≠ QB</span>
+                              )}
+                            </span>
                           </td>
                         </tr>
                         );
@@ -862,7 +909,7 @@ export default function CashflowPage() {
     refetch,
     isFetching: isCashflowFetching,
     dataUpdatedAt: cashflowUpdatedAt,
-  } = useQuery<{ rows: CashflowWeek[]; trust: FinanceTrustMeta | null }>({
+  } = useQuery<{ rows: CashflowWeek[]; trust: FinanceTrustMeta | null; summary: CashflowTrustSummary | null }>({
     queryKey: [CASHFLOW_API_BASE, projectParam],
     queryFn: async () => {
       const url = projectParam
@@ -874,12 +921,13 @@ export default function CashflowPage() {
       const res = await fetch(url, { credentials: "include", headers });
       if (!res.ok) throw new Error("Failed to fetch cashflow data");
       const trust = extractTrustHeaders(res);
-      const rows = (await res.json()) as CashflowWeek[];
-      return { rows, trust };
+      const body = (await res.json()) as { weeks: CashflowWeek[]; summary: CashflowTrustSummary | null };
+      return { rows: body.weeks ?? [], trust, summary: body.summary ?? null };
     },
   });
   const cashflowData: CashflowWeek[] = cashflowEnvelope?.rows ?? [];
   const cashflowTrust: FinanceTrustMeta | null = cashflowEnvelope?.trust ?? null;
+  const cashflowSummary: CashflowTrustSummary | null = cashflowEnvelope?.summary ?? null;
 
   const { data: balanceHistory = [] } = useQuery<BalanceHistoryEntry[]>({
     queryKey: [`${CASHFLOW_API_BASE}/balance-history`, historyWeek],
@@ -1145,11 +1193,23 @@ export default function CashflowPage() {
           </Badge>
         )}
       </div>
-      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs text-slate-700" data-testid="cashflow-trust-note">
-        <p>Cashflow actuals use payment received / paid dates.</p>
-        <p className="mt-1">Forecast dates may use planned-payment fallback where no canonical payment date exists.</p>
-        <p className="mt-1 text-slate-600">Use forecast values as planning data until reconciled.</p>
-      </div>
+      <FinanceTrustStrip
+        source={cashflowTrust?.canonicalTable ?? "canonical"}
+        lastImportDate={cashflowSummary?.lastImportDate ?? "Unknown"}
+        quickBooksLinkStatus="unknown"
+        metrics={[
+          {
+            label: "Unresolved drift",
+            value: cashflowSummary != null ? cashflowSummary.shiftedLineCount : "Unknown / not yet measured",
+            tone: (cashflowSummary?.shiftedLineCount ?? 0) > 0 ? "warning" : "default",
+          },
+          {
+            label: "Missing PO",
+            value: cashflowSummary != null ? cashflowSummary.missingTermsCount : "Unknown / not yet measured",
+            tone: (cashflowSummary?.missingTermsCount ?? 0) > 0 ? "warning" : "default",
+          },
+        ]}
+      />
       <div className="lg:flex lg:gap-5 lg:items-start -mt-1">
         <aside
           className="hidden lg:flex lg:flex-col lg:w-56 lg:shrink-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] rounded-xl border border-border bg-card shadow-sm p-3"
