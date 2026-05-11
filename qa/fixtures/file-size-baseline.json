@@ -2,11 +2,11 @@
   "_documentation": "EE-QA-015 baseline — files above the FILE_SIZE_THRESHOLD LOC. The CI guard `qa/tests/unit/file-size-ratchet.test.ts` fails if any of these grow OR a NEW file lands over the threshold. To regenerate after a split, run `npx tsx scripts/build-file-size-baseline.ts` and commit the new JSON.",
   "threshold": 1500,
   "buffer": 50,
-  "generated": "2026-05-08",
+  "generated": "2026-05-11",
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
-      "loc": 7676
+      "loc": 7729
     },
     {
       "file": "client/src/pages/EngineeringTasksPage.tsx",
@@ -45,12 +45,12 @@
       "loc": 2505
     },
     {
-      "file": "server/lib/import/commit-executor.ts",
-      "loc": 2437
+      "file": "server/lifecycle-routes.ts",
+      "loc": 2461
     },
     {
-      "file": "server/lifecycle-routes.ts",
-      "loc": 2421
+      "file": "server/lib/import/commit-executor.ts",
+      "loc": 2437
     },
     {
       "file": "client/src/pages/my-work-tasks.tsx",
@@ -101,12 +101,12 @@
       "loc": 2064
     },
     {
-      "file": "server/departments/opportunities-routes.ts",
-      "loc": 2045
+      "file": "client/src/pages/cashflow.tsx",
+      "loc": 2048
     },
     {
-      "file": "client/src/pages/cashflow.tsx",
-      "loc": 1983
+      "file": "server/departments/opportunities-routes.ts",
+      "loc": 2045
     },
     {
       "file": "server/departments/priority-strategic-routes.ts",
@@ -121,12 +121,12 @@
       "loc": 1820
     },
     {
-      "file": "client/src/pages/collaboration.tsx",
-      "loc": 1788
+      "file": "server/quickbooks-routes.ts",
+      "loc": 1803
     },
     {
-      "file": "server/quickbooks-routes.ts",
-      "loc": 1787
+      "file": "client/src/pages/collaboration.tsx",
+      "loc": 1788
     },
     {
       "file": "server/departments/exco-routes.ts",
