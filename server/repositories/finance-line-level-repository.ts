@@ -241,6 +241,7 @@ export class FinanceLineLevelRepository {
           description: normalizedCostLineActuals.description,
           qty: normalizedCostLineActuals.qty,
           rate: normalizedCostLineActuals.rate,
+          revenueRecognitionAmount: normalizedCostLineActuals.revenueRecognitionAmount,
         })
         .from(normalizedCostLineActuals)
         .where(
@@ -273,6 +274,9 @@ export class FinanceLineLevelRepository {
           // realised bucket with the COS tracker's classification.
           invoiceDateFontColor: normalizedCostLines.invoiceDateFontColor,
           invoiceDateConfirmed: normalizedCostLines.invoiceDateConfirmed,
+          // Persisted Smart Import col U — preferred over derived
+          // (Q/X)*J so the GP page matches the Revenue tracker.
+          revenueRecognitionAmount: normalizedCostLines.revenueRecognitionAmount,
         })
         .from(normalizedCostLines)
         .where(
@@ -382,6 +386,10 @@ export interface FinanceLineActualsRowInput {
   description: string | null;
   qty: string | null;
   rate: string | null;
+  /** Persisted Smart Import col U on this actuals row. When non-null,
+   * preferred over the derived (Q/X)*J value so the GP page reconciles
+   * to the Revenue tracker (which reads this column directly). */
+  revenueRecognitionAmount?: string | number | null;
 }
 
 export interface FinanceLineParentRowInput {
@@ -408,6 +416,10 @@ export interface FinanceLineParentRowInput {
   // Used by the bucket classifier to align with the COS tracker.
   invoiceDateFontColor?: string | null;
   invoiceDateConfirmed?: boolean | null;
+  /** Persisted Smart Import col U on the parent (text). Falls through
+   * to synthesized actuals rows so parent-only lines get the same
+   * revenue-recognition number the Revenue tracker would show. */
+  revenueRecognitionAmount?: string | null;
 }
 
 export interface FinanceLineAllocationRowInput {
@@ -467,6 +479,7 @@ export function synthesizeActualsForParents(
       description: parent.description ?? null,
       qty: null,
       rate: null,
+      revenueRecognitionAmount: parent.revenueRecognitionAmount ?? null,
     });
   }
   return out;
@@ -560,7 +573,12 @@ export function deriveFinanceLinesFromRows(
   for (const a of actualsRows) {
     const parent = parentById.get(a.costLineId);
     const invoiceRaisedDate = isoDate(a.invoiceDate);
-    if (!inWindow(invoiceRaisedDate, opts.fyStart, opts.fyEnd)) continue;
+    // Recognition date: prefer invoice date (col T); fall back to
+    // forecast payment date (col H) so no-invoice lines bucket the
+    // same way the COS / Revenue trackers bucket them.
+    const recognitionDate =
+      invoiceRaisedDate ?? isoDate(parent?.forecastPaymentDate ?? null);
+    if (!inWindow(recognitionDate, opts.fyStart, opts.fyEnd)) continue;
 
     const actualTotal = toNum(a.actualTotal);
     const allocId = parent ? parentResolvedAllocId.get(parent.id) ?? null : null;
@@ -572,9 +590,18 @@ export function deriveFinanceLinesFromRows(
       ? toNum(allocation.revenueAllocation)
       : null;
 
+    // Persisted Smart Import value (col U). Smart Import writes this
+    // per-actual-row at import time using the canonical category-scoped
+    // (Q/X)*J formula (§ 3.3). When present, prefer it over re-deriving
+    // — that's the same source the Revenue tracker reads from, so the
+    // numbers reconcile exactly.
+    const persistedRevenue = toNum(a.revenueRecognitionAmount);
+
     let perLineRevenue = 0;
     let warning: string | null = null;
-    if (parent == null) {
+    if (persistedRevenue > 0) {
+      perLineRevenue = persistedRevenue;
+    } else if (parent == null) {
       warning = "orphan_actuals_row_no_parent";
     } else if (allocId == null) {
       // Distinguish "parent has nothing to lookup with" from "parent had a
@@ -653,10 +680,12 @@ export function deriveFinanceLinesFromRows(
         a.invoiceNumber ?? null,
         parent?.invoiceDateFontColor ?? null,
         parent?.invoiceDateConfirmed ?? null,
-        monthKey(invoiceRaisedDate),
+        monthKey(recognitionDate),
         currentMonthKey,
       ),
-      recognitionMonth: monthKey(invoiceRaisedDate),
+      // Use the resolved recognition date so no-invoice lines bucket
+      // on forecast_payment_date (matches COS / Revenue tabs).
+      recognitionMonth: monthKey(recognitionDate),
       derivationWarning: warning,
     });
   }
