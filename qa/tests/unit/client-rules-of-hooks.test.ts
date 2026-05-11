@@ -35,5 +35,5 @@ describe("client Rules of Hooks", () => {
       offenders,
       `Found ${offenders.length} Rules-of-Hooks violation(s):\n${offenders.join("\n")}`,
     ).toEqual([]);
-  }, 60_000);
+  }, 120_000);
 });

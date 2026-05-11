@@ -22,7 +22,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 function read(relPath: string): string {
-  return fs.readFileSync(path.join(process.cwd(), relPath), "utf8");
+  return fs.readFileSync(path.join(process.cwd(), relPath), "utf8").replace(/\r\n/g, "\n");
 }
 
 describe("QuickBooks link — many-to-many allocations (Task #142)", () => {
@@ -169,7 +169,7 @@ describe("QuickBooks bulk-assign hardening (#660 follow-up)", () => {
     expect(routes).toContain("QuickBooksBillNotFoundError");
     expect(routes).toContain('new ApiError(404, "quickbooks_bill_not_found"');
     expect(routes).toContain("Over-assignment blocked");
-    expect(routes).toContain("conflict(err.message)");
+    expect(routes).toContain('conflict("Over-assignment blocked")');
   });
 
   it("does not fall back to qbRealmId='unknown' in the save-allocations path", () => {
