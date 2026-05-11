@@ -2,7 +2,7 @@ import { eq, and, desc, ilike, isNull, or, inArray, sql } from "drizzle-orm";
 import { softCloseByProjectName } from "../lib/temporal-helpers";
 import { logAudit } from "../audit-logger";
 import {
-  normalizedRevenueLines, projectInfo,
+  normalizedRevenueLines, projectInfo, smartImportRuns,
   type ProgramInflows, type InsertProgramInflows,
 } from "@shared/schema";
 import { db } from "../db";
@@ -106,8 +106,29 @@ export class FinanceInflowsRepository {
       this.dbInstance.select().from(normalizedRevenueLines).where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))),
       this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
     ]);
+
+    // Resolve snapshotRunId → committedAt so the per-row Stale badge uses the
+    // actual import run timestamp, not createdAt (which never changes for stable rows).
+    const runIds = [...new Set(
+      (revLines as any[]).map((r: any) => r.snapshotRunId).filter((id: any) => id != null) as number[],
+    )];
+    const committedAtByRunId = new Map<number, string | null>();
+    if (runIds.length > 0) {
+      const runRows = await this.dbInstance
+        .select({ id: smartImportRuns.id, committedAt: smartImportRuns.committedAt })
+        .from(smartImportRuns)
+        .where(inArray(smartImportRuns.id, runIds));
+      for (const r of runRows) {
+        committedAtByRunId.set(r.id, r.committedAt ? new Date(r.committedAt).toISOString() : null);
+      }
+    }
+    const revLinesWithTs = (revLines as any[]).map((r: any) => ({
+      ...r,
+      snapshotRunCommittedAt: committedAtByRunId.get(r.snapshotRunId) ?? null,
+    }));
+
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
-    return resolveRevenueRowProjectNames(revLines as any[], piRows as any[], "[getAllRevenueLinesForCashflow]")
+    return resolveRevenueRowProjectNames(revLinesWithTs, piRows as any[], "[getAllRevenueLinesForCashflow]")
       .map(({ row, name }) => adaptRevenueToInflow(row, resolve(name)));
   }
 

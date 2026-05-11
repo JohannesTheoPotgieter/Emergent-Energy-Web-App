@@ -567,7 +567,16 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                                 <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-violet-50 text-violet-800 border-violet-300" title={inf.adminDateOverrideReason ? `Override: ${inf.adminDateOverrideReason}` : "Date override applied"} data-testid={`signal-override-inflow-${weekStart}-${i}`}>Override</span>
                               )}
                               {inf.qbDivergence && (
-                                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-rose-50 text-rose-800 border-rose-300" title="App amount differs from QuickBooks by more than R100" data-testid={`signal-qb-divergence-inflow-${weekStart}-${i}`}>≠ QB</span>
+                                <TooltipProvider>
+                                  <UiTooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-rose-50 text-rose-800 border-rose-300 cursor-help" data-testid={`signal-qb-divergence-inflow-${weekStart}-${i}`}>≠ QB</span>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" className="max-w-xs text-xs">
+                                      App amount R{inf.milestoneAmount?.toLocaleString() ?? "?"} differs from QuickBooks{inf.qbDocNumber ? ` (${inf.qbDocNumber})` : ""} by more than R100. Reconcile in QuickBooks.
+                                    </TooltipContent>
+                                  </UiTooltip>
+                                </TooltipProvider>
                               )}
                             </span>
                           </td>
@@ -719,7 +728,16 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                                 <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-violet-50 text-violet-800 border-violet-300" title={out.adminDateOverrideReason ? `Override: ${out.adminDateOverrideReason}` : "Date override applied"} data-testid={`signal-override-outflow-${weekStart}-${i}`}>Override</span>
                               )}
                               {out.qbDivergence && (
-                                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-rose-50 text-rose-800 border-rose-300" title="App amount differs from QuickBooks by more than R100" data-testid={`signal-qb-divergence-outflow-${weekStart}-${i}`}>≠ QB</span>
+                                <TooltipProvider>
+                                  <UiTooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-rose-50 text-rose-800 border-rose-300 cursor-help" data-testid={`signal-qb-divergence-outflow-${weekStart}-${i}`}>≠ QB</span>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" className="max-w-xs text-xs">
+                                      App amount R{out.expenseActualTotal?.toLocaleString() ?? "?"} differs from QuickBooks{out.qbDocNumber ? ` (${out.qbDocNumber})` : ""} by more than R100. Reconcile in QuickBooks.
+                                    </TooltipContent>
+                                  </UiTooltip>
+                                </TooltipProvider>
                               )}
                             </span>
                           </td>
@@ -1257,11 +1275,6 @@ export default function CashflowPage() {
           },
         ]}
       />
-      <div className="mb-4 rounded-md border border-slate-200 bg-slate-50/70 p-3" data-testid="cashflow-trust-note">
-        <p className="text-sm text-slate-800">Cashflow actuals use payment received / paid dates.</p>
-        <p className="mt-1 text-sm text-slate-700">Forecast dates may use planned-payment fallback where no canonical payment date exists.</p>
-        <p className="mt-1 text-xs text-slate-600">Use forecast values as planning data until reconciled.</p>
-      </div>
       <div className="lg:flex lg:gap-5 lg:items-start -mt-1">
         <aside
           className="hidden lg:flex lg:flex-col lg:w-56 lg:shrink-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] rounded-xl border border-border bg-card shadow-sm p-3"
