@@ -1222,6 +1222,7 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
           dateSource: dateInfo.source,
           expenseActualTotal: amountBreakdown.amount,
           supplierName: e.supplierName || null,
+          rowNumber: (e as any).rowNumber ?? null,
           lastImportedAt: (e as any).createdAt
             ? new Date((e as any).createdAt).toISOString()
             : null,
