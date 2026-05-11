@@ -915,6 +915,67 @@ export default function DashboardPage() {
             ))}
           </div>
         )}
+
+        {/* ── Program Dashboard metrics row (Excel Program Dashboard parity) ── */}
+        {data?.kpis && (
+          <div className="space-y-1.5">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <BarChart3 className="w-3.5 h-3.5" /> Program Metrics
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              {([
+                {
+                  label: "On Schedule Rate",
+                  value: `${Number(data.kpis.onScheduleRate ?? 0).toFixed(1)}%`,
+                  color: Number(data.kpis.onScheduleRate ?? 0) >= 80 ? "text-emerald-700" : Number(data.kpis.onScheduleRate ?? 0) >= 50 ? "text-amber-700" : "text-red-700",
+                  tip: "% of active projects within 5% of expected progress (Excel C3)",
+                },
+                {
+                  label: "Contract Completeness",
+                  value: `${Number(data.kpis.contractCompleteness ?? 0).toFixed(1)}%`,
+                  color: Number(data.kpis.contractCompleteness ?? 0) >= 80 ? "text-emerald-700" : "text-amber-700",
+                  tip: "% of active projects with cost proposal and EPC contract both signed (Excel E3)",
+                },
+                {
+                  label: "REV Outstanding (Month)",
+                  value: money(data.kpis.revenueOutstandingThisMonth),
+                  color: Number(data.kpis.revenueOutstandingThisMonth ?? 0) > 0 ? "text-amber-700" : "text-foreground",
+                  tip: "Revenue invoiced this month but not yet received (Excel F9)",
+                },
+                {
+                  label: "COS Outstanding (Month)",
+                  value: money(data.kpis.cosOutstandingThisMonth),
+                  color: Number(data.kpis.cosOutstandingThisMonth ?? 0) > 0 ? "text-orange-700" : "text-foreground",
+                  tip: "COS planned this month minus realised COS (Excel G9)",
+                },
+                {
+                  label: "Inflows This Week",
+                  value: money(data.kpis.projectInflowsThisWeek),
+                  color: "text-emerald-700",
+                  tip: "Project inflows from cashflow sheet for current week (Excel D9)",
+                },
+                {
+                  label: "Outflows This Week",
+                  value: money(data.kpis.projectOutflowsThisWeek),
+                  color: "text-orange-700",
+                  tip: "Project outflows from cashflow sheet for current week (Excel E9)",
+                },
+              ] as const).map((kpi) => (
+                <Tooltip key={kpi.label}>
+                  <TooltipTrigger asChild>
+                    <Card className="border-border/50 energy-card cursor-default border-dashed">
+                      <CardContent className="p-3">
+                        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground truncate mb-1">{kpi.label}</p>
+                        <p className={`text-base font-semibold font-mono ${kpi.color}`}>{kpi.value}</p>
+                      </CardContent>
+                    </Card>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom"><p>{kpi.tip}</p></TooltipContent>
+                </Tooltip>
+              ))}
+            </div>
+          </div>
+        )}
       </TooltipProvider>
 
       <Card className="border-border energy-card" data-testid="immediate-intervention-queue">
