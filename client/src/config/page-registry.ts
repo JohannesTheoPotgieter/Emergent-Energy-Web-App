@@ -123,6 +123,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "cos", path: "/cos", label: "COS", iconKey: "TrendingUp", navGroup: "FINANCE", permissionEntity: "cos", showInSidebar: true, routeComponentKey: "CostTracker" },
   { id: "cosAnalysis", path: "/cos/analysis", label: "COS Analysis", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "cos", showInSidebar: true, routeComponentKey: "CosAnalysisPage" },
   { id: "revenueTracker", path: "/revenue-tracker", label: "Revenue", iconKey: "TrendingUp", navGroup: "FINANCE", permissionEntity: "revenue_tracker", showInSidebar: true, routeComponentKey: "RevenueTrackerPage" },
+  { id: "fyeRevenueTracking", path: "/fye-revenue-tracking", label: "FYE Revenue", iconKey: "CalendarRange", navGroup: "FINANCE", permissionEntity: "fye_revenue_tracking", showInSidebar: true, routeComponentKey: "FyeRevenueTrackingPage" },
   { id: "financeGpCompany", path: "/finance/gp/company", label: "GP", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: false, routeComponentKey: "FinanceGpCompanyPage" },
   { id: "financeGp", path: "/finance/gp", label: "GP — by project", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: false, routeComponentKey: "FinanceGpPage" },
   // Per-project Tracker replicas — read-only views that render the source
