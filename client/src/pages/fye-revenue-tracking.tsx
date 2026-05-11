@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from "react";
 import { FinanceShell } from "@/components/layout/FinanceShell";
 import { SectionHeader } from "@/components/layout/page-shell";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useApiMutation } from "@/hooks/use-api-mutation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -362,10 +363,11 @@ function ProjectsTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
     queryFn: fetchQueryFn(`/api/fye-revenue-tracking/detail?fye=${fye}${cutoff ? `&cutoffMonth=${cutoff}` : ""}`),
   });
 
-  const editMutation = useMutation({
+  const editMutation = useApiMutation({
     mutationFn: (body: { projectName: string; field: string; value: string | null }) =>
       apiRequest("PUT", "/api/fye-revenue-tracking/detail/inline-edit", body),
     onSuccess: () => qc.invalidateQueries({ queryKey }),
+    errorToast: "Failed to save field",
   });
 
   const projects = useMemo(() => {
@@ -555,19 +557,25 @@ function PipelineTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
     queryFn: fetchQueryFn(`/api/fye-revenue-tracking/pipeline?fye=${fye}`),
   });
 
-  const createMut = useMutation({
+  const createMut = useApiMutation({
     mutationFn: (body: typeof form) => apiRequest("POST", "/api/fye-revenue-tracking/pipeline", { ...body, fyeYear: fye, sizeKwp: body.sizeKwp || null, dealProbabilityPct: Number(body.dealProbabilityPct), solarRevenue: body.solarRevenue || "0", bessRevenue: body.bessRevenue || "0", forecastGpPct: body.forecastGpPct || null }),
     onSuccess: () => { qc.invalidateQueries({ queryKey }); setAdding(false); setForm({ ...EMPTY_PIPELINE }); },
+    successToast: "Deal added",
+    errorToast: "Failed to add deal",
   });
 
-  const updateMut = useMutation({
+  const updateMut = useApiMutation({
     mutationFn: ({ id, data }: { id: number; data: Partial<PipelineRow> }) => apiRequest("PUT", `/api/fye-revenue-tracking/pipeline/${id}`, data),
     onSuccess: () => { qc.invalidateQueries({ queryKey }); setEditId(null); },
+    successToast: "Deal updated",
+    errorToast: "Failed to update deal",
   });
 
-  const deleteMut = useMutation({
+  const deleteMut = useApiMutation({
     mutationFn: (id: number) => apiRequest("DELETE", `/api/fye-revenue-tracking/pipeline/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey }),
+    successToast: "Deal removed",
+    errorToast: "Failed to remove deal",
   });
 
   const totalRev = rows.reduce((s, r) => s + (parseFloat(r.solarRevenue || "0") + parseFloat(r.bessRevenue || "0")), 0);
@@ -688,19 +696,25 @@ function LostDealsTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
     queryFn: fetchQueryFn(`/api/fye-revenue-tracking/lost-deals?fye=${fye}`),
   });
 
-  const createMut = useMutation({
+  const createMut = useApiMutation({
     mutationFn: (body: typeof form) => apiRequest("POST", "/api/fye-revenue-tracking/lost-deals", { ...body, fyeYear: fye, dealValue: body.dealValue || null }),
     onSuccess: () => { qc.invalidateQueries({ queryKey }); setAdding(false); setForm({ ...EMPTY_LOST }); },
+    successToast: "Lost deal recorded",
+    errorToast: "Failed to save lost deal",
   });
 
-  const updateMut = useMutation({
+  const updateMut = useApiMutation({
     mutationFn: ({ id, data }: { id: number; data: Partial<LostDealRow> }) => apiRequest("PUT", `/api/fye-revenue-tracking/lost-deals/${id}`, data),
     onSuccess: () => { qc.invalidateQueries({ queryKey }); setEditId(null); },
+    successToast: "Lost deal updated",
+    errorToast: "Failed to update lost deal",
   });
 
-  const deleteMut = useMutation({
+  const deleteMut = useApiMutation({
     mutationFn: (id: number) => apiRequest("DELETE", `/api/fye-revenue-tracking/lost-deals/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey }),
+    successToast: "Lost deal removed",
+    errorToast: "Failed to remove lost deal",
   });
 
   const totalLost = rows.reduce((s, r) => s + parseFloat(r.dealValue || "0"), 0);
