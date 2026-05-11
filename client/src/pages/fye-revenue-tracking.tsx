@@ -331,6 +331,89 @@ function FyeTrackingCharts({ months }: { months: DashboardMonth[] }) {
   );
 }
 
+/**
+ * Source-of-truth banner — shows the timestamp + file of the last successful
+ * Smart Import commit so the user knows EXACTLY which workbook these
+ * numbers reflect. Reads from /api/smart-import/runs (the canonical
+ * smart_import_runs audit table — no caching, no derived state).
+ */
+interface ImportRunMeta {
+  id: number;
+  project_id: number | null;
+  project_name: string | null;
+  status: string | null;
+  file_name: string | null;
+  uploaded_at: string | null;
+  committed_at: string | null;
+  uploaded_by: string | null;
+  committed_by: string | null;
+}
+
+function SourceOfTruthBanner() {
+  const { data: runs = [] } = useQuery<ImportRunMeta[]>({
+    queryKey: ["/api/smart-import/runs"],
+    queryFn: async () => {
+      const res = await fetch("/api/smart-import/runs", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 30_000,
+  });
+
+  const lastCommitted = runs.find((r) => (r.status || "").toLowerCase() === "committed");
+
+  if (!lastCommitted || !lastCommitted.committed_at) {
+    return (
+      <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 px-4 py-3 text-xs flex items-start gap-2">
+        <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+        <div className="flex-1">
+          <div className="font-medium text-amber-800 dark:text-amber-200">No imports recorded yet.</div>
+          <div className="text-amber-700/80 dark:text-amber-300/80">
+            Numbers shown reflect the current database state but cannot be tied to a specific tracker workbook. Run a manual import from{" "}
+            <a href="/admin/integrations" className="underline font-medium">Integration Statuses</a> to establish a source-of-truth audit trail.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const when = new Date(lastCommitted.committed_at);
+  const isoTitle = lastCommitted.committed_at;
+  const ageMs = Date.now() - when.getTime();
+  const ageDays = Math.floor(ageMs / 86_400_000);
+  const isStale = ageDays > 7;
+
+  return (
+    <div className={`mb-3 rounded-lg border px-4 py-3 text-xs flex items-start gap-2 ${
+      isStale
+        ? "border-amber-200 bg-amber-50 dark:bg-amber-950/20"
+        : "border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20"
+    }`} data-testid="banner-fye-source-of-truth">
+      <CheckCircle2 className={`h-4 w-4 shrink-0 mt-0.5 ${isStale ? "text-amber-600" : "text-emerald-600"}`} />
+      <div className="flex-1 space-y-0.5">
+        <div className={`font-medium ${isStale ? "text-amber-800 dark:text-amber-200" : "text-emerald-800 dark:text-emerald-200"}`}>
+          Source of truth:{" "}
+          <span className="font-mono">{lastCommitted.file_name ?? "(unknown file)"}</span>
+        </div>
+        <div className={`${isStale ? "text-amber-700/80 dark:text-amber-300/80" : "text-emerald-700/80 dark:text-emerald-300/80"}`}>
+          Last imported <span title={isoTitle} className="font-medium">
+            {ageDays === 0 ? "today" : ageDays === 1 ? "1 day ago" : `${ageDays} days ago`}
+          </span>{" "}
+          ({when.toLocaleString()})
+          {lastCommitted.committed_by && <> by <span className="font-medium">{lastCommitted.committed_by}</span></>}
+          {lastCommitted.project_name && <> · project <span className="font-medium">{lastCommitted.project_name}</span></>}
+          {isStale && " · consider re-importing to refresh"}.
+        </div>
+        <div className="pt-1 flex gap-3 text-[11px]">
+          <a href="/admin/integrations" className="underline font-medium hover:no-underline">Run manual import</a>
+          <a href="/program/excel-vs-app" className="underline font-medium hover:no-underline">Excel vs App diff</a>
+          <a href="/admin/smart-import" className="underline font-medium hover:no-underline">Import history</a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DashboardGrid({ months }: { months: DashboardMonth[] }) {
   const now = new Date();
   const curMk = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -1044,11 +1127,12 @@ export default function FyeRevenueTrackingPage() {
           </TabsList>
 
           <TabsContent value="dashboard" className="mt-3">
+            <SourceOfTruthBanner />
             <Card className="shadow-sm overflow-hidden">
               <CardHeader className="bg-muted/30 border-b border-border px-4 py-3">
                 <CardTitle className="text-sm font-semibold tracking-tight flex items-center gap-2">
                   <BarChart3 className="h-4 w-4 text-muted-foreground" />
-                  Monthly Revenue · COS · GP — Budget vs Actual/Forecast vs Pipeline
+                  Monthly Revenue · COS · GP — Budget · Adjusted Budget · Actual + Forecast · Actual · Captured Data
                   <Badge variant="outline" className="ml-auto text-[10px]">
                     <CalendarRange className="h-3 w-3 mr-1" />{fyeLabel}
                   </Badge>
