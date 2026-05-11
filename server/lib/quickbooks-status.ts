@@ -17,6 +17,7 @@ export interface QbTxnCandidate {
   counterpartyName: string | null;
   txnDate: string | null;
   statusDate: string | null;
+  taxUncertain?: boolean;
 }
 
 export interface QbStatusResolutionInput {

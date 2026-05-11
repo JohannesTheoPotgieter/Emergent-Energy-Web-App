@@ -152,6 +152,7 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
     cellFormat: (cost as any).cellFormat ?? null,
     importSnapshot: (cost as any).importSnapshot ?? null,
     counterpartyId: (cost as any).counterpartyId ?? null,
+    snapshotRunCommittedAt: (cost as any).snapshotRunCommittedAt ?? null,
   };
 }
 

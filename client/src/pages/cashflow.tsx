@@ -160,6 +160,7 @@ interface DetailOutflow {
   adminDateOverrideAt: string | null;
   expenseActualTotal: number;
   paymentStatus: string;
+  rowNumber?: number | null;
   lastImportedAt?: string | null;
   paymentTermsMissing?: boolean;
   forecastDateShiftDays?: number | null;
@@ -485,7 +486,11 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredInflows.map((inf, i) => (
+                      {filteredInflows.map((inf, i) => {
+                        const inflowStaleDays = inf.lastImportedAt && isStaleImport(inf.lastImportedAt)
+                          ? Math.round((Date.now() - new Date(inf.lastImportedAt).getTime()) / 864e5)
+                          : null;
+                        return (
                         <tr key={i} className="border-b border-border hover:bg-muted/50 transition-colors" data-testid={`row-inflow-${weekStart}-${i}`}>
                           <td className="px-3 py-2 font-medium text-foreground">{inf.projectName}</td>
                           <td className="px-3 py-2 text-muted-foreground">{inf.milestoneName}</td>
@@ -544,8 +549,18 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                           </td>
                           <td className="px-3 py-2" data-testid={`signals-cell-inflow-${weekStart}-${i}`}>
                             <span className="inline-flex flex-wrap gap-1">
-                              {inf.lastImportedAt && isStaleImport(inf.lastImportedAt) && (
-                                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-amber-50 text-amber-800 border-amber-300" title={`Last imported: ${inf.lastImportedAt}`} data-testid={`signal-stale-inflow-${weekStart}-${i}`}>Stale</span>
+                              {inflowStaleDays !== null && (
+                                <TooltipProvider>
+                                  <UiTooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="cursor-help text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-amber-50 text-amber-800 border-amber-300" data-testid={`signal-stale-inflow-${weekStart}-${i}`}>Stale</span>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="max-w-xs">
+                                      <p className="font-medium text-xs">Data is {inflowStaleDays} day{inflowStaleDays !== 1 ? "s" : ""} old</p>
+                                      <p className="mt-1 text-[11px] text-muted-foreground">Re-import the {inf.projectName} tracker to refresh this line.</p>
+                                    </TooltipContent>
+                                  </UiTooltip>
+                                </TooltipProvider>
                               )}
                               {inf.hasAdminOverride && (
                                 <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-violet-50 text-violet-800 border-violet-300" title={inf.adminDateOverrideReason ? `Override: ${inf.adminDateOverrideReason}` : "Date override applied"} data-testid={`signal-override-inflow-${weekStart}-${i}`}>Override</span>
@@ -556,7 +571,8 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                             </span>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -600,6 +616,9 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                           "Risk": "bg-red-50 text-red-700 border-red-300",
                           "Planned": "bg-muted text-muted-foreground border-border",
                         };
+                        const staleDays = out.lastImportedAt && isStaleImport(out.lastImportedAt)
+                          ? Math.round((Date.now() - new Date(out.lastImportedAt).getTime()) / 864e5)
+                          : null;
                         return (
                         <tr key={i} className="border-b border-border hover:bg-muted/50 transition-colors" data-testid={`row-outflow-${weekStart}-${i}`}>
                           <td className="px-3 py-2 font-medium text-foreground">{out.projectName}</td>
@@ -664,11 +683,33 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                           </td>
                           <td className="px-3 py-2" data-testid={`signals-cell-outflow-${weekStart}-${i}`}>
                             <span className="inline-flex flex-wrap gap-1">
-                              {out.lastImportedAt && isStaleImport(out.lastImportedAt) && (
-                                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-amber-50 text-amber-800 border-amber-300" title={`Last imported: ${out.lastImportedAt}`} data-testid={`signal-stale-outflow-${weekStart}-${i}`}>Stale</span>
+                              {staleDays !== null && (
+                                <TooltipProvider>
+                                  <UiTooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="cursor-help text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-amber-50 text-amber-800 border-amber-300" data-testid={`signal-stale-outflow-${weekStart}-${i}`}>Stale</span>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="max-w-xs">
+                                      <p className="font-medium text-xs">Data is {staleDays} day{staleDays !== 1 ? "s" : ""} old</p>
+                                      <p className="mt-1 text-[11px] text-muted-foreground">Re-import the {out.projectName} tracker to refresh this line.</p>
+                                    </TooltipContent>
+                                  </UiTooltip>
+                                </TooltipProvider>
                               )}
                               {out.paymentTermsMissing && (
-                                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-orange-50 text-orange-800 border-orange-300" title="Forecast date set but no payment terms (counterparty) linked" data-testid={`signal-terms-missing-outflow-${weekStart}-${i}`}>No terms</span>
+                                <TooltipProvider>
+                                  <UiTooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="cursor-help text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-orange-50 text-orange-800 border-orange-300" data-testid={`signal-terms-missing-outflow-${weekStart}-${i}`}>No terms</span>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="max-w-xs">
+                                      <p className="font-medium text-xs">Payment terms formula missing</p>
+                                      <p className="mt-1 text-[11px] text-muted-foreground">
+                                        {out.rowNumber ? `Row ${out.rowNumber} in ` : ""}{out.projectName} tracker is committed or invoiced but has no forecast payment date — add a payment terms formula in the Forecast Payment Date column and re-import.
+                                      </p>
+                                    </TooltipContent>
+                                  </UiTooltip>
+                                </TooltipProvider>
                               )}
                               {out.forecastDateShiftDays != null && Math.abs(out.forecastDateShiftDays) > 14 && (
                                 <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-amber-50 text-amber-800 border-amber-300" title={`Forecast date shifted ${out.forecastDateShiftDays > 0 ? "+" : ""}${out.forecastDateShiftDays} days since last import`} data-testid={`signal-date-shift-outflow-${weekStart}-${i}`}>Shifted {out.forecastDateShiftDays > 0 ? "+" : ""}{Math.round(out.forecastDateShiftDays / 7)}w</span>
@@ -1215,6 +1256,11 @@ export default function CashflowPage() {
           },
         ]}
       />
+      <div className="mb-4 rounded-md border border-slate-200 bg-slate-50/70 p-3" data-testid="cashflow-trust-note">
+        <p className="text-sm text-slate-800">Cashflow actuals use payment received / paid dates.</p>
+        <p className="mt-1 text-sm text-slate-700">Forecast dates may use planned-payment fallback where no canonical payment date exists.</p>
+        <p className="mt-1 text-xs text-slate-600">Use forecast values as planning data until reconciled.</p>
+      </div>
       <div className="lg:flex lg:gap-5 lg:items-start -mt-1">
         <aside
           className="hidden lg:flex lg:flex-col lg:w-56 lg:shrink-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] rounded-xl border border-border bg-card shadow-sm p-3"

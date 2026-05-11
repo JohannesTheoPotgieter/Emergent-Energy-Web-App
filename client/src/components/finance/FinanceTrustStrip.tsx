@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
+import { isImportStale } from "@shared/lib/cashflow-trust";
 
 export interface TrustMetricLink {
   label: string;
@@ -24,11 +25,7 @@ const toneClass: Record<NonNullable<TrustMetricLink["tone"]>, string> = {
 };
 
 export function isStaleImport(lastImportDate: string): boolean {
-  if (!lastImportDate || lastImportDate.toLowerCase() === "unknown") return true;
-  const parsed = new Date(lastImportDate);
-  if (Number.isNaN(parsed.getTime())) return true;
-  const ageDays = (Date.now() - parsed.getTime()) / (1000 * 60 * 60 * 24);
-  return ageDays > 7;
+  return isImportStale(lastImportDate);
 }
 
 export function buildTrustStripState(params: {
