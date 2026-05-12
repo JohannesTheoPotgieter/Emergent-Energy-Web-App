@@ -1,6 +1,6 @@
 {
   "generatedAt": "2026-04-27T13:30:55.798Z",
-  "count": 604,
+  "count": 605,
   "notes": "Legacy routes that pre-date the Task #101 canonical-evaluator gate. Adding NEW entries to this list is forbidden — the CI guard will fail. Removing entries (by adding requirePermission to that route) is welcome and shrinks the legacy debt.",
   "routes": [
     "server/analytics-routes.ts:GET /api/analytics/budget-waterfall",
@@ -196,6 +196,7 @@
     "server/departments/om-handover-routes.ts:PATCH /api/om-handovers/:id",
     "server/departments/om-handover-routes.ts:POST /api/projects/:projectId/om-handover",
     "server/departments/priority-strategic-routes.ts:GET /api/priorities",
+    "server/departments/priority-strategic-routes.ts:POST /api/priorities/from-task/:workItemId",
     "server/departments/priority-strategic-routes.ts:GET /api/priorities/:id",
     "server/departments/priority-strategic-routes.ts:GET /api/priorities/:id/activity",
     "server/departments/priority-strategic-routes.ts:GET /api/priorities/:id/approvals",
