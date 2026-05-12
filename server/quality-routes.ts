@@ -45,6 +45,17 @@ import { getProjectLinkedItems } from "./project-linking-service";
 import { computePdPmSubmitBlockers, getProjectDevelopmentWorkspace } from "./services/project-development-workspace-service";
 import { parseIntParam } from "./lib/req-params";
 import { evaluateSafeFormula } from "@shared/lib/safe-formula";
+import {
+  countEvidencePerItem,
+  findChecklistByProjectName,
+  findFullHandoverRowForProject,
+  findProjectWithExecutionState,
+  listActiveWarningsForProject,
+  listHandoverRowsForProjects,
+  listProjectsWithExecutionState,
+  mergeProjectRow as repoMergeProjectRow,
+  type MergedProjectRow,
+} from "./repositories/quality-repository";
 
 const qmApprovalUploadsDir = path.join(process.cwd(), "uploads", "qm-approvals");
 if (!fs.existsSync(qmApprovalUploadsDir)) fs.mkdirSync(qmApprovalUploadsDir, { recursive: true });
@@ -58,7 +69,7 @@ const qmApprovalUpload = multer({
 });
 
 type AppUser = { id: number; email: string; name: string; role: string; };
-type ProjectInfoRow = any;
+type ProjectInfoRow = MergedProjectRow;
 type QcChecklistRow = typeof qcChecklist.$inferSelect;
 type QcItemInstanceRow = typeof qcItemInstance.$inferSelect;
 type QcTemplateItemRow = typeof qcTemplateItem.$inferSelect;
@@ -66,6 +77,13 @@ type QcTemplateRiskQuestionRow = typeof qcTemplateRiskQuestion.$inferSelect;
 type QcTemplateGroupRow = typeof qcTemplateGroup.$inferSelect;
 type QcTemplatePhaseRow = typeof qcTemplatePhase.$inferSelect;
 type QcItemEvidenceRow = typeof qcItemEvidence.$inferSelect;
+type QcRiskAnswerRow = typeof schema.qcRiskAnswer.$inferSelect;
+type QcWarningRow = typeof qcWarning.$inferSelect;
+type QcPlanLinkRow = typeof schema.qcPlanLink.$inferSelect;
+
+// M3: leftJoin row merge — delegates to the repository so the defensive
+// null-handling lives in one place. See server/repositories/quality-repository.ts.
+const mergeProjectRow = repoMergeProjectRow;
 
 function getUser(req: Request): AppUser {
   return getEffectiveUser(req) as AppUser;
@@ -165,23 +183,8 @@ function uniqueNumberList(values: Array<number | null | undefined>): number[] {
   return Array.from(result);
 }
 
-async function fetchProjectHandoverRows(projectIds: number[]): Promise<any[]> {
-  if (projectIds.length === 0) return [];
-  try {
-    const result = await db.execute(sql`
-      SELECT project_id, status, engineering_status, quality_status, rejection_reason
-      FROM project_pd_pm_handover
-      WHERE project_id IN (${sql.join(projectIds.map((id) => sql`${id}`), sql`, `)})
-    `);
-    return Array.isArray(result) ? result : result.rows || [];
-  } catch (err: unknown) {
-    console.warn("[Quality] handover summary query failed; continuing without handover context", {
-      projectCount: projectIds.length,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return [];
-  }
-}
+// `fetchProjectHandoverRows` moved to server/repositories/quality-repository.ts
+// (`listHandoverRowsForProjects`). Import + call there.
 
 function normalizeHandoverRow(row: any) {
   if (!row) return null;
@@ -206,11 +209,10 @@ async function loadProjectQualityGovernanceContext(projectName: string, userId: 
   const rawRows = await db.select().from(projectInfo)
     .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
     .where(eq(projectInfo.projectName, projectName));
-  // Prompt 0.8: projectExecutionState is a leftJoin — the row is null when a
-  // project has no execution state record yet. Spreading null throws a
-  // TypeError that surfaces as a 500 on the Quality Dashboard. Coalesce to
-  // an empty object so the spread is safe for projects without execution state.
-  const projectRows = rawRows.map((r: any) => ({ ...r.project_info, ...(r.project_execution_state || {}), id: r.project_info.id, updatedAt: r.project_info.updatedAt })) as any[];
+  // Prompt 0.8 + M3: see mergeProjectRow helper — defends against both null
+  // execution-state rows AND a future schema where project_info itself may
+  // be on the right-hand side of a leftJoin.
+  const projectRows = rawRows.map(mergeProjectRow).filter((p: ProjectInfoRow | null): p is ProjectInfoRow => p != null);
   const [project] = projectRows;
   const checklistRows: QcChecklistRow[] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, projectName));
   const [checklist] = checklistRows;
@@ -267,7 +269,7 @@ async function loadProjectQualityGovernanceContext(projectName: string, userId: 
     ? await db.select().from(qcItemEvidence).where(and(inArray(qcItemEvidence.itemInstanceId, itemInstances.map((item) => item.id)), isNull(qcItemEvidence.deletedAt)))
     : [];
   const riskAnswers = await db.select().from(qcRiskAnswer).where(eq(qcRiskAnswer.checklistId, checklist.id));
-  const templateRiskQuestionIds = uniqueNumberList(riskAnswers.map((answer: any) => answer.templateRiskQuestionId));
+  const templateRiskQuestionIds = uniqueNumberList(riskAnswers.map((answer: QcRiskAnswerRow) => answer.templateRiskQuestionId));
   const riskQuestions: QcTemplateRiskQuestionRow[] = templateRiskQuestionIds.length > 0
     ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.id, templateRiskQuestionIds))
     : [];
@@ -333,10 +335,8 @@ async function loadProjectQualityGovernanceContext(projectName: string, userId: 
     };
   });
 
-  const handoverRows: any[] = await db.execute(sql`
-    SELECT * FROM project_pd_pm_handover WHERE project_id = ${project.id} LIMIT 1
-  `).then((result: any) => (Array.isArray(result) ? result : result.rows || []));
-  const handover = normalizeHandoverRow(handoverRows[0]) || { deliverables: {} };
+  const handoverRow = await findFullHandoverRowForProject(project.id);
+  const handover = normalizeHandoverRow(handoverRow) || { deliverables: {} };
 
   const workspace = await getProjectDevelopmentWorkspace({
     projectId: project.id,
@@ -369,7 +369,7 @@ async function loadProjectQualityGovernanceContext(projectName: string, userId: 
   const relevantMicrosoftItems = (await getProjectLinkedItems(project.id, userId))
     .filter((item: any) => Boolean(item?.qualityContext?.itemInstanceId));
 
-  const enrichedRiskAnswers = riskAnswers.map((answer: any) => {
+  const enrichedRiskAnswers = riskAnswers.map((answer: QcRiskAnswerRow) => {
     const question = riskQuestionMap.get(answer.templateRiskQuestionId);
     return {
       responseType: question?.responseType ?? "yesno",
@@ -687,10 +687,10 @@ export function registerQualityRoutes(app: Express) {
       if (!tmpl) return res.status(404).json({ error: "Template not found" });
 
       const phases = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, tid));
-      const phaseIds = phases.map((p: any) => p.id);
+      const phaseIds = phases.map((p: QcTemplatePhaseRow) => p.id);
 
       const groups = phaseIds.length ? await db.select().from(qcTemplateGroup).where(inArray(qcTemplateGroup.templatePhaseId, phaseIds)) : [];
-      const groupIds = groups.map((g: any) => g.id);
+      const groupIds = groups.map((g: QcTemplateGroupRow) => g.id);
       const items = groupIds.length ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.templateGroupId, groupIds)) : [];
       const riskQuestions = phaseIds.length ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.templatePhaseId, phaseIds)) : [];
       const metrics = await db.select().from(qcTemplatePostmortemMetric);
@@ -737,21 +737,21 @@ export function registerQualityRoutes(app: Express) {
         wasCreated = true;
 
         const phases = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, activeTemplate.id));
-        const phaseIds = phases.map((p: any) => p.id);
+        const phaseIds = phases.map((p: QcTemplatePhaseRow) => p.id);
         const groups = phaseIds.length ? await db.select().from(qcTemplateGroup).where(inArray(qcTemplateGroup.templatePhaseId, phaseIds)) : [];
-        const groupIds = groups.map((g: any) => g.id);
+        const groupIds = groups.map((g: QcTemplateGroupRow) => g.id);
         const templateItems = groupIds.length ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.templateGroupId, groupIds)) : [];
 
         if (templateItems.length) {
           await db.insert(qcItemInstance).values(
-            templateItems.map((ti: any) => ({ checklistId: checklist.id, templateItemId: ti.id }))
+            templateItems.map((ti: QcTemplateItemRow) => ({ checklistId: checklist.id, templateItemId: ti.id }))
           );
         }
 
         const riskQuestions = phaseIds.length ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.templatePhaseId, phaseIds)) : [];
         if (riskQuestions.length) {
           await db.insert(qcRiskAnswer).values(
-            riskQuestions.map((rq: any) => ({ checklistId: checklist.id, templateRiskQuestionId: rq.id }))
+            riskQuestions.map((rq: QcTemplateRiskQuestionRow) => ({ checklistId: checklist.id, templateRiskQuestionId: rq.id }))
           );
         }
       }
@@ -794,9 +794,9 @@ export function registerQualityRoutes(app: Express) {
 
       const templateId = checklist.templateId;
       const phases = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, templateId));
-      const phaseIds = phases.map((p: any) => p.id);
+      const phaseIds = phases.map((p: QcTemplatePhaseRow) => p.id);
       const groups = phaseIds.length ? await db.select().from(qcTemplateGroup).where(inArray(qcTemplateGroup.templatePhaseId, phaseIds)) : [];
-      const groupIds = groups.map((g: any) => g.id);
+      const groupIds = groups.map((g: QcTemplateGroupRow) => g.id);
       const templateItems = groupIds.length ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.templateGroupId, groupIds)) : [];
       const riskQuestions = phaseIds.length ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.templatePhaseId, phaseIds)) : [];
 
@@ -806,7 +806,7 @@ export function registerQualityRoutes(app: Express) {
         phases,
         groups,
         templateItems,
-        itemInstances: itemInstances.map((item: any) => {
+        itemInstances: itemInstances.map((item: QcItemInstanceRow) => {
           const assignments = assignmentMap.get(item.id) || [];
           const primaryAssignment = assignments[0] || null;
           return {
@@ -1451,7 +1451,7 @@ export function registerQualityRoutes(app: Express) {
       const pName = decodeURIComponent(String(req.params.projectName));
       const { itemName, groupId } = req.body;
 
-      const [checklist] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, pName));
+      const checklist = await findChecklistByProjectName(pName);
       if (!checklist) return res.status(404).json({ error: "No checklist found for this project" });
 
       let templateItemId: number;
@@ -1497,7 +1497,7 @@ export function registerQualityRoutes(app: Express) {
       const pName = decodeURIComponent(String(req.params.projectName));
       const itemId = parseIntParam(req.params.itemInstanceId);
 
-      const [checklist] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, pName));
+      const checklist = await findChecklistByProjectName(pName);
       if (!checklist) return res.status(404).json({ error: "No checklist found for this project" });
 
       const [instance] = await db.select().from(qcItemInstance).where(
@@ -1608,7 +1608,7 @@ export function registerQualityRoutes(app: Express) {
         const projectsWithLinks = [...new Set(allPlanLinks.map((l: any) => l.projectName))];
         const allWiTasks = await getAllPMWorkItemsAsProjectPlan();
         const allPlanTasks = allWiTasks.filter((t: any) => projectsWithLinks.includes(t.projectName));
-        const templateItemIds = uniqueNumberList(allItems.map((item: any) => item.templateItemId));
+        const templateItemIds = uniqueNumberList(allItems.map((item: QcItemInstanceRow) => item.templateItemId));
         const templateItems = templateItemIds.length
           ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.id, templateItemIds))
           : [];
@@ -1723,14 +1723,9 @@ export function registerQualityRoutes(app: Express) {
       const [projectRow] = await db.select().from(projectInfo)
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
         .where(eq(projectInfo.projectName, projectName));
-      // BUG-01 follow-up: the leftJoin returns a row for every project_info match,
-      // but project_execution_state may be null for projects without a state row.
-      // Spreading null throws TypeError → generic 500 on every project without
-      // execution state. Coalesce to {} before spreading.
-      const project = projectRow
-        ? { ...projectRow.project_info, ...(projectRow.project_execution_state || {}), id: projectRow.project_info.id }
-        : undefined;
-      const [checklist] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, projectName));
+      // BUG-01 follow-up + M3: defensive merge via mergeProjectRow.
+      const project = projectRow ? mergeProjectRow(projectRow) ?? undefined : undefined;
+      const checklist = await findChecklistByProjectName(projectName);
       if (!checklist) {
         return res.json({
           hasChecklist: false,
@@ -1754,12 +1749,12 @@ export function registerQualityRoutes(app: Express) {
 
       const itemInstances = await db.select().from(qcItemInstance).where(eq(qcItemInstance.checklistId, checklist.id));
       const riskAnswers = await db.select().from(qcRiskAnswer).where(eq(qcRiskAnswer.checklistId, checklist.id));
-      const riskQuestionIds = uniqueNumberList(riskAnswers.map((answer: any) => answer.templateRiskQuestionId));
+      const riskQuestionIds = uniqueNumberList(riskAnswers.map((answer: QcRiskAnswerRow) => answer.templateRiskQuestionId));
       const riskQuestions: QcTemplateRiskQuestionRow[] = riskQuestionIds.length > 0
         ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.id, riskQuestionIds))
         : [];
       const riskQuestionMap = new Map<number, QcTemplateRiskQuestionRow>(riskQuestions.map((question) => [question.id, question]));
-      const templateItemIds = uniqueNumberList(itemInstances.map((item: any) => item.templateItemId));
+      const templateItemIds = uniqueNumberList(itemInstances.map((item: QcItemInstanceRow) => item.templateItemId));
       const templateItems: QcTemplateItemRow[] = templateItemIds.length > 0
         ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.id, templateItemIds))
         : [];
@@ -1771,7 +1766,7 @@ export function registerQualityRoutes(app: Express) {
       const groupMap = new Map<number, QcTemplateGroupRow>(groups.map((group) => [group.id, group]));
       const phases: QcTemplatePhaseRow[] = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, checklist.templateId));
       const evidenceRows: QcItemEvidenceRow[] = itemInstances.length > 0
-        ? await db.select().from(qcItemEvidence).where(and(inArray(qcItemEvidence.itemInstanceId, itemInstances.map((item: any) => item.id)), isNull(qcItemEvidence.deletedAt)))
+        ? await db.select().from(qcItemEvidence).where(and(inArray(qcItemEvidence.itemInstanceId, itemInstances.map((item: QcItemInstanceRow) => item.id)), isNull(qcItemEvidence.deletedAt)))
         : [];
       const evidenceCountMap = new Map<number, number>();
       for (const evidence of evidenceRows) {
@@ -1800,17 +1795,10 @@ export function registerQualityRoutes(app: Express) {
         };
       });
 
-      const handoverRows: any[] = project
-        ? await db.execute(sql`
-            SELECT project_id, status, engineering_status, quality_status, rejection_reason
-            FROM project_pd_pm_handover
-            WHERE project_id = ${project.id}
-            LIMIT 1
-          `).then((result: any) => (Array.isArray(result) ? result : result.rows || []))
-        : [];
+      const handoverRows = project ? await listHandoverRowsForProjects([project.id]) : [];
       const handover = handoverRows[0];
       const riskSummary = computeQualityRiskSummary({
-        items: itemInstances.map((item: any) => ({
+        items: itemInstances.map((item: QcItemInstanceRow) => ({
           qmStatus: item.qmStatus,
           approved: item.approved,
           isApplicable: item.isApplicable,
@@ -1820,7 +1808,7 @@ export function registerQualityRoutes(app: Express) {
           isEvidenceRequired: templateItemMap.get(item.templateItemId)?.isEvidenceRequired ?? false,
           evidenceCount: evidenceCountMap.get(item.id) || 0,
         })),
-        riskAnswers: riskAnswers.map((answer: any) => {
+        riskAnswers: riskAnswers.map((answer: QcRiskAnswerRow) => {
           const question = riskQuestionMap.get(answer.templateRiskQuestionId);
           return {
             responseType: question?.responseType ?? "yesno",
@@ -2082,7 +2070,7 @@ export function registerQualityRoutes(app: Express) {
       const allProjectRows = await db.select().from(projectInfo)
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
       // Prompt 0.8: safe spread for null leftJoin rows (see loadProjectQualityGovernanceContext).
-      const allProjects: ProjectInfoRow[] = allProjectRows.map((r: any) => ({ ...r.project_info, ...(r.project_execution_state || {}), id: r.project_info.id }));
+      const allProjects: ProjectInfoRow[] = allProjectRows.map(mergeProjectRow).filter((p: ProjectInfoRow | null): p is ProjectInfoRow => p != null);
       const projectMap = new Map<number, ProjectInfoRow>(allProjects.map((project: any) => [project.id, project]));
       const projectNameMap = new Map<string, ProjectInfoRow>();
       for (const project of allProjects) {
@@ -2114,7 +2102,7 @@ export function registerQualityRoutes(app: Express) {
           return linkedProject?.id ?? null;
         }),
       );
-      const handoverRows: any[] = await fetchProjectHandoverRows(linkedProjectIds);
+      const handoverRows: any[] = await listHandoverRowsForProjects(linkedProjectIds);
       const handoverMap = new Map(handoverRows.map((row: any) => [Number(row.project_id), row]));
 
       const allWarnings = await db.select().from(qcWarning).where(sql`${qcWarning.status} != 'resolved'`);
@@ -2168,15 +2156,29 @@ export function registerQualityRoutes(app: Express) {
         : [];
       const groupMap = new Map<number, QcTemplateGroupRow>(groups.map((group) => [group.id, group]));
       const evidenceRows: QcItemEvidenceRow[] = allItems.length > 0
-        ? await db.select().from(qcItemEvidence).where(and(inArray(qcItemEvidence.itemInstanceId, allItems.map((item: any) => item.id)), isNull(qcItemEvidence.deletedAt)))
+        ? await db.select().from(qcItemEvidence).where(and(inArray(qcItemEvidence.itemInstanceId, allItems.map((item: QcItemInstanceRow) => item.id)), isNull(qcItemEvidence.deletedAt)))
         : [];
       const evidenceCountMap = new Map<number, number>();
       for (const evidence of evidenceRows) {
         evidenceCountMap.set(evidence.itemInstanceId, (evidenceCountMap.get(evidence.itemInstanceId) || 0) + 1);
       }
 
-      const result = await Promise.all(dedupedChecklists.map(async (cl) => {
-        const phases = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, cl.templateId));
+      // M5: batch phases query across all distinct templateIds instead of
+      // querying once per checklist. Each checklist below indexes into
+      // phasesByTemplate by its own templateId.
+      const distinctTemplateIds = uniqueNumberList(dedupedChecklists.map((cl) => cl.templateId));
+      const allPhasesForChecklists: QcTemplatePhaseRow[] = distinctTemplateIds.length
+        ? await db.select().from(qcTemplatePhase).where(inArray(qcTemplatePhase.templateId, distinctTemplateIds))
+        : [];
+      const phasesByTemplate = new Map<number, QcTemplatePhaseRow[]>();
+      for (const phase of allPhasesForChecklists) {
+        const list = phasesByTemplate.get(phase.templateId) ?? [];
+        list.push(phase);
+        phasesByTemplate.set(phase.templateId, list);
+      }
+
+      const result = dedupedChecklists.map((cl) => {
+        const phases = phasesByTemplate.get(cl.templateId) ?? [];
         const clItems = allItems.filter((i: any) => i.checklistId === cl.id);
         const clRiskAnswers = allRiskAnswers.filter((answer: any) => answer.checklistId === cl.id);
         const linkedProject = cl.projectId
@@ -2285,7 +2287,7 @@ export function registerQualityRoutes(app: Express) {
           qualityRiskScore: riskSummary.score,
           qualityRiskLevel: riskSummary.level,
         };
-      }));
+      });
 
       res.json(result);
     } catch (err) {
@@ -2314,7 +2316,7 @@ export function registerQualityRoutes(app: Express) {
             .where(inArray(projectInfo.id, projectIds))
         : [];
       // Prompt 0.8: safe spread for null leftJoin rows (see loadProjectQualityGovernanceContext).
-      const allProjects: ProjectInfoRow[] = allProjectRows.map((r: any) => ({ ...r.project_info, ...(r.project_execution_state || {}), id: r.project_info.id }));
+      const allProjects: ProjectInfoRow[] = allProjectRows.map(mergeProjectRow).filter((p: ProjectInfoRow | null): p is ProjectInfoRow => p != null);
       const projectMap = new Map<number, ProjectInfoRow>(allProjects.map((project: any) => [project.id, project]));
       const projectNameMap = new Map<string, ProjectInfoRow>();
       for (const project of allProjects) {
@@ -2347,17 +2349,17 @@ export function registerQualityRoutes(app: Express) {
         }),
       );
 
-      const handoverRows: any[] = await fetchProjectHandoverRows(dedupedProjectIds);
+      const handoverRows: any[] = await listHandoverRowsForProjects(dedupedProjectIds);
       const handoverMap = new Map(handoverRows.map((row: any) => [Number(row.project_id), row]));
 
-      const templateItemIds = uniqueNumberList(allItems.map((item: any) => item.templateItemId));
+      const templateItemIds = uniqueNumberList(allItems.map((item: QcItemInstanceRow) => item.templateItemId));
       const templateItems: QcTemplateItemRow[] = templateItemIds.length > 0
         ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.id, templateItemIds))
         : [];
-      const templateItemMap = new Map<number, QcTemplateItemRow>(templateItems.map((item: any) => [item.id, item]));
+      const templateItemMap = new Map<number, QcTemplateItemRow>(templateItems.map((item: QcTemplateItemRow) => [item.id, item]));
 
       const evidenceRows: QcItemEvidenceRow[] = allItems.length > 0
-        ? await db.select().from(qcItemEvidence).where(and(inArray(qcItemEvidence.itemInstanceId, allItems.map((item: any) => item.id)), isNull(qcItemEvidence.deletedAt)))
+        ? await db.select().from(qcItemEvidence).where(and(inArray(qcItemEvidence.itemInstanceId, allItems.map((item: QcItemInstanceRow) => item.id)), isNull(qcItemEvidence.deletedAt)))
         : [];
       const evidenceCountMap = new Map<number, number>();
       for (const evidence of evidenceRows) {
@@ -2669,52 +2671,82 @@ export function registerQualityRoutes(app: Express) {
       }
 
       const phases = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, activeTemplate.id));
-      const phaseIds = phases.map((p: any) => p.id);
+      const phaseIds = phases.map((p: QcTemplatePhaseRow) => p.id);
       const groups = phaseIds.length ? await db.select().from(qcTemplateGroup).where(inArray(qcTemplateGroup.templatePhaseId, phaseIds)) : [];
-      const groupIds = groups.map((g: any) => g.id);
+      const groupIds = groups.map((g: QcTemplateGroupRow) => g.id);
       const templateItems = groupIds.length ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.templateGroupId, groupIds)) : [];
       const riskQuestions = phaseIds.length ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.templatePhaseId, phaseIds)) : [];
 
-      const results: { project: string; status: string }[] = [];
+      // M7: batch project + existing-checklist lookups up-front instead of
+      // running 2 queries per project in a loop.
+      const requestedNames: string[] = (projectNames as string[]).map((n) => String(n ?? "").trim()).filter((n) => n.length > 0);
+      const normalizedRequestedNames: string[] = requestedNames.map((n) => n.toLowerCase());
 
-      for (const projectNameRaw of projectNames) {
-        const requestedProjectName = String(projectNameRaw ?? "");
-        const [project] = await db
-          .select({ id: projectInfo.id, projectName: projectInfo.projectName })
-          .from(projectInfo)
-          .where(sql`LOWER(TRIM(${projectInfo.projectName})) = LOWER(TRIM(${requestedProjectName}))`)
-          .limit(1);
+      type MatchedProject = { id: number; projectName: string };
+      const matchedProjects: MatchedProject[] = normalizedRequestedNames.length
+        ? await db
+            .select({ id: projectInfo.id, projectName: projectInfo.projectName })
+            .from(projectInfo)
+            .where(sql`LOWER(TRIM(${projectInfo.projectName})) IN (${sql.join(normalizedRequestedNames.map((n: string) => sql`${n}`), sql`, `)})`)
+        : [];
+      const projectByNormalizedName = new Map<string, MatchedProject>();
+      for (const p of matchedProjects) {
+        projectByNormalizedName.set(p.projectName.trim().toLowerCase(), p);
+      }
+
+      const matchedProjectIds: number[] = matchedProjects.map((p: MatchedProject) => p.id);
+      const existingChecklists = matchedProjectIds.length
+        ? await db.select().from(qcChecklist).where(inArray(qcChecklist.projectId, matchedProjectIds))
+        : [];
+      const projectIdsWithChecklist = new Set<number>(
+        existingChecklists.map((cl: QcChecklistRow) => cl.projectId).filter((id: number | null): id is number => id != null),
+      );
+
+      const results: { project: string; status: string }[] = [];
+      const checklistsToCreate: Array<{ project: { id: number; projectName: string }; requestedName: string }> = [];
+
+      for (const requestedProjectName of requestedNames) {
+        const project = projectByNormalizedName.get(requestedProjectName.toLowerCase());
         if (!project) {
           results.push({ project: requestedProjectName, status: "project not found" });
           continue;
         }
-
-        const [existing] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectId, project.id));
-        if (existing) {
+        if (projectIdsWithChecklist.has(project.id)) {
           results.push({ project: project.projectName, status: "already exists" });
           continue;
         }
+        checklistsToCreate.push({ project, requestedName: requestedProjectName });
+      }
 
-        const [checklist] = await db.insert(qcChecklist).values({
-          projectId: project.id,
-          projectName: project.projectName,
-          templateId: activeTemplate.id,
-          status: "active",
-        }).returning();
+      // Batch-insert all new checklists, then batch the per-checklist
+      // item-instance + risk-answer inserts.
+      if (checklistsToCreate.length > 0) {
+        const insertedChecklists: QcChecklistRow[] = await db.insert(qcChecklist).values(
+          checklistsToCreate.map(({ project }) => ({
+            projectId: project.id,
+            projectName: project.projectName,
+            templateId: activeTemplate.id,
+            status: "active",
+          })),
+        ).returning();
 
-        if (templateItems.length) {
-          await db.insert(qcItemInstance).values(
-            templateItems.map((ti: any) => ({ checklistId: checklist.id, templateItemId: ti.id }))
-          );
+        const itemInstancesToInsert = insertedChecklists.flatMap((cl: QcChecklistRow) =>
+          templateItems.map((ti: QcTemplateItemRow) => ({ checklistId: cl.id, templateItemId: ti.id })),
+        );
+        if (itemInstancesToInsert.length) {
+          await db.insert(qcItemInstance).values(itemInstancesToInsert);
         }
 
-        if (riskQuestions.length) {
-          await db.insert(qcRiskAnswer).values(
-            riskQuestions.map((rq: any) => ({ checklistId: checklist.id, templateRiskQuestionId: rq.id }))
-          );
+        const riskAnswersToInsert = insertedChecklists.flatMap((cl: QcChecklistRow) =>
+          riskQuestions.map((rq: QcTemplateRiskQuestionRow) => ({ checklistId: cl.id, templateRiskQuestionId: rq.id })),
+        );
+        if (riskAnswersToInsert.length) {
+          await db.insert(qcRiskAnswer).values(riskAnswersToInsert);
         }
 
-        results.push({ project: project.projectName, status: "created" });
+        for (const cl of insertedChecklists) {
+          results.push({ project: cl.projectName ?? "(unnamed)", status: "created" });
+        }
       }
 
       logAuditFromReq(req, { entityType: "quality_template", entityId: "0", action: "create", changesJson: { description: "Bulk checklists created", count: results.filter(r => r.status === "created").length } });
@@ -2770,6 +2802,30 @@ export async function recalculateWarnings(projectName: string): Promise<number> 
   const newWarnings: any[] = [];
   const today = new Date().toISOString().split('T')[0];
 
+  // M6: batch the evidence count check across all candidate items in a single
+  // query instead of one per approved+evidence-required item.
+  const evidenceCheckCandidateIds = items
+    .filter((item: QcItemInstanceRow) => {
+      if (!item.isApplicable || !item.approved) return false;
+      const tmpl = templateItems.find((t: any) => t.id === item.templateItemId);
+      return Boolean(tmpl?.isEvidenceRequired);
+    })
+    .map((i: QcItemInstanceRow) => i.id);
+
+  const evidenceCountByItem = new Map<number, number>();
+  if (evidenceCheckCandidateIds.length > 0) {
+    const evidenceRowsForCheck = await db
+      .select({ itemInstanceId: qcItemEvidence.itemInstanceId })
+      .from(qcItemEvidence)
+      .where(and(
+        inArray(qcItemEvidence.itemInstanceId, evidenceCheckCandidateIds),
+        isNull(qcItemEvidence.deletedAt),
+      ));
+    for (const row of evidenceRowsForCheck) {
+      evidenceCountByItem.set(row.itemInstanceId, (evidenceCountByItem.get(row.itemInstanceId) ?? 0) + 1);
+    }
+  }
+
   for (const item of items) {
     if (!item.isApplicable) continue;
     const tmpl = templateItems.find((t: any) => t.id === item.templateItemId);
@@ -2795,8 +2851,8 @@ export async function recalculateWarnings(projectName: string): Promise<number> 
     }
 
     if (item.approved && tmpl?.isEvidenceRequired) {
-      const evidence = await db.select().from(qcItemEvidence).where(and(eq(qcItemEvidence.itemInstanceId, item.id), isNull(qcItemEvidence.deletedAt)));
-      if (!evidence.length) {
+      const evidenceCount = evidenceCountByItem.get(item.id) ?? 0;
+      if (evidenceCount === 0) {
         newWarnings.push({
           projectName, severity: "High", warningType: "missing_evidence",
           title: `Missing evidence: ${tmpl.itemName}`,
