@@ -94,7 +94,10 @@ describe("nav cleanup — six-tab COO spec", () => {
   it("Home secondary still surfaces personal-workspace items", () => {
     const section = findTop("Home");
     const paths = section.secondary.map((item) => item.path);
-    expect(paths).toContain("/my-work/tasks");
+    // Phase 7B: /my-work/tasks dropped from secondary nav. Replaced by
+    // /priorities which is the unified surface for personal work
+    // (work_items + personal priorities in one feed).
+    expect(paths).toContain("/priorities");
     expect(paths).toContain("/my-work/calendar");
     expect(paths).toContain("/inbox");
   });

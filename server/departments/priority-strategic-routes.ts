@@ -700,6 +700,11 @@ router.get("/api/priorities/my-work", requireAuth, requirePermission("company_pr
       taskCategory: t.taskCategory ?? null,
       bucket: t.bucket ?? null,
       percentComplete: t.percentComplete ?? 0,
+      // Phase 7C: expose the red/amber/green health signal so /priorities
+      // can apply the health filter chip to tasks the same way it does
+      // for priorities. `trackingRag` is canonical on work_items; we don't
+      // synthesise it client-side.
+      trackingRag: t.trackingRag ?? null,
       createdAt: t.createdAt,
       updatedAt: t.updatedAt,
     }));
