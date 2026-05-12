@@ -76,14 +76,14 @@ export const TOP_SECTIONS: TopSection[] = [
     label: "Home",
     key: "HOME",
     path: "/",
-    match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/my-work", "/inbox"]),
+    match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/my-work", "/inbox", "/priorities"]),
     secondary: [
       { label: "My Dashboard", path: "/" },
       { label: "My Tasks", path: "/my-work/tasks" },
       { label: "Calendar", path: "/my-work/calendar" },
       { label: "Meetings", path: "/my-work/meetings" },
       { label: "Inbox", path: "/inbox" },
-      { label: "Teams Chat", path: "/my-work/teams" },
+      { label: "Priorities", path: "/priorities" },
     ],
   },
   {
@@ -97,31 +97,6 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Execution Dashboard", path: "/execution-board" },
       { label: "All Projects", path: "/projects" },
       { label: "Milestone Tracker", path: "/milestone-tracker" },
-    ],
-  },
-  // Stub kept for path-matching code in older modules that still query the
-  // "Gates" tab. Hidden from DISPLAY_TOP_NAV — only reachable via Functionality
-  // Control re-enabling /gates.
-  {
-    label: "Gates",
-    key: "PORTFOLIO",
-    path: "/gates",
-    requiredAnySectionKeys: ["PORTFOLIO", "PROJECT_DELIVERY"],
-    requiredPathPermissions: ["/gates"],
-    match: (pathname) => startsWithAny(pathname, [
-      "/gates",
-      "/exceptions",
-      "/dashboard",
-    ]),
-    secondary: [
-      { label: "Gates Pipeline", path: "/gates" },
-      { label: "Blocked Gates", path: "/gates/blocked" },
-      { label: "Ready Gates", path: "/gates/ready" },
-      { label: "Gate Exceptions", path: "/gates/exceptions" },
-      { label: "Client Updates", path: "/gates/client-updates" },
-      { label: "Handover Queue", path: "/gates/handovers" },
-      { label: "Open Queries", path: "/gates/queries" },
-      { label: "Client Commitments", path: "/gates/commitments" },
     ],
   },
   {
