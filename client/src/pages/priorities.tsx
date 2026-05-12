@@ -21,6 +21,26 @@ import { useToast } from "@/hooks/use-toast";
 
 export { PriorityCard } from "@/components/priorities/PriorityCard";
 
+// Phase 7B: URL-state contract for the level + health filter chips so
+// home-dashboard deep-links like /priorities?tab=my&health=at_risk
+// round-trip into the on-page filter selections. Exported as a pure
+// helper so the contract is unit-pinnable separately from the React
+// component.
+const ALLOWED_LEVELS = new Set(["all", "critical", "important", "normal"]);
+const ALLOWED_HEALTH = new Set(["all", "critical", "at_risk", "healthy"]);
+
+export function parsePrioritiesFilterParams(
+  searchString: string,
+): { level: string; health: string } {
+  const params = new URLSearchParams(searchString);
+  const levelParam = params.get("level");
+  const healthParam = params.get("health");
+  return {
+    level: levelParam && ALLOWED_LEVELS.has(levelParam) ? levelParam : "all",
+    health: healthParam && ALLOWED_HEALTH.has(healthParam) ? healthParam : "all",
+  };
+}
+
 async function fetchPriorities(params: string): Promise<PriorityRow[]> {
   const res = await apiRequest("GET", `/api/priorities?${params}`);
   const contentType = res.headers.get("content-type") || "";
@@ -58,18 +78,12 @@ export default function PrioritiesPage() {
   const [assignDialogPriorityId, setAssignDialogPriorityId] = useState<number | null>(null);
   const [bulkReassignOpen, setBulkReassignOpen] = useState(false);
   // Phase 7B: read level + health from URL params so the home dashboard's
-  // "My Overdue Actions" callouts can deep-link to /priorities?tab=my&health=at_risk
-  // (replaces the legacy /my-work/tasks?overdue=1 entry point).
-  const levelParam = params.get("level");
-  const healthParam = params.get("health");
-  const allowedLevels = new Set(["all", "critical", "important", "normal"]);
-  const allowedHealth = new Set(["all", "critical", "at_risk", "healthy"]);
-  const [levelFilter, setLevelFilter] = useState(
-    levelParam && allowedLevels.has(levelParam) ? levelParam : "all",
-  );
-  const [healthFilter, setHealthFilter] = useState(
-    healthParam && allowedHealth.has(healthParam) ? healthParam : "all",
-  );
+  // "My Overdue Actions" callouts can deep-link to /priorities?tab=my&health=at_risk.
+  // Parsing extracted to `parsePrioritiesFilterParams` (exported above) so
+  // the URL contract is unit-pinned.
+  const initialFilters = parsePrioritiesFilterParams(searchString);
+  const [levelFilter, setLevelFilter] = useState(initialFilters.level);
+  const [healthFilter, setHealthFilter] = useState(initialFilters.health);
   const [showClosed, setShowClosed] = useState(false);
   const [bulkSelected, setBulkSelected] = useState<Set<number>>(new Set());
   // Admins can pick which department to view on the Department tab. Dept

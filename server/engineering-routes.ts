@@ -76,7 +76,7 @@ function getUserRole(req: Request): string {
 // the key here. Engineering PR 2 will replace every caller with a strict
 // Zod allowlist via `validateBody(schema)` — at which point this helper
 // becomes unused and can be removed.
-const FORBIDDEN_BODY_KEYS = new Set<string>([
+export const FORBIDDEN_BODY_KEYS = new Set<string>([
   // Identity / lineage
   "id",
   "createdAt",
@@ -111,7 +111,7 @@ const FORBIDDEN_BODY_KEYS = new Set<string>([
 // is intentionally `any`-shaped so existing spread-style update bodies keep
 // compiling without per-field assertions. PR 2 replaces this with Zod
 // schemas that narrow to typed `Partial<Insert*>` objects.
-function stripServerFields(body: unknown): Record<string, any> {
+export function stripServerFields(body: unknown): Record<string, any> {
   if (!body || typeof body !== "object" || Array.isArray(body)) return {};
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const out: Record<string, any> = {};
