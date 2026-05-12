@@ -731,14 +731,27 @@ router.get("/api/priorities/my-work", requireAuth, requirePermission("company_pr
 }));
 
 // ==================== POST /api/priorities/from-task/:workItemId ====================
-// Promote an existing work_item to a personal priority. Creates a new
-// mytool_company_priorities row with scope='role', copies title/description/
-// dueDate from the work_item, and stores `linkedTaskId` so the unified
-// feed knows to suppress the work_item next time it renders. Idempotent:
-// if a priority already exists with this linkedTaskId, returns it instead
-// of creating a duplicate. Permission: any authenticated user (they can
-// only promote tasks they own or are assigned to — checked server-side).
-router.post("/api/priorities/from-task/:workItemId", requireAuth, requirePermission("company_priorities", "edit"), asyncHandler(async (req: Request, res: Response) => {
+// Promote an existing work_item to a *personal* (scope='role') priority.
+// Creates a new mytool_company_priorities row with scope='role', copies
+// title/description/dueDate from the work_item, and stores `linkedTaskId`
+// so the unified feed knows to suppress the work_item next time it
+// renders. Idempotent: if a priority already exists with this linkedTaskId,
+// returns it instead of creating a duplicate.
+//
+// Authorization model (deliberately NOT `requirePermission`):
+//   • requirePriorityCreator / `company_priorities:edit` gate company- and
+//     department-scope priorities to admins + dept heads. A user promoting
+//     their OWN task to their OWN personal priority is a different intent.
+//   • Any authenticated user can promote, but only for tasks they
+//     own or are assigned to (verified below against work_item_assignments).
+//   • The created priority is hard-coded to scope='role' + ownerUserId =
+//     caller, so this endpoint can never produce a department/company
+//     priority — those still go through the gated create endpoint.
+//
+// This endpoint is intentionally listed in qa/fixtures/route-coverage-
+// baseline.json as an authorization-by-ownership route. Route-coverage
+// CI is fine with that.
+router.post("/api/priorities/from-task/:workItemId", requireAuth, asyncHandler(async (req: Request, res: Response) => {
   const user = getEffectiveUser(req);
   const userId = user?.id;
   if (!userId) throw badRequest("No effective user");
