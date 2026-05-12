@@ -183,6 +183,14 @@ export const DISPLAY_TOP_NAV: DisplayTopNavItem[] = [
  *
  * Typed as `Record<CompanyRole, SectionKey[]>` so that adding a new role to
  * COMPANY_ROLES (shared/schema/users.ts) or typoing a section key is a TS error.
+ *
+ * NOTE on retained section keys (post-2026-05-12 nav cleanup):
+ *   Several entries still list section keys that no longer appear in
+ *   DISPLAY_TOP_NAV (PORTFOLIO, PROJECT_DEVELOPMENT, HSE, REPORTS). These are
+ *   kept on purpose — they represent the role's *data scope*, not its UI tabs.
+ *   If a COO re-enables (say) the Reports tab via Functionality Control, roles
+ *   listed with REPORTS here will see it automatically with no migration.
+ *   Stripping them now would break that forward-compat path.
  */
 export const ROLE_VISIBLE_SECTIONS: Record<CompanyRole, SectionKey[]> = {
   COO_ADMIN:              ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "ENGINEERING", "QUALITY", "HSE", "FINANCE", "REPORTS", "PRIORITIES", "ADMIN"],
