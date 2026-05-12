@@ -6,14 +6,12 @@ import { requireAuth, requireAdmin, requireCosOverrideRole } from './shared-midd
 import {
   PLACEHOLDER_INVOICES,
   OVERRIDE_NOT_REALISED,
-  // Finance Tier 2: `isPastMonthAutoRealised` is byte-equivalent to the
-  // canonical (verified by audit) — safe to dedupe. `isEffectivelyRealised`
-  // is NOT byte-equivalent: the local impl calls `isCosRealisedShared`
-  // (the financeUtils wrapper that intentionally bypasses the canonical's
-  // zero-amount gate by not forwarding `amountExVat`). Migrating to the
-  // canonical here would silently flip zero-amount invoiced lines from
-  // realised → unrealised, which is a real behaviour change that does not
-  // belong in a Tier 2 (security + correctness) PR. Tracked for Tier 3.
+  // `isPastMonthAutoRealised` is byte-equivalent to the canonical. The
+  // local `isEffectivelyRealised` (defined below) is also now aligned —
+  // the `isCosRealised` wrapper in financeUtils forwards
+  // `expenseActualTotal` as `amountExVat`, so the canonical zero-amount
+  // gate fires and R0 invoiced lines stop being counted as realised
+  // (COO business rule 2026-05).
   isPastMonthAutoRealised,
 } from '../lib/finance/cos-realisation';
 import {
@@ -411,16 +409,11 @@ function isCosRealised(exp: any): boolean {
  * past-month lines respect explicit finance intent (overrides) and don't get
  * promoted on placeholder values like "TBC" / "N/A".
  */
-// Finance Tier 2: `isPastMonthAutoRealised` is now imported from canonical
-// (byte-equivalent — see import block at top of file). The local
-// `isEffectivelyRealised` is intentionally KEPT here because it calls
-// `isCosRealisedShared` (the financeUtils wrapper that bypasses the
-// canonical's zero-amount gate by not forwarding `amountExVat`). Migrating
-// to the canonical `isEffectivelyRealised` from cos-realisation.ts would
-// silently flip zero-amount invoiced lines from realised → unrealised,
-// which is a behaviour change inappropriate for a Tier 2 (security +
-// correctness) PR. Aligning the wrapper with the canonical zero-amount
-// gate is tracked for Finance Tier 3.
+// Local `isEffectivelyRealised`: layered on top of the financeUtils
+// `isCosRealised` wrapper. The wrapper now forwards `expenseActualTotal`
+// as `amountExVat` so the canonical zero-amount gate fires — R0
+// invoiced lines are no longer treated as realised (COO business rule
+// 2026-05; documented at `financeUtils.ts:isCosRealised`).
 function isEffectivelyRealised(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
   // Past-month auto-promote: once a month has closed, an invoice-bearing line
   // (with no admin "not realised" override and no placeholder invoice value)
