@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useLocation } from "wouter";
 import { useGatesPipeline, type GateProjectCard } from "@/hooks/use-gates";
-import { ApprovalQueueCard } from "@/components/controlled-documents";
+import { ApprovalQueueCard } from "@/components/managed-documents";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { PageLayout } from "@/components/layout";

@@ -15,7 +15,7 @@
  * - The approvals queue is the D6 Phase 5 canonical component
  *   `ManagedDocumentApprovalQueue`, reading the typed nested response from
  *   /api/managed-document-approvals/queue. The legacy ApprovalQueueCard
- *   under client/src/components/controlled-documents/ had a shape mismatch
+ *   under client/src/components/managed-documents/ had a shape mismatch
  *   with the API and is being retired.
  */
 
