@@ -16,6 +16,8 @@ import { PriorityListSection } from "@/components/priorities/PriorityListSection
 import { CreatePriorityDialog } from "@/components/priorities/CreatePriorityDialog";
 import { AssignPriorityDialog, BulkReassignDialog } from "@/components/priorities/AssignDialogs";
 import { useConfirmDialog } from "@/components/priorities/ConfirmActionDialog";
+import { MyWorkTasksList, type MyWorkTaskRow } from "@/components/priorities/MyWorkTasksList";
+import { useToast } from "@/hooks/use-toast";
 
 export { PriorityCard } from "@/components/priorities/PriorityCard";
 
@@ -82,14 +84,26 @@ export default function PrioritiesPage() {
   const listQueryParams = (base: string) =>
     showClosed ? `${base}&include_cancelled=true` : base;
 
-  // My Priorities — everything owned by or assigned to the current user,
-  // regardless of scope. Backend resolves `assigned_user_id=me` to the
-  // caller's id (see priority-strategic-routes.ts:485) and matches BOTH
-  // assignedUserId AND ownerUserId, so users see items they own or items
-  // delegated to them.
-  const myQuery = useQuery<PriorityRow[]>({
-    queryKey: ["/api/priorities", "my", showClosed],
-    queryFn: () => fetchPriorities(listQueryParams("assigned_user_id=me")),
+  // My Priorities — unified feed of priorities AND work_items owned by /
+  // assigned to the current user. Backend de-duplicates: work items already
+  // linked to a priority via linkedTaskId are suppressed (see
+  // server/departments/priority-strategic-routes.ts :: GET /api/priorities/my-work).
+  // Closed/completed items hidden unless showClosed is on.
+  const myWorkFeedQuery = useQuery<{
+    userId: number;
+    items: Array<
+      | { kind: "priority"; priority: PriorityRow }
+      | { kind: "task"; task: MyWorkTaskRow }
+    >;
+    counts: { priorities: number; tasks: number; total: number };
+  }>({
+    queryKey: ["/api/priorities/my-work", showClosed],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (showClosed) params.set("include_closed", "true");
+      const res = await apiRequest("GET", `/api/priorities/my-work?${params.toString()}`);
+      return res.json();
+    },
     enabled: activeTab === "my",
   });
 
@@ -109,7 +123,34 @@ export default function PrioritiesPage() {
     enabled: activeTab === "company",
   });
 
+  const { toast } = useToast();
   const invalidateAll = () => queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+
+  // Promote a work_item into a personal (scope='role') priority. Idempotent
+  // server-side: if a priority already links to this task, the existing one
+  // is returned and the toast says "already on your list".
+  const promoteTaskMutation = useMutation({
+    mutationFn: async (workItemId: number) => {
+      const res = await apiRequest("POST", `/api/priorities/from-task/${workItemId}`, {});
+      return res.json();
+    },
+    onSuccess: (body: { alreadyExisted?: boolean }) => {
+      toast({
+        title: body?.alreadyExisted ? "Already on your priority list" : "Promoted to priority",
+        description: body?.alreadyExisted
+          ? "This task was already linked to a priority."
+          : "It now lives in My Priorities — you can escalate it to your department or the company.",
+      });
+      invalidateAll();
+    },
+    onError: (err) => {
+      toast({
+        title: "Could not promote",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    },
+  });
 
   const escalateMutation = useMutation({
     mutationFn: (priorityId: number) => apiRequest("POST", `/api/priorities/${priorityId}/escalate`, { reason: "manual" }),
@@ -159,7 +200,30 @@ export default function PrioritiesPage() {
       return true;
     });
 
-  const filteredMy = useMemo(() => applyFilters(myQuery.data || []), [myQuery.data, levelFilter, healthFilter]);
+  // My-tab feed splits into two arrays (priorities + tasks). filteredMy is
+  // the priorities half — used by PriorityListSection / activeCount / bulk
+  // actions. filteredMyTasks is the task half — rendered by MyWorkTasksList
+  // below the priority section.
+  const myPriorities = useMemo(
+    () => (myWorkFeedQuery.data?.items ?? [])
+      .filter((it): it is { kind: "priority"; priority: PriorityRow } => it.kind === "priority")
+      .map((it) => it.priority),
+    [myWorkFeedQuery.data],
+  );
+  const myTasks = useMemo(
+    () => (myWorkFeedQuery.data?.items ?? [])
+      .filter((it): it is { kind: "task"; task: MyWorkTaskRow } => it.kind === "task")
+      .map((it) => it.task),
+    [myWorkFeedQuery.data],
+  );
+  const filteredMy = useMemo(() => applyFilters(myPriorities), [myPriorities, levelFilter, healthFilter]);
+  const filteredMyTasks = useMemo(() => {
+    // The task list shares the level + health filters' UX even though it
+    // doesn't expose those fields — when filters are active, the task pane
+    // collapses to keep the surface focused.
+    if (levelFilter !== "all" || healthFilter !== "all") return [];
+    return myTasks;
+  }, [myTasks, levelFilter, healthFilter]);
   const filteredDept = useMemo(() => applyFilters(deptQuery.data || []), [deptQuery.data, levelFilter, healthFilter]);
   const filteredCompany = useMemo(() => applyFilters(companyQuery.data || []), [companyQuery.data, levelFilter, healthFilter]);
 
@@ -352,26 +416,51 @@ export default function PrioritiesPage() {
         </div>
 
         <TabsContent value="my">
-          <PriorityListSection
-            priorities={filteredMy}
-            isLoading={myQuery.isLoading}
-            isError={myQuery.isError}
-            error={myQuery.error as Error}
-            refetch={myQuery.refetch}
-            showEscalate
-            onEscalate={(id) => escalateMutation.mutate(id)}
-            showReopen={showClosed}
-            onReopen={(id) => reopenMutation.mutate(id)}
-            selectable
-            selectedIds={bulkSelected}
-            onToggleSelect={toggleBulkSelect}
-            emptyMessage="Nothing on your plate yet"
-            emptyAction={
-              <Button size="sm" className="mt-3" onClick={() => setCreateDialogOpen(true)}>
-                <Plus className="w-4 h-4 mr-1" /> Create My Priority
-              </Button>
-            }
-          />
+          <div className="space-y-6">
+            <PriorityListSection
+              priorities={filteredMy}
+              isLoading={myWorkFeedQuery.isLoading}
+              isError={myWorkFeedQuery.isError}
+              error={myWorkFeedQuery.error as Error}
+              refetch={myWorkFeedQuery.refetch}
+              showEscalate
+              onEscalate={(id) => escalateMutation.mutate(id)}
+              showReopen={showClosed}
+              onReopen={(id) => reopenMutation.mutate(id)}
+              selectable
+              selectedIds={bulkSelected}
+              onToggleSelect={toggleBulkSelect}
+              emptyMessage="Nothing on your priority list yet"
+              emptyAction={
+                <Button size="sm" className="mt-3" onClick={() => setCreateDialogOpen(true)}>
+                  <Plus className="w-4 h-4 mr-1" /> Create My Priority
+                </Button>
+              }
+            />
+
+            {filteredMyTasks.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-baseline justify-between">
+                  <h3 className="text-sm font-semibold text-foreground">
+                    Tasks assigned to you
+                    <span className="ml-2 text-xs text-muted-foreground font-normal">
+                      ({filteredMyTasks.length})
+                    </span>
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Click <em>Make priority</em> to promote any task to a personal priority with the full escalate chain.
+                  </p>
+                </div>
+                <MyWorkTasksList
+                  tasks={filteredMyTasks}
+                  onPromote={async (id) => {
+                    await promoteTaskMutation.mutateAsync(id);
+                  }}
+                  promotingId={promoteTaskMutation.isPending ? (promoteTaskMutation.variables ?? null) as number | null : null}
+                />
+              </div>
+            )}
+          </div>
         </TabsContent>
 
         {(isDeptHead || isAdmin) && (

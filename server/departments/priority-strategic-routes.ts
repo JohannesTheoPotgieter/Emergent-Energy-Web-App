@@ -1,6 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { z } from "zod";
 import { requireAuth, requirePriorityAdmin, requirePriorityCreator } from "./shared-middleware";
+import { requirePermission } from "../permission-middleware";
 import { isPriorityAdminRole } from "@shared/config/priorities";
 import { getEffectiveUser } from "../auth-context";
 import { db } from "../db";
@@ -13,6 +14,7 @@ import {
   projectExecutionState,
   derivedProjectKpis,
   workItems,
+  workItemAssignments,
   approvals,
   opportunities,
   engineeringTickets,
@@ -574,6 +576,240 @@ router.get("/api/priorities", requireAuth, asyncHandler(async (req: Request, res
     });
 
   res.json(enriched);
+}));
+
+// ==================== GET /api/priorities/my-work ====================
+// Unified "what's on my plate" feed — discriminated union of:
+//   • Priorities the caller owns or is assigned to (any scope)
+//   • Active work_items the caller owns or is assigned via
+//     work_item_assignments
+// Work items already linked from a priority (linkedTaskId) are suppressed
+// so the same item never shows up twice. Closed/cancelled/completed work
+// items are hidden unless include_closed=true. Priorities follow the
+// existing show-closed contract on the parent /api/priorities query.
+//
+// Phase 7A unifies the My Tasks + My Priorities surfaces under
+// /priorities → My Priorities. /my-work/tasks keeps its dedicated page
+// for power users this release; will fold in the next one.
+router.get("/api/priorities/my-work", requireAuth, requirePermission("company_priorities", "view"), asyncHandler(async (req: Request, res: Response) => {
+  const user = getEffectiveUser(req);
+  const userId = user?.id;
+  if (!userId) throw badRequest("No effective user");
+  const includeClosed = req.query.include_closed === "true";
+
+  // 1) Priorities the user owns or is assigned to (across all scopes).
+  let priorities: any[] = [];
+  try {
+    priorities = await db.select().from(mytoolCompanyPriorities);
+  } catch (dbErr: any) {
+    console.error("[Priorities] my-work DB query failed:", dbErr.message);
+    const raw: any = await db.execute(sql`SELECT * FROM mytool_company_priorities ORDER BY id`);
+    priorities = raw.rows || raw || [];
+  }
+  priorities = priorities.filter((p: any) => {
+    const owner = p.ownerUserId ?? p.owner_user_id ?? null;
+    const assigned = p.assignedUserId ?? p.assigned_user_id ?? null;
+    if (owner !== userId && assigned !== userId) return false;
+    if (!includeClosed && p.status === "closed") return false;
+    return true;
+  });
+
+  const allMetrics = await getAllPriorityDerivedMetrics();
+  const metricsMap = new Map(allMetrics.map((m: any) => [m.priority_id, m]));
+  const userIds = Array.from(new Set(
+    priorities.flatMap((p: any) => [
+      p.ownerUserId ?? p.owner_user_id,
+      p.accountableExecId ?? p.accountable_exec_id,
+      p.assignedUserId ?? p.assigned_user_id,
+    ].filter(Boolean)),
+  )) as number[];
+  const userMap = await getUsersByIds(userIds);
+  const parentIds = Array.from(new Set(
+    priorities.map((p: any) => p.parentId ?? p.parent_id).filter((v: number | null) => v != null),
+  )) as number[];
+  const parentMap = new Map<number, string>();
+  if (parentIds.length > 0) {
+    const parents = await db
+      .select({ id: mytoolCompanyPriorities.id, title: mytoolCompanyPriorities.title })
+      .from(mytoolCompanyPriorities)
+      .where(inArray(mytoolCompanyPriorities.id, parentIds));
+    for (const p of parents) parentMap.set(p.id, p.title);
+  }
+  const enrichedPriorities = await Promise.all(
+    priorities.map((p: any) => enrichPriority(p, metricsMap.get(p.id), userMap, parentMap)),
+  );
+
+  // 2) Active work items owned by OR assigned to the caller.
+  const ownedRows = await db
+    .select()
+    .from(workItems)
+    .where(and(eq(workItems.ownerUserId, userId), isNull(workItems.deletedAt)));
+  const assignedRows = await db
+    .select({ work_items: workItems })
+    .from(workItemAssignments)
+    .innerJoin(workItems, eq(workItemAssignments.workItemId, workItems.id))
+    .where(and(eq(workItemAssignments.userId, userId), isNull(workItems.deletedAt)));
+  const taskMap = new Map<number, any>();
+  for (const wi of ownedRows) taskMap.set(wi.id, wi);
+  for (const row of assignedRows) {
+    const wi = (row as any).work_items;
+    if (wi && !taskMap.has(wi.id)) taskMap.set(wi.id, wi);
+  }
+
+  // 3) Suppress work items already linked to a priority (any priority,
+  //    not just the caller's). The user only wants to see a task once.
+  const linkedIds = new Set<number>();
+  const allWithLinks = await db
+    .select({ linkedTaskId: mytoolCompanyPriorities.linkedTaskId })
+    .from(mytoolCompanyPriorities);
+  for (const row of allWithLinks) {
+    if (typeof row.linkedTaskId === "number") linkedIds.add(row.linkedTaskId);
+  }
+
+  // 4) Filter + normalise tasks.
+  const projectLookup = new Map<number, string>();
+  const projectIds = Array.from(
+    new Set(Array.from(taskMap.values()).map((t: any) => t.projectId).filter((v: number | null) => v != null)),
+  );
+  if (projectIds.length > 0) {
+    const projectRows = await db
+      .select({ id: projectInfo.id, name: projectInfo.projectName })
+      .from(projectInfo)
+      .where(inArray(projectInfo.id, projectIds as number[]));
+    for (const p of projectRows) projectLookup.set(p.id, p.name);
+  }
+
+  const TASK_CLOSED_STATUSES = new Set(["closed", "complete", "completed", "cancelled", "done"]);
+  const taskRows = Array.from(taskMap.values())
+    .filter((t: any) => !linkedIds.has(t.id))
+    .filter((t: any) => includeClosed || !TASK_CLOSED_STATUSES.has(String(t.status || "").toLowerCase()))
+    .map((t: any) => ({
+      id: t.id,
+      title: t.title,
+      description: t.description ?? null,
+      status: t.status,
+      priority: t.priority ?? null,
+      dueDate: t.endDate ?? null,
+      startDate: t.startDate ?? null,
+      projectId: t.projectId ?? null,
+      projectName: t.projectId ? (projectLookup.get(t.projectId) ?? null) : null,
+      ownerUserId: t.ownerUserId ?? null,
+      ownerName: t.ownerName ?? null,
+      workstream: t.workstream,
+      source: t.source,
+      taskCategory: t.taskCategory ?? null,
+      bucket: t.bucket ?? null,
+      percentComplete: t.percentComplete ?? 0,
+      createdAt: t.createdAt,
+      updatedAt: t.updatedAt,
+    }));
+
+  // 5) Wire format: discriminated union, priorities first (they carry the
+  //    escalation chain), tasks after. Both sorted: due-date ASC then
+  //    title for deterministic output.
+  const PRIORITY_BUCKET = enrichedPriorities.map((p: any) => ({ kind: "priority" as const, priority: p }));
+  const TASK_BUCKET = taskRows.map((t) => ({ kind: "task" as const, task: t }));
+
+  const dueDateAsc = (a: string | null, b: string | null): number => {
+    if (a && b) return a.localeCompare(b);
+    if (a) return -1;
+    if (b) return 1;
+    return 0;
+  };
+  PRIORITY_BUCKET.sort((a, b) => dueDateAsc(a.priority.dueDate, b.priority.dueDate));
+  TASK_BUCKET.sort((a, b) => dueDateAsc(a.task.dueDate, b.task.dueDate));
+
+  res.json({
+    userId,
+    items: [...PRIORITY_BUCKET, ...TASK_BUCKET],
+    counts: {
+      priorities: PRIORITY_BUCKET.length,
+      tasks: TASK_BUCKET.length,
+      total: PRIORITY_BUCKET.length + TASK_BUCKET.length,
+    },
+  });
+}));
+
+// ==================== POST /api/priorities/from-task/:workItemId ====================
+// Promote an existing work_item to a personal priority. Creates a new
+// mytool_company_priorities row with scope='role', copies title/description/
+// dueDate from the work_item, and stores `linkedTaskId` so the unified
+// feed knows to suppress the work_item next time it renders. Idempotent:
+// if a priority already exists with this linkedTaskId, returns it instead
+// of creating a duplicate. Permission: any authenticated user (they can
+// only promote tasks they own or are assigned to — checked server-side).
+router.post("/api/priorities/from-task/:workItemId", requireAuth, requirePermission("company_priorities", "edit"), asyncHandler(async (req: Request, res: Response) => {
+  const user = getEffectiveUser(req);
+  const userId = user?.id;
+  if (!userId) throw badRequest("No effective user");
+  const workItemId = Number(req.params.workItemId);
+  if (!Number.isInteger(workItemId) || workItemId <= 0) throw badRequest("Invalid work item id");
+
+  // Verify the work_item exists + the caller has it on their plate (owned
+  // OR assigned). Otherwise reject — no one should promote someone else's
+  // task to their priority list.
+  const [task] = await db.select().from(workItems).where(eq(workItems.id, workItemId));
+  if (!task) throw notFound("Work item");
+  const isOwner = task.ownerUserId === userId;
+  let isAssigned = false;
+  if (!isOwner) {
+    const [assignment] = await db
+      .select({ id: workItemAssignments.id })
+      .from(workItemAssignments)
+      .where(and(eq(workItemAssignments.workItemId, workItemId), eq(workItemAssignments.userId, userId)))
+      .limit(1);
+    isAssigned = !!assignment;
+  }
+  if (!isOwner && !isAssigned) {
+    throw forbidden("You can only promote tasks you own or are assigned to.");
+  }
+
+  // Idempotency — if a priority already exists for this linkedTaskId,
+  // return it untouched.
+  const [existing] = await db
+    .select()
+    .from(mytoolCompanyPriorities)
+    .where(eq(mytoolCompanyPriorities.linkedTaskId, workItemId))
+    .limit(1);
+  if (existing) {
+    const metrics = await getPriorityDerivedMetrics(existing.id);
+    const enriched = await enrichPriority(existing, metrics);
+    return res.json({ kind: "priority", priority: enriched, alreadyExisted: true });
+  }
+
+  const dueDate = task.endDate ? String(task.endDate) : null;
+  const [created] = await db
+    .insert(mytoolCompanyPriorities)
+    .values({
+      title: task.title,
+      description: task.description ?? null,
+      scope: "role",
+      severity: "normal",
+      status: "active",
+      horizon: "week",
+      ownerUserId: userId,
+      assignedUserId: userId,
+      linkedTaskId: workItemId,
+      linkedTaskType: "work_item",
+      dueDate,
+    })
+    .returning();
+
+  // Audit
+  try {
+    await recordActivity({
+      priorityId: created.id,
+      actorUserId: userId,
+      action: "created",
+      details: { source: "promoted_from_task", workItemId, taskTitle: task.title },
+    });
+  } catch (err) {
+    console.warn("[Priorities] from-task: failed to record activity:", err);
+  }
+
+  const metrics = await getPriorityDerivedMetrics(created.id);
+  const enriched = await enrichPriority(created, metrics);
+  res.status(201).json({ kind: "priority", priority: enriched, alreadyExisted: false });
 }));
 
 // ==================== GET /api/priorities/:id ====================
