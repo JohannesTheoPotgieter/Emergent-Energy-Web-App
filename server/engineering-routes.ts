@@ -28,9 +28,9 @@ import { syncProjectSplitTables } from "./lib/project-info-sync";
 import { requireAuthority, requirePermission, evaluateAuthorityForRequest } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { ApiError, sendError, badRequest, notFound, forbidden, serverError } from "./lib/api-error";
-import { listEngineeringWorkItems, getEngineeringWorkItemById, createEngineeringWorkItem, updateEngineeringWorkItem, deleteEngineeringWorkItem, generateDefaultEngineeringWorkItemsForProject, mapToOpsStatus, toCanonicalStatus } from "./work-items-adapter";
+import { listEngineeringWorkItems, getEngineeringWorkItemById, createEngineeringWorkItem, updateEngineeringWorkItem, deleteEngineeringWorkItem, generateDefaultEngineeringWorkItemsForProject, mapToOpsStatus, toCanonicalStatus, type EngTask } from "./work-items-adapter";
 import { generateWorkItemReconciliationReport } from "./lib/reconciliation/work-item-reconciliation";
-import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
+import { assertTaskWorkflowTransition, buildTaskWorkflowContext, buildTaskWorkflowContextsForIds, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
 import { isTaskComplete, isTaskCompleteForReporting, isApprovalState } from "@shared/task-status";
 import {
   isTicketBlocked,
@@ -45,6 +45,22 @@ import { requireRole as requireRoleCanonical } from "./middleware/requireRole";
 import { ADMIN_ROLES, normalizeRoleForPermissions } from "@shared/schema";
 import { validateBody } from "./middleware/validateBody";
 import { z } from "zod";
+// Engineering PR 3 — repository extraction (Tier 3). Mirrors Quality #900:
+// 5 reused query helpers + 1 spread-null coalesce. Not a full repository
+// migration (most db.* calls in this file appear once and don't justify
+// a function). See engineering-repository.ts for what was extracted.
+// Note: `resolveProjectIdByName` is exported from the repository for
+// intake / external-ref flows, but the task-create handler uses a
+// different normalisation (exact match + `_Tracker` regex strip), so
+// it stays inline.
+import {
+  findProjectWithExecutionState,
+  findProjectInfoById,
+  findEngineeringWorkItem,
+  findDeliverableById,
+  findUserName,
+  coalesceProjectExecState,
+} from "./repositories/engineering-repository";
 import { getAssignmentsForEntity, getAssignmentsForEntities, listAssignableDirectory } from "./services/assignment-service";
 import { buildMyWorkSourceLinks } from "./lib/my-work-source-links";
 import { runCascadesAfterUpdate, validateParentCompletion } from "./services/task-cascade-service";
@@ -271,7 +287,7 @@ async function createNotification(recipientUserId: number, eventType: string, ti
  * Microsoft items, stage context, and computed flags.
  * Used by both the task list and task detail endpoints.
  */
-async function enrichEngineeringTasks(tasks: any[], req: Request): Promise<any[]> {
+async function enrichEngineeringTasks(tasks: EngTask[], req: Request): Promise<any[]> {
   if (tasks.length === 0) return [];
 
   const { buildUserMap, mergeResolvedWithTextNames } = await import("./user-resolver");
@@ -279,8 +295,8 @@ async function enrichEngineeringTasks(tasks: any[], req: Request): Promise<any[]
   const visibleProjectIds = Array.from(
     new Set(
       tasks
-        .map((task: any) => (typeof task.projectId === "number" ? task.projectId : null))
-        .filter((value): value is number => Number.isInteger(value) && value > 0),
+        .map((task) => (typeof task.projectId === "number" ? task.projectId : null))
+        .filter((value): value is number => value != null && Number.isInteger(value) && value > 0),
     ),
   );
   const canViewAllMicrosoftContext = MICROSOFT_ADMIN_ROLES.has(getUserRole(req));
@@ -364,7 +380,7 @@ async function enrichEngineeringTasks(tasks: any[], req: Request): Promise<any[]
     microsoftByProject.set(projectKey, list);
   }
 
-  const allWorkItemIds = tasks.map((t: any) => t.workItemId || t.id).filter(Boolean);
+  const allWorkItemIds: number[] = tasks.map((t) => t.workItemId || t.id).filter(Boolean);
   const stageContextMap = new Map<number, string>();
   try {
     const stageLinks = allWorkItemIds.length > 0
@@ -384,7 +400,7 @@ async function enrichEngineeringTasks(tasks: any[], req: Request): Promise<any[]
     console.warn("[Engineering] Non-fatal stage context error:", stageErr.message);
   }
 
-  return tasks.map((t: any) => {
+  return tasks.map((t) => {
     const resolvedAssigneeIds = Array.from(
       new Set([
         ...((t.assigneeUserIds || []).filter((uid: number) => Number.isInteger(uid)) as number[]),
@@ -422,9 +438,13 @@ async function enrichEngineeringTasks(tasks: any[], req: Request): Promise<any[]
       isDeliverableApprovalPendingStatus(item.status),
     ).length;
 
-    const ownerName = t.ownerUserId
-      ? userMap.get(t.ownerUserId)?.name ?? t.ownerName ?? null
-      : t.ownerName ?? null;
+    // Engineering PR 3: listEngineeringWorkItems doesn't emit endDate /
+    // ownerName / externalRef / wbsCode / expectedPctComplete (those got
+    // mapped to dueDate / externalTaskId / taskNumber / null). The view
+    // function (`projectEngineeringTicket`) already does its own
+    // dueDate↔endDate / externalRef↔externalTaskId fallback, so we just
+    // pass the canonical EngTask fields.
+    const ownerName = t.ownerUserId ? userMap.get(t.ownerUserId)?.name ?? null : null;
     const sourceContextLabel = stageContextMap.has(t.workItemId || t.id)
       ? `Engineering Stage: ${stageContextMap.get(t.workItemId || t.id)}`
       : (projectLinks?.sourceContextLabel || null);
@@ -444,10 +464,8 @@ async function enrichEngineeringTasks(tasks: any[], req: Request): Promise<any[]
       projectId: t.projectId,
       projectName: t.projectName,
       startDate: t.startDate,
-      endDate: t.endDate,
-      dueDate: t.dueDate ?? t.endDate,
+      dueDate: t.dueDate,
       percentComplete: t.percentComplete,
-      expectedPctComplete: t.expectedPctComplete,
       ownerUserId: t.ownerUserId,
       ownerName,
       assigneeUserIds: resolvedAssigneeIds,
@@ -465,9 +483,8 @@ async function enrichEngineeringTasks(tasks: any[], req: Request): Promise<any[]
       linkedPlanItemId: t.linkedPlanItemId,
       linkedDeliverableId: t.linkedDeliverableId,
       linkedQualityItemInstanceId: t.linkedQualityItemInstanceId,
-      externalRef: t.externalRef,
-      externalTaskId: t.externalTaskId ?? t.externalRef,
-      wbsCode: t.wbsCode ?? t.taskNumber,
+      externalTaskId: t.externalTaskId,
+      wbsCode: t.taskNumber,
       projectLinkedDeliverableCount: projectDeliverables.length,
       projectLinkedDeliverables: projectDeliverables.slice(0, 3).map((d) => ({
         id: d.id,
@@ -854,29 +871,40 @@ export function registerEngineeringRoutes(app: Express) {
         if (!nameMap[first]) nameMap[first] = { id: u.id, name: u.name };
       }
 
+      // Engineering PR 3: batch the per-row updates + inserts. Old code
+      // ran N×2 round-trips (one db.update + one db.insert per matched
+      // work_item). Now: group matches by user id, then run one
+      // UPDATE per user (covers all that user's work items) + one
+      // bulk INSERT for the assignments. Round-trips collapse to
+      // 2×distinctUsers regardless of N.
+      const matchesByUserId = new Map<number, number[]>(); // userId -> [workItemIds]
+      for (const wi of engItems) {
+        if (wi.ownerUserId || !wi.ownerName) continue;
+        const lower = wi.ownerName.toLowerCase();
+        const first = lower.split(/\s+/)[0];
+        const match = nameMap[lower] || nameMap[first];
+        if (!match) continue;
+        const list = matchesByUserId.get(match.id) ?? [];
+        list.push(wi.id);
+        matchesByUserId.set(match.id, list);
+      }
+
       let updated = 0;
       let assignmentsCreated = 0;
-
-      for (const wi of engItems) {
-        if (!wi.ownerUserId && wi.ownerName) {
-          const lower = wi.ownerName.toLowerCase();
-          const first = lower.split(/\s+/)[0];
-          const match = nameMap[lower] || nameMap[first];
-          if (match) {
-            await db.update(workItems)
-              .set({ ownerUserId: match.id, updatedAt: new Date() })
-              .where(eq(workItems.id, wi.id));
-
-            await db.insert(workItemAssignments).values({
-              workItemId: wi.id,
-              userId: match.id,
-              role: "OWNER" as any,
-            }).onConflictDoNothing();
-
-            updated++;
-            assignmentsCreated++;
-          }
-        }
+      const updatedAt = new Date();
+      for (const [userId, workItemIds] of matchesByUserId.entries()) {
+        await db.update(workItems)
+          .set({ ownerUserId: userId, updatedAt })
+          .where(inArray(workItems.id, workItemIds));
+        await db.insert(workItemAssignments).values(
+          workItemIds.map((wid) => ({
+            workItemId: wid,
+            userId,
+            role: "OWNER" as any,
+          })),
+        ).onConflictDoNothing();
+        updated += workItemIds.length;
+        assignmentsCreated += workItemIds.length;
       }
 
       res.json({ message: `Backfill complete: ${updated} work items updated, ${assignmentsCreated} assignments created` });
@@ -1025,7 +1053,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.patch("/api/eng/tasks/:id", requireAuth, requirePermission("eng_tasks", "edit"), validateBody(engTaskUpdateSchema), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
-      const [existing] = await db.select().from(workItems).where(and(eq(workItems.id, id), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
+      const existing = await findEngineeringWorkItem(id);
       if (!existing) return sendError(res, notFound("Task"));
 
       // Prompt 0.9 follow-up: the inline kanban-card buttons in
@@ -1270,7 +1298,7 @@ export function registerEngineeringRoutes(app: Express) {
         await createNotification(updated.ownerUserId, "deliverable.submitted_for_approval",
           `Approval needed: ${updated.title}`,
           `Task "${updated.title}" has been sent for approval${file ? ` with attachment: ${file.originalname}` : ""}`,
-          { projectName: existing.projectName, linkedTaskId: id }
+          { projectName: existing.projectName ?? undefined, linkedTaskId: id }
         );
       }
 
@@ -1518,7 +1546,7 @@ export function registerEngineeringRoutes(app: Express) {
       await createNotification(recipientUserId, "deliverable.sent_for_acknowledgment",
         `Deliverable received: ${existing.title}`,
         `"${file.originalname}" has been sent to you for acknowledgment on task "${existing.title}"${note.trim() ? ` — ${note.trim()}` : ""}`,
-        { projectName: existing.projectName, linkedTaskId: id }
+        { projectName: existing.projectName ?? undefined, linkedTaskId: id }
       );
 
       const localFlowEnabled = await isLocalSyncedSaveFlowEnabled();
@@ -1746,7 +1774,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.delete("/api/eng/tasks/:id", requireAuth, requirePermission('eng_tasks', 'delete'), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
-      const [existing] = await db.select().from(workItems).where(and(eq(workItems.id, id), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
+      const existing = await findEngineeringWorkItem(id);
       if (!existing) return sendError(res, notFound("Task"));
 
       const deleted = await deleteEngineeringWorkItem(id);
@@ -1777,13 +1805,16 @@ export function registerEngineeringRoutes(app: Express) {
       if (canonicalBulkStatus === "hold" && !updates.blockedType) {
         return sendError(res, badRequest("Blocked type (Internal or External) required when setting status to hold"));
       }
-      // Validate ALL tasks before updating any (fail-fast)
+      // Engineering PR 3: batched validation. Replaces per-id
+      // getEngineeringWorkItemById + buildTaskWorkflowContext (each of which
+      // was an N×O(allEngineeringItems) + N×2 DB queries) with two queries
+      // total across all taskIds.
       if (canonicalBulkStatus) {
+        const contexts = await buildTaskWorkflowContextsForIds(taskIds);
         for (const taskId of taskIds) {
-          const task = await getEngineeringWorkItemById(taskId);
-          if (!task) continue;
+          const context = contexts.get(taskId);
+          if (!context) continue;
           try {
-            const context = await buildTaskWorkflowContext(taskId, task.status);
             assertTaskWorkflowTransition(context, canonicalBulkStatus, "bulk_status_update");
           } catch (err: any) {
             if (err instanceof TaskWorkflowGuardError) {
@@ -1794,48 +1825,47 @@ export function registerEngineeringRoutes(app: Express) {
         }
       }
 
-      // All validations passed — apply updates atomically
-      const updatedTaskIds: number[] = [];
-      await db.transaction(async (tx: any) => {
-        for (const taskId of taskIds) {
-          const adapterUpdates: any = {};
-          if (canonicalBulkStatus) adapterUpdates.status = canonicalBulkStatus;
-          if (updates.holdReason !== undefined) adapterUpdates.holdReason = updates.holdReason;
-          if (updates.blockedType !== undefined) adapterUpdates.blockedType = updates.blockedType;
-          if (updates.priority !== undefined) adapterUpdates.priority = updates.priority;
-          if (updates.ownerUserId !== undefined) adapterUpdates.ownerUserId = updates.ownerUserId;
-          if (canonicalBulkStatus === "complete") adapterUpdates.completedAt = new Date();
+      // All validations passed — apply updates atomically.
+      // Engineering PR 3: single batched UPDATE + single batched INSERT,
+      // replacing the per-taskId loop with N×2 round-trips inside the
+      // transaction.
+      const setData: any = { updatedAt: new Date() };
+      if (canonicalBulkStatus) setData.status = canonicalBulkStatus;
+      if (updates.holdReason !== undefined) setData.holdReason = updates.holdReason;
+      if (updates.blockedType !== undefined) setData.blockedType = updates.blockedType;
+      if (updates.priority !== undefined) setData.priority = updates.priority;
+      if (updates.ownerUserId !== undefined) setData.ownerUserId = updates.ownerUserId;
+      if (canonicalBulkStatus === "complete") setData.completedAt = new Date();
 
-          const setData: any = { updatedAt: new Date() };
-          if (adapterUpdates.status !== undefined) setData.status = adapterUpdates.status;
-          if (adapterUpdates.holdReason !== undefined) setData.holdReason = adapterUpdates.holdReason;
-          if (adapterUpdates.blockedType !== undefined) setData.blockedType = adapterUpdates.blockedType;
-          if (adapterUpdates.priority !== undefined) setData.priority = adapterUpdates.priority;
-          if (adapterUpdates.ownerUserId !== undefined) setData.ownerUserId = adapterUpdates.ownerUserId;
-          if (adapterUpdates.completedAt !== undefined) setData.completedAt = adapterUpdates.completedAt;
+      const actorId = getUser(req).id;
+      const updatesJson = JSON.stringify(updates);
 
-          const [updated] = await tx.update(workItems)
-            .set(setData)
-            .where(and(eq(workItems.id, taskId), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)))
-            .returning({ id: workItems.id });
+      const updatedTaskIds: number[] = await db.transaction(async (tx: any) => {
+        const updatedRows = await tx.update(workItems)
+          .set(setData)
+          .where(and(inArray(workItems.id, taskIds), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)))
+          .returning({ id: workItems.id });
 
-          if (updated) {
-            updatedTaskIds.push(taskId);
-            await tx.insert(taskActivityLog).values({
-              workItemId: taskId, actorId: getUser(req).id,
+        const ids = updatedRows.map((r: { id: number }) => r.id);
+        if (ids.length > 0) {
+          await tx.insert(taskActivityLog).values(
+            ids.map((wid: number) => ({
+              workItemId: wid,
+              actorId,
               actionType: "bulk_updated",
-              newValue: JSON.stringify(updates),
-            });
-          }
+              newValue: updatesJson,
+            })),
+          );
         }
+        return ids;
       });
 
-      // Fetch enriched results outside the transaction
-      const updatedTasks = [];
-      for (const taskId of updatedTaskIds) {
-        const mapped = await getEngineeringWorkItemById(taskId);
-        if (mapped) updatedTasks.push(mapped);
-      }
+      // Engineering PR 3: single enriched-list fetch outside the transaction,
+      // replacing per-id getEngineeringWorkItemById calls (each doing an
+      // O(allEngineeringItems) scan).
+      const updatedTasks = updatedTaskIds.length > 0
+        ? await listEngineeringWorkItems({ ids: updatedTaskIds })
+        : [];
 
       res.json({ updated: updatedTasks.length, tasks: updatedTasks });
     } catch (err: any) {
@@ -2083,12 +2113,14 @@ export function registerEngineeringRoutes(app: Express) {
         createdBy: getUser(req).id,
       });
 
-      // Set parentId on the newly created work item and inherit parent dates
+      // Set parentId on the newly created work item and inherit parent dates.
+      // EngTask exposes only `dueDate` (listEngineeringWorkItems maps the
+      // raw `endDate` column → `dueDate` in its output).
       await db.update(workItems)
         .set({
           parentId: parentId,
           startDate: parent.startDate || null,
-          endDate: parent.dueDate || parent.endDate || null,
+          endDate: parent.dueDate || null,
         })
         .where(eq(workItems.id, subtaskWorkItem.id));
 
@@ -2135,7 +2167,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.get("/api/deliverables/:id", requireAuth, requirePermission("deliverables", "view"), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
-      const [del] = await db.select().from(deliverables).where(eq(deliverables.id, id));
+      const del = await findDeliverableById(id);
       if (!del) return sendError(res, notFound("Deliverable"));
 
       const versions = await db.select().from(deliverableVersions)
@@ -2205,7 +2237,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.patch("/api/deliverables/:id", requireAuth, requirePermission("deliverables", "edit"), validateBody(deliverableUpdateSchema), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
-      const [existing] = await db.select().from(deliverables).where(eq(deliverables.id, id));
+      const existing = await findDeliverableById(id);
       if (!existing) return sendError(res, notFound("Deliverable"));
 
       // Prompt 0.9 follow-up: normalize incoming deliverable status — same
@@ -2297,7 +2329,7 @@ export function registerEngineeringRoutes(app: Express) {
       const id = parseIntParam(req.params.id);
       const { changeReason, impactJson } = req.body;
 
-      const [existing] = await db.select().from(deliverables).where(eq(deliverables.id, id));
+      const existing = await findDeliverableById(id);
       if (!existing) return sendError(res, notFound("Deliverable"));
 
       const newVersion = existing.currentVersion + 1;
@@ -2430,7 +2462,7 @@ export function registerEngineeringRoutes(app: Express) {
       // listEngineeringWorkItems returns canonical lowercase via
       // toCanonicalStatus(). The previous UPPERCASE comparisons silently
       // matched zero tasks, making warnings never fire.
-      const allTasks = canonicalTasks.filter((t: any) => !isTaskComplete(t.status));
+      const allTasks = canonicalTasks.filter((t) => !isTaskComplete(t.status));
 
       for (const task of allTasks) {
         if (task.dueDate && task.dueDate < today && !isTaskComplete(task.status)) {
@@ -2489,11 +2521,33 @@ export function registerEngineeringRoutes(app: Express) {
       if (projectName) delConditions.push(eq(deliverables.projectName, projectName));
       const allDeliverables = await db.select().from(deliverables).where(and(...delConditions));
 
+      // Engineering PR 3: batch the approved-files check across all
+      // qc_approved/complete deliverables. Old code ran one
+      // `db.select().from(deliverableFiles)` per matching deliverable.
+      // Now: single `inArray` over the candidate ids, group counts in JS.
+      const candidateDeliverableIds = allDeliverables
+        .filter((del: any) => del.status === "qc_approved" || del.status === "complete")
+        .map((del: any) => del.id as number);
+      const approvedFilesByDeliverableId = new Map<number, number>();
+      if (candidateDeliverableIds.length > 0) {
+        const approvedRows = await db
+          .select({ deliverableId: deliverableFiles.deliverableId })
+          .from(deliverableFiles)
+          .where(and(
+            inArray(deliverableFiles.deliverableId, candidateDeliverableIds),
+            eq(deliverableFiles.isApproved, true),
+          ));
+        for (const row of approvedRows) {
+          approvedFilesByDeliverableId.set(
+            row.deliverableId,
+            (approvedFilesByDeliverableId.get(row.deliverableId) ?? 0) + 1,
+          );
+        }
+      }
       for (const del of allDeliverables) {
         if (del.status === "qc_approved" || del.status === "complete") {
-          const approvedFiles = await db.select().from(deliverableFiles)
-            .where(and(eq(deliverableFiles.deliverableId, del.id), eq(deliverableFiles.isApproved, true)));
-          if (approvedFiles.length === 0) {
+          const approvedCount = approvedFilesByDeliverableId.get(del.id) ?? 0;
+          if (approvedCount === 0) {
             newWarnings.push({
               projectName: del.projectName,
               severity: "HIGH",
@@ -2520,30 +2574,60 @@ export function registerEngineeringRoutes(app: Express) {
           .innerJoin(engStageTemplates, eq(projectEngStages.stageTemplateId, engStageTemplates.id))
           .where(ne(projectEngStages.status, "complete"));
 
-        for (const stage of allStages) {
+        // Engineering PR 3: batch the IFC scan. Old code ran two queries
+        // per matching stage (deliverables + projectInfo). Now: filter to
+        // candidate stages with the rule flag set, then run one
+        // `inArray` for deliverables grouped by stage id, and one
+        // `inArray` for project names by project id.
+        const candidateStages = allStages.filter((stage: any) => {
           const rules = (stage.stageGateRules as any) || {};
-          if (!rules.requireIfcIssuance) continue;
+          return !!rules.requireIfcIssuance;
+        });
+        const candidateStageIds: number[] = candidateStages.map((s: any) => s.id as number);
+        const stageProjectIds: number[] = Array.from(
+          new Set(
+            candidateStages
+              .map((s: any) => s.projectId as number | null)
+              .filter((v: number | null): v is number => v != null),
+          ),
+        );
 
-          const stageDeliverables = await db.select({
+        const deliverablesByStageId = new Map<number, Array<{ releasedFor: string | null; approvalStatus: string | null }>>();
+        if (candidateStageIds.length > 0) {
+          const allStageDeliverables = await db.select({
+            projectEngStageId: projectEngDeliverables.projectEngStageId,
             releasedFor: projectEngDeliverables.releasedFor,
             approvalStatus: projectEngDeliverables.approvalStatus,
           })
             .from(projectEngDeliverables)
-            .where(eq(projectEngDeliverables.projectEngStageId, stage.id));
+            .where(inArray(projectEngDeliverables.projectEngStageId, candidateStageIds));
+          for (const d of allStageDeliverables) {
+            const list = deliverablesByStageId.get(d.projectEngStageId) ?? [];
+            list.push({ releasedFor: d.releasedFor, approvalStatus: d.approvalStatus });
+            deliverablesByStageId.set(d.projectEngStageId, list);
+          }
+        }
 
-          const hasIfc = stageDeliverables.some((d: any) =>
+        const projectNameById = new Map<number, string>();
+        if (stageProjectIds.length > 0) {
+          const projectRows = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName })
+            .from(projectInfo)
+            .where(inArray(projectInfo.id, stageProjectIds));
+          for (const p of projectRows) projectNameById.set(p.id, p.projectName);
+        }
+
+        for (const stage of candidateStages) {
+          const stageDeliverables = deliverablesByStageId.get(stage.id) ?? [];
+          const hasIfc = stageDeliverables.some((d) =>
             d.releasedFor === "issued_for_construction" || d.releasedFor === "as_built"
           );
-          const hasApprovedOnly = stageDeliverables.some((d: any) =>
+          const hasApprovedOnly = stageDeliverables.some((d) =>
             d.approvalStatus === "approved" && d.releasedFor !== "issued_for_construction" && d.releasedFor !== "as_built"
           );
 
           if (!hasIfc && hasApprovedOnly) {
-            // Look up project name for this stage
-            const [proj] = await db.select({ projectName: projectInfo.projectName })
-              .from(projectInfo).where(eq(projectInfo.id, stage.projectId));
             newWarnings.push({
-              projectName: proj?.projectName || `project_id:${stage.projectId}`,
+              projectName: projectNameById.get(stage.projectId) || `project_id:${stage.projectId}`,
               severity: "HIGH",
               warningType: "missing_approval",
               title: `IFC not issued: ${stage.templateName}`,
@@ -2660,9 +2744,17 @@ export function registerEngineeringRoutes(app: Express) {
       sevenDaysOut.setDate(sevenDaysOut.getDate() + 7);
       const weekEndStr = sevenDaysOut.toISOString().split('T')[0];
 
-      const [rawCanonicalTasks, allProjectInfoRows] = await Promise.all([
+      // Engineering PR 3: collapsed two leftJoin queries (one of which fed
+      // a no-op loop that admitted "we need the projectId but it's not in
+      // the select") into a single canonical query that includes
+      // projectId, projectName, and phase.
+      const [rawCanonicalTasks, projectIdPhaseRows] = await Promise.all([
         listEngineeringWorkItems({}),
-        db.select({ projectName: projectInfo.projectName, phase: projectExecutionState.phase })
+        db.select({
+          id: projectInfo.id,
+          projectName: projectInfo.projectName,
+          phase: projectExecutionState.phase,
+        })
           .from(projectInfo)
           .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)),
       ]);
@@ -2670,45 +2762,23 @@ export function registerEngineeringRoutes(app: Express) {
       // Resolve assignee names from assigneeUserIds for standup filtering/workload
       const { buildUserMap } = await import("./user-resolver");
       const userMap = await buildUserMap();
-      const rawTasks = rawCanonicalTasks.map((t: any) => {
+      const rawTasks: EngTask[] = rawCanonicalTasks.map((t) => {
         const assigneeNames = (t.assigneeUserIds || [])
-          .map((uid: number) => userMap.get(uid)?.name)
-          .filter(Boolean);
+          .map((uid) => userMap.get(uid)?.name)
+          .filter((name): name is string => Boolean(name));
         return { ...t, assignees: assigneeNames.length > 0 ? assigneeNames : null };
       });
 
-      const allTasks = assigneeFilter
-        ? rawTasks.filter((t: any) => {
+      const allTasks: EngTask[] = assigneeFilter
+        ? rawTasks.filter((t) => {
             if (!t.assignees || !Array.isArray(t.assignees)) return false;
             const filterLower = assigneeFilter!.toLowerCase();
-            return t.assignees.some((a: string) => a && a.toLowerCase().startsWith(filterLower));
+            return t.assignees.some((a) => a && a.toLowerCase().startsWith(filterLower));
           })
         : rawTasks;
 
-      // Phase lookup: projectId-based (canonical) rather than the old
-      // fuzzy name-matching heuristic that could misattribute phases.
-      // Tasks from listEngineeringWorkItems() carry projectId; the
-      // projectInfo query provides phase per projectId.
       const phaseByProjectId = new Map<number, string>();
       const projectNameById = new Map<number, string>();
-      for (const pi of allProjectInfoRows) {
-        // allProjectInfoRows is a leftJoin result; need careful extraction
-        const pName = pi.projectName;
-        const pPhase = pi.phase;
-        // projectInfo rows have projectName; projectExecutionState has phase
-        // The query selects { projectName: projectInfo.projectName, phase: projectExecutionState.phase }
-        if (pName && pPhase) {
-          // We need the projectId but it's not in the select — look up from task data
-        }
-      }
-      // Build from raw: re-query with projectId for canonical mapping
-      const projectIdPhaseRows = await db.select({
-        id: projectInfo.id,
-        projectName: projectInfo.projectName,
-        phase: projectExecutionState.phase,
-      })
-        .from(projectInfo)
-        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
       for (const row of projectIdPhaseRows) {
         if (row.phase) phaseByProjectId.set(row.id, row.phase);
         if (row.projectName) projectNameById.set(row.id, row.projectName);
@@ -2725,24 +2795,24 @@ export function registerEngineeringRoutes(app: Express) {
       // the output of listEngineeringWorkItems() / toCanonicalStatus().
       const openStatuses = new Set(["to_do", "in_progress", "needs_approval", "provide_feedback", "projects_assistance", "not_started"]);
 
-      const recentlyCompleted = allTasks.filter((t: any) =>
+      const recentlyCompleted = allTasks.filter((t) =>
         isTaskComplete(t.status) && t.completedAt &&
         new Date(t.completedAt).toISOString().split('T')[0] >= yesterdayStr
       );
 
-      const blockers = allTasks.filter((t: any) =>
+      const blockers = allTasks.filter((t) =>
         t.status === "hold" || (!isTaskComplete(t.status) && t.dueDate && t.dueDate < todayStr)
       );
 
-      const holdItems = blockers.filter((t: any) => t.status === "hold");
-      const overdueItems = blockers.filter((t: any) => t.status !== "hold" && t.dueDate && t.dueDate < todayStr);
+      const holdItems = blockers.filter((t) => t.status === "hold");
+      const overdueItems = blockers.filter((t) => t.status !== "hold" && t.dueDate && t.dueDate < todayStr);
 
-      const upcomingThisWeek = allTasks.filter((t: any) =>
+      const upcomingThisWeek = allTasks.filter((t) =>
         openStatuses.has(t.status) && t.dueDate && t.dueDate >= todayStr && t.dueDate <= weekEndStr
-      ).sort((a: any, b: any) => (a.dueDate || "").localeCompare(b.dueDate || ""));
+      ).sort((a, b) => String(a.dueDate || "").localeCompare(String(b.dueDate || "")));
 
-      const inProgress = allTasks.filter((t: any) => t.status === "in_progress");
-      const needsApproval = allTasks.filter((t: any) => t.status === "needs_approval" || t.status === "provide_feedback");
+      const inProgress = allTasks.filter((t) => t.status === "in_progress");
+      const needsApproval = allTasks.filter((t) => t.status === "needs_approval" || t.status === "provide_feedback");
 
       const assigneeMap = new Map<string, { active: number; overdue: number; hold: number; dueThisWeek: number }>();
       for (const t of allTasks) {
@@ -2785,10 +2855,10 @@ export function registerEngineeringRoutes(app: Express) {
         // Canonical phase lookup by projectId — no fuzzy name matching.
         const phase = lookupPhaseById(projectId);
         const total = tasks.length;
-        const completed = tasks.filter((t: any) => isTaskComplete(t.status)).length;
-        const active = tasks.filter((t: any) => openStatuses.has(t.status)).length;
-        const hold = tasks.filter((t: any) => t.status === "hold").length;
-        const overdue = tasks.filter((t: any) => !isTaskComplete(t.status) && t.dueDate && t.dueDate < todayStr).length;
+        const completed = tasks.filter((t) => isTaskComplete(t.status)).length;
+        const active = tasks.filter((t) => openStatuses.has(t.status)).length;
+        const hold = tasks.filter((t) => t.status === "hold").length;
+        const overdue = tasks.filter((t) => !isTaskComplete(t.status) && t.dueDate && t.dueDate < todayStr).length;
         const dueThisWeek = tasks.filter(t => openStatuses.has(t.status) && t.dueDate && t.dueDate >= todayStr && t.dueDate <= weekEndStr).length;
         const completion = total > 0 ? Math.round((completed / total) * 100) : 0;
 
@@ -2882,7 +2952,7 @@ export function registerEngineeringRoutes(app: Express) {
           totalProjects: realProjectCount,
           totalTasks: allTasks.length,
           activeTasks: allTasks.filter(t => openStatuses.has(t.status)).length,
-          completedTasks: allTasks.filter((t: any) => isTaskComplete(t.status)).length,
+          completedTasks: allTasks.filter((t) => isTaskComplete(t.status)).length,
           overdueTasks: overdueItems.length,
           holdTasks: holdItems.length,
           recentlyCompletedCount: recentlyCompleted.length,
@@ -3388,41 +3458,71 @@ export function registerEngineeringRoutes(app: Express) {
       await db.update(projectInfo).set(cpSignedFields).where(eq(projectInfo.id, projectId));
       await syncProjectSplitTables(projectId, cpSignedFields);
 
+      // Engineering PR 3: bulk-insert both task packs in one round-trip.
+      // Old code called `createEngineeringWorkItem` N times (10 INSERTs
+      // total). Now: filter packs by idempotency flags, build a single
+      // values array, one INSERT. Latent bug fix: `phase` was silently
+      // dropped by `createEngineeringWorkItem` because the helper omitted
+      // it from the `createWorkItem` payload; the bulk path writes phase
+      // directly so new task-pack rows now carry phase as intended.
       let pmTasksCreated = 0;
       let engTasksCreated = 0;
 
-      // Create PM task pack (idempotent)
+      const rowsToInsert: Array<{
+        projectId: number;
+        title: string;
+        status: string;
+        priority: string;
+        phase: string;
+        workstream: "ENG";
+        type: string;
+        source: "UI";
+        createdBy: number;
+      }> = [];
+
       if (!project.pmTaskPackCreated) {
-        for (let i = 0; i < PM_DEFAULT_TASK_PACK.length; i++) {
-          const t = PM_DEFAULT_TASK_PACK[i];
-          await createEngineeringWorkItem({
+        for (const t of PM_DEFAULT_TASK_PACK) {
+          rowsToInsert.push({
             projectId,
             title: `[PM] ${t.title}`,
             status: "to_do",
             priority: t.priority,
             phase: t.phase,
+            workstream: "ENG",
+            type: "task",
+            source: "UI",
             createdBy: user.id,
           });
-          pmTasksCreated++;
         }
-        await db.update(projectInfo).set({ pmTaskPackCreated: true }).where(eq(projectInfo.id, projectId));
-        await syncProjectSplitTables(projectId, { pmTaskPackCreated: true });
+        pmTasksCreated = PM_DEFAULT_TASK_PACK.length;
       }
 
-      // Create Engineering post-CP task pack (idempotent)
       if (!project.engPostCpTaskPackCreated) {
-        for (let i = 0; i < ENG_POST_CP_TASK_PACK.length; i++) {
-          const t = ENG_POST_CP_TASK_PACK[i];
-          await createEngineeringWorkItem({
+        for (const t of ENG_POST_CP_TASK_PACK) {
+          rowsToInsert.push({
             projectId,
             title: `[Eng Post-CP] ${t.title}`,
             status: "to_do",
             priority: t.priority,
             phase: t.phase,
+            workstream: "ENG",
+            type: "task",
+            source: "UI",
             createdBy: user.id,
           });
-          engTasksCreated++;
         }
+        engTasksCreated = ENG_POST_CP_TASK_PACK.length;
+      }
+
+      if (rowsToInsert.length > 0) {
+        await db.insert(workItems).values(rowsToInsert);
+      }
+
+      if (!project.pmTaskPackCreated) {
+        await db.update(projectInfo).set({ pmTaskPackCreated: true }).where(eq(projectInfo.id, projectId));
+        await syncProjectSplitTables(projectId, { pmTaskPackCreated: true });
+      }
+      if (!project.engPostCpTaskPackCreated) {
         await db.update(projectInfo).set({ engPostCpTaskPackCreated: true }).where(eq(projectInfo.id, projectId));
         await syncProjectSplitTables(projectId, { engPostCpTaskPackCreated: true });
       }
@@ -3468,12 +3568,13 @@ export function registerEngineeringRoutes(app: Express) {
 
       let signedByName: string | null = null;
       if (project.cpSignedByUserId) {
-        const [signer] = await db.select({ name: users.name }).from(users).where(eq(users.id, project.cpSignedByUserId));
-        signedByName = signer?.name || null;
+        signedByName = await findUserName(project.cpSignedByUserId);
       }
 
+      // Engineering PR 3: coalesce so leftJoin nulls on the execution-state
+      // side become safe defaults (cpSigned: false, etc.) before spreading.
       res.json({
-        ...project,
+        ...coalesceProjectExecState(project),
         cpSignedByName: signedByName,
       });
     } catch (err: any) {
@@ -3502,10 +3603,11 @@ export function registerEngineeringRoutes(app: Express) {
         return sendError(res, badRequest("Invalid phase value", { validPhases: PROJECT_PHASES.join(", ") }));
       }
 
-      const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
+      // `phase` lives on `projectExecutionState`, not `projectInfo`.
+      const project = await findProjectWithExecutionState(projectId);
       if (!project) return sendError(res, notFound("Project"));
 
-      const fromPhase = project.phase;
+      const fromPhase = project.phase ?? null;
 
       if (fromPhase === toPhase) {
         return sendError(res, badRequest("Project is already in this phase"));
@@ -3603,7 +3705,7 @@ export function registerEngineeringRoutes(app: Express) {
         console.warn("[Phase] Stage gate evaluation error (non-blocking):", gateErr.message);
       }
 
-      const [updated] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
+      const updated = await findProjectInfoById(projectId);
       res.json({
         project: updated,
         phaseLabel: PROJECT_PHASE_LABELS[toPhase as ProjectPhase] || toPhase,
@@ -3628,7 +3730,7 @@ export function registerEngineeringRoutes(app: Express) {
       const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return sendError(res, badRequest("Invalid project ID"));
 
-      const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
+      const project = await findProjectInfoById(projectId);
       if (!project) return sendError(res, notFound("Project"));
 
       const history = await db.select({
@@ -3660,7 +3762,8 @@ export function registerEngineeringRoutes(app: Express) {
       const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return sendError(res, badRequest("Invalid project ID"));
 
-      const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
+      // `phase` lives on `projectExecutionState`, not `projectInfo`.
+      const project = await findProjectWithExecutionState(projectId);
       if (!project) return sendError(res, notFound("Project"));
 
       const cleanName = project.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
@@ -3668,7 +3771,7 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.json({
         projectName: cleanName,
-        phase: project.phase,
+        phase: project.phase ?? null,
         tasks,
       });
     } catch (err: any) {
@@ -3683,7 +3786,7 @@ export function registerEngineeringRoutes(app: Express) {
       const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return sendError(res, badRequest("Invalid project ID"));
 
-      const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
+      const project = await findProjectInfoById(projectId);
       if (!project) return sendError(res, notFound("Project"));
 
       const existing = await listEngineeringWorkItems({ projectId });
@@ -3956,7 +4059,7 @@ export function registerEngineeringRoutes(app: Express) {
         })),
       ];
 
-      const overdueTasks = myTasks.filter((t: any) =>
+      const overdueTasks = myTasks.filter((t: { dueDate: string | null }) =>
         t.dueDate && t.dueDate !== '' && new Date(t.dueDate) < new Date()
       );
 
