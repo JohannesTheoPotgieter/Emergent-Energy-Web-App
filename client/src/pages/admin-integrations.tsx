@@ -13,14 +13,18 @@
  *     don't double-count.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageLayout } from "@/components/layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { useToast } from "@/hooks/use-toast";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -28,7 +32,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Upload, FileSpreadsheet, ExternalLink, RefreshCw, CheckCircle2, AlertTriangle, Clock, Eye } from "lucide-react";
+import { Upload, FileSpreadsheet, ExternalLink, RefreshCw, CheckCircle2, AlertTriangle, Clock, Eye, Play, Cloud, Save, Zap } from "lucide-react";
 import { ConnectionsSection } from "./role-settings";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -373,6 +377,390 @@ function ImportedDataMenu({ run }: { run: ImportRun }) {
   );
 }
 
+// ── SharePoint Auto-Import Panel ───────────────────────────────────────────
+
+interface SpSettings {
+  id?: number;
+  siteId: string;
+  driveId: string;
+  folderItemId: string | null;
+  folderPath: string | null;
+  intervalMinutes: number;
+  enabled: boolean;
+  lastRunAt: string | null;
+  updatedAt?: string;
+  updatedBy?: number | null;
+}
+
+interface TestConnectionResult {
+  ok: boolean;
+  message?: string;
+  siteName?: string;
+  driveName?: string;
+}
+
+function nextRunEstimate(lastRunAt: string | null, intervalMinutes: number): string {
+  if (!lastRunAt) return "as soon as scheduler ticks (≤60 s)";
+  const nextMs = new Date(lastRunAt).getTime() + intervalMinutes * 60_000;
+  const deltaMs = nextMs - Date.now();
+  if (deltaMs <= 0) return "due now — running on next tick";
+  const mins = Math.ceil(deltaMs / 60_000);
+  return `in ~${mins} minute${mins === 1 ? "" : "s"}`;
+}
+
+/**
+ * SharePoint Auto-Import — wires the SP_SETTINGS row that the legacy
+ * importPipeline.startScheduler() polls every 60 s. When `enabled=true` AND
+ * `Date.now() - lastRunAt ≥ intervalMinutes × 60 000`, runFullImport runs
+ * end-to-end (auto-commit mode, per the owner's "always commit; no human
+ * review" choice on 2026-05-11). UI here lives on /admin/integrations.
+ */
+function SharePointAutoImportPanel() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+
+  const settingsQuery = useQuery<SpSettings | null>({
+    queryKey: ["/api/admin/sp-settings"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/sp-settings", { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    staleTime: 30_000,
+  });
+
+  const [form, setForm] = useState<SpSettings>({
+    siteId: "",
+    driveId: "",
+    folderItemId: null,
+    folderPath: null,
+    intervalMinutes: 30,
+    enabled: false,
+    lastRunAt: null,
+  });
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [testResult, setTestResult] = useState<TestConnectionResult | null>(null);
+
+  // Sync form with server state when it loads / refetches.
+  useEffect(() => {
+    if (!settingsQuery.data || dirty) return;
+    setForm({
+      ...settingsQuery.data,
+      // Defensive: server may emit nulls for optional fields.
+      folderItemId: settingsQuery.data.folderItemId ?? null,
+      folderPath: settingsQuery.data.folderPath ?? null,
+      intervalMinutes: settingsQuery.data.intervalMinutes ?? 30,
+    });
+  }, [settingsQuery.data, dirty]);
+
+  function patch<K extends keyof SpSettings>(key: K, value: SpSettings[K]) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    setDirty(true);
+  }
+
+  async function handleSave() {
+    if (!form.siteId.trim() || !form.driveId.trim()) {
+      toast({
+        title: "Site ID and Drive ID are required",
+        description: "Paste them from SharePoint or use Test Connection to verify before saving.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/sp-settings", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          siteId: form.siteId.trim(),
+          driveId: form.driveId.trim(),
+          folderItemId: form.folderItemId || null,
+          folderPath: form.folderPath || null,
+          intervalMinutes: form.intervalMinutes,
+          enabled: form.enabled,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || `HTTP ${res.status}`);
+      }
+      toast({ title: "Auto-import settings saved" });
+      setDirty(false);
+      void qc.invalidateQueries({ queryKey: ["/api/admin/sp-settings"] });
+    } catch (err) {
+      toast({
+        title: "Failed to save",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleTest() {
+    if (!form.siteId.trim() || !form.driveId.trim()) {
+      toast({ title: "Site ID and Drive ID required to test", variant: "destructive" });
+      return;
+    }
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/admin/sp-settings/test", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteId: form.siteId.trim(), driveId: form.driveId.trim() }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setTestResult({ ok: false, message: body?.error || `HTTP ${res.status}` });
+      } else {
+        setTestResult(body as TestConnectionResult);
+      }
+    } catch (err) {
+      setTestResult({ ok: false, message: err instanceof Error ? err.message : "Unknown error" });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function handleRunNow() {
+    setRunning(true);
+    try {
+      const res = await fetch("/api/admin/import/run", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || `HTTP ${res.status}`);
+      }
+      toast({ title: "Import started", description: "Will refresh shortly." });
+      // Give the scheduler a moment to update lastRunAt then refetch.
+      setTimeout(() => {
+        void qc.invalidateQueries({ queryKey: ["/api/admin/sp-settings"] });
+        void qc.invalidateQueries({ queryKey: ["/api/smart-import/runs"] });
+        void qc.invalidateQueries({ queryKey: ["/api/smart-import/health-dashboard"] });
+      }, 3000);
+    } catch (err) {
+      toast({
+        title: "Run Now failed",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  const configured = !!settingsQuery.data;
+  const enabled = form.enabled;
+
+  return (
+    <Card data-testid="sharepoint-autoimport-panel">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Cloud className="h-5 w-5 text-sky-600" />
+              SharePoint Auto-Import Schedule
+              {enabled ? (
+                <Badge variant="default" className="bg-emerald-600">On</Badge>
+              ) : (
+                <Badge variant="outline">Off</Badge>
+              )}
+            </CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              Polls the active tracker workbook in SharePoint and commits
+              changes automatically — no human review. Set the interval, save,
+              and the in-process scheduler picks up the change on its next 60 s
+              tick. COO / CEO only.
+            </p>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Status strip */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+          <div className="rounded-lg border bg-muted/30 px-3 py-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Last run</div>
+            <div className="font-medium" data-testid="text-last-run-at">
+              {settingsQuery.data?.lastRunAt
+                ? `${fmtRelative(settingsQuery.data.lastRunAt)} (${new Date(settingsQuery.data.lastRunAt).toLocaleString()})`
+                : "Never"}
+            </div>
+          </div>
+          <div className="rounded-lg border bg-muted/30 px-3 py-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Next run</div>
+            <div className="font-medium" data-testid="text-next-run-at">
+              {enabled ? nextRunEstimate(settingsQuery.data?.lastRunAt ?? null, form.intervalMinutes) : "Disabled"}
+            </div>
+          </div>
+          <div className="rounded-lg border bg-muted/30 px-3 py-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Interval</div>
+            <div className="font-medium">{form.intervalMinutes} min</div>
+          </div>
+        </div>
+
+        {/* Configuration form */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label htmlFor="sp-site-id">SharePoint Site ID</Label>
+            <Input
+              id="sp-site-id"
+              placeholder="e.g. emergent.sharepoint.com,abc-123,def-456"
+              value={form.siteId}
+              onChange={(e) => patch("siteId", e.target.value)}
+              data-testid="input-sp-site-id"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="sp-drive-id">Drive ID</Label>
+            <Input
+              id="sp-drive-id"
+              placeholder="e.g. b!abc...xyz"
+              value={form.driveId}
+              onChange={(e) => patch("driveId", e.target.value)}
+              data-testid="input-sp-drive-id"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="sp-folder-path">Folder Path (optional)</Label>
+            <Input
+              id="sp-folder-path"
+              placeholder="/Active Trackers/2026"
+              value={form.folderPath ?? ""}
+              onChange={(e) => patch("folderPath", e.target.value || null)}
+              data-testid="input-sp-folder-path"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="sp-interval">Interval (minutes)</Label>
+            <Input
+              id="sp-interval"
+              type="number"
+              min={1}
+              max={1440}
+              value={form.intervalMinutes}
+              onChange={(e) => patch("intervalMinutes", Math.max(1, Number(e.target.value) || 30))}
+              data-testid="input-sp-interval"
+            />
+          </div>
+        </div>
+
+        {/* Enable toggle */}
+        <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2">
+          <div>
+            <div className="font-medium">Enable scheduled imports</div>
+            <p className="text-xs text-muted-foreground">
+              When on, the scheduler auto-commits every interval. Turn off to
+              pause without losing your configuration.
+            </p>
+          </div>
+          <Switch
+            checked={enabled}
+            onCheckedChange={(v) => patch("enabled", v)}
+            data-testid="switch-sp-enabled"
+          />
+        </div>
+
+        {/* Test connection result */}
+        {testResult && (
+          <div
+            className={`rounded-lg border px-3 py-2 text-sm flex items-start gap-2 ${
+              testResult.ok
+                ? "border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20"
+                : "border-red-200 bg-red-50 dark:bg-red-950/20"
+            }`}
+            data-testid="text-sp-test-result"
+          >
+            {testResult.ok ? (
+              <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+            ) : (
+              <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+            )}
+            <div className="min-w-0">
+              <div className={`font-medium ${testResult.ok ? "text-emerald-800 dark:text-emerald-200" : "text-red-800 dark:text-red-200"}`}>
+                {testResult.ok ? "Connection OK" : "Connection failed"}
+              </div>
+              {(testResult.siteName || testResult.driveName) && (
+                <div className="text-xs text-muted-foreground">
+                  {testResult.siteName ? `Site: ${testResult.siteName}` : ""}
+                  {testResult.siteName && testResult.driveName ? " · " : ""}
+                  {testResult.driveName ? `Drive: ${testResult.driveName}` : ""}
+                </div>
+              )}
+              {testResult.message && !testResult.ok && (
+                <div className="text-xs">{testResult.message}</div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Button
+            onClick={handleSave}
+            disabled={!dirty || saving}
+            className="gap-1.5"
+            data-testid="btn-sp-save"
+          >
+            <Save className="h-4 w-4" />
+            {saving ? "Saving…" : "Save"}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleTest}
+            disabled={testing}
+            className="gap-1.5"
+            data-testid="btn-sp-test"
+          >
+            <Zap className="h-4 w-4" />
+            {testing ? "Testing…" : "Test Connection"}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleRunNow}
+            disabled={running || !configured || !enabled}
+            className="gap-1.5"
+            data-testid="btn-sp-run-now"
+            title={!configured ? "Save settings first" : !enabled ? "Enable scheduled imports first" : "Trigger an immediate scheduled run"}
+          >
+            <Play className="h-4 w-4" />
+            {running ? "Triggering…" : "Run Now"}
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => void settingsQuery.refetch()}
+            className="gap-1.5 ml-auto"
+            data-testid="btn-sp-refresh"
+            aria-label="Refresh status"
+          >
+            <RefreshCw className={`h-4 w-4 ${settingsQuery.isFetching ? "animate-spin" : ""}`} />
+          </Button>
+        </div>
+
+        {!configured && (
+          <div className="text-xs text-muted-foreground bg-amber-50/50 dark:bg-amber-950/10 border border-amber-200/60 rounded px-3 py-2">
+            <strong>Not yet configured.</strong> Paste the Site ID + Drive ID from
+            SharePoint, click <em>Test Connection</em> to confirm the tenant is
+            reachable, then <em>Save</em>. The scheduler picks up enabled rows on
+            its next 60-second tick.
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────
 
 export default function AdminIntegrationsPage() {
@@ -380,10 +768,11 @@ export default function AdminIntegrationsPage() {
     <PageLayout>
       <PageHeader
         title="Integration Statuses"
-        subtitle="Live connection state for every external system the app depends on. Run a manual Excel import, audit recent imports, and verify the imported numbers match the source workbook."
+        subtitle="Live connection state for every external system the app depends on. Run a manual Excel import, configure the SharePoint auto-import schedule, and verify the imported numbers against the source workbook."
       />
       <div className="space-y-6">
         <SmartImportPanel />
+        <SharePointAutoImportPanel />
         <ConnectionsSection />
       </div>
     </PageLayout>
