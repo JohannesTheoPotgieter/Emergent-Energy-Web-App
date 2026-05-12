@@ -5,6 +5,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
+    setupFiles: [path.resolve(__dirname, "setup-jsdom-polyfills.ts")],
     include: ["qa/tests/**/*.test.ts", "qa/tests/**/*.test.tsx", "qa/tests/**/*.spec.ts"],
     testTimeout: 30000,
     reporters: ["default", "json"],

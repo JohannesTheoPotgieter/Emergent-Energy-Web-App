@@ -63,15 +63,20 @@ function startsWithAny(pathname: string, prefixes: string[]) {
   return prefixes.some((prefix) => matchesPathPrefix(pathname, prefix));
 }
 
+/**
+ * Locked, canonical top-nav per COO spec (2026-05-11):
+ *   Home · Project Delivery · Finance · Engineering · Quality Management · Settings
+ *
+ * Anything not in this list (Gates, Portfolio, Project Development, HSE,
+ * Reports, Knowledge, all of the legacy Admin sub-grid) is hidden from the
+ * sidebar by default and surfaced only via Settings → Functionality Control.
+ */
 export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Home",
     key: "HOME",
     path: "/",
-    match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/my-work", "/inbox", "/priorities"]),
-    // Prompt 0.7: "Approvals" removed — duplicate of Project Delivery →
-    // PM Approvals which points at the canonical /pm/approvals page.
-    // /my-work/approvals remains as a redirect alias for bookmarks.
+    match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/my-work", "/inbox"]),
     secondary: [
       { label: "My Dashboard", path: "/" },
       { label: "My Tasks", path: "/my-work/tasks" },
@@ -79,65 +84,24 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Meetings", path: "/my-work/meetings" },
       { label: "Inbox", path: "/inbox" },
       { label: "Teams Chat", path: "/my-work/teams" },
-      { label: "Priorities", path: "/priorities", requiredSectionKey: "PRIORITIES" },
     ],
   },
   {
-    label: "Projects",
-    key: "PORTFOLIO",
+    label: "Project Delivery",
+    key: "PROJECT_DELIVERY",
     path: "/execution-board",
     match: (pathname) => startsWithAny(pathname, [
-      "/company-overview",
-      "/company/team",
-      "/lifecycle-board",
-      "/project-lifecycle",
-      "/portfolios",
+      "/execution-board", "/projects", "/project", "/milestone-tracker",
     ]),
     secondary: [
-      { label: "Company Overview", path: "/company-overview" },
-      { label: "Team", path: "/company/team" },
-      { label: "Lifecycle Board", path: "/lifecycle-board" },
-      { label: "Portfolios", path: "/portfolios", requiredSectionKey: "PROJECT_DELIVERY" },
-      { label: "PD Dashboard", path: "/pd", requiredSectionKey: "PROJECT_DEVELOPMENT" },
-      { label: "Pipeline / Opportunities", path: "/opportunities", requiredSectionKey: "PROJECT_DEVELOPMENT" },
-      { label: "Clients", path: "/clients", requiredSectionKey: "PROJECT_DEVELOPMENT" },
-      { label: "Handover Queue", path: "/handover-control", requiredSectionKey: "PROJECT_DEVELOPMENT" },
-      { label: "Execution Dashboard", path: "/execution-board", requiredSectionKey: "PROJECT_DELIVERY" },
-      { label: "PM Dashboard", path: "/pm-dashboard", requiredSectionKey: "PROJECT_DELIVERY" },
-      { label: "All Projects", path: "/projects", requiredSectionKey: "PROJECT_DELIVERY" },
-      { label: "Sites", path: "/sites", requiredSectionKey: "PROJECT_DELIVERY" },
-      { label: "Milestone Tracker", path: "/milestone-tracker", requiredSectionKey: "PROJECT_DELIVERY" },
-      { label: "PM Approvals", path: "/pm/approvals", requiredSectionKey: "PROJECT_DELIVERY" },
-      { label: "PO Approvals", path: "/po-approval-board", requiredSectionKey: "PROJECT_DELIVERY" },
-      { label: "Handover & Closeout", path: "/handover", requiredSectionKey: "PROJECT_DELIVERY" },
-      { label: "PM On-The-Go", path: "/pm/on-the-go", requiredSectionKey: "PROJECT_DELIVERY" },
-    ],
-    secondaryGroups: [
-      { label: "Portfolio", items: [
-        { label: "Company Overview", path: "/company-overview" },
-        { label: "Team", path: "/company/team" },
-        { label: "Lifecycle Board", path: "/lifecycle-board" },
-        { label: "Portfolios", path: "/portfolios", requiredSectionKey: "PROJECT_DELIVERY" },
-      ] },
-      { label: "Project Development", items: [
-        { label: "PD Dashboard", path: "/pd", requiredSectionKey: "PROJECT_DEVELOPMENT" },
-        { label: "Pipeline / Opportunities", path: "/opportunities", requiredSectionKey: "PROJECT_DEVELOPMENT" },
-        { label: "Clients", path: "/clients", requiredSectionKey: "PROJECT_DEVELOPMENT" },
-        { label: "Handover Queue", path: "/handover-control", requiredSectionKey: "PROJECT_DEVELOPMENT" },
-      ] },
-      { label: "Project Delivery", items: [
-        { label: "Execution Dashboard", path: "/execution-board", requiredSectionKey: "PROJECT_DELIVERY" },
-        { label: "PM Dashboard", path: "/pm-dashboard", requiredSectionKey: "PROJECT_DELIVERY" },
-        { label: "All Projects", path: "/projects", requiredSectionKey: "PROJECT_DELIVERY" },
-        { label: "Sites", path: "/sites", requiredSectionKey: "PROJECT_DELIVERY" },
-        { label: "Milestone Tracker", path: "/milestone-tracker", requiredSectionKey: "PROJECT_DELIVERY" },
-        { label: "PM Approvals", path: "/pm/approvals", requiredSectionKey: "PROJECT_DELIVERY" },
-        { label: "PO Approvals", path: "/po-approval-board", requiredSectionKey: "PROJECT_DELIVERY" },
-        { label: "Handover & Closeout", path: "/handover", requiredSectionKey: "PROJECT_DELIVERY" },
-        { label: "PM On-The-Go", path: "/pm/on-the-go", requiredSectionKey: "PROJECT_DELIVERY" },
-      ] },
+      { label: "Execution Dashboard", path: "/execution-board" },
+      { label: "All Projects", path: "/projects" },
+      { label: "Milestone Tracker", path: "/milestone-tracker" },
     ],
   },
+  // Stub kept for path-matching code in older modules that still query the
+  // "Gates" tab. Hidden from DISPLAY_TOP_NAV — only reachable via Functionality
+  // Control re-enabling /gates.
   {
     label: "Gates",
     key: "PORTFOLIO",
@@ -161,207 +125,61 @@ export const TOP_SECTIONS: TopSection[] = [
     ],
   },
   {
-    label: "Project Development",
-    key: "PROJECT_DEVELOPMENT",
-    path: "/pd",
-    match: (pathname) => startsWithAny(pathname, [
-      "/pd", "/opportunities", "/clients",
-      "/handover-control",
-      "/engineering-board", "/engineering-dashboard",
-    ]),
-    secondary: [
-      { label: "PD Dashboard", path: "/pd" },
-      { label: "Pipeline / Opportunities", path: "/opportunities" },
-      { label: "Clients", path: "/clients" },
-      { label: "Handover Queue", path: "/handover-control" },
-    ],
-  },
-  {
-    label: "Project Delivery",
-    key: "PROJECT_DELIVERY",
-    path: "/execution-board",
-    match: (pathname) => startsWithAny(pathname, [
-      "/execution-board",
-      "/portfolios",
-      "/projects", "/project", "/project-create",
-      "/procurement",
-      "/po-approval-board",
-      "/handover",
-      "/sseg-submissions",
-      "/pm", "/sites",
-      "/milestone-tracker",
-      "/weekly-reviews",
-      "/pm-dashboard",
-    ]),
-    secondary: [
-      { label: "Execution Dashboard", path: "/execution-board" },
-      { label: "PM Dashboard", path: "/pm-dashboard" },
-      { label: "All Projects", path: "/projects" },
-      { label: "Milestone Tracker", path: "/milestone-tracker" },
-      { label: "PM Approvals", path: "/pm/approvals" },
-      { label: "PO Approvals", path: "/po-approval-board" },
-      { label: "PM On-The-Go", path: "/pm/on-the-go" },
-      { label: "Handover & Closeout", path: "/handover" },
-      { label: "SSEG Submissions", path: "/sseg-submissions" },
-      { label: "Weekly Reviews", path: "/weekly-reviews" },
-      { label: "Sites", path: "/sites" },
-    ],
-  },
-  {
     label: "Finance",
     key: "FINANCE",
     path: "/cashflow",
     match: (pathname) => startsWithAny(pathname, [
-      "/cashflow", "/cos", "/revenue-tracker", "/finance",
-      "/governance/financial-reviews",
-      "/program",
-      "/po-approval-board",
-      "/payment-request-board", "/payment-batch-manager",
+      "/cashflow", "/cos", "/revenue-tracker", "/finance", "/fye-revenue-tracking",
     ]),
     secondary: [
       { label: "Cashflow", path: "/cashflow" },
-      { label: "Cashflow Analysis", path: "/cashflow/analysis" },
-      { label: "COS", path: "/cos" },
-      { label: "COS Analysis", path: "/cos/analysis" },
+      { label: "Cost of Sales", path: "/cos" },
       { label: "Revenue", path: "/revenue-tracker" },
-      { label: "GP", path: "/finance/gp/company" },
-      { label: "Excel vs App", path: "/program/excel-vs-app" },
-      { label: "QB Throughput", path: "/finance/quickbooks" },
-      { label: "Financial Reviews", path: "/governance/financial-reviews" },
-      { label: "PO Approvals", path: "/po-approval-board" },
-      { label: "Payment Requests", path: "/payment-request-board" },
-      { label: "Payment Batches", path: "/payment-batch-manager" },
+      { label: "Gross Profit", path: "/finance/gp/company" },
+      { label: "FYE Tracking Report", path: "/fye-revenue-tracking" },
     ],
   },
   {
-    label: "Departments",
+    label: "Engineering",
     key: "ENGINEERING",
     path: "/engineering",
-    requiredAnySectionKeys: ["ENGINEERING", "QUALITY", "HSE"],
-    match: (pathname) => startsWithAny(pathname, ["/engineering", "/quality", "/commissioning-dashboard", "/hse"]),
+    match: (pathname) => startsWithAny(pathname, ["/engineering"]),
     secondary: [
-      { label: "Engineering Dashboard", path: "/engineering", requiredSectionKey: "ENGINEERING" },
-      { label: "Task Board", path: "/engineering/tasks", requiredSectionKey: "ENGINEERING" },
-      { label: "Standup", path: "/engineering/standup", requiredSectionKey: "ENGINEERING" },
-      { label: "Quality Dashboard", path: "/quality", requiredSectionKey: "QUALITY" },
-      { label: "Commissioning", path: "/commissioning-dashboard", requiredSectionKey: "QUALITY" },
-      { label: "HSE Dashboard", path: "/hse", requiredSectionKey: "HSE" },
-    ],
-    secondaryGroups: [
-      { label: "Engineering", items: [
-        { label: "Engineering Dashboard", path: "/engineering", requiredSectionKey: "ENGINEERING" },
-        { label: "Task Board", path: "/engineering/tasks", requiredSectionKey: "ENGINEERING" },
-        { label: "Standup", path: "/engineering/standup", requiredSectionKey: "ENGINEERING" },
-      ] },
-      { label: "Quality", items: [
-        { label: "Quality Dashboard", path: "/quality", requiredSectionKey: "QUALITY" },
-        { label: "Commissioning", path: "/commissioning-dashboard", requiredSectionKey: "QUALITY" },
-      ] },
-      { label: "HSE", items: [
-        { label: "HSE Dashboard", path: "/hse", requiredSectionKey: "HSE" },
-      ] },
+      { label: "Engineering Dashboard", path: "/engineering" },
+      { label: "Engineering Task Board", path: "/engineering/tasks" },
+      { label: "Engineering Document Management", path: "/engineering/documents" },
+      { label: "Standup", path: "/engineering/standup" },
     ],
   },
   {
-    label: "Reports",
-    key: "REPORTS",
-    path: "/reports/center",
-    match: (pathname) => startsWithAny(pathname, ["/reports", "/ceo", "/coo"]),
+    label: "Quality Management",
+    key: "QUALITY",
+    path: "/quality",
+    match: (pathname) => startsWithAny(pathname, ["/quality"]),
     secondary: [
-      { label: "Report Center", path: "/reports/center" },
-      { label: "Programme Reports", path: "/reports/programme" },
-      { label: "PM Monthly", path: "/reports/pm/monthly" },
-      { label: "Engineering Monthly", path: "/reports/engineering/monthly" },
-      { label: "Program-wide Assessment", path: "/reports/program-wide-assessment" },
-      { label: "Performance", path: "/reports/performance" },
-      { label: "CEO Report View", path: "/ceo", requiredRoles: ["CEO_ADMIN"] },
-      { label: "COO Report View", path: "/coo", requiredRoles: ["COO_ADMIN"] },
+      { label: "Quality Dashboard", path: "/quality" },
+      { label: "Quality Task Board", path: "/quality/tasks" },
+      { label: "Quality Document Management", path: "/quality/documents" },
     ],
   },
   {
-    label: "Admin",
+    label: "Settings",
     key: "ADMIN",
-    path: "/settings",
+    path: "/admin/roles",
     match: (pathname) => startsWithAny(pathname, [
-      "/admin", "/settings", "/ee-info", "/feedback", "/training",
-      "/leaderboard", "/department-scores", "/documents", "/pending-approvals",
-      "/engineering/audit",
+      "/admin", "/settings",
     ]),
     secondary: [
-      // General
-      { label: "Settings", path: "/settings" },
       { label: "Roles & Permissions", path: "/admin/roles" },
-      { label: "Smart Import", path: "/admin/smart-import" },
+      { label: "Functionality Control", path: "/admin/functionality" },
+      { label: "Integration Statuses", path: "/admin/integrations" },
       { label: "Audit Log", path: "/admin/activity-log" },
-      { label: "Phase Templates", path: "/admin/phase-templates" },
-      { label: "Recovery", path: "/admin/recovery" },
-      { label: "Pending Approvals", path: "/pending-approvals" },
-      // System
-      { label: "System Settings", path: "/admin/settings" },
-      { label: "Workflow Config", path: "/admin/workflow-config" },
-      { label: "Stage Lifecycle", path: "/admin/stage-lifecycle" },
-      { label: "Import Control", path: "/admin/import-control-tower" },
-      { label: "Data Migration", path: "/admin/data-migration-status" },
-      { label: "Database Migration", path: "/admin/database-migration" },
-      { label: "Engineering Audit Log", path: "/engineering/audit" },
-      { label: "Work Item Linkage", path: "/admin/work-item-linkage" },
-      { label: "Eng Templates", path: "/admin/eng-templates" },
-      { label: "Document Management", path: "/admin/document-management" },
-      { label: "Lessons Learnt", path: "/admin/lessons" },
-      { label: "Handover Health", path: "/admin/handover-health" },
-      { label: "KPI Traceability", path: "/admin/kpi-traceability" },
-      // Integrations
-      { label: "Pipedrive", path: "/admin/pipedrive" },
-      { label: "QuickBooks Admin", path: "/admin/quickbooks" },
-      { label: "SharePoint", path: "/admin/sharepoint-intake" },
-      // Knowledge
-      { label: "Processes & SOPs", path: "/ee-info" },
-      { label: "Documents", path: "/documents" },
-      { label: "Training", path: "/training" },
-      { label: "Leaderboard", path: "/leaderboard" },
-    ],
-    secondaryGroups: [
-      { label: "General", items: [
-        { label: "Settings", path: "/settings" },
-        { label: "Roles & Permissions", path: "/admin/roles" },
-        { label: "Smart Import", path: "/admin/smart-import" },
-        { label: "Audit Log", path: "/admin/activity-log" },
-        { label: "Phase Templates", path: "/admin/phase-templates" },
-        { label: "Recovery", path: "/admin/recovery" },
-        { label: "Pending Approvals", path: "/pending-approvals" },
-      ] },
-      { label: "System", items: [
-        { label: "System Settings", path: "/admin/settings" },
-        { label: "Workflow Config", path: "/admin/workflow-config" },
-        { label: "Stage Lifecycle", path: "/admin/stage-lifecycle" },
-        { label: "Import Control", path: "/admin/import-control-tower" },
-        { label: "Data Migration", path: "/admin/data-migration-status" },
-        { label: "Database Migration", path: "/admin/database-migration" },
-        { label: "Engineering Audit Log", path: "/engineering/audit" },
-        { label: "Work Item Linkage", path: "/admin/work-item-linkage" },
-        { label: "Eng Templates", path: "/admin/eng-templates" },
-        { label: "Document Management", path: "/admin/document-management" },
-        { label: "Lessons Learnt", path: "/admin/lessons" },
-        { label: "Handover Health", path: "/admin/handover-health" },
-        { label: "KPI Traceability", path: "/admin/kpi-traceability" },
-      ] },
-      { label: "Integrations", items: [
-        { label: "Pipedrive", path: "/admin/pipedrive" },
-        { label: "QuickBooks Admin", path: "/admin/quickbooks" },
-        { label: "SharePoint", path: "/admin/sharepoint-intake" },
-      ] },
-      { label: "Knowledge", items: [
-        { label: "Processes & SOPs", path: "/ee-info" },
-        { label: "Documents", path: "/documents" },
-        { label: "Training", path: "/training" },
-        { label: "Leaderboard", path: "/leaderboard" },
-      ] },
     ],
   },
 ];
 
 export type DisplayTopNavItem = {
-  label: "Home" | "Projects" | "Gates" | "Finance" | "Departments" | "Reports" | "Admin";
+  label: "Home" | "Project Delivery" | "Finance" | "Engineering" | "Quality Management" | "Settings";
   path: string;
   requiredSectionKey?: SectionKey;
   requiredAnySectionKeys?: SectionKey[];
@@ -369,30 +187,18 @@ export type DisplayTopNavItem = {
   sectionKeys: SectionKey[];
 };
 
+/**
+ * Canonical six-tab top navigation per COO spec (2026-05-11).
+ * Hidden modules (Project Development, Gates, HSE, Reports, Portfolio, Knowledge,
+ * legacy Admin grid) are reachable only via Settings → Functionality Control.
+ */
 export const DISPLAY_TOP_NAV: DisplayTopNavItem[] = [
   { label: "Home", path: "/", requiredSectionKey: "HOME", sectionKeys: ["HOME"] },
-  {
-    label: "Projects",
-    path: "/execution-board",
-    requiredAnySectionKeys: ["PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY"],
-    sectionKeys: ["PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY"],
-  },
-  {
-    label: "Gates",
-    path: "/gates",
-    requiredAnySectionKeys: ["PORTFOLIO", "PROJECT_DELIVERY", "QUALITY", "HSE"],
-    requiredPathPermissions: ["/gates"],
-    sectionKeys: ["PORTFOLIO", "PROJECT_DELIVERY", "QUALITY", "HSE"],
-  },
+  { label: "Project Delivery", path: "/execution-board", requiredSectionKey: "PROJECT_DELIVERY", sectionKeys: ["PROJECT_DELIVERY"] },
   { label: "Finance", path: "/cashflow", requiredSectionKey: "FINANCE", sectionKeys: ["FINANCE"] },
-  {
-    label: "Departments",
-    path: "/engineering",
-    requiredAnySectionKeys: ["ENGINEERING", "QUALITY", "HSE"],
-    sectionKeys: ["ENGINEERING", "QUALITY", "HSE"],
-  },
-  { label: "Reports", path: "/reports/center", requiredSectionKey: "REPORTS", sectionKeys: ["REPORTS"] },
-  { label: "Admin", path: "/settings", requiredSectionKey: "ADMIN", sectionKeys: ["ADMIN"] },
+  { label: "Engineering", path: "/engineering", requiredSectionKey: "ENGINEERING", sectionKeys: ["ENGINEERING"] },
+  { label: "Quality Management", path: "/quality", requiredSectionKey: "QUALITY", sectionKeys: ["QUALITY"] },
+  { label: "Settings", path: "/admin/roles", requiredSectionKey: "ADMIN", sectionKeys: ["ADMIN"] },
 ];
 
 /**

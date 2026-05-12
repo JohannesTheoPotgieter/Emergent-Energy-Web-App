@@ -142,6 +142,13 @@ const PendingApprovalsPage = lazyWithRetry(() => import("@/pages/pending-approva
 const NcrLegacyRedirect = lazyWithRetry(() => import("@/pages/ncr-legacy-redirect"));
 const FinanceGpPage = lazyWithRetry(() => import("@/pages/finance-gp"));
 const FinanceGpCompanyPage = lazyWithRetry(() => import("@/pages/finance-gp-company"));
+// Phase-1 new pages — Engineering Doc Mgmt, Quality Task Board + Doc Mgmt,
+// Functionality Control, Integration Statuses.
+const EngineeringDocumentsPage = lazyWithRetry(() => import("@/pages/engineering/documents"));
+const QualityTasksPage = lazyWithRetry(() => import("@/pages/quality/tasks"));
+const QualityDocumentsPage = lazyWithRetry(() => import("@/pages/quality/documents"));
+const AdminFunctionalityPage = lazyWithRetry(() => import("@/pages/admin-functionality"));
+const AdminIntegrationsPage = lazyWithRetry(() => import("@/pages/admin-integrations"));
 
 /**
  * Maps PageRegistryEntry.routeComponentKey → the lazy-loaded page component.
@@ -280,6 +287,11 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   HandoverLivePage,
   PendingApprovalsPage,
   NcrLegacyRedirect,
+  EngineeringDocumentsPage,
+  QualityTasksPage,
+  QualityDocumentsPage,
+  AdminFunctionalityPage,
+  AdminIntegrationsPage,
 };
 
 export const ROUTE_COMPONENT_KEYS: ReadonlySet<string> = new Set(Object.keys(ROUTE_COMPONENTS));

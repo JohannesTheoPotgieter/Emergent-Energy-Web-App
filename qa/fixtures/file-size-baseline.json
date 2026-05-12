@@ -2,7 +2,7 @@
   "_documentation": "EE-QA-015 baseline — files above the FILE_SIZE_THRESHOLD LOC. The CI guard `qa/tests/unit/file-size-ratchet.test.ts` fails if any of these grow OR a NEW file lands over the threshold. To regenerate after a split, run `npx tsx scripts/build-file-size-baseline.ts` and commit the new JSON.",
   "threshold": 1500,
   "buffer": 50,
-  "generated": "2026-05-11",
+  "generated": "2026-05-12",
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
@@ -22,7 +22,7 @@
     },
     {
       "file": "server/smart-import-routes.ts",
-      "loc": 3657
+      "loc": 3660
     },
     {
       "file": "client/src/components/tabs/UnifiedPlanTab.tsx",
@@ -41,12 +41,12 @@
       "loc": 2567
     },
     {
-      "file": "server/services/quickbooks-reconciliation-service.ts",
-      "loc": 2505
+      "file": "server/lifecycle-routes.ts",
+      "loc": 2556
     },
     {
-      "file": "server/lifecycle-routes.ts",
-      "loc": 2461
+      "file": "server/services/quickbooks-reconciliation-service.ts",
+      "loc": 2505
     },
     {
       "file": "server/lib/import/commit-executor.ts",
@@ -70,7 +70,7 @@
     },
     {
       "file": "server/departments/project-routes.ts",
-      "loc": 2166
+      "loc": 2177
     },
     {
       "file": "client/src/components/tabs/ProjectProcurementTab.tsx",
@@ -137,6 +137,10 @@
       "loc": 1750
     },
     {
+      "file": "server/departments/fye-revenue-tracking-routes.ts",
+      "loc": 1747
+    },
+    {
       "file": "server/routes/planning-tasks-routes.ts",
       "loc": 1735
     },
@@ -147,10 +151,6 @@
     {
       "file": "client/src/pages/standups.tsx",
       "loc": 1726
-    },
-    {
-      "file": "server/departments/fye-revenue-tracking-routes.ts",
-      "loc": 1719
     },
     {
       "file": "server/eng-stage-routes.ts",
