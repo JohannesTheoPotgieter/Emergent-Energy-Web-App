@@ -65,6 +65,62 @@ function getUserRole(req: Request): string {
   return getEffectiveUser(req)?.role || "";
 }
 
+// H8 hotfix — strip server-controlled keys from a spread-style update body.
+// Several handlers previously did `db.update(...).set({ ...req.body, ... })`
+// which lets a caller assign ANY column (id, projectId, ownerUserId,
+// createdBy, importRunId, etc.) by including it in the JSON. This is a
+// classic mass-assignment vulnerability.
+//
+// This helper is a *denylist* — it removes keys that should never come
+// from user input. It is intentionally conservative: when in doubt, add
+// the key here. Engineering PR 2 will replace every caller with a strict
+// Zod allowlist via `validateBody(schema)` — at which point this helper
+// becomes unused and can be removed.
+const FORBIDDEN_BODY_KEYS = new Set<string>([
+  // Identity / lineage
+  "id",
+  "createdAt",
+  "createdBy",
+  "updatedAt",       // handlers set this themselves
+  "deletedAt",
+  "deletedBy",
+  // Cross-entity FKs (routes pass these via params/path, not body)
+  "projectId",
+  "clientId",
+  "ownerUserId",     // set via separate /assignees endpoint
+  "uploadedByUserId",
+  "cpSignedByUserId",
+  // Import-pipeline metadata
+  "source",
+  "sourceRow",
+  "sourceSheet",
+  "importRunId",
+  "legacyTable",
+  "legacyId",
+  "externalRef",
+  // Workflow flags that must transition via dedicated routes
+  "approvedBy",
+  "approvedAt",
+  "isApproved",
+  "completedAt",
+  // Sharing / visibility
+  "isShared",
+]);
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- return type
+// is intentionally `any`-shaped so existing spread-style update bodies keep
+// compiling without per-field assertions. PR 2 replaces this with Zod
+// schemas that narrow to typed `Partial<Insert*>` objects.
+function stripServerFields(body: unknown): Record<string, any> {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return {};
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const out: Record<string, any> = {};
+  for (const [k, v] of Object.entries(body as Record<string, unknown>)) {
+    if (!FORBIDDEN_BODY_KEYS.has(k)) out[k] = v;
+  }
+  return out;
+}
+
 // Trust fix: canonical lowercase to match listEngineeringWorkItems() output.
 // The previous UPPERCASE sets silently failed every comparison because
 // the work-items adapter returns canonical lowercase since migration
@@ -767,7 +823,9 @@ export function registerEngineeringRoutes(app: Express) {
       // canonical lowercase form and nothing is silently skipped.
       const rawStatus: string | undefined = req.body?.status;
       const canonicalStatus = rawStatus ? toCanonicalStatus(rawStatus) : undefined;
-      const updates = { ...req.body, status: canonicalStatus, updatedAt: new Date() };
+      // H8: strip server-controlled keys to prevent mass-assignment.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const updates: Record<string, any> = { ...stripServerFields(req.body), status: canonicalStatus, updatedAt: new Date() };
 
       if (canonicalStatus && !(TASK_STATUSES as readonly string[]).includes(canonicalStatus)) {
         return sendError(res, badRequest(`Invalid status. Must be one of: ${TASK_STATUSES.join(", ")}`));
@@ -1901,8 +1959,9 @@ export function registerEngineeringRoutes(app: Express) {
       if (!Number.isInteger(projectId) || projectId <= 0) {
         return sendError(res, badRequest("projectId is required"));
       }
+      // H8: strip server-controlled keys to prevent mass-assignment.
       const [del] = await db.insert(deliverables).values({
-        ...data,
+        ...stripServerFields(data),
         projectId,
         status: "to_do",
         currentVersion: 1,
@@ -1952,7 +2011,9 @@ export function registerEngineeringRoutes(app: Express) {
         return res.status(403).json({ error: "forbidden", reason: authority.reason, scope: authority.scope });
       }
 
-      const updates = { ...req.body, status: canonicalDeliverableStatus, updatedAt: new Date() };
+      // H8: strip server-controlled keys to prevent mass-assignment.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const updates: Record<string, any> = { ...stripServerFields(req.body), status: canonicalDeliverableStatus, updatedAt: new Date() };
       const [updated] = await db.update(deliverables).set(updates).where(eq(deliverables.id, id)).returning();
 
       if (canonicalDeliverableStatus && canonicalDeliverableStatus !== existing.status) {
@@ -2059,8 +2120,9 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.post("/api/deliverables/:id/files", requireAuth, requirePermission("deliverables", "edit"), async (req, res) => {
     try {
+      // H8: strip server-controlled keys to prevent mass-assignment.
       const [file] = await db.insert(deliverableFiles).values({
-        ...req.body,
+        ...stripServerFields(req.body),
         deliverableId: parseIntParam(req.params.id),
         uploadedByUserId: getUser(req).id,
       }).returning();
@@ -2313,7 +2375,9 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const id = parseIntParam(req.params.id);
       if (isNaN(id)) return sendError(res, badRequest("Invalid ID"));
-      const updates = { ...req.body, updatedAt: new Date() };
+      // H8: strip server-controlled keys to prevent mass-assignment.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const updates: Record<string, any> = { ...stripServerFields(req.body), updatedAt: new Date() };
       const [updated] = await db.update(qcWarning).set(updates).where(eq(qcWarning.id, id)).returning();
       logAuditFromReq(req, { entityType: "qc_warning", entityId: String(id), action: "update", changesJson: { description: "Warning updated", status: req.body.status } });
 
@@ -2709,10 +2773,15 @@ export function registerEngineeringRoutes(app: Express) {
       const catFilter = (!category || category === "all") ? null : (category as string);
       const searchFilter = searchTerm ? `%${searchTerm}%` : null;
 
-      const unionParts: string[] = [];
+      // H1 hotfix: each fragment is a parameterised `sql` tagged template so
+      // any future contributor that adds an interpolated value lands on the
+      // safe path (Drizzle binds the parameter); previously these were raw
+      // strings concatenated with `sql.raw(...)` which would have happily
+      // inlined any caller-controlled string into the SQL.
+      const unionParts: ReturnType<typeof sql>[] = [];
 
       if (!catFilter || catFilter === "task_changes") {
-        unionParts.push(`
+        unionParts.push(sql`
           SELECT
             'task_' || tal.id::text AS id,
             'task_changes' AS category,
@@ -2741,7 +2810,7 @@ export function registerEngineeringRoutes(app: Express) {
       }
 
       if (!catFilter || catFilter === "phase_changes") {
-        unionParts.push(`
+        unionParts.push(sql`
           SELECT
             'phase_' || pph.id::text AS id,
             'phase_changes' AS category,
@@ -2758,7 +2827,7 @@ export function registerEngineeringRoutes(app: Express) {
       }
 
       if (!catFilter || catFilter === "data_imports") {
-        unionParts.push(`
+        unionParts.push(sql`
           SELECT
             'upload_' || um.id::text AS id,
             'data_imports' AS category,
@@ -2772,7 +2841,7 @@ export function registerEngineeringRoutes(app: Express) {
           FROM upload_metadata um
           LEFT JOIN users u ON um.uploaded_by = u.id
         `);
-        unionParts.push(`
+        unionParts.push(sql`
           SELECT
             'refresh_' || rl.id::text AS id,
             'data_imports' AS category,
@@ -2788,7 +2857,7 @@ export function registerEngineeringRoutes(app: Express) {
       }
 
       if (!catFilter || catFilter === "writebacks") {
-        unionParts.push(`
+        unionParts.push(sql`
           SELECT
             'wb_' || wal.id::text AS id,
             'writebacks' AS category,
@@ -2809,7 +2878,7 @@ export function registerEngineeringRoutes(app: Express) {
       }
 
       if (!catFilter || catFilter === "template_applications") {
-        unionParts.push(`
+        unionParts.push(sql`
           SELECT
             'tpl_' || pta.id::text AS id,
             'template_applications' AS category,
@@ -2830,20 +2899,23 @@ export function registerEngineeringRoutes(app: Express) {
         return res.json({ entries: [], total: 0, categoryCounts: {} });
       }
 
-      const unionQuery = unionParts.join(" UNION ALL ");
+      // H1 hotfix: drop `sql.raw(unionQuery)` — embed the joined SQL directly
+      // so the whole statement remains a single parameterised Drizzle tagged
+      // template. `sql.join` is the canonical way to concatenate SQL fragments.
+      const unionQuery = sql.join(unionParts, sql` UNION ALL `);
 
       let countResult;
       let dataResult;
 
       if (searchFilter) {
-        const countSql = sql`SELECT category, count(*)::int AS cnt FROM (${sql.raw(unionQuery)}) unified WHERE lower(summary) LIKE ${searchFilter} OR lower(detail) LIKE ${searchFilter} OR lower(actor_name) LIKE ${searchFilter} OR lower(project_name) LIKE ${searchFilter} GROUP BY category`;
+        const countSql = sql`SELECT category, count(*)::int AS cnt FROM (${unionQuery}) unified WHERE lower(summary) LIKE ${searchFilter} OR lower(detail) LIKE ${searchFilter} OR lower(actor_name) LIKE ${searchFilter} OR lower(project_name) LIKE ${searchFilter} GROUP BY category`;
         countResult = await db.execute(countSql);
 
-        const dataSql = sql`SELECT * FROM (${sql.raw(unionQuery)}) unified WHERE lower(summary) LIKE ${searchFilter} OR lower(detail) LIKE ${searchFilter} OR lower(actor_name) LIKE ${searchFilter} OR lower(project_name) LIKE ${searchFilter} ORDER BY timestamp DESC NULLS LAST LIMIT ${pageLimit} OFFSET ${pageOffset}`;
+        const dataSql = sql`SELECT * FROM (${unionQuery}) unified WHERE lower(summary) LIKE ${searchFilter} OR lower(detail) LIKE ${searchFilter} OR lower(actor_name) LIKE ${searchFilter} OR lower(project_name) LIKE ${searchFilter} ORDER BY timestamp DESC NULLS LAST LIMIT ${pageLimit} OFFSET ${pageOffset}`;
         dataResult = await db.execute(dataSql);
       } else {
-        countResult = await db.execute(sql`SELECT category, count(*)::int AS cnt FROM (${sql.raw(unionQuery)}) unified GROUP BY category`);
-        dataResult = await db.execute(sql`SELECT * FROM (${sql.raw(unionQuery)}) unified ORDER BY timestamp DESC NULLS LAST LIMIT ${pageLimit} OFFSET ${pageOffset}`);
+        countResult = await db.execute(sql`SELECT category, count(*)::int AS cnt FROM (${unionQuery}) unified GROUP BY category`);
+        dataResult = await db.execute(sql`SELECT * FROM (${unionQuery}) unified ORDER BY timestamp DESC NULLS LAST LIMIT ${pageLimit} OFFSET ${pageOffset}`);
       }
 
       const categoryCounts: Record<string, number> = {};

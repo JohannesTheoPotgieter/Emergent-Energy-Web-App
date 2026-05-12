@@ -18,7 +18,7 @@
     },
     {
       "file": "server/engineering-routes.ts",
-      "loc": 3685
+      "loc": 3757
     },
     {
       "file": "server/smart-import-routes.ts",
@@ -66,7 +66,7 @@
     },
     {
       "file": "server/departments/priority-strategic-routes.ts",
-      "loc": 2215
+      "loc": 2220
     },
     {
       "file": "client/src/components/quickbooks/QbMatchingWorkbench.tsx",
