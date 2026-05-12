@@ -16,7 +16,7 @@ import { PriorityListSection } from "@/components/priorities/PriorityListSection
 import { CreatePriorityDialog } from "@/components/priorities/CreatePriorityDialog";
 import { AssignPriorityDialog, BulkReassignDialog } from "@/components/priorities/AssignDialogs";
 import { useConfirmDialog } from "@/components/priorities/ConfirmActionDialog";
-import { MyWorkTasksList, type MyWorkTaskRow } from "@/components/priorities/MyWorkTasksList";
+import { MyWorkTasksList, taskHealth, taskLevel, type MyWorkTaskRow } from "@/components/priorities/MyWorkTasksList";
 import { useToast } from "@/hooks/use-toast";
 
 export { PriorityCard } from "@/components/priorities/PriorityCard";
@@ -217,12 +217,16 @@ export default function PrioritiesPage() {
     [myWorkFeedQuery.data],
   );
   const filteredMy = useMemo(() => applyFilters(myPriorities), [myPriorities, levelFilter, healthFilter]);
+  // Phase 7C: tasks honour the same level + health chips as priorities.
+  // Projection happens in `taskLevel` / `taskHealth` (see MyWorkTasksList):
+  //   level  ← work_item.priority   (critical / high / normal)
+  //   health ← work_item.trackingRag with status + overdue fallback
   const filteredMyTasks = useMemo(() => {
-    // The task list shares the level + health filters' UX even though it
-    // doesn't expose those fields — when filters are active, the task pane
-    // collapses to keep the surface focused.
-    if (levelFilter !== "all" || healthFilter !== "all") return [];
-    return myTasks;
+    return myTasks.filter((t) => {
+      if (levelFilter !== "all" && taskLevel(t) !== levelFilter) return false;
+      if (healthFilter !== "all" && taskHealth(t) !== healthFilter) return false;
+      return true;
+    });
   }, [myTasks, levelFilter, healthFilter]);
   const filteredDept = useMemo(() => applyFilters(deptQuery.data || []), [deptQuery.data, levelFilter, healthFilter]);
   const filteredCompany = useMemo(() => applyFilters(companyQuery.data || []), [companyQuery.data, levelFilter, healthFilter]);

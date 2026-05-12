@@ -79,11 +79,14 @@ export const TOP_SECTIONS: TopSection[] = [
     match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/my-work", "/inbox", "/priorities"]),
     secondary: [
       { label: "My Dashboard", path: "/" },
-      { label: "My Tasks", path: "/my-work/tasks" },
+      // Phase 7B: "My Tasks" removed from secondary nav — surface unified
+      // under Priorities → "My" tab (work_items + personal priorities in
+      // one feed). The /my-work/tasks page stays routable for bookmarks +
+      // the transition banner pointing back to /priorities?tab=my.
+      { label: "Priorities", path: "/priorities" },
       { label: "Calendar", path: "/my-work/calendar" },
       { label: "Meetings", path: "/my-work/meetings" },
       { label: "Inbox", path: "/inbox" },
-      { label: "Priorities", path: "/priorities" },
     ],
   },
   {

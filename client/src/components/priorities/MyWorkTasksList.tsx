@@ -37,8 +37,59 @@ export interface MyWorkTaskRow {
   taskCategory: string | null;
   bucket: string | null;
   percentComplete: number;
+  /** Canonical red/amber/green health signal from work_items.trackingRag. */
+  trackingRag: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+// =============================================================================
+// Phase 7C: task ↔ level/health mapping. The /priorities filter chips use
+// `level` ∈ {all, critical, important, normal} and `health` ∈ {all, critical,
+// at_risk, healthy}. work_items don't have those exact columns, so we project:
+//
+//   level   <- work_item.priority
+//     "critical" → "critical"
+//     "high"     → "important"
+//     anything else (normal, low, null) → "normal"
+//
+//   health  <- work_item.trackingRag (canonical) with status fallback
+//     "red" or status="blocked"            → "critical"
+//     "amber" or overdue (dueDate < today) → "at_risk"
+//     "green" or anything else             → "healthy"
+//
+// We keep this client-side because the server already returns trackingRag
+// + priority + status verbatim and the filter is a pure presentation
+// concern.
+// =============================================================================
+
+export type TaskLevel = "critical" | "important" | "normal";
+export type TaskHealth = "critical" | "at_risk" | "healthy";
+
+export function taskLevel(task: { priority: string | null }): TaskLevel {
+  const p = (task.priority ?? "").toLowerCase();
+  if (p === "critical") return "critical";
+  if (p === "high") return "important";
+  return "normal";
+}
+
+export function taskHealth(task: { trackingRag: string | null; status: string; dueDate: string | null }): TaskHealth {
+  const rag = (task.trackingRag ?? "").toLowerCase();
+  if (rag === "red") return "critical";
+  const status = (task.status ?? "").toLowerCase();
+  if (status === "blocked" || status === "block") return "critical";
+  if (rag === "amber" || rag === "yellow") return "at_risk";
+  // Overdue → at_risk if not otherwise classified.
+  if (task.dueDate) {
+    const due = Date.parse(task.dueDate + "T00:00:00Z");
+    const today = Date.parse(new Date().toISOString().slice(0, 10) + "T00:00:00Z");
+    if (!Number.isNaN(due) && !Number.isNaN(today) && due < today) {
+      // Done tasks are not at-risk even if past due — they're complete.
+      const isDone = status === "complete" || status === "completed" || status === "done";
+      if (!isDone) return "at_risk";
+    }
+  }
+  return "healthy";
 }
 
 const PRIORITY_BORDER: Record<string, string> = {
