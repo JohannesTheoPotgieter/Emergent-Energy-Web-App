@@ -1,18 +1,32 @@
 /**
- * Engineering Document Management — wraps the canonical /documents browser
- * so engineering folders, drawings, specs, NCR evidence and approval traffic
- * live under one Engineering tab. Document storage stays on SharePoint;
- * managed_documents + folder_taxonomy + project_folders are the canonical
- * tables (controlled_documents is deprecated — do not extend it).
+ * Engineering Document Management — engineering team's working surface for
+ * drawings, specs, NCR evidence, calibration certs, and approval traffic.
  *
- * Note: this is intentionally a wrapper — there is exactly one
- * SharePoint-backed document UI in the app and we want a single source of
- * truth for upload / browse / version / comment behaviour. Filters and
- * scoping happen inside `DocumentsPage` based on the user's folder picks.
+ * Layout: ManagedDocumentApprovalQueue sits above the canonical /documents
+ * browser so engineering approvals waiting on you are the first thing you
+ * see when you land on this tab.
+ *
+ * Data integrity:
+ * - All documents live in SharePoint. The app holds metadata + Graph
+ *   driveId/driveItemId references via managed_documents + folder_taxonomy
+ *   + project_folders (controlled_documents is deprecated — do not extend
+ *   it). See AGENT_GUARDRAILS.md § 2 (Six Rules — SharePoint = source of
+ *   truth) and § 5A (no file bodies in DB).
+ * - The approvals queue is the D6 Phase 5 canonical component
+ *   `ManagedDocumentApprovalQueue`, reading the typed nested response from
+ *   /api/managed-document-approvals/queue. The legacy ApprovalQueueCard
+ *   under client/src/components/controlled-documents/ had a shape mismatch
+ *   with the API and is being retired.
  */
 
+import { ManagedDocumentApprovalQueue } from "@/components/documents/ManagedDocumentApprovalQueue";
 import DocumentsPage from "../documents";
 
 export default function EngineeringDocumentsPage() {
-  return <DocumentsPage />;
+  return (
+    <div className="space-y-6" data-testid="engineering-documents-page">
+      <ManagedDocumentApprovalQueue title="Engineering approvals waiting on me" />
+      <DocumentsPage />
+    </div>
+  );
 }
