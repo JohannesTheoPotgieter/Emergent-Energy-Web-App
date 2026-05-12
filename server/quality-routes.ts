@@ -3,6 +3,7 @@ import { db } from "./db";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "@shared/schema";
 import { eq, and, desc, sql, inArray, isNull } from "drizzle-orm";
+import { z } from "zod";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -17,6 +18,10 @@ import {
   users, projectInfo, projectExecutionState,
 } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
+import { requireRole as requireRoleCanonical } from "./middleware/requireRole";
+import { ADMIN_ROLES, COMPANY_ROLES, normalizeRoleForPermissions } from "@shared/schema";
+import { validateBody } from "./middleware/validateBody";
+import { sendError, ApiError, notFound, badRequest } from "./lib/api-error";
 import { logAuditFromReq } from "./audit-logger";
 import { recordAudit } from "./api/v2/services/audit-service";
 import { canOverride } from "@shared/permissions/authoriser-matrix";
@@ -39,6 +44,7 @@ import {
 import { getProjectLinkedItems } from "./project-linking-service";
 import { computePdPmSubmitBlockers, getProjectDevelopmentWorkspace } from "./services/project-development-workspace-service";
 import { parseIntParam } from "./lib/req-params";
+import { evaluateSafeFormula } from "@shared/lib/safe-formula";
 
 const qmApprovalUploadsDir = path.join(process.cwd(), "uploads", "qm-approvals");
 if (!fs.existsSync(qmApprovalUploadsDir)) fs.mkdirSync(qmApprovalUploadsDir, { recursive: true });
@@ -69,15 +75,9 @@ function getUserRole(req: Request): string {
   return getEffectiveUser(req)?.role || "";
 }
 
-function requireRole(...roles: string[]) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    if (roles.includes(getUserRole(req))) return next();
-    res.status(403).json({ error: "forbidden", message: `Requires one of: ${roles.join(', ')}` });
-  };
-}
-
-function isAdminRole(role: string) {
-  return role === "COO_ADMIN" || role === "CEO_ADMIN";
+function isAdminRole(role: string): boolean {
+  const normalized = normalizeRoleForPermissions(role);
+  return normalized != null && (ADMIN_ROLES as readonly string[]).includes(normalized);
 }
 
 function normalizeProjectName(projectName: string | null | undefined): string {
@@ -97,17 +97,17 @@ async function resolveProjectIdForItemInstance(itemInstanceId: number): Promise<
   return typeof value === "number" ? value : null;
 }
 
-function requireAdminOrQm(req: Request, res: Response, next: NextFunction) {
-  const role = getUserRole(req);
-  if (isAdminRole(role) || role === "quality_manager" || role === "QUALITY_MANAGER") return next();
-  res.status(403).json({ error: "forbidden", message: "Admin or Quality Manager access required" });
-}
+const requireAdminOrQm = requireRoleCanonical([
+  "COO_ADMIN",
+  "CEO_ADMIN",
+  "QUALITY_MANAGER",
+]);
 
-function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
-  const role = getUserRole(req);
-  if (isAdminRole(role) || role === "eng_program_manager" || role === "ENGINEERING_MANAGER") return next();
-  res.status(403).json({ error: "forbidden", message: "Admin or Engineering Program Manager access required" });
-}
+const requireAdminOrEpm = requireRoleCanonical([
+  "COO_ADMIN",
+  "CEO_ADMIN",
+  "ENGINEERING_MANAGER",
+]);
 
 // Plan v3 § T3-4: the original notifications feature was removed but the
 // QM dashboard still needs to know "what would we have alerted about?"
@@ -168,9 +168,11 @@ function uniqueNumberList(values: Array<number | null | undefined>): number[] {
 async function fetchProjectHandoverRows(projectIds: number[]): Promise<any[]> {
   if (projectIds.length === 0) return [];
   try {
-    const result = await db.execute(sql.raw(
-      `SELECT project_id, status, engineering_status, quality_status, rejection_reason FROM project_pd_pm_handover WHERE project_id IN (${projectIds.join(",")})`,
-    ));
+    const result = await db.execute(sql`
+      SELECT project_id, status, engineering_status, quality_status, rejection_reason
+      FROM project_pd_pm_handover
+      WHERE project_id IN (${sql.join(projectIds.map((id) => sql`${id}`), sql`, `)})
+    `);
     return Array.isArray(result) ? result : result.rows || [];
   } catch (err: unknown) {
     console.warn("[Quality] handover summary query failed; continuing without handover context", {
@@ -223,6 +225,7 @@ async function loadProjectQualityGovernanceContext(projectName: string, userId: 
       warnings,
       phaseSummaries: [] as any[],
       governanceItems: [] as any[],
+      riskAnswers: [] as any[],
       riskSummary: computeQualityRiskSummary({ items: [], warnings }),
       handover: {
         status: "DRAFT",
@@ -330,9 +333,9 @@ async function loadProjectQualityGovernanceContext(projectName: string, userId: 
     };
   });
 
-  const handoverRows: any[] = await db.execute(sql.raw(
-    `SELECT * FROM project_pd_pm_handover WHERE project_id = ${project.id} LIMIT 1`,
-  )).then((result: any) => (Array.isArray(result) ? result : result.rows || []));
+  const handoverRows: any[] = await db.execute(sql`
+    SELECT * FROM project_pd_pm_handover WHERE project_id = ${project.id} LIMIT 1
+  `).then((result: any) => (Array.isArray(result) ? result : result.rows || []));
   const handover = normalizeHandoverRow(handoverRows[0]) || { deliverables: {} };
 
   const workspace = await getProjectDevelopmentWorkspace({
@@ -366,20 +369,22 @@ async function loadProjectQualityGovernanceContext(projectName: string, userId: 
   const relevantMicrosoftItems = (await getProjectLinkedItems(project.id, userId))
     .filter((item: any) => Boolean(item?.qualityContext?.itemInstanceId));
 
+  const enrichedRiskAnswers = riskAnswers.map((answer: any) => {
+    const question = riskQuestionMap.get(answer.templateRiskQuestionId);
+    return {
+      responseType: question?.responseType ?? "yesno",
+      triggersWarning: question?.triggersWarning ?? false,
+      triggerCondition: question?.triggerCondition ?? null,
+      triggerSeverity: question?.triggerSeverity ?? null,
+      answerYesno: answer.answerYesno,
+      answerText: answer.answerText,
+      answerNumber: answer.answerNumber,
+    };
+  });
+
   const riskSummary = computeQualityRiskSummary({
     items: governanceItems,
-    riskAnswers: riskAnswers.map((answer: any) => {
-      const question = riskQuestionMap.get(answer.templateRiskQuestionId);
-      return {
-        responseType: question?.responseType ?? "yesno",
-        triggersWarning: question?.triggersWarning ?? false,
-        triggerCondition: question?.triggerCondition ?? null,
-        triggerSeverity: question?.triggerSeverity ?? null,
-        answerYesno: answer.answerYesno,
-        answerText: answer.answerText,
-        answerNumber: answer.answerNumber,
-      };
-    }),
+    riskAnswers: enrichedRiskAnswers,
     warnings,
     handover: handoverSummaryInput,
     linkedMicrosoftCount: relevantMicrosoftItems.length,
@@ -415,6 +420,7 @@ async function loadProjectQualityGovernanceContext(projectName: string, userId: 
     warnings,
     phaseSummaries,
     governanceItems,
+    riskAnswers: enrichedRiskAnswers,
     riskSummary,
     handover: {
       status: handover.status || "DRAFT",
@@ -432,6 +438,100 @@ async function loadProjectQualityGovernanceContext(projectName: string, userId: 
   };
 }
 
+// ============================================================================
+// M4 — Zod body schemas for every mutating endpoint. Each is `.strict()` so
+// unknown keys are rejected (forces typos to surface in dev instead of being
+// silently ignored). Keep these grouped here for discoverability.
+// ============================================================================
+
+const accessVerifySchema = z.object({
+  code: z.string().min(1, "code required"),
+}).strict();
+
+const updateItemSchema = z.object({
+  startDate: z.string().nullable().optional(),
+  endDate: z.string().nullable().optional(),
+  isApplicable: z.boolean().optional(),
+  notApplicableReason: z.string().nullable().optional(),
+  approvalComment: z.string().nullable().optional(),
+  allowedWorkingDays: z.number().int().min(0).max(365).optional(),
+  qmStatus: z.string().optional(),
+  assigneeUserId: z.union([z.number().int(), z.string(), z.null()]).optional(),
+  assigneeType: z.string().nullable().optional(),
+  assigneeId: z.union([z.number().int(), z.string(), z.null()]).optional(),
+  override_reason: z.string().optional(),
+}).strict();
+
+const approveItemSchema = z.object({
+  approved: z.boolean(),
+  comment: z.string().nullable().optional(),
+  override_reason: z.string().optional(),
+}).strict();
+
+const addEvidenceSchema = z.object({
+  evidenceUrl: z.string().trim().min(1, "evidenceUrl required").max(2048),
+  evidenceNote: z.string().nullable().optional(),
+}).strict();
+
+// send-for-approval is multipart/form-data, so multer parses the file and
+// the body fields come through as strings. Coerce + validate.
+const sendForApprovalSchema = z.object({
+  approverUserId: z.coerce.number().int().positive(),
+  note: z.string().optional(),
+}).passthrough(); // multer's req.body may have other multipart fields
+
+const createItemSchema = z.object({
+  itemName: z.string().trim().min(1, "itemName required").max(255),
+  groupId: z.number().int().positive().optional(),
+}).strict();
+
+const riskAnswerSchema = z.object({
+  riskAnswerId: z.number().int().positive(),
+  answerYesno: z.boolean().nullable().optional(),
+  answerText: z.string().nullable().optional(),
+  answerNumber: z.number().nullable().optional(),
+  answerValue: z.enum(["yes", "no"]).optional(),
+  notes: z.string().nullable().optional(),
+}).strict();
+
+const warningEventSchema = z.object({
+  note: z.string().nullable().optional(),
+}).strict();
+
+const planLinkSchema = z.object({
+  planItemId: z.union([z.number().int(), z.string()]),
+  itemInstanceId: z.number().int().positive().nullable().optional(),
+  phaseId: z.number().int().positive().nullable().optional(),
+  linkType: z.string().optional(),
+}).strict().refine(
+  (data) => data.itemInstanceId != null || data.phaseId != null,
+  { message: "Either phaseId or itemInstanceId is required" },
+);
+
+const postmortemSchema = z.object({
+  metricInputs: z.array(z.object({
+    templateMetricId: z.number().int().positive(),
+    inputValueNumber: z.number().nullable().optional(),
+    inputValueChoice: z.string().nullable().optional(),
+  })).default([]),
+}).strict();
+
+const holidaySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD"),
+  name: z.string().trim().min(1).max(255),
+  countryCode: z.string().trim().length(2).toUpperCase().optional(),
+}).strict();
+
+const updateRoleSchema = z.object({
+  role: z.enum(COMPANY_ROLES),
+}).strict();
+
+const bulkCreateChecklistsSchema = z.object({
+  projectNames: z.array(z.string().trim().min(1)).min(1).max(500),
+}).strict();
+
+const recalculateWarningsSchema = z.object({}).strict();
+
 export function registerQualityRoutes(app: Express) {
 
   app.use("/api/quality", jwtAuth);
@@ -439,7 +539,7 @@ export function registerQualityRoutes(app: Express) {
 
   // ========== QM ACCESS CHALLENGE ==========
 
-  app.post("/api/quality/access/verify", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.post("/api/quality/access/verify", requireAuth, requireAdminOrQm, validateBody(accessVerifySchema), async (req, res) => {
     try {
       const { code } = req.body;
       const userId = getUser(req).id;
@@ -483,28 +583,31 @@ export function registerQualityRoutes(app: Express) {
         return res.status(429).json({ error: "Too many failed attempts. Locked for 15 minutes.", locked: true });
       }
       return res.status(401).json({ error: "Invalid access code", attemptsRemaining: 5 - newCount });
-    } catch (err: unknown) {
-      console.error("[Quality] Access verify error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
+  // H5 follow-up: per-user session probe. `requireAuth` is sufficient because
+  // the response is scoped to the caller's own session — `challenged` /
+  // `needsChallenge` / `role` are all values the caller already knows. The
+  // `hasCode` boolean reveals whether QM_ACCESS_CODE is configured, but the
+  // UI needs that to gracefully degrade if the gate is disabled.
   app.get("/api/quality/access/status", requireAuth, async (req, res) => {
     try {
       const hasCode = !!process.env.QM_ACCESS_CODE;
       const challenged = !!(req.session as any)?.qmChallengePassed;
       const userRole = getUserRole(req);
-      const needsChallenge = (userRole === "quality_manager") && !challenged;
+      const needsChallenge = (normalizeRoleForPermissions(userRole) === "QUALITY_MANAGER") && !challenged;
       res.json({ hasCode, challenged, needsChallenge, role: userRole });
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
   // ========== EPM ACCESS CHALLENGE ==========
 
-  app.post("/api/engineering/access/verify", requireAuth, requireAdminOrEpm, async (req, res) => {
+  app.post("/api/engineering/access/verify", requireAuth, requireAdminOrEpm, validateBody(accessVerifySchema), async (req, res) => {
     try {
       const { code } = req.body;
       const userId = getUser(req).id;
@@ -548,22 +651,21 @@ export function registerQualityRoutes(app: Express) {
         return res.status(429).json({ error: "Too many failed attempts. Locked for 15 minutes.", locked: true });
       }
       return res.status(401).json({ error: "Invalid access code", attemptsRemaining: 5 - newCount });
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
+  // H5 follow-up: same per-user scoping as /api/quality/access/status above.
   app.get("/api/engineering/access/status", requireAuth, async (req, res) => {
     try {
       const hasCode = !!process.env.EPM_ACCESS_CODE;
       const challenged = !!(req.session as any)?.epmChallengePassed;
       const userRole = getUserRole(req);
-      const needsChallenge = (userRole === "eng_program_manager") && !challenged;
+      const needsChallenge = (normalizeRoleForPermissions(userRole) === "ENGINEERING_MANAGER") && !challenged;
       res.json({ hasCode, challenged, needsChallenge, role: userRole });
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
@@ -573,9 +675,8 @@ export function registerQualityRoutes(app: Express) {
     try {
       const templates = await db.select().from(qcTemplate);
       res.json(templates);
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
@@ -595,9 +696,8 @@ export function registerQualityRoutes(app: Express) {
       const metrics = await db.select().from(qcTemplatePostmortemMetric);
 
       res.json({ template: tmpl, phases, groups, items, riskQuestions, metrics });
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
@@ -721,9 +821,8 @@ export function registerQualityRoutes(app: Express) {
         riskAnswers,
         evidence,
       });
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
@@ -903,16 +1002,15 @@ export function registerQualityRoutes(app: Express) {
         });
 
         res.json({ success: true, counts: result.counts });
-      } catch (err: unknown) {
-        console.error("[Quality] Error deleting project quality process:", err);
-        res.status(500).json({ error: "Internal server error" });
+      } catch (err) {
+        sendError(res, err);
       }
     },
   );
 
   // ========== CHECKLIST ITEM OPERATIONS ==========
 
-  app.post("/api/quality/project/:projectName/item/:itemInstanceId", requireAuth, requireAdminOrQm, requirePermission('pd_quality', 'edit'), async (req, res) => {
+  app.post("/api/quality/project/:projectName/item/:itemInstanceId", requireAuth, requireAdminOrQm, requirePermission('pd_quality', 'edit'), validateBody(updateItemSchema), async (req, res) => {
     try {
       const itemId = parseIntParam(req.params.itemInstanceId);
       const {
@@ -939,7 +1037,7 @@ export function registerQualityRoutes(app: Express) {
       const [existing] = await db.select().from(qcItemInstance).where(eq(qcItemInstance.id, itemId));
 
       if (qmStatus !== undefined && existing) {
-        const currentStatus = existing.qmStatus || "not_started";
+        const currentStatus = existing.qmStatus ?? "not_started";
         if (qmStatus !== currentStatus && !isValidQmStatusTransition(currentStatus, qmStatus)) {
           return res.status(400).json({ error: "invalid_transition", message: `Cannot transition from '${currentStatus}' to '${qmStatus}'` });
         }
@@ -956,7 +1054,8 @@ export function registerQualityRoutes(app: Express) {
       if (qmStatus === "pass") {
         if (existing && (existing.qmStatus === "review" || existing.qmStatus === "fail")) {
           const role = getUserRole(req);
-          const isQmManager = isAdminRole(role) || role === "quality_manager" || role === "QUALITY_MANAGER";
+          const normalizedRole = normalizeRoleForPermissions(role);
+          const isQmManager = isAdminRole(role) || normalizedRole === "QUALITY_MANAGER";
           if (!isQmManager && !qcOverrideAllowed) {
             return res.status(403).json({
               error: "forbidden",
@@ -1089,13 +1188,12 @@ export function registerQualityRoutes(app: Express) {
         },
       });
       res.json({ ...updated, assignments, primaryAssignment: assignments[0] || null });
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
-  app.post("/api/quality/project/:projectName/item/:itemInstanceId/approve", requireAuth, requirePermission('quality', 'approve'), async (req, res) => {
+  app.post("/api/quality/project/:projectName/item/:itemInstanceId/approve", requireAuth, requirePermission('quality', 'approve'), validateBody(approveItemSchema), async (req, res) => {
     try {
       const itemId = parseIntParam(req.params.itemInstanceId);
       const { approved, comment } = req.body;
@@ -1111,7 +1209,8 @@ export function registerQualityRoutes(app: Express) {
       if (approved) {
         if (existing && (existing.qmStatus === "review" || existing.qmStatus === "fail")) {
           const role = getUserRole(req);
-          const isQmManager = isAdminRole(role) || role === "quality_manager" || role === "QUALITY_MANAGER";
+          const normalizedRole = normalizeRoleForPermissions(role);
+          const isQmManager = isAdminRole(role) || normalizedRole === "QUALITY_MANAGER";
           if (!isQmManager && !approveOverrideAllowed) {
             return res.status(403).json({
               error: "forbidden",
@@ -1199,17 +1298,15 @@ export function registerQualityRoutes(app: Express) {
 
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: approved ? "approve" : "update", projectName: pName, changesJson: { description: approved ? "Quality item approved" : "Quality item approval revoked" } });
       res.json(updated);
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
-  app.post("/api/quality/project/:projectName/item/:itemInstanceId/evidence", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
+  app.post("/api/quality/project/:projectName/item/:itemInstanceId/evidence", requireAuth, requirePermission("quality", "edit"), validateBody(addEvidenceSchema), async (req, res) => {
     try {
       const itemId = parseIntParam(req.params.itemInstanceId);
       const { evidenceUrl, evidenceNote } = req.body;
-      if (!evidenceUrl) return res.status(400).json({ error: "evidenceUrl required" });
 
       const projectId = await resolveProjectIdForItemInstance(itemId);
       if (!projectId) return res.status(400).json({ error: "project_context_missing", message: "Cannot attach evidence without project linkage" });
@@ -1220,9 +1317,8 @@ export function registerQualityRoutes(app: Express) {
       }).returning();
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "update", projectName: decodeURIComponent(String(req.params.projectName)), changesJson: { description: "Evidence added", evidenceUrl } });
       res.json(evidence);
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
@@ -1245,9 +1341,8 @@ export function registerQualityRoutes(app: Express) {
       }).returning();
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "update", projectName: decodeURIComponent(String(req.params.projectName)), changesJson: { description: "Evidence file uploaded", fileName: file.originalname } });
       res.json(evidence);
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
@@ -1264,9 +1359,8 @@ export function registerQualityRoutes(app: Express) {
       const folderId = req.query.folderId as string | undefined;
       const items = await browseFolders(settings.driveId, folderId || undefined);
       res.json({ driveId: settings.driveId, items });
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
@@ -1286,18 +1380,16 @@ export function registerQualityRoutes(app: Express) {
       const meta = await getFileMetadata(settings.driveId, itemId);
       const webUrl = meta.webUrl || meta["@microsoft.graph.downloadUrl"] || "";
       res.json({ name: meta.name, webUrl, size: meta.size });
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
-  app.post("/api/quality/project/:projectName/item/:itemInstanceId/send-for-approval", requireAuth, requirePermission("pd_quality", "edit"), qmApprovalUpload.single("file"), async (req, res) => {
+  app.post("/api/quality/project/:projectName/item/:itemInstanceId/send-for-approval", requireAuth, requirePermission("pd_quality", "edit"), qmApprovalUpload.single("file"), validateBody(sendForApprovalSchema), async (req, res) => {
     try {
       const itemId = parseIntParam(req.params.itemInstanceId);
       const projectName = decodeURIComponent(String(req.params.projectName));
-      const approverUserId = parseInt(req.body.approverUserId);
-      if (!approverUserId) return res.status(400).json({ error: "Approver is required" });
+      const approverUserId = req.body.approverUserId as number;
 
       const [existing] = await db.select().from(qcItemInstance).where(eq(qcItemInstance.id, itemId));
       if (!existing) return res.status(404).json({ error: "Quality item not found" });
@@ -1337,10 +1429,8 @@ export function registerQualityRoutes(app: Express) {
         ...updated,
         uploadedFile: file ? { filename: file.filename, originalName: file.originalname, size: file.size } : null,
       });
-    } catch (err: unknown) {
-      console.error("[QM] Send for approval error:", err);
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
@@ -1349,19 +1439,17 @@ export function registerQualityRoutes(app: Express) {
       await db.update(qcItemEvidence).set({ deletedAt: new Date(), deletedBy: getUser(req).id }).where(eq(qcItemEvidence.id, parseIntParam(req.params.evidenceId))).returning();
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(req.params.evidenceId), action: "delete", changesJson: { description: "Evidence deleted" } });
       res.json({ success: true });
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
   // ========== QC ITEM CREATE/DELETE ==========
 
-  app.post("/api/quality/project/:projectName/items", requireAuth, requireAdminOrQm, requirePermission('pd_quality', 'edit'), async (req, res) => {
+  app.post("/api/quality/project/:projectName/items", requireAuth, requireAdminOrQm, requirePermission('pd_quality', 'edit'), validateBody(createItemSchema), async (req, res) => {
     try {
       const pName = decodeURIComponent(String(req.params.projectName));
       const { itemName, groupId } = req.body;
-      if (!itemName) return res.status(400).json({ error: "itemName required" });
 
       const [checklist] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, pName));
       if (!checklist) return res.status(404).json({ error: "No checklist found for this project" });
@@ -1399,9 +1487,8 @@ export function registerQualityRoutes(app: Express) {
 
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(item.id), action: "create", projectName: pName, changesJson: { description: "Quality item created", itemName } });
       res.json(item);
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
@@ -1429,15 +1516,14 @@ export function registerQualityRoutes(app: Express) {
 
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "delete", projectName: pName, changesJson: { description: "Quality item deleted" } });
       res.json({ success: true });
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
   // ========== RISK ANSWERS ==========
 
-  app.post("/api/quality/project/:projectName/risk-answer", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
+  app.post("/api/quality/project/:projectName/risk-answer", requireAuth, requirePermission("quality", "edit"), validateBody(riskAnswerSchema), async (req, res) => {
     try {
       const {
         riskAnswerId,
@@ -1483,9 +1569,8 @@ export function registerQualityRoutes(app: Express) {
         },
       });
       res.json(updated);
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
@@ -1498,9 +1583,8 @@ export function registerQualityRoutes(app: Express) {
         .where(eq(qcWarning.projectName, projectName))
         .orderBy(desc(qcWarning.createdAt));
       res.json(warnings);
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
@@ -1553,13 +1637,12 @@ export function registerQualityRoutes(app: Express) {
       }
 
       res.json(warnings);
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
-  app.post("/api/quality/warning/:warningId/acknowledge", requireAuth, requirePermission("quality", "approve"), async (req, res) => {
+  app.post("/api/quality/warning/:warningId/acknowledge", requireAuth, requirePermission("quality", "approve"), validateBody(warningEventSchema), async (req, res) => {
     try {
       const warningId = parseIntParam(req.params.warningId);
       const { note } = req.body;
@@ -1569,18 +1652,15 @@ export function registerQualityRoutes(app: Express) {
       });
 
       const [warning] = await db.select().from(qcWarning).where(eq(qcWarning.id, warningId));
-      if (warning) {
-      }
 
       logAuditFromReq(req, { entityType: "qc_warning", entityId: String(warningId), action: "update", projectName: warning?.projectName, changesJson: { description: "QC warning acknowledged", warningType: warning?.warningType } });
       res.json({ success: true });
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
-  app.post("/api/quality/warning/:warningId/resolve", requireAuth, requirePermission("quality", "approve"), async (req, res) => {
+  app.post("/api/quality/warning/:warningId/resolve", requireAuth, requirePermission("quality", "approve"), validateBody(warningEventSchema), async (req, res) => {
     try {
       const warningId = parseIntParam(req.params.warningId);
       const { note } = req.body;
@@ -1589,15 +1669,10 @@ export function registerQualityRoutes(app: Express) {
         warningId, eventType: "resolved", note, actorUserId: getUser(req).id,
       });
 
-      const [resolvedWarning] = await db.select().from(qcWarning).where(eq(qcWarning.id, warningId));
-      if (resolvedWarning) {
-      }
-
       logAuditFromReq(req, { entityType: "qc_warning", entityId: String(warningId), action: "update", changesJson: { description: "QC warning resolved" } });
       res.json({ success: true });
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
@@ -1608,27 +1683,23 @@ export function registerQualityRoutes(app: Express) {
       const projectName = decodeURIComponent(String(req.params.projectName));
       const links = await db.select().from(qcPlanLink).where(eq(qcPlanLink.projectName, projectName));
       res.json(links);
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
-  app.post("/api/quality/project/:projectName/plan-link", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
+  app.post("/api/quality/project/:projectName/plan-link", requireAuth, requirePermission("quality", "edit"), validateBody(planLinkSchema), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
       const { planItemId, itemInstanceId, phaseId, linkType } = req.body;
-      if (!planItemId) return res.status(400).json({ error: "planItemId is required" });
-      if (!itemInstanceId && !phaseId) return res.status(400).json({ error: "Either phaseId or itemInstanceId is required" });
       const [link] = await db.insert(qcPlanLink).values({
         projectName, planItemId, itemInstanceId: itemInstanceId || null, phaseId: phaseId || null, linkType: linkType || "phase_task",
       }).returning();
       recalculateWarnings(projectName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(link.id), action: "create", projectName, changesJson: { description: "Plan link created", planItemId } });
       res.json(link);
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
@@ -1639,9 +1710,8 @@ export function registerQualityRoutes(app: Express) {
       if (deletedLink) recalculateWarnings(deletedLink.projectName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(req.params.linkId), action: "delete", projectName: deletedLink?.projectName, changesJson: { description: "Plan link deleted" } });
       res.json({ success: true });
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
@@ -1731,9 +1801,12 @@ export function registerQualityRoutes(app: Express) {
       });
 
       const handoverRows: any[] = project
-        ? await db.execute(sql.raw(
-            `SELECT project_id, status, engineering_status, quality_status, rejection_reason FROM project_pd_pm_handover WHERE project_id = ${project.id} LIMIT 1`,
-          )).then((result: any) => (Array.isArray(result) ? result : result.rows || []))
+        ? await db.execute(sql`
+            SELECT project_id, status, engineering_status, quality_status, rejection_reason
+            FROM project_pd_pm_handover
+            WHERE project_id = ${project.id}
+            LIMIT 1
+          `).then((result: any) => (Array.isArray(result) ? result : result.rows || []))
         : [];
       const handover = handoverRows[0];
       const riskSummary = computeQualityRiskSummary({
@@ -1803,9 +1876,8 @@ export function registerQualityRoutes(app: Express) {
           }),
         },
       });
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
@@ -1880,12 +1952,11 @@ export function registerQualityRoutes(app: Express) {
           })),
           itemNames: context.governanceItems.map((item: any) => item.itemName),
           warnings: context.warnings,
-          riskAnswers: context.riskSummary.exposures.triggeredRiskCount > 0 ? undefined : [],
+          riskAnswers: context.riskAnswers,
         }),
       });
-    } catch (err: unknown) {
-      console.error("[Quality] workspace error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
@@ -1997,9 +2068,8 @@ export function registerQualityRoutes(app: Express) {
       }
 
       res.json(items);
-    } catch (err: unknown) {
-      console.error("[Quality] all-items error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
@@ -2218,9 +2288,8 @@ export function registerQualityRoutes(app: Express) {
       }));
 
       res.json(result);
-    } catch (err: unknown) {
-      console.error("[Quality] checklists endpoint failed:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
@@ -2391,23 +2460,21 @@ export function registerQualityRoutes(app: Express) {
         topRiskProjects: projectsAtRisk.slice(0, 5),
         outstandingPostmortems,
       });
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
   // ========== WARNING ENGINE ==========
 
-  app.post("/api/quality/project/:projectName/recalculate-warnings", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
+  app.post("/api/quality/project/:projectName/recalculate-warnings", requireAuth, requirePermission("quality", "edit"), validateBody(recalculateWarningsSchema), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
       const count = await recalculateWarnings(projectName);
       logAuditFromReq(req, { entityType: "qc_warning", entityId: "0", action: "create", projectName, changesJson: { description: "Warnings recalculated", warningsGenerated: count } });
       res.json({ success: true, warningsGenerated: count });
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
@@ -2424,13 +2491,12 @@ export function registerQualityRoutes(app: Express) {
       const metrics = await db.select().from(qcTemplatePostmortemMetric);
 
       res.json({ postmortem: pm, metricValues, summary, metrics });
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
-  app.post("/api/quality/postmortem/:projectName", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
+  app.post("/api/quality/postmortem/:projectName", requireAuth, requirePermission("quality", "edit"), validateBody(postmortemSchema), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
       const { metricInputs } = req.body;
@@ -2455,10 +2521,10 @@ export function registerQualityRoutes(app: Express) {
         if (rule) {
           if (metric.inputType === "choice" && rule.choices && input.inputValueChoice) {
             score = rule.choices[input.inputValueChoice] ?? null;
-          } else if (metric.inputType === "count" && rule.formula && input.inputValueNumber != null) {
-            const val = input.inputValueNumber;
-            const formula = rule.formula.replace(/count|days/g, String(val));
-            try { score = Math.max(0, Math.min(1, Function('"use strict"; return (' + formula + ')')())); } catch { score = null; }
+          } else if (metric.inputType === "count" && typeof rule.formula === "string" && input.inputValueNumber != null) {
+            const val = Number(input.inputValueNumber);
+            const raw = evaluateSafeFormula(rule.formula, { count: val, days: val });
+            score = raw == null ? null : Math.max(0, Math.min(1, raw));
           }
         }
 
@@ -2507,9 +2573,8 @@ export function registerQualityRoutes(app: Express) {
 
       logAuditFromReq(req, { entityType: "quality_template", entityId: String(pm.id), action: "create", projectName, changesJson: { description: "Post-mortem completed", contractorScore, engineeringScore, redFlag } });
       res.json({ success: true, contractorScore, engineeringScore, redFlag });
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
@@ -2519,32 +2584,29 @@ export function registerQualityRoutes(app: Express) {
     try {
       const holidays = await db.select().from(calendarHoliday);
       res.json(holidays);
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
-  app.post("/api/quality/holidays", requireAuth, requireRole("COO_ADMIN", "CEO_ADMIN"), async (req, res) => {
+  app.post("/api/quality/holidays", requireAuth, requireRoleCanonical(["COO_ADMIN", "CEO_ADMIN"]), validateBody(holidaySchema), async (req, res) => {
     try {
       const { date, name, countryCode } = req.body;
       const [h] = await db.insert(calendarHoliday).values({ date, name, countryCode: countryCode || "ZA" }).returning();
       logAuditFromReq(req, { entityType: "quality_template", entityId: String(h.id), action: "create", changesJson: { description: "Holiday created", date, name } });
       res.json(h);
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
-  app.delete("/api/quality/holidays/:id", requireAuth, requireRole("COO_ADMIN", "CEO_ADMIN"), async (req, res) => {
+  app.delete("/api/quality/holidays/:id", requireAuth, requireRoleCanonical(["COO_ADMIN", "CEO_ADMIN"]), async (req, res) => {
     try {
       await db.delete(calendarHoliday).where(eq(calendarHoliday.id, parseIntParam(req.params.id)));
       logAuditFromReq(req, { entityType: "quality_template", entityId: String(req.params.id), action: "delete", changesJson: { description: "Holiday deleted" } });
       res.json({ success: true });
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
@@ -2568,56 +2630,39 @@ export function registerQualityRoutes(app: Express) {
         }
       }
       res.json(byPlanItem);
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
   // ========== QM USER MANAGEMENT ==========
 
-  app.get("/api/quality/users", requireAuth, requireRole("COO_ADMIN", "CEO_ADMIN"), async (req, res) => {
+  app.get("/api/quality/users", requireAuth, requireRoleCanonical(["COO_ADMIN", "CEO_ADMIN"]), async (req, res) => {
     try {
       const { users } = await import("@shared/schema");
       const allUsers = await db.select({ id: users.id, email: users.email, name: users.name, role: users.role }).from(users);
       res.json(allUsers);
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
-  app.patch("/api/quality/users/:userId/role", requireAuth, async (req, res) => {
+  app.patch("/api/quality/users/:userId/role", requireAuth, requireRoleCanonical(["COO_ADMIN", "CEO_ADMIN"]), validateBody(updateRoleSchema), async (req, res) => {
     try {
-      const role = getUserRole(req);
-      if (!isAdminRole(role)) {
-        return res.status(403).json({ error: "Admin access required" });
-      }
       const userId = parseIntParam(req.params.userId);
       const { role: newRole } = req.body;
-      if (!newRole) return res.status(400).json({ error: "Role is required" });
       const { users } = await import("@shared/schema");
       const [updated] = await db.update(users).set({ role: newRole }).where(eq(users.id, userId)).returning();
       logAuditFromReq(req, { entityType: "quality_template", entityId: String(userId), action: "update", changesJson: { description: "User role updated", newRole, userName: updated.name } });
       res.json({ id: updated.id, email: updated.email, name: updated.name, role: updated.role });
-    } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 
-  app.post("/api/quality/admin/bulk-create-checklists", requireAuth, async (req, res) => {
+  app.post("/api/quality/admin/bulk-create-checklists", requireAuth, requireRoleCanonical(["COO_ADMIN", "CEO_ADMIN"]), validateBody(bulkCreateChecklistsSchema), async (req, res) => {
     try {
-      const role = getUserRole(req);
-      if (!isAdminRole(role)) {
-        return res.status(403).json({ error: "Admin access required" });
-      }
-
       const { projectNames } = req.body;
-      if (!Array.isArray(projectNames) || projectNames.length === 0) {
-        return res.status(400).json({ error: "projectNames array is required" });
-      }
-
       const [activeTemplate] = await db.select().from(qcTemplate).where(eq(qcTemplate.isActive, true));
       if (!activeTemplate) {
         return res.status(400).json({ error: "No active quality template found" });
@@ -2674,9 +2719,8 @@ export function registerQualityRoutes(app: Express) {
 
       logAuditFromReq(req, { entityType: "quality_template", entityId: "0", action: "create", changesJson: { description: "Bulk checklists created", count: results.filter(r => r.status === "created").length } });
       res.json({ success: true, results });
-    } catch (err: unknown) {
-      console.error("[Quality] Bulk Create Checklists error:", err);
-      res.status(500).json({ error: "Internal server error" });
+    } catch (err) {
+      sendError(res, err);
     }
   });
 }
