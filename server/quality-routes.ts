@@ -168,9 +168,11 @@ function uniqueNumberList(values: Array<number | null | undefined>): number[] {
 async function fetchProjectHandoverRows(projectIds: number[]): Promise<any[]> {
   if (projectIds.length === 0) return [];
   try {
-    const result = await db.execute(sql.raw(
-      `SELECT project_id, status, engineering_status, quality_status, rejection_reason FROM project_pd_pm_handover WHERE project_id IN (${projectIds.join(",")})`,
-    ));
+    const result = await db.execute(sql`
+      SELECT project_id, status, engineering_status, quality_status, rejection_reason
+      FROM project_pd_pm_handover
+      WHERE project_id IN (${sql.join(projectIds.map((id) => sql`${id}`), sql`, `)})
+    `);
     return Array.isArray(result) ? result : result.rows || [];
   } catch (err: unknown) {
     console.warn("[Quality] handover summary query failed; continuing without handover context", {
@@ -223,6 +225,7 @@ async function loadProjectQualityGovernanceContext(projectName: string, userId: 
       warnings,
       phaseSummaries: [] as any[],
       governanceItems: [] as any[],
+      riskAnswers: [] as any[],
       riskSummary: computeQualityRiskSummary({ items: [], warnings }),
       handover: {
         status: "DRAFT",
@@ -330,9 +333,9 @@ async function loadProjectQualityGovernanceContext(projectName: string, userId: 
     };
   });
 
-  const handoverRows: any[] = await db.execute(sql.raw(
-    `SELECT * FROM project_pd_pm_handover WHERE project_id = ${project.id} LIMIT 1`,
-  )).then((result: any) => (Array.isArray(result) ? result : result.rows || []));
+  const handoverRows: any[] = await db.execute(sql`
+    SELECT * FROM project_pd_pm_handover WHERE project_id = ${project.id} LIMIT 1
+  `).then((result: any) => (Array.isArray(result) ? result : result.rows || []));
   const handover = normalizeHandoverRow(handoverRows[0]) || { deliverables: {} };
 
   const workspace = await getProjectDevelopmentWorkspace({
@@ -366,20 +369,22 @@ async function loadProjectQualityGovernanceContext(projectName: string, userId: 
   const relevantMicrosoftItems = (await getProjectLinkedItems(project.id, userId))
     .filter((item: any) => Boolean(item?.qualityContext?.itemInstanceId));
 
+  const enrichedRiskAnswers = riskAnswers.map((answer: any) => {
+    const question = riskQuestionMap.get(answer.templateRiskQuestionId);
+    return {
+      responseType: question?.responseType ?? "yesno",
+      triggersWarning: question?.triggersWarning ?? false,
+      triggerCondition: question?.triggerCondition ?? null,
+      triggerSeverity: question?.triggerSeverity ?? null,
+      answerYesno: answer.answerYesno,
+      answerText: answer.answerText,
+      answerNumber: answer.answerNumber,
+    };
+  });
+
   const riskSummary = computeQualityRiskSummary({
     items: governanceItems,
-    riskAnswers: riskAnswers.map((answer: any) => {
-      const question = riskQuestionMap.get(answer.templateRiskQuestionId);
-      return {
-        responseType: question?.responseType ?? "yesno",
-        triggersWarning: question?.triggersWarning ?? false,
-        triggerCondition: question?.triggerCondition ?? null,
-        triggerSeverity: question?.triggerSeverity ?? null,
-        answerYesno: answer.answerYesno,
-        answerText: answer.answerText,
-        answerNumber: answer.answerNumber,
-      };
-    }),
+    riskAnswers: enrichedRiskAnswers,
     warnings,
     handover: handoverSummaryInput,
     linkedMicrosoftCount: relevantMicrosoftItems.length,
@@ -415,6 +420,7 @@ async function loadProjectQualityGovernanceContext(projectName: string, userId: 
     warnings,
     phaseSummaries,
     governanceItems,
+    riskAnswers: enrichedRiskAnswers,
     riskSummary,
     handover: {
       status: handover.status || "DRAFT",
@@ -939,7 +945,7 @@ export function registerQualityRoutes(app: Express) {
       const [existing] = await db.select().from(qcItemInstance).where(eq(qcItemInstance.id, itemId));
 
       if (qmStatus !== undefined && existing) {
-        const currentStatus = existing.qmStatus || "not_started";
+        const currentStatus = existing.qmStatus ?? "not_started";
         if (qmStatus !== currentStatus && !isValidQmStatusTransition(currentStatus, qmStatus)) {
           return res.status(400).json({ error: "invalid_transition", message: `Cannot transition from '${currentStatus}' to '${qmStatus}'` });
         }
@@ -1339,7 +1345,6 @@ export function registerQualityRoutes(app: Express) {
       });
     } catch (err: unknown) {
       console.error("[QM] Send for approval error:", err);
-      console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1569,8 +1574,6 @@ export function registerQualityRoutes(app: Express) {
       });
 
       const [warning] = await db.select().from(qcWarning).where(eq(qcWarning.id, warningId));
-      if (warning) {
-      }
 
       logAuditFromReq(req, { entityType: "qc_warning", entityId: String(warningId), action: "update", projectName: warning?.projectName, changesJson: { description: "QC warning acknowledged", warningType: warning?.warningType } });
       res.json({ success: true });
@@ -1588,10 +1591,6 @@ export function registerQualityRoutes(app: Express) {
       await db.insert(qcWarningEvent).values({
         warningId, eventType: "resolved", note, actorUserId: getUser(req).id,
       });
-
-      const [resolvedWarning] = await db.select().from(qcWarning).where(eq(qcWarning.id, warningId));
-      if (resolvedWarning) {
-      }
 
       logAuditFromReq(req, { entityType: "qc_warning", entityId: String(warningId), action: "update", changesJson: { description: "QC warning resolved" } });
       res.json({ success: true });
@@ -1731,9 +1730,12 @@ export function registerQualityRoutes(app: Express) {
       });
 
       const handoverRows: any[] = project
-        ? await db.execute(sql.raw(
-            `SELECT project_id, status, engineering_status, quality_status, rejection_reason FROM project_pd_pm_handover WHERE project_id = ${project.id} LIMIT 1`,
-          )).then((result: any) => (Array.isArray(result) ? result : result.rows || []))
+        ? await db.execute(sql`
+            SELECT project_id, status, engineering_status, quality_status, rejection_reason
+            FROM project_pd_pm_handover
+            WHERE project_id = ${project.id}
+            LIMIT 1
+          `).then((result: any) => (Array.isArray(result) ? result : result.rows || []))
         : [];
       const handover = handoverRows[0];
       const riskSummary = computeQualityRiskSummary({
@@ -1880,7 +1882,7 @@ export function registerQualityRoutes(app: Express) {
           })),
           itemNames: context.governanceItems.map((item: any) => item.itemName),
           warnings: context.warnings,
-          riskAnswers: context.riskSummary.exposures.triggeredRiskCount > 0 ? undefined : [],
+          riskAnswers: context.riskAnswers,
         }),
       });
     } catch (err: unknown) {
