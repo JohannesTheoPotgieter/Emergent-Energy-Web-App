@@ -2,10 +2,9 @@
  * Engineering Document Management — engineering team's working surface for
  * drawings, specs, NCR evidence, calibration certs, and approval traffic.
  *
- * Layout: ApprovalQueueCard sits ABOVE the canonical /documents browser so
- * engineering approvals waiting on you are the first thing you see when
- * you land on this tab. The full SharePoint browser (Active Clients + the
- * generic library) lives below.
+ * Layout: ManagedDocumentApprovalQueue sits above the canonical /documents
+ * browser so engineering approvals waiting on you are the first thing you
+ * see when you land on this tab.
  *
  * Data integrity:
  * - All documents live in SharePoint. The app holds metadata + Graph
@@ -13,19 +12,20 @@
  *   + project_folders (controlled_documents is deprecated — do not extend
  *   it). See AGENT_GUARDRAILS.md § 2 (Six Rules — SharePoint = source of
  *   truth) and § 5A (no file bodies in DB).
- * - The approvals queue is canonical — it reads
- *   /api/managed-document-approvals/queue under the hood. Only the
- *   component's folder name (controlled-documents/) is legacy; a rename
- *   is queued as a separate follow-up.
+ * - The approvals queue is the D6 Phase 5 canonical component
+ *   `ManagedDocumentApprovalQueue`, reading the typed nested response from
+ *   /api/managed-document-approvals/queue. The legacy ApprovalQueueCard
+ *   under client/src/components/controlled-documents/ had a shape mismatch
+ *   with the API and is being retired.
  */
 
-import { ApprovalQueueCard } from "@/components/controlled-documents";
+import { ManagedDocumentApprovalQueue } from "@/components/documents/ManagedDocumentApprovalQueue";
 import DocumentsPage from "../documents";
 
 export default function EngineeringDocumentsPage() {
   return (
-    <div className="ee-page space-y-6" data-testid="engineering-documents-page">
-      <ApprovalQueueCard />
+    <div className="space-y-6" data-testid="engineering-documents-page">
+      <ManagedDocumentApprovalQueue title="Engineering approvals waiting on me" />
       <DocumentsPage />
     </div>
   );

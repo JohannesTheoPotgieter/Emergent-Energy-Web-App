@@ -3,22 +3,22 @@
  * evidence, audit reports, calibration certs, ITP sign-offs, and commissioning
  * packs.
  *
- * Layout mirrors Engineering Document Management: ApprovalQueueCard above
- * the canonical SharePoint browser, so quality approvals waiting on you are
- * the first thing you see.
+ * Layout mirrors Engineering Document Management: ManagedDocumentApprovalQueue
+ * above the canonical SharePoint browser, so quality approvals waiting on you
+ * are the first thing you see.
  *
  * Data integrity: same backbone as Engineering — managed_documents +
  * folder_taxonomy + project_folders, SharePoint = source of truth, no file
  * bodies in the DB. See AGENT_GUARDRAILS.md § 2 + § 5A.
  */
 
-import { ApprovalQueueCard } from "@/components/controlled-documents";
+import { ManagedDocumentApprovalQueue } from "@/components/documents/ManagedDocumentApprovalQueue";
 import DocumentsPage from "../documents";
 
 export default function QualityDocumentsPage() {
   return (
-    <div className="ee-page space-y-6" data-testid="quality-documents-page">
-      <ApprovalQueueCard />
+    <div className="space-y-6" data-testid="quality-documents-page">
+      <ManagedDocumentApprovalQueue title="Quality approvals waiting on me" />
       <DocumentsPage />
     </div>
   );
