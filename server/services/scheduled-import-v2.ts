@@ -26,7 +26,7 @@
  */
 
 import crypto from "crypto";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../db";
 import { storage } from "../storage";
 import { smartImportRuns } from "@shared/schema";
@@ -170,8 +170,7 @@ async function processFileV2(file: {
 
   // Auto-commit path: when we have a project AND the policy decided to
   // commit, hand off to the scheduler commit service. Anything other than a
-  // clean commit leaves the row as-is (preview → caller can still commit
-  // via UI; awaiting_review → human needed).
+  // clean commit leaves the run for human review.
   if (autoMappedProjectId && policyDecision.decision === "commit") {
     try {
       const commitResult = await commitSmartImportRunAsSystem({
@@ -181,21 +180,39 @@ async function processFileV2(file: {
       if (commitResult.status === "committed") {
         return { status: "committed", runId: run.id };
       }
-      // Any non-committed result → the run remains as-is for human review.
-      // Re-stamp the status to `awaiting_review` so it surfaces in the UI.
+      // H2: tally the outcome based on what the commit service actually did.
+      // Critically, when `commitResult.status === "skipped_already_committed"`
+      // a concurrent UI commit won the race — the run is already in
+      // `committed` state and we MUST NOT overwrite it. Treat as skipped.
+      if (commitResult.status === "skipped_already_committed") {
+        return { status: "skipped", runId: run.id };
+      }
+      // For `skipped_recency_*` and `blocked_*` outcomes the run was never
+      // claimed (early return before the transaction) OR the transaction
+      // rolled back. The DB status is whatever `initialStatus` set it to
+      // (`preview`). Flip to `awaiting_review` so the UI surfaces it as
+      // needing human attention. Done with a guarded UPDATE so a racing
+      // UI commit (which legitimately flipped to `committed`) isn't
+      // clobbered.
       await db.update(smartImportRuns)
         .set({ status: "awaiting_review" })
-        .where(eq(smartImportRuns.id, run.id));
+        .where(and(
+          eq(smartImportRuns.id, run.id),
+          inArray(smartImportRuns.status, ["preview", "awaiting_review"]),
+        ));
       console.log(`[ScheduledImportV2] Commit deferred for run ${run.id}: ${commitResult.status}`);
       return { status: "parked", runId: run.id };
     } catch (commitErr) {
-      // Transaction failed — mark as awaiting_review so the file isn't lost,
-      // and report the file as failed in the tally.
+      // Transaction failed — mark as awaiting_review (guarded so a racing
+      // UI commit isn't clobbered) and report the file as failed.
       console.error(`[ScheduledImportV2] Auto-commit failed for run ${run.id}:`, commitErr instanceof Error ? commitErr.message : commitErr);
       try {
         await db.update(smartImportRuns)
           .set({ status: "awaiting_review" })
-          .where(eq(smartImportRuns.id, run.id));
+          .where(and(
+            eq(smartImportRuns.id, run.id),
+            inArray(smartImportRuns.status, ["preview", "awaiting_review"]),
+          ));
       } catch { /* non-blocking */ }
       return {
         status: "failed",

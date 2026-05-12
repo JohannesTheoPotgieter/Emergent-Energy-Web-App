@@ -65,6 +65,7 @@ import {
 import { materializeDerivatives } from "../lib/import/derivative-materializer";
 import { syncProjectSplitTables } from "../lib/project-info-sync";
 import { recordImportChange } from "../lib/audit/diff-engine";
+import { logAudit } from "../audit-logger";
 import { refreshProjectMetricsAsync } from "./dashboard-metrics";
 import { normalizeAllocationConfidence } from "../lib/import/utils";
 
@@ -257,9 +258,12 @@ export async function commitSmartImportRunAsSystem(
       `);
       const claimed = (claimResult.rows ?? claimResult) as Array<{ id: number }>;
       if (!claimed || claimed.length === 0) {
+        // H1: tag the throw with a code so the outer catch can return
+        // `skipped_already_committed` rather than reporting a false failure
+        // when a concurrent UI commit got there first.
         throw Object.assign(
           new Error("Import run is no longer committable (already committed, rolled back, or superseded)"),
-          { status: 409 },
+          { status: 409, code: "claim_lost" },
         );
       }
 
@@ -665,12 +669,35 @@ export async function commitSmartImportRunAsSystem(
       }
     });
   } catch (err) {
+    // H1: claim-race — a concurrent UI commit got there first. Return
+    // `skipped_already_committed` instead of reporting a false failure so
+    // the orchestrator doesn't tally a scheduler "failure" and so we don't
+    // pollute `import_logs` with a fake failure row.
+    if ((err as any)?.status === 409 && (err as any)?.code === "claim_lost") {
+      return { status: "skipped_already_committed", runId };
+    }
     // Writer-engine conflict surfaced from inside the transaction → return decision, not throw
     if ((err as any)?.status === 409 && (err as any)?.code === "v2_conflicts_detected" && writerEngineConflicts) {
       return { status: "blocked_writer_engine_conflicts", runId, conflicts: writerEngineConflicts };
     }
-    // Log and rethrow — orchestrator will tally as failed
+    // M2: capture PG cause detail (constraint / table / column) so a
+    // FK / NOT NULL violation can be diagnosed without re-running the import.
+    const pgCause = (err as any)?.cause;
+    const baseMsg = err instanceof Error ? err.message : String(err);
+    const causeMsg = pgCause
+      ? ` | PG: ${pgCause?.message || ""} [${pgCause?.code || ""}] constraint=${pgCause?.constraint || ""} detail=${pgCause?.detail || ""}`
+      : "";
     console.error("[SchedulerCommit] Transaction failed for run", runId, err);
+    if (pgCause) {
+      console.error("[SchedulerCommit] PostgreSQL cause:", {
+        message: pgCause?.message,
+        detail: pgCause?.detail,
+        code: pgCause?.code,
+        constraint: pgCause?.constraint,
+        table: pgCause?.table,
+        column: pgCause?.column,
+      });
+    }
     try {
       await db.insert(importLogs).values({
         importRunId: runId,
@@ -679,7 +706,7 @@ export async function commitSmartImportRunAsSystem(
         importedByName: "scheduler",
         projectName: projectName || null,
         status: "failed",
-        errorMessage: (err instanceof Error ? err.message : String(err)).substring(0, 2000),
+        errorMessage: (baseMsg + causeMsg).substring(0, 2000),
       });
     } catch (_) { /* non-blocking */ }
     throw err;
@@ -706,6 +733,25 @@ export async function commitSmartImportRunAsSystem(
     });
   } catch (auditErr) {
     console.warn("[SchedulerCommit] Audit logging failed (non-blocking):", auditErr instanceof Error ? auditErr.message : String(auditErr));
+  }
+
+  // M1: also write to `audit_events` so scheduler-committed runs appear in
+  // standard audit reports alongside user-committed runs. Mirrors the HTTP
+  // handler's `logAuditFromReq({ action: "commit" })` at smart-import-routes.ts:2962.
+  try {
+    await logAudit({
+      userId: undefined,
+      userName: "scheduler",
+      actorRole: "SYSTEM",
+      entityType: "smart_import",
+      entityId: String(runId),
+      action: "commit",
+      projectName: projectName || undefined,
+      source: "IMPORT",
+      changesJson: { counts, preservedOverrides: 0, preservedManualEdits: 0, triggeredBy: "scheduler" },
+    });
+  } catch (auditErr) {
+    console.warn("[SchedulerCommit] audit_events write failed (non-blocking):", auditErr instanceof Error ? auditErr.message : String(auditErr));
   }
 
   try {
