@@ -3,7 +3,15 @@
 // add explicit ': any' to .map/.filter callback params on db result rows.
 import { Router, type Express, type Request, type Response, type NextFunction } from "express";
 import { requireAuth, requireAdmin, requireCosOverrideRole } from './shared-middleware';
-import { PLACEHOLDER_INVOICES, OVERRIDE_NOT_REALISED } from '../lib/finance/cos-realisation';
+import {
+  PLACEHOLDER_INVOICES,
+  OVERRIDE_NOT_REALISED,
+  // Finance Tier 2: import canonical helpers from the single source of truth
+  // (server/lib/finance/cos-realisation.ts). Previously this file declared
+  // local shadows at L279/L289 that drifted from the canonical impl.
+  isPastMonthAutoRealised,
+  isEffectivelyRealised,
+} from '../lib/finance/cos-realisation';
 import {
   checkCosPeriodLock,
   lockCosPeriod,
@@ -23,6 +31,11 @@ import { requirePermission } from "../permission-middleware";
 import { requireTrackerPermission } from "../lib/finance-route-access";
 import { z } from "zod";
 import { validateBody } from "../middleware/validateBody";
+// Finance Tier 2: canonical error envelope. Replaces 78 raw
+// `res.status(500).json(...)` sites with `sendError(res, serverError(msg))`.
+// User-facing messages are preserved; the response shape now carries
+// `code` + (in dev) `detail` + traceId per server/lib/api-error.ts.
+import { sendError, serverError } from "../lib/api-error";
 
 // ── Finance write-surface Zod schemas (Phase 2b-PR2) ──
 // .passthrough() for now so existing UI payloads survive; tighten in a
@@ -85,6 +98,119 @@ const revenueTrackingOverridesSchema = z
     overrideComment: z.string().min(3).max(1000),
   })
   .passthrough();
+
+// ===========================================================================
+// Finance Tier 2 — Zod schemas for the previously-unvalidated mutating
+// endpoints (audit list A). Each schema is `.strict()` so unknown keys
+// reject loudly (surfaces typos in dev) and downstream handlers can trust
+// the field shape. Decimal columns use `decimalLike` (string|number) to
+// match how Drizzle wants `numeric` columns at the boundary.
+// ===========================================================================
+
+const deleteOpeningBalanceSchema = z.object({
+  weekStartDate: isoDateStr,
+}).strict();
+
+const deleteOpexWeeklySchema = z.object({
+  weekStartDate: isoDateStr,
+}).strict();
+
+const trackerMonthlyBodySchema = z.object({
+  trackerType: z.enum(["COS", "REV", "GP"]),
+  monthKey: z.string().regex(/^\d{4}-\d{2}$/, "YYYY-MM"),
+  realised: decimalLike.optional(),
+  outstanding: decimalLike.optional(),
+  budget: decimalLike.optional(),
+}).passthrough();
+
+const cosToggleRealisedSchema = z.object({
+  realised: z.boolean(),
+  expectedUpdatedAt: z.string().optional().nullable(),
+}).strict();
+
+const cosOverrideStatusSchema = z.object({
+  cosStatus: z.enum(["Planned", "Committed", "COS Realised"]).nullable(),
+  invoiceDate: z.string().nullable().optional(),
+  invoiceDateConfirmed: z.boolean().optional(),
+  reason: z.string().max(1000).optional(),
+  expectedUpdatedAt: z.string().optional().nullable(),
+}).strict().refine(
+  (data) => data.cosStatus === null || (data.reason !== undefined && data.reason.trim().length >= 3),
+  { message: "reason is required (min 3 chars) when cosStatus is not null" },
+);
+
+const noRevenueLinkedSchema = z.object({
+  noRevenueLinked: z.boolean(),
+  expectedUpdatedAt: z.string().optional().nullable(),
+}).strict();
+
+const revenueTabCostedSchema = z.object({
+  revenue: decimalLike,
+  expenditure: decimalLike,
+  changeReason: z.string().min(3).max(1000),
+  changeCategory: z.string().min(1).max(100),
+}).strict();
+
+const revenueTabLinkTaskSchema = z.object({
+  milestoneRowNumber: z.number().int().min(0),
+  taskId: z.number().int(),
+}).strict();
+
+const revenueTabDateOverrideSchema = z.object({
+  milestoneRowNumber: z.number().int().min(0),
+  dateOverride: isoDateStr,
+  reason: z.string().max(1000).optional(),
+}).strict();
+
+const expenditureOverridesSchema = z.object({
+  overrides: z.array(z.object({
+    projectName: z.string().min(1),
+    rowNumber: z.number().int().min(0),
+    fieldName: z.string().min(1),
+    overrideValue: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+  }).passthrough()).min(1),
+  overrideCategory: z.string().min(1),
+  overrideComment: z.string().min(3).max(1000),
+}).passthrough();
+
+const expenseTaskLinkSchema = z.object({
+  expenseId: z.number().int().positive(),
+  taskId: z.number().int(),
+}).strict();
+
+const expenseTaskLinkDateOverrideSchema = z.object({
+  dateOverride: isoDateStr,
+  reason: z.string().max(1000).optional(),
+}).passthrough();
+
+const addExpenseLineSchema = z.object({
+  projectName: z.string().min(1),
+  expenseCategory: z.string().min(1).max(255),
+  expenseLineItem: z.string().min(1).max(500),
+  expenseActualTotal: decimalLike,
+  expensePoNumber: z.string().max(255).optional().nullable(),
+  expenseInvoiceNumber: z.string().max(255).optional().nullable(),
+  expenseInvoicedDate: z.string().optional().nullable(),
+  expensePaymentDate: z.string().optional().nullable(),
+  idempotencyKey: z.string().min(1).max(255),
+}).passthrough();
+
+const addExpenseCategorySchema = z.object({
+  projectName: z.string().min(1),
+  categoryName: z.string().min(1).max(255),
+  idempotencyKey: z.string().min(1).max(255),
+}).strict();
+
+const insertTaskAsLineSchema = z.object({
+  projectName: z.string().min(1),
+  taskId: z.number().int(),
+  expenseCategory: z.string().min(1).max(255),
+  idempotencyKey: z.string().min(1).max(255),
+}).strict();
+
+const financeRevenueOverridesSchema = expenditureOverridesSchema;
+const financeCosOverridesSchema = expenditureOverridesSchema;
+
 import { applyManualOverride, manualOverridesEnabled } from "../lib/manual-overrides";
 import { EXPENDITURE_TRACKED_FIELDS, REVENUE_TRACKED_FIELDS } from "@shared/excel-vs-app/contract";
 import {
@@ -276,28 +402,10 @@ function isCosRealised(exp: any): boolean {
  * past-month lines respect explicit finance intent (overrides) and don't get
  * promoted on placeholder values like "TBC" / "N/A".
  */
-function isPastMonthAutoRealised(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
-  if (!monthKey || monthKey >= currentMonthKey) return false;
-  const override = String(exp?.cosStatusOverride ?? "").toUpperCase().trim();
-  if (OVERRIDE_NOT_REALISED.has(override)) return false;
-  const invoiceTrimmed = String(exp?.expenseInvoiceNumber ?? "").trim();
-  if (!invoiceTrimmed) return false;
-  if (PLACEHOLDER_INVOICES.has(invoiceTrimmed.toLowerCase())) return false;
-  return true;
-}
-
-function isEffectivelyRealised(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
-  // Past-month auto-promote: once a month has closed, an invoice-bearing line
-  // (with no admin "not realised" override and no placeholder invoice value)
-  // is treated as realised regardless of the Excel font-color confirmation
-  // flag. Font-color is a current-month vetting heuristic that stops being
-  // meaningful for periods finance is no longer actively reviewing — without
-  // this rule historical rows sit in "Committed" limbo forever.
-  if (isPastMonthAutoRealised(exp, monthKey, currentMonthKey)) return true;
-  if (!isCosRealisedShared(exp)) return false;
-  // Realised lines are effective for current and past months only
-  return monthKey ? monthKey <= currentMonthKey : true;
-}
+// Finance Tier 2: local shadows of `isPastMonthAutoRealised` and
+// `isEffectivelyRealised` removed. Both helpers are now imported from the
+// canonical `server/lib/finance/cos-realisation.ts` (see import block above).
+// Removing the duplicates avoids future drift between the two implementations.
 
 // Returns true if a cost is still actively committed (has PO or invoice-in-progress but not yet realised).
 function isEffectivelyCommitted(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
@@ -782,7 +890,7 @@ function getFYRange(date: Date = new Date()): { start: string; end: string } {
 
 // ==================== PROGRAM COS CONTROL ====================
 
-router.get("/api/program/cos", requireAuth, async (req, res) => {
+router.get("/api/program/cos", requireAuth, requirePermission("cos", "view"), async (req, res) => {
   try {
     const { projectName, startDate, endDate, atRiskDays = '30' } = req.query;
     const atRiskDaysNum = parseInt(atRiskDays as string, 10) || 30;
@@ -922,7 +1030,7 @@ router.get("/api/program/cos", requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error("Program COS error:", error);
-    res.status(500).json({ error: "Failed to fetch program COS data" });
+    sendError(res, serverError("Failed to fetch program COS data"));
   }
 });
 
@@ -1179,7 +1287,7 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
     res.json({ weeks, summary });
   } catch (error) {
     console.error("Cashflow 2026 error:", error);
-    res.status(500).json({ error: "Failed to fetch cashflow 2026 data", message: "Failed to fetch cashflow 2026 data" });
+    sendError(res, serverError("Failed to fetch cashflow 2026 data"));
   }
 });
 
@@ -1481,7 +1589,7 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
     res.json({ outflows: enrichedOutflows, inflows: enrichedInflows, qbMeta });
   } catch (error) {
     console.error("Cashflow 2026 detail error:", error);
-    res.status(500).json({ error: "Failed to fetch cashflow detail", message: "Failed to fetch cashflow detail" });
+    sendError(res, serverError("Failed to fetch cashflow detail"));
   }
 });
 
@@ -1553,7 +1661,7 @@ router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePerm
     res.json({ success: true, updated: row });
   } catch (error) {
     console.error("Expense date override error:", error);
-    res.status(500).json({ error: "Failed to save expense date override" });
+    sendError(res, serverError("Failed to save expense date override"));
   }
 });
 
@@ -1623,7 +1731,7 @@ router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermi
     res.json({ success: true, updated: row });
   } catch (error) {
     console.error("Inflow date override error:", error);
-    res.status(500).json({ error: "Failed to save inflow date override" });
+    sendError(res, serverError("Failed to save inflow date override"));
   }
 });
 
@@ -1666,7 +1774,7 @@ router.post("/api/cashflow-2026/opening-balance", requireAuth, requirePermission
     res.json({ ...result, clearedWeeks });
   } catch (error) {
     console.error("Opening balance save error:", error);
-    res.status(500).json({ error: "Failed to save opening balance", message: "Failed to save opening balance" });
+    sendError(res, serverError("Failed to save opening balance"));
   }
 });
 
@@ -1681,11 +1789,11 @@ router.get("/api/cashflow-2026/balance-history", requireAuth, requirePermission(
     res.json(allHistory);
   } catch (error) {
     console.error("Balance history error:", error);
-    res.status(500).json({ error: "Failed to fetch balance history" });
+    sendError(res, serverError("Failed to fetch balance history"));
   }
 });
 
-router.delete("/api/cashflow-2026/opening-balance", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
+router.delete("/api/cashflow-2026/opening-balance", requireAuth, requirePermission("cashflow", "edit"), validateBody(deleteOpeningBalanceSchema), async (req, res) => {
   try {
     const { weekStartDate } = req.body;
     if (!weekStartDate) {
@@ -1708,7 +1816,7 @@ router.delete("/api/cashflow-2026/opening-balance", requireAuth, requirePermissi
     res.json({ ok: true });
   } catch (error) {
     console.error("Opening balance delete error:", error);
-    res.status(500).json({ error: "Failed to delete opening balance" });
+    sendError(res, serverError("Failed to delete opening balance"));
   }
 });
 
@@ -1722,7 +1830,7 @@ router.post("/api/cashflow-2026/opex-budget", requireAuth, requirePermission("ca
     res.json(result);
   } catch (error) {
     console.error("OPEX budget save error:", error);
-    res.status(500).json({ error: "Failed to save OPEX budget", message: "Failed to save OPEX budget" });
+    sendError(res, serverError("Failed to save OPEX budget"));
   }
 });
 
@@ -1732,7 +1840,7 @@ router.get("/api/cashflow-2026/opex-budget", requireAuth, requirePermission("cas
     res.json(entries);
   } catch (error) {
     console.error("OPEX budget fetch error:", error);
-    res.status(500).json({ error: "Failed to fetch OPEX budgets", message: "Failed to fetch OPEX budgets" });
+    sendError(res, serverError("Failed to fetch OPEX budgets"));
   }
 });
 
@@ -1746,11 +1854,11 @@ router.post("/api/cashflow-2026/opex-weekly", requireAuth, requirePermission("ca
     res.json(result);
   } catch (error) {
     console.error("OPEX weekly save error:", error);
-    res.status(500).json({ error: "Failed to save weekly OPEX" });
+    sendError(res, serverError("Failed to save weekly OPEX"));
   }
 });
 
-router.delete("/api/cashflow-2026/opex-weekly", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
+router.delete("/api/cashflow-2026/opex-weekly", requireAuth, requirePermission("cashflow", "edit"), validateBody(deleteOpexWeeklySchema), async (req, res) => {
   try {
     const { weekStartDate } = req.body;
     if (!weekStartDate) {
@@ -1760,13 +1868,13 @@ router.delete("/api/cashflow-2026/opex-weekly", requireAuth, requirePermission("
     res.json({ success: true });
   } catch (error) {
     console.error("OPEX weekly delete error:", error);
-    res.status(500).json({ error: "Failed to delete weekly OPEX override" });
+    sendError(res, serverError("Failed to delete weekly OPEX override"));
   }
 });
 
 // ==================== TRACKER MONTHLY ====================
 
-router.post("/api/tracker-monthly", requireAuth, requireTrackerPermission("edit"), async (req, res) => {
+router.post("/api/tracker-monthly", requireAuth, requireTrackerPermission("edit"), validateBody(trackerMonthlyBodySchema), async (req, res) => {
   try {
     const { trackerType, monthKey, realised, outstanding, budget } = req.body;
     if (!trackerType || !monthKey) {
@@ -1788,7 +1896,7 @@ router.post("/api/tracker-monthly", requireAuth, requireTrackerPermission("edit"
     res.json(result);
   } catch (error) {
     console.error("Tracker monthly save error:", error);
-    res.status(500).json({ error: "Failed to save tracker entry", message: "Failed to save tracker entry" });
+    sendError(res, serverError("Failed to save tracker entry"));
   }
 });
 
@@ -1802,7 +1910,7 @@ router.get("/api/tracker-monthly/:type", requireAuth, requireTrackerPermission("
     res.json(entries);
   } catch (error) {
     console.error("Tracker monthly fetch error:", error);
-    res.status(500).json({ error: "Failed to fetch tracker entries", message: "Failed to fetch tracker entries" });
+    sendError(res, serverError("Failed to fetch tracker entries"));
   }
 });
 
@@ -1827,7 +1935,7 @@ router.get("/api/rev-tracker", requireAuth, requirePermission("revenue_tracker",
 
 // ==================== COS TRACKER API ====================
 
-router.get("/api/cos-tracker", requireAuth, async (req, res) => {
+router.get("/api/cos-tracker", requireAuth, requirePermission("cos", "view"), async (req, res) => {
   try {
     const [manualEntries, rawCostLines, links, pnlReport] = await Promise.all([
       storage.getTrackerMonthlyManual('COS'),
@@ -2072,11 +2180,11 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
     res.json(months);
   } catch (error) {
     console.error("COS tracker error:", error);
-    res.status(500).json({ error: "Failed to fetch COS tracker data", message: "Failed to fetch COS tracker data" });
+    sendError(res, serverError("Failed to fetch COS tracker data"));
   }
 });
 
-router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res) => {
+router.get("/api/cos-tracker/project/:projectName", requireAuth, requirePermission("cos", "view"), async (req, res) => {
   try {
     const projectName = decodeURIComponent(String(req.params.projectName || ""));
     const projectIdParam = req.query.projectId ? parseInt(String(req.query.projectId), 10) : null;
@@ -2199,11 +2307,11 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
     res.json(months);
   } catch (error) {
     console.error("Project COS tracker error:", error);
-    res.status(500).json({ error: "Failed to fetch project COS tracker data" });
+    sendError(res, serverError("Failed to fetch project COS tracker data"));
   }
 });
 
-router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
+router.get("/api/cos-tracker/month-detail", requireAuth, requirePermission("cos", "view"), async (req, res) => {
   try {
     const { monthKey, fromMonthKey, project, state: stateFilter } = req.query as { monthKey?: string; fromMonthKey?: string; project?: string; state?: string };
     if (!monthKey) return res.status(400).json({ error: "monthKey required" });
@@ -2482,7 +2590,7 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error("COS month detail error:", error);
-    res.status(500).json({ error: "Failed to fetch COS month detail" });
+    sendError(res, serverError("Failed to fetch COS month detail"));
   }
 });
 
@@ -2930,7 +3038,7 @@ router.get("/api/cos-tracker/tracker-gap", requireAuth, requirePermission("cos",
     });
   } catch (err) {
     console.error("[tracker-gap]", err);
-    res.status(500).json({ error: "tracker_gap_failed", detail: "An unexpected server error occurred" });
+    sendError(res, serverError("tracker_gap_failed"));
   }
 });
 
@@ -2981,7 +3089,7 @@ router.post("/api/cos-tracker/tracker-gap/ignore", requireAuth, requirePermissio
     res.json({ ok: true, ignore: created });
   } catch (err) {
     console.error("[tracker-gap/ignore]", err);
-    res.status(500).json({ error: "ignore_failed", detail: "An unexpected server error occurred" });
+    sendError(res, serverError("ignore_failed"));
   }
 });
 
@@ -3017,7 +3125,7 @@ router.delete("/api/cos-tracker/tracker-gap/ignore/:id", requireAuth, requirePer
     res.json({ ok: true });
   } catch (err) {
     console.error("[tracker-gap/ignore/delete]", err);
-    res.status(500).json({ error: "ignore_delete_failed", detail: "An unexpected server error occurred" });
+    sendError(res, serverError("ignore_delete_failed"));
   }
 });
 
@@ -3062,7 +3170,7 @@ router.post("/api/cos-tracker/tracker-gap/class-override", requireAuth, requireP
       return res.status(409).json({ error: "concurrent_update", detail: "Another mapping was just saved for this class. Refresh and retry." });
     }
     console.error("[tracker-gap/class-override]", err);
-    res.status(500).json({ error: "override_failed", detail: "An unexpected server error occurred" });
+    sendError(res, serverError("override_failed"));
   }
 });
 
@@ -3092,7 +3200,7 @@ router.delete("/api/cos-tracker/tracker-gap/class-override/:id", requireAuth, re
     res.json({ ok: true });
   } catch (err) {
     console.error("[tracker-gap/class-override/delete]", err);
-    res.status(500).json({ error: "override_delete_failed", detail: "An unexpected server error occurred" });
+    sendError(res, serverError("override_delete_failed"));
   }
 });
 
@@ -3406,7 +3514,7 @@ router.get(
       });
     } catch (err) {
       console.error("[revenue tracker-gap]", err);
-      res.status(500).json({ error: "revenue_tracker_gap_failed", detail: "An unexpected server error occurred" });
+      sendError(res, serverError("revenue_tracker_gap_failed"));
     }
   },
 );
@@ -3468,7 +3576,7 @@ router.post(
       res.json({ ok: true, ignore: created });
     } catch (err) {
       console.error("[revenue tracker-gap/ignore]", err);
-      res.status(500).json({ error: "ignore_failed", detail: "An unexpected server error occurred" });
+      sendError(res, serverError("ignore_failed"));
     }
   },
 );
@@ -3510,7 +3618,7 @@ router.delete(
       res.json({ ok: true });
     } catch (err) {
       console.error("[revenue tracker-gap/ignore/delete]", err);
-      res.status(500).json({ error: "ignore_delete_failed", detail: "An unexpected server error occurred" });
+      sendError(res, serverError("ignore_delete_failed"));
     }
   },
 );
@@ -3556,7 +3664,7 @@ router.post(
         return res.status(409).json({ error: "concurrent_update", detail: "Another mapping was just saved for this customer. Refresh and retry." });
       }
       console.error("[revenue tracker-gap/customer-override]", err);
-      res.status(500).json({ error: "override_failed", detail: "An unexpected server error occurred" });
+      sendError(res, serverError("override_failed"));
     }
   },
 );
@@ -3588,7 +3696,7 @@ router.delete(
       res.json({ ok: true });
     } catch (err) {
       console.error("[revenue tracker-gap/customer-override/delete]", err);
-      res.status(500).json({ error: "override_delete_failed", detail: "An unexpected server error occurred" });
+      sendError(res, serverError("override_delete_failed"));
     }
   },
 );
@@ -3632,7 +3740,7 @@ router.get(
       });
     } catch (err) {
       console.error("[revenue tracker-gap/audit-history]", err);
-      res.status(500).json({ error: "audit_history_failed", detail: "An unexpected server error occurred" });
+      sendError(res, serverError("audit_history_failed"));
     }
   },
 );
@@ -3687,11 +3795,11 @@ router.get("/api/cos-tracker/audit-history", requireAuth, requirePermission("cos
     });
   } catch (err) {
     console.error("[cos-tracker/audit-history]", err);
-    res.status(500).json({ error: "audit_history_failed", detail: "An unexpected server error occurred" });
+    sendError(res, serverError("audit_history_failed"));
   }
 });
 
-router.get("/api/cos-tracker/reconciliation", requireAuth, async (req, res) => {
+router.get("/api/cos-tracker/reconciliation", requireAuth, requirePermission("cos", "view"), async (req, res) => {
   try {
     const { monthKey } = req.query as { monthKey?: string };
     const [allCostLines, links, rawBills] = await Promise.all([
@@ -3833,7 +3941,7 @@ router.get("/api/cos-tracker/reconciliation", requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error("COS reconciliation error:", error);
-    res.status(500).json({ error: "Failed to fetch COS reconciliation" });
+    sendError(res, serverError("Failed to fetch COS reconciliation"));
   }
 });
 
@@ -3856,7 +3964,7 @@ async function updateExpenseFieldsDualTable(
   return storage.updateProgramExpenseFields(id, fields, expectedUpdatedAt);
 }
 
-router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, async (req, res) => {
+router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, validateBody(cosToggleRealisedSchema), async (req, res) => {
   try {
     const id = parseIntParam(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid expense id" });
@@ -3943,7 +4051,7 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
     }, expectedUpdatedAt, req.user?.id ?? null);
 
     if (!updated) {
-      return res.status(500).json({ error: "Failed to update expense fields" });
+      return sendError(res, serverError("Failed to update expense fields"));
     }
 
     // B4: audit the realisation action so there's a per-line paper trail.
@@ -3965,7 +4073,7 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
     if (expense.projectId) refreshProjectMetricsAsync(expense.projectId);
   } catch (error) {
     console.error("Toggle realised error:", error);
-    res.status(500).json({ error: "Failed to toggle realised status" });
+    sendError(res, serverError("Failed to toggle realised status"));
   }
 });
 
@@ -3977,7 +4085,7 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
 // be empowered to override. The whitelist is now:
 //   COO_ADMIN, CEO_ADMIN, CFO, PROGRAM_FINANCE_MANAGER
 
-router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireCosOverrideRole, async (req, res) => {
+router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireCosOverrideRole, validateBody(cosOverrideStatusSchema), async (req, res) => {
   try {
     const id = parseIntParam(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid expense id" });
@@ -4063,7 +4171,7 @@ router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireCosOver
 
     const updated = await updateExpenseFieldsDualTable(id, overrideFields, expectedUpdatedAt, req.user?.id ?? null);
     if (!updated) {
-      return res.status(500).json({ error: "Failed to update expense fields" });
+      return sendError(res, serverError("Failed to update expense fields"));
     }
 
     // B4: explicit audit-log entry tagged as override so downstream
@@ -4095,7 +4203,7 @@ router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireCosOver
       return res.status(409).json({ error: error.message });
     }
     console.error("COS status override error:", error);
-    res.status(500).json({ error: "Failed to override COS status" });
+    sendError(res, serverError("Failed to override COS status"));
   }
 });
 
@@ -4136,7 +4244,7 @@ function parsePeriodParam(raw: string): string | null {
   return `${y}-${mm}-01`;
 }
 
-router.get("/api/cos-periods/status", requireAuth, async (req, res) => {
+router.get("/api/cos-periods/status", requireAuth, requirePermission("cos", "view"), async (req, res) => {
   try {
     const fromRaw = typeof req.query.from === "string" ? req.query.from : null;
     const toRaw = typeof req.query.to === "string" ? req.query.to : null;
@@ -4161,7 +4269,7 @@ router.get("/api/cos-periods/status", requireAuth, async (req, res) => {
     res.json({ fromMonth, toMonth, periods: statuses });
   } catch (error: any) {
     console.error("COS period status error:", error);
-    res.status(500).json({ error: "Failed to load COS period lock statuses" });
+    sendError(res, serverError("Failed to load COS period lock statuses"));
   }
 });
 
@@ -4200,7 +4308,7 @@ router.post("/api/cos-periods/:yyyyMm/lock", requireAuth, requirePeriodLockRole,
     res.json({ success: true, alreadyLocked: false, period, id });
   } catch (error: any) {
     console.error("COS period lock error:", error);
-    res.status(500).json({ error: "Failed to lock COS period" });
+    sendError(res, serverError("Failed to lock COS period"));
   }
 });
 
@@ -4236,13 +4344,13 @@ router.post("/api/cos-periods/:yyyyMm/unlock", requireAuth, requirePeriodLockRol
     res.json({ success: true, period, id });
   } catch (error: any) {
     console.error("COS period unlock error:", error);
-    res.status(500).json({ error: "Failed to unlock COS period" });
+    sendError(res, serverError("Failed to unlock COS period"));
   }
 });
 
 // ==================== NO REVENUE LINKED TOGGLE ====================
 
-router.patch("/api/cost-lines/:id/no-revenue-linked", requireAuth, requireAdmin, async (req, res) => {
+router.patch("/api/cost-lines/:id/no-revenue-linked", requireAuth, requireAdmin, validateBody(noRevenueLinkedSchema), async (req, res) => {
   try {
     const id = parseIntParam(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid cost line id" });
@@ -4257,7 +4365,7 @@ router.patch("/api/cost-lines/:id/no-revenue-linked", requireAuth, requireAdmin,
       return res.status(409).json({ error: error.message });
     }
     console.error("Toggle no-revenue-linked error:", error);
-    res.status(500).json({ error: "Failed to toggle no-revenue-linked" });
+    sendError(res, serverError("Failed to toggle no-revenue-linked"));
   }
 });
 
@@ -4393,7 +4501,7 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePerm
     });
   } catch (error) {
     console.error("Project revenue tracker error:", error);
-    res.status(500).json({ error: "Failed to fetch project revenue tracker data" });
+    sendError(res, serverError("Failed to fetch project revenue tracker data"));
   }
 });
 
@@ -4568,7 +4676,7 @@ router.get("/api/gp-tracker", requireAuth, requirePermission("gp_tracker", "view
     res.json({ months, projects, totalRevenue, totalCOS, totalGP, overallGpPct, ytdGP: finalYtdGP, ytdBudget: finalYtdBudget, ytdVariance: finalYtdVariance, ytdGpPct: finalYtdGpPct, nullCount: gpNullCount });
   } catch (error) {
     console.error("Portfolio GP tracker error:", error);
-    res.status(500).json({ error: "Failed to fetch GP tracker data" });
+    sendError(res, serverError("Failed to fetch GP tracker data"));
   }
 });
 
@@ -4710,7 +4818,7 @@ router.get("/api/gp-tracker/project/:projectName", requireAuth, requirePermissio
     });
   } catch (error) {
     console.error("Project GP tracker error:", error);
-    res.status(500).json({ error: "Failed to fetch project GP tracker data" });
+    sendError(res, serverError("Failed to fetch project GP tracker data"));
   }
 });
 
@@ -4799,7 +4907,7 @@ router.get("/api/gp-tracker/month-detail", requireAuth, requirePermission("gp_tr
     });
   } catch (error) {
     console.error("GP tracker month-detail error:", error);
-    res.status(500).json({ error: "Failed to fetch GP tracker month detail" });
+    sendError(res, serverError("Failed to fetch GP tracker month detail"));
   }
 });
 
@@ -5026,7 +5134,7 @@ async function revenueTrackerHandler(req: Request, res: Response) {
     });
   } catch (error) {
     console.error("Revenue tracker error:", error);
-    res.status(500).json({ error: "Failed to fetch revenue tracker data" });
+    sendError(res, serverError("Failed to fetch revenue tracker data"));
   }
 }
 
@@ -5182,7 +5290,7 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
     res.json(items);
   } catch (error) {
     console.error("Revenue tracker month-detail error:", error);
-    res.status(500).json({ error: "Failed to fetch revenue tracker month detail" });
+    sendError(res, serverError("Failed to fetch revenue tracker month detail"));
   }
 });
 
@@ -5333,13 +5441,13 @@ router.get("/api/revenue-tracker/reconciliation", requireAuth, requirePermission
     });
   } catch (error) {
     console.error("Revenue reconciliation error:", error);
-    res.status(500).json({ error: "Failed to fetch revenue reconciliation" });
+    sendError(res, serverError("Failed to fetch revenue reconciliation"));
   }
 });
 
 // ==================== PROGRAM EXPENSES & INFLOWS ====================
 
-router.get("/api/program-expenses", requireAuth, async (req, res) => {
+router.get("/api/program-expenses", requireAuth, requirePermission("financials", "view"), async (req, res) => {
   try {
     const { projectName, startDate, endDate, applyOverrides } = req.query;
     let expenses;
@@ -5364,13 +5472,13 @@ router.get("/api/program-expenses", requireAuth, async (req, res) => {
 
     res.json(expenses);
   } catch (error) {
-    res.status(500).json({ error: "Failed to fetch program expenses", message: "Failed to fetch program expenses" });
+    sendError(res, serverError("Failed to fetch program expenses"));
   }
 });
 
 // DEPRECATED — prefer /api/projects/:projectName/cost-lines.
 // Scheduled for removal in the next release after consumers migrate.
-router.get("/api/program-expenses/:projectName", requireAuth, async (req, res) => {
+router.get("/api/program-expenses/:projectName", requireAuth, requirePermission("financials", "view"), async (req, res) => {
   try {
     const projectName = paramStr(req.params.projectName);
     const expenses = await getCanonicalProjectCostLinesByName(projectName).then((r) => r.rows);
@@ -5382,7 +5490,7 @@ router.get("/api/program-expenses/:projectName", requireAuth, async (req, res) =
     res.set("Deprecation", "true");
     res.json(expenses);
   } catch (error) {
-    res.status(500).json({ error: "Failed to fetch program expenses", message: "Failed to fetch program expenses" });
+    sendError(res, serverError("Failed to fetch program expenses"));
   }
 });
 
@@ -5400,7 +5508,7 @@ router.get("/api/finance/cost-lines/diagnostics", requireAuth, requireAdmin, asy
     });
   } catch (error) {
     console.error("Cost-line diagnostics error:", error);
-    res.status(500).json({ error: "Failed to fetch cost-line diagnostics" });
+    sendError(res, serverError("Failed to fetch cost-line diagnostics"));
   }
 });
 
@@ -5417,14 +5525,14 @@ router.get("/api/finance/trust-core-report", requireAuth, requireAdmin, async (_
     res.json(report);
   } catch (error) {
     console.error("Finance trust-core report error:", error);
-    res.status(500).json({ error: "Failed to build finance trust-core report" });
+    sendError(res, serverError("Failed to build finance trust-core report"));
   }
 });
 
 
 // DEPRECATED — prefer /api/projects/:projectName/revenue-lines.
 // Scheduled for removal in the next release after consumers migrate.
-router.get("/api/program-inflows", requireAuth, async (req, res) => {
+router.get("/api/program-inflows", requireAuth, requirePermission("financials", "view"), async (req, res) => {
   try {
     const { projectName, startDate, endDate, applyOverrides } = req.query;
     let inflows;
@@ -5459,7 +5567,7 @@ router.get("/api/program-inflows", requireAuth, async (req, res) => {
     res.set("Deprecation", "true");
     res.json(inflows);
   } catch (error) {
-    res.status(500).json({ error: "Failed to fetch program inflows", message: "Failed to fetch program inflows" });
+    sendError(res, serverError("Failed to fetch program inflows"));
   }
 });
 
@@ -5475,7 +5583,7 @@ router.get("/api/projects/:projectName/cost-lines", requireAuth, requirePermissi
     });
     res.json(expenses);
   } catch (error) {
-    res.status(500).json({ error: "Failed to fetch cost lines", message: "Failed to fetch cost lines" });
+    sendError(res, serverError("Failed to fetch cost lines"));
   }
 });
 
@@ -5504,13 +5612,13 @@ router.get("/api/projects/:projectName/revenue-lines", requireAuth, requirePermi
 
     res.json(inflows);
   } catch (error) {
-    res.status(500).json({ error: "Failed to fetch revenue lines", message: "Failed to fetch revenue lines" });
+    sendError(res, serverError("Failed to fetch revenue lines"));
   }
 });
 
 // ==================== CASHFLOW & PLANNING OVERRIDES ====================
 
-router.get("/api/cashflow", requireAuth, async (req, res) => {
+router.get("/api/cashflow", requireAuth, requirePermission("cashflow", "view"), async (req, res) => {
   try {
     const projectParam = req.query.project || req.query.projectName;
     const { startDate, endDate } = req.query;
@@ -5682,11 +5790,11 @@ router.get("/api/cashflow", requireAuth, async (req, res) => {
     res.json(points);
   } catch (error) {
     console.error("Cashflow API error:", error);
-    res.status(500).json({ error: "Failed to fetch cashflow data" });
+    sendError(res, serverError("Failed to fetch cashflow data"));
   }
 });
 
-router.get("/api/cashflow/planning-overrides", requireAuth, async (req, res) => {
+router.get("/api/cashflow/planning-overrides", requireAuth, requirePermission("cashflow", "view"), async (req, res) => {
   try {
     const { projectName } = req.query;
     let overrides: any[];
@@ -5696,7 +5804,7 @@ router.get("/api/cashflow/planning-overrides", requireAuth, async (req, res) => 
 
     res.json(overrides);
   } catch (error) {
-    res.status(500).json({ error: "Failed to fetch planning overrides", message: "Failed to fetch planning overrides" });
+    sendError(res, serverError("Failed to fetch planning overrides"));
   }
 });
 
@@ -5751,9 +5859,7 @@ router.post("/api/cashflow/planning-overrides", requireAuth, requireAdmin, valid
 
     res.json({ message: "Planning overrides saved", count: saved.length, overrides: saved });
   } catch (error) {
-    res.status(500).json({
-      error: "Failed to save planning overrides"
-    });
+    sendError(res, serverError("Failed to save planning overrides"));
   }
 });
 
@@ -5766,13 +5872,13 @@ router.delete("/api/cashflow/planning-overrides/:projectName", requireAuth, requ
     await storage.deleteProjectPlanOverridesByProject(projectName);
     res.json({ message: `Planning overrides deleted for project: ${projectName}` });
   } catch (error) {
-    res.status(500).json({ error: "Failed to delete planning overrides", message: "Failed to delete planning overrides" });
+    sendError(res, serverError("Failed to delete planning overrides"));
   }
 });
 
 // ==================== REVENUE TRACKING OVERRIDES ====================
 
-router.get("/api/revenue-tracking/overrides", requireAuth, async (req, res) => {
+router.get("/api/revenue-tracking/overrides", requireAuth, requirePermission("revenue_tracker", "view"), async (req, res) => {
   try {
     const { projectName } = req.query;
     if (!projectName || typeof projectName !== 'string') {
@@ -5780,7 +5886,7 @@ router.get("/api/revenue-tracking/overrides", requireAuth, async (req, res) => {
     }
     res.json([]);
   } catch (error) {
-    res.status(500).json({ error: "Failed to fetch revenue tracking overrides", message: "Failed to fetch revenue tracking overrides" });
+    sendError(res, serverError("Failed to fetch revenue tracking overrides"));
   }
 });
 
@@ -6006,7 +6112,7 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
       }
     } catch (_) { /* non-blocking */ }
   } catch (error) {
-    res.status(500).json({ error: "Failed to save revenue tracking overrides" });
+    sendError(res, serverError("Failed to save revenue tracking overrides"));
   }
 });
 
@@ -6019,13 +6125,13 @@ router.delete("/api/revenue-tracking/overrides/:projectName", requireAuth, requi
     // Override tables collapsed into base tables — no separate overrides to delete
     res.json({ message: `Revenue tracking overrides deleted for project: ${projectName}` });
   } catch (error) {
-    res.status(500).json({ error: "Failed to delete revenue tracking overrides", message: "Failed to delete revenue tracking overrides" });
+    sendError(res, serverError("Failed to delete revenue tracking overrides"));
   }
 });
 
 // ==================== REVENUE TAB ====================
 
-router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
+router.get("/api/revenue-tab/:projectName", requireAuth, requirePermission("revenue_tracker", "view"), async (req, res) => {
   try {
     const projectName = paramStr(req.params.projectName);
 
@@ -6482,11 +6588,11 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error("Revenue tab error:", error);
-    res.status(500).json({ error: "Failed to fetch revenue tab data" });
+    sendError(res, serverError("Failed to fetch revenue tab data"));
   }
 });
 
-router.post("/api/revenue-tab/:projectName/costed", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
+router.post("/api/revenue-tab/:projectName/costed", requireAuth, requireAdminOrFinancialEditor, validateBody(revenueTabCostedSchema), async (req, res) => {
   try {
     const projectName = String(req.params.projectName || "");
     const { revenue, expenditure, changeReason, changeCategory } = req.body;
@@ -6561,7 +6667,7 @@ router.post("/api/revenue-tab/:projectName/costed", requireAuth, requireAdminOrF
     res.json(saved);
   } catch (error) {
     console.error("Save costed error:", error);
-    res.status(500).json({ error: "Failed to save costed values" });
+    sendError(res, serverError("Failed to save costed values"));
   }
 });
 
@@ -6600,11 +6706,11 @@ router.get("/api/revenue-tab/:projectName/task-alerts", requireAuth, requireAdmi
     res.json(alerts);
   } catch (error) {
     console.error("Task alerts error:", error);
-    res.status(500).json({ error: "Failed to fetch task alerts" });
+    sendError(res, serverError("Failed to fetch task alerts"));
   }
 });
 
-router.post("/api/revenue-tab/:projectName/link-task", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
+router.post("/api/revenue-tab/:projectName/link-task", requireAuth, requireAdminOrFinancialEditor, validateBody(revenueTabLinkTaskSchema), async (req, res) => {
   try {
     const projectName = paramStr(req.params.projectName);
     const { milestoneRowNumber, taskId } = req.body;
@@ -6663,11 +6769,11 @@ router.post("/api/revenue-tab/:projectName/link-task", requireAuth, requireAdmin
     res.json(link);
   } catch (error) {
     console.error("Link task error:", error);
-    res.status(500).json({ error: "Failed to link task" });
+    sendError(res, serverError("Failed to link task"));
   }
 });
 
-router.post("/api/revenue-tab/:projectName/date-override", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
+router.post("/api/revenue-tab/:projectName/date-override", requireAuth, requireAdminOrFinancialEditor, validateBody(revenueTabDateOverrideSchema), async (req, res) => {
   try {
     const projectName = paramStr(req.params.projectName);
     const { milestoneRowNumber, dateOverride, reason } = req.body;
@@ -6723,7 +6829,7 @@ router.post("/api/revenue-tab/:projectName/date-override", requireAuth, requireA
     }
   } catch (error) {
     console.error("Date override error:", error);
-    res.status(500).json({ error: "Failed to save date override" });
+    sendError(res, serverError("Failed to save date override"));
   }
 });
 
@@ -6763,13 +6869,13 @@ router.delete("/api/revenue-tab/:projectName/link-task/:milestoneRowNumber", req
     res.json({ success: true });
   } catch (error) {
     console.error("Unlink task error:", error);
-    res.status(500).json({ error: "Failed to unlink task" });
+    sendError(res, serverError("Failed to unlink task"));
   }
 });
 
 // ==================== EXPENDITURE OVERRIDES ====================
 
-router.get("/api/expenditure/overrides", requireAuth, async (req, res) => {
+router.get("/api/expenditure/overrides", requireAuth, requirePermission("financials", "view"), async (req, res) => {
   try {
     const { projectName } = req.query;
     if (!projectName || typeof projectName !== 'string') {
@@ -6777,11 +6883,11 @@ router.get("/api/expenditure/overrides", requireAuth, async (req, res) => {
     }
     res.json([]);
   } catch (error) {
-    res.status(500).json({ error: "Failed to fetch expenditure overrides", message: "Failed to fetch expenditure overrides" });
+    sendError(res, serverError("Failed to fetch expenditure overrides"));
   }
 });
 
-router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEditor, requirePermission('financials', 'edit'), async (req, res) => {
+router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEditor, requirePermission('financials', 'edit'), validateBody(expenditureOverridesSchema), async (req, res) => {
   try {
     const { overrides, overrideCategory, overrideComment } = req.body;
     if (!Array.isArray(overrides)) {
@@ -6938,7 +7044,7 @@ router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEd
     }
   } catch (error) {
     console.error("Failed to save expenditure overrides:", error);
-    res.status(500).json({ error: "Failed to save expenditure overrides" });
+    sendError(res, serverError("Failed to save expenditure overrides"));
   }
 });
 
@@ -6951,7 +7057,7 @@ router.delete("/api/expenditure/overrides/:projectName", requireAuth, requireAdm
     // Override tables collapsed into base tables — no separate overrides to delete
     res.json({ message: `Expenditure overrides deleted for project: ${projectName}` });
   } catch (error) {
-    res.status(500).json({ error: "Failed to delete expenditure overrides", message: "Failed to delete expenditure overrides" });
+    sendError(res, serverError("Failed to delete expenditure overrides"));
   }
 });
 
@@ -6962,11 +7068,11 @@ router.get("/api/expense-task-links/:projectName", requireAuth, requireAdmin, as
     const links = await storage.getExpenseTaskLinks(paramStr(req.params.projectName));
     res.json(links);
   } catch (error) {
-    res.status(500).json({ error: "Failed to fetch expense task links" });
+    sendError(res, serverError("Failed to fetch expense task links"));
   }
 });
 
-router.post("/api/expense-task-links/:projectName", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
+router.post("/api/expense-task-links/:projectName", requireAuth, requireAdminOrFinancialEditor, validateBody(expenseTaskLinkSchema), async (req, res) => {
   try {
     const { expenseId, taskId } = req.body;
     if (!expenseId || taskId === undefined) {
@@ -6994,7 +7100,7 @@ router.post("/api/expense-task-links/:projectName", requireAuth, requireAdminOrF
     res.json(link);
   } catch (error) {
     console.error("Link expense task error:", error);
-    res.status(500).json({ error: "Failed to link task" });
+    sendError(res, serverError("Failed to link task"));
   }
 });
 
@@ -7022,11 +7128,11 @@ router.delete("/api/expense-task-links/:projectName/:expenseId", requireAuth, re
 
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: "Failed to unlink task" });
+    sendError(res, serverError("Failed to unlink task"));
   }
 });
 
-router.post("/api/expense-task-links/:projectName/:expenseId/date-override", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
+router.post("/api/expense-task-links/:projectName/:expenseId/date-override", requireAuth, requireAdminOrFinancialEditor, validateBody(expenseTaskLinkDateOverrideSchema), async (req, res) => {
   try {
     const { dateOverride, reason } = req.body;
     const expProjectName = paramStr(req.params.projectName);
@@ -7043,13 +7149,13 @@ router.post("/api/expense-task-links/:projectName/:expenseId/date-override", req
       console.warn("[finance] Expense date override metrics refresh failed:", metricsErr.message);
     }
   } catch (error) {
-    res.status(500).json({ error: "Failed to save date override" });
+    sendError(res, serverError("Failed to save date override"));
   }
 });
 
 // ==================== MANUAL EXPENSE ROWS API ====================
 
-router.post("/api/expenses/add-line", requireAuth, requireAdmin, async (req, res) => {
+router.post("/api/expenses/add-line", requireAuth, requireAdmin, validateBody(addExpenseLineSchema), async (req, res) => {
   try {
     const { projectName, expenseCategory, expenseLineItem, expenseActualTotal, expensePoNumber, expenseInvoiceNumber, expenseInvoicedDate, expensePaymentDate, idempotencyKey } = req.body;
     if (!projectName || !expenseCategory) {
@@ -7075,11 +7181,11 @@ router.post("/api/expenses/add-line", requireAuth, requireAdmin, async (req, res
     res.json(newExpense);
   } catch (error) {
     console.error("Add expense line error:", error);
-    res.status(500).json({ error: "Failed to add expense line item" });
+    sendError(res, serverError("Failed to add expense line item"));
   }
 });
 
-router.post("/api/expenses/add-category", requireAuth, requireAdmin, async (req, res) => {
+router.post("/api/expenses/add-category", requireAuth, requireAdmin, validateBody(addExpenseCategorySchema), async (req, res) => {
   try {
     const { projectName, categoryName, idempotencyKey } = req.body;
     if (!projectName || !categoryName) {
@@ -7099,11 +7205,11 @@ router.post("/api/expenses/add-category", requireAuth, requireAdmin, async (req,
     res.json(newCategory);
   } catch (error) {
     console.error("Add category error:", error);
-    res.status(500).json({ error: "Failed to add category" });
+    sendError(res, serverError("Failed to add category"));
   }
 });
 
-router.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, async (req, res) => {
+router.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, validateBody(insertTaskAsLineSchema), async (req, res) => {
   try {
     const { projectName, taskId, expenseCategory, idempotencyKey } = req.body;
     if (!projectName || !taskId || !expenseCategory) {
@@ -7139,13 +7245,13 @@ router.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, asyn
     res.json(newExpense);
   } catch (error) {
     console.error("Insert task as line error:", error);
-    res.status(500).json({ error: "Failed to insert task as line item" });
+    sendError(res, serverError("Failed to insert task as line item"));
   }
 });
 
 // ==================== EXPENDITURE BREAKDOWN COMPOSITE API ====================
 
-router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, res) => {
+router.get("/api/expenditure-breakdown/:projectName", requireAuth, requirePermission("financials", "view"), async (req, res) => {
   try {
     const projectName = paramStr(req.params.projectName);
     const projectIdParam = req.query.projectId ? parseInt(String(req.query.projectId), 10) : null;
@@ -7476,13 +7582,13 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
     });
   } catch (error) {
     console.error("Expenditure breakdown error:", error);
-    res.status(500).json({ error: "Failed to fetch expenditure breakdown" });
+    sendError(res, serverError("Failed to fetch expenditure breakdown"));
   }
 });
 
 // ==================== FINANCE REVENUE OVERRIDES ====================
 
-router.get("/api/finance/revenue/overrides", requireAuth, async (req, res) => {
+router.get("/api/finance/revenue/overrides", requireAuth, requirePermission("revenue_tracker", "view"), async (req, res) => {
   try {
     const { projectName } = req.query;
     if (!projectName || typeof projectName !== 'string') {
@@ -7491,11 +7597,11 @@ router.get("/api/finance/revenue/overrides", requireAuth, async (req, res) => {
     const overrides = await (storage as any).getFinanceRevenueOverridesByProject(projectName);
     res.json(overrides);
   } catch (error) {
-    res.status(500).json({ error: "Failed to fetch finance revenue overrides", message: "Failed to fetch finance revenue overrides" });
+    sendError(res, serverError("Failed to fetch finance revenue overrides"));
   }
 });
 
-router.post("/api/finance/revenue/overrides", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
+router.post("/api/finance/revenue/overrides", requireAuth, requireAdmin, requirePermission('financials', 'edit'), validateBody(financeRevenueOverridesSchema), async (req, res) => {
   try {
     const { overrides, overrideCategory, overrideComment } = req.body;
     if (!Array.isArray(overrides)) {
@@ -7538,7 +7644,7 @@ router.post("/api/finance/revenue/overrides", requireAuth, requireAdmin, require
       console.warn("[finance] Finance revenue override metrics refresh failed:", metricsErr.message);
     }
   } catch (error) {
-    res.status(500).json({ error: "Failed to save finance revenue overrides" });
+    sendError(res, serverError("Failed to save finance revenue overrides"));
   }
 });
 
@@ -7551,13 +7657,13 @@ router.delete("/api/finance/revenue/overrides/:projectName", requireAuth, requir
     await (storage as any).deleteFinanceRevenueOverridesByProject(projectName);
     res.json({ message: `Finance revenue overrides deleted for project: ${projectName}` });
   } catch (error) {
-    res.status(500).json({ error: "Failed to delete finance revenue overrides", message: "Failed to delete finance revenue overrides" });
+    sendError(res, serverError("Failed to delete finance revenue overrides"));
   }
 });
 
 // ==================== FINANCE COS OVERRIDES ====================
 
-router.get("/api/finance/cos/overrides", requireAuth, async (req, res) => {
+router.get("/api/finance/cos/overrides", requireAuth, requirePermission("cos", "view"), async (req, res) => {
   try {
     const { projectName } = req.query;
     if (!projectName || typeof projectName !== 'string') {
@@ -7566,11 +7672,11 @@ router.get("/api/finance/cos/overrides", requireAuth, async (req, res) => {
     const overrides = await (storage as any).getFinanceCosOverridesByProject(projectName);
     res.json(overrides);
   } catch (error) {
-    res.status(500).json({ error: "Failed to fetch finance COS overrides", message: "Failed to fetch finance COS overrides" });
+    sendError(res, serverError("Failed to fetch finance COS overrides"));
   }
 });
 
-router.post("/api/finance/cos/overrides", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
+router.post("/api/finance/cos/overrides", requireAuth, requireAdmin, requirePermission('financials', 'edit'), validateBody(financeCosOverridesSchema), async (req, res) => {
   try {
     const { overrides, overrideCategory, overrideComment } = req.body;
     if (!Array.isArray(overrides)) {
@@ -7613,7 +7719,7 @@ router.post("/api/finance/cos/overrides", requireAuth, requireAdmin, requirePerm
       console.warn("[finance] Finance COS override metrics refresh failed:", metricsErr.message);
     }
   } catch (error) {
-    res.status(500).json({ error: "Failed to save finance COS overrides" });
+    sendError(res, serverError("Failed to save finance COS overrides"));
   }
 });
 
@@ -7626,7 +7732,7 @@ router.delete("/api/finance/cos/overrides/:projectName", requireAuth, requireAdm
     await (storage as any).deleteFinanceCosOverridesByProject(projectName);
     res.json({ message: `Finance COS overrides deleted for project: ${projectName}` });
   } catch (error) {
-    res.status(500).json({ error: "Failed to delete finance COS overrides", message: "Failed to delete finance COS overrides" });
+    sendError(res, serverError("Failed to delete finance COS overrides"));
   }
 });
 
@@ -7643,7 +7749,7 @@ function maxCreatedAtIso(rows: Array<{ createdAt?: Date | string | null }>): str
   return maxMs > 0 ? new Date(maxMs).toISOString() : undefined;
 }
 
-router.get("/api/finance/revenue", requireAuth, async (req, res) => {
+router.get("/api/finance/revenue", requireAuth, requirePermission("financials", "view"), async (req, res) => {
   try {
     const { projectName, startDate, endDate, applyOverrides } = req.query;
     let data;
@@ -7671,11 +7777,11 @@ router.get("/api/finance/revenue", requireAuth, async (req, res) => {
 
     res.json(data);
   } catch (error) {
-    res.status(500).json({ error: "Failed to fetch finance revenue data", message: "Failed to fetch finance revenue data" });
+    sendError(res, serverError("Failed to fetch finance revenue data"));
   }
 });
 
-router.get("/api/finance/cos", requireAuth, async (req, res) => {
+router.get("/api/finance/cos", requireAuth, requirePermission("financials", "view"), async (req, res) => {
   try {
     const { projectName, startDate, endDate, applyOverrides } = req.query;
     let data;
@@ -7703,7 +7809,7 @@ router.get("/api/finance/cos", requireAuth, async (req, res) => {
 
     res.json(data);
   } catch (error) {
-    res.status(500).json({ error: "Failed to fetch finance COS data", message: "Failed to fetch finance COS data" });
+    sendError(res, serverError("Failed to fetch finance COS data"));
   }
 });
 
