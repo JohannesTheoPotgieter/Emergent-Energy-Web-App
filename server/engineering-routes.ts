@@ -115,8 +115,12 @@ export const FORBIDDEN_BODY_KEYS = new Set<string>([
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- return type
 // is intentionally `any`-shaped so existing spread-style update bodies keep
-// compiling without per-field assertions. PR 2 replaces this with Zod
-// schemas that narrow to typed `Partial<Insert*>` objects.
+// compiling without per-field assertions. Engineering PR 2 (#909) pairs
+// this denylist with `.passthrough()` Zod schemas — Zod validates the
+// shape of *known* fields while this helper filters server-only keys
+// out of the spread. The original "replace with strict Zod" plan was
+// not adopted because the handlers depend on the flexible spread shape
+// (50+ fields piped through `createEngineeringWorkItem` / Drizzle inserts).
 export function stripServerFields(body: unknown): Record<string, any> {
   if (!body || typeof body !== "object" || Array.isArray(body)) return {};
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2968,7 +2972,13 @@ export function registerEngineeringRoutes(app: Express) {
 
   // ========== USERS LIST (for assignment dropdowns) ==========
 
-  app.get("/api/eng/users", requireAuth, requirePermission("engineering", "view"), async (req, res) => {
+  // permission-skip: assignment-dropdown directory consumed by
+  // CreateTaskFromSourceDialog and similar UI from non-engineering tabs
+  // (e.g., CFO opening a source dialog needs to see assignees). Tier 2
+  // audit found that `engineering:view` blocks CFO / CONSTRUCTION_MANAGER /
+  // ACCOUNTANT / HSE_MANAGER from these dropdowns. The directory itself
+  // (id/name/role) is broadly accessible by design.
+  app.get("/api/eng/users", requireAuth, async (req, res) => {
     try {
       const allUsers = await db.select({
         id: users.id, name: users.name, email: users.email, role: users.role,
