@@ -57,8 +57,19 @@ export default function PrioritiesPage() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [assignDialogPriorityId, setAssignDialogPriorityId] = useState<number | null>(null);
   const [bulkReassignOpen, setBulkReassignOpen] = useState(false);
-  const [levelFilter, setLevelFilter] = useState("all");
-  const [healthFilter, setHealthFilter] = useState("all");
+  // Phase 7B: read level + health from URL params so the home dashboard's
+  // "My Overdue Actions" callouts can deep-link to /priorities?tab=my&health=at_risk
+  // (replaces the legacy /my-work/tasks?overdue=1 entry point).
+  const levelParam = params.get("level");
+  const healthParam = params.get("health");
+  const allowedLevels = new Set(["all", "critical", "important", "normal"]);
+  const allowedHealth = new Set(["all", "critical", "at_risk", "healthy"]);
+  const [levelFilter, setLevelFilter] = useState(
+    levelParam && allowedLevels.has(levelParam) ? levelParam : "all",
+  );
+  const [healthFilter, setHealthFilter] = useState(
+    healthParam && allowedHealth.has(healthParam) ? healthParam : "all",
+  );
   const [showClosed, setShowClosed] = useState(false);
   const [bulkSelected, setBulkSelected] = useState<Set<number>>(new Set());
   // Admins can pick which department to view on the Department tab. Dept
@@ -442,13 +453,20 @@ export default function PrioritiesPage() {
               }
             />
 
-            {filteredMyTasks.length > 0 && (
+            {/*
+              Show the task pane whenever the user HAS tasks (myTasks.length > 0),
+              even if the active filter zero-matches. That way the section
+              header doesn't silently vanish when a chip is applied — the
+              user sees "(0)" + a helpful empty state instead of wondering
+              whether tasks exist at all.
+            */}
+            {myTasks.length > 0 && (
               <div className="space-y-2">
                 <div className="flex items-baseline justify-between">
                   <h3 className="text-sm font-semibold text-foreground">
                     Tasks assigned to you
                     <span className="ml-2 text-xs text-muted-foreground font-normal">
-                      ({filteredMyTasks.length})
+                      ({filteredMyTasks.length}{filteredMyTasks.length !== myTasks.length ? ` of ${myTasks.length}` : ""})
                     </span>
                   </h3>
                   <p className="text-xs text-muted-foreground">
@@ -461,6 +479,11 @@ export default function PrioritiesPage() {
                     await promoteTaskMutation.mutateAsync(id);
                   }}
                   promotingId={promoteTaskMutation.isPending ? (promoteTaskMutation.variables ?? null) as number | null : null}
+                  emptyMessage={
+                    levelFilter !== "all" || healthFilter !== "all"
+                      ? "No tasks match the active filter."
+                      : "No outstanding tasks assigned to you."
+                  }
                 />
               </div>
             )}

@@ -73,7 +73,7 @@ const PM_CONFIG: RoleDashboardConfig = {
   ],
   attentionPriority: ["my_behind_plan", "my_blockers", "my_approvals", "my_overdue"],
   quickActions: [
-    { label: "My Tasks", path: "/my-work/tasks", iconKey: "ListChecks" },
+    { label: "My Tasks", path: "/priorities?tab=my", iconKey: "ListChecks" },
     { label: "Approvals", path: "/pm/approvals", iconKey: "ClipboardCheck" },
     { label: "Projects", path: "/projects", iconKey: "FileSpreadsheet" },
     { label: "Weekly Reviews", path: "/weekly-reviews", iconKey: "CalendarCheck" },
@@ -94,7 +94,7 @@ const ENGINEER_CONFIG: RoleDashboardConfig = {
   quickActions: [
     { label: "Engineering Tasks", path: "/engineering/tasks", iconKey: "ListTodo" },
     { label: "Standup", path: "/engineering/standup", iconKey: "Users" },
-    { label: "My Tasks", path: "/my-work/tasks", iconKey: "ListChecks" },
+    { label: "My Tasks", path: "/priorities?tab=my", iconKey: "ListChecks" },
     { label: "Engineering Overview", path: "/engineering", iconKey: "Wrench" },
     { label: "Quality", path: "/quality", iconKey: "ShieldCheck" },
   ],
@@ -154,7 +154,7 @@ const QUALITY_CONFIG: RoleDashboardConfig = {
   quickActions: [
     { label: "Quality Dashboard", path: "/quality", iconKey: "ShieldCheck" },
     { label: "Commissioning", path: "/commissioning-dashboard", iconKey: "ClipboardCheck" },
-    { label: "My Tasks", path: "/my-work/tasks", iconKey: "ListChecks" },
+    { label: "My Tasks", path: "/priorities?tab=my", iconKey: "ListChecks" },
     { label: "Projects", path: "/projects", iconKey: "FileSpreadsheet" },
     { label: "Approvals", path: "/pm/approvals", iconKey: "ClipboardList" },
   ],
@@ -175,7 +175,7 @@ const CONSTRUCTION_CONFIG: RoleDashboardConfig = {
     { label: "Project List", path: "/projects", iconKey: "FileSpreadsheet" },
     { label: "Quality", path: "/quality", iconKey: "ShieldCheck" },
     { label: "Gates Pipeline", path: "/gates", iconKey: "Milestone" },
-    { label: "My Tasks", path: "/my-work/tasks", iconKey: "ListChecks" },
+    { label: "My Tasks", path: "/priorities?tab=my", iconKey: "ListChecks" },
   ],
   cockpitPath: "/execution-board",
   cockpitLabel: "Execution Board",

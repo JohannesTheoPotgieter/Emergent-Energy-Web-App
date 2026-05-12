@@ -52,7 +52,7 @@ const roleQuickActions: Record<string, QuickAction[]> = {
 };
 
 const defaultQuickActions: QuickAction[] = [
-  { label: "My Tasks", description: "Start with your active tasks.", path: "/my-work/tasks" },
+  { label: "My Tasks", description: "Start with your active tasks.", path: "/priorities?tab=my" },
   { label: "Approvals", description: "Resolve pending approvals.", path: "/my-work/approvals" },
   { label: "Projects", description: "Check live project context.", path: "/projects" },
 ];

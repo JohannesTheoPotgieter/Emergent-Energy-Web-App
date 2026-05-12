@@ -418,7 +418,7 @@ export default function HomePage() {
     if (Number(kpis.pendingApprovals) > 0) items.push({ label: "Pending Approvals", value: Number(kpis.pendingApprovals), color: "text-blue-700 bg-blue-50 border-blue-200", href: "/pm/approvals" });
     if (Number(kpis.openEngineeringBlockers) > 0) items.push({ label: "Eng. Blockers", value: Number(kpis.openEngineeringBlockers), color: "text-violet-700 bg-violet-50 border-violet-200", href: "/dashboard?engineeringBlockersOnly=true" });
     if (Number(kpis.openQualityWarnings) > 0) items.push({ label: "Quality Warnings", value: Number(kpis.openQualityWarnings), color: "text-orange-700 bg-orange-50 border-orange-200", href: "/dashboard?qualityIssuesOnly=true" });
-    if (myPendingActions > 0) items.push({ label: "My Overdue Actions", value: myPendingActions, color: "text-rose-700 bg-rose-50 border-rose-200", href: "/my-work/tasks?overdue=1" });
+    if (myPendingActions > 0) items.push({ label: "My Overdue Actions", value: myPendingActions, color: "text-rose-700 bg-rose-50 border-rose-200", href: "/priorities?tab=my&health=at_risk" });
     return items;
   }, [stats, kpis, myPendingActions]);
 
@@ -464,7 +464,7 @@ export default function HomePage() {
         return isOverdue && isOpen;
       })
       .slice(0, 10)
-      .map((t: any) => ({ project: t.projectName || "—", issue: t.title || t.name || "Overdue task", severity: "High", owner: "You", link: "/my-work/tasks?overdue=1" }));
+      .map((t: any) => ({ project: t.projectName || "—", issue: t.title || t.name || "Overdue task", severity: "High", owner: "You", link: "/priorities?tab=my&health=at_risk" }));
 
     return map;
   }, [dashData, myWorkData]);
@@ -703,7 +703,7 @@ export default function HomePage() {
                 <div className="lg:col-span-2">
                   <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Your Workspace</h2>
                   {workspaceCard([
-                    { href: "/my-work/tasks", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
+                    { href: "/priorities?tab=my", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
                     ...(Number(kpis.pendingApprovals) > 0 ? [{ href: "/pm/approvals", label: `Approvals (${kpis.pendingApprovals})`, icon: <ClipboardCheck className="w-4 h-4 mr-2" /> }] : []),
                   ])}
                 </div>
@@ -736,7 +736,7 @@ export default function HomePage() {
                 <div className="lg:col-span-2">
                   <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Your Workspace</h2>
                   {workspaceCard([
-                    { href: "/my-work/tasks", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
+                    { href: "/priorities?tab=my", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
                     ...(Number(kpis.pendingApprovals) > 0 ? [{ href: "/pm/approvals", label: `Approvals (${kpis.pendingApprovals})`, icon: <ClipboardCheck className="w-4 h-4 mr-2" /> }] : []),
                   ])}
                 </div>
@@ -751,7 +751,7 @@ export default function HomePage() {
                 <div className="lg:col-span-2">
                   <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Your Workspace</h2>
                   {workspaceCard([
-                    { href: "/my-work/tasks", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
+                    { href: "/priorities?tab=my", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
                     ...(Number(kpis.pendingApprovals) > 0 ? [{ href: "/pm/approvals", label: `Approvals (${kpis.pendingApprovals})`, icon: <ClipboardCheck className="w-4 h-4 mr-2" /> }] : []),
                   ])}
                 </div>
@@ -777,7 +777,7 @@ export default function HomePage() {
                 <div className="lg:col-span-2">
                   <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Your Workspace</h2>
                   {workspaceCard([
-                    { href: "/my-work/tasks", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
+                    { href: "/priorities?tab=my", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
                     { href: config.cockpitPath, label: config.cockpitLabel, icon: <LayoutDashboard className="w-4 h-4 mr-2" /> },
                   ])}
                 </div>
@@ -831,7 +831,7 @@ export default function HomePage() {
                 <div className="lg:col-span-2">
                   <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Your Workspace</h2>
                   {workspaceCard([
-                    { href: "/my-work/tasks", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
+                    { href: "/priorities?tab=my", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
                     ...(Number(kpis.pendingApprovals) > 0 ? [{ href: "/pm/approvals", label: `Approvals (${kpis.pendingApprovals})`, icon: <ClipboardCheck className="w-4 h-4 mr-2" /> }] : []),
                   ])}
                 </div>
@@ -846,7 +846,7 @@ export default function HomePage() {
                 <div className="lg:col-span-2">
                   <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Your Workspace</h2>
                   {workspaceCard([
-                    { href: "/my-work/tasks", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
+                    { href: "/priorities?tab=my", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
                     { href: config.cockpitPath, label: config.cockpitLabel, icon: <LayoutDashboard className="w-4 h-4 mr-2" /> },
                   ])}
                 </div>
