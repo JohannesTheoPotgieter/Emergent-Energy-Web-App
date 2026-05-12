@@ -25,7 +25,11 @@ export function useScreenAvailability() {
     queryKey: ["admin-screen-settings"],
     queryFn: fetchScreenSettings,
     staleTime: 5 * 60_000,
-    // Fail silently — non-admins will get a 403 and see all screens as enabled
+    // Fail silently — the endpoint is auth-only (no role check), so the only
+    // failure modes are transient network errors. On error we return an empty
+    // set, which means every screen is treated as enabled. That's the correct
+    // soft-fail for a UX-layer gate: the server-side route still enforces the
+    // canonical RBAC for the actual data the screen would render.
     retry: false,
   });
 

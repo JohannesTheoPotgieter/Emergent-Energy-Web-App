@@ -30,12 +30,15 @@ export function registerScreenSettingsRoutes(app: Express): void {
   // Public read — every signed-in user needs to know which screens are hidden
   // so the client-side router can 404 disabled routes. We only expose
   // screenId + isEnabled (no actor id, no timestamps) to keep this surface
-  // free of audit metadata.
+  // free of audit metadata. Cache-Control is private + 60 s to keep
+  // per-tab poll churn down without delaying the next admin toggle past a
+  // minute on a normal browser refresh.
   app.get(
     "/api/screen-settings",
     requireAuth,
     async (_req, res) => {
       const settings = await screenSettingsRepository.getAll();
+      res.setHeader("Cache-Control", "private, max-age=60");
       res.json(
         settings.map((s) => ({ screenId: s.screenId, isEnabled: s.isEnabled })),
       );

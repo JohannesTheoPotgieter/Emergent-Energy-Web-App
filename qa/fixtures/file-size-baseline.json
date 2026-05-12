@@ -191,10 +191,6 @@
     {
       "file": "client/src/pages/cos.tsx",
       "loc": 1528
-    },
-    {
-      "file": "server/routes/imports-admin-extracted-routes.ts",
-      "loc": 1523
     }
   ]
 }
