@@ -39,7 +39,7 @@ import { ProjectHistoryTab } from "@/components/tabs/ProjectHistoryTab";
 import { WeeklyReviewWizard } from "@/components/WeeklyReviewWizard";
 import { ProjectChatTab } from "@/components/tabs/ProjectChatTab";
 import { LocalFolderTab } from "@/components/tabs/LocalFolderTab";
-import { DocumentStrip, ProjectSharepointRootCard } from "@/components/controlled-documents";
+import { DocumentStrip, ProjectSharepointRootCard } from "@/components/managed-documents";
 import { ProjectApprovalsTab } from "@/components/tabs/ProjectApprovalsTab";
 import { ProjectTimelineTab } from "@/components/tabs/ProjectTimelineTab";
 import { ProjectRaidTab } from "@/components/tabs/ProjectRaidTab";

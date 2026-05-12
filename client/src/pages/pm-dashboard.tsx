@@ -52,7 +52,7 @@ import { EnergyLoader } from "@/components/ui/energy-loader";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import DataSourceDebug from "@/components/DataSourceDebug";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
-import { ApprovalQueueCard } from "@/components/controlled-documents";
+import { ApprovalQueueCard } from "@/components/managed-documents";
 import { apiRequest } from "@/lib/queryClient";
 import { formatCurrencyCompact, formatCurrencyFull } from "@/lib/execution-dashboard";
 import { formatForDisplayZA, parseIsoDateStrict } from "@shared/utils/dates";
