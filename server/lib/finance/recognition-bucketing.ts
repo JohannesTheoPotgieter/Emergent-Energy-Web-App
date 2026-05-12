@@ -26,10 +26,11 @@ import {
   recognitionAmountFor,
   type CostLineForRecognition,
 } from "./revenue-recognition";
-import { isEffectivelyRealised } from "./cos-realisation";
+import { isPastMonthAutoRealised } from "./cos-realisation";
 import { getCosEffectiveDateAndSource } from "../expense-row-selector";
 import {
   extractMonthKey,
+  isCosRealised,
   parseExpenseAmount,
 } from "../calculations/financeUtils";
 
@@ -52,6 +53,26 @@ export interface RecognitionBucketedLine<T extends CostLineForRecognition = Cost
 export interface BucketCostLinesOptions {
   /** Current YYYY-MM month key (UTC) — passed through to `isEffectivelyRealised`. */
   currentMonthKey: string;
+}
+
+/**
+ * Local-shadow `isEffectivelyRealised`. Audit follow-up: must NOT swap to
+ * the canonical `isEffectivelyRealised` from `cos-realisation.ts`. The
+ * canonical applies a zero-amount gate on `input.amountExVat` (cos-
+ * realisation.ts:99-102) that would silently flip zero-amount invoiced
+ * lines from realised → unrealised. The 6 monthly-rollup handlers feed
+ * `adaptCostToExpense`-shaped rows where `amountExVat` is renamed to
+ * `expenseActualTotal` and the top-level `amountExVat` is dropped, so
+ * the gate currently no-ops by accident — but relying on that accident
+ * is brittle. The financeUtils `isCosRealised` wrapper deliberately
+ * does NOT forward `amountExVat`, so it preserves the documented
+ * "invoice alone = realised even at zero amount" behaviour that the 6
+ * handlers expected before this refactor.
+ */
+function isEffectivelyRealisedLocal(exp: CostLineForRecognition, monthKey: string | null, currentMonthKey: string): boolean {
+  if (isPastMonthAutoRealised(exp as any, monthKey, currentMonthKey)) return true;
+  if (!isCosRealised(exp as any)) return false;
+  return monthKey ? monthKey <= currentMonthKey : true;
 }
 
 /**
@@ -79,7 +100,7 @@ export function bucketCostLinesForRecognition<T extends CostLineForRecognition &
     if (!monthKey) continue;
 
     const revenueAmount = recognitionAmountFor(exp);
-    const cosRealised = isEffectivelyRealised(exp as any, monthKey, options.currentMonthKey);
+    const cosRealised = isEffectivelyRealisedLocal(exp, monthKey, options.currentMonthKey);
     const projectName = (exp.projectName || "").replace(/_Tracker$/i, "");
 
     out.push({ exp, amount, monthKey, revenueAmount, cosRealised, projectName });

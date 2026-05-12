@@ -782,7 +782,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       const userRole = req.user?.role;
 
       // Admin users apply overrides directly (this legacy route requires requireAdmin)
-      const projectNames = [...new Set(overrides.map((o: any) => o.projectName))];
+      const projectNames = [...new Set(overrides.map((o: any) => o.projectName).filter(Boolean))] as string[];
       const fieldToColumnMap: Record<string, string> = {
         expenseInvoicedDate: "expenseInvoicedDate",
         expensePaymentDate: "expensePaymentDate",

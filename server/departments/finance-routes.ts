@@ -783,40 +783,24 @@ async function loadProjectFinanceGovernanceContext(
   // forcing every `.map((row: any)` / `.filter((row: any)` downstream.
   // Hand-rolled aliases here mirror the select projections, so the
   // callbacks can drop their `any` annotations.
-  type ApprovalRow = {
-    id: number;
-    type: string;
-    title: string;
-    description: string | null;
-    status: string;
-    dueDate: string | null;
-    requestedAt: Date;
-    approvalCategory: string | null;
-    relatedEntityType: string | null;
-  };
-  type ChangeRow = {
-    id: number;
-    actorRole: string | null;
-    actorUserId: number | null;
-    entityType: string;
-    entityId: string;
-    action: string;
-    summary: string | null;
-    overrideCategory: string | null;
-    overrideComment: string | null;
-    createdAt: Date;
-  };
-  type MicrosoftRow = {
-    id: number;
-    type: string;
-    subjectOrTitle: string | null;
-    preview: string | null;
-    webLink: string | null;
-    actionRequired: boolean | null;
-    isRead: boolean | null;
-    linkedTaskId: number | null;
-    receivedOrStartDatetime: Date | null;
-  };
+  // Finance PR 3 audit follow-up: derive row types from `$inferSelect` and
+  // narrow to the projected columns, so the aliases stay in lock-step with
+  // the schema even if `approvals.dueDate` switches from `timestamp` to
+  // `date`, etc. The hand-rolled types in the first iteration drifted
+  // from the canonical schema (e.g. dueDate was claimed string|null but
+  // is Date|null at runtime).
+  type ApprovalRow = Pick<
+    typeof approvals.$inferSelect,
+    "id" | "type" | "title" | "description" | "status" | "dueDate" | "requestedAt" | "approvalCategory" | "relatedEntityType"
+  >;
+  type ChangeRow = Pick<
+    typeof changeSets.$inferSelect,
+    "id" | "actorRole" | "actorUserId" | "entityType" | "entityId" | "action" | "summary" | "overrideCategory" | "overrideComment" | "createdAt"
+  >;
+  type MicrosoftRow = Pick<
+    typeof msObjects.$inferSelect,
+    "id" | "type" | "subjectOrTitle" | "preview" | "webLink" | "actionRequired" | "isRead" | "linkedTaskId" | "receivedOrStartDatetime"
+  >;
   const [approvalRows, editRequestRows, changeRows, microsoftRows]: [
     ApprovalRow[],
     Awaited<ReturnType<typeof financialIntegrationRepository.listEditRequestsForProjectWithRequester>>,

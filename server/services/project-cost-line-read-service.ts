@@ -203,15 +203,27 @@ export async function getCanonicalCostLinesByNames(
   for (const n of uniqueNames) result.set(n, { projectId: null, rows: [] });
   if (uniqueNames.length === 0) return result;
 
-  // 1. Exact-match pass: one query for all names.
-  const exactMatches = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName })
-    .from(projectInfo)
-    .where(inArray(projectInfo.projectName, uniqueNames));
-  const exactByName = new Map<string, number>();
-  for (const row of exactMatches) exactByName.set(row.projectName, row.id);
+  // Finance PR 3 audit follow-up: mirror the decode + trim normalisation
+  // `resolveProjectIdByName` does, so URL-encoded or whitespace-padded
+  // inputs resolve identically through the batched path.
+  const inputToLookup = new Map<string, string>();
+  for (const inputName of uniqueNames) {
+    const lookup = decodeURIComponent(inputName).trim();
+    inputToLookup.set(inputName, lookup);
+  }
+  const lookupNames = Array.from(new Set(Array.from(inputToLookup.values()).filter((n) => n.length > 0)));
 
-  // 2. Fuzzy fallback: one full scan for any names that didn't match exactly.
-  const unresolved = uniqueNames.filter((n) => !exactByName.has(n));
+  // 1. Exact-match pass: one query for all normalised lookup names.
+  const exactMatches = lookupNames.length > 0
+    ? await db.select({ id: projectInfo.id, projectName: projectInfo.projectName })
+        .from(projectInfo)
+        .where(inArray(projectInfo.projectName, lookupNames))
+    : [];
+  const exactByLookup = new Map<string, number>();
+  for (const row of exactMatches) exactByLookup.set(row.projectName, row.id);
+
+  // 2. Fuzzy fallback: one full scan for any lookups that didn't match exactly.
+  const unresolved = lookupNames.filter((n) => !exactByLookup.has(n));
   if (unresolved.length > 0) {
     const allProjects = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo);
     const projectsByKey = new Map<string, number>();
@@ -219,14 +231,16 @@ export async function getCanonicalCostLinesByNames(
     for (const name of unresolved) {
       const key = normalizeProjectLookupName(name);
       const id = projectsByKey.get(key);
-      if (id != null) exactByName.set(name, id);
+      if (id != null) exactByLookup.set(name, id);
     }
   }
 
   // 3. Single fetch for all matching cost lines.
   const inputToProjectId = new Map<string, number>();
   for (const name of uniqueNames) {
-    const id = exactByName.get(name);
+    const lookup = inputToLookup.get(name);
+    if (!lookup) continue;
+    const id = exactByLookup.get(lookup);
     if (id != null) inputToProjectId.set(name, id);
   }
   const allProjectIds = Array.from(new Set(inputToProjectId.values()));
