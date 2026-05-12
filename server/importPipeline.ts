@@ -466,6 +466,7 @@ export function startScheduler(): void {
             const result = await runScheduledImportV2({ triggerType: "schedule", triggeredBy: "system" });
             console.log("[SharePoint] Scheduled import v2 complete:", JSON.stringify({
               discovered: result.filesDiscovered,
+              committed: result.filesCommitted,
               parked: result.filesParked,
               skipped: result.filesSkipped,
               failed: result.filesFailed,
