@@ -6,7 +6,7 @@
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
-      "loc": 7819
+      "loc": 7861
     },
     {
       "file": "client/src/pages/EngineeringTasksPage.tsx",
@@ -18,7 +18,7 @@
     },
     {
       "file": "server/engineering-routes.ts",
-      "loc": 3757
+      "loc": 3979
     },
     {
       "file": "server/smart-import-routes.ts",

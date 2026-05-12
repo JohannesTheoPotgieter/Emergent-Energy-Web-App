@@ -39,6 +39,12 @@ import {
 import { projectEngineeringTicket } from "@shared/lib/engineering-ticket-view";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
+// Engineering PR 2 — canonical RBAC + body validation imports.
+// Replaces local `requireAdminOrEpm` shim + hardcoded role strings.
+import { requireRole as requireRoleCanonical } from "./middleware/requireRole";
+import { ADMIN_ROLES, normalizeRoleForPermissions } from "@shared/schema";
+import { validateBody } from "./middleware/validateBody";
+import { z } from "zod";
 import { getAssignmentsForEntity, getAssignmentsForEntities, listAssignableDirectory } from "./services/assignment-service";
 import { buildMyWorkSourceLinks } from "./lib/my-work-source-links";
 import { runCascadesAfterUpdate, validateParentCompletion } from "./services/task-cascade-service";
@@ -109,8 +115,12 @@ export const FORBIDDEN_BODY_KEYS = new Set<string>([
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- return type
 // is intentionally `any`-shaped so existing spread-style update bodies keep
-// compiling without per-field assertions. PR 2 replaces this with Zod
-// schemas that narrow to typed `Partial<Insert*>` objects.
+// compiling without per-field assertions. Engineering PR 2 (#909) pairs
+// this denylist with `.passthrough()` Zod schemas — Zod validates the
+// shape of *known* fields while this helper filters server-only keys
+// out of the spread. The original "replace with strict Zod" plan was
+// not adopted because the handlers depend on the flexible spread shape
+// (50+ fields piped through `createEngineeringWorkItem` / Drizzle inserts).
 export function stripServerFields(body: unknown): Record<string, any> {
   if (!body || typeof body !== "object" || Array.isArray(body)) return {};
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -125,7 +135,8 @@ export function stripServerFields(body: unknown): Record<string, any> {
 // The previous UPPERCASE sets silently failed every comparison because
 // the work-items adapter returns canonical lowercase since migration
 // 20260413_status_casing_normalization.
-const MICROSOFT_ADMIN_ROLES = new Set(["COO_ADMIN", "CEO_ADMIN"]);
+// Engineering PR 2: use canonical ADMIN_ROLES instead of a local set.
+const MICROSOFT_ADMIN_ROLES: ReadonlySet<string> = new Set(ADMIN_ROLES);
 
 // Status flag detection routes through the canonical helpers in
 // shared/engineering-ticket-status.ts. The previous local
@@ -190,20 +201,25 @@ async function getFallbackPreferenceForUser(userId: number): Promise<"download" 
   return value === "clipboard" ? "clipboard" : "download";
 }
 
-function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
-  const role = getUserRole(req);
-  const allowed = [
-    "eng_program_manager",
-    "COO_ADMIN", "CEO_ADMIN", "CCO", "CFO",
-    "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_FINANCE_MANAGER",
-    "ENGINEERING_PROGRAM_MANAGER", "QUALITY_MANAGER", "HEAD_OF_DESIGN",
-  ];
-  if (allowed.includes(role)) return next();
-  sendError(res, forbidden("Admin or EPM access required"));
-}
+// Engineering PR 2 — replaced the local `requireAdminOrEpm` shim with the
+// canonical `requireRole` middleware. The old shim hardcoded 11 role strings
+// including 3 stale names (`eng_program_manager` lowercase alias,
+// `ENGINEERING_PROGRAM_MANAGER`, `HEAD_OF_DESIGN`) that are NOT in
+// COMPANY_ROLES and were dead matches. The canonical roles below cover the
+// real EPM-or-admin gate (Engineering Manager replaces the stale EPM role).
+const requireAdminOrEpm = requireRoleCanonical([
+  ...ADMIN_ROLES,
+  "CCO",
+  "CFO",
+  "PROGRAM_MANAGER",
+  "PROGRAM_FINANCE_MANAGER",
+  "CONSTRUCTION_MANAGER",
+  "ENGINEERING_MANAGER",
+  "QUALITY_MANAGER",
+]);
 
 function requireEpmChallenge(req: Request, res: Response, next: NextFunction) {
-  if (["COO_ADMIN", "CEO_ADMIN"].includes(getUserRole(req))) return next();
+  if ((ADMIN_ROLES as readonly string[]).includes(getUserRole(req))) return next();
   if ((req.session as any)?.epmChallengePassed) return next();
   res.status(403).json({ error: "epm_challenge_required", message: "EPM access code required", code: "EPM_CHALLENGE_REQUIRED" });
 }
@@ -482,6 +498,203 @@ async function enrichEngineeringTasks(tasks: any[], req: Request): Promise<any[]
   });
 }
 
+// ===========================================================================
+// Engineering PR 2 — Zod schemas for every previously-unvalidated mutating
+// endpoint (audit list A). Schemas are grouped by surface: local-config,
+// project-team, tasks, deliverables, file-pointers, warnings, lifecycle.
+// `.strict()` is used where the body shape is fully known. The five
+// `mixed-with-stripServerFields` handlers (task PATCH, deliverable INSERT/
+// PATCH, deliverableFiles INSERT, qcWarning PATCH) use `.passthrough()`
+// so the existing denylist helper still filters server-only keys; the
+// schema only validates known fields.
+// ===========================================================================
+
+const localSyncedSaveConfigSchema = z.object({
+  mappedPath: z.string().min(1).max(1000).optional().nullable(),
+  fallbackPreference: z.enum(["download", "clipboard"]).optional(),
+}).strict();
+
+const projectTeamCreateSchema = z.object({
+  projectName: z.string().min(1).max(500),
+  userId: z.number().int().positive(),
+  roleOnProject: z.string().min(1).max(100),
+}).strict();
+
+const engTaskCreateSchema = z.object({
+  projectId: z.number().int().positive().nullable().optional(),
+  projectName: z.string().nullable().optional(),
+  title: z.string().min(1).max(500),
+  description: z.string().nullable().optional(),
+  status: z.string().optional(),
+  priority: z.string().optional(),
+  phase: z.string().nullable().optional(),
+  startDate: z.string().nullable().optional(),
+  dueDate: z.string().nullable().optional(),
+  ownerUserId: z.number().int().nullable().optional(),
+  assignees: z.array(z.union([z.string(), z.number()])).optional(),
+  plannedHours: z.union([z.string(), z.number()]).nullable().optional(),
+  taskCategory: z.string().nullable().optional(),
+  bucket: z.string().nullable().optional(),
+}).passthrough(); // allow additional fields the adapter pipes through
+
+// Task PATCH still goes through `stripServerFields(req.body)` in the
+// handler. The schema validates the known editable shape but stays
+// `.passthrough()` so the denylist remains effective.
+const engTaskUpdateSchema = z.object({
+  title: z.string().min(1).max(500).optional(),
+  description: z.string().nullable().optional(),
+  status: z.string().optional(),
+  priority: z.string().optional(),
+  startDate: z.string().nullable().optional(),
+  dueDate: z.string().nullable().optional(),
+  percentComplete: z.union([z.string(), z.number()]).nullable().optional(),
+  comment: z.string().nullable().optional(),
+  holdReason: z.string().nullable().optional(),
+  blockedType: z.string().nullable().optional(),
+  blockerReason: z.string().nullable().optional(),
+  trackingRag: z.string().nullable().optional(),
+  taskTypeTag: z.string().nullable().optional(),
+  linkedPlanItemId: z.number().int().nullable().optional(),
+  linkedDeliverableId: z.number().int().nullable().optional(),
+  linkedQualityItemInstanceId: z.number().int().nullable().optional(),
+  plannedHours: z.union([z.string(), z.number()]).nullable().optional(),
+  projectId: z.number().int().nullable().optional(), // stripped by stripServerFields anyway
+  projectName: z.string().nullable().optional(),
+}).passthrough();
+
+const engTaskSendForApprovalSchema = z.object({
+  note: z.string().max(5000).optional(),
+  localSave: z.union([z.boolean(), z.string()]).optional(),
+  projectSuggestion: z.string().optional(),
+  projectFinal: z.string().optional(),
+  projectOverrideReason: z.string().optional(),
+  routeSuggestion: z.string().optional(),
+  routeFinal: z.string().optional(),
+  routeOverrideReason: z.string().optional(),
+}).passthrough(); // multipart — multer also adds req.file
+
+const engTaskSendDeliverableSchema = z.object({
+  recipientUserId: z.union([z.number().int(), z.string()]).optional(),
+  recipientSuggestion: z.string().optional(),
+  recipientFinal: z.string().optional(),
+  recipientOverrideReason: z.string().optional(),
+  linkedProjectSuggestion: z.string().optional(),
+  linkedProjectFinal: z.string().optional(),
+  linkedProjectOverrideReason: z.string().optional(),
+  note: z.string().max(5000).optional(),
+  localSave: z.union([z.boolean(), z.string()]).optional(),
+}).passthrough(); // multipart
+
+const engTaskBulkUpdateSchema = z.object({
+  taskIds: z.array(z.number().int().positive()).min(1).max(200),
+  updates: z.object({
+    status: z.string().optional(),
+    holdReason: z.string().nullable().optional(),
+    blockedType: z.string().nullable().optional(),
+    priority: z.string().optional(),
+    ownerUserId: z.number().int().nullable().optional(),
+  }).passthrough(),
+}).strict();
+
+const engTaskLinkSchema = z.object({
+  linkedPlanItemId: z.number().int().nullable().optional(),
+  linkedDeliverableId: z.number().int().nullable().optional(),
+  linkedQualityItemInstanceId: z.number().int().nullable().optional(),
+}).strict();
+
+const engTaskWatcherAddSchema = z.object({
+  userId: z.number().int().positive(),
+}).strict();
+
+const engTaskCommentSchema = z.object({
+  body: z.string().min(1).max(10000),
+}).strict();
+
+const engTaskSubtaskSchema = z.object({
+  title: z.string().min(1).max(500),
+  description: z.string().nullable().optional(),
+  status: z.string().optional(),
+  priority: z.string().optional(),
+  phase: z.string().nullable().optional(),
+  ownerUserId: z.number().int().nullable().optional(),
+}).strict();
+
+// Deliverable INSERT / PATCH still use stripServerFields. .passthrough()
+// keeps the existing flexible shape working.
+const deliverableCreateSchema = z.object({
+  projectId: z.number().int().positive(),
+  title: z.string().min(1).max(500).optional(),
+  description: z.string().nullable().optional(),
+  milestoneType: z.string().nullable().optional(),
+  plannedDate: z.string().nullable().optional(),
+}).passthrough();
+
+const deliverableUpdateSchema = z.object({
+  status: z.string().optional(),
+  title: z.string().min(1).max(500).optional(),
+  description: z.string().nullable().optional(),
+  plannedDate: z.string().nullable().optional(),
+  actualDate: z.string().nullable().optional(),
+}).passthrough();
+
+const deliverableFeedbackSchema = z.object({
+  feedbackText: z.string().min(1).max(10000),
+}).strict();
+
+const deliverableReviseSchema = z.object({
+  changeReason: z.string().min(1).max(2000),
+  impactJson: z.unknown().optional(),
+}).strict();
+
+const deliverableFileCreateSchema = z.object({
+  fileName: z.string().min(1).max(500).optional(),
+  fileUrl: z.string().max(2048).optional().nullable(),
+  fileSize: z.union([z.number(), z.string()]).optional(),
+  contentType: z.string().max(255).optional().nullable(),
+}).passthrough(); // stripServerFields applies; keep extra-fields flexibility
+
+const filePointerCreateSchema = z.object({
+  entityType: z.string().min(1).max(100),
+  entityId: z.union([z.number().int(), z.string()]),
+  spSiteId: z.string().nullable().optional(),
+  spDriveId: z.string().nullable().optional(),
+  spFileItemId: z.string().nullable().optional(),
+  fileName: z.string().max(500).optional(),
+  label: z.string().nullable().optional(),
+  siteId: z.string().nullable().optional(),
+  driveId: z.string().nullable().optional(),
+  fileItemId: z.string().nullable().optional(),
+  webUrl: z.string().max(2048).nullable().optional(),
+}).passthrough();
+
+const warningScanSchema = z.object({
+  projectName: z.string().min(1).max(500),
+}).strict();
+
+const warningUpdateSchema = z.object({
+  status: z.string().optional(),
+  note: z.string().nullable().optional(),
+}).passthrough(); // stripServerFields applies
+
+const warningAcknowledgeSchema = z.object({
+  reason: z.string().max(2000).optional().nullable(),
+}).strict();
+
+const markCpSignedSchema = z.object({
+  evidenceType: z.string().min(1).max(100),
+  emailSubject: z.string().max(1000).optional().nullable(),
+  emailDate: z.string().nullable().optional(),
+  fileId: z.union([z.number().int(), z.string()]).optional().nullable(),
+}).strict();
+
+const phaseChangeSchema = z.object({
+  toPhase: z.string().min(1).max(100),
+  reason: z.string().max(2000).optional(),
+  overrideSequence: z.boolean().optional(),
+}).strict();
+
+const emptyBodySchema = z.object({}).strict();
+
 export function registerEngineeringRoutes(app: Express) {
 
   app.use("/api/eng", jwtAuth);
@@ -504,7 +717,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.put("/api/eng/local-synced-save/config", requireAuth, requirePermission("engineering", "edit"), async (req, res) => {
+  app.put("/api/eng/local-synced-save/config", requireAuth, requirePermission("engineering", "edit"), validateBody(localSyncedSaveConfigSchema), async (req, res) => {
     try {
       const user = getUser(req);
       const mappedPath = typeof req.body?.mappedPath === "string" ? req.body.mappedPath.trim() : "";
@@ -567,7 +780,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/project-team", requireAuth, requireAdminOrEpm, async (req, res) => {
+  app.post("/api/project-team", requireAuth, requireAdminOrEpm, validateBody(projectTeamCreateSchema), async (req, res) => {
     try {
       const { projectName, userId, roleOnProject } = req.body;
       const [member] = await db.insert(projectTeamMembers).values({ projectName, userId, roleOnProject }).returning();
@@ -592,7 +805,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.get("/api/eng/team-members", requireAuth, async (_req, res) => {
+  app.get("/api/eng/team-members", requireAuth, requirePermission("engineering", "view"), async (_req, res) => {
     try {
       const assignable = await listAssignableDirectory();
       const allUsers = assignable
@@ -610,7 +823,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.get("/api/pm-assignable-users", requireAuth, async (_req, res) => {
+  app.get("/api/pm-assignable-users", requireAuth, requirePermission("engineering", "view"), async (_req, res) => {
     try {
       const assignable = await listAssignableDirectory();
       const allUsers = assignable
@@ -694,7 +907,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/tasks", requireAuth, requirePermission("eng_tasks", "create"), async (req, res) => {
+  app.post("/api/eng/tasks", requireAuth, requirePermission("eng_tasks", "create"), validateBody(engTaskCreateSchema), async (req, res) => {
     try {
       const data = req.body || {};
       const rawProjectId = data?.projectId;
@@ -809,7 +1022,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/eng/tasks/:id", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
+  app.patch("/api/eng/tasks/:id", requireAuth, requirePermission("eng_tasks", "edit"), validateBody(engTaskUpdateSchema), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
       const [existing] = await db.select().from(workItems).where(and(eq(workItems.id, id), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
@@ -929,7 +1142,7 @@ export function registerEngineeringRoutes(app: Express) {
   });
 
   // Permission: submitting for approval requires edit on eng_tasks.
-  app.post("/api/eng/tasks/:id/send-for-approval", requireAuth, requirePermission("eng_tasks", "edit"), approvalUpload.single("file"), async (req, res) => {
+  app.post("/api/eng/tasks/:id/send-for-approval", requireAuth, requirePermission("eng_tasks", "edit"), approvalUpload.single("file"), validateBody(engTaskSendForApprovalSchema), async (req, res) => {
     const id = parseIntParam(req.params.id);
     const user = getUser(req);
     const note = req.body.note || "";
@@ -1184,7 +1397,7 @@ export function registerEngineeringRoutes(app: Express) {
   });
 
   // Permission: sending a deliverable requires edit on eng_tasks.
-  app.post("/api/eng/tasks/:id/send-deliverable", requireAuth, requirePermission("eng_tasks", "edit"), approvalUpload.single("file"), async (req, res) => {
+  app.post("/api/eng/tasks/:id/send-deliverable", requireAuth, requirePermission("eng_tasks", "edit"), approvalUpload.single("file"), validateBody(engTaskSendDeliverableSchema), async (req, res) => {
     const id = parseIntParam(req.params.id);
     const user = getUser(req);
 
@@ -1546,7 +1759,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/tasks/bulk-update", requireAuth, requireAdminOrEpm, async (req, res) => {
+  app.post("/api/eng/tasks/bulk-update", requireAuth, requireAdminOrEpm, validateBody(engTaskBulkUpdateSchema), async (req, res) => {
     try {
       const { taskIds, updates } = req.body;
       if (!Array.isArray(taskIds) || taskIds.length === 0) {
@@ -1631,7 +1844,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/tasks/:id/link", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
+  app.post("/api/eng/tasks/:id/link", requireAuth, requirePermission("eng_tasks", "edit"), validateBody(engTaskLinkSchema), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
       const { linkedPlanItemId, linkedDeliverableId, linkedQualityItemInstanceId } = req.body;
@@ -1672,7 +1885,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/tasks/:id/watchers", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
+  app.post("/api/eng/tasks/:id/watchers", requireAuth, requirePermission("eng_tasks", "edit"), validateBody(engTaskWatcherAddSchema), async (req, res) => {
     try {
       const taskId = parseIntParam(req.params.id);
       const userId = parseInt(req.body.userId);
@@ -1776,7 +1989,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/tasks/:id/comments", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
+  app.post("/api/eng/tasks/:id/comments", requireAuth, requirePermission("eng_tasks", "edit"), validateBody(engTaskCommentSchema), async (req, res) => {
     try {
       const taskId = parseIntParam(req.params.id);
       const { body } = req.body;
@@ -1848,7 +2061,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/tasks/:id/subtasks", requireAuth, requirePermission("eng_tasks", "create"), async (req, res) => {
+  app.post("/api/eng/tasks/:id/subtasks", requireAuth, requirePermission("eng_tasks", "create"), validateBody(engTaskSubtaskSchema), async (req, res) => {
     try {
       const parentId = parseIntParam(req.params.id);
       const parent = await getEngineeringWorkItemById(parentId);
@@ -1952,7 +2165,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/deliverables", requireAuth, requirePermission("deliverables", "create"), async (req, res) => {
+  app.post("/api/deliverables", requireAuth, requirePermission("deliverables", "create"), validateBody(deliverableCreateSchema), async (req, res) => {
     try {
       const data = req.body;
       const projectId = Number(data.projectId);
@@ -1989,7 +2202,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/deliverables/:id", requireAuth, requirePermission("deliverables", "edit"), async (req, res) => {
+  app.patch("/api/deliverables/:id", requireAuth, requirePermission("deliverables", "edit"), validateBody(deliverableUpdateSchema), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
       const [existing] = await db.select().from(deliverables).where(eq(deliverables.id, id));
@@ -2008,7 +2221,8 @@ export function registerEngineeringRoutes(app: Express) {
         : await evaluateAuthorityForRequest(req, "deliverables", "edit");
 
       if (!authority.allowed) {
-        return res.status(403).json({ error: "forbidden", reason: authority.reason, scope: authority.scope });
+        // Engineering PR 2: use canonical sendError envelope.
+        return sendError(res, forbidden(authority.reason ?? "Forbidden"));
       }
 
       // H8: strip server-controlled keys to prevent mass-assignment.
@@ -2046,7 +2260,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/deliverables/:id/feedback", requireAuth, requireAuthority("deliverables", "approve"), async (req, res) => {
+  app.post("/api/deliverables/:id/feedback", requireAuth, requireAuthority("deliverables", "approve"), validateBody(deliverableFeedbackSchema), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
       const { feedbackText } = req.body;
@@ -2078,7 +2292,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/deliverables/:id/revise", requireAuth, requirePermission("deliverables", "edit"), async (req, res) => {
+  app.post("/api/deliverables/:id/revise", requireAuth, requirePermission("deliverables", "edit"), validateBody(deliverableReviseSchema), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
       const { changeReason, impactJson } = req.body;
@@ -2118,7 +2332,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/deliverables/:id/files", requireAuth, requirePermission("deliverables", "edit"), async (req, res) => {
+  app.post("/api/deliverables/:id/files", requireAuth, requirePermission("deliverables", "edit"), validateBody(deliverableFileCreateSchema), async (req, res) => {
     try {
       // H8: strip server-controlled keys to prevent mass-assignment.
       const [file] = await db.insert(deliverableFiles).values({
@@ -2167,7 +2381,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/file-pointers", requireAuth, requirePermission("engineering", "edit"), async (req, res) => {
+  app.post("/api/eng/file-pointers", requireAuth, requirePermission("engineering", "edit"), validateBody(filePointerCreateSchema), async (req, res) => {
     try {
       const { entityType, entityId, spSiteId, spDriveId, spFileItemId, fileName, label, siteId, driveId, fileItemId, webUrl } = req.body;
       const [pointer] = await db.insert(spFilePointers).values({
@@ -2203,7 +2417,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   // ========== WARNING ENGINE - ENHANCED RULES ==========
 
-  app.post("/api/eng/warnings/scan", requireAuth, requireAdminOrEpm, async (req, res) => {
+  app.post("/api/eng/warnings/scan", requireAuth, requireAdminOrEpm, validateBody(warningScanSchema), async (req, res) => {
     try {
       const { projectName } = req.body;
       const newWarnings: any[] = [];
@@ -2371,7 +2585,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/eng/warnings/:id", requireAuth, requirePermission("engineering", "edit"), async (req, res) => {
+  app.patch("/api/eng/warnings/:id", requireAuth, requirePermission("engineering", "edit"), validateBody(warningUpdateSchema), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
       if (isNaN(id)) return sendError(res, badRequest("Invalid ID"));
@@ -2397,7 +2611,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/warnings/:id/acknowledge", requireAuth, requirePermission("engineering", "edit"), async (req, res) => {
+  app.post("/api/eng/warnings/:id/acknowledge", requireAuth, requirePermission("engineering", "edit"), validateBody(warningAcknowledgeSchema), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
       await db.insert(qcWarningEvent).values({
@@ -2416,11 +2630,20 @@ export function registerEngineeringRoutes(app: Express) {
 
   // ========== ENGINEERING OVERVIEW DASHBOARD ==========
 
-  app.get("/api/eng/dashboard/overview", requireAuth, async (req, res) => {
+  app.get("/api/eng/dashboard/overview", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
-      const role = getUserRole(req);
-      const managerRoles = ["eng_program_manager", "CEO_ADMIN", "COO_ADMIN", "CCO", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"];
-      const isManager = managerRoles.includes(role);
+      const role = normalizeRoleForPermissions(getUserRole(req)) ?? "";
+      // Engineering PR 2: canonical role names only. `eng_program_manager`
+      // lowercase alias was unreachable (not in COMPANY_ROLES). The
+      // ENGINEERING_MANAGER replaces the stale EPM role.
+      const managerRoles = [
+        ...ADMIN_ROLES,
+        "CCO",
+        "PROGRAM_MANAGER",
+        "ENGINEERING_MANAGER",
+        "CONSTRUCTION_MANAGER",
+      ];
+      const isManager = (managerRoles as readonly string[]).includes(role);
       const userName = getUser(req).name || "";
       const userFirstName = userName.split(/\s+/)[0];
       let assigneeFilter: string | undefined;
@@ -2749,6 +2972,12 @@ export function registerEngineeringRoutes(app: Express) {
 
   // ========== USERS LIST (for assignment dropdowns) ==========
 
+  // permission-skip: assignment-dropdown directory consumed by
+  // CreateTaskFromSourceDialog and similar UI from non-engineering tabs
+  // (e.g., CFO opening a source dialog needs to see assignees). Tier 2
+  // audit found that `engineering:view` blocks CFO / CONSTRUCTION_MANAGER /
+  // ACCOUNTANT / HSE_MANAGER from these dropdowns. The directory itself
+  // (id/name/role) is broadly accessible by design.
   app.get("/api/eng/users", requireAuth, async (req, res) => {
     try {
       const allUsers = await db.select({
@@ -3107,7 +3336,7 @@ export function registerEngineeringRoutes(app: Express) {
     { title: "Testing & Commissioning Plan", priority: "Med", phase: "P5_COMMISSIONING_TESTING" },
   ];
 
-  app.post("/api/projects/:projectId/mark-cp-signed", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/projects/:projectId/mark-cp-signed", jwtAuth, requireAuth, requireAdmin, validateBody(markCpSignedSchema), async (req, res) => {
     try {
       const projectId = parseIntParam(req.params.projectId);
       const user = getUser(req);
@@ -3255,7 +3484,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   // ========== PROJECT PHASE MANAGEMENT ==========
 
-  app.patch("/api/projects/:projectId/phase", jwtAuth, requireAuth, requirePermission("lifecycle", "edit"), async (req, res) => {
+  app.patch("/api/projects/:projectId/phase", jwtAuth, requireAuth, requirePermission("lifecycle", "edit"), validateBody(phaseChangeSchema), async (req, res) => {
     try {
       const user = getUser(req);
       if (user.role !== "COO_ADMIN" && user.role !== "CEO_ADMIN") {
@@ -3672,7 +3901,9 @@ export function registerEngineeringRoutes(app: Express) {
 
       const myEngApprovals = engApprovals.filter((a: any) => {
         if (a.approverRole === "QA_REVIEW" || a.approverRole === "Quality Manager") {
-          return userRole === "QUALITY_MANAGER" || userRole === "quality_manager";
+          // Engineering PR 2: canonical role only. `quality_manager`
+          // lowercase alias is not in COMPANY_ROLES.
+          return normalizeRoleForPermissions(userRole) === "QUALITY_MANAGER";
         }
         if (isAdmin) return true;
         if (a.approverUserId && a.approverUserId === userId) return true;
@@ -3683,7 +3914,8 @@ export function registerEngineeringRoutes(app: Express) {
         return false;
       });
 
-      const myQcItems = (userRole === "QUALITY_MANAGER" || userRole === "quality_manager") ? qcItems : [];
+      // Engineering PR 2: canonical role only.
+      const myQcItems = normalizeRoleForPermissions(userRole) === "QUALITY_MANAGER" ? qcItems : [];
 
       const myDeliverables = deliverableItems;
 
