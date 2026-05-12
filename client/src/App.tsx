@@ -82,23 +82,6 @@ function AccessDenied() {
   );
 }
 
-function ScreenUnavailable() {
-  return (
-    <div className="min-h-[60vh] flex items-center justify-center">
-      <div className="text-center space-y-4 max-w-md px-4">
-        <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto">
-          <X className="h-8 w-8 text-slate-400" />
-        </div>
-        <h2 className="text-xl font-semibold text-foreground">Not Available</h2>
-        <p className="text-sm text-muted-foreground">This section has been disabled by your administrator.</p>
-        <a href="/" className="inline-flex items-center gap-2 text-sm font-medium text-emerald-600 hover:text-emerald-700">
-          <ArrowLeft className="h-4 w-4" /> Back to Home
-        </a>
-      </div>
-    </div>
-  );
-}
-
 function RoleGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [location] = useLocation();
@@ -196,7 +179,10 @@ function ProtectedPages() {
             return (
               <Route key={route.path} path={route.path}>
                 {() => {
-                  if (screenId && !isScreenEnabled(screenId)) return <ScreenUnavailable />;
+                  // Per COO spec (2026-05-11): disabled screens return 404, not
+                  // a friendly "unavailable" page. Treat them as if they don't
+                  // exist so bookmarks and deep links fail closed.
+                  if (screenId && !isScreenEnabled(screenId)) return <NotFound />;
                   return <ErrorBoundary><PageComponent /></ErrorBoundary>;
                 }}
               </Route>

@@ -1082,6 +1082,7 @@ export function registerLifecycleRoutes(app: Express) {
       const todayMs = new Date(today).getTime();
       const PLAN_SECTION_HEADERS = new Set(['no.', 'no', '#']);
 
+      type PlanTask = typeof rawPlanTasks[number];
       for (const project of activeProjects) {
         const norm = normalizeName(project.projectName);
         const tasks = planTasksByProjectId.get(project.id);
@@ -1089,7 +1090,7 @@ export function registerLifecycleRoutes(app: Express) {
 
         // Strip section-header rows AND rows with no WBS + no dates.
         // Matches planning-tasks-routes.ts:256-265 which the plan tab uses.
-        const filtered = tasks.filter(t => {
+        const filtered = tasks.filter((t: PlanTask) => {
           const wbs = (t.wbsCode || '').toString().toLowerCase().trim();
           if (PLAN_SECTION_HEADERS.has(wbs)) return false;
           const hasWbs = t.wbsCode && String(t.wbsCode).trim().length > 0;
@@ -1100,7 +1101,7 @@ export function registerLifecycleRoutes(app: Express) {
         });
 
         // FY membership: any task with a date inside the financial year
-        const fyItemCount = filtered.filter(t => {
+        const fyItemCount = filtered.filter((t: PlanTask) => {
           const d = t.startDate ?? t.endDate;
           return d && isDateInRange(String(d).slice(0, 10), fy.start, fy.end);
         }).length;
@@ -1118,7 +1119,7 @@ export function registerLifecycleRoutes(app: Express) {
         }
 
         // Leaf tasks: wbsCode not in parentWbs (or no wbsCode — treated as leaf)
-        const leafTasks = filtered.filter(t => {
+        const leafTasks = filtered.filter((t: PlanTask) => {
           const wbs = (t.wbsCode || '').toString().trim();
           return !wbs || !parentWbs.has(wbs);
         });

@@ -8,7 +8,11 @@ interface ScreenSetting {
 
 async function fetchScreenSettings(): Promise<ScreenSetting[]> {
   try {
-    const res = await fetch("/api/admin/screen-settings", { credentials: "include" });
+    // Public endpoint (auth-only) — drives the client 404 gate for every user.
+    // The admin-only /api/admin/screen-settings carries audit metadata; this
+    // endpoint exposes only screenId + isEnabled so non-admins still see
+    // disabled screens 404.
+    const res = await fetch("/api/screen-settings", { credentials: "include" });
     if (!res.ok) return [];
     return res.json();
   } catch {

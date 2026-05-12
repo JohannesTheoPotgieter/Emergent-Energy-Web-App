@@ -1,11 +1,16 @@
 /**
- * Admin screen-settings routes.
+ * Screen-settings routes.
  *
  * Endpoints:
- *   GET  /api/admin/screen-settings           — list all screen setting overrides
- *   PUT  /api/admin/screen-settings/:screenId — enable or disable a screen
+ *   GET  /api/screen-settings                 — public list of {screenId, isEnabled}
+ *                                                 for any signed-in user. Drives the
+ *                                                 client-side 404 gate so disabled
+ *                                                 screens are unreachable for everyone.
+ *   GET  /api/admin/screen-settings           — full admin list with audit metadata.
+ *   PUT  /api/admin/screen-settings/:screenId — enable or disable a screen.
  *
- * Auth: COO_ADMIN or CEO_ADMIN only.
+ * Auth: signed-in user for the public GET; COO_ADMIN / CEO_ADMIN for the admin
+ * GET/PUT.
  */
 
 import type { Express } from "express";
@@ -22,6 +27,21 @@ const updateSchema = z.object({
 });
 
 export function registerScreenSettingsRoutes(app: Express): void {
+  // Public read — every signed-in user needs to know which screens are hidden
+  // so the client-side router can 404 disabled routes. We only expose
+  // screenId + isEnabled (no actor id, no timestamps) to keep this surface
+  // free of audit metadata.
+  app.get(
+    "/api/screen-settings",
+    requireAuth,
+    async (_req, res) => {
+      const settings = await screenSettingsRepository.getAll();
+      res.json(
+        settings.map((s) => ({ screenId: s.screenId, isEnabled: s.isEnabled })),
+      );
+    },
+  );
+
   app.get(
     "/api/admin/screen-settings",
     requireAuth,

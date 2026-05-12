@@ -539,16 +539,30 @@ router.get(
         // forecastPipeline may not exist yet
       }
 
-      // Build monthly dashboard data
+      // Build monthly dashboard data — five series that mirror the source-of-
+      // truth FYE Revenue Tracking workbook (Dashboard 2026 sheet):
+      //   1. Budget           — original plan from fye_budgets
+      //   2. Adjusted Budget  — revised plan; defaults to captured-to-date for
+      //                          closed months, original budget for open months
+      //   3. Actual + Forecast — actuals so far + 3-month forecast
+      //   4. Actual            — realised in closed months only
+      //   5. Captured Data     — live captured-to-date (actuals regardless of
+      //                          whether the month is technically closed)
+      // The legacy `pipeline` field is preserved for back-compat with the
+      // pipeline chart on the same page.
       const months = monthKeys.map((mk) => {
         const budgetRev = budgetRevByMonth[mk] || 0;
         const budgetCos = budgetCosByMonth[mk] || 0;
         const isPastOrCurrent = mk < currentMk;
         const isForecastMonth = forecastWindow.includes(mk);
 
-        // Actual values - only for past/current months, null for future
-        const actualRev = isPastOrCurrent ? (actualRevByMonth[mk] || 0) : null;
-        const actualCos = isPastOrCurrent ? (actualCosByMonth[mk] || 0) : null;
+        // Captured Data — live realised amounts, independent of month-close state.
+        const capturedRev = actualRevByMonth[mk] || 0;
+        const capturedCos = actualCosByMonth[mk] || 0;
+
+        // Actual — only populated for closed (past) months.
+        const actualRev = isPastOrCurrent ? capturedRev : null;
+        const actualCos = isPastOrCurrent ? capturedCos : null;
 
         // Actual + Forecast blending:
         //   Past/current months → actual values
@@ -557,8 +571,8 @@ router.get(
         let actualForecastRev: number;
         let actualForecastCos: number;
         if (isPastOrCurrent) {
-          actualForecastRev = actualRevByMonth[mk] || 0;
-          actualForecastCos = actualCosByMonth[mk] || 0;
+          actualForecastRev = capturedRev;
+          actualForecastCos = capturedCos;
         } else if (isForecastMonth) {
           actualForecastRev = forecastRevByMonth[mk] || 0;
           actualForecastCos = forecastCosByMonth[mk] || 0;
@@ -566,6 +580,12 @@ router.get(
           actualForecastRev = 0;
           actualForecastCos = 0;
         }
+
+        // Adjusted Budget — closed months snap to captured data (the year is
+        // already over for those numbers), open months default to budget. An
+        // explicit operator override surface can supersede this in a follow-up.
+        const adjustedBudgetRev = isPastOrCurrent ? capturedRev : budgetRev;
+        const adjustedBudgetCos = isPastOrCurrent ? capturedCos : budgetCos;
 
         const pipelineRev = pipelineRevByMonth[mk] || 0;
         const pipelineCos = pipelineCosByMonth[mk] || 0;
@@ -576,20 +596,26 @@ router.get(
           label: monthKeyToLabel(mk),
           revenue: {
             budget: budgetRev,
+            adjustedBudget: adjustedBudgetRev,
             actualForecast: actualForecastRev,
             actual: actualRev,
+            capturedData: capturedRev,
             pipeline: pipelineRev,
           },
           cos: {
             budget: budgetCos,
+            adjustedBudget: adjustedBudgetCos,
             actualForecast: actualForecastCos,
             actual: actualCos,
+            capturedData: capturedCos,
             pipeline: pipelineCos,
           },
           gp: {
             budget: budgetRev - budgetCos,
+            adjustedBudget: adjustedBudgetRev - adjustedBudgetCos,
             actualForecast: actualForecastRev - actualForecastCos,
             actual: actualRev !== null && actualCos !== null ? actualRev - actualCos : null,
+            capturedData: capturedRev - capturedCos,
             pipeline: pipelineGp,
           },
         };

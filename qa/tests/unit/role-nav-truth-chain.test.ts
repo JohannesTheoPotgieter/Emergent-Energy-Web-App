@@ -35,25 +35,34 @@ import { ADMIN_ROLES, ENTITY_REGISTRY, type CompanyRole } from "@shared/schema";
 // Mirrors §3 of docs/roles-permissions-navigation-audit-2026-05-05.md.
 // ---------------------------------------------------------------------------
 
-type TopNavLabel = "Home" | "Projects" | "Gates" | "Finance" | "Departments" | "Reports" | "Admin";
+type TopNavLabel = "Home" | "Project Delivery" | "Finance" | "Engineering" | "Quality Management" | "Settings";
 
+/**
+ * Locked role × top-nav visibility per COO spec (2026-05-11):
+ *
+ *   Home · Project Delivery · Finance · Engineering · Quality Management · Settings
+ *
+ * Hidden tabs (Projects/Portfolio, Gates, Project Development, HSE, Reports,
+ * the legacy Admin grid) sit behind Functionality Control and don't render
+ * in the top bar regardless of the role. Settings is COO/CEO only.
+ */
 const EXPECTED_VISIBILITY: Record<CompanyRole, TopNavLabel[]> = {
-  COO_ADMIN:               ["Home", "Projects", "Gates", "Finance", "Departments", "Reports", "Admin"],
-  CEO_ADMIN:               ["Home", "Projects", "Gates", "Finance", "Reports", "Admin"],
-  CCO:                     ["Home", "Projects", "Gates", "Finance", "Reports"],
-  KEY_ACCOUNTS_MANAGER:    ["Home", "Projects", "Gates", "Finance"],
-  PROGRAM_MANAGER:         ["Home", "Projects", "Gates", "Finance", "Departments", "Reports"],
-  PROGRAM_FINANCE_MANAGER: ["Home", "Projects", "Gates", "Finance", "Reports"],
-  PROJECT_MANAGER_SITE:    ["Home", "Projects", "Gates", "Finance", "Departments", "Reports"],
-  CONSTRUCTION_MANAGER:    ["Home", "Projects", "Gates", "Finance", "Departments", "Reports"],
-  ENGINEERING_MANAGER:     ["Home", "Projects", "Gates", "Departments", "Reports"],
-  QUALITY_MANAGER:         ["Home", "Projects", "Gates", "Departments", "Reports"],
-  HSE_MANAGER:             ["Home", "Projects", "Gates", "Departments", "Reports"],
-  SSEG_MANAGER:            ["Home", "Projects", "Gates", "Departments"],
-  CFO:                     ["Home", "Projects", "Gates", "Finance", "Reports"],
+  COO_ADMIN:               ["Home", "Project Delivery", "Finance", "Engineering", "Quality Management", "Settings"],
+  CEO_ADMIN:               ["Home", "Project Delivery", "Finance", "Settings"],
+  CCO:                     ["Home", "Finance"],
+  KEY_ACCOUNTS_MANAGER:    ["Home", "Finance"],
+  PROGRAM_MANAGER:         ["Home", "Project Delivery", "Finance", "Quality Management"],
+  PROGRAM_FINANCE_MANAGER: ["Home", "Project Delivery", "Finance"],
+  PROJECT_MANAGER_SITE:    ["Home", "Project Delivery", "Finance", "Quality Management"],
+  CONSTRUCTION_MANAGER:    ["Home", "Project Delivery", "Finance", "Quality Management"],
+  ENGINEERING_MANAGER:     ["Home", "Project Delivery", "Engineering", "Quality Management"],
+  QUALITY_MANAGER:         ["Home", "Project Delivery", "Quality Management"],
+  HSE_MANAGER:             ["Home", "Project Delivery"],
+  SSEG_MANAGER:            ["Home", "Project Delivery", "Engineering", "Quality Management"],
+  CFO:                     ["Home", "Project Delivery", "Finance"],
   ACCOUNTANT:              ["Home", "Finance"],
-  ENGINEER:                ["Home", "Gates", "Departments"],
-  PROJECT_DEVELOPER:       ["Home", "Projects", "Finance"],
+  ENGINEER:                ["Home", "Engineering", "Quality Management"],
+  PROJECT_DEVELOPER:       ["Home", "Finance"],
 };
 
 /**
@@ -86,12 +95,12 @@ describe("role × top-nav visibility matrix matches the audit doc", () => {
   });
 });
 
-describe("Admin visibility ⇔ ADMIN_ROLES membership", () => {
-  it("Admin top-nav is shown for exactly COO_ADMIN and CEO_ADMIN", () => {
+describe("Settings visibility ⇔ ADMIN_ROLES membership", () => {
+  it("Settings top-nav is shown for exactly COO_ADMIN and CEO_ADMIN", () => {
     const adminRoles = new Set<string>(ADMIN_ROLES);
     for (const role of Object.keys(ROLE_VISIBLE_SECTIONS) as CompanyRole[]) {
-      const sees = visibleLabelsFor(role).includes("Admin");
-      expect(sees, `${role} Admin visibility`).toBe(adminRoles.has(role));
+      const sees = visibleLabelsFor(role).includes("Settings");
+      expect(sees, `${role} Settings visibility`).toBe(adminRoles.has(role));
     }
   });
 });

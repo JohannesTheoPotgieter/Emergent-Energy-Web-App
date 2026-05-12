@@ -53,8 +53,10 @@ import {
 
 interface MonthBucket {
   budget: number;
+  adjustedBudget: number;
   actualForecast: number;
   actual: number | null;
+  capturedData: number;
   pipeline: number;
 }
 
@@ -234,18 +236,27 @@ function KpiCard({ label, value, icon: Icon, accent, testId }: { label: string; 
 
 // ── Dashboard Grid ─────────────────────────────────────────────────────────
 
+// Five-series layout mirrors the FYE Revenue Tracking workbook's
+// "Dashboard 2026" sheet 1:1 — Budget · Adjusted Budget · Actual + Forecast ·
+// Actual · Captured Data — for Revenue, COS and Gross Profit.
 const DASH_ROW_DEFS = [
-  { key: "rev-budget",   section: "revenue", field: "budget" as keyof MonthBucket,        label: "Budget Revenue",         class: "text-emerald-700/70" },
-  { key: "rev-actual",   section: "revenue", field: "actualForecast" as keyof MonthBucket, label: "Actual / Forecast Rev",  class: "text-emerald-700 font-semibold" },
-  { key: "rev-pipeline", section: "revenue", field: "pipeline" as keyof MonthBucket,       label: "Pipeline Revenue",       class: "text-emerald-600/70" },
-  { key: "sep-1",        section: null,       field: null,                                  label: "",                       class: "" },
-  { key: "cos-budget",   section: "cos",     field: "budget" as keyof MonthBucket,         label: "Budget COS",             class: "text-amber-700/70" },
-  { key: "cos-actual",   section: "cos",     field: "actualForecast" as keyof MonthBucket, label: "Actual / Forecast COS",  class: "text-amber-700 font-semibold" },
-  { key: "cos-pipeline", section: "cos",     field: "pipeline" as keyof MonthBucket,       label: "Pipeline COS",           class: "text-amber-600/70" },
-  { key: "sep-2",        section: null,       field: null,                                  label: "",                       class: "" },
-  { key: "gp-budget",    section: "gp",      field: "budget" as keyof MonthBucket,         label: "Budget GP",              class: "text-foreground/70" },
-  { key: "gp-actual",    section: "gp",      field: "actualForecast" as keyof MonthBucket, label: "Actual / Forecast GP",   class: "text-foreground font-bold" },
-  { key: "gp-pipeline",  section: "gp",      field: "pipeline" as keyof MonthBucket,       label: "Pipeline GP",            class: "text-foreground/70" },
+  { key: "rev-budget",     section: "revenue", field: "budget" as keyof MonthBucket,         label: "Budget Revenue",          class: "text-emerald-700/60" },
+  { key: "rev-adjusted",   section: "revenue", field: "adjustedBudget" as keyof MonthBucket, label: "Adjusted Budget Revenue", class: "text-emerald-700/80" },
+  { key: "rev-actual-fc",  section: "revenue", field: "actualForecast" as keyof MonthBucket, label: "Actual + Forecast Rev",   class: "text-emerald-700 font-semibold" },
+  { key: "rev-actual",     section: "revenue", field: "actual" as keyof MonthBucket,         label: "Actual Revenue",          class: "text-emerald-700" },
+  { key: "rev-captured",   section: "revenue", field: "capturedData" as keyof MonthBucket,   label: "Captured Data Rev",       class: "text-emerald-600/80" },
+  { key: "sep-1",          section: null,       field: null,                                  label: "",                        class: "" },
+  { key: "cos-budget",     section: "cos",     field: "budget" as keyof MonthBucket,         label: "Budget COS",              class: "text-amber-700/60" },
+  { key: "cos-adjusted",   section: "cos",     field: "adjustedBudget" as keyof MonthBucket, label: "Adjusted Budget COS",     class: "text-amber-700/80" },
+  { key: "cos-actual-fc",  section: "cos",     field: "actualForecast" as keyof MonthBucket, label: "Actual + Forecast COS",   class: "text-amber-700 font-semibold" },
+  { key: "cos-actual",     section: "cos",     field: "actual" as keyof MonthBucket,         label: "Actual COS",              class: "text-amber-700" },
+  { key: "cos-captured",   section: "cos",     field: "capturedData" as keyof MonthBucket,   label: "Captured Data COS",       class: "text-amber-600/80" },
+  { key: "sep-2",          section: null,       field: null,                                  label: "",                        class: "" },
+  { key: "gp-budget",      section: "gp",      field: "budget" as keyof MonthBucket,         label: "Budget GP",               class: "text-foreground/60" },
+  { key: "gp-adjusted",    section: "gp",      field: "adjustedBudget" as keyof MonthBucket, label: "Adjusted Budget GP",      class: "text-foreground/80" },
+  { key: "gp-actual-fc",   section: "gp",      field: "actualForecast" as keyof MonthBucket, label: "Actual + Forecast GP",    class: "text-foreground font-bold" },
+  { key: "gp-actual",      section: "gp",      field: "actual" as keyof MonthBucket,         label: "Actual GP",               class: "text-foreground font-semibold" },
+  { key: "gp-captured",    section: "gp",      field: "capturedData" as keyof MonthBucket,   label: "Captured Data GP",        class: "text-foreground/80" },
 ] as const;
 
 // ── Cumulative tracking charts ─────────────────────────────────────────────
@@ -316,6 +327,89 @@ function FyeTrackingCharts({ months }: { months: DashboardMonth[] }) {
     <div className="px-4 pt-4 pb-2 border-b border-border flex gap-6 flex-wrap">
       <TrackingChart title="Revenue Tracking (Cumulative)" data={revenueData} />
       <TrackingChart title="GP Tracking (Cumulative)" data={gpData} />
+    </div>
+  );
+}
+
+/**
+ * Source-of-truth banner — shows the timestamp + file of the last successful
+ * Smart Import commit so the user knows EXACTLY which workbook these
+ * numbers reflect. Reads from /api/smart-import/runs (the canonical
+ * smart_import_runs audit table — no caching, no derived state).
+ */
+interface ImportRunMeta {
+  id: number;
+  project_id: number | null;
+  project_name: string | null;
+  status: string | null;
+  file_name: string | null;
+  uploaded_at: string | null;
+  committed_at: string | null;
+  uploaded_by: string | null;
+  committed_by: string | null;
+}
+
+function SourceOfTruthBanner() {
+  const { data: runs = [] } = useQuery<ImportRunMeta[]>({
+    queryKey: ["/api/smart-import/runs"],
+    queryFn: async () => {
+      const res = await fetch("/api/smart-import/runs", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 30_000,
+  });
+
+  const lastCommitted = runs.find((r) => (r.status || "").toLowerCase() === "committed");
+
+  if (!lastCommitted || !lastCommitted.committed_at) {
+    return (
+      <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 px-4 py-3 text-xs flex items-start gap-2">
+        <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+        <div className="flex-1">
+          <div className="font-medium text-amber-800 dark:text-amber-200">No imports recorded yet.</div>
+          <div className="text-amber-700/80 dark:text-amber-300/80">
+            Numbers shown reflect the current database state but cannot be tied to a specific tracker workbook. Run a manual import from{" "}
+            <a href="/admin/integrations" className="underline font-medium">Integration Statuses</a> to establish a source-of-truth audit trail.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const when = new Date(lastCommitted.committed_at);
+  const isoTitle = lastCommitted.committed_at;
+  const ageMs = Date.now() - when.getTime();
+  const ageDays = Math.floor(ageMs / 86_400_000);
+  const isStale = ageDays > 7;
+
+  return (
+    <div className={`mb-3 rounded-lg border px-4 py-3 text-xs flex items-start gap-2 ${
+      isStale
+        ? "border-amber-200 bg-amber-50 dark:bg-amber-950/20"
+        : "border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20"
+    }`} data-testid="banner-fye-source-of-truth">
+      <CheckCircle2 className={`h-4 w-4 shrink-0 mt-0.5 ${isStale ? "text-amber-600" : "text-emerald-600"}`} />
+      <div className="flex-1 space-y-0.5">
+        <div className={`font-medium ${isStale ? "text-amber-800 dark:text-amber-200" : "text-emerald-800 dark:text-emerald-200"}`}>
+          Source of truth:{" "}
+          <span className="font-mono">{lastCommitted.file_name ?? "(unknown file)"}</span>
+        </div>
+        <div className={`${isStale ? "text-amber-700/80 dark:text-amber-300/80" : "text-emerald-700/80 dark:text-emerald-300/80"}`}>
+          Last imported <span title={isoTitle} className="font-medium">
+            {ageDays === 0 ? "today" : ageDays === 1 ? "1 day ago" : `${ageDays} days ago`}
+          </span>{" "}
+          ({when.toLocaleString()})
+          {lastCommitted.committed_by && <> by <span className="font-medium">{lastCommitted.committed_by}</span></>}
+          {lastCommitted.project_name && <> · project <span className="font-medium">{lastCommitted.project_name}</span></>}
+          {isStale && " · consider re-importing to refresh"}.
+        </div>
+        <div className="pt-1 flex gap-3 text-[11px]">
+          <a href="/admin/integrations" className="underline font-medium hover:no-underline">Run manual import</a>
+          <a href="/program/excel-vs-app" className="underline font-medium hover:no-underline">Excel vs App diff</a>
+          <a href="/admin/smart-import" className="underline font-medium hover:no-underline">Import history</a>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1033,11 +1127,12 @@ export default function FyeRevenueTrackingPage() {
           </TabsList>
 
           <TabsContent value="dashboard" className="mt-3">
+            <SourceOfTruthBanner />
             <Card className="shadow-sm overflow-hidden">
               <CardHeader className="bg-muted/30 border-b border-border px-4 py-3">
                 <CardTitle className="text-sm font-semibold tracking-tight flex items-center gap-2">
                   <BarChart3 className="h-4 w-4 text-muted-foreground" />
-                  Monthly Revenue · COS · GP — Budget vs Actual/Forecast vs Pipeline
+                  Monthly Revenue · COS · GP — Budget · Adjusted Budget · Actual + Forecast · Actual · Captured Data
                   <Badge variant="outline" className="ml-auto text-[10px]">
                     <CalendarRange className="h-3 w-3 mr-1" />{fyeLabel}
                   </Badge>

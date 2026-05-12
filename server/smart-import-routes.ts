@@ -289,8 +289,11 @@ router.use(jwtAuth);
 
 router.get("/api/smart-import/runs", requireAuth, requirePermission("smart_import", "view"), async (req: Request, res: Response) => {
   try {
+    // project_id surfaced so the UI can deep-link to the per-project Tracker
+    // replicas (Revenue Tracking / Expenditure Breakdown / Program Plan) for
+    // post-import data-integrity verification.
     const rows = await db.execute(sql`
-      SELECT id, project_name, status, source_file_name as file_name,
+      SELECT id, project_id, project_name, status, source_file_name as file_name,
              uploaded_at, committed_at, uploaded_by, committed_by
       FROM smart_import_runs
       ORDER BY uploaded_at DESC
