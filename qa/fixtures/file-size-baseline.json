@@ -30,7 +30,7 @@
     },
     {
       "file": "server/quality-routes.ts",
-      "loc": 2848
+      "loc": 2948
     },
     {
       "file": "client/src/pages/projects.tsx",
@@ -65,12 +65,12 @@
       "loc": 2243
     },
     {
-      "file": "client/src/components/quickbooks/QbMatchingWorkbench.tsx",
-      "loc": 2204
+      "file": "server/departments/priority-strategic-routes.ts",
+      "loc": 2215
     },
     {
-      "file": "server/departments/priority-strategic-routes.ts",
-      "loc": 2202
+      "file": "client/src/components/quickbooks/QbMatchingWorkbench.tsx",
+      "loc": 2204
     },
     {
       "file": "server/departments/project-routes.ts",
