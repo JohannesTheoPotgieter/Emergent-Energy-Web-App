@@ -26,7 +26,7 @@
  */
 
 import crypto from "crypto";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../db";
 import { storage } from "../storage";
 import { smartImportRuns } from "@shared/schema";
@@ -40,21 +40,24 @@ import {
   type ProjectMatch,
 } from "../lib/import/project-match";
 import { resolveSchedulerConflictPolicy } from "../imports/scheduler-conflict-policy";
+import { commitSmartImportRunAsSystem } from "./scheduler-commit";
 
 export interface ScheduledImportV2Result {
   triggerType: "schedule" | "manual";
   triggeredBy: string;
   filesDiscovered: number;
+  filesCommitted: number;
   filesParked: number;
   filesSkipped: number;
   filesFailed: number;
   runIds: number[];
+  committedRunIds: number[];
   errors: Array<{ fileName: string; error: string }>;
   durationMs: number;
 }
 
 interface FileOutcome {
-  status: "parked" | "skipped" | "failed";
+  status: "committed" | "parked" | "skipped" | "failed";
   runId?: number;
   error?: string;
 }
@@ -145,6 +148,13 @@ async function processFileV2(file: {
     },
   };
 
+  // Insert the run as `preview` (matching the upload route's contract) when
+  // we have a project and the policy says commit; otherwise as
+  // `awaiting_review` so the UI surfaces it for human attention.
+  const initialStatus = autoMappedProjectId && policyDecision.decision === "commit"
+    ? "preview"
+    : "awaiting_review";
+
   const [run] = await db
     .insert(smartImportRuns)
     .values({
@@ -153,11 +163,64 @@ async function processFileV2(file: {
       uploadedBy: null,
       sourceFileName: fileName,
       sourceFileHash: fileHash,
-      // Phase 6 PR 1: always park. Auto-commit is the follow-up PR.
-      status: "awaiting_review",
+      status: initialStatus,
       summaryJson,
     })
     .returning();
+
+  // Auto-commit path: when we have a project AND the policy decided to
+  // commit, hand off to the scheduler commit service. Anything other than a
+  // clean commit leaves the run for human review.
+  if (autoMappedProjectId && policyDecision.decision === "commit") {
+    try {
+      const commitResult = await commitSmartImportRunAsSystem({
+        runId: run.id,
+        v2ConflictResolutions: policyDecision.resolutions,
+      });
+      if (commitResult.status === "committed") {
+        return { status: "committed", runId: run.id };
+      }
+      // H2: tally the outcome based on what the commit service actually did.
+      // Critically, when `commitResult.status === "skipped_already_committed"`
+      // a concurrent UI commit won the race — the run is already in
+      // `committed` state and we MUST NOT overwrite it. Treat as skipped.
+      if (commitResult.status === "skipped_already_committed") {
+        return { status: "skipped", runId: run.id };
+      }
+      // For `skipped_recency_*` and `blocked_*` outcomes the run was never
+      // claimed (early return before the transaction) OR the transaction
+      // rolled back. The DB status is whatever `initialStatus` set it to
+      // (`preview`). Flip to `awaiting_review` so the UI surfaces it as
+      // needing human attention. Done with a guarded UPDATE so a racing
+      // UI commit (which legitimately flipped to `committed`) isn't
+      // clobbered.
+      await db.update(smartImportRuns)
+        .set({ status: "awaiting_review" })
+        .where(and(
+          eq(smartImportRuns.id, run.id),
+          inArray(smartImportRuns.status, ["preview", "awaiting_review"]),
+        ));
+      console.log(`[ScheduledImportV2] Commit deferred for run ${run.id}: ${commitResult.status}`);
+      return { status: "parked", runId: run.id };
+    } catch (commitErr) {
+      // Transaction failed — mark as awaiting_review (guarded so a racing
+      // UI commit isn't clobbered) and report the file as failed.
+      console.error(`[ScheduledImportV2] Auto-commit failed for run ${run.id}:`, commitErr instanceof Error ? commitErr.message : commitErr);
+      try {
+        await db.update(smartImportRuns)
+          .set({ status: "awaiting_review" })
+          .where(and(
+            eq(smartImportRuns.id, run.id),
+            inArray(smartImportRuns.status, ["preview", "awaiting_review"]),
+          ));
+      } catch { /* non-blocking */ }
+      return {
+        status: "failed",
+        runId: run.id,
+        error: `Auto-commit failed: ${commitErr instanceof Error ? commitErr.message : String(commitErr)}`,
+      };
+    }
+  }
 
   return { status: "parked", runId: run.id };
 }
@@ -207,10 +270,12 @@ export async function runScheduledImportV2(opts: {
     triggerType: opts.triggerType,
     triggeredBy: opts.triggeredBy,
     filesDiscovered: folderChildren.length,
+    filesCommitted: 0,
     filesParked: 0,
     filesSkipped: 0,
     filesFailed: 0,
     runIds: [],
+    committedRunIds: [],
     errors: [],
     durationMs: 0,
   };
@@ -221,7 +286,13 @@ export async function runScheduledImportV2(opts: {
         { id: child.id, name: child.name, driveId: settings.driveId },
         opts.triggeredBy,
       );
-      if (outcome.status === "parked") {
+      if (outcome.status === "committed") {
+        result.filesCommitted++;
+        if (outcome.runId) {
+          result.runIds.push(outcome.runId);
+          result.committedRunIds.push(outcome.runId);
+        }
+      } else if (outcome.status === "parked") {
         result.filesParked++;
         if (outcome.runId) result.runIds.push(outcome.runId);
       } else if (outcome.status === "skipped") {
@@ -229,6 +300,7 @@ export async function runScheduledImportV2(opts: {
       } else {
         result.filesFailed++;
         if (outcome.error) result.errors.push({ fileName: child.name, error: outcome.error });
+        if (outcome.runId) result.runIds.push(outcome.runId);
       }
     } catch (err) {
       result.filesFailed++;
