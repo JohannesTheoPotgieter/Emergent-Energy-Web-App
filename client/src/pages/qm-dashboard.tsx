@@ -65,7 +65,7 @@ import { MicroWalkthrough, ReplayWalkthrough } from "@/components/guidance/Micro
 import { useRolloutFlag } from "@/hooks/use-rollout-flag";
 import type { NextAction, BlockerInfo } from "@/hooks/use-guidance";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
-import { ApprovalQueueCard } from "@/components/controlled-documents";
+import { ApprovalQueueCard } from "@/components/managed-documents";
 import { NcrLegacyDeepLinkBanner } from "@/components/quality/NcrLegacyDeepLinkBanner";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";

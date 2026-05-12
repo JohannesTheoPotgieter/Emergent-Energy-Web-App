@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { getQueryFn } from "@/lib/queryClient";
 import { useGatesPipeline, useGatesHandovers } from "@/hooks/use-gates";
-import { ApprovalQueueCard } from "@/components/controlled-documents";
+import { ApprovalQueueCard } from "@/components/managed-documents";
 import { PortfolioReadinessTile } from "@/components/documents/PortfolioReadinessTile";
 import { ManagedDocumentApprovalQueue } from "@/components/documents/ManagedDocumentApprovalQueue";
 import { PageHeader } from "@/components/ui/page-header";
