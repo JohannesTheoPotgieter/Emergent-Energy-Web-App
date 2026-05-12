@@ -5,12 +5,17 @@
  * The 2 existing scheduler call sites (`server/bootstrap/start-runtime-services.ts`
  * for `startScheduler`, `server/bootstrap/environment-status.ts` for
  * `getSchedulerStatus`) are explicitly allow-listed and tracked for migration.
+ *
+ * Phase 6: when `AUTO_IMPORT_V2_ENABLED=true` the scheduler routes to
+ * `runScheduledImportV2()` (auto-discover + auto-preview + park as
+ * awaiting_review) instead of `runFullImport()` (legacy metadata snapshot).
  */
 import crypto from "crypto";
 import { storage } from "./storage";
 import { downloadFileContent, detectChanges, downloadSingleFile, getFileMetadata } from "./sharepoint";
 import type { ChangeLedger, InsertSnapshot, InsertSnapshotMetric, InsertChangeLedger, InsertSpFile } from "@shared/schema";
 import ExcelJS from "exceljs";
+import { runScheduledImportV2 } from "./services/scheduled-import-v2";
 
 const PARSER_VERSION = "1.0";
 
@@ -453,11 +458,23 @@ export function startScheduler(): void {
       const MAX_RETRIES = 3;
       const BACKOFF_BASE_MS = 2000;
       let lastError: any = null;
+      const useV2 = process.env.AUTO_IMPORT_V2_ENABLED === "true";
 
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-          const result = await runFullImport("schedule", "system");
-          console.log("[SharePoint] Scheduled import complete:", JSON.stringify(result.summary));
+          if (useV2) {
+            const result = await runScheduledImportV2({ triggerType: "schedule", triggeredBy: "system" });
+            console.log("[SharePoint] Scheduled import v2 complete:", JSON.stringify({
+              discovered: result.filesDiscovered,
+              parked: result.filesParked,
+              skipped: result.filesSkipped,
+              failed: result.filesFailed,
+              durationMs: result.durationMs,
+            }));
+          } else {
+            const result = await runFullImport("schedule", "system");
+            console.log("[SharePoint] Scheduled import complete:", JSON.stringify(result.summary));
+          }
           lastError = null;
           break;
         } catch (retryErr: any) {
