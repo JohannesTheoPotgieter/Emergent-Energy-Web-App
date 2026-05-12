@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { hasDeliverableRequirementFlag } from "@shared/task-deliverable-requirement";
 import { db } from "../db";
 import { workItems, taskDeliverables } from "@shared/schema";
@@ -53,6 +53,43 @@ export async function buildTaskWorkflowContext(taskId: number, fallbackCurrentSt
     deliverableRequired,
     deliverableSent: !!deliverable,
   };
+}
+
+/**
+ * Engineering PR 3 (Tier 3) — batched variant of `buildTaskWorkflowContext`
+ * for bulk operations. Two queries total (workItems + taskDeliverables)
+ * regardless of taskIds count, vs. the N×2 the per-id helper does.
+ * Used by `POST /api/eng/tasks/bulk-update`.
+ */
+export async function buildTaskWorkflowContextsForIds(taskIds: number[]): Promise<Map<number, TaskWorkflowContext>> {
+  const result = new Map<number, TaskWorkflowContext>();
+  if (taskIds.length === 0) return result;
+
+  const tasks = await db.select({
+    id: workItems.id,
+    status: workItems.status,
+    approvalRequired: workItems.approvalRequired,
+    linkedDeliverableId: workItems.linkedDeliverableId,
+    taskTypeTag: workItems.taskTypeTag,
+  }).from(workItems).where(inArray(workItems.id, taskIds));
+
+  const deliverables = await db.select({ workItemId: taskDeliverables.workItemId })
+    .from(taskDeliverables)
+    .where(inArray(taskDeliverables.workItemId, taskIds));
+
+  const hasDeliverable = new Set<number>(deliverables.map((d: { workItemId: number }) => d.workItemId));
+
+  for (const task of tasks) {
+    result.set(task.id, {
+      taskId: task.id,
+      currentStatus: task.status || "TO DO",
+      approvalRequired: !!task.approvalRequired,
+      deliverableRequired: hasDeliverableRequirementFlag(task),
+      deliverableSent: hasDeliverable.has(task.id),
+    });
+  }
+
+  return result;
 }
 
 export function assertTaskWorkflowTransition(

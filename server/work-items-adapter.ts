@@ -664,9 +664,101 @@ type EngineeringListOptions = {
   phase?: string;
   ownerUserId?: number;
   projectId?: number;
+  ids?: number[];
 };
 
-export async function listEngineeringWorkItems(options: EngineeringListOptions = {}): Promise<any[]> {
+/**
+ * Engineering PR 3 (Tier 3): typed return for `listEngineeringWorkItems`.
+ * Captures the operational-task-shape view used by engineering-routes.ts
+ * and the dashboard /overview endpoint. Optional fields are mutated in
+ * place by callers (e.g. `assignees` gets resolved from `assigneeUserIds`
+ * via the user-map). Use `Record<string, unknown>` index access for the
+ * rare "we want to spread arbitrary metadata" sites.
+ */
+export type EngTask = {
+  id: number;
+  projectId: number | null;
+  projectName: string | null;
+  importedTaskId: null;
+  taskNumber: string | null;
+  parentTaskId: number | null;
+  parentTaskTitle: string | null;
+  title: string;
+  description: string | null;
+  status: string;
+  priority: string;
+  phase: string | null;
+  primaryWorkstream: "Engineering";
+  ownerUserId: number | null;
+  requesterUserId: null;
+  approverUserId: null;
+  holdReason: string | null;
+  blockedType: string | null;
+  approvalRequired: boolean;
+  startDate: string | Date | null;
+  dueDate: string | Date | null;
+  durationDays: number | null;
+  actualStartDate: string | Date | null;
+  actualEndDate: string | Date | null;
+  actualDurationDays: number | null;
+  completedAt: Date | string | null;
+  percentComplete: number;
+  expectedPercentComplete: null;
+  comment: string | null;
+  /** Resolved by route handlers from `assigneeUserIds` + user map. */
+  assignees: string[] | null;
+  assigneeUserIds: number[];
+  watchers: null;
+  tags: null;
+  blockerReason: string | null;
+  plannedHours: null;
+  actualHours: null;
+  escalationLevel: null;
+  sortOrder: number;
+  isBaseline: false;
+  linkedPlanItemId: number | null;
+  linkedDeliverableId: number | null;
+  linkedQualityItemInstanceId: number | null;
+  externalSource: null;
+  externalTaskId: string | null;
+  externalSubtaskIds: null;
+  externalSubtaskUrls: null;
+  trackingRag: string | null;
+  summaryText: null;
+  importedCommentCount: null;
+  taskTypeTag: string | null;
+  domain: "BOTH";
+  pdTicketId: null;
+  createdBy: number | null;
+  scheduledDate: string | Date | null;
+  scheduledStartTime: string | null;
+  scheduledEndTime: string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+  workItemId: number;
+  legacyId: number | null;
+  legacyTable: string | null;
+  canonical: true;
+  /**
+   * Defensive passthrough fields. listEngineeringWorkItems doesn't set
+   * these (we map endDate→dueDate, etc.), but the engineering-routes
+   * enrichEngineeringTasks handler reads them as a fallback chain (e.g.
+   * `t.dueDate ?? t.endDate`) in case future callers feed in raw
+   * work_items rows. Keeping them optional avoids a noisy refactor.
+   */
+  endDate?: string | Date | null;
+  ownerName?: string | null;
+  expectedPctComplete?: number | null;
+  externalRef?: string | null;
+  wbsCode?: string | null;
+};
+
+export async function listEngineeringWorkItems(options: EngineeringListOptions = {}): Promise<EngTask[]> {
+  // Engineering PR 3: short-circuit when the caller passes an empty `ids`
+  // array. Without this guard Drizzle would emit `IN ()` which Postgres
+  // rejects.
+  if (options.ids && options.ids.length === 0) return [];
+
   const conditions = [
     eq(workItems.workstream, "ENG"),
     isNull(workItems.deletedAt),
@@ -676,6 +768,7 @@ export async function listEngineeringWorkItems(options: EngineeringListOptions =
   if (options.phase) conditions.push(eq(workItems.phase, options.phase));
   if (options.ownerUserId) conditions.push(eq(workItems.ownerUserId, options.ownerUserId));
   if (options.projectId) conditions.push(eq(workItems.projectId, options.projectId));
+  if (options.ids && options.ids.length > 0) conditions.push(inArray(workItems.id, options.ids));
   if (options.projectName) {
     conditions.push(sql`EXISTS (
       SELECT 1 FROM project_info pi
@@ -794,9 +887,12 @@ export async function listEngineeringWorkItems(options: EngineeringListOptions =
   }));
 }
 
-export async function getEngineeringWorkItemById(id: number): Promise<any | null> {
-  const items = await listEngineeringWorkItems({});
-  return items.find((item) => item.id === id) || null;
+export async function getEngineeringWorkItemById(id: number): Promise<EngTask | null> {
+  // Engineering PR 3: scope by id rather than listing all engineering work
+  // items in memory and filtering. listEngineeringWorkItems(ids=[id]) does
+  // the same enrichment but with an `inArray` filter.
+  const items = await listEngineeringWorkItems({ ids: [id] });
+  return items[0] || null;
 }
 
 export async function createEngineeringWorkItem(data: {
