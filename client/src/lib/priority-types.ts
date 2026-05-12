@@ -72,6 +72,15 @@ export interface PriorityRow {
   escalationReason: string | null;
   childCount: number;
   parentTitle: string | null;
+  /**
+   * FK to work_items.id when this priority was promoted from a task via
+   * POST /api/priorities/from-task/:workItemId. Surfaces the "from task"
+   * lineage on the card so users know the priority is tied to a personal
+   * work item; the unified My-Work feed uses this to suppress the work
+   * item from the tasks pane (it's now represented by the priority).
+   */
+  linkedTaskId: number | null;
+  linkedTaskType: string | null;
   createdAt: string;
   updatedAt: string;
 }

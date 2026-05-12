@@ -39,7 +39,6 @@
     "client/src/pages/financial-linking.tsx",
     "client/src/pages/gates/gates-exceptions.tsx",
     "client/src/pages/home.tsx",
-    "client/src/pages/priorities.tsx",
     "client/src/pages/priority-detail.tsx",
     "client/src/pages/reports/report-center.tsx"
   ]

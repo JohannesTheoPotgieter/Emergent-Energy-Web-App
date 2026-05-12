@@ -54,7 +54,7 @@
     },
     {
       "file": "client/src/pages/my-work-tasks.tsx",
-      "loc": 2342
+      "loc": 2368
     },
     {
       "file": "client/src/pages/ee-info.tsx",
@@ -67,6 +67,10 @@
     {
       "file": "client/src/components/quickbooks/QbMatchingWorkbench.tsx",
       "loc": 2204
+    },
+    {
+      "file": "server/departments/priority-strategic-routes.ts",
+      "loc": 2202
     },
     {
       "file": "server/departments/project-routes.ts",
@@ -107,10 +111,6 @@
     {
       "file": "server/departments/opportunities-routes.ts",
       "loc": 2045
-    },
-    {
-      "file": "server/departments/priority-strategic-routes.ts",
-      "loc": 1966
     },
     {
       "file": "client/src/components/TaskDetailDrawer.tsx",
