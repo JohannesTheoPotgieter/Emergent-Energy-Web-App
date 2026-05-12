@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "../db";
 import { normalizedCostLines, projectInfo } from "@shared/schema";
 import { adaptCostToExpense } from "../lib/data-merge";
@@ -180,6 +180,101 @@ export async function getCanonicalProjectCostLinesByName(
   if (!projectId) return { projectId: null, rows: [] };
   const rows = await getCanonicalProjectCostLines(projectId, opts);
   return { projectId, rows };
+}
+
+/**
+ * Finance PR 3 (Tier 3): batched cousin of
+ * `getCanonicalProjectCostLinesByName`. Resolves every requested project
+ * name to its id in a single pass (one query for exact matches, one
+ * full-table scan for the fuzzy fallback), then fetches all matching
+ * `normalized_cost_lines` in a single `inArray` query. Used by the
+ * legacy `/api/expenditure/overrides` handler which previously did
+ * 2 round-trips per project name in a loop.
+ *
+ * Returned map is keyed by the caller-supplied project name; missing
+ * resolutions yield `{ projectId: null, rows: [] }`.
+ */
+export async function getCanonicalCostLinesByNames(
+  projectNames: string[],
+  opts?: CostLineReadOpts,
+): Promise<Map<string, { projectId: number | null; rows: CanonicalCostLineRow[] }>> {
+  const result = new Map<string, { projectId: number | null; rows: CanonicalCostLineRow[] }>();
+  const uniqueNames = Array.from(new Set(projectNames.filter((n): n is string => typeof n === "string" && n.length > 0)));
+  for (const n of uniqueNames) result.set(n, { projectId: null, rows: [] });
+  if (uniqueNames.length === 0) return result;
+
+  // Finance PR 3 audit follow-up: mirror the decode + trim normalisation
+  // `resolveProjectIdByName` does, so URL-encoded or whitespace-padded
+  // inputs resolve identically through the batched path.
+  const inputToLookup = new Map<string, string>();
+  for (const inputName of uniqueNames) {
+    const lookup = decodeURIComponent(inputName).trim();
+    inputToLookup.set(inputName, lookup);
+  }
+  const lookupNames = Array.from(new Set(Array.from(inputToLookup.values()).filter((n) => n.length > 0)));
+
+  // 1. Exact-match pass: one query for all normalised lookup names.
+  const exactMatches = lookupNames.length > 0
+    ? await db.select({ id: projectInfo.id, projectName: projectInfo.projectName })
+        .from(projectInfo)
+        .where(inArray(projectInfo.projectName, lookupNames))
+    : [];
+  const exactByLookup = new Map<string, number>();
+  for (const row of exactMatches) exactByLookup.set(row.projectName, row.id);
+
+  // 2. Fuzzy fallback: one full scan for any lookups that didn't match exactly.
+  const unresolved = lookupNames.filter((n) => !exactByLookup.has(n));
+  if (unresolved.length > 0) {
+    const allProjects = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo);
+    const projectsByKey = new Map<string, number>();
+    for (const p of allProjects) projectsByKey.set(normalizeProjectLookupName(p.projectName), p.id);
+    for (const name of unresolved) {
+      const key = normalizeProjectLookupName(name);
+      const id = projectsByKey.get(key);
+      if (id != null) exactByLookup.set(name, id);
+    }
+  }
+
+  // 3. Single fetch for all matching cost lines.
+  const inputToProjectId = new Map<string, number>();
+  for (const name of uniqueNames) {
+    const lookup = inputToLookup.get(name);
+    if (!lookup) continue;
+    const id = exactByLookup.get(lookup);
+    if (id != null) inputToProjectId.set(name, id);
+  }
+  const allProjectIds = Array.from(new Set(inputToProjectId.values()));
+  if (allProjectIds.length === 0) return result;
+
+  const [projectMap, rawRows] = await Promise.all([
+    projectNameMapById(),
+    db.select().from(normalizedCostLines).where(and(
+      inArray(normalizedCostLines.projectId, allProjectIds),
+      isNull(normalizedCostLines.effectiveTo),
+      isNull(normalizedCostLines.deletedAt),
+    )),
+  ]);
+
+  // 4. Dedupe + optional overlay per project, then group back to input names.
+  const rowsByProjectId = new Map<number, RawCostLineRow[]>();
+  for (const row of rawRows as RawCostLineRow[]) {
+    const list = rowsByProjectId.get(row.projectId) ?? [];
+    list.push(row);
+    rowsByProjectId.set(row.projectId, list);
+  }
+  for (const [inputName, pid] of inputToProjectId.entries()) {
+    const rows = rowsByProjectId.get(pid) ?? [];
+    const deduped = dedupeCurrentLineage(rows);
+    const overlaid = opts?.applyOverrides
+      ? (applyOverridesOverlay(deduped as any[], EXPENDITURE_TRACKED_FIELDS) as RawCostLineRow[])
+      : deduped;
+    const resolvedName = projectMap.get(pid) || (overlaid[0]?.projectName ?? "");
+    result.set(inputName, {
+      projectId: pid,
+      rows: overlaid.map((r) => toCanonicalUiRow(r, resolvedName)),
+    });
+  }
+  return result;
 }
 
 export async function getCanonicalCostLineDiagnostics(projectId?: number) {
