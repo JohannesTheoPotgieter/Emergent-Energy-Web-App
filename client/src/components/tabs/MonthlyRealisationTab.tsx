@@ -157,7 +157,7 @@ function MonthDetailDrawer({ month, onClose, defaultFilter = "all" }: { month: P
         </div>
 
         <div className="px-6 py-4 border-b bg-gradient-to-b from-slate-50/50 to-transparent">
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="rounded-xl bg-gradient-to-br from-slate-50 to-slate-100/50 border border-border/60 px-4 py-3">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Realised</p>
               <p className="font-mono font-black text-foreground text-lg mt-0.5" data-testid="text-drawer-realised">{formatRand(filteredRealised)}</p>

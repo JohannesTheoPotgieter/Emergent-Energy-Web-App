@@ -68,7 +68,7 @@ export function LifecycleGatesChecklist({ gateStatuses = {}, compact = false }: 
               }`}>
                 {status}
               </span>
-              <ArrowRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+              <ArrowRight className="h-3 w-3 text-muted-foreground opacity-50 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity" />
             </Link>
           );
         })}

@@ -600,7 +600,7 @@ export default function TaskDetailDrawer({ task, open, onOpenChange, onInvalidat
               </div>
 
               {form.isRecurring && (
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <Label className="text-xs text-muted-foreground mb-1 block">Interval</Label>
                     <Input type="number" min={1} value={String(form.recurrenceInterval)} onChange={(e) => setForm((f) => ({ ...f, recurrenceInterval: Number(e.target.value || 1) }))} className="h-8 text-sm" />

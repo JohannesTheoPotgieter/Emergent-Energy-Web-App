@@ -1269,7 +1269,7 @@ export default function SubcontractorDashboardPage() {
                 )}
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <Card>
                   <CardContent className="p-3">
                     <p className="text-[10px] text-muted-foreground uppercase">Last Activity</p>

@@ -1959,7 +1959,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                           <span className="text-[9px] text-muted-foreground ml-auto">{view.columns.length} cols</span>
                         </Button>
                         <button
-                          className="h-5 w-5 rounded hover:bg-red-100 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="h-7 w-7 lg:h-5 lg:w-5 rounded hover:bg-red-100 flex items-center justify-center opacity-70 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"
                           onClick={() => deleteView(view.name)}
                           data-testid={`button-delete-view-${view.name}`}
                         >
