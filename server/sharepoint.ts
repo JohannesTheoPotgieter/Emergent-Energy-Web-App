@@ -30,13 +30,13 @@ async function graphGetBuffer(url: string): Promise<Buffer> {
   return Buffer.from(arrayBuf);
 }
 
-export async function testConnection(siteId: string, driveId: string): Promise<{ ok: boolean; success: boolean; siteName?: string; driveName?: string; error?: string }> {
+export async function testConnection(siteId: string, driveId: string): Promise<{ ok: boolean; success: boolean; siteName?: string; driveName?: string; message?: string }> {
   try {
     const site = await graphGet(`https://graph.microsoft.com/v1.0/sites/${siteId}`);
     const drive = await graphGet(`https://graph.microsoft.com/v1.0/drives/${driveId}`);
     return { ok: true, success: true, siteName: site.displayName, driveName: drive.name };
   } catch (err: unknown) {
-    return { ok: false, success: false, error: (err instanceof Error ? err.message : String(err)) };
+    return { ok: false, success: false, message: (err instanceof Error ? err.message : String(err)) };
   }
 }
 
