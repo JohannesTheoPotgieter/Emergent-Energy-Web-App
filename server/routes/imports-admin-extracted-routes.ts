@@ -81,6 +81,14 @@ const upload = multer({
 
 export async function registerImportsAdminExtractedRoutes(app: Express): Promise<void> {
 
+  // Loaded once at registration time; only `createSnapshotFromUpload` is
+  // consumed below (by the /api/upload handler at line ~109). The other
+  // exports (runFullImport, retryFailedImports, importSingleFile) used to
+  // be destructured here too, but those routes were moved to
+  // server/departments/admin-routes.ts in 2026-05-12 to fix a duplicate-
+  // registration audit-log gap.
+  const { createSnapshotFromUpload } = await import("../importPipeline");
+
   const EXECUTION_PHASES = [
     "Construction", "QA", "Commissioning", "Handover", "Compliance Handover",
     "Commercial Close Out", "Commercial Close out", "DLP", "Financial Close",
@@ -1389,134 +1397,19 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
     }
   });
 
-  // ==================== SHAREPOINT IMPORT ROUTES ====================
-
-  const { testConnection, isSharePointConfigured, browseFolders } = await import("../sharepoint");
-  const { runFullImport, retryFailedImports, importSingleFile, createSnapshotFromUpload } = await import("../importPipeline");
-
-  // Admin: Get SP settings
-  app.get("/api/admin/sp-settings", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const settings = await storage.getSpSettings();
-      res.json(settings || null);
-    } catch (err: any) {
-      throw err;
-    }
-  });
-
-  // Admin: Save SP settings
-  app.post("/api/admin/sp-settings", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const { siteId, driveId, folderItemId, folderPath, intervalMinutes, enabled } = req.body;
-      if (!siteId || !driveId) {
-        return res.status(400).json({ error: "siteId and driveId are required" });
-      }
-      const settings = await storage.upsertSpSettings({
-        siteId,
-        driveId,
-        folderItemId: folderItemId || null,
-        folderPath: folderPath || null,
-        intervalMinutes: intervalMinutes || 30,
-        enabled: enabled ?? false,
-        updatedBy: (req.user as any)?.id || null,
-      });
-      logAuditFromReq(req, { entityType: "admin", action: "sp_settings_update", changesJson: { description: "SharePoint settings updated", siteId, driveId, enabled } });
-      res.json(settings);
-    } catch (err: any) {
-      throw err;
-    }
-  });
-
-  // Admin: Test SP connection
-  app.post("/api/admin/sp-settings/test", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const { siteId, driveId } = req.body;
-      if (!siteId || !driveId) {
-        return res.status(400).json({ error: "siteId and driveId are required" });
-      }
-      const result = await testConnection(siteId, driveId);
-      logAuditFromReq(req, { entityType: "sp_settings", action: "test_connection", changesJson: { siteId, driveId } });
-      res.json(result);
-    } catch (err: any) {
-      throw err;
-    }
-  });
-
-  // Admin: Browse SharePoint folders
-  app.get("/api/admin/sp-browse", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const driveId = req.query.driveId as string;
-      const folderId = req.query.folderId as string | undefined;
-      if (!driveId) {
-        return res.status(400).json({ error: "driveId is required" });
-      }
-      const items = await browseFolders(driveId, folderId || undefined);
-      res.json(items);
-    } catch (err: any) {
-      throw err;
-    }
-  });
-
-  // Admin: Import single file from SharePoint
-  app.post("/api/admin/import/single", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const { driveId, siteId, itemId } = req.body;
-      if (!driveId || !siteId || !itemId) {
-        return res.status(400).json({ error: "driveId, siteId, and itemId are required" });
-      }
-      const user = req.user as any;
-      const result = await importSingleFile(driveId, siteId, itemId, user?.email || user?.name || "admin");
-      logAuditFromReq(req, { entityType: "admin", action: "import_single", changesJson: { description: "Single file imported from SharePoint", itemId } });
-      res.json(result);
-    } catch (err: any) {
-      throw err;
-    }
-  });
-
-  // Admin: Run import now
-  app.post("/api/admin/import/run", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const user = req.user as any;
-      const result = await runFullImport("manual", user?.email || user?.name || "admin");
-      logAuditFromReq(req, { entityType: "admin", action: "import_run", changesJson: { description: "Full import triggered manually" } });
-      res.json(result);
-    } catch (err: any) {
-      throw err;
-    }
-  });
-
-  // Admin: Retry failed imports
-  app.post("/api/admin/import/retry-failed", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const user = req.user as any;
-      const result = await retryFailedImports(user?.email || user?.name || "admin");
-      logAuditFromReq(req, { entityType: "admin", action: "import_retry", changesJson: { description: "Failed imports retried" } });
-      res.json(result);
-    } catch (err: any) {
-      throw err;
-    }
-  });
-
-  // Admin: List import runs
-  app.get("/api/admin/import/runs", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const runs = await storage.getAllImportRuns();
-      res.json(runs);
-    } catch (err: any) {
-      throw err;
-    }
-  });
-
-  // Admin: Get single import run + ledger entries
-  app.get("/api/admin/import/runs/:id", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const runId = parseIntParam(req.params.id);
-      const run = await storage.getImportRun(runId);
-      if (!run) return res.status(404).json({ error: "Run not found" });
-      const entries = await storage.getAllChangeLedger({ runId });
-      res.json({ run, entries });
-    } catch (err: any) {
-      throw err;
-    }
-  });
+  // NOTE: SharePoint settings + import-run endpoints used to be duplicated
+  // here AND in server/departments/admin-routes.ts. Express resolves the
+  // first-registered handler, and `registerDepartmentRoutes` runs before
+  // `registerExtractedRoutes` (see server/routes/register-all-routes.ts),
+  // so the `admin-routes.ts` copy is the live one — the duplicates here
+  // were dead code. Removed 2026-05-12 after the Phase 3 security review
+  // flagged the shadow as a missing-audit-log risk.
+  //
+  // Canonical home for:
+  //   GET/POST /api/admin/sp-settings
+  //   POST     /api/admin/sp-settings/test
+  //   GET      /api/admin/sp-browse
+  //   POST     /api/admin/import/{run,retry-failed,single}
+  //   GET      /api/admin/import/runs[/:id]
+  // is server/departments/admin-routes.ts.
 }

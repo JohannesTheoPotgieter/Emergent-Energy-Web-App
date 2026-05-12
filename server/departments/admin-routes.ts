@@ -1,4 +1,5 @@
 import { Router, type Express, type Request, type Response, type NextFunction } from "express";
+import { z } from "zod";
 import { requireAuth, requireAdmin } from './shared-middleware';
 import { storage } from "../storage";
 import { db } from "../db";
@@ -14,6 +15,35 @@ import { getFeatureFlags } from "../lib/feature-flags";
 import { buildPhase1AReconciliationReport } from "../services/promoted-read-compat";
 import { isPhase1ADomainEnabled, isPhase1AEndpointEnabled, type Phase1AFlagSet } from "../services/phase1a-reconciliation-policy";
 import { queryStr, queryInt, paramStr, paramInt } from "../lib/req-parse";
+import { logAuditFromReq } from "../audit-logger";
+
+/**
+ * Body schema for POST /api/admin/sp-settings — used to validate the COO/CEO
+ * input from the SharePoint Auto-Import admin panel. Bounds on
+ * `intervalMinutes` prevent foot-guns (0 would tight-loop the in-process
+ * scheduler, very large values silently disable the schedule). `enabled` is
+ * a strict boolean, not a truthy-coerced field, so a stray string never
+ * flips the scheduler on or off.
+ */
+const SP_SETTINGS_BODY = z.object({
+  siteId: z.string().trim().min(1, "siteId is required"),
+  driveId: z.string().trim().min(1, "driveId is required"),
+  folderItemId: z.string().trim().nullable().optional(),
+  folderPath: z.string().trim().nullable().optional(),
+  intervalMinutes: z.number().int().min(1).max(1440).default(30),
+  enabled: z.boolean().default(false),
+}).strict();
+
+const SP_TEST_BODY = z.object({
+  siteId: z.string().trim().min(1, "siteId is required"),
+  driveId: z.string().trim().min(1, "driveId is required"),
+}).strict();
+
+const SP_IMPORT_SINGLE_BODY = z.object({
+  driveId: z.string().trim().min(1, "driveId is required"),
+  siteId: z.string().trim().min(1, "siteId is required"),
+  itemId: z.string().trim().min(1, "itemId is required"),
+}).strict();
 
 const router = Router();
 
@@ -668,92 +698,122 @@ router.get("/api/admin/sp-settings", requireAuth, requireAdmin, async (req, res)
 });
 
 router.post("/api/admin/sp-settings", requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { siteId, driveId, folderItemId, folderPath, intervalMinutes, enabled } = req.body;
-    if (!siteId || !driveId) {
-      return res.status(400).json({ error: "siteId and driveId are required" });
-    }
-    const settings = await storage.upsertSpSettings({
-      siteId,
-      driveId,
-      folderItemId: folderItemId || null,
-      folderPath: folderPath || null,
-      intervalMinutes: intervalMinutes || 30,
-      enabled: enabled ?? false,
-      updatedBy: (req.user as any)?.id || null,
+  const parsed = SP_SETTINGS_BODY.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "Invalid sp-settings payload",
+      issues: parsed.error.issues.map((issue) => ({
+        path: issue.path.join("."),
+        message: issue.message,
+      })),
     });
-    res.json(settings);
-  } catch (err: any) {
-    throw err;
   }
+  const body = parsed.data;
+  const userId = typeof req.user?.id === "number" ? req.user.id : null;
+  const settings = await storage.upsertSpSettings({
+    siteId: body.siteId,
+    driveId: body.driveId,
+    folderItemId: body.folderItemId ?? null,
+    folderPath: body.folderPath ?? null,
+    intervalMinutes: body.intervalMinutes,
+    enabled: body.enabled,
+    updatedBy: userId,
+  });
+  logAuditFromReq(req, {
+    entityType: "admin",
+    action: "sp_settings_update",
+    changesJson: {
+      description: "SharePoint settings updated",
+      siteId: body.siteId,
+      driveId: body.driveId,
+      intervalMinutes: body.intervalMinutes,
+      enabled: body.enabled,
+    },
+  });
+  res.json(settings);
 });
 
 router.post("/api/admin/sp-settings/test", requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { siteId, driveId } = req.body;
-    if (!siteId || !driveId) {
-      return res.status(400).json({ error: "siteId and driveId are required" });
-    }
-    const { testConnection } = await import("../sharepoint");
-    const result = await testConnection(siteId, driveId);
-    res.json(result);
-  } catch (err: any) {
-    throw err;
+  const parsed = SP_TEST_BODY.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "siteId and driveId are required",
+      issues: parsed.error.issues.map((issue) => ({
+        path: issue.path.join("."),
+        message: issue.message,
+      })),
+    });
   }
+  const { testConnection } = await import("../sharepoint");
+  const result = await testConnection(parsed.data.siteId, parsed.data.driveId);
+  logAuditFromReq(req, {
+    entityType: "sp_settings",
+    action: "test_connection",
+    changesJson: { siteId: parsed.data.siteId, driveId: parsed.data.driveId },
+  });
+  res.json(result);
 });
 
 router.get("/api/admin/sp-browse", requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const driveId = req.query.driveId as string;
-    const folderId = req.query.folderId as string | undefined;
-    if (!driveId) {
-      return res.status(400).json({ error: "driveId is required" });
-    }
-    const { browseFolders } = await import("../sharepoint");
-    const items = await browseFolders(driveId, folderId || undefined);
-    res.json(items);
-  } catch (err: any) {
-    throw err;
+  const driveId = queryStr(req, "driveId");
+  const folderId = queryStr(req, "folderId");
+  if (!driveId) {
+    return res.status(400).json({ error: "driveId is required" });
   }
+  const { browseFolders } = await import("../sharepoint");
+  const items = await browseFolders(driveId, folderId || undefined);
+  res.json(items);
 });
 
 // ==================== SHAREPOINT IMPORT ====================
 
 router.post("/api/admin/import/single", requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { driveId, siteId, itemId } = req.body;
-    if (!driveId || !siteId || !itemId) {
-      return res.status(400).json({ error: "driveId, siteId, and itemId are required" });
-    }
-    const { importSingleFile } = await import("../importPipeline");
-    const user = req.user as any;
-    const result = await importSingleFile(driveId, siteId, itemId, user?.email || user?.name || "admin");
-    res.json(result);
-  } catch (err: any) {
-    throw err;
+  const parsed = SP_IMPORT_SINGLE_BODY.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "driveId, siteId, and itemId are required",
+      issues: parsed.error.issues.map((issue) => ({
+        path: issue.path.join("."),
+        message: issue.message,
+      })),
+    });
   }
+  const { importSingleFile } = await import("../importPipeline");
+  const actor = req.user?.email || req.user?.name || "admin";
+  const result = await importSingleFile(parsed.data.driveId, parsed.data.siteId, parsed.data.itemId, actor);
+  logAuditFromReq(req, {
+    entityType: "admin",
+    action: "import_single_file",
+    changesJson: {
+      description: "Single SharePoint file imported manually",
+      itemId: parsed.data.itemId,
+    },
+  });
+  res.json(result);
 });
 
 router.post("/api/admin/import/run", requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { runFullImport } = await import("../importPipeline");
-    const user = req.user as any;
-    const result = await runFullImport("manual", user?.email || user?.name || "admin");
-    res.json(result);
-  } catch (err: any) {
-    throw err;
-  }
+  const { runFullImport } = await import("../importPipeline");
+  const actor = req.user?.email || req.user?.name || "admin";
+  const result = await runFullImport("manual", actor);
+  logAuditFromReq(req, {
+    entityType: "admin",
+    action: "import_run",
+    changesJson: { description: "Full SharePoint import triggered manually" },
+  });
+  res.json(result);
 });
 
 router.post("/api/admin/import/retry-failed", requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { retryFailedImports } = await import("../importPipeline");
-    const user = req.user as any;
-    const result = await retryFailedImports(user?.email || user?.name || "admin");
-    res.json(result);
-  } catch (err: any) {
-    throw err;
-  }
+  const { retryFailedImports } = await import("../importPipeline");
+  const actor = req.user?.email || req.user?.name || "admin";
+  const result = await retryFailedImports(actor);
+  logAuditFromReq(req, {
+    entityType: "admin",
+    action: "import_retry_failed",
+    changesJson: { description: "Failed SharePoint imports retried manually" },
+  });
+  res.json(result);
 });
 
 router.get("/api/admin/import/runs", requireAuth, requireAdmin, async (req, res) => {
