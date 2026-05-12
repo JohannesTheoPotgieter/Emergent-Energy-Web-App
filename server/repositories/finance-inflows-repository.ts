@@ -133,35 +133,74 @@ export class FinanceInflowsRepository {
   }
 
   async getProgramInflowsByProject(projectName: string, opts?: { applyOverrides?: boolean }): Promise<any[]> {
-    const { adaptRevenueToInflow } = await import("../lib/data-merge");
-    // Build all name variants so "Mondi" and "Mondi_Tracker" resolve to the
-    // same row set. Strip _Tracker suffix, then include both bare and suffixed
-    // forms to cover rows stored under either spelling.
-    const baseName = projectName.replace(/_Tracker$/i, "").trim();
-    const nameVariants = Array.from(new Set([projectName, baseName, `${baseName}_Tracker`]));
+    const byName = await this.listProgramInflowsByProjectNames([projectName], opts);
+    return byName.get(projectName) ?? [];
+  }
 
-    // Resolve project IDs for all variants to also catch legacy rows where
-    // project_name is NULL but project_id is set.
-    const projectMatches = await this.dbInstance.select({ id: projectInfo.id })
+  /**
+   * Finance PR 3 (Tier 3) — batched cousin of `getProgramInflowsByProject`.
+   *
+   * Loads the inflow rows for many project names in a fixed 2 queries
+   * (project_info name-variant lookup + normalized_revenue_lines fetch),
+   * vs. the N×2 round-trips the per-project caller does inside a `for`
+   * loop. Used by `POST /api/revenue-tracking/overrides` (5887 + 5973
+   * paths) and the legacy fallback in
+   * `server/routes/finance-legacy-extracted-routes.ts`.
+   *
+   * The returned map is keyed by the CALLER-SUPPLIED projectName so
+   * baseline-diff handlers can look up by input key without re-resolving
+   * variants.
+   */
+  async listProgramInflowsByProjectNames(
+    projectNames: string[],
+    opts?: { applyOverrides?: boolean },
+  ): Promise<Map<string, any[]>> {
+    const result = new Map<string, any[]>();
+    const uniqueNames = Array.from(new Set(projectNames.filter((n): n is string => typeof n === "string" && n.length > 0)));
+    if (uniqueNames.length === 0) return result;
+
+    const { adaptRevenueToInflow } = await import("../lib/data-merge");
+
+    // Build all name variants and a reverse-map so we can group results back
+    // to the caller's input names.
+    const variantToInput = new Map<string, string[]>();
+    const allVariants: string[] = [];
+    for (const inputName of uniqueNames) {
+      const baseName = inputName.replace(/_Tracker$/i, "").trim();
+      const variants = Array.from(new Set([inputName, baseName, `${baseName}_Tracker`]));
+      for (const v of variants) {
+        if (!variantToInput.has(v)) variantToInput.set(v, []);
+        variantToInput.get(v)!.push(inputName);
+        allVariants.push(v);
+      }
+    }
+    const uniqueVariants = Array.from(new Set(allVariants));
+
+    // 1. Resolve project IDs once.
+    const projectMatches = await this.dbInstance.select({
+      id: projectInfo.id,
+      projectName: projectInfo.projectName,
+    })
       .from(projectInfo)
-      .where(inArray(projectInfo.projectName, nameVariants));
+      .where(inArray(projectInfo.projectName, uniqueVariants));
+    const projectIdToVariant = new Map<number, string>();
+    for (const p of projectMatches) {
+      if (p.projectName) projectIdToVariant.set(p.id, p.projectName);
+    }
     const projectIds = projectMatches.map((p: { id: number }) => p.id);
 
+    // 2. One fetch for all matching revenue lines.
     const projectIdFilter = projectIds.length > 0
       ? inArray(normalizedRevenueLines.projectId, projectIds)
       : sql`FALSE`;
-
     const matched = await this.dbInstance.select().from(normalizedRevenueLines)
       .where(and(
         isNull(normalizedRevenueLines.effectiveTo),
         isNull(normalizedRevenueLines.deletedAt),
-        or(inArray(normalizedRevenueLines.projectName, nameVariants), projectIdFilter),
+        or(inArray(normalizedRevenueLines.projectName, uniqueVariants), projectIdFilter),
       ));
 
-    // Optional read-side overlay (workstream B). When enabled, applies
-    // manual_overrides on top of the live column for tracked revenue
-    // fields BEFORE adaptRevenueToInflow runs, so the adapter's derived
-    // fields (e.g. inBank computation) react to the operator's edits.
+    // Optional read-side overlay (workstream B).
     let rawRows = matched as any[];
     if (opts?.applyOverrides) {
       const { applyOverridesOverlay } = await import("../lib/manual-overrides");
@@ -169,7 +208,21 @@ export class FinanceInflowsRepository {
       rawRows = applyOverridesOverlay(rawRows, REVENUE_TRACKED_FIELDS);
     }
 
-    return rawRows.map((r: any) => adaptRevenueToInflow(r, projectName));
+    // 3. Group by caller-supplied input name. A row may belong to multiple
+    // input names if the caller passed both "Mondi" and "Mondi_Tracker";
+    // emit once per matched input, with `adaptRevenueToInflow` invoked with
+    // the input name so downstream readers see a stable key.
+    for (const inputName of uniqueNames) result.set(inputName, []);
+    for (const row of rawRows) {
+      const owningVariant = (typeof row.projectName === "string" && row.projectName)
+        ? row.projectName
+        : (row.projectId != null ? projectIdToVariant.get(row.projectId) : undefined);
+      const inputs = owningVariant ? (variantToInput.get(owningVariant) ?? []) : [];
+      for (const inputName of inputs) {
+        result.get(inputName)!.push(adaptRevenueToInflow(row, inputName));
+      }
+    }
+    return result;
   }
 
   async updateProgramInflowFields(id: number, fields: Record<string, any>, audit?: AuditCtx): Promise<any | undefined> {
