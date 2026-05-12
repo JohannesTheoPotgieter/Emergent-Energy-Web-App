@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { AlertTriangle, ArrowUp, CheckCircle2, Clock, RefreshCw, User, Users } from "lucide-react";
+import { AlertTriangle, ArrowUp, CheckCircle2, Clock, ListTodo, RefreshCw, User, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -97,12 +97,24 @@ export function PriorityCard({
           </div>
         )}
 
-        {priority.escalated && (
-          <div className="flex items-center gap-1 mb-2">
-            <Badge variant="destructive" className="text-[10px]">
-              <AlertTriangle className="w-3 h-3 mr-0.5" />
-              Escalated{priority.escalationReason ? ` — ${priority.escalationReason}` : ""}
-            </Badge>
+        {(priority.escalated || priority.linkedTaskId) && (
+          <div className="flex items-center gap-1 mb-2 flex-wrap">
+            {priority.escalated && (
+              <Badge variant="destructive" className="text-[10px]">
+                <AlertTriangle className="w-3 h-3 mr-0.5" />
+                Escalated{priority.escalationReason ? ` — ${priority.escalationReason}` : ""}
+              </Badge>
+            )}
+            {priority.linkedTaskId && (
+              <Badge
+                variant="outline"
+                className="text-[10px] bg-sky-50 text-sky-700 border-sky-200"
+                title={`Promoted from work item #${priority.linkedTaskId}`}
+              >
+                <ListTodo className="w-3 h-3 mr-0.5" />
+                from task
+              </Badge>
+            )}
           </div>
         )}
 

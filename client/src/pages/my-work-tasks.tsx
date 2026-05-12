@@ -984,6 +984,32 @@ export default function MyWorkTasksPage() {
   return (
     <PageShell className="max-w-6xl p-4 md:p-6" data-testid="my-work-tasks-page">
 
+      {/* Phase 7A transition banner — points users at the unified My
+          Priorities surface so the two views stay synchronised. The
+          My-Priorities tab on /priorities now ALSO surfaces every work
+          item assigned to the caller (with a "Make priority" affordance);
+          this page is the canonical power-user view (filters, board, deep
+          sort) and will be folded into /priorities in a later release. */}
+      <div
+        className="mb-3 rounded-md border border-emerald-200 bg-emerald-50/60 dark:bg-emerald-950/20 px-3 py-2 text-xs text-emerald-900 dark:text-emerald-100 flex items-center justify-between gap-3"
+        data-testid="my-tasks-priorities-banner"
+      >
+        <span>
+          <strong>Personal priorities have moved.</strong>{" "}
+          Promote any task here to your priority list, or view both side-by-side under{" "}
+          <a href="/priorities?tab=my" className="underline font-medium hover:no-underline">
+            My Priorities
+          </a>
+          .
+        </span>
+        <a
+          href="/priorities?tab=my"
+          className="text-emerald-700 dark:text-emerald-200 hover:underline font-medium shrink-0"
+        >
+          Open →
+        </a>
+      </div>
+
       <div className="shrink-0 mb-3" data-testid="tasks-header">
         <SectionHeader
           icon={<ListTodo className="h-5 w-5" />}
