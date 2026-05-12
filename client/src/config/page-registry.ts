@@ -213,7 +213,11 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "myWork", path: "/my-work", label: "My Work", iconKey: "Home", navGroup: "MY_WORK", permissionEntity: "home", showInSidebar: true, routeComponentKey: "MyWorkHomePage", matchSubRoutes: true },
   { id: "inbox", path: "/inbox", label: "Inbox", iconKey: "Inbox", navGroup: "MY_WORK", permissionEntity: "home", showInSidebar: true, routeComponentKey: "InboxPage" },
   { id: "myWorkCalendar", path: "/my-work/calendar", label: "Calendar", iconKey: "CalendarCheck", navGroup: "MY_WORK", permissionEntity: "my_work", showInSidebar: true, routeComponentKey: "MyWorkCalendarPage" },
-  { id: "myWorkTasks", path: "/my-work/tasks", label: "Tasks", iconKey: "ListChecks", navGroup: "MY_WORK", permissionEntity: "my_tool", showInSidebar: true, routeComponentKey: "MyWorkTasksPage" },
+  // Phase 7B: showInSidebar flipped to false. Page stays routable for
+  // bookmarks + the transition banner that points at /priorities?tab=my.
+  // The MY_WORK sidebar no longer renders a "Tasks" entry — users go to
+  // Home → Priorities → "My" tab for unified work_items + priorities.
+  { id: "myWorkTasks", path: "/my-work/tasks", label: "Tasks", iconKey: "ListChecks", navGroup: "MY_WORK", permissionEntity: "my_tool", showInSidebar: false, routeComponentKey: "MyWorkTasksPage" },
   // Prompt 0.7: duplicate approvals entry point. Canonical approvals surface
   // is `/pm/approvals` (kept in TOP_SECTIONS). Route remains as a redirect
   // alias so deep links still resolve.

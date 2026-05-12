@@ -247,6 +247,10 @@ function mapExceptionModelLabel(item: HomeExceptionItem) {
 }
 
 function getExceptionHref(item: HomeExceptionItem) {
+  // Phase 7B: targeted `?itemKey=` deep-links still go to the dedicated
+  // /my-work/tasks page (still routable; transition banner present) so
+  // the scroll-to / highlight behaviour works. Untargeted fallbacks go
+  // to the unified /priorities?tab=my surface.
   switch (item.sourceType) {
     case "work_item":
       return `/my-work/tasks?itemKey=${encodeURIComponent(`plan-${item.sourceId}`)}`;
@@ -255,7 +259,7 @@ function getExceptionHref(item: HomeExceptionItem) {
     case "approval":
       return `/my-work/tasks?itemKey=${encodeURIComponent(`approval-gen-${item.sourceId}`)}`;
     default:
-      return "/my-work/tasks";
+      return "/priorities?tab=my";
   }
 }
 
