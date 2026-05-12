@@ -5,19 +5,22 @@ import { syncAuditLog, intakeRequests, projectInfo } from "@shared/schema";
 import { getConnector, getConfig, mapSpFieldsToApp, normalizeClientKey, hashFields } from "./intake-connector";
 import { getEffectiveUser, jwtAuth, requireAuth, type AuthenticatedUser } from "./auth-context";
 import { logAuditFromReq } from "./audit-logger";
-import { sendError, ApiError } from "./lib/api-error";
+import { sendError, ApiError, notFound } from "./lib/api-error";
+// Engineering PR 2 — canonical RBAC. Replaces local `requireCOO` shim
+// (which hardcoded ["COO_ADMIN", "CEO_ADMIN"] and emitted a raw 403).
+import { requireRole as requireRoleCanonical } from "./middleware/requireRole";
+import { ADMIN_ROLES } from "@shared/schema";
 
 function getUser(req: Request): { id: number; name: string; role: string } {
   const user = getEffectiveUser(req);
   return user ? { id: user.id, name: user.name, role: user.role } : { id: 0, name: "Unknown", role: "viewer" };
 }
 
-function requireCOO(req: Request, res: Response, next: NextFunction) {
-  const role = getUser(req)?.role || "";
-  const cooRoles = ["COO_ADMIN", "CEO_ADMIN"];
-  if (cooRoles.includes(role)) return next();
-  res.status(403).json({ error: "forbidden", message: "COO access required" });
-}
+// Engineering PR 2: replaced the local `requireCOO` function (which had a
+// raw 403 JSON response) with the canonical `requireRole` middleware over
+// the canonical ADMIN_ROLES constant. Same semantics; canonical error
+// envelope.
+const requireCOO = requireRoleCanonical([...ADMIN_ROLES]);
 
 export function registerEngineeringIntakeRoutes(app: Express) {
 
@@ -67,7 +70,7 @@ export function registerEngineeringIntakeRoutes(app: Express) {
       const items = await connector.fetchItems(siteId, listId);
       const item = items.find(i => i.id === req.params.id);
 
-      if (!item) return res.status(404).json({ error: "Item not found" });
+      if (!item) return sendError(res, notFound("Item"));
 
       const columns = await connector.getColumns(siteId, listId);
 
