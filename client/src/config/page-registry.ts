@@ -143,7 +143,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // Absorbs: QB Customer Mapping, QB Bill Linking, Counterparties,
   // Subcontractor Dashboard, Invoice Patterns, Admin QB.
   { id: "financeQuickBooksThroughput", path: "/finance/quickbooks", label: "QB Throughput", iconKey: "Plug", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: false, routeComponentKey: "FinanceQuickBooksThroughputPage" },
-  { id: "priorities", path: "/priorities", label: "Priorities", iconKey: "Flag", navGroup: "PRIORITIES", permissionEntity: "company_priorities", accessPolicy: "ungated", showInSidebar: false, routeComponentKey: "PrioritiesPage" },
+  { id: "priorities", path: "/priorities", label: "Priorities", iconKey: "Flag", navGroup: "PRIORITIES", permissionEntity: "company_priorities", accessPolicy: "ungated", showInSidebar: true, routeComponentKey: "PrioritiesPage" },
   { id: "priorityDetail", path: "/priorities/:id", label: "Priority Detail", permissionEntity: "company_priorities", accessPolicy: "ungated", routeComponentKey: "PriorityDetailPage" },
   { id: "companyPriorities", path: "/company-priorities", label: "Company Priorities", type: "alias", permissionEntity: "company_priorities", accessPolicy: "ungated", redirectTo: "/priorities" },
   { id: "adminMyTool", path: "/admin/my-tool-settings", label: "My Work Settings", permissionEntity: "admin", routeComponentKey: "MyWorkAdminSettingsPage" },
