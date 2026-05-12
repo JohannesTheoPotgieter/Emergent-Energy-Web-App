@@ -1148,7 +1148,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
           </Badge>
           <span className="truncate max-w-[90px] text-xs" title={exp.linkedTask.title}>{exp.linkedTask.title}</span>
           {isAdmin && (
-            <Button variant="ghost" size="sm" className="h-4 w-4 p-0 opacity-0 group-hover:opacity-100 shrink-0"
+            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 opacity-70 lg:h-4 lg:w-4 lg:opacity-0 lg:group-hover:opacity-100 shrink-0"
               onClick={() => unlinkTaskMutation.mutate(exp.id)} title="Unlink task" data-testid={`button-unlink-exp-${exp.id}`}>
               <Unlink className="h-3 w-3 text-gray-400 hover:text-red-500" />
             </Button>

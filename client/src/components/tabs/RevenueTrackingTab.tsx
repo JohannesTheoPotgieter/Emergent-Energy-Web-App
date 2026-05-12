@@ -1171,7 +1171,7 @@ export function RevenueTrackingTab({ projectName, highlightId, projectId }: Reve
                                 )}
                                 <Button
                                   variant="ghost" size="sm"
-                                  className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                  className="h-7 w-7 lg:h-5 lg:w-5 p-0 opacity-70 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity shrink-0"
                                   onClick={() => { setDateOverrideRow(m.rowNumber); setDateOverrideValues({ date: formatDateForInput(m.date), reason: m.dateOverrideReason || "" }); }}
                                   title="Override date with reason"
                                   data-testid={`button-date-override-${m.rowNumber}`}
@@ -1248,7 +1248,7 @@ export function RevenueTrackingTab({ projectName, highlightId, projectId }: Reve
                                 </span>
                                 <Button
                                   variant="ghost" size="sm"
-                                  className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                  className="h-7 w-7 lg:h-5 lg:w-5 p-0 opacity-70 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity shrink-0"
                                   onClick={() => unlinkTaskMutation.mutate(m.rowNumber)}
                                   title="Unlink task"
                                   data-testid={`button-unlink-${m.rowNumber}`}

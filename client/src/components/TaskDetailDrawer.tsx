@@ -1434,7 +1434,7 @@ function TaskDetailContent({
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-600"
+                          className="h-7 w-7 p-0 opacity-60 lg:opacity-0 lg:h-6 lg:w-6 lg:group-hover:opacity-100 text-muted-foreground hover:text-red-600"
                           onClick={() => setConfirmDeleteItem(item.id)}
                           title="Delete item"
                           data-testid={`button-delete-item-${item.id}`}
@@ -1625,7 +1625,7 @@ function TaskDetailContent({
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-600"
+                          className="h-7 w-7 p-0 opacity-60 lg:opacity-0 lg:h-6 lg:w-6 lg:group-hover:opacity-100 text-muted-foreground hover:text-red-600"
                           onClick={() => setConfirmDeleteComment(c.id)}
                           title="Delete comment"
                           data-testid={`button-delete-comment-${c.id}`}
@@ -1728,7 +1728,7 @@ function TaskDetailContent({
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-600"
+                    className="h-7 w-7 p-0 opacity-60 lg:opacity-0 lg:h-6 lg:w-6 lg:group-hover:opacity-100 text-muted-foreground hover:text-red-600"
                     onClick={() => setConfirmDeleteAttachment(a.id)}
                     title="Delete attachment"
                     data-testid={`button-delete-attachment-${a.id}`}

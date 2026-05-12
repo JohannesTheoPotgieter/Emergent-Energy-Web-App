@@ -217,7 +217,7 @@ export default function TaskCard({
         )}
       </div>
 
-      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+      <div className="flex items-center gap-0.5 opacity-70 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity shrink-0">
         {task.status !== "in_progress" && !isDone && task.status !== "cancelled" && (
           <Button
             variant="ghost" size="sm"
