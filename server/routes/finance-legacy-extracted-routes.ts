@@ -35,13 +35,16 @@ import { mapCostToExpenseInput } from "../lib/data-merge";
 import { getMergedExpensesAndInflows } from "../lib/cashflow-helpers";
 import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
 import { STATIC_COS_BUDGET_FY26 } from "../lib/calculations/financeUtils";
+import { FinanceInflowsRepository } from "../repositories/finance-inflows-repository";
+
+const financeInflowsRepository = new FinanceInflowsRepository();
 import { sanitizeFilename, allowedFileFilter } from "../lib/upload-security";
 import { recordOverride, recordManualEdit } from "../lib/audit/diff-engine";
 import { recordManualEditFlag } from "../lib/manual-edit-flag";
 import { safeNum, getFYRange } from "../lib/home-helpers";
 import { isEffectivelyRealisedLocal, isCashflowConfirmedCheck } from "../lib/finance-helpers";
 import { paramStr, parseIntParam } from "../lib/req-params";
-import { getCanonicalAllCurrentCostLines, getCanonicalProjectCostLinesByName } from "../services/project-cost-line-read-service";
+import { getCanonicalAllCurrentCostLines, getCanonicalProjectCostLinesByName, getCanonicalCostLinesByNames } from "../services/project-cost-line-read-service";
 
 export function registerFinanceLegacyExtractedRoutes(app: Express): void {
 
@@ -667,12 +670,17 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       const userId = req.user?.id;
 
       // Apply overrides directly to the base table (normalized_revenue_lines)
-      const projectNames = [...new Set(overrides.map((o: any) => o.projectName).filter(Boolean))];
+      const projectNames = [...new Set(overrides.map((o: any) => o.projectName).filter(Boolean))] as string[];
       const saved: any[] = [];
+
+      // Finance PR 3: batch read of inflows for every project in this
+      // override payload. Replaces N×2 round-trips with a single 2-query
+      // call before the apply loop.
+      const inflowsByProject = await financeInflowsRepository.listProgramInflowsByProjectNames(projectNames);
 
       for (const pn of projectNames) {
         const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
-        const inflows = await storage.getProgramInflowsByProject(pn);
+        const inflows = inflowsByProject.get(pn) ?? [];
         const rowMap = new Map(inflows.map((r: any) => [r.rowNumber, r]));
 
         const rowGroups = new Map<number, Record<string, any>>();
@@ -793,9 +801,14 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
         supplierName: "supplierName",
       };
 
+      // Finance PR 3: batch read of cost lines for every project in this
+      // override payload. Replaces the per-project 2-query lookup with a
+      // single fixed-2-query call before the apply loop.
+      const costLinesByProject = await getCanonicalCostLinesByNames(projectNames as string[]);
+
       for (const pn of projectNames) {
         const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
-        const { rows: expenses } = await getCanonicalProjectCostLinesByName(pn as string);
+        const expenses = costLinesByProject.get(pn as string)?.rows ?? [];
         const rowMap = new Map(expenses.map((e: any) => [e.rowNumber, e]));
 
         const rowGroups = new Map<number, Record<string, any>>();

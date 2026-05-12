@@ -257,6 +257,11 @@ import { recordOverride } from "../lib/audit/diff-engine";
 // § 3.3 canonical revenue-recognition helper. All "Revenue" KPIs MUST come
 // from this — see docs/AGENT_GUARDRAILS.md § 3.3.
 import { recognitionAmountFor } from "../lib/finance/revenue-recognition";
+// Finance PR 3 (Tier 3): monthly-rollup bucketing helper. Consolidates the
+// per-line iteration that 6 tracker handlers were rebuilding inline so
+// `recognitionAmountFor` + `getCosEffectiveDateAndSource` +
+// `isEffectivelyRealised` are read through one canonical path per § 3.3.2.
+import { bucketCostLinesForRecognition } from "../lib/finance/recognition-bucketing";
 import { isWorkItemsEnabled, getWorkItemsAsOperationalTasks } from "../work-items-adapter";
 import { refreshProjectMetricsAsync } from "../services/dashboard-metrics";
 import { createNotification } from "../services/notification-service";
@@ -771,7 +776,53 @@ async function loadProjectFinanceGovernanceContext(
   projectId?: number | null,
   extraUserIds: number[] = []
 ) {
-  const [approvalRows, editRequestRows, changeRows, microsoftRows] = await Promise.all([
+  // Finance PR 3: typed row shapes for the project-finance dashboard
+  // governance bundle. The Drizzle selects below already declare exact
+  // column projections, but the conditional `Promise.resolve([])`
+  // fallbacks for the `projectId == null` branch widen to `any[]`,
+  // forcing every `.map((row: any)` / `.filter((row: any)` downstream.
+  // Hand-rolled aliases here mirror the select projections, so the
+  // callbacks can drop their `any` annotations.
+  type ApprovalRow = {
+    id: number;
+    type: string;
+    title: string;
+    description: string | null;
+    status: string;
+    dueDate: string | null;
+    requestedAt: Date;
+    approvalCategory: string | null;
+    relatedEntityType: string | null;
+  };
+  type ChangeRow = {
+    id: number;
+    actorRole: string | null;
+    actorUserId: number | null;
+    entityType: string;
+    entityId: string;
+    action: string;
+    summary: string | null;
+    overrideCategory: string | null;
+    overrideComment: string | null;
+    createdAt: Date;
+  };
+  type MicrosoftRow = {
+    id: number;
+    type: string;
+    subjectOrTitle: string | null;
+    preview: string | null;
+    webLink: string | null;
+    actionRequired: boolean | null;
+    isRead: boolean | null;
+    linkedTaskId: number | null;
+    receivedOrStartDatetime: Date | null;
+  };
+  const [approvalRows, editRequestRows, changeRows, microsoftRows]: [
+    ApprovalRow[],
+    Awaited<ReturnType<typeof financialIntegrationRepository.listEditRequestsForProjectWithRequester>>,
+    ChangeRow[],
+    MicrosoftRow[],
+  ] = await Promise.all([
     projectId
       ? db
           .select({
@@ -789,7 +840,7 @@ async function loadProjectFinanceGovernanceContext(
           .where(eq(approvals.projectId, projectId))
           .orderBy(desc(approvals.requestedAt))
           .limit(25)
-      : Promise.resolve([] as any[]),
+      : Promise.resolve([] as ApprovalRow[]),
     financialIntegrationRepository.listEditRequestsForProjectWithRequester(projectName, 25),
     db
       .select({
@@ -825,18 +876,18 @@ async function loadProjectFinanceGovernanceContext(
           .where(eq(msObjects.linkedProjectId, projectId))
           .orderBy(desc(msObjects.receivedOrStartDatetime))
           .limit(25)
-      : Promise.resolve([] as any[]),
+      : Promise.resolve([] as MicrosoftRow[]),
   ]);
 
-  const changeSetIds = changeRows.map((row: any) => row.id).filter((id: any): id is number => typeof id === "number");
+  const changeSetIds = changeRows.map((row) => row.id).filter((id): id is number => typeof id === "number");
   const changeFieldRows = await qbReconRepository.listFieldChangesByChangeSetIds(changeSetIds);
 
   const userIds = Array.from(
     new Set(
       [
         ...extraUserIds,
-        ...changeRows.map((row: any) => row.actorUserId),
-        ...editRequestRows.map((row: any) => row.requestedByUserId),
+        ...changeRows.map((row) => row.actorUserId),
+        ...editRequestRows.map((row) => row.requestedByUserId),
       ].filter((id): id is number => typeof id === "number" && Number.isFinite(id))
     )
   );
@@ -844,13 +895,13 @@ async function loadProjectFinanceGovernanceContext(
   const userRows = await usersRepository.listIdNameByIds(userIds);
 
   const userNameById = new Map<number, string>(
-    userRows.map((row: any) => [row.id, row.name || `User ${row.id}`])
+    userRows.map((row: { id: number; name: string | null }) => [row.id, row.name || `User ${row.id}`])
   );
 
   const { byChangeSet, latestByEntity } = buildFieldChangesByChangeSet(changeRows, changeFieldRows);
-  const pendingApprovals = approvalRows.filter((row: any) => row.status === "pending");
-  const cashAffectingApprovals = pendingApprovals.filter((row: any) => isFinanceApprovalRecord(row));
-  const pendingEditRequests = editRequestRows.filter((row: any) => row.status === "pending");
+  const pendingApprovals = approvalRows.filter((row) => row.status === "pending");
+  const cashAffectingApprovals = pendingApprovals.filter((row) => isFinanceApprovalRecord(row));
+  const pendingEditRequests = editRequestRows.filter((row) => row.status === "pending");
 
   return {
     latestChangeByEntity: latestByEntity,
@@ -859,7 +910,7 @@ async function loadProjectFinanceGovernanceContext(
     approvals: {
       pendingCount: pendingApprovals.length,
       affectingCashCount: cashAffectingApprovals.length,
-      pending: cashAffectingApprovals.slice(0, 5).map((row: any) => ({
+      pending: cashAffectingApprovals.slice(0, 5).map((row) => ({
         id: row.id,
         title: row.title,
         type: row.type,
@@ -870,23 +921,23 @@ async function loadProjectFinanceGovernanceContext(
     },
     editRequests: {
       pendingCount: pendingEditRequests.length,
-      pending: pendingEditRequests.slice(0, 5).map((row: any) => ({
+      pending: pendingEditRequests.slice(0, 5).map((row) => ({
         id: row.id,
         editType: row.editType,
         editTarget: row.editTarget,
         editSummary: row.editSummary,
         affectsRevenue: row.affectsRevenue,
         affectsExpenditure: row.affectsExpenditure,
-        requestedByName: row.requestedByName || userNameById.get(row.requestedByUserId) || null,
+        requestedByName: row.requestedByName || (row.requestedByUserId != null ? userNameById.get(row.requestedByUserId) : null) || null,
         createdAt: row.createdAt,
       })),
     },
     microsoft: {
       linkedCount: microsoftRows.length,
-      actionRequiredCount: microsoftRows.filter((row: any) => row.actionRequired).length,
-      unreadCount: microsoftRows.filter((row: any) => row.isRead === false).length,
-      linkedTaskCount: microsoftRows.filter((row: any) => row.linkedTaskId != null).length,
-      recent: microsoftRows.slice(0, 5).map((row: any) => ({
+      actionRequiredCount: microsoftRows.filter((row) => row.actionRequired).length,
+      unreadCount: microsoftRows.filter((row) => row.isRead === false).length,
+      linkedTaskCount: microsoftRows.filter((row) => row.linkedTaskId != null).length,
+      recent: microsoftRows.slice(0, 5).map((row) => ({
         id: row.id,
         type: row.type,
         subjectOrTitle: row.subjectOrTitle,
@@ -4431,29 +4482,13 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePerm
     const realisedRevByMonth = new Map<string, number>();
     const itemsByMonth = new Map<string, any[]>();
 
-    for (const exp of projectExpenses) {
-      if (exp.rowType !== 'item') continue;
-      const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
-      if (isNaN(amount) || amount === 0) continue;
-
-      const { date: cosDate } = getCosEffectiveDateAndSource(exp);
-      if (!cosDate) continue;
-      const dateMatch = cosDate.match(/^(\d{4})-(\d{2})/);
-      if (!dateMatch) continue;
-      const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
-
-      // § 3.3 canonical: revenue is the persisted per-line POC amount,
-      // not derived on the fly. recognitionAmountFor handles
-      // noRevenueLinked + rowType + parseFloat fallback.
-      const revenueAmount = recognitionAmountFor(exp as any);
-
+    // Finance PR 3: § 3.3.2 — recognition via canonical bucketing helper.
+    for (const b of bucketCostLinesForRecognition(projectExpenses, { currentMonthKey })) {
+      const { exp, amount, monthKey, revenueAmount, cosRealised } = b;
       revByMonth.set(monthKey, (revByMonth.get(monthKey) || 0) + revenueAmount);
-
-      const cosRealised = isEffectivelyRealised(exp, monthKey, currentMonthKey);
       if (cosRealised) {
         realisedRevByMonth.set(monthKey, (realisedRevByMonth.get(monthKey) || 0) + revenueAmount);
       }
-
       if (!itemsByMonth.has(monthKey)) itemsByMonth.set(monthKey, []);
       itemsByMonth.get(monthKey)!.push({
         id: exp.id,
@@ -4586,23 +4621,12 @@ router.get("/api/gp-tracker", requireAuth, requirePermission("gp_tracker", "view
     const realisedRevByMonth = new Map<string, number>();
     const projectGpMap = new Map<string, { revenue: number; cos: number; gp: number; gpPct: number }>();
 
-    for (const exp of allExpenses) {
-      if (exp.rowType !== 'item') continue;
-      const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
-      if (isNaN(amount) || amount === 0) continue;
-      const { date: cosDate } = getCosEffectiveDateAndSource(exp);
-      if (!cosDate) continue;
-      const dateMatch = cosDate.match(/^(\d{4})-(\d{2})/);
-      if (!dateMatch) continue;
-      const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
-      const pName = (exp.projectName || "").replace(/_Tracker$/i, "");
-      // § 3.3 canonical: persisted per-line POC amount.
-      const revenueAmount = recognitionAmountFor(exp as any);
-
+    // Finance PR 3: § 3.3.2 — recognition via canonical bucketing helper.
+    for (const b of bucketCostLinesForRecognition(allExpenses, { currentMonthKey })) {
+      const { amount, monthKey, revenueAmount, cosRealised, projectName: pName } = b;
       cosByMonth.set(monthKey, (cosByMonth.get(monthKey) || 0) + amount);
       revByMonth.set(monthKey, (revByMonth.get(monthKey) || 0) + revenueAmount);
 
-      const cosRealised = isEffectivelyRealised(exp, monthKey, currentMonthKey);
       if (cosRealised) {
         realisedCosByMonth.set(monthKey, (realisedCosByMonth.get(monthKey) || 0) + amount);
         realisedRevByMonth.set(monthKey, (realisedRevByMonth.get(monthKey) || 0) + revenueAmount);
@@ -4741,29 +4765,14 @@ router.get("/api/gp-tracker/project/:projectName", requireAuth, requirePermissio
     const realisedRevByMonth = new Map<string, number>();
     const itemsByMonth = new Map<string, any[]>();
 
-    for (const exp of projectExpenses) {
-      if (exp.rowType !== 'item') continue;
-      const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
-      if (isNaN(amount) || amount === 0) continue;
-
-      const { date: cosDate } = getCosEffectiveDateAndSource(exp);
-      if (!cosDate) continue;
-      const dateMatch = cosDate.match(/^(\d{4})-(\d{2})/);
-      if (!dateMatch) continue;
-      const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
-
+    // Finance PR 3: § 3.3.2 — recognition via canonical bucketing helper.
+    for (const b of bucketCostLinesForRecognition(projectExpenses, { currentMonthKey })) {
+      const { exp, amount, monthKey, revenueAmount, cosRealised } = b;
       cosByMonth.set(monthKey, (cosByMonth.get(monthKey) || 0) + amount);
+      revByMonth.set(monthKey, (revByMonth.get(monthKey) || 0) + revenueAmount);
 
-      const cosRealised = isEffectivelyRealised(exp, monthKey, currentMonthKey);
       if (cosRealised) {
         realisedCosByMonth.set(monthKey, (realisedCosByMonth.get(monthKey) || 0) + amount);
-      }
-
-      // § 3.3 canonical: persisted per-line POC amount.
-      const revenueAmount = recognitionAmountFor(exp as any);
-
-      revByMonth.set(monthKey, (revByMonth.get(monthKey) || 0) + revenueAmount);
-      if (cosRealised) {
         realisedRevByMonth.set(monthKey, (realisedRevByMonth.get(monthKey) || 0) + revenueAmount);
       }
 
@@ -4873,24 +4882,13 @@ router.get("/api/gp-tracker/month-detail", requireAuth, requirePermission("gp_tr
     const curMK = getCurrentMonthKey();
     const items: any[] = [];
 
-    for (const exp of allExpenses) {
-      const amount = parseExpenseAmount(exp);
-      if (amount === 0) continue;
-
-      const { date: cosDate } = getCosEffectiveDateAndSource(exp);
-      const itemMonthKey = extractMonthKey(cosDate);
+    // Finance PR 3: § 3.3.2 — recognition via canonical bucketing helper.
+    for (const b of bucketCostLinesForRecognition(allExpenses, { currentMonthKey: curMK })) {
+      const { exp, amount, monthKey: itemMonthKey, revenueAmount, cosRealised, projectName: pName } = b;
       if (itemMonthKey !== monthKey) continue;
-
-      const pName = normalizeProjectName(exp.projectName);
       if (project && pName !== project) continue;
-
-      // § 3.3 canonical: persisted per-line POC amount.
-      const revenueAmount = recognitionAmountFor(exp as any);
       const gpAmount = revenueAmount - amount;
-
-      const cosRealised = isEffectivelyRealised(exp, itemMonthKey, curMK);
       const gpState = cosRealised ? 'Realised' : 'Unrealised';
-
       if (stateFilter && stateFilter.toLowerCase() !== gpState.toLowerCase()) continue;
 
       items.push({
@@ -4990,31 +4988,17 @@ async function revenueTrackerHandler(req: Request, res: Response) {
     const revByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
     const realisedByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
 
-    for (const exp of allExpenses) {
-      if (exp.rowType !== 'item') continue;
-      const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
-      if (isNaN(amount) || amount === 0) continue;
-
-      const { date: cosDate } = getCosEffectiveDateAndSource(exp);
-      if (!cosDate) continue;
-      const dateMatch = cosDate.match(/^(\d{4})-(\d{2})/);
-      if (!dateMatch) continue;
-      const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
-
-      const pName = (exp.projectName || '').replace(/_Tracker$/i, '');
-      // Skip rows with no project association — keep revenue tracker project-scoped.
+    // Finance PR 3: § 3.3.2 — recognition via canonical bucketing helper.
+    for (const b of bucketCostLinesForRecognition(allExpenses, { currentMonthKey })) {
+      const { monthKey, revenueAmount, cosRealised, projectName: pName } = b;
+      // Keep revenue tracker project-scoped — skip lines with no project.
       if (!pName) continue;
-      const isNoRevLinked = !!(exp as any).noRevenueLinked;
-
-      // § 3.3 canonical: persisted per-line POC amount.
-      const revenueAmount = recognitionAmountFor(exp as any);
 
       if (!revByMonth.has(monthKey)) revByMonth.set(monthKey, { total: 0, projects: new Map() });
       const revBucket = revByMonth.get(monthKey)!;
       revBucket.total += revenueAmount;
       revBucket.projects.set(pName, (revBucket.projects.get(pName) || 0) + revenueAmount);
 
-      const cosRealised = isEffectivelyRealised(exp, monthKey, currentMonthKey);
       if (cosRealised) {
         if (!realisedByMonth.has(monthKey)) realisedByMonth.set(monthKey, { total: 0, projects: new Map() });
         const realBucket = realisedByMonth.get(monthKey)!;
@@ -5216,28 +5200,14 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
     const currentMonthKey = `${nowDate.getUTCFullYear()}-${String(nowDate.getUTCMonth() + 1).padStart(2, '0')}`;
 
     const items: any[] = [];
-    for (const exp of allExpenses) {
-      if (exp.rowType !== 'item') continue;
-      const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
-      if (isNaN(amount) || amount === 0) continue;
-
-      const { date: cosDate } = getCosEffectiveDateAndSource(exp);
-      if (!cosDate) continue;
-      const dateMatch = cosDate.match(/^(\d{4})-(\d{2})/);
-      if (!dateMatch) continue;
-      const itemMonthKey = `${dateMatch[1]}-${dateMatch[2]}`;
+    // Finance PR 3: § 3.3.2 — recognition via canonical bucketing helper.
+    for (const b of bucketCostLinesForRecognition(allExpenses, { currentMonthKey })) {
+      const { exp, amount, monthKey: itemMonthKey, revenueAmount, cosRealised, projectName: pName } = b;
       if (itemMonthKey !== monthKey) continue;
-
-      const pName = (exp.projectName || '').replace(/_Tracker$/i, '');
       // Keep revenue drill-down project-scoped — skip lines with no project.
       if (!pName) continue;
 
-      // § 3.3 canonical: persisted per-line POC amount.
-      const revenueAmount = recognitionAmountFor(exp as any);
-
-      const cosRealised = isEffectivelyRealised(exp, itemMonthKey, currentMonthKey);
       const revState = cosRealised ? 'Realised' : 'Unrealised';
-
       if (stateFilter && stateFilter.toLowerCase() !== revState.toLowerCase()) continue;
 
       items.push({
@@ -5955,12 +5925,16 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
       });
     }
 
-    const projectNames = [...new Set(overrides.map((o: any) => o.projectName).filter(Boolean))];
+    const projectNames = [...new Set(overrides.map((o: any) => o.projectName).filter(Boolean))] as string[];
     const baselineRowsByProject = new Map<string, Map<number, any>>();
     const saved: any[] = [];
 
+    // Finance PR 3: batched read of inflows across all projects in this
+    // override batch. Replaces the per-projectName loop (N×2 queries) with
+    // a single 2-query call.
+    const baselineInflows = await financeInflowsRepository.listProgramInflowsByProjectNames(projectNames);
     for (const projectName of projectNames) {
-      const rawInflows = await storage.getProgramInflowsByProject(projectName);
+      const rawInflows = baselineInflows.get(projectName) ?? [];
       baselineRowsByProject.set(
         projectName,
         new Map(rawInflows.map((row: any) => [row.rowNumber, row])),
@@ -6045,8 +6019,11 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
     // applyManualOverride; paidDateFontColor is presentation metadata
     // (untracked) and keeps writing to the live column directly.
     try {
+      // Finance PR 3: batched read for the inBank sync pass — same N×2 →
+      // 2-query collapse as the baseline read above.
+      const appliedInflowsByProject = await financeInflowsRepository.listProgramInflowsByProjectNames(projectNames);
       for (const projectName of projectNames) {
-        const appliedRows = await storage.getProgramInflowsByProject(projectName);
+        const appliedRows = appliedInflowsByProject.get(projectName) ?? [];
         for (const r of appliedRows) {
           const milestoneNo = r.milestoneNo;
           if (!milestoneNo || !/^\d+$/.test(String(milestoneNo).trim())) continue;
