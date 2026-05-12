@@ -6,11 +6,15 @@ import { requireAuth, requireAdmin, requireCosOverrideRole } from './shared-midd
 import {
   PLACEHOLDER_INVOICES,
   OVERRIDE_NOT_REALISED,
-  // Finance Tier 2: import canonical helpers from the single source of truth
-  // (server/lib/finance/cos-realisation.ts). Previously this file declared
-  // local shadows at L279/L289 that drifted from the canonical impl.
+  // Finance Tier 2: `isPastMonthAutoRealised` is byte-equivalent to the
+  // canonical (verified by audit) — safe to dedupe. `isEffectivelyRealised`
+  // is NOT byte-equivalent: the local impl calls `isCosRealisedShared`
+  // (the financeUtils wrapper that intentionally bypasses the canonical's
+  // zero-amount gate by not forwarding `amountExVat`). Migrating to the
+  // canonical here would silently flip zero-amount invoiced lines from
+  // realised → unrealised, which is a real behaviour change that does not
+  // belong in a Tier 2 (security + correctness) PR. Tracked for Tier 3.
   isPastMonthAutoRealised,
-  isEffectivelyRealised,
 } from '../lib/finance/cos-realisation';
 import {
   checkCosPeriodLock,
@@ -402,10 +406,28 @@ function isCosRealised(exp: any): boolean {
  * past-month lines respect explicit finance intent (overrides) and don't get
  * promoted on placeholder values like "TBC" / "N/A".
  */
-// Finance Tier 2: local shadows of `isPastMonthAutoRealised` and
-// `isEffectivelyRealised` removed. Both helpers are now imported from the
-// canonical `server/lib/finance/cos-realisation.ts` (see import block above).
-// Removing the duplicates avoids future drift between the two implementations.
+// Finance Tier 2: `isPastMonthAutoRealised` is now imported from canonical
+// (byte-equivalent — see import block at top of file). The local
+// `isEffectivelyRealised` is intentionally KEPT here because it calls
+// `isCosRealisedShared` (the financeUtils wrapper that bypasses the
+// canonical's zero-amount gate by not forwarding `amountExVat`). Migrating
+// to the canonical `isEffectivelyRealised` from cos-realisation.ts would
+// silently flip zero-amount invoiced lines from realised → unrealised,
+// which is a behaviour change inappropriate for a Tier 2 (security +
+// correctness) PR. Aligning the wrapper with the canonical zero-amount
+// gate is tracked for Finance Tier 3.
+function isEffectivelyRealised(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
+  // Past-month auto-promote: once a month has closed, an invoice-bearing line
+  // (with no admin "not realised" override and no placeholder invoice value)
+  // is treated as realised regardless of the Excel font-color confirmation
+  // flag. Font-color is a current-month vetting heuristic that stops being
+  // meaningful for periods finance is no longer actively reviewing — without
+  // this rule historical rows sit in "Committed" limbo forever.
+  if (isPastMonthAutoRealised(exp, monthKey, currentMonthKey)) return true;
+  if (!isCosRealisedShared(exp)) return false;
+  // Realised lines are effective for current and past months only
+  return monthKey ? monthKey <= currentMonthKey : true;
+}
 
 // Returns true if a cost is still actively committed (has PO or invoice-in-progress but not yet realised).
 function isEffectivelyCommitted(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
@@ -456,10 +478,15 @@ function setFinanceTrustHeaders(
 // category-scoped POC formula). We delegate to the canonical
 // `recognitionAmountFor` helper.
 //
-// FOLLOW-UP: the date axis (`expenseInvoicedDate`) is the parent cost
-// line's invoice date, not the actuals-row invoice date that § 3.3
-// canonical date guidance prefers. Pre-existing inconsistency, not
-// introduced by this hotfix. Tracked separately.
+// FOLLOW-UP (Tier 3): two known gaps tracked for the next finance refactor.
+//   1. § 3.3.2 — every callsite reading per-line revenue recognition (this
+//      file uses the in-line `recognitionAmountFor` from
+//      `server/lib/finance/revenue-recognition.ts`) should route through
+//      `server/repositories/finance-line-level-repository.ts` so the
+//      persisted-vs-derived parity audit fires.
+//   2. The date axis (`expenseInvoicedDate`) is the parent cost line's
+//      invoice date, not the actuals-row invoice date that § 3.3 canonical
+//      date guidance prefers. Pre-existing inconsistency.
 function calculateRevenueRecognition(
   expenses: any[],
   projectName: string | null
@@ -5478,7 +5505,12 @@ router.get("/api/program-expenses", requireAuth, requirePermission("financials",
 
 // DEPRECATED — prefer /api/projects/:projectName/cost-lines.
 // Scheduled for removal in the next release after consumers migrate.
-router.get("/api/program-expenses/:projectName", requireAuth, requirePermission("financials", "view"), async (req, res) => {
+// permission-skip: project-scoped read consumed by ExpenditureEditableTab
+// on the project-detail page. Tier 2 audit flagged that `financials:view`
+// blocks PROJECT_MANAGER_SITE / CONSTRUCTION_MANAGER / ENGINEER from their
+// OWN project's data. Proper fix is per-project membership scoping (Tier 3);
+// for now we accept the same broad-auth posture this endpoint had before.
+router.get("/api/program-expenses/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = paramStr(req.params.projectName);
     const expenses = await getCanonicalProjectCostLinesByName(projectName).then((r) => r.rows);
@@ -6131,7 +6163,12 @@ router.delete("/api/revenue-tracking/overrides/:projectName", requireAuth, requi
 
 // ==================== REVENUE TAB ====================
 
-router.get("/api/revenue-tab/:projectName", requireAuth, requirePermission("revenue_tracker", "view"), async (req, res) => {
+// permission-skip: project-scoped read consumed by RevenueTrackingTab on the
+// project-detail page. `revenue_tracker:view` would block PROJECT_MANAGER_SITE
+// / CONSTRUCTION_MANAGER from their OWN project's revenue tab. Proper
+// per-project membership scoping is owed (Tier 3); for now we accept the
+// pre-existing broad-auth posture.
+router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = paramStr(req.params.projectName);
 
@@ -7251,7 +7288,12 @@ router.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, vali
 
 // ==================== EXPENDITURE BREAKDOWN COMPOSITE API ====================
 
-router.get("/api/expenditure-breakdown/:projectName", requireAuth, requirePermission("financials", "view"), async (req, res) => {
+// permission-skip: project-scoped read consumed by ExpenditureEditableTab on
+// the project-detail page. `financials:view` would block project-team roles
+// (PROJECT_MANAGER_SITE, CONSTRUCTION_MANAGER, ENGINEER) from their own
+// project's expenditure breakdown. Proper per-project membership scoping is
+// owed (Tier 3); for now we accept the pre-existing broad-auth posture.
+router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = paramStr(req.params.projectName);
     const projectIdParam = req.query.projectId ? parseInt(String(req.query.projectId), 10) : null;
