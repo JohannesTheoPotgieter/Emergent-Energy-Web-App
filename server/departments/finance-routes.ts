@@ -116,7 +116,6 @@ import { classifyExpenseState } from "../lib/calculations/stateClassifier";
 import {
   STATIC_COS_BUDGET_FY26,
   extractMonthKey,
-  allocateRevenue,
   isCosRealised as isCosRealisedShared,
   classifyCosStatusFull,
   normalizeProjectName,
@@ -338,6 +337,15 @@ function setFinanceTrustHeaders(
   setFinanceTrustHeadersShared(res, params);
 }
 
+// § 3.3 fix: this function was bucketing realised COS as revenue at the
+// invoice-paid date — both wrong inputs and wrong dates. § 3.3.3:
+// "Revenue is not recognised on … invoice payment". The amount must be
+// the per-line revenue recognition value (already persisted at import
+// time on `normalized_cost_lines.revenue_recognition_amount` per § 3.3.1
+// category-scoped POC formula). The date stays at `expenseInvoicedDate`
+// because the cashflow series uses invoice date to time revenue
+// recognition relative to cash receipt, and that timing convention
+// pre-dates this fix.
 function calculateRevenueRecognition(
   expenses: any[],
   projectName: string | null
@@ -345,18 +353,18 @@ function calculateRevenueRecognition(
   const weekly = new Map<string, Map<string, number>>();
   const cumulative = new Map<string, Map<string, number>>();
 
-  const relevantExpenses = expenses.filter(e =>
-    (!projectName || e.projectName === projectName) &&
-    e.expenseInvoiceNumber &&
-    e.expenseInvoicedDate &&
-    (e.actualCosTotal || e.expenseActualTotal) &&
-    parseFloat(e.actualCosTotal || e.expenseActualTotal || "0") !== 0
-  );
+  const relevantExpenses = expenses.filter(e => {
+    if (projectName && e.projectName !== projectName) return false;
+    if (!e.expenseInvoiceNumber || !e.expenseInvoicedDate) return false;
+    if (e.noRevenueLinked) return false;
+    const revAmt = parseFloat((e as any).revenueRecognitionAmount as string);
+    return Number.isFinite(revAmt) && revAmt !== 0;
+  });
 
   for (const expense of relevantExpenses) {
     const pName = expense.projectName;
     const weekStart = getWeekStartDate(expense.expenseInvoicedDate);
-    const amount = parseFloat(expense.actualCosTotal || expense.expenseActualTotal || "0");
+    const amount = parseFloat((expense as any).revenueRecognitionAmount as string) || 0;
 
     if (!weekly.has(pName)) {
       weekly.set(pName, new Map());
@@ -4296,9 +4304,18 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePerm
       const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
 
       const isNoRevLinked = !!(exp as any).noRevenueLinked;
-      const revenueAmount = (totalCOS > 0 && !isNoRevLinked)
-        ? (amount / totalCOS) * totalMilestoneRevenue
-        : 0;
+      // § 3.3 fix: use the canonical per-line revenue recognition amount
+      // persisted by the Smart Import normalizer on
+      // normalized_cost_lines.revenue_recognition_amount (col U on the
+      // Expenditure Breakdown sheet). The previous on-the-fly formula
+      // `(amount / totalCOS) * totalMilestoneRevenue` was project-pooled
+      // and under-counted YTD revenue by ~93% (R 4.18M vs R 54.5M actual)
+      // because totalMilestoneRevenue summed only NRL milestones, which
+      // are incomplete for many projects. Matches the canonical pattern
+      // at L4893-4900.
+      const revenueAmount = isNoRevLinked
+        ? 0
+        : (parseFloat((exp as any).revenueRecognitionAmount as string) || 0);
 
       revByMonth.set(monthKey, (revByMonth.get(monthKey) || 0) + revenueAmount);
 
@@ -4460,12 +4477,15 @@ router.get("/api/gp-tracker", requireAuth, requirePermission("gp_tracker", "view
       if (!dateMatch) continue;
       const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
       const pName = (exp.projectName || "").replace(/_Tracker$/i, "");
-      const totalCOSProject = cosByProject.get(pName) || 1;
-      const totalRevProject = revByProject.get(pName) || 0;
       const isNoRevLinked = !!(exp as any).noRevenueLinked;
-      const revenueAmount = (totalCOSProject > 0 && !isNoRevLinked)
-        ? (amount / totalCOSProject) * totalRevProject
-        : 0;
+      // § 3.3 fix: use the canonical per-line revenue recognition amount
+      // persisted on normalized_cost_lines.revenue_recognition_amount.
+      // The previous formula `(amount / totalCOSProject) * totalRevProject`
+      // was project-pooled and under-counted portfolio YTD revenue by ~93%
+      // because totalRevProject summed only NRL milestone rows.
+      const revenueAmount = isNoRevLinked
+        ? 0
+        : (parseFloat((exp as any).revenueRecognitionAmount as string) || 0);
 
       cosByMonth.set(monthKey, (cosByMonth.get(monthKey) || 0) + amount);
       revByMonth.set(monthKey, (revByMonth.get(monthKey) || 0) + revenueAmount);
@@ -4628,9 +4648,15 @@ router.get("/api/gp-tracker/project/:projectName", requireAuth, requirePermissio
       }
 
       const isNoRevLinked = !!(exp as any).noRevenueLinked;
-      const revenueAmount = (totalCOSAll > 0 && !isNoRevLinked)
-        ? (amount / totalCOSAll) * totalMilestoneRevenue
-        : 0;
+      // § 3.3 fix: use the canonical per-line revenue recognition amount
+      // persisted on normalized_cost_lines.revenue_recognition_amount.
+      // The previous formula `(amount / totalCOSAll) * totalMilestoneRevenue`
+      // was project-pooled and under-counted YTD revenue by ~93%
+      // (R 4.18M vs R 54.5M actual) for projects with incomplete NRL
+      // milestone data.
+      const revenueAmount = isNoRevLinked
+        ? 0
+        : (parseFloat((exp as any).revenueRecognitionAmount as string) || 0);
 
       revByMonth.set(monthKey, (revByMonth.get(monthKey) || 0) + revenueAmount);
       if (cosRealised) {
@@ -4764,10 +4790,15 @@ router.get("/api/gp-tracker/month-detail", requireAuth, requirePermission("gp_tr
       const pName = normalizeProjectName(exp.projectName);
       if (project && pName !== project) continue;
 
-      const totalCOSProject = cosByProject.get(pName) || 1;
-      const totalRevProject = revByProject.get(pName) || 0;
       const isNoRevLinked = !!(exp as any).noRevenueLinked;
-      const revenueAmount = allocateRevenue(amount, totalCOSProject, totalRevProject, isNoRevLinked);
+      // § 3.3 fix: use the canonical per-line revenue recognition amount
+      // persisted on normalized_cost_lines.revenue_recognition_amount.
+      // `allocateRevenue()` is deprecated — it uses project-pooled totals
+      // instead of category-scoped per-line POC, producing ~93%
+      // under-counted YTD revenue.
+      const revenueAmount = isNoRevLinked
+        ? 0
+        : (parseFloat((exp as any).revenueRecognitionAmount as string) || 0);
       const gpAmount = revenueAmount - amount;
 
       const cosRealised = isEffectivelyRealised(exp, itemMonthKey, curMK);
