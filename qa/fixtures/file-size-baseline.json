@@ -6,7 +6,7 @@
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
-      "loc": 7747
+      "loc": 7819
     },
     {
       "file": "client/src/pages/EngineeringTasksPage.tsx",
