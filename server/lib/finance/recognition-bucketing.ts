@@ -56,18 +56,14 @@ export interface BucketCostLinesOptions {
 }
 
 /**
- * Local-shadow `isEffectivelyRealised`. Audit follow-up: must NOT swap to
- * the canonical `isEffectivelyRealised` from `cos-realisation.ts`. The
- * canonical applies a zero-amount gate on `input.amountExVat` (cos-
- * realisation.ts:99-102) that would silently flip zero-amount invoiced
- * lines from realised → unrealised. The 6 monthly-rollup handlers feed
- * `adaptCostToExpense`-shaped rows where `amountExVat` is renamed to
- * `expenseActualTotal` and the top-level `amountExVat` is dropped, so
- * the gate currently no-ops by accident — but relying on that accident
- * is brittle. The financeUtils `isCosRealised` wrapper deliberately
- * does NOT forward `amountExVat`, so it preserves the documented
- * "invoice alone = realised even at zero amount" behaviour that the 6
- * handlers expected before this refactor.
+ * Realised classifier matching the local shadow in
+ * `finance-routes.ts:isEffectivelyRealised`. The financeUtils
+ * `isCosRealised` wrapper now forwards `expenseActualTotal` as
+ * `amountExVat`, so the canonical zero-amount gate fires — an R0
+ * invoiced line is not realised (COO business rule 2026-05). The
+ * canonical `isEffectivelyRealised` in `cos-realisation.ts` is NOT
+ * used directly here because it expects `amountExVat` on the input
+ * row; adapted expense rows expose the amount as `expenseActualTotal`.
  */
 function isEffectivelyRealisedLocal(exp: CostLineForRecognition, monthKey: string | null, currentMonthKey: string): boolean {
   if (isPastMonthAutoRealised(exp as any, monthKey, currentMonthKey)) return true;
