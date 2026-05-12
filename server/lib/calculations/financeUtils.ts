@@ -113,15 +113,18 @@ export function classifyCosStatusFull(exp: {
 // ─── COS realisation check ───
 // Determines whether a cost line item should be treated as "realised" for tracker
 // purposes. Delegates to the canonical isCanonicalCosRealised() which uses the
-// invoice-only hard rule: if a supplier invoice number is captured, COS is realised.
+// invoice-only hard rule: if a supplier invoice number is captured AND the line
+// has a non-zero amount, COS is realised. Zero-amount lines are NOT realised —
+// there is nothing to realise (per business rule, COO 2026-05).
 //
 // NOTE: classifyCosStatusFull() is a DISPLAY label (Planned/Committed/COS Realised)
 // based on data quality (invoice + date + confirmed). The realisation CHECK is
-// separate and less strict — invoice number alone is sufficient per business rules.
+// separate and less strict — invoice number + non-zero amount is sufficient.
 export function isCosRealised(exp: {
   expenseInvoiceNumber?: string | null;
   expenseInvoicedDate?: string | null;
   expensePoNumber?: string | null;
+  expenseActualTotal?: string | number | null;
   invoiceDateConfirmed?: boolean | null;
   invoiceDateFontColor?: string | null;
   _cosOverrideStatus?: string | null;
@@ -129,7 +132,13 @@ export function isCosRealised(exp: {
   cosStatusOverride?: string | null;
   lineAssignedQbExVat?: number | null;
   lineAmountExVat?: number | null;
+  amountExVat?: string | number | null;
 }): boolean {
+  // Resolve the line amount. Adapted expense rows expose it as
+  // `expenseActualTotal` (via `adaptCostToExpense`); raw NCL rows carry
+  // `amountExVat`. Forward whichever is supplied so the canonical's
+  // zero-amount gate fires — "R0 has nothing to realise".
+  const amountForGate = exp.expenseActualTotal ?? exp.amountExVat ?? null;
   return isCanonicalCosRealised({
     status: null, // status labels do NOT independently determine realisation
     cosStatusOverride: exp._cosOverrideStatus ?? exp.cosStatusOverride ?? null,
@@ -137,6 +146,7 @@ export function isCosRealised(exp: {
     expenseInvoiceNumber: exp.expenseInvoiceNumber ?? null,
     expenseInvoicedDate: exp.expenseInvoicedDate ?? null,
     expensePoNumber: exp.expensePoNumber ?? null,
+    amountExVat: amountForGate,
     paymentDate: null,
     today: new Date().toISOString().slice(0, 10),
     // Forward the invoice-date-confirmed signals ONLY when the caller

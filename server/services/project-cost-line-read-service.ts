@@ -361,6 +361,36 @@ export async function getCostLineRiskDiagnostics(projectId?: number, sampleSize 
       updatedAt: r.updatedAt ?? null,
     }));
 
+  // Data-quality flag: invoice number captured but amount is R0. Per the
+  // COO business rule, "you don't invoice for R0" — these rows are
+  // either an import oversight (amount column blank) or a deliberate
+  // suppression that should be cleared. They're excluded from the
+  // Realised pile by `isCosRealised` (the wrapper now forwards the
+  // amount to the canonical zero-amount gate), so the diagnostic is
+  // the only place they surface.
+  const zeroAmountInvoicedRows = normalizedRows
+    .filter((r) => {
+      const invoice = String(r.expenseInvoiceNumber ?? "").trim();
+      if (!invoice) return false;
+      const amountRaw = r.expenseActualTotal ?? r.amountExVat;
+      if (amountRaw == null || amountRaw === "") return false;
+      const amount = typeof amountRaw === "number" ? amountRaw : parseFloat(String(amountRaw));
+      return Number.isFinite(amount) && amount === 0;
+    })
+    .map((r) => ({
+      id: Number(r.id),
+      projectId: Number(r.projectId),
+      projectName: projectNameById.get(Number(r.projectId)) || r.projectName || null,
+      invoiceNumber: r.expenseInvoiceNumber ?? null,
+      invoiceDate: r.expenseInvoicedDate ?? null,
+      expenseCategory: r.expenseCategory ?? null,
+      expenseLineItem: r.expenseLineItem ?? null,
+      supplierName: r.supplierName ?? null,
+      sourceSheet: r.sourceSheet ?? null,
+      sourceRow: r.sourceRow ?? null,
+      updatedAt: r.updatedAt ?? null,
+    }));
+
   const driftGroups = Array.from(
     normalizedRows.reduce((acc, row) => {
       const pid = Number(row.projectId);
@@ -398,6 +428,10 @@ export async function getCostLineRiskDiagnostics(projectId?: number, sampleSize 
     projectNameDriftGroups: {
       count: driftGroups.length,
       sample: driftGroups.slice(0, sampleSize),
+    },
+    zeroAmountInvoicedRows: {
+      count: zeroAmountInvoicedRows.length,
+      sample: zeroAmountInvoicedRows.slice(0, sampleSize),
     },
     // normalizedVsProgramExpenseActiveOverlap was removed when program_expense
     // was retired in the PE/PI cutover. The diagnostic is no longer meaningful.
