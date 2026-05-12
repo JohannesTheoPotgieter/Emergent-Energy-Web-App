@@ -49,10 +49,13 @@ import { z } from "zod";
 // 5 reused query helpers + 1 spread-null coalesce. Not a full repository
 // migration (most db.* calls in this file appear once and don't justify
 // a function). See engineering-repository.ts for what was extracted.
+// Note: `resolveProjectIdByName` is exported from the repository for
+// intake / external-ref flows, but the task-create handler uses a
+// different normalisation (exact match + `_Tracker` regex strip), so
+// it stays inline.
 import {
   findProjectWithExecutionState,
   findProjectInfoById,
-  resolveProjectIdByName,
   findEngineeringWorkItem,
   findDeliverableById,
   findUserName,
@@ -435,9 +438,13 @@ async function enrichEngineeringTasks(tasks: EngTask[], req: Request): Promise<a
       isDeliverableApprovalPendingStatus(item.status),
     ).length;
 
-    const ownerName = t.ownerUserId
-      ? userMap.get(t.ownerUserId)?.name ?? t.ownerName ?? null
-      : t.ownerName ?? null;
+    // Engineering PR 3: listEngineeringWorkItems doesn't emit endDate /
+    // ownerName / externalRef / wbsCode / expectedPctComplete (those got
+    // mapped to dueDate / externalTaskId / taskNumber / null). The view
+    // function (`projectEngineeringTicket`) already does its own
+    // dueDate↔endDate / externalRef↔externalTaskId fallback, so we just
+    // pass the canonical EngTask fields.
+    const ownerName = t.ownerUserId ? userMap.get(t.ownerUserId)?.name ?? null : null;
     const sourceContextLabel = stageContextMap.has(t.workItemId || t.id)
       ? `Engineering Stage: ${stageContextMap.get(t.workItemId || t.id)}`
       : (projectLinks?.sourceContextLabel || null);
@@ -457,10 +464,8 @@ async function enrichEngineeringTasks(tasks: EngTask[], req: Request): Promise<a
       projectId: t.projectId,
       projectName: t.projectName,
       startDate: t.startDate,
-      endDate: t.endDate,
-      dueDate: t.dueDate ?? t.endDate,
+      dueDate: t.dueDate,
       percentComplete: t.percentComplete,
-      expectedPctComplete: t.expectedPctComplete,
       ownerUserId: t.ownerUserId,
       ownerName,
       assigneeUserIds: resolvedAssigneeIds,
@@ -478,9 +483,8 @@ async function enrichEngineeringTasks(tasks: EngTask[], req: Request): Promise<a
       linkedPlanItemId: t.linkedPlanItemId,
       linkedDeliverableId: t.linkedDeliverableId,
       linkedQualityItemInstanceId: t.linkedQualityItemInstanceId,
-      externalRef: t.externalRef,
-      externalTaskId: t.externalTaskId ?? t.externalRef,
-      wbsCode: t.wbsCode ?? t.taskNumber,
+      externalTaskId: t.externalTaskId,
+      wbsCode: t.taskNumber,
       projectLinkedDeliverableCount: projectDeliverables.length,
       projectLinkedDeliverables: projectDeliverables.slice(0, 3).map((d) => ({
         id: d.id,
@@ -1049,7 +1053,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.patch("/api/eng/tasks/:id", requireAuth, requirePermission("eng_tasks", "edit"), validateBody(engTaskUpdateSchema), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
-      const [existing] = await db.select().from(workItems).where(and(eq(workItems.id, id), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
+      const existing = await findEngineeringWorkItem(id);
       if (!existing) return sendError(res, notFound("Task"));
 
       // Prompt 0.9 follow-up: the inline kanban-card buttons in
@@ -1770,7 +1774,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.delete("/api/eng/tasks/:id", requireAuth, requirePermission('eng_tasks', 'delete'), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
-      const [existing] = await db.select().from(workItems).where(and(eq(workItems.id, id), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
+      const existing = await findEngineeringWorkItem(id);
       if (!existing) return sendError(res, notFound("Task"));
 
       const deleted = await deleteEngineeringWorkItem(id);
@@ -2109,12 +2113,14 @@ export function registerEngineeringRoutes(app: Express) {
         createdBy: getUser(req).id,
       });
 
-      // Set parentId on the newly created work item and inherit parent dates
+      // Set parentId on the newly created work item and inherit parent dates.
+      // EngTask exposes only `dueDate` (listEngineeringWorkItems maps the
+      // raw `endDate` column → `dueDate` in its output).
       await db.update(workItems)
         .set({
           parentId: parentId,
           startDate: parent.startDate || null,
-          endDate: parent.dueDate || parent.endDate || null,
+          endDate: parent.dueDate || null,
         })
         .where(eq(workItems.id, subtaskWorkItem.id));
 
@@ -2161,7 +2167,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.get("/api/deliverables/:id", requireAuth, requirePermission("deliverables", "view"), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
-      const [del] = await db.select().from(deliverables).where(eq(deliverables.id, id));
+      const del = await findDeliverableById(id);
       if (!del) return sendError(res, notFound("Deliverable"));
 
       const versions = await db.select().from(deliverableVersions)
@@ -2231,7 +2237,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.patch("/api/deliverables/:id", requireAuth, requirePermission("deliverables", "edit"), validateBody(deliverableUpdateSchema), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
-      const [existing] = await db.select().from(deliverables).where(eq(deliverables.id, id));
+      const existing = await findDeliverableById(id);
       if (!existing) return sendError(res, notFound("Deliverable"));
 
       // Prompt 0.9 follow-up: normalize incoming deliverable status — same
@@ -2323,7 +2329,7 @@ export function registerEngineeringRoutes(app: Express) {
       const id = parseIntParam(req.params.id);
       const { changeReason, impactJson } = req.body;
 
-      const [existing] = await db.select().from(deliverables).where(eq(deliverables.id, id));
+      const existing = await findDeliverableById(id);
       if (!existing) return sendError(res, notFound("Deliverable"));
 
       const newVersion = existing.currentVersion + 1;

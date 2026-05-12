@@ -739,18 +739,6 @@ export type EngTask = {
   legacyId: number | null;
   legacyTable: string | null;
   canonical: true;
-  /**
-   * Defensive passthrough fields. listEngineeringWorkItems doesn't set
-   * these (we map endDate→dueDate, etc.), but the engineering-routes
-   * enrichEngineeringTasks handler reads them as a fallback chain (e.g.
-   * `t.dueDate ?? t.endDate`) in case future callers feed in raw
-   * work_items rows. Keeping them optional avoids a noisy refactor.
-   */
-  endDate?: string | Date | null;
-  ownerName?: string | null;
-  expectedPctComplete?: number | null;
-  externalRef?: string | null;
-  wbsCode?: string | null;
 };
 
 export async function listEngineeringWorkItems(options: EngineeringListOptions = {}): Promise<EngTask[]> {
