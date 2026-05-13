@@ -184,8 +184,8 @@ export default function PrioritiesPage() {
   });
 
   const escalateMutation = useMutation({
-    mutationFn: ({ id, reason }: { id: number; reason: string }) =>
-      apiRequest("POST", `/api/priorities/${id}/escalate`, { reason }),
+    mutationFn: ({ id, reason, note }: { id: number; reason: string; note?: string }) =>
+      apiRequest("POST", `/api/priorities/${id}/escalate`, { reason, ...(note ? { note } : {}) }),
     onSuccess: () => { setEscalateTarget(null); invalidateAll(); },
     onError: (err) => toast({ title: "Escalation failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
@@ -643,8 +643,8 @@ export default function PrioritiesPage() {
         onOpenChange={(open) => { if (!open) setEscalateTarget(null); }}
         priorityTitle={escalateTarget?.title ?? ""}
         currentScope={escalateTarget?.scope ?? "role"}
-        onConfirm={(reason) => {
-          if (escalateTarget) escalateMutation.mutate({ id: escalateTarget.id, reason });
+        onConfirm={(reason, note) => {
+          if (escalateTarget) escalateMutation.mutate({ id: escalateTarget.id, reason, note });
         }}
         isPending={escalateMutation.isPending}
       />

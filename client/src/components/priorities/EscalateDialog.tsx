@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Textarea } from "@/components/ui/textarea";
 
 const REASONS = [
   { value: "overdue",  label: "Overdue — deadline has passed" },
@@ -17,11 +18,9 @@ type EscalationReason = (typeof REASONS)[number]["value"];
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Title of the priority being escalated — shown for context. */
   priorityTitle: string;
-  /** Current scope of the priority: "role" or "department". */
   currentScope: string;
-  onConfirm: (reason: EscalationReason) => void;
+  onConfirm: (reason: EscalationReason, note?: string) => void;
   isPending?: boolean;
 }
 
@@ -34,7 +33,12 @@ export function EscalateDialog({
   isPending,
 }: Props) {
   const [reason, setReason] = useState<EscalationReason>("manual");
+  const [note, setNote] = useState("");
   const targetScope = currentScope === "role" ? "Department" : "Company";
+
+  const handleConfirm = () => {
+    onConfirm(reason, note.trim() || undefined);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -72,6 +76,18 @@ export function EscalateDialog({
           ))}
         </RadioGroup>
 
+        <div className="mt-1">
+          <Label className="text-xs text-muted-foreground">Additional note (optional)</Label>
+          <Textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Any context for the reviewer…"
+            rows={2}
+            maxLength={1000}
+            className="mt-1 text-sm resize-none"
+          />
+        </div>
+
         <DialogFooter className="mt-2">
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
             Cancel
@@ -79,7 +95,7 @@ export function EscalateDialog({
           <Button
             size="sm"
             className="bg-orange-600 hover:bg-orange-700 text-white"
-            onClick={() => onConfirm(reason)}
+            onClick={handleConfirm}
             disabled={isPending}
           >
             {isPending ? "Escalating…" : `Escalate to ${targetScope}`}

@@ -15,6 +15,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertTriangle,
+  Bell,
+  BellOff,
   CheckCircle2,
   DollarSign,
   FolderOpen,
@@ -23,6 +25,9 @@ import {
   ListTodo,
   MessageSquare,
   Plus,
+  RotateCcw,
+  Send,
+  Trash2,
   X,
 } from "lucide-react";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
@@ -39,6 +44,7 @@ import {
 } from "@/components/priorities/PriorityFormFields";
 import { BreakDownDialog } from "@/components/priorities/BreakDownDialog";
 import { useConfirmDialog } from "@/components/priorities/ConfirmActionDialog";
+import { EscalateDialog } from "@/components/priorities/EscalateDialog";
 import { ActivityIcon, formatActivitySentence } from "@/lib/priority-activity-formatter";
 import type {
   LinkedProject,
@@ -139,7 +145,9 @@ export default function PriorityDetailPage() {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [breakDownDialogOpen, setBreakDownDialogOpen] = useState(false);
+  const [escalateDialogOpen, setEscalateDialogOpen] = useState(false);
   const [showProjectEvents, setShowProjectEvents] = useState(false);
+  const [commentBody, setCommentBody] = useState("");
   const [editForm, setEditForm] = useState<PriorityFormState>(emptyPriorityForm);
   const [progressSource, setProgressSource] = useState<ProgressSourceValue>({
     type: "manual",
@@ -213,13 +221,65 @@ export default function PriorityDetailPage() {
     enabled: priorityId > 0,
   });
 
+  interface PriorityComment {
+    id: number;
+    priorityId: number;
+    authorUserId: number | null;
+    authorName: string | null;
+    body: string;
+    editedAt: string | null;
+    createdAt: string;
+  }
+  const { data: comments = [], refetch: refetchComments } = useQuery<PriorityComment[]>({
+    queryKey: [`/api/priorities/${priorityId}/comments`],
+    queryFn: () => subResourceFetcher(`/api/priorities/${priorityId}/comments`, [] as PriorityComment[]),
+    enabled: priorityId > 0,
+  });
+
+  const { data: watchStatus } = useQuery<{ watching: boolean }>({
+    queryKey: [`/api/priorities/${priorityId}/watched`],
+    queryFn: () => subResourceFetcher(`/api/priorities/${priorityId}/watched`, { watching: false }),
+    enabled: priorityId > 0 && !!user?.id,
+  });
+  const watching = watchStatus?.watching ?? false;
+
+  const invalidateDetail = () => {
+    queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
+    queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/activity`] });
+    queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+  };
+
   const escalateMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/priorities/${priorityId}/escalate`, { reason: "manual" }),
+    mutationFn: ({ reason, note }: { reason: string; note?: string }) =>
+      apiRequest("POST", `/api/priorities/${priorityId}/escalate`, { reason, ...(note ? { note } : {}) }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/activity`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+      setEscalateDialogOpen(false);
+      invalidateDetail();
     },
+  });
+
+  const reopenMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/priorities/${priorityId}/reopen`, {}),
+    onSuccess: invalidateDetail,
+  });
+
+  const watchMutation = useMutation({
+    mutationFn: () => apiRequest(watching ? "DELETE" : "POST", `/api/priorities/${priorityId}/watch`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/watched`] }),
+  });
+
+  const addCommentMutation = useMutation({
+    mutationFn: (body: string) => apiRequest("POST", `/api/priorities/${priorityId}/comments`, { body }),
+    onSuccess: () => {
+      setCommentBody("");
+      refetchComments();
+      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/activity`] });
+    },
+  });
+
+  const deleteCommentMutation = useMutation({
+    mutationFn: (commentId: number) => apiRequest("DELETE", `/api/priorities/${priorityId}/comments/${commentId}`),
+    onSuccess: () => refetchComments(),
   });
 
   const unlinkMutation = useMutation({
@@ -349,30 +409,51 @@ export default function PriorityDetailPage() {
             </div>
           }
           actions={
-            isAdmin ? (
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="outline" onClick={openEditDialog} data-testid="btn-edit-priority">Edit priority</Button>
-                {priority.status !== "closed" && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={async () => {
-                      const ok = await confirm({
-                        title: "Close this priority?",
-                        description: "It will be soft-closed and hidden from the active list.",
-                        confirmLabel: "Close",
-                        destructive: true,
-                      });
-                      if (ok) closePriorityMutation.mutate();
-                    }}
-                    disabled={closePriorityMutation.isPending}
-                    data-testid="btn-close-priority"
-                  >
-                    {closePriorityMutation.isPending ? "Closing..." : "Close"}
-                  </Button>
-                )}
-              </div>
-            ) : undefined
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 px-2 text-muted-foreground hover:text-foreground"
+                title={watching ? "Unwatch — stop receiving escalation alerts" : "Watch — get notified on escalation or status changes"}
+                onClick={() => watchMutation.mutate()}
+                disabled={watchMutation.isPending}
+                data-testid="btn-watch-priority"
+              >
+                {watching ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
+              </Button>
+              {isAdmin && <Button size="sm" variant="outline" onClick={openEditDialog} data-testid="btn-edit-priority">Edit priority</Button>}
+              {isAdmin && (priority.status === "closed" || priority.status === "complete") && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => reopenMutation.mutate()}
+                  disabled={reopenMutation.isPending}
+                  data-testid="btn-reopen-priority"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                  {reopenMutation.isPending ? "Reopening..." : "Reopen"}
+                </Button>
+              )}
+              {isAdmin && priority.status !== "closed" && priority.status !== "complete" && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: "Close this priority?",
+                      description: "It will be soft-closed and hidden from the active list.",
+                      confirmLabel: "Close",
+                      destructive: true,
+                    });
+                    if (ok) closePriorityMutation.mutate();
+                  }}
+                  disabled={closePriorityMutation.isPending}
+                  data-testid="btn-close-priority"
+                >
+                  {closePriorityMutation.isPending ? "Closing..." : "Close"}
+                </Button>
+              )}
+            </div>
           }
         />
       }
@@ -426,14 +507,7 @@ export default function PriorityDetailPage() {
                   size="sm"
                   variant="outline"
                   className="text-xs h-7"
-                  onClick={async () => {
-                    const ok = await confirm({
-                      title: "Escalate this priority?",
-                      description: "It will move one scope upward (role → department → company).",
-                      confirmLabel: "Escalate",
-                    });
-                    if (ok) escalateMutation.mutate();
-                  }}
+                  onClick={() => setEscalateDialogOpen(true)}
                   disabled={escalateMutation.isPending}
                 >
                   {escalateMutation.isPending ? "Escalating..." : "Escalate"}
@@ -526,6 +600,10 @@ export default function PriorityDetailPage() {
               <TabsTrigger value="tasks" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><ListTodo className="w-3.5 h-3.5" />Tasks & Approvals</TabsTrigger>
               <TabsTrigger value="updates" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><MessageSquare className="w-3.5 h-3.5" />Updates</TabsTrigger>
               <TabsTrigger value="activity" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><History className="w-3.5 h-3.5" />Activity</TabsTrigger>
+              <TabsTrigger value="comments" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5">
+                <MessageSquare className="w-3.5 h-3.5" />
+                Notes{comments.length > 0 && <span className="ml-0.5 text-[10px] text-muted-foreground">({comments.length})</span>}
+              </TabsTrigger>
             </>
           ) : (
             <>
@@ -533,6 +611,10 @@ export default function PriorityDetailPage() {
               <TabsTrigger value="chain" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><GitBranch className="w-3.5 h-3.5" />Chain</TabsTrigger>
               <TabsTrigger value="updates" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><MessageSquare className="w-3.5 h-3.5" />Updates</TabsTrigger>
               <TabsTrigger value="activity" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><History className="w-3.5 h-3.5" />Activity</TabsTrigger>
+              <TabsTrigger value="comments" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5">
+                <MessageSquare className="w-3.5 h-3.5" />
+                Notes{comments.length > 0 && <span className="ml-0.5 text-[10px] text-muted-foreground">({comments.length})</span>}
+              </TabsTrigger>
             </>
           )}
         </TabsList>
@@ -566,6 +648,19 @@ export default function PriorityDetailPage() {
                   </p>
                 </div>
               </div>
+              {Array.isArray(priority.healthReasons) && priority.healthReasons.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase mb-1">Health Signals</h3>
+                  <ul className="space-y-1">
+                    {priority.healthReasons.map((reason, i) => (
+                      <li key={i} className="flex items-start gap-2 text-xs text-foreground">
+                        <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-500" />
+                        {reason}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -921,6 +1016,67 @@ export default function PriorityDetailPage() {
           )}
         </TabsContent>
 
+        {/* Comments / Notes tab */}
+        <TabsContent value="comments" className="mt-4">
+          <div className="space-y-4">
+            {/* Compose */}
+            <Card>
+              <CardContent className="p-3">
+                <Textarea
+                  placeholder="Add a note or comment…"
+                  value={commentBody}
+                  onChange={(e) => setCommentBody(e.target.value)}
+                  rows={3}
+                  className="text-sm resize-none mb-2"
+                  maxLength={5000}
+                />
+                <div className="flex justify-end">
+                  <Button
+                    size="sm"
+                    disabled={!commentBody.trim() || addCommentMutation.isPending}
+                    onClick={() => addCommentMutation.mutate(commentBody.trim())}
+                  >
+                    <Send className="w-3.5 h-3.5 mr-1" />
+                    {addCommentMutation.isPending ? "Posting…" : "Post"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {comments.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">No notes yet. Add the first one above.</p>
+            ) : (
+              <div className="space-y-2">
+                {comments.map((c) => (
+                  <Card key={c.id}>
+                    <CardContent className="p-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-medium text-foreground">{c.authorName || "Unknown"}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground tabular-nums">{formatDateTime(c.createdAt)}</span>
+                          {(isAdmin || c.authorUserId === user?.id) && (
+                            <button
+                              type="button"
+                              className="text-muted-foreground hover:text-red-600 transition-colors"
+                              title="Delete comment"
+                              onClick={() => deleteCommentMutation.mutate(c.id)}
+                              disabled={deleteCommentMutation.isPending}
+                              aria-label="Delete comment"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-sm whitespace-pre-wrap">{c.body}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
         {/* Activity tab — append-only audit timeline */}
         <TabsContent value="activity" className="mt-4">
           <div className="flex items-center justify-end mb-3">
@@ -1010,6 +1166,15 @@ export default function PriorityDetailPage() {
           onOpenChange={setBreakDownDialogOpen}
         />
       )}
+
+      <EscalateDialog
+        open={escalateDialogOpen}
+        onOpenChange={setEscalateDialogOpen}
+        priorityTitle={priority?.title ?? ""}
+        currentScope={priority?.scope ?? "role"}
+        onConfirm={(reason, note) => escalateMutation.mutate({ reason, note })}
+        isPending={escalateMutation.isPending}
+      />
 
       {confirmDialog}
     </PageLayout>

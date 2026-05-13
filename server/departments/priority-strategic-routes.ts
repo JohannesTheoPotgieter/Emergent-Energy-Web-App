@@ -9,6 +9,8 @@ import {
   mytoolCompanyPriorities,
   priorityProjects,
   priorityOpportunities,
+  priorityComments,
+  priorityWatches,
   users,
   projectInfo,
   projectExecutionState,
@@ -113,6 +115,7 @@ const updatePrioritySchema = basePrioritySchema
 
 const escalatePrioritySchema = z.object({
   reason: reasonEnum.optional(),
+  note: z.string().max(1000).optional(),
 });
 
 const linkProjectsSchema = z.object({
@@ -1843,7 +1846,7 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const priorityId = parseIdParam(req.params.id);
     if (priorityId === null) throw badRequest("Invalid priority id");
-    const { reason } = req.body as z.infer<typeof escalatePrioritySchema>;
+    const { reason, note } = req.body as z.infer<typeof escalatePrioritySchema>;
 
     const [priority] = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
     if (!priority) throw notFound("Priority");
@@ -1883,7 +1886,7 @@ router.post(
       action: "escalated",
       fromValue: priority.scope,
       toValue: patch.scope,
-      details: { reason: patch.escalationReason },
+      details: { reason: patch.escalationReason, ...(note ? { note } : {}) },
     });
 
     // Tier 4 · PR 5 — outbound signal. Emit a RAID "issue" on every directly
@@ -2278,6 +2281,163 @@ router.get("/api/reports/priorities-pack", requireAuth, asyncHandler(async (req:
   }
 
   doc.end();
+}));
+
+// ==================== POST /api/priorities/:id/reopen ====================
+router.post("/api/priorities/:id/reopen", requireAuth, requirePriorityAdmin, asyncHandler(async (req: Request, res: Response) => {
+  const priorityId = parseIdParam(req.params.id);
+  if (priorityId === null) throw badRequest("Invalid priority id");
+
+  const [priority] = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
+  if (!priority) throw notFound("Priority");
+  if (priority.status !== "closed" && priority.status !== "complete") {
+    throw badRequest("Priority is not closed");
+  }
+
+  const now = new Date();
+  const [updated] = await db.update(mytoolCompanyPriorities)
+    .set({ status: "active", updatedAt: now })
+    .where(eq(mytoolCompanyPriorities.id, priorityId))
+    .returning();
+
+  await recordActivity({
+    priorityId,
+    actorUserId: getEffectiveUser(req)?.id,
+    action: "updated",
+    fromValue: priority.status,
+    toValue: "active",
+    details: { field: "status", reopened: true },
+  });
+
+  const metrics = await getPriorityDerivedMetrics(priorityId);
+  const enriched = await enrichPriority(updated, metrics);
+  res.json(enriched);
+}));
+
+// ==================== GET /api/priorities/:id/comments ====================
+router.get("/api/priorities/:id/comments", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+  const priorityId = parseIdParam(req.params.id);
+  if (priorityId === null) throw badRequest("Invalid priority id");
+
+  const rows = await db
+    .select({
+      id: priorityComments.id,
+      priorityId: priorityComments.priorityId,
+      authorUserId: priorityComments.authorUserId,
+      authorName: priorityComments.authorName,
+      body: priorityComments.body,
+      editedAt: priorityComments.editedAt,
+      createdAt: priorityComments.createdAt,
+    })
+    .from(priorityComments)
+    .where(and(
+      eq(priorityComments.priorityId, priorityId),
+      isNull(priorityComments.deletedAt),
+    ))
+    .orderBy(asc(priorityComments.createdAt));
+
+  res.json(rows);
+}));
+
+// ==================== POST /api/priorities/:id/comments ====================
+router.post("/api/priorities/:id/comments", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+  const user = getEffectiveUser(req);
+  if (!user?.id) throw badRequest("No effective user");
+  const priorityId = parseIdParam(req.params.id);
+  if (priorityId === null) throw badRequest("Invalid priority id");
+
+  const schema = z.object({ body: z.string().min(1).max(5000) });
+  const { body } = schema.parse(req.body);
+
+  const [priority] = await db.select({ id: mytoolCompanyPriorities.id }).from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
+  if (!priority) throw notFound("Priority");
+
+  const [comment] = await db.insert(priorityComments).values({
+    priorityId,
+    authorUserId: user.id,
+    authorName: user.name ?? null,
+    body,
+  }).returning();
+
+  await recordActivity({
+    priorityId,
+    actorUserId: user.id,
+    action: "commented",
+    details: { commentId: comment.id, preview: body.slice(0, 120) },
+  });
+
+  res.status(201).json(comment);
+}));
+
+// ==================== DELETE /api/priorities/:id/comments/:commentId ====================
+router.delete("/api/priorities/:id/comments/:commentId", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+  const user = getEffectiveUser(req);
+  if (!user?.id) throw badRequest("No effective user");
+  const priorityId = parseIdParam(req.params.id);
+  const commentId = parseIdParam(req.params.commentId);
+  if (priorityId === null || commentId === null) throw badRequest("Invalid id");
+
+  const [comment] = await db
+    .select({ id: priorityComments.id, authorUserId: priorityComments.authorUserId })
+    .from(priorityComments)
+    .where(and(eq(priorityComments.id, commentId), eq(priorityComments.priorityId, priorityId), isNull(priorityComments.deletedAt)));
+
+  if (!comment) throw notFound("Comment");
+
+  const isAdmin = isPriorityAdminRole(user.role as any);
+  if (comment.authorUserId !== user.id && !isAdmin) {
+    throw forbidden("You can only delete your own comments");
+  }
+
+  await db.update(priorityComments).set({ deletedAt: new Date() }).where(eq(priorityComments.id, commentId));
+
+  res.json({ success: true });
+}));
+
+// ==================== GET /api/priorities/:id/watched ====================
+router.get("/api/priorities/:id/watched", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+  const user = getEffectiveUser(req);
+  if (!user?.id) throw badRequest("No effective user");
+  const priorityId = parseIdParam(req.params.id);
+  if (priorityId === null) throw badRequest("Invalid priority id");
+
+  const [watch] = await db
+    .select({ userId: priorityWatches.userId })
+    .from(priorityWatches)
+    .where(and(eq(priorityWatches.priorityId, priorityId), eq(priorityWatches.userId, user.id)));
+
+  res.json({ watching: !!watch });
+}));
+
+// ==================== POST /api/priorities/:id/watch ====================
+router.post("/api/priorities/:id/watch", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+  const user = getEffectiveUser(req);
+  if (!user?.id) throw badRequest("No effective user");
+  const priorityId = parseIdParam(req.params.id);
+  if (priorityId === null) throw badRequest("Invalid priority id");
+
+  const [priority] = await db.select({ id: mytoolCompanyPriorities.id }).from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
+  if (!priority) throw notFound("Priority");
+
+  // ON CONFLICT DO NOTHING via upsert — idempotent
+  await db.insert(priorityWatches)
+    .values({ userId: user.id, priorityId })
+    .onConflictDoNothing();
+
+  res.json({ watching: true });
+}));
+
+// ==================== DELETE /api/priorities/:id/watch ====================
+router.delete("/api/priorities/:id/watch", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+  const user = getEffectiveUser(req);
+  if (!user?.id) throw badRequest("No effective user");
+  const priorityId = parseIdParam(req.params.id);
+  if (priorityId === null) throw badRequest("Invalid priority id");
+
+  await db.delete(priorityWatches)
+    .where(and(eq(priorityWatches.priorityId, priorityId), eq(priorityWatches.userId, user.id)));
+
+  res.json({ watching: false });
 }));
 
 export function registerPriorityStrategicRoutes(app: any) {
