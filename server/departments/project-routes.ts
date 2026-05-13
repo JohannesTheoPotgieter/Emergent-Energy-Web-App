@@ -1053,9 +1053,9 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
       let revenueOutstanding = 0;
       for (const inflow of projectInflows) {
         if (inflow.milestoneAmount) {
-          const hasPayment = inflow.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inflow.paymentReceivedDate) && inflow.paymentReceivedDate <= today;
-          const noInvoice = !inflow.milestoneInvoiceNumber || inflow.milestoneInvoiceNumber.trim() === '';
-          if (hasPayment && noInvoice) {
+          const hasInvoice = inflow.invoiceRaisedDate && /^\d{4}-\d{2}-\d{2}/.test(inflow.invoiceRaisedDate);
+          const isPaid = inflow.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inflow.paymentReceivedDate);
+          if (hasInvoice && !isPaid) {
             revenueOutstanding += parseFloat(inflow.milestoneAmount) || 0;
           }
         }
@@ -1064,9 +1064,9 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
       let expensesDue = 0;
       for (const expense of projectExpenses) {
         if (expense.expenseActualTotal) {
-          const hasPastPaymentDate = expense.expensePaymentDate && /^\d{4}-\d{2}-\d{2}/.test(expense.expensePaymentDate) && expense.expensePaymentDate < today;
-          const noInvoice = !expense.expenseInvoiceNumber || expense.expenseInvoiceNumber.trim() === '';
-          if (hasPastPaymentDate && noInvoice) {
+          const hasInvoiceDate = expense.expenseInvoicedDate && /^\d{4}-\d{2}-\d{2}/.test(expense.expenseInvoicedDate);
+          const isPaid = expense.expensePaymentDate && /^\d{4}-\d{2}-\d{2}/.test(expense.expensePaymentDate);
+          if (hasInvoiceDate && !isPaid) {
             expensesDue += parseFloat(expense.expenseActualTotal) || 0;
           }
         }
@@ -1136,7 +1136,8 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
         task_status_counts: taskCountsByProject.get(projectName) || {},
         phase_updated_at: info?.phaseUpdatedAt || null,
         has_tracker_import: importedProjectNames.has(projectName) || importedProjectNames.has(projectName.replace(/_/g, ' ')),
-        is_active: info?.isActive !== false && info?.phase?.toLowerCase() !== "gone",
+        is_active: (info?.archivedStatus ?? 'ACTIVE') === 'ACTIVE' && info?.phase?.toLowerCase() !== "gone",
+        rag_status: info?.ragStatus ?? null,
         pd_pm_handover_status: handover?.status || "DRAFT",
         pd_pm_handover_rejection_reason: handover?.rejection_reason || null,
         next_open_inflow_milestone: (() => {
