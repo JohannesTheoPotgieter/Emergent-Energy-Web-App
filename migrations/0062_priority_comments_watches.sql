@@ -13,7 +13,7 @@ CREATE TABLE "priority_watches" (
 	"user_id" integer NOT NULL,
 	"priority_id" integer NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "priority_watches_unique" UNIQUE("user_id","priority_id")
+	CONSTRAINT "priority_watches_unique" PRIMARY KEY("user_id","priority_id")
 );
 --> statement-breakpoint
 ALTER TABLE "priority_comments" ADD CONSTRAINT "priority_comments_priority_id_mytool_company_priorities_id_fk" FOREIGN KEY ("priority_id") REFERENCES "public"."mytool_company_priorities"("id") ON DELETE cascade ON UPDATE no action;

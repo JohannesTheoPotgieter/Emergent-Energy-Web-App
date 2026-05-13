@@ -2184,7 +2184,7 @@ router.get("/api/priorities/:id/activity", requireAuth, asyncHandler(async (req:
 // Executive priorities pack — PDF summary of active priorities grouped by
 // scope, with health / severity / overdue highlights. Leverages the
 // pdfkit pattern from server/departments/board-pack-routes.ts.
-router.get("/api/reports/priorities-pack", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+router.get("/api/reports/priorities-pack", requireAuth, requirePriorityCreator, asyncHandler(async (req: Request, res: Response) => {
   const scopeFilter = typeof req.query.scope === "string" ? req.query.scope : null;
   const departmentFilter = typeof req.query.department === "string" ? req.query.department : null;
 

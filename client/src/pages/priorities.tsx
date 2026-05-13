@@ -212,8 +212,9 @@ export default function PrioritiesPage() {
   });
 
   const reopenMutation = useMutation({
-    mutationFn: (priorityId: number) => apiRequest("PUT", `/api/priorities/${priorityId}`, { status: "active" }),
-    onSuccess: invalidateAll,
+    mutationFn: (priorityId: number) => apiRequest("POST", `/api/priorities/${priorityId}/reopen`, {}),
+    onSuccess: () => { toast({ title: "Priority reopened" }); invalidateAll(); },
+    onError: (err) => toast({ title: "Could not reopen", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
   const bulkCloseMutation = useMutation({
@@ -486,12 +487,12 @@ export default function PrioritiesPage() {
               isError={myWorkFeedQuery.isError}
               error={myWorkFeedQuery.error as Error}
               refetch={myWorkFeedQuery.refetch}
-              showEscalate
+              showEscalate={isAdmin || isDeptHead}
               onEscalate={(id) => {
                 const p = myPriorities.find((x) => x.id === id);
                 if (p) setEscalateTarget({ id: p.id, title: p.title, scope: p.scope });
               }}
-              showReopen={showClosed}
+              showReopen={showClosed && (isAdmin || isDeptHead)}
               onReopen={(id) => reopenMutation.mutate(id)}
               selectable
               selectedIds={bulkSelected}

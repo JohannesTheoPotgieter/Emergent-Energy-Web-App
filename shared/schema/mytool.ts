@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -232,7 +232,7 @@ export const priorityWatches = pgTable("priority_watches", {
   priorityId: integer("priority_id").notNull().references(() => mytoolCompanyPriorities.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
-  pk: unique("priority_watches_unique").on(table.userId, table.priorityId),
+  pk: primaryKey({ name: "priority_watches_unique", columns: [table.userId, table.priorityId] }),
 }));
 
 export type PriorityWatch = typeof priorityWatches.$inferSelect;

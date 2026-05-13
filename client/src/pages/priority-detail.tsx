@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { isPriorityAdminRole, departmentLabel } from "@/config/priorities";
 import { ProjectLinker } from "@/components/priorities/ProjectLinker";
@@ -156,6 +157,7 @@ export default function PriorityDetailPage() {
   });
 
   const isAdmin = isPriorityAdminRole(user?.role);
+  const { toast } = useToast();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
 
   const { data: priority, isLoading, isError, error, refetch } = useQuery<PriorityDetail>({
@@ -275,11 +277,13 @@ export default function PriorityDetailPage() {
       refetchComments();
       queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/activity`] });
     },
+    onError: (err) => toast({ title: "Could not post comment", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
   const deleteCommentMutation = useMutation({
     mutationFn: (commentId: number) => apiRequest("DELETE", `/api/priorities/${priorityId}/comments/${commentId}`),
     onSuccess: () => refetchComments(),
+    onError: (err) => toast({ title: "Could not delete comment", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
   const unlinkMutation = useMutation({

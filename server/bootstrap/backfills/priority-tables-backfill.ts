@@ -31,7 +31,7 @@ export async function runPriorityTablesDdl(log: (msg: string, src?: string) => v
           user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
           priority_id INTEGER NOT NULL REFERENCES mytool_company_priorities(id) ON DELETE CASCADE,
           created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-          CONSTRAINT priority_watches_unique UNIQUE(user_id, priority_id)
+          CONSTRAINT priority_watches_unique PRIMARY KEY(user_id, priority_id)
         )
       `,
     },
