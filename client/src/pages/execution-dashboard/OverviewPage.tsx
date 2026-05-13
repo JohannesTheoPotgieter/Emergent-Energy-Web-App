@@ -19,8 +19,8 @@ export default function OverviewPage() {
   const [revenueSheetOpen, setRevenueSheetOpen] = useState(false);
   const [cosSheetOpen, setCosSheetOpen] = useState(false);
 
-  const behindCount = kpis.projectsBehindPlan;               // server boolean — canonical
-  const onScheduleCount = filteredProjects.length - behindCount; // always sums to total
+  const behindCount = filteredProjects.filter((p) => p.behindPlan).length;
+  const onScheduleCount = filteredProjects.length - behindCount;
   const fullySignedCount = filteredProjects.filter(
     (p) => p.cpSigned && p.signedStatus === "SIGNED",
   ).length;
@@ -149,7 +149,7 @@ export default function OverviewPage() {
             </SheetTitle>
           </SheetHeader>
           <p className="text-[11px] text-muted-foreground mt-2">
-            Sorted by open revenue (largest first). Figures are for the current financial year across all active projects.
+            Sorted by open revenue (largest first). Figures are for the current financial year for currently filtered projects.
           </p>
           <div className="mt-3 border rounded-lg overflow-auto max-h-[72vh]">
             <table className="w-full text-sm">
@@ -164,7 +164,7 @@ export default function OverviewPage() {
                 </tr>
               </thead>
               <tbody>
-                {[...allProjects]
+                {[...filteredProjects]
                   .sort((a, b) => (b.openInflowFy ?? 0) - (a.openInflowFy ?? 0))
                   .map((p) => (
                     <tr
@@ -189,10 +189,10 @@ export default function OverviewPage() {
               </tbody>
               <tfoot className="bg-muted/40 border-t-2 border-border sticky bottom-0">
                 <tr className="text-[11px] font-semibold">
-                  <td className="py-2 px-3" colSpan={2}>Total ({allProjects.length} projects)</td>
-                  <td className="py-2 px-3 text-right tabular-nums">{formatCurrencyFull(allProjects.reduce((s, p) => s + p.plannedRevenueFy, 0))}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-emerald-600">{formatCurrencyFull(allProjects.reduce((s, p) => s + p.receivedInflowFy, 0))}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-amber-600">{formatCurrencyFull(allProjects.reduce((s, p) => s + p.openInflowFy, 0))}</td>
+                  <td className="py-2 px-3" colSpan={2}>Total ({filteredProjects.length} projects)</td>
+                  <td className="py-2 px-3 text-right tabular-nums">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.plannedRevenueFy, 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-emerald-600">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.receivedInflowFy, 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-amber-600">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.openInflowFy, 0))}</td>
                   <td></td>
                 </tr>
               </tfoot>
@@ -211,7 +211,7 @@ export default function OverviewPage() {
             </SheetTitle>
           </SheetHeader>
           <p className="text-[11px] text-muted-foreground mt-2">
-            Sorted by open expenditure (largest first). Figures are for the current financial year across all active projects.
+            Sorted by open expenditure (largest first). Figures are for the current financial year for currently filtered projects.
           </p>
           <div className="mt-3 border rounded-lg overflow-auto max-h-[72vh]">
             <table className="w-full text-sm">
@@ -226,7 +226,7 @@ export default function OverviewPage() {
                 </tr>
               </thead>
               <tbody>
-                {[...allProjects]
+                {[...filteredProjects]
                   .sort((a, b) => (b.openExpenditureFy ?? 0) - (a.openExpenditureFy ?? 0))
                   .map((p) => (
                     <tr
@@ -251,10 +251,10 @@ export default function OverviewPage() {
               </tbody>
               <tfoot className="bg-muted/40 border-t-2 border-border sticky bottom-0">
                 <tr className="text-[11px] font-semibold">
-                  <td className="py-2 px-3" colSpan={2}>Total ({allProjects.length} projects)</td>
-                  <td className="py-2 px-3 text-right tabular-nums">{formatCurrencyFull(allProjects.reduce((s, p) => s + p.plannedExpenditureFy, 0))}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-emerald-600">{formatCurrencyFull(allProjects.reduce((s, p) => s + p.paidExpenditureFy, 0))}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-orange-600">{formatCurrencyFull(allProjects.reduce((s, p) => s + p.openExpenditureFy, 0))}</td>
+                  <td className="py-2 px-3" colSpan={2}>Total ({filteredProjects.length} projects)</td>
+                  <td className="py-2 px-3 text-right tabular-nums">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.plannedExpenditureFy, 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-emerald-600">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.paidExpenditureFy, 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-orange-600">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.openExpenditureFy, 0))}</td>
                   <td></td>
                 </tr>
               </tfoot>
