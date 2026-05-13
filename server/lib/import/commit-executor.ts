@@ -781,7 +781,10 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
             outlineNumber: wbsCode,
             indentLevel: fileRow.indentLevel ?? 0,
             isMilestone: fileRow.isMilestone ?? false,
-            phase: fileRow.phase || null,
+            // Phase is owned by the canonical lifecycle (project_info / stage gates).
+            // Smart import must NOT propagate Excel "Phase" values into work_items —
+            // doing so leaks legacy/free-text phase strings into the project header
+            // and stage stepper. Detector still surfaces it for diagnostics only.
             ownerUserId: resolveOwnerUserId(fileRow.owner),
             ownerName: fileRow.owner || null,
             sourceRow: fileRow.sourceRow || null,
@@ -838,7 +841,8 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
           outlineNumber: wbsCode,
           indentLevel: fileRow.indentLevel ?? 0,
           isMilestone: fileRow.isMilestone ?? false,
-          phase: fileRow.phase || null,
+          // Phase: see comment in the UPDATE branch above. Smart import does
+          // not write phase; the canonical lifecycle owns it.
           parentId: null,
           ownerUserId: resolveOwnerUserId(fileRow.owner),
           ownerName: fileRow.owner || null,

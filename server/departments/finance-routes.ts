@@ -6418,8 +6418,12 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
     const plannedMargin = plannedRevenue > 0 ? plannedProfit / plannedRevenue : 0;
     const costedExpenditureFinal = plannedExpenditureVal;
 
+    // ACTUAL = money that has actually moved (paid invoices only).
+    // Revenue = milestones in bank. Expenditure = expense lines classified Paid.
+    // `allExpenditure` (which includes committed/PO costs not yet paid) is used
+    // for the LIVE/managed view below, never for the ACTUAL block.
     const actualRevenue = inBankTotal;
-    const actualProfit = actualRevenue - allExpenditure;
+    const actualProfit = actualRevenue - actualExpenditure;
     const actualMargin = actualRevenue > 0 ? actualProfit / actualRevenue : 0;
 
     const liveRevenue = totalContract;
@@ -6539,7 +6543,7 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
         },
         actual: {
           revenue: actualRevenue,
-          expenditure: allExpenditure,
+          expenditure: actualExpenditure,
           profit: actualProfit,
           margin: actualMargin,
         },
