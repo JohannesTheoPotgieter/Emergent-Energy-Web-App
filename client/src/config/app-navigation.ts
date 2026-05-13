@@ -108,6 +108,7 @@ export const TOP_SECTIONS: TopSection[] = [
     path: "/cashflow",
     match: (pathname) => startsWithAny(pathname, [
       "/cashflow", "/cos", "/revenue-tracker", "/finance", "/fye-revenue-tracking",
+      "/payment-request-board", "/po-approval-board", "/payment-batch-manager",
     ]),
     secondary: [
       { label: "Cashflow", path: "/cashflow" },
@@ -115,6 +116,9 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Revenue", path: "/revenue-tracker" },
       { label: "Gross Profit", path: "/finance/gp/company" },
       { label: "FYE Tracking Report", path: "/fye-revenue-tracking" },
+      { label: "QuickBooks Throughput", path: "/finance/quickbooks" },
+      { label: "Payment Requests", path: "/payment-request-board" },
+      { label: "PO Approvals", path: "/po-approval-board" },
     ],
   },
   {
@@ -143,7 +147,7 @@ export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Settings",
     key: "ADMIN",
-    path: "/admin/roles",
+    path: "/settings",
     match: (pathname) => startsWithAny(pathname, [
       "/admin", "/settings",
     ]),
@@ -176,7 +180,7 @@ export const DISPLAY_TOP_NAV: DisplayTopNavItem[] = [
   { label: "Finance", path: "/cashflow", requiredSectionKey: "FINANCE", sectionKeys: ["FINANCE"] },
   { label: "Engineering", path: "/engineering", requiredSectionKey: "ENGINEERING", sectionKeys: ["ENGINEERING"] },
   { label: "Quality Management", path: "/quality", requiredSectionKey: "QUALITY", sectionKeys: ["QUALITY"] },
-  { label: "Settings", path: "/admin/roles", requiredSectionKey: "ADMIN", sectionKeys: ["ADMIN"] },
+  { label: "Settings", path: "/settings", requiredSectionKey: "ADMIN", sectionKeys: ["ADMIN"] },
 ];
 
 /**

@@ -100,6 +100,30 @@ function selectDefinedFields<T extends Record<string, any>>(fields: T): T {
   ) as T;
 }
 
+type ExecutionDashboardProjectRow = {
+  id: number;
+  projectName: string;
+  pm: string | null;
+  pd: string | null;
+  executionPhase: string | null;
+  ragStatus: string | null;
+  archivedStatus: string | null;
+  phase: string | null;
+  cpSigned: string | null;
+  signedStatus: string | null;
+};
+
+type ExecutionDashboardEngTaskRow = {
+  projectId: number | null;
+  projectName: string | null;
+  status: string | null;
+  dueDate: string | null;
+  blockerReason: string | null;
+  priority: string | null;
+  ownerUserId: number | null;
+  title: string | null;
+};
+
 function formatDateKey(y: number, m: number, d: number): string {
   return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
@@ -1047,7 +1071,7 @@ export function registerLifecycleRoutes(app: Express) {
         signedStatus: projectExecutionState.signedStatus,
       })).from(projectInfo)
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
-        .where(eq(projectExecutionState.archivedStatus, "ACTIVE"));
+        .where(eq(projectExecutionState.archivedStatus, "ACTIVE")) as ExecutionDashboardProjectRow[];
 
       // Helpers matching program-dashboard logic
       const hasText = (v: any) => typeof v === 'string' && v.trim().length > 0;
@@ -1285,7 +1309,7 @@ export function registerLifecycleRoutes(app: Express) {
       }
 
       const activeProjectIds = activeProjects.map((p) => p.id);
-      const engTasks = activeProjectIds.length > 0
+      const engTasks: ExecutionDashboardEngTaskRow[] = activeProjectIds.length > 0
         ? await db.select({
             projectId: workItems.projectId,
             projectName: projectInfo.projectName,

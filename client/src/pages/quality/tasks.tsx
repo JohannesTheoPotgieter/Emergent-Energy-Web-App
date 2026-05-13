@@ -1,12 +1,8 @@
 /**
  * Quality Task Board — minimal first cut.
  *
- * Lists open quality work items (source/discipline = quality) in a single
- * filterable table. Uses the existing /api/eng/tasks endpoint and filters
- * client-side for quality-sourced rows so the page works on the current
- * server architecture (no new endpoint required). A dedicated
- * /api/quality/tasks endpoint can replace this in a follow-up without
- * changing the page shape.
+ * Lists quality and NCR work items from the dedicated /api/quality/tasks
+ * endpoint so quality ownership, counts, and source semantics live server-side.
  */
 
 import { useMemo, useState } from "react";
@@ -24,7 +20,7 @@ import {
 import { Search } from "lucide-react";
 import { Link } from "wouter";
 
-interface RawTask {
+interface QualityTask {
   id: number;
   title?: string | null;
   description?: string | null;
@@ -39,10 +35,15 @@ interface RawTask {
   assigneeName?: string | null;
 }
 
-function isQualityTask(t: RawTask): boolean {
-  const src = (t.source || "").toLowerCase();
-  const disc = (t.discipline || "").toLowerCase();
-  return src.includes("quality") || disc.includes("quality") || src === "ncr" || src === "qa";
+interface QualityTaskResponse {
+  tasks?: QualityTask[];
+  items?: QualityTask[];
+  counts?: {
+    total: number;
+    overdue: number;
+    unassigned: number;
+    byStatus: Record<string, number>;
+  };
 }
 
 function statusVariant(status?: string | null) {
@@ -54,26 +55,26 @@ function statusVariant(status?: string | null) {
 }
 
 export default function QualityTasksPage() {
-  const tasksQuery = useQuery<RawTask[]>({
+  const tasksQuery = useQuery<QualityTaskResponse>({
     queryKey: ["quality-tasks"],
     queryFn: async () => {
-      const data = await engFetch("/api/eng/tasks");
-      const list: RawTask[] = Array.isArray(data) ? data : (data?.tasks ?? data?.items ?? []);
-      return list.filter(isQualityTask);
+      const data = await engFetch("/api/quality/tasks");
+      return Array.isArray(data) ? { tasks: data } : data;
     },
     staleTime: 30_000,
   });
 
   const [search, setSearch] = useState("");
+  const tasks = tasksQuery.data?.tasks ?? tasksQuery.data?.items ?? [];
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return tasksQuery.data ?? [];
-    return (tasksQuery.data ?? []).filter((t) =>
+    if (!q) return tasks;
+    return tasks.filter((t) =>
       [t.title, t.description, t.projectName, t.assigneeName].some(
         (v) => typeof v === "string" && v.toLowerCase().includes(q),
       ),
     );
-  }, [tasksQuery.data, search]);
+  }, [tasks, search]);
 
   if (tasksQuery.isLoading) {
     return (
@@ -100,7 +101,7 @@ export default function QualityTasksPage() {
     <PageLayout>
       <PageHeader
         title="Quality Task Board"
-        subtitle="Open quality and NCR work items across the program. Click a task to open it in the engineering task drawer."
+        subtitle="Open quality and NCR work items across the program. Counts and ownership are filtered by the Quality task API."
       />
       <Card>
         <CardContent className="p-4 space-y-3">
@@ -116,7 +117,8 @@ export default function QualityTasksPage() {
               />
             </div>
             <div className="ml-auto text-xs sm:text-sm text-muted-foreground whitespace-nowrap">
-              {filtered.length} of {tasksQuery.data?.length ?? 0} task{(tasksQuery.data?.length ?? 0) === 1 ? "" : "s"}
+              {filtered.length} of {tasks.length} task{tasks.length === 1 ? "" : "s"}
+              {tasksQuery.data?.counts ? ` - ${tasksQuery.data.counts.overdue} overdue` : ""}
             </div>
           </div>
 

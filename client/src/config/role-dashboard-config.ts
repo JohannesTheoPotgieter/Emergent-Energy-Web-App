@@ -35,10 +35,10 @@ const COO_CEO_CONFIG: RoleDashboardConfig = {
   attentionPriority: ["exceptions", "gate_failures", "handover_bottlenecks", "budget_deviation"],
   quickActions: [
     { label: "Execution Board", path: "/execution-board", iconKey: "LayoutDashboard" },
-    { label: "Exceptions", path: "/exceptions", iconKey: "AlertTriangle" },
+    { label: "Exceptions", path: "/gates/exceptions", iconKey: "AlertTriangle" },
     { label: "Gate Pipeline", path: "/gates", iconKey: "Milestone" },
-    { label: "Reports", path: "/reports", iconKey: "FileText" },
-    { label: "Control Center", path: "/admin/control-center", iconKey: "Gauge" },
+    { label: "Reports", path: "/reports/center", iconKey: "FileText" },
+    { label: "Settings", path: "/settings", iconKey: "Gauge" },
   ],
   cockpitPath: "/execution-board",
   cockpitLabel: "Execution Board",
@@ -56,9 +56,9 @@ const PROGRAM_MANAGER_CONFIG: RoleDashboardConfig = {
     { label: "Gates Pipeline", path: "/gates", iconKey: "Milestone" },
     { label: "Weekly Reviews", path: "/weekly-reviews", iconKey: "CalendarCheck" },
     { label: "Execution Board", path: "/execution-board", iconKey: "LayoutDashboard" },
-    { label: "Project List", path: "/projects", iconKey: "FileSpreadsheet" },
+    { label: "All Projects", path: "/projects", iconKey: "FileSpreadsheet" },
     { label: "Programme Reports", path: "/reports/programme", iconKey: "FileText" },
-    { label: "Exceptions", path: "/exceptions", iconKey: "AlertTriangle" },
+    { label: "Exceptions", path: "/gates/exceptions", iconKey: "AlertTriangle" },
   ],
   cockpitPath: "/execution-board",
   cockpitLabel: "Execution Board",
@@ -172,7 +172,7 @@ const CONSTRUCTION_CONFIG: RoleDashboardConfig = {
   attentionPriority: ["material_delays", "inspection_failures", "critical_snags", "safety_incidents"],
   quickActions: [
     { label: "Execution Board", path: "/execution-board", iconKey: "LayoutDashboard" },
-    { label: "Project List", path: "/projects", iconKey: "FileSpreadsheet" },
+    { label: "All Projects", path: "/projects", iconKey: "FileSpreadsheet" },
     { label: "Quality", path: "/quality", iconKey: "ShieldCheck" },
     { label: "Gates Pipeline", path: "/gates", iconKey: "Milestone" },
     { label: "My Tasks", path: "/priorities?tab=my", iconKey: "ListChecks" },
@@ -191,7 +191,7 @@ const DEFAULT_CONFIG: RoleDashboardConfig = {
   attentionPriority: ["my_overdue", "my_blockers", "my_approvals"],
   quickActions: [
     { label: "My Tasks", path: "/my-work", iconKey: "ListChecks" },
-    { label: "Project List", path: "/projects", iconKey: "FileSpreadsheet" },
+    { label: "All Projects", path: "/projects", iconKey: "FileSpreadsheet" },
   ],
   cockpitPath: "/execution-board",
   cockpitLabel: "Execution Board",
@@ -272,7 +272,7 @@ import { resolveUserLens, type LensRole } from "@shared/schema/role-based-upgrad
 
 const LENS_CONFIG_MAP: Record<LensRole, RoleDashboardConfig> = {
   CEO: COO_CEO_CONFIG,
-  COO_SUPER_ADMIN: { ...COO_CEO_CONFIG, cockpitPath: "/admin/control-center", cockpitLabel: "Command Center" },
+  COO_SUPER_ADMIN: { ...COO_CEO_CONFIG, cockpitPath: "/settings", cockpitLabel: "Settings" },
   CFO: FINANCE_CONFIG,
   HEAD_OF_PROJECT_DEVELOPMENT: PD_CONFIG,
   PROGRAM_MANAGER: PROGRAM_MANAGER_CONFIG,

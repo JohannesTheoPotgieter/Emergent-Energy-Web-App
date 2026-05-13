@@ -1753,6 +1753,13 @@ export default function ProjectDetailPage() {
           })}
         </div>
 
+        {(!canViewTab.engineering || !canViewTab.finance) && (
+          <div className="sr-only" data-testid="project-dept-permission-hints">
+            {!canViewTab.engineering && <span>Engineering locked: {tabPermissionReasons.eng}</span>}
+            {!canViewTab.finance && <span>Finance locked: {tabPermissionReasons.finance}</span>}
+          </div>
+        )}
+
         <Popover>
           <PopoverTrigger asChild>
             <button

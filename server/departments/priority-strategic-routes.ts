@@ -755,7 +755,7 @@ router.get("/api/priorities/my-work", requireAuth, requirePermission("company_pr
 // Create a personal work_item (no project required) from the My Priorities
 // page. The existing POST /api/tasks requires projectId which personal
 // tasks don't have, so this endpoint bypasses that constraint.
-router.post("/api/priorities/tasks", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+router.post("/api/priorities/tasks", requireAuth, requirePermission("company_priorities", "view"), asyncHandler(async (req: Request, res: Response) => {
   const user = getEffectiveUser(req);
   if (!user?.id) throw badRequest("No effective user");
 
@@ -793,7 +793,7 @@ router.post("/api/priorities/tasks", requireAuth, asyncHandler(async (req: Reque
 // DELETE /api/priorities/tasks/:id — soft-delete a personal work_item.
 // Only the owner can delete their own task. Uses the priorities-domain
 // endpoint to bypass the admin-only gate in task-management-routes.ts.
-router.delete("/api/priorities/tasks/:id", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+router.delete("/api/priorities/tasks/:id", requireAuth, requirePermission("company_priorities", "view"), asyncHandler(async (req: Request, res: Response) => {
   const user = getEffectiveUser(req);
   if (!user?.id) throw badRequest("No effective user");
 
@@ -2284,7 +2284,7 @@ router.get("/api/reports/priorities-pack", requireAuth, requirePriorityCreator, 
 }));
 
 // ==================== POST /api/priorities/:id/reopen ====================
-router.post("/api/priorities/:id/reopen", requireAuth, requirePriorityAdmin, asyncHandler(async (req: Request, res: Response) => {
+router.post("/api/priorities/:id/reopen", requireAuth, requirePermission("company_priorities", "view"), requirePriorityAdmin, asyncHandler(async (req: Request, res: Response) => {
   const priorityId = parseIdParam(req.params.id);
   if (priorityId === null) throw badRequest("Invalid priority id");
 
@@ -2315,7 +2315,7 @@ router.post("/api/priorities/:id/reopen", requireAuth, requirePriorityAdmin, asy
 }));
 
 // ==================== GET /api/priorities/:id/comments ====================
-router.get("/api/priorities/:id/comments", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+router.get("/api/priorities/:id/comments", requireAuth, requirePermission("company_priorities", "view"), asyncHandler(async (req: Request, res: Response) => {
   const priorityId = parseIdParam(req.params.id);
   if (priorityId === null) throw badRequest("Invalid priority id");
 
@@ -2340,7 +2340,7 @@ router.get("/api/priorities/:id/comments", requireAuth, asyncHandler(async (req:
 }));
 
 // ==================== POST /api/priorities/:id/comments ====================
-router.post("/api/priorities/:id/comments", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+router.post("/api/priorities/:id/comments", requireAuth, requirePermission("company_priorities", "view"), asyncHandler(async (req: Request, res: Response) => {
   const user = getEffectiveUser(req);
   if (!user?.id) throw badRequest("No effective user");
   const priorityId = parseIdParam(req.params.id);
@@ -2370,7 +2370,7 @@ router.post("/api/priorities/:id/comments", requireAuth, asyncHandler(async (req
 }));
 
 // ==================== DELETE /api/priorities/:id/comments/:commentId ====================
-router.delete("/api/priorities/:id/comments/:commentId", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+router.delete("/api/priorities/:id/comments/:commentId", requireAuth, requirePermission("company_priorities", "view"), asyncHandler(async (req: Request, res: Response) => {
   const user = getEffectiveUser(req);
   if (!user?.id) throw badRequest("No effective user");
   const priorityId = parseIdParam(req.params.id);
@@ -2395,7 +2395,7 @@ router.delete("/api/priorities/:id/comments/:commentId", requireAuth, asyncHandl
 }));
 
 // ==================== GET /api/priorities/:id/watched ====================
-router.get("/api/priorities/:id/watched", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+router.get("/api/priorities/:id/watched", requireAuth, requirePermission("company_priorities", "view"), asyncHandler(async (req: Request, res: Response) => {
   const user = getEffectiveUser(req);
   if (!user?.id) throw badRequest("No effective user");
   const priorityId = parseIdParam(req.params.id);
@@ -2410,7 +2410,7 @@ router.get("/api/priorities/:id/watched", requireAuth, asyncHandler(async (req: 
 }));
 
 // ==================== POST /api/priorities/:id/watch ====================
-router.post("/api/priorities/:id/watch", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+router.post("/api/priorities/:id/watch", requireAuth, requirePermission("company_priorities", "view"), asyncHandler(async (req: Request, res: Response) => {
   const user = getEffectiveUser(req);
   if (!user?.id) throw badRequest("No effective user");
   const priorityId = parseIdParam(req.params.id);
@@ -2428,7 +2428,7 @@ router.post("/api/priorities/:id/watch", requireAuth, asyncHandler(async (req: R
 }));
 
 // ==================== DELETE /api/priorities/:id/watch ====================
-router.delete("/api/priorities/:id/watch", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+router.delete("/api/priorities/:id/watch", requireAuth, requirePermission("company_priorities", "view"), asyncHandler(async (req: Request, res: Response) => {
   const user = getEffectiveUser(req);
   if (!user?.id) throw badRequest("No effective user");
   const priorityId = parseIdParam(req.params.id);
