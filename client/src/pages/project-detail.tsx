@@ -1412,10 +1412,20 @@ export default function ProjectDetailPage() {
   const qualityRag: "green" | "amber" | "red" = (healthSummary?.quality.rag as any) ?? computeQualityRag(!!qualitySummaryLegacy?.hasChecklist, qualityGatesPassed, qualityGatesTotal, qualityApprovedItems);
 
   // Revenue realisation
-  const totalPaidInflows = healthSummary?.revenue.totalPaidInflows ?? v2Detail?.financeSummary?.receivedRevenue ?? revTabMilestones
+  // Source of truth: revenue-tab milestones (live). healthSummary is a
+  // denormalised aggregate that can lag behind in-bank confirmations and
+  // was reporting 0% inflows realised even when ACTUAL = R 373k. We now
+  // prefer the live computation and only fall back to the cached aggregates
+  // when no live milestone data is available at all.
+  const liveInBankTotal = revTabMilestones
     .filter((m: any) => m.status === 'inBank')
     .reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
-  const revenueRealisedPct = healthSummary?.revenue.realisedPct ?? (contractValue > 0 ? (totalPaidInflows / contractValue) * 100 : 0);
+  const totalPaidInflows = revTabMilestones.length > 0
+    ? liveInBankTotal
+    : (v2Detail?.financeSummary?.receivedRevenue ?? healthSummary?.revenue.totalPaidInflows ?? 0);
+  const revenueRealisedPct = contractValue > 0
+    ? (totalPaidInflows / contractValue) * 100
+    : (healthSummary?.revenue.realisedPct ?? 0);
 
   const isExpensePaid = (e: any): boolean => {
     const hasPaymentDate = !!(e.expensePaymentDate && String(e.expensePaymentDate).trim());
@@ -1438,13 +1448,20 @@ export default function ProjectDetailPage() {
     return dateStr.length === 7 && dateStr < currentMonth;
   };
 
-  // COS realisation
-  const totalRealisedCos = healthSummary?.cos.totalRealised ?? (expenseData as any[]).reduce((s: number, e: any) => {
+  // COS realisation — same source-of-truth precedence as inflows: prefer
+  // the live expense rows; only fall back to healthSummary's cached value
+  // when expenseData is empty.
+  const liveRealisedCos = (expenseData as any[]).reduce((s: number, e: any) => {
     if (isCosRealised(e)) return s + (Number(e.expenseActualTotal) || 0);
     return s;
   }, 0);
+  const totalRealisedCos = (expenseData as any[]).length > 0
+    ? liveRealisedCos
+    : (healthSummary?.cos.totalRealised ?? 0);
   const cosDenominator = totalExpenses > 0 ? totalExpenses : budgetTotal;
-  const cosRealisedPct = healthSummary?.cos.realisedPct ?? (cosDenominator > 0 ? (totalRealisedCos / cosDenominator) * 100 : 0);
+  const cosRealisedPct = cosDenominator > 0
+    ? (totalRealisedCos / cosDenominator) * 100
+    : (healthSummary?.cos.realisedPct ?? 0);
   const marginDelta = revenueRealisedPct - cosRealisedPct;
 
   const overallRag: "green" | "amber" | "red" = (healthSummary?.overall.rag as any) ?? computeOverallRag(scheduleRag, costRag, qualityRag);
