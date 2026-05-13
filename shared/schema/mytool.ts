@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -204,6 +204,38 @@ export const priorityProjects = pgTable("priority_projects", {
 export const insertPriorityProjectSchema = createInsertSchema(priorityProjects).omit({ id: true, linkedAt: true } as any);
 export type InsertPriorityProject = z.infer<typeof insertPriorityProjectSchema>;
 export type PriorityProject = typeof priorityProjects.$inferSelect;
+
+// ── Priority Comments ─────────────────────────────────────────────────
+// Free-text notes and discussion on a priority. Append-only from the
+// client; soft-deleted via deletedAt so the author count stays consistent.
+export const priorityComments = pgTable("priority_comments", {
+  id: serial("id").primaryKey(),
+  priorityId: integer("priority_id").notNull().references(() => mytoolCompanyPriorities.id, { onDelete: "cascade" }),
+  authorUserId: integer("author_user_id").references(() => users.id, { onDelete: "set null" }),
+  authorName: text("author_name"),
+  body: text("body").notNull(),
+  editedAt: timestamp("edited_at"),
+  deletedAt: timestamp("deleted_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertPriorityCommentSchema = createInsertSchema(priorityComments).omit({ id: true, createdAt: true } as any);
+export type InsertPriorityComment = z.infer<typeof insertPriorityCommentSchema>;
+export type PriorityComment = typeof priorityComments.$inferSelect;
+
+// ── Priority Watches ─────────────────────────────────────────────────
+// Users can watch a priority to receive notifications on escalation and
+// status changes. One row per (user, priority) pair; unique constraint
+// enforced at DB level.
+export const priorityWatches = pgTable("priority_watches", {
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  priorityId: integer("priority_id").notNull().references(() => mytoolCompanyPriorities.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  pk: primaryKey({ name: "priority_watches_unique", columns: [table.userId, table.priorityId] }),
+}));
+
+export type PriorityWatch = typeof priorityWatches.$inferSelect;
 
 // Priority ↔ Opportunity junction — Tier 4 · PR 2.
 // Lets a Priority attach to a *pre-contract* deal (opportunity) as well as
