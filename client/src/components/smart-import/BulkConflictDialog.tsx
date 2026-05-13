@@ -118,6 +118,13 @@ export function BulkConflictDialog({
         // containing block for `position: fixed` and shrink `width: 100%`
         // away from the actual viewport. `100vw` is always relative to the
         // real viewport, and an inline `transform` always wins.
+        //
+        // NOTE: this inline-style override is intentionally retained even
+        // though the global `[data-layout-mode]` CSS in index.css would
+        // otherwise centre the dialog. The bulk-conflict dialog's 3-column
+        // layout requires a wider modal (768px) than the global override
+        // (42rem) and must work even when the layout mode is "auto" and the
+        // measured viewport happens to be just under the md breakpoint.
         style={{
           position: "fixed",
           top: "50%",
@@ -126,6 +133,7 @@ export function BulkConflictDialog({
           bottom: "auto",
           transform: "translate(-50%, -50%)",
           width: "min(calc(100vw - 2rem), 768px)",
+          maxWidth: "min(calc(100vw - 2rem), 768px)",
           maxHeight: "90vh",
         }}
         className="rounded-lg overflow-hidden flex flex-col"
