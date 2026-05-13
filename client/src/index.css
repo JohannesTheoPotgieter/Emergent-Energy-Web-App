@@ -586,6 +586,11 @@ html[data-layout-mode="desktop"] .ee-bottom-nav {
      (sticky action bars, bottom sheets, bottom tabs). */
   .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 0.5rem); }
   .pt-safe { padding-top: max(env(safe-area-inset-top), 0.5rem); }
+
+  /* Clears the fixed mobile bottom-nav bar (56px) + safe area + breathing room */
+  .pb-bottom-nav {
+    padding-bottom: calc(56px + env(safe-area-inset-bottom) + 1.25rem);
+  }
 }
 
 ::-webkit-scrollbar {
@@ -1120,6 +1125,19 @@ tbody tr {
     transform: none;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Z-index scale (canonical — do not add overlays between these bands)
+ *
+ *   z-20   — page-level sticky footers (save bars inside scroll containers)
+ *   z-30   — in-page sticky headers / column freeze bars
+ *   z-40   — (reserved — LensSwitcher/similar dropdowns use z-[46] backdrop)
+ *   z-[45] — .ee-bottom-nav (fixed mobile tab bar)
+ *   z-[46] — LensSwitcher backdrop (must sit above bottom nav)
+ *   z-50   — all Radix UI overlays: Sheet, Dialog, AlertDialog, Dropdown,
+ *             Popover, Select, Tooltip, Drawer, CommandPalette
+ *   z-[9999] — DataSourceDebug debug overlay
+ * ───────────────────────────────────────────────────────────────────────── */
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Layout-mode overrides
