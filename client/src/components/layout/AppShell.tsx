@@ -50,7 +50,7 @@ export function AppShell({
 }: AppShellProps) {
   return (
     <div
-      className={cn("ee-shell min-h-screen flex flex-col", className)}
+      className={cn("ee-shell min-h-[100dvh] flex flex-col", className)}
       data-testid="app-shell"
     >
       {banner && (

@@ -153,7 +153,7 @@ function RevenueDetailDrawer({ month, onClose, defaultFilter = "all" }: { month:
         </div>
 
         <div className="px-6 py-4 border-b bg-gradient-to-b from-emerald-50/30 to-white">
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100/50 border border-emerald-200/60 px-4 py-3">
               <p className="text-xs font-medium text-emerald-600 uppercase tracking-wider">Realised</p>
               <p className="font-mono font-black text-emerald-800 text-lg mt-0.5" data-testid="text-revenue-drawer-realised">{formatRand(filteredRealised)}</p>

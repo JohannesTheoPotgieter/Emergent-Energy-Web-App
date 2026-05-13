@@ -340,7 +340,7 @@ function UpcomingFinancialsSection({ data }: { data: FinancialsResponse | undefi
 
         {hasEvents ? (
           <>
-            <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
               <div className="rounded-lg border border-border/50 p-3">
                 <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wide">Total Inflows</p>
                 <p className="text-base font-semibold font-mono text-emerald-700 mt-0.5">R {data.totalInflow.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
