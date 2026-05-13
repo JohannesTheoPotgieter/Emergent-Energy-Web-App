@@ -110,14 +110,25 @@ export function BulkConflictDialog({
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent
-        // Force centered-modal positioning at ALL breakpoints. The shared
-        // shadcn DialogContent base is mobile-first (full-width bottom
-        // sheet under sm:, centered modal at sm+). For this dense 3-column
-        // conflict-resolution UI a bottom sheet is wrong on every screen
-        // size, and the base `inset-x-0` + sm: `translate-x-[-50%]` were
-        // interacting badly inside the Replit Canvas iframe and shifting
-        // the whole dialog off the left edge of the viewport.
-        className="left-[50%] top-[50%] inset-x-auto bottom-auto translate-x-[-50%] translate-y-[-50%] w-[calc(100%-2rem)] max-w-3xl max-h-[90vh] rounded-lg overflow-hidden flex flex-col"
+        // Force centered-modal positioning at ALL breakpoints using inline
+        // styles so we bypass: (a) the shared shadcn DialogContent's
+        // mobile-first bottom-sheet base classes, (b) any Tailwind utility
+        // de-duplication quirks under tailwind-merge v3 / Tailwind v4, and
+        // (c) any transformed/filtered ancestor that could become the
+        // containing block for `position: fixed` and shrink `width: 100%`
+        // away from the actual viewport. `100vw` is always relative to the
+        // real viewport, and an inline `transform` always wins.
+        style={{
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          right: "auto",
+          bottom: "auto",
+          transform: "translate(-50%, -50%)",
+          width: "min(calc(100vw - 2rem), 768px)",
+          maxHeight: "90vh",
+        }}
+        className="rounded-lg overflow-hidden flex flex-col"
         data-testid={`bulk-conflict-dialog-${runId}`}
       >
         <DialogHeader>
