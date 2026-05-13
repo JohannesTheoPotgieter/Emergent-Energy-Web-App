@@ -15,6 +15,7 @@ import {
   Milestone, Search, CheckCircle2, Clock, AlertTriangle,
   Target, DollarSign, TrendingUp,
   Loader2, BanknoteIcon, FileText, CircleDot, ChevronDown, ChevronRight,
+  Users, Download, Calendar,
 } from "lucide-react";
 
 // ── Construction-to-Client-Handover phase filter ───────────────────────────
@@ -228,6 +229,133 @@ function LatestUpdateCellWrapper({ project, onSaved }: { project: ProjectRow; on
   );
 }
 
+function ProjectCard({
+  project, isExpanded, headerBg, toggleProject, navigate, revenueLoading, onSaved,
+}: {
+  project: ProjectRow;
+  isExpanded: boolean;
+  headerBg: string;
+  toggleProject: (id: number) => void;
+  navigate: (path: string) => void;
+  revenueLoading: boolean;
+  onSaved: () => void;
+}) {
+  return (
+    <Card className="overflow-hidden">
+      <div
+        className={`px-3 py-2 flex items-center gap-2 sm:gap-3 flex-wrap cursor-pointer select-none hover:bg-muted/50 transition-colors ${headerBg}`}
+        onClick={() => toggleProject(project.projectId)}
+      >
+        {isExpanded
+          ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+          : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+        }
+        <div className="flex items-center gap-2 min-w-0 flex-1 sm:flex-initial sm:min-w-[180px]">
+          <div className={`w-2 h-2 rounded-full ${ragDotClass(project.ragStatus)} shrink-0`} />
+          <span
+            className="text-sm font-semibold hover:underline truncate"
+            onClick={(e) => { e.stopPropagation(); navigate(`/project/${encodeURIComponent(project.projectNameRaw)}`); }}
+          >
+            {project.projectName}
+          </span>
+          <Badge variant="outline" className="text-[9px] px-1.5 py-0 shrink-0">{project.phase}</Badge>
+        </div>
+        <div className="hidden sm:flex items-center gap-3 text-[10px] text-muted-foreground">
+          <span>{project.pm || "No PM"}</span>
+          <span>{formatZAR(project.contractValue)}</span>
+          {project.sizeKwp && <span>{parseFloat(project.sizeKwp).toFixed(0)} kWp</span>}
+        </div>
+        {project.revenueSummary && (
+          <div className="flex flex-wrap items-center gap-2 text-[10px] basis-full sm:basis-auto sm:ml-auto">
+            <span className="text-emerald-700 font-semibold">
+              In Bank: {formatZAR(project.revenueSummary.inBank)}
+            </span>
+            {project.revenueSummary.overdue > 0 && (
+              <span className="text-red-600 font-semibold">
+                Overdue: {formatZAR(project.revenueSummary.overdue)}
+              </span>
+            )}
+            <span className="text-muted-foreground">
+              {project.revenueSummary.milestoneCount} milestones
+            </span>
+          </div>
+        )}
+        <div className="flex flex-col gap-0.5 w-[80px] shrink-0">
+          <span className="text-[8px] text-muted-foreground uppercase tracking-wide">Rev collected</span>
+          <div className="flex items-center gap-1">
+            <Progress value={project.projectPctComplete} className="h-1.5 flex-1" />
+            <span className="text-[9px] font-semibold tabular-nums">{project.projectPctComplete}%</span>
+          </div>
+        </div>
+        <div className="hidden md:block w-[160px] shrink-0" onClick={(e) => e.stopPropagation()}>
+          <LatestUpdateCellWrapper project={project} onSaved={onSaved} />
+        </div>
+      </div>
+      {isExpanded && (
+        <>
+          {project.milestones.length > 0 ? (
+            <div className="overflow-x-auto border-t">
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="border-b bg-muted/20 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    <th className="px-3 py-1.5 text-left w-[40px]">#</th>
+                    <th className="px-3 py-1.5 text-left">Milestone</th>
+                    <th className="px-3 py-1.5 text-right w-[120px]">Amount</th>
+                    <th className="px-3 py-1.5 text-center w-[90px]">Date</th>
+                    <th className="px-3 py-1.5 text-center w-[100px]">Invoice</th>
+                    <th className="px-3 py-1.5 text-center w-[80px]">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {project.milestones.map((m) => {
+                    const amt = parseFloat(m.milestoneAmount || "0");
+                    return (
+                      <tr key={m.id} className="border-b last:border-b-0 hover:bg-muted/20">
+                        <td className="px-3 py-1.5 text-muted-foreground">{m.milestoneNo || m.rowNumber}</td>
+                        <td className="px-3 py-1.5 font-medium">
+                          {m.milestoneName || "—"}
+                          {m.milestoneNotes && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="ml-1 text-muted-foreground cursor-help">*</span>
+                                </TooltipTrigger>
+                                <TooltipContent className="max-w-xs text-xs">
+                                  {m.milestoneNotes}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
+                        </td>
+                        <td className="px-3 py-1.5 text-right tabular-nums font-medium">
+                          {isNaN(amt) || amt === 0 ? "—" : formatZAR(amt)}
+                        </td>
+                        <td className={`px-3 py-1.5 text-center tabular-nums ${m.isRed ? "text-red-600 font-semibold" : ""}`}>
+                          {formatDate(m.date)}
+                        </td>
+                        <td className="px-3 py-1.5 text-center text-muted-foreground">
+                          {m.milestoneInvoiceNumber || "—"}
+                        </td>
+                        <td className="px-3 py-1.5 text-center">
+                          <MilestoneStatusBadge status={m.status} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="px-4 py-3 text-center text-[11px] text-muted-foreground italic border-t">
+              {revenueLoading ? "Loading milestones..." : "No revenue milestones found for this project"}
+            </div>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
 // ── Main Page ───────────────────────────────────────────────────────────────
 
 export default function MilestoneTrackerPage() {
@@ -235,6 +363,7 @@ export default function MilestoneTrackerPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [showCompleted, setShowCompleted] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set());
+  const [groupByPm, setGroupByPm] = useState(false);
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
 
@@ -275,7 +404,7 @@ export default function MilestoneTrackerPage() {
   // 2. Filter to Construction-Client Handover
   const eligibleProjects = useMemo(() => {
     if (!allProjects) return [];
-    return allProjects.filter((p: any) => p.isActive !== false && isInMilestonePhase(p.phase));
+    return allProjects.filter((p: any) => (p.archivedStatus ?? 'ACTIVE') === 'ACTIVE' && isInMilestonePhase(p.phase));
   }, [allProjects]);
 
   // 3. Fetch revenue milestones for each eligible project
@@ -358,6 +487,67 @@ export default function MilestoneTrackerPage() {
 
   const completedCount = useMemo(() => projectRows.filter(p => p.projectPctComplete >= 100).length, [projectRows]);
 
+  // 4-month revenue forecast — bucket unpaid milestones by calendar month
+  // Overdue milestones (past months) get a dedicated "Overdue" bucket at the front.
+  const revenueForecast = useMemo(() => {
+    const now = new Date();
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const overdueBucket = { key: "__overdue__", label: "Overdue", total: 0 };
+    const forwardBuckets: { key: string; label: string; total: number }[] = [];
+    for (let i = 0; i < 4; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const label = d.toLocaleDateString("en-ZA", { month: "short", year: "2-digit" });
+      forwardBuckets.push({ key, label, total: 0 });
+    }
+    for (const p of projectRows) {
+      for (const m of p.milestones) {
+        if ((m.status === "planned" || m.status === "invoiced" || m.status === "overdue") && m.milestoneAmount && m.date) {
+          const monthKey = m.date.substring(0, 7);
+          const fwdBucket = forwardBuckets.find(b => b.key === monthKey);
+          if (fwdBucket) {
+            fwdBucket.total += parseFloat(m.milestoneAmount) || 0;
+          } else if (monthKey < currentMonthKey) {
+            overdueBucket.total += parseFloat(m.milestoneAmount) || 0;
+          }
+        }
+      }
+    }
+    return overdueBucket.total > 0 ? [overdueBucket, ...forwardBuckets] : forwardBuckets;
+  }, [projectRows]);
+
+  const handleCsvExport = () => {
+    const rows: string[] = [
+      ["Project", "PM", "Phase", "Milestone #", "Milestone Name", "Amount (R)", "Date", "Invoice", "Status"].join(","),
+    ];
+    for (const p of filtered) {
+      if (p.milestones.length === 0) {
+        rows.push([p.projectName, p.pm || "", p.phase || "", "", "", "", "", "", ""].map(v => `"${String(v).replace(/"/g, '""')}"`).join(","));
+      } else {
+        for (const m of p.milestones) {
+          rows.push([
+            p.projectName,
+            p.pm || "",
+            p.phase || "",
+            m.milestoneNo || String(m.rowNumber),
+            m.milestoneName || "",
+            m.milestoneAmount || "",
+            m.date || "",
+            m.milestoneInvoiceNumber || "",
+            m.status,
+          ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(","));
+        }
+      }
+    }
+    const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `milestone-tracker-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/project-info"] });
     queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] });
@@ -402,6 +592,23 @@ export default function MilestoneTrackerPage() {
         />
       </div>
 
+      {/* 4-month revenue forecast strip */}
+      {revenueForecast.some(b => b.total > 0) && (
+        <div className="flex items-center gap-2 flex-wrap bg-muted/30 rounded-lg px-3 py-2 border">
+          <span className="flex items-center gap-1 text-[11px] font-semibold text-muted-foreground">
+            <Calendar className="h-3.5 w-3.5" />Revenue Forecast:
+          </span>
+          {revenueForecast.map(b => (
+            <span key={b.key} className={`text-[11px] px-2 py-0.5 rounded-md border ${
+              b.key === "__overdue__" ? "bg-red-50 text-red-700 border-red-200" :
+              b.total > 0 ? "bg-blue-50 text-blue-700 border-blue-200" : "text-muted-foreground border-border"
+            }`}>
+              {b.label} {b.total > 0 ? `R${(b.total / 1_000_000).toFixed(1)}M` : "—"}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Filters */}
       <FilterBar>
         <div className="flex flex-wrap items-center gap-2">
@@ -439,6 +646,22 @@ export default function MilestoneTrackerPage() {
               ? "Collapse All"
               : "Expand All"}
           </Button>
+          <Button
+            variant={groupByPm ? "secondary" : "outline"}
+            size="sm"
+            className="text-xs h-8 gap-1"
+            onClick={() => setGroupByPm(prev => !prev)}
+          >
+            <Users className="h-3.5 w-3.5" />Group by PM
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs h-8 gap-1"
+            onClick={handleCsvExport}
+          >
+            <Download className="h-3.5 w-3.5" />Export CSV
+          </Button>
           {revenueLoading && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -449,6 +672,54 @@ export default function MilestoneTrackerPage() {
       </FilterBar>
 
       {/* Project rows with their revenue milestones */}
+      {groupByPm ? (
+        <div className="space-y-4">
+          {(() => {
+            const pmGroups = new Map<string, typeof filtered>();
+            for (const p of filtered) {
+              const key = p.pm || "No PM";
+              if (!pmGroups.has(key)) pmGroups.set(key, []);
+              pmGroups.get(key)!.push(p);
+            }
+            return Array.from(pmGroups.entries())
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([pm, projects]) => {
+                const pmInBank = projects.reduce((s, p) => s + (p.revenueSummary?.inBank || 0), 0);
+                const pmOverdue = projects.reduce((s, p) => s + (p.revenueSummary?.overdue || 0), 0);
+                return (
+                  <div key={pm} className="space-y-1.5">
+                    <div className="flex items-center gap-3 px-1">
+                      <div className="flex items-center gap-1.5 text-sm font-semibold">
+                        <Users className="h-4 w-4 text-muted-foreground" />
+                        {pm}
+                      </div>
+                      <span className="text-[11px] text-muted-foreground">{projects.length} project{projects.length !== 1 ? "s" : ""}</span>
+                      <span className="text-[11px] text-emerald-700 font-medium">In Bank: {formatZAR(pmInBank, true)}</span>
+                      {pmOverdue > 0 && <span className="text-[11px] text-red-600 font-medium">Overdue: {formatZAR(pmOverdue, true)}</span>}
+                    </div>
+                    {projects.map((project) => {
+                      const isExpanded = expandedProjects.has(project.projectId);
+                      const headerBg = project.urgencyGroup === 0
+                        ? "bg-red-50 border-l-2 border-l-red-400"
+                        : project.urgencyGroup === 1
+                        ? "bg-amber-50 border-l-2 border-l-amber-400"
+                        : "bg-muted/30";
+                      return <ProjectCard key={project.projectId} project={project} isExpanded={isExpanded} headerBg={headerBg} toggleProject={toggleProject} navigate={navigate} revenueLoading={revenueLoading} onSaved={invalidate} />;
+                    })}
+                  </div>
+                );
+              });
+          })()}
+          {filtered.length === 0 && (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Target className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+                <p className="text-sm font-semibold">No projects in Construction — Client Handover match your filters</p>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      ) : (
       <div className="space-y-1.5">
         {filtered.map((project, idx) => {
           const isExpanded = expandedProjects.has(project.projectId);
@@ -470,129 +741,15 @@ export default function MilestoneTrackerPage() {
                  project.urgencyGroup === 1 ? "Upcoming (Next 14 Days)" : "Other Projects"}
               </div>
             )}
-          <Card className="overflow-hidden">
-            {/* Project header row — click to expand/collapse */}
-            <div
-              className={`px-3 py-2 flex items-center gap-2 sm:gap-3 flex-wrap cursor-pointer select-none hover:bg-muted/50 transition-colors ${headerBg}`}
-              onClick={() => toggleProject(project.projectId)}
-            >
-              {/* Chevron */}
-              {isExpanded
-                ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
-                : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-              }
-
-              {/* RAG dot + name + phase */}
-              <div className="flex items-center gap-2 min-w-0 flex-1 sm:flex-initial sm:min-w-[180px]">
-                <div className={`w-2 h-2 rounded-full ${ragDotClass(project.ragStatus)} shrink-0`} />
-                <span
-                  className="text-sm font-semibold hover:underline truncate"
-                  onClick={(e) => { e.stopPropagation(); navigate(`/project/${encodeURIComponent(project.projectNameRaw)}`); }}
-                >
-                  {project.projectName}
-                </span>
-                <Badge variant="outline" className="text-[9px] px-1.5 py-0 shrink-0">{project.phase}</Badge>
-              </div>
-
-              {/* Compact info — hidden on smallest screens, shown sm+ */}
-              <div className="hidden sm:flex items-center gap-3 text-[10px] text-muted-foreground">
-                <span>{project.pm || "No PM"}</span>
-                <span>{formatZAR(project.contractValue)}</span>
-                {project.sizeKwp && <span>{parseFloat(project.sizeKwp).toFixed(0)} kWp</span>}
-              </div>
-
-              {/* Revenue summary badges — full width on mobile under name, inline at sm+ */}
-              {project.revenueSummary && (
-                <div className="flex flex-wrap items-center gap-2 text-[10px] basis-full sm:basis-auto sm:ml-auto">
-                  <span className="text-emerald-700 font-semibold">
-                    In Bank: {formatZAR(project.revenueSummary.inBank)}
-                  </span>
-                  {project.revenueSummary.overdue > 0 && (
-                    <span className="text-red-600 font-semibold">
-                      Overdue: {formatZAR(project.revenueSummary.overdue)}
-                    </span>
-                  )}
-                  <span className="text-muted-foreground">
-                    {project.revenueSummary.milestoneCount} milestones
-                  </span>
-                </div>
-              )}
-
-              {/* Progress bar */}
-              <div className="flex items-center gap-1.5 w-[80px] shrink-0">
-                <Progress value={project.projectPctComplete} className="h-1.5 flex-1" />
-                <span className="text-[9px] font-semibold tabular-nums">{project.projectPctComplete}%</span>
-              </div>
-
-              {/* Last update — hidden on mobile (use expand row to access full milestones) */}
-              <div className="hidden md:block w-[160px] shrink-0" onClick={(e) => e.stopPropagation()}>
-                <LatestUpdateCellWrapper project={project} onSaved={invalidate} />
-              </div>
-            </div>
-
-            {/* Milestone table — only shown when expanded */}
-            {isExpanded && (
-              <>
-                {project.milestones.length > 0 ? (
-                  <div className="overflow-x-auto border-t">
-                    <table className="w-full text-[11px]">
-                      <thead>
-                        <tr className="border-b bg-muted/20 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                          <th className="px-3 py-1.5 text-left w-[40px]">#</th>
-                          <th className="px-3 py-1.5 text-left">Milestone</th>
-                          <th className="px-3 py-1.5 text-right w-[120px]">Amount</th>
-                          <th className="px-3 py-1.5 text-center w-[90px]">Date</th>
-                          <th className="px-3 py-1.5 text-center w-[100px]">Invoice</th>
-                          <th className="px-3 py-1.5 text-center w-[80px]">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {project.milestones.map((m) => {
-                          const amt = parseFloat(m.milestoneAmount || "0");
-                          return (
-                            <tr key={m.id} className="border-b last:border-b-0 hover:bg-muted/20">
-                              <td className="px-3 py-1.5 text-muted-foreground">{m.milestoneNo || m.rowNumber}</td>
-                              <td className="px-3 py-1.5 font-medium">
-                                {m.milestoneName || "—"}
-                                {m.milestoneNotes && (
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <span className="ml-1 text-muted-foreground cursor-help">*</span>
-                                      </TooltipTrigger>
-                                      <TooltipContent className="max-w-xs text-xs">
-                                        {m.milestoneNotes}
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                )}
-                              </td>
-                              <td className="px-3 py-1.5 text-right tabular-nums font-medium">
-                                {isNaN(amt) || amt === 0 ? "—" : formatZAR(amt)}
-                              </td>
-                              <td className={`px-3 py-1.5 text-center tabular-nums ${m.isRed ? "text-red-600 font-semibold" : ""}`}>
-                                {formatDate(m.date)}
-                              </td>
-                              <td className="px-3 py-1.5 text-center text-muted-foreground">
-                                {m.milestoneInvoiceNumber || "—"}
-                              </td>
-                              <td className="px-3 py-1.5 text-center">
-                                <MilestoneStatusBadge status={m.status} />
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="px-4 py-3 text-center text-[11px] text-muted-foreground italic border-t">
-                    {revenueLoading ? "Loading milestones..." : "No revenue milestones found for this project"}
-                  </div>
-                )}
-              </>
-            )}
-          </Card>
+            <ProjectCard
+              project={project}
+              isExpanded={isExpanded}
+              headerBg={headerBg}
+              toggleProject={toggleProject}
+              navigate={navigate}
+              revenueLoading={revenueLoading}
+              onSaved={invalidate}
+            />
           </div>
           );
         })}
@@ -606,6 +763,7 @@ export default function MilestoneTrackerPage() {
           </Card>
         )}
       </div>
+      )}
     </PageShell>
   );
 }
