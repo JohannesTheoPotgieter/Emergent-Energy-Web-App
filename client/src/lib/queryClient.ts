@@ -231,7 +231,7 @@ export const queryClient = new QueryClient({
       refetchInterval: false,
       refetchOnWindowFocus: false,
       refetchOnReconnect: true,
-      staleTime: 30_000,
+      staleTime: 120_000,
       gcTime: 300_000,
       retry: (failureCount, error) => {
         if (error instanceof ApiError) {

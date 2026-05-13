@@ -469,7 +469,6 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error(`Dashboard request failed (${res.status})`);
       return res.json();
     },
-    refetchOnWindowFocus: true,
   });
   const { data: importHealth } = useQuery<ImportHealthResponse>({
     queryKey: ["/api/dashboard/import-health"],
@@ -511,7 +510,6 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error("Failed to fetch events");
       return res.json();
     },
-    refetchOnWindowFocus: true,
   });
 
   const { data: financialsData } = useQuery<FinancialsResponse>({
@@ -521,7 +519,6 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error("Failed to fetch financials");
       return res.json();
     },
-    refetchOnWindowFocus: true,
   });
 
   const { data: dashboardPreferences } = useQuery<any>({
@@ -545,7 +542,7 @@ export default function DashboardPage() {
       const json = await res.json();
       return json.data;
     },
-    refetchInterval: 60_000,
+    refetchInterval: 120_000,
   });
 
   const refreshMetrics = useMutation({
