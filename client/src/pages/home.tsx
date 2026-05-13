@@ -25,26 +25,14 @@ import {
   CheckCircle2,
   AlertTriangle,
   DollarSign,
-  Wrench,
   ShieldCheck,
-  Briefcase,
   BarChart3,
   Clock,
   ArrowRight,
   Flame,
   ChevronDown,
   ListChecks,
-  ListTodo,
   ClipboardCheck,
-  ClipboardList,
-  Package,
-  FileSpreadsheet,
-  FileText,
-  CalendarCheck,
-  Users,
-  Sun,
-  Wallet,
-  Activity,
   Inbox,
   Calendar,
   MessageSquare,
@@ -65,39 +53,6 @@ const UnifiedApprovalsQueue = lazyWithRetry(() =>
 const money = (n: number | null | undefined) =>
   `R ${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
-/** Resolve iconKey strings from role-dashboard-config to Lucide components */
-const ICON_MAP: Record<string, React.ReactNode> = {
-  AlertTriangle: <AlertTriangle className="w-4 h-4" />,
-  LayoutDashboard: <LayoutDashboard className="w-4 h-4" />,
-  Activity: <Activity className="w-4 h-4" />,
-  ListChecks: <ListChecks className="w-4 h-4" />,
-  ClipboardCheck: <ClipboardCheck className="w-4 h-4" />,
-  Package: <Package className="w-4 h-4" />,
-  ListTodo: <ListTodo className="w-4 h-4" />,
-  Users: <Users className="w-4 h-4" />,
-  Sun: <Sun className="w-4 h-4" />,
-  ClipboardList: <ClipboardList className="w-4 h-4" />,
-  Wallet: <Wallet className="w-4 h-4" />,
-  TrendingUp: <TrendingUp className="w-4 h-4" />,
-  ShieldCheck: <ShieldCheck className="w-4 h-4" />,
-  FileSpreadsheet: <FileSpreadsheet className="w-4 h-4" />,
-  FileText: <FileText className="w-4 h-4" />,
-  CalendarCheck: <CalendarCheck className="w-4 h-4" />,
-  FolderOpen: <FolderOpen className="w-4 h-4" />,
-  Wrench: <Wrench className="w-4 h-4" />,
-  Briefcase: <Briefcase className="w-4 h-4" />,
-  DollarSign: <DollarSign className="w-4 h-4" />,
-  BarChart3: <BarChart3 className="w-4 h-4" />,
-  ShieldAlert: <AlertTriangle className="w-4 h-4" />,
-  HardHat: <Briefcase className="w-4 h-4" />,
-  Gauge: <LayoutDashboard className="w-4 h-4" />,
-  Milestone: <CheckCircle2 className="w-4 h-4" />,
-  Flag: <Flame className="w-4 h-4" />,
-};
-
-function resolveIcon(iconKey?: string): React.ReactNode {
-  return (iconKey && ICON_MAP[iconKey]) || <ArrowRight className="w-4 h-4" />;
-}
 
 const HOME_TABS = [
   { key: "actions", label: "Actions", icon: ListChecks },
@@ -505,11 +460,6 @@ export default function HomePage() {
         onDismiss={(key) => dismissMutation.mutate({ key })}
       />
 
-      {/* 3b. This Week — upcoming milestones & payments for delivery-facing roles */}
-      {(layoutGroup === 'leadership' || layoutGroup === 'portfolio-manager' || layoutGroup === 'delivery') && (
-        <UpcomingEventsStrip />
-      )}
-
       {/* 4. Tab Navigation — Home absorbs My Work */}
       <div className="flex items-center gap-1 border-b mb-5 overflow-x-auto">
         {HOME_TABS.map((tab) => {
@@ -557,13 +507,13 @@ export default function HomePage() {
                   </div>
                 </div>
                 <div className="lg:col-span-2">
-                  <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Your Workspace</h2>
                   {workspaceCard([
                     { href: "/priorities?tab=my", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
                     ...(Number(kpis.pendingApprovals) > 0 ? [{ href: "/pm/approvals", label: `Approvals (${kpis.pendingApprovals})`, icon: <ClipboardCheck className="w-4 h-4 mr-2" /> }] : []),
                   ])}
                 </div>
               </div>
+              <UpcomingEventsStrip />
             </>
           )}
 
@@ -573,30 +523,23 @@ export default function HomePage() {
               <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
                 <div className="lg:col-span-3 space-y-5">
                   <div>
-                    <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Portfolio Overview</h2>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Portfolio Health</h2>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {kpiCard("Active Projects", stats.activeProjects, <FolderOpen className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
                       {kpiCard("Red RAG", stats.redProjects, <AlertTriangle className="w-4 h-4" />, { color: stats.redProjects > 0 ? "text-red-600" : undefined, scopeLabel: "Portfolio" })}
                       {kpiCard("Behind Plan", kpis.projectsBehindPlan ?? "\u2014", <Clock className="w-4 h-4" />, { color: Number(kpis.projectsBehindPlan) > 0 ? "text-amber-600" : undefined, scopeLabel: "Portfolio" })}
-                    </div>
-                  </div>
-                  <div>
-                    <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Delivery Health</h2>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       {kpiCard("Avg Progress", kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "\u2014", <BarChart3 className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
-                      {kpiCard("Eng. Blockers", kpis.openEngineeringBlockers ?? "\u2014", <AlertTriangle className="w-4 h-4" />, { color: Number(kpis.openEngineeringBlockers) > 0 ? "text-violet-600" : undefined, scopeLabel: "Portfolio" })}
-                      {kpiCard("Quality Warnings", kpis.openQualityWarnings ?? "\u2014", <ShieldCheck className="w-4 h-4" />, { color: Number(kpis.openQualityWarnings) > 0 ? "text-orange-600" : undefined, scopeLabel: "Portfolio" })}
                     </div>
                   </div>
                 </div>
                 <div className="lg:col-span-2">
-                  <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Your Workspace</h2>
                   {workspaceCard([
                     { href: "/priorities?tab=my", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
                     ...(Number(kpis.pendingApprovals) > 0 ? [{ href: "/pm/approvals", label: `Approvals (${kpis.pendingApprovals})`, icon: <ClipboardCheck className="w-4 h-4 mr-2" /> }] : []),
                   ])}
                 </div>
               </div>
+              <UpcomingEventsStrip />
             </>
           )}
 
@@ -605,7 +548,6 @@ export default function HomePage() {
             <>
               <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
                 <div className="lg:col-span-2">
-                  <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Your Workspace</h2>
                   {workspaceCard([
                     { href: "/priorities?tab=my", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
                     ...(Number(kpis.pendingApprovals) > 0 ? [{ href: "/pm/approvals", label: `Approvals (${kpis.pendingApprovals})`, icon: <ClipboardCheck className="w-4 h-4 mr-2" /> }] : []),
@@ -623,6 +565,7 @@ export default function HomePage() {
                   </div>
                 </div>
               </div>
+              <UpcomingEventsStrip />
             </>
           )}
 
@@ -631,7 +574,6 @@ export default function HomePage() {
             <>
               <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
                 <div className="lg:col-span-2">
-                  <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Your Workspace</h2>
                   {workspaceCard([
                     { href: "/priorities?tab=my", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
                     { href: config.cockpitPath, label: config.cockpitLabel, icon: <LayoutDashboard className="w-4 h-4 mr-2" /> },
@@ -670,23 +612,15 @@ export default function HomePage() {
                 <div className="lg:col-span-3 space-y-5">
                   <div>
                     <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Financial Overview</h2>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {kpiCard("Inflow (FY)", money(kpis.receivedInflowFy), <DollarSign className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
-                      {kpiCard("Gross Margin", kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "\u2014", <TrendingUp className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
-                      {kpiCard("Gross Profit", money(kpis.grossProfitFy), <DollarSign className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
-                    </div>
-                  </div>
-                  <div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {kpiCard("Inflow (FY)", money(kpis.receivedInflowFy), <DollarSign className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
+                      {kpiCard("Gross Profit", money(kpis.grossProfitFy), <DollarSign className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
                       {kpiCard("Open Expenditure", money(kpis.openExpenditureFy), <DollarSign className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
-                      {kpiCard("Paid Expenditure", money(kpis.paidExpenditureFy), <DollarSign className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
                       {kpiCard("Overdue Inflow", money(kpis.overdueInflowFy), <AlertTriangle className="w-4 h-4" />, { color: Number(kpis.overdueInflowFy) > 0 ? "text-red-600" : undefined, scopeLabel: "Portfolio" })}
-                      {kpiCard("Overdue Outflow", money(kpis.overdueOutflowFy), <AlertTriangle className="w-4 h-4" />, { color: Number(kpis.overdueOutflowFy) > 0 ? "text-red-600" : undefined, scopeLabel: "Portfolio" })}
                     </div>
                   </div>
                 </div>
                 <div className="lg:col-span-2">
-                  <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Your Workspace</h2>
                   {workspaceCard([
                     { href: "/priorities?tab=my", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
                     ...(Number(kpis.pendingApprovals) > 0 ? [{ href: "/pm/approvals", label: `Approvals (${kpis.pendingApprovals})`, icon: <ClipboardCheck className="w-4 h-4 mr-2" /> }] : []),
@@ -701,7 +635,6 @@ export default function HomePage() {
             <>
               <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
                 <div className="lg:col-span-2">
-                  <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Your Workspace</h2>
                   {workspaceCard([
                     { href: "/priorities?tab=my", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
                     { href: config.cockpitPath, label: config.cockpitLabel, icon: <LayoutDashboard className="w-4 h-4 mr-2" /> },
@@ -717,27 +650,6 @@ export default function HomePage() {
             </>
           )}
 
-          {/* Navigate To — shown for all layouts */}
-          <div>
-            <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
-              Navigate To
-            </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {config.quickActions.map((action) => (
-                <Link key={action.path} href={action.path}>
-                  <Card className="border-border/50 hover:border-primary/30 hover:shadow-sm transition-all cursor-pointer group">
-                    <CardContent className="p-3.5 flex items-center gap-3">
-                      <div className="text-muted-foreground group-hover:text-primary transition-colors">
-                        {resolveIcon(action.iconKey)}
-                      </div>
-                      <span className="text-sm font-medium text-foreground">{action.label}</span>
-                      <ArrowRight className="w-3.5 h-3.5 ml-auto text-muted-foreground/40 group-hover:text-primary/60 transition-colors" />
-                    </CardContent>
-                  </Card>
-                </Link>
-              ))}
-            </div>
-          </div>
         </div>
       )}
 
@@ -867,9 +779,6 @@ function FocusPanel({
               <div className="flex items-center gap-2.5">
                 <Flame className="w-4 h-4 text-primary" />
                 <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider">Company Priorities</h2>
-                {!prioritiesLoading && priorities.length > 0 && (
-                  <Badge variant="secondary" className="text-[11px]">{priorities.length} active</Badge>
-                )}
               </div>
               <Link href="/priorities">
                 <span className="text-xs text-primary hover:underline font-medium cursor-pointer">View all</span>
@@ -917,11 +826,6 @@ function FocusPanel({
             <div className="flex items-center gap-2.5">
               <Sparkles className="w-4 h-4 text-primary" />
               <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider">Do Next</h2>
-              {!doNextLoading && doNextItems.length > 0 && (
-                <Badge variant="secondary" className="text-[11px]" data-testid="badge-do-next-count">
-                  {doNextItems.length} {doNextItems.length === 1 ? "action" : "actions"}
-                </Badge>
-              )}
             </div>
             {!doNextLoading && doNextItems.length > 0 && (
               <span className="text-[11px] text-muted-foreground hidden sm:block">Ranked · snooze or dismiss</span>
@@ -940,9 +844,14 @@ function FocusPanel({
             </div>
           ) : (
             <div className="flex flex-wrap gap-2">
-              {doNextItems.map((item) => (
+              {doNextItems.slice(0, 5).map((item) => (
                 <DoNextChip key={item.key} item={item} onSnooze={onSnooze} onDismiss={onDismiss} />
               ))}
+              {doNextItems.length > 5 && (
+                <span className="inline-flex items-center px-3 py-2 text-sm text-muted-foreground">
+                  +{doNextItems.length - 5} more in Approvals
+                </span>
+              )}
             </div>
           )}
         </CardContent>
