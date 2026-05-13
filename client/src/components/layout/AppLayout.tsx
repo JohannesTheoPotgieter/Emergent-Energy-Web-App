@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Menu, Search, Plus, Calendar, Mail, MessageSquare, CalendarClock, ChevronRight, ChevronDown, Building2, UserCircle2, LogOut, X, Sun, Moon, Monitor, Home, MoreHorizontal, Smartphone, Laptop, MonitorSmartphone } from "lucide-react";
+import { Menu, Search, Plus, Calendar, Mail, MessageSquare, CalendarClock, ChevronRight, ChevronDown, Building2, UserCircle2, LogOut, X, Sun, Moon, Monitor, Home, MoreHorizontal, Smartphone, Laptop, MonitorSmartphone, BarChart3, LayoutGrid, Wrench, CheckCircle2, Settings, FolderOpen, ShieldCheck, FileText } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { buildVisibleTopSections, getBreadcrumbs, linkIsActive } from "@/config/app-navigation";
@@ -44,6 +44,34 @@ const MICROSOFT_SHORTCUTS = [
   { label: "Teams", path: "/my-work/teams", icon: MessageSquare },
 ] as const;
 
+const SECTION_ICONS: Record<string, React.ElementType> = {
+  HOME: Home,
+  PORTFOLIO: Building2,
+  PRIORITIES: CheckCircle2,
+  PROJECT_DEVELOPMENT: FolderOpen,
+  PROJECT_DELIVERY: LayoutGrid,
+  FINANCE: BarChart3,
+  ENGINEERING: Wrench,
+  HSE: ShieldCheck,
+  QUALITY: ShieldCheck,
+  REPORTS: FileText,
+  ADMIN: Settings,
+};
+
+const SECTION_SHORT_LABELS: Record<string, string> = {
+  HOME: "Home",
+  PORTFOLIO: "Company",
+  PRIORITIES: "Priorities",
+  PROJECT_DEVELOPMENT: "Dev",
+  PROJECT_DELIVERY: "Delivery",
+  FINANCE: "Finance",
+  ENGINEERING: "Eng.",
+  HSE: "HSE",
+  QUALITY: "Quality",
+  REPORTS: "Reports",
+  ADMIN: "Admin",
+};
+
 function isDirectResultUrl(url?: string | null) {
   return !!url && (url.startsWith("/") || url.startsWith("http://") || url.startsWith("https://"));
 }
@@ -55,6 +83,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loadingSearch, setLoadingSearch] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
   const [microsoftMenuOpen, setMicrosoftMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -151,6 +180,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return MICROSOFT_SHORTCUTS.filter((shortcut) => canViewPath(shortcut.path));
   }, [canViewPath]);
 
+  // Close mobile nav sheet whenever the route changes
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location]);
+
   // Track page views for analytics
   useEffect(() => {
     if (activeSection) {
@@ -230,11 +264,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <div className="min-h-[100dvh] ee-shell">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-2 focus:left-2 focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:rounded-md focus:text-sm focus:font-medium">Skip to content</a>
       <ConnectorModeBanner />
-      <header className="sticky top-0 z-50 border-b border-border/60 bg-background/95 backdrop-blur-lg">
+      <header className="sticky top-0 z-50 border-b border-border/50 bg-background/[0.92] ee-header-glass">
         <div className="px-4 lg:px-6 py-2.5 flex items-center gap-3 mx-auto w-full max-w-[1440px]">
-          <Sheet>
+          <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="lg:hidden" data-testid="button-mobile-menu" aria-label="Open navigation menu"><Menu className="h-5 w-5" /></Button>
+              <Button variant="ghost" size="icon" className={cn(isMobile ? "hidden" : "lg:hidden")} data-testid="button-mobile-menu" aria-label="Open navigation menu"><Menu className="h-5 w-5" /></Button>
             </SheetTrigger>
             <SheetContent side="left" className="w-[300px] border-r border-border p-0" data-testid="nav-mobile-sheet">
               <SheetHeader className="px-5 pt-5 pb-3 border-b border-border/60">
@@ -349,7 +383,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </button>
             )}
             {searchTerm.trim().length >= 2 && (
-              <div className="absolute left-0 right-0 top-[calc(100%+4px)] rounded-lg border border-border/80 bg-background shadow-[var(--shadow-md)] p-1.5 max-h-96 overflow-auto" role="listbox" aria-live="polite">
+              <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 rounded-lg border border-border/80 bg-background shadow-[var(--shadow-md)] p-1.5 max-h-96 overflow-auto" role="listbox" aria-live="polite">
                 {loadingSearch ? (
                   <p className="text-xs text-muted-foreground p-2">Searching…</p>
                 ) : searchError ? (
@@ -452,7 +486,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="hidden lg:block border-t border-border/40">
-          <nav className="flex px-6 py-1.5 gap-1 overflow-x-auto no-scrollbar mx-auto w-full max-w-[1440px]" data-testid="nav-top-sections">
+          <nav className="flex px-6 pt-1.5 pb-[9px] gap-1 overflow-x-auto no-scrollbar mx-auto w-full max-w-[1440px]" data-testid="nav-top-sections">
             {visibleSections.map((section) => {
               const active = section.label === activeSection.label;
               return (
@@ -666,7 +700,41 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      <main id="main-content" className={cn("px-4 lg:px-6 py-5", isTablet && "pb-24")}>{children}</main>
+      <main id="main-content" className={cn("px-4 lg:px-6 py-5", isTablet && "pb-24", isMobile && "pb-bottom-nav")}>{children}</main>
+      {isMobile && (
+        <nav className="ee-bottom-nav" aria-label="Primary navigation" data-testid="nav-bottom-mobile">
+          {visibleSections.slice(0, 4).map((section) => {
+            const BottomIcon = SECTION_ICONS[section.key] ?? LayoutGrid;
+            const shortLabel = SECTION_SHORT_LABELS[section.key] ?? section.label;
+            const active = section.label === activeSection.label;
+            return (
+              <Link
+                key={section.key}
+                href={section.path}
+                className={cn("ee-bottom-nav-item", active && "ee-bottom-nav-item-active")}
+                onClick={() => trackNavClick(section.label)}
+                aria-current={active ? "page" : undefined}
+              >
+                <span className="ee-bottom-nav-icon-wrap">
+                  <BottomIcon className="h-[22px] w-[22px]" aria-hidden="true" />
+                </span>
+                <span className="ee-bottom-nav-label">{shortLabel}</span>
+              </Link>
+            );
+          })}
+          <button
+            type="button"
+            className={cn("ee-bottom-nav-item", mobileNavOpen && "ee-bottom-nav-item-active")}
+            onClick={() => setMobileNavOpen(true)}
+            aria-label="More navigation options"
+          >
+            <span className="ee-bottom-nav-icon-wrap">
+              <MoreHorizontal className="h-[22px] w-[22px]" aria-hidden="true" />
+            </span>
+            <span className="ee-bottom-nav-label">More</span>
+          </button>
+        </nav>
+      )}
       <GlobalCommandPalette />
       <KeyboardShortcutsDialog />
       <KeyboardNavActivator />

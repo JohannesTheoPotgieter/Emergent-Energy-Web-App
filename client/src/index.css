@@ -96,6 +96,8 @@
   --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
   --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.06);
   --shadow-md: 0 6px 16px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.05);
+  --shadow-lg: 0 20px 40px rgba(15, 23, 42, 0.12), 0 8px 16px rgba(15, 23, 42, 0.06);
+  --shadow-primary: 0 4px 14px rgba(22, 163, 74, 0.18);
 
   --sidebar: 0 0% 100%;
   --sidebar-foreground: 215 16% 47%;
@@ -153,6 +155,8 @@
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.45), 0 8px 16px rgba(0, 0, 0, 0.28);
+  --shadow-primary: 0 4px 14px rgba(22, 163, 74, 0.28);
 
   --sidebar: 222 14% 11%;
   --sidebar-foreground: 215 16% 58%;
@@ -335,6 +339,94 @@ body {
 }
 
 @layer components {
+  /* Enhanced glass-morphism for the sticky app header */
+  .ee-header-glass {
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    box-shadow: 0 1px 0 hsl(var(--border) / 0.5), 0 4px 12px rgba(15, 23, 42, 0.04);
+  }
+  .dark .ee-header-glass {
+    backdrop-filter: blur(24px) saturate(140%);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    box-shadow: 0 1px 0 hsl(var(--border) / 0.4), 0 4px 12px rgba(0, 0, 0, 0.18);
+  }
+
+  /* ── Mobile bottom navigation ─────────────────────────────────────────── */
+  .ee-bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 45;
+    display: flex;
+    align-items: stretch;
+    height: calc(56px + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    background: hsl(var(--background) / 0.95);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border-top: 1px solid hsl(var(--border) / 0.5);
+    box-shadow: 0 -2px 20px rgba(15, 23, 42, 0.06), 0 -1px 0 hsl(var(--border) / 0.3);
+  }
+  .dark .ee-bottom-nav {
+    background: hsl(var(--background) / 0.92);
+    box-shadow: 0 -2px 20px rgba(0, 0, 0, 0.25), 0 -1px 0 hsl(var(--border) / 0.4);
+  }
+
+  .ee-bottom-nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 6px 4px 4px;
+    height: 56px;
+    color: hsl(var(--muted-foreground));
+    text-decoration: none;
+    position: relative;
+    transition: color 0.15s ease;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    cursor: pointer;
+    background: none;
+    border: none;
+    font-family: inherit;
+    min-width: 0;
+  }
+  .ee-bottom-nav-item:active {
+    transform: scale(0.88);
+    transition: transform 0.08s ease;
+  }
+  .ee-bottom-nav-item-active {
+    color: hsl(var(--primary));
+  }
+  .ee-bottom-nav-icon-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 28px;
+    border-radius: 14px;
+    transition: background-color 0.15s ease;
+  }
+  .ee-bottom-nav-item-active .ee-bottom-nav-icon-wrap {
+    background-color: hsl(var(--primary) / 0.12);
+  }
+  .ee-bottom-nav-label {
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 1.2;
+    letter-spacing: 0.01em;
+    max-width: 68px;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* ── end Mobile bottom navigation ───────────────────────────────────── */
+
   .ee-shell {
     background: hsl(var(--background));
     @apply text-foreground;
@@ -397,11 +489,14 @@ body {
   }
 
   .ee-subnav-pill {
-    @apply inline-flex items-center rounded-md border border-transparent px-3 py-1.5 text-[13px] font-medium text-muted-foreground transition-colors duration-150 hover:text-foreground hover:bg-[hsl(var(--surface-tint))];
+    @apply inline-flex items-center rounded-md border border-transparent px-3 py-1.5 text-[13px] font-medium text-muted-foreground transition-all duration-150 hover:text-foreground hover:bg-[hsl(var(--surface-tint))];
   }
 
   .ee-subnav-pill-active {
-    @apply bg-primary/10 text-primary border-primary/25 shadow-[0_1px_0_0_hsl(var(--primary)/0.10)];
+    color: hsl(var(--primary));
+    border-color: hsl(var(--primary) / 0.28);
+    background: linear-gradient(135deg, hsl(var(--primary) / 0.13) 0%, hsl(var(--primary) / 0.06) 100%);
+    box-shadow: 0 1px 4px hsl(var(--primary) / 0.10), inset 0 1px 0 hsl(var(--primary) / 0.08);
   }
 
   .ee-subnav-group-label {
@@ -415,9 +510,27 @@ body {
   .ee-topnav-link {
     @apply relative inline-flex items-center rounded-md px-3.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors duration-150 text-muted-foreground hover:text-foreground hover:bg-muted/60;
   }
+  .ee-topnav-link:not(.ee-topnav-link-active)::after {
+    content: '';
+    position: absolute;
+    bottom: -7px;
+    left: 50%;
+    right: 50%;
+    height: 2.5px;
+    background: hsl(var(--muted-foreground) / 0.2);
+    border-radius: 2px;
+    transition: left 0.2s cubic-bezier(0.16, 1, 0.3, 1), right 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.15s ease;
+    opacity: 0;
+  }
+  .ee-topnav-link:not(.ee-topnav-link-active):hover::after {
+    left: 30%;
+    right: 30%;
+    opacity: 1;
+  }
 
   .ee-topnav-link-active {
-    @apply text-primary bg-primary/[0.06];
+    color: hsl(var(--primary));
+    background: linear-gradient(180deg, hsl(var(--primary) / 0.08) 0%, hsl(var(--primary) / 0.04) 100%);
   }
 
   .ee-status-success { @apply border-emerald-200 bg-emerald-50 text-emerald-700; }
@@ -429,8 +542,17 @@ body {
 /* Mobile: compact sub-nav pills for horizontal scroll */
 @media (max-width: 768px) {
   .ee-subnav-pill {
-    @apply px-2 py-1 text-[12px];
+    @apply px-2.5 py-1 text-[12px];
   }
+}
+
+/* Force-mobile: ensure bottom nav always shows regardless of breakpoint utilities */
+html[data-layout-mode="mobile"] .ee-bottom-nav {
+  display: flex !important;
+}
+/* Force-desktop: hide the bottom nav even if isMobile resolves oddly */
+html[data-layout-mode="desktop"] .ee-bottom-nav {
+  display: none !important;
 }
 
 @layer utilities {
@@ -464,6 +586,11 @@ body {
      (sticky action bars, bottom sheets, bottom tabs). */
   .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 0.5rem); }
   .pt-safe { padding-top: max(env(safe-area-inset-top), 0.5rem); }
+
+  /* Clears the fixed mobile bottom-nav bar (56px) + safe area + breathing room */
+  .pb-bottom-nav {
+    padding-bottom: calc(56px + env(safe-area-inset-bottom) + 1.25rem);
+  }
 }
 
 ::-webkit-scrollbar {
@@ -692,11 +819,16 @@ thead th {
 }
 
 .card-hover {
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 .card-hover:hover {
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-  border-color: hsl(var(--border));
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.09), 0 1px 4px rgba(15, 23, 42, 0.05);
+  border-color: hsl(var(--primary) / 0.18);
+  transform: translateY(-1px);
+}
+.dark .card-hover:hover {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3), 0 1px 4px rgba(0, 0, 0, 0.2);
+  border-color: hsl(var(--primary) / 0.22);
 }
 
 .nav-item-glow {
@@ -793,12 +925,16 @@ thead th {
 }
 
 .energy-card {
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease, border-color 0.3s ease;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, border-color 0.25s ease;
 }
 .energy-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.06), 0 4px 8px -4px rgba(0, 0, 0, 0.04);
-  border-color: hsl(142 76% 36% / 0.3);
+  box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.10), 0 4px 10px -4px rgba(15, 23, 42, 0.06), 0 0 0 1px hsl(142 76% 36% / 0.14);
+  border-color: hsl(142 76% 36% / 0.28);
+}
+.dark .energy-card:hover {
+  box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.35), 0 4px 10px -4px rgba(0, 0, 0, 0.22), 0 0 0 1px hsl(142 76% 40% / 0.22);
+  border-color: hsl(142 76% 40% / 0.25);
 }
 
 .energy-button {
@@ -926,14 +1062,29 @@ thead th {
 
 /* Modern interactive card lift effect */
 .ee-card-interactive {
-  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.18s ease;
 }
 .ee-card-interactive:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
+  border-color: hsl(var(--primary) / 0.18);
 }
 .ee-card-interactive:active {
   transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Premium glass-surface card */
+.ee-card-glass {
+  background: hsl(var(--card) / 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid hsl(var(--border) / 0.55);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.dark .ee-card-glass {
+  background: hsl(var(--card) / 0.80);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 /* Tactile button press feedback */
@@ -964,7 +1115,29 @@ tbody tr {
   .ee-card-interactive:hover {
     transform: none;
   }
+  .ee-bottom-nav-item:active {
+    transform: none;
+  }
+  .card-hover:hover {
+    transform: none;
+  }
+  .energy-card:hover {
+    transform: none;
+  }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Z-index scale (canonical — do not add overlays between these bands)
+ *
+ *   z-20   — page-level sticky footers (save bars inside scroll containers)
+ *   z-30   — in-page sticky headers / column freeze bars
+ *   z-40   — (reserved — LensSwitcher/similar dropdowns use z-[46] backdrop)
+ *   z-[45] — .ee-bottom-nav (fixed mobile tab bar)
+ *   z-[46] — LensSwitcher backdrop (must sit above bottom nav)
+ *   z-50   — all Radix UI overlays: Sheet, Dialog, AlertDialog, Dropdown,
+ *             Popover, Select, Tooltip, Drawer, CommandPalette
+ *   z-[9999] — DataSourceDebug debug overlay
+ * ───────────────────────────────────────────────────────────────────────── */
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Layout-mode overrides
