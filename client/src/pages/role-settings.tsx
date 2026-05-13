@@ -1158,7 +1158,7 @@ export function ProcurementAnalysisSection() {
       </Card>
 
       {status && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Card>
             <CardContent className="py-4 text-center">
               <div className="text-2xl font-bold text-foreground" data-testid="text-source-expenses">{status.sourceExpenses.toLocaleString()}</div>

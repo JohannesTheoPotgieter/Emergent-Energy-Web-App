@@ -165,7 +165,7 @@ export function BulkConflictDialog({
                     <span className="font-mono font-bold text-xs text-slate-800">{c.field.fieldName}</span>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2 text-xs mb-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs mb-2">
                     <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
                       <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-0.5">Baseline</div>
                       <div className="font-mono text-slate-600 break-words">

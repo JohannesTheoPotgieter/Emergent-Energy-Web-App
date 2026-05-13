@@ -67,7 +67,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
       const chunkError = isChunkLoadError(this.state.error);
 
       return (
-        <div className="min-h-screen flex items-center justify-center bg-background p-4" data-testid="error-boundary-page">
+        <div className="min-h-[100dvh] flex items-center justify-center bg-background p-4" data-testid="error-boundary-page">
           <Card className="w-full max-w-md">
             <CardHeader>
               <div className={`flex items-center gap-2 ${chunkError ? "text-blue-600" : "text-destructive"}`}>

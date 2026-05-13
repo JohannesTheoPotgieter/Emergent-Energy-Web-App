@@ -104,16 +104,18 @@ export default function QualityTasksPage() {
       />
       <Card>
         <CardContent className="p-4 space-y-3">
-          <div className="flex items-center gap-2">
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search title, project, assignee…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="max-w-sm"
-              data-testid="input-quality-task-search"
-            />
-            <div className="ml-auto text-sm text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-0 sm:min-w-[240px] sm:max-w-sm">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search title, project, assignee…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-8"
+                data-testid="input-quality-task-search"
+              />
+            </div>
+            <div className="ml-auto text-xs sm:text-sm text-muted-foreground whitespace-nowrap">
               {filtered.length} of {tasksQuery.data?.length ?? 0} task{(tasksQuery.data?.length ?? 0) === 1 ? "" : "s"}
             </div>
           </div>
@@ -122,11 +124,11 @@ export default function QualityTasksPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Title</TableHead>
-                <TableHead>Project</TableHead>
+                <TableHead className="hidden md:table-cell">Project</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Priority</TableHead>
-                <TableHead>Assignee</TableHead>
-                <TableHead>Due</TableHead>
+                <TableHead className="hidden sm:table-cell">Priority</TableHead>
+                <TableHead className="hidden lg:table-cell">Assignee</TableHead>
+                <TableHead className="hidden md:table-cell">Due</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -143,14 +145,19 @@ export default function QualityTasksPage() {
                       <Link href={`/engineering/tasks?task=${t.id}`} className="hover:underline">
                         {t.title || `Task #${t.id}`}
                       </Link>
+                      {/* On mobile, surface project + due inline under the title */}
+                      <div className="md:hidden mt-0.5 text-[11px] text-muted-foreground flex flex-wrap gap-x-2">
+                        {t.projectName && <span>{t.projectName}</span>}
+                        {t.dueDate && <span>· Due {new Date(t.dueDate).toLocaleDateString()}</span>}
+                      </div>
                     </TableCell>
-                    <TableCell>{t.projectName ?? "—"}</TableCell>
+                    <TableCell className="hidden md:table-cell">{t.projectName ?? "—"}</TableCell>
                     <TableCell>
                       <Badge variant={statusVariant(t.status)}>{t.status ?? "—"}</Badge>
                     </TableCell>
-                    <TableCell>{t.priority ?? "—"}</TableCell>
-                    <TableCell>{t.assigneeName ?? "—"}</TableCell>
-                    <TableCell>{t.dueDate ? new Date(t.dueDate).toLocaleDateString() : "—"}</TableCell>
+                    <TableCell className="hidden sm:table-cell">{t.priority ?? "—"}</TableCell>
+                    <TableCell className="hidden lg:table-cell">{t.assigneeName ?? "—"}</TableCell>
+                    <TableCell className="hidden md:table-cell">{t.dueDate ? new Date(t.dueDate).toLocaleDateString() : "—"}</TableCell>
                   </TableRow>
                 ))
               )}

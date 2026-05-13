@@ -554,7 +554,7 @@ export function ProjectChatTab({ projectName, projectInfoId }: { projectName: st
                           </Badge>
                         </div>
                       </div>
-                      <LinkIcon className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                      <LinkIcon className="h-3.5 w-3.5 text-muted-foreground opacity-60 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity shrink-0" />
                     </div>
                   ))
                 )}

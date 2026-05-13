@@ -283,9 +283,10 @@ body {
     padding-right: env(safe-area-inset-right);
   }
 
-  h1 { @apply text-2xl; line-height: 1.2; }
-  h2 { @apply text-xl; line-height: 1.2; }
-  h3 { @apply text-lg; line-height: 1.25; }
+  /* Fluid heading scale — caps tablet/desktop sizes, gives readable mobile sizes */
+  h1 { font-size: clamp(1.375rem, 1.15rem + 1.1vw, 1.75rem); line-height: 1.2; }
+  h2 { font-size: clamp(1.125rem, 1rem + 0.6vw, 1.375rem); line-height: 1.25; }
+  h3 { font-size: clamp(1rem, 0.95rem + 0.25vw, 1.125rem); line-height: 1.3; }
 
   body {
     line-height: 1.5;
@@ -301,25 +302,31 @@ body {
     @apply text-sm;
     font-size: max(13px, 0.8125rem);
     line-height: 1.4;
-    min-height: 44px;
   }
 
-  tr {
-    min-height: 44px;
-  }
   h1, h2, h3, h4, h5, h6 {
     @apply font-heading font-semibold tracking-tight;
   }
+
+  /* Prevent inline images / SVGs from forcing horizontal overflow */
+  img, svg, video, canvas, iframe { max-width: 100%; }
+  img, video { height: auto; }
 }
 
 @media (max-width: 768px) {
-  button,
-  [role="button"],
-  a.inline-flex,
+  /* Minimum 44x44 touch targets for primary interactive elements.
+     Icon-only buttons opt out via the .touch-compact class when needed
+     (e.g. dense toolbars), but the default is accessible. */
+  button:not(.touch-compact),
+  [role="button"]:not(.touch-compact),
+  a.inline-flex:not(.touch-compact),
   .touch-target {
     min-height: 44px;
-    min-width: 44px;
   }
+
+  /* Table rows are taller on mobile to give comfortable tap targets,
+     but stay tight on desktop where rows are scanned visually. */
+  td, th { min-height: 44px; }
 
   .mobile-table-scroll {
     overflow-x: auto;
@@ -432,6 +439,31 @@ body {
     transform: translateZ(0);
     backface-visibility: hidden;
   }
+
+  /* Mobile-first responsive horizontal page padding.
+     Use on the root page container so content never touches the viewport
+     edge on phones. Pairs naturally with `mx-auto w-full max-w-[...]`. */
+  .page-pad-x { padding-inline: clamp(0.75rem, 2.5vw, 1.5rem); }
+
+  /* Wrapper for any wide table or long horizontal row of items —
+     gives horizontal scroll with momentum on iOS and a soft right-edge
+     fade hint so users discover the overflow. */
+  .scroll-x-touch {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  /* Vertical scroll using dynamic viewport height so the iOS Safari URL
+     bar doesn't clip the bottom of full-height panes. */
+  .h-dvh-safe { height: 100dvh; }
+  .min-h-dvh-safe { min-height: 100dvh; }
+  .max-h-dvh-safe { max-height: 100dvh; }
+
+  /* Reserve room for the iOS home indicator on bottom-anchored UI
+     (sticky action bars, bottom sheets, bottom tabs). */
+  .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 0.5rem); }
+  .pt-safe { padding-top: max(env(safe-area-inset-top), 0.5rem); }
 }
 
 ::-webkit-scrollbar {
@@ -460,10 +492,8 @@ body {
 }
 
 @media (max-width: 640px) {
-  button, a, [role="button"] {
-    min-height: 36px;
-    min-width: 36px;
-  }
+  /* iOS Safari zooms inputs whose font-size is < 16px on focus.
+     Forcing 16px in form fields prevents that zoom-and-shift. */
   input, select, textarea {
     font-size: 16px !important;
   }
@@ -474,12 +504,13 @@ body {
   .card-hover:active {
     transform: scale(0.98);
   }
+  /* Body copy in tables stays readable on phones (no 11px). */
   table {
-    font-size: 11px;
+    font-size: 13px;
   }
   th, td {
-    padding-left: 6px;
-    padding-right: 6px;
+    padding-left: 8px;
+    padding-right: 8px;
   }
   /* Engineering mobile optimizations (#14) */
   [data-testid="eng-tasks-page"] .flex.gap-1\.5.overflow-x-auto {

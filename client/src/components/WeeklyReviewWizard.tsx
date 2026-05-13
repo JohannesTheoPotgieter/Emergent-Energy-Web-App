@@ -330,7 +330,7 @@ export function WeeklyReviewWizard({ projectName, snapshotMetrics }: WeeklyRevie
                 />
               </div>
               {snapshotMetrics && (
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-2 sm:gap-3">
                   <div className="bg-muted/50 rounded p-2 text-center">
                     <p className="text-[10px] text-muted-foreground">Revenue</p>
                     <p className="text-xs font-bold">R{((snapshotMetrics.totalRevenue || 0) / 1e6).toFixed(1)}M</p>
@@ -481,7 +481,7 @@ export function WeeklyReviewWizard({ projectName, snapshotMetrics }: WeeklyRevie
                     placeholder="What needs to be done..."
                     data-testid={`textarea-action-${idx}`}
                   />
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-3 gap-2 sm:gap-3">
                     <input
                       type="text"
                       className="h-7 px-2 text-xs border rounded-md"
