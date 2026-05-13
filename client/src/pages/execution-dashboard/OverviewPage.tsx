@@ -7,6 +7,7 @@ import { formatCurrencyCompact, formatCurrencyFull } from "@/lib/execution-dashb
 import {
   Activity, TrendingDown, DollarSign,
   ArrowRight, CheckCircle2, XCircle, Banknote, Clock,
+  TrendingUp, AlertOctagon,
 } from "lucide-react";
 import { useExecutionData } from "./use-execution-data";
 
@@ -111,6 +112,30 @@ export default function OverviewPage() {
           iconBg="bg-red-100"
           cta="Open cashflow register"
           onClick={() => setLocation("/cashflow")}
+        />
+
+        {/* 8 — Portfolio GP% */}
+        <KpiTile
+          label="Portfolio Gross Margin"
+          value={kpis.grossMarginPctFy != null ? `${kpis.grossMarginPctFy}%` : "—"}
+          valueClass={kpis.grossMarginPctFy == null ? "text-muted-foreground" : kpis.grossMarginPctFy >= 20 ? "text-emerald-600" : kpis.grossMarginPctFy >= 10 ? "text-amber-600" : "text-red-600"}
+          sub={`GP ${formatCurrencyCompact(kpis.grossProfitFy)} on ${formatCurrencyCompact(kpis.plannedRevenueFy)} planned revenue · FY`}
+          icon={<TrendingUp className="w-5 h-5 text-emerald-600" />}
+          iconBg="bg-emerald-100"
+          cta="View finance breakdown"
+          onClick={() => setRevenueSheetOpen(true)}
+        />
+
+        {/* 9 — Overdue Receivables */}
+        <KpiTile
+          label="Overdue Receivables"
+          value={formatCurrencyCompact(kpis.overdueInflowFy ?? 0)}
+          valueClass={(kpis.overdueInflowFy ?? 0) === 0 ? "text-emerald-600" : "text-red-600"}
+          sub="Revenue milestones past planned date without confirmed payment · FY"
+          icon={<AlertOctagon className="w-5 h-5 text-red-600" />}
+          iconBg="bg-red-100"
+          cta="View outstanding revenue"
+          onClick={() => setRevenueSheetOpen(true)}
         />
       </div>
 
@@ -279,6 +304,7 @@ export default function OverviewPage() {
                   <th className="text-left py-2.5 px-3 font-medium">Project</th>
                   <th className="text-left py-2.5 px-3 font-medium hidden md:table-cell">PM</th>
                   <th className="text-left py-2.5 px-3 font-medium hidden lg:table-cell">Phase</th>
+                  <th className="text-center py-2.5 px-3 font-medium hidden sm:table-cell">RAG</th>
                   <th className="text-right py-2.5 px-3 font-medium">Actual %</th>
                   <th className="text-right py-2.5 px-3 font-medium">Expected %</th>
                   <th className="text-right py-2.5 px-3 font-medium">Variance</th>
@@ -301,6 +327,9 @@ export default function OverviewPage() {
                         <td className="py-2.5 px-3 font-medium truncate max-w-[180px]">{p.projectName}</td>
                         <td className="py-2.5 px-3 text-xs text-muted-foreground hidden md:table-cell">{p.pm || "—"}</td>
                         <td className="py-2.5 px-3 text-xs text-muted-foreground hidden lg:table-cell">{p.executionPhase || "—"}</td>
+                        <td className="py-2.5 px-3 text-center hidden sm:table-cell">
+                          <span className={`inline-block w-2.5 h-2.5 rounded-full ${p.rag === "Green" ? "bg-emerald-500" : p.rag === "Amber" ? "bg-amber-500" : p.rag === "Red" ? "bg-red-500" : "bg-gray-300"}`} title={p.rag || "Not set"} />
+                        </td>
                         <td className="py-2.5 px-3 text-right tabular-nums font-semibold">
                           {p.actualProgressPct != null ? `${p.actualProgressPct}%` : "—"}
                         </td>

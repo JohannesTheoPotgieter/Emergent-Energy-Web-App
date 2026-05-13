@@ -46,6 +46,8 @@ import {
   Circle,
   FileSpreadsheet as SpreadsheetIcon,
   ChevronsUpDown,
+  BanknoteIcon,
+  DollarSign,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Link, useLocation } from "wouter";
@@ -866,6 +868,7 @@ const COLUMN_WIDTHS: Record<string, string> = {
   comments: "130px",
   financial_summary: "84px",
   next_key_date: "80px",
+  next_open_inflow_milestone: "160px",
   actions: "32px",
 };
 
@@ -876,7 +879,7 @@ const COLUMN_GROUPS_META: { label: string; keys: string[]; color: string; sticky
   { label: "Phase & Schedule", keys: ["phase", "escalation_level", "pd_handover_date", "construction_start_date", "commissioning_date", "om_handover_date", "client_handover_date", "duration", "kw_per_week"], color: "bg-blue-50 text-blue-700" },
   { label: "Progress", keys: ["project_pct_complete", "expected_pct_complete", "delta_vs_expected"], color: "bg-violet-50 text-violet-700" },
   { label: "Financials", keys: ["actual_revenue", "actual_expenses", "cashflow_delta", "gp_percent", "tracking_gp_percent", "cos_realised_pct", "revenue_outstanding", "expenses_due", "financial_summary"], color: "bg-green-50 text-green-700" },
-  { label: "Updates", keys: ["latest_update", "comments", "next_key_date"], color: "bg-amber-50 text-amber-700" },
+  { label: "Updates", keys: ["latest_update", "comments", "next_key_date", "next_open_inflow_milestone"], color: "bg-amber-50 text-amber-700" },
 ];
 
 const ALL_COLUMN_KEYS_STATIC = COLUMN_GROUPS_META.flatMap(g => g.keys);
@@ -1348,7 +1351,7 @@ export default function ProjectsSummary() {
   const canSuperAdmin = isSuperAdmin(user?.role, companyRole);
   const [editProject, setEditProject] = useState<ProjectSummary | null>(null);
   const [viewTab, setViewTab] = useState<"active" | "archived">("active");
-  const [quickFilter, setQuickFilter] = useState<"all" | "behind_plan" | "needs_attention" | "my_projects">("all");
+  const [quickFilter, setQuickFilter] = useState<"all" | "behind_plan" | "needs_attention" | "my_projects" | "missing_fc" | "overdue_milestone">("all");
 
   // Stage-driven filter from secondary nav (Prompt 2)
   const urlStageFilter = useMemo(() => {
@@ -1525,6 +1528,10 @@ export default function ProjectsSummary() {
       result = result.filter((p) => p.rag_status === "Red" || p.rag_status === "Amber" || (p.escalation_level && p.escalation_level !== "None"));
     } else if (quickFilter === "my_projects") {
       result = result.filter((p) => p.pm === currentUserName);
+    } else if (quickFilter === "missing_fc") {
+      result = result.filter((p) => !p.financial_close_achieved);
+    } else if (quickFilter === "overdue_milestone") {
+      result = result.filter((p) => p.next_open_inflow_milestone?.overdue === true);
     }
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
@@ -1567,6 +1574,11 @@ export default function ProjectsSummary() {
         const diff = aIdx - bIdx;
         if (diff !== 0) return sortDir === "asc" ? diff : -diff;
         return String(aVal).localeCompare(String(bVal));
+      }
+      if (sortKey === "next_open_inflow_milestone") {
+        const aDate = (a.next_open_inflow_milestone?.plannedDate) ?? "9999-99-99";
+        const bDate = (b.next_open_inflow_milestone?.plannedDate) ?? "9999-99-99";
+        return sortDir === "asc" ? aDate.localeCompare(bDate) : bDate.localeCompare(aDate);
       }
       if (typeof aVal === "string" && typeof bVal === "string") {
         return sortDir === "asc" ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
@@ -1635,7 +1647,10 @@ export default function ProjectsSummary() {
       : 0;
     const behindSchedule = sorted.filter(p => p.delta_vs_expected != null && p.delta_vs_expected < -0.05).length;
     const finCloseCount = sorted.filter(p => p.financial_close_achieved).length;
-    return { total, totalKwp, avgCompletion, behindSchedule, finCloseCount };
+    const totalInBank = sorted.reduce((s, p) => s + safeNum(p.actual_revenue), 0);
+    const totalContract = sorted.reduce((s, p) => s + safeNum(p.total_contract_revenue), 0);
+    const totalRevOutstanding = sorted.reduce((s, p) => s + safeNum(p.revenue_outstanding), 0);
+    return { total, totalKwp, avgCompletion, behindSchedule, finCloseCount, totalInBank, totalContract, totalRevOutstanding };
   }, [sorted]);
 
   const isDefaultView = visibleColumns.size === DEFAULT_DIRECTORY_COLUMNS.length && DEFAULT_DIRECTORY_COLUMNS.every((k) => visibleColumns.has(k));
@@ -2225,6 +2240,25 @@ export default function ProjectsSummary() {
       header: "Next Key Date",
       render: (p) => <span className="text-[10px] text-muted-foreground">{formatDate(getNextKeyDate(p))}</span>,
     },
+    {
+      key: "next_open_inflow_milestone",
+      header: "Next Milestone",
+      render: (p) => {
+        const m = p.next_open_inflow_milestone;
+        if (!m) return <span className="text-slate-400 text-[10px]">—</span>;
+        return (
+          <div className="space-y-0.5">
+            <span className={`block text-[10px] font-medium truncate max-w-[150px] ${m.overdue ? "text-red-600" : "text-foreground"}`} title={m.name}>
+              {m.name}
+            </span>
+            <span className={`text-[9px] ${m.overdue ? "text-red-500 font-semibold" : "text-muted-foreground"}`}>
+              {m.plannedDate ? formatDate(m.plannedDate) : "No date"}{m.overdue ? " · Overdue" : ""}
+              {m.openCount > 1 ? ` · +${m.openCount - 1} more` : ""}
+            </span>
+          </div>
+        );
+      },
+    },
     ...(isAdmin
       ? [
           {
@@ -2345,6 +2379,8 @@ export default function ProjectsSummary() {
           { key: "my_projects" as const, label: "My Projects" },
           { key: "behind_plan" as const, label: "Behind Plan" },
           { key: "needs_attention" as const, label: "Needs Attention" },
+          { key: "missing_fc" as const, label: "Missing FC" },
+          { key: "overdue_milestone" as const, label: "Overdue Milestone" },
         ]).map(({ key, label }) => (
           <button
             key={key}
@@ -2360,7 +2396,7 @@ export default function ProjectsSummary() {
         ))}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-7 gap-2.5">
         <Card className="border-border shadow-sm overflow-hidden card-hover">
           <CardContent className="p-3">
             <div className="flex items-center justify-between mb-2">
@@ -2414,6 +2450,53 @@ export default function ProjectsSummary() {
             </div>
             <div className="text-2xl font-bold text-foreground" data-testid="stat-fin-close">{stats.finCloseCount}</div>
             <div className="text-xs text-muted-foreground mt-1">of {stats.total} achieved ({stats.total > 0 ? ((stats.finCloseCount / stats.total) * 100).toFixed(0) : 0}%)</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border shadow-sm overflow-hidden card-hover">
+          <CardContent className="p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Contract</span>
+              <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center">
+                <DollarSign className="w-4 h-4 text-slate-600" />
+              </div>
+            </div>
+            <div className="text-xl font-bold text-foreground tabular-nums">
+              {stats.totalContract >= 1_000_000 ? `R${(stats.totalContract / 1_000_000).toFixed(1)}M` : `R${Math.round(stats.totalContract).toLocaleString("en-ZA")}`}
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">total contract value</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border shadow-sm overflow-hidden card-hover">
+          <CardContent className="p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">In Bank</span>
+              <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
+                <BanknoteIcon className="w-4 h-4 text-emerald-600" />
+              </div>
+            </div>
+            <div className="text-xl font-bold text-emerald-600 tabular-nums">
+              {stats.totalInBank >= 1_000_000 ? `R${(stats.totalInBank / 1_000_000).toFixed(1)}M` : `R${Math.round(stats.totalInBank).toLocaleString("en-ZA")}`}
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">
+              {stats.totalContract > 0 ? `${((stats.totalInBank / stats.totalContract) * 100).toFixed(0)}% of contract collected` : "revenue received"}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border shadow-sm overflow-hidden card-hover">
+          <CardContent className="p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Rev. Outstanding</span>
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${stats.totalRevOutstanding > 0 ? "bg-amber-50" : "bg-emerald-50"}`}>
+                <Clock className={`w-4 h-4 ${stats.totalRevOutstanding > 0 ? "text-amber-600" : "text-emerald-600"}`} />
+              </div>
+            </div>
+            <div className={`text-xl font-bold tabular-nums ${stats.totalRevOutstanding > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+              {stats.totalRevOutstanding >= 1_000_000 ? `R${(stats.totalRevOutstanding / 1_000_000).toFixed(1)}M` : `R${Math.round(stats.totalRevOutstanding).toLocaleString("en-ZA")}`}
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">invoiced but not yet paid</div>
           </CardContent>
         </Card>
       </div>

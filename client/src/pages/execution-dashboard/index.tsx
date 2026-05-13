@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useState } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { usePermission } from "@/hooks/use-permissions";
 import { EnergyLoader } from "@/components/ui/energy-loader";
 import { Activity, AlertCircle, AlertTriangle, RefreshCw } from "lucide-react";
@@ -10,11 +11,15 @@ import {
   useExecutionDataProvider,
 } from "./use-execution-data";
 import OverviewPage from "./OverviewPage";
+import ProgramPage from "./ProgramPage";
+import ConstructionPage from "./ConstructionPage";
+import FinancePage from "./FinancePage";
 
 export default function ExecutionDashboard() {
   const { allowed: canView } = usePermission("execution_board", "view");
   const [, setLocation] = useLocation();
   const ctx = useExecutionDataProvider(setLocation);
+  const [activeTab, setActiveTab] = useState("overview");
 
   if (ctx.loading) {
     return (
@@ -78,7 +83,31 @@ export default function ExecutionDashboard() {
           </div>
         </div>
 
-        <OverviewPage />
+        {/* Tab navigation */}
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="flex-wrap h-auto gap-1">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="programme">Programme</TabsTrigger>
+            <TabsTrigger value="construction">Construction</TabsTrigger>
+            <TabsTrigger value="finance">Finance</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="overview" className="mt-5">
+            <OverviewPage />
+          </TabsContent>
+
+          <TabsContent value="programme" className="mt-5">
+            <ProgramPage />
+          </TabsContent>
+
+          <TabsContent value="construction" className="mt-5">
+            <ConstructionPage />
+          </TabsContent>
+
+          <TabsContent value="finance" className="mt-5">
+            <FinancePage />
+          </TabsContent>
+        </Tabs>
       </div>
     </ExecutionDashboardContext.Provider>
   );
