@@ -109,7 +109,15 @@ function SmartImportPanel() {
     staleTime: 30_000,
   });
 
-  const runs = runsQuery.data ?? [];
+  // Defensive: API contract is `ImportRun[]`, but if a 200 response ever
+  // returns a wrapped shape (`{ rows: [...] }`, an error object, etc.) we
+  // would crash this whole admin page with `runs.slice is not a function`.
+  // Normalise to an array no matter what.
+  const runs: ImportRun[] = Array.isArray(runsQuery.data)
+    ? runsQuery.data
+    : Array.isArray((runsQuery.data as any)?.rows)
+      ? (runsQuery.data as any).rows
+      : [];
   const recentRuns = runs.slice(0, 10);
   const lastCommitted = runs.find((r) => (r.status || "").toLowerCase() === "committed");
 
