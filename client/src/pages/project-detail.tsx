@@ -19,8 +19,9 @@ import {
   ChevronDown, ChevronUp, Eye, Play, Zap, Target, Users, Trash2, Plus,
   MessageSquare, FolderOpen, FileCheck, Search, X,
   Handshake, MapPin, LayoutDashboard, FileText, ClipboardList, Plug,
-  CalendarClock,
+  CalendarClock, Info,
 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { EnergyLoader } from "@/components/ui/energy-loader";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
 import { ExpenditureEditableTab } from "@/components/tabs/ExpenditureEditableTab";
@@ -1286,23 +1287,10 @@ export default function ProjectDetailPage() {
     refetchOnWindowFocus: true,
   });
 
-  const { data: headerKpis } = useQuery<{
-    contractValue: number;
-    inflowsRealisedPct: number;
-    cosRealisedPct: number;
-    marginDeltaPct: number;
-    nextMilestone: NextMilestoneSummary | null;
-  }>({
-    queryKey: ["project-header-kpis", projectInfoId],
-    queryFn: async () => {
-      const res = await engFetch(`/api/projects/${projectInfoId}/header-kpis`);
-      if (!res.ok) return null;
-      return res.json();
-    },
-    enabled: !!projectInfoId,
-    staleTime: 0,
-    refetchOnWindowFocus: true,
-  });
+  // Removed: project-header-kpis query. The ProjectCommandHeader now reads
+  // KPIs from the same locally-computed live data (v2 detail + revenue-tab +
+  // health summary) used by the rest of the page, so this pre-aggregated
+  // endpoint is no longer needed and was causing stale header values.
 
   // Revenue milestones (from revenue-tab endpoint — provides milestone-level detail not in V2)
   const revTabMilestones: any[] = revenueTrustData?.milestones || [];
@@ -1538,15 +1526,19 @@ export default function ProjectDetailPage() {
         sizeKwp={sizeKwp}
         completion={completion}
         completionNum={completionNum}
-        contractValue={headerKpis?.contractValue ?? contractValue}
-        revenueRealisedPct={headerKpis?.inflowsRealisedPct ?? revenueRealisedPct}
-        cosRealisedPct={headerKpis?.cosRealisedPct ?? cosRealisedPct}
-        marginDelta={headerKpis?.marginDeltaPct ?? marginDelta}
+        {/* Source of truth: the same live per-project data the tabs below
+            render from (v2 detail + revenue-tab + health summary). The
+            pre-aggregated /api/projects-summary KPIs are intentionally NOT
+            used here — they were the cause of the stale header. */}
+        contractValue={contractValue}
+        revenueRealisedPct={revenueRealisedPct}
+        cosRealisedPct={cosRealisedPct}
+        marginDelta={marginDelta}
         scheduleRag={overallRag as "green" | "amber" | "red"}
         costRag={overallRag as "green" | "amber" | "red"}
         qualityRag={overallRag as "green" | "amber" | "red"}
         ragStatus={ragStatus}
-        nextMilestone={headerKpis?.nextMilestone ?? nextMilestone}
+        nextMilestone={nextMilestone}
         projectInfoId={projectInfoId ?? null}
         isAdmin={isAdmin}
         canSetRag={canSetRag}
@@ -1702,73 +1694,114 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      {topAlerts.length > 0 && (
-        <div className="flex flex-wrap gap-1.5" data-testid="cockpit-exception-strip">
-          {topAlerts.map((alert) => (
+      {/* ══════════════════════════════════════════════════════════════
+           Department tabs — collapsed busy zone.
+           Previously 5 stacked rows (permission-hints, tabs, alerts,
+           trust/source, related-departments). Now: ONE row with the
+           dept tabs + an "i" popover on the right that contains the
+           Source/Status/Last-updated trust strip and the related-
+           departments pills. Locked tabs are rendered greyed-out and
+           disabled (no separate permission-hints row). Alert chips for
+           the active dept appear as a slim sticky banner immediately
+           below the tabs row when there is anything to flag.
+         ══════════════════════════════════════════════════════════════ */}
+      <div className="flex items-center gap-2" data-testid="project-dept-tabs-row">
+        <div className="flex items-center gap-1.5 rounded-lg bg-muted/40 p-1 overflow-x-auto scrollbar-hide flex-1" data-testid="project-dept-tabs">
+          {[
+            { key: "pm", label: "Project Management", icon: Target, visible: canViewTab.overview, lockReason: undefined as string | undefined },
+            { key: "eng", label: "Engineering", icon: Wrench, visible: canViewTab.engineering, lockReason: tabPermissionReasons.eng },
+            { key: "quality", label: "Quality", icon: ShieldCheck, visible: canViewTab.quality || canViewTab.history, lockReason: tabPermissionReasons.quality },
+            { key: "finance", label: "Finance", icon: Landmark, visible: canViewTab.finance, lockReason: tabPermissionReasons.finance },
+            { key: "pd", label: "Project Development", icon: TrendingUp, visible: true, lockReason: undefined },
+            { key: "excel", label: "Excel Import", icon: FileText, visible: true, lockReason: undefined },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeDept === tab.key;
+            const isLocked = !tab.visible;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => !isLocked && navigateToDept(tab.key)}
+                disabled={isLocked}
+                title={isLocked ? `${tab.label} locked${tab.lockReason ? ": " + tab.lockReason : ""}` : tab.label}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap shrink-0 transition-all border ${
+                  isLocked
+                    ? "bg-muted/30 text-muted-foreground/50 border-transparent cursor-not-allowed opacity-60"
+                    : isActive
+                      ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                      : "bg-background text-muted-foreground border-border hover:text-foreground hover:bg-muted/50 hover:opacity-90"
+                }`}
+                data-testid={`dept-tab-${tab.key}`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <Popover>
+          <PopoverTrigger asChild>
             <button
-              key={alert.label}
               type="button"
-              onClick={alert.action}
-              title={alert.title}
-              aria-label={alert.ariaLabel}
-              className="text-xs rounded-md border border-amber-200 bg-amber-50 px-2 py-1 cursor-pointer transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50"
+              className="shrink-0 inline-flex items-center justify-center h-7 w-7 rounded-md border border-border bg-background text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+              title="Source, sync status & related departments"
+              aria-label="Source, sync status and related departments"
+              data-testid="button-project-context-info"
             >
-              <span className="font-semibold text-amber-800">{alert.count}</span> {alert.label}
+              <Info className="h-3.5 w-3.5" />
             </button>
-          ))}
-        </div>
-      )}
-
-      {/* ── Department tabs ── */}
-      <div className="flex flex-wrap gap-2 mb-2" data-testid="project-dept-permission-hints">
-        {!canViewTab.engineering && <Badge variant="outline" className="text-[10px]">Engineering locked: {tabPermissionReasons.eng}</Badge>}
-        {!canViewTab.quality && <Badge variant="outline" className="text-[10px]">Quality locked: {tabPermissionReasons.quality}</Badge>}
-        {!canViewTab.finance && <Badge variant="outline" className="text-[10px]">Finance locked: {tabPermissionReasons.finance}</Badge>}
-      </div>
-      <div className="flex items-center gap-1.5 rounded-lg bg-muted/40 p-1 overflow-x-auto scrollbar-hide" data-testid="project-dept-tabs">
-        {[
-          { key: "pm", label: "Project Management", icon: Target, visible: canViewTab.overview },
-          { key: "eng", label: "Engineering", icon: Wrench, visible: canViewTab.engineering },
-          { key: "quality", label: "Quality", icon: ShieldCheck, visible: canViewTab.quality || canViewTab.history },
-          { key: "finance", label: "Finance", icon: Landmark, visible: canViewTab.finance },
-          { key: "pd", label: "Project Development", icon: TrendingUp, visible: true },
-          { key: "excel", label: "Excel Import", icon: FileText, visible: true },
-        ].filter(t => t.visible).map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeDept === tab.key;
-          return (
-            <button
-              key={tab.key}
-              onClick={() => navigateToDept(tab.key)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap shrink-0 transition-all border hover:opacity-90 ${
-                isActive
-                  ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                  : "bg-background text-muted-foreground border-border hover:text-foreground hover:bg-muted/50"
-              }`}
-              data-testid={`dept-tab-${tab.key}`}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {tab.label}
-            </button>
-          );
-        })}
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-80 p-3 text-xs space-y-3" data-testid="popover-project-context">
+            <div className="space-y-1" data-testid="project-trust-strip">
+              <div className="font-semibold text-foreground text-[11px] uppercase tracking-wide">Data source</div>
+              <div><strong>Source:</strong> {activeDept === "finance" ? "Finance trackers + V2 summary" : activeDept === "quality" ? "Quality workspace + V2 summary" : "V2 project detail + project workspaces"}</div>
+              <div><strong>Status:</strong> {(activeDept === "finance" && revenueFetching) || (activeDept === "quality" && qualityFetching) || v2DetailFetching ? "Refreshing" : "Synced"}</div>
+              <div><strong>Last updated:</strong> {
+                activeDept === "finance"
+                  ? formatUpdatedAt(Math.max(v2DetailUpdatedAt || 0, revenueUpdatedAt || 0, cashflowUpdatedAt || 0))
+                  : activeDept === "quality"
+                    ? formatUpdatedAt(Math.max(v2DetailUpdatedAt || 0, qualityUpdatedAt || 0))
+                    : formatUpdatedAt(v2DetailUpdatedAt)
+              }</div>
+            </div>
+            <div className="border-t pt-2">
+              <div className="font-semibold text-foreground text-[11px] uppercase tracking-wide mb-1.5">Related departments</div>
+              <RelatedDepartmentLinks projectId={projectInfoId ?? null} projectName={projectName ?? null} />
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
 
-      <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs" data-testid="project-trust-strip">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          <span><strong>Source:</strong> {activeDept === "finance" ? "Finance trackers + V2 summary" : activeDept === "quality" ? "Quality workspace + V2 summary" : "V2 project detail + project workspaces"}</span>
-          <span><strong>Status:</strong> {(activeDept === "finance" && revenueFetching) || (activeDept === "quality" && qualityFetching) || v2DetailFetching ? "Refreshing" : "Synced"}</span>
-          <span><strong>Last updated:</strong> {
-            activeDept === "finance"
-              ? formatUpdatedAt(Math.max(v2DetailUpdatedAt || 0, revenueUpdatedAt || 0, cashflowUpdatedAt || 0))
-              : activeDept === "quality"
-                ? formatUpdatedAt(Math.max(v2DetailUpdatedAt || 0, qualityUpdatedAt || 0))
-                : formatUpdatedAt(v2DetailUpdatedAt)
-          }</span>
-        </div>
-      </div>
-
-      <RelatedDepartmentLinks projectId={projectInfoId ?? null} projectName={projectName ?? null} />
+      {/* Per-tab alert banner — only the alerts relevant to the active
+          dept render here, so this row collapses to nothing when there's
+          nothing to flag for the current tab. */}
+      {(() => {
+        const deptForKey: Record<string, string> = {
+          "overdue-plan-tasks": "pm",
+          "overdue-engineering-tasks": "eng",
+          "pending-quality-approvals": "quality",
+          "overdue-supplier-costs": "finance",
+        };
+        const visibleAlerts = topAlerts.filter(a => deptForKey[a.key] === activeDept);
+        if (visibleAlerts.length === 0) return null;
+        return (
+          <div className="sticky top-0 z-10 flex flex-wrap gap-1.5 -mt-1" data-testid="cockpit-exception-strip">
+            {visibleAlerts.map((alert) => (
+              <button
+                key={alert.label}
+                type="button"
+                onClick={alert.action}
+                title={alert.title}
+                aria-label={alert.ariaLabel}
+                className="text-xs rounded-md border border-amber-200 bg-amber-50 px-2 py-1 cursor-pointer transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50"
+              >
+                <span className="font-semibold text-amber-800">{alert.count}</span> {alert.label}
+              </button>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* ════════════════════════════════════════════════════════════
            PROJECT MANAGEMENT DEPARTMENT
