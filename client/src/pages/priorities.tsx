@@ -17,6 +17,8 @@ import { CreatePriorityDialog } from "@/components/priorities/CreatePriorityDial
 import { AssignPriorityDialog, BulkReassignDialog } from "@/components/priorities/AssignDialogs";
 import { useConfirmDialog } from "@/components/priorities/ConfirmActionDialog";
 import { MyWorkTasksList, taskHealth, taskLevel, type MyWorkTaskRow } from "@/components/priorities/MyWorkTasksList";
+import { CreatePersonalTaskDialog } from "@/components/priorities/CreatePersonalTaskDialog";
+import { EscalateDialog } from "@/components/priorities/EscalateDialog";
 import { useToast } from "@/hooks/use-toast";
 
 export { PriorityCard } from "@/components/priorities/PriorityCard";
@@ -75,6 +77,10 @@ export default function PrioritiesPage() {
   const [activeTab, setActiveTab] = useState<"my" | "department" | "company">(initialTab as "my" | "department" | "company");
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createTaskDialogOpen, setCreateTaskDialogOpen] = useState(false);
+  const [escalateTarget, setEscalateTarget] = useState<{ id: number; title: string; scope: string } | null>(null);
+  const [updatingTaskId, setUpdatingTaskId] = useState<number | null>(null);
+  const [deletingTaskId, setDeletingTaskId] = useState<number | null>(null);
   const [assignDialogPriorityId, setAssignDialogPriorityId] = useState<number | null>(null);
   const [bulkReassignOpen, setBulkReassignOpen] = useState(false);
   // Phase 7B: read level + health from URL params so the home dashboard's
@@ -178,8 +184,31 @@ export default function PrioritiesPage() {
   });
 
   const escalateMutation = useMutation({
-    mutationFn: (priorityId: number) => apiRequest("POST", `/api/priorities/${priorityId}/escalate`, { reason: "manual" }),
-    onSuccess: invalidateAll,
+    mutationFn: ({ id, reason }: { id: number; reason: string }) =>
+      apiRequest("POST", `/api/priorities/${id}/escalate`, { reason }),
+    onSuccess: () => { setEscalateTarget(null); invalidateAll(); },
+    onError: (err) => toast({ title: "Escalation failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
+  });
+
+  const updateTaskStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: string }) => {
+      setUpdatingTaskId(id);
+      const res = await apiRequest("PATCH", `/api/tasks/${id}`, { status });
+      return res.json();
+    },
+    onSettled: () => setUpdatingTaskId(null),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/priorities/my-work"] }),
+    onError: (err) => toast({ title: "Could not update status", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
+  });
+
+  const deleteTaskMutation = useMutation({
+    mutationFn: async (id: number) => {
+      setDeletingTaskId(id);
+      await apiRequest("DELETE", `/api/priorities/tasks/${id}`);
+    },
+    onSettled: () => setDeletingTaskId(null),
+    onSuccess: () => { toast({ title: "Task removed" }); queryClient.invalidateQueries({ queryKey: ["/api/priorities/my-work"] }); },
+    onError: (err) => toast({ title: "Could not delete task", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
   const reopenMutation = useMutation({
@@ -261,6 +290,10 @@ export default function PrioritiesPage() {
     : filteredCompany;
   const activeCount = activeData.filter((p) => p.status !== "closed" && p.status !== "complete").length;
   const closedData = activeData.filter((p) => p.status === "closed" || p.status === "complete");
+  const openTaskCount = useMemo(() => myTasks.filter((t) => {
+    const s = (t.status ?? "").toLowerCase();
+    return s !== "complete" && s !== "completed" && s !== "cancelled" && s !== "done";
+  }).length, [myTasks]);
 
   const bulkSize = bulkSelected.size;
   const runBulkClose = async () => {
@@ -302,6 +335,7 @@ export default function PrioritiesPage() {
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             {activeCount} active priorit{activeCount === 1 ? "y" : "ies"}
+            {activeTab === "my" && openTaskCount > 0 && ` · ${openTaskCount} task${openTaskCount !== 1 ? "s" : ""}`}
             {showClosed && closedData.length > 0 && ` · ${closedData.length} closed`}
           </p>
         </div>
@@ -453,7 +487,10 @@ export default function PrioritiesPage() {
               error={myWorkFeedQuery.error as Error}
               refetch={myWorkFeedQuery.refetch}
               showEscalate
-              onEscalate={(id) => escalateMutation.mutate(id)}
+              onEscalate={(id) => {
+                const p = myPriorities.find((x) => x.id === id);
+                if (p) setEscalateTarget({ id: p.id, title: p.title, scope: p.scope });
+              }}
               showReopen={showClosed}
               onReopen={(id) => reopenMutation.mutate(id)}
               selectable
@@ -467,40 +504,48 @@ export default function PrioritiesPage() {
               }
             />
 
-            {/*
-              Show the task pane whenever the user HAS tasks (myTasks.length > 0),
-              even if the active filter zero-matches. That way the section
-              header doesn't silently vanish when a chip is applied — the
-              user sees "(0)" + a helpful empty state instead of wondering
-              whether tasks exist at all.
-            */}
-            {myTasks.length > 0 && (
-              <div className="space-y-2">
-                <div className="flex items-baseline justify-between">
-                  <h3 className="text-sm font-semibold text-foreground">
-                    Tasks assigned to you
+            {/* Task management section — always shown so + Add Task is accessible */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-foreground">
+                  My Tasks
+                  {myTasks.length > 0 && (
                     <span className="ml-2 text-xs text-muted-foreground font-normal">
                       ({filteredMyTasks.length}{filteredMyTasks.length !== myTasks.length ? ` of ${myTasks.length}` : ""})
                     </span>
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    Click <em>Make priority</em> to promote any task to a personal priority with the full escalate chain.
+                  )}
+                </h3>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs text-muted-foreground hidden sm:block">
+                    Use <em>Make priority</em> to escalate any task up the chain.
                   </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    onClick={() => setCreateTaskDialogOpen(true)}
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1" /> Add Task
+                  </Button>
                 </div>
-                <MyWorkTasksList
-                  tasks={filteredMyTasks}
-                  onPromote={async (id) => {
-                    await promoteTaskMutation.mutateAsync(id);
-                  }}
-                  promotingId={promoteTaskMutation.isPending ? (promoteTaskMutation.variables ?? null) as number | null : null}
-                  emptyMessage={
-                    levelFilter !== "all" || healthFilter !== "all"
-                      ? "No tasks match the active filter."
-                      : "No outstanding tasks assigned to you."
-                  }
-                />
               </div>
-            )}
+              <MyWorkTasksList
+                tasks={filteredMyTasks}
+                onPromote={async (id) => {
+                  await promoteTaskMutation.mutateAsync(id);
+                }}
+                promotingId={promoteTaskMutation.isPending ? (promoteTaskMutation.variables ?? null) as number | null : null}
+                onUpdateStatus={(id, status) => updateTaskStatusMutation.mutate({ id, status })}
+                onDelete={(id) => deleteTaskMutation.mutate(id)}
+                updatingId={updatingTaskId}
+                deletingId={deletingTaskId}
+                emptyMessage={
+                  levelFilter !== "all" || healthFilter !== "all"
+                    ? "No tasks match the active filter."
+                    : "No tasks yet — click + Add Task to create your first personal task, or tasks assigned to you will appear here."
+                }
+              />
+            </div>
           </div>
         </TabsContent>
 
@@ -513,7 +558,10 @@ export default function PrioritiesPage() {
               error={deptQuery.error as Error}
               refetch={deptQuery.refetch}
               showEscalate
-              onEscalate={(id) => escalateMutation.mutate(id)}
+              onEscalate={(id) => {
+                const p = filteredDept.find((x) => x.id === id);
+                if (p) setEscalateTarget({ id: p.id, title: p.title, scope: p.scope });
+              }}
               showDeptActions
               onAssign={(id) => setAssignDialogPriorityId(id)}
               showReopen={showClosed}
@@ -582,6 +630,23 @@ export default function PrioritiesPage() {
         selectedCount={bulkSize}
         onConfirm={(userId) => bulkReassignMutation.mutate({ ids: Array.from(bulkSelected), userId })}
         isPending={bulkReassignMutation.isPending}
+      />
+
+      <CreatePersonalTaskDialog
+        open={createTaskDialogOpen}
+        onOpenChange={setCreateTaskDialogOpen}
+        onCreated={() => queryClient.invalidateQueries({ queryKey: ["/api/priorities/my-work"] })}
+      />
+
+      <EscalateDialog
+        open={escalateTarget !== null}
+        onOpenChange={(open) => { if (!open) setEscalateTarget(null); }}
+        priorityTitle={escalateTarget?.title ?? ""}
+        currentScope={escalateTarget?.scope ?? "role"}
+        onConfirm={(reason) => {
+          if (escalateTarget) escalateMutation.mutate({ id: escalateTarget.id, reason });
+        }}
+        isPending={escalateMutation.isPending}
       />
 
       {confirmDialog}

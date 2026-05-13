@@ -15,6 +15,7 @@ import {
   derivedProjectKpis,
   workItems,
   workItemAssignments,
+  workItemStatusHistory,
   approvals,
   opportunities,
   engineeringTickets,
@@ -747,6 +748,71 @@ router.get("/api/priorities/my-work", requireAuth, requirePermission("company_pr
 //   • requirePriorityCreator / `company_priorities:edit` gate company- and
 //     department-scope priorities to admins + dept heads. A user promoting
 //     their OWN task to their OWN personal priority is a different intent.
+// ==================== POST /api/priorities/tasks ====================
+// Create a personal work_item (no project required) from the My Priorities
+// page. The existing POST /api/tasks requires projectId which personal
+// tasks don't have, so this endpoint bypasses that constraint.
+router.post("/api/priorities/tasks", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+  const user = getEffectiveUser(req);
+  if (!user?.id) throw badRequest("No effective user");
+
+  const schema = z.object({
+    title: z.string().min(1).max(500),
+    description: z.string().max(2000).optional(),
+    dueDate: z.string().optional(),
+    priority: z.enum(["normal", "high", "critical"]).optional(),
+  });
+  const body = schema.parse(req.body);
+
+  const [item] = await db.insert(workItems).values({
+    title: body.title,
+    description: body.description ?? null,
+    endDate: body.dueDate ?? null,
+    priority: body.priority ?? "normal",
+    workstream: "PERSONAL",
+    bucket: "personal",
+    status: "Not Started",
+    source: "UI",
+    ownerUserId: user.id,
+    createdBy: user.id,
+  } as any).returning();
+
+  await db.insert(workItemStatusHistory).values({
+    workItemId: item.id,
+    newStatus: "Not Started",
+    changedBy: user.id,
+    reason: "Personal task created from Priorities page",
+  } as any);
+
+  res.status(201).json(item);
+}));
+
+// DELETE /api/priorities/tasks/:id — soft-delete a personal work_item.
+// Only the owner can delete their own task. Uses the priorities-domain
+// endpoint to bypass the admin-only gate in task-management-routes.ts.
+router.delete("/api/priorities/tasks/:id", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+  const user = getEffectiveUser(req);
+  if (!user?.id) throw badRequest("No effective user");
+
+  const taskId = parseIdParam(req.params.id);
+  if (taskId === null) throw badRequest("Invalid task id");
+
+  const [task] = await db
+    .select({ id: workItems.id, ownerUserId: workItems.ownerUserId })
+    .from(workItems)
+    .where(and(eq(workItems.id, taskId), isNull(workItems.deletedAt)));
+
+  if (!task) throw notFound("Task");
+  if (task.ownerUserId !== user.id) throw forbidden("You can only delete tasks you own");
+
+  await db
+    .update(workItems)
+    .set({ deletedAt: new Date() } as any)
+    .where(eq(workItems.id, taskId));
+
+  res.json({ success: true });
+}));
+
 //   • Any authenticated user can promote, but only for tasks they
 //     own or are assigned to (verified below against work_item_assignments).
 //   • The created priority is hard-coded to scope='role' + ownerUserId =
