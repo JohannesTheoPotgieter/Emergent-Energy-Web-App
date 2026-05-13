@@ -258,11 +258,13 @@ export default function PriorityDetailPage() {
       setEscalateDialogOpen(false);
       invalidateDetail();
     },
+    onError: (err) => toast({ title: "Escalation failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
   const reopenMutation = useMutation({
     mutationFn: () => apiRequest("POST", `/api/priorities/${priorityId}/reopen`, {}),
-    onSuccess: invalidateDetail,
+    onSuccess: () => { toast({ title: "Priority reopened" }); invalidateDetail(); },
+    onError: (err) => toast({ title: "Could not reopen", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
   const watchMutation = useMutation({

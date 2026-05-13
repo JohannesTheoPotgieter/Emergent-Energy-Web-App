@@ -565,7 +565,7 @@ export default function PrioritiesPage() {
               }}
               showDeptActions
               onAssign={(id) => setAssignDialogPriorityId(id)}
-              showReopen={showClosed}
+              showReopen={showClosed && isAdmin}
               onReopen={(id) => reopenMutation.mutate(id)}
               selectable
               selectedIds={bulkSelected}
