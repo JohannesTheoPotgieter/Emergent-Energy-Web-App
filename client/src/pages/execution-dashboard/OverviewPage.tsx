@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useLocation } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -6,18 +7,20 @@ import { formatCurrencyCompact, formatCurrencyFull } from "@/lib/execution-dashb
 import {
   Activity, TrendingDown, DollarSign,
   ArrowRight, CheckCircle2, XCircle, Banknote, Clock,
+  TrendingUp, AlertOctagon,
 } from "lucide-react";
 import { useExecutionData } from "./use-execution-data";
 
 export default function OverviewPage() {
-  const { kpis, filteredProjects, openProject, dashboard } = useExecutionData();
+  const { kpis, filteredProjects, allProjects, openProject, dashboard } = useExecutionData();
+  const [, setLocation] = useLocation();
   const [scheduleSheetOpen, setScheduleSheetOpen] = useState(false);
   const [contractSheetOpen, setContractSheetOpen] = useState(false);
   const [revenueSheetOpen, setRevenueSheetOpen] = useState(false);
   const [cosSheetOpen, setCosSheetOpen] = useState(false);
 
-  const behindCount = kpis.projectsBehindPlan;               // server boolean — canonical
-  const onScheduleCount = filteredProjects.length - behindCount; // always sums to total
+  const behindCount = filteredProjects.filter((p) => p.behindPlan).length;
+  const onScheduleCount = filteredProjects.length - behindCount;
   const fullySignedCount = filteredProjects.filter(
     (p) => p.cpSigned && p.signedStatus === "SIGNED",
   ).length;
@@ -44,7 +47,7 @@ export default function OverviewPage() {
           label="On Schedule Rate"
           value={`${kpis.onScheduleRate}%`}
           valueClass={kpis.onScheduleRate >= 70 ? "text-emerald-600" : kpis.onScheduleRate >= 50 ? "text-amber-600" : "text-red-600"}
-          sub={`${onScheduleCount} of ${filteredProjects.length} projects within ±5% tolerance`}
+          sub={`${onScheduleCount} of ${filteredProjects.length} projects not more than 5% behind expected`}
           icon={<Activity className="w-5 h-5 text-emerald-600" />}
           iconBg="bg-emerald-100"
           cta="View schedule breakdown"
@@ -95,8 +98,8 @@ export default function OverviewPage() {
           sub="Cashflow revenue series expected Mon–Sun this week · all active projects"
           icon={<Banknote className="w-5 h-5 text-blue-600" />}
           iconBg="bg-blue-100"
-          cta="View by project"
-          onClick={() => setRevenueSheetOpen(true)}
+          cta="Open cashflow register"
+          onClick={() => setLocation("/cashflow")}
         />
 
         {/* 7 — Outflows This Week */}
@@ -107,8 +110,32 @@ export default function OverviewPage() {
           sub="Cashflow expenditure series expected Mon–Sun this week · all active projects"
           icon={<TrendingDown className="w-5 h-5 text-red-600" />}
           iconBg="bg-red-100"
-          cta="View by project"
-          onClick={() => setCosSheetOpen(true)}
+          cta="Open cashflow register"
+          onClick={() => setLocation("/cashflow")}
+        />
+
+        {/* 8 — Portfolio GP% */}
+        <KpiTile
+          label="Portfolio Gross Margin"
+          value={kpis.grossMarginPctFy != null ? `${kpis.grossMarginPctFy}%` : "—"}
+          valueClass={kpis.grossMarginPctFy == null ? "text-muted-foreground" : kpis.grossMarginPctFy >= 20 ? "text-emerald-600" : kpis.grossMarginPctFy >= 10 ? "text-amber-600" : "text-red-600"}
+          sub={`GP ${formatCurrencyCompact(kpis.grossProfitFy)} on ${formatCurrencyCompact(kpis.plannedRevenueFy)} planned revenue · FY`}
+          icon={<TrendingUp className="w-5 h-5 text-emerald-600" />}
+          iconBg="bg-emerald-100"
+          cta="View finance breakdown"
+          onClick={() => setRevenueSheetOpen(true)}
+        />
+
+        {/* 9 — Overdue Receivables */}
+        <KpiTile
+          label="Overdue Receivables"
+          value={formatCurrencyCompact(kpis.overdueInflowFy ?? 0)}
+          valueClass={(kpis.overdueInflowFy ?? 0) === 0 ? "text-emerald-600" : "text-red-600"}
+          sub="Revenue milestones past planned date without confirmed payment · FY"
+          icon={<AlertOctagon className="w-5 h-5 text-red-600" />}
+          iconBg="bg-red-100"
+          cta="View outstanding revenue"
+          onClick={() => setRevenueSheetOpen(true)}
         />
       </div>
 
@@ -122,7 +149,7 @@ export default function OverviewPage() {
             </SheetTitle>
           </SheetHeader>
           <p className="text-[11px] text-muted-foreground mt-2">
-            Sorted by open revenue (largest first). Figures are for the current financial year across all active projects regardless of active filters.
+            Sorted by open revenue (largest first). Figures are for the current financial year for currently filtered projects.
           </p>
           <div className="mt-3 border rounded-lg overflow-auto max-h-[72vh]">
             <table className="w-full text-sm">
@@ -184,7 +211,7 @@ export default function OverviewPage() {
             </SheetTitle>
           </SheetHeader>
           <p className="text-[11px] text-muted-foreground mt-2">
-            Sorted by open expenditure (largest first). Figures are for the current financial year across all active projects regardless of active filters.
+            Sorted by open expenditure (largest first). Figures are for the current financial year for currently filtered projects.
           </p>
           <div className="mt-3 border rounded-lg overflow-auto max-h-[72vh]">
             <table className="w-full text-sm">
@@ -277,6 +304,7 @@ export default function OverviewPage() {
                   <th className="text-left py-2.5 px-3 font-medium">Project</th>
                   <th className="text-left py-2.5 px-3 font-medium hidden md:table-cell">PM</th>
                   <th className="text-left py-2.5 px-3 font-medium hidden lg:table-cell">Phase</th>
+                  <th className="text-center py-2.5 px-3 font-medium hidden sm:table-cell">RAG</th>
                   <th className="text-right py-2.5 px-3 font-medium">Actual %</th>
                   <th className="text-right py-2.5 px-3 font-medium">Expected %</th>
                   <th className="text-right py-2.5 px-3 font-medium">Variance</th>
@@ -299,6 +327,9 @@ export default function OverviewPage() {
                         <td className="py-2.5 px-3 font-medium truncate max-w-[180px]">{p.projectName}</td>
                         <td className="py-2.5 px-3 text-xs text-muted-foreground hidden md:table-cell">{p.pm || "—"}</td>
                         <td className="py-2.5 px-3 text-xs text-muted-foreground hidden lg:table-cell">{p.executionPhase || "—"}</td>
+                        <td className="py-2.5 px-3 text-center hidden sm:table-cell">
+                          <span className={`inline-block w-2.5 h-2.5 rounded-full ${p.rag === "Green" ? "bg-emerald-500" : p.rag === "Amber" ? "bg-amber-500" : p.rag === "Red" ? "bg-red-500" : "bg-gray-300"}`} title={p.rag || "Not set"} />
+                        </td>
                         <td className="py-2.5 px-3 text-right tabular-nums font-semibold">
                           {p.actualProgressPct != null ? `${p.actualProgressPct}%` : "—"}
                         </td>

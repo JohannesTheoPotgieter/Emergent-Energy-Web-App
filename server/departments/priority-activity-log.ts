@@ -29,7 +29,8 @@ export type PriorityActivityAction =
   | "manual_progress_changed"
   | "due_date_changed"
   | "owner_changed"
-  | "accountable_exec_changed";
+  | "accountable_exec_changed"
+  | "commented";
 
 export interface RecordActivityInput {
   priorityId: number;

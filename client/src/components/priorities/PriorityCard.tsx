@@ -172,7 +172,12 @@ export function PriorityCard({
         <div className="mb-2">
           <div className="flex items-center justify-between text-xs mb-1">
             <span className="text-muted-foreground">
-              {priority.effectiveProgress}%{!priority.hasProjects && " (manual)"}
+              {priority.effectiveProgress}%{" "}
+              {priority.progressSource?.label
+                ? `(${priority.progressSource.label})`
+                : !priority.hasProjects
+                  ? "(manual)"
+                  : ""}
             </span>
           </div>
           <div className="h-1.5 bg-muted rounded-full overflow-hidden">
@@ -217,7 +222,13 @@ export function PriorityCard({
                 )}
               </span>
             )}
-            {!priority.hasProjects && priority.childCount === 0 && (
+            {priority.openTaskCount > 0 && (
+              <span>
+                <ListTodo className="w-3 h-3 inline mr-0.5" />
+                {priority.openTaskCount} task{priority.openTaskCount !== 1 ? "s" : ""}
+              </span>
+            )}
+            {!priority.hasProjects && priority.childCount === 0 && priority.openTaskCount === 0 && (
               <span className="italic">Standalone</span>
             )}
           </div>
