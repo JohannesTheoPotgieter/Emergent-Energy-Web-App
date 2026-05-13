@@ -460,35 +460,18 @@ export default function HomePage() {
         onDismiss={(key) => dismissMutation.mutate({ key })}
       />
 
-      {/* 4. Tab Navigation — Home absorbs My Work */}
-      <div className="flex items-center gap-1 border-b mb-5 overflow-x-auto">
-        {HOME_TABS.map((tab) => {
-          const Icon = tab.icon;
-          const pendingCount = tab.key === "approvals" ? Number(kpis.pendingApprovals) || 0 : 0;
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-                activeTab === tab.key
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30"
-              }`}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {tab.label}
-              {pendingCount > 0 && (
-                <Badge variant="secondary" className="text-[10px] h-4 px-1.5 bg-primary/10 text-primary border-0">
-                  {pendingCount}
-                </Badge>
-              )}
-            </button>
-          );
-        })}
-      </div>
+      {/* "This Week" upcoming-events strip — moved up to where the tab
+          navigation + portfolio-health/workspace block previously rendered.
+          The role-specific portfolio/workspace KPI panels and the Actions /
+          Approvals / Calendar / Meetings / Inbox tab system below have been
+          intentionally removed per product direction; the live Home page now
+          ends at Priorities + Do Next + This Week. The legacy
+          `activeTab === "..."` blocks are kept as dead branches (gated on a
+          state variable that no UI can change) only to minimise diff churn —
+          they never render. */}
+      <UpcomingEventsStrip />
 
-      {/* 5. Tab Content */}
-      {activeTab === "actions" && (
+      {false && activeTab === "actions" && (
         <div className="space-y-6">
 
           {/* === LEADERSHIP LAYOUT (COO, CEO) === */}
@@ -653,25 +636,29 @@ export default function HomePage() {
         </div>
       )}
 
-      {activeTab === "approvals" && (
+      {/* Legacy non-actions tab content — hard-gated off. Without this `false`,
+          a `?tab=approvals` URL or the auto-default-tab effect (which can pick
+          "approvals" for leadership/finance lenses with pending approvals)
+          would still mount these lazy pages below the new minimal Home. */}
+      {false && activeTab === "approvals" && (
         <Suspense fallback={<Skeleton className="h-64 w-full" />}>
           <UnifiedApprovalsQueue />
         </Suspense>
       )}
 
-      {activeTab === "calendar" && (
+      {false && activeTab === "calendar" && (
         <Suspense fallback={<Skeleton className="h-64 w-full" />}>
           <MyWorkCalendarPage />
         </Suspense>
       )}
 
-      {activeTab === "meetings" && (
+      {false && activeTab === "meetings" && (
         <Suspense fallback={<Skeleton className="h-64 w-full" />}>
           <MyWorkMeetingsPage />
         </Suspense>
       )}
 
-      {activeTab === "inbox" && (
+      {false && activeTab === "inbox" && (
         <Suspense fallback={<Skeleton className="h-64 w-full" />}>
           <InboxPage />
         </Suspense>
