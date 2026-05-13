@@ -10,7 +10,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Link, useSearch, useLocation } from "wouter";
 import { PageShell } from "@/components/layout/page-shell";
-import { type AttentionItem } from "@/components/dashboard/AttentionBadges";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { apiRequest } from "@/lib/queryClient";
 import { QueryErrorBanner } from "@/components/QueryErrorBanner";
@@ -192,19 +191,20 @@ function getKpiCards(
   const kpiSource: Record<string, KpiSource> = {
     // \u2500\u2500 Finance \u2014 real server-computed metrics
     revenue_vs_target: { value: money(kpis.receivedInflowFy), icon: <DollarSign className="w-4 h-4" /> },
-    revenue_this_month: { value: money(kpis.receivedInflowFy), icon: <DollarSign className="w-4 h-4" /> },
+    revenue_this_month: { value: money(kpis.revenueOutstandingThisMonth), icon: <DollarSign className="w-4 h-4" /> },
     proposals_pending: { value: money(kpis.receivedInflowFy), icon: <DollarSign className="w-4 h-4" /> },
     pd_tickets_open: { value: money(kpis.plannedRevenueFy), icon: <DollarSign className="w-4 h-4" /> },
     cash_position: { value: money(kpis.grossProfitFy), icon: <DollarSign className="w-4 h-4" /> },
     margin_drift: { value: money(kpis.openExpenditureFy), icon: <DollarSign className="w-4 h-4" /> },
     my_deliverables_due: { value: money(kpis.openExpenditureFy), icon: <DollarSign className="w-4 h-4" /> },
     gp_margin: { value: fmtPct1(kpis.grossMarginPctFy), icon: <TrendingUp className="w-4 h-4" /> },
-    cos_this_month: { value: fmtPct1(kpis.grossMarginPctFy), icon: <TrendingUp className="w-4 h-4" /> },
+    cos_this_month: { value: money(kpis.cosOutstandingThisMonth), icon: <DollarSign className="w-4 h-4" /> },
 
     // \u2500\u2500 Project status \u2014 real metrics
     projects_on_track: { value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
     my_opportunities: { value: stats.totalProjects, icon: <FolderOpen className="w-4 h-4" /> },
     projects_off_track: { value: orNull(stats.redProjects), icon: <AlertTriangle className="w-4 h-4" /> },
+    projects_behind_plan: { value: orNull(kpis.projectsBehindPlan), icon: <Clock className="w-4 h-4" /> },
     milestones_due: { value: orNull(kpis.projectsBehindPlan), icon: <Clock className="w-4 h-4" /> },
     my_overdue_tasks: { value: orNull(kpis.projectsBehindPlan), icon: <Clock className="w-4 h-4" /> },
     my_overdue_deliverables: { value: fmtPct(kpis.averageActualProgressPct), icon: <BarChart3 className="w-4 h-4" /> },
@@ -212,25 +212,13 @@ function getKpiCards(
     overdue_tasks: { value: orNull(kpis.pendingApprovals), icon: <CheckCircle2 className="w-4 h-4" /> },
     my_approvals_pending: { value: orNull(kpis.pendingApprovals), icon: <CheckCircle2 className="w-4 h-4" /> },
     my_approvals: { value: orNull(kpis.pendingApprovals), icon: <CheckCircle2 className="w-4 h-4" /> },
+    pending_approvals_kpi: { value: orNull(kpis.pendingApprovals), icon: <CheckCircle2 className="w-4 h-4" /> },
 
     // \u2500\u2500 Engineering
     design_queue: { value: orNull(kpis.openEngineeringBlockers), icon: <AlertTriangle className="w-4 h-4" /> },
 
-    // \u2500\u2500 Quality \u2014 only Warnings is real today; Open NCRs / Snags / Inspections
-    //    Pending / Corrective Actions Open are unwired metrics.
+    // \u2500\u2500 Quality \u2014 only open_warnings is wired today
     open_warnings: { value: orNull(kpis.openQualityWarnings), icon: <AlertTriangle className="w-4 h-4" /> },
-
-    // \u2500\u2500 HSE \u2014 real metrics
-    incidents_open: { value: orNull(kpis.openIncidents), icon: <AlertTriangle className="w-4 h-4" /> },
-    corrective_actions_due: { value: orNull(kpis.correctiveActionsDue), icon: <Clock className="w-4 h-4" /> },
-    safety_file_compliance: { value: orNull(kpis.safetyCompliance), icon: <ShieldCheck className="w-4 h-4" /> },
-    inspections_overdue: { value: orNull(kpis.inspectionsOverdue), icon: <AlertTriangle className="w-4 h-4" /> },
-
-    // \u2500\u2500 SSEG
-    applications_pending: { value: orNull(kpis.applicationsPending), icon: <Clock className="w-4 h-4" /> },
-    queries_outstanding: { value: orNull(kpis.queriesOutstanding), icon: <AlertTriangle className="w-4 h-4" /> },
-    approvals_due: { value: orNull(kpis.approvalsDue), icon: <CheckCircle2 className="w-4 h-4" /> },
-    rejections_open: { value: orNull(kpis.rejectionsOpen), icon: <AlertTriangle className="w-4 h-4" /> },
   };
 
   const cards: Array<{ label: string; value: string | number; icon: React.ReactNode }> = [];
@@ -239,10 +227,11 @@ function getKpiCards(
     if (seen.has(kpi.label)) continue;
     seen.add(kpi.label);
     const source = kpiSource[kpi.key];
+    if (!source || source.value == null) continue;
     cards.push({
       label: kpi.label,
-      value: source && source.value != null ? source.value : "\u2014",
-      icon: source?.icon ?? <BarChart3 className="w-4 h-4" />,
+      value: source.value,
+      icon: source.icon,
     });
   }
 
@@ -279,8 +268,6 @@ export default function HomePage() {
   const urlTab = new URLSearchParams(searchString).get("tab") as HomeTab | null;
   const [activeTab, setActiveTab] = useState<HomeTab>(urlTab || "actions");
   const [autoTabApplied, setAutoTabApplied] = useState<boolean>(Boolean(urlTab));
-  const [prioritiesExpanded, setPrioritiesExpanded] = useState(false);
-  const [expandedAttention, setExpandedAttention] = useState<string | null>(null);
 
   const { data: dashData, isLoading: dashLoading, isError: dashIsError, error: dashError } = useQuery<any>({
     queryKey: ["/api/lifecycle-board/execution-dashboard"],
@@ -411,67 +398,6 @@ export default function HomePage() {
     }).length;
   }, [myWorkData]);
 
-  const attentionItems = useMemo((): AttentionItem[] => {
-    const items: AttentionItem[] = [];
-    if (stats.redProjects > 0) items.push({ label: "Red RAG Projects", value: stats.redProjects, color: "text-red-600 bg-red-50 border-red-200", href: "/dashboard?rag=Red" });
-    if (Number(kpis.projectsBehindPlan) > 0) items.push({ label: "Behind Plan", value: Number(kpis.projectsBehindPlan), color: "text-amber-700 bg-amber-50 border-amber-200", href: "/dashboard?behindPlanOnly=true" });
-    if (Number(kpis.pendingApprovals) > 0) items.push({ label: "Pending Approvals", value: Number(kpis.pendingApprovals), color: "text-blue-700 bg-blue-50 border-blue-200", href: "/pm/approvals" });
-    if (Number(kpis.openEngineeringBlockers) > 0) items.push({ label: "Eng. Blockers", value: Number(kpis.openEngineeringBlockers), color: "text-violet-700 bg-violet-50 border-violet-200", href: "/dashboard?engineeringBlockersOnly=true" });
-    if (Number(kpis.openQualityWarnings) > 0) items.push({ label: "Quality Warnings", value: Number(kpis.openQualityWarnings), color: "text-orange-700 bg-orange-50 border-orange-200", href: "/dashboard?qualityIssuesOnly=true" });
-    if (myPendingActions > 0) items.push({ label: "My Overdue Actions", value: myPendingActions, color: "text-rose-700 bg-rose-50 border-rose-200", href: "/priorities?tab=my&health=at_risk" });
-    return items;
-  }, [stats, kpis, myPendingActions]);
-
-  /** Build action rows for each attention category so users can act inline */
-  const attentionActionRows = useMemo((): Record<string, Array<{ project: string; issue: string; severity: string; owner: string; link: string }>> => {
-    const actionRows: any[] = dashData?.actionCenter?.rows || [];
-    const projects: any[] = dashData?.projects || [];
-    const myItems: any[] = myWorkData?.items || myWorkData?.tasks || [];
-
-    const map: Record<string, Array<{ project: string; issue: string; severity: string; owner: string; link: string }>> = {};
-
-    // Red RAG Projects — from project data
-    map["Red RAG Projects"] = projects
-      .filter((p: any) => p.rag === "Red")
-      .map((p: any) => ({ project: p.projectName, issue: `RAG: Red`, severity: "High", owner: p.pm || p.pd || "Unassigned", link: `/project/${encodeURIComponent(p.projectName)}` }));
-
-    // Behind Plan — from action center queue
-    map["Behind Plan"] = actionRows
-      .filter((r: any) => r.queue === "Projects Behind Plan")
-      .map((r: any) => ({ project: r.projectName, issue: r.issueTitle, severity: r.severity, owner: r.owner, link: r.link }));
-
-    // Eng. Blockers — from action center queue
-    map["Eng. Blockers"] = actionRows
-      .filter((r: any) => r.queue === "Engineering Bottlenecks")
-      .map((r: any) => ({ project: r.projectName, issue: r.issueTitle, severity: r.severity, owner: r.owner, link: r.link }));
-
-    // Quality Warnings — from action center queue
-    map["Quality Warnings"] = actionRows
-      .filter((r: any) => r.queue === "Quality Issues")
-      .map((r: any) => ({ project: r.projectName, issue: r.issueTitle, severity: r.severity, owner: r.owner, link: r.link }));
-
-    // Pending Approvals — from action center queue
-    map["Pending Approvals"] = actionRows
-      .filter((r: any) => r.queue === "Pending Approvals / Decisions")
-      .map((r: any) => ({ project: r.projectName, issue: r.issueTitle, severity: r.severity, owner: r.owner, link: r.link }));
-
-    // My Overdue Actions — from my work data
-    map["My Overdue Actions"] = myItems
-      .filter((t: any) => {
-        if (!t.dueDate) return false;
-        const isOverdue = new Date(t.dueDate) < new Date();
-        const isOpen = !["complete", "done", "closed", "cancelled"].includes(String(t.status || "").toLowerCase());
-        return isOverdue && isOpen;
-      })
-      .slice(0, 10)
-      .map((t: any) => ({ project: t.projectName || "—", issue: t.title || t.name || "Overdue task", severity: "High", owner: "You", link: "/priorities?tab=my&health=at_risk" }));
-
-    return map;
-  }, [dashData, myWorkData]);
-
-  const visiblePriorities = companyPriorities?.slice(0, 3) || [];
-  const hiddenPriorities = companyPriorities?.slice(3) || [];
-
   /** Render a single KPI metric card.
    *
    * Every card on the home screen should drill into the source of truth.
@@ -600,63 +526,12 @@ export default function HomePage() {
         <p className="text-sm text-muted-foreground mt-0.5" data-testid="text-role-badge">{roleLabel}</p>
       </div>
 
-      {/* 2. Company Priorities — shown for all roles */}
-      {(companyPriorities && companyPriorities.length > 0) && (
-        <Collapsible open={prioritiesExpanded} onOpenChange={setPrioritiesExpanded}>
-          <Card className="border-border/60 mb-5" data-testid="card-company-priorities">
-            <CardContent className="p-5">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2.5">
-                  <Flame className="w-4 h-4 text-primary" />
-                  <h2 className="text-sm font-semibold text-foreground">Company Priorities</h2>
-                  <Badge variant="secondary" className="text-[11px]">{companyPriorities.length} active</Badge>
-                </div>
-                <Link href="/priorities">
-                  <span className="text-xs text-primary hover:underline font-medium cursor-pointer">View all</span>
-                </Link>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {visiblePriorities.map((priority: any, i: number) => (
-                  <PriorityCard key={priority.id || i} priority={priority} index={i} />
-                ))}
-              </div>
-              {hiddenPriorities.length > 0 && (
-                <>
-                  <CollapsibleContent>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
-                      {hiddenPriorities.map((priority: any, i: number) => (
-                        <PriorityCard key={priority.id || (i + 3)} priority={priority} index={i + 3} />
-                      ))}
-                    </div>
-                  </CollapsibleContent>
-                  <CollapsibleTrigger asChild>
-                    <button className="mt-3 flex items-center gap-1 text-xs text-primary hover:underline font-medium mx-auto">
-                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${prioritiesExpanded ? "rotate-180" : ""}`} />
-                      {prioritiesExpanded ? "Show less" : `Show ${hiddenPriorities.length} more`}
-                    </button>
-                  </CollapsibleTrigger>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </Collapsible>
-      )}
-      {!companyPriorities && prioritiesLoading && (
-        <div className="mb-5">
-          <Skeleton className="h-5 w-48 mb-2.5" />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <Skeleton className="h-24 w-full rounded-lg" />
-            <Skeleton className="h-24 w-full rounded-lg" />
-          </div>
-        </div>
-      )}
-
-      {/* 3. Do Next — central, role-aware action strip. Replaces the legacy
-          "Attention Needed" badges. Each chip is a direct, two-click resolution
-          path; snooze/dismiss is server-persisted so it follows the user. */}
-      <DoNextStrip
-        items={doNextItems}
-        loading={doNextLoading}
+      {/* 2+3. Focus Panel — Company Priorities (left) + Do Next (right) merged */}
+      <FocusPanel
+        priorities={companyPriorities ?? []}
+        prioritiesLoading={prioritiesLoading && !companyPriorities}
+        doNextItems={doNextItems}
+        doNextLoading={doNextLoading}
         onSnooze={(key, hours) => snoozeMutation.mutate({ key, hours })}
         onDismiss={(key) => dismissMutation.mutate({ key })}
       />
@@ -1039,6 +914,124 @@ function DoNextStrip({
           <DoNextChip key={item.key} item={item} onSnooze={onSnooze} onDismiss={onDismiss} />
         ))}
       </div>
+    </div>
+  );
+}
+
+function FocusPanel({
+  priorities,
+  prioritiesLoading,
+  doNextItems,
+  doNextLoading,
+  onSnooze,
+  onDismiss,
+}: {
+  priorities: any[];
+  prioritiesLoading: boolean;
+  doNextItems: DoNextItem[];
+  doNextLoading: boolean;
+  onSnooze: (key: string, hours: number) => void;
+  onDismiss: (key: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const hasPriorities = priorities.length > 0 || prioritiesLoading;
+  const hasActions = doNextItems.length > 0 || doNextLoading;
+
+  if (!hasPriorities && !hasActions) return null;
+
+  const visiblePriorities = priorities.slice(0, 3);
+  const hiddenPriorities = priorities.slice(3);
+
+  return (
+    <div className="mb-5 grid grid-cols-1 lg:grid-cols-2 gap-4" data-testid="section-focus-panel">
+      {/* Company Priorities */}
+      {hasPriorities && (
+        <Card className="border-border/60" data-testid="card-company-priorities">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2.5">
+                <Flame className="w-4 h-4 text-primary" />
+                <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider">Company Priorities</h2>
+                {!prioritiesLoading && priorities.length > 0 && (
+                  <Badge variant="secondary" className="text-[11px]">{priorities.length} active</Badge>
+                )}
+              </div>
+              <Link href="/priorities">
+                <span className="text-xs text-primary hover:underline font-medium cursor-pointer">View all</span>
+              </Link>
+            </div>
+            {prioritiesLoading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-20 w-full rounded-lg" />
+                <Skeleton className="h-20 w-full rounded-lg" />
+              </div>
+            ) : (
+              <Collapsible open={expanded} onOpenChange={setExpanded}>
+                <div className="space-y-2">
+                  {visiblePriorities.map((priority: any, i: number) => (
+                    <PriorityCard key={priority.id || i} priority={priority} index={i} />
+                  ))}
+                </div>
+                {hiddenPriorities.length > 0 && (
+                  <>
+                    <CollapsibleContent>
+                      <div className="space-y-2 mt-2">
+                        {hiddenPriorities.map((priority: any, i: number) => (
+                          <PriorityCard key={priority.id || (i + 3)} priority={priority} index={i + 3} />
+                        ))}
+                      </div>
+                    </CollapsibleContent>
+                    <CollapsibleTrigger asChild>
+                      <button className="mt-3 flex items-center gap-1 text-xs text-primary hover:underline font-medium mx-auto">
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} />
+                        {expanded ? "Show less" : `Show ${hiddenPriorities.length} more`}
+                      </button>
+                    </CollapsibleTrigger>
+                  </>
+                )}
+              </Collapsible>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Do Next */}
+      <Card className={`border-border/60 ${!hasPriorities ? "lg:col-span-2" : ""}`} data-testid="card-do-next">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2.5">
+              <Sparkles className="w-4 h-4 text-primary" />
+              <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider">Do Next</h2>
+              {!doNextLoading && doNextItems.length > 0 && (
+                <Badge variant="secondary" className="text-[11px]" data-testid="badge-do-next-count">
+                  {doNextItems.length} {doNextItems.length === 1 ? "action" : "actions"}
+                </Badge>
+              )}
+            </div>
+            {!doNextLoading && doNextItems.length > 0 && (
+              <span className="text-[11px] text-muted-foreground hidden sm:block">Ranked · snooze or dismiss</span>
+            )}
+          </div>
+          {doNextLoading ? (
+            <div className="flex flex-wrap gap-2">
+              {[0, 1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-10 w-40 rounded-lg" />
+              ))}
+            </div>
+          ) : doNextItems.length === 0 ? (
+            <div className="flex items-center gap-3 py-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+              <p className="text-sm text-emerald-900">You're clear — no actions need you right now.</p>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {doNextItems.map((item) => (
+                <DoNextChip key={item.key} item={item} onSnooze={onSnooze} onDismiss={onDismiss} />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
