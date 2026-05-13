@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useLocation } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -10,7 +11,8 @@ import {
 import { useExecutionData } from "./use-execution-data";
 
 export default function OverviewPage() {
-  const { kpis, filteredProjects, openProject, dashboard } = useExecutionData();
+  const { kpis, filteredProjects, allProjects, openProject, dashboard } = useExecutionData();
+  const [, setLocation] = useLocation();
   const [scheduleSheetOpen, setScheduleSheetOpen] = useState(false);
   const [contractSheetOpen, setContractSheetOpen] = useState(false);
   const [revenueSheetOpen, setRevenueSheetOpen] = useState(false);
@@ -44,7 +46,7 @@ export default function OverviewPage() {
           label="On Schedule Rate"
           value={`${kpis.onScheduleRate}%`}
           valueClass={kpis.onScheduleRate >= 70 ? "text-emerald-600" : kpis.onScheduleRate >= 50 ? "text-amber-600" : "text-red-600"}
-          sub={`${onScheduleCount} of ${filteredProjects.length} projects within ±5% tolerance`}
+          sub={`${onScheduleCount} of ${filteredProjects.length} projects not more than 5% behind expected`}
           icon={<Activity className="w-5 h-5 text-emerald-600" />}
           iconBg="bg-emerald-100"
           cta="View schedule breakdown"
@@ -95,8 +97,8 @@ export default function OverviewPage() {
           sub="Cashflow revenue series expected Mon–Sun this week · all active projects"
           icon={<Banknote className="w-5 h-5 text-blue-600" />}
           iconBg="bg-blue-100"
-          cta="View by project"
-          onClick={() => setRevenueSheetOpen(true)}
+          cta="Open cashflow register"
+          onClick={() => setLocation("/cashflow")}
         />
 
         {/* 7 — Outflows This Week */}
@@ -107,8 +109,8 @@ export default function OverviewPage() {
           sub="Cashflow expenditure series expected Mon–Sun this week · all active projects"
           icon={<TrendingDown className="w-5 h-5 text-red-600" />}
           iconBg="bg-red-100"
-          cta="View by project"
-          onClick={() => setCosSheetOpen(true)}
+          cta="Open cashflow register"
+          onClick={() => setLocation("/cashflow")}
         />
       </div>
 
@@ -122,7 +124,7 @@ export default function OverviewPage() {
             </SheetTitle>
           </SheetHeader>
           <p className="text-[11px] text-muted-foreground mt-2">
-            Sorted by open revenue (largest first). Figures are for the current financial year across all active projects regardless of active filters.
+            Sorted by open revenue (largest first). Figures are for the current financial year across all active projects.
           </p>
           <div className="mt-3 border rounded-lg overflow-auto max-h-[72vh]">
             <table className="w-full text-sm">
@@ -137,7 +139,7 @@ export default function OverviewPage() {
                 </tr>
               </thead>
               <tbody>
-                {[...filteredProjects]
+                {[...allProjects]
                   .sort((a, b) => (b.openInflowFy ?? 0) - (a.openInflowFy ?? 0))
                   .map((p) => (
                     <tr
@@ -162,10 +164,10 @@ export default function OverviewPage() {
               </tbody>
               <tfoot className="bg-muted/40 border-t-2 border-border sticky bottom-0">
                 <tr className="text-[11px] font-semibold">
-                  <td className="py-2 px-3" colSpan={2}>Total ({filteredProjects.length} projects)</td>
-                  <td className="py-2 px-3 text-right tabular-nums">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.plannedRevenueFy, 0))}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-emerald-600">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.receivedInflowFy, 0))}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-amber-600">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.openInflowFy, 0))}</td>
+                  <td className="py-2 px-3" colSpan={2}>Total ({allProjects.length} projects)</td>
+                  <td className="py-2 px-3 text-right tabular-nums">{formatCurrencyFull(allProjects.reduce((s, p) => s + p.plannedRevenueFy, 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-emerald-600">{formatCurrencyFull(allProjects.reduce((s, p) => s + p.receivedInflowFy, 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-amber-600">{formatCurrencyFull(allProjects.reduce((s, p) => s + p.openInflowFy, 0))}</td>
                   <td></td>
                 </tr>
               </tfoot>
@@ -184,7 +186,7 @@ export default function OverviewPage() {
             </SheetTitle>
           </SheetHeader>
           <p className="text-[11px] text-muted-foreground mt-2">
-            Sorted by open expenditure (largest first). Figures are for the current financial year across all active projects regardless of active filters.
+            Sorted by open expenditure (largest first). Figures are for the current financial year across all active projects.
           </p>
           <div className="mt-3 border rounded-lg overflow-auto max-h-[72vh]">
             <table className="w-full text-sm">
@@ -199,7 +201,7 @@ export default function OverviewPage() {
                 </tr>
               </thead>
               <tbody>
-                {[...filteredProjects]
+                {[...allProjects]
                   .sort((a, b) => (b.openExpenditureFy ?? 0) - (a.openExpenditureFy ?? 0))
                   .map((p) => (
                     <tr
@@ -224,10 +226,10 @@ export default function OverviewPage() {
               </tbody>
               <tfoot className="bg-muted/40 border-t-2 border-border sticky bottom-0">
                 <tr className="text-[11px] font-semibold">
-                  <td className="py-2 px-3" colSpan={2}>Total ({filteredProjects.length} projects)</td>
-                  <td className="py-2 px-3 text-right tabular-nums">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.plannedExpenditureFy, 0))}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-emerald-600">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.paidExpenditureFy, 0))}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-orange-600">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.openExpenditureFy, 0))}</td>
+                  <td className="py-2 px-3" colSpan={2}>Total ({allProjects.length} projects)</td>
+                  <td className="py-2 px-3 text-right tabular-nums">{formatCurrencyFull(allProjects.reduce((s, p) => s + p.plannedExpenditureFy, 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-emerald-600">{formatCurrencyFull(allProjects.reduce((s, p) => s + p.paidExpenditureFy, 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-orange-600">{formatCurrencyFull(allProjects.reduce((s, p) => s + p.openExpenditureFy, 0))}</td>
                   <td></td>
                 </tr>
               </tfoot>

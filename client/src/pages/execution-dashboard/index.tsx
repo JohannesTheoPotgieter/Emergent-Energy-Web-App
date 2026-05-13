@@ -66,9 +66,16 @@ export default function ExecutionDashboard() {
               </p>
             </div>
           </div>
-          <Button variant="outline" size="sm" onClick={ctx.loadData} className="gap-1.5 shrink-0">
-            <RefreshCw className="w-3.5 h-3.5" /><span className="hidden sm:inline">Refresh</span>
-          </Button>
+          <div className="flex items-center gap-2 shrink-0">
+            {ctx.dashboard?.dataFreshness?.generatedAt && (
+              <span className="text-[11px] text-muted-foreground hidden sm:inline">
+                Data as of {new Date(ctx.dashboard.dataFreshness.generatedAt).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Africa/Johannesburg" })}
+              </span>
+            )}
+            <Button variant="outline" size="sm" onClick={ctx.loadData} className="gap-1.5">
+              <RefreshCw className="w-3.5 h-3.5" /><span className="hidden sm:inline">Refresh</span>
+            </Button>
+          </div>
         </div>
 
         <OverviewPage />
