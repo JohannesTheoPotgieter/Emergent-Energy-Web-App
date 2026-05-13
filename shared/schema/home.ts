@@ -34,16 +34,17 @@ export type DoNextState = typeof doNextState.$inferSelect;
  * Used both for ranking weights and for the chip icon/colour mapping on the client.
  */
 export const DO_NEXT_KINDS = [
-  "approval",        // pending gate / exception / handover / engineering / quality / general approval
-  "rag",             // a project flipped or stayed Red
-  "behind_plan",     // milestone or project behind plan
-  "overdue_task",    // assigned task past its due date
-  "eng_blocker",     // engineering bottleneck / blocker
-  "quality_issue",   // open NCR / quality warning
-  "hse_incident",    // open HSE incident
-  "blocked_priority",// company priority blocked
-  "import_drift",    // tracker re-import variance vs prior snapshot
-  "qb_sync_failed",  // QuickBooks sync failure
+  "approval",           // pending gate / exception / handover / engineering / quality / general approval
+  "rag",                // a project flipped or stayed Red
+  "behind_plan",        // milestone or project behind plan
+  "overdue_task",       // assigned task past its due date
+  "eng_blocker",        // engineering bottleneck / blocker
+  "quality_issue",      // open NCR / quality warning
+  "hse_incident",       // open HSE incident
+  "blocked_priority",   // company priority blocked
+  "escalated_priority", // a priority was recently escalated (needs attention from the escalation target)
+  "import_drift",       // tracker re-import variance vs prior snapshot
+  "qb_sync_failed",     // QuickBooks sync failure
 ] as const;
 
 export type DoNextKind = typeof DO_NEXT_KINDS[number];
