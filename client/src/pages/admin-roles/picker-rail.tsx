@@ -62,8 +62,7 @@ export function PickerRail({ mode, onModeChange, query, onQueryChange, selectedK
 
   return (
     <aside
-      className="flex w-[320px] shrink-0 flex-col rounded-lg border border-gray-200 bg-white shadow-sm"
-      style={{ maxHeight: "calc(100vh - 8rem)" }}
+      className="flex w-full lg:w-[320px] lg:shrink-0 flex-col rounded-lg border border-gray-200 bg-white shadow-sm max-h-[60vh] lg:max-h-[calc(100vh-8rem)]"
       data-testid="picker-rail"
     >
       {/* Mode toggle */}
