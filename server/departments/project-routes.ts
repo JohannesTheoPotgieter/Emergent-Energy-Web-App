@@ -1136,7 +1136,7 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
         task_status_counts: taskCountsByProject.get(projectName) || {},
         phase_updated_at: info?.phaseUpdatedAt || null,
         has_tracker_import: importedProjectNames.has(projectName) || importedProjectNames.has(projectName.replace(/_/g, ' ')),
-        is_active: (info?.archivedStatus ?? 'ACTIVE') === 'ACTIVE' && info?.phase?.toLowerCase() !== "gone",
+        is_active: info != null && (info.archivedStatus ?? 'ACTIVE') === 'ACTIVE' && info.phase?.toLowerCase() !== "gone",
         rag_status: info?.ragStatus ?? null,
         pd_pm_handover_status: handover?.status || "DRAFT",
         pd_pm_handover_rejection_reason: handover?.rejection_reason || null,
@@ -1158,7 +1158,7 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
     res.json(projectsSummary);
   } catch (error) {
     console.error("Projects summary fetch error:", error);
-    res.status(500).json({ error: "Failed to fetch projects summary", message: "Failed to fetch projects summary" });
+    throw error;
   }
 });
 

@@ -1284,12 +1284,22 @@ export function registerLifecycleRoutes(app: Express) {
         }
       }
 
-      const engTasks: any[] = await db.execute(sql`
-        SELECT wi.project_id AS "projectId", pi.project_name AS "projectName", wi.status, wi.end_date AS "dueDate",
-               wi.blocker_reason AS "blockerReason", wi.priority, wi.owner_user_id AS "ownerUserId", wi.title
-        FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id
-        WHERE wi.deleted_at IS NULL AND wi.workstream = 'ENG'
-      `).then((r: any) => r.rows || r);
+      const activeProjectIds = activeProjects.map((p) => p.id);
+      const engTasks = activeProjectIds.length > 0
+        ? await db.select({
+            projectId: workItems.projectId,
+            projectName: projectInfo.projectName,
+            status: workItems.status,
+            dueDate: workItems.endDate,
+            blockerReason: workItems.blockerReason,
+            priority: workItems.priority,
+            ownerUserId: workItems.ownerUserId,
+            title: workItems.title,
+          })
+          .from(workItems)
+          .innerJoin(projectInfo, eq(workItems.projectId, projectInfo.id))
+          .where(and(isNull(workItems.deletedAt), eq(workItems.workstream, "ENG"), inArray(workItems.projectId, activeProjectIds)))
+        : [];
       const qualityRows = await db.select(selectDefinedFields({ projectName: qcWarning.projectName, status: qcWarning.status, severity: qcWarning.severity, title: qcWarning.title, dueDate: qcWarning.dueDate, ownerUserId: qcWarning.ownerUserId })).from(qcWarning);
       const approvalRows = await db.select(selectDefinedFields({ projectId: approvals.projectId, status: approvals.status, title: approvals.title, dueDate: approvals.dueDate, assignedApprover: approvals.assignedApprover })).from(approvals);
       const importRuns = await db.select(selectDefinedFields({ projectId: smartImportRuns.projectId, projectName: smartImportRuns.projectName, uploadedAt: smartImportRuns.uploadedAt })).from(smartImportRuns);
@@ -1481,6 +1491,7 @@ export function registerLifecycleRoutes(app: Express) {
       const dayOfWeek = nowSast.getUTCDay(); // 0=Sun, in SAST
       const weekStart = new Date(nowSast);
       weekStart.setUTCDate(nowSast.getUTCDate() - ((dayOfWeek + 6) % 7)); // Mon SAST
+      weekStart.setUTCHours(0, 0, 0, 0); // zero time so ISO slice gives the SAST date not day-1
       const weekEnd = new Date(weekStart);
       weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
       const weekStartKey = weekStart.toISOString().slice(0, 10);

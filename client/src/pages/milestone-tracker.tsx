@@ -280,9 +280,12 @@ function ProjectCard({
             </span>
           </div>
         )}
-        <div className="flex items-center gap-1.5 w-[80px] shrink-0">
-          <Progress value={project.projectPctComplete} className="h-1.5 flex-1" />
-          <span className="text-[9px] font-semibold tabular-nums">{project.projectPctComplete}%</span>
+        <div className="flex flex-col gap-0.5 w-[80px] shrink-0">
+          <span className="text-[8px] text-muted-foreground uppercase tracking-wide">Rev collected</span>
+          <div className="flex items-center gap-1">
+            <Progress value={project.projectPctComplete} className="h-1.5 flex-1" />
+            <span className="text-[9px] font-semibold tabular-nums">{project.projectPctComplete}%</span>
+          </div>
         </div>
         <div className="hidden md:block w-[160px] shrink-0" onClick={(e) => e.stopPropagation()}>
           <LatestUpdateCellWrapper project={project} onSaved={onSaved} />
@@ -484,26 +487,33 @@ export default function MilestoneTrackerPage() {
 
   const completedCount = useMemo(() => projectRows.filter(p => p.projectPctComplete >= 100).length, [projectRows]);
 
-  // 3-month revenue forecast — bucket unpaid milestones by calendar month
+  // 4-month revenue forecast — bucket unpaid milestones by calendar month
+  // Overdue milestones (past months) get a dedicated "Overdue" bucket at the front.
   const revenueForecast = useMemo(() => {
     const now = new Date();
-    const buckets: { key: string; label: string; total: number }[] = [];
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const overdueBucket = { key: "__overdue__", label: "Overdue", total: 0 };
+    const forwardBuckets: { key: string; label: string; total: number }[] = [];
     for (let i = 0; i < 4; i++) {
       const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       const label = d.toLocaleDateString("en-ZA", { month: "short", year: "2-digit" });
-      buckets.push({ key, label, total: 0 });
+      forwardBuckets.push({ key, label, total: 0 });
     }
     for (const p of projectRows) {
       for (const m of p.milestones) {
         if ((m.status === "planned" || m.status === "invoiced" || m.status === "overdue") && m.milestoneAmount && m.date) {
           const monthKey = m.date.substring(0, 7);
-          const bucket = buckets.find(b => b.key === monthKey);
-          if (bucket) bucket.total += parseFloat(m.milestoneAmount) || 0;
+          const fwdBucket = forwardBuckets.find(b => b.key === monthKey);
+          if (fwdBucket) {
+            fwdBucket.total += parseFloat(m.milestoneAmount) || 0;
+          } else if (monthKey < currentMonthKey) {
+            overdueBucket.total += parseFloat(m.milestoneAmount) || 0;
+          }
         }
       }
     }
-    return buckets;
+    return overdueBucket.total > 0 ? [overdueBucket, ...forwardBuckets] : forwardBuckets;
   }, [projectRows]);
 
   const handleCsvExport = () => {
@@ -589,7 +599,10 @@ export default function MilestoneTrackerPage() {
             <Calendar className="h-3.5 w-3.5" />Revenue Forecast:
           </span>
           {revenueForecast.map(b => (
-            <span key={b.key} className={`text-[11px] px-2 py-0.5 rounded-md border ${b.total > 0 ? "bg-blue-50 text-blue-700 border-blue-200" : "text-muted-foreground border-border"}`}>
+            <span key={b.key} className={`text-[11px] px-2 py-0.5 rounded-md border ${
+              b.key === "__overdue__" ? "bg-red-50 text-red-700 border-red-200" :
+              b.total > 0 ? "bg-blue-50 text-blue-700 border-blue-200" : "text-muted-foreground border-border"
+            }`}>
               {b.label} {b.total > 0 ? `R${(b.total / 1_000_000).toFixed(1)}M` : "—"}
             </span>
           ))}

@@ -1523,7 +1523,7 @@ export default function ProjectsSummary() {
     }
     // A4: Quick filter tabs
     if (quickFilter === "behind_plan") {
-      result = result.filter((p) => (p.delta_vs_expected ?? 0) < -0.1);
+      result = result.filter((p) => (p.delta_vs_expected ?? 0) < -0.05);
     } else if (quickFilter === "needs_attention") {
       result = result.filter((p) => p.rag_status === "Red" || p.rag_status === "Amber" || (p.escalation_level && p.escalation_level !== "None"));
     } else if (quickFilter === "my_projects") {
