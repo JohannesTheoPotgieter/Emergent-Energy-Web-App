@@ -105,7 +105,7 @@ const ENGINEER_CONFIG: RoleDashboardConfig = {
 const PD_CONFIG: RoleDashboardConfig = {
   kpis: [
     { key: "my_opportunities", label: "Total Projects" },
-    { key: "handover_readiness", label: "Active Projects" },
+    { key: "projects_off_track", label: "Red RAG Projects" },
     { key: "pd_tickets_open", label: "Planned Revenue (FY)" },
     { key: "proposals_pending", label: "Received Inflow (FY)" },
   ],
@@ -121,10 +121,10 @@ const PD_CONFIG: RoleDashboardConfig = {
 
 const FINANCE_CONFIG: RoleDashboardConfig = {
   kpis: [
-    { key: "revenue_this_month", label: "Revenue This Month" },
-    { key: "cos_this_month", label: "COS This Month" },
-    { key: "cash_position", label: "Cash Position" },
-    { key: "margin_drift", label: "Margin Drift" },
+    { key: "revenue_this_month", label: "Revenue Outstanding" },
+    { key: "cos_this_month", label: "COS Outstanding" },
+    { key: "cash_position", label: "Gross Profit (FY)" },
+    { key: "margin_drift", label: "Open Expenditure (FY)" },
   ],
   attentionPriority: ["invoices_overdue", "payment_due", "margin_drift", "budget_deviation"],
   quickActions: [
@@ -199,10 +199,10 @@ const DEFAULT_CONFIG: RoleDashboardConfig = {
 
 const HSE_CONFIG: RoleDashboardConfig = {
   kpis: [
-    { key: "incidents_open", label: "Open Incidents" },
-    { key: "corrective_actions_due", label: "Corrective Actions Due" },
-    { key: "safety_file_compliance", label: "Safety File Compliance" },
-    { key: "inspections_overdue", label: "Inspections Overdue" },
+    { key: "projects_off_track", label: "Red RAG Projects" },
+    { key: "projects_behind_plan", label: "Behind Plan" },
+    { key: "open_warnings", label: "Quality Warnings" },
+    { key: "pending_approvals_kpi", label: "Pending Approvals" },
   ],
   attentionPriority: ["safety_incidents", "overdue_corrective_actions", "audit_findings", "compliance_gaps"],
   quickActions: [
@@ -216,10 +216,10 @@ const HSE_CONFIG: RoleDashboardConfig = {
 
 const SSEG_CONFIG: RoleDashboardConfig = {
   kpis: [
-    { key: "applications_pending", label: "Applications Pending" },
-    { key: "queries_outstanding", label: "Queries Outstanding" },
-    { key: "approvals_due", label: "Approvals Due" },
-    { key: "rejections_open", label: "Rejections Open" },
+    { key: "projects_on_track", label: "Active Projects" },
+    { key: "projects_off_track", label: "Red RAG Projects" },
+    { key: "pending_approvals_kpi", label: "Pending Approvals" },
+    { key: "milestones_due", label: "Projects Behind Plan" },
   ],
   attentionPriority: ["response_due", "missing_documents", "authority_queries", "expired_approvals"],
   quickActions: [
