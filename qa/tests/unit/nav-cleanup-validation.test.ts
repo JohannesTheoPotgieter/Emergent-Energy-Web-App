@@ -51,7 +51,7 @@ describe("nav cleanup — six-tab COO spec", () => {
     ]);
   });
 
-  it("Finance has the five locked items in spec order", () => {
+  it("Finance has the locked items and operations in spec order", () => {
     const section = findTop("Finance");
     expect(section.secondary.map((item) => item.path)).toEqual([
       "/cashflow",
@@ -59,6 +59,9 @@ describe("nav cleanup — six-tab COO spec", () => {
       "/revenue-tracker",
       "/finance/gp/company",
       "/fye-revenue-tracking",
+      "/finance/quickbooks",
+      "/payment-request-board",
+      "/po-approval-board",
     ]);
   });
 

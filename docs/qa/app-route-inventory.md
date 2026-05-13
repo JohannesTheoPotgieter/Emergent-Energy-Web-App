@@ -1,10 +1,10 @@
 # App Route Inventory
 
-**Generated** 2026-05-11T12:05:19.965Z by `script/test-routes.ts`. Do not hand-edit — regenerate with `npm run test:routes`.
+**Generated** 2026-05-13T13:45:17.586Z by `script/test-routes.ts`. Do not hand-edit — regenerate with `npm run test:routes`.
 
 Source: `client/src/config/page-registry.ts`
 
-Total registered paths: 176
+Total registered paths: 183
 
 | Path | Title | Nav group | Permission |
 |------|-------|-----------|------------|
@@ -25,8 +25,10 @@ Total registered paths: 176
 | `/admin/document-types` | — | SYSTEM | admin_roles |
 | `/admin/email-linker-dev` | — | SYSTEM | admin_roles |
 | `/admin/eng-templates` | — | SYSTEM | admin |
+| `/admin/functionality` | — | SYSTEM | admin_roles |
 | `/admin/handover-health` | — | SYSTEM | handover |
 | `/admin/import-control-tower` | — | SYSTEM | admin |
+| `/admin/integrations` | — | SYSTEM | admin_roles |
 | `/admin/kpi-traceability` | — | SYSTEM | admin |
 | `/admin/legacy-utilities` | — | — | — |
 | `/admin/lessons` | — | SYSTEM | handover |
@@ -69,10 +71,12 @@ Total registered paths: 176
 | `/ee-info` | — | KNOWLEDGE | ee_info |
 | `/engineering` | — | ENGINEERING | engineering |
 | `/engineering/audit` | — | SYSTEM | admin |
+| `/engineering/documents` | — | ENGINEERING | engineering |
 | `/engineering/standup` | — | ENGINEERING | standups |
 | `/engineering/tasks` | — | ENGINEERING | eng_tasks |
 | `/exceptions` | — | — | — |
 | `/execution-board` | — | PROJECT_MANAGEMENT | execution_board |
+| `/execution-board/construction` | — | — | execution_board |
 | `/execution-board/finance` | — | — | execution_board |
 | `/execution-board/program` | — | — | execution_board |
 | `/execution-dashboard` | — | PROJECT_MANAGEMENT | execution_board |
@@ -157,9 +161,12 @@ Total registered paths: 176
 | `/projects/:projectId/revenue-tracking` | — | FINANCE | revenue_tracker |
 | `/quality` | — | QUALITY | quality |
 | `/quality/dashboard` | — | — | quality |
+| `/quality/documents` | — | QUALITY | quality |
 | `/quality/ncr/:id` | — | — | quality |
 | `/quality/ncrs` | — | — | quality |
+| `/quality/tasks` | — | QUALITY | quality |
 | `/quickbooks` | — | — | financials |
+| `/reports` | — | — | — |
 | `/reports/center` | — | REPORTS | reports |
 | `/reports/engineering/monthly` | — | REPORTS | reports |
 | `/reports/engineering/monthly/:month/project/:projectId` | — | — | reports |

@@ -30,11 +30,11 @@ const roleQuickActions: Record<string, QuickAction[]> = {
   engineering: [
     { label: "Engineering Requests", description: "Triage new requests and assignments.", path: "/engineering/tasks" },
     { label: "Engineering Dashboard", description: "Monitor throughput and constraints.", path: "/engineering" },
-    { label: "Review Queue", description: "Complete assigned technical reviews.", path: "/engineering/inbox" },
-    { label: "PD Handover", description: "Coordinate technical handover items.", path: "/pd/pm-handover" },
+    { label: "Review Queue", description: "Complete assigned technical reviews.", path: "/engineering/tasks" },
+    { label: "PM Handover Review", description: "Coordinate technical handover items.", path: "/pm/handover-review" },
   ],
   finance: [
-    { label: "PO Approvals", description: "Approve pending procurement requests.", path: "/my-work/approvals" },
+    { label: "PO Approvals", description: "Approve pending procurement requests.", path: "/po-approval-board" },
     { label: "Invoice Matching", description: "Resolve invoice linking and gaps.", path: "/actions/launchpad?action=link-invoice" },
     { label: "COS Tracker", description: "Check budget vs actual exceptions.", path: "/cos" },
     { label: "Cashflow", description: "Review near-term cashflow posture.", path: "/cashflow" },
@@ -45,7 +45,7 @@ const roleQuickActions: Record<string, QuickAction[]> = {
     { label: "My Approvals", description: "Resolve quality sign-off dependencies.", path: "/my-work/approvals" },
   ],
   admin: [
-    { label: "Admin Control Center", description: "Monitor system governance and health.", path: "/admin/control-center" },
+    { label: "Settings", description: "Monitor system governance and health.", path: "/settings" },
     { label: "Roles & Permissions", description: "Manage access and permissions.", path: "/admin/roles" },
     { label: "Company Priorities", description: "Manage company-wide priorities.", path: "/company-priorities" },
   ],

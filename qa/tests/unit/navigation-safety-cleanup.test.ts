@@ -17,7 +17,7 @@ describe("navigation safety cleanup", () => {
 
   it("keeps legacy admin redirects canonical", () => {
     const byPath = new Map(LEGACY_REDIRECTS.map((r) => [r.path, r.redirectTo]));
-    expect(byPath.get("/admin/control-center")).toBe("/admin/roles");
+    expect(byPath.get("/admin/control-center")).toBe("/settings");
     expect(byPath.get("/admin-settings")).toBe("/admin/settings");
   });
 

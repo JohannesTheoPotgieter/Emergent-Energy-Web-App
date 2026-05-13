@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,12 +14,21 @@ import OverviewPage from "./OverviewPage";
 import ProgramPage from "./ProgramPage";
 import ConstructionPage from "./ConstructionPage";
 import FinancePage from "./FinancePage";
+import {
+  EXECUTION_DASHBOARD_TABS,
+  getExecutionDashboardPathForTab,
+  getExecutionDashboardTabFromPath,
+  type ExecutionDashboardTab,
+} from "./route-tabs";
 
 export default function ExecutionDashboard() {
   const { allowed: canView } = usePermission("execution_board", "view");
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const ctx = useExecutionDataProvider(setLocation);
-  const [activeTab, setActiveTab] = useState("overview");
+  const activeTab = getExecutionDashboardTabFromPath(location);
+  const handleTabChange = (tab: string) => {
+    setLocation(getExecutionDashboardPathForTab(tab as ExecutionDashboardTab));
+  };
 
   if (ctx.loading) {
     return (
@@ -84,12 +93,11 @@ export default function ExecutionDashboard() {
         </div>
 
         {/* Tab navigation */}
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <Tabs value={activeTab} onValueChange={handleTabChange}>
           <TabsList className="flex-wrap h-auto gap-1">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="programme">Programme</TabsTrigger>
-            <TabsTrigger value="construction">Construction</TabsTrigger>
-            <TabsTrigger value="finance">Finance</TabsTrigger>
+            {EXECUTION_DASHBOARD_TABS.map((tab) => (
+              <TabsTrigger key={tab.value} value={tab.value}>{tab.label}</TabsTrigger>
+            ))}
           </TabsList>
 
           <TabsContent value="overview" className="mt-5">

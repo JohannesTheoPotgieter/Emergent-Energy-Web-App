@@ -4,14 +4,13 @@ import { PageLayout } from "@/components/layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  Shield, FileText, Puzzle, ScrollText,
-  Workflow, Database, Activity, AlertTriangle, ArrowRight,
-  Link as LinkIcon,
+  Shield, ScrollText, ToggleLeft, AlertTriangle, ArrowRight,
+  Plug,
 } from "lucide-react";
 import { isSuperAdmin } from "@/lib/access-control";
 
 /**
- * Settings home — the super-user control surface.
+ * Settings home - the super-user control surface.
  *
  * Replaces the cluttered "what does what?" feel of the previous admin
  * pages by naming every section, giving each a one-line description of
@@ -20,7 +19,7 @@ import { isSuperAdmin } from "@/lib/access-control";
  * matching the locked rule.
  *
  * Actionable rule: every card is a direct link to the tool that does
- * the job named on the card — no landing-then-looking around.
+ * the job named on the card - no landing-then-looking around.
  */
 
 interface SettingsCardDef {
@@ -40,117 +39,44 @@ interface SettingsGroupDef {
 
 const GROUPS: SettingsGroupDef[] = [
   {
-    title: "People",
-    description: "Who can do what in the app.",
+    title: "Core Settings",
+    description: "The four supported administration surfaces.",
     cards: [
       {
         key: "roles",
         title: "Roles & Permissions",
-        description: "Assign users to roles, link Microsoft identities, and configure which pages each role sees. One surface for everything people-related.",
+        description: "Assign users to roles, link Microsoft identities, and configure which pages each role sees.",
         href: "/admin/roles",
         icon: Shield,
         status: "ready",
       },
-    ],
-  },
-  {
-    title: "Documents",
-    description: "Control the company's document lifecycle.",
-    cards: [
       {
-        key: "document-types",
-        title: "Document types & approvers",
-        description: "Add / edit controlled document types, change default approver matrix, set multi-approver rules.",
-        href: "/admin/document-types",
-        icon: FileText,
-        status: "ready",
-      },
-    ],
-  },
-  {
-    title: "Integrations",
-    description: "External systems the app talks to.",
-    cards: [
-      {
-        key: "quickbooks",
-        title: "QuickBooks",
-        description: "Connection health, mappings, reconciliation, invoice + bill linking — one surface.",
-        href: "/finance/quickbooks",
-        icon: LinkIcon,
+        key: "functionality",
+        title: "Functionality Control",
+        description: "Enable or hide app screens for each role without sending users through older settings pages.",
+        href: "/admin/functionality",
+        icon: ToggleLeft,
         status: "ready",
       },
       {
-        key: "pipedrive",
-        title: "Pipedrive",
-        description: "Deal sync status, field mapping, stage → lifecycle mapping.",
-        href: "/admin/pipedrive",
-        icon: LinkIcon,
+        key: "integrations",
+        title: "Integration Statuses",
+        description: "Check connector health and operational status for external systems.",
+        href: "/admin/integrations",
+        icon: Plug,
         status: "ready",
       },
-    ],
-  },
-  {
-    title: "Workflow",
-    description: "How the lifecycle behaves.",
-    cards: [
-      {
-        key: "workflow-config",
-        title: "Workflow config",
-        description: "Stage requirements, gate templates, exception thresholds, RAG rules.",
-        href: "/admin/workflow-config",
-        icon: Workflow,
-        status: "ready",
-      },
-      {
-        key: "phase-templates",
-        title: "Phase templates",
-        description: "Default phase + milestone templates applied to new projects.",
-        href: "/admin/phase-templates",
-        icon: Puzzle,
-        status: "ready",
-      },
-    ],
-  },
-  {
-    title: "Operational",
-    description: "Maintenance and observability.",
-    cards: [
       {
         key: "audit",
-        title: "Audit log",
-        description: "Every role change, approval, import, and settings edit with who/when.",
+        title: "Audit Log",
+        description: "Review role changes, approvals, imports, and settings edits with who and when.",
         href: "/admin/activity-log",
         icon: ScrollText,
         status: "ready",
       },
-      {
-        key: "system-activity",
-        title: "System activity",
-        description: "Job runs, errors, job queue status, recent events across the system.",
-        href: "/admin/activity-log",
-        icon: Activity,
-        status: "ready",
-      },
-      {
-        key: "backfills",
-        title: "Data migration status",
-        description: "One-off data repair jobs: lifecycle re-seed, QB re-link, missing snapshots.",
-        href: "/admin/data-migration-status",
-        icon: Database,
-        status: "ready",
-      },
-      {
-        key: "recovery",
-        title: "Recovery centre",
-        description: "Restore soft-deleted records, review cascade-delete audit history.",
-        href: "/admin/recovery",
-        icon: AlertTriangle,
-        status: "beta",
-      },
     ],
   },
 ];
-
 export default function SettingsHome() {
   const companyRole = localStorage.getItem("company_role");
   const tokenRole = localStorage.getItem("user_role");
