@@ -35,6 +35,12 @@ const DialogContent = React.forwardRef<
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
+      // `data-shadcn-dialog` is the stable hook our global layout-mode CSS
+      // (client/src/index.css) uses to identify shadcn Dialog content
+      // without also matching Sheet content (Radix gives both `role="dialog"`).
+      // Do NOT remove this attribute or the force-desktop / force-mobile
+      // overrides will silently start clobbering side-drawer Sheets too.
+      data-shadcn-dialog=""
       className={cn(
         // Mobile (< sm): bottom sheet — anchors to the bottom of the viewport,
         //   full width, rounded only on top, max 92dvh, scrollable body.

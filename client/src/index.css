@@ -965,3 +965,99 @@ tbody tr {
     transform: none;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Layout-mode overrides
+ *
+ * The user can force the app into "desktop" or "mobile" layout via the
+ * toggle in the app-header user menu. The provider sets
+ * `<html data-layout-mode="desktop|mobile">` and updates the viewport meta
+ * tag. The viewport meta tag handles Tailwind sm:/md:/lg: utilities on real
+ * mobile devices (where it's honoured); on desktop browsers we additionally
+ * use the rules below to flip the most-impacted shadcn/Radix primitives
+ * (Dialog, AlertDialog, Sheet) so they behave the way the user asked.
+ *
+ * Strategy: target Radix's stable role="dialog" with
+ * data-state="open" — present on the rendered Content of every dialog
+ * variant (Dialog, AlertDialog, Sheet). Use !important to win against the
+ * mobile-first base classes baked into shadcn's primitives.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+/* Force-desktop: render shadcn Dialog content as a centered modal regardless
+   of viewport width. Scoped to [data-shadcn-dialog] (set by Dialog only) so
+   we do NOT also clobber Sheet/Drawer side-panels — both share role="dialog"
+   under Radix, but Sheet keeps its side-anchored layout untouched. */
+html[data-layout-mode="desktop"] [data-shadcn-dialog][data-state="open"] {
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: translate(-50%, -50%) !important;
+  width: min(calc(100vw - 2rem), 42rem) !important;
+  max-width: min(calc(100vw - 2rem), 42rem) !important;
+  height: auto !important;
+  max-height: 90vh !important;
+  border-radius: var(--radius-lg, 0.5rem) !important;
+  border-bottom-left-radius: var(--radius-lg, 0.5rem) !important;
+  border-bottom-right-radius: var(--radius-lg, 0.5rem) !important;
+  inset-inline: auto !important;
+}
+
+/* Force-mobile: render shadcn Dialog content as a full-width bottom sheet
+   regardless of viewport width. Same scoping rule — Sheet is left alone. */
+html[data-layout-mode="mobile"] [data-shadcn-dialog][data-state="open"] {
+  position: fixed !important;
+  top: auto !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  transform: none !important;
+  width: 100vw !important;
+  max-width: 100vw !important;
+  max-height: 92dvh !important;
+  border-top-left-radius: 1rem !important;
+  border-top-right-radius: 1rem !important;
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+  inset-inline: 0 !important;
+}
+
+/* Force-mobile: hide elements that are explicitly desktop-only
+   (md:block / lg:block) so the simulated mobile view doesn't show them. */
+html[data-layout-mode="mobile"] .hidden.md\:block,
+html[data-layout-mode="mobile"] .hidden.md\:flex,
+html[data-layout-mode="mobile"] .hidden.md\:inline,
+html[data-layout-mode="mobile"] .hidden.md\:inline-flex,
+html[data-layout-mode="mobile"] .hidden.lg\:block,
+html[data-layout-mode="mobile"] .hidden.lg\:flex,
+html[data-layout-mode="mobile"] .hidden.lg\:inline,
+html[data-layout-mode="mobile"] .hidden.lg\:inline-flex,
+html[data-layout-mode="mobile"] .hidden.xl\:block,
+html[data-layout-mode="mobile"] .hidden.xl\:flex {
+  display: none !important;
+}
+
+/* Force-mobile: reveal elements that are explicitly mobile-only (md:hidden
+   / lg:hidden) — they would otherwise stay hidden on a wide screen. */
+html[data-layout-mode="mobile"] .md\:hidden,
+html[data-layout-mode="mobile"] .lg\:hidden,
+html[data-layout-mode="mobile"] .xl\:hidden {
+  display: revert !important;
+}
+
+/* Force-desktop on a narrow real viewport: reveal md:/lg:-only elements that
+   would otherwise stay hidden, and hide the explicit mobile-only ones. */
+html[data-layout-mode="desktop"] .hidden.md\:block { display: block !important; }
+html[data-layout-mode="desktop"] .hidden.md\:flex,
+html[data-layout-mode="desktop"] .hidden.lg\:flex,
+html[data-layout-mode="desktop"] .hidden.xl\:flex { display: flex !important; }
+html[data-layout-mode="desktop"] .hidden.md\:inline,
+html[data-layout-mode="desktop"] .hidden.lg\:inline { display: inline !important; }
+html[data-layout-mode="desktop"] .hidden.md\:inline-flex,
+html[data-layout-mode="desktop"] .hidden.lg\:inline-flex { display: inline-flex !important; }
+html[data-layout-mode="desktop"] .hidden.lg\:block,
+html[data-layout-mode="desktop"] .hidden.xl\:block { display: block !important; }
+html[data-layout-mode="desktop"] .md\:hidden,
+html[data-layout-mode="desktop"] .lg\:hidden,
+html[data-layout-mode="desktop"] .xl\:hidden { display: none !important; }
