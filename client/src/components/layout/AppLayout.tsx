@@ -180,6 +180,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return MICROSOFT_SHORTCUTS.filter((shortcut) => canViewPath(shortcut.path));
   }, [canViewPath]);
 
+  // Close mobile nav sheet whenever the route changes
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location]);
+
   // Track page views for analytics
   useEffect(() => {
     if (activeSection) {
@@ -378,7 +383,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </button>
             )}
             {searchTerm.trim().length >= 2 && (
-              <div className="absolute left-0 right-0 top-[calc(100%+4px)] rounded-lg border border-border/80 bg-background shadow-[var(--shadow-md)] p-1.5 max-h-96 overflow-auto" role="listbox" aria-live="polite">
+              <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 rounded-lg border border-border/80 bg-background shadow-[var(--shadow-md)] p-1.5 max-h-96 overflow-auto" role="listbox" aria-live="polite">
                 {loadingSearch ? (
                   <p className="text-xs text-muted-foreground p-2">Searching…</p>
                 ) : searchError ? (
@@ -481,7 +486,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="hidden lg:block border-t border-border/40">
-          <nav className="flex px-6 py-1.5 gap-1 overflow-x-auto no-scrollbar mx-auto w-full max-w-[1440px]" data-testid="nav-top-sections">
+          <nav className="flex px-6 pt-1.5 pb-[9px] gap-1 overflow-x-auto no-scrollbar mx-auto w-full max-w-[1440px]" data-testid="nav-top-sections">
             {visibleSections.map((section) => {
               const active = section.label === activeSection.label;
               return (
@@ -695,7 +700,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      <main id="main-content" className={cn("px-4 lg:px-6 py-5", isTablet && "pb-24", isMobile && "pb-24")}>{children}</main>
+      <main id="main-content" className={cn("px-4 lg:px-6 py-5", isTablet && "pb-24", isMobile && "pb-bottom-nav")}>{children}</main>
       {isMobile && (
         <nav className="ee-bottom-nav" aria-label="Primary navigation" data-testid="nav-bottom-mobile">
           {visibleSections.slice(0, 4).map((section) => {
