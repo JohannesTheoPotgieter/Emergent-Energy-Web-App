@@ -160,12 +160,13 @@ function ProtectedPages() {
   const [location] = useLocation();
   useScrollRestoration(location);
   usePageTitle(location);
-  const { isScreenEnabled } = useScreenAvailability();
+  const { isScreenEnabled, isDegraded } = useScreenAvailability();
 
   return (
     <LensProvider>
     <RoleGuard>
     <AppLayout>
+      {isDegraded && <ScreenAvailabilityWarning />}
       <ErrorBoundary>
       <Suspense fallback={<div className="space-y-6 p-6"><LoadingState variant="skeleton-card" cards={4} /><LoadingState variant="skeleton-table" rows={6} /></div>}>
       <div className="page-enter">
@@ -197,6 +198,18 @@ function ProtectedPages() {
     </AppLayout>
     </RoleGuard>
     </LensProvider>
+  );
+}
+
+function ScreenAvailabilityWarning() {
+  return (
+    <div
+      role="status"
+      className="mx-auto mb-3 max-w-[1400px] rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+      data-testid="screen-availability-degraded"
+    >
+      Functionality Control status is temporarily unavailable. Screen visibility may be stale until the service recovers.
+    </div>
   );
 }
 

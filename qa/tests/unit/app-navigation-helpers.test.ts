@@ -86,5 +86,28 @@ describe("app navigation helpers", () => {
     // Settings tab gates on ADMIN section access.
     const settings = DISPLAY_TOP_NAV.find((i) => i.label === "Settings");
     expect(settings?.requiredSectionKey).toBe("ADMIN");
+    expect(settings?.path).toBe("/settings");
+  });
+
+  it("keeps Settings as a landing page with four named admin destinations", () => {
+    const settings = TOP_SECTIONS.find((section) => section.label === "Settings");
+    expect(settings?.path).toBe("/settings");
+    expect(settings?.secondary.map((item) => [item.label, item.path])).toEqual([
+      ["Roles & Permissions", "/admin/roles"],
+      ["Functionality Control", "/admin/functionality"],
+      ["Integration Statuses", "/admin/integrations"],
+      ["Audit Log", "/admin/activity-log"],
+    ]);
+  });
+
+  it("makes finance operations discoverable from the Finance nav", () => {
+    const finance = TOP_SECTIONS.find((section) => section.label === "Finance");
+    expect(finance?.secondary.map((item) => [item.label, item.path])).toEqual(
+      expect.arrayContaining([
+        ["QuickBooks Throughput", "/finance/quickbooks"],
+        ["Payment Requests", "/payment-request-board"],
+        ["PO Approvals", "/po-approval-board"],
+      ]),
+    );
   });
 });

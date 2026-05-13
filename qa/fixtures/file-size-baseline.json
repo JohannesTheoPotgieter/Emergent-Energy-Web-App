@@ -34,7 +34,7 @@
     },
     {
       "file": "client/src/pages/projects.tsx",
-      "loc": 2814
+      "loc": 2897
     },
     {
       "file": "server/routes/quickbooks-invoice-matches.routes.ts",
@@ -66,7 +66,7 @@
     },
     {
       "file": "server/departments/priority-strategic-routes.ts",
-      "loc": 2220
+      "loc": 2446
     },
     {
       "file": "client/src/components/quickbooks/QbMatchingWorkbench.tsx",
@@ -106,7 +106,7 @@
     },
     {
       "file": "client/src/pages/project-detail.tsx",
-      "loc": 2064
+      "loc": 2117
     },
     {
       "file": "server/departments/opportunities-routes.ts",

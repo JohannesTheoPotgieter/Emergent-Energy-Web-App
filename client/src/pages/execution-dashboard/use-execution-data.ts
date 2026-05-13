@@ -200,7 +200,9 @@ export function useExecutionDataProvider(setLocation: (to: string) => void) {
   }, [dashboard, filteredProjects]);
 
   const openProject = useCallback((project: ExecutionDashboardProject, tab?: string) => {
-    const projectPath = `/project/${encodeURIComponent(project.projectName)}`;
+    const projectPath = project.projectId
+      ? `/project/id/${project.projectId}`
+      : `/project/${encodeURIComponent(project.projectName)}`;
     setLocation(tab ? `${projectPath}?tab=${tab}` : projectPath);
   }, [setLocation]);
 
