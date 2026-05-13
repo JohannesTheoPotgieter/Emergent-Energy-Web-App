@@ -26,6 +26,7 @@ const KIND_WEIGHT: Record<DoNextKind, number> = {
   qb_sync_failed: 80,
   import_drift: 75,
   blocked_priority: 70,
+  escalated_priority: 68,
   overdue_task: 65,
   behind_plan: 60,
   eng_blocker: 55,
@@ -243,6 +244,60 @@ async function buildBlockedPriorityItems(_req: Request, role: string): Promise<D
   }
 }
 
+async function buildEscalatedPriorityItems(req: Request, role: string): Promise<DoNextItem[]> {
+  const userId = Number((req as any).user?.id);
+  if (!userId) return [];
+  // Show escalation events that happened in the last 7 days where:
+  // - the escalation target is this user's scope (dept head / company lead), OR
+  // - this user is the priority owner who needs to follow up
+  const ESCALATION_ROLES = new Set([
+    "COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER",
+    "ENGINEERING_MANAGER", "QUALITY_MANAGER", "HSE_MANAGER", "SSEG_MANAGER",
+    "CONSTRUCTION_MANAGER", "PROGRAM_FINANCE_MANAGER",
+  ]);
+  if (!ESCALATION_ROLES.has(role)) return [];
+  try {
+    const rows: any[] = await db.execute(sql`
+      SELECT
+        pa.id,
+        pa.priority_id,
+        pa.actor_name,
+        pa.to_value,
+        pa.details,
+        pa.created_at,
+        p.title AS priority_title,
+        p.scope AS priority_scope
+      FROM priority_activity pa
+      JOIN mytool_company_priorities p ON p.id = pa.priority_id
+      WHERE pa.action = 'escalated'
+        AND pa.created_at >= NOW() - INTERVAL '7 days'
+        AND p.status NOT IN ('closed', 'complete')
+      ORDER BY pa.created_at DESC
+      LIMIT 8
+    `).then((r: any) => r.rows ?? r ?? []);
+
+    return rows.map((r: any): DoNextItem => {
+      const reason = (r.details as any)?.reason || r.to_value || "";
+      const sev: DoNextItem["severity"] =
+        reason === "critical" || reason === "blocked" ? "high" : "medium";
+      const since = r.created_at ? new Date(r.created_at).toISOString() : null;
+      return {
+        key: `escalated:${r.id}`,
+        kind: "escalated_priority",
+        title: `Escalated · ${r.priority_title || `Priority #${r.priority_id}`}`,
+        subtitle: r.actor_name ? `by ${r.actor_name}` : null,
+        severity: sev,
+        score: computeScore("escalated_priority", sev, since),
+        href: `/priorities/${r.priority_id}`,
+        since,
+      };
+    });
+  } catch (err) {
+    console.warn("[do-next] escalated priorities source failed:", err instanceof Error ? err.message : err);
+    return [];
+  }
+}
+
 // ---------- Snooze state helpers ----------
 
 interface SnoozeRow {
@@ -301,15 +356,16 @@ export function registerHomeDoNextRoutes(app: Express) {
     }
 
     try {
-      const [approvals, rags, overdue, blockedPriorities, state] = await Promise.all([
+      const [approvals, rags, overdue, blockedPriorities, escalated, state] = await Promise.all([
         buildApprovalItems(req, role),
         buildRagItems(req, role),
         buildOverdueTaskItems(req, role),
         buildBlockedPriorityItems(req, role),
+        buildEscalatedPriorityItems(req, role),
         loadActiveState(userId),
       ]);
 
-      const all = [...approvals, ...rags, ...overdue, ...blockedPriorities];
+      const all = [...approvals, ...rags, ...overdue, ...blockedPriorities, ...escalated];
       const visible = applyState(all, state);
       visible.sort((a, b) => b.score - a.score);
 

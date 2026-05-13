@@ -39,7 +39,11 @@ import {
   Info,
   BellOff,
   Sparkles,
+  Plus,
+  ArrowUp,
+  Target,
 } from "lucide-react";
+import { CreatePersonalTaskDialog } from "@/components/priorities/CreatePersonalTaskDialog";
 
 // Lazy-load tab content from My Work pages (with the same ChunkLoadError
 // retry wrapper App.tsx uses for all other lazy routes — Prompt 0.12 follow-up).
@@ -222,6 +226,9 @@ export default function HomePage() {
   const urlTab = new URLSearchParams(searchString).get("tab") as HomeTab | null;
   const [activeTab, setActiveTab] = useState<HomeTab>(urlTab || "actions");
   const [autoTabApplied, setAutoTabApplied] = useState<boolean>(Boolean(urlTab));
+  const [prioritiesExpanded, setPrioritiesExpanded] = useState(false);
+  const [myPrioritiesExpanded, setMyPrioritiesExpanded] = useState(false);
+  const [createTaskDialogOpen, setCreateTaskDialogOpen] = useState(false);
 
   const { data: dashData, isLoading: dashLoading, isError: dashIsError, error: dashError } = useQuery<any>({
     queryKey: ["/api/lifecycle-board/execution-dashboard"],
@@ -246,6 +253,19 @@ export default function HomePage() {
       const res = await apiRequest("GET", "/api/my-work/all-tasks");
       return res.json();
     },
+  });
+
+  const { data: myWorkFeed } = useQuery<{
+    userId: number;
+    items: Array<{ kind: "priority"; priority: any } | { kind: "task"; task: any }>;
+    counts: { priorities: number; tasks: number; total: number };
+  }>({
+    queryKey: ["/api/priorities/my-work"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/priorities/my-work");
+      return res.json();
+    },
+    staleTime: 60_000,
   });
 
   // Do Next — central, role-aware action strip. Single source of truth replaces
@@ -352,6 +372,58 @@ export default function HomePage() {
     }).length;
   }, [myWorkData]);
 
+  /** Personal priorities from the my-work feed (role-scope) */
+  const myPersonalPriorities = useMemo(() => {
+    return (myWorkFeed?.items ?? [])
+      .filter((i): i is { kind: "priority"; priority: any } => i.kind === "priority")
+      .map((i) => i.priority)
+      .filter((p) => p.status !== "complete" && p.status !== "closed");
+  }, [myWorkFeed]);
+
+  /** Personal tasks from the my-work feed */
+  const myPersonalTasks = useMemo(() => {
+    return (myWorkFeed?.items ?? [])
+      .filter((i): i is { kind: "task"; task: any } => i.kind === "task")
+      .map((i) => i.task);
+  }, [myWorkFeed]);
+
+  /** Priority health stats derived from company priorities for leadership KPI cards */
+  const priorityHealthStats = useMemo(() => {
+    const active = (companyPriorities ?? []);
+    const atRisk = active.filter((p: any) => p.effectiveHealth === "at_risk" || p.effectiveHealth === "critical").length;
+    const escalated = active.filter((p: any) => p.escalated).length;
+    return { total: active.length, atRisk, escalated };
+  }, [companyPriorities]);
+
+  /** Items with due dates within the next 7 days (priorities + personal tasks) */
+  const dueThisWeek = useMemo(() => {
+    const today = Date.parse(new Date().toISOString().slice(0, 10) + "T00:00:00Z");
+    const cutoff = today + 7 * 86_400_000;
+    const result: Array<{ type: "priority" | "task"; id: number; title: string; dueDate: string; daysLeft: number; href: string; health?: string }> = [];
+
+    for (const p of (companyPriorities ?? [])) {
+      if (!p.dueDate) continue;
+      const due = Date.parse(p.dueDate + "T00:00:00Z");
+      if (!Number.isNaN(due) && due >= today && due <= cutoff) {
+        result.push({ type: "priority", id: p.id, title: p.title, dueDate: p.dueDate, daysLeft: Math.ceil((due - today) / 86_400_000), href: `/priorities/${p.id}`, health: p.effectiveHealth });
+      }
+    }
+
+    for (const t of myPersonalTasks) {
+      if (!t.dueDate) continue;
+      const statusLc = (t.status || "").toLowerCase();
+      if (statusLc === "complete" || statusLc === "done" || statusLc === "cancelled") continue;
+      const due = Date.parse(t.dueDate + "T00:00:00Z");
+      if (!Number.isNaN(due) && due >= today && due <= cutoff) {
+        result.push({ type: "task", id: t.id, title: t.title, dueDate: t.dueDate, daysLeft: Math.ceil((due - today) / 86_400_000), href: "/priorities?tab=my", health: undefined });
+      }
+    }
+
+    return result.sort((a, b) => a.daysLeft - b.daysLeft).slice(0, 8);
+  }, [companyPriorities, myPersonalTasks]);
+
+  /** True for roles that should see Company Priorities (not personal) */
+  const isManagerRole = layoutGroup === 'leadership' || layoutGroup === 'portfolio-manager' || layoutGroup === 'finance';
   /** Render a single KPI metric card.
    *
    * Every card on the home screen should drill into the source of truth.
@@ -401,9 +473,17 @@ export default function HomePage() {
   /** Render the workspace card with task counts and action links */
   function workspaceCard(links: Array<{ href: string; label: string; icon: React.ReactNode; variant?: "default" | "outline" }>) {
     const tasksReady = Boolean(myWorkData);
+    const personalTaskCount = myPersonalTasks.filter((t: any) => {
+      const s = (t.status || "").toLowerCase();
+      return s !== "complete" && s !== "done" && s !== "cancelled";
+    }).length;
+    const projectTaskCount = Math.max(0, myOpenTasks - personalTaskCount);
+    const totalTasks = myWorkFeed?.counts?.tasks ?? myOpenTasks;
+    const completedTasks = totalTasks > 0 ? Math.max(0, totalTasks - myOpenTasks) : 0;
+    const completionPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
     return (
       <Card className="border-border/50">
-        <CardContent className="p-4 space-y-4">
+        <CardContent className="p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div>
               {tasksReady
@@ -418,6 +498,17 @@ export default function HomePage() {
               </div>
             )}
           </div>
+          {myWorkFeed && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>{personalTaskCount} personal · {projectTaskCount} project</span>
+                <span>{completionPct}% done</span>
+              </div>
+              <div className="h-1 bg-muted rounded-full overflow-hidden">
+                <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${completionPct}%` }} />
+              </div>
+            </div>
+          )}
           {links.map((link) => (
             <Link key={link.href} href={link.href}>
               <Button variant={link.variant || "outline"} className="w-full">
@@ -442,20 +533,153 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* 1. Greeting */}
-      <div className="mb-5">
-        <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground" data-testid="text-greeting">
-          {greeting}, {displayName}
-        </h1>
-        <p className="text-sm text-muted-foreground mt-0.5" data-testid="text-role-badge">{roleLabel}</p>
+      {/* 1. Greeting + quick-create */}
+      <div className="mb-5 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground" data-testid="text-greeting">
+            {greeting}, {displayName}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-0.5" data-testid="text-role-badge">{roleLabel}</p>
+        </div>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button size="sm" variant="outline" className="shrink-0 gap-1.5 mt-0.5" data-testid="btn-quick-create">
+              <Plus className="w-3.5 h-3.5" />
+              New
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-44 p-1" align="end">
+            <Link href="/priorities?create=1">
+              <button type="button" className="w-full text-left text-sm px-3 py-2 rounded hover:bg-muted flex items-center gap-2">
+                <Target className="w-3.5 h-3.5 text-muted-foreground" />
+                New Priority
+              </button>
+            </Link>
+            <button
+              type="button"
+              className="w-full text-left text-sm px-3 py-2 rounded hover:bg-muted flex items-center gap-2"
+              onClick={() => setCreateTaskDialogOpen(true)}
+            >
+              <ListTodo className="w-3.5 h-3.5 text-muted-foreground" />
+              New Task
+            </button>
+          </PopoverContent>
+        </Popover>
       </div>
 
-      {/* 2+3. Focus Panel — Company Priorities (left) + Do Next (right) merged */}
-      <FocusPanel
-        priorities={companyPriorities ?? []}
-        prioritiesLoading={prioritiesLoading && !companyPriorities}
-        doNextItems={doNextItems}
-        doNextLoading={doNextLoading}
+      {/* 2. Priorities — Company view for managers, My Priorities for everyone else */}
+      {isManagerRole ? (
+        <>
+          {(companyPriorities && companyPriorities.length > 0) && (
+            <Collapsible open={prioritiesExpanded} onOpenChange={setPrioritiesExpanded}>
+              <Card className="border-border/60 mb-5" data-testid="card-company-priorities">
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2.5">
+                      <Flame className="w-4 h-4 text-primary" />
+                      <h2 className="text-sm font-semibold text-foreground">Company Priorities</h2>
+                      <Badge variant="secondary" className="text-[11px]">{companyPriorities.length} active</Badge>
+                      {priorityHealthStats.atRisk > 0 && (
+                        <Badge className="text-[10px] bg-amber-100 text-amber-700 border-amber-200">
+                          {priorityHealthStats.atRisk} at risk
+                        </Badge>
+                      )}
+                      {priorityHealthStats.escalated > 0 && (
+                        <Badge className="text-[10px] bg-red-100 text-red-700 border-red-200">
+                          <ArrowUp className="w-2.5 h-2.5 mr-0.5 inline" />
+                          {priorityHealthStats.escalated} escalated
+                        </Badge>
+                      )}
+                    </div>
+                    <Link href="/priorities">
+                      <span className="text-xs text-primary hover:underline font-medium cursor-pointer">View all</span>
+                    </Link>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {(companyPriorities ?? []).slice(0, 3).map((priority: any, i: number) => (
+                      <PriorityCard key={priority.id || i} priority={priority} index={i} />
+                    ))}
+                  </div>
+                  {(companyPriorities ?? []).length > 3 && (
+                    <>
+                      <CollapsibleContent>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                          {(companyPriorities ?? []).slice(3).map((priority: any, i: number) => (
+                            <PriorityCard key={priority.id || (i + 3)} priority={priority} index={i + 3} />
+                          ))}
+                        </div>
+                      </CollapsibleContent>
+                      <CollapsibleTrigger asChild>
+                        <button className="mt-3 flex items-center gap-1 text-xs text-primary hover:underline font-medium mx-auto">
+                          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${prioritiesExpanded ? "rotate-180" : ""}`} />
+                          {prioritiesExpanded ? "Show less" : `Show ${(companyPriorities ?? []).length - 3} more`}
+                        </button>
+                      </CollapsibleTrigger>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </Collapsible>
+          )}
+          {!companyPriorities && prioritiesLoading && (
+            <div className="mb-5">
+              <Skeleton className="h-5 w-48 mb-2.5" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Skeleton className="h-24 w-full rounded-lg" />
+                <Skeleton className="h-24 w-full rounded-lg" />
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          {myPersonalPriorities.length > 0 && (
+            <Collapsible open={myPrioritiesExpanded} onOpenChange={setMyPrioritiesExpanded}>
+              <Card className="border-border/60 mb-5" data-testid="card-my-priorities">
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2.5">
+                      <Flame className="w-4 h-4 text-primary" />
+                      <h2 className="text-sm font-semibold text-foreground">My Priorities</h2>
+                      <Badge variant="secondary" className="text-[11px]">{myPersonalPriorities.length} active</Badge>
+                    </div>
+                    <Link href="/priorities?tab=my">
+                      <span className="text-xs text-primary hover:underline font-medium cursor-pointer">View all</span>
+                    </Link>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {myPersonalPriorities.slice(0, 3).map((priority: any, i: number) => (
+                      <PriorityCard key={priority.id || i} priority={priority} index={i} />
+                    ))}
+                  </div>
+                  {myPersonalPriorities.length > 3 && (
+                    <>
+                      <CollapsibleContent>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                          {myPersonalPriorities.slice(3).map((priority: any, i: number) => (
+                            <PriorityCard key={priority.id || (i + 3)} priority={priority} index={i + 3} />
+                          ))}
+                        </div>
+                      </CollapsibleContent>
+                      <CollapsibleTrigger asChild>
+                        <button className="mt-3 flex items-center gap-1 text-xs text-primary hover:underline font-medium mx-auto">
+                          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${myPrioritiesExpanded ? "rotate-180" : ""}`} />
+                          {myPrioritiesExpanded ? "Show less" : `Show ${myPersonalPriorities.length - 3} more`}
+                        </button>
+                      </CollapsibleTrigger>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </Collapsible>
+          )}
+        </>
+      )}
+
+      {/* 3. Do Next — central, role-aware action strip. */}
+      <DoNextStrip
+        items={doNextItems}
+        loading={doNextLoading}
         onSnooze={(key, hours) => snoozeMutation.mutate({ key, hours })}
         onDismiss={(key) => dismissMutation.mutate({ key })}
       />
@@ -464,7 +688,8 @@ export default function HomePage() {
       <div className="flex items-center gap-1 border-b mb-5 overflow-x-auto">
         {HOME_TABS.map((tab) => {
           const Icon = tab.icon;
-          const pendingCount = tab.key === "approvals" ? Number(kpis.pendingApprovals) || 0 : 0;
+          const actionsBadge = tab.key === "actions" && doNextItems.length > 0 ? doNextItems.length : null;
+          const approvalsBadge = tab.key === "approvals" && Number(kpis.pendingApprovals) > 0 ? Number(kpis.pendingApprovals) : null;
           return (
             <button
               key={tab.key}
@@ -477,10 +702,15 @@ export default function HomePage() {
             >
               <Icon className="h-3.5 w-3.5" />
               {tab.label}
-              {pendingCount > 0 && (
-                <Badge variant="secondary" className="text-[10px] h-4 px-1.5 bg-primary/10 text-primary border-0">
-                  {pendingCount}
-                </Badge>
+              {actionsBadge !== null && (
+                <span className="ml-0.5 text-[10px] bg-primary/10 text-primary rounded-full px-1.5 py-0.5 font-semibold leading-none">
+                  {actionsBadge}
+                </span>
+              )}
+              {approvalsBadge !== null && (
+                <span className="ml-0.5 text-[10px] bg-blue-100 text-blue-700 rounded-full px-1.5 py-0.5 font-semibold leading-none">
+                  {approvalsBadge}
+                </span>
               )}
             </button>
           );
@@ -503,6 +733,14 @@ export default function HomePage() {
                       {kpiCard("Red RAG", stats.redProjects, <AlertTriangle className="w-4 h-4" />, { color: stats.redProjects > 0 ? "text-red-600" : undefined })}
                       {kpiCard("Behind Plan", kpis.projectsBehindPlan ?? "\u2014", <Clock className="w-4 h-4" />, { color: Number(kpis.projectsBehindPlan) > 0 ? "text-amber-600" : undefined })}
                       {kpiCard("Pending Approvals", kpis.pendingApprovals ?? "\u2014", <CheckCircle2 className="w-4 h-4" />, { color: Number(kpis.pendingApprovals) > 0 ? "text-blue-600" : undefined })}
+                    </div>
+                  </div>
+                  <div>
+                    <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Priority Health</h2>
+                    <div className="grid grid-cols-3 gap-2">
+                      {kpiCard("Active Priorities", priorityHealthStats.total, <Target className="w-4 h-4" />, { href: "/priorities" })}
+                      {kpiCard("At Risk", priorityHealthStats.atRisk, <AlertTriangle className="w-4 h-4" />, { color: priorityHealthStats.atRisk > 0 ? "text-amber-600" : undefined, href: "/priorities?health=at_risk" })}
+                      {kpiCard("Escalated", priorityHealthStats.escalated, <ArrowUp className="w-4 h-4" />, { color: priorityHealthStats.escalated > 0 ? "text-red-600" : undefined, href: "/priorities?tab=dept" })}
                     </div>
                   </div>
                 </div>
@@ -529,6 +767,14 @@ export default function HomePage() {
                       {kpiCard("Red RAG", stats.redProjects, <AlertTriangle className="w-4 h-4" />, { color: stats.redProjects > 0 ? "text-red-600" : undefined, scopeLabel: "Portfolio" })}
                       {kpiCard("Behind Plan", kpis.projectsBehindPlan ?? "\u2014", <Clock className="w-4 h-4" />, { color: Number(kpis.projectsBehindPlan) > 0 ? "text-amber-600" : undefined, scopeLabel: "Portfolio" })}
                       {kpiCard("Avg Progress", kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "\u2014", <BarChart3 className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
+                    </div>
+                  </div>
+                  <div>
+                    <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Priority Health</h2>
+                    <div className="grid grid-cols-3 gap-2">
+                      {kpiCard("Active Priorities", priorityHealthStats.total, <Target className="w-4 h-4" />, { href: "/priorities" })}
+                      {kpiCard("At Risk", priorityHealthStats.atRisk, <AlertTriangle className="w-4 h-4" />, { color: priorityHealthStats.atRisk > 0 ? "text-amber-600" : undefined, href: "/priorities?health=at_risk" })}
+                      {kpiCard("Escalated", priorityHealthStats.escalated, <ArrowUp className="w-4 h-4" />, { color: priorityHealthStats.escalated > 0 ? "text-red-600" : undefined, href: "/priorities?tab=dept" })}
                     </div>
                   </div>
                 </div>
@@ -650,6 +896,50 @@ export default function HomePage() {
             </>
           )}
 
+          {/* Due This Week — items due in the next 7 days */}
+          {dueThisWeek.length > 0 && (
+            <div>
+              <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+                Due This Week
+              </h2>
+              <div className="flex flex-wrap gap-2">
+                {dueThisWeek.map((item) => {
+                  const healthColor = item.health === "critical" ? "border-red-300 bg-red-50 text-red-900" : item.health === "at_risk" ? "border-amber-300 bg-amber-50 text-amber-900" : "border-border bg-muted/30 text-foreground";
+                  return (
+                    <Link key={`${item.type}:${item.id}`} href={item.href}>
+                      <div className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:shadow-sm transition-all cursor-pointer ${healthColor}`}>
+                        {item.type === "priority" ? <Flame className="w-3 h-3 shrink-0" /> : <ListTodo className="w-3 h-3 shrink-0" />}
+                        <span className="truncate max-w-[200px]">{item.title}</span>
+                        <span className="text-xs opacity-70 shrink-0">{item.daysLeft === 0 ? "today" : `${item.daysLeft}d`}</span>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Navigate To — shown for all layouts */}
+          <div>
+            <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+              Navigate To
+            </h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {config.quickActions.map((action) => (
+                <Link key={action.path} href={action.path}>
+                  <Card className="border-border/50 hover:border-primary/30 hover:shadow-sm transition-all cursor-pointer group">
+                    <CardContent className="p-3.5 flex items-center gap-3">
+                      <div className="text-muted-foreground group-hover:text-primary transition-colors">
+                        {resolveIcon(action.iconKey)}
+                      </div>
+                      <span className="text-sm font-medium text-foreground">{action.label}</span>
+                      <ArrowRight className="w-3.5 h-3.5 ml-auto text-muted-foreground/40 group-hover:text-primary/60 transition-colors" />
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
@@ -676,6 +966,12 @@ export default function HomePage() {
           <InboxPage />
         </Suspense>
       )}
+
+      <CreatePersonalTaskDialog
+        open={createTaskDialogOpen}
+        onOpenChange={setCreateTaskDialogOpen}
+        onCreated={() => queryClient.invalidateQueries({ queryKey: ["/api/priorities/my-work"] })}
+      />
 
     </PageShell>
   );
@@ -712,8 +1008,21 @@ function PriorityCard({ priority, index }: { priority: any; index: number }) {
           <div className={`h-full rounded-full ${priority.effectiveHealth === "critical" ? "bg-red-500" : priority.effectiveHealth === "at_risk" ? "bg-amber-500" : "bg-emerald-500"}`} style={{ width: `${Math.min(priority.effectiveProgress || 0, 100)}%` }} />
         </div>
         <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-          <span>{priority.effectiveProgress || 0}%{!priority.hasProjects && " (manual)"}</span>
-          <span>{priority.hasProjects ? `${priority.projectCount} project${priority.projectCount !== 1 ? "s" : ""}` : "Standalone"}</span>
+          <span>
+            {priority.effectiveProgress || 0}%
+            {priority.progressSource?.label
+              ? ` (${priority.progressSource.label})`
+              : !priority.hasProjects ? " (manual)" : ""}
+          </span>
+          <span>
+            {priority.hasProjects
+              ? `${priority.projectCount} project${priority.projectCount !== 1 ? "s" : ""}`
+              : priority.childCount > 0
+                ? `${priority.childCount} sub-priorit${priority.childCount === 1 ? "y" : "ies"}`
+                : priority.openTaskCount > 0
+                  ? `${priority.openTaskCount} task${priority.openTaskCount !== 1 ? "s" : ""}`
+                  : "Standalone"}
+          </span>
         </div>
       </CardContent>
     </Card>
@@ -735,6 +1044,7 @@ const KIND_CHIP_TONE: Record<string, string> = {
   qb_sync_failed: "bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100",
   import_drift: "bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100",
   blocked_priority: "bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100",
+  escalated_priority: "bg-orange-50 border-orange-200 text-orange-900 hover:bg-orange-100",
   overdue_task: "bg-rose-50 border-rose-200 text-rose-900 hover:bg-rose-100",
   behind_plan: "bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100",
   eng_blocker: "bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100",

@@ -144,6 +144,13 @@ export async function runStartupOrchestrator(options: {
     } catch (err: unknown) {
       log(`Gate evaluation backfill error (non-fatal): ${(err instanceof Error ? err.message : String(err))}`, "Startup:GateEvaluationBackfill");
     }
+    // Priority collaboration tables (priority_comments, priority_watches) — idempotent DDL
+    try {
+      const { runPriorityTablesDdl } = await import("./backfills/priority-tables-backfill");
+      await runPriorityTablesDdl(log);
+    } catch (err: unknown) {
+      log(`Priority tables DDL error (non-fatal): ${(err instanceof Error ? err.message : String(err))}`, "Startup:PriorityDdl");
+    }
   } else {
     log(
       "Safety-net backfills skipped (production read-only mode). Enable ENABLE_STARTUP_BACKFILL or ADMIN_MIGRATION_MODE to run them.",
