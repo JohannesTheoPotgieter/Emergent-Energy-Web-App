@@ -1526,10 +1526,6 @@ export default function ProjectDetailPage() {
         sizeKwp={sizeKwp}
         completion={completion}
         completionNum={completionNum}
-        {/* Source of truth: the same live per-project data the tabs below
-            render from (v2 detail + revenue-tab + health summary). The
-            pre-aggregated /api/projects-summary KPIs are intentionally NOT
-            used here — they were the cause of the stale header. */}
         contractValue={contractValue}
         revenueRealisedPct={revenueRealisedPct}
         cosRealisedPct={cosRealisedPct}
