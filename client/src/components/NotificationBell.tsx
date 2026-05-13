@@ -69,8 +69,8 @@ export function NotificationBell() {
   const { data: countData } = useQuery<{ count: number }>({
     queryKey: ["notifications-unread-count"],
     queryFn: () => engFetch("/api/notifications/unread-count"),
-    refetchInterval: 30_000,
-    staleTime: 10_000,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
   });
 
   const { data: listData } = useQuery<{ notifications: Notification[] }>({
