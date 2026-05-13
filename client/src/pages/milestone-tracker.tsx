@@ -275,7 +275,7 @@ export default function MilestoneTrackerPage() {
   // 2. Filter to Construction-Client Handover
   const eligibleProjects = useMemo(() => {
     if (!allProjects) return [];
-    return allProjects.filter((p: any) => p.isActive !== false && isInMilestonePhase(p.phase));
+    return allProjects.filter((p: any) => (p.archivedStatus ?? 'ACTIVE') === 'ACTIVE' && isInMilestonePhase(p.phase));
   }, [allProjects]);
 
   // 3. Fetch revenue milestones for each eligible project
