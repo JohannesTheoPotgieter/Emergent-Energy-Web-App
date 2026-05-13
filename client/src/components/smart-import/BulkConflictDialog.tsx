@@ -117,7 +117,7 @@ export function BulkConflictDialog({
         // size, and the base `inset-x-0` + sm: `translate-x-[-50%]` were
         // interacting badly inside the Replit Canvas iframe and shifting
         // the whole dialog off the left edge of the viewport.
-        className="top-1/2 left-1/2 inset-x-auto bottom-auto -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-3xl max-h-[90vh] rounded-lg overflow-hidden flex flex-col"
+        className="left-[50%] top-[50%] inset-x-auto bottom-auto translate-x-[-50%] translate-y-[-50%] w-[calc(100%-2rem)] max-w-3xl max-h-[90vh] rounded-lg overflow-hidden flex flex-col"
         data-testid={`bulk-conflict-dialog-${runId}`}
       >
         <DialogHeader>
