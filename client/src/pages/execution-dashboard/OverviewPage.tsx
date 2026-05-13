@@ -247,7 +247,7 @@ export default function OverviewPage() {
           </SheetHeader>
 
           {/* Summary strip */}
-          <div className="mt-3 grid grid-cols-4 gap-2">
+          <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div className="bg-slate-50 rounded-lg border p-2 text-center">
               <p className="text-[10px] text-muted-foreground font-medium">TOTAL</p>
               <p className="text-xl font-bold">{filteredProjects.length}</p>

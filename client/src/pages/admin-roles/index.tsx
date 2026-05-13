@@ -134,13 +134,13 @@ export default function AdminRolesPage() {
   }, [mode, selected, usersQ.data]);
 
   return (
-    <div className="space-y-4 p-6" data-testid="admin-roles-page">
+    <div className="space-y-4 p-4 sm:p-6" data-testid="admin-roles-page">
       {/* ── Header ───────────────────────────────────────────────────── */}
       <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
+        <div className="flex items-start gap-3 min-w-0">
           <ShieldCheck className="h-7 w-7 shrink-0 text-emerald-600" />
-          <div>
-            <h1 className="text-2xl font-semibold leading-tight">Roles &amp; Permissions</h1>
+          <div className="min-w-0">
+            <h1 className="font-semibold leading-tight">Roles &amp; Permissions</h1>
             <p className="text-sm text-slate-600">
               Pick a person or a role on the left, edit on the right. Need to change who sees which workspaces or tickets? Use{" "}
               <Link
@@ -183,8 +183,8 @@ export default function AdminRolesPage() {
         </div>
       </header>
 
-      {/* ── Two-column body ─────────────────────────────────────────── */}
-      <div className="flex gap-4">
+      {/* ── Two-column body (stacks on mobile, side-by-side on lg+) ──── */}
+      <div className="flex flex-col lg:flex-row gap-4">
         <PickerRail
           mode={mode}
           onModeChange={handleModeChange}

@@ -473,7 +473,7 @@ export default function MilestoneTrackerPage() {
           <Card className="overflow-hidden">
             {/* Project header row — click to expand/collapse */}
             <div
-              className={`px-3 py-2 flex items-center gap-3 flex-wrap cursor-pointer select-none hover:bg-muted/50 transition-colors ${headerBg}`}
+              className={`px-3 py-2 flex items-center gap-2 sm:gap-3 flex-wrap cursor-pointer select-none hover:bg-muted/50 transition-colors ${headerBg}`}
               onClick={() => toggleProject(project.projectId)}
             >
               {/* Chevron */}
@@ -483,27 +483,27 @@ export default function MilestoneTrackerPage() {
               }
 
               {/* RAG dot + name + phase */}
-              <div className="flex items-center gap-2 min-w-[180px]">
+              <div className="flex items-center gap-2 min-w-0 flex-1 sm:flex-initial sm:min-w-[180px]">
                 <div className={`w-2 h-2 rounded-full ${ragDotClass(project.ragStatus)} shrink-0`} />
                 <span
-                  className="text-sm font-semibold hover:underline"
+                  className="text-sm font-semibold hover:underline truncate"
                   onClick={(e) => { e.stopPropagation(); navigate(`/project/${encodeURIComponent(project.projectNameRaw)}`); }}
                 >
                   {project.projectName}
                 </span>
-                <Badge variant="outline" className="text-[9px] px-1.5 py-0">{project.phase}</Badge>
+                <Badge variant="outline" className="text-[9px] px-1.5 py-0 shrink-0">{project.phase}</Badge>
               </div>
 
-              {/* Compact info */}
-              <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+              {/* Compact info — hidden on smallest screens, shown sm+ */}
+              <div className="hidden sm:flex items-center gap-3 text-[10px] text-muted-foreground">
                 <span>{project.pm || "No PM"}</span>
                 <span>{formatZAR(project.contractValue)}</span>
                 {project.sizeKwp && <span>{parseFloat(project.sizeKwp).toFixed(0)} kWp</span>}
               </div>
 
-              {/* Revenue summary badges */}
+              {/* Revenue summary badges — full width on mobile under name, inline at sm+ */}
               {project.revenueSummary && (
-                <div className="flex items-center gap-2 text-[10px] ml-auto">
+                <div className="flex flex-wrap items-center gap-2 text-[10px] basis-full sm:basis-auto sm:ml-auto">
                   <span className="text-emerald-700 font-semibold">
                     In Bank: {formatZAR(project.revenueSummary.inBank)}
                   </span>
@@ -524,8 +524,8 @@ export default function MilestoneTrackerPage() {
                 <span className="text-[9px] font-semibold tabular-nums">{project.projectPctComplete}%</span>
               </div>
 
-              {/* Last update */}
-              <div className="w-[160px] shrink-0" onClick={(e) => e.stopPropagation()}>
+              {/* Last update — hidden on mobile (use expand row to access full milestones) */}
+              <div className="hidden md:block w-[160px] shrink-0" onClick={(e) => e.stopPropagation()}>
                 <LatestUpdateCellWrapper project={project} onSaved={invalidate} />
               </div>
             </div>
