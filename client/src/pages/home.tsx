@@ -14,11 +14,10 @@ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/component
 import { apiRequest } from "@/lib/queryClient";
 import { QueryErrorBanner } from "@/components/QueryErrorBanner";
 import type { DoNextItem } from "@shared/schema/home";
-import { getRoleDashboardConfig, getLensDashboardConfig } from "@/config/role-dashboard-config";
-import { COMPANY_ROLE_LABELS, normalizeRoleForPermissions } from "@shared/schema/users";
+import { getLensDashboardConfig } from "@/config/role-dashboard-config";
+import { normalizeRoleForPermissions } from "@shared/schema/users";
 import type { CompanyRole } from "@shared/schema/users";
 import { useLensContext } from "@/hooks/use-lens-context";
-import type { LensRole } from "@shared/schema/role-based-upgrade";
 import {
   LayoutDashboard,
   FolderOpen,
@@ -49,17 +48,13 @@ import {
   Inbox,
   Calendar,
   MessageSquare,
-  ChevronRight,
-  ExternalLink,
   Info,
-  X,
   BellOff,
   Sparkles,
 } from "lucide-react";
 
 // Lazy-load tab content from My Work pages (with the same ChunkLoadError
 // retry wrapper App.tsx uses for all other lazy routes — Prompt 0.12 follow-up).
-const MyWorkTasksPage = lazyWithRetry(() => import("@/pages/my-work-tasks"));
 const MyWorkCalendarPage = lazyWithRetry(() => import("@/pages/my-work-calendar"));
 const MyWorkMeetingsPage = lazyWithRetry(() => import("@/pages/my-work-meetings"));
 const InboxPage = lazyWithRetry(() => import("@/pages/inbox"));
@@ -119,7 +114,6 @@ type LayoutGroup = 'leadership' | 'portfolio-manager' | 'delivery' | 'specialist
 /** Pre-select the most useful starting tab for each layout group. */
 function defaultTabForLayout(group: LayoutGroup, pendingApprovals: number): HomeTab {
   if (pendingApprovals > 0 && (group === 'finance' || group === 'leadership')) return "approvals";
-  if (group === 'specialist') return "inbox";
   return "actions";
 }
 
@@ -137,7 +131,9 @@ const KPI_HREF: Record<string, string> = {
   "Active Projects": "/projects",
   "Total Projects": "/projects",
   "Red RAG": "/execution-board?rag=Red",
+  "Red RAG Projects": "/execution-board?rag=Red",
   "Behind Plan": "/execution-board?behindPlanOnly=true",
+  "Projects Behind Plan": "/execution-board?behindPlanOnly=true",
   "Avg Progress": "/execution-board",
   "Eng. Blockers": "/execution-board?engineeringBlockersOnly=true",
   "Quality Warnings": "/execution-board?qualityIssuesOnly=true",
@@ -154,6 +150,9 @@ const KPI_HREF: Record<string, string> = {
   "Open Expenditure (FY)": "/cos",
   "Paid Expenditure": "/cos",
   "Overdue Inflow": "/cos/analysis",
+  "Revenue Outstanding": "/cos/analysis",
+  "COS Outstanding": "/cos",
+  "Overdue Outflow": "/cos",
   "Open Incidents": "/execution-board",
   "Corrective Actions Due": "/execution-board",
   "Safety Compliance": "/execution-board",
@@ -168,7 +167,7 @@ const KPI_HREF: Record<string, string> = {
  * selected by the role's config kpi keys as a guide.
  */
 function getKpiCards(
-  config: ReturnType<typeof getRoleDashboardConfig>,
+  config: ReturnType<typeof getLensDashboardConfig>,
   kpis: any,
   stats: any,
   isLoading: boolean,
@@ -329,7 +328,7 @@ export default function HomePage() {
   const layoutGroup: LayoutGroup = useMemo(() => {
     switch (lens.activeLens) {
       case 'CEO': case 'COO_SUPER_ADMIN': return 'leadership';
-      case 'PROGRAM_MANAGER': return 'portfolio-manager';
+      case 'PROGRAM_MANAGER': case 'HEAD_OF_PROJECT_DEVELOPMENT': return 'portfolio-manager';
       case 'PROJECT_MANAGER': case 'CONSTRUCTION_MANAGER': return 'delivery';
       case 'ENGINEER': case 'QUALITY_MANAGER': return 'specialist';
       case 'CFO': case 'PROGRAM_FINANCE_MANAGER': return 'finance';
@@ -444,50 +443,20 @@ export default function HomePage() {
     );
   }
 
-  /** Render a KPI card with planned vs actual values */
-  function kpiCardDual(label: string, planned: string | number, actual: string | number, icon: React.ReactNode, opts?: { color?: string; href?: string }) {
-    const fallbackHref = opts?.href ?? KPI_HREF[label];
-    const isClickable = Boolean(fallbackHref);
-    return (
-      <Card
-        key={label}
-        className={`border-border/50 ${isClickable ? "cursor-pointer hover:border-primary/40 transition-colors" : ""}`}
-        onClick={isClickable ? () => setLocation(fallbackHref!) : undefined}
-        data-testid={`kpi-card-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
-      >
-        <CardContent className="p-3.5">
-          <div className="flex items-center gap-1.5 text-muted-foreground mb-1.5">
-            {icon}
-            <span className="text-[11px] uppercase tracking-wide">{label}</span>
-          </div>
-          {isLoading ? <Skeleton className="h-10 w-20" /> : (
-            <div className="space-y-0.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-muted-foreground uppercase">Planned</span>
-                <span className="text-sm font-semibold font-mono text-foreground">{planned}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-muted-foreground uppercase">Actual</span>
-                <span className={`text-sm font-semibold font-mono ${opts?.color || "text-foreground"}`}>{actual}</span>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    );
-  }
-
   /** Render the workspace card with task counts and action links */
   function workspaceCard(links: Array<{ href: string; label: string; icon: React.ReactNode; variant?: "default" | "outline" }>) {
+    const tasksReady = Boolean(myWorkData);
     return (
       <Card className="border-border/50">
         <CardContent className="p-4 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-semibold font-mono text-foreground" data-testid="text-open-tasks">{myOpenTasks}</p>
+              {tasksReady
+                ? <p className="text-2xl font-semibold font-mono text-foreground" data-testid="text-open-tasks">{myOpenTasks}</p>
+                : <Skeleton className="h-7 w-10 mb-0.5" />}
               <p className="text-xs text-muted-foreground">open tasks</p>
             </div>
-            {myPendingActions > 0 && (
+            {tasksReady && myPendingActions > 0 && (
               <div className="text-right">
                 <p className="text-2xl font-semibold font-mono text-rose-600" data-testid="text-overdue-count">{myPendingActions}</p>
                 <p className="text-xs text-rose-600">overdue</p>
@@ -536,10 +505,16 @@ export default function HomePage() {
         onDismiss={(key) => dismissMutation.mutate({ key })}
       />
 
+      {/* 3b. This Week — upcoming milestones & payments for delivery-facing roles */}
+      {(layoutGroup === 'leadership' || layoutGroup === 'portfolio-manager' || layoutGroup === 'delivery') && (
+        <UpcomingEventsStrip />
+      )}
+
       {/* 4. Tab Navigation — Home absorbs My Work */}
       <div className="flex items-center gap-1 border-b mb-5 overflow-x-auto">
         {HOME_TABS.map((tab) => {
           const Icon = tab.icon;
+          const pendingCount = tab.key === "approvals" ? Number(kpis.pendingApprovals) || 0 : 0;
           return (
             <button
               key={tab.key}
@@ -552,6 +527,11 @@ export default function HomePage() {
             >
               <Icon className="h-3.5 w-3.5" />
               {tab.label}
+              {pendingCount > 0 && (
+                <Badge variant="secondary" className="text-[10px] h-4 px-1.5 bg-primary/10 text-primary border-0">
+                  {pendingCount}
+                </Badge>
+              )}
             </button>
           );
         })}
@@ -568,10 +548,11 @@ export default function HomePage() {
                 <div className="lg:col-span-3 space-y-5">
                   <div>
                     <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Portfolio Health</h2>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {kpiCard("Active Projects", stats.activeProjects, <FolderOpen className="w-4 h-4" />)}
                       {kpiCard("Red RAG", stats.redProjects, <AlertTriangle className="w-4 h-4" />, { color: stats.redProjects > 0 ? "text-red-600" : undefined })}
                       {kpiCard("Behind Plan", kpis.projectsBehindPlan ?? "\u2014", <Clock className="w-4 h-4" />, { color: Number(kpis.projectsBehindPlan) > 0 ? "text-amber-600" : undefined })}
+                      {kpiCard("Pending Approvals", kpis.pendingApprovals ?? "\u2014", <CheckCircle2 className="w-4 h-4" />, { color: Number(kpis.pendingApprovals) > 0 ? "text-blue-600" : undefined })}
                     </div>
                   </div>
                 </div>
@@ -696,10 +677,11 @@ export default function HomePage() {
                     </div>
                   </div>
                   <div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {kpiCard("Open Expenditure", money(kpis.openExpenditureFy), <DollarSign className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
                       {kpiCard("Paid Expenditure", money(kpis.paidExpenditureFy), <DollarSign className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
                       {kpiCard("Overdue Inflow", money(kpis.overdueInflowFy), <AlertTriangle className="w-4 h-4" />, { color: Number(kpis.overdueInflowFy) > 0 ? "text-red-600" : undefined, scopeLabel: "Portfolio" })}
+                      {kpiCard("Overdue Outflow", money(kpis.overdueOutflowFy), <AlertTriangle className="w-4 h-4" />, { color: Number(kpis.overdueOutflowFy) > 0 ? "text-red-600" : undefined, scopeLabel: "Portfolio" })}
                     </div>
                   </div>
                 </div>
@@ -849,73 +831,6 @@ const KIND_CHIP_TONE: Record<string, string> = {
 
 function chipTone(kind: string): string {
   return KIND_CHIP_TONE[kind] || "bg-muted border-border text-foreground hover:bg-muted/70";
-}
-
-function DoNextStrip({
-  items,
-  loading,
-  onSnooze,
-  onDismiss,
-}: {
-  items: DoNextItem[];
-  loading: boolean;
-  onSnooze: (key: string, hours: number) => void;
-  onDismiss: (key: string) => void;
-}) {
-  if (loading) {
-    return (
-      <div className="mb-6" data-testid="section-do-next">
-        <div className="flex items-center gap-2 mb-2.5">
-          <Sparkles className="w-3.5 h-3.5 text-primary" />
-          <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider">Do Next</h2>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-10 w-44 rounded-lg" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (items.length === 0) {
-    return (
-      <div className="mb-6" data-testid="section-do-next">
-        <div className="flex items-center gap-2 mb-2.5">
-          <Sparkles className="w-3.5 h-3.5 text-primary" />
-          <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider">Do Next</h2>
-        </div>
-        <Card className="border-emerald-200 bg-emerald-50/40">
-          <CardContent className="p-4 flex items-center gap-3">
-            <CheckCircle2 className="w-4 h-4 text-emerald-700" />
-            <p className="text-sm text-emerald-900">
-              You're clear. No actions need you right now — well done.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  return (
-    <div className="mb-6" data-testid="section-do-next">
-      <div className="flex items-center justify-between mb-2.5">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-3.5 h-3.5 text-primary" />
-          <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider">Do Next</h2>
-          <Badge variant="secondary" className="text-[11px]" data-testid="badge-do-next-count">
-            {items.length} {items.length === 1 ? "action" : "actions"}
-          </Badge>
-        </div>
-        <span className="text-[11px] text-muted-foreground">Ranked for you · snooze or dismiss what isn't useful</span>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {items.map((item) => (
-          <DoNextChip key={item.key} item={item} onSnooze={onSnooze} onDismiss={onDismiss} />
-        ))}
-      </div>
-    </div>
-  );
 }
 
 function FocusPanel({
@@ -1109,6 +1024,104 @@ function DoNextChip({
           </button>
         </PopoverContent>
       </Popover>
+    </div>
+  );
+}
+
+// ============================================================
+// Upcoming Events strip
+// ============================================================
+
+interface UpcomingEvent {
+  type: string;
+  date: string;
+  projectName: string;
+  projectId: number | null;
+  detail: string;
+  amount?: string;
+}
+
+const EVENT_LABEL: Record<string, string> = {
+  construction_start: "Construction Start",
+  commissioning: "Commissioning",
+  handover_om: "O&M Handover",
+  handover_client: "Client Handover",
+  practical_completion: "Practical Completion",
+  pd_handover: "PD Handover",
+  payment_in: "Inflow",
+  payment_out: "Payment Due",
+};
+
+const EVENT_TONE: Record<string, string> = {
+  construction_start: "bg-emerald-50 border-emerald-200 text-emerald-900",
+  commissioning: "bg-blue-50 border-blue-200 text-blue-900",
+  handover_om: "bg-violet-50 border-violet-200 text-violet-900",
+  handover_client: "bg-violet-50 border-violet-200 text-violet-900",
+  practical_completion: "bg-blue-50 border-blue-200 text-blue-900",
+  pd_handover: "bg-amber-50 border-amber-200 text-amber-900",
+  payment_in: "bg-emerald-50 border-emerald-200 text-emerald-900",
+  payment_out: "bg-rose-50 border-rose-200 text-rose-900",
+};
+
+function formatEventDate(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00");
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diff = Math.round((d.getTime() - today.getTime()) / 86400000);
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Tomorrow";
+  return d.toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short" });
+}
+
+function UpcomingEventsStrip() {
+  const { data, isLoading } = useQuery<{ rangeStart: string; rangeEnd: string; events: UpcomingEvent[] }>({
+    queryKey: ["/api/upcoming-events"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/upcoming-events");
+      return res.json();
+    },
+    staleTime: 5 * 60_000,
+  });
+
+  const events = data?.events ?? [];
+
+  if (isLoading) {
+    return (
+      <div className="mb-5" data-testid="section-upcoming-events">
+        <div className="flex items-center gap-2 mb-2">
+          <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
+          <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider">This Week</h2>
+        </div>
+        <div className="flex gap-2">
+          {[0, 1, 2].map((i) => <Skeleton key={i} className="h-9 w-52 rounded-lg" />)}
+        </div>
+      </div>
+    );
+  }
+
+  if (events.length === 0) return null;
+
+  return (
+    <div className="mb-5" data-testid="section-upcoming-events">
+      <div className="flex items-center gap-2 mb-2">
+        <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
+        <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider">This Week</h2>
+        <span className="text-[11px] text-muted-foreground">{data?.rangeStart} – {data?.rangeEnd}</span>
+      </div>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {events.slice(0, 10).map((ev, i) => (
+          <Link key={i} href={ev.projectId ? `/projects/${ev.projectId}` : "/execution-board"}>
+            <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm whitespace-nowrap cursor-pointer hover:opacity-80 transition-opacity ${EVENT_TONE[ev.type] ?? "bg-muted border-border"}`}>
+              <span className="font-medium">{formatEventDate(ev.date)}</span>
+              <span className="opacity-40">·</span>
+              <span className="max-w-[120px] truncate">{ev.projectName}</span>
+              <span className="opacity-40">·</span>
+              <span className="font-medium">{EVENT_LABEL[ev.type] ?? ev.detail}</span>
+              {ev.amount && <span className="opacity-60 text-xs">R {Number(ev.amount).toLocaleString()}</span>}
+            </div>
+          </Link>
+        ))}
+      </div>
     </div>
   );
 }
