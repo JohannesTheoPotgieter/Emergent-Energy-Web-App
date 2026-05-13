@@ -110,7 +110,14 @@ export function BulkConflictDialog({
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent
-        className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col"
+        // Force centered-modal positioning at ALL breakpoints. The shared
+        // shadcn DialogContent base is mobile-first (full-width bottom
+        // sheet under sm:, centered modal at sm+). For this dense 3-column
+        // conflict-resolution UI a bottom sheet is wrong on every screen
+        // size, and the base `inset-x-0` + sm: `translate-x-[-50%]` were
+        // interacting badly inside the Replit Canvas iframe and shifting
+        // the whole dialog off the left edge of the viewport.
+        className="top-1/2 left-1/2 inset-x-auto bottom-auto -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-3xl max-h-[90vh] rounded-lg overflow-hidden flex flex-col"
         data-testid={`bulk-conflict-dialog-${runId}`}
       >
         <DialogHeader>
