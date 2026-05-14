@@ -2,7 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { z } from "zod";
 import { requireAuth, requirePriorityAdmin, requirePriorityCreator } from "./shared-middleware";
 import { requirePermission } from "../permission-middleware";
-import { isDepartmentHeadRole, isPriorityAdminRole, isPriorityTerminalStatus } from "@shared/config/priorities";
+import { canPriorityRoleEditPriority, isDepartmentHeadRole, isPriorityAdminRole, isPriorityTerminalStatus } from "@shared/config/priorities";
 import { getEffectiveUser } from "../auth-context";
 import { db } from "../db";
 import {
@@ -24,7 +24,7 @@ import {
   raidItems,
 } from "@shared/schema";
 import { ROLE_DEPARTMENT_MAP } from "@shared/schema/users";
-import { eq, and, sql, desc, asc, inArray, isNull, ne } from "drizzle-orm";
+import { eq, and, sql, desc, asc, inArray, isNull } from "drizzle-orm";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { validateBody } from "../middleware/validateBody";
 import { ApiError, badRequest, forbidden, notFound } from "../lib/api-error";
@@ -53,6 +53,33 @@ function activePriorityStatusSql(columnName = "status") {
 
 function getDepartmentForRole(role: string | null | undefined): string | undefined {
   return role ? (ROLE_DEPARTMENT_MAP as Record<string, string>)[role] : undefined;
+}
+
+function nullableNumber(value: number | null | undefined): number | null {
+  return value ?? null;
+}
+
+function assertRegularPriorityUpdateFields(body: Record<string, any>, existing: any) {
+  const protectedChanges: string[] = [];
+  const existingScope = (existing.scope ?? "company") as PriorityScope;
+  const existingDepartmentKey = existing.departmentKey ?? null;
+  const existingParentId = existing.parentId ?? null;
+  const existingOwnerUserId = existing.ownerUserId ?? null;
+  const existingAssignedUserId = existing.assignedUserId ?? null;
+  const existingAccountableExecId = existing.accountableExecId ?? null;
+
+  if (body.scope !== undefined && body.scope !== existingScope) protectedChanges.push("scope");
+  if (body.department_key !== undefined && (body.department_key ?? null) !== existingDepartmentKey) protectedChanges.push("department_key");
+  if (body.parent_id !== undefined && nullableNumber(body.parent_id) !== existingParentId) protectedChanges.push("parent_id");
+  if (body.owner_user_id !== undefined && nullableNumber(body.owner_user_id) !== existingOwnerUserId) protectedChanges.push("owner_user_id");
+  if (body.assigned_user_id !== undefined && nullableNumber(body.assigned_user_id) !== existingAssignedUserId) protectedChanges.push("assigned_user_id");
+  if (body.accountable_exec_id !== undefined && nullableNumber(body.accountable_exec_id) !== existingAccountableExecId) protectedChanges.push("accountable_exec_id");
+  if (body.project_ids !== undefined) protectedChanges.push("project_ids");
+  if (body.progress_source_type !== undefined || body.progress_source_ref !== undefined) protectedChanges.push("progress_source");
+
+  if (protectedChanges.length > 0) {
+    throw forbidden(`Regular users can only update personal priority fields: ${protectedChanges.join(", ")}`);
+  }
 }
 
 function getRouteParamAsString(param: string | string[] | undefined): string | null {
@@ -1089,6 +1116,7 @@ router.post(
     let effectiveOwnerUserId = owner_user_id || null;
     let effectiveAssignedUserId = assigned_user_id || null;
     let effectiveAccountableExecId = accountable_exec_id || null;
+    let effectiveParentId = parent_id || null;
     let effectiveProjectIds = project_ids || [];
 
     if (!isPriorityAdmin && !isDeptHead) {
@@ -1099,6 +1127,7 @@ router.post(
       effectiveOwnerUserId = user.id;
       effectiveAssignedUserId = user.id;
       effectiveAccountableExecId = null;
+      effectiveParentId = null;
       effectiveProjectIds = [];
     } else if (!isPriorityAdmin) {
       if (effectiveScope !== "department" && effectiveScope !== "role") {
@@ -1123,8 +1152,8 @@ router.post(
       const assignee = await getUserById(effectiveAssignedUserId);
       if (!assignee) throw badRequest("assigned_user_id not found");
     }
-    if (parent_id) {
-      const [parent] = await db.select({ id: mytoolCompanyPriorities.id }).from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, parent_id));
+    if (effectiveParentId) {
+      const [parent] = await db.select({ id: mytoolCompanyPriorities.id }).from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, effectiveParentId));
       if (!parent) throw badRequest("parent_id not found");
     }
     if (effectiveProjectIds.length > 0) {
@@ -1153,7 +1182,7 @@ router.post(
       definitionOfDone: definition_of_done || null,
       support: support || null,
       scope: effectiveScope,
-      parentId: parent_id || null,
+      parentId: effectiveParentId,
       departmentKey: effectiveDepartmentKey,
       assignedUserId: effectiveAssignedUserId,
       createdAt: now,
@@ -1192,7 +1221,7 @@ router.post(
 router.put(
   "/api/priorities/:id",
   requireAuth,
-  requirePriorityCreator,
+  requirePermission("company_priorities", "view"),
   validateBody(updatePrioritySchema),
   asyncHandler(async (req: Request, res: Response) => {
     const user = getEffectiveUser(req)!;
@@ -1211,15 +1240,29 @@ router.put(
       scope, parent_id, department_key, assigned_user_id,
     } = body;
 
+    const existingPriority = existing[0] as any;
+    const isPriorityAdmin = isPriorityAdminRole(user.role);
+    const isDeptHead = isDepartmentHeadRole(user.role);
+    const userDept = getDepartmentForRole(user.role);
+    const existingScope = (existingPriority.scope || "company") as PriorityScope;
+    const existingDept = existingPriority.departmentKey || null;
+    const canEdit = canPriorityRoleEditPriority(
+      { role: user.role, userId: user.id, departmentKey: userDept || null },
+      {
+        scope: existingScope,
+        departmentKey: existingDept,
+        ownerUserId: existingPriority.ownerUserId ?? null,
+        assignedUserId: existingPriority.assignedUserId ?? null,
+      },
+    );
+    if (!canEdit) {
+      throw forbidden("You cannot edit this priority");
+    }
+
     // Non-admin dept heads may only edit dept/role priorities within their own
     // department, and may not promote a priority to company scope or move it
     // to another department. Mirrors the POST scope guard.
-    if (!isPriorityAdminRole(user.role)) {
-      const userDept = user.role
-        ? (ROLE_DEPARTMENT_MAP as Record<string, string>)[user.role]
-        : undefined;
-      const existingScope = (existing[0] as any).scope || "company";
-      const existingDept = (existing[0] as any).departmentKey || null;
+    if (!isPriorityAdmin && isDeptHead) {
       if (existingScope === "company") {
         throw badRequest("Only priority admins can edit company-scope priorities");
       }
@@ -1232,6 +1275,8 @@ router.put(
       if (department_key && userDept && department_key !== userDept) {
         throw badRequest("You may only assign priorities to your own department");
       }
+    } else if (!isPriorityAdmin) {
+      assertRegularPriorityUpdateFields(body as Record<string, any>, existingPriority);
     }
 
     const updates: Record<string, any> = { updatedAt: new Date() };
