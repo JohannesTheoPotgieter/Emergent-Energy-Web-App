@@ -2684,6 +2684,18 @@ export default function CashflowPage() {
         <Dialog open={!!qbLinkContext} onOpenChange={(open) => !open && setQbLinkContext(null)}>
           <DialogContent
             data-wide-dialog=""
+            style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              right: 'auto',
+              bottom: 'auto',
+              transform: 'translate(-50%, -50%)',
+              width: 'min(calc(100vw - 2rem), 70rem)',
+              maxWidth: 'min(calc(100vw - 2rem), 70rem)',
+              maxHeight: 'min(86dvh, 780px)',
+              zIndex: 60,
+            }}
             className="z-[60] overflow-hidden p-0 sm:p-0"
             data-testid="dialog-cashflow-qb-match"
           >
