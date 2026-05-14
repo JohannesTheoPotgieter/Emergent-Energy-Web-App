@@ -1300,7 +1300,7 @@ export default function CosTracker() {
   if (isLoading) return <PageSkeleton lines={5} />;
   if (isError)
     return (
-      <div className="p-4 md:p-6">
+      <div className="p-3 md:p-4">
         <PageError
           title="Unable to load COS Tracker"
           message={error instanceof Error ? error.message : 'Failed to fetch data'}
