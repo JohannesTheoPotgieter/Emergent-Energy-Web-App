@@ -10,6 +10,7 @@ export {
   SCOPE_LABELS,
   DEPARTMENT_OPTIONS,
   PRIORITY_TERMINAL_STATUSES,
+  canPriorityRoleEditPriority,
   canPriorityRoleCreateScope,
   canPriorityRoleUseAdminAction,
   departmentLabel,
@@ -24,4 +25,6 @@ export type {
   EscalationReason,
   DepartmentOption,
   PriorityTerminalStatus,
+  PriorityAccessUser,
+  PriorityMutabilityRow,
 } from "@shared/config/priorities";

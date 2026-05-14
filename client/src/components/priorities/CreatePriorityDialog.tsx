@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,6 +10,14 @@ import {
 } from "@/components/ui/dialog";
 import { apiRequest } from "@/lib/queryClient";
 import { invalidatePriorityQueries } from "@/lib/priority-query-invalidation";
+import { useAuth } from "@/hooks/use-auth";
+import {
+  PRIORITY_SCOPES,
+  canPriorityRoleCreateScope,
+  isDepartmentHeadRole,
+  isPriorityAdminRole,
+  type PriorityScope,
+} from "@/config/priorities";
 import {
   PriorityFormFields,
   emptyPriorityForm,
@@ -28,9 +36,18 @@ export function CreatePriorityDialog({
   defaultScope?: string;
   defaultDepartment?: string;
 }) {
+  const { user } = useAuth();
+  const allowedScopes = useMemo<PriorityScope[]>(() => {
+    const scopes = PRIORITY_SCOPES.filter((scope) => canPriorityRoleCreateScope(user?.role, scope));
+    return scopes.length > 0 ? [...scopes] : ["role"];
+  }, [user?.role]);
+  const normalizedDefaultScope = allowedScopes.includes(defaultScope as PriorityScope)
+    ? (defaultScope as PriorityScope)
+    : allowedScopes[0];
+  const canUseAdvancedPriorityFields = isPriorityAdminRole(user?.role) || isDepartmentHeadRole(user?.role);
   const [form, setForm] = useState<PriorityFormState>({
     ...emptyPriorityForm,
-    scope: defaultScope || "company",
+    scope: normalizedDefaultScope,
     department_key: defaultDepartment || "",
   });
   const queryClient = useQueryClient();
@@ -41,11 +58,11 @@ export function CreatePriorityDialog({
     if (open) {
       setForm({
         ...emptyPriorityForm,
-        scope: defaultScope || "company",
+        scope: normalizedDefaultScope,
         department_key: defaultDepartment || "",
       });
     }
-  }, [open, defaultScope, defaultDepartment]);
+  }, [open, normalizedDefaultScope, defaultDepartment]);
 
   const patch = (delta: Partial<PriorityFormState>) =>
     setForm((prev) => ({ ...prev, ...delta }));
@@ -70,7 +87,18 @@ export function CreatePriorityDialog({
         <DialogHeader>
           <DialogTitle>Add Priority</DialogTitle>
         </DialogHeader>
-        <PriorityFormFields form={form} patch={patch} mode="create" />
+        <PriorityFormFields
+          form={form}
+          patch={patch}
+          mode="create"
+          scopeOptions={allowedScopes}
+          departmentLocked={!canUseAdvancedPriorityFields}
+          showParentPicker={canUseAdvancedPriorityFields}
+          showOwnerFields={canUseAdvancedPriorityFields}
+          showAccountableExecField={canUseAdvancedPriorityFields}
+          showAssigneeField={canUseAdvancedPriorityFields}
+          showProjectPicker={canUseAdvancedPriorityFields}
+        />
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel

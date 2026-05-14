@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { apiRequest } from "@/lib/queryClient";
-import { DEPARTMENT_OPTIONS } from "@shared/config/priorities";
+import { DEPARTMENT_OPTIONS, PRIORITY_SCOPES, type PriorityScope } from "@shared/config/priorities";
 import { useUserOptions, useProjectOptions } from "./usePriorityPickers";
 import {
   ProgressSourcePicker,
@@ -85,6 +85,14 @@ interface Props {
   /** When editing, the priority's own id so we can exclude it from the parent
    *  picker (a priority can't be its own parent). */
   excludePriorityId?: number;
+  scopeOptions?: readonly PriorityScope[];
+  departmentLocked?: boolean;
+  showParentPicker?: boolean;
+  showOwnerFields?: boolean;
+  showAccountableExecField?: boolean;
+  showAssigneeField?: boolean;
+  showProjectPicker?: boolean;
+  showProgressSourcePicker?: boolean;
 }
 
 export function PriorityFormFields({
@@ -95,10 +103,23 @@ export function PriorityFormFields({
   onProgressSourceChange,
   linkedProjects,
   excludePriorityId,
+  scopeOptions,
+  departmentLocked = false,
+  showParentPicker = true,
+  showOwnerFields = true,
+  showAccountableExecField = true,
+  showAssigneeField = true,
+  showProjectPicker = true,
+  showProgressSourcePicker = true,
 }: Props) {
   const userOptions = useUserOptions(true);
   const projectOptions = useProjectOptions(true);
   const [projectSearch, setProjectSearch] = useState("");
+  const effectiveScopeOptions = scopeOptions && scopeOptions.length > 0
+    ? scopeOptions
+    : PRIORITY_SCOPES;
+  const showDepartmentSection = form.scope === "department" || form.scope === "role";
+  const showParentPriorityPicker = showParentPicker && showDepartmentSection;
 
   // Parent-priority picker — always available when scope is dept/role so
   // a department priority can be linked under a company one (and a role
@@ -119,7 +140,7 @@ export function PriorityFormFields({
       const dept = (await res2.json()) as PriorityRow[];
       return [...company, ...dept];
     },
-    enabled: form.scope !== "company",
+    enabled: showParentPriorityPicker,
     staleTime: 30_000,
   });
 
@@ -187,9 +208,11 @@ export function PriorityFormFields({
           <Select value={form.scope} onValueChange={(v) => patch({ scope: v })}>
             <SelectTrigger data-testid="select-priority-scope"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="company">Company</SelectItem>
-              <SelectItem value="department">Department</SelectItem>
-              <SelectItem value="role">Role / Individual</SelectItem>
+              {effectiveScopeOptions.map((scope) => (
+                <SelectItem key={scope} value={scope}>
+                  {scope === "company" ? "Company" : scope === "department" ? "Department" : "Role / Individual"}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -233,11 +256,15 @@ export function PriorityFormFields({
         )}
       </div>
 
-      {(form.scope === "department" || form.scope === "role") && (
-        <div className="grid grid-cols-2 gap-3">
+      {showDepartmentSection && (
+        <div className={showParentPriorityPicker ? "grid grid-cols-2 gap-3" : "grid grid-cols-1 gap-3"}>
           <div>
             <Label className="text-xs">Department</Label>
-            <Select value={form.department_key} onValueChange={(v) => patch({ department_key: v })}>
+            <Select
+              value={form.department_key}
+              onValueChange={(v) => patch({ department_key: v })}
+              disabled={departmentLocked}
+            >
               <SelectTrigger data-testid="select-priority-department">
                 <SelectValue placeholder="Select department" />
               </SelectTrigger>
@@ -248,56 +275,64 @@ export function PriorityFormFields({
               </SelectContent>
             </Select>
           </div>
-          <div>
-            <Label className="text-xs">Parent priority (optional)</Label>
-            {parentOptions.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-2">
-                No higher-level priorities to link to.
-              </p>
-            ) : (
-              <Select
-                value={form.parent_id || "none"}
-                onValueChange={(v) => patch({ parent_id: v === "none" ? "" : v })}
-              >
-                <SelectTrigger data-testid="select-priority-parent">
-                  <SelectValue placeholder="Standalone" />
-                </SelectTrigger>
-                <SelectContent>
+          {showParentPriorityPicker && (
+            <div>
+              <Label className="text-xs">Parent priority (optional)</Label>
+              {parentOptions.length === 0 ? (
+                <p className="text-xs text-muted-foreground py-2">
+                  No higher-level priorities to link to.
+                </p>
+              ) : (
+                <Select
+                  value={form.parent_id || "none"}
+                  onValueChange={(v) => patch({ parent_id: v === "none" ? "" : v })}
+                >
+                  <SelectTrigger data-testid="select-priority-parent">
+                    <SelectValue placeholder="Standalone" />
+                  </SelectTrigger>
+                  <SelectContent>
                   <SelectItem value="none">— Standalone —</SelectItem>
-                  {parentOptions.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
+                    {parentOptions.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          )}
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <Label className="text-xs">Owner</Label>
-          <SearchableSelect
-            options={userOptions}
-            value={form.owner_user_id}
-            onValueChange={(v) => patch({ owner_user_id: v })}
-            placeholder="Who drives this?"
-            searchPlaceholder="Search people..."
-          />
+      {(showOwnerFields || showAccountableExecField) && (
+        <div className={showOwnerFields && showAccountableExecField ? "grid grid-cols-2 gap-3" : "grid grid-cols-1 gap-3"}>
+          {showOwnerFields && (
+            <div>
+              <Label className="text-xs">Owner</Label>
+              <SearchableSelect
+                options={userOptions}
+                value={form.owner_user_id}
+                onValueChange={(v) => patch({ owner_user_id: v })}
+                placeholder="Who drives this?"
+                searchPlaceholder="Search people..."
+              />
+            </div>
+          )}
+          {showAccountableExecField && (
+            <div>
+              <Label className="text-xs">Accountable exec</Label>
+              <SearchableSelect
+                options={userOptions}
+                value={form.accountable_exec_id}
+                onValueChange={(v) => patch({ accountable_exec_id: v })}
+                placeholder="Executive sponsor"
+                searchPlaceholder="Search people..."
+              />
+            </div>
+          )}
         </div>
-        <div>
-          <Label className="text-xs">Accountable exec</Label>
-          <SearchableSelect
-            options={userOptions}
-            value={form.accountable_exec_id}
-            onValueChange={(v) => patch({ accountable_exec_id: v })}
-            placeholder="Executive sponsor"
-            searchPlaceholder="Search people..."
-          />
-        </div>
-      </div>
+      )}
 
-      {form.scope === "role" && (
+      {form.scope === "role" && showAssigneeField && (
         <div>
           <Label className="text-xs">Assign to</Label>
           <SearchableSelect
@@ -340,7 +375,7 @@ export function PriorityFormFields({
       </div>
 
       {/* Progress: linked-source picker on edit, simple manual % on create. */}
-      {mode === "edit" && progressSource && onProgressSourceChange ? (
+      {mode === "edit" && showProgressSourcePicker && progressSource && onProgressSourceChange ? (
         <ProgressSourcePicker
           value={progressSource}
           onChange={onProgressSourceChange}
@@ -390,7 +425,7 @@ export function PriorityFormFields({
         />
       </div>
 
-      {mode === "create" && (
+      {mode === "create" && showProjectPicker && (
         <div>
           <Label className="text-xs">Link projects (optional)</Label>
           <Input

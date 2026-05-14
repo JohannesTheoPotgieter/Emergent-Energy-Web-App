@@ -35,7 +35,15 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { invalidatePriorityQueries } from "@/lib/priority-query-invalidation";
-import { isPriorityAdminRole, departmentLabel } from "@/config/priorities";
+import {
+  canPriorityRoleEditPriority,
+  canPriorityRoleUseAdminAction,
+  departmentLabel,
+  isDepartmentHeadRole,
+  isPriorityTerminalStatus,
+  type PriorityScope,
+} from "@/config/priorities";
+import { ROLE_DEPARTMENT_MAP } from "@shared/schema/users";
 import { ProjectLinker } from "@/components/priorities/ProjectLinker";
 import { type ProgressSourceValue } from "@/components/priorities/ProgressSourcePicker";
 import {
@@ -157,7 +165,9 @@ export default function PriorityDetailPage() {
     manualProgress: "",
   });
 
-  const isAdmin = isPriorityAdminRole(user?.role);
+  const userDepartment = user?.role ? ROLE_DEPARTMENT_MAP[user.role] : null;
+  const canUsePriorityAdminActions = canPriorityRoleUseAdminAction(user?.role);
+  const canUseAdvancedPriorityFields = canUsePriorityAdminActions || isDepartmentHeadRole(user?.role);
   const { toast } = useToast();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
 
@@ -299,12 +309,22 @@ export default function PriorityDetailPage() {
   const updatePriorityMutation = useMutation({
     mutationFn: async () => {
       const payload = buildPriorityPayload(editForm, { includeStatus: true });
-      // Linked-source progress overrides any manual % from the form.
-      payload.manual_progress = progressSource.type === "manual" && progressSource.manualProgress
-        ? parseInt(progressSource.manualProgress, 10)
-        : null;
-      payload.progress_source_type = progressSource.type;
-      payload.progress_source_ref = progressSource.type === "manual" ? null : progressSource.ref;
+      if (!canUseAdvancedPriorityFields) {
+        delete payload.scope;
+        delete payload.department_key;
+        delete payload.owner_user_id;
+        delete payload.accountable_exec_id;
+        delete payload.assigned_user_id;
+        delete payload.parent_id;
+      }
+      if (canUseAdvancedPriorityFields) {
+        // Linked-source progress overrides any manual % from the form.
+        payload.manual_progress = progressSource.type === "manual" && progressSource.manualProgress
+          ? parseInt(progressSource.manualProgress, 10)
+          : null;
+        payload.progress_source_type = progressSource.type;
+        payload.progress_source_ref = progressSource.type === "manual" ? null : progressSource.ref;
+      }
       await apiRequest("PUT", `/api/priorities/${priorityId}`, payload);
     },
     onSuccess: () => {
@@ -328,6 +348,21 @@ export default function PriorityDetailPage() {
   if (!priority) {
     return <PageShell><p className="text-muted-foreground">Priority not found</p></PageShell>;
   }
+
+  const canEditPriority = canPriorityRoleEditPriority(
+    { role: user?.role, userId: user?.id, departmentKey: userDepartment },
+    {
+      scope: priority.scope,
+      departmentKey: (priority as any).departmentKey ?? null,
+      ownerUserId: priority.owner?.id ?? (priority as any).ownerUserId ?? null,
+      assignedUserId: (priority as any).assignedUserId ?? null,
+    },
+  );
+  const editScopeOptions: readonly PriorityScope[] = canUsePriorityAdminActions
+    ? ["company", "department", "role"]
+    : canUseAdvancedPriorityFields
+      ? ["department", "role"]
+      : [((priority.scope || "role") as PriorityScope)];
 
   const openEditDialog = () => {
     setEditForm({
@@ -417,8 +452,8 @@ export default function PriorityDetailPage() {
               >
                 {watching ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
               </Button>
-              {isAdmin && <Button size="sm" variant="outline" onClick={openEditDialog} data-testid="btn-edit-priority">Edit priority</Button>}
-              {isAdmin && (priority.status === "closed" || priority.status === "complete") && (
+              {canEditPriority && <Button size="sm" variant="outline" onClick={openEditDialog} data-testid="btn-edit-priority">Edit priority</Button>}
+              {canUsePriorityAdminActions && isPriorityTerminalStatus(priority.status) && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -430,7 +465,7 @@ export default function PriorityDetailPage() {
                   {reopenMutation.isPending ? "Reopening..." : "Reopen"}
                 </Button>
               )}
-              {isAdmin && priority.status !== "closed" && priority.status !== "complete" && (
+              {canEditPriority && !isPriorityTerminalStatus(priority.status) && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -496,7 +531,7 @@ export default function PriorityDetailPage() {
               <GitBranch className="w-3 h-3" /> {priority.childCount} sub-priorit{priority.childCount === 1 ? "y" : "ies"}
             </span>
           )}
-          {isAdmin && (
+          {canUsePriorityAdminActions && (
             <div className="flex items-center gap-2 ml-auto">
               {(priority.scope === "role" || priority.scope === "department") && (
                 <Button
@@ -575,7 +610,7 @@ export default function PriorityDetailPage() {
           <Card className="mt-4 border-dashed">
             <CardContent className="p-4 text-sm text-muted-foreground">
               This is a standalone priority. Link projects — or break it down into sub-priorities — to see derived metrics and financial data.
-              {isAdmin && (
+              {canUsePriorityAdminActions && (
                 <Button variant="outline" size="sm" className="ml-2" onClick={() => setLinkDialogOpen(true)}>
                   <Plus className="w-3 h-3 mr-1" /> Link projects
                 </Button>
@@ -672,7 +707,7 @@ export default function PriorityDetailPage() {
                   <th className="pb-2 font-medium">PM</th>
                   <th className="pb-2 font-medium">RAG</th>
                   <th className="pb-2 font-medium">% Complete</th>
-                  {isAdmin && <th className="pb-2 font-medium w-8" />}
+                  {canUsePriorityAdminActions && <th className="pb-2 font-medium w-8" />}
                 </tr>
               </thead>
               <tbody>
@@ -700,7 +735,7 @@ export default function PriorityDetailPage() {
                         ) : "—"}
                       </td>
                       <td className="py-2">{p.percentComplete}%</td>
-                      {isAdmin && (
+                      {canUsePriorityAdminActions && (
                         <td className="py-2">
                           {linkedDirectly ? (
                             <button
@@ -732,7 +767,7 @@ export default function PriorityDetailPage() {
             </table>
           </div>
 
-          {isAdmin && (
+          {canUsePriorityAdminActions && (
             <Button variant="outline" size="sm" className="mt-3" onClick={() => setLinkDialogOpen(true)}>
               <Plus className="w-3 h-3 mr-1" /> Link project
             </Button>
@@ -1050,7 +1085,7 @@ export default function PriorityDetailPage() {
                         <span className="text-xs font-medium text-foreground">{c.authorName || "Unknown"}</span>
                         <div className="flex items-center gap-2">
                           <span className="text-[10px] text-muted-foreground tabular-nums">{formatDateTime(c.createdAt)}</span>
-                          {(isAdmin || c.authorUserId === user?.id) && (
+                          {(canUsePriorityAdminActions || c.authorUserId === user?.id) && (
                             <button
                               type="button"
                               className="text-muted-foreground hover:text-red-600 transition-colors"
@@ -1112,7 +1147,7 @@ export default function PriorityDetailPage() {
         </TabsContent>
       </Tabs>
 
-      {isAdmin && (
+      {canUsePriorityAdminActions && (
         <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
           <DialogContent>
             <DialogHeader>
@@ -1127,7 +1162,7 @@ export default function PriorityDetailPage() {
         </Dialog>
       )}
 
-      {isAdmin && (
+      {canEditPriority && (
         <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
@@ -1141,6 +1176,14 @@ export default function PriorityDetailPage() {
               onProgressSourceChange={setProgressSource}
               linkedProjects={linkedProjects}
               excludePriorityId={priorityId}
+              scopeOptions={editScopeOptions}
+              departmentLocked={!canUsePriorityAdminActions}
+              showParentPicker={canUseAdvancedPriorityFields}
+              showOwnerFields={canUseAdvancedPriorityFields}
+              showAccountableExecField={canUseAdvancedPriorityFields}
+              showAssigneeField={canUseAdvancedPriorityFields}
+              showProjectPicker={false}
+              showProgressSourcePicker={canUseAdvancedPriorityFields}
             />
             <div className="flex justify-end gap-2 mt-2">
               <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
@@ -1155,7 +1198,7 @@ export default function PriorityDetailPage() {
           </DialogContent>
         </Dialog>
       )}
-      {isAdmin && (
+      {canUsePriorityAdminActions && (
         <BreakDownDialog
           priorityId={priorityId}
           open={breakDownDialogOpen}
