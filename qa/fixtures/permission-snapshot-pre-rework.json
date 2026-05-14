@@ -2824,8 +2824,8 @@
     },
     "company_priorities": {
       "view": true,
-      "create": false,
-      "edit": false,
+      "create": true,
+      "edit": true,
       "approve": false,
       "override": false,
       "delete": false
@@ -10136,8 +10136,8 @@
     },
     "company_priorities": {
       "view": true,
-      "create": false,
-      "edit": false,
+      "create": true,
+      "edit": true,
       "approve": false,
       "override": false,
       "delete": false

@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { apiRequest } from "@/lib/queryClient";
+import { invalidatePriorityQueries } from "@/lib/priority-query-invalidation";
 import { useUserOptions } from "./usePriorityPickers";
 
 /**
@@ -32,10 +33,10 @@ export function AssignPriorityDialog({
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
       if (priorityId) {
-        queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
-        queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/activity`] });
+        void invalidatePriorityQueries(queryClient, priorityId);
+      } else {
+        void invalidatePriorityQueries(queryClient);
       }
       setUserId("");
       onOpenChange(false);
