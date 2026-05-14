@@ -126,8 +126,11 @@ export function PriorityFormFields({
   // priority under either). We pull company + department priorities and
   // filter client-side based on scope.
   const { data: parentCandidates = [] } = useQuery<PriorityRow[]>({
-    queryKey: ["/api/priorities", "parent-candidates"],
+    queryKey: ["/api/priorities", "parent-candidates", form.scope, form.department_key],
     queryFn: async () => {
+      const departmentParam = form.department_key
+        ? `&department=${encodeURIComponent(form.department_key)}`
+        : "";
       const res = await apiRequest(
         "GET",
         "/api/priorities?scope=company&include_cancelled=false",
@@ -135,7 +138,7 @@ export function PriorityFormFields({
       const company = (await res.json()) as PriorityRow[];
       const res2 = await apiRequest(
         "GET",
-        "/api/priorities?scope=department&include_cancelled=false&include_team_roles=true",
+        `/api/priorities?scope=department&include_cancelled=false&include_team_roles=false${departmentParam}`,
       );
       const dept = (await res2.json()) as PriorityRow[];
       return [...company, ...dept];

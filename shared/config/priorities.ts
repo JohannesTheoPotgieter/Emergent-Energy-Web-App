@@ -102,6 +102,35 @@ export function canPriorityRoleEditPriority(
     && (priority.ownerUserId === user.userId || priority.assignedUserId === user.userId);
 }
 
+export interface PriorityParentCandidate {
+  id: number;
+  scope: PriorityScope | string | null | undefined;
+  departmentKey: string | null | undefined;
+}
+
+export interface PriorityParentChild {
+  scope: PriorityScope | string | null | undefined;
+  departmentKey: string | null | undefined;
+}
+
+export function isPriorityParentAllowed(
+  child: PriorityParentChild,
+  parent: PriorityParentCandidate | null,
+): boolean {
+  if (!parent) return true;
+
+  const childScope = (child.scope || "company") as PriorityScope;
+  const parentScope = (parent.scope || "company") as PriorityScope;
+
+  if (childScope === "company") return false;
+  if (childScope === "department") return parentScope === "company";
+  if (childScope !== "role") return false;
+
+  if (parentScope === "company") return true;
+  if (parentScope !== "department") return false;
+  return !!child.departmentKey && parent.departmentKey === child.departmentKey;
+}
+
 /** Escalation reason types */
 export type EscalationReason = "overdue" | "critical" | "blocked" | "manual";
 
