@@ -347,18 +347,15 @@ function DetailRow({
   project,
   fyScope,
   colSpan = 8,
+  onOpenQbLink,
 }: {
   weekStart: string;
   project: string;
   fyScope: FinancialYearScope;
   colSpan?: number;
+  onOpenQbLink: (ctx: { scope: QbMatchScope; initialSearch: string; label: string }) => void;
 }) {
   const [detailSearch, setDetailSearch] = useState('');
-  const [qbLinkContext, setQbLinkContext] = useState<{
-    scope: QbMatchScope;
-    initialSearch: string;
-    label: string;
-  } | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -647,7 +644,7 @@ function DetailRow({
                                     title="Open QuickBooks match"
                                     data-testid={`button-qb-link-inflow-${weekStart}-${i}`}
                                     onClick={() =>
-                                      setQbLinkContext({
+                                      onOpenQbLink({
                                         scope: 'revenue',
                                         initialSearch:
                                           inf.milestoneInvoiceNumber?.trim() ||
@@ -906,7 +903,7 @@ function DetailRow({
                                     title="Open QuickBooks match"
                                     data-testid={`button-qb-link-outflow-${weekStart}-${i}`}
                                     onClick={() =>
-                                      setQbLinkContext({
+                                      onOpenQbLink({
                                         scope: 'cost',
                                         initialSearch:
                                           out.expenseInvoiceNumber?.trim() ||
@@ -1031,28 +1028,6 @@ function DetailRow({
               )}
             </div>
           </div>
-          <Dialog open={!!qbLinkContext} onOpenChange={(open) => !open && setQbLinkContext(null)}>
-            <DialogContent
-              className="max-w-5xl max-h-[85vh] overflow-y-auto"
-              data-testid="dialog-cashflow-qb-match"
-            >
-              <DialogHeader>
-                <DialogTitle className="text-lg font-semibold">Open QuickBooks match</DialogTitle>
-                <DialogDescription>
-                  Search QuickBooks, link the app line, and review the live payment status without
-                  leaving cashflow.
-                  {qbLinkContext?.label ? ` Seeded from ${qbLinkContext.label}.` : ''}
-                </DialogDescription>
-              </DialogHeader>
-              {qbLinkContext && (
-                <FindQbMatchesPanel
-                  key={`${qbLinkContext.scope}-${qbLinkContext.initialSearch}`}
-                  defaultScope={qbLinkContext.scope}
-                  initialSearch={qbLinkContext.initialSearch}
-                />
-              )}
-            </DialogContent>
-          </Dialog>
         </div>
       </td>
     </tr>
@@ -1294,6 +1269,11 @@ export default function CashflowPage() {
   const [availPayHistoryWeek, setAvailPayHistoryWeek] = useState<string | null>(null);
   const [railSearch, setRailSearch] = useState('');
   const railSearchRef = useRef<HTMLInputElement>(null);
+  const [qbLinkContext, setQbLinkContext] = useState<{
+    scope: QbMatchScope;
+    initialSearch: string;
+    label: string;
+  } | null>(null);
 
   const projectParam = selectedProjects.length > 0 ? selectedProjects.join(',') : undefined;
   const selectedFy = fyScope.fy ?? getCurrentFiscalYear();
@@ -2510,6 +2490,7 @@ export default function CashflowPage() {
                                       }
                                       fyScope={fyScope}
                                       colSpan={6}
+                                      onOpenQbLink={setQbLinkContext}
                                     />
                                   )}
                                 </Fragment>
@@ -2696,6 +2677,28 @@ export default function CashflowPage() {
                 Close
               </Button>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={!!qbLinkContext} onOpenChange={(open) => !open && setQbLinkContext(null)}>
+          <DialogContent
+            className="max-w-5xl max-h-[85vh] overflow-y-auto"
+            data-testid="dialog-cashflow-qb-match"
+          >
+            <DialogHeader>
+              <DialogTitle className="text-lg font-semibold">Open QuickBooks match</DialogTitle>
+              <DialogDescription>
+                Search QuickBooks, link the app line, and review the live payment status without
+                leaving cashflow.
+                {qbLinkContext?.label ? ` Seeded from ${qbLinkContext.label}.` : ''}
+              </DialogDescription>
+            </DialogHeader>
+            {qbLinkContext && (
+              <FindQbMatchesPanel
+                key={`${qbLinkContext.scope}-${qbLinkContext.initialSearch}`}
+                defaultScope={qbLinkContext.scope}
+                initialSearch={qbLinkContext.initialSearch}
+              />
+            )}
           </DialogContent>
         </Dialog>
       </div>
