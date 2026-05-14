@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { useLocation } from 'wouter';
+import { useLocation, useSearch } from 'wouter';
 
 export interface FinancialYearOption {
   value: string;
@@ -45,22 +45,19 @@ function buildOptions(currentFy: number): FinancialYearOption[] {
   });
 }
 
-function currentSearch(location: string): URLSearchParams {
-  const searchFromLocation = location.includes('?') ? location.split('?')[1] : '';
-  const searchFromWindow =
-    typeof window !== 'undefined' ? window.location.search.replace(/^\?/, '') : '';
-  return new URLSearchParams(searchFromLocation || searchFromWindow);
-}
-
 function pathWithoutSearch(location: string): string {
   return location.split('?')[0] || (typeof window !== 'undefined' ? window.location.pathname : '/');
 }
 
 export function useFinancialYearScope(): FinancialYearScope {
   const [location, navigate] = useLocation();
+  const search = useSearch();
 
   const currentFy = getCurrentFinancialYear();
-  const params = useMemo(() => currentSearch(location), [location]);
+  const params = useMemo(
+    () => new URLSearchParams(search ?? ''),
+    [search],
+  );
   const rawFy = params.get('fy');
   const allData =
     rawFy === 'all' || params.get('scope') === 'all' || params.get('allData') === 'true';
@@ -71,14 +68,14 @@ export function useFinancialYearScope(): FinancialYearScope {
 
   const updateRoute = useCallback(
     (nextFy: string) => {
-      const nextParams = currentSearch(location);
+      const nextParams = new URLSearchParams(search ?? '');
       nextParams.set('fy', nextFy);
       nextParams.delete('scope');
       nextParams.delete('allData');
       const nextSearch = nextParams.toString();
       navigate(`${pathWithoutSearch(location)}${nextSearch ? `?${nextSearch}` : ''}`);
     },
-    [location, navigate],
+    [location, navigate, search],
   );
 
   const setFy = useCallback((nextFy: number) => updateRoute(String(nextFy)), [updateRoute]);
