@@ -639,7 +639,7 @@ function DetailRow({
                                     type="button"
                                     variant="ghost"
                                     size="sm"
-                                    className="h-4 px-1 text-[9px] text-amber-800 hover:text-amber-900"
+                                    className="touch-compact h-4 px-1 text-[9px] text-amber-800 hover:text-amber-900"
                                     aria-label="Open QuickBooks match"
                                     title="Open QuickBooks match"
                                     data-testid={`button-qb-link-inflow-${weekStart}-${i}`}
@@ -651,8 +651,8 @@ function DetailRow({
                                           inf.qbDocNumber?.trim() ||
                                           inf.projectName,
                                         label: inf.milestoneInvoiceNumber || inf.projectName,
-                                      })
-                                    }
+                                      });
+                                    }}
                                   >
                                     <Link2 className="h-3 w-3" />
                                     Link
@@ -898,10 +898,11 @@ function DetailRow({
                                     type="button"
                                     variant="ghost"
                                     size="sm"
-                                    className="h-4 px-1 text-[9px] text-amber-800 hover:text-amber-900"
+                                    className="touch-compact h-4 px-1 text-[9px] text-amber-800 hover:text-amber-900"
                                     aria-label="Open QuickBooks match"
                                     title="Open QuickBooks match"
                                     data-testid={`button-qb-link-outflow-${weekStart}-${i}`}
+                                    
                                     onClick={() =>
                                       onOpenQbLink({
                                         scope: 'cost',
@@ -910,8 +911,8 @@ function DetailRow({
                                           out.qbDocNumber?.trim() ||
                                           out.projectName,
                                         label: out.expenseInvoiceNumber || out.projectName,
-                                      })
-                                    }
+                                      });
+                                    }}
                                   >
                                     <Link2 className="h-3 w-3" />
                                     Link
