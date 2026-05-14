@@ -6,6 +6,22 @@ export type PriorityScope = "company" | "department" | "role";
 
 export const PRIORITY_SCOPES: readonly PriorityScope[] = ["company", "department", "role"] as const;
 
+export const PRIORITY_TERMINAL_STATUSES = [
+  "closed",
+  "complete",
+  "completed",
+  "cancelled",
+  "canceled",
+] as const;
+
+export type PriorityTerminalStatus = (typeof PRIORITY_TERMINAL_STATUSES)[number];
+
+export function isPriorityTerminalStatus(status: string | null | undefined): boolean {
+  return !!status && PRIORITY_TERMINAL_STATUSES.includes(
+    status.toLowerCase() as PriorityTerminalStatus,
+  );
+}
+
 export const PRIORITY_ADMIN_ROLES = [
   "COO_ADMIN",
   "CEO_ADMIN",
@@ -38,6 +54,20 @@ export type DepartmentHeadRole = (typeof DEPARTMENT_HEAD_ROLES)[number];
 
 export function isDepartmentHeadRole(role: string | null | undefined): boolean {
   return !!role && DEPARTMENT_HEAD_ROLES.includes(role as DepartmentHeadRole);
+}
+
+export function canPriorityRoleCreateScope(
+  role: string | null | undefined,
+  scope: PriorityScope,
+): boolean {
+  if (!role) return false;
+  if (scope === "role") return true;
+  if (isPriorityAdminRole(role)) return true;
+  return isDepartmentHeadRole(role) && scope === "department";
+}
+
+export function canPriorityRoleUseAdminAction(role: string | null | undefined): boolean {
+  return isPriorityAdminRole(role);
 }
 
 /** Escalation reason types */
