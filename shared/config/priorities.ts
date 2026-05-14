@@ -70,6 +70,38 @@ export function canPriorityRoleUseAdminAction(role: string | null | undefined): 
   return isPriorityAdminRole(role);
 }
 
+export interface PriorityAccessUser {
+  role: string | null | undefined;
+  userId: number | null | undefined;
+  departmentKey: string | null | undefined;
+}
+
+export interface PriorityMutabilityRow {
+  scope: PriorityScope | string | null | undefined;
+  departmentKey: string | null | undefined;
+  ownerUserId: number | null | undefined;
+  assignedUserId: number | null | undefined;
+}
+
+export function canPriorityRoleEditPriority(
+  user: PriorityAccessUser,
+  priority: PriorityMutabilityRow,
+): boolean {
+  if (!user.role || !user.userId) return false;
+  const scope = (priority.scope || "company") as PriorityScope;
+
+  if (isPriorityAdminRole(user.role)) return true;
+
+  if (isDepartmentHeadRole(user.role)) {
+    if (scope === "company") return false;
+    if (!user.departmentKey) return false;
+    return !priority.departmentKey || priority.departmentKey === user.departmentKey;
+  }
+
+  return scope === "role"
+    && (priority.ownerUserId === user.userId || priority.assignedUserId === user.userId);
+}
+
 /** Escalation reason types */
 export type EscalationReason = "overdue" | "critical" | "blocked" | "manual";
 
