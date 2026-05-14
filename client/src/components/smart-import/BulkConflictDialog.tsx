@@ -110,33 +110,7 @@ export function BulkConflictDialog({
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent
-        // Force centered-modal positioning at ALL breakpoints using inline
-        // styles so we bypass: (a) the shared shadcn DialogContent's
-        // mobile-first bottom-sheet base classes, (b) any Tailwind utility
-        // de-duplication quirks under tailwind-merge v3 / Tailwind v4, and
-        // (c) any transformed/filtered ancestor that could become the
-        // containing block for `position: fixed` and shrink `width: 100%`
-        // away from the actual viewport. `100vw` is always relative to the
-        // real viewport, and an inline `transform` always wins.
-        //
-        // NOTE: this inline-style override is intentionally retained even
-        // though the global `[data-layout-mode]` CSS in index.css would
-        // otherwise centre the dialog. The bulk-conflict dialog's 3-column
-        // layout requires a wider modal (768px) than the global override
-        // (42rem) and must work even when the layout mode is "auto" and the
-        // measured viewport happens to be just under the md breakpoint.
-        style={{
-          position: "fixed",
-          top: "50%",
-          left: "50%",
-          right: "auto",
-          bottom: "auto",
-          transform: "translate(-50%, -50%)",
-          width: "min(calc(100vw - 2rem), 768px)",
-          maxWidth: "min(calc(100vw - 2rem), 768px)",
-          maxHeight: "90vh",
-        }}
-        className="rounded-lg overflow-hidden flex flex-col"
+        className="sm:max-w-3xl"
         data-testid={`bulk-conflict-dialog-${runId}`}
       >
         <DialogHeader>
