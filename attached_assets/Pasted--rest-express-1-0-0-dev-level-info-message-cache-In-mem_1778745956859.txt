@@ -1,0 +1,163 @@
+> rest-express@1.0.0 dev
+{"level":"info","message":"[cache] In-memory cache backend active (set REDIS_URL for Redis)","timestamp":"2026-05-14T08:00:52.462Z"}
+{"level":"info","message":"[job-queue] In-memory queue backend active (set REDIS_URL for BullMQ)","timestamp":"2026-05-14T08:00:53.445Z"}
+[DB] Testing PostgreSQL connection to helium...
+[DB] ✓ Using PostgreSQL (host: helium)
+[DB] ✓ work_items engineering columns verified
+[DB] ✓ entity_assignments table verified
+8:00:53 AM [express] Session schema auto-create enabled (startup schema repair is on)
+8:00:53 AM [express] CSRF enabled for [POST, PUT, PATCH, DELETE], exempt routes loaded: 6 (auth: 3, webhooks: 2, health: 1)
+8:00:53 AM [Startup:Schema] Runtime schema sync is disabled — schema is owned by ./migrations/*.sql (shared/schema.ts is the Drizzle mirror). Production startup is read-only.
+[auth-context] loaded 0 revoked tokens, 0 revoked sessions from DB
+8:00:53 AM [Startup:PriorityDdl] Table priority_comments ensured
+8:00:53 AM [Startup:PriorityDdl] Table priority_watches ensured
+[permissions] requireRole([COO_ADMIN,CEO_ADMIN,QUALITY_MANAGER]) is a legacy gate. Prefer requirePermission(entity, action) — see docs/permissions.md.
+[permissions] requireRole([COO_ADMIN,CEO_ADMIN,ENGINEERING_MANAGER]) is a legacy gate. Prefer requirePermission(entity, action) — see docs/permissions.md.
+[permissions] requireRole([COO_ADMIN,CEO_ADMIN]) is a legacy gate. Prefer requirePermission(entity, action) — see docs/permissions.md.
+[permissions] requireRole([COO_ADMIN,CEO_ADMIN,CCO,CFO,PROGRAM_MANAGER,PROGRAM_FINANCE_MANAGER,CONSTRUCTION_MANAGER,ENGINEERING_MANAGER,QUALITY_MANAGER]) is a legacy gate. Prefer requirePermission(entity, action) — see docs/permissions.md.
+[Lifecycle] RAG audit table and columns ensured
+[permissions] requireRole([CFO,CEO_ADMIN,COO_ADMIN]) is a legacy gate. Prefer requirePermission(entity, action) — see docs/permissions.md.
+[permissions] requireRole([COO_ADMIN,CEO_ADMIN,CFO,PROGRAM_FINANCE_MANAGER,ACCOUNTANT,PROGRAM_MANAGER]) is a legacy gate. Prefer requirePermission(entity, action) — see docs/permissions.md.
+[permissions] requireRole([COO_ADMIN,CEO_ADMIN,CFO,PROGRAM_FINANCE_MANAGER]) is a legacy gate. Prefer requirePermission(entity, action) — see docs/permissions.md.
+[permissions] requireRole([COO_ADMIN,CEO_ADMIN,CCO,CFO,PROGRAM_MANAGER,PROGRAM_FINANCE_MANAGER,CONSTRUCTION_MANAGER,QUALITY_MANAGER,ENGINEERING_MANAGER,KEY_ACCOUNTS_MANAGER,ACCOUNTANT,ENGINEER,PROJECT_MANAGER_SITE,PROJECT_DEVELOPER,HSE_MANAGER,SSEG_MANAGER]) is a legacy gate. Prefer requirePermission(entity, action) — see docs/permissions.md.
+[permissions] requireRole([COO_ADMIN,CEO_ADMIN,CCO,CFO,PROGRAM_MANAGER,PROGRAM_FINANCE_MANAGER,CONSTRUCTION_MANAGER,ENGINEERING_MANAGER,QUALITY_MANAGER,PROJECT_MANAGER_SITE,PROJECT_DEVELOPER,KEY_ACCOUNTS_MANAGER,ACCOUNTANT]) is a legacy gate. Prefer requirePermission(entity, action) — see docs/permissions.md.
+8:00:56 AM [Startup:Routes] All route groups registered
+[Monthly Report Scheduler] Starting scheduler (checks every hour)
+[NotificationScheduler] Starting — checks every 60 minutes
+[cos-period-lock] Auto-lock scheduler registered (daily + 1 immediate run).
+[cos-period-lock] Proposed lock for 2026-04-01 (awaiting approval).
+[MS Sync] Periodic sync started (every 15 minutes)
+[qb-payment-refresh] Nightly payment-status refresh scheduler registered.
+[QuickBooks] QUICKBOOKS_CLIENT_ID: "ABXc...UXtS" (length=50)
+[QuickBooks] QUICKBOOKS_CLIENT_SECRET: "MGU8...VxlF" (length=40)
+[QuickBooks] Token endpoint: https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer
+[QuickBooks] Authorization header: Basic QUJYY1...hsRg== (base64 length=124)
+[QuickBooks] Token body params: grant_type, refresh_token
+[QuickBooks] QUICKBOOKS_CLIENT_ID: "ABXc...UXtS" (length=50)
+[QuickBooks] QUICKBOOKS_CLIENT_SECRET: "MGU8...VxlF" (length=40)
+[QuickBooks] Token exchange failed: status=400 | response={"error":"invalid_grant","error_description":"Incorrect or invalid refresh token"} | clientId=ABXc...UXtS(len=50) | secret=MGU8...VxlF(len=40)
+[qb-payment-refresh] Error refreshing link 1: Error: QuickBooks token endpoint returned 400: {"error":"invalid_grant","error_description":"Incorrect or invalid refresh token"}. Diagnostics: clientId=ABXc...UXtS(len=50), secret=MGU8...VxlF(len=40)
+    at postToTokenEndpoint (/home/runner/workspace/server/services/quickbooks-service.ts:187:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async refreshAccessToken (/home/runner/workspace/server/services/quickbooks-service.ts:267:27)
+    at async getValidAccessToken (/home/runner/workspace/server/services/quickbooks-service.ts:314:23)
+    at async qbGet (/home/runner/workspace/server/services/quickbooks-service.ts:384:38)
+    at async getBillById (/home/runner/workspace/server/services/quickbooks-service.ts:553:16)
+    at async refreshPaymentStatus (/home/runner/workspace/server/bootstrap/qb-payment-refresh-scheduler.ts:86:17)
+    at async runWithAudit (/home/runner/workspace/server/bootstrap/qb-payment-refresh-scheduler.ts:146:14)
+    at async safeRun (/home/runner/workspace/server/bootstrap/qb-payment-refresh-scheduler.ts:178:5)
+[DashboardRefresh] cycle complete: refreshed=3, failed=0
+8:00:58 AM [Startup] [Startup] dbMode=postgres
+8:00:58 AM [Startup] [Startup] flags={"startupMaintenanceEnabled":false,"startupSchemaRepairEnabled":true,"startupDataSeedEnabled":false,"startupBackfillEnabled":false,"startupSessionResetEnabled":false,"startupSyncEnabled":true,"runtimeMaintenanceEnabled":false,"runtimeMutationsActive":false}
+8:00:58 AM [Startup] [Startup] maintenance=skipped
+8:00:58 AM [Startup] [Startup] backfills=skipped
+8:00:58 AM [Startup] [Startup] seeds=skipped
+8:00:58 AM [Startup] [Startup] routes=registered
+8:00:58 AM [Startup] [Startup] runtime=import-scheduler, monthly-report-scheduler, notification-trigger-scheduler, cos-period-lock-scheduler, integration-registry-seed(inserted=0), dashboard-refresh-scheduler, alert-dispatcher-worker, task-reminder-scheduler, periodic-sync, qb-payment-refresh-scheduler
+8:00:58 AM [Startup] serving on port 5000
+[QuickBooks] QUICKBOOKS_CLIENT_ID: "ABXc...UXtS" (length=50)
+[QuickBooks] QUICKBOOKS_CLIENT_SECRET: "MGU8...VxlF" (length=40)
+[QuickBooks] Token endpoint: https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer
+[QuickBooks] Authorization header: Basic QUJYY1...hsRg== (base64 length=124)
+[QuickBooks] Token body params: grant_type, refresh_token
+[QuickBooks] QUICKBOOKS_CLIENT_ID: "ABXc...UXtS" (length=50)
+[QuickBooks] QUICKBOOKS_CLIENT_SECRET: "MGU8...VxlF" (length=40)
+[QuickBooks] Token exchange failed: status=400 | response={"error":"invalid_grant","error_description":"Incorrect or invalid refresh token"} | clientId=ABXc...UXtS(len=50) | secret=MGU8...VxlF(len=40)
+[qb-payment-refresh] Error refreshing link 2: Error: QuickBooks token endpoint returned 400: {"error":"invalid_grant","error_description":"Incorrect or invalid refresh token"}. Diagnostics: clientId=ABXc...UXtS(len=50), secret=MGU8...VxlF(len=40)
+    at postToTokenEndpoint (/home/runner/workspace/server/services/quickbooks-service.ts:187:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async refreshAccessToken (/home/runner/workspace/server/services/quickbooks-service.ts:267:27)
+    at async getValidAccessToken (/home/runner/workspace/server/services/quickbooks-service.ts:314:23)
+    at async qbGet (/home/runner/workspace/server/services/quickbooks-service.ts:384:38)
+    at async refreshPaymentStatus (/home/runner/workspace/server/bootstrap/qb-payment-refresh-scheduler.ts:88:21)
+    at async runWithAudit (/home/runner/workspace/server/bootstrap/qb-payment-refresh-scheduler.ts:146:14)
+    at async safeRun (/home/runner/workspace/server/bootstrap/qb-payment-refresh-scheduler.ts:178:5)
+8:01:09 AM [express] GET /api/version 200 in 10ms
+8:01:10 AM [express] GET /api/auth/me 304 in 6ms
+8:01:10 AM [express] GET /api/platform/connector-status 304 in 12ms
+8:01:10 AM [express] GET /api/notifications/unread-count 304 in 12ms
+[API Error] Unhandled: {
+  name: 'Error',
+  message: 'Failed query: \n' +
+    '      SELECT parent_id, COUNT(*)::int AS child_count\n' +
+    '      FROM mytool_company_priorities\n' +
+    "      WHERE parent_id IS NOT NULL AND status NOT IN ('closed', 'complete', 'completed', 'cancelled', 'canceled')\n" +
+    '      GROUP BY parent_id\n' +
+    '    \n' +
+    'params: ',
+  stack: 'Error: Failed query: \n' +
+    '      SELECT parent_id, COUNT(*)::int AS child_count\n' +
+    '      FROM mytool_company_priorities\n' +
+    "      WHERE parent_id IS NOT NULL AND status NOT IN ('closed', 'complete', 'completed', 'cancelled', 'canceled')\n" +
+    '      GROUP BY parent_id\n' +
+    '    \n' +
+    'params: \n' +
+    '    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+    '    at async <anonymous> (/home/runner/workspace/server/departments/priority-strategic-routes.ts:617:35)'
+}
+8:01:10 AM [express] GET /api/upcoming-events 304 in 113ms
+8:01:10 AM [express] GET /api/priorities 500 in 108ms
+8:01:10 AM [express] GET /api/my-work/all-tasks 304 in 168ms
+8:01:10 AM [express] GET /api/lifecycle-board/execution-dashboard 200 in 162ms
+8:01:10 AM [express] GET /api/home/do-next 200 in 10ms
+8:01:10 AM [express] GET /api/auth/permissions 304 in 11ms
+8:01:11 AM [express] GET /api/feature-flags/rollout 304 in 7ms
+8:01:11 AM [express] GET /api/screen-settings 304 in 11ms
+[API Error] Unhandled: {
+  name: 'Error',
+  message: 'Failed query: \n' +
+    '      SELECT parent_id, COUNT(*)::int AS child_count\n' +
+    '      FROM mytool_company_priorities\n' +
+    "      WHERE parent_id IS NOT NULL AND status NOT IN ('closed', 'complete', 'completed', 'cancelled', 'canceled')\n" +
+    '      GROUP BY parent_id\n' +
+    '    \n' +
+    'params: ',
+  stack: 'Error: Failed query: \n' +
+    '      SELECT parent_id, COUNT(*)::int AS child_count\n' +
+    '      FROM mytool_company_priorities\n' +
+    "      WHERE parent_id IS NOT NULL AND status NOT IN ('closed', 'complete', 'completed', 'cancelled', 'canceled')\n" +
+    '      GROUP BY parent_id\n' +
+    '    \n' +
+    'params: \n' +
+    '    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+    '    at async <anonymous> (/home/runner/workspace/server/departments/priority-strategic-routes.ts:617:35)'
+}
+8:01:11 AM [express] GET /api/priorities 500 in 15ms
+[API Error] Unhandled: {
+  name: 'Error',
+  message: 'Failed query: \n' +
+    '      SELECT parent_id, COUNT(*)::int AS child_count\n' +
+    '      FROM mytool_company_priorities\n' +
+    "      WHERE parent_id IS NOT NULL AND status NOT IN ('closed', 'complete', 'completed', 'cancelled', 'canceled')\n" +
+    '      GROUP BY parent_id\n' +
+    '    \n' +
+    'params: ',
+  stack: 'Error: Failed query: \n' +
+    '      SELECT parent_id, COUNT(*)::int AS child_count\n' +
+    '      FROM mytool_company_priorities\n' +
+    "      WHERE parent_id IS NOT NULL AND status NOT IN ('closed', 'complete', 'completed', 'cancelled', 'canceled')\n" +
+    '      GROUP BY parent_id\n' +
+    '    \n' +
+    'params: \n' +
+    '    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+    '    at async <anonymous> (/home/runner/workspace/server/departments/priority-strategic-routes.ts:617:35)'
+}
+8:01:14 AM [express] GET /api/priorities 500 in 15ms
+[NotificationScheduler] Initial check complete — 0 notifications sent
+8:01:40 AM [express] POST /api/analytics/nav-event 204 in 3ms
+[SharePoint] Scheduled import starting...
+[TaskReminder] initial pass: scanned=2000 fired=0 skipped=2000
+[SharePoint] Scheduled import error: Graph API 403: {"error":{"code":"accessDenied","message":"Access denied"}}
+8:02:10 AM [express] GET /api/notifications/unread-count 304 in 6ms
+[SharePoint] Scheduled import starting...
+[SharePoint] Scheduled import error: Graph API 403: {"error":{"code":"accessDenied","message":"Access denied"}}
+8:03:11 AM [express] GET /api/notifications/unread-count 304 in 36ms
+[SharePoint] Scheduled import starting...
+[SharePoint] Scheduled import error: Graph API 403: {"error":{"code":"accessDenied","message":"Access denied"}}
+8:04:11 AM [express] GET /api/notifications/unread-count 304 in 6ms
+[SharePoint] Scheduled import starting...
+[SharePoint] Scheduled import error: Graph API 403: {"error":{"code":"accessDenied","message":"Access denied"}}
+8:05:11 AM [express] GET /api/notifications/unread-count 304 in 7ms
