@@ -7,8 +7,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import type { FinancialYearScope } from '@/hooks/use-financial-year-scope';
 
@@ -35,32 +33,27 @@ export function FinancialYearScopeControl({
           else scope.setFy(Number(value));
         }}
       >
-        <SelectTrigger className="h-8 w-[112px] rounded-md border-border bg-background text-xs">
+        <SelectTrigger
+          className="h-8 w-[120px] rounded-md border-border bg-background text-xs"
+          data-testid="select-finance-year"
+        >
           <SelectValue placeholder="Financial year" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All data</SelectItem>
+          <SelectItem value="all" data-testid="select-finance-year-option-all">
+            All data
+          </SelectItem>
           {scope.options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
+            <SelectItem
+              key={option.value}
+              value={option.value}
+              data-testid={`select-finance-year-option-${option.value}`}
+            >
               {option.label}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
-      <div className="flex items-center gap-1.5">
-        <Switch
-          id="finance-year-all-data"
-          checked={scope.allData}
-          onCheckedChange={scope.setAllData}
-          aria-label="Show all finance data"
-        />
-        <Label
-          htmlFor="finance-year-all-data"
-          className="text-[11px] font-medium text-muted-foreground"
-        >
-          All data
-        </Label>
-      </div>
     </div>
   );
 }
