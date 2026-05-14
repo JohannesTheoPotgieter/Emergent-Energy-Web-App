@@ -8,7 +8,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
-import { isPriorityAdminRole, isDepartmentHeadRole, SCOPE_LABELS, DEPARTMENT_OPTIONS } from "@/config/priorities";
+import {
+  canPriorityRoleCreateScope,
+  canPriorityRoleUseAdminAction,
+  isPriorityAdminRole,
+  isDepartmentHeadRole,
+  isPriorityTerminalStatus,
+  SCOPE_LABELS,
+  DEPARTMENT_OPTIONS,
+} from "@/config/priorities";
+import { invalidatePriorityQueries } from "@/lib/priority-query-invalidation";
 import { ROLE_DEPARTMENT_MAP } from "@shared/schema/users";
 const ALL_DEPTS_KEY = "__ALL__";
 import type { PriorityRow } from "@/lib/priority-types";
@@ -60,6 +69,7 @@ export default function PrioritiesPage() {
 
   const isAdmin = isPriorityAdminRole(user?.role);
   const isDeptHead = isDepartmentHeadRole(user?.role);
+  const canUsePriorityAdminActions = canPriorityRoleUseAdminAction(user?.role);
   const userDepartment = user?.role ? ROLE_DEPARTMENT_MAP[user.role] : undefined;
 
   const tabParam = params.get("tab");
@@ -155,7 +165,12 @@ export default function PrioritiesPage() {
   });
 
   const { toast } = useToast();
-  const invalidateAll = () => queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+  const activeCreateScope = activeTab === "my" ? "role" : activeTab;
+  const canCreateInActiveTab = canPriorityRoleCreateScope(user?.role, activeCreateScope);
+  const canUseBulkActions = isAdmin || isDeptHead;
+  const invalidateAll = (priorityId?: number | null) => {
+    void invalidatePriorityQueries(queryClient, priorityId);
+  };
 
   // Promote a work_item into a personal (scope='role') priority. Idempotent
   // server-side: if a priority already links to this task, the existing one
@@ -165,14 +180,14 @@ export default function PrioritiesPage() {
       const res = await apiRequest("POST", `/api/priorities/from-task/${workItemId}`, {});
       return res.json();
     },
-    onSuccess: (body: { alreadyExisted?: boolean }) => {
+    onSuccess: (body: { alreadyExisted?: boolean; priority?: { id?: number } }) => {
       toast({
         title: body?.alreadyExisted ? "Already on your priority list" : "Promoted to priority",
         description: body?.alreadyExisted
           ? "This task was already linked to a priority."
           : "It now lives in My Priorities — you can escalate it to your department or the company.",
       });
-      invalidateAll();
+      invalidateAll(body?.priority?.id ?? null);
     },
     onError: (err) => {
       toast({
@@ -186,7 +201,7 @@ export default function PrioritiesPage() {
   const escalateMutation = useMutation({
     mutationFn: ({ id, reason, note }: { id: number; reason: string; note?: string }) =>
       apiRequest("POST", `/api/priorities/${id}/escalate`, { reason, ...(note ? { note } : {}) }),
-    onSuccess: () => { setEscalateTarget(null); invalidateAll(); },
+    onSuccess: (_data, variables) => { setEscalateTarget(null); invalidateAll(variables.id); },
     onError: (err) => toast({ title: "Escalation failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
@@ -197,7 +212,7 @@ export default function PrioritiesPage() {
       return res.json();
     },
     onSettled: () => setUpdatingTaskId(null),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/priorities/my-work"] }),
+    onSuccess: () => invalidateAll(),
     onError: (err) => toast({ title: "Could not update status", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
@@ -207,13 +222,13 @@ export default function PrioritiesPage() {
       await apiRequest("DELETE", `/api/priorities/tasks/${id}`);
     },
     onSettled: () => setDeletingTaskId(null),
-    onSuccess: () => { toast({ title: "Task removed" }); queryClient.invalidateQueries({ queryKey: ["/api/priorities/my-work"] }); },
+    onSuccess: () => { toast({ title: "Task removed" }); invalidateAll(); },
     onError: (err) => toast({ title: "Could not delete task", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
   const reopenMutation = useMutation({
     mutationFn: (priorityId: number) => apiRequest("POST", `/api/priorities/${priorityId}/reopen`, {}),
-    onSuccess: () => { toast({ title: "Priority reopened" }); invalidateAll(); },
+    onSuccess: (_data, priorityId) => { toast({ title: "Priority reopened" }); invalidateAll(priorityId); },
     onError: (err) => toast({ title: "Could not reopen", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
@@ -289,8 +304,8 @@ export default function PrioritiesPage() {
   const activeData = activeTab === "my" ? filteredMy
     : activeTab === "department" ? filteredDept
     : filteredCompany;
-  const activeCount = activeData.filter((p) => p.status !== "closed" && p.status !== "complete").length;
-  const closedData = activeData.filter((p) => p.status === "closed" || p.status === "complete");
+  const activeCount = activeData.filter((p) => !isPriorityTerminalStatus(p.status)).length;
+  const closedData = activeData.filter((p) => isPriorityTerminalStatus(p.status));
   const openTaskCount = useMemo(() => myTasks.filter((t) => {
     const s = (t.status ?? "").toLowerCase();
     return s !== "complete" && s !== "completed" && s !== "cancelled" && s !== "done";
@@ -347,7 +362,7 @@ export default function PrioritiesPage() {
               Export PDF
             </Button>
           )}
-          {(isAdmin || isDeptHead) && (
+          {canCreateInActiveTab && (
             <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="w-4 h-4 mr-1" />
               Add Priority
@@ -356,7 +371,7 @@ export default function PrioritiesPage() {
         </div>
       </div>
 
-      {bulkSize > 0 && (
+      {bulkSize > 0 && canUseBulkActions && (
         <div className="sticky top-0 z-20 bg-primary/10 border border-primary rounded-md px-3 py-2 mb-3 flex items-center gap-2 text-sm">
           <span className="font-medium">{bulkSize} selected</span>
           {isAdmin && (
@@ -370,7 +385,7 @@ export default function PrioritiesPage() {
               Close
             </Button>
           )}
-          {(isAdmin || isDeptHead) && (
+          {isAdmin && (
             <Button
               variant="outline"
               size="sm"
@@ -487,14 +502,14 @@ export default function PrioritiesPage() {
               isError={myWorkFeedQuery.isError}
               error={myWorkFeedQuery.error as Error}
               refetch={myWorkFeedQuery.refetch}
-              showEscalate={isAdmin || isDeptHead}
+              showEscalate={canUsePriorityAdminActions}
               onEscalate={(id) => {
                 const p = myPriorities.find((x) => x.id === id);
                 if (p) setEscalateTarget({ id: p.id, title: p.title, scope: p.scope });
               }}
-              showReopen={showClosed && (isAdmin || isDeptHead)}
+              showReopen={showClosed && canUsePriorityAdminActions}
               onReopen={(id) => reopenMutation.mutate(id)}
-              selectable
+              selectable={canUseBulkActions}
               selectedIds={bulkSelected}
               onToggleSelect={toggleBulkSelect}
               emptyMessage="Nothing on your priority list yet"
@@ -558,7 +573,7 @@ export default function PrioritiesPage() {
               isError={deptQuery.isError}
               error={deptQuery.error as Error}
               refetch={deptQuery.refetch}
-              showEscalate
+              showEscalate={canUsePriorityAdminActions}
               onEscalate={(id) => {
                 const p = filteredDept.find((x) => x.id === id);
                 if (p) setEscalateTarget({ id: p.id, title: p.title, scope: p.scope });
@@ -567,7 +582,7 @@ export default function PrioritiesPage() {
               onAssign={(id) => setAssignDialogPriorityId(id)}
               showReopen={showClosed && isAdmin}
               onReopen={(id) => reopenMutation.mutate(id)}
-              selectable
+              selectable={canUseBulkActions}
               selectedIds={bulkSelected}
               onToggleSelect={toggleBulkSelect}
               emptyMessage={
@@ -591,14 +606,14 @@ export default function PrioritiesPage() {
             isError={companyQuery.isError}
             error={companyQuery.error as Error}
             refetch={companyQuery.refetch}
-            showReopen={showClosed && (isAdmin || isDeptHead)}
+            showReopen={showClosed && canUsePriorityAdminActions}
             onReopen={(id) => reopenMutation.mutate(id)}
             selectable={isAdmin}
             selectedIds={bulkSelected}
             onToggleSelect={toggleBulkSelect}
             emptyMessage="No company priorities yet"
             emptyAction={
-              (isAdmin || isDeptHead) ? (
+              isAdmin ? (
                 <Button size="sm" className="mt-3" onClick={() => setCreateDialogOpen(true)}>
                   <Plus className="w-4 h-4 mr-1" /> Create Priority
                 </Button>
@@ -636,7 +651,7 @@ export default function PrioritiesPage() {
       <CreatePersonalTaskDialog
         open={createTaskDialogOpen}
         onOpenChange={setCreateTaskDialogOpen}
-        onCreated={() => queryClient.invalidateQueries({ queryKey: ["/api/priorities/my-work"] })}
+        onCreated={() => invalidateAll()}
       />
 
       <EscalateDialog

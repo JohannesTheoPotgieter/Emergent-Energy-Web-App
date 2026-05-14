@@ -4,6 +4,7 @@ import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiRequest } from "@/lib/queryClient";
+import { invalidatePriorityQueries } from "@/lib/priority-query-invalidation";
 
 interface ProjectOption {
   id: number;
@@ -84,10 +85,7 @@ export function ProjectLinker({
       await apiRequest("POST", `/api/priorities/${priorityId}/projects`, { project_ids: selected });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/activity`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+      void invalidatePriorityQueries(queryClient, priorityId);
       onDone();
     },
   });

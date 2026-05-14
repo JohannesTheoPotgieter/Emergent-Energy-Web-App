@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { apiRequest } from "@/lib/queryClient";
+import { invalidatePriorityQueries } from "@/lib/priority-query-invalidation";
 import {
   PriorityFormFields,
   emptyPriorityForm,
@@ -58,8 +59,7 @@ export function CreatePriorityDialog({
       );
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+      void invalidatePriorityQueries(queryClient);
       onOpenChange(false);
     },
   });
