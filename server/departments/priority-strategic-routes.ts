@@ -2,7 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { z } from "zod";
 import { requireAuth, requirePriorityAdmin, requirePriorityCreator } from "./shared-middleware";
 import { requirePermission } from "../permission-middleware";
-import { isPriorityAdminRole } from "@shared/config/priorities";
+import { isDepartmentHeadRole, isPriorityAdminRole, isPriorityTerminalStatus } from "@shared/config/priorities";
 import { getEffectiveUser } from "../auth-context";
 import { db } from "../db";
 import {
@@ -42,6 +42,18 @@ const router = Router();
 // ==================== HELPERS ====================
 
 const COO_ONLY_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
+
+function activePriorityStatusCondition() {
+  return sql`${mytoolCompanyPriorities.status} NOT IN ('closed', 'complete', 'completed', 'cancelled', 'canceled')`;
+}
+
+function activePriorityStatusSql(columnName = "status") {
+  return sql.raw(`${columnName} NOT IN ('closed', 'complete', 'completed', 'cancelled', 'canceled')`);
+}
+
+function getDepartmentForRole(role: string | null | undefined): string | undefined {
+  return role ? (ROLE_DEPARTMENT_MAP as Record<string, string>)[role] : undefined;
+}
 
 function getRouteParamAsString(param: string | string[] | undefined): string | null {
   if (typeof param === "string") return param;
@@ -271,7 +283,7 @@ async function resolveRolledUpScope(rootPriorityId: number): Promise<RolledUpSco
   const adjacency = await db
     .select({ id: mytoolCompanyPriorities.id, parentId: mytoolCompanyPriorities.parentId })
     .from(mytoolCompanyPriorities)
-    .where(ne(mytoolCompanyPriorities.status, "closed"));
+    .where(activePriorityStatusCondition());
 
   const descendantPriorityIds = collectDescendantIds(
     adjacency.map((r: { id: number; parentId: number | null }) => ({ id: r.id, parentId: r.parentId })),
@@ -453,7 +465,7 @@ router.get("/api/priorities", requireAuth, asyncHandler(async (req: Request, res
 
   // Filter out cancelled unless requested
   if (!includeCancelled) {
-    allPriorities = allPriorities.filter((p: any) => p.status !== "closed");
+    allPriorities = allPriorities.filter((p: any) => !isPriorityTerminalStatus(p.status));
   }
 
   // Department-head team-role inclusion: when the dept tab asks for
@@ -530,7 +542,7 @@ router.get("/api/priorities", requireAuth, asyncHandler(async (req: Request, res
     const childCountResult: any = await db.execute(sql`
       SELECT parent_id, COUNT(*)::int AS child_count
       FROM mytool_company_priorities
-      WHERE parent_id IS NOT NULL AND status != 'closed'
+      WHERE parent_id IS NOT NULL AND ${activePriorityStatusSql()}
       GROUP BY parent_id
     `);
     const childCountMap = new Map<number, number>();
@@ -614,7 +626,7 @@ router.get("/api/priorities/my-work", requireAuth, requirePermission("company_pr
     const owner = p.ownerUserId ?? p.owner_user_id ?? null;
     const assigned = p.assignedUserId ?? p.assigned_user_id ?? null;
     if (owner !== userId && assigned !== userId) return false;
-    if (!includeClosed && p.status === "closed") return false;
+    if (!includeClosed && isPriorityTerminalStatus(p.status)) return false;
     return true;
   });
 
@@ -899,6 +911,13 @@ router.post("/api/priorities/from-task/:workItemId", requireAuth, asyncHandler(a
   res.status(201).json({ kind: "priority", priority: enriched, alreadyExisted: false });
 }));
 
+router.get(
+  "/api/priorities/progress-source-options",
+  requireAuth,
+  attachProjectScope,
+  asyncHandler(getPriorityProgressSourceOptions),
+);
+
 // ==================== GET /api/priorities/:id ====================
 // Drill-down is now a rolled-up view: `linkedProjects` includes every project
 // linked to this priority OR any descendant, deduped. A `rolledUp` object
@@ -1049,7 +1068,7 @@ router.get("/api/priorities/:id", requireAuth, asyncHandler(async (req: Request,
 router.post(
   "/api/priorities",
   requireAuth,
-  requirePriorityCreator,
+  requirePermission("company_priorities", "view"),
   validateBody(createPrioritySchema),
   asyncHandler(async (req: Request, res: Response) => {
     const user = getEffectiveUser(req)!;
@@ -1062,42 +1081,55 @@ router.post(
       scope, parent_id, department_key, assigned_user_id,
     } = body;
 
-    // Non-admin dept heads may only create department/role-scoped priorities
-    // for their own department. Company-scope creation is admin-only.
-    if (!isPriorityAdminRole(user.role)) {
-      const userDept = user.role
-        ? (ROLE_DEPARTMENT_MAP as Record<string, string>)[user.role]
-        : undefined;
-      if (scope && scope !== "department" && scope !== "role") {
+    const isPriorityAdmin = isPriorityAdminRole(user.role);
+    const isDeptHead = isDepartmentHeadRole(user.role);
+    const userDept = getDepartmentForRole(user.role);
+    const effectiveScope = (scope || (isPriorityAdmin ? "company" : "role")) as PriorityScope;
+    let effectiveDepartmentKey = department_key || null;
+    let effectiveOwnerUserId = owner_user_id || null;
+    let effectiveAssignedUserId = assigned_user_id || null;
+    let effectiveAccountableExecId = accountable_exec_id || null;
+    let effectiveProjectIds = project_ids || [];
+
+    if (!isPriorityAdmin && !isDeptHead) {
+      if (effectiveScope !== "role") {
+        throw badRequest("Regular users can only create personal role priorities");
+      }
+      effectiveDepartmentKey = userDept || null;
+      effectiveOwnerUserId = user.id;
+      effectiveAssignedUserId = user.id;
+      effectiveAccountableExecId = null;
+      effectiveProjectIds = [];
+    } else if (!isPriorityAdmin) {
+      if (effectiveScope !== "department" && effectiveScope !== "role") {
         throw badRequest("Dept-head users can only create department or role priorities");
       }
-      if (!userDept) {
-        throw badRequest("Your role has no associated department");
-      }
-      if (department_key && department_key !== userDept) {
+      if (!userDept) throw badRequest("Your role has no associated department");
+      if (effectiveDepartmentKey && effectiveDepartmentKey !== userDept) {
         throw badRequest("You may only create priorities for your own department");
       }
+      effectiveDepartmentKey = effectiveDepartmentKey || userDept;
     }
 
-    if (owner_user_id) {
-      const ownerUser = await getUserById(owner_user_id);
+    if (effectiveOwnerUserId) {
+      const ownerUser = await getUserById(effectiveOwnerUserId);
       if (!ownerUser) throw badRequest("owner_user_id not found");
     }
-    if (accountable_exec_id) {
-      const execUser = await getUserById(accountable_exec_id);
+    if (effectiveAccountableExecId) {
+      const execUser = await getUserById(effectiveAccountableExecId);
       if (!execUser) throw badRequest("accountable_exec_id not found");
     }
-    if (assigned_user_id) {
-      const assignee = await getUserById(assigned_user_id);
+    if (effectiveAssignedUserId) {
+      const assignee = await getUserById(effectiveAssignedUserId);
       if (!assignee) throw badRequest("assigned_user_id not found");
     }
     if (parent_id) {
       const [parent] = await db.select({ id: mytoolCompanyPriorities.id }).from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, parent_id));
       if (!parent) throw badRequest("parent_id not found");
     }
-    if (project_ids && project_ids.length > 0) {
-      const projectRows = await db.select({ id: projectInfo.id }).from(projectInfo).where(inArray(projectInfo.id, project_ids));
-      if (projectRows.length !== project_ids.length) throw badRequest("One or more project_ids not found");
+    if (effectiveProjectIds.length > 0) {
+      const projectRows = await db.select({ id: projectInfo.id }).from(projectInfo).where(inArray(projectInfo.id, effectiveProjectIds));
+      if (projectRows.length !== effectiveProjectIds.length) throw badRequest("One or more project_ids not found");
     }
 
     const now = new Date();
@@ -1106,8 +1138,8 @@ router.post(
       description: description || null,
       severity: severity || "normal",
       department: department || null,
-      ownerUserId: owner_user_id || null,
-      accountableExecId: accountable_exec_id || null,
+      ownerUserId: effectiveOwnerUserId,
+      accountableExecId: effectiveAccountableExecId,
       targetStartDate: target_start_date || null,
       dueDate: due_date || null,
       targetOutcome: target_outcome || null,
@@ -1120,17 +1152,17 @@ router.post(
       nextAction: next_action || null,
       definitionOfDone: definition_of_done || null,
       support: support || null,
-      scope: scope || "company",
+      scope: effectiveScope,
       parentId: parent_id || null,
-      departmentKey: department_key || null,
-      assignedUserId: assigned_user_id || null,
+      departmentKey: effectiveDepartmentKey,
+      assignedUserId: effectiveAssignedUserId,
       createdAt: now,
       updatedAt: now,
     }).returning();
 
-    if (project_ids && project_ids.length > 0) {
+    if (effectiveProjectIds.length > 0) {
       await db.insert(priorityProjects).values(
-        project_ids.map((pid: number) => ({
+        effectiveProjectIds.map((pid: number) => ({
           priorityId: created.id,
           projectId: pid,
           linkedBy: user.id,
@@ -1146,7 +1178,7 @@ router.post(
       details: {
         scope: created.scope,
         severity: created.severity,
-        projectCount: project_ids?.length ?? 0,
+        projectCount: effectiveProjectIds.length,
       },
     });
 
@@ -1313,12 +1345,13 @@ router.put(
   }),
 );
 
-// ==================== GET /api/priorities/progress-source-options ====================
+// Progress-source options handler. The route is registered before /api/priorities/:id
+// so Express does not treat "progress-source-options" as a priority id.
 // Picker support — returns the revenue milestones + work items available
 // for a given project, so the Edit Priority dialog can populate the
 // linked-progress picker. Phases are static (shared/phases.ts) so they
 // live entirely in the client.
-router.get("/api/priorities/progress-source-options", requireAuth, attachProjectScope, asyncHandler(async (req: Request, res: Response) => {
+async function getPriorityProgressSourceOptions(req: Request, res: Response) {
   const projectId = parseInt(String(req.query.projectId ?? ""), 10);
   if (!Number.isFinite(projectId) || projectId <= 0) {
     return res.json({ projectId: null, milestones: [], workItems: [] });
@@ -1367,7 +1400,7 @@ router.get("/api/priorities/progress-source-options", requireAuth, attachProject
       percentComplete: Number(w.percent_complete || 0),
     })),
   });
-}));
+}
 
 // ==================== DELETE /api/priorities/:id ====================
 router.delete(
@@ -1592,14 +1625,14 @@ router.get(
       .innerJoin(mytoolCompanyPriorities, eq(priorityProjects.priorityId, mytoolCompanyPriorities.id))
       .where(and(
         eq(priorityProjects.projectId, projectId),
-        ne(mytoolCompanyPriorities.status, "closed"),
+        activePriorityStatusCondition(),
       ));
 
     // Load the full adjacency once so we can walk ancestors cheaply.
     const adjacency = await db
       .select({ id: mytoolCompanyPriorities.id, parentId: mytoolCompanyPriorities.parentId })
       .from(mytoolCompanyPriorities)
-      .where(ne(mytoolCompanyPriorities.status, "closed"));
+      .where(activePriorityStatusCondition());
 
     const directIds = new Set(directRows.map((r: typeof directRows[number]) => r.id));
     const ancestorIdSet = new Set<number>();
@@ -1940,7 +1973,7 @@ router.get("/api/priorities/:id/children", requireAuth, asyncHandler(async (req:
   const children = await db.select().from(mytoolCompanyPriorities)
     .where(and(
       eq(mytoolCompanyPriorities.parentId, priorityId),
-      ne(mytoolCompanyPriorities.status, "closed"),
+      activePriorityStatusCondition(),
     ));
 
   if (children.length === 0) return res.json([]);
@@ -1958,7 +1991,7 @@ router.get("/api/priorities/:id/children", requireAuth, asyncHandler(async (req:
   const grandChildResult: any = await db.execute(sql`
     SELECT parent_id, COUNT(*)::int AS child_count
     FROM mytool_company_priorities
-    WHERE parent_id = ANY(${childIds}) AND status != 'closed'
+    WHERE parent_id = ANY(${childIds}) AND ${activePriorityStatusSql()}
     GROUP BY parent_id
   `);
   const grandChildCountMap = new Map<number, number>();
@@ -2189,7 +2222,7 @@ router.get("/api/reports/priorities-pack", requireAuth, requirePriorityCreator, 
   const departmentFilter = typeof req.query.department === "string" ? req.query.department : null;
 
   let rows = await db.select().from(mytoolCompanyPriorities);
-  rows = rows.filter((p: any) => p.status !== "closed");
+  rows = rows.filter((p: any) => !isPriorityTerminalStatus(p.status));
   if (scopeFilter && PRIORITY_SCOPES.includes(scopeFilter as PriorityScope)) {
     rows = rows.filter((p: any) => (p.scope ?? "company") === scopeFilter);
   }

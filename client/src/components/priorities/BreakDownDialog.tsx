@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { apiRequest } from "@/lib/queryClient";
+import { invalidatePriorityQueries } from "@/lib/priority-query-invalidation";
 import { DEPARTMENT_OPTIONS } from "@shared/config/priorities";
 import { useUserOptions } from "./usePriorityPickers";
 
@@ -44,10 +45,7 @@ export function BreakDownDialog({
       await apiRequest("POST", `/api/priorities/${priorityId}/break-down`, { children });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/children`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/activity`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+      void invalidatePriorityQueries(queryClient, priorityId);
       onOpenChange(false);
       setRows([emptyRow()]);
     },

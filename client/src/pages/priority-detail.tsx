@@ -34,6 +34,7 @@ import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { invalidatePriorityQueries } from "@/lib/priority-query-invalidation";
 import { isPriorityAdminRole, departmentLabel } from "@/config/priorities";
 import { ProjectLinker } from "@/components/priorities/ProjectLinker";
 import { type ProgressSourceValue } from "@/components/priorities/ProgressSourcePicker";
@@ -246,9 +247,7 @@ export default function PriorityDetailPage() {
   const watching = watchStatus?.watching ?? false;
 
   const invalidateDetail = () => {
-    queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
-    queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/activity`] });
-    queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+    void invalidatePriorityQueries(queryClient, priorityId);
   };
 
   const escalateMutation = useMutation({
@@ -293,10 +292,7 @@ export default function PriorityDetailPage() {
       await apiRequest("DELETE", `/api/priorities/${priorityId}/projects/${projectId}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/activity`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+      invalidateDetail();
     },
   });
 
@@ -312,10 +308,7 @@ export default function PriorityDetailPage() {
       await apiRequest("PUT", `/api/priorities/${priorityId}`, payload);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/activity`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+      invalidateDetail();
       setEditDialogOpen(false);
     },
   });
@@ -325,10 +318,7 @@ export default function PriorityDetailPage() {
       await apiRequest("PUT", `/api/priorities/${priorityId}`, { status: "closed" });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/activity`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+      invalidateDetail();
     },
   });
 
