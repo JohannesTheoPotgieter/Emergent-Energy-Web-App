@@ -651,8 +651,8 @@ function DetailRow({
                                           inf.qbDocNumber?.trim() ||
                                           inf.projectName,
                                         label: inf.milestoneInvoiceNumber || inf.projectName,
-                                      });
-                                    }}
+                                      })
+                                    }
                                   >
                                     <Link2 className="h-3 w-3" />
                                     Link
@@ -911,8 +911,8 @@ function DetailRow({
                                           out.qbDocNumber?.trim() ||
                                           out.projectName,
                                         label: out.expenseInvoiceNumber || out.projectName,
-                                      });
-                                    }}
+                                      })
+                                    }
                                   >
                                     <Link2 className="h-3 w-3" />
                                     Link
