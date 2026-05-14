@@ -1,22 +1,23 @@
-import { createContext, useContext, useState, useCallback, useMemo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useToast } from "@/hooks/use-toast";
+import { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useToast } from '@/hooks/use-toast';
 import {
   ExecutionDashboardProject,
   ExecutionDashboardResponse,
   ExecutionFilters,
   filterExecutionProjects,
-} from "@/lib/execution-dashboard";
-import { apiRequest } from "@/lib/queryClient";
-import { extractTrustHeaders, type FinanceTrustMeta } from "@/lib/finance-trust";
+} from '@/lib/execution-dashboard';
+import { apiRequest } from '@/lib/queryClient';
+import { extractTrustHeaders, type FinanceTrustMeta } from '@/lib/finance-trust';
+import { useFinancialYearScope, type FinancialYearScope } from '@/hooks/use-financial-year-scope';
 
 export const defaultFilters: ExecutionFilters = {
-  search: "",
-  portfolio: "all",
-  pm: "all",
-  pd: "all",
-  executionPhase: "all",
-  rag: "all",
+  search: '',
+  portfolio: 'all',
+  pm: 'all',
+  pd: 'all',
+  executionPhase: 'all',
+  rag: 'all',
   exceptionOnly: false,
   behindPlanOnly: false,
   inflowRiskOnly: false,
@@ -36,8 +37,9 @@ export interface ExecutionDashboardContextValue {
   filteredProjects: ExecutionDashboardProject[];
   allProjects: ExecutionDashboardProject[];
   fyLabel: string;
+  fyScope: FinancialYearScope;
   kpis: ComputedKpis;
-  actionRows: ExecutionDashboardResponse["actionCenter"]["rows"];
+  actionRows: ExecutionDashboardResponse['actionCenter']['rows'];
   lastRefresh: Date | null;
   trust: FinanceTrustMeta | null;
   loadData: () => Promise<void>;
@@ -91,7 +93,7 @@ export const ExecutionDashboardContext = createContext<ExecutionDashboardContext
 
 export function useExecutionData(): ExecutionDashboardContextValue {
   const ctx = useContext(ExecutionDashboardContext);
-  if (!ctx) throw new Error("useExecutionData must be used within ExecutionDashboardContext");
+  if (!ctx) throw new Error('useExecutionData must be used within ExecutionDashboardContext');
   return ctx;
 }
 
@@ -99,13 +101,21 @@ export function useExecutionDataProvider(setLocation: (to: string) => void) {
   const [filters, setFilters] = useState<ExecutionFilters>(defaultFilters);
   const [trust, setTrust] = useState<FinanceTrustMeta | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const fyScope = useFinancialYearScope();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: dashboard = null, isLoading: loading, error: queryError } = useQuery<ExecutionDashboardResponse>({
-    queryKey: ["execution-dashboard"],
+  const {
+    data: dashboard = null,
+    isLoading: loading,
+    error: queryError,
+  } = useQuery<ExecutionDashboardResponse>({
+    queryKey: ['execution-dashboard', fyScope.apiQueryString],
     queryFn: async () => {
-      const res = await apiRequest("GET", "/api/lifecycle-board/execution-dashboard");
+      const res = await apiRequest(
+        'GET',
+        `/api/lifecycle-board/execution-dashboard?${fyScope.apiQueryString}`,
+      );
       const trustMeta = extractTrustHeaders(res);
       setTrust(trustMeta);
       setLastRefresh(new Date());
@@ -119,26 +129,47 @@ export function useExecutionDataProvider(setLocation: (to: string) => void) {
 
   const loadData = useCallback(async () => {
     try {
-      await queryClient.invalidateQueries({ queryKey: ["execution-dashboard"] });
+      await queryClient.invalidateQueries({
+        queryKey: ['execution-dashboard', fyScope.apiQueryString],
+      });
     } catch (err: any) {
-      toast({ title: "Error", description: err.message || "Failed to load execution dashboard", variant: "destructive" });
+      toast({
+        title: 'Error',
+        description: err.message || 'Failed to load execution dashboard',
+        variant: 'destructive',
+      });
     }
-  }, [queryClient, toast]);
+  }, [queryClient, toast, fyScope.apiQueryString]);
 
   const allProjects = dashboard?.projects || [];
-  const fyLabel = dashboard?.financialYear?.label || "Current FY";
+  const fyLabel = dashboard?.financialYear?.label || 'Current FY';
 
-  const filteredProjects = useMemo(() => filterExecutionProjects(allProjects, filters), [allProjects, filters]);
+  const filteredProjects = useMemo(
+    () => filterExecutionProjects(allProjects, filters),
+    [allProjects, filters],
+  );
 
-  const portfolios = useMemo(() => Array.from(new Set(allProjects.map((p) => p.portfolio || "—"))).sort(), [allProjects]);
-  const pms = useMemo(() => Array.from(new Set(allProjects.map((p) => p.pm || "Unassigned"))).sort(), [allProjects]);
-  const pds = useMemo(() => Array.from(new Set(allProjects.map((p) => p.pd || "Unassigned"))).sort(), [allProjects]);
-  const phases = useMemo(() => Array.from(new Set(allProjects.map((p) => p.executionPhase || "Unassigned"))).sort(), [allProjects]);
+  const portfolios = useMemo(
+    () => Array.from(new Set(allProjects.map((p) => p.portfolio || '—'))).sort(),
+    [allProjects],
+  );
+  const pms = useMemo(
+    () => Array.from(new Set(allProjects.map((p) => p.pm || 'Unassigned'))).sort(),
+    [allProjects],
+  );
+  const pds = useMemo(
+    () => Array.from(new Set(allProjects.map((p) => p.pd || 'Unassigned'))).sort(),
+    [allProjects],
+  );
+  const phases = useMemo(
+    () => Array.from(new Set(allProjects.map((p) => p.executionPhase || 'Unassigned'))).sort(),
+    [allProjects],
+  );
 
   const ragDistribution = useMemo(() => {
     const dist: Record<string, number> = { Red: 0, Amber: 0, Green: 0, Unknown: 0 };
     for (const p of filteredProjects) {
-      const key = dist[p.rag] !== undefined ? p.rag : "Unknown";
+      const key = dist[p.rag] !== undefined ? p.rag : 'Unknown';
       dist[key] = (dist[key] || 0) + 1;
     }
     return dist;
@@ -152,18 +183,27 @@ export function useExecutionDataProvider(setLocation: (to: string) => void) {
     const paidExpenditure = fp.reduce((s, p) => s + p.paidExpenditureFy, 0);
     const grossProfit = plannedRevenue - plannedExpenditure;
     const actualGrossProfit = receivedInflow - paidExpenditure;
-    const grossMargin = plannedRevenue > 0 ? Number(((grossProfit / plannedRevenue) * 100).toFixed(1)) : null;
-    const actualMargin = receivedInflow > 0 ? Number(((actualGrossProfit / receivedInflow) * 100).toFixed(1)) : null;
-    const marginVariance = grossMargin !== null && actualMargin !== null ? Number((actualMargin - grossMargin).toFixed(1)) : null;
+    const grossMargin =
+      plannedRevenue > 0 ? Number(((grossProfit / plannedRevenue) * 100).toFixed(1)) : null;
+    const actualMargin =
+      receivedInflow > 0 ? Number(((actualGrossProfit / receivedInflow) * 100).toFixed(1)) : null;
+    const marginVariance =
+      grossMargin !== null && actualMargin !== null
+        ? Number((actualMargin - grossMargin).toFixed(1))
+        : null;
 
     return {
       activeDashboardProjects: fp.length,
-      averageActualProgressPct: fp.length ? Number((fp.reduce((s, p) => s + (p.actualProgressPct || 0), 0) / fp.length).toFixed(1)) : null,
-      averageExpectedProgressPct: fp.length ? Number((fp.reduce((s, p) => s + (p.expectedProgressPct || 0), 0) / fp.length).toFixed(1)) : null,
+      averageActualProgressPct: fp.length
+        ? Number((fp.reduce((s, p) => s + (p.actualProgressPct || 0), 0) / fp.length).toFixed(1))
+        : null,
+      averageExpectedProgressPct: fp.length
+        ? Number((fp.reduce((s, p) => s + (p.expectedProgressPct || 0), 0) / fp.length).toFixed(1))
+        : null,
       projectsBehindPlan: fp.filter((p) => p.behindPlan).length,
-      projectsRed: fp.filter((p) => p.rag === "Red").length,
-      projectsAmber: fp.filter((p) => p.rag === "Amber").length,
-      projectsGreen: fp.filter((p) => p.rag === "Green").length,
+      projectsRed: fp.filter((p) => p.rag === 'Red').length,
+      projectsAmber: fp.filter((p) => p.rag === 'Amber').length,
+      projectsGreen: fp.filter((p) => p.rag === 'Green').length,
       plannedRevenueFy: plannedRevenue,
       receivedInflowFy: receivedInflow,
       openInflowFy: plannedRevenue - receivedInflow,
@@ -177,19 +217,30 @@ export function useExecutionDataProvider(setLocation: (to: string) => void) {
       openEngineeringBlockers: fp.reduce((s, p) => s + p.engineeringBlockerCount, 0),
       openQualityWarnings: fp.reduce((s, p) => s + p.openQualityWarningCount, 0),
       pendingApprovals: fp.reduce((s, p) => s + p.pendingApprovalCount, 0),
-      staleImports: fp.filter((p) => p.importFreshness !== "Fresh").length,
-      engineeringBlocked: fp.filter((p) => p.engineeringStatus === "Blocked").length,
-      engineeringAtRisk: fp.filter((p) => p.engineeringStatus === "At Risk").length,
-      engineeringOnTrack: fp.filter((p) => p.engineeringStatus === "On Track").length,
-      qualityBlocked: fp.filter((p) => p.qualityStatus === "Blocked").length,
-      qualityAtRisk: fp.filter((p) => p.qualityStatus === "At Risk").length,
-      qualityOnTrack: fp.filter((p) => p.qualityStatus === "On Track").length,
+      staleImports: fp.filter((p) => p.importFreshness !== 'Fresh').length,
+      engineeringBlocked: fp.filter((p) => p.engineeringStatus === 'Blocked').length,
+      engineeringAtRisk: fp.filter((p) => p.engineeringStatus === 'At Risk').length,
+      engineeringOnTrack: fp.filter((p) => p.engineeringStatus === 'On Track').length,
+      qualityBlocked: fp.filter((p) => p.qualityStatus === 'Blocked').length,
+      qualityAtRisk: fp.filter((p) => p.qualityStatus === 'At Risk').length,
+      qualityOnTrack: fp.filter((p) => p.qualityStatus === 'On Track').length,
       inflowRiskProjects: fp.filter((p) => p.inflowRisk).length,
       outflowRiskProjects: fp.filter((p) => p.outflowRisk).length,
       overdueInflowFy: fp.reduce((s, p) => s + (p.overdueInflowFy || 0), 0),
       overdueOutflowFy: fp.reduce((s, p) => s + (p.overdueOutflowFy || 0), 0),
-      onScheduleRate: fp.length > 0 ? Number(((fp.filter((p) => !p.behindPlan).length / fp.length) * 100).toFixed(1)) : 0,
-      contractCompleteness: fp.length > 0 ? Number(((fp.filter((p) => p.cpSigned && p.signedStatus === "SIGNED").length / fp.length) * 100).toFixed(1)) : 0,
+      onScheduleRate:
+        fp.length > 0
+          ? Number(((fp.filter((p) => !p.behindPlan).length / fp.length) * 100).toFixed(1))
+          : 0,
+      contractCompleteness:
+        fp.length > 0
+          ? Number(
+              (
+                (fp.filter((p) => p.cpSigned && p.signedStatus === 'SIGNED').length / fp.length) *
+                100
+              ).toFixed(1),
+            )
+          : 0,
     };
   }, [filteredProjects]);
 
@@ -199,25 +250,54 @@ export function useExecutionDataProvider(setLocation: (to: string) => void) {
     return dashboard.actionCenter.rows.filter((r) => visibleIds.has(r.projectId));
   }, [dashboard, filteredProjects]);
 
-  const openProject = useCallback((project: ExecutionDashboardProject, tab?: string) => {
-    const projectPath = project.projectId
-      ? `/project/id/${project.projectId}`
-      : `/project/${encodeURIComponent(project.projectName)}`;
-    setLocation(tab ? `${projectPath}?tab=${tab}` : projectPath);
-  }, [setLocation]);
+  const openProject = useCallback(
+    (project: ExecutionDashboardProject, tab?: string) => {
+      const projectPath = project.projectId
+        ? `/project/id/${project.projectId}`
+        : `/project/${encodeURIComponent(project.projectName)}`;
+      setLocation(tab ? `${projectPath}?tab=${tab}` : projectPath);
+    },
+    [setLocation],
+  );
 
   const hasActiveFilters = !!(
-    filters.search || filters.portfolio !== "all" || filters.pm !== "all" ||
-    filters.pd !== "all" || filters.executionPhase !== "all" || filters.rag !== "all" ||
-    filters.exceptionOnly || filters.behindPlanOnly || filters.inflowRiskOnly ||
-    filters.outflowRiskOnly || filters.engineeringBlockersOnly || filters.qualityIssuesOnly ||
-    filters.pendingApprovalsOnly || filters.staleImportsOnly
+    filters.search ||
+    filters.portfolio !== 'all' ||
+    filters.pm !== 'all' ||
+    filters.pd !== 'all' ||
+    filters.executionPhase !== 'all' ||
+    filters.rag !== 'all' ||
+    filters.exceptionOnly ||
+    filters.behindPlanOnly ||
+    filters.inflowRiskOnly ||
+    filters.outflowRiskOnly ||
+    filters.engineeringBlockersOnly ||
+    filters.qualityIssuesOnly ||
+    filters.pendingApprovalsOnly ||
+    filters.staleImportsOnly
   );
 
   return {
-    dashboard, loading, error, filters, setFilters,
-    filteredProjects, allProjects, fyLabel, kpis, actionRows,
-    lastRefresh, trust, loadData, openProject, ragDistribution,
-    portfolios, pms, pds, phases, hasActiveFilters,
+    dashboard,
+    loading,
+    error,
+    filters,
+    setFilters,
+    filteredProjects,
+    allProjects,
+    fyLabel,
+    fyScope,
+    kpis,
+    actionRows,
+    lastRefresh,
+    trust,
+    loadData,
+    openProject,
+    ragDistribution,
+    portfolios,
+    pms,
+    pds,
+    phases,
+    hasActiveFilters,
   };
 }

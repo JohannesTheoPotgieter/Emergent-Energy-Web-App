@@ -1,28 +1,25 @@
-import React from "react";
-import { useLocation } from "wouter";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { usePermission } from "@/hooks/use-permissions";
-import { EnergyLoader } from "@/components/ui/energy-loader";
-import { Activity, AlertCircle, AlertTriangle, RefreshCw } from "lucide-react";
-import {
-  ExecutionDashboardContext,
-  useExecutionDataProvider,
-} from "./use-execution-data";
-import OverviewPage from "./OverviewPage";
-import ProgramPage from "./ProgramPage";
-import ConstructionPage from "./ConstructionPage";
-import FinancePage from "./FinancePage";
+import React from 'react';
+import { useLocation } from 'wouter';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { usePermission } from '@/hooks/use-permissions';
+import { EnergyLoader } from '@/components/ui/energy-loader';
+import { Activity, AlertCircle, AlertTriangle, RefreshCw } from 'lucide-react';
+import { ExecutionDashboardContext, useExecutionDataProvider } from './use-execution-data';
+import OverviewPage from './OverviewPage';
+import ProgramPage from './ProgramPage';
+import ConstructionPage from './ConstructionPage';
+import FinancePage from './FinancePage';
 import {
   EXECUTION_DASHBOARD_TABS,
   getExecutionDashboardPathForTab,
   getExecutionDashboardTabFromPath,
   type ExecutionDashboardTab,
-} from "./route-tabs";
+} from './route-tabs';
 
 export default function ExecutionDashboard() {
-  const { allowed: canView } = usePermission("execution_board", "view");
+  const { allowed: canView } = usePermission('execution_board', 'view');
   const [location, setLocation] = useLocation();
   const ctx = useExecutionDataProvider(setLocation);
   const activeTab = getExecutionDashboardTabFromPath(location);
@@ -44,7 +41,8 @@ export default function ExecutionDashboard() {
         <AlertCircle className="w-8 h-8 text-red-500" />
         <p>{ctx.error}</p>
         <Button onClick={ctx.loadData}>
-          <RefreshCw className="w-3.5 h-3.5 mr-1" />Retry
+          <RefreshCw className="w-3.5 h-3.5 mr-1" />
+          Retry
         </Button>
       </div>
     );
@@ -65,7 +63,10 @@ export default function ExecutionDashboard() {
 
   return (
     <ExecutionDashboardContext.Provider value={ctx}>
-      <div className="space-y-5 sm:space-y-6 max-w-[1400px] mx-auto pb-8" data-testid="execution-board-page">
+      <div
+        className="space-y-5 sm:space-y-6 max-w-[1400px] mx-auto pb-8"
+        data-testid="execution-board-page"
+      >
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
@@ -76,6 +77,10 @@ export default function ExecutionDashboard() {
               <h1 className="font-bold tracking-tight">Execution Board</h1>
               <p className="text-xs sm:text-sm text-muted-foreground truncate">
                 {ctx.fyLabel}
+                {ctx.dashboard &&
+                  (ctx.dashboard.financialYear.allData
+                    ? ' · all data in system'
+                    : ` · ${ctx.dashboard.financialYear.start} to ${ctx.dashboard.financialYear.end}`)}
                 {ctx.dashboard && ` · ${ctx.allProjects.length} active projects`}
               </p>
             </div>
@@ -83,11 +88,18 @@ export default function ExecutionDashboard() {
           <div className="flex items-center gap-2 shrink-0">
             {ctx.dashboard?.dataFreshness?.generatedAt && (
               <span className="text-[11px] text-muted-foreground hidden sm:inline">
-                Data as of {new Date(ctx.dashboard.dataFreshness.generatedAt).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Africa/Johannesburg" })}
+                Data as of{' '}
+                {new Date(ctx.dashboard.dataFreshness.generatedAt).toLocaleTimeString('en-ZA', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: false,
+                  timeZone: 'Africa/Johannesburg',
+                })}
               </span>
             )}
             <Button variant="outline" size="sm" onClick={ctx.loadData} className="gap-1.5">
-              <RefreshCw className="w-3.5 h-3.5" /><span className="hidden sm:inline">Refresh</span>
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Refresh</span>
             </Button>
           </div>
         </div>
@@ -96,7 +108,9 @@ export default function ExecutionDashboard() {
         <Tabs value={activeTab} onValueChange={handleTabChange}>
           <TabsList className="flex-wrap h-auto gap-1">
             {EXECUTION_DASHBOARD_TABS.map((tab) => (
-              <TabsTrigger key={tab.value} value={tab.value}>{tab.label}</TabsTrigger>
+              <TabsTrigger key={tab.value} value={tab.value}>
+                {tab.label}
+              </TabsTrigger>
             ))}
           </TabsList>
 

@@ -7,18 +7,18 @@
  * for the row where `name = 'quickbooks'`.
  */
 
-import { and, desc, eq, isNull } from "drizzle-orm";
-import { integrations, integrationRunEvents } from "@shared/schema";
-import { db } from "../db";
+import { and, desc, eq, isNull } from 'drizzle-orm';
+import { integrations, integrationRunEvents } from '@shared/schema';
+import { db } from '../db';
 import {
   deriveIntegrationHealth,
   recordIntegrationRun,
   type IntegrationHealthTile,
-} from "./integration-health-service";
-import { isConnectorMocked } from "../lib/connector-mode";
-import * as qbMocks from "../mocks/quickbooks-fixtures";
+} from './integration-health-service';
+import { isConnectorMocked } from '../lib/connector-mode';
+import * as qbMocks from '../mocks/quickbooks-fixtures';
 
-export const QB_INTEGRATION_NAME = "quickbooks";
+export const QB_INTEGRATION_NAME = 'quickbooks';
 
 /**
  * How long a successful QB sync stays "fresh" before the status endpoint
@@ -28,13 +28,13 @@ export const QB_INTEGRATION_NAME = "quickbooks";
  * to know when they're looking at a cached answer.
  */
 export const QB_STALE_AFTER_MS = 2 * 60 * 60 * 1000;
-const QB_AUTH_BASE = "https://appcenter.intuit.com/connect/oauth2";
-const QB_TOKEN_ENDPOINT = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
-const QB_SCOPE = "com.intuit.quickbooks.accounting";
+const QB_AUTH_BASE = 'https://appcenter.intuit.com/connect/oauth2';
+const QB_TOKEN_ENDPOINT = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
+const QB_SCOPE = 'com.intuit.quickbooks.accounting';
 
 export const QB_REDIRECT_URI =
   process.env.QUICKBOOKS_REDIRECT_URI ||
-  "https://emergent-energy-dashboard.replit.app/api/quickbooks/callback";
+  'https://emergent-energy-dashboard.replit.app/api/quickbooks/callback';
 
 // QuickBooks access tokens last 1 hour. We refresh a bit early.
 const ACCESS_TOKEN_EARLY_REFRESH_MS = 5 * 60 * 1000;
@@ -68,15 +68,15 @@ function getClientCredentials(): { clientId: string; clientSecret: string } {
 
   // Diagnostic: verify env vars are loaded (shows first/last 4 chars only)
   console.log(
-    `[QuickBooks] QUICKBOOKS_CLIENT_ID: ${clientId ? `"${maskMiddle(clientId)}" (length=${clientId.length})` : "UNDEFINED/EMPTY"}`,
+    `[QuickBooks] QUICKBOOKS_CLIENT_ID: ${clientId ? `"${maskMiddle(clientId)}" (length=${clientId.length})` : 'UNDEFINED/EMPTY'}`,
   );
   console.log(
-    `[QuickBooks] QUICKBOOKS_CLIENT_SECRET: ${clientSecret ? `"${maskMiddle(clientSecret)}" (length=${clientSecret.length})` : "UNDEFINED/EMPTY"}`,
+    `[QuickBooks] QUICKBOOKS_CLIENT_SECRET: ${clientSecret ? `"${maskMiddle(clientSecret)}" (length=${clientSecret.length})` : 'UNDEFINED/EMPTY'}`,
   );
 
   if (!clientId || !clientSecret) {
     throw new Error(
-      "QuickBooks OAuth credentials missing. Set QUICKBOOKS_CLIENT_ID and QUICKBOOKS_CLIENT_SECRET.",
+      'QuickBooks OAuth credentials missing. Set QUICKBOOKS_CLIENT_ID and QUICKBOOKS_CLIENT_SECRET.',
     );
   }
   return { clientId, clientSecret };
@@ -85,7 +85,7 @@ function getClientCredentials(): { clientId: string; clientSecret: string } {
 function basicAuthHeader(): string {
   const { clientId, clientSecret } = getClientCredentials();
   const raw = `${clientId}:${clientSecret}`;
-  return `Basic ${Buffer.from(raw, "utf8").toString("base64")}`;
+  return `Basic ${Buffer.from(raw, 'utf8').toString('base64')}`;
 }
 
 // ===================== STORAGE HELPERS =====================
@@ -111,14 +111,14 @@ async function saveQuickBooksMetadata(metadata: QuickBooksTokenMetadata): Promis
     // Seed row is expected to be created at boot; fall back to insert.
     await db.insert(integrations).values({
       name: QB_INTEGRATION_NAME,
-      displayName: "QuickBooks Online",
+      displayName: 'QuickBooks Online',
       description:
-        "OAuth2 integration with QuickBooks Online Accounting. Syncs invoices, customers, and financial data for COS tracking and invoice reconciliation.",
-      authType: "oauth2",
-      ownerProcess: "quickbooks-sync-service",
+        'OAuth2 integration with QuickBooks Online Accounting. Syncs invoices, customers, and financial data for COS tracking and invoice reconciliation.',
+      authType: 'oauth2',
+      ownerProcess: 'quickbooks-sync-service',
       fallbackDescription:
-        "Financial data can still be managed manually. QuickBooks data will sync on the next successful connection.",
-      alertTarget: "COO_ADMIN",
+        'Financial data can still be managed manually. QuickBooks data will sync on the next successful connection.',
+      alertTarget: 'COO_ADMIN',
       metadata,
     } as any);
     return;
@@ -136,7 +136,7 @@ export function getAuthorizationUrl(state: string): string {
   const { clientId } = getClientCredentials();
   const params = new URLSearchParams({
     client_id: clientId,
-    response_type: "code",
+    response_type: 'code',
     scope: QB_SCOPE,
     redirect_uri: QB_REDIRECT_URI,
     state,
@@ -156,18 +156,18 @@ async function postToTokenEndpoint(body: URLSearchParams): Promise<IntuitTokenRe
   const authHeader = basicAuthHeader();
 
   // Diagnostic: log token request details (mask the Base64 payload)
-  const b64Part = authHeader.replace("Basic ", "");
+  const b64Part = authHeader.replace('Basic ', '');
   console.log(`[QuickBooks] Token endpoint: ${QB_TOKEN_ENDPOINT}`);
   console.log(
     `[QuickBooks] Authorization header: Basic ${b64Part.slice(0, 6)}...${b64Part.slice(-6)} (base64 length=${b64Part.length})`,
   );
-  console.log(`[QuickBooks] Token body params: ${[...body.keys()].join(", ")}`);
+  console.log(`[QuickBooks] Token body params: ${[...body.keys()].join(', ')}`);
 
   const response = await fetch(QB_TOKEN_ENDPOINT, {
-    method: "POST",
+    method: 'POST',
     headers: {
-      Accept: "application/json",
-      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded',
       Authorization: authHeader,
     },
     body: body.toString(),
@@ -182,7 +182,7 @@ async function postToTokenEndpoint(body: URLSearchParams): Promise<IntuitTokenRe
       `response=${text || response.statusText}`,
       `clientId=${maskMiddle(clientId)}(len=${clientId.length})`,
       `secret=${maskMiddle(clientSecret)}(len=${clientSecret.length})`,
-    ].join(" | ");
+    ].join(' | ');
     console.error(`[QuickBooks] Token exchange failed: ${diag}`);
     throw new Error(
       `QuickBooks token endpoint returned ${response.status}: ${text || response.statusText}. Diagnostics: clientId=${maskMiddle(clientId)}(len=${clientId.length}), secret=${maskMiddle(clientSecret)}(len=${clientSecret.length})`,
@@ -203,7 +203,7 @@ export async function exchangeCodeForTokens(
   const startedAt = new Date();
   try {
     const body = new URLSearchParams({
-      grant_type: "authorization_code",
+      grant_type: 'authorization_code',
       code,
       redirect_uri: QB_REDIRECT_URI,
     });
@@ -224,7 +224,7 @@ export async function exchangeCodeForTokens(
 
     await saveQuickBooksMetadata(metadata);
     await recordQbRun({
-      runType: "oauth:exchange_code",
+      runType: 'oauth:exchange_code',
       startedAt,
       ok: true,
       metadata: { realmId },
@@ -233,7 +233,7 @@ export async function exchangeCodeForTokens(
   } catch (err) {
     const { code, detail } = classifyQbError(err);
     await recordQbRun({
-      runType: "oauth:exchange_code",
+      runType: 'oauth:exchange_code',
       startedAt,
       ok: false,
       errorCode: code,
@@ -247,12 +247,12 @@ export async function refreshAccessToken(): Promise<QuickBooksTokenMetadata> {
   const startedAt = new Date();
   const existing = await loadQuickBooksMetadata();
   if (!existing.refreshToken) {
-    const err = new Error("QuickBooks is not connected: no refresh token stored.");
+    const err = new Error('QuickBooks is not connected: no refresh token stored.');
     await recordQbRun({
-      runType: "oauth:refresh",
+      runType: 'oauth:refresh',
       startedAt,
       ok: false,
-      errorCode: "not_connected",
+      errorCode: 'not_connected',
       errorDetail: err.message,
     });
     throw err;
@@ -260,7 +260,7 @@ export async function refreshAccessToken(): Promise<QuickBooksTokenMetadata> {
 
   try {
     const body = new URLSearchParams({
-      grant_type: "refresh_token",
+      grant_type: 'refresh_token',
       refresh_token: existing.refreshToken,
     });
 
@@ -281,7 +281,7 @@ export async function refreshAccessToken(): Promise<QuickBooksTokenMetadata> {
 
     await saveQuickBooksMetadata(metadata);
     await recordQbRun({
-      runType: "oauth:refresh",
+      runType: 'oauth:refresh',
       startedAt,
       ok: true,
     });
@@ -289,7 +289,7 @@ export async function refreshAccessToken(): Promise<QuickBooksTokenMetadata> {
   } catch (err) {
     const { code, detail } = classifyQbError(err);
     await recordQbRun({
-      runType: "oauth:refresh",
+      runType: 'oauth:refresh',
       startedAt,
       ok: false,
       errorCode: code,
@@ -300,11 +300,11 @@ export async function refreshAccessToken(): Promise<QuickBooksTokenMetadata> {
 }
 
 export async function getValidAccessToken(): Promise<{ accessToken: string; realmId: string }> {
-  if (isConnectorMocked("quickbooks")) return qbMocks.mockQuickBooksAccessToken();
+  if (isConnectorMocked('quickbooks')) return qbMocks.mockQuickBooksAccessToken();
   const metadata = await loadQuickBooksMetadata();
 
   if (!metadata.accessToken || !metadata.refreshToken || !metadata.realmId) {
-    throw new Error("QuickBooks is not connected.");
+    throw new Error('QuickBooks is not connected.');
   }
 
   const expiresAt = metadata.tokenExpiry ? Date.parse(metadata.tokenExpiry) : 0;
@@ -313,7 +313,7 @@ export async function getValidAccessToken(): Promise<{ accessToken: string; real
   if (isExpired) {
     const refreshed = await refreshAccessToken();
     if (!refreshed.accessToken || !refreshed.realmId) {
-      throw new Error("QuickBooks refresh did not return a usable access token.");
+      throw new Error('QuickBooks refresh did not return a usable access token.');
     }
     return { accessToken: refreshed.accessToken, realmId: refreshed.realmId };
   }
@@ -325,10 +325,10 @@ export async function disconnectQuickBooks(): Promise<void> {
   const startedAt = new Date();
   await saveQuickBooksMetadata({});
   await recordQbRun({
-    runType: "oauth:disconnect",
+    runType: 'oauth:disconnect',
     startedAt,
     ok: true,
-    metadata: { reason: "manual_disconnect" },
+    metadata: { reason: 'manual_disconnect' },
   });
 }
 
@@ -340,13 +340,13 @@ export async function disconnectQuickBooks(): Promise<void> {
  */
 function classifyQbError(err: unknown): { code: string; detail: string } {
   const detail = err instanceof Error ? err.message : String(err);
-  if (/not connected/i.test(detail)) return { code: "not_connected", detail };
-  if (/401|unauthorized/i.test(detail)) return { code: "auth_expired", detail };
-  if (/403|forbidden/i.test(detail)) return { code: "forbidden", detail };
-  if (/429|rate ?limit/i.test(detail)) return { code: "rate_limited", detail };
+  if (/not connected/i.test(detail)) return { code: 'not_connected', detail };
+  if (/401|unauthorized/i.test(detail)) return { code: 'auth_expired', detail };
+  if (/403|forbidden/i.test(detail)) return { code: 'forbidden', detail };
+  if (/429|rate ?limit/i.test(detail)) return { code: 'rate_limited', detail };
   if (/5\d\d|server error|timeout|ECONN|fetch failed/i.test(detail))
-    return { code: "upstream_error", detail };
-  return { code: "unknown", detail };
+    return { code: 'upstream_error', detail };
+  return { code: 'unknown', detail };
 }
 
 /**
@@ -368,13 +368,13 @@ async function recordQbRun(params: {
       runType: params.runType,
       startedAt: params.startedAt,
       finishedAt: new Date(),
-      status: params.ok ? "success" : "failure",
+      status: params.ok ? 'success' : 'failure',
       errorCode: params.errorCode ?? null,
       errorDetail: params.errorDetail ?? null,
       metadata: params.metadata ?? null,
     });
   } catch (err) {
-    console.warn("[QuickBooks] recordIntegrationRun failed:", err);
+    console.warn('[QuickBooks] recordIntegrationRun failed:', err);
   }
 }
 
@@ -385,10 +385,10 @@ async function qbGet<T = any>(path: string): Promise<T> {
     const url = `${getApiBase(realmId)}${path}`;
 
     const response = await fetch(url, {
-      method: "GET",
+      method: 'GET',
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        Accept: "application/json",
+        Accept: 'application/json',
       },
     });
 
@@ -399,7 +399,7 @@ async function qbGet<T = any>(path: string): Promise<T> {
       );
       const { code, detail } = classifyQbError(err);
       await recordQbRun({
-        runType: `qbGet:${path.split("?")[0]}`,
+        runType: `qbGet:${path.split('?')[0]}`,
         startedAt,
         ok: false,
         errorCode: code,
@@ -415,10 +415,10 @@ async function qbGet<T = any>(path: string): Promise<T> {
     } catch {
       const err = new Error(`QuickBooks API ${path} returned invalid JSON`);
       await recordQbRun({
-        runType: `qbGet:${path.split("?")[0]}`,
+        runType: `qbGet:${path.split('?')[0]}`,
         startedAt,
         ok: false,
-        errorCode: "invalid_json",
+        errorCode: 'invalid_json',
         errorDetail: err.message,
         metadata: { path },
       });
@@ -426,7 +426,7 @@ async function qbGet<T = any>(path: string): Promise<T> {
     }
 
     await recordQbRun({
-      runType: `qbGet:${path.split("?")[0]}`,
+      runType: `qbGet:${path.split('?')[0]}`,
       startedAt,
       ok: true,
       metadata: { path },
@@ -435,10 +435,14 @@ async function qbGet<T = any>(path: string): Promise<T> {
   } catch (err) {
     // Only log here if we haven't already logged above (e.g. token-refresh
     // failure before the HTTP call even fired).
-    if (err instanceof Error && !/returned \d{3}:/.test(err.message) && !/returned invalid JSON/.test(err.message)) {
+    if (
+      err instanceof Error &&
+      !/returned \d{3}:/.test(err.message) &&
+      !/returned invalid JSON/.test(err.message)
+    ) {
       const { code, detail } = classifyQbError(err);
       await recordQbRun({
-        runType: `qbGet:${path.split("?")[0]}`,
+        runType: `qbGet:${path.split('?')[0]}`,
         startedAt,
         ok: false,
         errorCode: code,
@@ -450,18 +454,15 @@ async function qbGet<T = any>(path: string): Promise<T> {
   }
 }
 
-export async function queryQuickBooks<T = any>(
-  _entity: string,
-  query: string,
-): Promise<T> {
-  if (isConnectorMocked("quickbooks")) {
+export async function queryQuickBooks<T = any>(_entity: string, query: string): Promise<T> {
+  if (isConnectorMocked('quickbooks')) {
     // Best-effort query routing for local dev. The UI only uses a handful
     // of entity types; anything else returns an empty QueryResponse.
     const e = _entity.toLowerCase();
-    if (e === "invoice") return qbMocks.mockInvoices() as unknown as T;
-    if (e === "bill") return qbMocks.mockBills() as unknown as T;
-    if (e === "customer") return qbMocks.mockCustomers() as unknown as T;
-    if (e === "vendor") return qbMocks.mockVendors() as unknown as T;
+    if (e === 'invoice') return qbMocks.mockInvoices() as unknown as T;
+    if (e === 'bill') return qbMocks.mockBills() as unknown as T;
+    if (e === 'customer') return qbMocks.mockCustomers() as unknown as T;
+    if (e === 'vendor') return qbMocks.mockVendors() as unknown as T;
     return { QueryResponse: {} } as unknown as T;
   }
   // QuickBooks v3 query endpoint: /query?query=...
@@ -470,7 +471,7 @@ export async function queryQuickBooks<T = any>(
 }
 
 export async function getCompanyInfo(): Promise<any> {
-  if (isConnectorMocked("quickbooks")) return qbMocks.mockCompanyInfo();
+  if (isConnectorMocked('quickbooks')) return qbMocks.mockCompanyInfo();
   const { realmId } = await getValidAccessToken();
   const info = await qbGet<any>(`/companyinfo/${encodeURIComponent(realmId)}?minorversion=70`);
 
@@ -494,19 +495,19 @@ function buildDateClause(field: string, startDate?: string, endDate?: string): s
   const clauses: string[] = [];
   if (startDate) clauses.push(`${field} >= '${startDate}'`);
   if (endDate) clauses.push(`${field} <= '${endDate}'`);
-  return clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
+  return clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
 }
 
 export async function getInvoices(startDate?: string, endDate?: string): Promise<any> {
-  if (isConnectorMocked("quickbooks")) return qbMocks.mockInvoices(startDate, endDate);
-  const where = buildDateClause("TxnDate", startDate, endDate);
+  if (isConnectorMocked('quickbooks')) return qbMocks.mockInvoices(startDate, endDate);
+  const where = buildDateClause('TxnDate', startDate, endDate);
   const maxResults = 500;
   let startPosition = 1;
   const allInvoices: any[] = [];
 
   while (true) {
     const query = `SELECT * FROM Invoice${where} ORDERBY TxnDate DESC STARTPOSITION ${startPosition} MAXRESULTS ${maxResults}`;
-    const page = await queryQuickBooks<any>("Invoice", query);
+    const page = await queryQuickBooks<any>('Invoice', query);
     const invoices = page?.QueryResponse?.Invoice ?? [];
     allInvoices.push(...invoices);
     if (invoices.length < maxResults) break;
@@ -524,15 +525,15 @@ export async function getInvoices(startDate?: string, endDate?: string): Promise
 }
 
 export async function getCustomers(): Promise<any> {
-  if (isConnectorMocked("quickbooks")) return qbMocks.mockCustomers();
+  if (isConnectorMocked('quickbooks')) return qbMocks.mockCustomers();
   const query = `SELECT * FROM Customer WHERE Active = true MAXRESULTS 1000`;
-  return queryQuickBooks("Customer", query);
+  return queryQuickBooks('Customer', query);
 }
 
 export async function getVendors(): Promise<any> {
-  if (isConnectorMocked("quickbooks")) return qbMocks.mockVendors();
+  if (isConnectorMocked('quickbooks')) return qbMocks.mockVendors();
   const query = `SELECT * FROM Vendor WHERE Active = true MAXRESULTS 1000`;
-  return queryQuickBooks("Vendor", query);
+  return queryQuickBooks('Vendor', query);
 }
 
 /**
@@ -541,30 +542,30 @@ export async function getVendors(): Promise<any> {
  * client-supplied snapshot. Returns the raw Bill object or null if missing.
  */
 export async function getBillById(id: string): Promise<any | null> {
-  if (isConnectorMocked("quickbooks")) return qbMocks.mockBillById(id);
+  if (isConnectorMocked('quickbooks')) return qbMocks.mockBillById(id);
   if (!id) return null;
   // QB QL is not SQL-safe for arbitrary IDs. Reject anything outside the
   // documented Id alphabet so we can never smuggle a WHERE clause.
   if (!/^[A-Za-z0-9_-]+$/.test(id)) {
-    throw new Error("Invalid QuickBooks Bill Id format");
+    throw new Error('Invalid QuickBooks Bill Id format');
   }
   const query = `SELECT * FROM Bill WHERE Id = '${id}'`;
-  const resp = await queryQuickBooks<any>("Bill", query);
+  const resp = await queryQuickBooks<any>('Bill', query);
   const bills = resp?.QueryResponse?.Bill;
   if (Array.isArray(bills) && bills.length > 0) return bills[0];
   return null;
 }
 
 export async function getBills(startDate?: string, endDate?: string): Promise<any> {
-  if (isConnectorMocked("quickbooks")) return qbMocks.mockBills(startDate, endDate);
-  const where = buildDateClause("TxnDate", startDate, endDate);
+  if (isConnectorMocked('quickbooks')) return qbMocks.mockBills(startDate, endDate);
+  const where = buildDateClause('TxnDate', startDate, endDate);
   const maxResults = 500;
   let startPosition = 1;
   const allBills: any[] = [];
 
   while (true) {
     const query = `SELECT * FROM Bill${where} ORDERBY TxnDate DESC STARTPOSITION ${startPosition} MAXRESULTS ${maxResults}`;
-    const page = await queryQuickBooks<any>("Bill", query);
+    const page = await queryQuickBooks<any>('Bill', query);
     const bills = page?.QueryResponse?.Bill ?? [];
     allBills.push(...bills);
     if (bills.length < maxResults) break;
@@ -582,22 +583,22 @@ export async function getBills(startDate?: string, endDate?: string): Promise<an
 }
 
 export async function getProfitAndLossReport(startDate: string, endDate: string): Promise<any> {
-  if (isConnectorMocked("quickbooks")) return qbMocks.mockProfitAndLossReport(startDate, endDate);
+  if (isConnectorMocked('quickbooks')) return qbMocks.mockProfitAndLossReport(startDate, endDate);
   const params = new URLSearchParams({
     start_date: startDate,
     end_date: endDate,
-    minorversion: "70",
+    minorversion: '70',
   });
   return qbGet<any>(`/reports/ProfitAndLoss?${params.toString()}`);
 }
 
 export async function getMonthlyPnLReport(startDate: string, endDate: string): Promise<any> {
-  if (isConnectorMocked("quickbooks")) return qbMocks.mockMonthlyPnLReport(startDate, endDate);
+  if (isConnectorMocked('quickbooks')) return qbMocks.mockMonthlyPnLReport(startDate, endDate);
   const params = new URLSearchParams({
     start_date: startDate,
     end_date: endDate,
-    summarize_column_by: "Month",
-    minorversion: "70",
+    summarize_column_by: 'Month',
+    minorversion: '70',
   });
   return qbGet<any>(`/reports/ProfitAndLoss?${params.toString()}`);
 }
@@ -615,6 +616,76 @@ export async function getMonthlyPnLReport(startDate: string, endDate: string): P
  *
  * Defensive: returns an empty Map on any structural mismatch.
  */
+export interface MonthlyPnLAccountDetail {
+  accountId: string | null;
+  accountName: string | null;
+  monthKey: string;
+  amount: number;
+}
+
+export function extractMonthlyAccountDetailsFromPnL(
+  report: any,
+  matchAccount: (account: { id: string | null; name: string | null }) => boolean,
+): MonthlyPnLAccountDetail[] {
+  const out: MonthlyPnLAccountDetail[] = [];
+  try {
+    const cols: any[] = report?.Columns?.Column ?? [];
+    const monthByCol = new Map<number, string>();
+    cols.forEach((col, idx) => {
+      const meta: any[] = col?.MetaData ?? [];
+      const startDate = meta.find((m: any) => m?.Name === 'StartDate')?.Value;
+      const dm = String(startDate || '').match(/^(\d{4})-(\d{2})/);
+      if (dm) monthByCol.set(idx, `${dm[1]}-${dm[2]}`);
+    });
+    if (monthByCol.size === 0) return out;
+
+    const readCells = (
+      account: { id: string | null; name: string | null },
+      cellsArr: any[],
+    ): void => {
+      monthByCol.forEach((monthKey, idx) => {
+        const cell = cellsArr[idx];
+        const v = cell?.value;
+        const n = v === undefined || v === null || v === '' ? 0 : Number(v);
+        if (Number.isFinite(n) && n !== 0) {
+          out.push({ accountId: account.id, accountName: account.name, monthKey, amount: n });
+        }
+      });
+    };
+
+    const visit = (row: any): void => {
+      if (!row) return;
+      if (row.type === 'Section' || row.Header || row.Summary) {
+        const headerCell = row?.Header?.ColData?.[0] ?? {};
+        const account = {
+          id: headerCell?.id ? String(headerCell.id) : null,
+          name: headerCell?.value ? String(headerCell.value) : null,
+        };
+        if ((account.id || account.name) && matchAccount(account)) {
+          const sumCells: any[] = row?.Summary?.ColData ?? [];
+          if (sumCells.length) readCells(account, sumCells);
+        }
+      }
+      if (row.type === 'Data' && Array.isArray(row.ColData)) {
+        const accCell = row.ColData[0] ?? {};
+        const account = {
+          id: accCell?.id ? String(accCell.id) : null,
+          name: accCell?.value ? String(accCell.value) : null,
+        };
+        if (matchAccount(account)) readCells(account, row.ColData);
+      }
+      const children: any[] = row?.Rows?.Row ?? [];
+      for (const child of children) visit(child);
+    };
+
+    const top: any[] = report?.Rows?.Row ?? [];
+    for (const row of top) visit(row);
+  } catch {
+    // Defensive - return whatever we've parsed.
+  }
+  return out;
+}
+
 export function extractMonthlyAccountTotalsFromPnL(
   report: any,
   matchAccount: (account: { id: string | null; name: string | null }) => boolean,
@@ -626,8 +697,8 @@ export function extractMonthlyAccountTotalsFromPnL(
     const monthByCol = new Map<number, string>();
     cols.forEach((col, idx) => {
       const meta: any[] = col?.MetaData ?? [];
-      const startDate = meta.find((m: any) => m?.Name === "StartDate")?.Value;
-      const dm = String(startDate || "").match(/^(\d{4})-(\d{2})/);
+      const startDate = meta.find((m: any) => m?.Name === 'StartDate')?.Value;
+      const dm = String(startDate || '').match(/^(\d{4})-(\d{2})/);
       if (dm) monthByCol.set(idx, `${dm[1]}-${dm[2]}`);
     });
     if (monthByCol.size === 0) return out;
@@ -636,7 +707,7 @@ export function extractMonthlyAccountTotalsFromPnL(
       monthByCol.forEach((monthKey, idx) => {
         const cell = cellsArr[idx];
         const v = cell?.value;
-        const n = v === undefined || v === null || v === "" ? 0 : Number(v);
+        const n = v === undefined || v === null || v === '' ? 0 : Number(v);
         if (Number.isFinite(n) && n !== 0) {
           out.set(monthKey, (out.get(monthKey) ?? 0) + n);
         }
@@ -648,7 +719,7 @@ export function extractMonthlyAccountTotalsFromPnL(
       // Section row — check Header.ColData[0] for account match (handles
       // QB accounts that have sub-accounts and therefore appear as a
       // Section with a Summary row totalling the parent account).
-      if (row.type === "Section" || row.Header || row.Summary) {
+      if (row.type === 'Section' || row.Header || row.Summary) {
         const headerCell = row?.Header?.ColData?.[0] ?? {};
         const account = {
           id: headerCell?.id ? String(headerCell.id) : null,
@@ -658,12 +729,11 @@ export function extractMonthlyAccountTotalsFromPnL(
           const sumCells: any[] = row?.Summary?.ColData ?? [];
           if (sumCells.length) {
             readCells(sumCells);
-            return true;
           }
         }
       }
       // Data row at the leaf — check the account.
-      if (row.type === "Data" && Array.isArray(row.ColData)) {
+      if (row.type === 'Data' && Array.isArray(row.ColData)) {
         const accCell = row.ColData[0] ?? {};
         const account = {
           id: accCell?.id ? String(accCell.id) : null,
@@ -671,20 +741,19 @@ export function extractMonthlyAccountTotalsFromPnL(
         };
         if (matchAccount(account)) {
           readCells(row.ColData);
-          return true;
         }
       }
       // Recurse into nested sections.
       const children: any[] = row?.Rows?.Row ?? [];
       for (const child of children) {
-        if (visit(child)) return true;
+        visit(child);
       }
       return false;
     };
 
     const top: any[] = report?.Rows?.Row ?? [];
     for (const row of top) {
-      if (visit(row)) break;
+      visit(row);
     }
   } catch {
     // Defensive — return whatever we've parsed.
@@ -699,7 +768,7 @@ export interface QuickBooksConnectionStatus {
   tokenExpiry: string | null;
   refreshTokenExpiry: string | null;
   /** Derived health tile — 'healthy' | 'stale' | 'failing' | 'unknown'. */
-  health: IntegrationHealthTile["health"];
+  health: IntegrationHealthTile['health'];
   /** ISO of the most recent successful QB run event. */
   lastSuccessfulSyncAt: string | null;
   /** ISO of the most recent failed QB run event. */
@@ -723,7 +792,7 @@ export interface QuickBooksConnectionStatus {
  */
 async function loadQuickBooksRunHealth(): Promise<{
   lastRunAt: Date | null;
-  lastRunStatus: "success" | "failure" | "partial" | null;
+  lastRunStatus: 'success' | 'failure' | 'partial' | null;
   lastSuccessAt: Date | null;
   lastFailureAt: Date | null;
   lastFailureCode: string | null;
@@ -754,7 +823,7 @@ async function loadQuickBooksRunHealth(): Promise<{
     .where(
       and(
         eq(integrationRunEvents.integrationId, row.id),
-        eq(integrationRunEvents.status, "success"),
+        eq(integrationRunEvents.status, 'success'),
       ),
     )
     .orderBy(desc(integrationRunEvents.startedAt))
@@ -766,7 +835,7 @@ async function loadQuickBooksRunHealth(): Promise<{
     .where(
       and(
         eq(integrationRunEvents.integrationId, row.id),
-        eq(integrationRunEvents.status, "failure"),
+        eq(integrationRunEvents.status, 'failure'),
       ),
     )
     .orderBy(desc(integrationRunEvents.startedAt))
@@ -774,7 +843,7 @@ async function loadQuickBooksRunHealth(): Promise<{
 
   return {
     lastRunAt: lastRun?.startedAt ?? null,
-    lastRunStatus: (lastRun?.status as "success" | "failure" | "partial" | undefined) ?? null,
+    lastRunStatus: (lastRun?.status as 'success' | 'failure' | 'partial' | undefined) ?? null,
     lastSuccessAt: lastSuccess?.startedAt ?? null,
     lastFailureAt: lastFailure?.startedAt ?? null,
     lastFailureCode: lastFailure?.errorCode ?? null,
@@ -783,7 +852,8 @@ async function loadQuickBooksRunHealth(): Promise<{
 }
 
 export async function getQuickBooksConnectionStatus(): Promise<QuickBooksConnectionStatus> {
-  if (isConnectorMocked("quickbooks")) return qbMocks.mockQuickBooksConnectionStatus() as unknown as QuickBooksConnectionStatus;
+  if (isConnectorMocked('quickbooks'))
+    return qbMocks.mockQuickBooksConnectionStatus() as unknown as QuickBooksConnectionStatus;
   const metadata = await loadQuickBooksMetadata();
   const connected = Boolean(metadata.accessToken && metadata.refreshToken && metadata.realmId);
 

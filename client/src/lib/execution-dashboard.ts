@@ -17,9 +17,9 @@ export interface ExecutionDashboardProject {
   openExpenditureFy: number;
   grossProfitFy: number;
   grossMarginPctFy: number | null;
-  engineeringStatus: "On Track" | "At Risk" | "Blocked";
-  qualityStatus: "On Track" | "At Risk" | "Blocked";
-  importFreshness: "Fresh" | "Warning" | "Critical";
+  engineeringStatus: 'On Track' | 'At Risk' | 'Blocked';
+  qualityStatus: 'On Track' | 'At Risk' | 'Blocked';
+  importFreshness: 'Fresh' | 'Warning' | 'Critical';
   importAgeDays: number | null;
   behindPlan: boolean;
   inflowRisk: boolean;
@@ -35,7 +35,7 @@ export interface ExecutionDashboardProject {
 }
 
 export interface ExecutionDashboardResponse {
-  financialYear: { start: string; end: string; label: string };
+  financialYear: { start: string; end: string; label: string; allData?: boolean };
   projects: ExecutionDashboardProject[];
   kpis: {
     activeDashboardProjects: number;
@@ -111,7 +111,7 @@ export interface ExecutionFilters {
 
 export function formatCurrencyCompact(value: number): string {
   const safe = Number.isFinite(value) ? value : 0;
-  const sign = safe < 0 ? "-" : "";
+  const sign = safe < 0 ? '-' : '';
   const abs = Math.abs(safe);
   if (abs >= 1_000_000_000) return `${sign}R${(abs / 1_000_000_000).toFixed(1)}B`;
   if (abs >= 1_000_000) return `${sign}R${(abs / 1_000_000).toFixed(1)}M`;
@@ -121,30 +121,39 @@ export function formatCurrencyCompact(value: number): string {
 
 export function formatCurrencyFull(value: number): string {
   const safe = Number.isFinite(value) ? value : 0;
-  const sign = safe < 0 ? "-" : "";
+  const sign = safe < 0 ? '-' : '';
   const abs = Math.abs(safe);
-  return `${sign}R${abs.toLocaleString("en-ZA", { maximumFractionDigits: 0 })}`;
+  return `${sign}R${abs.toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`;
 }
 
 export function formatDate(value: string | null): string {
-  if (!value) return "—";
+  if (!value) return '—';
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleDateString("en-ZA", { day: "2-digit", month: "short", year: "numeric" });
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-export function filterExecutionProjects(projects: ExecutionDashboardProject[], filters: ExecutionFilters): ExecutionDashboardProject[] {
+export function filterExecutionProjects(
+  projects: ExecutionDashboardProject[],
+  filters: ExecutionFilters,
+): ExecutionDashboardProject[] {
   const search = filters.search.trim().toLowerCase();
   return projects.filter((project) => {
     if (search) {
-      const haystack = `${project.projectName} ${project.pm || ""} ${project.pd || ""} ${project.portfolio || ""}`.toLowerCase();
+      const haystack =
+        `${project.projectName} ${project.pm || ''} ${project.pd || ''} ${project.portfolio || ''}`.toLowerCase();
       if (!haystack.includes(search)) return false;
     }
-    if (filters.portfolio !== "all" && (project.portfolio || "—") !== filters.portfolio) return false;
-    if (filters.pm !== "all" && (project.pm || "Unassigned") !== filters.pm) return false;
-    if (filters.pd !== "all" && (project.pd || "Unassigned") !== filters.pd) return false;
-    if (filters.executionPhase !== "all" && (project.executionPhase || "Unassigned") !== filters.executionPhase) return false;
-    if (filters.rag !== "all" && project.rag !== filters.rag) return false;
+    if (filters.portfolio !== 'all' && (project.portfolio || '—') !== filters.portfolio)
+      return false;
+    if (filters.pm !== 'all' && (project.pm || 'Unassigned') !== filters.pm) return false;
+    if (filters.pd !== 'all' && (project.pd || 'Unassigned') !== filters.pd) return false;
+    if (
+      filters.executionPhase !== 'all' &&
+      (project.executionPhase || 'Unassigned') !== filters.executionPhase
+    )
+      return false;
+    if (filters.rag !== 'all' && project.rag !== filters.rag) return false;
     if (filters.exceptionOnly && project.criticalActionCount === 0) return false;
     if (filters.behindPlanOnly && !project.behindPlan) return false;
     if (filters.inflowRiskOnly && !project.inflowRisk) return false;
@@ -152,7 +161,7 @@ export function filterExecutionProjects(projects: ExecutionDashboardProject[], f
     if (filters.engineeringBlockersOnly && project.engineeringBlockerCount === 0) return false;
     if (filters.qualityIssuesOnly && project.openQualityWarningCount === 0) return false;
     if (filters.pendingApprovalsOnly && project.pendingApprovalCount === 0) return false;
-    if (filters.staleImportsOnly && project.importFreshness === "Fresh") return false;
+    if (filters.staleImportsOnly && project.importFreshness === 'Fresh') return false;
     return true;
   });
 }
