@@ -62,38 +62,55 @@ export function FinanceTrustStrip({
   const stale = isStaleImport(lastImportDate);
 
   return (
-    <div className="rounded-lg border bg-white px-3 py-2 mb-3" data-testid="finance-trust-strip">
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <Badge variant="outline">Source: {source || "Unknown"}</Badge>
-        <Badge className={stale ? toneClass.warning : toneClass.default} data-testid="trust-stale-import-badge">
-          Last import: {lastImportDate || "Unknown"}
+    <div
+      className="flex flex-wrap items-center gap-1.5 text-[11px] mb-2"
+      data-testid="finance-trust-strip"
+    >
+      <Badge variant="outline" className="px-2 py-0.5 font-normal">
+        Source: {source || "Unknown"}
+      </Badge>
+      <Badge
+        className={`px-2 py-0.5 font-normal ${stale ? toneClass.warning : toneClass.default}`}
+        data-testid="trust-stale-import-badge"
+      >
+        Last import: {lastImportDate || "Unknown"}
+      </Badge>
+      <Badge
+        className={`px-2 py-0.5 font-normal ${
+          quickBooksLinkStatus === "linked"
+            ? toneClass.default
+            : quickBooksLinkStatus === "partial"
+              ? toneClass.warning
+              : toneClass.critical
+        }`}
+        data-testid="trust-qb-link-status"
+      >
+        QB: {quickBooksLinkStatus}
+      </Badge>
+      {readOnly && (
+        <Badge variant="outline" className="px-2 py-0.5 font-normal" data-testid="trust-read-only">
+          Read-only
         </Badge>
-        <Badge className={quickBooksLinkStatus === "linked" ? toneClass.default : quickBooksLinkStatus === "partial" ? toneClass.warning : toneClass.critical} data-testid="trust-qb-link-status">
-          QB: {quickBooksLinkStatus}
-        </Badge>
-        {readOnly && <Badge variant="outline" data-testid="trust-read-only">Read-only trust view</Badge>}
-      </div>
-      <div className="mt-2 flex flex-wrap gap-2">
-        {metrics.map((metric) => {
-          const badge = (
-            <Badge
-              key={metric.label}
-              className={toneClass[metric.tone ?? "default"]}
-              data-testid={metric.testId}
-            >
-              {metric.label}: {metric.value}
-            </Badge>
+      )}
+      {metrics.map((metric) => {
+        const badge = (
+          <Badge
+            key={metric.label}
+            className={`px-2 py-0.5 font-normal ${toneClass[metric.tone ?? "default"]}`}
+            data-testid={metric.testId}
+          >
+            {metric.label}: {metric.value}
+          </Badge>
+        );
+        if (metric.href) {
+          return (
+            <Link key={metric.label} href={metric.href}>
+              <a className="inline-flex">{badge}</a>
+            </Link>
           );
-          if (metric.href) {
-            return (
-              <Link key={metric.label} href={metric.href}>
-                <a className="inline-flex">{badge}</a>
-              </Link>
-            );
-          }
-          return badge;
-        })}
-      </div>
+        }
+        return badge;
+      })}
     </div>
   );
 }

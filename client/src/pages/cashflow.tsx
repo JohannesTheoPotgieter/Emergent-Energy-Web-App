@@ -315,23 +315,23 @@ function KpiCard({
 
   return (
     <div
-      className={`rounded-xl border ${c.border} ${c.bg} p-4 flex items-center gap-3 transition-all hover:shadow-md`}
+      className={`rounded-lg border ${c.border} ${c.bg} px-3 py-2 flex items-center gap-2.5 transition-all hover:shadow-sm`}
       data-testid={testId}
     >
-      <div className={`rounded-lg ${c.iconBg} p-2.5 ${c.iconColor}`}>{icon}</div>
-      <div className="min-w-0">
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide truncate">
+      <div className={`rounded-md ${c.iconBg} p-1.5 ${c.iconColor} shrink-0`}>{icon}</div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide truncate leading-tight">
           {title}
         </p>
         <p
-          className={`text-lg font-bold font-mono ${c.text} truncate`}
+          className={`text-base font-bold font-mono ${c.text} truncate leading-tight`}
           data-testid={`${testId}-value`}
         >
           {value}
         </p>
         {nullCount != null && nullCount > 0 ? (
           <p
-            className="text-[11px] font-medium text-amber-600 truncate"
+            className="text-[10px] font-medium text-amber-600 truncate leading-tight"
             data-testid={`${testId}-null-count`}
           >
             ({nullCount} missing)
@@ -1601,7 +1601,7 @@ export default function CashflowPage() {
 
   return (
     <FinanceShell>
-      <div className="p-4 md:p-6" data-testid="page-cashflow">
+      <div className="p-3 md:p-4" data-testid="page-cashflow">
         <KeyboardShortcuts
           railSearchRef={railSearchRef}
           setProjectPickerOpen={setProjectPickerOpen}
@@ -1691,18 +1691,25 @@ export default function CashflowPage() {
             </Badge>
           )}
         </div>
-        <div
-          className="mt-3 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs text-slate-700"
+        <details
+          className="mt-2 rounded-md border border-slate-200 bg-slate-50/70 text-[11px] text-slate-700 group"
           data-testid="cashflow-trust-note"
         >
-          <p>Cashflow actuals use payment received / paid dates.</p>
-          <p className="mt-1">
-            Forecast dates may use planned-payment fallback where no canonical payment date exists.
+          <summary className="cursor-pointer select-none px-2.5 py-1 list-none flex items-center gap-1.5 hover:bg-slate-100/70 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60">
+            <span aria-hidden="true" className="text-slate-500">ⓘ</span>
+            <span>Actuals use paid dates; forecasts may fall back to planned-payment dates.</span>
+            <ChevronDown
+              aria-hidden="true"
+              className="ml-auto h-3 w-3 text-slate-400 transition-transform group-open:rotate-180"
+            />
+            <span className="sr-only group-open:hidden">Show full data trust note</span>
+            <span className="sr-only hidden group-open:inline">Hide full data trust note</span>
+          </summary>
+          <p className="px-2.5 pb-2 pt-0.5 text-slate-600 leading-snug">
+            Forecast dates use planned-payment fallback where no canonical payment date exists. Use
+            forecast values as planning data until reconciled.
           </p>
-          <p className="mt-1 text-slate-600">
-            Use forecast values as planning data until reconciled.
-          </p>
-        </div>
+        </details>
         <FinanceTrustStrip
           source={cashflowTrust?.canonicalTable ?? 'canonical'}
           lastImportDate={cashflowSummary?.lastImportDate ?? 'Unknown'}
@@ -1890,7 +1897,7 @@ export default function CashflowPage() {
               )}
             </div>
 
-            <div className="space-y-4 sm:space-y-5">
+            <div className="space-y-3">
               {isLoading ? (
                 <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
                   <Loader2
@@ -1908,7 +1915,7 @@ export default function CashflowPage() {
               ) : (
                 <>
                   <div
-                    className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"
+                    className="grid grid-cols-2 lg:grid-cols-4 gap-2"
                     data-testid="kpi-summary-row"
                   >
                     <KpiCard
@@ -1967,8 +1974,8 @@ export default function CashflowPage() {
                       />
                     </button>
                     {chartOpen && (
-                      <CardContent id="cashflow-trend-chart-body" className="px-2 pb-3">
-                        <div className="h-[220px] sm:h-[280px] w-full">
+                      <CardContent id="cashflow-trend-chart-body" className="px-2 pb-2">
+                        <div className="h-[180px] sm:h-[220px] w-full">
                           <ResponsiveContainer width="100%" height="100%">
                             <LineChart
                               data={chartData}
