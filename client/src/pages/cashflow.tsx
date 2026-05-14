@@ -1289,7 +1289,7 @@ export default function CashflowPage() {
   const [showDetail, setShowDetail] = useState(false);
   const [expandedWeek, setExpandedWeek] = useState<string | null>(null);
   const [opexOpen, setOpexOpen] = useState(false);
-  const [chartOpen, setChartOpen] = useState(true);
+  const [chartOpen, setChartOpen] = useState(false);
   const [historyWeek, setHistoryWeek] = useState<string | null>(null);
   const [availPayHistoryWeek, setAvailPayHistoryWeek] = useState<string | null>(null);
   const [railSearch, setRailSearch] = useState('');
@@ -1649,7 +1649,7 @@ export default function CashflowPage() {
             </div>
           }
         />
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-muted-foreground -mt-1">
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground -mt-2">
           <Badge
             variant="outline"
             className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card"
