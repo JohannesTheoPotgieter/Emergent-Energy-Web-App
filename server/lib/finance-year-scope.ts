@@ -41,7 +41,7 @@ export function resolveFinanceYearScope(
   query: QueryLike = {},
   today = new Date(),
 ): FinanceYearScope {
-  const rawFy = firstQueryValue(query.fy);
+  const rawFy = firstQueryValue(query.fy ?? query.fye);
   const rawScope = firstQueryValue(query.scope);
   const rawAllData = firstQueryValue(query.allData ?? query.all);
   const allRequested =

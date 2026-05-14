@@ -17,6 +17,9 @@ describe('cashflow QuickBooks link workflow', () => {
   });
 
   it('keeps the cashflow QuickBooks dialog visible, compact, and scroll-contained', () => {
+    expect(cashflowPage).toContain('type QbLinkContext');
+    expect(cashflowPage).toContain('onOpenQbLink={setQbLinkContext}');
+    expect(cashflowPage).toContain('onOpenQbLink: (ctx: QbLinkContext) => void');
     expect(cashflowPage).toContain('data-testid="dialog-cashflow-qb-match"');
     expect(cashflowPage).toContain('z-[60]');
     expect(cashflowPage).toContain("width: 'min(calc(100vw - 1rem), 1120px)'");
@@ -24,7 +27,7 @@ describe('cashflow QuickBooks link workflow', () => {
     expect(cashflowPage).toContain('max-h-[min(86dvh,780px)]');
     expect(cashflowPage).toContain('overflow-hidden');
     expect(cashflowPage).toContain('touch-compact h-4');
-    expect(cashflowPage).toContain('event.stopPropagation()');
+    expect(cashflowPage).toContain('stopPropagation()');
   });
 
   it('allows callers to seed the match panel search from an invoice number', () => {

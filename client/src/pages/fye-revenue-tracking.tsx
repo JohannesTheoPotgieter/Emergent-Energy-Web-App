@@ -1,8 +1,10 @@
 import React, { useState, useMemo } from "react";
 import { FinanceShell } from "@/components/layout/FinanceShell";
 import { SectionHeader } from "@/components/layout/page-shell";
+import { FinancialYearScopeControl } from "@/components/finance/FinancialYearScopeControl";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiMutation } from "@/hooks/use-api-mutation";
+import { useFinancialYearScope, type FinancialYearScope } from "@/hooks/use-financial-year-scope";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -69,7 +71,7 @@ interface DashboardMonth {
 }
 
 interface DashboardResponse {
-  fye: number;
+  fye: number | null;
   months: DashboardMonth[];
   monthKeys: string[];
 }
@@ -98,7 +100,7 @@ interface ProjectRow {
 }
 
 interface DetailResponse {
-  fye: number;
+  fye: number | null;
   cutoffMonth: string | null;
   projects: ProjectRow[];
   totals: {
@@ -527,16 +529,24 @@ function InlineEditCell({
 
 type SortKey = "projectName" | "budgetRevenue" | "actualRevenue" | "actualGp" | "budgetGpPct" | "actualGpPct";
 
-function ProjectsTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
+function ProjectsTab({
+  fyScope,
+  canEdit,
+}: {
+  fyScope: FinancialYearScope;
+  canEdit: boolean;
+}) {
   const qc = useQueryClient();
   const [cutoff, setCutoff] = useState<string>("");
   const [sortKey, setSortKey] = useState<SortKey>("projectName");
   const [sortAsc, setSortAsc] = useState(true);
 
-  const queryKey = ["/api/fye-revenue-tracking/detail", fye, cutoff || null];
+  const queryKey = ["/api/fye-revenue-tracking/detail", fyScope.apiQueryString, cutoff || null];
   const { data, isLoading, isError, error } = useQuery<DetailResponse>({
     queryKey,
-    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/detail?fye=${fye}${cutoff ? `&cutoffMonth=${cutoff}` : ""}`),
+    queryFn: fetchQueryFn(
+      `/api/fye-revenue-tracking/detail?${fyScope.apiQueryString}${cutoff ? `&cutoffMonth=${cutoff}` : ""}`,
+    ),
   });
 
   const editMutation = useApiMutation({
@@ -719,7 +729,15 @@ const EMPTY_PIPELINE = {
   notes: "",
 };
 
-function PipelineTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
+function PipelineTab({
+  fye,
+  fyScope,
+  canEdit,
+}: {
+  fye: number | null;
+  fyScope: FinancialYearScope;
+  canEdit: boolean;
+}) {
   const qc = useQueryClient();
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_PIPELINE });
@@ -727,14 +745,14 @@ function PipelineTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
   const [editForm, setEditForm] = useState<Partial<PipelineRow>>({});
   const [pendingDelete, setPendingDelete] = useState<{ id: number; label: string } | null>(null);
 
-  const queryKey = ["/api/fye-revenue-tracking/pipeline", fye];
+  const queryKey = ["/api/fye-revenue-tracking/pipeline", fyScope.apiQueryString];
   const { data: rows = [], isLoading } = useQuery<PipelineRow[]>({
     queryKey,
-    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/pipeline?fye=${fye}`),
+    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/pipeline?${fyScope.apiQueryString}`),
   });
 
   const createMut = useApiMutation({
-    mutationFn: (body: typeof form) => apiRequest("POST", "/api/fye-revenue-tracking/pipeline", { ...body, fyeYear: fye, sizeKwp: body.sizeKwp || null, dealProbabilityPct: Number(body.dealProbabilityPct), solarRevenue: body.solarRevenue || "0", bessRevenue: body.bessRevenue || "0", forecastGpPct: body.forecastGpPct || null }),
+    mutationFn: (body: typeof form) => apiRequest("POST", "/api/fye-revenue-tracking/pipeline", { ...body, fyeYear: fye ?? undefined, sizeKwp: body.sizeKwp || null, dealProbabilityPct: Number(body.dealProbabilityPct), solarRevenue: body.solarRevenue || "0", bessRevenue: body.bessRevenue || "0", forecastGpPct: body.forecastGpPct || null }),
     onSuccess: () => { qc.invalidateQueries({ queryKey }); setAdding(false); setForm({ ...EMPTY_PIPELINE }); },
     successToast: "Deal added",
     errorToast: "Failed to add deal",
@@ -838,7 +856,7 @@ function PipelineTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
               );
             })}
             {rows.length === 0 && !adding && (
-              <tr><td colSpan={11} className="px-4 py-8 text-center text-sm text-muted-foreground">No pipeline deals for FY{fye}. {canEdit && "Click \"Add Deal\" to add one."}</td></tr>
+              <tr><td colSpan={11} className="px-4 py-8 text-center text-sm text-muted-foreground">No pipeline deals for {fyScope.label}. {canEdit && "Click \"Add Deal\" to add one."}</td></tr>
             )}
           </tbody>
         </table>
@@ -858,7 +876,15 @@ function PipelineTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
 
 const EMPTY_LOST = { dealName: "", dealValue: "", businessDeveloper: "", lostReason: "", lostDate: "", notes: "" };
 
-function LostDealsTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
+function LostDealsTab({
+  fye,
+  fyScope,
+  canEdit,
+}: {
+  fye: number | null;
+  fyScope: FinancialYearScope;
+  canEdit: boolean;
+}) {
   const qc = useQueryClient();
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_LOST });
@@ -866,14 +892,14 @@ function LostDealsTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
   const [editForm, setEditForm] = useState<Partial<LostDealRow>>({});
   const [pendingDelete, setPendingDelete] = useState<{ id: number; label: string } | null>(null);
 
-  const queryKey = ["/api/fye-revenue-tracking/lost-deals", fye];
+  const queryKey = ["/api/fye-revenue-tracking/lost-deals", fyScope.apiQueryString];
   const { data: rows = [], isLoading } = useQuery<LostDealRow[]>({
     queryKey,
-    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/lost-deals?fye=${fye}`),
+    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/lost-deals?${fyScope.apiQueryString}`),
   });
 
   const createMut = useApiMutation({
-    mutationFn: (body: typeof form) => apiRequest("POST", "/api/fye-revenue-tracking/lost-deals", { ...body, fyeYear: fye, dealValue: body.dealValue || null }),
+    mutationFn: (body: typeof form) => apiRequest("POST", "/api/fye-revenue-tracking/lost-deals", { ...body, fyeYear: fye ?? undefined, dealValue: body.dealValue || null }),
     onSuccess: () => { qc.invalidateQueries({ queryKey }); setAdding(false); setForm({ ...EMPTY_LOST }); },
     successToast: "Lost deal recorded",
     errorToast: "Failed to save lost deal",
@@ -964,7 +990,7 @@ function LostDealsTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
               );
             })}
             {rows.length === 0 && !adding && (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-muted-foreground">No lost deals recorded for FY{fye}. {canEdit && "Click \"Add Lost Deal\" to add one."}</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-muted-foreground">No lost deals recorded for {fyScope.label}. {canEdit && "Click \"Add Lost Deal\" to add one."}</td></tr>
             )}
           </tbody>
         </table>
@@ -985,6 +1011,7 @@ function LostDealsTab({ fye, canEdit }: { fye: number; canEdit: boolean }) {
 export default function FyeRevenueTrackingPage() {
   const { allowed: canView } = usePermission("fye_revenue_tracking", "view");
   const { allowed: canEdit } = usePermission("fye_revenue_tracking", "edit");
+  const fyScope = useFinancialYearScope();
 
   const [activeTab, setActiveTab] = useState<"dashboard" | "projects" | "pipeline" | "lost-deals">("dashboard");
 
@@ -993,23 +1020,24 @@ export default function FyeRevenueTrackingPage() {
     queryFn: fetchQueryFn("/api/fye-revenue-tracking/years"),
   });
 
-  const [fye, setFye] = useState<number | null>(null);
-  const activeFye = fye ?? yearsData?.currentFye ?? new Date().getFullYear();
+  const activeFye = fyScope.fy ?? yearsData?.currentFye ?? new Date().getFullYear();
 
   const { data: kpis, isLoading: kpisLoading } = useQuery<KpiResponse>({
-    queryKey: ["/api/fye-revenue-tracking/kpis", activeFye],
-    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/kpis?fye=${activeFye}`),
-    enabled: !!activeFye,
+    queryKey: ["/api/fye-revenue-tracking/kpis", fyScope.apiQueryString],
+    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/kpis?${fyScope.apiQueryString}`),
+    enabled: fyScope.allData || !!activeFye,
   });
 
   const { data: dashData, isLoading: dashLoading, isError: dashError, error: dashErr } = useQuery<DashboardResponse>({
-    queryKey: ["/api/fye-revenue-tracking/dashboard", activeFye],
-    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/dashboard?fye=${activeFye}`),
-    enabled: !!activeFye,
+    queryKey: ["/api/fye-revenue-tracking/dashboard", fyScope.apiQueryString],
+    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/dashboard?${fyScope.apiQueryString}`),
+    enabled: fyScope.allData || !!activeFye,
     staleTime: 30_000,
   });
 
-  const fyeLabel = `FY${activeFye} (Sep ${activeFye - 1} – Aug ${activeFye})`;
+  const fyeLabel = fyScope.allData
+    ? "All data"
+    : `FY${activeFye} (Sep ${activeFye - 1} – Aug ${activeFye})`;
 
   // FY totals from dashboard for summary cards
   const fyTotals = useMemo(() => {
@@ -1049,22 +1077,8 @@ export default function FyeRevenueTrackingPage() {
             icon={<TrendingUp className="h-5 w-5" />}
             title="FYE Revenue Tracking"
             eyebrow={fyeLabel}
+            actions={<FinancialYearScopeControl scope={fyScope} />}
           />
-
-          <div className="flex items-center gap-2 flex-wrap">
-            <label htmlFor="select-fye-year" className="text-xs font-medium text-muted-foreground whitespace-nowrap">Financial Year:</label>
-            <select
-              id="select-fye-year"
-              value={activeFye}
-              onChange={(e) => setFye(Number(e.target.value))}
-              className="h-8 px-2 text-sm border border-border rounded-lg bg-card hover:bg-muted/50 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-300"
-              data-testid="select-fye"
-            >
-              {(yearsData?.years ?? [activeFye]).map((y) => (
-                <option key={y} value={y}>FY{y} (Sep {y - 1} – Aug {y})</option>
-              ))}
-            </select>
-          </div>
         </div>
 
         {/* KPI Strip */}
@@ -1163,7 +1177,7 @@ export default function FyeRevenueTrackingPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-4">
-                <ProjectsTab fye={activeFye} canEdit={canEdit} />
+                <ProjectsTab fyScope={fyScope} canEdit={canEdit} />
               </CardContent>
             </Card>
           </TabsContent>
@@ -1177,7 +1191,7 @@ export default function FyeRevenueTrackingPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-4">
-                <PipelineTab fye={activeFye} canEdit={canEdit} />
+                <PipelineTab fye={fyScope.fy} fyScope={fyScope} canEdit={canEdit} />
               </CardContent>
             </Card>
           </TabsContent>
@@ -1191,7 +1205,7 @@ export default function FyeRevenueTrackingPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-4">
-                <LostDealsTab fye={activeFye} canEdit={canEdit} />
+                <LostDealsTab fye={fyScope.fy} fyScope={fyScope} canEdit={canEdit} />
               </CardContent>
             </Card>
           </TabsContent>

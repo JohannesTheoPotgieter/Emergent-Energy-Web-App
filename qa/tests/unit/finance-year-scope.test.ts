@@ -63,4 +63,11 @@ describe('finance year scope helper', () => {
     expect(monthKeyInFinanceScope('2030-12', scope)).toBe(true);
     expect(financeScopeToQuery(scope)).toBe('fy=all');
   });
+
+  it('accepts the FYE route alias for all-data finance pages', () => {
+    const scope = resolveFinanceYearScope({ fye: 'all' }, new Date('2026-05-14T10:00:00Z'));
+
+    expect(scope.mode).toBe('all');
+    expect(scope.fy).toBeNull();
+  });
 });

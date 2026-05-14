@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SectionHeader } from "@/components/layout/page-shell";
+import { FinancialYearScopeControl } from "@/components/finance/FinancialYearScopeControl";
+import { useFinancialYearScope } from "@/hooks/use-financial-year-scope";
 import { fetchQueryFn } from "@/lib/queryClient";
 import {
   Bar,
@@ -200,6 +202,7 @@ function gpCellColor(val: number): string {
 
 export default function FinanceGpCompanyPage() {
   const [, navigate] = useLocation();
+  const fyScope = useFinancialYearScope();
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<"recon" | "trend">("recon");
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
@@ -214,8 +217,8 @@ export default function FinanceGpCompanyPage() {
     dataUpdatedAt,
     isFetching,
   } = useQuery<CosMonthData[]>({
-    queryKey: ["/api/cos-tracker"],
-    queryFn: fetchQueryFn("/api/cos-tracker"),
+    queryKey: ["/api/cos-tracker", fyScope.apiQueryString],
+    queryFn: fetchQueryFn(`/api/cos-tracker?${fyScope.apiQueryString}`),
     staleTime: 30_000,
   });
 
@@ -225,7 +228,8 @@ export default function FinanceGpCompanyPage() {
     isError: revError,
     refetch: refetchRev,
   } = useQuery<RevTrackerResponse>({
-    queryKey: ["/api/revenue-tracker"],
+    queryKey: ["/api/revenue-tracker", fyScope.apiQueryString],
+    queryFn: fetchQueryFn(`/api/revenue-tracker?${fyScope.apiQueryString}`),
     staleTime: 30_000,
   });
 
@@ -759,9 +763,12 @@ export default function FinanceGpCompanyPage() {
       <div className="space-y-3">
         <SectionHeader
           icon={<BarChart3 className="h-5 w-5" />}
-          title="Gross Profit FY26"
-          eyebrow={`Sep ${new Date().getFullYear() - 1} – Aug ${new Date().getFullYear()}`}
+          title={`Gross Profit ${fyScope.label}`}
+          eyebrow={
+            fyScope.allData ? "All data in system" : `${fyScope.startDate} - ${fyScope.endDate}`
+          }
           description="GP = Revenue − COS using exact same pipeline numbers as the COS and Revenue pages."
+          actions={<FinancialYearScopeControl scope={fyScope} />}
         />
 
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-muted-foreground -mt-1">

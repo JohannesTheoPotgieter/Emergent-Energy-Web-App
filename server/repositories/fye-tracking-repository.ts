@@ -33,7 +33,7 @@ export class FyeTrackingRepository {
 
   // ── fye_budgets ──
 
-  async listBudgetsByFye(fye: string): Promise<Array<{
+  async listBudgetsByFye(fye: string | null): Promise<Array<{
     id: number;
     projectName: string;
     fye: string;
@@ -41,7 +41,7 @@ export class FyeTrackingRepository {
     budgetType: string;
     amount: string | null;
   }>> {
-    return this.dbInstance
+    const query = this.dbInstance
       .select({
         id: fyeBudgets.id,
         projectName: fyeBudgets.projectName,
@@ -50,23 +50,25 @@ export class FyeTrackingRepository {
         budgetType: fyeBudgets.budgetType,
         amount: fyeBudgets.amount,
       })
-      .from(fyeBudgets)
-      .where(eq(fyeBudgets.fye, fye));
+      .from(fyeBudgets);
+
+    return fye ? query.where(eq(fyeBudgets.fye, fye)) : query;
   }
 
-  async listBudgetTotalsByFye(fye: string): Promise<Array<{
+  async listBudgetTotalsByFye(fye: string | null): Promise<Array<{
     monthKey: string;
     budgetType: string;
     amount: string | null;
   }>> {
-    return this.dbInstance
+    const query = this.dbInstance
       .select({
         monthKey: fyeBudgets.monthKey,
         budgetType: fyeBudgets.budgetType,
         amount: fyeBudgets.amount,
       })
-      .from(fyeBudgets)
-      .where(eq(fyeBudgets.fye, fye));
+      .from(fyeBudgets);
+
+    return fye ? query.where(eq(fyeBudgets.fye, fye)) : query;
   }
 
   async findBudgetIdByKey(args: {
@@ -112,23 +114,34 @@ export class FyeTrackingRepository {
       .where(eq(forecastPipeline.fyeYear, fyeYear));
   }
 
-  async listActivePipelineByFye(fyeYear: number): Promise<ForecastPipeline[]> {
+  async listActivePipelineByFye(fyeYear: number | null): Promise<ForecastPipeline[]> {
+    const whereClause =
+      fyeYear == null
+        ? eq(forecastPipeline.status, "active")
+        : and(eq(forecastPipeline.status, "active"), eq(forecastPipeline.fyeYear, fyeYear));
+
     return this.dbInstance
       .select()
       .from(forecastPipeline)
-      .where(and(
-        eq(forecastPipeline.status, "active"),
-        eq(forecastPipeline.fyeYear, fyeYear),
-      ))
+      .where(whereClause)
       .orderBy(desc(forecastPipeline.updatedAt));
   }
 
-  async listHighProbabilityActivePipeline(fyeYear: number): Promise<Array<{
+  async listHighProbabilityActivePipeline(fyeYear: number | null): Promise<Array<{
     solarRevenue: string | null;
     bessRevenue: string | null;
     forecastSignatureDate: string | null;
     forecastGpPct: string | null;
   }>> {
+    const whereClause =
+      fyeYear == null
+        ? and(gte(forecastPipeline.dealProbabilityPct, 95), eq(forecastPipeline.status, "active"))
+        : and(
+            eq(forecastPipeline.fyeYear, fyeYear),
+            gte(forecastPipeline.dealProbabilityPct, 95),
+            eq(forecastPipeline.status, "active"),
+          );
+
     return this.dbInstance
       .select({
         solarRevenue: forecastPipeline.solarRevenue,
@@ -137,11 +150,7 @@ export class FyeTrackingRepository {
         forecastGpPct: forecastPipeline.forecastGpPct,
       })
       .from(forecastPipeline)
-      .where(and(
-        eq(forecastPipeline.fyeYear, fyeYear),
-        gte(forecastPipeline.dealProbabilityPct, 95),
-        eq(forecastPipeline.status, "active"),
-      ));
+      .where(whereClause);
   }
 
   async getLatestPipelineRow(): Promise<{ id: number; projectName: string | null } | null> {
@@ -181,15 +190,14 @@ export class FyeTrackingRepository {
 
   // ── lost_deals ──
 
-  async listLostDealsByFye(fyeYear: number): Promise<Array<typeof lostDeals.$inferSelect>> {
-    return this.dbInstance
-      .select()
-      .from(lostDeals)
-      .where(eq(lostDeals.fyeYear, fyeYear))
-      .orderBy(desc(lostDeals.updatedAt));
+  async listLostDealsByFye(fyeYear: number | null): Promise<Array<typeof lostDeals.$inferSelect>> {
+    const query = this.dbInstance.select().from(lostDeals);
+    return fyeYear == null
+      ? query.orderBy(desc(lostDeals.updatedAt))
+      : query.where(eq(lostDeals.fyeYear, fyeYear)).orderBy(desc(lostDeals.updatedAt));
   }
 
-  async listLostDealsForKpi(fyeYear: number): Promise<Array<{
+  async listLostDealsForKpi(fyeYear: number | null): Promise<Array<{
     id: number;
     dealName: string | null;
     dealValue: string | null;
@@ -197,7 +205,7 @@ export class FyeTrackingRepository {
     lostReason: string | null;
     lostDate: string | null;
   }>> {
-    return this.dbInstance
+    const query = this.dbInstance
       .select({
         id: lostDeals.id,
         dealName: lostDeals.dealName,
@@ -206,8 +214,9 @@ export class FyeTrackingRepository {
         lostReason: lostDeals.lostReason,
         lostDate: lostDeals.lostDate,
       })
-      .from(lostDeals)
-      .where(eq(lostDeals.fyeYear, fyeYear));
+      .from(lostDeals);
+
+    return fyeYear == null ? query : query.where(eq(lostDeals.fyeYear, fyeYear));
   }
 
   async getLatestLostDealRow(): Promise<{ id: number; dealName: string | null } | null> {
