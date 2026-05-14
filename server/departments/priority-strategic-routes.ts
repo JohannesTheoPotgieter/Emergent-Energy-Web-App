@@ -2,7 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { z } from "zod";
 import { requireAuth, requirePriorityAdmin, requirePriorityCreator } from "./shared-middleware";
 import { requirePermission } from "../permission-middleware";
-import { canPriorityRoleEditPriority, isDepartmentHeadRole, isPriorityAdminRole, isPriorityTerminalStatus } from "@shared/config/priorities";
+import { canPriorityRoleEditPriority, isDepartmentHeadRole, isPriorityAdminRole, isPriorityParentAllowed, isPriorityTerminalStatus } from "@shared/config/priorities";
 import { getEffectiveUser } from "../auth-context";
 import { db } from "../db";
 import {
@@ -79,6 +79,54 @@ function assertRegularPriorityUpdateFields(body: Record<string, any>, existing: 
 
   if (protectedChanges.length > 0) {
     throw forbidden(`Regular users can only update personal priority fields: ${protectedChanges.join(", ")}`);
+  }
+}
+
+async function assertPriorityParentLink({
+  childId,
+  scope,
+  departmentKey,
+  parentId,
+}: {
+  childId: number | null;
+  scope: PriorityScope;
+  departmentKey: string | null;
+  parentId: number | null;
+}) {
+  if (!parentId) return;
+  if (childId && parentId === childId) {
+    throw badRequest("A priority cannot be its own parent");
+  }
+
+  const [parent] = await db
+    .select({
+      id: mytoolCompanyPriorities.id,
+      scope: mytoolCompanyPriorities.scope,
+      departmentKey: mytoolCompanyPriorities.departmentKey,
+    })
+    .from(mytoolCompanyPriorities)
+    .where(eq(mytoolCompanyPriorities.id, parentId))
+    .limit(1);
+  if (!parent) throw badRequest("parent_id not found");
+
+  if (!isPriorityParentAllowed({ scope, departmentKey }, parent)) {
+    throw badRequest("parent_id is not valid for this priority scope and department");
+  }
+
+  if (childId) {
+    const adjacency = await db
+      .select({ id: mytoolCompanyPriorities.id, parentId: mytoolCompanyPriorities.parentId })
+      .from(mytoolCompanyPriorities);
+    const descendantIds = collectDescendantIds(
+      adjacency.map((row: { id: number; parentId: number | null }) => ({
+        id: row.id,
+        parentId: row.parentId,
+      })),
+      childId,
+    );
+    if (descendantIds.includes(parentId)) {
+      throw badRequest("A priority cannot be linked under one of its descendants");
+    }
   }
 }
 
@@ -1152,10 +1200,12 @@ router.post(
       const assignee = await getUserById(effectiveAssignedUserId);
       if (!assignee) throw badRequest("assigned_user_id not found");
     }
-    if (effectiveParentId) {
-      const [parent] = await db.select({ id: mytoolCompanyPriorities.id }).from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, effectiveParentId));
-      if (!parent) throw badRequest("parent_id not found");
-    }
+    await assertPriorityParentLink({
+      childId: null,
+      scope: effectiveScope,
+      departmentKey: effectiveDepartmentKey,
+      parentId: effectiveParentId,
+    });
     if (effectiveProjectIds.length > 0) {
       const projectRows = await db.select({ id: projectInfo.id }).from(projectInfo).where(inArray(projectInfo.id, effectiveProjectIds));
       if (projectRows.length !== effectiveProjectIds.length) throw badRequest("One or more project_ids not found");
@@ -1278,6 +1328,20 @@ router.put(
     } else if (!isPriorityAdmin) {
       assertRegularPriorityUpdateFields(body as Record<string, any>, existingPriority);
     }
+
+    const nextScope = (scope ?? existingScope) as PriorityScope;
+    const nextDepartmentKey = department_key !== undefined
+      ? department_key
+      : existingDept;
+    const nextParentId = parent_id !== undefined
+      ? parent_id
+      : existingPriority.parentId ?? null;
+    await assertPriorityParentLink({
+      childId: priorityId,
+      scope: nextScope,
+      departmentKey: nextDepartmentKey ?? null,
+      parentId: nextParentId ?? null,
+    });
 
     const updates: Record<string, any> = { updatedAt: new Date() };
     if (title !== undefined) updates.title = title;
