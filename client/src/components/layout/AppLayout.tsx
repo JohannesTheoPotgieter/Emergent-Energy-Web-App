@@ -265,7 +265,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-2 focus:left-2 focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:rounded-md focus:text-sm focus:font-medium">Skip to content</a>
       <ConnectorModeBanner />
       <header className="sticky top-0 z-50 border-b border-border/50 bg-background/[0.92] ee-header-glass">
-        <div className="px-4 lg:px-6 py-2.5 flex items-center gap-3 mx-auto w-full max-w-[1440px]">
+        <div className="px-3 sm:px-4 lg:px-6 py-2 flex min-w-0 items-center gap-2.5 mx-auto w-full max-w-[1440px]">
           <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className={cn(isMobile ? "hidden" : "lg:hidden")} data-testid="button-mobile-menu" aria-label="Open navigation menu"><Menu className="h-5 w-5" /></Button>
@@ -360,16 +360,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             />
           </Link>
 
-          <div className={cn("relative flex-1", isMobile ? "max-w-[42vw]" : "max-w-xl")} ref={searchContainerRef}>
+          <div
+            className={cn("relative min-w-0 flex-1", isMobile ? "max-w-[46vw]" : "max-w-[42rem]")}
+            ref={searchContainerRef}
+          >
             <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
             <Input
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Escape") setSearchTerm(""); }}
-              placeholder="Search projects, tasks, people..."
-              className={cn("pl-9 pr-14 h-9 bg-muted/40 border-transparent hover:border-border focus-visible:border-border focus-visible:bg-background focus-visible:ring-ring/20 transition-colors", searchTerm && "pr-8 bg-background border-border")}
+              placeholder={isMobile ? "Search..." : "Search projects, tasks, people..."}
+              className={cn(
+                "h-9 bg-muted/35 pl-9 pr-9 xl:pr-24 border-transparent hover:border-border focus-visible:border-border focus-visible:bg-background focus-visible:ring-ring/20 transition-colors",
+                searchTerm && "bg-background border-border pr-9",
+              )}
             />
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground border rounded px-1.5 py-0.5 bg-background/80">
+            <span className="absolute right-3 top-1/2 hidden -translate-y-1/2 rounded border bg-background/80 px-1.5 py-0.5 text-[10px] text-muted-foreground xl:block">
               ⌘K / Ctrl+K
             </span>
             {searchTerm && (
@@ -486,7 +492,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="hidden lg:block border-t border-border/40">
-          <nav className="flex px-6 pt-1.5 pb-[9px] gap-1 overflow-x-auto no-scrollbar mx-auto w-full max-w-[1440px]" data-testid="nav-top-sections">
+          <nav className="flex px-4 lg:px-6 pt-1 pb-1.5 gap-1 overflow-x-auto no-scrollbar mx-auto w-full max-w-[1440px]" data-testid="nav-top-sections">
             {visibleSections.map((section) => {
               const active = section.label === activeSection.label;
               return (
@@ -500,7 +506,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   {...prefetch(section.path)}
                 >
                   {section.label}
-                  {active && <span className="pointer-events-none absolute -bottom-[7px] left-3 right-3 h-[2.5px] bg-primary rounded-full" />}
+                  {active && <span className="pointer-events-none absolute -bottom-[5px] left-3 right-3 h-[2px] bg-primary rounded-full" />}
                 </Link>
               );
             })}
@@ -508,10 +514,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         {(breadcrumbs.length > 0 || activeSection.secondary.length > 0) && (
-          <div className="bg-[hsl(var(--surface-tint))]/40">
+          <div className="border-t border-border/30 bg-[hsl(var(--surface-tint))]/30">
             <div className="px-4 lg:px-6 mx-auto w-full max-w-[1440px]">
               {breadcrumbs.length > 0 && (
-                <nav aria-label="breadcrumb" className="py-1.5">
+                <nav aria-label="breadcrumb" className="py-1">
                   <ol className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                     <li className="inline-flex items-center">
                       <Link href="/" className="hover:text-foreground transition-colors inline-flex items-center" aria-label="Home">
@@ -582,7 +588,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               {activeSection.secondary.length > 0 && (
                 <div
                   ref={subNavRef}
-                  className={cn("flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-2", breadcrumbs.length > 0 ? "pt-0" : "pt-1")}
+                  className={cn("flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1.5", breadcrumbs.length > 0 ? "pt-0" : "pt-1")}
                   role="tablist"
                   aria-label={`${activeSection.label} navigation`}
                   data-testid="nav-subnav-pills"
@@ -700,7 +706,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      <main id="main-content" className={cn("px-4 lg:px-6 py-5", isTablet && "pb-24", isMobile && "pb-bottom-nav")}>{children}</main>
+      <main id="main-content" className={cn("px-3 sm:px-4 lg:px-6 py-4 lg:py-5", isTablet && "pb-24", isMobile && "pb-bottom-nav")}>{children}</main>
       {isMobile && (
         <nav className="ee-bottom-nav" aria-label="Primary navigation" data-testid="nav-bottom-mobile">
           {visibleSections.slice(0, 4).map((section) => {

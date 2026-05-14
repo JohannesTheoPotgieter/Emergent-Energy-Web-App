@@ -642,11 +642,12 @@ function DetailRow({
                                     type="button"
                                     variant="ghost"
                                     size="sm"
-                                    className="h-4 px-1 text-[9px] text-amber-800 hover:text-amber-900"
+                                    className="touch-compact h-4 px-1 text-[9px] text-amber-800 hover:text-amber-900"
                                     aria-label="Open QuickBooks match"
                                     title="Open QuickBooks match"
                                     data-testid={`button-qb-link-inflow-${weekStart}-${i}`}
-                                    onClick={() =>
+                                    onClick={(event) => {
+                                      event.stopPropagation();
                                       setQbLinkContext({
                                         scope: 'revenue',
                                         initialSearch:
@@ -654,8 +655,8 @@ function DetailRow({
                                           inf.qbDocNumber?.trim() ||
                                           inf.projectName,
                                         label: inf.milestoneInvoiceNumber || inf.projectName,
-                                      })
-                                    }
+                                      });
+                                    }}
                                   >
                                     <Link2 className="h-3 w-3" />
                                     Link
@@ -901,11 +902,12 @@ function DetailRow({
                                     type="button"
                                     variant="ghost"
                                     size="sm"
-                                    className="h-4 px-1 text-[9px] text-amber-800 hover:text-amber-900"
+                                    className="touch-compact h-4 px-1 text-[9px] text-amber-800 hover:text-amber-900"
                                     aria-label="Open QuickBooks match"
                                     title="Open QuickBooks match"
                                     data-testid={`button-qb-link-outflow-${weekStart}-${i}`}
-                                    onClick={() =>
+                                    onClick={(event) => {
+                                      event.stopPropagation();
                                       setQbLinkContext({
                                         scope: 'cost',
                                         initialSearch:
@@ -913,8 +915,8 @@ function DetailRow({
                                           out.qbDocNumber?.trim() ||
                                           out.projectName,
                                         label: out.expenseInvoiceNumber || out.projectName,
-                                      })
-                                    }
+                                      });
+                                    }}
                                   >
                                     <Link2 className="h-3 w-3" />
                                     Link
@@ -1033,24 +1035,44 @@ function DetailRow({
           </div>
           <Dialog open={!!qbLinkContext} onOpenChange={(open) => !open && setQbLinkContext(null)}>
             <DialogContent
-              className="max-w-5xl max-h-[85vh] overflow-y-auto"
+              // Keep this reconciliation dialog centered and wide even when
+              // global layout-mode CSS forces generic dialogs narrower.
+              style={{
+                position: 'fixed',
+                top: '50%',
+                left: '50%',
+                right: 'auto',
+                bottom: 'auto',
+                transform: 'translate(-50%, -50%)',
+                width: 'min(calc(100vw - 1rem), 1120px)',
+                maxWidth: 'min(calc(100vw - 1rem), 1120px)',
+                maxHeight: 'min(86dvh, 780px)',
+                zIndex: 60,
+              }}
+              className="z-[60] w-[min(1120px,calc(100vw-2rem))] max-w-none max-h-[min(86dvh,780px)] overflow-hidden p-0 sm:p-0"
               data-testid="dialog-cashflow-qb-match"
             >
-              <DialogHeader>
-                <DialogTitle className="text-lg font-semibold">Open QuickBooks match</DialogTitle>
-                <DialogDescription>
-                  Search QuickBooks, link the app line, and review the live payment status without
-                  leaving cashflow.
-                  {qbLinkContext?.label ? ` Seeded from ${qbLinkContext.label}.` : ''}
-                </DialogDescription>
-              </DialogHeader>
-              {qbLinkContext && (
-                <FindQbMatchesPanel
-                  key={`${qbLinkContext.scope}-${qbLinkContext.initialSearch}`}
-                  defaultScope={qbLinkContext.scope}
-                  initialSearch={qbLinkContext.initialSearch}
-                />
-              )}
+              <div className="flex max-h-[min(86dvh,780px)] min-h-0 flex-col">
+                <DialogHeader className="shrink-0 border-b border-border bg-background px-4 py-3 pr-12 sm:px-5 sm:py-4">
+                  <DialogTitle className="text-base font-semibold">
+                    Open QuickBooks match
+                  </DialogTitle>
+                  <DialogDescription className="text-xs sm:text-sm">
+                    Search QuickBooks, link the app line, and review the live payment status without
+                    leaving cashflow.
+                    {qbLinkContext?.label ? ` Seeded from ${qbLinkContext.label}.` : ''}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/60 px-3 py-3 sm:px-5 sm:py-4">
+                  {qbLinkContext && (
+                    <FindQbMatchesPanel
+                      key={`${qbLinkContext.scope}-${qbLinkContext.initialSearch}`}
+                      defaultScope={qbLinkContext.scope}
+                      initialSearch={qbLinkContext.initialSearch}
+                    />
+                  )}
+                </div>
+              </div>
             </DialogContent>
           </Dialog>
         </div>
