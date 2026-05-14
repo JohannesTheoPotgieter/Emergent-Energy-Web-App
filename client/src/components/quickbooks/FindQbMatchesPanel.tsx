@@ -12,8 +12,8 @@
  * clear "you can review but not approve" experience.
  */
 
-import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -24,22 +24,22 @@ import {
   Sparkles,
   ThumbsDown,
   X,
-} from "lucide-react";
+} from 'lucide-react';
 
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
-import { isApiError } from "@/lib/api-error";
-import { formatRand } from "@/lib/safeMoney";
-import { QbCascadeProposalsPanel } from "./QbCascadeProposalsPanel";
-import { QbAutoSuggestInbox } from "./QbAutoSuggestInbox";
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { useToast } from '@/hooks/use-toast';
+import { apiRequest } from '@/lib/queryClient';
+import { isApiError } from '@/lib/api-error';
+import { formatRand } from '@/lib/safeMoney';
+import { QbCascadeProposalsPanel } from './QbCascadeProposalsPanel';
+import { QbAutoSuggestInbox } from './QbAutoSuggestInbox';
 
-type Scope = "cost" | "revenue";
+type Scope = 'cost' | 'revenue';
 
 interface AppCostSearchRow {
   id: number;
@@ -65,7 +65,7 @@ interface AppRevenueSearchRow {
 
 interface ScoredCandidate {
   qbEntityId: string;
-  qbEntityType: "bill" | "invoice";
+  qbEntityType: 'bill' | 'invoice';
   qbDocNumber: string | null;
   qbTxnDate: string | null;
   qbCounterpartyName: string | null;
@@ -96,51 +96,55 @@ interface FindResponse {
 }
 
 const WARNING_LABEL: Record<string, string> = {
-  no_po: "Invoice has no PO — red flag",
-  already_linked: "App invoice is already linked to a QB doc",
-  amount_mismatch: "Amount mismatch",
-  vendor_mismatch: "Vendor / customer mismatch",
-  vendor_not_matched: "Vendor / customer not matched",
-  date_mismatch: "Invoice dates differ",
-  qb_already_linked_elsewhere: "QB doc already linked to another app row",
-  qb_payment_inconsistent: "QB marks paid but balance is non-zero",
-  qb_amount_unknown: "QB document has no amount",
+  no_po: 'Invoice has no PO — red flag',
+  already_linked: 'App invoice is already linked to a QB doc',
+  amount_mismatch: 'Amount mismatch',
+  vendor_mismatch: 'Vendor / customer mismatch',
+  vendor_not_matched: 'Vendor / customer not matched',
+  date_mismatch: 'Invoice dates differ',
+  qb_already_linked_elsewhere: 'QB doc already linked to another app row',
+  qb_payment_inconsistent: 'QB marks paid but balance is non-zero',
+  qb_amount_unknown: 'QB document has no amount',
 };
 
 function bandColour(confidence: number): string {
-  if (confidence >= 90) return "bg-emerald-100 text-emerald-700 border-emerald-200";
-  if (confidence >= 70) return "bg-amber-100 text-amber-700 border-amber-200";
-  return "bg-rose-100 text-rose-700 border-rose-200";
+  if (confidence >= 90) return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+  if (confidence >= 70) return 'bg-amber-100 text-amber-700 border-amber-200';
+  return 'bg-rose-100 text-rose-700 border-rose-200';
 }
 
 function bandLabel(confidence: number): string {
-  if (confidence >= 90) return "High";
-  if (confidence >= 70) return "Medium";
-  return "Low";
+  if (confidence >= 90) return 'High';
+  if (confidence >= 70) return 'Medium';
+  return 'Low';
 }
 
 function paymentStatusBadge(status: string | null): { label: string; cls: string } {
   switch (status) {
-    case "paid":
-      return { label: "Paid", cls: "bg-emerald-100 text-emerald-700 border-emerald-200" };
-    case "partial":
-      return { label: "Partial", cls: "bg-amber-100 text-amber-700 border-amber-200" };
-    case "unpaid":
-      return { label: "Unpaid", cls: "bg-rose-100 text-rose-700 border-rose-200" };
+    case 'paid':
+      return { label: 'Paid', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
+    case 'partial':
+      return { label: 'Partial', cls: 'bg-amber-100 text-amber-700 border-amber-200' };
+    case 'unpaid':
+      return { label: 'Unpaid', cls: 'bg-rose-100 text-rose-700 border-rose-200' };
     default:
-      return { label: "Unknown", cls: "bg-slate-100 text-slate-600 border-slate-200" };
+      return { label: 'Unknown', cls: 'bg-slate-100 text-slate-600 border-slate-200' };
   }
 }
 
 export interface FindQbMatchesPanelProps {
   defaultScope?: Scope;
+  initialSearch?: string;
 }
 
-export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanelProps) {
+export function FindQbMatchesPanel({
+  defaultScope = 'cost',
+  initialSearch = '',
+}: FindQbMatchesPanelProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [scope, setScope] = useState<Scope>(defaultScope);
-  const [appLineSearch, setAppLineSearch] = useState("");
+  const [appLineSearch, setAppLineSearch] = useState(initialSearch);
   const [selectedAppLine, setSelectedAppLine] = useState<{
     id: number;
     invoiceNumber: string | null;
@@ -150,8 +154,8 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
     projectId: number | null;
   } | null>(null);
   const [findResult, setFindResult] = useState<FindResponse | null>(null);
-  const [rejectReason, setRejectReason] = useState("");
-  const [manualQbId, setManualQbId] = useState("");
+  const [rejectReason, setRejectReason] = useState('');
+  const [manualQbId, setManualQbId] = useState('');
   const [mapCounterparty, setMapCounterparty] = useState(true);
   const [lastApprovedLink, setLastApprovedLink] = useState<{
     linkId: number;
@@ -166,38 +170,45 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
       appValue: string | null;
       qbValue: string | null;
       reason: string | null;
-      status: "pending" | "accepted" | "declined";
+      status: 'pending' | 'accepted' | 'declined';
       createdAt: string;
     }>;
   } | null>(null);
 
+  useEffect(() => {
+    setScope(defaultScope);
+    setAppLineSearch(initialSearch);
+    setSelectedAppLine(null);
+    setFindResult(null);
+  }, [defaultScope, initialSearch]);
+
   // -------- Search the app side (reuses existing endpoints) -------------
   const costSearch = useQuery<{ costLines: AppCostSearchRow[] }>({
-    queryKey: ["/api/quickbooks/cost-lines/search", "fuzzy", appLineSearch],
+    queryKey: ['/api/quickbooks/cost-lines/search', 'fuzzy', appLineSearch],
     queryFn: async () => {
       const res = await apiRequest(
-        "GET",
+        'GET',
         `/api/quickbooks/cost-lines/search?q=${encodeURIComponent(appLineSearch)}&limit=25`,
       );
       return res.json();
     },
-    enabled: scope === "cost" && !findResult,
+    enabled: scope === 'cost' && !findResult,
   });
 
   const revenueSearch = useQuery<{ revenueLines: AppRevenueSearchRow[] }>({
-    queryKey: ["/api/quickbooks/revenue-lines/search", "fuzzy", appLineSearch],
+    queryKey: ['/api/quickbooks/revenue-lines/search', 'fuzzy', appLineSearch],
     queryFn: async () => {
       const res = await apiRequest(
-        "GET",
+        'GET',
         `/api/quickbooks/revenue-lines/search?q=${encodeURIComponent(appLineSearch)}&limit=25`,
       );
       return res.json();
     },
-    enabled: scope === "revenue" && !findResult,
+    enabled: scope === 'revenue' && !findResult,
   });
 
   const appRows = useMemo(() => {
-    if (scope === "cost") {
+    if (scope === 'cost') {
       return (costSearch.data?.costLines ?? []).map((c) => ({
         id: c.id,
         invoiceNumber: c.invoiceNumber,
@@ -224,10 +235,10 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
   const findMut = useMutation({
     mutationFn: async (appLineId: number) => {
       const body =
-        scope === "cost"
-          ? { scope: "cost", costLineId: appLineId }
-          : { scope: "revenue", revenueLineId: appLineId };
-      const res = await apiRequest("POST", "/api/quickbooks/invoice-matches/find", body);
+        scope === 'cost'
+          ? { scope: 'cost', costLineId: appLineId }
+          : { scope: 'revenue', revenueLineId: appLineId };
+      const res = await apiRequest('POST', '/api/quickbooks/invoice-matches/find', body);
       return (await res.json()) as FindResponse;
     },
     onSuccess: (data) => setFindResult(data),
@@ -236,7 +247,7 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
         isApiError(err) && err.status === 409
           ? "QuickBooks isn't connected — connect it in Admin → QuickBooks first."
           : err.message;
-      toast({ title: "Find matches failed", description, variant: "destructive" });
+      toast({ title: 'Find matches failed', description, variant: 'destructive' });
     },
   });
 
@@ -249,7 +260,7 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
       mapCustomer?: boolean;
     }) => {
       const res = await apiRequest(
-        "POST",
+        'POST',
         `/api/quickbooks/invoice-matches/${vars.suggestionId}/approve`,
         {
           candidateIndex: vars.candidateIndex,
@@ -273,31 +284,31 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
         appValue: string | null;
         qbValue: string | null;
         reason: string | null;
-        status: "pending" | "accepted" | "declined";
+        status: 'pending' | 'accepted' | 'declined';
         createdAt: string;
       }>;
     }) => {
       const proposalCount = data.proposals?.length ?? 0;
       toast({
-        title: "Match approved",
+        title: 'Match approved',
         description:
           proposalCount > 0
-            ? `Link #${data.linkId} created — ${proposalCount} proposed update${proposalCount === 1 ? "" : "s"} below.`
+            ? `Link #${data.linkId} created — ${proposalCount} proposed update${proposalCount === 1 ? '' : 's'} below.`
             : `Link #${data.linkId} created — QB and app already agree.`,
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/quickbooks/links"] });
+      queryClient.invalidateQueries({ queryKey: ['/api/quickbooks/links'] });
       setLastApprovedLink({ linkId: data.linkId, proposals: data.proposals ?? [] });
       setFindResult(null);
       setSelectedAppLine(null);
-      setAppLineSearch("");
+      setAppLineSearch('');
       setMapCounterparty(true);
     },
     onError: (err: Error) => {
       const isConflict = isApiError(err) && err.status === 409;
       toast({
-        title: isConflict ? "Already linked" : "Approve failed",
+        title: isConflict ? 'Already linked' : 'Approve failed',
         description: err.message,
-        variant: "destructive",
+        variant: 'destructive',
       });
     },
   });
@@ -305,51 +316,51 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
   const rejectMut = useMutation({
     mutationFn: async (vars: { suggestionId: number; reason: string }) => {
       const res = await apiRequest(
-        "POST",
+        'POST',
         `/api/quickbooks/invoice-matches/${vars.suggestionId}/reject`,
         { reason: vars.reason },
       );
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Suggestion rejected" });
+      toast({ title: 'Suggestion rejected' });
       setFindResult(null);
-      setRejectReason("");
+      setRejectReason('');
       setSelectedAppLine(null);
-      setAppLineSearch("");
+      setAppLineSearch('');
       setMapCounterparty(true);
     },
     onError: (err: Error) => {
-      toast({ title: "Reject failed", description: err.message, variant: "destructive" });
+      toast({ title: 'Reject failed', description: err.message, variant: 'destructive' });
     },
   });
 
   const manualMut = useMutation({
     mutationFn: async (vars: { qbEntityId: string; appEntityId: number }) => {
-      const res = await apiRequest("POST", "/api/quickbooks/invoice-matches/manual-link", {
+      const res = await apiRequest('POST', '/api/quickbooks/invoice-matches/manual-link', {
         scope,
         appEntityId: vars.appEntityId,
         qbEntityId: vars.qbEntityId,
-        notes: "manual_override via Find QB Matches",
+        notes: 'manual_override via Find QB Matches',
       });
       return res.json();
     },
     onSuccess: (data: { linkId: number }) => {
-      toast({ title: "Manual link created", description: `Link #${data.linkId}.` });
-      queryClient.invalidateQueries({ queryKey: ["/api/quickbooks/links"] });
+      toast({ title: 'Manual link created', description: `Link #${data.linkId}.` });
+      queryClient.invalidateQueries({ queryKey: ['/api/quickbooks/links'] });
       setFindResult(null);
-      setManualQbId("");
+      setManualQbId('');
       setSelectedAppLine(null);
-      setAppLineSearch("");
+      setAppLineSearch('');
     },
     onError: (err: Error) => {
       const isPerm = isApiError(err) && err.status === 403;
       toast({
-        title: isPerm ? "Not allowed" : "Manual link failed",
+        title: isPerm ? 'Not allowed' : 'Manual link failed',
         description: isPerm
-          ? "Manual override requires the financials override permission."
+          ? 'Manual override requires the financials override permission.'
           : err.message,
-        variant: "destructive",
+        variant: 'destructive',
       });
     },
   });
@@ -371,10 +382,10 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
           <div className="ml-auto flex gap-1">
             <Button
               size="sm"
-              variant={scope === "cost" ? "default" : "outline"}
+              variant={scope === 'cost' ? 'default' : 'outline'}
               className="h-7 text-[10px]"
               onClick={() => {
-                setScope("cost");
+                setScope('cost');
                 setSelectedAppLine(null);
                 setFindResult(null);
               }}
@@ -384,10 +395,10 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
             </Button>
             <Button
               size="sm"
-              variant={scope === "revenue" ? "default" : "outline"}
+              variant={scope === 'revenue' ? 'default' : 'outline'}
               className="h-7 text-[10px]"
               onClick={() => {
-                setScope("revenue");
+                setScope('revenue');
                 setSelectedAppLine(null);
                 setFindResult(null);
               }}
@@ -402,7 +413,7 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
           onReview={async (suggestionId) => {
             try {
               const res = await apiRequest(
-                "GET",
+                'GET',
                 `/api/quickbooks/invoice-matches/suggestions/${suggestionId}`,
               );
               const data = (await res.json()) as FindResponse;
@@ -417,8 +428,8 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
               });
               setFindResult(data);
             } catch (err) {
-              const message = err instanceof Error ? err.message : "Failed to load suggestion";
-              toast({ title: "Review failed", description: message, variant: "destructive" });
+              const message = err instanceof Error ? err.message : 'Failed to load suggestion';
+              toast({ title: 'Review failed', description: message, variant: 'destructive' });
             }
           }}
         />
@@ -429,9 +440,9 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
               <Search className="h-3 w-3 text-muted-foreground" />
               <Input
                 placeholder={
-                  scope === "cost"
-                    ? "Search project / supplier / invoice # / amount"
-                    : "Search project / milestone / invoice #"
+                  scope === 'cost'
+                    ? 'Search project / supplier / invoice # / amount'
+                    : 'Search project / milestone / invoice #'
                 }
                 value={appLineSearch}
                 onChange={(e) => setAppLineSearch(e.target.value)}
@@ -447,7 +458,7 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
                     <th className="px-2 py-1.5 text-left">Invoice #</th>
                     <th className="px-2 py-1.5 text-left">Date</th>
                     <th className="px-2 py-1.5 text-left">
-                      {scope === "cost" ? "Supplier" : "Milestone"}
+                      {scope === 'cost' ? 'Supplier' : 'Milestone'}
                     </th>
                     <th className="px-2 py-1.5 text-right">Amount ex-VAT</th>
                     <th className="px-2 py-1.5"></th>
@@ -464,9 +475,9 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
                   {appRows.map((row) => (
                     <tr key={row.id} className="border-t hover:bg-muted/40">
                       <td className="px-2 py-1.5">{row.projectName ?? `#${row.projectId}`}</td>
-                      <td className="px-2 py-1.5 font-medium">{row.invoiceNumber ?? "—"}</td>
-                      <td className="px-2 py-1.5">{row.invoiceDate ?? "—"}</td>
-                      <td className="px-2 py-1.5">{row.counterpartyName ?? "—"}</td>
+                      <td className="px-2 py-1.5 font-medium">{row.invoiceNumber ?? '—'}</td>
+                      <td className="px-2 py-1.5">{row.invoiceDate ?? '—'}</td>
+                      <td className="px-2 py-1.5">{row.counterpartyName ?? '—'}</td>
                       <td className="px-2 py-1.5 text-right">{formatRand(row.amountExVat)}</td>
                       <td className="px-2 py-1.5">
                         <Button
@@ -490,7 +501,7 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
                             <Loader2 className="h-3 w-3 animate-spin" />
                           ) : (
                             <Sparkles className="h-3 w-3" />
-                          )}{" "}
+                          )}{' '}
                           Find QB Matches
                         </Button>
                       </td>
@@ -514,7 +525,7 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
             onClose={() => {
               setFindResult(null);
               setSelectedAppLine(null);
-              setAppLineSearch("");
+              setAppLineSearch('');
               setMapCounterparty(true);
             }}
             onApprove={(candidateIndex) =>
@@ -522,8 +533,8 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
                 suggestionId: findResult.suggestionId,
                 candidateIndex,
                 notes: undefined,
-                mapVendor: scope === "cost" ? mapCounterparty : undefined,
-                mapCustomer: scope === "revenue" ? mapCounterparty : undefined,
+                mapVendor: scope === 'cost' ? mapCounterparty : undefined,
+                mapCustomer: scope === 'revenue' ? mapCounterparty : undefined,
               })
             }
             approvePending={approveMut.isPending}
@@ -532,9 +543,9 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
             onReject={() => {
               if (!rejectReason.trim()) {
                 toast({
-                  title: "Reason required",
-                  description: "Add a short reason before rejecting.",
-                  variant: "destructive",
+                  title: 'Reason required',
+                  description: 'Add a short reason before rejecting.',
+                  variant: 'destructive',
                 });
                 return;
               }
@@ -550,9 +561,9 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
               const trimmed = manualQbId.trim();
               if (!/^[A-Za-z0-9_-]+$/.test(trimmed)) {
                 toast({
-                  title: "Invalid QB id",
-                  description: "QB Bill / Invoice IDs are alphanumeric (with - or _).",
-                  variant: "destructive",
+                  title: 'Invalid QB id',
+                  description: 'QB Bill / Invoice IDs are alphanumeric (with - or _).',
+                  variant: 'destructive',
                 });
                 return;
               }
@@ -570,8 +581,8 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <div className="text-xs text-muted-foreground">
-                Link #{lastApprovedLink.linkId} — review proposed cascades
-                before they touch app data.
+                Link #{lastApprovedLink.linkId} — review proposed cascades before they touch app
+                data.
               </div>
               <Button
                 size="sm"
@@ -625,8 +636,8 @@ function FindResults({
   manualPending: boolean;
 }) {
   const appWarnings: string[] = [];
-  if (result.warnings.no_po) appWarnings.push("no_po");
-  if (result.warnings.already_linked) appWarnings.push("already_linked");
+  if (result.warnings.no_po) appWarnings.push('no_po');
+  if (result.warnings.already_linked) appWarnings.push('already_linked');
 
   return (
     <div className="space-y-3" data-testid="results-find-qb-matches">
@@ -635,28 +646,26 @@ function FindResults({
           <div className="font-semibold flex items-center gap-2">
             App invoice
             <Badge variant="outline" className="text-[9px] uppercase">
-              {result.scope === "cost" ? "Cost" : "Revenue"}
+              {result.scope === 'cost' ? 'Cost' : 'Revenue'}
             </Badge>
           </div>
           <div className="mt-1 grid grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-1 text-muted-foreground">
             <span>
-              # <span className="font-mono text-foreground">{result.app.invoiceNumber ?? "—"}</span>
+              # <span className="font-mono text-foreground">{result.app.invoiceNumber ?? '—'}</span>
             </span>
             <span>
-              Date <span className="text-foreground">{result.app.invoiceDate ?? "—"}</span>
+              Date <span className="text-foreground">{result.app.invoiceDate ?? '—'}</span>
             </span>
             <span>
-              Amount{" "}
-              <span className="text-foreground">{formatRand(result.app.amountExVat)}</span>
+              Amount <span className="text-foreground">{formatRand(result.app.amountExVat)}</span>
             </span>
             <span>
-              {result.scope === "cost" ? "Supplier" : "Project"}{" "}
-              <span className="text-foreground">{result.app.counterpartyName ?? "—"}</span>
+              {result.scope === 'cost' ? 'Supplier' : 'Project'}{' '}
+              <span className="text-foreground">{result.app.counterpartyName ?? '—'}</span>
             </span>
-            {result.scope === "cost" && (
+            {result.scope === 'cost' && (
               <span>
-                PO{" "}
-                <span className="text-foreground">{result.app.poNumber ?? "—"}</span>
+                PO <span className="text-foreground">{result.app.poNumber ?? '—'}</span>
               </span>
             )}
           </div>
@@ -684,16 +693,19 @@ function FindResults({
       )}
 
       {result.candidates.some((c) => c.qbCounterpartyId) && (
-        <div className="flex items-center gap-2 text-xs text-slate-700" data-testid="mapping-upsert-toggle">
+        <div
+          className="flex items-center gap-2 text-xs text-slate-700"
+          data-testid="mapping-upsert-toggle"
+        >
           <Checkbox
             id="map-counterparty"
             checked={mapCounterparty}
             onCheckedChange={(v) => setMapCounterparty(!!v)}
           />
           <label htmlFor="map-counterparty" className="cursor-pointer select-none">
-            {result.scope === "cost"
-              ? "Update vendor mapping when approving"
-              : "Update customer mapping when approving"}
+            {result.scope === 'cost'
+              ? 'Update vendor mapping when approving'
+              : 'Update customer mapping when approving'}
           </label>
         </div>
       )}
@@ -733,8 +745,8 @@ function FindResults({
                       </Badge>
                     </td>
                     <td className="px-2 py-1.5 font-medium">{c.qbDocNumber ?? c.qbEntityId}</td>
-                    <td className="px-2 py-1.5">{c.qbTxnDate ?? "—"}</td>
-                    <td className="px-2 py-1.5">{c.qbCounterpartyName ?? "—"}</td>
+                    <td className="px-2 py-1.5">{c.qbTxnDate ?? '—'}</td>
+                    <td className="px-2 py-1.5">{c.qbCounterpartyName ?? '—'}</td>
                     <td className="px-2 py-1.5 text-right">{formatRand(c.qbAmountExVat)}</td>
                     <td className="px-2 py-1.5">
                       <Badge variant="outline" className={`text-[10px] ${pay.cls}`}>
@@ -779,7 +791,7 @@ function FindResults({
                           <Loader2 className="h-3 w-3 animate-spin" />
                         ) : (
                           <Link2 className="h-3 w-3" />
-                        )}{" "}
+                        )}{' '}
                         Approve
                       </Button>
                     </td>
@@ -813,7 +825,11 @@ function FindResults({
             disabled={rejectPending}
             data-testid="button-reject-suggestion"
           >
-            {rejectPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <ThumbsDown className="h-3 w-3" />}{" "}
+            {rejectPending ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <ThumbsDown className="h-3 w-3" />
+            )}{' '}
             Record rejection
           </Button>
         </div>
@@ -822,7 +838,9 @@ function FindResults({
           <div className="flex items-center gap-1 text-xs font-medium text-sky-800">
             <Link2 className="h-3.5 w-3.5" /> Manual link (override)
           </div>
-          <Label className="text-[10px] text-sky-900">QB {result.scope === "cost" ? "Bill" : "Invoice"} Id</Label>
+          <Label className="text-[10px] text-sky-900">
+            QB {result.scope === 'cost' ? 'Bill' : 'Invoice'} Id
+          </Label>
           <Input
             placeholder="e.g. 12345"
             className="h-7 text-xs font-mono"
@@ -842,7 +860,11 @@ function FindResults({
             disabled={manualPending}
             data-testid="button-manual-link"
           >
-            {manualPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}{" "}
+            {manualPending ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Link2 className="h-3 w-3" />
+            )}{' '}
             Manual link
           </Button>
         </div>
