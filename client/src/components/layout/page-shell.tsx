@@ -5,7 +5,7 @@ import { Badge, type BadgeProps } from "@/components/ui/badge";
 
 export function PageShell({ className, children, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn("ee-page page-enter pb-8", className)} {...props}>
+    <div className={cn("ee-page page-enter pb-6 lg:pb-8", className)} {...props}>
       {children}
     </div>
   );
