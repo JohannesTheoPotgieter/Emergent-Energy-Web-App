@@ -341,12 +341,28 @@ export async function disconnectQuickBooks(): Promise<void> {
 function classifyQbError(err: unknown): { code: string; detail: string } {
   const detail = err instanceof Error ? err.message : String(err);
   if (/not connected/i.test(detail)) return { code: 'not_connected', detail };
+  // Intuit returns "invalid_grant" / "Incorrect or invalid refresh token"
+  // when the stored refresh token has been revoked or expired. The user
+  // must re-authorise the QuickBooks connection; the scheduler should not
+  // keep retrying.
+  if (/invalid_grant|invalid refresh token/i.test(detail))
+    return { code: 'needs_reconnect', detail };
   if (/401|unauthorized/i.test(detail)) return { code: 'auth_expired', detail };
   if (/403|forbidden/i.test(detail)) return { code: 'forbidden', detail };
   if (/429|rate ?limit/i.test(detail)) return { code: 'rate_limited', detail };
   if (/5\d\d|server error|timeout|ECONN|fetch failed/i.test(detail))
     return { code: 'upstream_error', detail };
   return { code: 'unknown', detail };
+}
+
+/**
+ * Returns true if the given error indicates the stored QuickBooks refresh
+ * token is no longer accepted by Intuit (revoked, expired, or rotated by a
+ * concurrent OAuth flow). The connection must be re-authorised by a user
+ * before any further QuickBooks API calls will succeed.
+ */
+export function isQbReconnectRequiredError(err: unknown): boolean {
+  return classifyQbError(err).code === 'needs_reconnect';
 }
 
 /**

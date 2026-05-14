@@ -24,6 +24,8 @@ import { recordIntegrationRun } from "../services/integration-health-service";
 import {
   getBillById,
   getQuickBooksConnectionStatus,
+  getValidAccessToken,
+  isQbReconnectRequiredError,
   queryQuickBooks,
 } from "../services/quickbooks-service";
 
@@ -49,14 +51,40 @@ function amountToNumber(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-async function refreshPaymentStatus(): Promise<{
+interface RefreshResult {
   processed: number;
   updated: number;
   errors: number;
-}> {
+  /**
+   * Set when the run was aborted because the stored QuickBooks refresh
+   * token is no longer accepted by Intuit. The integration-health audit
+   * uses this to record a distinct `needs_reconnect` error code instead
+   * of reporting the run as a clean success.
+   */
+  needsReconnect?: boolean;
+}
+
+async function refreshPaymentStatus(): Promise<RefreshResult> {
   const status = await getQuickBooksConnectionStatus();
   if (!status.connected || !status.realmId) {
     return { processed: 0, updated: 0, errors: 0 };
+  }
+
+  // Probe the token once up front. If the stored refresh token has been
+  // revoked, Intuit will reject it here — we abort the whole run with a
+  // single concise log line instead of hitting the same error on every
+  // link iteration (the loop below makes one QB call per link and would
+  // otherwise emit a full stack trace per link).
+  try {
+    await getValidAccessToken();
+  } catch (err) {
+    if (isQbReconnectRequiredError(err)) {
+      console.warn(
+        "[qb-payment-refresh] Skipping run — QuickBooks refresh token rejected by Intuit (invalid_grant). The connection must be re-authorised via the QuickBooks integration screen before nightly payment-status refresh can resume.",
+      );
+      return { processed: 0, updated: 0, errors: 0, needsReconnect: true };
+    }
+    throw err;
   }
 
   const links = await db
@@ -138,14 +166,26 @@ async function refreshPaymentStatus(): Promise<{
 
 async function runWithAudit(): Promise<void> {
   const startedAt = new Date();
-  let result = { processed: 0, updated: 0, errors: 0 };
+  let result: RefreshResult = { processed: 0, updated: 0, errors: 0 };
   let status: "success" | "failure" = "success";
   let errorDetail: string | null = null;
+  let errorCode: string | null = null;
 
   try {
     result = await refreshPaymentStatus();
+    // A skipped-due-to-reconnect run is not a "success" for integration
+    // health purposes — surface it as a distinct failure so the dashboard
+    // shows the connection needs re-authorisation rather than silently
+    // reporting clean nightly runs while no data is being refreshed.
+    if (result.needsReconnect) {
+      status = "failure";
+      errorCode = "needs_reconnect";
+      errorDetail =
+        "QuickBooks refresh token rejected by Intuit (invalid_grant). Re-authorise the connection in the QuickBooks integration screen.";
+    }
   } catch (err) {
     status = "failure";
+    errorCode = "refresh_failed";
     errorDetail = err instanceof Error ? err.message : String(err);
   } finally {
     await recordIntegrationRun({
@@ -155,7 +195,7 @@ async function runWithAudit(): Promise<void> {
       finishedAt: new Date(),
       status,
       recordsProcessed: result.processed,
-      errorCode: status === "failure" ? "refresh_failed" : null,
+      errorCode,
       errorDetail,
       metadata: { updated: result.updated, errors: result.errors },
     }).catch(() => {
