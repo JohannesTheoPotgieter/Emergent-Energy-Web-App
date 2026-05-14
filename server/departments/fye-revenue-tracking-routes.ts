@@ -71,6 +71,7 @@ import {
 import { isCanonicalCosRealised } from '../lib/finance/cos-realisation';
 import { getCosEffectiveDateAndSource } from '../lib/expense-row-selector';
 import { parseIntParam } from '../lib/req-params';
+import { monthKeyFromDate, resolveFinanceYearScope } from '../lib/finance-year-scope';
 import { FyeTrackingRepository } from '../repositories/fye-tracking-repository';
 import { ProjectInfoRepository } from '../repositories/project-info-repository';
 import { FinanceExpenseEngineRepository } from '../repositories/finance-expense-engine-repository';
@@ -100,6 +101,19 @@ function getFyeMonthKeys(fye: number): string[] {
     months.push(`${fye}-${String(m).padStart(2, '0')}`);
   }
   return months;
+}
+
+function isValidMonthKey(value: string | null | undefined): value is string {
+  return typeof value === 'string' && /^\d{4}-\d{2}$/.test(value);
+}
+
+function monthEndDate(monthKey: string): string {
+  const [year, month] = monthKey.split('-').map(Number);
+  return new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+}
+
+function sortedMonthKeys(values: Array<string | null | undefined>): string[] {
+  return Array.from(new Set(values.filter(isValidMonthKey))).sort();
 }
 
 /** Get current active FYE: if we're in Sep-Dec, FYE = currentYear+1; else FYE = currentYear. */
@@ -485,14 +499,19 @@ router.get(
   requirePermission('fye_revenue_tracking', 'view'),
   async (req, res) => {
     try {
-      const fye = parseInt(String(req.query.fye || getCurrentFye()), 10);
-      const monthKeys = getFyeMonthKeys(fye);
+      const fyScope = resolveFinanceYearScope(req.query);
+      const allData = fyScope.mode === 'all';
+      const fye = fyScope.fy ?? getCurrentFye();
+      let monthKeys = allData ? [] : getFyeMonthKeys(fye);
 
       // 1. Budget data from fye_budgets (may be empty if not yet entered)
       const budgetRevByMonth: Record<string, number> = {};
       const budgetCosByMonth: Record<string, number> = {};
+      let budgetRows: Array<{ monthKey: string; budgetType: string; amount: string | null }> = [];
       try {
-        const budgetRows = await fyeTrackingRepository.listBudgetTotalsByFye(String(fye));
+        budgetRows = await fyeTrackingRepository.listBudgetTotalsByFye(
+          allData ? null : String(fye),
+        );
 
         for (const b of budgetRows) {
           const amt = safeNum(b.amount);
@@ -546,9 +565,29 @@ router.get(
         ),
       );
       const financeLines = await financeLineLevelRepository.getPortfolioFinanceLines(projectIds, {
-        fyStart: `${fye - 1}-09-01`,
-        fyEnd: `${fye}-08-31`,
+        ...(allData
+          ? {}
+          : {
+              fyStart: `${fye - 1}-09-01`,
+              fyEnd: `${fye}-08-31`,
+            }),
       });
+      if (allData) {
+        monthKeys = sortedMonthKeys([
+          ...budgetRows.map((row) => row.monthKey),
+          ...allInflows.flatMap((row) => [
+            monthKeyFromDate(row.plannedPaymentDate),
+            monthKeyFromDate(row.invoiceRaisedDate),
+            monthKeyFromDate(row.paymentReceivedDate),
+          ]),
+          ...allExpenses.flatMap((row) => [
+            monthKeyFromDate(row.expenseInvoicedDate),
+            monthKeyFromDate(row.forecastPaymentDate),
+          ]),
+          ...financeLines.map((line) => line.recognitionMonth),
+        ]);
+        if (monthKeys.length === 0) monthKeys = getFyeMonthKeys(getCurrentFye());
+      }
       const canonicalActuals = buildCanonicalActualsByMonth(financeLines, monthKeys);
       const actualRevByMonth = canonicalActuals.revenueByMonth;
       const actualCosByMonth = canonicalActuals.cosByMonth;
@@ -620,11 +659,21 @@ router.get(
       const pipelineRevByMonth: Record<string, number> = {};
       const pipelineCosByMonth: Record<string, number> = {};
       try {
-        const pipelineDeals = await fyeTrackingRepository.listHighProbabilityActivePipeline(fye);
+        const pipelineDeals = await fyeTrackingRepository.listHighProbabilityActivePipeline(
+          allData ? null : fye,
+        );
 
         console.log(
           `[FYE Dashboard] Pipeline deals (95%+, FYE ${fye}): ${pipelineDeals.length} found`,
         );
+
+        if (allData) {
+          const nextMonthKeys = sortedMonthKeys([
+            ...monthKeys,
+            ...pipelineDeals.map((deal) => monthKeyFromDate(deal.forecastSignatureDate)),
+          ]);
+          if (nextMonthKeys.length > 0) monthKeys = nextMonthKeys;
+        }
 
         const futureMonths = monthKeys.filter((mk) => mk > currentMk);
         let undatedPipelineRev = 0;
@@ -750,7 +799,7 @@ router.get(
         };
       });
 
-      res.json({ fye, months, monthKeys });
+      res.json({ fye: allData ? null : fye, months, monthKeys });
     } catch (error: any) {
       console.error('FYE dashboard error:', error);
       res.status(500).json({ error: 'Failed to fetch FYE dashboard' });
@@ -765,19 +814,19 @@ router.get(
   requirePermission('fye_revenue_tracking', 'view'),
   async (req, res) => {
     try {
-      const fye = parseInt(String(req.query.fye || getCurrentFye()), 10);
-      const monthKeys = getFyeMonthKeys(fye);
-      const fyeStart = `${fye - 1}-09`;
-      const fyeEnd = `${fye}-08`;
+      const fyScope = resolveFinanceYearScope(req.query);
+      const allData = fyScope.mode === 'all';
+      const fye = fyScope.fy ?? getCurrentFye();
+      const fyeStart = fyScope.startMonthKey ?? `${fye - 1}-09`;
+      const fyeEnd = fyScope.endMonthKey ?? `${fye}-08`;
 
       // Optional cutoff month filter: only include data up to this month (e.g. "2026-02" for end of Feb)
       const cutoffMonth = req.query.cutoffMonth ? String(req.query.cutoffMonth) : null;
       const effectiveEnd =
-        cutoffMonth && cutoffMonth >= fyeStart && cutoffMonth <= fyeEnd ? cutoffMonth : fyeEnd;
-      const [effectiveEndYear, effectiveEndMonth] = effectiveEnd.split('-').map(Number);
-      const effectiveEndDate = new Date(Date.UTC(effectiveEndYear, effectiveEndMonth, 0))
-        .toISOString()
-        .slice(0, 10);
+        cutoffMonth && (allData || (cutoffMonth >= fyeStart && cutoffMonth <= fyeEnd))
+          ? cutoffMonth
+          : fyeEnd;
+      const effectiveEndDate = monthEndDate(effectiveEnd);
 
       // Get all projects (isActive may not exist in SQLite — treat null as true)
       const projectInfoRows = await projectInfoRepository.listAllWithExecutionState();
@@ -895,7 +944,11 @@ router.get(
         const budgetDate =
           exp.expenseInvoicedDate || exp.computedForecastPaymentDate || exp.forecastPaymentDate;
         const budgetMk = extractMonthKey(budgetDate);
-        if (!budgetMk || (budgetMk >= fyeStart && budgetMk <= effectiveEnd)) {
+        if (
+          allData
+            ? !cutoffMonth || !budgetMk || budgetMk <= cutoffMonth
+            : !budgetMk || (budgetMk >= fyeStart && budgetMk <= effectiveEnd)
+        ) {
           budgetCosByProject.set(pn, (budgetCosByProject.get(pn) || 0) + budgetAmt);
         }
       }
@@ -911,7 +964,11 @@ router.get(
         // FYE-specific budget revenue
         const revDate = inf.plannedPaymentDate || inf.invoiceRaisedDate || inf.paymentReceivedDate;
         const revMk = extractMonthKey(revDate);
-        if (revMk && revMk >= fyeStart && revMk <= effectiveEnd) {
+        if (
+          allData
+            ? !cutoffMonth || !revMk || revMk <= cutoffMonth
+            : revMk && revMk >= fyeStart && revMk <= effectiveEnd
+        ) {
           budgetRevByProject.set(pn, (budgetRevByProject.get(pn) || 0) + amt);
         }
       }
@@ -930,7 +987,11 @@ router.get(
       );
       const detailFinanceLines = await financeLineLevelRepository.getPortfolioFinanceLines(
         Array.from(activeProjectNameById.keys()),
-        { fyStart: `${fye - 1}-09-01`, fyEnd: effectiveEndDate },
+        allData
+          ? cutoffMonth
+            ? { fyEnd: effectiveEndDate }
+            : {}
+          : { fyStart: `${fye - 1}-09-01`, fyEnd: effectiveEndDate },
       );
       for (const line of detailFinanceLines) {
         if (line.bucket !== 'realised') continue;
@@ -1016,7 +1077,7 @@ router.get(
       );
 
       res.json({
-        fye,
+        fye: allData ? null : fye,
         cutoffMonth: cutoffMonth || null,
         projects: projectRows,
         totals: {
@@ -1081,8 +1142,10 @@ router.get(
   requirePermission('fye_revenue_tracking', 'view'),
   async (req, res) => {
     try {
-      const fye = String(req.query.fye || getCurrentFye());
-      const rows = await fyeTrackingRepository.listBudgetsByFye(fye);
+      const fyScope = resolveFinanceYearScope(req.query);
+      const rows = await fyeTrackingRepository.listBudgetsByFye(
+        fyScope.mode === 'all' ? null : String(fyScope.fy ?? getCurrentFye()),
+      );
       res.json(rows);
     } catch (error: any) {
       res.status(500).json({ error: 'Failed to fetch budgets' });
@@ -1145,8 +1208,10 @@ router.get(
   requirePermission('fye_revenue_tracking', 'view'),
   async (req, res) => {
     try {
-      const fye = parseInt(String(req.query.fye || getCurrentFye()), 10);
-      const rows = await fyeTrackingRepository.listActivePipelineByFye(fye);
+      const fyScope = resolveFinanceYearScope(req.query);
+      const rows = await fyeTrackingRepository.listActivePipelineByFye(
+        fyScope.mode === 'all' ? null : fyScope.fy ?? getCurrentFye(),
+      );
       res.json(rows);
     } catch (error: any) {
       res.status(500).json({ error: 'Failed to fetch pipeline' });
@@ -1236,8 +1301,10 @@ router.get(
   requirePermission('fye_revenue_tracking', 'view'),
   async (req, res) => {
     try {
-      const fye = parseInt(String(req.query.fye || getCurrentFye()), 10);
-      const rows = await fyeTrackingRepository.listLostDealsByFye(fye);
+      const fyScope = resolveFinanceYearScope(req.query);
+      const rows = await fyeTrackingRepository.listLostDealsByFye(
+        fyScope.mode === 'all' ? null : fyScope.fy ?? getCurrentFye(),
+      );
       res.json(rows);
     } catch (error: any) {
       res.status(500).json({ error: 'Failed to fetch lost deals' });
@@ -1319,20 +1386,23 @@ router.get(
   requirePermission('fye_revenue_tracking', 'view'),
   async (req, res) => {
     try {
-      const fye = parseInt(String(req.query.fye || getCurrentFye()), 10);
+      const fyScope = resolveFinanceYearScope(req.query);
+      const fye = fyScope.fy ?? getCurrentFye();
 
       // Try fye_kpi_counters first (manually seeded/editable values)
-      try {
-        const counter = await fyeTrackingRepository.getKpiCounterByFye(fye);
-        if (counter) {
-          return res.json({
-            broughtIn: counter.broughtIn,
-            signed: counter.signed,
-            total: counter.broughtIn + counter.signed,
-          });
+      if (fyScope.mode !== 'all') {
+        try {
+          const counter = await fyeTrackingRepository.getKpiCounterByFye(fye);
+          if (counter) {
+            return res.json({
+              broughtIn: counter.broughtIn,
+              signed: counter.signed,
+              total: counter.broughtIn + counter.signed,
+            });
+          }
+        } catch {
+          // Table may not exist — fall through to derived
         }
-      } catch {
-        // Table may not exist — fall through to derived
       }
 
       // Fallback: derive from project_info

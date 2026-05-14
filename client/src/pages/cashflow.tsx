@@ -250,6 +250,11 @@ function generateFYMonths(fyYear: number): { key: string; label: string }[] {
 
 const CASHFLOW_API_BASE = '/api/cashflow-2026';
 type QbMatchScope = 'cost' | 'revenue';
+type QbLinkContext = {
+  scope: QbMatchScope;
+  initialSearch: string;
+  label: string;
+};
 
 function isCurrentWeek(weekStart: string, weekEnd: string): boolean {
   const now = new Date();
@@ -353,7 +358,7 @@ function DetailRow({
   project: string;
   fyScope: FinancialYearScope;
   colSpan?: number;
-  onOpenQbLink: (ctx: { scope: QbMatchScope; initialSearch: string; label: string }) => void;
+  onOpenQbLink: (ctx: QbLinkContext) => void;
 }) {
   const [detailSearch, setDetailSearch] = useState('');
   const queryClient = useQueryClient();
@@ -1270,11 +1275,7 @@ export default function CashflowPage() {
   const [availPayHistoryWeek, setAvailPayHistoryWeek] = useState<string | null>(null);
   const [railSearch, setRailSearch] = useState('');
   const railSearchRef = useRef<HTMLInputElement>(null);
-  const [qbLinkContext, setQbLinkContext] = useState<{
-    scope: QbMatchScope;
-    initialSearch: string;
-    label: string;
-  } | null>(null);
+  const [qbLinkContext, setQbLinkContext] = useState<QbLinkContext | null>(null);
 
   const projectParam = selectedProjects.length > 0 ? selectedProjects.join(',') : undefined;
   const selectedFy = fyScope.fy ?? getCurrentFiscalYear();
@@ -2682,24 +2683,40 @@ export default function CashflowPage() {
         </Dialog>
         <Dialog open={!!qbLinkContext} onOpenChange={(open) => !open && setQbLinkContext(null)}>
           <DialogContent
-            className="max-w-5xl max-h-[85vh] overflow-y-auto"
+            style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              right: 'auto',
+              bottom: 'auto',
+              transform: 'translate(-50%, -50%)',
+              width: 'min(calc(100vw - 1rem), 1120px)',
+              maxWidth: 'min(calc(100vw - 1rem), 1120px)',
+              maxHeight: 'min(86dvh, 780px)',
+              zIndex: 60,
+            }}
+            className="z-[60] w-[min(1120px,calc(100vw-2rem))] max-w-none max-h-[min(86dvh,780px)] overflow-hidden p-0 sm:p-0"
             data-testid="dialog-cashflow-qb-match"
           >
-            <DialogHeader>
-              <DialogTitle className="text-lg font-semibold">Open QuickBooks match</DialogTitle>
-              <DialogDescription>
-                Search QuickBooks, link the app line, and review the live payment status without
-                leaving cashflow.
-                {qbLinkContext?.label ? ` Seeded from ${qbLinkContext.label}.` : ''}
-              </DialogDescription>
-            </DialogHeader>
-            {qbLinkContext && (
-              <FindQbMatchesPanel
-                key={`${qbLinkContext.scope}-${qbLinkContext.initialSearch}`}
-                defaultScope={qbLinkContext.scope}
-                initialSearch={qbLinkContext.initialSearch}
-              />
-            )}
+            <div className="flex max-h-[min(86dvh,780px)] min-h-0 flex-col">
+              <DialogHeader className="shrink-0 border-b border-border bg-background px-4 py-3 pr-12 sm:px-5 sm:py-4">
+                <DialogTitle className="text-base font-semibold">Open QuickBooks match</DialogTitle>
+                <DialogDescription className="text-xs sm:text-sm">
+                  Search QuickBooks, link the app line, and review the live payment status without
+                  leaving cashflow.
+                  {qbLinkContext?.label ? ` Seeded from ${qbLinkContext.label}.` : ''}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/60 px-3 py-3 sm:px-5 sm:py-4">
+                {qbLinkContext && (
+                  <FindQbMatchesPanel
+                    key={`${qbLinkContext.scope}-${qbLinkContext.initialSearch}`}
+                    defaultScope={qbLinkContext.scope}
+                    initialSearch={qbLinkContext.initialSearch}
+                  />
+                )}
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       </div>
