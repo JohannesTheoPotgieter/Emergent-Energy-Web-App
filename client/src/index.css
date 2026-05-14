@@ -1177,6 +1177,19 @@ html[data-layout-mode="desktop"] [data-shadcn-dialog][data-state="open"] {
   inset-inline: auto !important;
 }
 
+/* Wide-dialog opt-in: shadcn Dialog content marked with data-wide-dialog
+   needs to escape the 42rem cap imposed by the force-desktop rule above
+   (used by the cashflow QuickBooks match popup, which embeds a 4-column
+   workbench that collapses to a sliver at 42rem and reads as "no popup
+   appeared"). Stays scoped to the wide-dialog opt-in so default modals
+   keep the 42rem cap. */
+html[data-layout-mode="desktop"] [data-shadcn-dialog][data-wide-dialog][data-state="open"],
+[data-shadcn-dialog][data-wide-dialog][data-state="open"] {
+  width: min(calc(100vw - 2rem), 70rem) !important;
+  max-width: min(calc(100vw - 2rem), 70rem) !important;
+  max-height: min(86dvh, 780px) !important;
+}
+
 /* Force-mobile: render shadcn Dialog content as a full-width bottom sheet
    regardless of viewport width. Same scoping rule — Sheet is left alone. */
 html[data-layout-mode="mobile"] [data-shadcn-dialog][data-state="open"] {
