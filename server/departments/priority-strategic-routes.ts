@@ -43,12 +43,18 @@ const router = Router();
 
 const COO_ONLY_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
 
+// Note: the mytool_priority_status enum only defines these terminal values:
+// 'closed' and 'complete'. The previous list also included 'completed',
+// 'cancelled', 'canceled' — none of which exist in the enum — which caused
+// Postgres to abort with "invalid input value for enum mytool_priority_status"
+// the moment any query that used these helpers ran. Keep the list aligned
+// with the enum definition in shared/schema/mytool.ts.
 function activePriorityStatusCondition() {
-  return sql`${mytoolCompanyPriorities.status} NOT IN ('closed', 'complete', 'completed', 'cancelled', 'canceled')`;
+  return sql`${mytoolCompanyPriorities.status} NOT IN ('closed', 'complete')`;
 }
 
 function activePriorityStatusSql(columnName = "status") {
-  return sql.raw(`${columnName} NOT IN ('closed', 'complete', 'completed', 'cancelled', 'canceled')`);
+  return sql.raw(`${columnName} NOT IN ('closed', 'complete')`);
 }
 
 function getDepartmentForRole(role: string | null | undefined): string | undefined {

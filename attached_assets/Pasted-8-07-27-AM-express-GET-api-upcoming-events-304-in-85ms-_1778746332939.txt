@@ -1,0 +1,71 @@
+8:07:27 AM [express] GET /api/upcoming-events 304 in 85ms
+[API Error] Unhandled: {
+  name: 'Error',
+  message: 'Failed query: \n' +
+    '      SELECT parent_id, COUNT(*)::int AS child_count\n' +
+    '      FROM mytool_company_priorities\n' +
+    "      WHERE parent_id IS NOT NULL AND status NOT IN ('closed', 'complete', 'completed', 'cancelled', 'canceled')\n" +
+    '      GROUP BY parent_id\n' +
+    '    \n' +
+    'params: ',
+  stack: 'Error: Failed query: \n' +
+    '      SELECT parent_id, COUNT(*)::int AS child_count\n' +
+    '      FROM mytool_company_priorities\n' +
+    "      WHERE parent_id IS NOT NULL AND status NOT IN ('closed', 'complete', 'completed', 'cancelled', 'canceled')\n" +
+    '      GROUP BY parent_id\n' +
+    '    \n' +
+    'params: \n' +
+    '    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+    '    at async <anonymous> (/home/runner/workspace/server/departments/priority-strategic-routes.ts:617:35)'
+}
+8:07:27 AM [express] GET /api/lifecycle-board/execution-dashboard 200 in 184ms
+8:07:27 AM [express] GET /api/my-work/all-tasks 304 in 89ms
+8:07:28 AM [express] GET /api/priorities 500 in 158ms
+8:07:28 AM [express] GET /api/home/do-next 200 in 10ms
+8:07:28 AM [express] GET /api/auth/permissions 304 in 14ms
+8:07:28 AM [express] GET /api/feature-flags/rollout 304 in 19ms
+8:07:28 AM [express] GET /api/screen-settings 304 in 6ms
+[NotificationScheduler] Initial check complete — 0 notifications sent
+[API Error] Unhandled: {
+  name: 'Error',
+  message: 'Failed query: \n' +
+    '      SELECT parent_id, COUNT(*)::int AS child_count\n' +
+    '      FROM mytool_company_priorities\n' +
+    "      WHERE parent_id IS NOT NULL AND status NOT IN ('closed', 'complete', 'completed', 'cancelled', 'canceled')\n" +
+    '      GROUP BY parent_id\n' +
+    '    \n' +
+    'params: ',
+  stack: 'Error: Failed query: \n' +
+    '      SELECT parent_id, COUNT(*)::int AS child_count\n' +
+    '      FROM mytool_company_priorities\n' +
+    "      WHERE parent_id IS NOT NULL AND status NOT IN ('closed', 'complete', 'completed', 'cancelled', 'canceled')\n" +
+    '      GROUP BY parent_id\n' +
+    '    \n' +
+    'params: \n' +
+    '    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+    '    at async <anonymous> (/home/runner/workspace/server/departments/priority-strategic-routes.ts:617:35)'
+}
+8:07:52 AM [express] GET /api/priorities 500 in 15ms
+[API Error] Unhandled: {
+  name: 'Error',
+  message: 'Failed query: \n' +
+    '      SELECT parent_id, COUNT(*)::int AS child_count\n' +
+    '      FROM mytool_company_priorities\n' +
+    "      WHERE parent_id IS NOT NULL AND status NOT IN ('closed', 'complete', 'completed', 'cancelled', 'canceled')\n" +
+    '      GROUP BY parent_id\n' +
+    '    \n' +
+    'params: ',
+  stack: 'Error: Failed query: \n' +
+    '      SELECT parent_id, COUNT(*)::int AS child_count\n' +
+    '      FROM mytool_company_priorities\n' +
+    "      WHERE parent_id IS NOT NULL AND status NOT IN ('closed', 'complete', 'completed', 'cancelled', 'canceled')\n" +
+    '      GROUP BY parent_id\n' +
+    '    \n' +
+    'params: \n' +
+    '    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+    '    at async <anonymous> (/home/runner/workspace/server/departments/priority-strategic-routes.ts:617:35)'
+}
+8:07:54 AM [express] GET
