@@ -10,6 +10,7 @@ import { ApiError, sendError, badRequest, notFound, validationError, unauthorize
 import { validateTaskCreate, validateTaskUpdate } from "../lib/task-validation";
 import { normalizeStatus, normalizePriority } from "../lib/canonical-task-engine";
 import { isWorkItemsEnabled, getAllWorkItemsForPlanTab, toCanonicalStatus } from "../work-items-adapter";
+import { expectedPctFromDates } from "../lib/kpi-formulas";
 import { projectEngineeringTicket } from "@shared/lib/engineering-ticket-view";
 import { softDeleteCanonicalWorkItemByLegacyTaskId } from "../canonical-boundaries";
 import { runCascadesAfterUpdate, validateParentCompletion } from "../services/task-cascade-service";
@@ -294,25 +295,19 @@ export function registerPlanningTasksRoutes(app: Express) {
               else status = status || "not_started";
             }
 
-            let computedExpPct = 0;
+            // Canonical date-derived expected %. Shared with the Program
+            // Dashboard, kpi-service, and report-routes so every page shows
+            // the same number for the same row. See
+            // docs/smart-import-v2-task-dedup-audit.md (Fix 4b).
             const tPlannedStart = (ct.startDate || "").substring(0, 10);
             const tPlannedEnd = (ct.endDate || "").substring(0, 10);
             const tActualStart = (ct.actualStartDate || "").substring(0, 10);
             const tActualEnd = (ct.actualEndDate || "").substring(0, 10);
             const tStart = tActualStart || tPlannedStart;
             const tEnd = tActualEnd || tPlannedEnd;
-            if (tStart && tEnd && /^\d{4}-\d{2}-\d{2}/.test(tStart) && /^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
-              const todayStr = new Date().toISOString().split("T")[0];
-              if (todayStr >= tEnd) computedExpPct = 100;
-              else if (todayStr <= tStart) computedExpPct = 0;
-              else {
-                const totalWd = saWorkingDays(tStart, tEnd);
-                const elapsedWd = saWorkingDays(tStart, todayStr);
-                if (totalWd && totalWd > 0 && elapsedWd !== null) {
-                  computedExpPct = Math.round(Math.min(elapsedWd / totalWd, 1.0) * 100);
-                }
-              }
-            }
+            const todayStr = new Date().toISOString().split("T")[0];
+            const expFraction = expectedPctFromDates(tStart || null, tEnd || null, todayStr);
+            const computedExpPct = expFraction != null ? Math.round(expFraction * 100) : 0;
 
             const ticketView = isEngWorkstream(ct.workstream)
               ? projectEngineeringTicket({
@@ -484,21 +479,13 @@ export function registerPlanningTasksRoutes(app: Express) {
 
             let computedExpPct: number = pt.expectedPctComplete != null ? Math.round(pt.expectedPctComplete * 100) : 0;
             if (pt.expectedPctComplete == null && !pt.isVirtual) {
+              // Canonical date-derived expected % — see kpi-formulas.ts.
               const tStart = (pt.trueActualStart || pt.actualStart || "").substring(0, 10);
               const tEnd = (pt.trueActualEnd || pt.actualEnd || "").substring(0, 10);
-              if (tStart && tEnd && /^\d{4}-\d{2}-\d{2}/.test(tStart) && /^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
-                const todayStr = new Date().toISOString().split("T")[0];
-                if (todayStr >= tEnd) {
-                  computedExpPct = 100;
-                } else if (todayStr <= tStart) {
-                  computedExpPct = 0;
-                } else {
-                  const totalWd = saWorkingDays(tStart, tEnd);
-                  const elapsedWd = saWorkingDays(tStart, todayStr);
-                  if (totalWd && totalWd > 0 && elapsedWd !== null) {
-                    computedExpPct = Math.round(Math.min(elapsedWd / totalWd, 1.0) * 100);
-                  }
-                }
+              const todayStr = new Date().toISOString().split("T")[0];
+              const expFraction = expectedPctFromDates(tStart || null, tEnd || null, todayStr);
+              if (expFraction != null) {
+                computedExpPct = Math.round(expFraction * 100);
               }
             }
 

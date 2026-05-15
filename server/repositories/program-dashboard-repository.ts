@@ -25,6 +25,7 @@ import {
   projectExecutionState,
 } from "@shared/schema";
 import { getAllPMWorkItemsAsProjectPlan } from "../work-items-adapter";
+import { expectedPctFromDates, pctTo100 } from "../lib/kpi-formulas";
 import { isDateBlack } from "../lib/calculations/stateClassifier";
 import { isCosRealised as isCosRealisedShared } from "../lib/calculations/financeUtils";
 import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
@@ -313,21 +314,27 @@ export async function getProgramDashboardData(
     let expSum = 0;
     let expCount = 0;
     for (const t of items) {
-      actualSum += toNum(t.actualPctComplete) * 100;
+      // pctTo100 handles the canonical 0..1 stored values plus any legacy
+      // 0..100 stragglers; same helper that the Plan tab / report use.
+      const actualPct = pctTo100(t.actualPctComplete);
+      if (actualPct != null) actualSum += actualPct;
       if (t.expectedPctComplete != null) {
-        expSum += toNum(t.expectedPctComplete) * 100;
-        expCount++;
+        const ep = pctTo100(t.expectedPctComplete);
+        if (ep != null) {
+          expSum += ep;
+          expCount++;
+        }
       } else {
+        // Date-derived fallback now uses the canonical SA-working-days
+        // formula in server/lib/kpi-formulas.ts so this matches what
+        // the Plan tab computes for the same row. Previously this branch
+        // used calendar days — see docs/smart-import-v2-task-dedup-audit.md
+        // (Fix 4b).
         const s = (t.actualStart || t.startDate || '').slice(0,10);
         const e = (t.actualEnd || t.endDate || '').slice(0,10);
-        if (s && e && /^\d{4}-\d{2}-\d{2}/.test(s) && /^\d{4}-\d{2}-\d{2}/.test(e)) {
-          const sMs = new Date(s).getTime();
-          const eMs = new Date(e).getTime();
-          let exp: number;
-          if (todayMs >= eMs) exp = 100;
-          else if (todayMs <= sMs) exp = 0;
-          else { const total = Math.max(1, (eMs - sMs) / 86400000); exp = Math.min(((todayMs - sMs) / 86400000) / total, 1.0) * 100; }
-          expSum += exp;
+        const expFraction = expectedPctFromDates(s, e, today);
+        if (expFraction != null) {
+          expSum += expFraction * 100;
           expCount++;
         }
       }

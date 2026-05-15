@@ -358,7 +358,24 @@ export async function generatePmReportData(month: string) {
       const status = (w.status || "").toUpperCase();
       return w.endDate && w.endDate < monthEndStr && !COMPLETED_STATUSES.includes(status) && !CANCELLED_STATUSES.includes(status);
     }).length,
-    milestonesAchieved: pmWorkItems.filter((w: any) => w.isMilestone && w.completedAt && isTimestampInMonth(w.completedAt, monthStart, monthEnd)).length,
+    // Milestone achievement count: prefer `completedAt` (explicit timestamp
+    // set when the row was marked complete), but fall back to `actualEnd`
+    // when `completedAt` is missing AND the row's percentComplete is at
+    // 100% (canonical 0..1 scale → 1.0; defensive >= 1 accepts legacy
+    // 0..100 values too). This matches what the Plan tab considers
+    // "milestone complete" and prevents a workbook-imported milestone
+    // with a populated actualEnd but no completedAt from being silently
+    // dropped from the monthly count. See
+    // docs/smart-import-v2-task-dedup-audit.md (Fix 4c).
+    milestonesAchieved: pmWorkItems.filter((w: any) => {
+      if (!w.isMilestone) return false;
+      const completedAt = w.completedAt as string | Date | null | undefined;
+      if (completedAt && isTimestampInMonth(completedAt, monthStart, monthEnd)) return true;
+      const pct = typeof w.percentComplete === "number" ? w.percentComplete : Number(w.percentComplete);
+      const isAt100 = Number.isFinite(pct) && pct >= 1;
+      if (isAt100 && w.actualEnd && isTimestampInMonth(w.actualEnd, monthStart, monthEnd)) return true;
+      return false;
+    }).length,
     totalActiveTasks: pmWorkItems.filter((w: any) => {
       const status = (w.status || "").toUpperCase();
       return !COMPLETED_STATUSES.includes(status) && !CANCELLED_STATUSES.includes(status);

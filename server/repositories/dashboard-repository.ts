@@ -11,6 +11,7 @@ import { projectInfo } from "@shared/schema/projects";
 import { workItems } from "@shared/schema/tasks";
 import { qcWarning } from "@shared/schema/quality";
 import { financialEditRequests } from "@shared/schema/finance";
+import { pctTo100 } from "../lib/kpi-formulas";
 
 // ─── Import health ───────────────────────────────────────────────
 
@@ -257,10 +258,17 @@ export async function getDashboardAttentionItems(): Promise<AttentionItemsRespon
   for (const t of pmTaskRows) {
     const projectId = t.projectId;
     if (projectId == null || t.expected == null || t.actual == null) continue;
-    const expected = Number(t.expected);
-    const actual = Number(t.actual);
-    if (!Number.isFinite(expected) || !Number.isFinite(actual)) continue;
-    const gap = expected - actual; // positive = behind plan
+    // `work_items.percentComplete` / `expectedPctComplete` are written on
+    // the canonical 0..1 scale (see clampPercent in
+    // server/lib/import/value-normalization.ts). `BEHIND_PLAN_GAP_THRESHOLD`
+    // and `severityFromGap` operate in percentage points (0..100), so
+    // route through pctTo100() which converts 0..1 → 0..100 and is also
+    // tolerant of legacy 0..100 stragglers. See
+    // docs/smart-import-v2-task-dedup-audit.md (Fix 4a).
+    const expected = pctTo100(t.expected);
+    const actual = pctTo100(t.actual);
+    if (expected == null || actual == null) continue;
+    const gap = expected - actual; // positive = behind plan, in percentage points
     const cur = acc.get(projectId) ?? { gapSum: 0, count: 0 };
     cur.gapSum += gap;
     cur.count += 1;

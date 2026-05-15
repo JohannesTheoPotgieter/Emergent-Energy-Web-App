@@ -18,14 +18,13 @@
 
 import { toCanonicalEngineeringStageStatus } from "@shared/status-logic";
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "../lib/task-workflow-guard";
-import { softCloseByProjectName, addTemporalColumns, dedupeCostLineInserts } from "../lib/temporal-helpers";
+// Temporal helpers and the local multer / fileType / upload-security imports
+// were used by the /api/upload and /api/reprocess-all handlers that lived
+// here. Those handlers were shadowed by admin-routes.ts and have been
+// removed (2026-05-15). See header comment below.
 import type { Express, Request, Response, NextFunction } from "express";
-import multer from "multer";
 import fs from "fs";
 import path from "path";
-import { randomUUID } from "crypto";
-import { sanitizeFilename, allowedFileFilter } from "../lib/upload-security";
-import { fileTypeFromBuffer } from "file-type";
 import { storage } from "../storage";
 import { parseTrackerFile, applyFontColors } from "../excelParser";
 import {
@@ -44,50 +43,21 @@ import { ApiError, sendError, badRequest, logApiError } from "../lib/api-error";
 import { paramStr, parseIntParam } from "../lib/req-params";
 import { getCanonicalProjectCostLinesByName } from "../services/project-cost-line-read-service";
 
-// Ensure uploads directory exists
+// Ensure uploads directory exists — scan-folder still copies discovered
+// workbooks here before they're imported via Smart Import v2.
 const uploadDir = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-// Configure multer for disk storage
-const upload = multer({ 
-  storage: multer.diskStorage({
-    destination: (req, file, cb) => {
-      cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-      const ext = path.extname(file.originalname).toLowerCase().replace(/[^a-z0-9.]/g, "");
-      cb(null, `${randomUUID()}${ext}`);
-    }
-  }),
-  limits: { fileSize: 50 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowedMimes = [
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'application/vnd.ms-excel.sheet.macroEnabled.12',
-      'application/vnd.ms-excel'
-    ];
-    if (allowedMimes.includes(file.mimetype) || 
-        file.originalname.endsWith('.xlsx') || 
-        file.originalname.endsWith('.xlsm') ||
-        file.originalname.endsWith('.xls')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Invalid file type. Only Excel files (.xlsx, .xlsm, .xls) are allowed.'));
-    }
-  }
-});
-
 export async function registerImportsAdminExtractedRoutes(app: Express): Promise<void> {
 
-  // Loaded once at registration time; only `createSnapshotFromUpload` is
-  // consumed below (by the /api/upload handler at line ~109). The other
-  // exports (runFullImport, retryFailedImports, importSingleFile) used to
-  // be destructured here too, but those routes were moved to
-  // server/departments/admin-routes.ts in 2026-05-12 to fix a duplicate-
-  // registration audit-log gap.
-  const { createSnapshotFromUpload } = await import("../importPipeline");
+  // The runFullImport / retryFailedImports / importSingleFile / and
+  // createSnapshotFromUpload entry points used to be wired up here. The
+  // first three were moved to server/departments/admin-routes.ts in
+  // 2026-05-12; createSnapshotFromUpload was used only by the shadowed
+  // /api/upload handler and was removed when that handler was deleted
+  // (2026-05-15). See header comment below for the full deprecation trace.
 
   const EXECUTION_PHASES = [
     "Construction", "QA", "Commissioning", "Handover", "Compliance Handover",
@@ -105,484 +75,15 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
   }
 
   // ==================== FILE UPLOAD ROUTE ====================
-
-  // Accept multiple field names: files, file, tracker, trackers
-  const multiUpload = upload.fields([
-    { name: 'files', maxCount: 20 },
-    { name: 'file', maxCount: 20 },
-    { name: 'tracker', maxCount: 20 },
-    { name: 'trackers', maxCount: 20 }
-  ]);
-
-  app.post("/api/upload", requireAuth, multiUpload, async (req, res) => {
-    try {
-      // Normalize files from multiple possible field names
-      const filesObj = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
-      let files: Express.Multer.File[] = [];
-      
-      if (filesObj) {
-        if (filesObj.files) files.push(...filesObj.files);
-        if (filesObj.file) files.push(...filesObj.file);
-        if (filesObj.tracker) files.push(...filesObj.tracker);
-        if (filesObj.trackers) files.push(...filesObj.trackers);
-      }
-      
-      if (!files || files.length === 0) {
-        return res.status(400).json({ 
-          error: "no_files", 
-          message: "No files received. Expected files/file/tracker field(s)." 
-        });
-      }
-
-      const results: { 
-        file: string; 
-        status: string; 
-        message?: string; 
-        project_name?: string;
-        expensesParsed?: number;
-        inflowsParsed?: number;
-        planParsed?: number;
-        infoParsed?: boolean;
-        cashflowParsed?: number;
-        financeRevenueParsed?: number;
-        financeCosParsed?: number;
-        warnings?: string[];
-        mode?: string;
-      }[] = [];
-
-      // Get upload mode and options from form data
-      const mode = (req.body?.mode as string) || 'refresh'; // 'create', 'refresh', or 'duplicate'
-      const resetOverrides = req.body?.resetOverrides === 'true';
-
-      for (const file of files) {
-        try {
-          // Read and parse file first (no DB writes yet)
-          const fileBuffer = fs.readFileSync(file.path);
-          const actualType = await fileTypeFromBuffer(fileBuffer);
-          const allowedMime = new Set([
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "application/vnd.ms-excel.sheet.macroEnabled.12",
-            "application/vnd.ms-excel",
-          ]);
-          if (!actualType || !allowedMime.has(actualType.mime)) {
-            throw new Error(`Invalid file signature for ${file.originalname}`);
-          }
-          const cleanedFilename = file.originalname.replace(/^\d{10,}_/, '');
-          const parseResult = await parseTrackerFile(fileBuffer, cleanedFilename);
-          
-          await applyFontColors(parseResult.expenses, fileBuffer);
-
-          function sanitizeRecord(record: Record<string, any>) {
-            for (const key of Object.keys(record)) {
-              const val = record[key];
-              if (typeof val === 'number' && (isNaN(val) || !isFinite(val))) {
-                record[key] = null;
-              }
-              if (typeof val === 'string' && (val === 'NaN' || val === 'Infinity' || val === '-Infinity')) {
-                record[key] = null;
-              }
-            }
-          }
-          parseResult.expenses.forEach(sanitizeRecord);
-          parseResult.inflows.forEach(sanitizeRecord);
-          parseResult.planItems.forEach(sanitizeRecord);
-          parseResult.cashflowPoints.forEach(sanitizeRecord);
-          parseResult.financeRevenueMonthly.forEach(sanitizeRecord);
-          parseResult.financeCosMonthly.forEach(sanitizeRecord);
-          if (parseResult.projectInfo) sanitizeRecord(parseResult.projectInfo);
-          
-          // Handle duplicate mode: append timestamp to make project name unique
-          let targetProjectName = parseResult.projectName;
-          if (mode === 'duplicate') {
-            const timestamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
-            targetProjectName = `${parseResult.projectName}_${timestamp}`;
-            // Update project info with new name
-            if (parseResult.projectInfo) {
-              (parseResult.projectInfo as any).projectName = targetProjectName;
-            }
-            // Update all records with new project name
-            parseResult.expenses.forEach((e: any) => e.projectName = targetProjectName);
-            parseResult.inflows.forEach((i: any) => i.projectName = targetProjectName);
-            parseResult.planItems.forEach((p: any) => p.projectName = targetProjectName);
-            parseResult.cashflowPoints.forEach((c: any) => c.projectName = targetProjectName);
-            parseResult.financeRevenueMonthly.forEach((r: any) => r.projectName = targetProjectName);
-            parseResult.financeCosMonthly.forEach((c: any) => c.projectName = targetProjectName);
-          }
-          
-          // Perform all DB operations in a single transaction to prevent partial updates
-          await storage.transaction(async (txStorage) => {
-            // For refresh mode or create mode (if project already exists), delete existing data
-            if (mode !== 'duplicate') {
-              await txStorage.deleteProgramExpensesByProject(targetProjectName);
-              await txStorage.deleteProgramInflowsByProject(targetProjectName);
-              await txStorage.deleteProjectPlansByProject(targetProjectName);
-              await txStorage.deleteCashflowPointsByProject(targetProjectName);
-              await txStorage.deleteFinanceRevenueMonthlyByProject(targetProjectName);
-              await txStorage.deleteFinanceCosMonthlyByProject(targetProjectName);
-              
-              // Optionally reset planning overrides
-              if (resetOverrides) {
-                await txStorage.deleteProjectPlanOverridesByProject(targetProjectName);
-              }
-            }
-
-            // Insert project info (safeguard: never enable execution from import, map phase→executionPhase)
-            if (parseResult.projectInfo) {
-              safeguardImportProjectInfo(parseResult.projectInfo);
-              await txStorage.upsertProjectInfo(parseResult.projectInfo);
-            }
-
-            // Insert expenses
-            if (parseResult.expenses.length > 0) {
-              await txStorage.createManyProgramExpenses(parseResult.expenses);
-            }
-
-            // Insert inflows
-            if (parseResult.inflows.length > 0) {
-              await txStorage.createManyProgramInflows(parseResult.inflows);
-            }
-
-            // Insert plan items
-            if (parseResult.planItems.length > 0) {
-              await txStorage.createManyProjectPlans(parseResult.planItems);
-            }
-
-            // Insert cashflow points
-            if (parseResult.cashflowPoints.length > 0) {
-              await txStorage.createManyCashflowPoints(parseResult.cashflowPoints);
-            }
-
-            // Insert finance revenue monthly
-            if (parseResult.financeRevenueMonthly.length > 0) {
-              await txStorage.createManyFinanceRevenueMonthly(parseResult.financeRevenueMonthly);
-            }
-
-            // Insert finance COS monthly
-            if (parseResult.financeCosMonthly.length > 0) {
-              await txStorage.createManyFinanceCosMonthly(parseResult.financeCosMonthly);
-            }
-
-            // Log upload metadata
-            await txStorage.createUpload({
-              fileName: file.originalname,
-              filePath: file.path, // Store disk path for reprocessing
-              uploadedBy: req.user?.id || null,
-              recordsProcessed: parseResult.expensesParsed + parseResult.inflowsParsed + parseResult.planParsed + 
-                              parseResult.cashflowParsed + parseResult.financeRevenueParsed + parseResult.financeCosParsed,
-              validationErrors: parseResult.warnings.length > 0 ? parseResult.warnings.join("; ") : null,
-              status: "success"
-            });
-          });
-
-          results.push({
-            file: file.originalname,
-            status: "success",
-            project_name: targetProjectName,
-            expensesParsed: parseResult.expensesParsed,
-            inflowsParsed: parseResult.inflowsParsed,
-            planParsed: parseResult.planParsed,
-            infoParsed: parseResult.infoParsed,
-            cashflowParsed: parseResult.cashflowParsed,
-            financeRevenueParsed: parseResult.financeRevenueParsed,
-            financeCosParsed: parseResult.financeCosParsed,
-            warnings: parseResult.warnings,
-            mode: mode
-          });
-
-          try {
-            await createSnapshotFromUpload(fileBuffer, file.originalname, (req.user as any)?.email || "admin");
-          } catch (snapErr: any) {
-            console.error("[Snapshot] Non-blocking snapshot creation failed:", snapErr.message);
-          }
-
-          try {
-            const preview = await runSmartImportPreview(fileBuffer, file.originalname);
-            const norm = preview.normalization;
-            const resolvedProjectName = targetProjectName;
-            const [existingProject] = await db.select({ id: projectInfo.id }).from(projectInfo)
-              .where(eq(projectInfo.projectName, resolvedProjectName));
-            const pId = existingProject?.id || null;
-
-            if (pId) {
-              await db.delete(workItems).where(
-                and(
-                  eq(workItems.projectId, pId),
-                  eq(workItems.workstream, 'PM' as any),
-                  eq(workItems.source, 'SMART_IMPORT' as any)
-                )
-              );
-            }
-            // Temporal: soft-close existing rows instead of hard delete (Prompt 10)
-            await softCloseByProjectName(db, "normalized_revenue_lines", resolvedProjectName);
-            await softCloseByProjectName(db, "normalized_cost_lines", resolvedProjectName);
-            await db.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectName, resolvedProjectName));
-
-            const dummyRun = await db.insert(smartImportRuns).values({
-              fileName: file.originalname,
-              projectName: resolvedProjectName,
-              projectId: pId,
-              uploadedBy: req.user?.id || null,
-              status: "committed",
-              committedAt: new Date(),
-              committedBy: req.user?.id || null,
-              summaryJson: {} as any,
-            }).returning();
-            const importRunId = dummyRun[0].id;
-
-            if (norm.planTasks.length > 0) {
-              await db.insert(workItems).values(norm.planTasks.map((t: any, idx: number) => ({
-                projectId: pId,
-                workstream: 'PM' as any,
-                source: 'SMART_IMPORT' as any,
-                title: t.taskName,
-                wbsCode: t.taskNo || null,
-                type: t.phase,
-                startDate: t.startDate,
-                endDate: t.endDate,
-                duration: t.durationDays,
-                actualStart: t.actualStartDate || null,
-                actualEnd: t.actualEndDate || null,
-                actualDuration: t.actualDurationDays || null,
-                ownerName: t.owner,
-                status: t.status || 'Not Started',
-                percentComplete: t.pctComplete,
-                description: t.comment,
-                sourceSheet: t.sourceSheet,
-                sourceRow: t.sourceRow,
-                importRunId,
-                externalRef: `${resolvedProjectName}::PLAN::${t.taskNo || idx}::${importRunId}`,
-              })));
-            }
-            const uploadTimestamp = new Date();
-            if (norm.revenueLines.length > 0) {
-              const revVals = norm.revenueLines.map((r: any) => ({
-                projectId: pId, projectName: resolvedProjectName,
-                description: r.description, milestoneName: r.milestoneName,
-                amountExVat: r.amountExVat, vat: r.vat,
-                invoiceNumber: r.invoiceNumber, invoiceDate: r.invoiceDate,
-                invoiceDateFontColor: r.invoiceDateFontColor,
-                invoiceDateConfirmed: r.invoiceDateConfirmed || false,
-                expectedPaymentDate: r.expectedPaymentDate, paidDate: r.paidDate,
-                paidDateFontColor: r.paidDateFontColor,
-                paidDateConfirmed: r.paidDateConfirmed || false,
-                inBankDate: r.inBankDate, status: r.status,
-                sourceSheet: r.sourceSheet, sourceRow: r.sourceRow, importRunId,
-                turnaroundDays: r.turnaroundDays,
-              }));
-              await db.insert(normalizedRevenueLines).values(addTemporalColumns(revVals, importRunId, uploadTimestamp) as any);
-            }
-            if (norm.costLines.length > 0) {
-              const costVals = norm.costLines.map((c: any) => ({
-                projectId: pId, projectName: resolvedProjectName,
-                costCategory: c.costCategory, counterpartyName: c.counterpartyName,
-                description: c.description, amountExVat: c.amountExVat,
-                invoiceNumber: c.invoiceNumber, invoiceDate: c.invoiceDate,
-                invoiceDateFontColor: c.invoiceDateFontColor,
-                invoiceDateConfirmed: c.invoiceDateConfirmed || false,
-                approvedDate: c.approvedDate, paidDate: c.paidDate,
-                paidDateFontColor: c.paidDateFontColor,
-                paidDateConfirmed: c.paidDateConfirmed || false,
-                poNumber: c.poNumber, cosRealised: c.cosRealised || false,
-                cashflowConfirmed: c.cashflowConfirmed || false,
-                status: c.status, sourceSheet: c.sourceSheet, sourceRow: c.sourceRow,
-                importRunId, turnaroundDays: c.turnaroundDays,
-              }));
-              // Drop duplicate cost lines created by the workbook repeating
-              // an invoice across multiple forecast paid_date rows. See
-              // dedupeCostLineInserts() doc-comment for full rationale.
-              const { kept: dedupedCostVals, dropped: dedupedCount } = dedupeCostLineInserts(costVals);
-              if (dedupedCount > 0) {
-                console.log(`[imports-admin] Dropped ${dedupedCount} duplicate cost-line row(s) for project "${resolvedProjectName}" before insert.`);
-              }
-              await db.insert(normalizedCostLines).values(addTemporalColumns(dedupedCostVals, importRunId, uploadTimestamp) as any);
-            }
-            if (norm.costedSummary) {
-              try {
-                const existing = await storage.getProjectRevenueSummary(resolvedProjectName);
-                const hasManualOverride = existing && (existing.plannedRevenue || existing.plannedExpenditure);
-                if (!hasManualOverride) {
-                  await storage.upsertProjectRevenueSummary({
-                    projectName: resolvedProjectName,
-                    plannedRevenue: norm.costedSummary.plannedRevenue?.toString() ?? null,
-                    plannedExpenditure: norm.costedSummary.plannedExpenditure?.toString() ?? null,
-                    plannedProfit: norm.costedSummary.plannedProfit?.toString() ?? null,
-                    plannedMargin: norm.costedSummary.plannedMargin?.toString() ?? null,
-                    actualRevenue: null,
-                    actualExpenditure: null,
-                    actualProfit: null,
-                    actualMargin: null,
-                    voPmLimit: null,
-                    currentVoTotal: null,
-                  });
-                  console.log(`[Upload] Stored costed summary for "${resolvedProjectName}": Rev=${norm.costedSummary.plannedRevenue}, Exp=${norm.costedSummary.plannedExpenditure}`);
-                } else {
-                  console.log(`[Upload] Skipped costed summary for "${resolvedProjectName}" — manual override exists`);
-                }
-              } catch (summaryErr: any) {
-                console.warn("[Upload] Non-blocking costed summary storage failed:", summaryErr.message);
-              }
-            }
-            console.log(`[Upload] Also populated normalized tables for "${resolvedProjectName}" via smart import pipeline`);
-          } catch (normErr: any) {
-            console.error("[Upload] Non-blocking normalized table population failed:", normErr.message);
-          }
-
-        } catch (fileError: any) {
-          console.error("File parse/upload error:", fileError);
-          const { dbMode } = await import("../db");
-          
-          results.push({
-            file: file.originalname,
-            status: "error",
-            message: fileError.message || "Failed to process file"
-          });
-
-          // Try to log error upload (may fail if DB is unavailable)
-          try {
-            await storage.createUpload({
-              fileName: file.originalname,
-              uploadedBy: req.user?.id || null,
-              recordsProcessed: 0,
-              validationErrors: fileError.message,
-              status: "error"
-            });
-          } catch (logError) {
-            console.error("Failed to log upload error:", logError);
-          }
-        }
-      }
-
-      await storage.createRefreshLog({
-        triggeredBy: req.user?.id || null,
-        status: results.every(r => r.status === "success") ? "success" : "partial"
-      });
-
-      logAuditFromReq(req, { entityType: "file_upload", action: "create", changesJson: { description: `Uploaded ${files.length} file(s)`, fileCount: files.length, projectNames: results.filter(r => r.project_name).map(r => r.project_name) }, source: "IMPORT" });
-      res.json({ 
-        message: `Processed ${files.length} file(s)`,
-        results 
-      });
-    } catch (error: any) {
-      console.error("Upload error:", error);
-      const { dbMode } = await import("../db");
-      res.status(500).json({
-        error: "Failed to process upload",
-        code: error.code || 'UPLOAD_ERROR',
-        dbMode
-      });
-    }
-  });
-
-  // ==================== REPROCESS ALL UPLOADS ====================
-
-  app.post("/api/reprocess-all", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      // Get all uploads with file paths
-      const uploads = await storage.getAllUploads();
-      const reprocessResults: { fileName: string; status: string; message?: string }[] = [];
-      
-      // Group by project (use most recent upload per project)
-      const projectFiles = new Map<string, { filePath: string; fileName: string }>();
-      for (const upload of uploads) {
-        if (!upload.filePath) continue;
-        
-        const projectName = upload.fileName
-          .replace(/\.(xlsx|xlsm|xls)$/i, '')
-          .replace(/_[Tt]racker\d*$/, '')
-          .replace(/_/g, ' ')
-          .trim();
-        
-        // Only keep if this is the most recent or if project not yet seen
-        if (!projectFiles.has(projectName)) {
-          projectFiles.set(projectName, { filePath: upload.filePath, fileName: upload.fileName });
-        }
-      }
-      
-      // Reprocess each project's latest file
-      for (const [projectName, fileInfo] of Array.from(projectFiles.entries())) {
-        try {
-          if (!fs.existsSync(fileInfo.filePath)) {
-            reprocessResults.push({
-              fileName: fileInfo.fileName,
-              status: "error",
-              message: "File not found on disk"
-            });
-            continue;
-          }
-          
-          const fileBuffer = fs.readFileSync(fileInfo.filePath);
-          const parseResult = await parseTrackerFile(fileBuffer, fileInfo.fileName);
-          
-          await applyFontColors(parseResult.expenses, fileBuffer);
-          
-          // Delete existing data for this project
-          await storage.deleteProgramExpensesByProject(parseResult.projectName);
-          await storage.deleteProgramInflowsByProject(parseResult.projectName);
-          await storage.deleteProjectPlansByProject(parseResult.projectName);
-          await storage.deleteCashflowPointsByProject(parseResult.projectName);
-          await storage.deleteFinanceRevenueMonthlyByProject(parseResult.projectName);
-          await storage.deleteFinanceCosMonthlyByProject(parseResult.projectName);
-          
-          // Re-insert all data (safeguard: never enable execution from import)
-          if (parseResult.projectInfo) {
-            safeguardImportProjectInfo(parseResult.projectInfo);
-            await storage.upsertProjectInfo(parseResult.projectInfo);
-          }
-          if (parseResult.expenses.length > 0) {
-            await storage.createManyProgramExpenses(parseResult.expenses);
-          }
-          if (parseResult.inflows.length > 0) {
-            await storage.createManyProgramInflows(parseResult.inflows);
-          }
-          if (parseResult.planItems.length > 0) {
-            await storage.createManyProjectPlans(parseResult.planItems);
-          }
-          if (parseResult.cashflowPoints.length > 0) {
-            await storage.createManyCashflowPoints(parseResult.cashflowPoints);
-          }
-          if (parseResult.financeRevenueMonthly.length > 0) {
-            await storage.createManyFinanceRevenueMonthly(parseResult.financeRevenueMonthly);
-          }
-          if (parseResult.financeCosMonthly.length > 0) {
-            await storage.createManyFinanceCosMonthly(parseResult.financeCosMonthly);
-          }
-          
-          reprocessResults.push({
-            fileName: fileInfo.fileName,
-            status: "success",
-            message: `Reprocessed ${parseResult.cashflowParsed + parseResult.financeRevenueParsed + parseResult.financeCosParsed} cashflow/finance records`
-          });
-          
-        } catch (error: any) {
-          reprocessResults.push({
-            fileName: fileInfo.fileName,
-            status: "error"
-          });
-        }
-      }
-      
-      await storage.createRefreshLog({
-        triggeredBy: req.user?.id || null,
-        status: reprocessResults.every(r => r.status === "success") ? "success" : "partial"
-      });
-
-      logAuditFromReq(req, { entityType: "system", action: "reprocess_all", source: "SYSTEM", changesJson: { projectsProcessed: projectFiles.size, results: reprocessResults.map(r => ({ file: r.fileName, status: r.status })) } });
-      
-      res.json({
-        message: `Reprocessed ${projectFiles.size} project(s)`,
-        results: reprocessResults
-      });
-      
-    } catch (error: any) {
-      console.error("Reprocess error:", error);
-      const { dbMode } = await import("../db");
-      res.status(500).json({
-        error: "Failed to reprocess files",
-        code: error.code || 'REPROCESS_ERROR',
-        dbMode
-      });
-    }
-  });
+  //
+  // The /api/upload and /api/reprocess-all handlers that used to live here
+  // were shadowed by server/departments/admin-routes.ts (department routes
+  // register first; see comment block at end of file). Both bypassed every
+  // Smart Import v2 dedup guard via `storage.createManyProjectPlans` /
+  // `deleteProjectPlansByProject` (adapter façades over work_items). The
+  // live copies in admin-routes.ts have been replaced with 410 Gone
+  // responders; the shadowed copies here are deleted 2026-05-15.
+  // See docs/smart-import-v2-task-dedup-audit.md.
 
 
   // ==================== REFRESH ROUTE ====================
@@ -609,182 +110,21 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
     }
   });
 
-  // Admin data refresh - re-process all stored tracker files
-  app.post("/api/admin/refresh-data", requireAuth, requireAdmin, async (req, res) => {
-    const useSSE = req.headers.accept === 'text/event-stream';
-    const startTime = Date.now();
-
-    if (useSSE) {
-      res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      });
-      const sendEvent = (data: any) => {
-        res.write(`data: ${JSON.stringify(data)}\n\n`);
-      };
-
-      try {
-        const uploads = await storage.getAllUploads();
-        const projectFiles = new Map<string, { filePath: string; fileName: string; uploadedAt: Date }>();
-        for (const upload of uploads) {
-          if (!upload.filePath) continue;
-          const projectName = upload.fileName.replace(/\.(xlsx|xlsm|xls)$/i, '').replace(/_[Tt]racker\d*$/, '').replace(/^\d+_/, '').replace(/_/g, ' ').trim();
-          const existing = projectFiles.get(projectName);
-          if (!existing || (upload.uploadedAt && existing.uploadedAt < upload.uploadedAt)) {
-            projectFiles.set(projectName, { filePath: upload.filePath, fileName: upload.fileName, uploadedAt: upload.uploadedAt || new Date(0) });
-          }
-        }
-
-        const total = projectFiles.size;
-        sendEvent({ type: 'start', total });
-        const refreshResults: any[] = [];
-        let processed = 0;
-
-        for (const [projectName, fileInfo] of Array.from(projectFiles.entries())) {
-          processed++;
-          try {
-            if (!fs.existsSync(fileInfo.filePath)) {
-              refreshResults.push({ fileName: fileInfo.fileName, projectName, status: "error", message: "Source file not found on disk" });
-              sendEvent({ type: 'progress', current: processed, total, fileName: fileInfo.fileName, projectName, status: 'error' });
-              continue;
-            }
-            const fileBuffer = fs.readFileSync(fileInfo.filePath);
-            const parseResult = await parseTrackerFile(fileBuffer, fileInfo.fileName);
-            await applyFontColors(parseResult.expenses, fileBuffer);
-            await storage.transaction(async (txStorage) => {
-              await txStorage.deleteProgramExpensesByProject(parseResult.projectName);
-              await txStorage.deleteProgramInflowsByProject(parseResult.projectName);
-              await txStorage.deleteProjectPlansByProject(parseResult.projectName);
-              await txStorage.deleteCashflowPointsByProject(parseResult.projectName);
-              await txStorage.deleteFinanceRevenueMonthlyByProject(parseResult.projectName);
-              await txStorage.deleteFinanceCosMonthlyByProject(parseResult.projectName);
-              if (parseResult.projectInfo) { safeguardImportProjectInfo(parseResult.projectInfo); await txStorage.upsertProjectInfo(parseResult.projectInfo); }
-              if (parseResult.expenses.length > 0) await txStorage.createManyProgramExpenses(parseResult.expenses);
-              if (parseResult.inflows.length > 0) await txStorage.createManyProgramInflows(parseResult.inflows);
-              if (parseResult.planItems.length > 0) await txStorage.createManyProjectPlans(parseResult.planItems);
-              if (parseResult.cashflowPoints.length > 0) await txStorage.createManyCashflowPoints(parseResult.cashflowPoints);
-              if (parseResult.financeRevenueMonthly.length > 0) await txStorage.createManyFinanceRevenueMonthly(parseResult.financeRevenueMonthly);
-              if (parseResult.financeCosMonthly.length > 0) await txStorage.createManyFinanceCosMonthly(parseResult.financeCosMonthly);
-            });
-            const recordsProcessed = parseResult.expensesParsed + parseResult.inflowsParsed + parseResult.planParsed + parseResult.cashflowParsed + parseResult.financeRevenueParsed + parseResult.financeCosParsed;
-            refreshResults.push({ fileName: fileInfo.fileName, projectName: parseResult.projectName, status: "success", recordsProcessed });
-            sendEvent({ type: 'progress', current: processed, total, fileName: fileInfo.fileName, projectName: parseResult.projectName, status: 'success' });
-          } catch (error: any) {
-            refreshResults.push({ fileName: fileInfo.fileName, projectName, status: "error" });
-            sendEvent({ type: 'progress', current: processed, total, fileName: fileInfo.fileName, projectName, status: 'error' });
-          }
-        }
-
-        await storage.createRefreshLog({ triggeredBy: req.user?.id || null, status: refreshResults.every(r => r.status === "success") ? "success" : "partial" });
-        const refreshActiveNames = refreshResults.filter(r => r.status === "success").map(r => r.projectName);
-        if (refreshActiveNames.length > 0) await storage.markProjectsActive(refreshActiveNames);
-        logAuditFromReq(req, { entityType: "system", action: "admin_refresh_data", source: "SYSTEM", changesJson: { projectsProcessed: total, durationMs: Date.now() - startTime } });
-        sendEvent({ type: 'complete', results: refreshResults, durationMs: Date.now() - startTime });
-        res.end();
-      } catch (error: any) {
-        sendEvent({ type: 'error' });
-        res.end();
-      }
-      return;
-    }
-
-    try {
-      const uploads = await storage.getAllUploads();
-      const refreshResults: { 
-        fileName: string; 
-        projectName: string;
-        status: string; 
-        message?: string;
-        recordsProcessed?: number;
-      }[] = [];
-      
-      const projectFiles = new Map<string, { filePath: string; fileName: string; uploadedAt: Date }>();
-      for (const upload of uploads) {
-        if (!upload.filePath) continue;
-        const projectName = upload.fileName.replace(/\.(xlsx|xlsm|xls)$/i, '').replace(/_[Tt]racker\d*$/, '').replace(/^\d+_/, '').replace(/_/g, ' ').trim();
-        const existing = projectFiles.get(projectName);
-        if (!existing || (upload.uploadedAt && existing.uploadedAt < upload.uploadedAt)) {
-          projectFiles.set(projectName, { 
-            filePath: upload.filePath, 
-            fileName: upload.fileName,
-            uploadedAt: upload.uploadedAt || new Date(0)
-          });
-        }
-      }
-      
-      for (const [projectName, fileInfo] of Array.from(projectFiles.entries())) {
-        try {
-          if (!fs.existsSync(fileInfo.filePath)) {
-            refreshResults.push({ fileName: fileInfo.fileName, projectName, status: "error", message: "Source file not found on disk" });
-            continue;
-          }
-          const fileBuffer = fs.readFileSync(fileInfo.filePath);
-          const parseResult = await parseTrackerFile(fileBuffer, fileInfo.fileName);
-          await applyFontColors(parseResult.expenses, fileBuffer);
-          await storage.transaction(async (txStorage) => {
-            await txStorage.deleteProgramExpensesByProject(parseResult.projectName);
-            await txStorage.deleteProgramInflowsByProject(parseResult.projectName);
-            await txStorage.deleteProjectPlansByProject(parseResult.projectName);
-            await txStorage.deleteCashflowPointsByProject(parseResult.projectName);
-            await txStorage.deleteFinanceRevenueMonthlyByProject(parseResult.projectName);
-            await txStorage.deleteFinanceCosMonthlyByProject(parseResult.projectName);
-            if (parseResult.projectInfo) { safeguardImportProjectInfo(parseResult.projectInfo); await txStorage.upsertProjectInfo(parseResult.projectInfo); }
-            if (parseResult.expenses.length > 0) await txStorage.createManyProgramExpenses(parseResult.expenses);
-            if (parseResult.inflows.length > 0) await txStorage.createManyProgramInflows(parseResult.inflows);
-            if (parseResult.planItems.length > 0) await txStorage.createManyProjectPlans(parseResult.planItems);
-            if (parseResult.cashflowPoints.length > 0) await txStorage.createManyCashflowPoints(parseResult.cashflowPoints);
-            if (parseResult.financeRevenueMonthly.length > 0) await txStorage.createManyFinanceRevenueMonthly(parseResult.financeRevenueMonthly);
-            if (parseResult.financeCosMonthly.length > 0) await txStorage.createManyFinanceCosMonthly(parseResult.financeCosMonthly);
-          });
-          const recordsProcessed = parseResult.expensesParsed + parseResult.inflowsParsed + 
-            parseResult.planParsed + parseResult.cashflowParsed + 
-            parseResult.financeRevenueParsed + parseResult.financeCosParsed;
-          refreshResults.push({ fileName: fileInfo.fileName, projectName: parseResult.projectName, status: "success", message: `Refreshed from source`, recordsProcessed });
-        } catch (error: any) {
-          refreshResults.push({ fileName: fileInfo.fileName, projectName, status: "error" });
-        }
-      }
-      
-      await storage.createRefreshLog({
-        triggeredBy: req.user?.id || null,
-        status: refreshResults.every(r => r.status === "success") ? "success" : "partial"
-      });
-
-      const refreshActiveNamesNonSSE = refreshResults.filter(r => r.status === "success").map(r => r.projectName);
-      if (refreshActiveNamesNonSSE.length > 0) await storage.markProjectsActive(refreshActiveNamesNonSSE);
-      
-      const endTime = Date.now();
-      const successCount = refreshResults.filter(r => r.status === "success").length;
-      const totalRecords = refreshResults.reduce((sum, r) => sum + (r.recordsProcessed || 0), 0);
-      
-      res.json({
-        success: true,
-        message: `Refreshed ${successCount}/${projectFiles.size} project(s)`,
-        projectsRefreshed: successCount,
-        projectsTotal: projectFiles.size,
-        totalRecordsProcessed: totalRecords,
-        results: refreshResults,
-        timestamps: {
-          started: new Date(startTime).toISOString(),
-          completed: new Date(endTime).toISOString(),
-          durationMs: endTime - startTime
-        }
-      });
-      
-    } catch (error: any) {
-      console.error("Data refresh error:", error);
-      res.status(500).json({ 
-        success: false,
-        error: "refresh_failed",
-        code: "REFRESH_DATA_ERROR",
-        timestamps: {
-          started: new Date(startTime).toISOString(),
-          completed: new Date().toISOString(),
-          durationMs: Date.now() - startTime
-        }
-      });
-    }
+  // POST /api/admin/refresh-data — DEPRECATED (returns 410 Gone).
+  //
+  // Same dedup-bypass anti-pattern as /api/upload and /api/reprocess-all
+  // (already 410'd in admin-routes.ts). Re-processed every stored tracker
+  // file by deleting and re-inserting program/plan/cashflow/finance rows
+  // via `storage.createManyProjectPlans` (adapter façade over work_items)
+  // — bypassing Smart Import v2's hash dedup, 3-way merge, and conflict
+  // detection. Both SSE and non-SSE branches had the same bypass.
+  // Removed 2026-05-15. See docs/smart-import-v2-task-dedup-audit.md.
+  app.post("/api/admin/refresh-data", requireAuth, requireAdmin, async (_req, res) => {
+    res.status(410).json({
+      error: "endpoint_deprecated",
+      message: "POST /api/admin/refresh-data was removed because it bypasses Smart Import v2 dedup guards.",
+      use: "POST /api/smart-import/upload per project",
+    });
   });
 
   // Clear all data — wipes every project, cost line, revenue line, and task.
@@ -938,43 +278,16 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
           fileDate = stat.mtime.toISOString();
           
           const fileBuffer = fs.readFileSync(filePath);
+          // We parse the workbook once so we can extract the resolved project
+          // name for upload registration, but the previous full-replace write
+          // paths (program/plan/cashflow/finance delete-and-reinsert + a
+          // direct `db.insert(workItems)` block) were removed 2026-05-15:
+          // they bypassed every Smart Import v2 dedup guard. scan-folder is
+          // now a discovery-and-stage operation; operators must run Smart
+          // Import v2 per project to commit data. See
+          // docs/smart-import-v2-task-dedup-audit.md.
           const parseResult = await parseTrackerFile(fileBuffer, fileName);
-          await applyFontColors(parseResult.expenses, fileBuffer);
-          
-          await storage.transaction(async (txStorage) => {
-            // Delete existing data for this project
-            await txStorage.deleteProgramExpensesByProject(parseResult.projectName);
-            await txStorage.deleteProgramInflowsByProject(parseResult.projectName);
-            await txStorage.deleteProjectPlansByProject(parseResult.projectName);
-            await txStorage.deleteCashflowPointsByProject(parseResult.projectName);
-            await txStorage.deleteFinanceRevenueMonthlyByProject(parseResult.projectName);
-            await txStorage.deleteFinanceCosMonthlyByProject(parseResult.projectName);
-            
-            if (parseResult.projectInfo) {
-              safeguardImportProjectInfo(parseResult.projectInfo);
-              await txStorage.upsertProjectInfo(parseResult.projectInfo);
-            }
-            if (parseResult.expenses.length > 0) {
-              await txStorage.createManyProgramExpenses(parseResult.expenses);
-            }
-            if (parseResult.inflows.length > 0) {
-              await txStorage.createManyProgramInflows(parseResult.inflows);
-            }
-            if (parseResult.planItems.length > 0) {
-              await txStorage.createManyProjectPlans(parseResult.planItems);
-            }
-            if (parseResult.cashflowPoints.length > 0) {
-              await txStorage.createManyCashflowPoints(parseResult.cashflowPoints);
-            }
-            if (parseResult.financeRevenueMonthly.length > 0) {
-              await txStorage.createManyFinanceRevenueMonthly(parseResult.financeRevenueMonthly);
-            }
-            if (parseResult.financeCosMonthly.length > 0) {
-              await txStorage.createManyFinanceCosMonthly(parseResult.financeCosMonthly);
-            }
-          });
-          
-          // Also save a copy to uploads dir and record in upload_metadata
+
           const destPath = path.join(uploadDir, `${Date.now()}_${fileName}`);
           fs.copyFileSync(filePath, destPath);
           await storage.createUpload({
@@ -982,75 +295,12 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
             filePath: destPath,
           });
 
-          try {
-            const preview = await runSmartImportPreview(fileBuffer, fileName);
-            const norm = preview.normalization;
-            const resolvedProjectName = parseResult.projectName;
-            const [existingProject] = await db.select({ id: projectInfo.id }).from(projectInfo)
-              .where(eq(projectInfo.projectName, resolvedProjectName));
-            const pId = existingProject?.id || null;
-
-            if (pId) {
-              await db.delete(workItems).where(
-                and(
-                  eq(workItems.projectId, pId),
-                  eq(workItems.workstream, 'PM' as any),
-                  eq(workItems.source, 'SMART_IMPORT' as any)
-                )
-              );
-            }
-
-            const dummyRun = await db.insert(smartImportRuns).values({
-              fileName,
-              projectName: resolvedProjectName,
-              projectId: pId,
-              uploadedBy: req.user?.id || null,
-              status: "committed",
-              committedAt: new Date(),
-              committedBy: req.user?.id || null,
-              summaryJson: {} as any,
-            }).returning();
-            const importRunId = dummyRun[0].id;
-
-            if (norm.planTasks.length > 0) {
-              await db.insert(workItems).values(norm.planTasks.map((t: any, idx: number) => ({
-                projectId: pId,
-                workstream: 'PM' as any,
-                source: 'SMART_IMPORT' as any,
-                title: t.taskName,
-                wbsCode: t.taskNo || null,
-                type: t.phase,
-                startDate: t.startDate,
-                endDate: t.endDate,
-                duration: t.durationDays,
-                actualStart: t.actualStartDate || null,
-                actualEnd: t.actualEndDate || null,
-                actualDuration: t.actualDurationDays || null,
-                ownerName: t.owner,
-                status: t.status || 'Not Started',
-                percentComplete: t.pctComplete,
-                description: t.comment,
-                sourceSheet: t.sourceSheet,
-                sourceRow: t.sourceRow,
-                importRunId,
-                externalRef: `${resolvedProjectName}::PLAN::${t.taskNo || idx}::${importRunId}`,
-              })));
-            }
-            console.log(`[FolderScan] Populated work_items with actual dates for "${resolvedProjectName}"`);
-          } catch (normErr: any) {
-            console.error("[FolderScan] Non-blocking work_items population failed:", normErr.message);
-          }
-          
-          const recordsProcessed = parseResult.expensesParsed + parseResult.inflowsParsed + 
-            parseResult.planParsed + parseResult.cashflowParsed + 
-            parseResult.financeRevenueParsed + parseResult.financeCosParsed;
-          
           results.push({
             fileName,
             projectName: parseResult.projectName,
             status: "success",
-            message: `Processed successfully`,
-            recordsProcessed,
+            message: "Staged for Smart Import v2 — run /api/smart-import/upload to commit",
+            recordsProcessed: 0,
             fileDate
           });
           
@@ -1412,4 +662,17 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
   //   POST     /api/admin/import/{run,retry-failed,single}
   //   GET      /api/admin/import/runs[/:id]
   // is server/departments/admin-routes.ts.
+  //
+  // 2026-05-15 (Smart Import v2 task-dedup audit) — additional cleanup:
+  //   • `POST /api/upload` and `POST /api/reprocess-all` removed here.
+  //     The live copies in admin-routes.ts are now `410 Gone` responders.
+  //   • `POST /api/admin/refresh-data` replaced with a `410 Gone`. It used
+  //     to re-parse every stored tracker and call
+  //     `storage.createManyProjectPlans` / `deleteProjectPlansByProject`,
+  //     bypassing every v2 dedup guard.
+  //   • `POST /api/admin/scan-folder` kept, but its delete-and-reinsert
+  //     blocks (including a direct `db.insert(workItems)`) were removed.
+  //     The endpoint now only stages discovered Excel files — operators
+  //     must run `POST /api/smart-import/upload` to commit them.
+  // See docs/smart-import-v2-task-dedup-audit.md for the full trace.
 }
