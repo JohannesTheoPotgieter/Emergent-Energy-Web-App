@@ -1166,7 +1166,12 @@ html[data-layout-mode="desktop"] [data-shadcn-dialog][data-state="open"] {
   left: 50% !important;
   right: auto !important;
   bottom: auto !important;
-  transform: translate(-50%, -50%) !important;
+  /* Tailwind v4 emits the centering offset via the modern `translate`
+     CSS property. `transform` and `translate` are independent properties
+     the browser composes, so setting only `transform` here would stack
+     on top of Tailwind's `translate` and push the dialog off-screen. */
+  transform: none !important;
+  translate: -50% -50% !important;
   width: min(calc(100vw - 2rem), 42rem) !important;
   max-width: min(calc(100vw - 2rem), 42rem) !important;
   height: auto !important;
@@ -1198,7 +1203,9 @@ html[data-layout-mode="mobile"] [data-shadcn-dialog][data-state="open"] {
   left: 0 !important;
   right: 0 !important;
   bottom: 0 !important;
+  /* Reset both legacy and modern transform properties so neither stacks. */
   transform: none !important;
+  translate: none !important;
   width: 100vw !important;
   max-width: 100vw !important;
   max-height: 92dvh !important;
