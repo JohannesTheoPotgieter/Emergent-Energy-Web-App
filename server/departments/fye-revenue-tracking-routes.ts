@@ -11,12 +11,19 @@
  * Field-to-source mapping:
  * ─────────────────────────────────────────────────────────────────
  * DASHBOARD:
- *   Budget Revenue (monthly)   → fye_budgets (budgetType="revenue") [editable by finance]
- *   Budget COS (monthly)       → fye_budgets (budgetType="cos") [editable by finance]
+ *   Budget Revenue (monthly)   → bucketCostLinesForRecognition.revenueAmount on normalized_cost_lines
+ *                                  [same source as /api/revenue-tracker monthly totalRevenue — auto-derived]
+ *   Budget COS (monthly)       → bucketCostLinesForRecognition.amount on normalized_cost_lines
+ *                                  [same source as /api/cos-tracker monthly totalCost — auto-derived]
  *   Actual Revenue (monthly)   → FinanceLineLevelRepository.perLineRevenue [same canonical source as finance trackers]
  *   Actual COS (monthly)       → FinanceLineLevelRepository.actualTotal [same canonical source as finance trackers]
- *   Forecast Revenue           → fye_budgets for future months (budget as forecast proxy)
+ *   Forecast Revenue           → planned milestones; falls back to Budget for empty forecast months
  *   GP                         → Revenue - COS (derived)
+ *
+ *   Note: the fye_budgets table still exists and is editable via the budget endpoints below,
+ *   but the monthly Budget Revenue / Budget COS rows on the dashboard are no longer sourced
+ *   from it — they auto-derive from cost-line recognition so the Budget rows match the
+ *   COS Tracker and Revenue Tracker monthly totals exactly.
  *
  * FYE DETAIL:
  *   Project Name               → project_info.projectName [read-only]
@@ -69,6 +76,7 @@ import {
   currentMonthKey,
 } from '../lib/calculations/financeUtils';
 import { isCanonicalCosRealised } from '../lib/finance/cos-realisation';
+import { bucketCostLinesForRecognition } from '../lib/finance/recognition-bucketing';
 import { getCosEffectiveDateAndSource } from '../lib/expense-row-selector';
 import { parseIntParam } from '../lib/req-params';
 import { monthKeyFromDate, resolveFinanceYearScope } from '../lib/finance-year-scope';
@@ -504,29 +512,9 @@ router.get(
       const fye = fyScope.fy ?? getCurrentFye();
       let monthKeys = allData ? [] : getFyeMonthKeys(fye);
 
-      // 1. Budget data from fye_budgets (may be empty if not yet entered)
-      const budgetRevByMonth: Record<string, number> = {};
-      const budgetCosByMonth: Record<string, number> = {};
-      let budgetRows: Array<{ monthKey: string; budgetType: string; amount: string | null }> = [];
-      try {
-        budgetRows = await fyeTrackingRepository.listBudgetTotalsByFye(
-          allData ? null : String(fye),
-        );
-
-        for (const b of budgetRows) {
-          const amt = safeNum(b.amount);
-          if (b.budgetType === 'revenue') {
-            budgetRevByMonth[b.monthKey] = (budgetRevByMonth[b.monthKey] || 0) + amt;
-          } else if (b.budgetType === 'cos') {
-            budgetCosByMonth[b.monthKey] = (budgetCosByMonth[b.monthKey] || 0) + amt;
-          }
-        }
-      } catch {
-        // fye_budgets table may not exist yet
-      }
-
-      // 2. Load inflows + expenses + COS overrides for COS-ratio revenue allocation
-      //    Canonical source: normalized_revenue_lines + normalized_cost_lines.
+      // 1. Load inflows + expenses + COS overrides.
+      //    Canonical source: normalized_revenue_lines + normalized_cost_lines —
+      //    the SAME source the COS Tracker and Revenue Tracker screens read from.
       //    computedForecast* fields are v1-legacy and not populated by the v2 pipeline — return NULL.
       const [revLineRows, costLineRows, cosOverrideMap] = await Promise.all([
         financeInflowsRepository.listAllActiveRevenueLines(),
@@ -574,7 +562,6 @@ router.get(
       });
       if (allData) {
         monthKeys = sortedMonthKeys([
-          ...budgetRows.map((row) => row.monthKey),
           ...allInflows.flatMap((row) => [
             monthKeyFromDate(row.plannedPaymentDate),
             monthKeyFromDate(row.invoiceRaisedDate),
@@ -598,6 +585,22 @@ router.get(
       const now = new Date();
       const currentMk = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
       const lastActualMk = getPreviousMonthKey(currentMk);
+
+      // 2. Monthly Budget Revenue + Budget COS — auto-derived from cost-line
+      //    recognition. This is the SAME source as /api/revenue-tracker and
+      //    /api/cos-tracker, so the Budget rows on this screen match those
+      //    trackers' monthly totals exactly. The fye_budgets table is no
+      //    longer read for the dashboard monthly rows (its edit API is
+      //    preserved for back-compat but does not affect this output).
+      const budgetRevByMonth: Record<string, number> = {};
+      const budgetCosByMonth: Record<string, number> = {};
+      for (const b of bucketCostLinesForRecognition(allExpenses, { currentMonthKey: currentMk })) {
+        // Match revenueTrackerHandler — skip orphan lines with no project name so
+        // FYE Budget Revenue equals the Revenue Tracker monthly totalRevenue exactly.
+        if (!b.projectName) continue;
+        budgetRevByMonth[b.monthKey] = (budgetRevByMonth[b.monthKey] || 0) + b.revenueAmount;
+        budgetCosByMonth[b.monthKey] = (budgetCosByMonth[b.monthKey] || 0) + b.amount;
+      }
 
       // 6. Build 3-month forecast from planned data in the system (milestones/expenses, NOT budget)
       // Forecast window starts from the current month (since it's incomplete)
