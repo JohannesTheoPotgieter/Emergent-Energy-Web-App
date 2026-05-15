@@ -148,3 +148,113 @@ export function scheduleRagFromVariance(
   if (delta < -5) return "amber";
   return "green";
 }
+
+/**
+ * Canonical Actual % / Expected % per project.
+ *
+ * One formula across the Plan tab, the Execution Dashboard, the All
+ * Projects table, and the lifecycle board. Before this helper existed
+ * each surface re-derived the percentages with its own loop — the Plan
+ * tab used duration-weighted across *all* tasks, the dashboards used
+ * simple-average across leaf tasks — so the same project row showed
+ * "12% / 14%" on one page and "9% / 11%" on another.
+ *
+ * Rules (locked 2026-05-15):
+ *   - Filter out section-header rows ("no.", "no", "#").
+ *   - Only count LEAF tasks (rows that no other task points at via
+ *     parentRowNumber, indent inheritance, or WBS prefix). Phase parents
+ *     are summary rollups, not work, so including them would weight
+ *     their children twice.
+ *   - Weight each leaf by `max(1, durationDays)` — schedule weight, not
+ *     headcount. A 30-day task counts 30× a 1-day task.
+ *   - Stored `actualPctComplete` / `expectedPctComplete` arrive on a
+ *     0..1 scale (post-2026-05-15 normalisation). `pctTo100` accepts
+ *     both 0..1 and 0..100 stragglers.
+ *   - When `expectedPctComplete` is missing on a row, fall back to
+ *     `expectedPctFromDates(start, end, today)` so the formula doesn't
+ *     bias toward zero whenever the workbook leaves the column blank.
+ */
+export interface ProgressTaskInput {
+  taskNo: string | null;
+  rowNumber: number | null;
+  parentRowNumber: number | null;
+  indentLevel: number | null;
+  durationDays: number | null;
+  actualPctComplete: number | null;
+  expectedPctComplete: number | null;
+  startDate: string | null;
+  endDate: string | null;
+  actualStartDate: string | null;
+  actualEndDate: string | null;
+}
+
+export interface ProjectProgress {
+  actualPct: number;
+  expectedPct: number;
+  variancePct: number;
+  leafCount: number;
+}
+
+const SECTION_HEADER_TASKNOS = new Set(["no.", "no", "#"]);
+
+function isSectionHeader(t: ProgressTaskInput): boolean {
+  const tn = (t.taskNo || "").toString().toLowerCase().trim();
+  return SECTION_HEADER_TASKNOS.has(tn);
+}
+
+function collectParentRowNumbers(tasks: ProgressTaskInput[]): Set<number> {
+  const parents = new Set<number>();
+  for (const t of tasks) {
+    if (t.parentRowNumber != null) parents.add(t.parentRowNumber);
+  }
+  // Indent inheritance: a row is a parent of the row immediately below
+  // it when the next row's indent is deeper. Matches the legacy logic in
+  // program-dashboard-repository.ts.
+  for (let i = 0; i < tasks.length - 1; i++) {
+    const currIndent = tasks[i].indentLevel ?? 0;
+    const nextIndent = tasks[i + 1].indentLevel ?? 0;
+    if (nextIndent > currIndent && tasks[i].rowNumber != null) {
+      parents.add(tasks[i].rowNumber as number);
+    }
+  }
+  return parents;
+}
+
+export function computeProjectProgress(
+  tasks: ProgressTaskInput[],
+  todayIso: string,
+): ProjectProgress {
+  const filtered = tasks.filter((t) => !isSectionHeader(t));
+  const parentRows = collectParentRowNumbers(filtered);
+  const leaves = filtered.filter(
+    (t) => t.rowNumber == null || !parentRows.has(t.rowNumber),
+  );
+  const items = leaves.length > 0 ? leaves : filtered;
+
+  let actualWeightedSum = 0;
+  let expectedWeightedSum = 0;
+  let totalWeight = 0;
+  for (const t of items) {
+    const weight = Math.max(1, t.durationDays ?? 1);
+    const actual100 = pctTo100(t.actualPctComplete) ?? 0;
+    let expected100 = pctTo100(t.expectedPctComplete);
+    if (expected100 == null) {
+      const s = t.actualStartDate || t.startDate;
+      const e = t.actualEndDate || t.endDate;
+      const fraction = expectedPctFromDates(s, e, todayIso);
+      expected100 = fraction == null ? 0 : fraction * 100;
+    }
+    actualWeightedSum += actual100 * weight;
+    expectedWeightedSum += expected100 * weight;
+    totalWeight += weight;
+  }
+
+  const actualPct = totalWeight > 0 ? Math.round(actualWeightedSum / totalWeight) : 0;
+  const expectedPct = totalWeight > 0 ? Math.round(expectedWeightedSum / totalWeight) : 0;
+  return {
+    actualPct,
+    expectedPct,
+    variancePct: actualPct - expectedPct,
+    leafCount: items.length,
+  };
+}

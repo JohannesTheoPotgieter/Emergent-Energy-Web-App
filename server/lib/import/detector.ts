@@ -35,6 +35,7 @@ export interface DetectionResult {
     pdHandoverDate: string | null;
     constructionStartDate: string | null;
     commissioningDate: string | null;
+    practicalCompletionDate: string | null;
     omHandoverDate: string | null;
     clientHandoverDate: string | null;
   } | null;
@@ -458,8 +459,12 @@ function extractProjectInfo(
   const pdHandoverDate = findLabeledValue(["pd handover", "handover date", "design handover"], "date");
   const constructionStartDate = findLabeledValue(["construction start", "construction commencement", "site start"], "date");
   const commissioningDate = findLabeledValue(["commissioning", "commissioning date"], "date");
+  // Practical Completion is a distinct contractual milestone — own field,
+  // not aliased into Client Handover. Stored on
+  // project_execution_state.practical_completion_actual via the importer.
+  const practicalCompletionDate = findLabeledValue(["practical completion"], "date");
   const omHandoverDate = findLabeledValue(["o&m handover", "om handover", "o & m handover", "handover to mam", "mam handover"], "date");
-  const clientHandoverDate = findLabeledValue(["client handover", "final handover", "practical completion"], "date");
+  const clientHandoverDate = findLabeledValue(["client handover", "final handover"], "date");
 
   return {
     name,
@@ -471,6 +476,7 @@ function extractProjectInfo(
     pdHandoverDate,
     constructionStartDate,
     commissioningDate,
+    practicalCompletionDate,
     omHandoverDate,
     clientHandoverDate,
   };
@@ -481,7 +487,7 @@ function deriveKeyDatesFromPlan(
   dataStartRow: number,
   dataEndRow: number,
   headers: { colIndex: number; normalizedHeader: string }[]
-): Partial<Record<"constructionStartDate" | "commissioningDate" | "omHandoverDate" | "clientHandoverDate" | "pdHandoverDate", string>> {
+): Partial<Record<"constructionStartDate" | "commissioningDate" | "practicalCompletionDate" | "omHandoverDate" | "clientHandoverDate" | "pdHandoverDate", string>> {
   const result: Record<string, string | null> = {};
 
   const taskCol = headers.find(h =>
@@ -502,8 +508,9 @@ function deriveKeyDatesFromPlan(
   const milestonePatterns: { key: string; patterns: string[]; useEnd: boolean }[] = [
     { key: "constructionStartDate", patterns: ["site establishment", "construction start", "construction commencement"], useEnd: false },
     { key: "commissioningDate", patterns: ["commissioning"], useEnd: false },
+    { key: "practicalCompletionDate", patterns: ["practical completion"], useEnd: true },
     { key: "omHandoverDate", patterns: ["o&m handover", "om handover", "o & m handover", "handover to matriarch", "handover to o&m", "handover to mam", "mam handover"], useEnd: false },
-    { key: "clientHandoverDate", patterns: ["handover to client", "client handover", "practical completion", "final handover"], useEnd: false },
+    { key: "clientHandoverDate", patterns: ["handover to client", "client handover", "final handover"], useEnd: false },
     { key: "pdHandoverDate", patterns: ["project charter handover", "pd handover", "design handover", "handover documentation"], useEnd: false },
   ];
 

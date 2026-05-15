@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { storage } from "../storage";
 import { db } from "../db";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
-import { projectInfo, workItems, workItemAssignments, notifications } from "@shared/schema";
+import { projectInfo, projectExecutionState, workItems, workItemAssignments, notifications } from "@shared/schema";
 import { logAuditFromReq } from "../audit-logger";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
@@ -257,11 +257,21 @@ export function registerPlanningTasksRoutes(app: Express) {
           const filteredCanonical = canonicalTasks.filter((ct: any) => {
             const ws = ct.workstream || "PM";
             if (ws === "ENG" || ws === "QUALITY") return true;
-            if (ct.isMilestone) return true;
             const hasWbs = ct.taskNo && String(ct.taskNo).trim().length > 0;
-            const hasStart = ct.startDate && String(ct.startDate).trim().length > 0;
-            const hasEnd = ct.endDate && String(ct.endDate).trim().length > 0;
-            if (!hasWbs && !hasStart && !hasEnd) return false;
+            const hasActualStart = !!ct.actualStartDate;
+            const hasActualEnd = !!ct.actualEndDate;
+            // Milestones still pass — but only with a WBS code, matching the
+            // BLANK_OUTLINE_MILESTONE preflight warning at
+            // preflight-validator.ts:123. A milestone without a WBS is the
+            // exact shape the secondary "summary" blocks in the workbook
+            // produce (phantom rows after Handover to Matriarch).
+            if (ct.isMilestone && hasWbs) return true;
+            if (!hasWbs) return false;
+            // Project-261 phantom rows: secondary phase-summary blocks in
+            // the source workbook inherit planned dates but carry no actuals.
+            // Drop them at read-time so they never render even if a legacy
+            // import left them in work_items.
+            if (!hasActualStart && !hasActualEnd) return false;
             return true;
           });
 
@@ -436,7 +446,12 @@ export function registerPlanningTasksRoutes(app: Express) {
         }
       }
 
-      if (baselineTasks.length === 0) {
+      // Legacy fallback to the old project_plan table. Only fire when
+      // work_items is genuinely disabled — otherwise a canonical project
+      // whose rows all got filtered out (e.g. by the no-actual-dates rule
+      // above) would silently merge stale legacy rows back in, which is
+      // how project 261 ended up with phantom phase-summary rows.
+      if (!useCanonical && baselineTasks.length === 0) {
         const trackerName = projectName.endsWith("_Tracker") ? projectName : projectName + "_Tracker";
 
         const [allOperationalTasks, planTasksDirect, planTasksTracker] = await Promise.all([
@@ -1637,16 +1652,36 @@ export function registerPlanningTasksRoutes(app: Express) {
       planTasks = planTasksDirect.length > 0 ? planTasksDirect : planTasksTracker;
     }
 
+    // Practical Completion is the only key date that does NOT come from a
+    // task-name pattern in the plan. The importer captures it from the
+    // workbook's project-info block (detector.ts) and stores it on
+    // project_execution_state.practical_completion_actual/_target. Reading
+    // it here keeps the pill independent of any "commissioning" task end
+    // date, which is otherwise the nearest substring match.
+    let practicalCompletionActualPersisted: string | null = null;
+    let practicalCompletionTargetPersisted: string | null = null;
+    if (projectId) {
+      const [pcRow] = await db
+        .select({
+          target: projectExecutionState.practicalCompletionTarget,
+          actual: projectExecutionState.practicalCompletionActual,
+        })
+        .from(projectExecutionState)
+        .where(eq(projectExecutionState.projectId, projectId))
+        .limit(1);
+      practicalCompletionTargetPersisted = pcRow?.target ? String(pcRow.target).substring(0, 10) : null;
+      practicalCompletionActualPersisted = pcRow?.actual ? String(pcRow.actual).substring(0, 10) : null;
+    }
+
     const autoMappings = [
       { keyDateName: "PD Handover", patterns: ['bd handover', 'project charter handover'], dateField: 'actualEnd' as const, sortOrder: 1 },
       { keyDateName: "Construction Start", patterns: ['site establishment'], dateField: 'actualStart' as const, sortOrder: 2 },
       { keyDateName: "Commissioning", patterns: ['commissioning'], dateField: 'actualEnd' as const, sortOrder: 3 },
-      { keyDateName: "Practical Completion", patterns: ['practical completion'], dateField: 'actualEnd' as const, sortOrder: 4 },
       { keyDateName: "O&M Handover", patterns: ['handover to matriarch'], dateField: 'actualEnd' as const, sortOrder: 5 },
       { keyDateName: "Client Handover", patterns: ['handover to client'], dateField: 'actualEnd' as const, sortOrder: 6 },
     ];
 
-    return autoMappings.map(mapping => {
+    const taskMatched = autoMappings.map(mapping => {
       let matchedTask: any = null;
       let effectiveDate: string | null = null;
 
@@ -1694,6 +1729,24 @@ export function registerPlanningTasksRoutes(app: Express) {
         source: 'auto',
       };
     });
+
+    const practicalCompletionEntry = {
+      id: 4,
+      keyDateName: "Practical Completion",
+      sourceTaskNameMatch: "project_execution_state.practical_completion",
+      dateField: 'dueDate',
+      sortOrder: 4,
+      matchedTaskId: null as number | null,
+      matchedTaskTitle: null as string | null,
+      matchedTaskNumber: null as string | null,
+      plannedDate: practicalCompletionTargetPersisted,
+      actualDate: practicalCompletionActualPersisted,
+      effectiveDate: practicalCompletionActualPersisted || practicalCompletionTargetPersisted,
+      mappingValid: !!(practicalCompletionActualPersisted || practicalCompletionTargetPersisted),
+      source: 'project',
+    };
+
+    return [...taskMatched, practicalCompletionEntry].sort((a, b) => a.sortOrder - b.sortOrder);
   }
 
   app.get("/api/key-dates/by-id/:projectId", requireAuth, async (req: Request, res: Response) => {

@@ -202,10 +202,13 @@ describe("KPI readers route through the shared helpers, not inlined math", () =>
     expect(repo).not.toMatch(/const expected = Number\(t\.expected\);\s*\n\s*const actual = Number\(t\.actual\);/);
   });
 
-  it("program-dashboard-repository.ts uses expectedPctFromDates / pctTo100", () => {
+  it("program-dashboard-repository.ts routes through computeProjectProgress", () => {
     const repo = read("server/repositories/program-dashboard-repository.ts");
-    expect(repo).toContain("expectedPctFromDates");
-    expect(repo).toContain("pctTo100");
+    // After 2026-05-15 the per-project Actual % / Expected % goes through
+    // the single canonical helper so this dashboard, the Plan tab pill,
+    // and the lifecycle board all show the same number for the same row.
+    expect(repo).toContain("computeProjectProgress");
+    expect(repo).toContain('from "../lib/kpi-formulas"');
     // The pre-fix inline calendar-day arithmetic must be gone.
     expect(repo).not.toMatch(/\(eMs - sMs\) \/ 86400000/);
     expect(repo).not.toMatch(/todayMs - sMs/);

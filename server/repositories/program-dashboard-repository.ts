@@ -25,7 +25,7 @@ import {
   projectExecutionState,
 } from "@shared/schema";
 import { getAllPMWorkItemsAsProjectPlan } from "../work-items-adapter";
-import { expectedPctFromDates, pctTo100 } from "../lib/kpi-formulas";
+import { computeProjectProgress, pctTo100 } from "../lib/kpi-formulas";
 import { isDateBlack } from "../lib/calculations/stateClassifier";
 import { isCosRealised as isCosRealisedShared } from "../lib/calculations/financeUtils";
 import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
@@ -284,65 +284,34 @@ export async function getProgramDashboardData(
     planTasksByProjectId.get(proj.id)!.push(t);
   }
 
-  // Compute leaf-task simple-average progress per project (matching UnifiedPlanTab)
-  const todayMs = new Date(today).getTime();
+  // Per-project Actual % / Expected % via the canonical formula in
+  // server/lib/kpi-formulas.ts. The Plan tab pill values, this dashboard,
+  // and the All Projects table all funnel through the same helper so the
+  // same project row reports the same numbers everywhere.
   for (const [projId, tasks] of planTasksByProjectId) {
     const row = rowsByProject.get(projId);
     if (!row) continue;
 
-    const SECTION_HEADERS = ['no.', 'no', '#'];
-    const filtered = tasks.filter((t: any) => {
-      const tn = (t.taskNo || '').toString().toLowerCase().trim();
-      return !SECTION_HEADERS.includes(tn);
-    });
-
-    const parentRows = new Set<number>();
-    for (const t of filtered) {
-      if (t.parentRowNumber) parentRows.add(t.parentRowNumber);
-    }
-    for (let i = 0; i < filtered.length - 1; i++) {
-      const currIndent = filtered[i].indentLevel ?? 0;
-      const nextIndent = filtered[i + 1].indentLevel ?? 0;
-      if (nextIndent > currIndent && filtered[i].rowNumber) {
-        parentRows.add(filtered[i].rowNumber);
-      }
-    }
-    const leafTasks = filtered.filter((t: any) => !t.rowNumber || !parentRows.has(t.rowNumber));
-    const items = leafTasks.length > 0 ? leafTasks : filtered;
-
-    let actualSum = 0;
-    let expSum = 0;
-    let expCount = 0;
-    for (const t of items) {
-      // pctTo100 handles the canonical 0..1 stored values plus any legacy
-      // 0..100 stragglers; same helper that the Plan tab / report use.
-      const actualPct = pctTo100(t.actualPctComplete);
-      if (actualPct != null) actualSum += actualPct;
-      if (t.expectedPctComplete != null) {
-        const ep = pctTo100(t.expectedPctComplete);
-        if (ep != null) {
-          expSum += ep;
-          expCount++;
-        }
-      } else {
-        // Date-derived fallback now uses the canonical SA-working-days
-        // formula in server/lib/kpi-formulas.ts so this matches what
-        // the Plan tab computes for the same row. Previously this branch
-        // used calendar days — see docs/smart-import-v2-task-dedup-audit.md
-        // (Fix 4b).
-        const s = (t.actualStart || t.startDate || '').slice(0,10);
-        const e = (t.actualEnd || t.endDate || '').slice(0,10);
-        const expFraction = expectedPctFromDates(s, e, today);
-        if (expFraction != null) {
-          expSum += expFraction * 100;
-          expCount++;
-        }
-      }
-    }
-    row._taskActual = actualSum;
-    row._taskExpected = expSum;
-    row._taskWeight = items.length;
-    row._expCount = expCount;
+    const progress = computeProjectProgress(
+      tasks.map((t: any) => ({
+        taskNo: t.taskNo ?? null,
+        rowNumber: t.rowNumber ?? null,
+        parentRowNumber: t.parentRowNumber ?? null,
+        indentLevel: t.indentLevel ?? null,
+        durationDays: t.durationDays ?? null,
+        actualPctComplete: t.actualPctComplete ?? null,
+        expectedPctComplete: t.expectedPctComplete ?? null,
+        startDate: t.startDate ?? null,
+        endDate: t.endDate ?? null,
+        actualStartDate: t.actualStart ?? null,
+        actualEndDate: t.actualEnd ?? null,
+      })),
+      today,
+    );
+    row._taskActual = progress.actualPct;
+    row._taskExpected = progress.expectedPct;
+    row._taskWeight = progress.leafCount > 0 ? 1 : 0;
+    row._expCount = progress.leafCount > 0 ? 1 : 0;
   }
 
   for (const r of revenueRows) {

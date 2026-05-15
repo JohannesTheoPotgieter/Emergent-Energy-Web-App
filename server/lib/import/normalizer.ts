@@ -836,6 +836,13 @@ function extractPlanTasks(
     const actualStartDate = actualStartCol >= 0 ? parseDate(row[actualStartCol]) : null;
     const actualEndDate = actualEndCol >= 0 ? parseDate(row[actualEndCol]) : null;
 
+    // Skip rows that have no actual dates. Project trackers carry secondary
+    // summary / milestone blocks (phase headers re-listed without a WBS) that
+    // otherwise land in work_items and surface as phantom rows on the Plan
+    // tab. The rule "only ingest rows with an actual date" is enforced here
+    // at the import boundary so the DB never gets polluted.
+    if (!actualStartDate && !actualEndDate) continue;
+
     let durationDays: number | null = null;
     if (durationCol >= 0 && row[durationCol] != null) {
       const parsed = parseInt(String(row[durationCol]));
@@ -1864,6 +1871,7 @@ export function normalizeData(
             { name: "PD Handover", date: detection.projectInfo.pdHandoverDate },
             { name: "Construction Start", date: detection.projectInfo.constructionStartDate },
             { name: "Commissioning", date: detection.projectInfo.commissioningDate },
+            { name: "Practical Completion", date: detection.projectInfo.practicalCompletionDate },
             { name: "O&M Handover", date: detection.projectInfo.omHandoverDate },
             { name: "Client Handover", date: detection.projectInfo.clientHandoverDate },
           ];

@@ -40,6 +40,7 @@ import {
 } from "date-fns";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { styleForCell } from "@/lib/tracker-cell-format";
+import { computeProjectProgress } from "@/lib/kpi-formulas";
 import {
   WORKSTREAM_OPTIONS,
   resolveWorkstream,
@@ -1184,9 +1185,36 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     const leafTasks = source.filter(t => !t.isParent && !t.childCount);
     const total = source.length;
     const done = source.filter(t => t.status === "Done").length;
-    const avgPct = leafTasks.length > 0 ? Math.round(leafTasks.reduce((s, t) => s + (t.percentComplete || 0), 0) / leafTasks.length) : 0;
-    const expLeafs = leafTasks.filter(t => t.computedExpectedPct !== null && t.computedExpectedPct !== undefined);
-    const avgExpectedPct = expLeafs.length > 0 ? Math.round(expLeafs.reduce((s, t) => s + (t.computedExpectedPct ?? 0), 0) / expLeafs.length) : null;
+
+    // Canonical Actual % / Expected % — duration-weighted across leaves.
+    // Same helper as server/lib/kpi-formulas.ts so this pill agrees with
+    // the project's row on All Projects and Execution Dashboard.
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const progress = computeProjectProgress(
+      leafTasks.map((t: any) => ({
+        taskNo: t.taskNumber ?? t.taskNo ?? null,
+        rowNumber: t.rowNumber ?? null,
+        parentRowNumber: t.parentRowNumber ?? null,
+        indentLevel: t.indentLevel ?? null,
+        durationDays: t.durationDays ?? t.plannedDurationDays ?? null,
+        actualPctComplete: typeof t.percentComplete === "number"
+          ? (t.percentComplete > 1 ? t.percentComplete / 100 : t.percentComplete)
+          : null,
+        expectedPctComplete: typeof t.computedExpectedPct === "number"
+          ? (t.computedExpectedPct > 1 ? t.computedExpectedPct / 100 : t.computedExpectedPct)
+          : (typeof t.expectedPercentComplete === "number"
+              ? (t.expectedPercentComplete > 1 ? t.expectedPercentComplete / 100 : t.expectedPercentComplete)
+              : null),
+        startDate: t.startDate ?? null,
+        endDate: t.dueDate ?? t.endDate ?? null,
+        actualStartDate: t.actualStartDate ?? null,
+        actualEndDate: t.actualEndDate ?? null,
+      })),
+      todayIso,
+    );
+    const avgPct = progress.actualPct;
+    const expLeafsCount = leafTasks.filter(t => t.computedExpectedPct !== null && t.computedExpectedPct !== undefined).length;
+    const avgExpectedPct = expLeafsCount > 0 || progress.leafCount > 0 ? progress.expectedPct : null;
 
     let totalProjectDays: number | null = null;
     let elapsedDays: number | null = null;
