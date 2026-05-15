@@ -3936,6 +3936,103 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
     }
   };
 
+  // ── Create-new override for duplicate_project_candidate failures ──────
+  // When the smart-import duplicate guard blocks a row, the operator can
+  // click "Create new" to re-commit that same run with confirmNewProject:
+  // true, which tells the server to skip the similarity check and create
+  // a fresh project_info row.
+  const [creatingNewProject, setCreatingNewProject] = useState(false);
+
+  const recommitAsNewProject = async (runId: number, projectName: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/smart-import/${runId}/commit`, {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          forceCommit: true,
+          acknowledgeEqualDate: true,
+          forceRecreate: true,
+          acknowledgeManualEdits: true,
+          confirmNewProject: true,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCommitResults((prev) =>
+          prev.map((r) =>
+            r.runId === runId
+              ? { ...r, status: "committed" as const, counts: data.counts, error: undefined, conflicts: undefined }
+              : r,
+          ),
+        );
+        return true;
+      }
+      const err = await res.json().catch(() => ({ error: "Commit failed" }));
+      setCommitResults((prev) =>
+        prev.map((r) =>
+          r.runId === runId
+            ? { ...r, status: "failed" as const, error: err.error || "Commit failed" }
+            : r,
+        ),
+      );
+      toast({
+        title: `Could not create "${projectName}"`,
+        description: err.message || err.error || "Commit failed",
+        variant: "destructive",
+      });
+      return false;
+    } catch {
+      toast({
+        title: "Network error",
+        description: `Could not create "${projectName}".`,
+        variant: "destructive",
+      });
+      return false;
+    }
+  };
+
+  const handleCreateNewProjectForRun = async (runId: number, projectName: string) => {
+    const hit = commitResults.find(
+      (r) => r.runId === runId && r.status === "failed" && r.error === "duplicate_project_candidate",
+    );
+    if (!hit) return;
+    setCreatingNewProject(true);
+    try {
+      const ok = await recommitAsNewProject(hit.runId, hit.projectName);
+      if (ok) {
+        toast({
+          title: "Project created",
+          description: `"${projectName}" was imported as a new project.`,
+        });
+      }
+    } finally {
+      setCreatingNewProject(false);
+    }
+  };
+
+  const handleCreateNewProjectForAllDuplicates = async () => {
+    const targets = commitResults.filter(
+      (r) => r.status === "failed" && r.error === "duplicate_project_candidate",
+    );
+    if (targets.length === 0) return;
+    setCreatingNewProject(true);
+    let created = 0;
+    let failed = 0;
+    try {
+      for (const t of targets) {
+        const ok = await recommitAsNewProject(t.runId, t.projectName);
+        if (ok) created++;
+        else failed++;
+      }
+      toast({
+        title: "Create new complete",
+        description: `${created} created${failed > 0 ? `, ${failed} still failed` : ""}.`,
+      });
+    } finally {
+      setCreatingNewProject(false);
+    }
+  };
+
   if (loading) {
     return (
       <Card className="bg-card rounded-xl shadow-sm">
@@ -4008,6 +4105,7 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
         {commitResults.length > 0 && (
           <SmartImportBulkResultNext
             projects={commitResults.map(r => ({
+              runId: r.runId,
               projectName: r.projectName,
               status: r.status,
               error: r.error ? safeStr(r.error) : undefined,
@@ -4021,6 +4119,9 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
               if (hit) onSwitchToWizard(hit.id);
             }}
             onResolveConflicts={handleOpenConflictResolver}
+            onCreateNewProject={handleCreateNewProjectForRun}
+            onCreateNewProjectAll={handleCreateNewProjectForAllDuplicates}
+            busyCreatingNew={creatingNewProject}
           />
         )}
 
