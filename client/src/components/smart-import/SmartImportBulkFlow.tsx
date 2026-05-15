@@ -77,6 +77,10 @@ export function SmartImportBulkIntro({
 }
 
 export interface BulkResultProject {
+  /** Smart-import run id — uniquely identifies the row even when two
+   *  imports share the same project name. Required for per-row actions
+   *  like "Create new" so the correct run is re-committed. */
+  runId: number;
   projectName: string;
   status: "committed" | "skipped" | "failed" | "conflicts_pending";
   error?: string;
@@ -94,6 +98,22 @@ interface SmartImportBulkResultNextProps {
    * dialog with the per-field decision UI and re-commits the run.
    */
   onResolveConflicts?: (projectName: string) => void;
+  /**
+   * Called when the operator clicks "Create New" on a failed row whose
+   * error is `duplicate_project_candidate`. The parent re-commits the run
+   * with `confirmNewProject: true`, bypassing the duplicate guard.
+   * Keyed by `runId` (not name) so duplicate project names across rows
+   * still resolve to the correct run.
+   */
+  onCreateNewProject?: (runId: number, projectName: string) => void;
+  /**
+   * Called when the operator clicks the top-level "Create New for all
+   * duplicates" button. The parent re-commits every row whose error is
+   * `duplicate_project_candidate` with `confirmNewProject: true`.
+   */
+  onCreateNewProjectAll?: () => void;
+  /** True while a create-new request is in flight. */
+  busyCreatingNew?: boolean;
 }
 
 export function SmartImportBulkResultNext({
@@ -101,8 +121,14 @@ export function SmartImportBulkResultNext({
   onViewProject,
   onRetry,
   onResolveConflicts,
+  onCreateNewProject,
+  onCreateNewProjectAll,
+  busyCreatingNew,
 }: SmartImportBulkResultNextProps) {
   const committed = projects.filter((p) => p.status === "committed");
+  const duplicateFailures = projects.filter(
+    (p) => p.status === "failed" && p.error === "duplicate_project_candidate"
+  );
 
   return (
     <div className="space-y-4" data-testid="bulk-result-next">
@@ -119,6 +145,34 @@ export function SmartImportBulkResultNext({
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {duplicateFailures.length > 0 && onCreateNewProjectAll && (
+        <div
+          className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3"
+          data-testid="bulk-duplicate-banner"
+        >
+          <div className="flex items-start gap-2 min-w-0">
+            <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-amber-900 min-w-0">
+              <div className="font-semibold">
+                {duplicateFailures.length} file{duplicateFailures.length === 1 ? "" : "s"} look like duplicate projects
+              </div>
+              <div className="text-xs text-amber-800/90">
+                If you're sure these are new projects, create them all in one click.
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onCreateNewProjectAll}
+            disabled={busyCreatingNew}
+            data-testid="btn-create-new-all-duplicates"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-60 disabled:cursor-not-allowed px-3 py-1.5 rounded flex-shrink-0"
+          >
+            {busyCreatingNew ? "Creating…" : `Create new for all (${duplicateFailures.length})`}
+          </button>
         </div>
       )}
 
@@ -171,6 +225,17 @@ export function SmartImportBulkResultNext({
                     className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-2 py-1 rounded border border-amber-200"
                   >
                     Resolve conflicts{p.conflictCount ? ` (${p.conflictCount})` : ""}
+                  </button>
+                )}
+                {p.status === "failed" && p.error === "duplicate_project_candidate" && onCreateNewProject && (
+                  <button
+                    type="button"
+                    onClick={() => onCreateNewProject(p.runId, p.projectName)}
+                    disabled={busyCreatingNew}
+                    data-testid={`btn-create-new-project-${idx}`}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 disabled:opacity-60 disabled:cursor-not-allowed px-2 py-1 rounded border border-amber-300"
+                  >
+                    Create new
                   </button>
                 )}
                 {p.status === "failed" && onRetry && (
