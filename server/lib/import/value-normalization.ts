@@ -148,3 +148,37 @@ export function normalizeWithFieldType(val: any, fieldName?: string): string {
   if (t === "date") return normalizeDate(val);
   return normalizeBasic(val);
 }
+
+/**
+ * Coerce a percent-style value to the canonical 0..1 scale.
+ *
+ * Excel cells formatted as percentages give us numbers in 0..1 (e.g. 0.75
+ * for "75%"); cells formatted as plain numbers give us 0..100. The Tracker
+ * uses both conventions across columns, and historically Smart Import
+ * wrote whatever Excel handed back. The downstream readers split: some
+ * assume 0..1 and multiply by 100 (program-dashboard-repository,
+ * kpi-service), others assume 0..100 and compare raw (dashboard-repository
+ * behind-plan widget). The mixed convention produced silent
+ * misclassification — same `work_items` row showing on track on the Plan
+ * tab but behind on the dashboard.
+ *
+ * Canonical scale: **0..1**. This helper makes the contract explicit at
+ * the write boundary so every reader can rely on the same range.
+ *
+ * Rules:
+ *   - null / undefined / NaN / non-numeric strings → null
+ *   - 0..1 (inclusive) → returned as-is
+ *   - >1..100 → divided by 100 (treated as 0..100 percentage)
+ *   - >100 → clamped to 1 (defensive against runaway values)
+ *   - negative → clamped to 0
+ *
+ * See docs/smart-import-v2-task-dedup-audit.md (Fix 4a).
+ */
+export function clampPercent(val: unknown): number | null {
+  const n = tryParseNumeric(val);
+  if (n === null) return null;
+  if (n < 0) return 0;
+  if (n <= 1) return n;
+  if (n <= 100) return n / 100;
+  return 1;
+}

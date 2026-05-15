@@ -1,5 +1,6 @@
 import { toCanonicalEngineeringStageStatus, toCanonicalQualityStatus } from "@shared/status-logic";
 import { computeMarginPct } from "../lib/finance/margin";
+import { expectedPctFromDates } from "../lib/kpi-formulas";
 
 export interface ProjectCompletion {
   actualPct: number;
@@ -28,19 +29,15 @@ export function computeProjectCompletion(plans: any[]): ProjectCompletion {
 
     let exp = p.expectedPctComplete ?? p.expectedProgress ?? null;
     if (exp == null) {
-      const tStart = p.actualStart?.substring(0, 10);
-      const tEnd = p.actualEnd?.substring(0, 10);
-      if (tStart && tEnd && /^\d{4}-\d{2}-\d{2}/.test(tStart) && /^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
-        if (todayStr >= tEnd) exp = 1.0;
-        else if (todayStr <= tStart) exp = 0.0;
-        else {
-          const totalDays = Math.max(1, (new Date(tEnd).getTime() - new Date(tStart).getTime()) / 86400000);
-          const elapsedDays = (new Date(todayStr).getTime() - new Date(tStart).getTime()) / 86400000;
-          exp = Math.min(elapsedDays / totalDays, 1.0);
-        }
-      } else {
-        exp = 0;
-      }
+      // Date-derived fallback uses the canonical SA-working-days formula
+      // (server/lib/kpi-formulas.ts) so this agrees with the Plan tab and
+      // the Program Dashboard for the same row. Previously this branch
+      // used calendar days, which gave a different number every time the
+      // row's date range spanned a weekend or public holiday — see
+      // docs/smart-import-v2-task-dedup-audit.md (Fix 4b).
+      const tStart = p.actualStart?.substring(0, 10) ?? null;
+      const tEnd = p.actualEnd?.substring(0, 10) ?? null;
+      exp = expectedPctFromDates(tStart, tEnd, todayStr) ?? 0;
     }
     weightedExpected += (parseFloat(exp) || 0) * dur;
     totalWeight += dur;

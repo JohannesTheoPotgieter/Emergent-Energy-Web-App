@@ -44,6 +44,7 @@ import {
   type ManualOverridesMap,
 } from "./merge-engine";
 import { threeWayMergeEnabled } from "./feature-flags";
+import { clampPercent } from "./value-normalization";
 import {
   PLAN_TRACKED_FIELDS,
   REVENUE_TRACKED_FIELDS,
@@ -637,6 +638,32 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
       continue;
     }
 
+    // Surface PLAN rows that lack a stable task number. The matcher falls
+    // back to `taskName + phase` as the business key when `taskNo` is empty
+    // — that's how the workbook's identity reaches the merge engine, but
+    // its `row_hash` (via hashPlanRow) also collapses to `title` in that
+    // case. The consequence: if the operator renames such a row in a
+    // future import, the hash flips and the row becomes a NEW + a
+    // MISSING_FROM_UPLOAD pair (the old hash is soft-deleted by the
+    // end-of-pass cleanup; the new title becomes a new row). The counts
+    // reflect that, but the visible damage is easy to miss in a busy
+    // import. This warning surfaces the at-risk rows so the operator can
+    // decide whether to add a `taskNo` upstream. Documented in
+    // docs/smart-import-v2-known-limitations.md §5.
+    if (
+      mr.classification === "NEW" &&
+      mr.businessKey.matchConfidence === "LOW"
+    ) {
+      const rowLabel = mr.businessKey.rowLabel || rowUid;
+      warnings.push({
+        sourceRow: typeof fileRow.sourceRow === "number" ? fileRow.sourceRow : null,
+        sourceSheet: typeof fileRow.sourceSheet === "string" ? fileRow.sourceSheet : null,
+        ref: canonicalRef,
+        reason: "plan_row_no_stable_id",
+        cause: `PLAN row "${rowLabel}" lacks a task number (column A). Identity falls back to the task name; renaming this row in a future import will produce a new+missing pair rather than an update.`,
+      });
+    }
+
     // Savepoint name must be a valid SQL identifier; rowIdx is a number so
     // string-interpolation is safe.
     const savepointName = `wi_plan_${rowIdx}`;
@@ -775,8 +802,11 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
             actualStart: fileRow.actualStartDate || null,
             actualEnd: fileRow.actualEndDate || null,
             actualDuration: fileRow.actualDurationDays || null,
-            percentComplete: fileRow.pctComplete != null ? Number(fileRow.pctComplete) : 0,
-            expectedPctComplete: fileRow.expectedPctComplete != null ? Number(fileRow.expectedPctComplete) : null,
+            // Coerce to canonical 0..1 scale. See clampPercent() doc in
+            // value-normalization.ts and docs/smart-import-v2-task-dedup-audit.md
+            // (Fix 4a) for why this matters for KPI consistency.
+            percentComplete: clampPercent(fileRow.pctComplete) ?? 0,
+            expectedPctComplete: clampPercent(fileRow.expectedPctComplete),
             wbsCode,
             outlineNumber: wbsCode,
             indentLevel: fileRow.indentLevel ?? 0,
@@ -835,8 +865,11 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
           actualStart: fileRow.actualStartDate || null,
           actualEnd: fileRow.actualEndDate || null,
           actualDuration: fileRow.actualDurationDays || null,
-          percentComplete: fileRow.pctComplete != null ? Number(fileRow.pctComplete) : 0,
-          expectedPctComplete: fileRow.expectedPctComplete != null ? Number(fileRow.expectedPctComplete) : null,
+          // Coerce to canonical 0..1 scale. See clampPercent() doc in
+          // value-normalization.ts and docs/smart-import-v2-task-dedup-audit.md
+          // (Fix 4a) for why this matters for KPI consistency.
+          percentComplete: clampPercent(fileRow.pctComplete) ?? 0,
+          expectedPctComplete: clampPercent(fileRow.expectedPctComplete),
           wbsCode,
           outlineNumber: wbsCode,
           indentLevel: fileRow.indentLevel ?? 0,
