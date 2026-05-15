@@ -469,14 +469,27 @@ const EVENT_TONE: Record<string, string> = {
   payment_out: "bg-rose-50 border-rose-200 text-rose-900",
 };
 
-function formatEventDate(dateStr: string): string {
-  const d = new Date(dateStr + "T00:00:00");
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const diff = Math.round((d.getTime() - today.getTime()) / 86400000);
-  if (diff === 0) return "Today";
-  if (diff === 1) return "Tomorrow";
-  return d.toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short" });
+const EVENT_DOT: Record<string, string> = {
+  construction_start: "bg-emerald-500",
+  site_establishment: "bg-emerald-500",
+  commissioning: "bg-blue-500",
+  handover_om: "bg-violet-500",
+  handover_client: "bg-violet-500",
+  practical_completion: "bg-blue-500",
+  pd_handover: "bg-amber-500",
+  payment_in: "bg-emerald-500",
+  payment_out: "bg-rose-500",
+};
+
+function formatDateLabel(d: Date): string {
+  return d.toLocaleDateString("en-ZA", { day: "numeric", month: "short" });
+}
+
+function isoDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function UpcomingEventsStrip() {
@@ -489,45 +502,176 @@ function UpcomingEventsStrip() {
     staleTime: 5 * 60_000,
   });
 
-  const events = data?.events ?? [];
+  const today = useMemo(() => {
+    const t = new Date();
+    t.setHours(0, 0, 0, 0);
+    return t;
+  }, []);
+
+  const { weeks, todayIso, rangeStartDate, rangeEndDate } = useMemo(() => {
+    const start = data?.rangeStart ? new Date(data.rangeStart + "T00:00:00") : (() => {
+      const d = new Date(today);
+      const dow = d.getDay();
+      d.setDate(d.getDate() - ((dow + 6) % 7));
+      return d;
+    })();
+    const days: Date[] = [];
+    for (let i = 0; i < 28; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      days.push(d);
+    }
+    const w: Date[][] = [];
+    for (let i = 0; i < 4; i++) w.push(days.slice(i * 7, i * 7 + 7));
+    const end = new Date(start);
+    end.setDate(start.getDate() + 27);
+    return { weeks: w, todayIso: isoDate(today), rangeStartDate: start, rangeEndDate: end };
+  }, [data?.rangeStart, today]);
+
+  const eventsByDate = useMemo(() => {
+    const map = new Map<string, UpcomingEvent[]>();
+    for (const ev of data?.events ?? []) {
+      const arr = map.get(ev.date) ?? [];
+      arr.push(ev);
+      map.set(ev.date, arr);
+    }
+    return map;
+  }, [data?.events]);
+
+  const totalEvents = data?.events?.length ?? 0;
+  const dayHeaders = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
   if (isLoading) {
     return (
       <div className="mb-5" data-testid="section-upcoming-events">
         <div className="flex items-center gap-2 mb-2">
           <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
-          <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider">This Week</h2>
+          <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider">4-Week Look Ahead</h2>
         </div>
-        <div className="flex gap-2">
-          {[0, 1, 2].map((i) => <Skeleton key={i} className="h-9 w-52 rounded-lg" />)}
-        </div>
+        <Skeleton className="h-72 w-full rounded-lg" />
       </div>
     );
   }
 
-  if (events.length === 0) return null;
-
   return (
     <div className="mb-5" data-testid="section-upcoming-events">
-      <div className="flex items-center gap-2 mb-2">
-        <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
-        <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider">This Week</h2>
-        <span className="text-[11px] text-muted-foreground">{data?.rangeStart} - {data?.rangeEnd}</span>
+      <div className="flex items-baseline justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
+          <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider">4-Week Look Ahead</h2>
+          <span className="text-[11px] text-muted-foreground" data-testid="text-calendar-range">
+            {formatDateLabel(rangeStartDate)} – {formatDateLabel(rangeEndDate)}
+          </span>
+        </div>
+        <span className="text-[11px] text-muted-foreground" data-testid="text-calendar-event-count">
+          {totalEvents} {totalEvents === 1 ? "event" : "events"}
+        </span>
       </div>
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {events.slice(0, 10).map((ev, i) => (
-          <Link key={i} href={getHomeProjectHref(ev.projectId)}>
-            <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm whitespace-nowrap cursor-pointer hover:opacity-80 transition-opacity ${EVENT_TONE[ev.type] ?? "bg-muted border-border"}`}>
-              <span className="font-medium">{formatEventDate(ev.date)}</span>
-              <span className="opacity-40">-</span>
-              <span className="max-w-[120px] truncate">{ev.projectName}</span>
-              <span className="opacity-40">-</span>
-              <span className="font-medium">{EVENT_LABEL[ev.type] ?? ev.detail}</span>
-              {ev.amount && <span className="opacity-60 text-xs">R {Number(ev.amount).toLocaleString()}</span>}
+      <div className="rounded-lg border border-border bg-card overflow-hidden">
+        <div className="grid grid-cols-7 bg-muted/40 border-b border-border">
+          {dayHeaders.map((h) => (
+            <div key={h} className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground text-center">
+              {h}
             </div>
-          </Link>
-        ))}
+          ))}
+        </div>
+        <div className="grid grid-cols-7 grid-rows-4">
+          {weeks.flat().map((d, idx) => {
+            const iso = isoDate(d);
+            const dayEvents = eventsByDate.get(iso) ?? [];
+            const isToday = iso === todayIso;
+            const isPast = iso < todayIso;
+            const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+            const isLastRow = idx >= 21;
+            const isLastCol = (idx % 7) === 6;
+            const visible = dayEvents.slice(0, 3);
+            const overflow = dayEvents.length - visible.length;
+            return (
+              <div
+                key={iso}
+                data-testid={`cell-day-${iso}`}
+                className={`min-h-[96px] p-1.5 flex flex-col gap-1 ${!isLastCol ? "border-r" : ""} ${!isLastRow ? "border-b" : ""} border-border ${isPast ? "bg-muted/20" : isWeekend ? "bg-muted/10" : "bg-card"}`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className={`text-[11px] font-semibold ${isToday ? "text-primary" : isPast ? "text-muted-foreground/60" : "text-foreground"}`}>
+                    {d.getDate()}
+                  </span>
+                  {isToday && (
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                      Today
+                    </span>
+                  )}
+                  {!isToday && d.getDate() === 1 && (
+                    <span className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground">
+                      {d.toLocaleDateString("en-ZA", { month: "short" })}
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-col gap-0.5 min-h-0">
+                  {visible.map((ev, i) => (
+                    <Link key={i} href={getHomeProjectHref(ev.projectId)}>
+                      <div
+                        role="button"
+                        aria-label={`${d.toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long" })} — ${EVENT_LABEL[ev.type] ?? ev.detail} at ${ev.projectName}${ev.amount ? ` for R ${Number(ev.amount).toLocaleString()}` : ""}`}
+                        data-testid={`chip-event-${iso}-${i}`}
+                        title={`${ev.projectName} · ${EVENT_LABEL[ev.type] ?? ev.detail}${ev.amount ? ` · R ${Number(ev.amount).toLocaleString()}` : ""}`}
+                        className={`group flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] leading-tight cursor-pointer hover:shadow-sm transition-all ${EVENT_TONE[ev.type] ?? "bg-muted border-border text-foreground"}`}
+                      >
+                        <span aria-hidden="true" className={`w-1.5 h-1.5 rounded-full shrink-0 ${EVENT_DOT[ev.type] ?? "bg-muted-foreground"}`} />
+                        <span className="font-medium truncate">{ev.projectName}</span>
+                        <span className="sr-only">— {EVENT_LABEL[ev.type] ?? ev.detail}</span>
+                      </div>
+                    </Link>
+                  ))}
+                  {overflow > 0 && (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button
+                          data-testid={`button-more-${iso}`}
+                          className="text-[10px] text-muted-foreground hover:text-foreground font-medium text-left px-1.5"
+                        >
+                          +{overflow} more
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-64 p-2" align="start">
+                        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                          {d.toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "short" })}
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          {dayEvents.map((ev, i) => (
+                            <Link key={i} href={getHomeProjectHref(ev.projectId)}>
+                              <div className={`flex items-center gap-2 px-2 py-1.5 rounded border text-xs cursor-pointer hover:opacity-80 ${EVENT_TONE[ev.type] ?? "bg-muted border-border"}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${EVENT_DOT[ev.type] ?? "bg-muted-foreground"}`} />
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-medium truncate">{ev.projectName}</div>
+                                  <div className="text-[10px] opacity-70 truncate">
+                                    {EVENT_LABEL[ev.type] ?? ev.detail}
+                                    {ev.amount && ` · R ${Number(ev.amount).toLocaleString()}`}
+                                  </div>
+                                </div>
+                              </div>
+                            </Link>
+                          ))}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
+      {totalEvents > 0 && (
+        <div className="flex items-center gap-3 mt-2 text-[10px] text-muted-foreground flex-wrap">
+          <span className="font-semibold uppercase tracking-wider">Legend</span>
+          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Construction / Inflow</span>
+          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-500" /> Commissioning / PC</span>
+          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-violet-500" /> Handover</span>
+          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> PD Handover</span>
+          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Payment Due</span>
+        </div>
+      )}
     </div>
   );
 }

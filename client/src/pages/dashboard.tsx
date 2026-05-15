@@ -217,12 +217,18 @@ function formatEventDate(d: string) {
 function UpcomingEventsSection({ events }: { events: UpcomingEvent[] }) {
   const [showPayments, setShowPayments] = useState(false);
 
-  const filtered = useMemo(() => {
-    if (showPayments) return events;
-    return events.filter((ev) => PROJECT_EVENT_TYPES.has(ev.type));
-  }, [events, showPayments]);
+  const todayIso = useMemo(() => {
+    const t = new Date();
+    return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+  }, []);
+  const upcomingOnly = useMemo(() => events.filter((ev) => ev.date >= todayIso), [events, todayIso]);
 
-  const paymentCount = useMemo(() => events.filter((ev) => PAYMENT_EVENT_TYPES.has(ev.type)).length, [events]);
+  const filtered = useMemo(() => {
+    if (showPayments) return upcomingOnly;
+    return upcomingOnly.filter((ev) => PROJECT_EVENT_TYPES.has(ev.type));
+  }, [upcomingOnly, showPayments]);
+
+  const paymentCount = useMemo(() => upcomingOnly.filter((ev) => PAYMENT_EVENT_TYPES.has(ev.type)).length, [upcomingOnly]);
 
   if (filtered.length === 0 && !showPayments && paymentCount === 0) return null;
 
@@ -236,8 +242,8 @@ function UpcomingEventsSection({ events }: { events: UpcomingEvent[] }) {
       <CardContent className="p-4 md:p-5">
         <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
           <div>
-            <h2 className="text-sm font-semibold">Upcoming This Week</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">{filtered.length} event{filtered.length !== 1 ? "s" : ""} in the next 5 working days</p>
+            <h2 className="text-sm font-semibold">Upcoming — Next 4 Weeks</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">{filtered.length} event{filtered.length !== 1 ? "s" : ""} in the next 4 weeks</p>
           </div>
           {paymentCount > 0 && (
             <Button
@@ -253,7 +259,7 @@ function UpcomingEventsSection({ events }: { events: UpcomingEvent[] }) {
           )}
         </div>
         {filtered.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4 text-center">No project milestones in the next 5 working days</p>
+          <p className="text-sm text-muted-foreground py-4 text-center">No project milestones in the next 4 weeks</p>
         ) : (
           <div className="space-y-4">
             {Object.entries(grouped).map(([date, evts]) => (
