@@ -392,15 +392,19 @@ export function registerHomeExtractedRoutes(app: Express): void {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      const workDays: string[] = [];
-      let d = new Date(today);
-      while (workDays.length < 5) {
-        const dow = d.getDay();
-        if (dow !== 0 && dow !== 6) workDays.push(d.toISOString().slice(0, 10));
-        d.setDate(d.getDate() + 1);
-      }
-      const rangeStart = workDays[0];
-      const rangeEnd = workDays[workDays.length - 1];
+      // Rolling 4-week look ahead — start on the Monday of the current week
+      // so the calendar grid always begins on a Monday and spans 28 days.
+      const startDate = new Date(today);
+      const dow = startDate.getDay(); // 0 = Sun, 1 = Mon, ...
+      const daysSinceMonday = (dow + 6) % 7;
+      startDate.setDate(startDate.getDate() - daysSinceMonday);
+      const endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + 27);
+      // Use local-date formatting (NOT toISOString) so a server in UTC+2 doesn't
+      // shift local-midnight Monday into the previous UTC Sunday.
+      const fmtLocal = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const rangeStart = fmtLocal(startDate);
+      const rangeEnd = fmtLocal(endDate);
 
       type UpcomingEvent = { type: string; date: string; projectName: string; projectId: number | null; detail: string; amount?: string };
       const events: UpcomingEvent[] = [];
