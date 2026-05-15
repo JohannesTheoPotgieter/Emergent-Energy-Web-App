@@ -369,7 +369,7 @@ router.post("/api/smart-import/upload", requireAuth, requirePermission("smart_im
       matchCandidates: projectMatches,
       autoMappedProjectId,
       autoMappedProjectName: bestMatch && bestMatch.confidence >= 0.85 ? bestMatch.projectName : null,
-      requiresUserConfirmation: projectMatches.length > 0 && !autoMappedProjectId && projectMatches.some(m => m.confidence >= 0.5),
+      requiresUserConfirmation: projectMatches.length > 0 && !autoMappedProjectId && projectMatches.some(m => m.confidence >= 0.75),
     };
 
     if (preview.detection.projectInfo) {
@@ -2259,7 +2259,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
 
         if (!confirmNewProject) {
           const closeMatches = await findProjectMatches(projectName);
-          const significantMatches = closeMatches.filter(m => m.confidence >= 0.5);
+          const significantMatches = closeMatches.filter(m => m.confidence >= 0.75);
           if (significantMatches.length > 0) {
             return res.status(409).json({
               error: "duplicate_project_candidate",
