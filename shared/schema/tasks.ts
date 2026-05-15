@@ -158,7 +158,18 @@ export const workItems = pgTable("work_items", {
   startDate: date("start_date"),
   endDate: date("end_date"),
   duration: integer("duration"),
+  // Canonical 0..1 scale (e.g. 0.75 means "75%"). Smart Import v2 routes
+  // every write through `clampPercent` in
+  // server/lib/import/value-normalization.ts; the migration
+  // `migrations/00XX_normalise_work_items_pct_scale.sql` scaled any legacy
+  // 0..100 stored values down. Readers must NOT assume 0..100 — go through
+  // `pctTo100()` in server/lib/kpi-formulas.ts when they need percentage
+  // points. See docs/smart-import-v2-task-dedup-audit.md (Fix 4a).
   percentComplete: real("percent_complete").default(0),
+  // Same 0..1 scale as `percentComplete`. Smart Import writes this from
+  // the workbook's "expected %" column; readers that need to derive it
+  // from dates must use `expectedPctFromDates` in
+  // server/lib/kpi-formulas.ts (SA working days) for cross-page parity.
   expectedPctComplete: real("expected_pct_complete"),
   wbsCode: text("wbs_code"),
   outlineNumber: text("outline_number"),
