@@ -381,7 +381,7 @@ router.post("/api/smart-import/upload", requireAuth, requirePermission("smart_im
         name: projectName,
         sizeKwp: null, pd: null, pm: null, contractValue: null, phase: null,
         pdHandoverDate: null, constructionStartDate: null, commissioningDate: null,
-        omHandoverDate: null, clientHandoverDate: null,
+        practicalCompletionDate: null, omHandoverDate: null, clientHandoverDate: null,
       };
     }
 
@@ -1465,7 +1465,7 @@ router.patch("/api/smart-import/:runId/project-info", requireAuth, requirePermis
       summary.detection.projectInfo = {
         name: null, sizeKwp: null, pd: null, pm: null, contractValue: null, phase: null,
         pdHandoverDate: null, constructionStartDate: null, commissioningDate: null,
-        omHandoverDate: null, clientHandoverDate: null,
+        practicalCompletionDate: null, omHandoverDate: null, clientHandoverDate: null,
       };
     }
 
@@ -2765,6 +2765,13 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           updates.phase = rawPhase;
           updates.executionPhase = rawPhase;
           updates.phaseUpdatedAt = new Date();
+        }
+        // Practical Completion now has a dedicated column on
+        // project_execution_state. The detector pulls it from the workbook's
+        // project-info block; syncProjectSplitTables routes it through to
+        // practical_completion_actual via project-info-sync's allowlist.
+        if (detectedInfo.practicalCompletionDate) {
+          updates.practicalCompletionActual = detectedInfo.practicalCompletionDate;
         }
         if (Object.keys(updates).length > 0) {
           updates.updatedAt = new Date();

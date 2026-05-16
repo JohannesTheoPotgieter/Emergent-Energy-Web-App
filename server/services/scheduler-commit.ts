@@ -569,6 +569,9 @@ export async function commitSmartImportRunAsSystem(
           updates.executionPhase = rawPhase;
           updates.phaseUpdatedAt = new Date();
         }
+        if (detectedInfo.practicalCompletionDate) {
+          updates.practicalCompletionActual = detectedInfo.practicalCompletionDate;
+        }
         if (Object.keys(updates).length > 0) {
           updates.updatedAt = new Date();
           await tx.update(projectInfo).set(updates).where(eq(projectInfo.id, projectId));

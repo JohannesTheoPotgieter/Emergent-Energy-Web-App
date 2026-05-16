@@ -32,6 +32,8 @@ const EXECUTION_STATE_COLUMNS = new Set([
   "pdHandoverActual",
   "commissioningActual",
   "clientHandoverActual",
+  "practicalCompletionTarget",
+  "practicalCompletionActual",
   "escalationLevel",
   "ragStatus",
   "ragComment",

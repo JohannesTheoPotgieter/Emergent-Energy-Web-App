@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Loader2, AlertTriangle, RotateCcw, Save, Trash2, Link, ChevronLeft, ChevronRight, Calendar, GitBranch, Search, ZoomIn, Target, Split, X, AlertCircle, GripVertical, Hash, Diamond, Milestone } from "lucide-react";
 import { format, addDays, differenceInDays, eachDayOfInterval, parseISO, isValid, startOfDay, isBefore, isAfter, differenceInCalendarDays } from "date-fns";
+import { computeProjectProgress } from "@/lib/kpi-formulas";
 
 interface ProjectPlanTabProps {
   projectName: string;
@@ -360,16 +361,13 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
 
   const projectStats = useMemo(() => {
     if (tasks.length === 0) return null;
-    
+
     const today = startOfDay(new Date());
+    const todayIso = format(today, "yyyy-MM-dd");
     let minStart: Date | null = null;
     let maxEnd: Date | null = null;
-    let weightedActual = 0;
-    let weightedExpected = 0;
-    let totalWeight = 0;
-    let totalExpWeight = 0;
     let lateTasks = 0;
-    
+
     tasks.forEach(task => {
       if (task.startDate) {
         const start = parseISO(task.startDate);
@@ -383,12 +381,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
           maxEnd = end;
         }
       }
-      
-      const dur = (task.durationDays && task.durationDays > 0) ? task.durationDays : 1;
-      const actualPct = Math.round((task.percentComplete || 0) * 100);
-      weightedActual += actualPct * dur;
-      totalWeight += dur;
-      
+
       if (task.startDate && task.endDate) {
         const start = parseISO(task.startDate);
         const end = parseISO(task.endDate);
@@ -396,20 +389,38 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
           const totalDuration = differenceInCalendarDays(end, start);
           const elapsed = differenceInCalendarDays(today, start);
           const expectedPct = totalDuration > 0 ? clamp(elapsed / totalDuration, 0, 1) * 100 : 100;
-          weightedExpected += expectedPct * dur;
-          totalExpWeight += dur;
-          
+          const actualPct = Math.round((task.percentComplete || 0) * 100);
           if (actualPct < expectedPct && isAfter(today, start)) {
             lateTasks++;
           }
         }
       }
     });
-    
+
+    // Canonical actual/expected — same helper the server uses for the
+    // dashboards, so this pill agrees with the project's row on All
+    // Projects and Execution Dashboard. See client/src/lib/kpi-formulas.ts.
+    const progress = computeProjectProgress(
+      tasks.map((task: any) => ({
+        taskNo: task.taskNo ?? null,
+        rowNumber: task.rowNumber ?? null,
+        parentRowNumber: task.parentRowNumber ?? null,
+        indentLevel: task.indentLevel ?? null,
+        durationDays: task.durationDays ?? null,
+        actualPctComplete: task.percentComplete ?? null,
+        expectedPctComplete: task.expectedPctComplete ?? null,
+        startDate: task.startDate ?? null,
+        endDate: task.endDate ?? null,
+        actualStartDate: task.actualStartDate ?? null,
+        actualEndDate: task.actualEndDate ?? null,
+      })),
+      todayIso,
+    );
+
     const durationDays = minStart && maxEnd ? differenceInCalendarDays(maxEnd, minStart) + 1 : 0;
-    const overallActual = totalWeight > 0 ? Math.round(weightedActual / totalWeight) : 0;
-    const overallExpected = totalExpWeight > 0 ? Math.round(weightedExpected / totalExpWeight) : null;
-    
+    const overallActual = progress.actualPct;
+    const overallExpected = progress.leafCount > 0 ? progress.expectedPct : null;
+
     return {
       projectStart: minStart,
       projectEnd: maxEnd,

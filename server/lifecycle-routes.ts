@@ -46,6 +46,7 @@ import { PHASES as CANONICAL_PHASES, resolveCanonicalPhase } from '../shared/pha
 import { jwtAuth, requireAuth } from './auth-context';
 import { bridgeCatch } from './bridge/bridge-writer';
 import { computeMarginPct } from './lib/finance/margin';
+import { computeProjectProgress } from './lib/kpi-formulas';
 import {
   isCanonicalCosRealised,
   OVERRIDE_REALISED,
@@ -1097,7 +1098,10 @@ export function registerLifecycleRoutes(app: Express) {
         lcPlanTasksByNorm.get(norm)!.push(p);
       }
 
-      const lcTodayMs = new Date(todayDate).getTime();
+      // Per-project progress via the canonical helper in
+      // server/lib/kpi-formulas.ts. weightedPct / totalWeight here are
+      // shaped so the downstream serialisation (line ~1826) still divides
+      // and produces the same pct that the Plan tab pill shows.
       const planByNorm = new Map<
         string,
         {
@@ -1109,60 +1113,34 @@ export function registerLifecycleRoutes(app: Express) {
         }
       >();
       for (const [norm, tasks] of lcPlanTasksByNorm) {
-        // WBS-based parent detection — Smart Import never sets parentRowNumber/indentLevel
-        // so those fields are always absent; WBS prefix-stripping is the only reliable method.
-        const parentWbs = new Set<string>();
-        for (const t of tasks) {
-          const wbs = (t.taskNo || '').toString().trim();
-          if (!wbs || !wbs.includes('.')) continue;
-          const parts = wbs.split('.');
-          parts.pop();
-          parentWbs.add(parts.join('.'));
-        }
-        const leafTasks = tasks.filter((t: any) => {
-          const wbs = (t.taskNo || '').toString().trim();
-          return !wbs || !parentWbs.has(wbs);
-        });
-        const items = leafTasks.length > 0 ? leafTasks : tasks;
-
-        let actualSum = 0;
-        let expSum = 0;
-        let expCount = 0;
-        for (const p of items) {
-          actualSum += Number(p.actualPctComplete ?? 0);
-          if (p.expectedPctComplete !== null && p.expectedPctComplete !== undefined) {
-            expSum += Number(p.expectedPctComplete);
-            expCount++;
-          } else {
-            const tStart = (p as any).actualStart?.substring(0, 10);
-            const tEnd = (p as any).actualEnd?.substring(0, 10);
-            if (
-              tStart &&
-              tEnd &&
-              /^\d{4}-\d{2}-\d{2}/.test(tStart) &&
-              /^\d{4}-\d{2}-\d{2}/.test(tEnd)
-            ) {
-              const sMs = new Date(tStart).getTime();
-              const eMs = new Date(tEnd).getTime();
-              let exp: number;
-              if (lcTodayMs >= eMs) exp = 1.0;
-              else if (lcTodayMs <= sMs) exp = 0.0;
-              else {
-                const total = Math.max(1, (eMs - sMs) / 86400000);
-                exp = Math.min((lcTodayMs - sMs) / 86400000 / total, 1.0);
-              }
-              expSum += exp;
-              expCount++;
-            }
-          }
-        }
-
+        const progress = computeProjectProgress(
+          tasks.map((p: any) => ({
+            taskNo: p.taskNo ?? null,
+            rowNumber: p.rowNumber ?? null,
+            parentRowNumber: p.parentRowNumber ?? null,
+            indentLevel: p.indentLevel ?? null,
+            durationDays: p.durationDays ?? null,
+            actualPctComplete: p.actualPctComplete ?? null,
+            expectedPctComplete: p.expectedPctComplete ?? null,
+            startDate: p.startDate ?? null,
+            endDate: p.endDate ?? null,
+            actualStartDate: p.actualStart ?? null,
+            actualEndDate: p.actualEnd ?? null,
+          })),
+          todayDate,
+        );
+        const hasItems = progress.leafCount > 0;
+        // Helper returns 0..100; downstream code expects weightedPct on
+        // the same scale as actualPctComplete (0..1) divided by totalWeight,
+        // then multiplied by 100 (see line 1828). So we store weightedPct
+        // pre-scaled to 0..1 and totalWeight = 1, which lets the existing
+        // `(weightedPct / totalWeight) * 100` produce the canonical pct.
         planByNorm.set(norm, {
-          total: items.length,
-          weightedPct: actualSum,
-          totalWeight: items.length,
-          weightedExpPct: expSum,
-          totalExpWeight: expCount,
+          total: progress.leafCount,
+          weightedPct: hasItems ? progress.actualPct / 100 : 0,
+          totalWeight: hasItems ? 1 : 0,
+          weightedExpPct: hasItems ? progress.expectedPct / 100 : 0,
+          totalExpWeight: hasItems ? 1 : 0,
         });
       }
 
@@ -1432,7 +1410,6 @@ export function registerLifecycleRoutes(app: Express) {
             fyItems: number;
           }
         >();
-        const todayMs = new Date(today).getTime();
         const PLAN_SECTION_HEADERS = new Set(['no.', 'no', '#']);
 
         type PlanTask = (typeof rawPlanTasks)[number];
@@ -1462,59 +1439,34 @@ export function registerLifecycleRoutes(app: Express) {
               }).length;
           planFyItemsByNorm.set(norm, fyItemCount);
 
-          // WBS-based parent detection: build set of WBS prefixes that are parents
-          // e.g. tasks with wbs "1.1" and "1.2" make "1" a parent wbs
-          const parentWbs = new Set<string>();
-          for (const t of filtered) {
-            const wbs = (t.wbsCode || '').toString().trim();
-            if (!wbs || !wbs.includes('.')) continue;
-            const parts = wbs.split('.');
-            parts.pop();
-            parentWbs.add(parts.join('.'));
-          }
+          const progress = computeProjectProgress(
+            filtered.map((t: PlanTask) => ({
+              taskNo: (t as any).wbsCode ?? null,
+              rowNumber: (t as any).rowNumber ?? null,
+              parentRowNumber: (t as any).parentRowNumber ?? null,
+              indentLevel: (t as any).indentLevel ?? null,
+              durationDays: (t as any).durationDays ?? null,
+              actualPctComplete: (t as any).percentComplete ?? null,
+              expectedPctComplete: (t as any).expectedPctComplete ?? null,
+              startDate: t.startDate ? String(t.startDate) : null,
+              endDate: t.endDate ? String(t.endDate) : null,
+              actualStartDate: (t as any).actualStartDate ? String((t as any).actualStartDate) : null,
+              actualEndDate: (t as any).actualEndDate ? String((t as any).actualEndDate) : null,
+            })),
+            today,
+          );
 
-          // Leaf tasks: wbsCode not in parentWbs (or no wbsCode — treated as leaf)
-          const leafTasks = filtered.filter((t: PlanTask) => {
-            const wbs = (t.wbsCode || '').toString().trim();
-            return !wbs || !parentWbs.has(wbs);
-          });
-          const items = leafTasks.length > 0 ? leafTasks : filtered;
-
-          let actualSum = 0;
-          let expSum = 0;
-          let expCount = 0;
-          for (const t of items) {
-            actualSum +=
-              t.percentComplete !== null && t.percentComplete !== undefined
-                ? Number(t.percentComplete)
-                : 0;
-            if (t.expectedPctComplete != null) {
-              expSum += Number(t.expectedPctComplete);
-              expCount++;
-            } else {
-              const s = t.startDate ? String(t.startDate).slice(0, 10) : null;
-              const e = t.endDate ? String(t.endDate).slice(0, 10) : null;
-              if (s && e && /^\d{4}-\d{2}-\d{2}/.test(s) && /^\d{4}-\d{2}-\d{2}/.test(e)) {
-                const sMs = new Date(s).getTime();
-                const eMs = new Date(e).getTime();
-                let exp: number;
-                if (todayMs >= eMs) exp = 1;
-                else if (todayMs <= sMs) exp = 0;
-                else {
-                  const total = Math.max(1, (eMs - sMs) / 86400000);
-                  exp = Math.min((todayMs - sMs) / 86400000 / total, 1.0);
-                }
-                expSum += exp;
-                expCount++;
-              }
-            }
-          }
-
+          // computeProjectProgress returns the final percentages on a
+          // 0..100 scale. The downstream serialiser (~line 1828) does
+          // `(weightedPct / totalWeight) * 100`, so pre-scale to 0..1 and
+          // pin totalWeight = 1 — that produces the same canonical pct
+          // the Plan tab pill displays for the same project.
+          const hasItems = progress.leafCount > 0;
           planByNorm.set(norm, {
-            weightedPct: actualSum,
-            totalWeight: items.length,
-            weightedExpPct: expSum,
-            totalExpWeight: expCount,
+            weightedPct: hasItems ? progress.actualPct / 100 : 0,
+            totalWeight: hasItems ? 1 : 0,
+            weightedExpPct: hasItems ? progress.expectedPct / 100 : 0,
+            totalExpWeight: hasItems ? 1 : 0,
             fyItems: fyItemCount,
           });
         }
