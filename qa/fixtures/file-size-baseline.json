@@ -25,10 +25,6 @@
       "loc": 3600
     },
     {
-      "file": "client/src/pages/EngineeringTasksPage.tsx",
-      "loc": 3178
-    },
-    {
       "file": "client/src/components/tabs/UnifiedPlanTab.tsx",
       "loc": 3022
     },
@@ -171,6 +167,14 @@
     {
       "file": "client/src/pages/qm-dashboard.tsx",
       "loc": 1641
+    },
+    {
+      "file": "client/src/pages/engineering/EngineeringTaskDrawer.tsx",
+      "loc": 1622
+    },
+    {
+      "file": "client/src/pages/EngineeringTasksPage.tsx",
+      "loc": 1619
     },
     {
       "file": "shared/schema/finance.ts",

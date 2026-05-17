@@ -20,7 +20,15 @@ function read(relative: string): string {
 }
 
 describe("EngineeringTasksPage copy", () => {
-  const source = read("client/src/pages/EngineeringTasksPage.tsx");
+  // TaskDetailDrawer + PostUpdateForm (which carry the drawer copy these
+  // assertions guard) were extracted to ./engineering/EngineeringTaskDrawer
+  // (UI/UX audit module split). Read both the orchestrator and the extracted
+  // drawer module so the SAME assertions still validate the moved code
+  // wherever it now lives.
+  const source =
+    read("client/src/pages/EngineeringTasksPage.tsx") +
+    "\n" +
+    read("client/src/pages/engineering/EngineeringTaskDrawer.tsx");
 
   it("does not contain bare 'Send for Approval' button label", () => {
     // Renamed to "Submit for QC Review" to disambiguate from deliverable send
