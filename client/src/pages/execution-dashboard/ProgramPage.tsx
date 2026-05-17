@@ -4,7 +4,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ragBadgeClasses } from "@/lib/status-colors";
 import {
-  formatCurrencyCompact,
   formatDate,
   type ExecutionDashboardProject,
 } from "@/lib/execution-dashboard";
@@ -13,6 +12,7 @@ import {
   Layers, Clock, AlertTriangle, Activity, Shield, Users,
   ExternalLink,
 } from "lucide-react";
+import { KpiCard } from "@/components/ui/kpi-card";
 import { useExecutionData } from "./use-execution-data";
 
 type SortKey = "projectName" | "pm" | "phase" | "rag" | "progress" | "variance" | "behindPlan" | "criticalActions" | "importAge";
@@ -86,10 +86,10 @@ export default function ProgramPage() {
       {/* KPI STRIP */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {Object.entries(phaseCounts).slice(0, 4).map(([phase, count]) => (
-          <KpiCard key={phase} label={`In ${phase}`} value={count} icon={<Layers className="w-4 h-4 text-blue-600" />} iconBg="bg-blue-100" />
+          <KpiCard key={phase} label={`In ${phase}`} value={count} icon={<Layers className="w-4 h-4" />} />
         ))}
-        <KpiCard label="Behind Plan" value={kpis.projectsBehindPlan} icon={<Clock className="w-4 h-4 text-red-600" />} iconBg="bg-red-100" valueClass="text-red-600" />
-        <KpiCard label="Avg. Progress" value={`${kpis.averageActualProgressPct ?? "—"}%`} icon={<Activity className="w-4 h-4 text-emerald-600" />} iconBg="bg-emerald-100" sub={`Expected: ${kpis.averageExpectedProgressPct ?? "—"}%`} />
+        <KpiCard label="Behind Plan" value={kpis.projectsBehindPlan} icon={<Clock className="w-4 h-4" />} tone="danger" />
+        <KpiCard label="Avg. Progress" value={`${kpis.averageActualProgressPct ?? "—"}%`} icon={<Activity className="w-4 h-4" />} sub={`Expected: ${kpis.averageExpectedProgressPct ?? "—"}%`} />
       </div>
 
       {/* MAIN EXECUTION GRID */}
@@ -262,19 +262,3 @@ export default function ProgramPage() {
   );
 }
 
-function KpiCard({ icon, iconBg, label, value, sub, valueClass }: {
-  icon: React.ReactNode; iconBg: string; label: string; value: React.ReactNode; sub?: string; valueClass?: string;
-}) {
-  return (
-    <Card className="border-border/60">
-      <CardContent className="p-3">
-        <div className="flex items-center gap-2 mb-1.5">
-          <div className={`w-7 h-7 rounded-lg ${iconBg} flex items-center justify-center shrink-0`}>{icon}</div>
-          <span className="text-[10px] text-muted-foreground font-medium leading-tight">{label}</span>
-        </div>
-        <p className={`text-lg font-bold tabular-nums ${valueClass || ""}`}>{value}</p>
-        {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
-      </CardContent>
-    </Card>
-  );
-}

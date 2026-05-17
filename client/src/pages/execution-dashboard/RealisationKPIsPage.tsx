@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useExecutionData } from "./use-execution-data";
 import { apiRequest } from "@/lib/queryClient";
+import { formatZar, formatZarCompact } from "@/lib/currency";
 
 type TimePeriod = "weekly" | "monthly" | "yearly";
 
@@ -57,16 +58,6 @@ interface RealisationKPIResponse {
   fyEnd: string;
   cos: TrackerData;
   cashflow: TrackerData;
-}
-
-function formatCurrency(v: number): string {
-  if (Math.abs(v) >= 1_000_000) return `R${(v / 1_000_000).toFixed(1)}M`;
-  if (Math.abs(v) >= 1_000) return `R${(v / 1_000).toFixed(0)}K`;
-  return `R${v.toFixed(0)}`;
-}
-
-function formatCurrencyFull(v: number): string {
-  return `R ${v.toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function pctChange(current: number, previous: number): { value: number; label: string } | null {
@@ -194,14 +185,14 @@ export default function RealisationKPIsPage() {
             <BarChart data={data.cos.monthlySeries} barGap={1}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
               <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => formatCurrency(v)} width={70} />
+              <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => formatZarCompact(v)} width={70} />
               <Tooltip
-                formatter={(value: number, name: string) => [formatCurrencyFull(value), name]}
+                formatter={(value: number, name: string) => [formatZar(value), name]}
                 labelFormatter={(l) => `Month: ${l}`}
               />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="realised" name="Realised" stackId="a" fill="#059669" radius={[0,0,0,0]} />
-              <Bar dataKey="unrealised" name="Unrealised" stackId="a" fill="#fbbf24" radius={[2,2,0,0]} />
+              <Bar dataKey="realised" name="Realised" stackId="a" fill="hsl(var(--primary))" radius={[0,0,0,0]} />
+              <Bar dataKey="unrealised" name="Unrealised" stackId="a" fill="hsl(var(--muted-foreground))" fillOpacity={0.35} radius={[2,2,0,0]} />
             </BarChart>
           </ResponsiveContainer>
         </CardContent>
@@ -255,14 +246,14 @@ export default function RealisationKPIsPage() {
             <BarChart data={data.cashflow.monthlySeries} barGap={1}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
               <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => formatCurrency(v)} width={70} />
+              <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => formatZarCompact(v)} width={70} />
               <Tooltip
-                formatter={(value: number, name: string) => [formatCurrencyFull(value), name]}
+                formatter={(value: number, name: string) => [formatZar(value), name]}
                 labelFormatter={(l) => `Month: ${l}`}
               />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="realised" name="Out of Bank" stackId="a" fill="#2563eb" radius={[0,0,0,0]} />
-              <Bar dataKey="unrealised" name="Planned/Pending" stackId="a" fill="#93c5fd" radius={[2,2,0,0]} />
+              <Bar dataKey="realised" name="Out of Bank" stackId="a" fill="hsl(var(--primary))" radius={[0,0,0,0]} />
+              <Bar dataKey="unrealised" name="Planned/Pending" stackId="a" fill="hsl(var(--muted-foreground))" fillOpacity={0.35} radius={[2,2,0,0]} />
             </BarChart>
           </ResponsiveContainer>
         </CardContent>
@@ -312,21 +303,21 @@ function PeriodComparisonRow({
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <KpiCard
           label={`Total (${currentLabel})`}
-          value={formatCurrency(current.total)}
+          value={formatZarCompact(current.total)}
           sub={totalChange ? `${totalChange.label} vs ${previousLabel.toLowerCase()}` : undefined}
           subColor={totalChange && totalChange.value > 0 ? "text-red-500" : "text-emerald-500"}
           accent={accent}
         />
         <KpiCard
           label={`Realised (${currentLabel})`}
-          value={formatCurrency(current.realised)}
+          value={formatZarCompact(current.realised)}
           sub={realisedChange ? `${realisedChange.label} vs ${previousLabel.toLowerCase()}` : undefined}
           subColor={realisedChange && realisedChange.value > 0 ? "text-emerald-500" : "text-amber-500"}
           accent={accent}
         />
         <KpiCard
           label={`Unrealised (${currentLabel})`}
-          value={formatCurrency(current.unrealised)}
+          value={formatZarCompact(current.unrealised)}
           accent="amber"
         />
         <KpiCard
@@ -337,13 +328,13 @@ function PeriodComparisonRow({
         />
         <KpiCard
           label={`Total (${previousLabel})`}
-          value={formatCurrency(previous.total)}
+          value={formatZarCompact(previous.total)}
           sub={`${previous.realisedPct}% realised`}
           accent="slate"
         />
         <KpiCard
           label={`Realised (${previousLabel})`}
-          value={formatCurrency(previous.realised)}
+          value={formatZarCompact(previous.realised)}
           sub={`${previous.realisedCount} of ${previous.lineCount} lines`}
           accent="slate"
         />
@@ -383,17 +374,17 @@ function YTDSection({
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <KpiCard label={`YTD Total (${fyLabel})`} value={formatCurrency(ytd.total)} sub={`${ytd.lineCount} line items`} accent={accent} />
-        <KpiCard label="YTD Realised" value={formatCurrency(ytd.realised)} sub={`${ytd.realisedCount} lines realised`} accent={accent} />
-        <KpiCard label="YTD Unrealised" value={formatCurrency(ytd.unrealised)} accent="amber" />
+        <KpiCard label={`YTD Total (${fyLabel})`} value={formatZarCompact(ytd.total)} sub={`${ytd.lineCount} line items`} accent={accent} />
+        <KpiCard label="YTD Realised" value={formatZarCompact(ytd.realised)} sub={`${ytd.realisedCount} lines realised`} accent={accent} />
+        <KpiCard label="YTD Unrealised" value={formatZarCompact(ytd.unrealised)} accent="amber" />
         <KpiCard label="Realised %" value={`${ytd.realisedPct}%`} accent={accent} />
         {hasBudget && (
           <>
-            <KpiCard label="YTD Budget" value={formatCurrency(ytd.budget!)} accent="slate" />
+            <KpiCard label="YTD Budget" value={formatZarCompact(ytd.budget!)} accent="slate" />
             <KpiCard
               label="YTD Variance"
               value={`${(ytd.variancePct ?? 0) > 0 ? "+" : ""}${ytd.variancePct ?? 0}%`}
-              sub={formatCurrency(ytd.variance ?? 0)}
+              sub={formatZarCompact(ytd.variance ?? 0)}
               subColor={(ytd.variance ?? 0) > 0 ? "text-red-500" : "text-emerald-500"}
               accent={(ytd.variance ?? 0) > 0 ? "red" : "emerald"}
             />
@@ -445,9 +436,9 @@ function ProjectBreakdownTable({ projects }: { projects: { projectName: string; 
               return (
                 <tr key={p.projectName} className="border-t border-border/40 hover:bg-muted/20">
                   <td className="py-1.5 px-3 font-medium text-xs truncate max-w-[200px]">{p.projectName}</td>
-                  <td className="py-1.5 px-3 text-right tabular-nums text-xs">{formatCurrency(p.total)}</td>
-                  <td className="py-1.5 px-3 text-right tabular-nums text-xs text-emerald-600">{formatCurrency(p.realised)}</td>
-                  <td className="py-1.5 px-3 text-right tabular-nums text-xs text-amber-600">{formatCurrency(p.unrealised)}</td>
+                  <td className="py-1.5 px-3 text-right tabular-nums text-xs">{formatZarCompact(p.total)}</td>
+                  <td className="py-1.5 px-3 text-right tabular-nums text-xs text-emerald-600">{formatZarCompact(p.realised)}</td>
+                  <td className="py-1.5 px-3 text-right tabular-nums text-xs text-amber-600">{formatZarCompact(p.unrealised)}</td>
                   <td className="py-1.5 px-3 text-right tabular-nums text-xs">
                     <span className={`inline-flex items-center gap-1 ${parseFloat(pct) >= 80 ? "text-emerald-600" : parseFloat(pct) >= 50 ? "text-amber-600" : "text-red-500"}`}>
                       {pct}%
