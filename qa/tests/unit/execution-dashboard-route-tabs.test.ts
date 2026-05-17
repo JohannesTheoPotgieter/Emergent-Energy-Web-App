@@ -11,6 +11,7 @@ describe("execution dashboard route tabs", () => {
     expect(getExecutionDashboardTabFromPath("/execution-board/program")).toBe("programme");
     expect(getExecutionDashboardTabFromPath("/execution-board/construction")).toBe("construction");
     expect(getExecutionDashboardTabFromPath("/execution-board/finance")).toBe("finance");
+    expect(getExecutionDashboardTabFromPath("/execution-board/realisation")).toBe("realisation");
   });
 
   it("falls back to overview for unknown execution-board subroutes", () => {
@@ -24,10 +25,12 @@ describe("execution dashboard route tabs", () => {
       "programme",
       "construction",
       "finance",
+      "realisation",
     ]);
     expect(getExecutionDashboardPathForTab("overview")).toBe("/execution-board");
     expect(getExecutionDashboardPathForTab("programme")).toBe("/execution-board/program");
     expect(getExecutionDashboardPathForTab("construction")).toBe("/execution-board/construction");
     expect(getExecutionDashboardPathForTab("finance")).toBe("/execution-board/finance");
+    expect(getExecutionDashboardPathForTab("realisation")).toBe("/execution-board/realisation");
   });
 });

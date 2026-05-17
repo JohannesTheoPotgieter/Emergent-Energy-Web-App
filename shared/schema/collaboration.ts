@@ -1,4 +1,3 @@
-import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -841,9 +840,9 @@ export const standupSessions = pgTable("standup_sessions", {
   avgSecondsPerSpeaker: integer("avg_seconds_per_speaker").notNull().default(0),
   blockerCount: integer("blocker_count").notNull().default(0),
   // Structured facilitation payloads (arrays/maps of small metadata records).
-  taskMovements: jsonb("task_movements").notNull().default(sql`'[]'::jsonb`),
-  moodCounts: jsonb("mood_counts").notNull().default(sql`'{}'::jsonb`),
-  facilitatorNotes: jsonb("facilitator_notes").notNull().default(sql`'[]'::jsonb`),
+  taskMovements: jsonb("task_movements").notNull().default([]),
+  moodCounts: jsonb("mood_counts").notNull().default({}),
+  facilitatorNotes: jsonb("facilitator_notes").notNull().default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   byScheduleDate: index("standup_sessions_schedule_date_idx").on(table.scheduleId, table.sessionDate),

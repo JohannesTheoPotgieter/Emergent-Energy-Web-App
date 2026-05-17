@@ -18,7 +18,9 @@ describe("quality governance execution surfaces", () => {
     expect(source).toContain("Evidence gaps");
     expect(source).toContain("Blocked handover");
     expect(source).toContain("At-risk projects");
-    expect(source).toContain("qualityItemId=");
+    // Governance drill-down is now first-class open-NCR visibility
+    // (superseded the vestigial ?qualityItemId= deep link).
+    expect(source).toContain("/api/quality/ncrs");
   });
 
   it("keeps the project quality tab on existing checklist and evidence flows while adding workspace drill-down", () => {
