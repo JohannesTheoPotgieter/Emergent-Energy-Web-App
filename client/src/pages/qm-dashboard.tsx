@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -67,7 +66,6 @@ import type { NextAction, BlockerInfo } from "@/hooks/use-guidance";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { ApprovalQueueCard } from "@/components/managed-documents";
 import { NcrLegacyDeepLinkBanner } from "@/components/quality/NcrLegacyDeepLinkBanner";
-import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
 import { QualityTab } from "@/components/tabs/QualityTab";
 import { ConfirmDestructive, type ImpactRow } from "@/components/ui/confirm-destructive";
@@ -149,6 +147,25 @@ interface QualityItem {
   approved: boolean;
   approvedAt: string | null;
   approvalComment?: string | null;
+}
+
+/**
+ * One row from GET /api/quality/ncrs (server/quality-ncr-routes.ts). The
+ * endpoint returns the ncr_reports row plus a joined assignee name. It does
+ * NOT return project name — only projectId — so the dashboard resolves the
+ * name from the checklists list when available.
+ */
+interface NcrListItem {
+  id: number;
+  projectId: number;
+  title: string;
+  description: string | null;
+  severity: "minor" | "major" | "critical" | string;
+  status: string;
+  dueDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+  assigneeName: string | null;
 }
 
 interface QualityDashboardSummary {
@@ -247,7 +264,7 @@ export default function QmDashboardPage() {
   // so users without the right role don't see a delete button that would 403.
   const canDeleteQuality = canDeleteQualityPerm && (isAdmin || isQm);
 
-  const { data: checklists = [], isLoading: checklistsLoading, isError: checklistsError, error: checklistsQueryError, refetch: refetchChecklists } = useQuery<Checklist[]>({
+  const { data: checklists = [], isLoading: checklistsLoading, isError: checklistsError, refetch: refetchChecklists } = useQuery<Checklist[]>({
     queryKey: ["quality-checklists"],
     queryFn: () => qFetch("/api/quality/checklists"),
     refetchOnMount: "always",
@@ -262,11 +279,32 @@ export default function QmDashboardPage() {
     staleTime: 10_000,
   });
 
-  const { data: governanceSummary } = useQuery<QualityDashboardSummary>({
+  const {
+    data: governanceSummary,
+    isLoading: governanceLoading,
+    isError: governanceError,
+    refetch: refetchGovernance,
+  } = useQuery<QualityDashboardSummary>({
     queryKey: ["quality-dashboard"],
     queryFn: () => qFetch("/api/quality/dashboard"),
     refetchOnMount: "always",
     staleTime: 10_000,
+  });
+
+  // Open NCRs — first-class dashboard surface (finding QM-2). Sourced from
+  // the existing GET /api/quality/ncrs?status=open list endpoint
+  // (server/quality-ncr-routes.ts). Read-only; no new endpoint added.
+  const {
+    data: openNcrs = [],
+    isLoading: ncrsLoading,
+    isError: ncrsError,
+    refetch: refetchNcrs,
+  } = useQuery<NcrListItem[]>({
+    queryKey: ["quality-ncrs", "open"],
+    queryFn: () => qFetch("/api/quality/ncrs?status=open").then((r: { items?: NcrListItem[] }) => r?.items ?? []),
+    refetchOnMount: "always",
+    staleTime: 10_000,
+    retry: 1,
   });
 
   // Consolidated quality items for governance overview
@@ -482,6 +520,20 @@ export default function QmDashboardPage() {
     return new Date(value).toLocaleDateString();
   };
 
+  // Resolve a project name for an NCR row from the checklists list. The
+  // /api/quality/ncrs endpoint returns projectId only (see NcrListItem).
+  const ncrProjectName = (projectId: number): string | null =>
+    checklists.find((c) => c.projectId === projectId)?.projectName ?? null;
+
+  const ncrAge = (createdAt?: string | null): string => {
+    if (!createdAt) return "age unknown";
+    const created = new Date(createdAt).getTime();
+    if (Number.isNaN(created)) return "age unknown";
+    const days = Math.max(0, Math.floor((Date.now() - created) / 86_400_000));
+    if (days === 0) return "raised today";
+    return `${days}d open`;
+  };
+
   const filteredProjects = useMemo(() => {
     let list = checklists.filter(c =>
       (c.projectName || "").toLowerCase().includes(searchTerm.toLowerCase())
@@ -537,7 +589,8 @@ export default function QmDashboardPage() {
 
   const qmWalkthroughSteps = useMemo(() => [
     { title: "Quality overview", description: "KPI cards at the top show total projects, items passed, warnings, and average QM score." },
-    { title: "View modes", description: "Toggle between Projects view (top-down by project) and Items view (bottom-up by individual checklist item)." },
+    { title: "Open NCRs", description: "Open non-conformances are listed in their own card — review severity, owning project, and age at a glance." },
+    { title: "Project checklists", description: "Each project's quality checklist progress is listed below. Open a project to drill into its items." },
     { title: "Warnings", description: "Active warnings are shown below. Override or resolve them with a reason." },
   ], []);
 
@@ -546,17 +599,11 @@ export default function QmDashboardPage() {
     warningFilter ? 1 : 0,
   ].reduce((a, b) => a + b, 0);
 
-  if (checklistsLoading) return <PageSkeleton lines={5} />;
-
   return (
     <PageShell className="p-4 md:p-6" data-testid="qm-dashboard-page">
-      {checklistsError && (
-        <PageError
-          title="Unable to load some quality data"
-          message={checklistsQueryError instanceof Error ? checklistsQueryError.message : "Checklist data is temporarily unavailable. Showing the rest of the dashboard."}
-          onRetry={() => refetchChecklists()}
-        />
-      )}
+      {/* No global loading gate: each section below renders from its own
+          query state so a slow/failed /api/quality/checklists call never
+          blanks the KPI cards, warnings, NCRs, or approvals. */}
       {/* D3 controlled-document approvals waiting on this QM */}
       <div className="mb-4">
         <ApprovalQueueCard />
@@ -586,32 +633,145 @@ export default function QmDashboardPage() {
 
       <AttentionBadges items={qmAttentionItems} threshold={5} testId="qm-attention-needed" />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        {([
-          { label: "Overdue actions", value: governanceSummary?.overdueActions ?? 0, tone: "danger", sub: "Items past due and still unresolved." },
-          { label: "Failed QC", value: governanceSummary?.resubmissionNeeded ?? 0, tone: "danger", sub: "Items that failed inspection — fix and resubmit." },
-          { label: "Evidence gaps", value: governanceSummary?.evidenceRequired ?? 0, tone: "warning", sub: "Evidence-required items still missing proof." },
-          { label: "Blocked handover", value: governanceSummary?.blockedHandovers ?? 0, tone: "danger", sub: "Projects where quality is holding execution readiness." },
-          { label: "At-risk projects", value: governanceSummary?.atRiskProjects ?? 0, tone: "warning", sub: "Projects carrying elevated quality governance risk." },
-        ] as const).map((kpi) => {
-          const active = kpi.value > 0;
-          const border = !active
-            ? "border-border"
-            : kpi.tone === "danger" ? "border-red-200" : "border-amber-200";
-          const valueColor = !active
-            ? "text-muted-foreground"
-            : kpi.tone === "danger" ? "text-red-600" : "text-amber-700";
-          return (
-            <Card key={kpi.label} className={border}>
-              <CardContent className="p-3">
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{kpi.label}</p>
-                <p className={`text-xl font-bold tabular-nums mt-1 ${valueColor}`}>{kpi.value}</p>
-                <p className="text-xs text-muted-foreground mt-1">{kpi.sub}</p>
+      {/* Governance KPI strip — own query state. A slow/failed
+          /api/quality/dashboard call shows an explicit loading or
+          error+retry state here instead of silently rendering zeros. */}
+      {governanceLoading ? (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" data-testid="qm-kpi-loading">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Card key={i} className="border-border">
+              <CardContent className="p-3 space-y-2">
+                <div className="h-2.5 w-20 rounded bg-muted animate-pulse" />
+                <div className="h-6 w-10 rounded bg-muted animate-pulse" />
+                <div className="h-2.5 w-full rounded bg-muted animate-pulse" />
               </CardContent>
             </Card>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      ) : governanceError ? (
+        <Card className="border-amber-200" data-testid="qm-kpi-error">
+          <CardContent className="p-4 flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium">Couldn't load quality governance KPIs</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Overdue actions, failed QC, evidence gaps and risk counts are temporarily unavailable. The rest of the dashboard still works.</p>
+              </div>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => refetchGovernance()} data-testid="btn-retry-kpis">Retry</Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          {([
+            { label: "Overdue actions", value: governanceSummary?.overdueActions ?? 0, tone: "danger", sub: "Items past due and still unresolved." },
+            { label: "Failed QC", value: governanceSummary?.resubmissionNeeded ?? 0, tone: "danger", sub: "Items that failed inspection — fix and resubmit." },
+            { label: "Evidence gaps", value: governanceSummary?.evidenceRequired ?? 0, tone: "warning", sub: "Evidence-required items still missing proof." },
+            { label: "Blocked handover", value: governanceSummary?.blockedHandovers ?? 0, tone: "danger", sub: "Projects where quality is holding execution readiness." },
+            { label: "At-risk projects", value: governanceSummary?.atRiskProjects ?? 0, tone: "warning", sub: "Projects carrying elevated quality governance risk." },
+          ] as const).map((kpi) => {
+            const active = kpi.value > 0;
+            const border = !active
+              ? "border-border"
+              : kpi.tone === "danger" ? "border-red-200" : "border-amber-200";
+            const valueColor = !active
+              ? "text-muted-foreground"
+              : kpi.tone === "danger" ? "text-red-600" : "text-amber-700";
+            return (
+              <Card key={kpi.label} className={border}>
+                <CardContent className="p-3">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{kpi.label}</p>
+                  <p className={`text-xl font-bold tabular-nums mt-1 ${valueColor}`}>{kpi.value}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{kpi.sub}</p>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Open NCRs — first-class surface (audit QM-2). Own query state:
+          loading / explicit error+retry / empty / list, all independent
+          of the checklists query. Source: GET /api/quality/ncrs?status=open
+          (server/quality-ncr-routes.ts). Project name resolved from the
+          checklists list when available (endpoint returns projectId only). */}
+      <Card className="border-border" data-testid="qm-open-ncrs">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold flex items-center gap-2">
+            <div className="p-1.5 rounded-lg bg-red-50">
+              <FileText className="h-4 w-4 text-red-600" />
+            </div>
+            Open NCRs
+            {!ncrsLoading && !ncrsError && (
+              <Badge variant="outline" className="bg-muted text-muted-foreground border-border ml-1" data-testid="qm-open-ncrs-count">
+                {openNcrs.length}
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          {ncrsLoading ? (
+            <div className="flex flex-col items-center justify-center py-10 text-muted-foreground" data-testid="qm-ncrs-loading">
+              <Loader2 className="h-6 w-6 mb-2 animate-spin text-red-500" />
+              <p className="text-sm">Loading open NCRs...</p>
+            </div>
+          ) : ncrsError ? (
+            <div className="flex flex-col items-center justify-center py-10 text-muted-foreground" data-testid="qm-ncrs-error">
+              <AlertTriangle className="h-9 w-9 mb-2 text-amber-500" />
+              <p className="font-medium text-foreground">Couldn't load open NCRs</p>
+              <p className="text-xs mt-1">The non-conformance list is temporarily unavailable.</p>
+              <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchNcrs()} data-testid="btn-retry-ncrs">Retry</Button>
+            </div>
+          ) : openNcrs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 text-muted-foreground" data-testid="qm-ncrs-empty">
+              <ShieldCheck className="h-10 w-10 mb-2 text-emerald-500/70" />
+              <p className="font-medium text-foreground">No open NCRs</p>
+              <p className="text-xs mt-1">There are no open non-conformances across active projects.</p>
+            </div>
+          ) : (
+            <div className="space-y-2" data-testid="qm-ncrs-list">
+              {openNcrs.map((ncr) => {
+                const projectName = ncrProjectName(ncr.projectId);
+                const sev = String(ncr.severity || "").toLowerCase();
+                const sevClass = sev === "critical"
+                  ? "bg-red-50 text-red-600 border-red-200"
+                  : sev === "major"
+                    ? "bg-amber-50 text-amber-700 border-amber-200"
+                    : "bg-muted text-muted-foreground border-border";
+                return (
+                  <button
+                    key={ncr.id}
+                    type="button"
+                    className="w-full flex items-start justify-between gap-3 rounded-lg border bg-background px-3 py-2.5 text-left hover:border-red-300 hover:shadow-sm transition-all"
+                    onClick={() => projectName
+                      ? setLocation(`/project/${encodeURIComponent(projectName)}?mode=execution&section=quality&subTab=quality&ncr=${ncr.id}`)
+                      : setLocation(`/quality?ncr=${ncr.id}`)}
+                    data-testid={`qm-ncr-row-${ncr.id}`}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{ncr.title}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span>{projectName ?? `Project #${ncr.projectId}`}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>{ncrAge(ncr.createdAt)}</span>
+                        {ncr.assigneeName && (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span>{ncr.assigneeName}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <Badge variant="outline" className={`text-[10px] shrink-0 ${sevClass}`}>
+                      {sev ? sev.charAt(0).toUpperCase() + sev.slice(1) : "Unknown"}
+                    </Badge>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {topRiskProjects.length > 0 && (
         <Card className="border-border border-l-2 border-l-amber-500">
@@ -701,13 +861,13 @@ export default function QmDashboardPage() {
         </Card>
       </div>
 
-      <Tabs value="projects">
+      <section aria-label="Project checklists">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-1.5 px-4 h-10 font-semibold text-sm">
             <LayoutGrid className="h-4 w-4" /> Project Checklists
           </div>
           <div className="w-full rounded-lg border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-            {`Projects view: prioritize checklist-level review and navigate to project quality tabs (${activeProjectsCount} active, ${completedProjectsCount} completed).`}
+            {`Prioritize checklist-level review and navigate to project quality tabs (${activeProjectsCount} active, ${completedProjectsCount} completed).`}
           </div>
 
           {activeFiltersCount > 0 && (
@@ -724,7 +884,7 @@ export default function QmDashboardPage() {
           )}
         </div>
 
-        <TabsContent value="projects" className="mt-4">
+        <div className="mt-4">
           {selectedProjectName && selectedProjectChecklist ? (
             <Card>
               <CardHeader className="pb-3 border-b">
@@ -1030,8 +1190,8 @@ export default function QmDashboardPage() {
             </CardContent>
           </Card>
           )}
-        </TabsContent>
-      </Tabs>
+        </div>
+      </section>
 
       <Collapsible open={warningsExpanded} onOpenChange={setWarningsExpanded}>
         <Card className="border-amber-200">
