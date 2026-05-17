@@ -7,8 +7,8 @@ import { AdminQueryState } from "@/components/admin/admin-shell";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import * as api from "../settings-api";
-import type { RoleSummary, UserSummary } from "../settings-types";
-import { resolveSelectedRole, resolveAdminRolesViewState, canManageRoleActions } from "../settings-types";
+import type { RoleSummary, UserSummary, PermDiff } from "../settings-types";
+import { resolveSelectedRole, resolveAdminRolesViewState, canManageRoleActions, computePermDiff } from "../settings-types";
 import { RoleListPanel } from "./role-list-panel";
 import { RoleDetailPanel } from "./role-detail-panel";
 import { CreateRoleDialog, CloneRoleDialog, ArchiveRoleDialog, DeleteRoleDialog } from "./create-role-dialog";
@@ -19,6 +19,7 @@ export function RolesSection() {
   const [users, setUsers] = useState<UserSummary[]>([]);
   const [selectedRole, setSelectedRole] = useState("");
   const [draft, setDraft] = useState<Partial<RoleSummary>>({});
+  const [lastSaveDiff, setLastSaveDiff] = useState<PermDiff | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [canManage, setCanManage] = useState(false);
@@ -49,7 +50,7 @@ export function RolesSection() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => { setDraft({}); }, [selectedRole]);
+  useEffect(() => { setDraft({}); setLastSaveDiff(null); }, [selectedRole]);
 
   const selected = useMemo(() => roles.find((r) => r.role === selectedRole), [roles, selectedRole]);
   const viewState = resolveAdminRolesViewState({ isLoading, hasError: Boolean(loadError), roleCount: roles.length, canManageRoles: canManage });
@@ -60,14 +61,20 @@ export function RolesSection() {
 
   // Mutations
   const saveMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (reason: string) => {
       if (!selected || !canManage) throw new Error("Not allowed");
-      const result = await api.saveRole(selected.role, draft);
+      const diff = computePermDiff(
+        selected.entityPermissions,
+        draft.entityPermissions ?? selected.entityPermissions,
+      );
+      const result = await api.saveRole(selected.role, draft, reason || undefined);
       if (!result.ok) throw new Error(result.error || "Save failed");
+      return diff;
     },
-    onSuccess: () => {
+    onSuccess: (diff) => {
       queryClient.invalidateQueries({ queryKey: ["auth-permissions-matrix"] });
       setDraft({});
+      setLastSaveDiff(diff);
       load();
       toast({ title: "Role saved successfully" });
     },
@@ -147,12 +154,14 @@ export function RolesSection() {
                 draft={draft}
                 onUpdateDraft={updateDraft}
                 onResetDraft={() => setDraft({})}
-                onSave={() => saveMutation.mutate()}
+                onSave={(reason) => saveMutation.mutate(reason)}
                 onClone={() => setShowClone(true)}
                 onArchive={() => setShowArchive(true)}
                 onDelete={() => setShowDelete(true)}
                 canManageRoles={canManage}
                 isSaving={saveMutation.isPending}
+                lastSaveDiff={lastSaveDiff}
+                onDismissDiff={() => setLastSaveDiff(null)}
               />
             ) : viewState === "ready" ? (
               <Card className="border-gray-200 shadow-sm">

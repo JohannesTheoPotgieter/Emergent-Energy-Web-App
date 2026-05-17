@@ -5,6 +5,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Check, ChevronDown, ChevronRight, Eye, Pencil, Plus, Search, ShieldCheck, Trash2, X } from "lucide-react";
 import type { PermissionAction } from "@shared/schema";
 import { ENTITY_PERMISSION_DEFAULTS } from "@shared/schema";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { RoleSummary } from "../settings-types";
 import { ACTIONS, ENTITY_CATEGORIES, ENTITY_DESCRIPTIONS, PERM_CATEGORY_TO_NAV_SECTION, formatEntityName } from "../settings-types";
 
@@ -16,6 +17,27 @@ interface RolePermissionsMatrixProps {
   enabledNavSections: string[];
   /** Permission entities corresponding to disabled screens — filtered out of the matrix. */
   disabledEntityIds?: Set<string>;
+  /**
+   * UI/UX audit X6 — called with the audit justification the admin entered
+   * when confirming a bulk Grant-All / Revoke-All flip. The parent threads
+   * this through the save mutation so it is persisted to the audit log.
+   */
+  onBulkAuditReason?: (reason: string) => void;
+}
+
+// Calm, security-screen palette (UI/UX audit X4): emerald = granted,
+// one semantic red = explicitly denied, neutral grey otherwise. No blue/amber.
+const CELL_STYLES = {
+  granted: "bg-emerald-100 text-emerald-700 border-emerald-300",
+  denied: "bg-red-50 text-red-600 border-red-200",
+  neutral: "bg-gray-50 text-gray-400 border-gray-200",
+};
+
+interface PendingBulk {
+  kind: "global" | "category" | "entity";
+  label: string;
+  entities: string[];
+  value: boolean;
 }
 
 const ACTION_ICONS: Record<string, React.ReactNode> = {
@@ -25,13 +47,6 @@ const ACTION_ICONS: Record<string, React.ReactNode> = {
   approve: <Check className="h-3 w-3" />,
   override: <ShieldCheck className="h-3 w-3" />,
   delete: <Trash2 className="h-3 w-3" />,
-};
-
-const CELL_STYLES = {
-  role_override_on: "bg-emerald-100 text-emerald-700 border-emerald-300",
-  default_on: "bg-blue-50 text-blue-600 border-blue-200",
-  role_override_off: "bg-red-50 text-red-400 border-red-200",
-  no_access: "bg-gray-50 text-gray-300 border-gray-200",
 };
 
 function getPermissionState(
@@ -52,9 +67,11 @@ function getPermissionState(
   return { allowed: false, source: "none" };
 }
 
-export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRoles, enabledNavSections, disabledEntityIds }: RolePermissionsMatrixProps) {
+export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRoles, enabledNavSections, disabledEntityIds, onBulkAuditReason }: RolePermissionsMatrixProps) {
   const [permSearch, setPermSearch] = useState("");
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  // UI/UX audit X6 — bulk flips are gated behind a confirm + justification.
+  const [pendingBulk, setPendingBulk] = useState<PendingBulk | null>(null);
 
   const effectiveRole = { ...role, ...draft } as RoleSummary;
   const currentEp = (effectiveRole.entityPermissions || {}) as Record<string, Record<string, boolean>>;
@@ -67,7 +84,8 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
     onUpdateDraft({ entityPermissions: next });
   };
 
-  const bulkUpdateCategory = (entities: string[], value: boolean) => {
+  // Applies the actual bulk change to the draft (after confirmation).
+  const applyBulk = (entities: string[], value: boolean) => {
     const next = { ...currentEp };
     entities.forEach((entity) => {
       const updated: Record<string, boolean> = {};
@@ -75,6 +93,23 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
       next[entity] = updated;
     });
     onUpdateDraft({ entityPermissions: next });
+  };
+
+  // Single-entity all/none toggle stays inline (low blast radius — one entity).
+  const bulkUpdateEntity = (entity: string, value: boolean) => {
+    applyBulk([entity], value);
+  };
+
+  // Global + category flips must be confirmed with an impact preview + reason.
+  const requestBulk = (kind: PendingBulk["kind"], label: string, entities: string[], value: boolean) => {
+    setPendingBulk({ kind, label, entities, value });
+  };
+
+  const confirmBulk = (reason?: string) => {
+    if (!pendingBulk) return;
+    applyBulk(pendingBulk.entities, pendingBulk.value);
+    if (reason && onBulkAuditReason) onBulkAuditReason(reason);
+    setPendingBulk(null);
   };
 
   const toggleCategory = (key: string) => {
@@ -143,17 +178,16 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
         </div>
         {canManageRoles && (
           <div className="flex gap-1">
-            <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-emerald-700 border-emerald-200 hover:bg-emerald-50" onClick={() => bulkUpdateCategory(allEntities, true)} data-testid="button-grant-all-global">Grant All</Button>
-            <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-red-600 border-red-200 hover:bg-red-50" onClick={() => bulkUpdateCategory(allEntities, false)} data-testid="button-revoke-all-global">Revoke All</Button>
+            <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-emerald-700 border-emerald-200 hover:bg-emerald-50" onClick={() => requestBulk("global", "all workspaces", allEntities, true)} data-testid="button-grant-all-global">Grant All</Button>
+            <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-red-600 border-red-200 hover:bg-red-50" onClick={() => requestBulk("global", "all workspaces", allEntities, false)} data-testid="button-revoke-all-global">Revoke All</Button>
           </div>
         )}
       </div>
 
-      {/* Legend — compact */}
+      {/* Legend — calm 3-state palette (UI/UX audit X4) */}
       <div className="flex items-center gap-3 mb-2 text-[9px] text-muted-foreground px-1">
-        <div className="flex items-center gap-1"><div className="h-2 w-2 rounded border bg-emerald-100 border-emerald-300" /><span>Override (on)</span></div>
-        <div className="flex items-center gap-1"><div className="h-2 w-2 rounded border bg-blue-50 border-blue-200" /><span>Default (on)</span></div>
-        <div className="flex items-center gap-1"><div className="h-2 w-2 rounded border bg-red-50 border-red-200" /><span>Override (off)</span></div>
+        <div className="flex items-center gap-1"><div className="h-2 w-2 rounded border bg-emerald-100 border-emerald-300" /><span>Granted</span></div>
+        <div className="flex items-center gap-1"><div className="h-2 w-2 rounded border bg-red-50 border-red-200" /><span>Denied</span></div>
         <div className="flex items-center gap-1"><div className="h-2 w-2 rounded border bg-gray-50 border-gray-200" /><span>No access</span></div>
       </div>
 
@@ -164,10 +198,10 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="text-left pl-3 pr-1 py-1.5 text-[10px] font-semibold text-gray-600 bg-gray-50" style={{ minWidth: 160 }}>ENTITY</th>
                 {ACTIONS.map((a) => (
-                  <th key={a} className="text-center px-0.5 py-1.5 text-[10px] font-semibold text-gray-600 bg-gray-50" style={{ width: 44 }}>
+                  <th key={a} scope="col" aria-label={`${a} permission`} className="text-center px-0.5 py-1.5 text-[10px] font-semibold text-gray-600 bg-gray-50" style={{ width: 44 }}>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <div className="flex items-center justify-center gap-0.5 cursor-default">{ACTION_ICONS[a]}</div>
+                        <div className="flex items-center justify-center gap-0.5 cursor-default" aria-hidden="true">{ACTION_ICONS[a]}</div>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="text-[10px] capitalize">{a}</TooltipContent>
                     </Tooltip>
@@ -198,7 +232,7 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
                             {!navDisabled && summary && (
                               <div className="flex items-center gap-1 ml-1">
                                 <div className="w-12 h-1 bg-gray-200 rounded-full overflow-hidden">
-                                  <div className={`h-full rounded-full ${pct > 75 ? "bg-emerald-500" : pct > 25 ? "bg-amber-500" : "bg-gray-400"}`} style={{ width: `${pct}%` }} />
+                                  <div className={`h-full rounded-full ${pct > 75 ? "bg-emerald-500" : "bg-gray-400"}`} style={{ width: `${pct}%` }} />
                                 </div>
                                 <span className="text-[9px] text-gray-400 font-medium">{summary.granted}/{summary.total}</span>
                               </div>
@@ -206,8 +240,8 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
                           </div>
                           {canManageRoles && !navDisabled && (
                             <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                              <button type="button" onClick={() => bulkUpdateCategory(cat.entities, true)} className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 font-medium" data-testid={`grant-category-${cat.key}`}>Grant all</button>
-                              <button type="button" onClick={() => bulkUpdateCategory(cat.entities, false)} className="text-[9px] px-1.5 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100 font-medium" data-testid={`revoke-category-${cat.key}`}>Revoke all</button>
+                              <button type="button" onClick={() => requestBulk("category", cat.label, cat.entities, true)} className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 font-medium" data-testid={`grant-category-${cat.key}`}>Grant all</button>
+                              <button type="button" onClick={() => requestBulk("category", cat.label, cat.entities, false)} className="text-[9px] px-1.5 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100 font-medium" data-testid={`revoke-category-${cat.key}`}>Revoke all</button>
                             </div>
                           )}
                         </div>
@@ -238,33 +272,48 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
                           </td>
                           {ACTIONS.map((action) => {
                             const state = getPermissionState(entity, action, currentEp, normalizedRole);
+                            // Calm 3-state palette (X4): granted / denied / no-access.
                             const cellColor = navDisabled
-                              ? CELL_STYLES.no_access
+                              ? CELL_STYLES.neutral
                               : state.allowed
-                                ? state.source === "role_override" ? CELL_STYLES.role_override_on : CELL_STYLES.default_on
-                                : state.source === "role_override" ? CELL_STYLES.role_override_off : CELL_STYLES.no_access;
+                                ? CELL_STYLES.granted
+                                : state.source === "role_override"
+                                  ? CELL_STYLES.denied
+                                  : CELL_STYLES.neutral;
 
-                            const tooltipText = navDisabled
+                            // Text companion for the cell source — never colour-only (X4).
+                            const sourceLabel = navDisabled
                               ? "Navigation disabled"
                               : state.allowed
-                                ? state.source === "role_override" ? `Granted via role override` : `Granted via default`
-                                : state.source === "role_override" ? `Denied via role override` : `No access`;
+                                ? state.source === "role_override" ? "Granted (role override)" : "Granted (default)"
+                                : state.source === "role_override" ? "Denied (role override)" : "No access";
+                            const sourceTag = navDisabled
+                              ? ""
+                              : state.source === "role_override"
+                                ? "override"
+                                : state.source === "default"
+                                  ? "default"
+                                  : "";
 
                             return (
                               <td key={action} className="text-center px-0.5 py-1">
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <button type="button" disabled={!canManageRoles || navDisabled} onClick={() => updateEp(entity, action, !state.allowed)}
-                                      className={`inline-flex items-center justify-center h-5.5 w-5.5 rounded border transition-all ${!canManageRoles || navDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:scale-110"} ${cellColor}`}
+                                      aria-label={`${formatEntityName(entity)} ${action}: ${sourceLabel}`}
+                                      className={`relative inline-flex items-center justify-center h-5.5 w-5.5 rounded border transition-all ${!canManageRoles || navDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:scale-110"} ${cellColor}`}
                                       style={{ height: 22, width: 22 }}
                                       data-testid={`toggle-${entity}-${action}`}
                                     >
                                       {!navDisabled && state.allowed ? <Check className="h-2.5 w-2.5" /> : <X className="h-2.5 w-2.5" />}
+                                      {sourceTag === "override" && (
+                                        <span aria-hidden="true" className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-gray-500 ring-1 ring-white" />
+                                      )}
                                     </button>
                                   </TooltipTrigger>
                                   <TooltipContent side="top" className="text-[10px]">
                                     <p className="font-medium">{formatEntityName(entity)} · {action}</p>
-                                    <p className="text-muted-foreground">{tooltipText}</p>
+                                    <p className="text-muted-foreground">{sourceLabel}</p>
                                   </TooltipContent>
                                 </Tooltip>
                               </td>
@@ -274,8 +323,8 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
                             <td className="text-center px-0.5 py-1">
                               {!navDisabled && (
                                 <div className="flex gap-0.5 justify-center">
-                                  <button type="button" onClick={() => ACTIONS.forEach((a) => updateEp(entity, a, true))} className="text-[8px] px-1 py-0.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100" title="Grant all" data-testid={`grant-all-${entity}`}>All</button>
-                                  <button type="button" onClick={() => ACTIONS.forEach((a) => updateEp(entity, a, false))} className="text-[8px] px-1 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100" title="Revoke all" data-testid={`revoke-all-${entity}`}>None</button>
+                                  <button type="button" onClick={() => bulkUpdateEntity(entity, true)} className="text-[8px] px-1 py-0.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100" title="Grant all" data-testid={`grant-all-${entity}`}>All</button>
+                                  <button type="button" onClick={() => bulkUpdateEntity(entity, false)} className="text-[8px] px-1 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100" title="Revoke all" data-testid={`revoke-all-${entity}`}>None</button>
                                 </div>
                               )}
                             </td>
@@ -290,6 +339,38 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
           </table>
         </TooltipProvider>
       </div>
+
+      {/* UI/UX audit X6 — bulk Grant-All / Revoke-All confirmation with an
+          impact preview (actual counts) and required justification. */}
+      <ConfirmDialog
+        open={!!pendingBulk}
+        onOpenChange={(o) => { if (!o) setPendingBulk(null); }}
+        title={pendingBulk?.value ? "Grant all permissions?" : "Revoke all permissions?"}
+        description={
+          pendingBulk
+            ? `This ${pendingBulk.value ? "grants" : "revokes"} every action for ${
+                pendingBulk.kind === "global" ? "every workspace" : `the "${pendingBulk.label}" group`
+              } on the ${effectiveRole.label || normalizedRole} role.`
+            : undefined
+        }
+        variant={pendingBulk?.value ? "default" : "destructive"}
+        confirmLabel={pendingBulk?.value ? "Grant all" : "Revoke all"}
+        impact={
+          pendingBulk ? (
+            <p>
+              {pendingBulk.value ? "Grant All" : "Revoke All"} will set{" "}
+              <strong>{pendingBulk.entities.length * ACTIONS.length}</strong> permissions across{" "}
+              <strong>{pendingBulk.entities.length}</strong>{" "}
+              {pendingBulk.entities.length === 1 ? "workspace" : "workspaces"} for role{" "}
+              <strong>{effectiveRole.label || normalizedRole}</strong>. Every user with this role
+              is affected. Save to apply.
+            </p>
+          ) : undefined
+        }
+        requireReason
+        reasonLabel="Reason (recorded in the audit log)"
+        onConfirm={(reason) => confirmBulk(reason)}
+      />
     </div>
   );
 }
