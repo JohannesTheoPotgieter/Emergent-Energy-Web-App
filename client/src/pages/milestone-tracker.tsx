@@ -15,7 +15,7 @@ import {
   Milestone, Search, CheckCircle2, Clock, AlertTriangle,
   Target, DollarSign, TrendingUp,
   Loader2, BanknoteIcon, FileText, CircleDot, ChevronDown, ChevronRight,
-  Users, Download, Calendar,
+  Users, Download, Calendar, RefreshCw,
 } from "lucide-react";
 
 // ── Construction-to-Client-Handover phase filter ───────────────────────────
@@ -102,6 +102,8 @@ interface ProjectRow {
   latestUpdateBy: string | null;
   milestones: RevenueMilestone[];
   revenueSummary: RevenueTabData["summary"] | null;
+  /** True when this project's revenue fetch failed (distinct from "no milestones"). */
+  revenueErrored: boolean;
   /** Sorting category: 0 = overdue, 1 = upcoming 14 days, 2 = rest */
   urgencyGroup: 0 | 1 | 2;
 }
@@ -230,7 +232,7 @@ function LatestUpdateCellWrapper({ project, onSaved }: { project: ProjectRow; on
 }
 
 function ProjectCard({
-  project, isExpanded, headerBg, toggleProject, navigate, revenueLoading, onSaved,
+  project, isExpanded, headerBg, toggleProject, navigate, revenueLoading, onSaved, onRetryRevenue,
 }: {
   project: ProjectRow;
   isExpanded: boolean;
@@ -239,12 +241,23 @@ function ProjectCard({
   navigate: (path: string) => void;
   revenueLoading: boolean;
   onSaved: () => void;
+  onRetryRevenue: (projectNameRaw: string) => void;
 }) {
   return (
     <Card className="overflow-hidden">
       <div
         className={`px-3 py-2 flex items-center gap-2 sm:gap-3 flex-wrap cursor-pointer select-none hover:bg-muted/50 transition-colors ${headerBg}`}
         onClick={() => toggleProject(project.projectId)}
+        role="button"
+        tabIndex={0}
+        aria-expanded={isExpanded}
+        aria-label={`${project.projectName} — ${isExpanded ? "collapse" : "expand"} milestones`}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            toggleProject(project.projectId);
+          }
+        }}
       >
         {isExpanded
           ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -345,6 +358,24 @@ function ProjectCard({
                 </tbody>
               </table>
             </div>
+          ) : project.revenueErrored ? (
+            <div className="px-4 py-4 flex flex-col items-center gap-2 text-center border-t bg-red-50/40">
+              <AlertTriangle className="h-5 w-5 text-red-500" />
+              <p className="text-[11px] font-medium">Couldn’t load revenue milestones</p>
+              <p className="text-[10px] text-muted-foreground max-w-sm">
+                This failed to load — it does <strong>not</strong> mean the project has no
+                milestones. Please retry.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-[11px] gap-1.5"
+                onClick={() => onRetryRevenue(project.projectNameRaw)}
+              >
+                <RefreshCw className="h-3 w-3" />
+                Retry
+              </Button>
+            </div>
           ) : (
             <div className="px-4 py-3 text-center text-[11px] text-muted-foreground italic border-t">
               {revenueLoading ? "Loading milestones..." : "No revenue milestones found for this project"}
@@ -425,6 +456,7 @@ export default function MilestoneTrackerPage() {
     return eligibleProjects.map((p: any, idx: number) => {
       const rawName = p.projectName || p.project_name || "";
       const revenueData = revenueQueries[idx]?.data as RevenueTabData | undefined;
+      const revenueErrored = revenueQueries[idx]?.isError ?? false;
       const milestones = revenueData?.milestones || [];
       const summary = revenueData?.summary || null;
 
@@ -454,6 +486,7 @@ export default function MilestoneTrackerPage() {
         latestUpdateBy: sumRow?.latest_update_by || p.latestUpdateBy || null,
         milestones,
         revenueSummary: summary,
+        revenueErrored,
         urgencyGroup: computeUrgencyGroup(milestones),
       };
     })
@@ -551,6 +584,10 @@ export default function MilestoneTrackerPage() {
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/project-info"] });
     queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] });
+  };
+
+  const retryRevenue = (projectNameRaw: string) => {
+    queryClient.invalidateQueries({ queryKey: ["revenue-tab", projectNameRaw] });
   };
 
   // KPI summary — from actual revenue data, with contractValue fallback
@@ -704,7 +741,7 @@ export default function MilestoneTrackerPage() {
                         : project.urgencyGroup === 1
                         ? "bg-amber-50 border-l-2 border-l-amber-400"
                         : "bg-muted/30";
-                      return <ProjectCard key={project.projectId} project={project} isExpanded={isExpanded} headerBg={headerBg} toggleProject={toggleProject} navigate={navigate} revenueLoading={revenueLoading} onSaved={invalidate} />;
+                      return <ProjectCard key={project.projectId} project={project} isExpanded={isExpanded} headerBg={headerBg} toggleProject={toggleProject} navigate={navigate} revenueLoading={revenueLoading} onSaved={invalidate} onRetryRevenue={retryRevenue} />;
                     })}
                   </div>
                 );
@@ -749,6 +786,7 @@ export default function MilestoneTrackerPage() {
               navigate={navigate}
               revenueLoading={revenueLoading}
               onSaved={invalidate}
+              onRetryRevenue={retryRevenue}
             />
           </div>
           );

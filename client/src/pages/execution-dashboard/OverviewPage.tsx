@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { formatCurrencyCompact, formatCurrencyFull } from "@/lib/execution-dashboard";
+import { formatZar, formatZarCompact } from "@/lib/currency";
 import {
   Activity, TrendingDown, DollarSign,
   ArrowRight, CheckCircle2, XCircle, Banknote, Clock,
@@ -66,7 +66,8 @@ export default function OverviewPage() {
         {/* 4 — Revenue Outstanding This Month */}
         <KpiTile
           label="Rev Outstanding This Month"
-          value={formatCurrencyCompact(dashboard?.kpis.revenueOutstandingThisMonth ?? 0)}
+          value={formatZarCompact(dashboard?.kpis.revenueOutstandingThisMonth ?? 0)}
+          title={formatZar(dashboard?.kpis.revenueOutstandingThisMonth ?? 0)}
           valueClass="text-amber-600"
           sub="Revenue planned but not yet received this month · all active projects"
           icon={<DollarSign className="w-5 h-5" />}
@@ -77,7 +78,8 @@ export default function OverviewPage() {
         {/* 5 — COS Outstanding This Month */}
         <KpiTile
           label="COS Outstanding This Month"
-          value={formatCurrencyCompact(dashboard?.kpis.cosOutstandingThisMonth ?? 0)}
+          value={formatZarCompact(dashboard?.kpis.cosOutstandingThisMonth ?? 0)}
+          title={formatZar(dashboard?.kpis.cosOutstandingThisMonth ?? 0)}
           valueClass="text-amber-600"
           sub="Cost of sales planned but not yet paid this month · all active projects"
           icon={<TrendingDown className="w-5 h-5" />}
@@ -88,7 +90,8 @@ export default function OverviewPage() {
         {/* 6 — Inflows This Week */}
         <KpiTile
           label="Revenue Inflows This Week"
-          value={formatCurrencyCompact(dashboard?.kpis.projectInflowsThisWeek ?? 0)}
+          value={formatZarCompact(dashboard?.kpis.projectInflowsThisWeek ?? 0)}
+          title={formatZar(dashboard?.kpis.projectInflowsThisWeek ?? 0)}
           sub="Cashflow revenue series expected Mon–Sun this week · all active projects"
           icon={<Banknote className="w-5 h-5" />}
           cta="Open cashflow register"
@@ -98,7 +101,8 @@ export default function OverviewPage() {
         {/* 7 — Outflows This Week */}
         <KpiTile
           label="Expenditure Outflows This Week"
-          value={formatCurrencyCompact(dashboard?.kpis.projectOutflowsThisWeek ?? 0)}
+          value={formatZarCompact(dashboard?.kpis.projectOutflowsThisWeek ?? 0)}
+          title={formatZar(dashboard?.kpis.projectOutflowsThisWeek ?? 0)}
           sub="Cashflow expenditure series expected Mon–Sun this week · all active projects"
           icon={<TrendingDown className="w-5 h-5" />}
           cta="Open cashflow register"
@@ -110,7 +114,7 @@ export default function OverviewPage() {
           label="Portfolio Gross Margin"
           value={kpis.grossMarginPctFy != null ? `${kpis.grossMarginPctFy}%` : "—"}
           valueClass={kpis.grossMarginPctFy == null ? "text-muted-foreground" : kpis.grossMarginPctFy >= 20 ? "text-emerald-600" : kpis.grossMarginPctFy >= 10 ? "text-amber-600" : "text-red-600"}
-          sub={`GP ${formatCurrencyCompact(kpis.grossProfitFy)} on ${formatCurrencyCompact(kpis.plannedRevenueFy)} planned revenue · FY`}
+          sub={`GP ${formatZarCompact(kpis.grossProfitFy)} on ${formatZarCompact(kpis.plannedRevenueFy)} planned revenue · FY`}
           icon={<TrendingUp className="w-5 h-5" />}
           cta="View finance breakdown"
           onClick={() => setRevenueSheetOpen(true)}
@@ -119,7 +123,8 @@ export default function OverviewPage() {
         {/* 9 — Overdue Receivables */}
         <KpiTile
           label="Overdue Receivables"
-          value={formatCurrencyCompact(kpis.overdueInflowFy ?? 0)}
+          value={formatZarCompact(kpis.overdueInflowFy ?? 0)}
+          title={formatZar(kpis.overdueInflowFy ?? 0)}
           valueClass={(kpis.overdueInflowFy ?? 0) === 0 ? "text-emerald-600" : "text-red-600"}
           sub="Revenue milestones past planned date without confirmed payment · FY"
           icon={<AlertOctagon className="w-5 h-5" />}
@@ -163,10 +168,10 @@ export default function OverviewPage() {
                     >
                       <td className="py-2.5 px-3 font-medium truncate max-w-[180px]">{p.projectName}</td>
                       <td className="py-2.5 px-3 text-xs text-muted-foreground hidden sm:table-cell">{p.pm || "—"}</td>
-                      <td className="py-2.5 px-3 text-right tabular-nums text-muted-foreground">{formatCurrencyCompact(p.plannedRevenueFy)}</td>
-                      <td className="py-2.5 px-3 text-right tabular-nums text-emerald-600 font-semibold">{formatCurrencyCompact(p.receivedInflowFy)}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums text-muted-foreground">{formatZarCompact(p.plannedRevenueFy)}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums text-emerald-600 font-semibold">{formatZarCompact(p.receivedInflowFy)}</td>
                       <td className={`py-2.5 px-3 text-right tabular-nums font-bold ${p.openInflowFy > 0 ? "text-amber-600" : "text-emerald-600"}`}>
-                        {formatCurrencyCompact(p.openInflowFy)}
+                        {formatZarCompact(p.openInflowFy)}
                       </td>
                       <td className="py-2.5 px-1 text-center">
                         <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600">
@@ -179,9 +184,9 @@ export default function OverviewPage() {
               <tfoot className="bg-muted/40 border-t-2 border-border sticky bottom-0">
                 <tr className="text-[11px] font-semibold">
                   <td className="py-2 px-3" colSpan={2}>Total ({filteredProjects.length} projects)</td>
-                  <td className="py-2 px-3 text-right tabular-nums">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.plannedRevenueFy, 0))}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-emerald-600">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.receivedInflowFy, 0))}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-amber-600">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.openInflowFy, 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums">{formatZar(filteredProjects.reduce((s, p) => s + p.plannedRevenueFy, 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-emerald-600">{formatZar(filteredProjects.reduce((s, p) => s + p.receivedInflowFy, 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-amber-600">{formatZar(filteredProjects.reduce((s, p) => s + p.openInflowFy, 0))}</td>
                   <td></td>
                 </tr>
               </tfoot>
@@ -225,10 +230,10 @@ export default function OverviewPage() {
                     >
                       <td className="py-2.5 px-3 font-medium truncate max-w-[180px]">{p.projectName}</td>
                       <td className="py-2.5 px-3 text-xs text-muted-foreground hidden sm:table-cell">{p.pm || "—"}</td>
-                      <td className="py-2.5 px-3 text-right tabular-nums text-muted-foreground">{formatCurrencyCompact(p.plannedExpenditureFy)}</td>
-                      <td className="py-2.5 px-3 text-right tabular-nums text-emerald-600 font-semibold">{formatCurrencyCompact(p.paidExpenditureFy)}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums text-muted-foreground">{formatZarCompact(p.plannedExpenditureFy)}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums text-emerald-600 font-semibold">{formatZarCompact(p.paidExpenditureFy)}</td>
                       <td className={`py-2.5 px-3 text-right tabular-nums font-bold ${p.openExpenditureFy > 0 ? "text-orange-600" : "text-emerald-600"}`}>
-                        {formatCurrencyCompact(p.openExpenditureFy)}
+                        {formatZarCompact(p.openExpenditureFy)}
                       </td>
                       <td className="py-2.5 px-1 text-center">
                         <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600">
@@ -241,9 +246,9 @@ export default function OverviewPage() {
               <tfoot className="bg-muted/40 border-t-2 border-border sticky bottom-0">
                 <tr className="text-[11px] font-semibold">
                   <td className="py-2 px-3" colSpan={2}>Total ({filteredProjects.length} projects)</td>
-                  <td className="py-2 px-3 text-right tabular-nums">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.plannedExpenditureFy, 0))}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-emerald-600">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.paidExpenditureFy, 0))}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-orange-600">{formatCurrencyFull(filteredProjects.reduce((s, p) => s + p.openExpenditureFy, 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums">{formatZar(filteredProjects.reduce((s, p) => s + p.plannedExpenditureFy, 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-emerald-600">{formatZar(filteredProjects.reduce((s, p) => s + p.paidExpenditureFy, 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-orange-600">{formatZar(filteredProjects.reduce((s, p) => s + p.openExpenditureFy, 0))}</td>
                   <td></td>
                 </tr>
               </tfoot>
@@ -447,7 +452,7 @@ export default function OverviewPage() {
 }
 
 function KpiTile({
-  label, value, valueClass, sub, icon, cta, onClick,
+  label, value, valueClass, sub, icon, cta, onClick, title,
 }: {
   label: string;
   value: string;
@@ -456,9 +461,12 @@ function KpiTile({
   icon: React.ReactNode;
   cta: string;
   onClick: () => void;
+  /** X2 — exact figure tooltip for compact currency values. */
+  title?: string;
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className="w-full text-left bg-card rounded-lg border border-border p-5 shadow-sm hover:shadow-md hover:border-primary/40 transition-all group"
     >
@@ -468,7 +476,7 @@ function KpiTile({
         </div>
         <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide leading-tight">{label}</span>
       </div>
-      <p className={`text-3xl font-bold tabular-nums ${valueClass || "text-foreground"}`}>{value}</p>
+      <p className={`text-3xl font-bold tabular-nums ${valueClass || "text-foreground"}`} title={title}>{value}</p>
       <p className="text-xs text-muted-foreground mt-1.5 leading-snug">{sub}</p>
       <p className="text-[11px] font-medium text-primary mt-3 group-hover:underline">{cta} →</p>
     </button>

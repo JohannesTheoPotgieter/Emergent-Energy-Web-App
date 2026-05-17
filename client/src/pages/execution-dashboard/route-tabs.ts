@@ -3,6 +3,7 @@ export const EXECUTION_DASHBOARD_TABS = [
   { value: "programme", label: "Programme", path: "/execution-board/program" },
   { value: "construction", label: "Construction", path: "/execution-board/construction" },
   { value: "finance", label: "Finance", path: "/execution-board/finance" },
+  { value: "realisation", label: "Realisation", path: "/execution-board/realisation" },
 ] as const;
 
 export type ExecutionDashboardTab = typeof EXECUTION_DASHBOARD_TABS[number]["value"];

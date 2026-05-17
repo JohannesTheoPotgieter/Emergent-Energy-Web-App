@@ -11,6 +11,7 @@ import OverviewPage from './OverviewPage';
 import ProgramPage from './ProgramPage';
 import ConstructionPage from './ConstructionPage';
 import FinancePage from './FinancePage';
+import RealisationKPIsPage from './RealisationKPIsPage';
 import {
   EXECUTION_DASHBOARD_TABS,
   getExecutionDashboardPathForTab,
@@ -36,14 +37,26 @@ export default function ExecutionDashboard() {
   }
 
   if (ctx.error) {
+    // Keep the raw error detail in the console for debugging; show a calm,
+    // human-readable message to the user (UI/UX audit finding 1b).
+    // eslint-disable-next-line no-console
+    if (typeof console !== 'undefined') console.error('Execution dashboard load failed:', ctx.error);
     return (
-      <div className="flex flex-col items-center justify-center py-24 gap-4">
-        <AlertCircle className="w-8 h-8 text-red-500" />
-        <p>{ctx.error}</p>
-        <Button onClick={ctx.loadData}>
-          <RefreshCw className="w-3.5 h-3.5 mr-1" />
-          Retry
-        </Button>
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="max-w-md">
+          <CardContent className="py-8 px-6 text-center space-y-3">
+            <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
+            <h2 className="text-base font-semibold">We couldn’t load the Execution Board</h2>
+            <p className="text-sm text-muted-foreground">
+              Something went wrong while fetching dashboard data. This is usually temporary —
+              please retry. If it keeps happening, contact your administrator.
+            </p>
+            <Button onClick={ctx.loadData}>
+              <RefreshCw className="w-3.5 h-3.5 mr-1" />
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -51,10 +64,17 @@ export default function ExecutionDashboard() {
   if (!canView) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <Card>
-          <CardContent className="py-8 text-center">
-            <AlertTriangle className="mx-auto mb-2" />
-            <p>Access Denied</p>
+        <Card className="max-w-md">
+          <CardContent className="py-8 px-6 text-center space-y-3">
+            <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto" />
+            <h2 className="text-base font-semibold">Access denied</h2>
+            <p className="text-sm text-muted-foreground">
+              You don’t have permission to view the Execution Board. If you believe this is a
+              mistake, ask your administrator to grant the “Execution Board” permission.
+            </p>
+            <Button variant="outline" onClick={() => setLocation('/')}>
+              Back to home
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -87,7 +107,7 @@ export default function ExecutionDashboard() {
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {ctx.dashboard?.dataFreshness?.generatedAt && (
-              <span className="text-[11px] text-muted-foreground hidden sm:inline">
+              <span className="text-[11px] text-muted-foreground">
                 Data as of{' '}
                 {new Date(ctx.dashboard.dataFreshness.generatedAt).toLocaleTimeString('en-ZA', {
                   hour: '2-digit',
@@ -128,6 +148,10 @@ export default function ExecutionDashboard() {
 
           <TabsContent value="finance" className="mt-5">
             <FinancePage />
+          </TabsContent>
+
+          <TabsContent value="realisation" className="mt-5">
+            <RealisationKPIsPage />
           </TabsContent>
         </Tabs>
       </div>
