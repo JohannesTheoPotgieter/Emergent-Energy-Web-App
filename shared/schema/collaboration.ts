@@ -1,4 +1,3 @@
-import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -823,6 +822,34 @@ export const standupEntries = pgTable("standup_entries", {
 export const insertStandupEntrySchema = createInsertSchema(standupEntries).omit({ id: true, submittedAt: true, updatedAt: true } as any);
 export type InsertStandupEntry = z.infer<typeof insertStandupEntrySchema>;
 export type StandupEntry = typeof standupEntries.$inferSelect;
+
+// Persisted record of a completed live-facilitator standup. The summary
+// screen's "Save & Close" writes one row here so the facilitation history
+// (duration, who participated, task movements, blockers, moods, facilitator
+// notes) is durable rather than discarded on close. This is facilitation
+// metadata only — no email/message bodies or attachments (§ 5A).
+export const standupSessions = pgTable("standup_sessions", {
+  id: serial("id").primaryKey(),
+  scheduleId: integer("schedule_id").references(() => standupSchedules.id, { onDelete: "set null" }),
+  facilitatorUserId: integer("facilitator_user_id").references(() => users.id, { onDelete: "set null" }),
+  sessionDate: text("session_date").notNull(),
+  totalSeconds: integer("total_seconds").notNull().default(0),
+  participantCount: integer("participant_count").notNull().default(0),
+  completedCount: integer("completed_count").notNull().default(0),
+  skippedCount: integer("skipped_count").notNull().default(0),
+  avgSecondsPerSpeaker: integer("avg_seconds_per_speaker").notNull().default(0),
+  blockerCount: integer("blocker_count").notNull().default(0),
+  // Structured facilitation payloads (arrays/maps of small metadata records).
+  taskMovements: jsonb("task_movements").notNull().default([]),
+  moodCounts: jsonb("mood_counts").notNull().default({}),
+  facilitatorNotes: jsonb("facilitator_notes").notNull().default([]),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  byScheduleDate: index("standup_sessions_schedule_date_idx").on(table.scheduleId, table.sessionDate),
+}));
+export const insertStandupSessionSchema = createInsertSchema(standupSessions).omit({ id: true, createdAt: true } as any);
+export type InsertStandupSession = z.infer<typeof insertStandupSessionSchema>;
+export type StandupSession = typeof standupSessions.$inferSelect;
 
 // ===================== DOMAIN EVENTS ARCHITECTURE (Prompt 13) =====================
 

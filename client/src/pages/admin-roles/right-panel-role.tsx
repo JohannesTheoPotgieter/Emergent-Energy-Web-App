@@ -14,11 +14,11 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Shield, GitCompareArrows } from "lucide-react";
+import { Loader2, Shield, GitCompareArrows, AlertTriangle } from "lucide-react";
 import { queryClient as appQueryClient } from "@/lib/queryClient";
 import * as api from "../admin-settings/settings-api";
-import type { RoleSummary, UserSummary } from "../admin-settings/settings-types";
-import { canManageRoleActions } from "../admin-settings/settings-types";
+import type { RoleSummary, UserSummary, PermDiff } from "../admin-settings/settings-types";
+import { canManageRoleActions, computePermDiff } from "../admin-settings/settings-types";
 import { RoleDetailPanel } from "../admin-settings/roles/role-detail-panel";
 import { RoleComparisonDialog } from "../admin-settings/roles/role-comparison-dialog";
 import {
@@ -66,6 +66,7 @@ export function RightPanelRole({ roleKey, onRoleDeleted }: RightPanelRoleProps) 
   const { toast } = useToast();
   const qc = useQueryClient();
   const [draft, setDraft] = useState<Partial<RoleSummary>>({});
+  const [lastSaveDiff, setLastSaveDiff] = useState<PermDiff | null>(null);
   const [showClone, setShowClone] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
@@ -115,6 +116,7 @@ export function RightPanelRole({ roleKey, onRoleDeleted }: RightPanelRoleProps) 
   // Reset draft + transient apply state when the picked role changes.
   useEffect(() => {
     setDraft({});
+    setLastSaveDiff(null);
     setPendingTemplate(null);
     setApplyReason("");
   }, [roleKey]);
@@ -126,13 +128,20 @@ export function RightPanelRole({ roleKey, onRoleDeleted }: RightPanelRoleProps) 
   };
 
   const saveM = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (reason: string) => {
       if (!role || !canManage) throw new Error("Not allowed");
-      const r = await api.saveRole(role.role, draft);
+      // Capture the pre/post permission diff before the draft is cleared.
+      const diff = computePermDiff(
+        role.entityPermissions,
+        draft.entityPermissions ?? role.entityPermissions,
+      );
+      const r = await api.saveRole(role.role, draft, reason || undefined);
       if (!r.ok) throw new Error(r.error || "Save failed");
+      return diff;
     },
-    onSuccess: () => {
+    onSuccess: (diff) => {
       setDraft({});
+      setLastSaveDiff(diff);
       refetchAll();
       toast({ title: "Role saved" });
     },
@@ -221,12 +230,40 @@ export function RightPanelRole({ roleKey, onRoleDeleted }: RightPanelRoleProps) 
     );
   }
 
+  // UI/UX audit X1 — distinguish a failed fetch from a genuinely missing role.
+  // A network/permission error must NOT read as "no such role".
+  if (rolesQ.isError || permsQ.isError) {
+    return (
+      <Card className="border-red-200 bg-red-50/40 shadow-sm" data-testid="right-panel-role-error">
+        <CardContent className="py-12 text-center">
+          <AlertTriangle className="mx-auto mb-3 h-10 w-10 text-red-500" />
+          <p className="text-sm font-medium text-red-800">Couldn’t load roles</p>
+          <p className="mt-1 text-xs text-red-700">
+            This is a loading error, not a missing role. Check your connection and try again.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="mt-4 border-red-300 text-red-700 hover:bg-red-100"
+            onClick={() => { void rolesQ.refetch(); void permsQ.refetch(); }}
+            data-testid="button-retry-roles"
+          >
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
   if (!role) {
     return (
       <Card className="border-gray-200 shadow-sm">
         <CardContent className="py-12 text-center">
           <Shield className="mx-auto mb-3 h-10 w-10 text-gray-300" />
-          <p className="text-sm text-gray-600">Role not found.</p>
+          <p className="text-sm font-medium text-gray-700">Role not found</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            No role matches “{roleKey}”. It may have been deleted or renamed — pick another role from the list.
+          </p>
         </CardContent>
       </Card>
     );
@@ -270,12 +307,14 @@ export function RightPanelRole({ roleKey, onRoleDeleted }: RightPanelRoleProps) 
         draft={draft}
         onUpdateDraft={(u) => setDraft((d) => ({ ...d, ...u }))}
         onResetDraft={() => setDraft({})}
-        onSave={() => saveM.mutate()}
+        onSave={(reason) => saveM.mutate(reason)}
         onClone={() => setShowClone(true)}
         onArchive={() => setShowArchive(true)}
         onDelete={() => setShowDelete(true)}
         canManageRoles={canManage}
         isSaving={saveM.isPending}
+        lastSaveDiff={lastSaveDiff}
+        onDismissDiff={() => setLastSaveDiff(null)}
       />
 
       <RoleComparisonDialog

@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { ShieldCheck, History, Eye, ExternalLink } from "lucide-react";
+import { ShieldCheck, History, Eye, ExternalLink, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -178,7 +178,7 @@ export default function AdminRolesPage() {
             onClick={() => setAuditOpen(true)}
             data-testid="button-change-history"
           >
-            <History className="h-3.5 w-3.5" /> Change history
+            <History className="h-3.5 w-3.5" /> Audit log
           </Button>
         </div>
       </header>
@@ -216,10 +216,42 @@ export default function AdminRolesPage() {
                 user={selectedUser}
                 onOpenManageAccount={() => setAccountDrawerOpen(true)}
               />
-            ) : (
+            ) : usersQ.isError ? (
+              // UI/UX audit X1 — a failed user fetch must not masquerade as an
+              // endless "Loading person…". Surface an explicit, retryable error.
+              <Card className="border-red-200 bg-red-50/40 shadow-sm" data-testid="user-lookup-error">
+                <CardContent className="py-12 text-center">
+                  <AlertTriangle className="mx-auto mb-3 h-10 w-10 text-red-500" />
+                  <p className="text-sm font-medium text-red-800">Couldn’t load this person</p>
+                  <p className="mt-1 text-xs text-red-700">
+                    This is a loading error, not a missing account. Check your connection and try again.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-4 border-red-300 text-red-700 hover:bg-red-100"
+                    onClick={() => void usersQ.refetch()}
+                    data-testid="button-retry-users"
+                  >
+                    Retry
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : usersQ.isLoading ? (
               <Card className="border-gray-200 shadow-sm">
                 <CardContent className="py-12 text-center text-sm text-gray-500">
                   Loading person…
+                </CardContent>
+              </Card>
+            ) : (
+              // Loaded successfully but no match → genuinely missing user.
+              <Card className="border-gray-200 shadow-sm">
+                <CardContent className="py-12 text-center">
+                  <ShieldCheck className="mx-auto mb-3 h-10 w-10 text-gray-300" />
+                  <p className="text-sm font-medium text-gray-700">Person not found</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    No account matches this selection. Pick someone from the list.
+                  </p>
                 </CardContent>
               </Card>
             )

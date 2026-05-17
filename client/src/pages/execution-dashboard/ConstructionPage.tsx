@@ -12,6 +12,7 @@ import {
   HardHat, Shield, FileWarning, AlertTriangle, Activity,
   ExternalLink, Info,
 } from "lucide-react";
+import { KpiCard } from "@/components/ui/kpi-card";
 import { useExecutionData } from "./use-execution-data";
 
 type SortKey = "projectName" | "pm" | "phase" | "rag" | "progress" | "engineeringStatus" | "qualityStatus" | "engineeringBlockers" | "qualityWarnings";
@@ -60,15 +61,25 @@ export default function ConstructionPage() {
     else { setSortKey(key); setSortDir("asc"); }
   };
 
-  const SortHeader = ({ k, children, className }: { k: SortKey; children: React.ReactNode; className?: string }) => (
-    <th className={`py-2.5 px-2 font-medium cursor-pointer hover:text-foreground select-none ${className || ""}`} onClick={() => toggleSort(k)}>
-      <span className="inline-flex items-center gap-1">
-        {children}
-        {sortKey === k && (sortDir === "asc" ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
-        {sortKey !== k && <ArrowUpDown className="w-3 h-3 opacity-30" />}
-      </span>
-    </th>
-  );
+  const SortHeader = ({ k, children, className }: { k: SortKey; children: React.ReactNode; className?: string }) => {
+    const active = sortKey === k;
+    return (
+      <th
+        className={`py-2.5 px-2 font-medium cursor-pointer hover:text-foreground select-none ${className || ""}`}
+        aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+      >
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 font-medium hover:text-foreground"
+          onClick={() => toggleSort(k)}
+        >
+          {children}
+          {active && (sortDir === "asc" ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
+          {!active && <ArrowUpDown className="w-3 h-3 opacity-30" />}
+        </button>
+      </th>
+    );
+  };
 
   // Quality/engineering issue rows from action center
   const constructionIssues = useMemo(() => {
@@ -84,12 +95,12 @@ export default function ConstructionPage() {
     <div className="space-y-5">
       {/* KPI STRIP */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <KpiCard label="Active Projects" value={kpis.activeDashboardProjects} icon={<HardHat className="w-4 h-4 text-blue-600" />} iconBg="bg-blue-100" />
-        <KpiCard label="Behind Plan" value={kpis.projectsBehindPlan} icon={<AlertTriangle className="w-4 h-4 text-red-600" />} iconBg="bg-red-100" valueClass="text-red-600" />
-        <KpiCard label="Avg. Progress" value={`${kpis.averageActualProgressPct ?? "—"}%`} icon={<Activity className="w-4 h-4 text-emerald-600" />} iconBg="bg-emerald-100" sub={`Expected: ${kpis.averageExpectedProgressPct ?? "—"}%`} />
-        <KpiCard label="Eng. Blocked" value={kpis.engineeringBlocked} icon={<Shield className="w-4 h-4 text-red-600" />} iconBg="bg-red-100" valueClass="text-red-600" sub={`${kpis.engineeringAtRisk} at risk`} />
-        <KpiCard label="Open Eng. Blockers" value={kpis.openEngineeringBlockers} icon={<Shield className="w-4 h-4 text-violet-600" />} iconBg="bg-violet-100" />
-        <KpiCard label="Open Quality Issues" value={kpis.openQualityWarnings} icon={<FileWarning className="w-4 h-4 text-amber-600" />} iconBg="bg-amber-100" sub={`${kpis.qualityBlocked} blocked`} />
+        <KpiCard label="Active Projects" value={kpis.activeDashboardProjects} icon={<HardHat className="w-4 h-4" />} />
+        <KpiCard label="Behind Plan" value={kpis.projectsBehindPlan} icon={<AlertTriangle className="w-4 h-4" />} tone="danger" />
+        <KpiCard label="Avg. Progress" value={`${kpis.averageActualProgressPct ?? "—"}%`} icon={<Activity className="w-4 h-4" />} sub={`Expected: ${kpis.averageExpectedProgressPct ?? "—"}%`} />
+        <KpiCard label="Eng. Blocked" value={kpis.engineeringBlocked} icon={<Shield className="w-4 h-4" />} tone="danger" sub={`${kpis.engineeringAtRisk} at risk`} />
+        <KpiCard label="Open Eng. Blockers" value={kpis.openEngineeringBlockers} icon={<Shield className="w-4 h-4" />} />
+        <KpiCard label="Open Quality Issues" value={kpis.openQualityWarnings} icon={<FileWarning className="w-4 h-4" />} tone="warning" sub={`${kpis.qualityBlocked} blocked`} />
       </div>
 
       {/* Engineering & Quality Status Summary */}
@@ -181,6 +192,16 @@ export default function ConstructionPage() {
                       <tr
                         className={`border-t border-border/40 cursor-pointer transition-colors ${expanded ? "bg-emerald-50/40" : "hover:bg-muted/30"}`}
                         onClick={() => setExpandedId(expanded ? null : p.projectId)}
+                        role="button"
+                        tabIndex={0}
+                        aria-expanded={expanded}
+                        aria-label={`${p.projectName} — ${expanded ? "collapse" : "expand"} details`}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setExpandedId(expanded ? null : p.projectId);
+                          }
+                        }}
                       >
                         <td className="py-2 px-3 font-medium truncate max-w-[200px]">{p.projectName}</td>
                         <td className="py-2 px-2 text-muted-foreground text-xs hidden lg:table-cell">{p.pm || "—"}</td>
@@ -310,19 +331,3 @@ export default function ConstructionPage() {
   );
 }
 
-function KpiCard({ icon, iconBg, label, value, sub, valueClass }: {
-  icon: React.ReactNode; iconBg: string; label: string; value: React.ReactNode; sub?: string; valueClass?: string;
-}) {
-  return (
-    <Card className="border-border/60">
-      <CardContent className="p-3">
-        <div className="flex items-center gap-2 mb-1.5">
-          <div className={`w-7 h-7 rounded-lg ${iconBg} flex items-center justify-center shrink-0`}>{icon}</div>
-          <span className="text-[10px] text-muted-foreground font-medium leading-tight">{label}</span>
-        </div>
-        <p className={`text-lg font-bold tabular-nums ${valueClass || ""}`}>{value}</p>
-        {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
-      </CardContent>
-    </Card>
-  );
-}

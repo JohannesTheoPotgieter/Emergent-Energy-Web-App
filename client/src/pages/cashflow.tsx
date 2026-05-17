@@ -69,6 +69,7 @@ import { PageShell, SectionHeader } from '@/components/layout/page-shell';
 import { FinanceShell } from '@/components/layout/FinanceShell';
 import { FinancialYearScopeControl } from '@/components/finance/FinancialYearScopeControl';
 import { PageError, PageSkeleton } from '@/components/ui/page-states';
+import { formatZar, formatZarCompact } from '@/lib/currency';
 import { usePermission } from '@/hooks/use-permissions';
 import { useFinancialYearScope, type FinancialYearScope } from '@/hooks/use-financial-year-scope';
 import { DateOverridePopover } from '@/components/cashflow/DateOverridePopover';
@@ -182,14 +183,9 @@ interface OpexEntry {
   amount: number;
 }
 
-function formatRand(val: number | null | undefined): string {
-  if (val === null || val === undefined || !Number.isFinite(val)) return '—';
-  const abs = Math.abs(val);
-  const sign = val < 0 ? '-' : '';
-  if (abs >= 1_000_000) return `${sign}R ${(abs / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `${sign}R ${(abs / 1_000).toFixed(1)}K`;
-  return `${sign}R ${abs.toFixed(0)}`;
-}
+// Canonical precise ZAR for all cells, panels and tooltips. Absent /
+// non-numeric → "—" (never "R 0"). Chart axes use formatZarCompact directly.
+const formatRand = (val: number | null | undefined): string => formatZar(val);
 
 function formatWeek(dateStr: string): string {
   try {
@@ -278,6 +274,16 @@ function KpiCard({
   testId: string;
   nullCount?: number | null;
 }) {
+  // Calm finance palette (UI/UX audit X3): emerald = primary/positive,
+  // one semantic red = alert, neutral grey otherwise. No off-brand
+  // blue/violet — legacy `blue`/`purple` keys map to the neutral scheme.
+  const neutral = {
+    bg: 'bg-muted/40',
+    border: 'border-border',
+    text: 'text-foreground',
+    iconBg: 'bg-muted',
+    iconColor: 'text-muted-foreground',
+  };
   const colorMap = {
     green: {
       bg: 'bg-emerald-50',
@@ -289,31 +295,13 @@ function KpiCard({
     red: {
       bg: 'bg-red-50',
       border: 'border-red-200',
-      text: 'text-red-700',
+      text: 'text-destructive',
       iconBg: 'bg-red-100',
-      iconColor: 'text-red-600',
+      iconColor: 'text-destructive',
     },
-    blue: {
-      bg: 'bg-blue-50',
-      border: 'border-blue-200',
-      text: 'text-blue-700',
-      iconBg: 'bg-blue-100',
-      iconColor: 'text-blue-600',
-    },
-    purple: {
-      bg: 'bg-violet-50',
-      border: 'border-violet-200',
-      text: 'text-violet-700',
-      iconBg: 'bg-violet-100',
-      iconColor: 'text-violet-600',
-    },
-    slate: {
-      bg: 'bg-slate-50',
-      border: 'border-slate-200',
-      text: 'text-slate-700',
-      iconBg: 'bg-slate-100',
-      iconColor: 'text-slate-600',
-    },
+    blue: neutral,
+    purple: neutral,
+    slate: neutral,
   };
 
   const c = colorMap[color];
@@ -1983,12 +1971,7 @@ export default function CashflowPage() {
                                 tickLine={false}
                                 axisLine={false}
                                 tick={{ fill: '#64748b' }}
-                                tickFormatter={(val) => {
-                                  const abs = Math.abs(val);
-                                  if (abs >= 1_000_000) return `R${(val / 1_000_000).toFixed(1)}M`;
-                                  if (abs >= 1_000) return `R${(val / 1_000).toFixed(0)}K`;
-                                  return `R${val}`;
-                                }}
+                                tickFormatter={(val) => formatZarCompact(val)}
                                 width={65}
                               />
                               <Tooltip
@@ -2222,7 +2205,15 @@ export default function CashflowPage() {
                                               onClick={(e) => e.stopPropagation()}
                                               data-testid={`text-opening-balance-${week.weekStart}`}
                                             >
-                                              <span>{formatRand(week.openingBalance)}</span>
+                                              <span
+                                                className={
+                                                  (week.openingBalance || 0) < 0
+                                                    ? 'text-destructive font-semibold'
+                                                    : ''
+                                                }
+                                              >
+                                                {formatRand(week.openingBalance)}
+                                              </span>
                                               {canEditCashflow && (
                                                 <Pencil className="h-2.5 w-2.5 text-muted-foreground/60" />
                                               )}
@@ -2404,7 +2395,7 @@ export default function CashflowPage() {
                                       className={`px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-[11px] sm:text-[13px] font-bold ${
                                         (week.closingBalance || 0) >= 0
                                           ? 'text-emerald-700'
-                                          : 'text-red-700'
+                                          : 'text-destructive'
                                       }`}
                                       data-testid={`text-closing-balance-${week.weekStart}`}
                                     >
@@ -2422,7 +2413,7 @@ export default function CashflowPage() {
                                               className={`inline-flex items-center gap-1 font-semibold ${
                                                 (week.availablePayment || 0) >= 0
                                                   ? 'text-emerald-700'
-                                                  : 'text-red-700'
+                                                  : 'text-destructive'
                                               } ${canEditCashflow ? 'cursor-pointer hover:underline decoration-dashed underline-offset-2 transition-colors' : 'cursor-default'}`}
                                               disabled={!canEditCashflow}
                                               onClick={(e) => e.stopPropagation()}

@@ -10,16 +10,29 @@
  * Data integrity: same backbone as Engineering — managed_documents +
  * folder_taxonomy + project_folders, SharePoint = source of truth, no file
  * bodies in the DB. See AGENT_GUARDRAILS.md § 2 + § 5A.
+ *
+ * UX (audit QM-5): the page now carries a standard PageShell + SectionHeader
+ * so quality has a titled surface, and the header explicitly names the three
+ * evidence-integrity signals (version, approval status, owner) that the
+ * managed-document strips below surface per document — these are the trust
+ * signals NCR/ITP evidence is judged on.
  */
 
+import { ShieldCheck } from "lucide-react";
+import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { ManagedDocumentApprovalQueue } from "@/components/documents/ManagedDocumentApprovalQueue";
 import DocumentsPage from "../documents";
 
 export default function QualityDocumentsPage() {
   return (
-    <div className="space-y-6" data-testid="quality-documents-page">
+    <PageShell className="space-y-6" data-testid="quality-documents-page">
+      <SectionHeader
+        icon={<ShieldCheck className="h-5 w-5" />}
+        title="Quality Documents"
+        description="NCR evidence, ITP sign-offs, audit reports, calibration certs, and commissioning packs. Each managed document below shows its version, approval status, and owner — the evidence-integrity signals quality decisions are judged on."
+      />
       <ManagedDocumentApprovalQueue title="Quality approvals waiting on me" />
       <DocumentsPage />
-    </div>
+    </PageShell>
   );
 }

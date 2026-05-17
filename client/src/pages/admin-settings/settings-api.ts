@@ -47,8 +47,11 @@ export async function fetchPermissions(): Promise<{ canManageRoles?: boolean; ca
   return (await parseJsonSafe<{ canManageRoles?: boolean; canManageUsers?: boolean }>(res)) || {};
 }
 
-export async function saveRole(roleKey: string, payload: Partial<RoleSummary>): Promise<{ ok: boolean; error?: string }> {
-  const res = await fetch(`/api/roles/${roleKey}`, { method: "PUT", headers: authHeaders(), ...fetchOpts, body: JSON.stringify(payload) });
+export async function saveRole(roleKey: string, payload: Partial<RoleSummary>, reason?: string): Promise<{ ok: boolean; error?: string }> {
+  // UI/UX audit X6 — the audit justification rides alongside the role payload
+  // and is persisted server-side into the permission audit log change detail.
+  const body = reason ? { ...payload, reason } : payload;
+  const res = await fetch(`/api/roles/${roleKey}`, { method: "PUT", headers: authHeaders(), ...fetchOpts, body: JSON.stringify(body) });
   if (!res.ok) {
     const body = await parseJsonSafe<{ error?: string }>(res);
     return { ok: false, error: body?.error || `Save failed (${res.status})` };

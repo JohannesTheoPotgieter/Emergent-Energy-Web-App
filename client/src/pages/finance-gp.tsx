@@ -18,6 +18,7 @@ import { useFinanceQuery } from "@/lib/finance-trust";
 import { DataTrustBadge } from "@/components/ui/data-trust-badge";
 import { useQuery } from "@tanstack/react-query";
 import { fetchQueryFn } from "@/lib/queryClient";
+import { formatZar } from "@/lib/currency";
 
 type Bucket = "planned" | "committed" | "unrealised" | "realised";
 
@@ -119,17 +120,9 @@ interface CategoryHealthResponse {
   projects: CategoryHealthEntry[];
 }
 
-const ZAR = new Intl.NumberFormat("en-ZA", {
-  style: "currency",
-  currency: "ZAR",
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0,
-});
-
-const money = (n: number | null | undefined): string => {
-  if (n == null || !Number.isFinite(n)) return "—";
-  return ZAR.format(n);
-};
+// Canonical precise ZAR for all cells, panels and tooltips. Absent /
+// non-numeric → "—" (never "R 0").
+const money = (n: number | null | undefined): string => formatZar(n);
 
 const pct = (n: number | null | undefined): string => {
   if (n == null || !Number.isFinite(n)) return "—";

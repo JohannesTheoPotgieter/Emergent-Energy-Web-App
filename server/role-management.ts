@@ -359,6 +359,18 @@ export function registerRoleManagementRoutes(app: Express) {
     try {
       const roleKey = req.params.role as string;
       const { label, description, sections, canManageUsers, canManageRoles, canEditData, entityPermissions: ep, authorityModel } = req.body;
+
+      // UI/UX audit X6 — governed permission/role saves carry an audit
+      // justification. The reason is optional at the schema boundary but
+      // REQUIRED whenever entity-permission or authority changes are part of
+      // the save (those are the security-relevant, high-risk mutations).
+      const rawReason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+      const requiresReason = ep !== undefined || authorityModel !== undefined;
+      if (requiresReason && rawReason.length < 5) {
+        return res.status(400).json({ error: "A clear reason (min 5 characters) is required when changing role permissions or authority." });
+      }
+      const auditReason = rawReason.length > 0 ? rawReason : null;
+
       const [existing] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, roleKey));
       if (!existing) return res.status(404).json({ error: "Role not found" });
 
@@ -389,11 +401,11 @@ export function registerRoleManagementRoutes(app: Express) {
         .returning();
       invalidateEntityPermCache();
       invalidateUserOverrideCache();
-      logAuditFromReq(req, { entityType: "role_permissions", action: "update", entityId: roleKey, changesJson: { description: "Role permissions updated", role: roleKey, sections, canManageUsers, canManageRoles, canEditData, hasEntityPermChanges: ep !== undefined, hasAuthorityModelChanges: authorityModel !== undefined } });
-      logPermissionAudit(req, { eventType: "role_updated", targetRole: roleKey, changeDetail: { sections, canManageUsers, canManageRoles, canEditData, hasEntityPermChanges: ep !== undefined, hasAuthorityModelChanges: authorityModel !== undefined } });
+      logAuditFromReq(req, { entityType: "role_permissions", action: "update", entityId: roleKey, changesJson: { description: "Role permissions updated", role: roleKey, sections, canManageUsers, canManageRoles, canEditData, hasEntityPermChanges: ep !== undefined, hasAuthorityModelChanges: authorityModel !== undefined, reason: auditReason } });
+      logPermissionAudit(req, { eventType: "role_updated", targetRole: roleKey, changeDetail: { sections, canManageUsers, canManageRoles, canEditData, hasEntityPermChanges: ep !== undefined, hasAuthorityModelChanges: authorityModel !== undefined, reason: auditReason } });
       res.json(updated);
     } catch (err: any) {
-      console.error("[Roles] PUT /api/roles/:role error:", err.message, err.stack);
+      console.error("[Roles] PUT /api/roles/:role error:", err.message);
       throw err;
     }
   });

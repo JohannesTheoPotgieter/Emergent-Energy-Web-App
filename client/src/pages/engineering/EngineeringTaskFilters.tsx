@@ -1,6 +1,9 @@
 /**
  * Engineering task filter constants, workload strip, and localStorage helpers.
- * Re-exports from the main EngineeringTasksPage module for gradual migration.
+ *
+ * Filter constants + localStorage helpers now live in the real
+ * ./task-filter-config module (UI/UX audit X5 module split). The workload
+ * strip component still lives in the orchestrator; re-exported here.
  */
 export {
   // Filter option constants
@@ -19,7 +22,7 @@ export {
   getSavedEngDefaultView,
   saveEngDefaultView,
   clearEngDefaultView,
+} from "./task-filter-config";
 
-  // Workload strip component
-  EngineeringWorkloadStrip,
-} from "../EngineeringTasksPage";
+// Workload strip component still lives in the orchestrator module.
+export { EngineeringWorkloadStrip } from "../EngineeringTasksPage";

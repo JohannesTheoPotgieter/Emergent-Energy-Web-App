@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { AdminPageShell, AdminQueryState } from "@/components/admin/admin-shell";
+import { IntegrationStatusCard, type IntegrationStatus } from "@/components/admin/integration-status-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -329,225 +330,151 @@ export function ConnectionsSection() {
   const sharepointError = integrationStatusQuery.error?.message || integrationHealthQuery.error?.message || null;
   const teamsError = integrationStatusQuery.error?.message || integrationHealthQuery.error?.message || null;
 
+  // UI/UX audit X5/X7 — classify each integration into ONE explicit status
+  // enum + plain-language reason here (no ad-hoc "Needs Attention" inference
+  // scattered through the JSX). The shared card renders it consistently.
+  function classify(opts: {
+    connected: boolean;
+    configured: boolean;
+    error: string | null;
+  }): { status: IntegrationStatus; reason: string } {
+    if (opts.error) {
+      return { status: "error", reason: "We couldn’t reach this service. Try refreshing." };
+    }
+    if (opts.connected) {
+      return { status: "connected", reason: "Connected and syncing normally." };
+    }
+    if (!opts.configured) {
+      return { status: "not_set_up", reason: "Not set up yet." };
+    }
+    return {
+      status: "needs_attention",
+      reason: "Configured but not currently connected — a reconnect may be required.",
+    };
+  }
+
+  const outlookClass = classify({
+    connected: Boolean(outlookConnected),
+    configured: outlookConfigured !== false,
+    error: outlookError,
+  });
+  const sharepointClass = classify({
+    connected: sharepointConnected,
+    configured: Boolean(sharepointEnabled),
+    error: sharepointError,
+  });
+  const teamsClass = classify({
+    connected: Boolean(teamsEnabled && teamsHealth?.status === "connected"),
+    configured: teamsConfigured,
+    error: teamsError,
+  });
+  // "Last checked" = when the health query last resolved (distinct from
+  // "last sync" which is the connector's own successful data sync time).
+  const lastCheckedAt = integrationHealthQuery.dataUpdatedAt
+    ? new Date(integrationHealthQuery.dataUpdatedAt).toISOString()
+    : null;
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <Card data-testid="card-outlook-status">
-          <CardContent className="py-5">
-            <AdminQueryState
-              isLoading={integrationStatusQuery.isLoading || (outlookStatusQuery.isLoading && !integrationStatus?.outlook)}
-              error={outlookError}
-              onRetry={retryConnections}
-              loadingLabel="Loading Outlook status..."
-            >
-              <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className={`p-2.5 rounded-lg ${outlookConnected ? "bg-blue-100" : "bg-muted"}`}>
-                    <Mail className={`h-5 w-5 ${outlookConnected ? "text-blue-600" : "text-gray-400"}`} />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold">Outlook</p>
-                    <Badge
-                      variant="outline"
-                      className={`text-[10px] mt-0.5 ${
-                        outlookConnected
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                          : outlookConfigured === false
-                            ? "bg-muted text-muted-foreground border-border"
-                            : "bg-amber-50 text-amber-700 border-amber-200"
-                      }`}
-                      data-testid="badge-outlook-status"
-                    >
-                      {outlookConnected ? "Connected" : outlookConfigured === false ? "Not Set Up" : "Needs Attention"}
-                    </Badge>
-                  </div>
-                </div>
+        <AdminQueryState
+          isLoading={integrationStatusQuery.isLoading || (outlookStatusQuery.isLoading && !integrationStatus?.outlook)}
+          error={null}
+          onRetry={retryConnections}
+          loadingLabel="Loading Outlook status..."
+        >
+          <IntegrationStatusCard
+            name="Outlook"
+            icon={Mail}
+            status={outlookClass.status}
+            statusReason={outlookClass.reason}
+            description="Powers calendar sync, email access, and approval notifications."
+            lastSyncAt={outlookHealth?.lastSyncTime ?? null}
+            lastCheckedAt={lastCheckedAt}
+            technicalError={outlookError}
+            stats={[
+              { label: "Synced Objects", value: outlookHealth?.objectCount ?? 0 },
+              { label: "Connected Users", value: outlookHealth?.connectedUsers ?? 0 },
+            ]}
+            extra={outlookConnected && outlookEmail ? (
+              <p className="flex items-center gap-1.5">
+                <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                <span>{outlookEmail}</span>
+              </p>
+            ) : null}
+            onRefresh={() => void handleRefreshOutlook()}
+            refreshing={refreshingOutlook}
+            testId="card-outlook-status"
+          />
+        </AdminQueryState>
 
-                <div className="space-y-1.5 text-xs text-muted-foreground">
-                  {outlookConnected && outlookEmail ? (
-                    <div className="flex items-center gap-1.5">
-                      <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-                      <span>{outlookEmail}</span>
-                    </div>
-                  ) : null}
-                  <p>Powers calendar sync, email access, and approval notifications.</p>
-                  <div className="grid grid-cols-2 gap-2 rounded-lg border border-border/70 bg-muted/30 p-3">
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Synced Objects</p>
-                      <p className="text-sm font-medium text-foreground">{outlookHealth?.objectCount ?? 0}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Connected Users</p>
-                      <p className="text-sm font-medium text-foreground">{outlookHealth?.connectedUsers ?? 0}</p>
-                    </div>
-                  </div>
-                  <p>
-                    Last sync:{" "}
-                    <span className="text-foreground">
-                      {outlookHealth?.lastSyncTime ? new Date(outlookHealth.lastSyncTime).toLocaleString() : "No sync recorded"}
-                    </span>
-                  </p>
-                </div>
+        <AdminQueryState
+          isLoading={integrationStatusQuery.isLoading || (integrationHealthQuery.isLoading && !sharepointHealth)}
+          error={null}
+          onRetry={retryConnections}
+          loadingLabel="Loading SharePoint status..."
+        >
+          <IntegrationStatusCard
+            name="SharePoint"
+            icon={FolderOpen}
+            status={sharepointClass.status}
+            statusReason={sharepointClass.reason}
+            description="Controls document sync and project folder visibility from Microsoft 365."
+            lastSyncAt={sharepointHealth?.lastSyncTime ?? null}
+            lastCheckedAt={lastCheckedAt}
+            technicalError={sharepointError}
+            stats={[
+              { label: "Synced Files", value: sharepointHealth?.objectCount ?? 0 },
+              { label: "Connected Users", value: sharepointHealth?.connectedUsers ?? 0 },
+            ]}
+            extra={(integrationStatus?.sharepoint?.siteName || sharepointHealth?.siteName) ? (
+              <p>
+                Site:{" "}
+                <span className="text-foreground">
+                  {integrationStatus?.sharepoint?.siteName || sharepointHealth?.siteName}
+                </span>
+              </p>
+            ) : null}
+            testId="card-sharepoint-status"
+          />
+        </AdminQueryState>
 
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1 text-xs"
-                  onClick={handleRefreshOutlook}
-                  disabled={refreshingOutlook}
-                  data-testid="button-refresh-outlook"
-                >
-                  {refreshingOutlook ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                  Refresh Connection
-                </Button>
+        <AdminQueryState
+          isLoading={integrationStatusQuery.isLoading || (integrationHealthQuery.isLoading && !teamsHealth)}
+          error={null}
+          onRetry={retryConnections}
+          loadingLabel="Loading Teams status..."
+        >
+          <IntegrationStatusCard
+            name="Teams Chat"
+            icon={MessageSquare}
+            status={teamsClass.status}
+            statusReason={teamsClass.reason}
+            description="Links Teams messages to projects and lets users create tasks from conversations."
+            lastSyncAt={teamsHealth?.lastSyncTime ?? null}
+            lastCheckedAt={lastCheckedAt}
+            technicalError={teamsError}
+            stats={[
+              { label: "Synced Items", value: teamsHealth?.objectCount ?? 0 },
+              { label: "Connected Users", value: teamsHealth?.connectedUsers ?? 0 },
+            ]}
+            extra={teamsEnabled && integrationStatus?.teams?.tags ? (
+              <div className="flex flex-wrap gap-1">
+                {integrationStatus.teams.tags.slice(0, 4).map((tag) => (
+                  <Badge key={tag} variant="outline" className="text-[9px] py-0 px-1">
+                    {tag}
+                  </Badge>
+                ))}
+                {integrationStatus.teams.tags.length > 4 ? (
+                  <Badge variant="outline" className="text-[9px] py-0 px-1">
+                    +{integrationStatus.teams.tags.length - 4}
+                  </Badge>
+                ) : null}
               </div>
-            </AdminQueryState>
-          </CardContent>
-        </Card>
-
-        <Card data-testid="card-sharepoint-status">
-          <CardContent className="py-5">
-            <AdminQueryState
-              isLoading={integrationStatusQuery.isLoading || (integrationHealthQuery.isLoading && !sharepointHealth)}
-              error={sharepointError}
-              onRetry={retryConnections}
-              loadingLabel="Loading SharePoint status..."
-            >
-              <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className={`p-2.5 rounded-lg ${sharepointConnected ? "bg-emerald-100" : "bg-muted"}`}>
-                    <FolderOpen className={`h-5 w-5 ${sharepointConnected ? "text-emerald-600" : "text-gray-400"}`} />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold">SharePoint</p>
-                    <Badge
-                      variant="outline"
-                      className={`text-[10px] mt-0.5 ${
-                        sharepointConnected
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                          : sharepointEnabled
-                            ? "bg-amber-50 text-amber-700 border-amber-200"
-                            : "bg-muted text-muted-foreground border-border"
-                      }`}
-                      data-testid="badge-sharepoint-status"
-                    >
-                      {sharepointConnected ? "Connected" : sharepointEnabled ? "Needs Attention" : "Not Enabled"}
-                    </Badge>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5 text-xs text-muted-foreground">
-                  <p>Controls document sync and project folder visibility from Microsoft 365.</p>
-                  {(integrationStatus?.sharepoint?.siteName || sharepointHealth?.siteName) && (
-                    <p>
-                      Site:{" "}
-                      <span className="text-foreground">
-                        {integrationStatus?.sharepoint?.siteName || sharepointHealth?.siteName}
-                      </span>
-                    </p>
-                  )}
-                  {(integrationStatus?.sharepoint?.driveName || sharepointHealth?.driveName) && (
-                    <p>
-                      Drive:{" "}
-                      <span className="text-foreground">
-                        {integrationStatus?.sharepoint?.driveName || sharepointHealth?.driveName}
-                      </span>
-                    </p>
-                  )}
-                  <div className="grid grid-cols-2 gap-2 rounded-lg border border-border/70 bg-muted/30 p-3">
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Synced Files</p>
-                      <p className="text-sm font-medium text-foreground">{sharepointHealth?.objectCount ?? 0}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Connected Users</p>
-                      <p className="text-sm font-medium text-foreground">{sharepointHealth?.connectedUsers ?? 0}</p>
-                    </div>
-                  </div>
-                  <p>
-                    Last sync:{" "}
-                    <span className="text-foreground">
-                      {sharepointHealth?.lastSyncTime ? new Date(sharepointHealth.lastSyncTime).toLocaleString() : "No sync recorded"}
-                    </span>
-                  </p>
-                </div>
-              </div>
-            </AdminQueryState>
-          </CardContent>
-        </Card>
-
-        <Card data-testid="card-teams-status">
-          <CardContent className="py-5">
-            <AdminQueryState
-              isLoading={integrationStatusQuery.isLoading || (integrationHealthQuery.isLoading && !teamsHealth)}
-              error={teamsError}
-              onRetry={retryConnections}
-              loadingLabel="Loading Teams status..."
-            >
-              <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className={`p-2.5 rounded-lg ${teamsEnabled ? "bg-purple-100" : "bg-muted"}`}>
-                    <MessageSquare className={`h-5 w-5 ${teamsEnabled ? "text-purple-600" : "text-gray-400"}`} />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold">Teams Chat</p>
-                    <Badge
-                      variant="outline"
-                      className={`text-[10px] mt-0.5 ${
-                        teamsEnabled && teamsHealth?.status === "connected"
-                          ? "bg-purple-50 text-purple-700 border-purple-200"
-                          : teamsConfigured
-                            ? "bg-amber-50 text-amber-700 border-amber-200"
-                            : "bg-muted text-muted-foreground border-border"
-                      }`}
-                      data-testid="badge-teams-status"
-                    >
-                      {teamsEnabled && teamsHealth?.status === "connected"
-                        ? "Connected"
-                        : teamsConfigured
-                          ? "Configured"
-                          : "Not Enabled"}
-                    </Badge>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5 text-xs text-muted-foreground">
-                  <p>Links Teams messages to projects and lets users create tasks from conversations.</p>
-                  <div className="grid grid-cols-2 gap-2 rounded-lg border border-border/70 bg-muted/30 p-3">
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Synced Items</p>
-                      <p className="text-sm font-medium text-foreground">{teamsHealth?.objectCount ?? 0}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Connected Users</p>
-                      <p className="text-sm font-medium text-foreground">{teamsHealth?.connectedUsers ?? 0}</p>
-                    </div>
-                  </div>
-                  {teamsEnabled && integrationStatus?.teams?.tags ? (
-                    <div className="flex flex-wrap gap-1">
-                      {integrationStatus.teams.tags.slice(0, 4).map((tag) => (
-                        <Badge key={tag} variant="outline" className="text-[9px] py-0 px-1">
-                          {tag}
-                        </Badge>
-                      ))}
-                      {integrationStatus.teams.tags.length > 4 ? (
-                        <Badge variant="outline" className="text-[9px] py-0 px-1">
-                          +{integrationStatus.teams.tags.length - 4}
-                        </Badge>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  <p>
-                    Last sync:{" "}
-                    <span className="text-foreground">
-                      {teamsHealth?.lastSyncTime ? new Date(teamsHealth.lastSyncTime).toLocaleString() : "No sync recorded"}
-                    </span>
-                  </p>
-                </div>
-              </div>
-            </AdminQueryState>
-          </CardContent>
-        </Card>
+            ) : null}
+            testId="card-teams-status"
+          />
+        </AdminQueryState>
       </div>
 
       <Card data-testid="card-feature-toggle">

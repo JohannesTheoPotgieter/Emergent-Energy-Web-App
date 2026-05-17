@@ -1,4 +1,5 @@
 import { isTaskComplete } from "@shared/task-status";
+import { taskPrioritySortOrder } from "@shared/task-priorities";
 import {
   deriveDueLabel,
   getOwnerInitials,
@@ -77,15 +78,25 @@ export function smartDueLabel(
   return deriveDueLabel(toIsoDate(due ?? null), status ? isTaskComplete(status) : false);
 }
 
-export const priorityOrder: Record<string, number> = { Critical: 0, Urgent: 1, High: 2, Medium: 3, Low: 4 };
+/**
+ * @deprecated Divergent taxonomy. Use `taskPrioritySortOrder` from
+ * `@shared/task-priorities` (canonical Urgent/High/Med/Low). Retained as a
+ * canonical-backed alias so any external importer keeps working.
+ */
+export const priorityOrder: Record<string, number> = {
+  Urgent: taskPrioritySortOrder("Urgent"),
+  High: taskPrioritySortOrder("High"),
+  Med: taskPrioritySortOrder("Med"),
+  Low: taskPrioritySortOrder("Low"),
+};
 
 export function sortTasksForColumn(tasks: Task[]) {
   return [...tasks].sort((a, b) => {
     const aOverdue = isOverdue(a.dueDate, a.status) ? 0 : 1;
     const bOverdue = isOverdue(b.dueDate, b.status) ? 0 : 1;
     if (aOverdue !== bOverdue) return aOverdue - bOverdue;
-    const aPri = priorityOrder[a.priority] ?? 5;
-    const bPri = priorityOrder[b.priority] ?? 5;
+    const aPri = taskPrioritySortOrder(a.priority);
+    const bPri = taskPrioritySortOrder(b.priority);
     if (aPri !== bPri) return aPri - bPri;
     const aDate = a.dueDate ? new Date(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
     const bDate = b.dueDate ? new Date(b.dueDate).getTime() : Number.POSITIVE_INFINITY;

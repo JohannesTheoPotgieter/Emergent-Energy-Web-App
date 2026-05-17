@@ -409,3 +409,37 @@ export function summarizeChangeDetail(detail: Record<string, any>): string {
   if (detail.hasAuthorityModelChanges) parts.push("Authority model updated");
   return parts.join(" | ") || JSON.stringify(detail).slice(0, 80);
 }
+
+// ── UI/UX audit X3 — shared permission-diff helper ──
+// Used by the post-save change summary in the roles surfaces.
+export interface PermDiff {
+  added: string[];
+  removed: string[];
+}
+
+function grantedPermissionKeys(
+  ep: Record<string, Record<string, boolean>> | null | undefined,
+): Set<string> {
+  const out = new Set<string>();
+  if (!ep) return out;
+  for (const [entity, actions] of Object.entries(ep)) {
+    if (entity.startsWith("_")) continue;
+    for (const [action, allowed] of Object.entries(actions || {})) {
+      if (allowed === true) out.add(`${entity}:${action}`);
+    }
+  }
+  return out;
+}
+
+export function computePermDiff(
+  before: Record<string, Record<string, boolean>> | null | undefined,
+  after: Record<string, Record<string, boolean>> | null | undefined,
+): PermDiff {
+  const a = grantedPermissionKeys(before);
+  const b = grantedPermissionKeys(after);
+  const added: string[] = [];
+  const removed: string[] = [];
+  b.forEach((k) => { if (!a.has(k)) added.push(k); });
+  a.forEach((k) => { if (!b.has(k)) removed.push(k); });
+  return { added: added.sort(), removed: removed.sort() };
+}

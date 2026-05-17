@@ -33,6 +33,8 @@ import {
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Upload, FileSpreadsheet, ExternalLink, RefreshCw, CheckCircle2, AlertTriangle, Clock, Eye, Play, Cloud, Save, Zap } from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { formatRelativeWithAbsoluteZA } from "@/lib/datetime";
 import { ConnectionsSection } from "./role-settings";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -451,6 +453,8 @@ function SharePointAutoImportPanel() {
   const [testing, setTesting] = useState(false);
   const [running, setRunning] = useState(false);
   const [testResult, setTestResult] = useState<TestConnectionResult | null>(null);
+  // UI/UX audit X6 — turning auto-commit ON is gated behind a confirmation.
+  const [confirmEnableOpen, setConfirmEnableOpen] = useState(false);
 
   // Sync form with server state when it loads / refetches.
   useEffect(() => {
@@ -602,7 +606,7 @@ function SharePointAutoImportPanel() {
             <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Last run</div>
             <div className="font-medium" data-testid="text-last-run-at">
               {settingsQuery.data?.lastRunAt
-                ? `${fmtRelative(settingsQuery.data.lastRunAt)} (${new Date(settingsQuery.data.lastRunAt).toLocaleString()})`
+                ? formatRelativeWithAbsoluteZA(settingsQuery.data.lastRunAt)
                 : "Never"}
             </div>
           </div>
@@ -675,10 +679,34 @@ function SharePointAutoImportPanel() {
           </div>
           <Switch
             checked={enabled}
-            onCheckedChange={(v) => patch("enabled", v)}
+            onCheckedChange={(v) => {
+              // Pausing (off) is safe and immediate; enabling auto-commit of
+              // financial data requires explicit confirmation + justification.
+              if (v) setConfirmEnableOpen(true);
+              else patch("enabled", false);
+            }}
             data-testid="switch-sp-enabled"
           />
         </div>
+
+        <ConfirmDialog
+          open={confirmEnableOpen}
+          onOpenChange={setConfirmEnableOpen}
+          title="Enable automatic financial commits?"
+          description={`The scheduler will poll the tracker workbook every ${form.intervalMinutes} minute(s) and commit financial data with NO human review. Committed numbers flow straight into finance reporting.`}
+          confirmLabel="Enable auto-commit"
+          variant="destructive"
+          impact={
+            <p>
+              This turns on <strong>unattended commits of financial data</strong> on a{" "}
+              {form.intervalMinutes}-minute cycle. You can pause it at any time without losing
+              configuration.
+            </p>
+          }
+          requireReason
+          reasonLabel="Reason (recorded for audit)"
+          onConfirm={() => patch("enabled", true)}
+        />
 
         {/* Test connection result */}
         {testResult && (

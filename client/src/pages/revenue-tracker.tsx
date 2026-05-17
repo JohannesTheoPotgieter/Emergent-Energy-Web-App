@@ -19,6 +19,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { fetchQueryFn, apiRequest, invalidateDashboardQueries } from '@/lib/queryClient';
+import { formatZar, formatZarCompact } from '@/lib/currency';
 import { DataSourceBadge } from '@/components/finance/DataSourceBadge';
 import { usePermission } from '@/hooks/use-permissions';
 import {
@@ -119,13 +120,37 @@ interface MonthDetailItem {
   matchStatus?: string;
 }
 
+// Canonical precise ZAR for all cells, panels and tooltips. Absent /
+// non-numeric → "—" (never "R 0"). Chart axes use formatZarCompact directly.
 function formatRand(val: number | null | undefined): string {
-  if (val == null) return 'R 0';
-  const abs = Math.abs(val);
-  const sign = val < 0 ? '-' : '';
-  if (abs >= 1_000_000) return `${sign}R ${(abs / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `${sign}R ${(abs / 1_000).toFixed(1)}K`;
-  return `${sign}R ${Math.round(abs)}`;
+  return formatZar(val);
+}
+
+/**
+ * Small inline help affordance. Used to explain rows whose values are
+ * intentionally equal (e.g. Revenue Committed vs Revenue Unrealised) so the
+ * coincidence is not misread as a data bug.
+ */
+function RowHelp({ text }: { text: string }) {
+  return (
+    <TooltipProvider delayDuration={200}>
+      <UiTooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className="text-muted-foreground/70 hover:text-muted-foreground"
+            aria-label="Why these values match"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <HelpCircle className="h-3 w-3" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs text-xs leading-relaxed">
+          {text}
+        </TooltipContent>
+      </UiTooltip>
+    </TooltipProvider>
+  );
 }
 
 type RevTab = 'planned' | 'committed' | 'realised';
@@ -140,6 +165,8 @@ interface RowDef {
   editable?: boolean;
   projectsKey?: 'revProjects' | 'realisedProjects' | 'unrealisedProjects' | 'qbRevenueProjects';
   colorCoded?: boolean;
+  /** Optional inline clarification shown via a help icon next to the label. */
+  help?: string;
 }
 
 const ROW_DEFS: RowDef[] = [
@@ -169,6 +196,7 @@ const ROW_DEFS: RowDef[] = [
     group: 'monthly',
     expandable: true,
     projectsKey: 'unrealisedProjects',
+    help: 'Revenue has no separate planned-vs-committed breakdown yet, so "Revenue Committed" and "Revenue Unrealised" intentionally show the same figure (everything not yet realised). This is expected, not a bug.',
   },
   // "Revenue Unrealised" row mirrors the COS grid layout (Planned → Committed →
   // Unrealised → Realised). Revenue currently has no separate planned-vs-
@@ -184,6 +212,7 @@ const ROW_DEFS: RowDef[] = [
     group: 'monthly',
     expandable: true,
     projectsKey: 'unrealisedProjects',
+    help: 'Equals "Revenue Committed" above by design — revenue is not yet split into planned vs committed, so both rows report all not-yet-realised revenue. The values will diverge once finer revenue classification exists.',
   },
   {
     key: 'realisedRevenue',
@@ -232,6 +261,7 @@ const ROW_DEFS: RowDef[] = [
     dataKey: 'ytdUnrealised',
     colorClass: 'text-amber-700',
     group: 'ytd',
+    help: 'Same value as "YTD Unrealised" by design — revenue has no planned-vs-committed split yet, so both show all not-yet-realised YTD revenue.',
   },
   {
     key: 'ytdUnrealisedRow',
@@ -239,6 +269,7 @@ const ROW_DEFS: RowDef[] = [
     dataKey: 'ytdUnrealised',
     colorClass: 'text-amber-800',
     group: 'ytd',
+    help: 'Same value as "YTD Committed" by design — revenue has no planned-vs-committed split yet, so both show all not-yet-realised YTD revenue.',
   },
   {
     key: 'ytdRealised',
@@ -1235,7 +1266,7 @@ export default function RevenueTrackerPage() {
                 tickLine={false}
               />
               <YAxis
-                tickFormatter={(v: number) => formatRand(v)}
+                tickFormatter={(v: number) => formatZarCompact(v)}
                 tick={{ fontSize: 11, fill: '#64748b' }}
                 axisLine={false}
                 tickLine={false}
@@ -1327,10 +1358,14 @@ export default function RevenueTrackerPage() {
                           )}
                         </span>
                         <span>{row.label}</span>
+                        {row.help && <RowHelp text={row.help} />}
                       </button>
                     ) : (
-                      <span className={isYtd ? 'pl-5.5 text-muted-foreground' : ''}>
+                      <span
+                        className={`inline-flex items-center gap-1 ${isYtd ? 'pl-5.5 text-muted-foreground' : ''}`}
+                      >
                         {row.label}
+                        {row.help && <RowHelp text={row.help} />}
                       </span>
                     )}
                   </td>
