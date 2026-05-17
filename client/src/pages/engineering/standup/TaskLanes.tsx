@@ -11,7 +11,8 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { ArrowRight, AlertTriangle, Calendar, Pencil, X } from "lucide-react";
+import { ArrowRight, AlertTriangle, Calendar, Pencil } from "lucide-react";
+import { taskPriorityBadgeClass, taskPriorityLabel, TASK_PRIORITY_VALUES } from "@shared/task-priorities";
 import { type EngTask, STANDUP_LANES } from "./types";
 
 interface TaskLanesProps {
@@ -23,13 +24,13 @@ interface TaskLanesProps {
 
 function priorityBadge(priority: string | null) {
   if (!priority) return null;
-  const colors: Record<string, string> = {
-    Urgent: "bg-red-100 text-red-700 border-red-200",
-    High: "bg-orange-100 text-orange-700 border-orange-200",
-    Med: "bg-amber-100 text-amber-700 border-amber-200",
-    Low: "bg-slate-100 text-slate-600 border-slate-200",
-  };
-  return <Badge variant="outline" className={`text-[9px] px-1 py-0 ${colors[priority] || ""}`}>{priority}</Badge>;
+  // Route through the canonical priority helpers so the standup lanes use
+  // the same vocabulary/treatment as the board (no divergent local map).
+  return (
+    <Badge variant="outline" className={`text-[9px] px-1 py-0 ${taskPriorityBadgeClass(priority)}`}>
+      {taskPriorityLabel(priority)}
+    </Badge>
+  );
 }
 
 function TaskCard({ task, onMove, onEdit }: { task: EngTask; onMove: (status: string) => void; onEdit: () => void }) {
@@ -37,15 +38,22 @@ function TaskCard({ task, onMove, onEdit }: { task: EngTask; onMove: (status: st
 
   return (
     <Card
-      className="hover:shadow-sm transition-shadow group cursor-pointer"
-      onClick={onEdit}
+      className="hover:shadow-sm transition-shadow"
       data-testid={`task-card-${task.id}`}
     >
       <CardContent className="p-2.5 space-y-1.5">
-        <div className="flex items-start gap-1.5">
+        {/* The title is the real control to open the editor — a button so
+            it's keyboard-operable (was a div with Card onClick, X5 a11y). */}
+        <button
+          type="button"
+          onClick={onEdit}
+          aria-label={`Edit task: ${task.title}`}
+          data-testid={`task-card-edit-${task.id}`}
+          className="flex items-start gap-1.5 w-full text-left rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
           <span className="text-xs font-medium leading-tight flex-1">{task.title}</span>
           {priorityBadge(task.priority)}
-        </div>
+        </button>
         <div className="flex items-center gap-1.5 flex-wrap">
           <Badge variant="secondary" className="text-[9px] px-1 py-0">{task.workstream}</Badge>
           {task.projectName && (
@@ -62,13 +70,17 @@ function TaskCard({ task, onMove, onEdit }: { task: EngTask; onMove: (status: st
             </Badge>
           )}
         </div>
-        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity pt-0.5">
+        {/* Lane-move actions: always visible + keyboard reachable (were
+            hover-only opacity-0, X5 a11y). */}
+        <div className="flex gap-1 flex-wrap pt-0.5" role="group" aria-label={`Move task "${task.title}" to another lane`}>
           {STANDUP_LANES.filter(l => l.key !== task.status).map(lane => (
             <button
               key={lane.key}
+              type="button"
               onClick={(e) => { e.stopPropagation(); onMove(lane.key); }}
-              className="text-[9px] px-1.5 py-0.5 rounded border border-border hover:bg-accent transition-colors flex items-center gap-0.5"
+              className="text-[9px] px-1.5 py-0.5 rounded border border-border hover:bg-accent transition-colors flex items-center gap-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               data-testid={`move-task-${task.id}-${lane.key}`}
+              aria-label={`Move to ${lane.label}`}
             >
               <ArrowRight className="h-2.5 w-2.5" /> {lane.label}
             </button>
@@ -79,8 +91,10 @@ function TaskCard({ task, onMove, onEdit }: { task: EngTask; onMove: (status: st
   );
 }
 
-const PRIORITIES = ["Urgent", "High", "Med", "Low"];
-const STATUSES = ["TO DO", "IN PROGRESS", "HOLD", "COMPLETE"];
+// Canonical priority vocabulary (single source of truth). Standup statuses
+// stay in the 4-lane vocabulary the facilitator works with.
+const PRIORITIES = [...TASK_PRIORITY_VALUES];
+const STATUSES = STANDUP_LANES.map((l) => l.key);
 
 function TaskEditDialog({
   task,
@@ -183,7 +197,7 @@ function TaskEditDialog({
                 </SelectTrigger>
                 <SelectContent>
                   {PRIORITIES.map(p => (
-                    <SelectItem key={p} value={p}>{p}</SelectItem>
+                    <SelectItem key={p} value={p}>{taskPriorityLabel(p)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

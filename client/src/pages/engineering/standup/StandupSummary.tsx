@@ -1,7 +1,9 @@
+import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Copy, CheckCircle2, ArrowRight, AlertTriangle, Users, Clock, BarChart3, MessageSquare } from "lucide-react";
+import { Copy, CheckCircle2, ArrowRight, AlertTriangle, Users, Clock, BarChart3, MessageSquare, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { copyTeamsMessage, escapeHtml } from "@/lib/teams-clipboard";
 import { type TaskMovement, type Participant, MOODS, formatTime } from "./types";
@@ -15,7 +17,30 @@ interface StandupSummaryProps {
   taskMovements: TaskMovement[];
   moods: Map<number, string>;
   facilitatorNotes: Map<number, string>;
+  scheduleId?: number | null;
   onClose: () => void;
+}
+
+async function postStandupSession(url: string, payload: unknown) {
+  const token = localStorage.getItem("auth_token");
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const csrfToken = document.cookie
+    .split("; ")
+    .find((c) => c.startsWith("csrf-token="))
+    ?.split("=")[1];
+  if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    credentials: "include",
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.message || err?.error || `Request failed (${res.status})`);
+  }
+  return res.json();
 }
 
 export function StandupSummary({
@@ -27,9 +52,11 @@ export function StandupSummary({
   taskMovements,
   moods,
   facilitatorNotes,
+  scheduleId,
   onClose,
 }: StandupSummaryProps) {
   const { toast } = useToast();
+  const [saved, setSaved] = useState(false);
 
   const avgTime = completedCount > 0
     ? Math.round([...speakerTimings.values()].reduce((a, b) => a + b, 0) / completedCount)
@@ -43,6 +70,57 @@ export function StandupSummary({
   for (const [, mood] of moods) {
     moodCounts.set(mood, (moodCounts.get(mood) || 0) + 1);
   }
+
+  // "Save & Close" now persists the facilitation summary (the label used to
+  // lie — it discarded everything). On success the session is durable; we
+  // then close. On failure we surface the error and keep the screen open so
+  // nothing is lost.
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const moodCountsObj: Record<string, number> = {};
+      for (const [mood, count] of moodCounts) moodCountsObj[mood] = count;
+      const notesPayload = [...facilitatorNotes.entries()]
+        .filter(([, n]) => n.trim())
+        .map(([userId, note]) => ({
+          userId,
+          userName: participants.find((p) => p.userId === userId)?.userName || "Unknown",
+          note: note.trim(),
+        }));
+      return postStandupSession("/api/standups/sessions", {
+        scheduleId: scheduleId ?? null,
+        sessionDate: new Date().toISOString().slice(0, 10),
+        totalSeconds,
+        participantCount: participants.length,
+        completedCount,
+        skippedCount,
+        avgSecondsPerSpeaker: avgTime,
+        blockerCount: holdMoves.length,
+        taskMovements: taskMovements.map((m) => ({
+          taskId: m.taskId,
+          taskTitle: m.taskTitle,
+          userId: m.userId,
+          userName: m.userName,
+          fromStatus: m.fromStatus,
+          toStatus: m.toStatus,
+          ...(m.holdReason ? { holdReason: m.holdReason } : {}),
+        })),
+        moodCounts: moodCountsObj,
+        facilitatorNotes: notesPayload,
+      });
+    },
+    onSuccess: () => {
+      setSaved(true);
+      toast({ title: "Standup saved", description: "Summary recorded to standup history." });
+      onClose();
+    },
+    onError: (err: unknown) => {
+      toast({
+        title: "Couldn't save standup",
+        description: err instanceof Error ? err.message : "Unknown error — the summary was not lost, try again.",
+        variant: "destructive",
+      });
+    },
+  });
 
   function buildCopyText(): string {
     const date = new Date().toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "short", year: "numeric" });
@@ -278,8 +356,17 @@ export function StandupSummary({
         <Button onClick={handleCopyPlain} variant="outline" className="gap-1.5" data-testid="btn-copy-plain">
           <Copy className="h-4 w-4" /> Copy plain text
         </Button>
-        <Button onClick={onClose} className="gap-1.5 ml-auto" data-testid="btn-save-close-summary">
-          <CheckCircle2 className="h-4 w-4" /> Save & Close
+        <Button
+          onClick={() => saveMutation.mutate()}
+          disabled={saveMutation.isPending || saved}
+          className="gap-1.5 ml-auto"
+          data-testid="btn-save-close-summary"
+        >
+          {saveMutation.isPending ? (
+            <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</>
+          ) : (
+            <><CheckCircle2 className="h-4 w-4" /> Save & Close</>
+          )}
         </Button>
       </div>
     </div>
