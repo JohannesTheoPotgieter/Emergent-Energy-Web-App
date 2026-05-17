@@ -6,6 +6,11 @@ function read(relPath: string) {
   return fs.readFileSync(path.join(process.cwd(), relPath), "utf8");
 }
 
+// Quote-insensitive view — route files are auto-formatted to single quotes.
+function norm(s: string) {
+  return s.replace(/['"]/g, '"');
+}
+
 // The "Phase 2: sub_project_name on program_expense and program_inflows"
 // describe block was removed when program_expense and program_inflows were
 // retired in the PE/PI cutover. The block asserted that those legacy
@@ -26,8 +31,8 @@ describe("Phase 3: API endpoints support sub-project filtering", () => {
   // The test below documents the canonical route exists in finance-routes.ts.
   it("program-expenses canonical route exists in finance-routes.ts", () => {
     const financeRoutes = read("server/departments/finance-routes.ts");
-    expect(financeRoutes).toContain('"/api/program-expenses"');
-    expect(financeRoutes).toContain('"/api/program-expenses/:projectName"');
+    expect(norm(financeRoutes)).toContain('"/api/program-expenses"');
+    expect(norm(financeRoutes)).toContain('"/api/program-expenses/:projectName"');
   });
 
   it("program-inflows endpoint supports subProject query parameter", () => {

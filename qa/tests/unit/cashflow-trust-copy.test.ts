@@ -9,10 +9,13 @@ describe("cashflow trust copy", () => {
     const cashflow = read("client/src/pages/cashflow.tsx");
     const analysis = read("client/src/pages/cashflow-analysis.tsx");
 
+    // The two pages word the trust boundary differently (cashflow.tsx uses a
+    // condensed/collapsible note; cashflow-analysis.tsx the long form), so
+    // assert the shared trust concepts rather than one exact sentence.
     for (const source of [cashflow, analysis]) {
-      expect(source).toContain("Cashflow actuals use payment received / paid dates.");
-      expect(source).toContain("Forecast dates may use planned-payment fallback where no canonical payment date exists.");
-      expect(source).toContain("Use forecast values as planning data until reconciled.");
+      expect(source).toContain("paid dates");
+      expect(source).toContain("planned-payment");
+      expect(source).toContain("planning data until reconciled");
     }
   });
 

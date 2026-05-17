@@ -7,6 +7,11 @@ function read(relPath: string) {
   return fs.readFileSync(path.join(process.cwd(), relPath), "utf8");
 }
 
+// Quote-insensitive view — route files are auto-formatted to single quotes.
+function norm(s: string) {
+  return s.replace(/['"]/g, '"');
+}
+
 describe("project-cost-line-read-service identity", () => {
   it("builds imported canonical key as projectId|sourceSheet|sourceRow", () => {
     const result = toCanonicalKey({
@@ -79,7 +84,7 @@ describe("project-cost-line-read-service identity", () => {
 });
 
 describe("finance routes delegate project expenditure reads to canonical service", () => {
-  const routes = read("server/departments/finance-routes.ts");
+  const routes = norm(read("server/departments/finance-routes.ts"));
 
   it("program-expenses route reads canonical cost line service unconditionally", () => {
     const block = routes.substring(

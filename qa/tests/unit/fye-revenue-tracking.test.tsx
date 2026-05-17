@@ -159,10 +159,15 @@ function renderPage() {
   return { ...result, qc };
 }
 
-/** Wait until the years query has resolved and the FYE selector is visible. */
+/**
+ * Wait until the years query has resolved and the page has rendered past the
+ * loading skeleton. The FYE picker is now the shared
+ * <FinancialYearScopeControl> (data-testid="finance-year-scope-control"),
+ * which replaced the legacy inline <select data-testid="select-fye">.
+ */
 async function waitForPageReady() {
   await waitFor(() => {
-    expect(screen.getByTestId("select-fye")).toBeTruthy();
+    expect(screen.getByTestId("finance-year-scope-control")).toBeTruthy();
   });
 }
 
@@ -305,21 +310,22 @@ describe("FyeRevenueTrackingPage — full render", () => {
     expect(screen.getByText("FYE Revenue Tracking")).toBeTruthy();
   });
 
-  it("renders the FYE selector with years from the API", async () => {
+  it("renders the shared financial-year scope control", async () => {
     renderPage();
     await waitForPageReady();
-    const sel = screen.getByTestId("select-fye") as HTMLSelectElement;
-    expect(sel).toBeTruthy();
-    expect(sel.options.length).toBeGreaterThanOrEqual(1);
+    const control = screen.getByTestId("finance-year-scope-control");
+    expect(control).toBeTruthy();
+    // The year picker trigger lives inside the shared control.
+    expect(screen.getByTestId("select-finance-year")).toBeTruthy();
   });
 
-  it("FYE selector label is linked to the select via htmlFor/id", async () => {
+  it("the financial-year picker exposes an accessible trigger", async () => {
     renderPage();
     await waitForPageReady();
-    const label = document.querySelector("label[for='select-fye-year']");
-    expect(label).toBeTruthy();
-    const select = document.getElementById("select-fye-year");
-    expect(select).toBeTruthy();
+    const trigger = screen.getByTestId("select-finance-year");
+    expect(trigger).toBeTruthy();
+    // shadcn SelectTrigger renders a real button (keyboard/AT reachable).
+    expect(trigger.tagName.toLowerCase()).toBe("button");
   });
 
   it("shows KPI cards after KPI data loads", async () => {

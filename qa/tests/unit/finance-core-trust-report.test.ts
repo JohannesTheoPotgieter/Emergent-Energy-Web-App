@@ -6,10 +6,15 @@ function read(rel: string) {
   return fs.readFileSync(path.resolve(process.cwd(), rel), "utf8");
 }
 
+// Quote-insensitive view — route files are auto-formatted to single quotes.
+function norm(s: string) {
+  return s.replace(/['"]/g, '"');
+}
+
 describe("finance core trust report wiring", () => {
   it("registers admin trust-core endpoint", () => {
     const source = read("server/departments/finance-routes.ts");
-    expect(source).toContain('"/api/finance/trust-core-report"');
+    expect(norm(source)).toContain('"/api/finance/trust-core-report"');
     expect(source).toContain("buildFinanceCoreTrustReport");
     // After the trust-envelope refactor, header emission lives in the
     // shared helper. Pin both: finance-routes must import it, and the

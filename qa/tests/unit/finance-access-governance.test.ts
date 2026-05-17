@@ -7,6 +7,12 @@ function read(relPath: string) {
   return fs.readFileSync(path.join(process.cwd(), relPath), "utf8");
 }
 
+// Quote- and whitespace-insensitive view — source files are auto-formatted
+// (single quotes, multi-line call signatures); assert wiring, not layout.
+function norm(s: string) {
+  return s.replace(/['"]/g, '"').replace(/\s+/g, "");
+}
+
 describe("finance access governance", () => {
   it("maps tracker types onto explicit finance permission entities", () => {
     expect(getTrackerPermissionEntity("REV")).toBe("revenue_tracker");
@@ -19,9 +25,9 @@ describe("finance access governance", () => {
     const cashflowSource = read("client/src/pages/cashflow.tsx");
     const revenueTrackerSource = read("client/src/pages/revenue-tracker.tsx");
 
-    expect(cashflowSource).toContain('usePermission("cashflow", "edit")');
+    expect(norm(cashflowSource)).toContain(norm('usePermission("cashflow", "edit")'));
     expect(cashflowSource).not.toContain("isAdmin");
-    expect(revenueTrackerSource).toContain('usePermission("revenue_tracker", "edit")');
+    expect(norm(revenueTrackerSource)).toContain(norm('usePermission("revenue_tracker", "edit")'));
     expect(revenueTrackerSource).not.toContain("isAdmin");
   });
 
@@ -30,15 +36,15 @@ describe("finance access governance", () => {
     const legacyRoutesSource = read("server/routes.ts");
     const cashflow2026RoutesSource = read("server/routes/register-cashflow-2026-routes.ts");
 
-    expect(financeRoutesSource).toContain('router.post("/api/cashflow-2026/opening-balance", requireAuth, requirePermission("cashflow", "edit")');
-    expect(financeRoutesSource).toContain('router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "view")');
-    expect(financeRoutesSource).toContain('router.post("/api/tracker-monthly", requireAuth, requireTrackerPermission("edit")');
-    expect(financeRoutesSource).toContain('router.get("/api/tracker-monthly/:type", requireAuth, requireTrackerPermission("view")');
-    expect(financeRoutesSource).toContain('router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_tracker", "view")');
+    expect(norm(financeRoutesSource)).toContain(norm('router.post("/api/cashflow-2026/opening-balance", requireAuth, requirePermission("cashflow", "edit")'));
+    expect(norm(financeRoutesSource)).toContain(norm('router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "view")'));
+    expect(norm(financeRoutesSource)).toContain(norm('router.post("/api/tracker-monthly", requireAuth, requireTrackerPermission("edit")'));
+    expect(norm(financeRoutesSource)).toContain(norm('router.get("/api/tracker-monthly/:type", requireAuth, requireTrackerPermission("view")'));
+    expect(norm(financeRoutesSource)).toContain(norm('router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_tracker", "view")'));
 
     // Cashflow-2026 routes extracted from routes.ts to register-cashflow-2026-routes.ts
-    expect(cashflow2026RoutesSource).toContain('app.post("/api/cashflow-2026/available-payment", requireAuth, requirePermission("cashflow", "edit")');
-    expect(cashflow2026RoutesSource).toContain('app.get("/api/cashflow-2026/available-payment-history", requireAuth, requirePermission("cashflow", "view")');
+    expect(norm(cashflow2026RoutesSource)).toContain(norm('app.post("/api/cashflow-2026/available-payment", requireAuth, requirePermission("cashflow", "edit")'));
+    expect(norm(cashflow2026RoutesSource)).toContain(norm('app.get("/api/cashflow-2026/available-payment-history", requireAuth, requirePermission("cashflow", "view")'));
     // tracker-monthly routes consolidated into finance-routes.ts (checked above)
   });
 });

@@ -33,6 +33,12 @@ function read(relPath: string): string {
   return fs.readFileSync(path.join(process.cwd(), relPath), "utf8");
 }
 
+// Quote- and whitespace-insensitive view — route files are auto-formatted
+// (single quotes, multi-line call signatures); assert wiring, not layout.
+function norm(s: string): string {
+  return s.replace(/['"]/g, '"').replace(/\s+/g, "");
+}
+
 const QB_ROUTES_PATH = "server/quickbooks-routes.ts";
 const QB_RECON_SERVICE_PATH = "server/services/quickbooks-reconciliation-service.ts";
 const FINANCE_ROUTES_PATH = "server/departments/finance-routes.ts";
@@ -196,8 +202,8 @@ describe("quickbooks route hardening — mark-realised bypass is disabled", () =
     // The canonical path is admin-gated and enforces the invoice / period
     // rules. If this line disappears, the QB bypass closure loses its
     // documented replacement.
-    expect(financeRoutes).toContain(
-      'router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin',
+    expect(norm(financeRoutes)).toContain(
+      norm('router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin'),
     );
   });
 });

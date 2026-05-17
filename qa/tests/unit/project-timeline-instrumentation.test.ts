@@ -6,14 +6,19 @@ function read(file: string) {
   return fs.readFileSync(path.resolve(file), "utf8");
 }
 
+// Quote-insensitive view — route files are auto-formatted to single quotes.
+function norm(s: string) {
+  return s.replace(/['"]/g, '"');
+}
+
 describe("project timeline instrumentation", () => {
   it("records stage transition events", () => {
     const source = read("server/lifecycle-routes.ts");
-    expect(source).toContain('eventType: "project.stage_changed"');
+    expect(norm(source)).toContain('eventType: "project.stage_changed"');
   });
 
   it("records gate and override events", () => {
-    const source = read("server/lifecycle-routes.ts");
+    const source = norm(read("server/lifecycle-routes.ts"));
     expect(source).toContain('"project.gate_passed"');
     expect(source).toContain('"project.gate_failed"');
     expect(source).toContain('"project.override_granted"');

@@ -21,6 +21,11 @@ function read(relPath: string): string {
   return fs.readFileSync(path.join(process.cwd(), relPath), "utf8");
 }
 
+// Quote-insensitive view — route files are auto-formatted to single quotes.
+function norm(s: string): string {
+  return s.replace(/['"]/g, '"');
+}
+
 const ROUTE_FILE = "server/routes/finance-trust-routes.ts";
 const ROUTES_INDEX = "server/routes/index.ts";
 
@@ -100,7 +105,7 @@ describe("finance-trust — finance-routes.ts uses the shared helper", () => {
   const financeRoutes = read("server/departments/finance-routes.ts");
 
   it("imports setFinanceTrustHeaders from the shared lib", () => {
-    expect(financeRoutes).toContain(
+    expect(norm(financeRoutes)).toContain(
       'from "../lib/finance-trust/envelope"',
     );
   });

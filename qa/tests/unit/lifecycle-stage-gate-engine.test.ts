@@ -6,6 +6,11 @@ function read(file: string) {
   return fs.readFileSync(path.resolve(file), "utf8");
 }
 
+// Quote-insensitive view — route files are auto-formatted to single quotes.
+function norm(s: string) {
+  return s.replace(/['"]/g, '"');
+}
+
 describe("lifecycle stage gate engine", () => {
   it("allows stage transition when requirements are complete", () => {
     const source = read("server/services/lifecycle-stage-gate-service.ts");
@@ -14,7 +19,7 @@ describe("lifecycle stage gate engine", () => {
 
   it("blocks stage transition with missing requirements", () => {
     const source = read("server/lifecycle-routes.ts");
-    expect(source).toContain('error: "stage_gate_failed"');
+    expect(norm(source)).toContain('error: "stage_gate_failed"');
     expect(source).toContain("missingItems: evaluation.missingItems");
   });
 

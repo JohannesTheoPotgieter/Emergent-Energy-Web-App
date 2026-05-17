@@ -25,6 +25,11 @@ function read(relPath: string) {
   return fs.readFileSync(path.join(process.cwd(), relPath), "utf8");
 }
 
+// Quote-insensitive view — route files are auto-formatted to single quotes.
+function norm(s: string) {
+  return s.replace(/['"]/g, '"');
+}
+
 function countOccurrences(source: string, pattern: string): number {
   let count = 0;
   let pos = 0;
@@ -40,11 +45,11 @@ describe("/api/program-expenses route uniqueness", () => {
   const legacyRoutes = read("server/routes.ts");
 
   it("canonical route GET /api/program-expenses exists in finance-routes.ts", () => {
-    expect(financeRoutes).toContain('"/api/program-expenses"');
+    expect(norm(financeRoutes)).toContain('"/api/program-expenses"');
   });
 
   it("canonical route GET /api/program-expenses/:projectName exists in finance-routes.ts", () => {
-    expect(financeRoutes).toContain('"/api/program-expenses/:projectName"');
+    expect(norm(financeRoutes)).toContain('"/api/program-expenses/:projectName"');
   });
 
   it("legacy routes.ts does NOT register /api/program-expenses (removed duplicate)", () => {

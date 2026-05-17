@@ -120,7 +120,8 @@ describe("integration services gate on isConnectorMocked (Phase 7)", () => {
       });
 
       it(`calls isConnectorMocked("${c.integration}") at least ${c.expectedGateCallsAtLeast}× (one per gated entry point)`, () => {
-        const needle = new RegExp(`isConnectorMocked\\("${c.integration}"\\)`, "g");
+        // Quote-agnostic — service files may use single or double quotes.
+        const needle = new RegExp(`isConnectorMocked\\(['"]${c.integration}['"]\\)`, "g");
         const hits = source.match(needle) || [];
         expect(
           hits.length,
