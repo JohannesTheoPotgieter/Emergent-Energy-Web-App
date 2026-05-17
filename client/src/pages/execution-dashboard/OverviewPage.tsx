@@ -36,8 +36,7 @@ export default function OverviewPage() {
           value={String(behindCount)}
           valueClass={behindCount === 0 ? "text-emerald-600" : behindCount <= 2 ? "text-amber-600" : "text-red-600"}
           sub={`${onScheduleCount} of ${filteredProjects.length} projects on track`}
-          icon={<Clock className="w-5 h-5 text-red-600" />}
-          iconBg="bg-red-100"
+          icon={<Clock className="w-5 h-5" />}
           cta="View all projects"
           onClick={() => setScheduleSheetOpen(true)}
         />
@@ -48,8 +47,7 @@ export default function OverviewPage() {
           value={`${kpis.onScheduleRate}%`}
           valueClass={kpis.onScheduleRate >= 70 ? "text-emerald-600" : kpis.onScheduleRate >= 50 ? "text-amber-600" : "text-red-600"}
           sub={`${onScheduleCount} of ${filteredProjects.length} projects not more than 5% behind expected`}
-          icon={<Activity className="w-5 h-5 text-emerald-600" />}
-          iconBg="bg-emerald-100"
+          icon={<Activity className="w-5 h-5" />}
           cta="View schedule breakdown"
           onClick={() => setScheduleSheetOpen(true)}
         />
@@ -60,8 +58,7 @@ export default function OverviewPage() {
           value={`${kpis.contractCompleteness}%`}
           valueClass={kpis.contractCompleteness >= 80 ? "text-emerald-600" : kpis.contractCompleteness >= 50 ? "text-amber-600" : "text-red-600"}
           sub={`${fullySignedCount} of ${filteredProjects.length} projects CP + EPC signed`}
-          icon={<CheckCircle2 className="w-5 h-5 text-blue-600" />}
-          iconBg="bg-blue-100"
+          icon={<CheckCircle2 className="w-5 h-5" />}
           cta="View contract status"
           onClick={() => setContractSheetOpen(true)}
         />
@@ -72,8 +69,7 @@ export default function OverviewPage() {
           value={formatCurrencyCompact(dashboard?.kpis.revenueOutstandingThisMonth ?? 0)}
           valueClass="text-amber-600"
           sub="Revenue planned but not yet received this month · all active projects"
-          icon={<DollarSign className="w-5 h-5 text-amber-600" />}
-          iconBg="bg-amber-100"
+          icon={<DollarSign className="w-5 h-5" />}
           cta="View by project"
           onClick={() => setRevenueSheetOpen(true)}
         />
@@ -82,10 +78,9 @@ export default function OverviewPage() {
         <KpiTile
           label="COS Outstanding This Month"
           value={formatCurrencyCompact(dashboard?.kpis.cosOutstandingThisMonth ?? 0)}
-          valueClass="text-orange-600"
+          valueClass="text-amber-600"
           sub="Cost of sales planned but not yet paid this month · all active projects"
-          icon={<TrendingDown className="w-5 h-5 text-orange-600" />}
-          iconBg="bg-orange-100"
+          icon={<TrendingDown className="w-5 h-5" />}
           cta="View by project"
           onClick={() => setCosSheetOpen(true)}
         />
@@ -94,10 +89,8 @@ export default function OverviewPage() {
         <KpiTile
           label="Revenue Inflows This Week"
           value={formatCurrencyCompact(dashboard?.kpis.projectInflowsThisWeek ?? 0)}
-          valueClass="text-blue-600"
           sub="Cashflow revenue series expected Mon–Sun this week · all active projects"
-          icon={<Banknote className="w-5 h-5 text-blue-600" />}
-          iconBg="bg-blue-100"
+          icon={<Banknote className="w-5 h-5" />}
           cta="Open cashflow register"
           onClick={() => setLocation("/cashflow")}
         />
@@ -106,10 +99,8 @@ export default function OverviewPage() {
         <KpiTile
           label="Expenditure Outflows This Week"
           value={formatCurrencyCompact(dashboard?.kpis.projectOutflowsThisWeek ?? 0)}
-          valueClass="text-red-600"
           sub="Cashflow expenditure series expected Mon–Sun this week · all active projects"
-          icon={<TrendingDown className="w-5 h-5 text-red-600" />}
-          iconBg="bg-red-100"
+          icon={<TrendingDown className="w-5 h-5" />}
           cta="Open cashflow register"
           onClick={() => setLocation("/cashflow")}
         />
@@ -120,8 +111,7 @@ export default function OverviewPage() {
           value={kpis.grossMarginPctFy != null ? `${kpis.grossMarginPctFy}%` : "—"}
           valueClass={kpis.grossMarginPctFy == null ? "text-muted-foreground" : kpis.grossMarginPctFy >= 20 ? "text-emerald-600" : kpis.grossMarginPctFy >= 10 ? "text-amber-600" : "text-red-600"}
           sub={`GP ${formatCurrencyCompact(kpis.grossProfitFy)} on ${formatCurrencyCompact(kpis.plannedRevenueFy)} planned revenue · FY`}
-          icon={<TrendingUp className="w-5 h-5 text-emerald-600" />}
-          iconBg="bg-emerald-100"
+          icon={<TrendingUp className="w-5 h-5" />}
           cta="View finance breakdown"
           onClick={() => setRevenueSheetOpen(true)}
         />
@@ -132,8 +122,7 @@ export default function OverviewPage() {
           value={formatCurrencyCompact(kpis.overdueInflowFy ?? 0)}
           valueClass={(kpis.overdueInflowFy ?? 0) === 0 ? "text-emerald-600" : "text-red-600"}
           sub="Revenue milestones past planned date without confirmed payment · FY"
-          icon={<AlertOctagon className="w-5 h-5 text-red-600" />}
-          iconBg="bg-red-100"
+          icon={<AlertOctagon className="w-5 h-5" />}
           cta="View outstanding revenue"
           onClick={() => setRevenueSheetOpen(true)}
         />
@@ -287,9 +276,9 @@ export default function OverviewPage() {
               <p className="text-[10px] text-red-700 font-medium">BEHIND</p>
               <p className="text-xl font-bold text-red-600">{behindCount}</p>
             </div>
-            <div className="bg-blue-50 rounded-lg border border-blue-200 p-2 text-center">
-              <p className="text-[10px] text-blue-700 font-medium">ON SCHEDULE RATE</p>
-              <p className="text-xl font-bold text-blue-600">{kpis.onScheduleRate}%</p>
+            <div className="bg-primary/5 rounded-lg border border-primary/20 p-2 text-center">
+              <p className="text-[10px] text-primary font-medium">ON SCHEDULE RATE</p>
+              <p className="text-xl font-bold text-primary">{kpis.onScheduleRate}%</p>
             </div>
           </div>
 
@@ -328,7 +317,13 @@ export default function OverviewPage() {
                         <td className="py-2.5 px-3 text-xs text-muted-foreground hidden md:table-cell">{p.pm || "—"}</td>
                         <td className="py-2.5 px-3 text-xs text-muted-foreground hidden lg:table-cell">{p.executionPhase || "—"}</td>
                         <td className="py-2.5 px-3 text-center hidden sm:table-cell">
-                          <span className={`inline-block w-2.5 h-2.5 rounded-full ${p.rag === "Green" ? "bg-emerald-500" : p.rag === "Amber" ? "bg-amber-500" : p.rag === "Red" ? "bg-red-500" : "bg-gray-300"}`} title={p.rag || "Not set"} />
+                          <span
+                            role="img"
+                            aria-label={`RAG: ${p.rag || "Not set"}`}
+                            title={p.rag || "Not set"}
+                            className={`inline-block w-2.5 h-2.5 rounded-full ${p.rag === "Green" ? "bg-emerald-500" : p.rag === "Amber" ? "bg-amber-500" : p.rag === "Red" ? "bg-red-500" : "bg-gray-300"}`}
+                          />
+                          <span className="sr-only">{p.rag || "Not set"}</span>
                         </td>
                         <td className="py-2.5 px-3 text-right tabular-nums font-semibold">
                           {p.actualProgressPct != null ? `${p.actualProgressPct}%` : "—"}
@@ -452,31 +447,30 @@ export default function OverviewPage() {
 }
 
 function KpiTile({
-  label, value, valueClass, sub, icon, iconBg, cta, onClick,
+  label, value, valueClass, sub, icon, cta, onClick,
 }: {
   label: string;
   value: string;
   valueClass?: string;
   sub: string;
   icon: React.ReactNode;
-  iconBg: string;
   cta: string;
   onClick: () => void;
 }) {
   return (
     <button
       onClick={onClick}
-      className="w-full text-left bg-white rounded-xl border border-border/60 p-5 hover:shadow-md hover:border-emerald-300 transition-all group"
+      className="w-full text-left bg-card rounded-lg border border-border p-5 shadow-sm hover:shadow-md hover:border-primary/40 transition-all group"
     >
       <div className="flex items-center gap-3 mb-3">
-        <div className={`w-9 h-9 rounded-lg ${iconBg} flex items-center justify-center shrink-0`}>
+        <div className="w-9 h-9 rounded-lg bg-primary/8 text-primary flex items-center justify-center shrink-0">
           {icon}
         </div>
         <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide leading-tight">{label}</span>
       </div>
-      <p className={`text-3xl font-bold tabular-nums ${valueClass || ""}`}>{value}</p>
+      <p className={`text-3xl font-bold tabular-nums ${valueClass || "text-foreground"}`}>{value}</p>
       <p className="text-xs text-muted-foreground mt-1.5 leading-snug">{sub}</p>
-      <p className="text-[11px] font-medium text-emerald-600 mt-3 group-hover:underline">{cta} →</p>
+      <p className="text-[11px] font-medium text-primary mt-3 group-hover:underline">{cta} →</p>
     </button>
   );
 }
