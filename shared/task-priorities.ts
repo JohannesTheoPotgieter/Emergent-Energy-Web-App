@@ -45,3 +45,41 @@ export function normalizeTaskPriority(value: string | null | undefined): TaskPri
 export function taskPriorityLabel(value: string | null | undefined): string {
   return TASK_PRIORITY_LABELS[normalizeTaskPriority(value)];
 }
+
+// Canonical badge / border / sort treatments keyed by the four real
+// priority values. Any divergent local map (Critical/Urgent/High/Medium/Low,
+// Med vs Medium, etc.) must normalise through normalizeTaskPriority() first
+// and read from these so a row never silently falls through to bg-muted.
+export const TASK_PRIORITY_BADGE_CLASS: Record<TaskPriority, string> = {
+  Urgent: "bg-red-600 text-white",
+  High: "bg-amber-100 text-amber-700",
+  Med: "bg-blue-100 text-blue-700",
+  Low: "bg-muted text-muted-foreground",
+};
+
+export const TASK_PRIORITY_BORDER_CLASS: Record<TaskPriority, string> = {
+  Urgent: "border-l-red-600",
+  High: "border-l-amber-500",
+  Med: "border-l-blue-400",
+  Low: "border-l-gray-300",
+};
+
+// Lower number = higher urgency. Stable sort weight for board/list ordering.
+export const TASK_PRIORITY_SORT_ORDER: Record<TaskPriority, number> = {
+  Urgent: 0,
+  High: 1,
+  Med: 2,
+  Low: 3,
+};
+
+export function taskPriorityBadgeClass(value: string | null | undefined): string {
+  return TASK_PRIORITY_BADGE_CLASS[normalizeTaskPriority(value)];
+}
+
+export function taskPriorityBorderClass(value: string | null | undefined): string {
+  return TASK_PRIORITY_BORDER_CLASS[normalizeTaskPriority(value)];
+}
+
+export function taskPrioritySortOrder(value: string | null | undefined): number {
+  return TASK_PRIORITY_SORT_ORDER[normalizeTaskPriority(value)];
+}

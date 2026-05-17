@@ -12,6 +12,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -105,7 +114,7 @@ import { InlineTip } from "@/components/guidance/InlineTip";
 import { MicroWalkthrough, ReplayWalkthrough } from "@/components/guidance/MicroWalkthrough";
 import { useRolloutFlag } from "@/hooks/use-rollout-flag";
 import type { NextAction, BlockerInfo } from "@/hooks/use-guidance";
-import type { Task, Comment, ActivityEntry, TeamMember, EngDefaultView } from "@/components/tasks/types";
+import type { Task, Comment, ActivityEntry, TeamMember } from "@/components/tasks/types";
 import { formatDate, formatDateShort, isOverdue, isDueThisWeek, daysLabel, getAvatarColor, getInitials, sortTasksForColumn } from "@/lib/task-formatters";
 import {
   deriveEngineeringTaskMetrics,
@@ -129,99 +138,40 @@ import {
   DEFAULT_TASK_PRIORITY,
   normalizeTaskPriority,
   taskPriorityLabel,
-  type TaskPriority,
+  taskPriorityBadgeClass,
+  taskPriorityBorderClass,
+  taskPrioritySortOrder,
 } from "@shared/task-priorities";
 
-export const PRIORITIES: readonly TaskPriority[] = TASK_PRIORITY_VALUES;
-export const DUE_DATE_FILTER_OPTIONS: { value: EngineeringDueDateFilter; label: string }[] = [
-  { value: "all", label: "All Due Dates" },
-  { value: "overdue", label: "Overdue" },
-  { value: "today", label: "Due Today" },
-  { value: "this_week", label: "Due In 7 Days" },
-  { value: "no_due_date", label: "No Due Date" },
-];
-export const WORKLOAD_STATE_OPTIONS: { value: EngineeringWorkloadStateFilter; label: string }[] = [
-  { value: "all", label: "All Work States" },
-  { value: "unassigned", label: "Unassigned" },
-  { value: "blocked", label: "Blocked" },
-  { value: "review", label: "Review Needed" },
-  { value: "approval", label: "QC Review Pending" },
-  { value: "deliverable", label: "Project Deliverables" },
-  { value: "microsoft_action", label: "Microsoft Actions" },
-];
-export const LINKED_SOURCE_OPTIONS: { value: EngineeringLinkedSourceFilter; label: string }[] = [
-  { value: "all", label: "All Linked Sources" },
-  { value: "project_linked", label: "Project Linked" },
-  { value: "project_unlinked", label: "No Project Link" },
-  { value: "microsoft_linked", label: "Microsoft Linked" },
-  { value: "microsoft_action_required", label: "Microsoft Action Required" },
-];
-
-export const priorityColors: Record<string, string> = {
-  Critical: "bg-red-600 text-white",
-  Urgent: "bg-orange-100 text-orange-700",
-  High: "bg-amber-100 text-amber-700",
-  Medium: "bg-blue-100 text-blue-700",
-  Low: "bg-muted text-muted-foreground",
-};
-
-export const priorityBorderColors: Record<string, string> = {
-  Critical: "border-l-red-600",
-  Urgent: "border-l-orange-500",
-  High: "border-l-amber-500",
-  Medium: "border-l-blue-400",
-  Low: "border-l-gray-300",
-};
-
-export const SAVED_FILTERS: {
-  label: string;
-  filter: {
-    status?: string;
-    dueDateFilter?: EngineeringDueDateFilter;
-    workloadStateFilter?: EngineeringWorkloadStateFilter;
-    linkedSourceFilter?: EngineeringLinkedSourceFilter;
-  };
-}[] = [
-  { label: "Overdue", filter: { dueDateFilter: "overdue" } },
-  { label: "Unassigned", filter: { workloadStateFilter: "unassigned" } },
-  { label: "Blocked", filter: { workloadStateFilter: "blocked" } },
-  { label: "Review Needed", filter: { workloadStateFilter: "review" } },
-  { label: "QC Review Pending", filter: { workloadStateFilter: "approval" } },
-  { label: "Deliverables", filter: { workloadStateFilter: "deliverable" } },
-  { label: "Microsoft Linked", filter: { linkedSourceFilter: "microsoft_linked" } },
-];
-
-export function getSavedMyName(): string {
-  return localStorage.getItem("eng_my_name") || "";
-}
-
-export function setSavedMyName(name: string) {
-  localStorage.setItem("eng_my_name", name);
-}
-
-export function getEngViewKey(userId?: number): string {
-  return `eng_default_view_${userId || "default"}`;
-}
-
-export function getSavedEngDefaultView(userId?: number): EngDefaultView | null {
-  try {
-    const raw = localStorage.getItem(getEngViewKey(userId));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return null;
-    const validViews = ["board", "list", "projects", "mytasks"];
-    if (!validViews.includes(parsed.viewMode)) parsed.viewMode = "board";
-    return parsed;
-  } catch { return null; }
-}
-
-export function saveEngDefaultView(view: EngDefaultView, userId?: number) {
-  localStorage.setItem(getEngViewKey(userId), JSON.stringify(view));
-}
-
-export function clearEngDefaultView(userId?: number) {
-  localStorage.removeItem(getEngViewKey(userId));
-}
+// Filter constants + per-user view localStorage helpers were extracted to
+// ./engineering/task-filter-config (UI/UX audit X5 module split). Re-exported
+// here so the public surface of this module is unchanged.
+export {
+  PRIORITIES,
+  DUE_DATE_FILTER_OPTIONS,
+  WORKLOAD_STATE_OPTIONS,
+  LINKED_SOURCE_OPTIONS,
+  priorityColors,
+  priorityBorderColors,
+  SAVED_FILTERS,
+  getSavedMyName,
+  setSavedMyName,
+  getEngViewKey,
+  getSavedEngDefaultView,
+  saveEngDefaultView,
+  clearEngDefaultView,
+} from "./engineering/task-filter-config";
+import {
+  PRIORITIES,
+  DUE_DATE_FILTER_OPTIONS,
+  WORKLOAD_STATE_OPTIONS,
+  LINKED_SOURCE_OPTIONS,
+  SAVED_FILTERS,
+  getSavedMyName,
+  getSavedEngDefaultView,
+  saveEngDefaultView,
+  clearEngDefaultView,
+} from "./engineering/task-filter-config";
 
 export function QuickStatusSelect({ task, onStatusChange }: { task: Task; onStatusChange: (id: number, status: string) => void }) {
   return (
@@ -447,6 +397,54 @@ export function EngineeringWorkloadStrip({
 }
 
 
+/**
+ * Keyboard-operable alternative to drag-and-drop (UI/UX audit X4). The board
+ * is otherwise pointer-only; this menu lets any keyboard user move a card
+ * between status columns. It is always rendered (not hover-gated) so it is
+ * reachable by Tab. The status vocabulary is the canonical board view set.
+ */
+export function MoveCardMenu({
+  task,
+  onStatusChange,
+  size = "default",
+}: {
+  task: Task;
+  onStatusChange: (id: number, status: string) => void;
+  size?: "default" | "sm";
+}) {
+  const currentCanonical = canonicalizeTaskStatus(task.status);
+  const targets = getVisibleStatusesForView("board").filter((s) => s !== currentCanonical);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          onClick={(e) => e.stopPropagation()}
+          className={`inline-flex items-center gap-1 rounded border border-border bg-card font-medium text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${size === "sm" ? "text-[9px] px-1.5 py-0.5" : "text-[10px] px-2 py-1"}`}
+          aria-label={`Move task "${task.title}" to another status column`}
+          data-testid={`btn-move-card-${task.id}`}
+        >
+          <ArrowRightLeft className={size === "sm" ? "h-2.5 w-2.5" : "h-3 w-3"} />
+          Move
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
+        <DropdownMenuLabel className="text-[11px]">Move to status</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {targets.map((status) => (
+          <DropdownMenuItem
+            key={status}
+            onSelect={() => onStatusChange(task.id, status)}
+            data-testid={`move-card-${task.id}-${status}`}
+          >
+            {getTaskStatusLabel(status)}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateChange, compact, selected, onToggleSelect }: {
   task: Task; onClick: () => void; onStatusChange: (id: number, status: string) => void;
   onPriorityChange?: (id: number, priority: string) => void;
@@ -466,6 +464,17 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
     }
     onClick();
   };
+  // X4 a11y: the card is the primary affordance to open task detail. Make it
+  // operable from the keyboard (Enter / Space) since drag-and-drop and the
+  // pointer onClick alone are inaccessible. Ignore the keystroke when it
+  // originates from a nested interactive control (its own handler runs).
+  const handleCardKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onClick();
+    }
+  };
   const overdue = isOverdue(task.dueDate, task.status);
   const dueSoon = isDueThisWeek(task.dueDate, task.status);
   const projectDisplay = task.projectName?.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
@@ -482,8 +491,12 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
         onDragStart={(e) => { dragStartedRef.current = true; e.dataTransfer.setData("taskId", String(task.id)); e.dataTransfer.effectAllowed = "move"; }}
         onDragEnd={() => { setTimeout(() => { dragStartedRef.current = false; }, 0); }}
         onClick={handleCardClick}
-        className={`bg-card border-l-[3px] border border-b-border border-r-border border-t-border rounded px-2 py-1.5 cursor-pointer hover:shadow-sm transition-all group relative
-          ${priorityBorderColors[task.priority] || "border-l-gray-300"}
+        onKeyDown={handleCardKeyDown}
+        role="button"
+        tabIndex={0}
+        aria-label={`Open task: ${task.title}`}
+        className={`bg-card border-l-[3px] border border-b-border border-r-border border-t-border rounded px-2 py-1.5 cursor-pointer hover:shadow-sm transition-all group relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
+          ${taskPriorityBorderClass(task.priority)}
           ${overdue ? "bg-red-50/60" : ""}
         `}
         data-testid={`kanban-card-${task.id}`}
@@ -509,6 +522,11 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
             <span className="text-[8px] text-muted-foreground/50 truncate">Sub-task of {task.parentTaskTitle}</span>
           </div>
         )}
+        {onStatusChange && (
+          <div className="mt-1" onClick={(e) => e.stopPropagation()}>
+            <MoveCardMenu task={task} onStatusChange={onStatusChange} size="sm" />
+          </div>
+        )}
       </div>
     );
   }
@@ -523,8 +541,12 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
       }}
       onDragEnd={() => { setTimeout(() => { dragStartedRef.current = false; }, 0); }}
       onClick={handleCardClick}
-      className={`bg-card border-l-[3px] border border-b-border border-r-border border-t-border rounded-md px-2.5 py-2 cursor-pointer hover:shadow-md hover:translate-y-[-1px] transition-all duration-150 group relative
-        ${priorityBorderColors[task.priority] || "border-l-gray-300"}
+      onKeyDown={handleCardKeyDown}
+      role="button"
+      tabIndex={0}
+      aria-label={`Open task: ${task.title}`}
+      className={`bg-card border-l-[3px] border border-b-border border-r-border border-t-border rounded-md px-2.5 py-2 cursor-pointer hover:shadow-md hover:translate-y-[-1px] transition-all duration-150 group relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
+        ${taskPriorityBorderClass(task.priority)}
         ${overdue ? "bg-red-50/60 border-r-red-200 border-t-red-200 border-b-red-200" : ""}
         ${isCritical && !overdue ? "bg-orange-50/30" : ""}
         ${selected ? "ring-2 ring-blue-500 bg-blue-50/40" : ""}
@@ -589,8 +611,8 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
               data-testid={`card-priority-${task.id}`}
             />
           ) : (
-            <Badge className={`text-[9px] px-1.5 py-0 leading-tight ${priorityColors[task.priority] || "bg-muted"}`}>
-              {task.priority}
+            <Badge className={`text-[9px] px-1.5 py-0 leading-tight ${taskPriorityBadgeClass(task.priority)}`}>
+              {taskPriorityLabel(task.priority)}
             </Badge>
           )}
         </div>
@@ -654,26 +676,29 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
         </div>
       )}
 
-      {/* Inline quick actions - appear on hover */}
+      {/* Quick actions + keyboard column-move (X4). Always rendered (not
+          hover-gated) so the move affordance is reachable by Tab — drag-and-
+          drop alone was the only path to move a card between columns. */}
       {onStatusChange && (() => {
         const canonical = canonicalizeTaskStatus(task.status);
         return (
-          <div className="opacity-0 group-hover:opacity-100 transition-opacity mt-1.5 pt-1.5 border-t border-dashed flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          <div className="mt-1.5 pt-1.5 border-t border-dashed flex items-center gap-1 flex-wrap" onClick={(e) => e.stopPropagation()}>
             {canonical !== "in_progress" && (
-              <button className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium" onClick={() => onStatusChange(task.id, "in_progress")}>
+              <button type="button" className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onStatusChange(task.id, "in_progress")} data-testid={`quick-start-${task.id}`}>
                 Start
               </button>
             )}
             {canonical !== "complete" && canonical !== "needs_approval" && (
-              <button className="text-[9px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 hover:bg-purple-100 font-medium" onClick={() => onStatusChange(task.id, "needs_approval")}>
+              <button type="button" className="text-[9px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 hover:bg-purple-100 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onStatusChange(task.id, "needs_approval")} data-testid={`quick-submit-${task.id}`}>
                 Submit
               </button>
             )}
             {canonical !== "complete" && (
-              <button className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-medium" onClick={() => onStatusChange(task.id, "complete")}>
+              <button type="button" className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onStatusChange(task.id, "complete")} data-testid={`quick-done-${task.id}`}>
                 Done
               </button>
             )}
+            <MoveCardMenu task={task} onStatusChange={onStatusChange} size="sm" />
           </div>
         );
       })()}
@@ -952,6 +977,9 @@ export function TaskDetailDrawer({
   const [drawerHoldDialog, setDrawerHoldDialog] = useState(false);
   const [drawerHoldReason, setDrawerHoldReason] = useState("");
   const [drawerBlockedType, setDrawerBlockedType] = useState("");
+  // X6: replace window.confirm with the shared ConfirmDialog so the
+  // high-severity completion guard matches every other confirm in the app.
+  const [drawerCompletionConfirm, setDrawerCompletionConfirm] = useState(false);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [showMentions, setShowMentions] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
@@ -1140,9 +1168,8 @@ export function TaskDetailDrawer({
     if (newStatus === "complete") {
       const hasHighWarnings = task.trackingRag === "Red" || normalizeTaskPriority(task.priority) === "Urgent";
       if (hasHighWarnings) {
-        if (!window.confirm("This task has high-severity warnings. Proceed with completion anyway?")) {
-          return;
-        }
+        setDrawerCompletionConfirm(true);
+        return;
       }
     }
     updateMutation.mutate({ status: newStatus });
@@ -2307,6 +2334,28 @@ export function TaskDetailDrawer({
         }}
         testIdPrefix="drawer-hold"
       />
+
+      <ConfirmDialog
+        open={drawerCompletionConfirm}
+        onOpenChange={setDrawerCompletionConfirm}
+        title="Complete this task?"
+        description="This task is flagged with high-severity warnings. Marking it complete will bypass the usual review path."
+        confirmLabel="Mark complete"
+        impact={
+          <p data-testid="drawer-completion-impact">
+            Flags:{" "}
+            <strong>
+              {[
+                task.trackingRag === "Red" ? "Red tracking RAG" : null,
+                normalizeTaskPriority(task.priority) === "Urgent" ? "Urgent priority" : null,
+              ]
+                .filter(Boolean)
+                .join(", ")}
+            </strong>
+          </p>
+        }
+        onConfirm={() => updateMutation.mutate({ status: "complete" })}
+      />
       </ErrorBoundary>
     </div>
   );
@@ -2560,8 +2609,8 @@ export function ProjectKanbanView({
                                       >
                                         <p className="font-medium leading-tight line-clamp-2 mb-1">{task.title}</p>
                                         <div className="flex items-center gap-1 flex-wrap">
-                                          <Badge className={`text-[8px] px-1 py-0 ${priorityColors[task.priority] || "bg-muted"}`}>
-                                            {task.priority}
+                                          <Badge className={`text-[8px] px-1 py-0 ${taskPriorityBadgeClass(task.priority)}`}>
+                                            {taskPriorityLabel(task.priority)}
                                           </Badge>
                                           {task.dueDate && (
                                             <span className={`text-[9px] flex items-center gap-0.5 ${isOverdue(task.dueDate, task.status) ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
@@ -2804,7 +2853,7 @@ export function TimelineView({ tasks, onCardClick }: { tasks: Task[]; onCardClic
                     <div className="w-[220px] shrink-0 p-2 border-r cursor-pointer">
                       <p className="text-[11px] font-medium truncate leading-tight">{task.title}</p>
                       <div className="flex items-center gap-1 mt-0.5">
-                        <Badge className={`text-[8px] px-1 py-0 ${priorityColors[task.priority] || "bg-muted"}`}>{task.priority}</Badge>
+                        <Badge className={`text-[8px] px-1 py-0 ${taskPriorityBadgeClass(task.priority)}`}>{taskPriorityLabel(task.priority)}</Badge>
                         <span className={`text-[9px] ${overdue ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>{daysLabel(task.dueDate!)}</span>
                       </div>
                     </div>
@@ -2886,7 +2935,6 @@ export function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityC
     else { setSortCol(col); setSortDir("asc"); }
   }, [sortCol]);
 
-  const PRIORITY_ORDER: Record<string, number> = { Critical: 0, Urgent: 1, High: 2, Med: 3, Low: 4 };
   const sorted = useMemo(() => {
     if (!sortCol) return tasks;
     const arr = [...tasks];
@@ -2896,7 +2944,7 @@ export function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityC
         case "title": return dir * (a.title || "").localeCompare(b.title || "");
         case "project": return dir * (a.projectName || "").localeCompare(b.projectName || "");
         case "status": return dir * (a.status || "").localeCompare(b.status || "");
-        case "priority": return dir * ((PRIORITY_ORDER[a.priority] ?? 9) - (PRIORITY_ORDER[b.priority] ?? 9));
+        case "priority": return dir * (taskPrioritySortOrder(a.priority) - taskPrioritySortOrder(b.priority));
         case "assignee": return dir * ((a.assignees?.[0] || "zzz").localeCompare(b.assignees?.[0] || "zzz"));
         case "dueDate": {
           const da = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
@@ -3133,8 +3181,7 @@ export function MyTasksView({
       }
     }
 
-    const priorityOrder: Record<string, number> = { Critical: 0, Urgent: 1, High: 2, Medium: 3, Low: 4 };
-    const sortByPriority = (a: Task, b: Task) => (priorityOrder[a.priority] ?? 5) - (priorityOrder[b.priority] ?? 5);
+    const sortByPriority = (a: Task, b: Task) => taskPrioritySortOrder(a.priority) - taskPrioritySortOrder(b.priority);
     overdue.sort((a, b) => {
       const aDate = a.dueDate ? new Date(a.dueDate).getTime() : 0;
       const bDate = b.dueDate ? new Date(b.dueDate).getTime() : 0;
@@ -3624,6 +3671,14 @@ export default function EngineeringTasksPage() {
   const [collapsedColumns, setCollapsedColumns] = useState<Set<string>>(() => new Set());
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<number>>(new Set());
   const bulkMode = selectedTaskIds.size > 0;
+  // X6: bulk status/priority changes must be confirmed (with an impact
+  // preview) before they fan out. Holds the pending change until the user
+  // confirms via the shared ConfirmDialog.
+  const [pendingBulk, setPendingBulk] = useState<
+    | { kind: "status"; taskIds: number[]; value: string; label: string }
+    | { kind: "priority"; taskIds: number[]; value: string; label: string }
+    | null
+  >(null);
 
   const toggleTaskSelection = useCallback((taskId: number) => {
     setSelectedTaskIds(prev => {
@@ -3833,29 +3888,66 @@ export default function EngineeringTasksPage() {
     updatePriorityMutation.mutate({ taskId, priority: newPriority });
   }, [updatePriorityMutation]);
 
-  const bulkStatusMutation = useMutation({
-    mutationFn: async ({ taskIds, status }: { taskIds: number[]; status: string }) => {
-      await Promise.all(taskIds.map(id => engFetch(`/api/eng/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ status }) })));
+  // Settle every PATCH independently so a partial failure is reported
+  // honestly instead of the previous all-or-nothing toast (X6).
+  const runBulkPatch = useCallback(
+    async (taskIds: number[], body: Record<string, unknown>) => {
+      const results = await Promise.allSettled(
+        taskIds.map((id) => engFetch(`/api/eng/tasks/${id}`, { method: "PATCH", body: JSON.stringify(body) })),
+      );
+      const ok = results.filter((r) => r.status === "fulfilled").length;
+      const failed = results.length - ok;
+      return { ok, failed };
     },
-    onSuccess: () => {
+    [],
+  );
+
+  const bulkStatusMutation = useMutation({
+    mutationFn: ({ taskIds, status }: { taskIds: number[]; status: string }) => runBulkPatch(taskIds, { status }),
+    onSuccess: ({ ok, failed }) => {
       invalidateAllTaskCaches(queryClient);
-      toast({ title: `${selectedTaskIds.size} tasks updated` });
-      clearSelection();
+      if (failed === 0) {
+        toast({ title: `${ok} task${ok === 1 ? "" : "s"} updated` });
+      } else {
+        toast({
+          title: `${ok} updated, ${failed} failed`,
+          description: "Some tasks could not be updated. Selection kept so you can retry.",
+          variant: "destructive",
+        });
+      }
+      if (failed === 0) clearSelection();
     },
     onError: (e: Error) => toast({ title: "Bulk update failed", description: e.message, variant: "destructive" }),
   });
 
   const bulkPriorityMutation = useMutation({
-    mutationFn: async ({ taskIds, priority }: { taskIds: number[]; priority: string }) => {
-      await Promise.all(taskIds.map(id => engFetch(`/api/eng/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ priority }) })));
-    },
-    onSuccess: () => {
+    mutationFn: ({ taskIds, priority }: { taskIds: number[]; priority: string }) => runBulkPatch(taskIds, { priority }),
+    onSuccess: ({ ok, failed }) => {
       invalidateAllTaskCaches(queryClient);
-      toast({ title: `${selectedTaskIds.size} tasks updated` });
-      clearSelection();
+      if (failed === 0) {
+        toast({ title: `${ok} task${ok === 1 ? "" : "s"} updated` });
+      } else {
+        toast({
+          title: `${ok} updated, ${failed} failed`,
+          description: "Some tasks could not be updated. Selection kept so you can retry.",
+          variant: "destructive",
+        });
+      }
+      if (failed === 0) clearSelection();
     },
     onError: (e: Error) => toast({ title: "Bulk update failed", description: e.message, variant: "destructive" }),
   });
+
+  // Confirmed executor — fired by the ConfirmDialog.
+  const executePendingBulk = useCallback(() => {
+    if (!pendingBulk) return;
+    if (pendingBulk.kind === "status") {
+      bulkStatusMutation.mutate({ taskIds: pendingBulk.taskIds, status: pendingBulk.value });
+    } else {
+      bulkPriorityMutation.mutate({ taskIds: pendingBulk.taskIds, priority: pendingBulk.value });
+    }
+    setPendingBulk(null);
+  }, [pendingBulk, bulkStatusMutation, bulkPriorityMutation]);
 
   const updateDueDateMutation = useMutation({
     mutationFn: ({ taskId, dueDate }: { taskId: number; dueDate: string }) =>
@@ -4693,7 +4785,7 @@ export default function EngineeringTasksPage() {
             <div className="h-4 w-px bg-blue-200" />
             <SearchableSelect
               value=""
-              onValueChange={(status) => bulkStatusMutation.mutate({ taskIds: Array.from(selectedTaskIds), status })}
+              onValueChange={(status) => setPendingBulk({ kind: "status", taskIds: Array.from(selectedTaskIds), value: status, label: getTaskStatusLabel(status) })}
               placeholder="Set status..."
               triggerClassName="h-7 text-[10px] min-w-[100px]"
               options={getVisibleStatusesForView("board").map(s => ({ value: s, label: getTaskStatusLabel(s) }))}
@@ -4701,7 +4793,7 @@ export default function EngineeringTasksPage() {
             />
             <SearchableSelect
               value=""
-              onValueChange={(p) => bulkPriorityMutation.mutate({ taskIds: Array.from(selectedTaskIds), priority: p })}
+              onValueChange={(p) => setPendingBulk({ kind: "priority", taskIds: Array.from(selectedTaskIds), value: p, label: taskPriorityLabel(p) })}
               placeholder="Set priority..."
               triggerClassName="h-7 text-[10px] min-w-[90px]"
               options={PRIORITIES.map(p => ({ value: p, label: TASK_PRIORITY_LABELS[p] }))}
@@ -4780,8 +4872,8 @@ export default function EngineeringTasksPage() {
           onCardClick={setSelectedTask}
           onStatusChange={handleStatusChange}
           onPriorityChange={handlePriorityChange}
-          onBulkStatusChange={(ids, status) => bulkStatusMutation.mutate({ taskIds: ids, status })}
-          onBulkPriorityChange={(ids, priority) => bulkPriorityMutation.mutate({ taskIds: ids, priority })}
+          onBulkStatusChange={(ids, status) => setPendingBulk({ kind: "status", taskIds: ids, value: status, label: getTaskStatusLabel(status) })}
+          onBulkPriorityChange={(ids, priority) => setPendingBulk({ kind: "priority", taskIds: ids, value: priority, label: taskPriorityLabel(priority) })}
         />
       )}
 
@@ -4834,6 +4926,24 @@ export default function EngineeringTasksPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* X6: bulk status / priority change confirmation with impact preview. */}
+      <ConfirmDialog
+        open={!!pendingBulk}
+        onOpenChange={(open) => { if (!open) setPendingBulk(null); }}
+        title={pendingBulk?.kind === "priority" ? "Change priority on multiple tasks?" : "Change status on multiple tasks?"}
+        description="This applies the same change to every selected task."
+        confirmLabel={pendingBulk ? `Apply to ${pendingBulk.taskIds.length} task${pendingBulk.taskIds.length === 1 ? "" : "s"}` : "Apply"}
+        impact={
+          pendingBulk ? (
+            <p data-testid="bulk-confirm-impact">
+              <strong>{pendingBulk.taskIds.length}</strong> task{pendingBulk.taskIds.length === 1 ? "" : "s"} will be set to{" "}
+              {pendingBulk.kind === "priority" ? "priority" : "status"} <strong>{pendingBulk.label}</strong>.
+            </p>
+          ) : undefined
+        }
+        onConfirm={executePendingBulk}
+      />
 
       {showShortcuts && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setShowShortcuts(false)}>

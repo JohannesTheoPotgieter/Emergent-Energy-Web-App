@@ -105,20 +105,38 @@ export default function EngineeringStandupPage() {
 
   // ── Data fetching ─────────────────────────────────────────────────────
 
-  const { data: schedules = [], isLoading: schedulesLoading, refetch: refetchSchedules } = useQuery<any[]>({
+  const {
+    data: schedules = [],
+    isLoading: schedulesLoading,
+    isError: schedulesError,
+    error: schedulesErrorObj,
+    refetch: refetchSchedules,
+  } = useQuery<any[]>({
     queryKey: ["/api/standups/schedules"],
     queryFn: () => api("/api/standups/schedules"),
   });
 
   const activeScheduleId = schedules[0]?.id ? String(schedules[0].id) : "";
 
-  const { data: allParticipants = [], isLoading: participantsLoading, refetch: refetchParticipants } = useQuery<Participant[]>({
+  const {
+    data: allParticipants = [],
+    isLoading: participantsLoading,
+    isError: participantsError,
+    error: participantsErrorObj,
+    refetch: refetchParticipants,
+  } = useQuery<Participant[]>({
     queryKey: ["/api/standups/schedules", activeScheduleId, "participants"],
     queryFn: () => api(`/api/standups/schedules/${activeScheduleId}/participants`),
     enabled: !!activeScheduleId,
   });
 
-  const { data: allEngTasks = [], isLoading: allTasksLoading } = useQuery<EngTask[]>({
+  const {
+    data: allEngTasks = [],
+    isLoading: allTasksLoading,
+    isError: allTasksError,
+    error: allTasksErrorObj,
+    refetch: refetchAllTasks,
+  } = useQuery<EngTask[]>({
     queryKey: ["eng-tasks-all-standup"],
     queryFn: async () => {
       const data = await api("/api/eng/tasks");
@@ -488,6 +506,36 @@ export default function EngineeringStandupPage() {
 
   if (isLoading) return <PageSkeleton lines={5} />;
 
+  // Explicit error states — distinct from "no data yet", each with retry.
+  // Standup can't run if any of the three core feeds is unreachable.
+  if (schedulesError || (!!activeScheduleId && participantsError) || allTasksError) {
+    const failed = schedulesError
+      ? { what: "standup schedules", err: schedulesErrorObj, retry: refetchSchedules }
+      : participantsError
+        ? { what: "standup participants", err: participantsErrorObj, retry: refetchParticipants }
+        : { what: "engineering tasks", err: allTasksErrorObj, retry: refetchAllTasks };
+    return (
+      <PageShell className="p-4 md:p-6" data-testid="page-engineering-standup">
+        <SectionHeader
+          icon={<Users className="h-5 w-5" />}
+          eyebrow="Engineering"
+          title="Engineering Standup"
+          description="Live standup facilitator"
+        />
+        <div data-testid="standup-error-state">
+          <PageError
+            title={`Couldn't load ${failed.what}`}
+            message={
+              (failed.err instanceof Error ? failed.err.message : null) ||
+              "The standup needs schedules, participants and engineering tasks. Check your connection and retry."
+            }
+            onRetry={() => { void failed.retry(); }}
+          />
+        </div>
+      </PageShell>
+    );
+  }
+
   // ── RENDER ────────────────────────────────────────────────────────────
 
   return (
@@ -752,6 +800,7 @@ export default function EngineeringStandupPage() {
           taskMovements={taskMovements}
           moods={moods}
           facilitatorNotes={facilitatorNotes}
+          scheduleId={activeScheduleId ? Number(activeScheduleId) : null}
           onClose={() => setPhase("waiting")}
         />
       )}
