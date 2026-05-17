@@ -23,10 +23,10 @@ export function AuditLogDrawer({ open, onOpenChange }: AuditLogDrawerProps) {
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <History className="h-5 w-5 text-emerald-600" />
-            Change history
+            Audit log
           </SheetTitle>
           <p className="text-xs text-muted-foreground">
-            Every role, permission and access-control change, newest first. Filter by event type to focus the view.
+            Every role, permission and access-control change, newest first. Filter by event type, person, or free text.
           </p>
         </SheetHeader>
         <div className="mt-4">

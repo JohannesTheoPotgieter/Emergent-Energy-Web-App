@@ -5,6 +5,7 @@
 export {
   // View components
   TaskCard,
+  MoveCardMenu,
   KanbanColumn,
   InlineListView,
   TimelineView,

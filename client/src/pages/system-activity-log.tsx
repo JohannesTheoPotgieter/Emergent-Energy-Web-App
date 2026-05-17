@@ -13,6 +13,8 @@ import {
   ChevronLeft, ChevronRight, Loader2, Search, ArrowRight, Filter, AlertTriangle,
   Download, Calendar, X, User,
 } from "lucide-react";
+import { AuditDetailView } from "@/components/admin/audit-detail-view";
+import { formatDateTimeZA } from "@/lib/datetime";
 
 const SOURCE_ICONS: Record<string, any> = {
   IMPORT: FileUp, MANUAL_EDIT: Edit, OVERRIDE: Shield,
@@ -42,10 +44,8 @@ function authFetch(url: string) {
 }
 
 function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleString("en-ZA", {
-    year: "numeric", month: "short", day: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  });
+  // UI/UX audit #8 — explicit timezone for a non-technical COO.
+  return formatDateTimeZA(dateStr);
 }
 
 function buildQueryParams(filters: {
@@ -175,8 +175,8 @@ export default function SystemActivityLogPage() {
   return (
     <AdminPageShell
       surfaceId="audit-log"
-      title="Audit Log"
-      description="Trace governed system activity, filter operational history, and drill into changes without leaving the admin control centre."
+      title="Audit log"
+      description="Trace governed system activity, filter operational history, and drill into changes without leaving the admin control centre. Times shown in SAST (Africa/Johannesburg)."
       statuses={auditStatuses}
       metrics={[
         { label: "Events", value: pagination.total, helper: "Matching current audit filters" },
@@ -189,7 +189,7 @@ export default function SystemActivityLogPage() {
         <div className="flex items-center gap-3">
           <Activity className="h-6 w-6 text-primary" />
           <div>
-            <h1 className="text-2xl font-bold" data-testid="text-activity-log-title">System Activity Log</h1>
+            <h1 className="text-2xl font-bold" data-testid="text-activity-log-title">Audit log</h1>
             <p className="text-sm text-muted-foreground">All logins, edits, imports, overrides, deletes, and system events</p>
           </div>
         </div>
@@ -524,11 +524,11 @@ export default function SystemActivityLogPage() {
                 <p className="text-sm bg-muted p-2 rounded">{selectedRecord.summary}</p>
               )}
               {selectedRecord.changes_json && typeof selectedRecord.changes_json === 'object' && Object.keys(selectedRecord.changes_json).length > 0 && (
-                <div>
-                  <h4 className="text-sm font-semibold mb-2">Change Details</h4>
-                  <div className="border rounded p-3 bg-muted/50 text-xs font-mono max-h-[300px] overflow-auto whitespace-pre-wrap">
-                    {JSON.stringify(selectedRecord.changes_json, null, 2)}
-                  </div>
+                <div className="max-h-[300px] overflow-auto">
+                  <AuditDetailView
+                    detail={selectedRecord.changes_json as Record<string, unknown>}
+                    title="Change details"
+                  />
                 </div>
               )}
             </div>

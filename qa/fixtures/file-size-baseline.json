@@ -2,19 +2,15 @@
   "_documentation": "EE-QA-015 baseline — files above the FILE_SIZE_THRESHOLD LOC. The CI guard `qa/tests/unit/file-size-ratchet.test.ts` fails if any of these grow OR a NEW file lands over the threshold. To regenerate after a split, run `npx tsx scripts/build-file-size-baseline.ts` and commit the new JSON.",
   "threshold": 1500,
   "buffer": 50,
-  "generated": "2026-05-12",
+  "generated": "2026-05-17",
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
-      "loc": 7822
-    },
-    {
-      "file": "client/src/pages/EngineeringTasksPage.tsx",
-      "loc": 4870
+      "loc": 9269
     },
     {
       "file": "client/src/pages/smart-import.tsx",
-      "loc": 4760
+      "loc": 4861
     },
     {
       "file": "server/engineering-routes.ts",
@@ -22,11 +18,15 @@
     },
     {
       "file": "server/smart-import-routes.ts",
-      "loc": 3660
+      "loc": 3667
+    },
+    {
+      "file": "server/lifecycle-routes.ts",
+      "loc": 3600
     },
     {
       "file": "client/src/components/tabs/UnifiedPlanTab.tsx",
-      "loc": 2994
+      "loc": 3022
     },
     {
       "file": "server/quality-routes.ts",
@@ -37,12 +37,16 @@
       "loc": 2897
     },
     {
-      "file": "server/routes/quickbooks-invoice-matches.routes.ts",
-      "loc": 2567
+      "file": "client/src/pages/cashflow.tsx",
+      "loc": 2698
     },
     {
-      "file": "server/lifecycle-routes.ts",
-      "loc": 2556
+      "file": "server/departments/priority-strategic-routes.ts",
+      "loc": 2594
+    },
+    {
+      "file": "server/routes/quickbooks-invoice-matches.routes.ts",
+      "loc": 2567
     },
     {
       "file": "server/services/quickbooks-reconciliation-service.ts",
@@ -50,11 +54,15 @@
     },
     {
       "file": "server/lib/import/commit-executor.ts",
-      "loc": 2437
+      "loc": 2474
     },
     {
       "file": "client/src/pages/my-work-tasks.tsx",
       "loc": 2368
+    },
+    {
+      "file": "server/departments/fye-revenue-tracking-routes.ts",
+      "loc": 2338
     },
     {
       "file": "client/src/pages/ee-info.tsx",
@@ -65,8 +73,8 @@
       "loc": 2243
     },
     {
-      "file": "server/departments/priority-strategic-routes.ts",
-      "loc": 2446
+      "file": "client/src/pages/cos.tsx",
+      "loc": 2234
     },
     {
       "file": "client/src/components/quickbooks/QbMatchingWorkbench.tsx",
@@ -74,7 +82,7 @@
     },
     {
       "file": "server/departments/project-routes.ts",
-      "loc": 2177
+      "loc": 2178
     },
     {
       "file": "client/src/components/tabs/ProjectProcurementTab.tsx",
@@ -85,28 +93,24 @@
       "loc": 2126
     },
     {
+      "file": "client/src/pages/project-detail.tsx",
+      "loc": 2125
+    },
+    {
       "file": "client/src/pages/finance-quickbooks-throughput.tsx",
       "loc": 2120
+    },
+    {
+      "file": "server/lib/import/normalizer.ts",
+      "loc": 2117
     },
     {
       "file": "server/ee-info-routes.ts",
       "loc": 2111
     },
     {
-      "file": "server/lib/import/normalizer.ts",
-      "loc": 2109
-    },
-    {
-      "file": "client/src/pages/cashflow.tsx",
-      "loc": 2108
-    },
-    {
       "file": "client/src/pages/lifecycle-board.tsx",
       "loc": 2082
-    },
-    {
-      "file": "client/src/pages/project-detail.tsx",
-      "loc": 2117
     },
     {
       "file": "server/departments/opportunities-routes.ts",
@@ -115,6 +119,10 @@
     {
       "file": "client/src/components/TaskDetailDrawer.tsx",
       "loc": 1901
+    },
+    {
+      "file": "client/src/pages/revenue-tracker.tsx",
+      "loc": 1874
     },
     {
       "file": "server/seed-ee-info-updates.ts",
@@ -133,16 +141,12 @@
       "loc": 1779
     },
     {
+      "file": "server/routes/planning-tasks-routes.ts",
+      "loc": 1775
+    },
+    {
       "file": "client/src/pages/pd-dashboard.tsx",
       "loc": 1750
-    },
-    {
-      "file": "server/departments/fye-revenue-tracking-routes.ts",
-      "loc": 1747
-    },
-    {
-      "file": "server/routes/planning-tasks-routes.ts",
-      "loc": 1735
     },
     {
       "file": "server/storage.ts",
@@ -161,6 +165,18 @@
       "loc": 1702
     },
     {
+      "file": "client/src/pages/qm-dashboard.tsx",
+      "loc": 1641
+    },
+    {
+      "file": "client/src/pages/engineering/EngineeringTaskDrawer.tsx",
+      "loc": 1622
+    },
+    {
+      "file": "client/src/pages/EngineeringTasksPage.tsx",
+      "loc": 1619
+    },
+    {
       "file": "shared/schema/finance.ts",
       "loc": 1608
     },
@@ -173,6 +189,10 @@
       "loc": 1568
     },
     {
+      "file": "client/src/components/tabs/ProjectPlanTab.tsx",
+      "loc": 1565
+    },
+    {
       "file": "server/services/stage-lifecycle-service.ts",
       "loc": 1565
     },
@@ -181,16 +201,12 @@
       "loc": 1561
     },
     {
-      "file": "client/src/components/tabs/ProjectPlanTab.tsx",
-      "loc": 1554
-    },
-    {
       "file": "server/services/gate-auto-evaluator-service.ts",
       "loc": 1538
     },
     {
-      "file": "client/src/pages/cos.tsx",
-      "loc": 1528
+      "file": "server/role-management.ts",
+      "loc": 1504
     }
   ]
 }

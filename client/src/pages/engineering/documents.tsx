@@ -2,9 +2,9 @@
  * Engineering Document Management — engineering team's working surface for
  * drawings, specs, NCR evidence, calibration certs, and approval traffic.
  *
- * Layout: ManagedDocumentApprovalQueue sits above the canonical /documents
- * browser so engineering approvals waiting on you are the first thing you
- * see when you land on this tab.
+ * Layout: a standard PageShell + SectionHeader frames the page with explicit
+ * engineering context, then the ManagedDocumentApprovalQueue (approvals
+ * waiting on you) sits above the canonical /documents browser.
  *
  * Data integrity:
  * - All documents live in SharePoint. The app holds metadata + Graph
@@ -14,19 +14,26 @@
  *   truth) and § 5A (no file bodies in DB).
  * - The approvals queue is the D6 Phase 5 canonical component
  *   `ManagedDocumentApprovalQueue`, reading the typed nested response from
- *   /api/managed-document-approvals/queue. The legacy ApprovalQueueCard
- *   under client/src/components/managed-documents/ had a shape mismatch
- *   with the API and is being retired.
+ *   /api/managed-document-approvals/queue. It owns its own
+ *   loading / empty / error states.
  */
 
+import { FolderTree } from "lucide-react";
+import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { ManagedDocumentApprovalQueue } from "@/components/documents/ManagedDocumentApprovalQueue";
 import DocumentsPage from "../documents";
 
 export default function EngineeringDocumentsPage() {
   return (
-    <div className="space-y-6" data-testid="engineering-documents-page">
+    <PageShell className="p-4 md:p-6 space-y-6" data-testid="engineering-documents-page">
+      <SectionHeader
+        icon={<FolderTree className="h-5 w-5" />}
+        eyebrow="Engineering"
+        title="Engineering Document Management"
+        description="Drawings, specs, NCR evidence and calibration certificates. Approvals waiting on you appear first; the full SharePoint-backed browser is below."
+      />
       <ManagedDocumentApprovalQueue title="Engineering approvals waiting on me" />
       <DocumentsPage />
-    </div>
+    </PageShell>
   );
 }

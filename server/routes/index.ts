@@ -29,6 +29,7 @@ import { registerTrackerReplicaRoutes } from './tracker-replica.routes';
 import { registerExcelVsAppRoutes } from './excel-vs-app.routes';
 import { registerReconciliationRoutes } from './reconciliation.routes';
 import { registerQualityTasksRoutes } from './quality-tasks.routes';
+import { registerStandupSessionsRoutes } from './standup-sessions.routes';
 
 export async function registerRoutes(httpServer: Server, app: Express) {
   registerTemplateGovernanceRoutes(app);
@@ -52,5 +53,6 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerExcelVsAppRoutes(app);
   registerReconciliationRoutes(app);
   registerQualityTasksRoutes(app);
+  registerStandupSessionsRoutes(app);
   return registerLegacyRoutes(httpServer, app);
 }

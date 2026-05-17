@@ -4,14 +4,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Archive, Check, ChevronDown, ChevronRight, Copy, Key, Compass, Lock, Pencil, Save, Shield, ShieldCheck, Trash2, Users, X } from "lucide-react";
-import type { RoleSummary, UserSummary } from "../settings-types";
-import { ACTIONS, ENTITY_CATEGORIES } from "../settings-types";
+import type { RoleSummary, UserSummary, PermDiff } from "../settings-types";
+import { ACTIONS, ENTITY_CATEGORIES, computePermDiff } from "../settings-types";
 import { RoleNavAccess } from "./role-nav-access";
 import { RolePermissionsMatrix } from "./role-permissions-matrix";
 import { RoleAuthorityConfig } from "./role-authority-config";
 import { ENTITY_PERMISSION_DEFAULTS } from "@shared/schema";
 import { PAGE_REGISTRY } from "@/config/page-registry";
 import { useScreenAvailability } from "@/hooks/use-screen-availability";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 interface RoleDetailPanelProps {
   role: RoleSummary;
@@ -19,25 +20,45 @@ interface RoleDetailPanelProps {
   draft: Partial<RoleSummary>;
   onUpdateDraft: (update: Partial<RoleSummary>) => void;
   onResetDraft: () => void;
-  onSave: () => void;
+  /** UI/UX audit X6 — the audit justification entered on Save is persisted. */
+  onSave: (reason: string) => void;
   onClone: () => void;
   onArchive: () => void;
   onDelete: () => void;
   canManageRoles: boolean;
   isSaving: boolean;
+  /**
+   * UI/UX audit X3 — concise pre/post permission diff to show after a save.
+   * Provided by the parent (which owns the save lifecycle / success signal).
+   */
+  lastSaveDiff?: PermDiff | null;
+  onDismissDiff?: () => void;
 }
 
 type SectionKey = "navigation" | "permissions" | "authority";
 
 export function RoleDetailPanel({
-  role, users, draft, onUpdateDraft, onResetDraft, onSave, onClone, onArchive, onDelete, canManageRoles, isSaving,
+  role, users, draft, onUpdateDraft, onResetDraft, onSave, onClone, onArchive, onDelete, canManageRoles, isSaving, lastSaveDiff, onDismissDiff,
 }: RoleDetailPanelProps) {
   const [editingDescription, setEditingDescription] = useState(false);
   const [descriptionDraft, setDescriptionDraft] = useState("");
   const [expandedSections, setExpandedSections] = useState<Set<SectionKey>>(new Set(["navigation", "permissions"]));
+  // UI/UX audit X2 — the direct full-matrix save now also requires a reason
+  // (symmetric with, and at least as governed as, the Apply-template path).
+  const [confirmSaveOpen, setConfirmSaveOpen] = useState(false);
+  // UI/UX audit X6 — a justification captured at bulk Grant/Revoke time is
+  // surfaced as the default save reason so it is not lost on the way to save.
+  const [bulkReason, setBulkReason] = useState("");
 
   const hasChanges = Object.keys(draft).length > 0;
   const roleUsers = users.filter((u) => u.role === role.role);
+
+  // Pending change preview (pre = saved role, post = draft about to be saved).
+  const pendingDiff = useMemo<PermDiff>(
+    () => computePermDiff(role.entityPermissions, draft.entityPermissions ?? role.entityPermissions),
+    [role.entityPermissions, draft.entityPermissions],
+  );
+  const touchesPermissions = draft.entityPermissions !== undefined || draft.authorityModel !== undefined;
 
   const { disabledScreenIds } = useScreenAvailability();
   const disabledEntityIds = useMemo(() => {
@@ -101,6 +122,37 @@ export function RoleDetailPanel({
 
   return (
     <div className="space-y-3">
+      {/* UI/UX audit X3 — post-save change summary / diff. */}
+      {lastSaveDiff && (lastSaveDiff.added.length > 0 || lastSaveDiff.removed.length > 0) && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 shadow-sm" data-testid="post-save-diff">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1.5 min-w-0">
+              <p className="text-sm font-medium text-emerald-800">
+                Saved · {lastSaveDiff.added.length} permission{lastSaveDiff.added.length !== 1 ? "s" : ""} granted,{" "}
+                {lastSaveDiff.removed.length} removed
+              </p>
+              {lastSaveDiff.added.length > 0 && (
+                <p className="text-xs text-emerald-700 break-words">
+                  <span className="font-semibold">Granted:</span> {lastSaveDiff.added.slice(0, 25).join(", ")}
+                  {lastSaveDiff.added.length > 25 ? ` +${lastSaveDiff.added.length - 25} more` : ""}
+                </p>
+              )}
+              {lastSaveDiff.removed.length > 0 && (
+                <p className="text-xs text-red-700 break-words">
+                  <span className="font-semibold">Removed:</span> {lastSaveDiff.removed.slice(0, 25).join(", ")}
+                  {lastSaveDiff.removed.length > 25 ? ` +${lastSaveDiff.removed.length - 25} more` : ""}
+                </p>
+              )}
+            </div>
+            {onDismissDiff && (
+              <Button size="sm" variant="ghost" className="h-6 w-6 p-0 shrink-0" onClick={onDismissDiff} data-testid="button-dismiss-diff">
+                <X className="h-3 w-3 text-emerald-700" />
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Unsaved changes banner */}
       {hasChanges && (
         <div className="sticky top-2 z-20 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 flex items-center justify-between shadow-sm">
@@ -110,7 +162,7 @@ export function RoleDetailPanel({
           </div>
           <div className="flex gap-2">
             <Button size="sm" variant="outline" onClick={onResetDraft} className="h-7 text-xs border-amber-300 text-amber-700 hover:bg-amber-100" data-testid="button-reset-changes">Discard</Button>
-            <Button size="sm" onClick={onSave} disabled={!canManageRoles || isSaving} className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700" data-testid="button-save-changes">
+            <Button size="sm" onClick={() => setConfirmSaveOpen(true)} disabled={!canManageRoles || isSaving} className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700" data-testid="button-save-changes">
               <Save className="h-3 w-3 mr-1" />{isSaving ? "Saving..." : "Save"}
             </Button>
           </div>
@@ -210,7 +262,7 @@ export function RoleDetailPanel({
                   <RoleNavAccess role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} />
                 )}
                 {section.key === "permissions" && (
-                  <RolePermissionsMatrix role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} enabledNavSections={(draft.sections ?? role.sections) || []} disabledEntityIds={disabledEntityIds} />
+                  <RolePermissionsMatrix role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} enabledNavSections={(draft.sections ?? role.sections) || []} disabledEntityIds={disabledEntityIds} onBulkAuditReason={setBulkReason} />
                 )}
                 {section.key === "authority" && (
                   <RoleAuthorityConfig role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} />
@@ -220,6 +272,38 @@ export function RoleDetailPanel({
           </Card>
         );
       })}
+
+      {/* UI/UX audit X2 — direct/full-matrix save is governed symmetrically
+          with Apply-template: an audit justification is required, and it is
+          persisted to the permission audit log via the save mutation. */}
+      <ConfirmDialog
+        open={confirmSaveOpen}
+        onOpenChange={setConfirmSaveOpen}
+        title={`Save changes to ${role.label}?`}
+        description={
+          touchesPermissions
+            ? `This updates the permission set for the ${role.label} role. Every user with this role is affected. The change is recorded in the audit log.${bulkReason ? ` (Bulk-flip note: "${bulkReason}")` : ""}`
+            : `This updates the ${role.label} role. The change is recorded in the audit log.`
+        }
+        confirmLabel={isSaving ? "Saving…" : "Save changes"}
+        impact={
+          touchesPermissions ? (
+            <p>
+              <strong>{pendingDiff.added.length}</strong> permission
+              {pendingDiff.added.length !== 1 ? "s" : ""} will be granted and{" "}
+              <strong>{pendingDiff.removed.length}</strong> removed for role{" "}
+              <strong>{role.label}</strong> ({roleUsers.length} user
+              {roleUsers.length !== 1 ? "s" : ""} affected).
+            </p>
+          ) : undefined
+        }
+        requireReason
+        reasonLabel="Reason (recorded in the audit log)"
+        onConfirm={(reason) => {
+          setConfirmSaveOpen(false);
+          onSave(reason ?? "");
+        }}
+      />
     </div>
   );
 }

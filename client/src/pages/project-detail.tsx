@@ -70,6 +70,8 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PROJECT_PHASE_LABELS, TASK_STATUSES, type ProjectPhase, checkPermission } from "@shared/schema";
 import { computeScheduleRag, computeCostRag, computeQualityRag, computeOverallRag } from "@shared/kpi-definitions";
 import { usePermission } from "@/hooks/use-permissions";
+import { formatZar } from "@/lib/currency";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { type NextMilestoneSummary } from "@/lib/next-milestone";
 import { useProjectDetail, useProjectPlan, useProjectQuality, useProjectEngineering } from "@/hooks/use-project-v2";
 import type { ProjectPermissions } from "@shared/api-types/project-v2";
@@ -205,7 +207,7 @@ function LinkedEntityCards({ projectInfoId }: { projectInfoId: number }) {
             <Badge variant="secondary" className="text-[9px] h-4">Draft</Badge>
           )}
           {latestBaseline.revenueBaseline && (
-            <span className="text-muted-foreground">R{Number(latestBaseline.revenueBaseline).toLocaleString()}</span>
+            <span className="text-muted-foreground">{formatZar(latestBaseline.revenueBaseline)}</span>
           )}
         </div>
       )}
@@ -797,18 +799,20 @@ function EngTasksTab({
                               </div>
                               <div className="flex gap-1">
                                 {canDelete && (
-                                  deleteConfirmId === task.id ? (
-                                    <div className="flex items-center gap-1">
-                                      <Button size="sm" variant="destructive" className="h-6 text-[10px] px-2" onClick={() => deleteMutation.mutate(tid)} disabled={deleteMutation.isPending} data-testid={`btn-confirm-delete-eng-task-${task.id}`}>
-                                        {deleteMutation.isPending ? "..." : "Delete"}
-                                      </Button>
-                                      <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2" onClick={() => setDeleteConfirmId(null)} data-testid={`btn-cancel-delete-eng-task-${task.id}`}>No</Button>
-                                    </div>
-                                  ) : (
+                                  <>
                                     <Button size="sm" variant="ghost" className="h-7 text-xs text-red-500 hover:text-red-700 gap-1" onClick={() => setDeleteConfirmId(task.id)} data-testid={`btn-delete-eng-task-${task.id}`}>
                                       <Trash2 className="h-3 w-3" /> Delete
                                     </Button>
-                                  )
+                                    <ConfirmDialog
+                                      open={deleteConfirmId === task.id}
+                                      onOpenChange={(o) => setDeleteConfirmId(o ? task.id : null)}
+                                      title="Delete this task?"
+                                      description="This permanently removes the engineering task. This action cannot be undone."
+                                      confirmLabel={deleteMutation.isPending ? "Deleting..." : "Delete"}
+                                      variant="destructive"
+                                      onConfirm={() => deleteMutation.mutate(tid)}
+                                    />
+                                  </>
                                 )}
                               </div>
                             </div>
@@ -956,7 +960,12 @@ export default function ProjectDetailPage() {
   const projectInfo = projectById ?? projectByName;
   const projectInfoId = projectInfo?.project_info_id ?? undefined;
   const projectName = projectInfo?.project_name ?? routeProjectName;
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
+  // Canonical client RBAC: derive capability gates from the permission
+  // registry / role-derived flags — never hardcode role-name arrays
+  // (guardrail § 5; reference pattern: projects.tsx uses useAuth().isAdmin).
+  const { allowed: canSetRag } = usePermission('pd_overview', 'edit');
+  const { allowed: canInitiateFinancialReview } = usePermission('pd_finance', 'approve');
 
   useEffect(() => {
     if (projectName) {
@@ -1363,9 +1372,8 @@ export default function ProjectDetailPage() {
     ? `${(projectInfo.project_pct_complete * 100).toFixed(0)}%`
     : "—";
   const completionNum = projectInfo?.project_pct_complete != null ? projectInfo.project_pct_complete * 100 : 0;
-  const isAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '');
-  const canSetRag = ['admin', 'COO_ADMIN', 'CEO_ADMIN', 'CCO'].includes(user?.role || '');
-  const canInitiateFinancialReview = ['PROJECT_MANAGER_SITE', 'PROGRAM_MANAGER', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '');
+  // isAdmin / canSetRag / canInitiateFinancialReview are derived above from
+  // useAuth().isAdmin + usePermission() — see note near useAuth() destructure.
   const ragStatus = v2Detail?.executionState?.ragStatus ?? projectInfo?.rag_status ?? null;
 
   // ─── KPI computation: V2 detail → healthSummary → client-side fallback ───
@@ -1659,8 +1667,8 @@ export default function ProjectDetailPage() {
           <div className="flex items-center gap-2 rounded-md border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs text-orange-800" data-testid="contract-value-mismatch">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
             <span>
-              Contract value mismatch: Project info shows <strong>R{projectContractValue.toLocaleString()}</strong> but
-              revenue milestones total <strong>R{revenueMilestoneTotal.toLocaleString()}</strong>
+              Contract value mismatch: Project info shows <strong>{formatZar(projectContractValue)}</strong> but
+              revenue milestones total <strong>{formatZar(revenueMilestoneTotal)}</strong>
               {` (${((revenueMilestoneTotal - projectContractValue) / projectContractValue * 100).toFixed(1)}% difference)`}
             </span>
           </div>
@@ -1987,7 +1995,7 @@ export default function ProjectDetailPage() {
         <div className="space-y-3" data-testid="dept-finance-section">
           {/* Finance KPI strip */}
           <div className="flex items-center gap-4 flex-wrap rounded-md border bg-muted/30 px-3 py-2 text-xs">
-            <div><span className="text-muted-foreground">Contract:</span> <span className="font-semibold">{contractValue > 0 ? `R${contractValue.toLocaleString()}` : "—"}</span></div>
+            <div><span className="text-muted-foreground">Contract:</span> <span className="font-semibold">{contractValue > 0 ? formatZar(contractValue) : "—"}</span></div>
             <div><span className="text-muted-foreground">Revenue:</span> <span className="font-semibold">{Math.round(revenueRealisedPct)}%</span></div>
             <div className="flex items-center gap-1.5">
               <span className={`w-2 h-2 rounded-full ${costRag === "green" ? "bg-emerald-500" : costRag === "amber" ? "bg-amber-500" : "bg-red-500"}`} />

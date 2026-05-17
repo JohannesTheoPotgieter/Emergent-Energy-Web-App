@@ -6,7 +6,6 @@ import { ragBadgeClasses } from '@/lib/status-colors';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import {
   formatCurrencyCompact,
-  formatCurrencyFull,
   formatDate,
   type ExecutionDashboardProject,
 } from '@/lib/execution-dashboard';
@@ -30,7 +29,8 @@ import {
 } from 'lucide-react';
 import { useExecutionData } from './use-execution-data';
 import { apiRequest } from '@/lib/queryClient';
-import RealisationKPIsPage from './RealisationKPIsPage';
+import { KpiCard } from '@/components/ui/kpi-card';
+import { formatZar } from '@/lib/currency';
 import { DataTrustBadge } from '@/components/ui/data-trust-badge';
 import { FinancialYearScopeControl } from '@/components/finance/FinancialYearScopeControl';
 import { getMarginColour } from '@/lib/margin-colour';
@@ -127,6 +127,7 @@ export default function FinancePage() {
   const [overdueFilter, setOverdueFilter] = useState<'all' | 'inflow' | 'outflow'>('all');
   const [overdueData, setOverdueData] = useState<OverdueData | null>(null);
   const [overdueLoading, setOverdueLoading] = useState(false);
+  const [overdueError, setOverdueError] = useState(false);
   const [overdueProjectFilter, setOverdueProjectFilter] = useState<number | null>(null);
   const [overdueExpandedId, setOverdueExpandedId] = useState<number | null>(null);
 
@@ -134,6 +135,7 @@ export default function FinancePage() {
     async (direction: string = 'all', projectId?: number) => {
       try {
         setOverdueLoading(true);
+        setOverdueError(false);
         const params = new URLSearchParams();
         params.set('fy', fyScope.allData ? 'all' : String(fyScope.fy));
         if (direction !== 'all') params.set('direction', direction);
@@ -144,8 +146,12 @@ export default function FinancePage() {
         );
         const data: OverdueData = await res.json();
         setOverdueData(data);
-      } catch {
+      } catch (err) {
+        // A failed load must NOT read as "nothing overdue" (UI/UX audit 4a).
+        // eslint-disable-next-line no-console
+        if (typeof console !== 'undefined') console.error('Overdue payments load failed:', err);
         setOverdueData(null);
+        setOverdueError(true);
       } finally {
         setOverdueLoading(false);
       }
@@ -244,42 +250,42 @@ export default function FinancePage() {
         <KpiCard
           label={`Budget Revenue (${fyLabel})`}
           value={formatCurrencyCompact(kpis.plannedRevenueFy)}
-          icon={<TrendingUp className="w-4 h-4 text-emerald-600" />}
-          iconBg="bg-emerald-100"
+          title={formatZar(kpis.plannedRevenueFy)}
+          icon={<TrendingUp className="w-4 h-4" />}
         />
         <KpiCard
           label={`Actual Revenue (${fyLabel})`}
           value={formatCurrencyCompact(kpis.receivedInflowFy)}
-          icon={<TrendingUp className="w-4 h-4 text-blue-600" />}
-          iconBg="bg-blue-100"
+          title={formatZar(kpis.receivedInflowFy)}
+          icon={<TrendingUp className="w-4 h-4" />}
           sub={`${kpis.plannedRevenueFy > 0 ? Math.round((kpis.receivedInflowFy / kpis.plannedRevenueFy) * 100) : 0}% collected`}
         />
         <KpiCard
           label="Revenue Outstanding"
           value={formatCurrencyCompact(kpis.openInflowFy)}
-          icon={<DollarSign className="w-4 h-4 text-amber-600" />}
-          iconBg="bg-amber-100"
-          valueClass="text-amber-600"
+          title={formatZar(kpis.openInflowFy)}
+          icon={<DollarSign className="w-4 h-4" />}
+          tone="warning"
         />
         <KpiCard
           label={`Budget Expenditure (${fyLabel})`}
           value={formatCurrencyCompact(kpis.plannedExpenditureFy)}
-          icon={<TrendingDown className="w-4 h-4 text-orange-600" />}
-          iconBg="bg-orange-100"
+          title={formatZar(kpis.plannedExpenditureFy)}
+          icon={<TrendingDown className="w-4 h-4" />}
         />
         <KpiCard
           label={`Actual Expenditure (${fyLabel})`}
           value={formatCurrencyCompact(kpis.paidExpenditureFy)}
-          icon={<TrendingDown className="w-4 h-4 text-blue-600" />}
-          iconBg="bg-blue-100"
+          title={formatZar(kpis.paidExpenditureFy)}
+          icon={<TrendingDown className="w-4 h-4" />}
           sub={`${kpis.plannedExpenditureFy > 0 ? Math.round((kpis.paidExpenditureFy / kpis.plannedExpenditureFy) * 100) : 0}% spent`}
         />
         <KpiCard
           label="Expense Outstanding"
           value={formatCurrencyCompact(kpis.openExpenditureFy)}
-          icon={<DollarSign className="w-4 h-4 text-amber-600" />}
-          iconBg="bg-amber-100"
-          valueClass="text-amber-600"
+          title={formatZar(kpis.openExpenditureFy)}
+          icon={<DollarSign className="w-4 h-4" />}
+          tone="warning"
         />
       </div>
 
@@ -288,22 +294,20 @@ export default function FinancePage() {
         <KpiCard
           label="Gross Profit (Planned)"
           value={formatCurrencyCompact(kpis.grossProfitFy)}
-          icon={<BarChart3 className="w-4 h-4 text-emerald-600" />}
-          iconBg="bg-emerald-100"
+          title={formatZar(kpis.grossProfitFy)}
+          icon={<BarChart3 className="w-4 h-4" />}
           sub="Planned revenue minus planned expenditure"
         />
         <KpiCard
           label="Planned Margin"
           value={`${kpis.grossMarginPctFy ?? '—'}%`}
-          icon={<BarChart3 className="w-4 h-4 text-blue-600" />}
-          iconBg="bg-blue-100"
+          icon={<BarChart3 className="w-4 h-4" />}
           sub="Planned GP as % of planned revenue"
         />
         <KpiCard
           label="Actual Margin"
           value={`${kpis.actualMarginPctFy ?? '—'}%`}
-          icon={<BarChart3 className="w-4 h-4 text-violet-600" />}
-          iconBg="bg-violet-100"
+          icon={<BarChart3 className="w-4 h-4" />}
           sub="Actual received minus actual paid"
         />
         <KpiCard
@@ -313,16 +317,14 @@ export default function FinancePage() {
               ? `${kpis.marginVariancePct > 0 ? '+' : ''}${kpis.marginVariancePct}%`
               : '—'
           }
-          icon={<BarChart3 className="w-4 h-4 text-amber-600" />}
-          iconBg="bg-amber-100"
-          valueClass={(kpis.marginVariancePct ?? 0) < 0 ? 'text-red-600' : 'text-emerald-600'}
+          icon={<BarChart3 className="w-4 h-4" />}
+          tone={(kpis.marginVariancePct ?? 0) < 0 ? 'danger' : 'success'}
         />
         <KpiCard
           label="Inflow Risk Projects"
           value={kpis.inflowRiskProjects}
-          icon={<AlertTriangle className="w-4 h-4 text-red-600" />}
-          iconBg="bg-red-100"
-          valueClass="text-red-600"
+          icon={<AlertTriangle className="w-4 h-4" />}
+          tone="danger"
           sub={`${kpis.outflowRiskProjects} outflow risk`}
         />
       </div>
@@ -338,66 +340,36 @@ export default function FinancePage() {
             </Badge>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {/* Total Overdue */}
-            <div
-              className="bg-white rounded-lg border border-red-200 p-3 cursor-pointer hover:shadow-md transition-shadow"
+            <KpiCard
+              label="Total Overdue"
+              value={formatCurrencyCompact(kpis.overdueInflowFy + kpis.overdueOutflowFy)}
+              title={formatZar(kpis.overdueInflowFy + kpis.overdueOutflowFy)}
+              icon={<Clock className="w-4 h-4" />}
+              tone="danger"
+              sub="Click to drill down to item level"
               onClick={() => openOverdueDrawer('all')}
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-7 h-7 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
-                  <Clock className="w-4 h-4 text-red-600" />
-                </div>
-                <span className="text-[10px] text-muted-foreground font-medium">TOTAL OVERDUE</span>
-              </div>
-              <p className="text-xl font-bold text-red-600 tabular-nums">
-                {formatCurrencyCompact(kpis.overdueInflowFy + kpis.overdueOutflowFy)}
-              </p>
-              <p className="text-[10px] text-muted-foreground mt-0.5">
-                Click to drill down to item level
-              </p>
-            </div>
-
-            {/* Overdue Inflow */}
-            <div
-              className="bg-white rounded-lg border border-amber-200 p-3 cursor-pointer hover:shadow-md transition-shadow"
+              data-testid="kpi-total-overdue"
+            />
+            <KpiCard
+              label="Overdue Inflow (AR)"
+              value={formatCurrencyCompact(kpis.overdueInflowFy)}
+              title={formatZar(kpis.overdueInflowFy)}
+              icon={<ArrowDownRight className="w-4 h-4" />}
+              tone="warning"
+              sub="Revenue past expected payment date"
               onClick={() => openOverdueDrawer('inflow')}
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
-                  <ArrowDownRight className="w-4 h-4 text-amber-600" />
-                </div>
-                <span className="text-[10px] text-muted-foreground font-medium">
-                  OVERDUE INFLOW (AR)
-                </span>
-              </div>
-              <p className="text-xl font-bold text-amber-600 tabular-nums">
-                {formatCurrencyCompact(kpis.overdueInflowFy)}
-              </p>
-              <p className="text-[10px] text-muted-foreground mt-0.5">
-                Revenue past expected payment date
-              </p>
-            </div>
-
-            {/* Overdue Outflow */}
-            <div
-              className="bg-white rounded-lg border border-orange-200 p-3 cursor-pointer hover:shadow-md transition-shadow"
+              data-testid="kpi-overdue-inflow"
+            />
+            <KpiCard
+              label="Overdue Outflow (AP)"
+              value={formatCurrencyCompact(kpis.overdueOutflowFy)}
+              title={formatZar(kpis.overdueOutflowFy)}
+              icon={<ArrowUpRight className="w-4 h-4" />}
+              tone="warning"
+              sub="Expenditure past approved/invoice date"
               onClick={() => openOverdueDrawer('outflow')}
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-7 h-7 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
-                  <ArrowUpRight className="w-4 h-4 text-orange-600" />
-                </div>
-                <span className="text-[10px] text-muted-foreground font-medium">
-                  OVERDUE OUTFLOW (AP)
-                </span>
-              </div>
-              <p className="text-xl font-bold text-orange-600 tabular-nums">
-                {formatCurrencyCompact(kpis.overdueOutflowFy)}
-              </p>
-              <p className="text-[10px] text-muted-foreground mt-0.5">
-                Expenditure past approved/invoice date
-              </p>
-            </div>
+              data-testid="kpi-overdue-outflow"
+            />
           </div>
 
           {/* Per-project overdue breakdown (top 5) */}
@@ -663,18 +635,18 @@ export default function FinancePage() {
                                 <div className="space-y-1.5 text-sm">
                                   <p>
                                     <span className="text-muted-foreground">Budget:</span>{' '}
-                                    {formatCurrencyFull(p.plannedRevenueFy)}
+                                    {formatZar(p.plannedRevenueFy)}
                                   </p>
                                   <p>
                                     <span className="text-muted-foreground">Received:</span>{' '}
                                     <span className="text-emerald-600">
-                                      {formatCurrencyFull(p.receivedInflowFy)}
+                                      {formatZar(p.receivedInflowFy)}
                                     </span>
                                   </p>
                                   <p>
                                     <span className="text-muted-foreground">Outstanding:</span>{' '}
                                     <span className="text-amber-600">
-                                      {formatCurrencyFull(p.openInflowFy)}
+                                      {formatZar(p.openInflowFy)}
                                     </span>
                                   </p>
                                   <p>
@@ -684,7 +656,7 @@ export default function FinancePage() {
                                         revenueVar < 0 ? 'text-red-600' : 'text-emerald-600'
                                       }
                                     >
-                                      {formatCurrencyFull(revenueVar)}
+                                      {formatZar(revenueVar)}
                                     </span>
                                   </p>
                                   <p>
@@ -708,18 +680,18 @@ export default function FinancePage() {
                                 <div className="space-y-1.5 text-sm">
                                   <p>
                                     <span className="text-muted-foreground">Budget:</span>{' '}
-                                    {formatCurrencyFull(p.plannedExpenditureFy)}
+                                    {formatZar(p.plannedExpenditureFy)}
                                   </p>
                                   <p>
                                     <span className="text-muted-foreground">Paid:</span>{' '}
                                     <span className="text-emerald-600">
-                                      {formatCurrencyFull(p.paidExpenditureFy)}
+                                      {formatZar(p.paidExpenditureFy)}
                                     </span>
                                   </p>
                                   <p>
                                     <span className="text-muted-foreground">Outstanding:</span>{' '}
                                     <span className="text-amber-600">
-                                      {formatCurrencyFull(p.openExpenditureFy)}
+                                      {formatZar(p.openExpenditureFy)}
                                     </span>
                                   </p>
                                   <p>
@@ -729,7 +701,7 @@ export default function FinancePage() {
                                         expenditureVar > 0 ? 'text-red-600' : 'text-emerald-600'
                                       }
                                     >
-                                      {formatCurrencyFull(expenditureVar)}
+                                      {formatZar(expenditureVar)}
                                     </span>
                                   </p>
                                   <p>
@@ -760,7 +732,7 @@ export default function FinancePage() {
                                           : 'text-emerald-600 font-medium'
                                       }
                                     >
-                                      {formatCurrencyFull(p.grossProfitFy)}
+                                      {formatZar(p.grossProfitFy)}
                                     </span>
                                   </p>
                                   <p>
@@ -977,8 +949,30 @@ export default function FinancePage() {
         </Card>
       )}
 
-      {/* REALISATION KPIs DETAIL */}
-      <RealisationKPIsPage />
+      {/* Realisation KPIs now live on their own discoverable tab
+          (/execution-board/realisation) — see route-tabs.ts. */}
+      <Card className="border-border/60">
+        <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <BarChart3 className="w-5 h-5 text-emerald-600 shrink-0" />
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold">Realisation KPIs</h3>
+              <p className="text-xs text-muted-foreground">
+                COS &amp; cashflow realisation trends — weekly, monthly and YTD.
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="sm:ml-auto gap-1.5 shrink-0"
+            onClick={() => (window.location.href = '/execution-board/realisation')}
+          >
+            View Realisation KPIs
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* OVERDUE PAYMENTS DRILL-DOWN DRAWER */}
       <Sheet open={overdueDrawerOpen} onOpenChange={setOverdueDrawerOpen}>
@@ -1064,6 +1058,24 @@ export default function FinancePage() {
             <div className="text-sm text-muted-foreground mt-6 text-center py-8">
               Loading overdue items...
             </div>
+          ) : overdueError ? (
+            <div className="mt-6 flex flex-col items-center justify-center gap-3 py-10 text-center">
+              <AlertTriangle className="w-7 h-7 text-red-500" />
+              <p className="text-sm font-medium">Couldn’t load overdue payments</p>
+              <p className="text-xs text-muted-foreground max-w-sm">
+                This list failed to load — it does <strong>not</strong> mean there are no overdue
+                payments. Please retry.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={() => loadOverdueData(overdueFilter, overdueProjectFilter || undefined)}
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Retry
+              </Button>
+            </div>
           ) : (
             <div className="mt-3 border rounded-lg overflow-auto max-h-[65vh]">
               <table className="w-full text-sm">
@@ -1109,7 +1121,7 @@ export default function FinancePage() {
                               {item.description}
                             </td>
                             <td className="py-2 px-3 text-right tabular-nums font-medium">
-                              {formatCurrencyFull(item.amount)}
+                              {formatZar(item.amount)}
                             </td>
                             <td className="py-2 px-3 text-xs text-muted-foreground">
                               {item.invoiceNumber || '—'}
@@ -1150,7 +1162,7 @@ export default function FinancePage() {
                                       <p>
                                         <span className="text-muted-foreground">Amount:</span>{' '}
                                         <span className="font-medium">
-                                          {formatCurrencyFull(item.amount)}
+                                          {formatZar(item.amount)}
                                         </span>
                                       </p>
                                       <p>
@@ -1253,35 +1265,3 @@ export default function FinancePage() {
   );
 }
 
-function KpiCard({
-  icon,
-  iconBg,
-  label,
-  value,
-  sub,
-  valueClass,
-}: {
-  icon: React.ReactNode;
-  iconBg: string;
-  label: string;
-  value: React.ReactNode;
-  sub?: string;
-  valueClass?: string;
-}) {
-  return (
-    <Card className="border-border/60">
-      <CardContent className="p-3">
-        <div className="flex items-center gap-2 mb-1.5">
-          <div className={`w-7 h-7 rounded-lg ${iconBg} flex items-center justify-center shrink-0`}>
-            {icon}
-          </div>
-          <span className="text-[10px] text-muted-foreground font-medium leading-tight">
-            {label}
-          </span>
-        </div>
-        <p className={`text-lg font-bold tabular-nums ${valueClass || ''}`}>{value}</p>
-        {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
-      </CardContent>
-    </Card>
-  );
-}

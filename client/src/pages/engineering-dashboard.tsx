@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Card, CardContent } from "@/components/ui/card";
@@ -51,12 +51,11 @@ import {
   ArrowRightLeft,
 } from "lucide-react";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
-import { PageShell, SectionHeader } from "@/components/layout/page-shell";
+import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
 import { ApprovalQueueCard } from "@/components/managed-documents";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { engFetch, engPatch, engPost } from "@/lib/eng-fetch";
 import { PHASE_COLORS } from "@/lib/phase-colors";
-import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 import { useToast } from "@/hooks/use-toast";
 import { copyTeamsMessage, escapeHtml } from "@/lib/teams-clipboard";
@@ -160,7 +159,7 @@ interface ActionCentreCard {
   count: number;
   href: string;
   icon: React.ReactNode;
-  tone: string;
+  tone: KpiTone;
   whyShown: string;
   emptyState: string;
 }
@@ -277,15 +276,40 @@ function CollapsibleSection({
   );
 }
 
+type KpiTone = "default" | "danger" | "warning";
+
+const KPI_TILE: Record<KpiTone, string> = {
+  default: "bg-primary/8 text-primary",
+  danger: "bg-red-50 text-red-600",
+  warning: "bg-amber-50 text-amber-600",
+};
+const KPI_VALUE: Record<KpiTone, string> = {
+  default: "text-foreground",
+  danger: "text-red-600",
+  warning: "text-amber-700",
+};
+const KPI_BORDER: Record<KpiTone, string> = {
+  default: "",
+  danger: "border-red-200",
+  warning: "border-amber-200",
+};
+
 function KpiStrip({ summary }: { summary: StandupData["summary"] }) {
-  const stats = [
-    { label: "Projects", value: summary.totalProjects, icon: <Layers className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", pulse: false, scrollTo: "section-project-health", href: null },
-    { label: "Active", value: summary.activeTasks, icon: <ListTodo className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", pulse: false, scrollTo: "section-in-progress", href: "/engineering/tasks?status=in_progress" },
-    { label: "Overdue", value: summary.overdueTasks, icon: <AlertTriangle className="w-4 h-4" />, color: summary.overdueTasks > 0 ? "text-red-600" : "text-muted-foreground", bg: summary.overdueTasks > 0 ? "bg-red-50" : "bg-muted", border: summary.overdueTasks > 0 ? "border-red-200" : "", pulse: summary.overdueTasks > 0, scrollTo: "section-blockers", href: "/engineering/tasks?dueDate=overdue" },
-    { label: "On Hold", value: summary.holdTasks, icon: <PauseCircle className="w-4 h-4" />, color: summary.holdTasks > 0 ? "text-amber-600" : "text-muted-foreground", bg: summary.holdTasks > 0 ? "bg-amber-50" : "bg-muted", border: summary.holdTasks > 0 ? "border-amber-200" : "", pulse: false, scrollTo: "section-blockers", href: "/engineering/tasks?status=hold" },
-    { label: "Approvals", value: summary.needsApprovalCount, icon: <ShieldAlert className="w-4 h-4" />, color: summary.needsApprovalCount > 0 ? "text-purple-600" : "text-muted-foreground", bg: summary.needsApprovalCount > 0 ? "bg-purple-50" : "bg-muted", border: summary.needsApprovalCount > 0 ? "border-purple-200" : "", pulse: false, scrollTo: "section-approvals", href: "/engineering/tasks?status=needs_approval" },
-    { label: "Due This Week", value: summary.upcomingThisWeekCount, icon: <Timer className="w-4 h-4" />, color: "text-indigo-600", bg: "bg-indigo-50", border: "border-indigo-200", pulse: false, scrollTo: "section-due-this-week", href: "/engineering/tasks?dueDate=this_week" },
-    { label: "Done (24h)", value: summary.recentlyCompletedCount, icon: <CheckCircle2 className="w-4 h-4" />, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-200", pulse: false, scrollTo: "section-recently-completed", href: "/engineering/tasks?status=complete" },
+  const stats: {
+    label: string;
+    value: number;
+    icon: React.ReactNode;
+    tone: KpiTone;
+    scrollTo: string;
+    href: string | null;
+  }[] = [
+    { label: "Projects", value: summary.totalProjects, icon: <Layers className="w-4 h-4" />, tone: "default", scrollTo: "section-project-health", href: null },
+    { label: "Active", value: summary.activeTasks, icon: <ListTodo className="w-4 h-4" />, tone: "default", scrollTo: "section-in-progress", href: "/engineering/tasks?status=in_progress" },
+    { label: "Overdue", value: summary.overdueTasks, icon: <AlertTriangle className="w-4 h-4" />, tone: summary.overdueTasks > 0 ? "danger" : "default", scrollTo: "section-blockers", href: "/engineering/tasks?dueDate=overdue" },
+    { label: "On Hold", value: summary.holdTasks, icon: <PauseCircle className="w-4 h-4" />, tone: summary.holdTasks > 0 ? "warning" : "default", scrollTo: "section-blockers", href: "/engineering/tasks?status=hold" },
+    { label: "Approvals", value: summary.needsApprovalCount, icon: <ShieldAlert className="w-4 h-4" />, tone: summary.needsApprovalCount > 0 ? "warning" : "default", scrollTo: "section-approvals", href: "/engineering/tasks?status=needs_approval" },
+    { label: "Due This Week", value: summary.upcomingThisWeekCount, icon: <Timer className="w-4 h-4" />, tone: "default", scrollTo: "section-upcoming", href: "/engineering/tasks?dueDate=this_week" },
+    { label: "Done (24h)", value: summary.recentlyCompletedCount, icon: <CheckCircle2 className="w-4 h-4" />, tone: "default", scrollTo: "section-completed", href: "/engineering/tasks?status=complete" },
   ];
 
   return (
@@ -293,15 +317,15 @@ function KpiStrip({ summary }: { summary: StandupData["summary"] }) {
       {stats.map(s => (
         <Card
           key={s.label}
-          className={`overflow-hidden shadow-sm ${s.border} transition-all hover:shadow-md cursor-pointer`}
+          className={`overflow-hidden shadow-sm transition-all hover:shadow-md cursor-pointer ${KPI_BORDER[s.tone]}`}
           onClick={() => s.href ? (window.location.href = s.href) : document.querySelector(`[data-testid="${s.scrollTo}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" })}
         >
           <CardContent className="p-3 flex items-center gap-2.5">
-            <div className={`w-9 h-9 rounded-xl ${s.bg} flex items-center justify-center shrink-0 ${s.pulse ? "animate-pulse" : ""}`}>
-              <span className={s.color}>{s.icon}</span>
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${KPI_TILE[s.tone]} ${s.tone === "danger" ? "animate-pulse" : ""}`}>
+              {s.icon}
             </div>
             <div className="min-w-0">
-              <p className={`text-xl font-bold leading-tight ${s.color}`} data-testid={`kpi-${s.label.toLowerCase().replace(/\s+/g, "-")}`}>{s.value}</p>
+              <p className={`text-xl font-bold leading-tight ${KPI_VALUE[s.tone]}`} data-testid={`kpi-${s.label.toLowerCase().replace(/\s+/g, "-")}`}>{s.value}</p>
               <p className="text-[8px] text-muted-foreground uppercase tracking-wider font-medium truncate">{s.label}</p>
             </div>
           </CardContent>
@@ -701,17 +725,6 @@ export default function EngineeringDashboard() {
     staleTime: 10_000,
   });
 
-  const engAttentionItems = useMemo((): AttentionItem[] => {
-    if (!data?.summary) return [];
-    const s = data.summary;
-    const items: AttentionItem[] = [];
-    if (s.overdueTasks > 0) items.push({ label: "Overdue Tasks", value: s.overdueTasks, color: "text-red-600 bg-red-50 border-red-200", href: "/engineering/tasks?dueDate=overdue" });
-    if (s.holdTasks > 0) items.push({ label: "On Hold", value: s.holdTasks, color: "text-amber-700 bg-amber-50 border-amber-200", href: "/engineering/tasks?status=hold" });
-    if (s.needsApprovalCount > 0) items.push({ label: "Needs Approval", value: s.needsApprovalCount, color: "text-violet-700 bg-violet-50 border-violet-200", href: "/engineering/tasks?status=needs_approval" });
-    if (s.upcomingThisWeekCount > 0) items.push({ label: "Due This Week", value: s.upcomingThisWeekCount, color: "text-blue-700 bg-blue-50 border-blue-200", href: "/engineering/tasks?dueDate=this_week" });
-    return items;
-  }, [data?.summary]);
-
   const summary = data?.summary;
   const blockers = data?.blockers;
   const recentlyCompleted = data?.recentlyCompleted ?? [];
@@ -831,108 +844,105 @@ export default function EngineeringDashboard() {
     <PageShell className="p-4 md:p-6" data-testid="eng-dashboard">
       <SectionHeader
         icon={<Wrench className="h-5 w-5" />}
-        title={showAllTasks ? "Engineering Overview & Team Ops" : `${firstName}'s Dashboard`}
-        description={todayFormatted}
+        eyebrow="Engineering"
+        title={showAllTasks ? "Overview & Team Ops" : `${firstName}'s Dashboard`}
+        meta={
+          <span className="flex items-center gap-1.5" data-testid="text-standup-title">
+            <Clock className="h-3 w-3" />
+            {todayFormatted}
+            {!showAllTasks && firstName && (
+              <span className="ml-1 flex items-center gap-1 text-primary font-medium">
+                <UserCheck className="h-3 w-3" />
+                Filtered to your tasks
+              </span>
+            )}
+          </span>
+        }
+        badges={
+          totalBlockers > 0
+            ? [{
+                label: `${totalBlockers} blocker${totalBlockers !== 1 ? "s" : ""}`,
+                icon: <ShieldAlert />,
+                variant: "destructive" as const,
+              }]
+            : undefined
+        }
+        actions={
+          <>
+            {isAdmin && (
+              <Link href="/engineering/audit">
+                <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" data-testid="btn-audit-log">
+                  <Activity className="h-3.5 w-3.5" />
+                  Audit Log
+                </Button>
+              </Link>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs gap-1.5 border-[#5059C9] text-[#5059C9] hover:bg-[#5059C9]/10 hover:text-[#464EB8]"
+              onClick={handleCopyDailyForTeams}
+              data-testid="btn-copy-daily-for-teams"
+              title="Copy today's blockers, overdue, and approvals as a Teams-friendly message"
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              Copy for Teams
+            </Button>
+            {firstName && isManagerRole && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" data-testid="eng-more-controls">
+                    <MoreHorizontal className="h-3.5 w-3.5" /> More
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-44 p-1.5">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start text-xs"
+                    onClick={() => setShowAllTasks(!showAllTasks)}
+                    data-testid="toggle-all-tasks"
+                  >
+                    {showAllTasks ? (
+                      <><UserCheck className="h-3.5 w-3.5 mr-1.5" /> My Tasks</>
+                    ) : (
+                      <><Eye className="h-3.5 w-3.5 mr-1.5" /> All Tasks</>
+                    )}
+                  </Button>
+                </PopoverContent>
+              </Popover>
+            )}
+          </>
+        }
       />
 
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center shadow-md">
-            <Wrench className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <h2 className="text-xl sm:text-2xl font-heading font-bold tracking-tight" data-testid="text-standup-title">
-              {showAllTasks ? "Engineering Overview & Team Ops" : `${firstName}'s Dashboard`}
-            </h2>
-            <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-              <Clock className="h-3 w-3" />
-              {todayFormatted}
-              {!showAllTasks && firstName && (
-                <span className="ml-1 flex items-center gap-1 text-blue-600 font-medium">
-                  <UserCheck className="h-3 w-3" />
-                  Filtered to your tasks
-                </span>
-              )}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {isAdmin && (
-            <Link href="/engineering/audit">
-              <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" data-testid="btn-audit-log">
-                <Activity className="h-3.5 w-3.5" />
-                Audit Log
+      <div data-testid="engineering-workspace-handoff">
+        <WorkspaceNotice
+          title="Workspace intent"
+          description="Standup, blockers, approvals and team coordination live here. Use the task board for active execution, detailed updates, and delivery flow."
+          actions={
+            <Link href="/engineering/tasks">
+              <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" data-testid="btn-open-task-execution-board">
+                <ArrowRightLeft className="h-3.5 w-3.5" />
+                Go to Task Execution Board
               </Button>
             </Link>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 text-xs gap-1.5 border-[#5059C9] text-[#5059C9] hover:bg-[#5059C9]/10 hover:text-[#464EB8]"
-            onClick={handleCopyDailyForTeams}
-            data-testid="btn-copy-daily-for-teams"
-            title="Copy today's blockers, overdue, and approvals as a Teams-friendly message"
-          >
-            <MessageSquare className="h-3.5 w-3.5" />
-            Copy for Teams
-          </Button>
-          {totalBlockers > 0 && (
-            <div className="flex items-center gap-1.5 text-red-600 bg-red-50 border border-red-200 px-2.5 py-1 rounded-lg text-xs font-bold" data-testid="blocker-alert">
-              <ShieldAlert className="h-3.5 w-3.5" />
-              {totalBlockers} blocker{totalBlockers !== 1 ? "s" : ""}
-            </div>
-          )}
-          {firstName && isManagerRole && (
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" data-testid="eng-more-controls">
-                  <MoreHorizontal className="h-3.5 w-3.5" /> More
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-44 p-1.5">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full justify-start text-xs"
-                  onClick={() => setShowAllTasks(!showAllTasks)}
-                  data-testid="toggle-all-tasks"
-                >
-                  {showAllTasks ? (
-                    <><UserCheck className="h-3.5 w-3.5 mr-1.5" /> My Tasks</>
-                  ) : (
-                    <><Eye className="h-3.5 w-3.5 mr-1.5" /> All Tasks</>
-                  )}
-                </Button>
-              </PopoverContent>
-            </Popover>
-          )}
-        </div>
+          }
+        />
       </div>
 
-      <Card className="shadow-sm border-blue-200/70 bg-gradient-to-r from-blue-50/70 to-transparent" data-testid="engineering-workspace-handoff">
-        <CardContent className="p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">Workspace intent</p>
-            <p className="text-sm font-medium">This page is for standup, blockers, approvals and team coordination.</p>
-            <p className="text-xs text-muted-foreground">Use the task board for active execution, detailed updates, and delivery flow.</p>
-          </div>
-          <Link href="/engineering/tasks">
-            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" data-testid="btn-open-task-execution-board">
-              <ArrowRightLeft className="h-3.5 w-3.5" />
-              Go to Task Execution Board
-            </Button>
-          </Link>
-        </CardContent>
-      </Card>
-
-      <AttentionBadges items={engAttentionItems} threshold={5} testId="eng-attention-needed" />
       <KpiStrip summary={summary} />
 
-      <Card className="shadow-sm border-orange-200/70" data-testid="engineering-action-centre">
+      <Card className="shadow-sm" data-testid="engineering-action-centre">
         <CardContent className="p-4 space-y-3">
-          <div>
-            <h3 className="text-sm font-semibold tracking-wide uppercase text-orange-700">Engineering Action Centre</h3>
-            <p className="text-xs text-muted-foreground">Immediate queue for risk, ownership, approvals, and delivery flow.</p>
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-primary/8 flex items-center justify-center shrink-0">
+              <Target className="h-4 w-4 text-primary" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold tracking-tight">Engineering Action Centre</h3>
+              <p className="text-xs text-muted-foreground">Immediate queue for risk, ownership, approvals, and delivery flow.</p>
+            </div>
           </div>
           {(() => {
             const unassignedCount = [...inProgressHighlights, ...otherActive].filter(
@@ -948,7 +958,7 @@ export default function EngineeringDashboard() {
                 count: blockers?.overdue?.length ?? 0,
                 href: "/engineering/tasks?dueDate=overdue",
                 icon: <AlertTriangle className="h-4 w-4" />,
-                tone: "text-red-700 border-red-200 bg-red-50/70",
+                tone: "danger",
                 whyShown: "Past due and incomplete tasks are a schedule risk.",
                 emptyState: "No overdue engineering work",
               },
@@ -958,7 +968,7 @@ export default function EngineeringDashboard() {
                 count: blockers?.hold?.length ?? 0,
                 href: "/engineering/tasks?workloadState=blocked",
                 icon: <PauseCircle className="h-4 w-4" />,
-                tone: "text-amber-700 border-amber-200 bg-amber-50/70",
+                tone: "warning",
                 whyShown: "Blocked work cannot progress until a dependency is cleared.",
                 emptyState: "No blocked tasks",
               },
@@ -968,7 +978,7 @@ export default function EngineeringDashboard() {
                 count: unassignedCount,
                 href: "/engineering/tasks?workloadState=unassigned",
                 icon: <Users className="h-4 w-4" />,
-                tone: "text-slate-700 border-slate-200 bg-slate-50/70",
+                tone: "default",
                 whyShown: "Tasks without owners risk silent delay.",
                 emptyState: "No unassigned tasks",
               },
@@ -978,7 +988,7 @@ export default function EngineeringDashboard() {
                 count: needsApproval.length,
                 href: "/engineering/tasks?workloadState=approval",
                 icon: <ShieldAlert className="h-4 w-4" />,
-                tone: "text-purple-700 border-purple-200 bg-purple-50/70",
+                tone: "warning",
                 whyShown: "Approval queue items gate downstream execution.",
                 emptyState: "No approvals waiting",
               },
@@ -988,7 +998,7 @@ export default function EngineeringDashboard() {
                 count: upcomingThisWeek.length,
                 href: "/engineering/tasks?dueDate=this_week",
                 icon: <Timer className="h-4 w-4" />,
-                tone: "text-indigo-700 border-indigo-200 bg-indigo-50/70",
+                tone: "default",
                 whyShown: "Near-term due dates need sequencing before they become overdue.",
                 emptyState: "No tasks due this week",
               },
@@ -998,33 +1008,47 @@ export default function EngineeringDashboard() {
                 count: deliverableActionCount,
                 href: "/engineering/tasks?workloadState=deliverable",
                 icon: <Send className="h-4 w-4" />,
-                tone: "text-cyan-700 border-cyan-200 bg-cyan-50/70",
+                tone: "default",
                 whyShown: "Deliverable-linked tasks impact issue/approval handoffs.",
                 emptyState: "No deliverables awaiting action",
               },
             ];
 
+            const accentBorder: Record<KpiTone, string> = {
+              default: "border-l-2 border-l-primary/40",
+              danger: "border-l-2 border-l-red-500",
+              warning: "border-l-2 border-l-amber-500",
+            };
+            const accentText: Record<KpiTone, string> = {
+              default: "text-primary",
+              danger: "text-red-600",
+              warning: "text-amber-600",
+            };
+
             return (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5">
-                {cards.map((card) => (
-                  <Link key={card.key} href={card.href}>
-                    <button
-                      type="button"
-                      className={`w-full text-left rounded-lg border p-3 hover:shadow-sm transition ${card.tone}`}
-                      data-testid={`action-centre-${card.key}`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-1.5 font-semibold text-sm">
-                          {card.icon}
-                          <span>{card.title}</span>
+                {cards.map((card) => {
+                  const active = card.count > 0;
+                  return (
+                    <Link key={card.key} href={card.href}>
+                      <button
+                        type="button"
+                        className={`w-full text-left rounded-lg border bg-card p-3 hover:shadow-sm transition ${active ? accentBorder[card.tone] : "border-border"}`}
+                        data-testid={`action-centre-${card.key}`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className={`flex items-center gap-1.5 font-semibold text-sm ${active ? "text-foreground" : "text-muted-foreground"}`}>
+                            <span className={active ? accentText[card.tone] : "text-muted-foreground"}>{card.icon}</span>
+                            <span>{card.title}</span>
+                          </div>
+                          <span className={`text-lg font-bold leading-none ${active ? accentText[card.tone] : "text-muted-foreground"}`}>{card.count}</span>
                         </div>
-                        <span className="text-lg font-bold leading-none">{card.count}</span>
-                      </div>
-                      <p className="text-[11px] mt-2 opacity-90">{card.whyShown}</p>
-                      {card.count === 0 && <p className="text-[11px] mt-1 font-medium">{card.emptyState}</p>}
-                    </button>
-                  </Link>
-                ))}
+                        <p className="text-[11px] mt-2 text-muted-foreground">{card.whyShown}</p>
+                        {!active && <p className="text-[11px] mt-1 font-medium text-muted-foreground">{card.emptyState}</p>}
+                      </button>
+                    </Link>
+                  );
+                })}
               </div>
             );
           })()}
@@ -1248,10 +1272,10 @@ export default function EngineeringDashboard() {
         </Card>
       )}
 
-      <div>
+      <div data-testid="section-project-health">
         <div className="flex items-center gap-2 mb-3">
-          <div className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center">
-            <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
+          <div className="w-7 h-7 rounded-lg bg-primary/8 flex items-center justify-center">
+            <ArrowUpRight className="h-4 w-4 text-primary" />
           </div>
           <h3 className="font-semibold text-sm">Project Health</h3>
           <div className="flex items-center gap-2 ml-auto text-[10px]">

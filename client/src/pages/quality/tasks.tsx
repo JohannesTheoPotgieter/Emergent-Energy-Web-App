@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Search } from "lucide-react";
+import { Search, ExternalLink } from "lucide-react";
 import { Link } from "wouter";
 
 interface QualityTask {
@@ -101,7 +101,7 @@ export default function QualityTasksPage() {
     <PageLayout>
       <PageHeader
         title="Quality Task Board"
-        subtitle="Open quality and NCR work items across the program. Counts and ownership are filtered by the Quality task API."
+        subtitle="Open quality and NCR work items across the program. Opening a task crosses into the Engineering task surface, where these items are actioned."
       />
       <Card>
         <CardContent className="p-4 space-y-3">
@@ -137,15 +137,29 @@ export default function QualityTasksPage() {
               {filtered.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-8">
-                    No quality tasks match your filter.
+                    {tasks.length === 0
+                      ? "No open quality or NCR work items right now. New items appear here as quality checklists and NCRs raise tasks."
+                      : "No quality tasks match your search. Clear the search box to see all open items."}
                   </TableCell>
                 </TableRow>
               ) : (
                 filtered.map((t) => (
                   <TableRow key={t.id} data-testid={`row-quality-task-${t.id}`}>
                     <TableCell className="font-medium">
-                      <Link href={`/engineering/tasks?task=${t.id}`} className="hover:underline">
+                      <Link
+                        href={`/engineering/tasks?task=${t.id}`}
+                        className="inline-flex items-center gap-1.5 hover:underline"
+                        aria-label={`Open task "${t.title || `Task #${t.id}`}" — opens in the Engineering task surface`}
+                        data-testid={`link-quality-task-${t.id}`}
+                      >
                         {t.title || `Task #${t.id}`}
+                        <Badge
+                          variant="outline"
+                          className="gap-0.5 px-1.5 py-0 text-[10px] font-normal text-muted-foreground shrink-0"
+                        >
+                          Engineering
+                          <ExternalLink className="h-2.5 w-2.5" aria-hidden="true" />
+                        </Badge>
                       </Link>
                       {/* On mobile, surface project + due inline under the title */}
                       <div className="md:hidden mt-0.5 text-[11px] text-muted-foreground flex flex-wrap gap-x-2">

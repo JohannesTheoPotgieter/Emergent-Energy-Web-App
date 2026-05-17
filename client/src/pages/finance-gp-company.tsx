@@ -13,6 +13,7 @@ import { SectionHeader } from "@/components/layout/page-shell";
 import { FinancialYearScopeControl } from "@/components/finance/FinancialYearScopeControl";
 import { useFinancialYearScope } from "@/hooks/use-financial-year-scope";
 import { fetchQueryFn } from "@/lib/queryClient";
+import { formatZar, formatZarCompact } from "@/lib/currency";
 import {
   Bar,
   XAxis,
@@ -167,13 +168,10 @@ const ROW_DEFS: RowDef[] = [
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+// Canonical precise ZAR for all cells, panels and tooltips. Absent /
+// non-numeric → "—" (never "R 0"). Chart axes use formatZarCompact directly.
 function formatRand(val: number | null | undefined): string {
-  if (val == null) return "R 0";
-  const abs = Math.abs(val);
-  const sign = val < 0 ? "-" : "";
-  if (abs >= 1_000_000) return `${sign}R ${(abs / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `${sign}R ${(abs / 1_000).toFixed(1)}K`;
-  return `${sign}R ${Math.round(abs)}`;
+  return formatZar(val);
 }
 
 function marginPct(gp: number, rev: number): number {
@@ -709,7 +707,7 @@ export default function FinanceGpCompanyPage() {
               <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={{ stroke: "#e2e8f0" }} tickLine={false} />
               <YAxis
                 yAxisId="left"
-                tickFormatter={(v: number) => formatRand(v)}
+                tickFormatter={(v: number) => formatZarCompact(v)}
                 tick={{ fontSize: 11, fill: "#64748b" }}
                 axisLine={false}
                 tickLine={false}

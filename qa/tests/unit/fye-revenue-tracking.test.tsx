@@ -196,14 +196,16 @@ afterEach(() => {
 describe("fmtR — currency formatter", () => {
   it("returns — for null", () => expect(fmtR(null)).toBe("—"));
   it("returns — for undefined", () => expect(fmtR(undefined)).toBe("—"));
+  // X2: fmtR now delegates to the canonical precise ZAR formatter (no
+  // abbreviation; abbreviated form is chart-axis only). ASCII-normalised.
   it("formats zero", () => expect(fmtR(0)).toBe("R 0"));
   it("formats a small positive integer below 1 000", () => expect(fmtR(500)).toBe("R 500"));
-  it("formats exactly 1 000 as 1.0K", () => expect(fmtR(1_000)).toBe("R 1.0K"));
-  it("formats 1 500 as 1.5K", () => expect(fmtR(1_500)).toBe("R 1.5K"));
-  it("formats exactly 1 000 000 as 1.00M", () => expect(fmtR(1_000_000)).toBe("R 1.00M"));
-  it("formats 2 500 000 as 2.50M", () => expect(fmtR(2_500_000)).toBe("R 2.50M"));
-  it("formats negative thousands", () => expect(fmtR(-1_000)).toBe("-R 1.0K"));
-  it("formats negative millions", () => expect(fmtR(-1_500_000)).toBe("-R 1.50M"));
+  it("formats exactly 1 000 precisely", () => expect(fmtR(1_000)).toBe("R 1 000"));
+  it("formats 1 500 precisely", () => expect(fmtR(1_500)).toBe("R 1 500"));
+  it("formats 1 000 000 precisely", () => expect(fmtR(1_000_000)).toBe("R 1 000 000"));
+  it("formats 2 500 000 precisely", () => expect(fmtR(2_500_000)).toBe("R 2 500 000"));
+  it("formats negative thousands", () => expect(fmtR(-1_000)).toBe("-R 1 000"));
+  it("formats negative millions", () => expect(fmtR(-1_500_000)).toBe("-R 1 500 000"));
   it("formats a negative value below 1 000", () => expect(fmtR(-250)).toBe("-R 250"));
 });
 
