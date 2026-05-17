@@ -22,6 +22,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { fetchQueryFn, apiRequest } from "@/lib/queryClient";
+import { formatZar, formatZarCompact } from "@/lib/currency";
 import { usePermission } from "@/hooks/use-permissions";
 import {
   TrendingUp,
@@ -192,13 +193,10 @@ function DeleteConfirmDialog({
 
 // ── Formatters ────────────────────────────────────────────────────────────
 
+// Canonical precise ZAR for all cells, panels and tooltips. Absent /
+// non-numeric → "—" (never "R 0"). Chart axes use formatZarCompact directly.
 export function fmtR(val: number | null | undefined): string {
-  if (val == null) return "—";
-  const abs = Math.abs(val);
-  const sign = val < 0 ? "-" : "";
-  if (abs >= 1_000_000) return `${sign}R ${(abs / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `${sign}R ${(abs / 1_000).toFixed(1)}K`;
-  return `${sign}R ${Math.round(abs).toLocaleString()}`;
+  return formatZar(val);
 }
 
 export function fmtPct(val: number | null | undefined): string {
@@ -263,10 +261,9 @@ const DASH_ROW_DEFS = [
 
 // ── Cumulative tracking charts ─────────────────────────────────────────────
 
+// Compact for chart axes only. Tooltips use precise fmtR.
 function fmt(value: number) {
-  if (Math.abs(value) >= 1_000_000) return `R${(value / 1_000_000).toFixed(1)}M`;
-  if (Math.abs(value) >= 1_000) return `R${(value / 1_000).toFixed(0)}k`;
-  return `R${value.toFixed(0)}`;
+  return formatZarCompact(value);
 }
 
 interface ChartPoint {
@@ -310,7 +307,7 @@ function TrackingChart({
           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
           <XAxis dataKey="label" tick={{ fontSize: 10 }} />
           <YAxis tickFormatter={fmt} tick={{ fontSize: 10 }} width={56} />
-          <Tooltip formatter={(v: number) => fmt(v)} />
+          <Tooltip formatter={(v: number) => fmtR(v)} />
           <Legend wrapperStyle={{ fontSize: 11 }} />
           <Line type="monotone" dataKey="budget" name="Budget" stroke="#94a3b8" strokeDasharray="5 3" dot={false} strokeWidth={1.5} />
           <Line type="monotone" dataKey="actualForecast" name="Actual + Forecast" stroke="#16a34a" dot={false} strokeWidth={2} />

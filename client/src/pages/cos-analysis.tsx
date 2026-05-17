@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FinanceShell } from "@/components/layout/FinanceShell";
+import { PageError } from "@/components/ui/page-states";
+import { formatZar as formatZarShared } from "@/lib/currency";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { Loader2, AlertTriangle, CheckCircle2, MinusCircle, Pencil, FlaskConical, RotateCcw } from "lucide-react";
@@ -38,9 +40,20 @@ async function okJson(r: Response) {
   return r.json();
 }
 
-function formatZar(value: number): string {
-  if (!Number.isFinite(value)) return "R 0";
-  return `R ${Math.round(value).toLocaleString("en-ZA")}`;
+// Canonical precise ZAR. Absent / non-numeric → "—" (never "R 0").
+function formatZar(value: number | null | undefined): string {
+  return formatZarShared(value);
+}
+
+/** Distinct error state (with retry) so a failed load never reads as "all clear". */
+function SectionError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <PageError
+      title="Couldn't load this section"
+      message="The data failed to load. This is not the same as having nothing to show — retry to try again."
+      onRetry={onRetry}
+    />
+  );
 }
 
 function formatPct(value: number): string {
@@ -191,7 +204,7 @@ export default function CosAnalysisPage() {
             Compares COS invoices against project plan progress. Per-project tolerance band determines the "in line" zone.
           </p>
           <p className="text-xs text-muted-foreground mt-1" data-testid="analysis-metadata">
-            Source: {earned.data?.trust?.sourceLayer ?? "canonical"} · Basis: captured COS invoices vs project progress · Last updated: {earned.data?.trust?.asOf ?? "N/A"}
+            Source: {earned.data?.trust?.sourceLayer ?? "canonical"} · Basis: captured COS invoices vs project progress · Last updated: {earned.data?.trust?.asOf ?? "—"}
           </p>
         </div>
         <div className="flex items-center gap-2 border-l pl-3">
@@ -240,7 +253,9 @@ export default function CosAnalysisPage() {
           <CardTitle className="text-sm">Project earned vs invoiced</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          {earned.isLoading || !earned.data ? (
+          {earned.isError ? (
+            <SectionError onRetry={() => earned.refetch()} />
+          ) : earned.isLoading || !earned.data ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : earnedView.length === 0 ? (
             <p className="text-sm text-muted-foreground">No active projects to analyse.</p>
@@ -364,7 +379,9 @@ export default function CosAnalysisPage() {
           <CardTitle className="text-sm">Top-5 counterparty COS trend (last 6 months)</CardTitle>
         </CardHeader>
         <CardContent style={{ height: 320 }}>
-          {counterparty.isLoading ? (
+          {counterparty.isError ? (
+            <SectionError onRetry={() => counterparty.refetch()} />
+          ) : counterparty.isLoading ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : trendChartData.length === 0 ? (
             <p className="text-sm text-muted-foreground">No counterparty invoices in this window.</p>

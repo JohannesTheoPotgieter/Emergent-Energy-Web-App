@@ -18,6 +18,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { apiRequest, fetchQueryFn, invalidateDashboardQueries } from '@/lib/queryClient';
+import { formatZar, formatZarCompact } from '@/lib/currency';
 import { useFinanceQuery } from '@/lib/finance-trust';
 import { DataTrustBadge } from '@/components/ui/data-trust-badge';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -170,13 +171,10 @@ type DrawerStateFilter =
   | 'recognised'
   | 'qb_actual';
 
+// Canonical precise ZAR for all cells, panels and tooltips. Absent /
+// non-numeric → "—" (never "R 0"). Chart axes use formatZarCompact directly.
 function formatRand(val: number | null | undefined): string {
-  if (val == null) return 'R 0';
-  const abs = Math.abs(val);
-  const sign = val < 0 ? '-' : '';
-  if (abs >= 1_000_000) return `${sign}R ${(abs / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `${sign}R ${(abs / 1_000).toFixed(1)}K`;
-  return `${sign}R ${Math.round(abs)}`;
+  return formatZar(val);
 }
 
 type EditableField = 'budget';
@@ -1783,7 +1781,7 @@ export default function CosTracker() {
               />
               <YAxis
                 yAxisId="left"
-                tickFormatter={(v: number) => formatRand(v)}
+                tickFormatter={(v: number) => formatZarCompact(v)}
                 tick={{ fontSize: 11, fill: '#64748b' }}
                 axisLine={false}
                 tickLine={false}

@@ -8,6 +8,8 @@ import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FinanceShell } from "@/components/layout/FinanceShell";
+import { PageError } from "@/components/ui/page-states";
+import { formatZar as formatZarShared } from "@/lib/currency";
 import { Loader2, AlertTriangle, TrendingUp, TrendingDown, Wallet, Users, FlaskConical, RotateCcw, CheckCircle2 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { bucketForDaysOverdue } from "@shared/lib/financeAnalysis";
@@ -74,9 +76,20 @@ async function okJson(r: Response) {
   return r.json();
 }
 
-function formatZar(value: number): string {
-  if (!Number.isFinite(value)) return "R 0";
-  return `R ${Math.round(value).toLocaleString("en-ZA")}`;
+// Canonical precise ZAR. Absent / non-numeric → "—" (never "R 0").
+function formatZar(value: number | null | undefined): string {
+  return formatZarShared(value);
+}
+
+/** Distinct error state (with retry) so a failed load never reads as "all clear". */
+function SectionError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <PageError
+      title="Couldn't load this section"
+      message="The data failed to load. This is not the same as having nothing to show — retry to try again."
+      onRetry={onRetry}
+    />
+  );
 }
 
 function formatPct(value: number): string {
@@ -178,7 +191,7 @@ export default function CashflowAnalysisPage() {
           <h2 className="text-xl font-semibold tracking-tight" data-testid="page-title">Cashflow Analysis</h2>
           <p className="text-sm text-muted-foreground">AR/AP aging, overdue, DSO/DPO, and concentration risk.</p>
           <p className="text-xs text-muted-foreground mt-1" data-testid="analysis-metadata">
-            Source: {forecast.data?.trust?.sourceLayer ?? "canonical"} · Basis: payment dates · Last updated: {forecast.data?.trust?.asOf ?? forecast.data?.today ?? "N/A"}
+            Source: {forecast.data?.trust?.sourceLayer ?? "canonical"} · Basis: payment dates · Last updated: {forecast.data?.trust?.asOf ?? forecast.data?.today ?? "—"}
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -268,7 +281,9 @@ export default function CashflowAnalysisPage() {
           <CardTitle className="text-sm">Aging buckets</CardTitle>
         </CardHeader>
         <CardContent>
-          {aging.isLoading || !aging.data ? (
+          {aging.isError ? (
+            <SectionError onRetry={() => aging.refetch()} />
+          ) : aging.isLoading || !aging.data ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -292,7 +307,9 @@ export default function CashflowAnalysisPage() {
           </Tabs>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          {overdue.isLoading || !overdue.data ? (
+          {overdue.isError ? (
+            <SectionError onRetry={() => overdue.refetch()} />
+          ) : overdue.isLoading || !overdue.data ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : overdueRowsView.length === 0 ? (
             <p className="text-sm text-muted-foreground">{sandboxOn ? "Sandbox cleared all overdue items 🎉" : "No overdue items 🎉"}</p>
@@ -348,7 +365,9 @@ export default function CashflowAnalysisPage() {
         <Card>
           <CardHeader><CardTitle className="text-sm">DSO / DPO (last 12 weeks)</CardTitle></CardHeader>
           <CardContent style={{ height: 280 }}>
-            {dso.isLoading ? (
+            {dso.isError ? (
+              <SectionError onRetry={() => dso.refetch()} />
+            ) : dso.isLoading ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <ResponsiveContainer width="100%" height="100%">
@@ -370,7 +389,9 @@ export default function CashflowAnalysisPage() {
         <Card>
           <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Users className="w-4 h-4" /> Concentration risk</CardTitle></CardHeader>
           <CardContent>
-            {concentration.isLoading || !concentration.data ? (
+            {concentration.isError ? (
+              <SectionError onRetry={() => concentration.refetch()} />
+            ) : concentration.isLoading || !concentration.data ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <div className="space-y-4">
@@ -398,7 +419,9 @@ export default function CashflowAnalysisPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          {atRisk.isLoading || !atRisk.data ? (
+          {atRisk.isError ? (
+            <SectionError onRetry={() => atRisk.refetch()} />
+          ) : atRisk.isLoading || !atRisk.data ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : atRiskRowsView.length === 0 ? (
             <p className="text-sm text-muted-foreground">{sandboxOn ? "Sandbox cleared all at-risk items." : "Nothing flagged."}</p>
@@ -453,7 +476,9 @@ export default function CashflowAnalysisPage() {
           </CardTitle>
         </CardHeader>
         <CardContent style={{ height: 280 }}>
-          {forecast.isLoading ? (
+          {forecast.isError ? (
+            <SectionError onRetry={() => forecast.refetch()} />
+          ) : forecast.isLoading ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : forecastChartData.length === 0 ? (
             <p className="text-sm text-muted-foreground">No cashflow points in the lookback window.</p>
