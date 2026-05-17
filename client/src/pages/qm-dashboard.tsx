@@ -184,11 +184,11 @@ function RiskLevelBadge({ level }: { level?: string }) {
   const normalized = String(level || "low").toLowerCase();
   const styles =
     normalized === "critical"
-      ? "bg-red-50 text-red-700 border-red-200"
+      ? "bg-red-50 text-red-600 border-red-200"
       : normalized === "high"
         ? "bg-amber-50 text-amber-700 border-amber-200"
         : normalized === "medium"
-          ? "bg-sky-50 text-sky-700 border-sky-200"
+          ? "bg-muted text-muted-foreground border-border"
           : "bg-emerald-50 text-emerald-700 border-emerald-200";
   const label = normalized.charAt(0).toUpperCase() + normalized.slice(1);
   return (
@@ -445,11 +445,13 @@ export default function QmDashboardPage() {
 
   const qmAttentionItems = useMemo((): AttentionItem[] => {
     const items: AttentionItem[] = [];
-    if (governanceSummary?.overdueActions && governanceSummary.overdueActions > 0) items.push({ label: "Overdue Actions", value: governanceSummary.overdueActions, color: "text-red-600 bg-red-50 border-red-200", href: "/quality" });
-    if (governanceSummary?.resubmissionNeeded && governanceSummary.resubmissionNeeded > 0) items.push({ label: "Failed QC Items", value: governanceSummary.resubmissionNeeded, color: "text-amber-700 bg-amber-50 border-amber-200", href: "/quality" });
-    if (governanceSummary?.evidenceRequired && governanceSummary.evidenceRequired > 0) items.push({ label: "Evidence Gaps", value: governanceSummary.evidenceRequired, color: "text-sky-700 bg-sky-50 border-sky-200", href: "/quality" });
-    if (governanceSummary?.blockedHandovers && governanceSummary.blockedHandovers > 0) items.push({ label: "Blocked Handovers", value: governanceSummary.blockedHandovers, color: "text-violet-700 bg-violet-50 border-violet-200", href: "/quality" });
-    if (activeWarnings > 0) items.push({ label: "Open Warnings", value: activeWarnings, color: "text-orange-700 bg-orange-50 border-orange-200", href: "/quality" });
+    const danger = "text-red-600 bg-red-50 border-red-200";
+    const warning = "text-amber-700 bg-amber-50 border-amber-200";
+    if (governanceSummary?.overdueActions && governanceSummary.overdueActions > 0) items.push({ label: "Overdue Actions", value: governanceSummary.overdueActions, color: danger, href: "/quality" });
+    if (governanceSummary?.resubmissionNeeded && governanceSummary.resubmissionNeeded > 0) items.push({ label: "Failed QC Items", value: governanceSummary.resubmissionNeeded, color: danger, href: "/quality" });
+    if (governanceSummary?.evidenceRequired && governanceSummary.evidenceRequired > 0) items.push({ label: "Evidence Gaps", value: governanceSummary.evidenceRequired, color: warning, href: "/quality" });
+    if (governanceSummary?.blockedHandovers && governanceSummary.blockedHandovers > 0) items.push({ label: "Blocked Handovers", value: governanceSummary.blockedHandovers, color: danger, href: "/quality" });
+    if (activeWarnings > 0) items.push({ label: "Open Warnings", value: activeWarnings, color: warning, href: "/quality" });
     return items;
   }, [governanceSummary, activeWarnings]);
 
@@ -585,45 +587,34 @@ export default function QmDashboardPage() {
       <AttentionBadges items={qmAttentionItems} threshold={5} testId="qm-attention-needed" />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <Card className="border-red-100 bg-red-50/50">
-          <CardContent className="p-3">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Overdue actions</p>
-            <p className="text-xl font-bold text-red-600 tabular-nums mt-1">{governanceSummary?.overdueActions ?? 0}</p>
-            <p className="text-xs text-muted-foreground mt-1">Items past due and still unresolved.</p>
-          </CardContent>
-        </Card>
-        <Card className="border-amber-100 bg-amber-50/50">
-          <CardContent className="p-3">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Failed QC</p>
-            <p className="text-xl font-bold text-amber-600 tabular-nums mt-1">{governanceSummary?.resubmissionNeeded ?? 0}</p>
-            <p className="text-xs text-muted-foreground mt-1">Items that failed inspection — fix and resubmit.</p>
-          </CardContent>
-        </Card>
-        <Card className="border-sky-100 bg-sky-50/50">
-          <CardContent className="p-3">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Evidence gaps</p>
-            <p className="text-xl font-bold text-sky-600 tabular-nums mt-1">{governanceSummary?.evidenceRequired ?? 0}</p>
-            <p className="text-xs text-muted-foreground mt-1">Evidence-required items still missing proof.</p>
-          </CardContent>
-        </Card>
-        <Card className="border-violet-100 bg-violet-50/50">
-          <CardContent className="p-3">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Blocked handover</p>
-            <p className="text-xl font-bold text-violet-600 tabular-nums mt-1">{governanceSummary?.blockedHandovers ?? 0}</p>
-            <p className="text-xs text-muted-foreground mt-1">Projects where quality is holding execution readiness.</p>
-          </CardContent>
-        </Card>
-        <Card className="border-emerald-100 bg-emerald-50/50">
-          <CardContent className="p-3">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">At-risk projects</p>
-            <p className="text-xl font-bold text-emerald-600 tabular-nums mt-1">{governanceSummary?.atRiskProjects ?? 0}</p>
-            <p className="text-xs text-muted-foreground mt-1">Projects carrying elevated quality governance risk. {/* Link: ?qualityItemId=N */}</p>
-          </CardContent>
-        </Card>
+        {([
+          { label: "Overdue actions", value: governanceSummary?.overdueActions ?? 0, tone: "danger", sub: "Items past due and still unresolved." },
+          { label: "Failed QC", value: governanceSummary?.resubmissionNeeded ?? 0, tone: "danger", sub: "Items that failed inspection — fix and resubmit." },
+          { label: "Evidence gaps", value: governanceSummary?.evidenceRequired ?? 0, tone: "warning", sub: "Evidence-required items still missing proof." },
+          { label: "Blocked handover", value: governanceSummary?.blockedHandovers ?? 0, tone: "danger", sub: "Projects where quality is holding execution readiness." },
+          { label: "At-risk projects", value: governanceSummary?.atRiskProjects ?? 0, tone: "warning", sub: "Projects carrying elevated quality governance risk." },
+        ] as const).map((kpi) => {
+          const active = kpi.value > 0;
+          const border = !active
+            ? "border-border"
+            : kpi.tone === "danger" ? "border-red-200" : "border-amber-200";
+          const valueColor = !active
+            ? "text-muted-foreground"
+            : kpi.tone === "danger" ? "text-red-600" : "text-amber-700";
+          return (
+            <Card key={kpi.label} className={border}>
+              <CardContent className="p-3">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{kpi.label}</p>
+                <p className={`text-xl font-bold tabular-nums mt-1 ${valueColor}`}>{kpi.value}</p>
+                <p className="text-xs text-muted-foreground mt-1">{kpi.sub}</p>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       {topRiskProjects.length > 0 && (
-        <Card className="border-amber-200/70 bg-gradient-to-r from-amber-50 to-background">
+        <Card className="border-border border-l-2 border-l-amber-500">
           <CardContent className="p-4">
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div>
@@ -893,7 +884,7 @@ export default function QmDashboardPage() {
                                 <div className="mt-1 flex flex-wrap gap-1">
                                   <RiskLevelBadge level={checklist.qualityRiskLevel} />
                                   {(checklist.overdueCount ?? 0) > 0 && (
-                                    <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-200">
+                                    <Badge variant="outline" className="text-[10px] bg-red-50 text-red-600 border-red-200">
                                       {checklist.overdueCount} overdue
                                     </Badge>
                                   )}
@@ -903,12 +894,12 @@ export default function QmDashboardPage() {
                                     </Badge>
                                   )}
                                   {(checklist.evidenceGapCount ?? 0) > 0 && (
-                                    <Badge variant="outline" className="text-[10px] bg-sky-50 text-sky-700 border-sky-200">
+                                    <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
                                       {checklist.evidenceGapCount} evidence
                                     </Badge>
                                   )}
                                   {checklist.blockedHandover && (
-                                    <Badge variant="outline" className="text-[10px] bg-violet-50 text-violet-700 border-violet-200">
+                                    <Badge variant="outline" className="text-[10px] bg-red-50 text-red-600 border-red-200">
                                       Handover blocked
                                     </Badge>
                                   )}
@@ -917,7 +908,7 @@ export default function QmDashboardPage() {
                               <td className="py-2.5 px-2 text-center">
                                 <Badge
                                   variant="outline"
-                                  className="text-[10px] bg-blue-50 text-blue-600 border-blue-200"
+                                  className="text-[10px] bg-muted text-muted-foreground border-border"
                                 >
                                   active
                                 </Badge>
@@ -1043,7 +1034,7 @@ export default function QmDashboardPage() {
       </Tabs>
 
       <Collapsible open={warningsExpanded} onOpenChange={setWarningsExpanded}>
-        <Card className="border-amber-200/50/40">
+        <Card className="border-amber-200">
           <CollapsibleTrigger asChild>
             <CardHeader className="pb-3 cursor-pointer hover:bg-muted/30 transition-colors rounded-t-lg" data-testid="warnings-section-header">
               <div className="flex items-center justify-between">
@@ -1122,8 +1113,8 @@ export default function QmDashboardPage() {
                   {lowWarnings.length > 0 && (
                     <div>
                       <div className="flex items-center gap-2 mb-2.5">
-                        <span className="h-2 w-2 rounded-full bg-blue-400" />
-                        <p className="text-xs font-semibold text-blue-600 uppercase tracking-wider">Low / Other ({lowWarnings.length})</p>
+                        <span className="h-2 w-2 rounded-full bg-muted-foreground/40" />
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Low / Other ({lowWarnings.length})</p>
                       </div>
                       <div className="space-y-2">
                         {lowWarnings.map((warning) => (
@@ -1148,7 +1139,7 @@ export default function QmDashboardPage() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className={`h-5 w-5 ${selectedWarning?.severity === "High" ? "text-red-500" : "text-amber-500"}`} />
+              <AlertTriangle className={`h-5 w-5 ${selectedWarning?.severity === "High" ? "text-red-600" : "text-amber-600"}`} />
               Warning Details
             </DialogTitle>
           </DialogHeader>
@@ -1159,8 +1150,8 @@ export default function QmDashboardPage() {
                 <div className="flex items-center gap-2 mt-1.5">
                   <Badge variant="outline" className={
                     selectedWarning.severity === "High"
-                      ? "bg-red-50 text-red-500 border-red-200 text-xs"
-                      : "bg-amber-50 text-amber-500 border-amber-200 text-xs"
+                      ? "bg-red-50 text-red-600 border-red-200 text-xs"
+                      : "bg-amber-50 text-amber-700 border-amber-200 text-xs"
                   }>
                     {selectedWarning.severity}
                   </Badge>
@@ -1425,18 +1416,18 @@ function WarningRow({ warning, severity, onView, onOverride, onResolve, onViewPr
   onViewProject: () => void;
 }) {
   const borderClass = severity === "high"
-    ? "border-red-200/50/40 bg-red-50/30 hover:bg-red-50/60"
+    ? "border-red-200 bg-red-50/30 hover:bg-red-50/60"
     : severity === "medium"
-    ? "border-amber-200/50/40 bg-amber-50/30 hover:bg-amber-50/60"
+    ? "border-amber-200 bg-amber-50/30 hover:bg-amber-50/60"
     : "border-border/50 hover:bg-muted/30";
 
-  const iconClass = severity === "high" ? "text-red-500" : severity === "medium" ? "text-amber-500" : "text-blue-600";
+  const iconClass = severity === "high" ? "text-red-600" : severity === "medium" ? "text-amber-600" : "text-muted-foreground";
 
   const badgeClass = severity === "high"
-    ? "bg-red-50 text-red-500 border-red-200"
+    ? "bg-red-50 text-red-600 border-red-200"
     : severity === "medium"
-    ? "bg-amber-50 text-amber-500 border-amber-200"
-    : "bg-blue-50 text-blue-500 border-blue-200";
+    ? "bg-amber-50 text-amber-700 border-amber-200"
+    : "bg-muted text-muted-foreground border-border";
 
   return (
     <div
