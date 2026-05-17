@@ -405,7 +405,7 @@ export function registerRoleManagementRoutes(app: Express) {
       logPermissionAudit(req, { eventType: "role_updated", targetRole: roleKey, changeDetail: { sections, canManageUsers, canManageRoles, canEditData, hasEntityPermChanges: ep !== undefined, hasAuthorityModelChanges: authorityModel !== undefined, reason: auditReason } });
       res.json(updated);
     } catch (err: any) {
-      console.error("[Roles] PUT /api/roles/:role error:", err.message, err.stack);
+      console.error("[Roles] PUT /api/roles/:role error:", err.message);
       throw err;
     }
   });

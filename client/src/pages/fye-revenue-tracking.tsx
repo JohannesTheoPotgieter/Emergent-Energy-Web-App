@@ -22,7 +22,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { fetchQueryFn, apiRequest } from "@/lib/queryClient";
-import { formatZar, formatZarCompact } from "@/lib/currency";
+import { formatZar, formatZarCompact, formatCount } from "@/lib/currency";
 import { usePermission } from "@/hooks/use-permissions";
 import {
   TrendingUp,
@@ -228,7 +228,7 @@ function KpiCard({ label, value, icon: Icon, accent, testId }: { label: string; 
           </div>
           <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
         </div>
-        <p className="text-2xl font-bold tabular-nums" data-testid={testId ? `${testId}-value` : undefined}>{value}</p>
+        <p className="text-2xl font-bold tabular-nums" data-testid={testId ? `${testId}-value` : undefined}>{formatCount(value)}</p>
       </CardContent>
     </Card>
   );

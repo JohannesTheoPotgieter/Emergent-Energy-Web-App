@@ -25,6 +25,15 @@ const PRECISE_CENTS = new Intl.NumberFormat("en-ZA", {
   maximumFractionDigits: 2,
 });
 
+/**
+ * Intl en-ZA emits no-break (U+00A0) and narrow-no-break (U+202F) spaces.
+ * Normalise to a plain ASCII space: visually identical, but deterministic for
+ * comparison/snapshot/test and safe to copy out of the UI.
+ */
+function ascii(s: string): string {
+  return s.replace(/[\u00A0\u202F]/g, " ");
+}
+
 /** True only for a finite number. Strings, null, undefined, NaN are not money. */
 function asFiniteNumber(value: unknown): number | null {
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
@@ -50,7 +59,7 @@ export function formatZar(value: unknown, options: FormatZarOptions = {}): strin
   const n = asFiniteNumber(value);
   if (n === null) return placeholder;
   const sign = showSign && n > 0 ? "+" : "";
-  return `${sign}${(cents ? PRECISE_CENTS : PRECISE).format(n)}`;
+  return ascii(`${sign}${(cents ? PRECISE_CENTS : PRECISE).format(n)}`);
 }
 
 /** Alias — explicit "full precision" name for call sites that want clarity. */
@@ -77,5 +86,5 @@ export function formatZarCompact(value: unknown, placeholder = "—"): string {
 export function formatCount(value: unknown, placeholder = "—"): string {
   const n = asFiniteNumber(value);
   if (n === null) return placeholder;
-  return n.toLocaleString("en-ZA", { maximumFractionDigits: 0 });
+  return ascii(n.toLocaleString("en-ZA", { maximumFractionDigits: 0 }));
 }
