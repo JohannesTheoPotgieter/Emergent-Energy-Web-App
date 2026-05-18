@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Link } from "wouter";
 import { PageShell } from "@/components/layout/page-shell";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
@@ -554,6 +555,7 @@ function UpcomingEventsStrip() {
   }
 
   return (
+    <TooltipProvider delayDuration={150}>
     <div className="mb-5" data-testid="section-upcoming-events">
       <div className="flex items-baseline justify-between mb-2">
         <div className="flex items-center gap-2">
@@ -584,8 +586,6 @@ function UpcomingEventsStrip() {
             const isWeekend = d.getDay() === 0 || d.getDay() === 6;
             const isLastRow = idx >= 21;
             const isLastCol = (idx % 7) === 6;
-            const visible = dayEvents.slice(0, 3);
-            const overflow = dayEvents.length - visible.length;
             return (
               <div
                 key={iso}
@@ -607,56 +607,206 @@ function UpcomingEventsStrip() {
                     </span>
                   )}
                 </div>
-                <div className="flex flex-col gap-0.5 min-h-0">
-                  {visible.map((ev, i) => (
-                    <Link key={i} href={getHomeProjectHref(ev.projectId)}>
-                      <div
-                        role="button"
-                        aria-label={`${d.toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long" })} — ${EVENT_LABEL[ev.type] ?? ev.detail} at ${ev.projectName}${ev.amount ? ` for R ${Number(ev.amount).toLocaleString()}` : ""}`}
-                        data-testid={`chip-event-${iso}-${i}`}
-                        title={`${ev.projectName} · ${EVENT_LABEL[ev.type] ?? ev.detail}${ev.amount ? ` · R ${Number(ev.amount).toLocaleString()}` : ""}`}
-                        className={`group flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] leading-tight cursor-pointer hover:shadow-sm transition-all ${EVENT_TONE[ev.type] ?? "bg-muted border-border text-foreground"}`}
-                      >
-                        <span aria-hidden="true" className={`w-1.5 h-1.5 rounded-full shrink-0 ${EVENT_DOT[ev.type] ?? "bg-muted-foreground"}`} />
-                        <span className="font-medium truncate">{ev.projectName}</span>
-                        <span className="sr-only">— {EVENT_LABEL[ev.type] ?? ev.detail}</span>
+                <DayCellChips dayEvents={dayEvents} d={d} iso={iso} />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {totalEvents > 0 && (
+        <div className="flex items-center gap-3 mt-2 text-[10px] text-muted-foreground flex-wrap">
+          <span className="font-semibold uppercase tracking-wider">Legend</span>
+          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Construction / Inflow</span>
+          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-500" /> Commissioning / PC</span>
+          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-violet-500" /> Handover</span>
+          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> PD Handover</span>
+          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Payment Due</span>
+        </div>
+      )}
+    </div>
+    </TooltipProvider>
+  );
+}
+
+const PAYMENT_TYPES = new Set(["payment_in", "payment_out"]);
+
+type ChipGroup = {
+  key: string;
+  type: string;
+  projectName: string;
+  projectId: number | null;
+  isAggregated: boolean;
+  totalAmount: number;
+  items: UpcomingEvent[];
+};
+
+function buildChipGroups(dayEvents: UpcomingEvent[]): { milestoneChips: ChipGroup[]; paymentChips: ChipGroup[] } {
+  const milestoneChips: ChipGroup[] = [];
+  const paymentBuckets = new Map<string, ChipGroup>();
+  for (const ev of dayEvents) {
+    if (PAYMENT_TYPES.has(ev.type)) {
+      const key = `${ev.type}__${ev.projectId ?? ev.projectName}`;
+      const amt = Number(ev.amount ?? 0) || 0;
+      const existing = paymentBuckets.get(key);
+      if (existing) {
+        existing.totalAmount += amt;
+        existing.items.push(ev);
+        existing.isAggregated = existing.items.length > 1;
+      } else {
+        paymentBuckets.set(key, {
+          key,
+          type: ev.type,
+          projectName: ev.projectName,
+          projectId: ev.projectId,
+          isAggregated: false,
+          totalAmount: amt,
+          items: [ev],
+        });
+      }
+    } else {
+      milestoneChips.push({
+        key: `m-${milestoneChips.length}`,
+        type: ev.type,
+        projectName: ev.projectName,
+        projectId: ev.projectId,
+        isAggregated: false,
+        totalAmount: Number(ev.amount ?? 0) || 0,
+        items: [ev],
+      });
+    }
+  }
+  return { milestoneChips, paymentChips: Array.from(paymentBuckets.values()) };
+}
+
+function formatRand(n: number): string {
+  return `R ${n.toLocaleString("en-ZA", { maximumFractionDigits: 0 })}`;
+}
+
+function ChipTooltipContent({ d, group }: { d: Date; group: ChipGroup }) {
+  return (
+    <div className="text-xs" data-testid={`tooltip-chip-${group.key}`}>
+      <div className="font-semibold mb-0.5">{group.projectName}</div>
+      <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">
+        {EVENT_LABEL[group.type] ?? group.items[0]?.detail}
+        {" · "}
+        {d.toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short" })}
+      </div>
+      {group.isAggregated ? (
+        <>
+          <div className="flex flex-col gap-1 mb-1.5 max-h-56 overflow-y-auto pr-1">
+            {group.items.map((it, i) => (
+              <div key={i} className="flex items-start justify-between gap-3 text-[11px]">
+                <span className="truncate flex-1 opacity-80">{it.detail || (group.type === "payment_in" ? "Inflow" : "Payment")}</span>
+                {it.amount && <span className="font-medium tabular-nums shrink-0">{formatRand(Number(it.amount))}</span>}
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-between border-t border-border pt-1.5 text-[11px]">
+            <span className="font-semibold uppercase tracking-wider">Total ({group.items.length})</span>
+            <span className="font-bold tabular-nums">{formatRand(group.totalAmount)}</span>
+          </div>
+        </>
+      ) : (
+        <div className="text-[11px]">
+          <div className="opacity-80 mb-0.5">{group.items[0]?.detail}</div>
+          {group.totalAmount > 0 && (
+            <div className="font-semibold tabular-nums">{formatRand(group.totalAmount)}</div>
+          )}
+        </div>
+      )}
+      <div className="text-[10px] text-muted-foreground mt-1.5 pt-1.5 border-t border-border">
+        Click to open project
+      </div>
+    </div>
+  );
+}
+
+function Chip({ d, iso, group, idx }: { d: Date; iso: string; group: ChipGroup; idx: number }) {
+  const isPayment = PAYMENT_TYPES.has(group.type);
+  const amountLabel = group.totalAmount > 0
+    ? (group.totalAmount >= 1000 ? `R${Math.round(group.totalAmount / 1000)}k` : `R${Math.round(group.totalAmount)}`)
+    : null;
+  const aria = `${d.toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long" })} — ${EVENT_LABEL[group.type] ?? group.items[0]?.detail} at ${group.projectName}${group.isAggregated ? ` (${group.items.length} items, total ${formatRand(group.totalAmount)})` : group.totalAmount > 0 ? ` for ${formatRand(group.totalAmount)}` : ""}`;
+  return (
+    <Tooltip delayDuration={150}>
+      <TooltipTrigger asChild>
+        <Link href={getHomeProjectHref(group.projectId)}>
+          <div
+            role="button"
+            aria-label={aria}
+            data-testid={`chip-event-${iso}-${idx}`}
+            className={`group flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] leading-tight cursor-pointer hover:shadow-sm transition-all ${EVENT_TONE[group.type] ?? "bg-muted border-border text-foreground"}`}
+          >
+            <span aria-hidden="true" className={`w-1.5 h-1.5 rounded-full shrink-0 ${EVENT_DOT[group.type] ?? "bg-muted-foreground"}`} />
+            <span className="font-medium truncate flex-1 min-w-0">{group.projectName}</span>
+            {isPayment && amountLabel && (
+              <span className="font-semibold tabular-nums opacity-80 shrink-0">
+                {amountLabel}
+                {group.isAggregated && <span className="opacity-60">×{group.items.length}</span>}
+              </span>
+            )}
+            <span className="sr-only">— {EVENT_LABEL[group.type] ?? group.items[0]?.detail}</span>
+          </div>
+        </Link>
+      </TooltipTrigger>
+      <TooltipContent side="top" align="start" className="max-w-xs p-2.5 bg-popover text-popover-foreground border border-border shadow-md">
+        <ChipTooltipContent d={d} group={group} />
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function DayCellChips({ dayEvents, d, iso }: { dayEvents: UpcomingEvent[]; d: Date; iso: string }) {
+  const { milestoneChips, paymentChips } = useMemo(() => buildChipGroups(dayEvents), [dayEvents]);
+
+  // Always show every payment chip. Show up to 3 milestones inline; the rest collapse into "+N more".
+  const MILESTONE_INLINE_LIMIT = Math.max(1, 3 - paymentChips.length);
+  const visibleMilestones = milestoneChips.slice(0, MILESTONE_INLINE_LIMIT);
+  const overflowMilestones = milestoneChips.slice(MILESTONE_INLINE_LIMIT);
+
+  return (
+    <div className="flex flex-col gap-0.5 min-h-0">
+      {visibleMilestones.map((g, i) => (
+        <Chip key={`m-${i}`} d={d} iso={iso} group={g} idx={i} />
+      ))}
+      {paymentChips.map((g, i) => (
+        <Chip key={g.key} d={d} iso={iso} group={g} idx={visibleMilestones.length + i} />
+      ))}
+      {overflowMilestones.length > 0 && (
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              data-testid={`button-more-${iso}`}
+              className="text-[10px] text-muted-foreground hover:text-foreground font-medium text-left px-1.5"
+            >
+              +{overflowMilestones.length} more
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-64 p-2" align="start">
+            <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+              {d.toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "short" })}
+            </div>
+            <div className="flex flex-col gap-1">
+              {overflowMilestones.map((g, i) => (
+                <Link key={i} href={getHomeProjectHref(g.projectId)}>
+                  <div className={`flex items-center gap-2 px-2 py-1.5 rounded border text-xs cursor-pointer hover:opacity-80 ${EVENT_TONE[g.type] ?? "bg-muted border-border"}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${EVENT_DOT[g.type] ?? "bg-muted-foreground"}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium truncate">{g.projectName}</div>
+                      <div className="text-[10px] opacity-70 truncate">
+                        {EVENT_LABEL[g.type] ?? g.items[0]?.detail}
                       </div>
-                    </Link>
-                  ))}
-                  {overflow > 0 && (
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <button
-                          data-testid={`button-more-${iso}`}
-                          className="text-[10px] text-muted-foreground hover:text-foreground font-medium text-left px-1.5"
-                        >
-                          +{overflow} more
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-64 p-2" align="start">
-                        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                          {d.toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "short" })}
-                        </div>
-                        <div className="flex flex-col gap-1">
-                          {dayEvents.map((ev, i) => (
-                            <Link key={i} href={getHomeProjectHref(ev.projectId)}>
-                              <div className={`flex items-center gap-2 px-2 py-1.5 rounded border text-xs cursor-pointer hover:opacity-80 ${EVENT_TONE[ev.type] ?? "bg-muted border-border"}`}>
-                                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${EVENT_DOT[ev.type] ?? "bg-muted-foreground"}`} />
-                                <div className="flex-1 min-w-0">
-                                  <div className="font-medium truncate">{ev.projectName}</div>
-                                  <div className="text-[10px] opacity-70 truncate">
-                                    {EVENT_LABEL[ev.type] ?? ev.detail}
-                                    {ev.amount && ` · R ${Number(ev.amount).toLocaleString()}`}
-                                  </div>
-                                </div>
-                              </div>
-                            </Link>
-                          ))}
-                        </div>
-                      </PopoverContent>
-                    </Popover>
-                  )}
-                </div>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
+      )}
+    </div>
+  );
+}
               </div>
             );
           })}
