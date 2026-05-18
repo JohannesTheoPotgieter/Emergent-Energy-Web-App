@@ -191,14 +191,27 @@ export function useExecutionDataProvider(setLocation: (to: string) => void) {
       grossMargin !== null && actualMargin !== null
         ? Number((actualMargin - grossMargin).toFixed(1))
         : null;
+    const scheduleMeasuredProjects = fp.filter(
+      (p) => p.actualProgressPct != null && p.expectedProgressPct != null,
+    );
 
     return {
       activeDashboardProjects: fp.length,
-      averageActualProgressPct: fp.length
-        ? Number((fp.reduce((s, p) => s + (p.actualProgressPct || 0), 0) / fp.length).toFixed(1))
+      averageActualProgressPct: scheduleMeasuredProjects.length
+        ? Number(
+            (
+              scheduleMeasuredProjects.reduce((s, p) => s + (p.actualProgressPct || 0), 0) /
+              scheduleMeasuredProjects.length
+            ).toFixed(1),
+          )
         : null,
-      averageExpectedProgressPct: fp.length
-        ? Number((fp.reduce((s, p) => s + (p.expectedProgressPct || 0), 0) / fp.length).toFixed(1))
+      averageExpectedProgressPct: scheduleMeasuredProjects.length
+        ? Number(
+            (
+              scheduleMeasuredProjects.reduce((s, p) => s + (p.expectedProgressPct || 0), 0) /
+              scheduleMeasuredProjects.length
+            ).toFixed(1),
+          )
         : null,
       projectsBehindPlan: fp.filter((p) => p.behindPlan).length,
       projectsRed: fp.filter((p) => p.rag === 'Red').length,
@@ -229,8 +242,14 @@ export function useExecutionDataProvider(setLocation: (to: string) => void) {
       overdueInflowFy: fp.reduce((s, p) => s + (p.overdueInflowFy || 0), 0),
       overdueOutflowFy: fp.reduce((s, p) => s + (p.overdueOutflowFy || 0), 0),
       onScheduleRate:
-        fp.length > 0
-          ? Number(((fp.filter((p) => !p.behindPlan).length / fp.length) * 100).toFixed(1))
+        scheduleMeasuredProjects.length > 0
+          ? Number(
+              (
+                (scheduleMeasuredProjects.filter((p) => !p.behindPlan).length /
+                  scheduleMeasuredProjects.length) *
+                100
+              ).toFixed(1),
+            )
           : 0,
       contractCompleteness:
         fp.length > 0

@@ -2008,18 +2008,22 @@ export function registerLifecycleRoutes(app: Express) {
           });
         }
 
-        const avgActual = projectRows.length
+        const scheduleMeasuredRows = projectRows.filter(
+          (p) => p.actualProgressPct !== null && p.expectedProgressPct !== null,
+        );
+        const avgActual = scheduleMeasuredRows.length
           ? Number(
               (
-                projectRows.reduce((s, p) => s + (p.actualProgressPct || 0), 0) / projectRows.length
+                scheduleMeasuredRows.reduce((s, p) => s + (p.actualProgressPct || 0), 0) /
+                scheduleMeasuredRows.length
               ).toFixed(1),
             )
           : null;
-        const avgExpected = projectRows.length
+        const avgExpected = scheduleMeasuredRows.length
           ? Number(
               (
-                projectRows.reduce((s, p) => s + (p.expectedProgressPct || 0), 0) /
-                projectRows.length
+                scheduleMeasuredRows.reduce((s, p) => s + (p.expectedProgressPct || 0), 0) /
+                scheduleMeasuredRows.length
               ).toFixed(1),
             )
           : null;
@@ -2029,10 +2033,10 @@ export function registerLifecycleRoutes(app: Express) {
         const paidExpenditure = projectRows.reduce((s, p) => s + p.paidExpenditureFy, 0);
 
         // Excel Program Dashboard parity KPIs
-        const onScheduleCount = projectRows.filter((p) => !p.behindPlan).length;
+        const onScheduleCount = scheduleMeasuredRows.filter((p) => !p.behindPlan).length;
         const onScheduleRate =
-          projectRows.length > 0
-            ? Number(((onScheduleCount / projectRows.length) * 100).toFixed(1))
+          scheduleMeasuredRows.length > 0
+            ? Number(((onScheduleCount / scheduleMeasuredRows.length) * 100).toFixed(1))
             : 0;
         const contractsCompleteCount = projectRows.filter(
           (p) => p.cpSigned && p.signedStatus === 'SIGNED',

@@ -258,6 +258,8 @@ export function registerPlanningTasksRoutes(app: Express) {
             const ws = ct.workstream || "PM";
             if (ws === "ENG" || ws === "QUALITY") return true;
             const hasWbs = ct.taskNo && String(ct.taskNo).trim().length > 0;
+            const hasPlannedStart = !!ct.startDate;
+            const hasPlannedEnd = !!ct.endDate;
             const hasActualStart = !!ct.actualStartDate;
             const hasActualEnd = !!ct.actualEndDate;
             // Milestones still pass — but only with a WBS code, matching the
@@ -267,11 +269,10 @@ export function registerPlanningTasksRoutes(app: Express) {
             // produce (phantom rows after Handover to Matriarch).
             if (ct.isMilestone && hasWbs) return true;
             if (!hasWbs) return false;
-            // Project-261 phantom rows: secondary phase-summary blocks in
-            // the source workbook inherit planned dates but carry no actuals.
-            // Drop them at read-time so they never render even if a legacy
-            // import left them in work_items.
-            if (!hasActualStart && !hasActualEnd) return false;
+            // Keep planned-only PM rows. Actual dates are optional until work
+            // starts or completes, but WBS-only rows with no schedule data are
+            // still phantom candidates from legacy imports.
+            if (!hasPlannedStart && !hasPlannedEnd && !hasActualStart && !hasActualEnd) return false;
             return true;
           });
 
@@ -363,9 +364,9 @@ export function registerPlanningTasksRoutes(app: Express) {
               blockerReason: null,
               plannedHours: null,
               actualHours: null,
-              actualStartDate: tActualStart || tPlannedStart || null,
-              actualEndDate: tActualEnd || tPlannedEnd || null,
-              actualDurationDays: ct.actualDurationDays || ct.durationDays || null,
+              actualStartDate: tActualStart || null,
+              actualEndDate: tActualEnd || null,
+              actualDurationDays: ct.actualDurationDays || null,
               comment: ct.comment || null,
               sortOrder: ct.sortOrder ?? idx,
               isBaseline: true,

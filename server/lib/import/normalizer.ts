@@ -836,12 +836,13 @@ function extractPlanTasks(
     const actualStartDate = actualStartCol >= 0 ? parseDate(row[actualStartCol]) : null;
     const actualEndDate = actualEndCol >= 0 ? parseDate(row[actualEndCol]) : null;
 
-    // Skip rows that have no actual dates. Project trackers carry secondary
-    // summary / milestone blocks (phase headers re-listed without a WBS) that
-    // otherwise land in work_items and surface as phantom rows on the Plan
-    // tab. The rule "only ingest rows with an actual date" is enforced here
-    // at the import boundary so the DB never gets polluted.
-    if (!actualStartDate && !actualEndDate) continue;
+    const hasWbs = !!(taskNo && taskNo.trim());
+    const hasPlanOrActualDate = !!(startDate || endDate || actualStartDate || actualEndDate);
+
+    // Planned-only rows are valid programme rows. Actual dates can remain
+    // blank until work starts or completes; rows still need a WBS and at least
+    // one plan/actual schedule date so summary headers do not pollute work_items.
+    if (!hasWbs || !hasPlanOrActualDate) continue;
 
     let durationDays: number | null = null;
     if (durationCol >= 0 && row[durationCol] != null) {
