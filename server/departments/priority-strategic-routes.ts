@@ -32,6 +32,7 @@ import { PRIORITY_HEALTH_VALUES, type PriorityHealth, computeEffectivePriorityHe
 import { PRIORITY_SCOPES, ESCALATION_REASONS, computeEscalatePatch, collectDescendantIds, collectAncestorIds, matchesPriorityListFilter, type PriorityScope, type EscalationReason } from "@shared/config/priorities";
 import { recordActivity, computeUpdateActivities } from "./priority-activity-log";
 import { computePriorityProgress } from "../lib/priorities/progress-source";
+import { chooseProgressPercent, toDisplayProgressPercent } from "../lib/priorities/progress-percent";
 import { attachProjectScope, getProjectScope } from "../middleware/project-scope-middleware";
 import { isProjectAccessible } from "../services/project-access-service";
 import { getProjectListSummaries } from "../services/project-platform-summary-service";
@@ -310,6 +311,11 @@ interface DerivedMetricsRow {
   open_pd_ticket_count?: number;
 }
 
+interface PriorityLiveProgressRow {
+  avgProgress: number | null;
+  projectCountWithTasks: number;
+}
+
 async function getPriorityDerivedMetrics(priorityId: number): Promise<DerivedMetricsRow | null> {
   try {
     const rows: any = await db.execute(sql`
@@ -332,6 +338,52 @@ async function getAllPriorityDerivedMetrics(): Promise<DerivedMetricsRow[]> {
     console.warn("[Priorities] priority_derived_metrics query failed:", err.message);
     return [];
   }
+}
+
+async function getPriorityLiveProgressMap(priorityIds: number[]): Promise<Map<number, PriorityLiveProgressRow>> {
+  const ids = Array.from(new Set(priorityIds.filter((id) => Number.isFinite(id) && id > 0)));
+  const out = new Map<number, PriorityLiveProgressRow>();
+  if (ids.length === 0) return out;
+
+  try {
+    const idList = sql.join(ids.map((id) => sql`${id}`), sql`, `);
+    const rows: any = await db.execute(sql`
+      SELECT
+        pp.priority_id,
+        wi.project_id,
+        AVG(COALESCE(pm.percent_complete, wi.percent_complete, 0)) AS avg_pct,
+        COUNT(wi.id) AS task_count
+      FROM priority_projects pp
+      JOIN work_items wi ON wi.project_id = pp.project_id AND wi.deleted_at IS NULL
+      LEFT JOIN work_item_pm pm ON pm.work_item_id = wi.id
+      WHERE pp.priority_id IN (${idList})
+      GROUP BY pp.priority_id, wi.project_id
+    `);
+
+    const grouped = new Map<number, { totalPct: number; projectCount: number }>();
+    for (const row of rows.rows || rows || []) {
+      const priorityId = Number(row.priority_id);
+      const taskCount = Number(row.task_count || 0);
+      if (!Number.isFinite(priorityId) || taskCount <= 0) continue;
+      const pct = toDisplayProgressPercent(row.avg_pct);
+      if (pct === null) continue;
+      const existing = grouped.get(priorityId) || { totalPct: 0, projectCount: 0 };
+      existing.totalPct += pct;
+      existing.projectCount += 1;
+      grouped.set(priorityId, existing);
+    }
+
+    for (const [priorityId, value] of grouped) {
+      out.set(priorityId, {
+        avgProgress: value.projectCount > 0 ? Math.round(value.totalPct / value.projectCount) : null,
+        projectCountWithTasks: value.projectCount,
+      });
+    }
+  } catch (err: any) {
+    console.warn("[Priorities] live progress aggregation failed:", err?.message);
+  }
+
+  return out;
 }
 
 async function getUserById(userId: number): Promise<{ id: number; name: string } | null> {
@@ -393,6 +445,7 @@ async function enrichPriority(
   userMap?: Map<number, { id: number; name: string }>,
   parentMap?: Map<number, string>,
   childCountMap?: Map<number, number>,
+  liveProgress?: PriorityLiveProgressRow | null,
 ): Promise<PriorityWithMetrics> {
   // Handle both camelCase (drizzle ORM) and snake_case (raw SQL) column names
   const p = {
@@ -430,6 +483,8 @@ async function enrichPriority(
 
   const projectCount = Number(metrics?.project_count || 0);
   const hasProjects = projectCount > 0;
+  const resolvedLiveProgress =
+    liveProgress ?? (hasProjects ? ((await getPriorityLiveProgressMap([p.id])).get(p.id) ?? null) : null);
   const blockerCount = Number(metrics?.blocker_count || 0);
   const engBlockerCount = Number(metrics?.eng_blocker_count || 0);
   const qualityDefectCount = Number(metrics?.quality_defect_count || 0);
@@ -474,10 +529,16 @@ async function enrichPriority(
     }
   }
 
+  const projectProgress = chooseProgressPercent({
+    cachedPct: metrics?.avg_progress ?? null,
+    liveAvgPct: resolvedLiveProgress?.avgProgress ?? null,
+    liveTaskCount: resolvedLiveProgress?.projectCountWithTasks ?? 0,
+  });
+
   const effectiveProgress = linkedProgress != null
     ? linkedProgress
     : hasProjects
-      ? Math.round(Number(metrics?.avg_progress || 0))
+      ? (projectProgress.value ?? 0)
       : (p.manualProgress || 0);
 
   const owner = p.ownerUserId ? (userMap?.get(p.ownerUserId) || await getUserById(p.ownerUserId)) : null;
@@ -608,6 +669,7 @@ router.get("/api/priorities", requireAuth, asyncHandler(async (req: Request, res
     // Get all derived metrics
     const allMetrics = await getAllPriorityDerivedMetrics();
     const metricsMap = new Map(allMetrics.map((m: any) => [m.priority_id, m]));
+    const liveProgressMap = await getPriorityLiveProgressMap(allPriorities.map((p: any) => Number(p.id)));
 
     // Prefetch referenced users to avoid N+1 lookups
     const userIds = Array.from(new Set(
@@ -646,7 +708,14 @@ router.get("/api/priorities", requireAuth, asyncHandler(async (req: Request, res
 
     // Enrich with metrics
     const enriched = await Promise.all(
-      allPriorities.map((p: any) => enrichPriority(p, metricsMap.get(p.id), userMap, parentMap, childCountMap))
+      allPriorities.map((p: any) => enrichPriority(
+        p,
+        metricsMap.get(p.id),
+        userMap,
+        parentMap,
+        childCountMap,
+        liveProgressMap.get(p.id) ?? null,
+      ))
     );
 
     // Sort: escalated first, then severity DESC, health DESC, dueDate ASC, sortOrder ASC
@@ -713,6 +782,7 @@ router.get("/api/priorities/my-work", requireAuth, requirePermission("company_pr
 
   const allMetrics = await getAllPriorityDerivedMetrics();
   const metricsMap = new Map(allMetrics.map((m: any) => [m.priority_id, m]));
+  const liveProgressMap = await getPriorityLiveProgressMap(priorities.map((p: any) => Number(p.id)));
   const userIds = Array.from(new Set(
     priorities.flatMap((p: any) => [
       p.ownerUserId ?? p.owner_user_id,
@@ -733,7 +803,14 @@ router.get("/api/priorities/my-work", requireAuth, requirePermission("company_pr
     for (const p of parents) parentMap.set(p.id, p.title);
   }
   const enrichedPriorities = await Promise.all(
-    priorities.map((p: any) => enrichPriority(p, metricsMap.get(p.id), userMap, parentMap)),
+    priorities.map((p: any) => enrichPriority(
+      p,
+      metricsMap.get(p.id),
+      userMap,
+      parentMap,
+      undefined,
+      liveProgressMap.get(p.id) ?? null,
+    )),
   );
 
   // 2) Active work items owned by OR assigned to the caller.
@@ -2095,6 +2172,7 @@ router.get("/api/priorities/:id/children", requireAuth, asyncHandler(async (req:
 
   const allMetrics = await getAllPriorityDerivedMetrics();
   const metricsMap = new Map(allMetrics.map((m: any) => [m.priority_id, m]));
+  const liveProgressMap = await getPriorityLiveProgressMap(children.map((p: any) => Number(p.id)));
 
   const userIds = Array.from(new Set(
     children.flatMap((p: any) => [p.ownerUserId, p.accountableExecId, p.assignedUserId].filter(Boolean)),
@@ -2115,7 +2193,14 @@ router.get("/api/priorities/:id/children", requireAuth, asyncHandler(async (req:
   }
 
   const enriched = await Promise.all(
-    children.map((p: any) => enrichPriority(p, metricsMap.get(p.id), userMap, new Map(), grandChildCountMap))
+    children.map((p: any) => enrichPriority(
+      p,
+      metricsMap.get(p.id),
+      userMap,
+      new Map(),
+      grandChildCountMap,
+      liveProgressMap.get(p.id) ?? null,
+    ))
   );
 
   // Group by department for display
@@ -2347,6 +2432,7 @@ router.get("/api/reports/priorities-pack", requireAuth, requirePriorityCreator, 
 
   const allMetrics = await getAllPriorityDerivedMetrics();
   const metricsMap = new Map(allMetrics.map((m: any) => [m.priority_id, m]));
+  const liveProgressMap = await getPriorityLiveProgressMap(rows.map((p: any) => Number(p.id)));
 
   const userIds = Array.from(new Set(
     rows.flatMap((p: any) => [p.ownerUserId, p.accountableExecId, p.assignedUserId].filter(Boolean)),
@@ -2354,7 +2440,14 @@ router.get("/api/reports/priorities-pack", requireAuth, requirePriorityCreator, 
   const userMap = await getUsersByIds(userIds);
 
   const enriched = await Promise.all(
-    rows.map((p: any) => enrichPriority(p, metricsMap.get(p.id), userMap)),
+    rows.map((p: any) => enrichPriority(
+      p,
+      metricsMap.get(p.id),
+      userMap,
+      undefined,
+      undefined,
+      liveProgressMap.get(p.id) ?? null,
+    )),
   );
 
   // Load pdfkit lazily so the import cost is paid only when the endpoint is hit.

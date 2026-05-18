@@ -13,6 +13,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "../../db";
 import { PHASES } from "../../../shared/phases";
+import { chooseProgressPercent, toDisplayProgressPercent } from "./progress-percent";
 
 export type ProgressSourceType =
   | "manual"
@@ -76,20 +77,30 @@ async function computeProjectPhase(ref: ProgressSourceRef): Promise<ComputedProg
 async function computeProjectPercent(ref: ProgressSourceRef): Promise<ComputedProgress> {
   if (!ref.projectId) return NULL_RESULT;
   const rows: any = await db.execute(sql`
-    SELECT pi.project_name, dpk.avg_actual_pct_complete
+    SELECT
+      pi.project_name,
+      dpk.avg_actual_pct_complete,
+      AVG(COALESCE(pm.percent_complete, wi.percent_complete, 0)) AS live_avg_pct,
+      COUNT(wi.id) AS live_task_count
     FROM project_info pi
     LEFT JOIN derived_project_kpis dpk ON dpk.project_id = pi.id
+    LEFT JOIN work_items wi ON wi.project_id = pi.id AND wi.deleted_at IS NULL
+    LEFT JOIN work_item_pm pm ON pm.work_item_id = wi.id
     WHERE pi.id = ${ref.projectId}
+    GROUP BY pi.id, pi.project_name, dpk.avg_actual_pct_complete
     LIMIT 1
   `);
   const row = rows.rows?.[0] || rows[0];
   if (!row) return NULL_RESULT;
-  const raw = row.avg_actual_pct_complete;
-  if (raw == null) {
+  const choice = chooseProgressPercent({
+    cachedPct: row.avg_actual_pct_complete,
+    liveAvgPct: row.live_avg_pct,
+    liveTaskCount: row.live_task_count,
+  });
+  if (choice.value == null) {
     return { value: 0, label: `${row.project_name} has no progress data yet` };
   }
-  const pct = clampPct(Number(raw));
-  return { value: pct, label: `${row.project_name} overall % complete` };
+  return { value: choice.value, label: `${row.project_name} overall % complete` };
 }
 
 async function computeMilestoneRevenue(ref: ProgressSourceRef): Promise<ComputedProgress> {
@@ -131,7 +142,7 @@ async function computeTasksRollup(ref: ProgressSourceRef): Promise<ComputedProgr
   `);
   const row = rows.rows?.[0] || rows[0];
   if (!row || Number(row.n) === 0) return NULL_RESULT;
-  const pct = clampPct(Number(row.avg_pct));
+  const pct = toDisplayProgressPercent(row.avg_pct) ?? 0;
   return { value: pct, label: `${row.n} task${Number(row.n) === 1 ? "" : "s"} averaged` };
 }
 

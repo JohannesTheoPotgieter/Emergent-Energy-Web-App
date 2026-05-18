@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -60,6 +60,9 @@ export function CreatePersonalTaskDialog({ open, onOpenChange, onCreated }: Prop
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>New Personal Task</DialogTitle>
+          <DialogDescription>
+            Create a private follow-up that stays in your task command center until it is promoted or completed.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 py-1">
           <div>
