@@ -1,15 +1,15 @@
 import { db } from "../../db";
 import { changeSets, fieldChanges, type InsertChangeSet, type InsertFieldChange } from "@shared/schema";
 
-export function normalizeValue(val: any): string | null {
+export function normalizeValue(val: unknown): string | null {
   if (val === null || val === undefined) return null;
   if (typeof val === "object") return JSON.stringify(val);
   return String(val);
 }
 
 export function computeFieldDiffs(
-  oldRecord: Record<string, any>,
-  newRecord: Record<string, any>,
+  oldRecord: Record<string, unknown>,
+  newRecord: Record<string, unknown>,
   fieldsToTrack?: string[]
 ): Array<{ fieldName: string; oldValue: string | null; newValue: string | null; dataType: string }> {
   const diffs: Array<{ fieldName: string; oldValue: string | null; newValue: string | null; dataType: string }> = [];
@@ -62,8 +62,8 @@ export async function recordOverride(opts: {
   summary?: string;
   overrideCategory: string;
   overrideComment: string;
-  oldRecord: Record<string, any>;
-  newRecord: Record<string, any>;
+  oldRecord: Record<string, unknown>;
+  newRecord: Record<string, unknown>;
   fieldsToTrack?: string[];
 }): Promise<number> {
   const diffs = computeFieldDiffs(opts.oldRecord, opts.newRecord, opts.fieldsToTrack);
@@ -98,7 +98,7 @@ export async function recordImportChange(opts: {
   projectId?: number;
   action: string;
   summary?: string;
-  fileMetadata?: any;
+  fileMetadata?: unknown;
   fields?: Array<{ fieldName: string; oldValue: string | null; newValue: string | null; dataType?: string }>;
 }): Promise<number> {
   return createChangeSet({
@@ -129,8 +129,8 @@ export async function recordManualEdit(opts: {
   projectId?: number;
   action: string;
   summary?: string;
-  oldRecord: Record<string, any>;
-  newRecord: Record<string, any>;
+  oldRecord: Record<string, unknown>;
+  newRecord: Record<string, unknown>;
   fieldsToTrack?: string[];
 }): Promise<number> {
   const diffs = computeFieldDiffs(opts.oldRecord, opts.newRecord, opts.fieldsToTrack);

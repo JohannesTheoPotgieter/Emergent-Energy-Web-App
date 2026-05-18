@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 import * as fs from "fs";
 import * as path from "path";
-import type { WritebackMapping, WritebackAuditLog } from "@shared/schema";
+import type { WritebackMapping } from "@shared/schema";
 
 export interface WritebackResult {
   mappingId: number;
@@ -24,7 +24,7 @@ export interface WritebackBatchResult {
 function resolveSourceValue(
   sourceField: string,
   entityType: string,
-  data: Record<string, any>
+  data: Record<string, unknown>
 ): string | null {
   if (!data) return null;
   const value = data[sourceField];
@@ -90,7 +90,7 @@ function parseCellAddress(addr: string): { col: number; row: number } | null {
 
 export function executeWriteback(
   mappings: WritebackMapping[],
-  dataByEntity: Record<string, Record<string, any>[]>
+  dataByEntity: Record<string, Record<string, unknown>[]>
 ): WritebackBatchResult[] {
   const resultsByWorkbook = new Map<string, WritebackBatchResult>();
 
@@ -110,7 +110,7 @@ export function executeWriteback(
     batch.totalMappings++;
 
     const entities = dataByEntity[mapping.entityType] || [];
-    let entity: Record<string, any> | undefined;
+    let entity: Record<string, unknown> | undefined;
     if (mapping.projectName) {
       entity = entities.find((e) => e.projectName === mapping.projectName || e.project_name === mapping.projectName);
     } else {
@@ -265,7 +265,7 @@ export async function getWorkbookSheets(workbookPath: string): Promise<string[]>
 export async function previewWriteback(
   workbookPath: string,
   mappings: WritebackMapping[],
-  dataByEntity: Record<string, Record<string, any>[]>
+  dataByEntity: Record<string, Record<string, unknown>[]>
 ): Promise<Array<{
   mappingId: number;
   mappingName: string;
@@ -291,7 +291,7 @@ export async function previewWriteback(
     const currentValue = await readCellValue(workbookPath, mapping.sheetName, mapping.cellAddress);
 
     const entities = dataByEntity[mapping.entityType] || [];
-    let entity: Record<string, any> | undefined;
+    let entity: Record<string, unknown> | undefined;
     if (mapping.projectName) {
       entity = entities.find((e) => e.projectName === mapping.projectName || e.project_name === mapping.projectName);
     } else {

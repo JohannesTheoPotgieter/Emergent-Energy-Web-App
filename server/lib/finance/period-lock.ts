@@ -232,7 +232,7 @@ export async function checkCosPeriodLock(params: {
     .from(cosPeriodLocks)
     .where(
       and(
-        eq(cosPeriodLocks.periodMonth, period as any),
+        eq(cosPeriodLocks.periodMonth, period),
         isNull(cosPeriodLocks.unlockedAt),
       ),
     )
@@ -277,7 +277,7 @@ export async function lockCosPeriod(params: {
   const [row] = await db
     .insert(cosPeriodLocks)
     .values({
-      periodMonth: params.periodMonth as any,
+      periodMonth: params.periodMonth,
       lockedByUserId: params.lockedByUserId,
       autoLocked: params.autoLocked,
       notes: params.notes ?? null,
@@ -300,7 +300,7 @@ export async function unlockCosPeriod(params: {
     .from(cosPeriodLocks)
     .where(
       and(
-        eq(cosPeriodLocks.periodMonth, params.periodMonth as any),
+        eq(cosPeriodLocks.periodMonth, params.periodMonth),
         isNull(cosPeriodLocks.unlockedAt),
       ),
     )

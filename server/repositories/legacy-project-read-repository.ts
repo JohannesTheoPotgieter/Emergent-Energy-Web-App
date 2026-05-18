@@ -1,5 +1,5 @@
 import { desc, eq } from "drizzle-orm";
-import { projectInfo, type Project } from "@shared/schema";
+import { projectInfo, type Project, type ProjectInfo } from "@shared/schema";
 import { db } from "../db";
 import { mapProjectInfoToLegacyProject } from "../lib/legacy-project-mapper";
 import {
@@ -27,11 +27,11 @@ export class LegacyProjectReadRepository {
   async getAll(): Promise<Project[]> {
     try {
       const rows = await this.dbInstance.select().from(projectInfo).orderBy(desc(projectInfo.updatedAt));
-      return rows.map((p: any) => mapProjectInfoToLegacyProject(p));
+      return rows.map((p: ProjectInfo) => mapProjectInfoToLegacyProject(p));
     } catch (error) {
       if (shouldUseLegacyProjectInfoReadFallback(error)) {
         const rows = await listLegacyCompatibleProjectInfo(this.dbInstance);
-        return rows.map((p: any) => mapProjectInfoToLegacyProject(p));
+        return rows.map((p: ProjectInfo) => mapProjectInfoToLegacyProject(p));
       }
       throw error;
     }

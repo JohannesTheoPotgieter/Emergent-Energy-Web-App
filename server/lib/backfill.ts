@@ -1,19 +1,10 @@
 import { db } from "../db";
-import { normalizedCostLines, normalizedRevenueLines, projectInfo, type ProjectInfo } from "@shared/schema";
+import { normalizedCostLines } from "@shared/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { classifyExpenseState } from "./calculations/stateClassifier";
-import { computeExpenseLineHash, computeInflowLineHash } from "./calculations/hashing";
-import { forecastExpensePaymentDate, forecastInflowReceiptDate } from "./calculations/forecaster";
 import { extractSupplierName } from "./calculations/supplierExtractor";
-
-async function getProjectMap(): Promise<Map<string, ProjectInfo>> {
-  const projects = await db.select().from(projectInfo);
-  return new Map(projects.map((p: ProjectInfo) => [p.projectName, p]));
-}
 
 export async function backfillExpenseComputedFields(): Promise<{ updated: number }> {
   const costLines = await db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
-  const projectMap = await getProjectMap();
 
   let updated = 0;
   const batchSize = 200;
@@ -45,13 +36,18 @@ export async function backfillInflowComputedFields(): Promise<{ updated: number 
 }
 
 async function backfillExecutionPhase(): Promise<{ updated: number }> {
-  const result = await db.execute(sql`
-    UPDATE project_info 
-    SET execution_phase = phase 
-    WHERE phase IS NOT NULL 
+  const result: unknown = await db.execute(sql`
+    UPDATE project_info
+    SET execution_phase = phase
+    WHERE phase IS NOT NULL
     AND (execution_phase IS NULL OR execution_phase = '')
   `);
-  return { updated: (result as any).rowCount || 0 };
+  // pg QueryResult exposes rowCount; the dev SQLite path lacks it (defaults to 0).
+  const rowCount =
+    result && typeof result === "object" && "rowCount" in result
+      ? Number((result as { rowCount: number | null }).rowCount)
+      : 0;
+  return { updated: Number.isFinite(rowCount) ? rowCount : 0 };
 }
 
 export async function runBackfill(): Promise<void> {

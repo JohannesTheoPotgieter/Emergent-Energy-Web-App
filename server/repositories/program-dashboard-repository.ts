@@ -23,13 +23,151 @@ import {
   financeRevenueMonthly,
   financeCosMonthly,
   projectExecutionState,
+  type NormalizedCostLine,
+  type NormalizedRevenueLine,
+  type SmartImportRun,
+  type WorkItem,
+  type CashflowPoint,
+  type FinanceRevenueMonthly,
+  type FinanceCosMonthly,
 } from "@shared/schema";
 import { getAllPMWorkItemsAsProjectPlan } from "../work-items-adapter";
-import { computeProjectProgress, pctTo100 } from "../lib/kpi-formulas";
+import { computeProjectProgress } from "../lib/kpi-formulas";
 import { isDateBlack } from "../lib/calculations/stateClassifier";
 import { isCosRealised as isCosRealisedShared } from "../lib/calculations/financeUtils";
 import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { resolveProjectScope } from "../services/project-access-service";
+
+/** Loosely-shaped row from a dynamic source (raw SQL / adapter / storage). */
+type DynRow = Record<string, unknown>;
+
+/**
+ * Normalize a `db.execute()` result to its row array. Shape differs by
+ * driver: node-postgres returns `{ rows: [...] }`, others return an array.
+ */
+/** Coerce an unknown jsonb/column value to `string | null`. */
+function asStr(v: unknown): string | null {
+  return v == null ? null : typeof v === "string" ? v : String(v);
+}
+
+/** Coerce an unknown jsonb/column value to `number | null`. */
+function asNum(v: unknown): number | null {
+  if (v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function execRows(r: unknown): DynRow[] {
+  if (Array.isArray(r)) return r as DynRow[];
+  if (r && typeof r === "object" && "rows" in r) {
+    const rows = (r as { rows: unknown }).rows;
+    return Array.isArray(rows) ? (rows as DynRow[]) : [];
+  }
+  return [];
+}
+
+/**
+ * Accumulator row built per project while aggregating. Carries the public
+ * dashboard fields plus `_`-prefixed scratch counters that are stripped
+ * before the row is returned to the client.
+ */
+interface ProjectAccumulatorRow {
+  projectId: number;
+  projectName: string;
+  portfolio: string | null;
+  pm: string | null;
+  pd: string | null;
+  executionPhase: string | null;
+  rag: string;
+  ragUpdatedAt: string | null;
+  actualProgressPct: number;
+  expectedProgressPct: number;
+  scheduleVariancePct: number;
+  plannedRevenueFy: number;
+  receivedInflowFy: number;
+  openInflowFy: number;
+  plannedExpenditureFy: number;
+  paidExpenditureFy: number;
+  openExpenditureFy: number;
+  grossMarginPctFy: number | null;
+  engineeringStatus: string;
+  qualityStatus: string;
+  importFreshness: string;
+  importAgeDays: number | null;
+  criticalActionCount: number;
+  _taskWeight: number;
+  _taskActual: number;
+  _taskExpected: number;
+  _expCount: number;
+  _engOpen: number;
+  _qualityOpen: number;
+  _qualityHigh: number;
+  _approvalsPending: number;
+  _inflowRisk: number;
+  _outflowRisk: number;
+  __hasFyItem?: boolean;
+}
+
+// Chart-dataset accumulator bucket shapes. Each carries a string period key
+// plus numeric metric fields.
+interface MonthlyForecastBucket {
+  periodKey: string;
+  period: string;
+  plannedRevenue: number;
+  plannedCos: number;
+  grossProfit: number;
+}
+interface WeeklyCashflowBucket {
+  periodKey: string;
+  period: string;
+  plannedRevenue: number;
+  plannedExpenditure: number;
+  plannedCashflow: number;
+  actualCashflow: number;
+  forecastRevenue: number;
+  forecastExpenditure: number;
+}
+interface PhaseSummaryBucket {
+  phase: string;
+  projectCount: number;
+  contractValue: number;
+  openInflow: number;
+  openExpenditure: number;
+  averageProgress: number;
+  _progressSum: number;
+}
+interface PmSummaryBucket {
+  owner: string;
+  projectCount: number;
+  contractValue: number;
+  behindPlanCount: number;
+  onScheduleRate: number;
+  openInflow: number;
+  openExpenditure: number;
+  averageProgress: number;
+  _onScheduleCount: number;
+  _progressSum: number;
+}
+interface MilestonePipelineBucket {
+  periodKey: string;
+  period: string;
+  pdHandovers: number;
+  siteEstablishment: number;
+  commissioning: number;
+  omHandover: number;
+  clientHandover: number;
+}
+
+/**
+ * Add `delta` to a numeric field of `obj` selected by a dynamic key.
+ * Centralises the one place the dashboard needs string-keyed numeric
+ * accumulation so callers stay `any`-free.
+ */
+function addToNumericField<T extends object>(obj: T, key: string, delta: number): void {
+  const rec = obj as Record<string, unknown>;
+  const cur = typeof rec[key] === "number" ? (rec[key] as number) : 0;
+  rec[key] = cur + delta;
+}
 
 // ─── Public interfaces ─────────────────────────────────────────────────────
 
@@ -52,18 +190,18 @@ export interface ProgramDashboardFilters {
 
 /** Test-only: in-memory inputs to bypass all DB and service calls. */
 export interface ProgramDashboardInputs {
-  allProjectInfo: any[];
-  revenueRows: any[];
-  costRows: any[];
-  importRuns: any[];
-  engRows: any[];
-  approvalsRows: any[];
-  canonicalPlanTasks: any[];
-  qualityRows: any[];
-  usersRows: any[];
-  cashflowPointRows: any[];
-  financeRevenueRows: any[];
-  financeCosRows: any[];
+  allProjectInfo: DynRow[];
+  revenueRows: NormalizedRevenueLine[];
+  costRows: NormalizedCostLine[];
+  importRuns: SmartImportRun[];
+  engRows: WorkItem[];
+  approvalsRows: DynRow[];
+  canonicalPlanTasks: DynRow[];
+  qualityRows: DynRow[];
+  usersRows: DynRow[];
+  cashflowPointRows: CashflowPoint[];
+  financeRevenueRows: FinanceRevenueMonthly[];
+  financeCosRows: FinanceCosMonthly[];
 }
 
 export interface ProgramDashboardOptions {
@@ -106,18 +244,18 @@ export interface ProgramDashboardResult {
     projectOutflowsThisWeek: number;
   };
   actionCenter: {
-    projectsBehindPlan: any[];
-    inflowAtRisk: any[];
-    expenditureAtRisk: any[];
-    engineeringBottlenecks: any[];
-    qualityIssues: any[];
-    pendingApprovalsDecisions: any[];
+    projectsBehindPlan: DynRow[];
+    inflowAtRisk: DynRow[];
+    expenditureAtRisk: DynRow[];
+    engineeringBottlenecks: DynRow[];
+    qualityIssues: DynRow[];
+    pendingApprovalsDecisions: DynRow[];
   };
-  projects: any[];
+  projects: DynRow[];
   charts: {
     supportedChartTypes: string[];
-    presets: any[];
-    datasets: any[];
+    presets: DynRow[];
+    datasets: DynRow[];
   };
   options: {
     portfolios: string[];
@@ -150,7 +288,7 @@ export async function getProgramDashboardData(
     approvalRows,
     canonicalPlanTasks,
     qualityRows,
-    usersRows,
+    /* usersRows (index 8) intentionally skipped — not consumed here */ ,
     cashflowPointRows,
     financeRevenueRows,
     financeCosRows,
@@ -177,10 +315,10 @@ export async function getProgramDashboardData(
         db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
         db.select().from(smartImportRuns).where(eq(smartImportRuns.status, 'committed')),
         db.select().from(workItems).where(and(eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt))),
-        db.execute(sql`SELECT id, project_id, status, title, due_date, assigned_approver FROM approvals`).catch(() => ({ rows: [] })).then((r: any) => (r.rows ?? []) as any[]),
+        db.execute(sql`SELECT id, project_id, status, title, due_date, assigned_approver FROM approvals`).catch(() => ({ rows: [] })).then(execRows),
         getAllPMWorkItemsAsProjectPlan(),
-        db.execute(sql`SELECT id, project_id, project_name, severity, status, title, owner_user_id, due_date FROM qc_warning`).catch(() => ({ rows: [] })).then((r: any) => (r.rows ?? []) as any[]),
-        db.execute(sql`SELECT id, name FROM users`).then((r: any) => (r.rows ?? []) as any[]),
+        db.execute(sql`SELECT id, project_id, project_name, severity, status, title, owner_user_id, due_date FROM qc_warning`).catch(() => ({ rows: [] })).then(execRows),
+        db.execute(sql`SELECT id, name FROM users`).then(execRows),
         // Guard: skips historical snapshots where effectiveTo IS NOT NULL (cashflow_points)
         db.select().from(cashflowPoints).where(isNull(cashflowPoints.effectiveTo)),
         // Guard: skips historical snapshots where effectiveTo IS NOT NULL (finance_revenue_monthly)
@@ -207,13 +345,13 @@ export async function getProgramDashboardData(
   const revOverrides: Array<{ projectName: string; rowNumber: string; overrideValue: string }> = [];
   const cosOverrides: Array<{ projectName: string; rowNumber: string; overrideStatus: string }> = [];
 
-  const hasText = (v: any) => typeof v === 'string' && v.trim().length > 0;
-  const toNum = (v: any) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
-  const isBlack = (fontColor: any, confirmed?: boolean | null) => isDateBlack(confirmed ?? null, fontColor);
+  const hasText = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
+  const toNum = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+  const isBlack = (fontColor: string | null | undefined, confirmed?: boolean | null) => isDateBlack(confirmed ?? null, fontColor);
   const isInFy = (d: string | null | undefined) => !!(d && /^\d{4}-\d{2}-\d{2}/.test(d) && d >= fyStart && d <= fyEnd);
 
   const inBankOverrideSet = new Set(
-    revOverrides.filter((o: any) => o.overrideValue === "1").map((o: any) => `${o.projectName}::${o.rowNumber}`)
+    revOverrides.filter((o) => o.overrideValue === "1").map((o) => `${o.projectName}::${o.rowNumber}`)
   );
   const cosOverrideByKey = new Map<string, string>();
   for (const co of cosOverrides) {
@@ -225,35 +363,47 @@ export async function getProgramDashboardData(
     ? { kind: "full_oversight" as const }
     : await resolveProjectScope(opts.user.id, opts.user.role, opts.user.name);
 
-  const scopedProjectInfo = dashScope.kind === "full_oversight"
-    ? allProjectInfo
-    : allProjectInfo.filter((p: any) => (dashScope as any).projectIds.has(p.id));
+  const scopedIds =
+    dashScope.kind === "full_oversight" ? null : dashScope.projectIds;
+  const scopedProjectInfo = scopedIds
+    ? allProjectInfo.filter((p) => scopedIds.has(Number(p.id)))
+    : allProjectInfo;
 
-  const projectById = new Map<number, any>();
-  const projectByName = new Map<string, any>();
+  const projectById = new Map<number, DynRow>();
+  const projectByName = new Map<string, DynRow>();
   for (const p of scopedProjectInfo) {
-    if (p.id) projectById.set(p.id, p);
-    projectByName.set((p.projectName || '').toLowerCase(), p);
+    if (p.id) projectById.set(Number(p.id), p);
+    projectByName.set(String(p.projectName || '').toLowerCase(), p);
   }
 
-  const planRows = canonicalPlanTasks as any[];
+  const planRows = canonicalPlanTasks;
 
-  const rowsByProject = new Map<number, any>();
-  const ensureRow = (proj: any) => {
-    if (!rowsByProject.has(proj.id)) rowsByProject.set(proj.id, {
-      projectId: proj.id, projectName: proj.projectName, portfolio: proj.portfolio || null, pm: proj.pm || null, pd: proj.pd || null,
-      executionPhase: proj.executionPhase || proj.phase || null, rag: proj.ragStatus || 'UNKNOWN',
-      ragUpdatedAt: proj.ragUpdatedAt || null,
-      actualProgressPct: 0, expectedProgressPct: 0, scheduleVariancePct: 0,
-      plannedRevenueFy: 0, receivedInflowFy: 0, openInflowFy: 0,
-      plannedExpenditureFy: 0, paidExpenditureFy: 0, openExpenditureFy: 0, grossMarginPctFy: null,
-      engineeringStatus: 'On Track', qualityStatus: 'On Track', importFreshness: 'Critical', importAgeDays: null,
-      criticalActionCount: 0,
-      _taskWeight: 0, _taskActual: 0, _taskExpected: 0, _expCount: 0,
-      _engOpen: 0, _qualityOpen: 0, _qualityHigh: 0, _approvalsPending: 0,
-      _inflowRisk: 0, _outflowRisk: 0,
-    });
-    return rowsByProject.get(proj.id);
+  const rowsByProject = new Map<number, ProjectAccumulatorRow>();
+  const ensureRow = (proj: DynRow): ProjectAccumulatorRow => {
+    const projId = Number(proj.id);
+    let row = rowsByProject.get(projId);
+    if (!row) {
+      row = {
+        projectId: projId,
+        projectName: String(proj.projectName ?? ''),
+        portfolio: (proj.portfolio as string) || null,
+        pm: (proj.pm as string) || null,
+        pd: (proj.pd as string) || null,
+        executionPhase: (proj.executionPhase as string) || (proj.phase as string) || null,
+        rag: (proj.ragStatus as string) || 'UNKNOWN',
+        ragUpdatedAt: (proj.ragUpdatedAt as string) || null,
+        actualProgressPct: 0, expectedProgressPct: 0, scheduleVariancePct: 0,
+        plannedRevenueFy: 0, receivedInflowFy: 0, openInflowFy: 0,
+        plannedExpenditureFy: 0, paidExpenditureFy: 0, openExpenditureFy: 0, grossMarginPctFy: null,
+        engineeringStatus: 'On Track', qualityStatus: 'On Track', importFreshness: 'Critical', importAgeDays: null,
+        criticalActionCount: 0,
+        _taskWeight: 0, _taskActual: 0, _taskExpected: 0, _expCount: 0,
+        _engOpen: 0, _qualityOpen: 0, _qualityHigh: 0, _approvalsPending: 0,
+        _inflowRisk: 0, _outflowRisk: 0,
+      };
+      rowsByProject.set(projId, row);
+    }
+    return row;
   };
 
   const committedProjectIds = new Set<number>();
@@ -264,24 +414,26 @@ export async function getProgramDashboardData(
     committedProjectNames.add((r.projectName || '').toLowerCase());
     const proj = r.projectId ? projectById.get(r.projectId) : projectByName.get((r.projectName || '').toLowerCase());
     if (!proj) continue;
-    const stamp = ((r.committedAt as any) || (r.uploadedAt as any) || null);
+    const stamp = r.committedAt || r.uploadedAt || null;
     if (!stamp) continue;
     const s = new Date(stamp).toISOString();
-    const prev = latestImportByProject.get(proj.id);
-    if (!prev || s > prev) latestImportByProject.set(proj.id, s);
+    const projId = Number(proj.id);
+    const prev = latestImportByProject.get(projId);
+    if (!prev || s > prev) latestImportByProject.set(projId, s);
   }
 
   // Group plan tasks by project for leaf-task identification
-  const planTasksByProjectId = new Map<number, any[]>();
+  const planTasksByProjectId = new Map<number, DynRow[]>();
   for (const t of planRows) {
     const proj = t.projectId ? projectById.get(Number(t.projectId)) : projectByName.get(String(t.projectName || '').toLowerCase());
     if (!proj) continue;
     const row = ensureRow(proj);
-    const wiStart = (t.actualStart || t.startDate || '').slice(0,10);
-    const wiEnd = (t.actualEnd || t.endDate || '').slice(0,10);
+    const projId = Number(proj.id);
+    const wiStart = (String(t.actualStart || t.startDate || '')).slice(0,10);
+    const wiEnd = (String(t.actualEnd || t.endDate || '')).slice(0,10);
     if (wiStart && wiEnd && wiStart <= fyEnd && wiEnd >= fyStart) row.__hasFyItem = true;
-    if (!planTasksByProjectId.has(proj.id)) planTasksByProjectId.set(proj.id, []);
-    planTasksByProjectId.get(proj.id)!.push(t);
+    if (!planTasksByProjectId.has(projId)) planTasksByProjectId.set(projId, []);
+    planTasksByProjectId.get(projId)!.push(t);
   }
 
   // Per-project Actual % / Expected % via the canonical formula in
@@ -293,18 +445,18 @@ export async function getProgramDashboardData(
     if (!row) continue;
 
     const progress = computeProjectProgress(
-      tasks.map((t: any) => ({
-        taskNo: t.taskNo ?? null,
-        rowNumber: t.rowNumber ?? null,
-        parentRowNumber: t.parentRowNumber ?? null,
-        indentLevel: t.indentLevel ?? null,
-        durationDays: t.durationDays ?? null,
-        actualPctComplete: t.actualPctComplete ?? null,
-        expectedPctComplete: t.expectedPctComplete ?? null,
-        startDate: t.startDate ?? null,
-        endDate: t.endDate ?? null,
-        actualStartDate: t.actualStart ?? null,
-        actualEndDate: t.actualEnd ?? null,
+      tasks.map((t) => ({
+        taskNo: asStr(t.taskNo),
+        rowNumber: asNum(t.rowNumber),
+        parentRowNumber: asNum(t.parentRowNumber),
+        indentLevel: asNum(t.indentLevel),
+        durationDays: asNum(t.durationDays),
+        actualPctComplete: asNum(t.actualPctComplete),
+        expectedPctComplete: asNum(t.expectedPctComplete),
+        startDate: asStr(t.startDate),
+        endDate: asStr(t.endDate),
+        actualStartDate: asStr(t.actualStart),
+        actualEndDate: asStr(t.actualEnd),
       })),
       today,
     );
@@ -360,8 +512,8 @@ export async function getProgramDashboardData(
         invoiceDateConfirmed: c.invoiceDateConfirmed,
         invoiceDateFontColor: c.invoiceDateFontColor,
         _cosOverrideStatus: cosOverrideStatus ?? null,
-        cosStatusOverride: (c as any).cosStatusOverride ?? null,
-        cosRealised: (c as any).cosRealised ?? null,
+        cosStatusOverride: c.cosStatusOverride ?? null,
+        cosRealised: c.cosRealised ?? null,
       });
       if (isRealised) cosRealisedMonth += amt;
     }
@@ -392,7 +544,7 @@ export async function getProgramDashboardData(
     if (String(a.status || '').toLowerCase() === 'pending') row._approvalsPending += 1;
   }
 
-  let projects = Array.from(rowsByProject.values()).filter((row: any) => {
+  let projects = Array.from(rowsByProject.values()).filter((row) => {
     const info = projectById.get(row.projectId);
     if (!info) return false;
     const isActive = info.archivedStatus === 'ACTIVE' && info.isActive !== false;
@@ -400,7 +552,7 @@ export async function getProgramDashboardData(
     return isActive && hasImport && !!row.__hasFyItem;
   });
 
-  projects.forEach((row: any) => {
+  projects.forEach((row) => {
     row.actualProgressPct = row._taskWeight > 0 ? row._taskActual / row._taskWeight : 0;
     row.expectedProgressPct = (row._expCount || row._taskWeight) > 0 ? row._taskExpected / (row._expCount || row._taskWeight) : 0;
     row.scheduleVariancePct = row.actualProgressPct - row.expectedProgressPct;
@@ -425,8 +577,8 @@ export async function getProgramDashboardData(
 
   // Apply query-param filters
   const f = opts.filters;
-  const includes = (a: any, v: string | undefined) => !v || String(a || '').toLowerCase() === v.toLowerCase();
-  projects = projects.filter((p: any) => {
+  const includes = (a: unknown, v: string | undefined) => !v || String(a || '').toLowerCase() === v.toLowerCase();
+  projects = projects.filter((p) => {
     if (f.search && !String(p.projectName || '').toLowerCase().includes(f.search.toLowerCase())) return false;
     if (!includes(p.portfolio, f.portfolio)) return false;
     if (!includes(p.pm, f.pm)) return false;
@@ -444,14 +596,14 @@ export async function getProgramDashboardData(
     return true;
   });
 
-  const visibleProjectNames = new Set(projects.map((p: any) => String(p.projectName || '').toLowerCase()));
-  const visibleProjectIds = new Set(projects.map((p: any) => Number(p.projectId)).filter((id: number) => Number.isFinite(id)));
-  const visibleProjectInfo = scopedProjectInfo.filter((info: any) => visibleProjectIds.has(Number(info.id)));
+  const visibleProjectNames = new Set(projects.map((p) => String(p.projectName || '').toLowerCase()));
+  const visibleProjectIds = new Set(projects.map((p) => Number(p.projectId)).filter((id) => Number.isFinite(id)));
+  const visibleProjectInfo = scopedProjectInfo.filter((info) => visibleProjectIds.has(Number(info.id)));
 
   // ── Excel Program Dashboard parity KPIs ─────────────────────────────────
 
   // On Schedule Rate (C3): % of visible projects where actual >= expected - 5%
-  const onScheduleCount = projects.filter((p: any) => p.actualProgressPct >= p.expectedProgressPct - 5).length;
+  const onScheduleCount = projects.filter((p) => p.actualProgressPct >= p.expectedProgressPct - 5).length;
   const onScheduleRate = projects.length > 0 ? (onScheduleCount / projects.length) * 100 : 0;
 
   // Contract Completeness (E3): % with CP signed AND EPC contract signed.
@@ -520,16 +672,16 @@ export async function getProgramDashboardData(
   const weekLabel = (dateKey: string) => {
     try { return format(new Date(`${dateKey}T00:00:00`), "dd MMM"); } catch { return dateKey; }
   };
-  const toDateKey = (value: any) => {
+  const toDateKey = (value: unknown) => {
     if (typeof value !== 'string') return null;
     const trimmed = value.trim();
     return /^\d{4}-\d{2}-\d{2}/.test(trimmed) ? trimmed.slice(0, 10) : null;
   };
-  const toMonthKey = (value: any) => {
+  const toMonthKey = (value: unknown) => {
     const dateKey = toDateKey(value);
     return dateKey ? dateKey.slice(0, 7) : null;
   };
-  const toWeekStartKey = (value: any) => {
+  const toWeekStartKey = (value: unknown) => {
     const dateKey = toDateKey(value);
     if (!dateKey) return null;
     const date = new Date(`${dateKey}T00:00:00`);
@@ -539,14 +691,15 @@ export async function getProgramDashboardData(
     date.setDate(date.getDate() + diff);
     return date.toISOString().slice(0, 10);
   };
-  const ensureBucket = (map: Map<string, any>, key: string, factory: () => any) => {
-    if (!map.has(key)) map.set(key, factory());
-    return map.get(key);
+  const ensureBucket = <T>(map: Map<string, T>, key: string, factory: () => T): T => {
+    let v = map.get(key);
+    if (v === undefined) { v = factory(); map.set(key, v); }
+    return v;
   };
 
   // ── Chart datasets ───────────────────────────────────────────────────────
   const chartDatasets = (() => {
-    const monthlyForecastMap = new Map<string, any>();
+    const monthlyForecastMap = new Map<string, MonthlyForecastBucket>();
     for (const row of financeRevenueRows) {
       if (!visibleProjectNames.has(String(row.projectName || '').toLowerCase())) continue;
       const monthKey = toMonthKey(row.monthEndDate);
@@ -590,10 +743,10 @@ export async function getProgramDashboardData(
       }
     }
     const monthlyForecastRows = Array.from(monthlyForecastMap.values())
-      .sort((a: any, b: any) => a.periodKey.localeCompare(b.periodKey))
-      .map((row: any) => ({ ...row, grossProfit: row.plannedRevenue - row.plannedCos }));
+      .sort((a, b) => a.periodKey.localeCompare(b.periodKey))
+      .map((row) => ({ ...row, grossProfit: row.plannedRevenue - row.plannedCos }));
 
-    const weeklyCashflowMap = new Map<string, any>();
+    const weeklyCashflowMap = new Map<string, WeeklyCashflowBucket>();
     const cashflowMetricMap: Record<string, string> = {
       "planned revenue": "plannedRevenue",
       "planned expenditure": "plannedExpenditure",
@@ -612,7 +765,7 @@ export async function getProgramDashboardData(
         actualCashflow: 0, forecastRevenue: 0, forecastExpenditure: 0,
       }));
       const metricKey = cashflowMetricMap[String(row.seriesName || '').toLowerCase()];
-      if (metricKey) bucket[metricKey] += toNum(row.value);
+      if (metricKey) addToNumericField(bucket, metricKey, toNum(row.value));
     }
     if (weeklyCashflowMap.size === 0) {
       for (const row of revenueRows) {
@@ -640,22 +793,24 @@ export async function getProgramDashboardData(
             actualCashflow: 0, forecastRevenue: 0, forecastExpenditure: 0,
           }));
           bucket.plannedExpenditure += toNum(row.amountExVat);
-          if (isRevenueSettled({ paidDate: row.paidDate, paidDateConfirmed: (row as any).paidDateConfirmed, paidDateFontColor: row.paidDateFontColor, inBankDate: (row as any).inBankDate })) {
+          // NCL has no in_bank_date column; the prior `(row as any).inBankDate`
+          // resolved to undefined at runtime, so it is correctly omitted here.
+          if (isRevenueSettled({ paidDate: row.paidDate, paidDateConfirmed: row.paidDateConfirmed, paidDateFontColor: row.paidDateFontColor })) {
             bucket.actualCashflow -= toNum(row.amountExVat);
           }
         }
       }
     }
     const weeklyCashflowRows = Array.from(weeklyCashflowMap.values())
-      .sort((a: any, b: any) => a.periodKey.localeCompare(b.periodKey))
-      .map((row: any) => ({
+      .sort((a, b) => a.periodKey.localeCompare(b.periodKey))
+      .map((row) => ({
         ...row,
         plannedCashflow: row.plannedCashflow || (row.plannedRevenue - row.plannedExpenditure),
         forecastRevenue: row.forecastRevenue || row.plannedRevenue,
         forecastExpenditure: row.forecastExpenditure || row.plannedExpenditure,
       }));
 
-    const phaseSummaryMap = new Map<string, any>();
+    const phaseSummaryMap = new Map<string, PhaseSummaryBucket>();
     for (const project of projects) {
       const key = String(project.executionPhase || project.rag || 'Unspecified');
       const bucket = ensureBucket(phaseSummaryMap, key, () => ({
@@ -670,8 +825,8 @@ export async function getProgramDashboardData(
       bucket._progressSum += toNum(project.actualProgressPct);
     }
     const phaseSummaryRows = Array.from(phaseSummaryMap.values())
-      .sort((a: any, b: any) => b.projectCount - a.projectCount)
-      .map((row: any) => ({
+      .sort((a, b) => b.projectCount - a.projectCount)
+      .map((row) => ({
         phase: row.phase, projectCount: row.projectCount, contractValue: row.contractValue,
         openInflow: row.openInflow, openExpenditure: row.openExpenditure,
         averageProgress: row.projectCount ? row._progressSum / row.projectCount : 0,
@@ -707,7 +862,7 @@ export async function getProgramDashboardData(
       }
     }
 
-    const pmSummaryMap = new Map<string, any>();
+    const pmSummaryMap = new Map<string, PmSummaryBucket>();
     for (const project of projects) {
       const key = String(project.pm || 'Unassigned');
       const bucket = ensureBucket(pmSummaryMap, key, () => ({
@@ -725,8 +880,8 @@ export async function getProgramDashboardData(
       bucket._progressSum += toNum(project.actualProgressPct);
     }
     const pmSummaryRows = Array.from(pmSummaryMap.values())
-      .sort((a: any, b: any) => b.contractValue - a.contractValue)
-      .map((row: any) => {
+      .sort((a, b) => b.contractValue - a.contractValue)
+      .map((row) => {
         const dateAcc = pmDateAccumulators.get(row.owner);
         return {
           owner: row.owner, projectCount: row.projectCount, contractValue: row.contractValue,
@@ -743,7 +898,7 @@ export async function getProgramDashboardData(
         };
       });
 
-    const milestonePipelineMap = new Map<string, any>();
+    const milestonePipelineMap = new Map<string, MilestonePipelineBucket>();
     const milestoneFields = [
       { key: "pdHandovers", label: "PD Handover", planned: "pdHandoverDate", actual: "pdHandoverActual" },
       { key: "siteEstablishment", label: "Site Establishment", planned: "constructionStartDate", actual: "constructionStartActual" },
@@ -753,18 +908,20 @@ export async function getProgramDashboardData(
     ];
     for (const info of visibleProjectInfo) {
       for (const field of milestoneFields) {
-        const milestoneDate = toDateKey(field.actual ? info[field.actual] || info[field.planned] : info[field.planned]);
+        const milestoneDate = toDateKey(
+          field.actual ? info[field.actual] || info[field.planned] : info[field.planned],
+        );
         if (!milestoneDate || milestoneDate < fyStart || milestoneDate > fyEnd) continue;
         const monthKey = milestoneDate.slice(0, 7);
         const bucket = ensureBucket(milestonePipelineMap, monthKey, () => ({
           periodKey: monthKey, period: monthLabel(monthKey),
           pdHandovers: 0, siteEstablishment: 0, commissioning: 0, omHandover: 0, clientHandover: 0,
         }));
-        bucket[field.key] += 1;
+        addToNumericField(bucket, field.key, 1);
       }
     }
     const milestonePipelineRows = Array.from(milestonePipelineMap.values())
-      .sort((a: any, b: any) => a.periodKey.localeCompare(b.periodKey));
+      .sort((a, b) => a.periodKey.localeCompare(b.periodKey));
 
     const nextTenDays = new Date(`${today}T00:00:00`);
     nextTenDays.setDate(nextTenDays.getDate() + 10);
@@ -888,10 +1045,19 @@ export async function getProgramDashboardData(
     return { supportedChartTypes: ["line", "area", "bar", "composed"], presets, datasets };
   })();
 
-  const sum = (field: string) => projects.reduce((a: number, p: any) => a + toNum(p[field]), 0);
-  const avg = (field: string) => projects.length ? sum(field) / projects.length : 0;
+  const sum = (field: keyof ProjectAccumulatorRow) =>
+    projects.reduce((a, p) => a + toNum(p[field]), 0);
+  const avg = (field: keyof ProjectAccumulatorRow) =>
+    projects.length ? sum(field) / projects.length : 0;
 
-  const actionRows = (items: any[]) => items.map((x: any) => ({
+  // Action-center items carry the project row plus issue annotations.
+  type ActionItem = ProjectAccumulatorRow & {
+    issueTitle?: string;
+    severity?: string;
+    owner?: string | null;
+    dueDate?: string | null;
+  };
+  const actionRows = (items: ActionItem[]): DynRow[] => items.map((x) => ({
     projectId: x.projectId,
     project: x.projectName,
     issueTitle: x.issueTitle,
@@ -908,42 +1074,42 @@ export async function getProgramDashboardData(
 
   const fmtR = (v: number) => `R${Math.round(v).toLocaleString()}`;
 
-  const behind = actionRows(projects.filter((p: any) => p.actualProgressPct < p.expectedProgressPct - 5).map((p: any) => ({
+  const behind = actionRows(projects.filter((p) => p.actualProgressPct < p.expectedProgressPct - 5).map((p) => ({
     ...p, issueTitle: `Actual ${Number(p.actualProgressPct).toFixed(1)}% vs Expected ${Number(p.expectedProgressPct).toFixed(1)}%`,
     severity: (p.expectedProgressPct - p.actualProgressPct) > 15 ? 'Critical' : 'High', owner: p.pm,
   })));
-  const inflow = actionRows(projects.filter((p: any) => p._inflowRisk > 0).map((p: any) => {
+  const inflow = actionRows(projects.filter((p) => p._inflowRisk > 0).map((p) => {
     const openPct = p.plannedRevenueFy > 0 ? Math.round((p.openInflowFy / p.plannedRevenueFy) * 100) : 0;
     return { ...p, issueTitle: `${fmtR(p.openInflowFy)} open of ${fmtR(p.plannedRevenueFy)} planned (${openPct}% outstanding)`, severity: openPct > 60 ? 'Critical' : 'High', owner: p.pm };
   }));
-  const outflow = actionRows(projects.filter((p: any) => p._outflowRisk > 0).map((p: any) => {
+  const outflow = actionRows(projects.filter((p) => p._outflowRisk > 0).map((p) => {
     const openPct = p.plannedExpenditureFy > 0 ? Math.round((p.openExpenditureFy / p.plannedExpenditureFy) * 100) : 0;
     return { ...p, issueTitle: `${fmtR(p.openExpenditureFy)} open of ${fmtR(p.plannedExpenditureFy)} planned (${openPct}% outstanding)`, severity: openPct > 60 ? 'Critical' : 'High', owner: p.pm };
   }));
-  const eng = actionRows(projects.filter((p: any) => p._engOpen > 0).map((p: any) => ({
+  const eng = actionRows(projects.filter((p) => p._engOpen > 0).map((p) => ({
     ...p, issueTitle: `${p._engOpen} open engineering blocker${p._engOpen !== 1 ? 's' : ''}`,
     severity: p._engOpen >= 5 ? 'Critical' : 'High', owner: p.pm,
   })));
-  const qual = actionRows(projects.filter((p: any) => p._qualityOpen > 0).map((p: any) => ({
+  const qual = actionRows(projects.filter((p) => p._qualityOpen > 0).map((p) => ({
     ...p, issueTitle: `${p._qualityOpen} open quality issue${p._qualityOpen !== 1 ? 's' : ''}${p._qualityHigh > 0 ? ` (${p._qualityHigh} high)` : ''}`,
     severity: p._qualityHigh >= 2 ? 'Critical' : p._qualityHigh >= 1 ? 'High' : 'Medium', owner: p.pm,
   })));
-  const pending = actionRows(projects.filter((p: any) => p._approvalsPending > 0).map((p: any) => ({
+  const pending = actionRows(projects.filter((p) => p._approvalsPending > 0).map((p) => ({
     ...p, issueTitle: `${p._approvalsPending} pending approval${p._approvalsPending !== 1 ? 's' : ''}`,
     severity: p._approvalsPending >= 3 ? 'Critical' : 'High', owner: p.pm,
   })));
 
   // Suspicious NULLs: invoice reference present but amount is null (silently coerced to 0).
   let nullCount = 0;
-  for (const r of revenueRows as any[]) {
-    const rawAmt = (r as any).amountExVat;
+  for (const r of revenueRows) {
+    const rawAmt = r.amountExVat;
     const hasAmt = rawAmt != null && rawAmt !== "" && Number.isFinite(parseFloat(String(rawAmt)));
-    if (!hasAmt && !!((r as any).invoiceNumber && String((r as any).invoiceNumber).trim())) nullCount += 1;
+    if (!hasAmt && !!(r.invoiceNumber && String(r.invoiceNumber).trim())) nullCount += 1;
   }
-  for (const r of costRows as any[]) {
-    const rawAmt = (r as any).amountExVat;
+  for (const r of costRows) {
+    const rawAmt = r.amountExVat;
     const hasAmt = rawAmt != null && rawAmt !== "" && Number.isFinite(parseFloat(String(rawAmt)));
-    if (!hasAmt && !!((r as any).invoiceNumber && String((r as any).invoiceNumber).trim())) nullCount += 1;
+    if (!hasAmt && !!(r.invoiceNumber && String(r.invoiceNumber).trim())) nullCount += 1;
   }
 
   return {
@@ -952,7 +1118,7 @@ export async function getProgramDashboardData(
       activeDashboardProjects: projects.length,
       averageActualProgressPct: avg('actualProgressPct'),
       averageExpectedProgressPct: avg('expectedProgressPct'),
-      projectsBehindPlan: projects.filter((p: any) => p.actualProgressPct < p.expectedProgressPct - 5).length,
+      projectsBehindPlan: projects.filter((p) => p.actualProgressPct < p.expectedProgressPct - 5).length,
       plannedRevenueFy: sum('plannedRevenueFy'),
       receivedInflowFy: sum('receivedInflowFy'),
       openInflowFy: sum('openInflowFy'),
@@ -964,7 +1130,7 @@ export async function getProgramDashboardData(
       openEngineeringBlockers: sum('_engOpen'),
       openQualityWarnings: sum('_qualityOpen'),
       pendingApprovals: sum('_approvalsPending'),
-      staleImports: projects.filter((p: any) => p.importFreshness !== 'Fresh').length,
+      staleImports: projects.filter((p) => p.importFreshness !== 'Fresh').length,
       cosPlannedMonth,
       cosRealisedMonth,
       currentMonth: currentMonthKey,
@@ -983,14 +1149,23 @@ export async function getProgramDashboardData(
       qualityIssues: qual,
       pendingApprovalsDecisions: pending,
     },
-    projects: projects.map(({ _taskWeight, _taskActual, _taskExpected, _expCount, _engOpen, _qualityOpen, _qualityHigh, _approvalsPending, _inflowRisk, _outflowRisk, __hasFyItem, ...rest }: any) => rest),
+    // Strip the `_`/`__`-prefixed scratch counters before returning the
+    // public project rows (explicit projection avoids unused-binding noise
+    // from a discard-destructure).
+    projects: projects.map((p) => {
+      const publicRow: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(p)) {
+        if (!k.startsWith("_")) publicRow[k] = v;
+      }
+      return publicRow;
+    }),
     charts: chartDatasets,
     options: {
-      portfolios: Array.from(new Set(projects.map((p: any) => p.portfolio).filter(Boolean))).sort() as string[],
-      pms: Array.from(new Set(projects.map((p: any) => p.pm).filter(Boolean))).sort() as string[],
-      pds: Array.from(new Set(projects.map((p: any) => p.pd).filter(Boolean))).sort() as string[],
-      executionPhases: Array.from(new Set(projects.map((p: any) => p.executionPhase).filter(Boolean))).sort() as string[],
-      rags: Array.from(new Set(projects.map((p: any) => p.rag).filter(Boolean))).sort() as string[],
+      portfolios: Array.from(new Set(projects.map((p) => p.portfolio).filter(Boolean))).sort() as string[],
+      pms: Array.from(new Set(projects.map((p) => p.pm).filter(Boolean))).sort() as string[],
+      pds: Array.from(new Set(projects.map((p) => p.pd).filter(Boolean))).sort() as string[],
+      executionPhases: Array.from(new Set(projects.map((p) => p.executionPhase).filter(Boolean))).sort() as string[],
+      rags: Array.from(new Set(projects.map((p) => p.rag).filter(Boolean))).sort() as string[],
     },
     nullCount,
   };

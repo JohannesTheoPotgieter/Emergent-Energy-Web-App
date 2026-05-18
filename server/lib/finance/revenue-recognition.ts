@@ -110,7 +110,7 @@ export function sumRealisedRevenueRecognition(
     if (amt === 0) continue;
     const mk = getCosMonthKey(line);
     if (!mk) continue;
-    if (!isEffectivelyRealised(line as any, mk, currentMonthKey)) continue;
+    if (!isEffectivelyRealised(line, mk, currentMonthKey)) continue;
     total += amt;
   }
   return total;
@@ -131,7 +131,7 @@ export function sumRealisedRevenueRecognitionByProject(
     if (amt === 0) continue;
     const mk = getCosMonthKey(line);
     if (!mk) continue;
-    if (!isEffectivelyRealised(line as any, mk, currentMonthKey)) continue;
+    if (!isEffectivelyRealised(line, mk, currentMonthKey)) continue;
     const pName = stripTrackerSuffix(line.projectName);
     if (!pName) continue;
     out.set(pName, (out.get(pName) || 0) + amt);

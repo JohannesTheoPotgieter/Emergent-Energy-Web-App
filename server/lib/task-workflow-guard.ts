@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { hasDeliverableRequirementFlag } from "@shared/task-deliverable-requirement";
 import { db } from "../db";
 import { workItems, taskDeliverables } from "@shared/schema";

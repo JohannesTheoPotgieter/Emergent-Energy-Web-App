@@ -1,5 +1,26 @@
 import type { NormalizedCostLine, NormalizedRevenueLine } from "@shared/schema";
 
+/**
+ * The adapters below read a few fields that are NOT on the canonical
+ * `normalized_*_lines` schema types — they are added at runtime by
+ * upstream enrichment joins / aliased projections (QB allocation totals,
+ * snapshot-run commit timestamp, legacy `inBank`/`source`/`lastEditedAt`).
+ * Modelled as optional so the access is type-safe without `any`; absent
+ * fields resolve to `null` exactly as before.
+ */
+type EnrichedCostLine = NormalizedCostLine & {
+  source?: string | null;
+  lastEditedAt?: Date | string | null;
+  lineAssignedQbExVat?: number | string | null;
+  lineRealisedAmountExVat?: number | string | null;
+  lineUnrealisedRemainderExVat?: number | string | null;
+  snapshotRunCommittedAt?: Date | string | null;
+};
+type EnrichedRevenueLine = NormalizedRevenueLine & {
+  inBank?: number | string | boolean | null;
+  snapshotRunCommittedAt?: Date | string | null;
+};
+
 export function mapCostToExpenseInput(cost: NormalizedCostLine) {
   return {
     expensePaymentDate: cost.paidDate,
@@ -53,7 +74,8 @@ export function createNameResolver(projectInfoNames: ReadonlyArray<string | null
   };
 }
 
-export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: string): any {
+export function adaptCostToExpense(costInput: NormalizedCostLine, resolvedName: string) {
+  const cost = costInput as EnrichedCostLine;
   const rawInvoiceDateConfirmed = cost.invoiceDateConfirmed;
   const rawPaidDateConfirmed = cost.paidDateConfirmed;
   const invoiceDateFontColor = cost.invoiceDateFontColor ?? null;
@@ -80,15 +102,15 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
   else if (hasInvoice && hasInvoiceDate && invoiceDateActual) computedState = "Invoiced";
   else if (hasPO || hasInvoice) computedState = "Committed";
 
-  const effectivePaidDate = cost.paidDate || (cost as any).forecastPaymentDate || null;
-  const effectivePaidDateFontColor = cost.paidDate ? paymentDateFontColor : ((cost as any).forecastPaymentDate ? (paymentDateFontColor || "red") : null);
-  const effectivePaidDateConfirmed = cost.paidDate ? (rawPaidDateConfirmed ?? false) : ((cost as any).forecastPaymentDate ? (rawPaidDateConfirmed ?? false) : false);
+  const effectivePaidDate = cost.paidDate || cost.forecastPaymentDate || null;
+  const effectivePaidDateFontColor = cost.paidDate ? paymentDateFontColor : (cost.forecastPaymentDate ? (paymentDateFontColor || "red") : null);
+  const effectivePaidDateConfirmed = cost.paidDate ? (rawPaidDateConfirmed ?? false) : (cost.forecastPaymentDate ? (rawPaidDateConfirmed ?? false) : false);
 
   return {
     id: -cost.id,
     projectName: resolvedName,
-    projectId: (cost as any).projectId ?? null,
-    rowNumber: (cost as any).sourceRow || cost.id,
+    projectId: cost.projectId ?? null,
+    rowNumber: cost.sourceRow || cost.id,
     rowType: "item",
     expenseCategory: cost.costCategory || "General",
     expenseLineItem: cost.description,
@@ -98,14 +120,14 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
     expenseActualTotal: cost.amountExVat,
     quotedTotal: cost.amountExVat,
     expensePoNumber: cost.poNumber,
-    budgetQty: (cost as any).budgetQty ?? null,
-    budgetRateUnit: (cost as any).budgetRate ?? null,
-    budgetTotal: (cost as any).budgetTotal ?? null,
-    budgetCosTotal: (cost as any).budgetCos ?? null,
+    budgetQty: cost.budgetQty ?? null,
+    budgetRateUnit: cost.budgetRate ?? null,
+    budgetTotal: cost.budgetTotal ?? null,
+    budgetCosTotal: cost.budgetCos ?? null,
     actualCosTotal: cost.amountExVat,
     approvedDate: cost.approvedDate ?? null,
-    status: (cost as any).status ?? null,
-    forecastPaymentDate: (cost as any).forecastPaymentDate ?? null,
+    status: cost.status ?? null,
+    forecastPaymentDate: cost.forecastPaymentDate ?? null,
     computedForecastPaymentDate: null,
     computedState,
     invoiceDateConfirmed: rawInvoiceDateConfirmed ?? false,
@@ -114,59 +136,60 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
     paymentDateFontColor: effectivePaidDateFontColor,
     supplierName: cost.counterpartyName,
     noRevenueLinked: cost.noRevenueLinked ?? false,
-    subProjectName: (cost as any).subProjectName ?? null,
-    revenueRecognitionAmount: (cost as any).revenueRecognitionAmount ?? null,
-    adminDateOverride: (cost as any).adminDateOverride ?? null,
-    adminDateOverrideReason: (cost as any).adminDateOverrideReason ?? null,
-    adminDateOverrideBy: (cost as any).adminDateOverrideBy ?? null,
-    adminDateOverrideAt: (cost as any).adminDateOverrideAt ?? null,
-    source: (cost as any).source ?? null,
-    updatedAt: (cost as any).updatedAt ?? null,
-    lastEditedAt: (cost as any).lastEditedAt ?? null,
-    createdAt: (cost as any).createdAt ?? null,
-    effectiveFrom: (cost as any).effectiveFrom ?? null,
+    subProjectName: cost.subProjectName ?? null,
+    revenueRecognitionAmount: cost.revenueRecognitionAmount ?? null,
+    adminDateOverride: cost.adminDateOverride ?? null,
+    adminDateOverrideReason: cost.adminDateOverrideReason ?? null,
+    adminDateOverrideBy: cost.adminDateOverrideBy ?? null,
+    adminDateOverrideAt: cost.adminDateOverrideAt ?? null,
+    source: cost.source ?? null,
+    updatedAt: cost.updatedAt ?? null,
+    lastEditedAt: cost.lastEditedAt ?? null,
+    createdAt: cost.createdAt ?? null,
+    effectiveFrom: cost.effectiveFrom ?? null,
     _isNormalized: true,
-    _sourceRow: (cost as any).sourceRow || cost.id,
-    cosRealised: (cost as any).cosRealised ?? false, // canonical field name for isCosRealised() consumers
-    _cosRealisedFlag: (cost as any).cosRealised ?? false, // backward-compat alias
-    _cosOverrideStatus: (cost as any).cosStatusOverride ?? null,
-    cosStatusOverride: (cost as any).cosStatusOverride ?? null, // canonical field name
-    lineAssignedQbExVat: (cost as any).lineAssignedQbExVat ?? null,
-    lineRealisedAmountExVat: (cost as any).lineRealisedAmountExVat ?? null,
-    lineUnrealisedRemainderExVat: (cost as any).lineUnrealisedRemainderExVat ?? null,
-    _cosOverrideBy: (cost as any).cosStatusOverrideBy ?? null,
-    _cosOverrideAt: (cost as any).cosStatusOverrideAt ?? null,
-    _cosOverrideReason: (cost as any).cosStatusOverrideReason ?? null,
+    _sourceRow: cost.sourceRow || cost.id,
+    cosRealised: cost.cosRealised ?? false, // canonical field name for isCosRealised() consumers
+    _cosRealisedFlag: cost.cosRealised ?? false, // backward-compat alias
+    _cosOverrideStatus: cost.cosStatusOverride ?? null,
+    cosStatusOverride: cost.cosStatusOverride ?? null, // canonical field name
+    lineAssignedQbExVat: cost.lineAssignedQbExVat ?? null,
+    lineRealisedAmountExVat: cost.lineRealisedAmountExVat ?? null,
+    lineUnrealisedRemainderExVat: cost.lineUnrealisedRemainderExVat ?? null,
+    _cosOverrideBy: cost.cosStatusOverrideBy ?? null,
+    _cosOverrideAt: cost.cosStatusOverrideAt ?? null,
+    _cosOverrideReason: cost.cosStatusOverrideReason ?? null,
     // Smart Import v2 tracker columns surfaced to the existing
     // Expenditure tab. The replica screens already render these via the
     // tracker-replica endpoint; spreading them here lets the legacy
     // Expenditure tab render the same values inline + apply per-cell
     // font/fill colours via the cell_format JSONB.
-    actualQty: (cost as any).actualQty ?? null,
-    actualRate: (cost as any).actualRate ?? null,
-    comments: (cost as any).comments ?? null,
-    checkFlag: (cost as any).checkFlag ?? null,
-    savingOverrun: (cost as any).savingOverrun ?? null,
-    usdExchangeRate: (cost as any).usdExchangeRate ?? null,
-    pricePerWatt: (cost as any).pricePerWatt ?? null,
-    cellFormat: (cost as any).cellFormat ?? null,
-    importSnapshot: (cost as any).importSnapshot ?? null,
-    counterpartyId: (cost as any).counterpartyId ?? null,
-    snapshotRunCommittedAt: (cost as any).snapshotRunCommittedAt ?? null,
+    actualQty: cost.actualQty ?? null,
+    actualRate: cost.actualRate ?? null,
+    comments: cost.comments ?? null,
+    checkFlag: cost.checkFlag ?? null,
+    savingOverrun: cost.savingOverrun ?? null,
+    usdExchangeRate: cost.usdExchangeRate ?? null,
+    pricePerWatt: cost.pricePerWatt ?? null,
+    cellFormat: cost.cellFormat ?? null,
+    importSnapshot: cost.importSnapshot ?? null,
+    counterpartyId: cost.counterpartyId ?? null,
+    snapshotRunCommittedAt: cost.snapshotRunCommittedAt ?? null,
   };
 }
 
-export function adaptRevenueToInflow(rev: NormalizedRevenueLine, resolvedName: string): any {
+export function adaptRevenueToInflow(revInput: NormalizedRevenueLine, resolvedName: string) {
+  const rev = revInput as EnrichedRevenueLine;
   const hasPaymentReceived = !!(rev.paidDate && String(rev.paidDate).trim() && rev.paidDate !== '-');
   const hasInvoice = !!(rev.invoiceNumber && String(rev.invoiceNumber).trim());
-  const manualInBank = (rev as any).inBank === 1 || (rev as any).inBank === '1' || (rev as any).inBank === true;
+  const manualInBank = rev.inBank === 1 || rev.inBank === '1' || rev.inBank === true;
   const inBank = manualInBank || (hasPaymentReceived && hasInvoice) ? 1 : 0;
 
   return {
     id: -rev.id,
     projectName: resolvedName,
-    rowNumber: (rev as any).sourceRow || rev.id,
-    milestoneNo: (rev as any).sourceRow || null,
+    rowNumber: rev.sourceRow || rev.id,
+    milestoneNo: rev.sourceRow || null,
     milestoneName: rev.milestoneName || rev.description,
     milestoneAmount: rev.amountExVat,
     milestoneInvoiceNumber: rev.invoiceNumber,
@@ -180,18 +203,18 @@ export function adaptRevenueToInflow(rev: NormalizedRevenueLine, resolvedName: s
     inBankDate: rev.inBankDate,
     inBank,
     effectiveDate: rev.paidDate || rev.inBankDate || rev.expectedPaymentDate || rev.invoiceDate,
-    subProjectName: (rev as any).subProjectName ?? null,
-    adminDateOverride: (rev as any).adminDateOverride ?? null,
-    adminDateOverrideReason: (rev as any).adminDateOverrideReason ?? null,
-    adminDateOverrideBy: (rev as any).adminDateOverrideBy ?? null,
-    adminDateOverrideAt: (rev as any).adminDateOverrideAt ?? null,
+    subProjectName: rev.subProjectName ?? null,
+    adminDateOverride: rev.adminDateOverride ?? null,
+    adminDateOverrideReason: rev.adminDateOverrideReason ?? null,
+    adminDateOverrideBy: rev.adminDateOverrideBy ?? null,
+    adminDateOverrideAt: rev.adminDateOverrideAt ?? null,
     // normalizedRevenueLines has no counterparty column; customer must come from
     // project-level data or QB customer mappings. Placeholder for future enrichment.
     customerName: null,
     // Smart Import v2 tracker columns surfaced to the existing Revenue tab.
-    milestoneNotes: (rev as any).milestoneNotes ?? null,
-    cellFormat: (rev as any).cellFormat ?? null,
+    milestoneNotes: rev.milestoneNotes ?? null,
+    cellFormat: rev.cellFormat ?? null,
     _isNormalized: true,
-    snapshotRunCommittedAt: (rev as any).snapshotRunCommittedAt ?? null,
+    snapshotRunCommittedAt: rev.snapshotRunCommittedAt ?? null,
   };
 }

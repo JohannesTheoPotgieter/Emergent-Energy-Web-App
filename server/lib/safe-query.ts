@@ -7,7 +7,7 @@
  * - Consistent soft-delete checking across the codebase
  */
 
-import { isNull, SQL, and } from "drizzle-orm";
+import { isNull, SQL, type SQLWrapper } from "drizzle-orm";
 
 /** Default maximum rows for list queries that don't specify a limit. */
 export const DEFAULT_QUERY_LIMIT = 5000;
@@ -18,7 +18,7 @@ export const DEFAULT_QUERY_LIMIT = 5000;
  *
  *   db.select().from(myTable).where(and(notDeleted(myTable.deletedAt), ...otherConditions))
  */
-export function notDeleted(deletedAtColumn: any): SQL {
+export function notDeleted(deletedAtColumn: SQLWrapper): SQL {
   return isNull(deletedAtColumn);
 }
 

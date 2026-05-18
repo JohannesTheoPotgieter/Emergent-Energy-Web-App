@@ -62,7 +62,7 @@ export function getFieldType(fieldName: string): FieldType {
  * old `normVal` / `normalizeForCompare` so callers without a field name
  * keep their current semantics.
  */
-export function normalizeBasic(val: any): string {
+export function normalizeBasic(val: unknown): string {
   if (val === null || val === undefined) return "";
   if (typeof val === "boolean") return val ? "true" : "";
   if (typeof val === "number") return val === 0 ? "" : String(val);
@@ -72,7 +72,7 @@ export function normalizeBasic(val: any): string {
 
 const NUMERIC_TOLERANCE = 0.005;
 
-function tryParseNumeric(val: any): number | null {
+function tryParseNumeric(val: unknown): number | null {
   if (val === null || val === undefined || val === "") return null;
   if (typeof val === "number") return Number.isFinite(val) ? val : null;
   if (typeof val === "boolean") return null;
@@ -85,7 +85,7 @@ function tryParseNumeric(val: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function normalizeNumeric(val: any): string {
+function normalizeNumeric(val: unknown): string {
   const n = tryParseNumeric(val);
   if (n === null) {
     // Not parseable as a number — fall through to basic normalisation so
@@ -98,7 +98,7 @@ function normalizeNumeric(val: any): string {
   return rounded.toFixed(2).replace(/\.?0+$/, "");
 }
 
-function tryParseDate(val: any): string | null {
+function tryParseDate(val: unknown): string | null {
   if (val === null || val === undefined || val === "") return null;
   // Already a Date instance.
   if (val instanceof Date) {
@@ -130,7 +130,7 @@ function tryParseDate(val: any): string | null {
   return parsed.toISOString().slice(0, 10);
 }
 
-function normalizeDate(val: any): string {
+function normalizeDate(val: unknown): string {
   const d = tryParseDate(val);
   if (d === null) return normalizeBasic(val);
   return d;
@@ -141,7 +141,7 @@ function normalizeDate(val: any): string {
  * and we apply numeric tolerance / date normalisation when appropriate;
  * otherwise we fall back to `normalizeBasic`.
  */
-export function normalizeWithFieldType(val: any, fieldName?: string): string {
+export function normalizeWithFieldType(val: unknown, fieldName?: string): string {
   if (!fieldName) return normalizeBasic(val);
   const t = getFieldType(fieldName);
   if (t === "numeric") return normalizeNumeric(val);

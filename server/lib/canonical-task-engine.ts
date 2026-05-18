@@ -58,107 +58,142 @@ export interface CanonicalTask {
   source_id: number;
 }
 
-export function fromWorkItem(wi: any, projectName?: string | null): CanonicalTask {
+/**
+ * Source rows arrive from several adapters — some via Drizzle (camelCase
+ * columns) and some via raw SQL (snake_case columns). The functions below
+ * read both spellings, so the input is modelled as an open string-keyed
+ * record and coerced through the small helpers below.
+ */
+type TaskSourceRow = Record<string, unknown>;
+
+function asNum(v: unknown): number {
+  return typeof v === "number" ? v : Number(v) || 0;
+}
+
+function asNumOrNull(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function asStr(v: unknown): string {
+  return typeof v === "string" ? v : v == null ? "" : String(v);
+}
+
+function asStrOrNull(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
+  return typeof v === "string" ? v : String(v);
+}
+
+/** First non-null/undefined value, returned as-is for further coercion. */
+function firstDefined(...vals: unknown[]): unknown {
+  for (const v of vals) {
+    if (v !== null && v !== undefined) return v;
+  }
+  return null;
+}
+
+export function fromWorkItem(wi: TaskSourceRow, projectName?: string | null): CanonicalTask {
   return {
-    task_id: wi.id,
-    project_id: wi.projectId || wi.project_id || null,
-    project_name: projectName || wi.project_name || null,
+    task_id: asNum(wi.id),
+    project_id: asNumOrNull(firstDefined(wi.projectId, wi.project_id)),
+    project_name: projectName || asStrOrNull(wi.project_name),
     task_type: "plan",
-    title: wi.title || wi.task_name || "",
-    description: wi.description || wi.comment || null,
-    status: normalizeStatus(wi.status),
-    priority: normalizePriority(wi.priority),
-    owner_user_id: wi.ownerUserId || wi.owner_user_id || null,
-    assignee_user_id: wi.ownerUserId || wi.owner_user_id || wi.assignee_user_id || null,
+    title: asStr(firstDefined(wi.title, wi.task_name)),
+    description: asStrOrNull(firstDefined(wi.description, wi.comment)),
+    status: normalizeStatus(asStrOrNull(wi.status)),
+    priority: normalizePriority(asStrOrNull(wi.priority)),
+    owner_user_id: asNumOrNull(firstDefined(wi.ownerUserId, wi.owner_user_id)),
+    assignee_user_id: asNumOrNull(firstDefined(wi.ownerUserId, wi.owner_user_id, wi.assignee_user_id)),
     viewer_user_ids: [],
     reviewer_user_id: null,
-    due_date: wi.endDate || wi.end_date || wi.dueDate || wi.due_date || null,
-    workstream: wi.workstream || "PM",
+    due_date: asStrOrNull(firstDefined(wi.endDate, wi.end_date, wi.dueDate, wi.due_date)),
+    workstream: asStrOrNull(wi.workstream) || "PM",
     created_by: null,
     updated_by: null,
-    created_at: wi.createdAt || wi.created_at || null,
-    updated_at: wi.updatedAt || wi.updated_at || null,
-    percent_complete: wi.percentComplete ?? wi.percent_complete ?? wi.pct_complete ?? null,
+    created_at: asStrOrNull(firstDefined(wi.createdAt, wi.created_at)),
+    updated_at: asStrOrNull(firstDefined(wi.updatedAt, wi.updated_at)),
+    percent_complete: asNumOrNull(firstDefined(wi.percentComplete, wi.percent_complete, wi.pct_complete)),
     source_table: "work_items",
-    source_id: wi.id,
+    source_id: asNum(wi.id),
   };
 }
 
-export function fromOperational(t: any): CanonicalTask {
+export function fromOperational(t: TaskSourceRow): CanonicalTask {
   return {
-    task_id: t.id,
-    project_id: t.projectId || t.project_id || null,
-    project_name: t.projectName || t.project_name || null,
+    task_id: asNum(t.id),
+    project_id: asNumOrNull(firstDefined(t.projectId, t.project_id)),
+    project_name: asStrOrNull(firstDefined(t.projectName, t.project_name)),
     task_type: "operational",
-    title: t.title || "",
-    description: t.description || t.notes || null,
-    status: normalizeStatus(t.status),
-    priority: normalizePriority(t.priority),
-    owner_user_id: t.ownerUserId || t.owner_user_id || null,
-    assignee_user_id: t.ownerUserId || t.owner_user_id || null,
+    title: asStr(t.title),
+    description: asStrOrNull(firstDefined(t.description, t.notes)),
+    status: normalizeStatus(asStrOrNull(t.status)),
+    priority: normalizePriority(asStrOrNull(t.priority)),
+    owner_user_id: asNumOrNull(firstDefined(t.ownerUserId, t.owner_user_id)),
+    assignee_user_id: asNumOrNull(firstDefined(t.ownerUserId, t.owner_user_id)),
     viewer_user_ids: [],
     reviewer_user_id: null,
-    due_date: t.dueDate || t.due_date || null,
-    workstream: t.workstream || "PM",
-    created_by: t.createdBy || t.created_by || null,
+    due_date: asStrOrNull(firstDefined(t.dueDate, t.due_date)),
+    workstream: asStrOrNull(t.workstream) || "PM",
+    created_by: asNumOrNull(firstDefined(t.createdBy, t.created_by)),
     updated_by: null,
-    created_at: t.createdAt || t.created_at || null,
-    updated_at: t.updatedAt || t.updated_at || null,
-    percent_complete: t.percentComplete ?? t.percent_complete ?? null,
+    created_at: asStrOrNull(firstDefined(t.createdAt, t.created_at)),
+    updated_at: asStrOrNull(firstDefined(t.updatedAt, t.updated_at)),
+    percent_complete: asNumOrNull(firstDefined(t.percentComplete, t.percent_complete)),
     source_table: "work_items",
-    source_id: t.id,
+    source_id: asNum(t.id),
   };
 }
 
-export function fromEngineering(t: any): CanonicalTask {
+export function fromEngineering(t: TaskSourceRow): CanonicalTask {
   return {
-    task_id: t.id,
-    project_id: t.projectId || t.project_id || null,
-    project_name: t.projectName || t.project_name || null,
+    task_id: asNum(t.id),
+    project_id: asNumOrNull(firstDefined(t.projectId, t.project_id)),
+    project_name: asStrOrNull(firstDefined(t.projectName, t.project_name)),
     task_type: "engineering",
-    title: t.title || "",
-    description: t.description || null,
-    status: normalizeStatus(t.status),
-    priority: normalizePriority(t.priority),
-    owner_user_id: t.assigneeUserId || t.assignee_user_id || null,
-    assignee_user_id: t.assigneeUserId || t.assignee_user_id || null,
+    title: asStr(t.title),
+    description: asStrOrNull(t.description),
+    status: normalizeStatus(asStrOrNull(t.status)),
+    priority: normalizePriority(asStrOrNull(t.priority)),
+    owner_user_id: asNumOrNull(firstDefined(t.assigneeUserId, t.assignee_user_id)),
+    assignee_user_id: asNumOrNull(firstDefined(t.assigneeUserId, t.assignee_user_id)),
     viewer_user_ids: [],
     reviewer_user_id: null,
-    due_date: t.dueDate || t.due_date || null,
+    due_date: asStrOrNull(firstDefined(t.dueDate, t.due_date)),
     workstream: "ENG",
     created_by: null,
     updated_by: null,
-    created_at: t.createdAt || t.created_at || null,
-    updated_at: t.updatedAt || t.updated_at || null,
+    created_at: asStrOrNull(firstDefined(t.createdAt, t.created_at)),
+    updated_at: asStrOrNull(firstDefined(t.updatedAt, t.updated_at)),
     percent_complete: null,
     source_table: "work_items",
-    source_id: t.id,
+    source_id: asNum(t.id),
   };
 }
 
-export function fromPersonal(t: any): CanonicalTask {
+export function fromPersonal(t: TaskSourceRow): CanonicalTask {
   return {
-    task_id: t.id,
+    task_id: asNum(t.id),
     project_id: null,
-    project_name: t.projectName || t.project_name || null,
+    project_name: asStrOrNull(firstDefined(t.projectName, t.project_name)),
     task_type: "personal",
-    title: t.title || "",
-    description: t.description || t.notes || null,
-    status: normalizeStatus(t.status),
-    priority: normalizePriority(t.priority),
-    owner_user_id: t.ownerUserId || t.owner_user_id || null,
-    assignee_user_id: t.ownerUserId || t.owner_user_id || null,
+    title: asStr(t.title),
+    description: asStrOrNull(firstDefined(t.description, t.notes)),
+    status: normalizeStatus(asStrOrNull(t.status)),
+    priority: normalizePriority(asStrOrNull(t.priority)),
+    owner_user_id: asNumOrNull(firstDefined(t.ownerUserId, t.owner_user_id)),
+    assignee_user_id: asNumOrNull(firstDefined(t.ownerUserId, t.owner_user_id)),
     viewer_user_ids: [],
     reviewer_user_id: null,
-    due_date: t.dueDate || t.due_date || null,
+    due_date: asStrOrNull(firstDefined(t.dueDate, t.due_date)),
     workstream: null,
-    created_by: t.ownerUserId || t.owner_user_id || null,
+    created_by: asNumOrNull(firstDefined(t.ownerUserId, t.owner_user_id)),
     updated_by: null,
-    created_at: t.createdAt || t.created_at || null,
-    updated_at: t.updatedAt || t.updated_at || null,
+    created_at: asStrOrNull(firstDefined(t.createdAt, t.created_at)),
+    updated_at: asStrOrNull(firstDefined(t.updatedAt, t.updated_at)),
     percent_complete: null,
     source_table: "mytool_tasks",
-    source_id: t.id,
+    source_id: asNum(t.id),
   };
 }
 
@@ -167,54 +202,54 @@ export function fromPersonal(t: any): CanonicalTask {
  */
 export const EXTENDED_CANONICAL_WORKSTREAMS = ["PM", "ENG", "QUALITY", "CONSTRUCTION", "PROCUREMENT"] as const;
 
-export function fromConstruction(t: any): CanonicalTask {
+export function fromConstruction(t: TaskSourceRow): CanonicalTask {
   return {
-    task_id: t.id,
-    project_id: t.projectId || t.project_id || null,
-    project_name: t.projectName || t.project_name || null,
+    task_id: asNum(t.id),
+    project_id: asNumOrNull(firstDefined(t.projectId, t.project_id)),
+    project_name: asStrOrNull(firstDefined(t.projectName, t.project_name)),
     task_type: "operational",
-    title: t.title || "",
-    description: t.description || null,
-    status: normalizeStatus(t.status),
-    priority: normalizePriority(t.severity || t.priority),
-    owner_user_id: t.assignedToUserId || t.assigned_to_user_id || null,
-    assignee_user_id: t.assignedToUserId || t.assigned_to_user_id || null,
+    title: asStr(t.title),
+    description: asStrOrNull(t.description),
+    status: normalizeStatus(asStrOrNull(t.status)),
+    priority: normalizePriority(asStrOrNull(firstDefined(t.severity, t.priority))),
+    owner_user_id: asNumOrNull(firstDefined(t.assignedToUserId, t.assigned_to_user_id)),
+    assignee_user_id: asNumOrNull(firstDefined(t.assignedToUserId, t.assigned_to_user_id)),
     viewer_user_ids: [],
     reviewer_user_id: null,
-    due_date: t.dueDate || t.due_date || null,
+    due_date: asStrOrNull(firstDefined(t.dueDate, t.due_date)),
     workstream: "CONSTRUCTION",
-    created_by: t.reportedByUserId || t.reported_by_user_id || null,
+    created_by: asNumOrNull(firstDefined(t.reportedByUserId, t.reported_by_user_id)),
     updated_by: null,
-    created_at: t.createdAt || t.created_at || null,
-    updated_at: t.updatedAt || t.updated_at || null,
+    created_at: asStrOrNull(firstDefined(t.createdAt, t.created_at)),
+    updated_at: asStrOrNull(firstDefined(t.updatedAt, t.updated_at)),
     percent_complete: null,
     source_table: "snags",
-    source_id: t.id,
+    source_id: asNum(t.id),
   };
 }
 
-export function fromQuality(t: any): CanonicalTask {
+export function fromQuality(t: TaskSourceRow): CanonicalTask {
   return {
-    task_id: t.id,
-    project_id: t.projectId || t.project_id || null,
-    project_name: t.projectName || t.project_name || null,
+    task_id: asNum(t.id),
+    project_id: asNumOrNull(firstDefined(t.projectId, t.project_id)),
+    project_name: asStrOrNull(firstDefined(t.projectName, t.project_name)),
     task_type: "quality",
-    title: t.title || t.item_name || t.itemName || "",
-    description: t.notes || null,
-    status: normalizeStatus(t.qmStatus || t.qm_status || t.status),
-    priority: normalizePriority(t.priority),
-    owner_user_id: t.assigneeUserId || t.assignee_user_id || null,
-    assignee_user_id: t.assigneeUserId || t.assignee_user_id || null,
+    title: asStr(firstDefined(t.title, t.item_name, t.itemName)),
+    description: asStrOrNull(t.notes),
+    status: normalizeStatus(asStrOrNull(firstDefined(t.qmStatus, t.qm_status, t.status))),
+    priority: normalizePriority(asStrOrNull(t.priority)),
+    owner_user_id: asNumOrNull(firstDefined(t.assigneeUserId, t.assignee_user_id)),
+    assignee_user_id: asNumOrNull(firstDefined(t.assigneeUserId, t.assignee_user_id)),
     viewer_user_ids: [],
     reviewer_user_id: null,
-    due_date: t.endDate || t.end_date || null,
+    due_date: asStrOrNull(firstDefined(t.endDate, t.end_date)),
     workstream: "QUALITY",
     created_by: null,
     updated_by: null,
-    created_at: t.createdAt || t.created_at || null,
-    updated_at: t.updatedAt || t.updated_at || null,
+    created_at: asStrOrNull(firstDefined(t.createdAt, t.created_at)),
+    updated_at: asStrOrNull(firstDefined(t.updatedAt, t.updated_at)),
     percent_complete: null,
     source_table: "qc_item_instance",
-    source_id: t.id,
+    source_id: asNum(t.id),
   };
 }

@@ -5,14 +5,21 @@ export interface ValidationError {
   message: string;
 }
 
-export function validateTaskCreate(data: any): ValidationError[] {
+interface TaskInput {
+  title?: unknown;
+  status?: unknown;
+  priority?: unknown;
+  workstream?: unknown;
+}
+
+export function validateTaskCreate(data: TaskInput): ValidationError[] {
   const errors: ValidationError[] = [];
 
   if (!data.title || typeof data.title !== "string" || !data.title.trim()) {
     errors.push({ field: "title", message: "Title is required and cannot be empty" });
   }
 
-  if (data.status) {
+  if (typeof data.status === "string" && data.status) {
     const s = data.status.toLowerCase().trim();
     const validStatuses = [...CANONICAL_STATUSES, "inbox", "done", "planned", "waiting", "not started", "in progress", "active", "pending"];
     if (!validStatuses.includes(s)) {
@@ -20,7 +27,7 @@ export function validateTaskCreate(data: any): ValidationError[] {
     }
   }
 
-  if (data.priority) {
+  if (typeof data.priority === "string" && data.priority) {
     const p = data.priority.toLowerCase().trim();
     const validPriorities = [...CANONICAL_PRIORITIES.map(x => x.toLowerCase()), "urgent", "p1", "p2", "p3", "p4", "med"];
     if (!validPriorities.includes(p)) {
@@ -28,9 +35,9 @@ export function validateTaskCreate(data: any): ValidationError[] {
     }
   }
 
-  if (data.workstream) {
+  if (typeof data.workstream === "string" && data.workstream) {
     const w = data.workstream.toUpperCase().trim();
-    if (!CANONICAL_WORKSTREAMS.includes(w as any)) {
+    if (!(CANONICAL_WORKSTREAMS as readonly string[]).includes(w)) {
       errors.push({ field: "workstream", message: `Invalid workstream "${data.workstream}". Valid: ${CANONICAL_WORKSTREAMS.join(", ")}` });
     }
   }
@@ -38,14 +45,14 @@ export function validateTaskCreate(data: any): ValidationError[] {
   return errors;
 }
 
-export function validateTaskUpdate(data: any): ValidationError[] {
+export function validateTaskUpdate(data: TaskInput): ValidationError[] {
   const errors: ValidationError[] = [];
 
   if (data.title !== undefined && (typeof data.title !== "string" || !data.title.trim())) {
     errors.push({ field: "title", message: "Title cannot be empty" });
   }
 
-  if (data.status !== undefined) {
+  if (data.status !== undefined && typeof data.status === "string") {
     const s = data.status.toLowerCase().trim();
     const validStatuses = [...CANONICAL_STATUSES, "inbox", "done", "planned", "waiting", "not started", "in progress", "active", "pending", "to do", "blocked", "on hold"];
     if (!validStatuses.includes(s)) {
@@ -53,7 +60,7 @@ export function validateTaskUpdate(data: any): ValidationError[] {
     }
   }
 
-  if (data.priority !== undefined) {
+  if (data.priority !== undefined && typeof data.priority === "string") {
     const p = data.priority.toLowerCase().trim();
     const validPriorities = [...CANONICAL_PRIORITIES.map(x => x.toLowerCase()), "urgent", "p1", "p2", "p3", "p4", "med"];
     if (!validPriorities.includes(p)) {
@@ -61,9 +68,9 @@ export function validateTaskUpdate(data: any): ValidationError[] {
     }
   }
 
-  if (data.workstream !== undefined) {
+  if (data.workstream !== undefined && typeof data.workstream === "string") {
     const w = data.workstream.toUpperCase().trim();
-    if (!CANONICAL_WORKSTREAMS.includes(w as any)) {
+    if (!(CANONICAL_WORKSTREAMS as readonly string[]).includes(w)) {
       errors.push({ field: "workstream", message: `Invalid workstream "${data.workstream}"` });
     }
   }

@@ -43,7 +43,7 @@ export async function recordManualEditFlag(opts: {
         editedByName: opts.editedByName || null,
       });
     }
-  } catch (err: any) {
-    console.warn("[manual-edit-flag] Failed to record:", err.message);
+  } catch (err) {
+    console.warn("[manual-edit-flag] Failed to record:", err instanceof Error ? err.message : String(err));
   }
 }

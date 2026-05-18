@@ -26,7 +26,10 @@ import { db, getDbMode } from "../db";
 export function shouldUseLegacyProjectInfoReadFallback(error: unknown): boolean {
   const mode = getDbMode();
   const message = error instanceof Error ? error.message : String(error ?? "");
-  const code = (error as any)?.code;
+  const code =
+    error && typeof error === "object" && "code" in error
+      ? (error as { code?: unknown }).code
+      : undefined;
 
   const missingColumnNames = [
     "phase_updated_at",
@@ -87,7 +90,7 @@ export async function listLegacyCompatibleProjectInfo(
     id?: number;
   },
 ): Promise<ProjectInfo[]> {
-  let rows: any[];
+  let rows: Record<string, unknown>[];
   try {
     const baseQuery = dbInstance.select({
       id: projectInfo.id,
@@ -106,9 +109,9 @@ export async function listLegacyCompatibleProjectInfo(
       : filters?.id != null
         ? await baseQuery.where(eq(projectInfo.id, filters.id))
         : await baseQuery.orderBy(desc(projectInfo.updatedAt));
-  } catch (joinErr: any) {
+  } catch (joinErr) {
     // project_execution_state table may not exist — try reading phase from project_info directly
-    console.warn("[storage] project_execution_state join failed, falling back to project_info:", joinErr.message);
+    console.warn("[storage] project_execution_state join failed, falling back to project_info:", joinErr instanceof Error ? joinErr.message : String(joinErr));
     try {
       // project_info may still have a phase column from legacy schema
       const fallbackRows = await dbInstance.execute(
@@ -119,7 +122,10 @@ export async function listLegacyCompatibleProjectInfo(
             FROM project_info
             ORDER BY updated_at DESC`
       );
-      rows = (fallbackRows.rows as any[]).map(r => ({
+      const rawRows: Record<string, unknown>[] = Array.isArray(fallbackRows?.rows)
+        ? (fallbackRows.rows as Record<string, unknown>[])
+        : [];
+      rows = rawRows.map(r => ({
         id: r.id,
         projectName: r.project_name,
         sizeKwp: r.size_kwp,
@@ -151,7 +157,7 @@ export async function listLegacyCompatibleProjectInfo(
         : filters?.id != null
           ? await simpleQuery.where(eq(projectInfo.id, filters.id))
           : await simpleQuery.orderBy(desc(projectInfo.updatedAt));
-      rows = simpleRows.map((r: any) => ({ ...r, phase: null }));
+      rows = simpleRows.map((r: Record<string, unknown>) => ({ ...r, phase: null }));
     }
   }
 
@@ -195,5 +201,9 @@ export async function listLegacyCompatibleProjectInfo(
     cpEvidenceRef: null,
     pmTaskPackCreated: false,
     engPostCpTaskPackCreated: false,
-  })) as ProjectInfo[];
+    // The raw rows are dynamically shaped (driver result / projection), so
+    // the constructed objects carry an `unknown`-valued index signature.
+    // This is the documented legacy-compatible fallback shape; assert via
+    // `unknown` since the structural overlap can't be proven statically.
+  })) as unknown as ProjectInfo[];
 }

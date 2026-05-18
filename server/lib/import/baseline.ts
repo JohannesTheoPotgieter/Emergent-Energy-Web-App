@@ -203,10 +203,10 @@ export async function loadBaselineNormalization(
 
   if (!lastCommitted) return null;
 
-  const summary = lastCommitted.summaryJson as any;
+  const summary = lastCommitted.summaryJson as { normalization?: NormalizationResult } | null;
   if (!summary?.normalization) return null;
 
-  return summary.normalization as NormalizationResult;
+  return summary.normalization;
 }
 
 // ---------------------------------------------------------------------------
@@ -346,7 +346,7 @@ export async function loadBaselineFromSnapshots(
   // :154) and keeps the planner and writer aligned so the conflict
   // count doesn't bounce when the executor re-checks.
   const planTasks = planLive.map((r: typeof planLive[number]) => {
-    const out: Record<string, any> = { ...r };
+    const out: Record<string, unknown> = { ...r };
     const snap = planSnapById.get(r.id);
     if (snap) {
       for (const [k, v] of Object.entries(snap)) {
@@ -359,7 +359,7 @@ export async function loadBaselineFromSnapshots(
   });
 
   const revenueLines = revenueLive.map((r: typeof revenueLive[number]) => {
-    const out: Record<string, any> = { ...r };
+    const out: Record<string, unknown> = { ...r };
     const snap = revenueSnapById.get(r.id);
     if (snap) {
       for (const [k, v] of Object.entries(snap)) {
@@ -371,7 +371,7 @@ export async function loadBaselineFromSnapshots(
   });
 
   const costLines = costLive.map((r: typeof costLive[number]) => {
-    const out: Record<string, any> = { ...r };
+    const out: Record<string, unknown> = { ...r };
     const snap = costSnapById.get(r.id);
     if (snap) {
       for (const [k, v] of Object.entries(snap)) {

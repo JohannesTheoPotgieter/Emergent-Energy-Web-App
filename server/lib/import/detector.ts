@@ -79,7 +79,7 @@ function getAllSynonymPhrases(section: string): string[] {
   return phrases;
 }
 
-function scoreRowAsHeader(row: any[], anchorPhrases: string[], allSynonymPhrases: string[]): number {
+function scoreRowAsHeader(row: unknown[], anchorPhrases: string[], allSynonymPhrases: string[]): number {
   if (!row || row.length === 0) return 0;
 
   let anchorHits = 0;
@@ -115,7 +115,7 @@ function scoreRowAsHeader(row: any[], anchorPhrases: string[], allSynonymPhrases
  * Expenditure Breakdown (budget left, actual right).
  * Returns the 0-based column index of the gap, or -1 if none found.
  */
-export function findPaneGapColumn(headerRow: any[]): number {
+export function findPaneGapColumn(headerRow: unknown[]): number {
   // Build a bitmap of populated columns
   const populated: boolean[] = headerRow.map(
     cell => cell != null && String(cell).trim() !== ""
@@ -147,7 +147,7 @@ export function findPaneGapColumn(headerRow: any[]): number {
 }
 
 function findHeaderRow(
-  data: any[][],
+  data: unknown[][],
   sectionKey: string,
   maxScanRows: number = 30
 ): { rowIndex: number; headers: { colIndex: number; rawHeader: string; normalizedHeader: string }[]; budgetHeaders?: { colIndex: number; rawHeader: string; normalizedHeader: string }[] } | null {
@@ -233,7 +233,7 @@ function findHeaderRow(
   return { rowIndex: bestRowIndex, headers, budgetHeaders: budgetHeaders.length > 0 ? budgetHeaders : undefined };
 }
 
-function isTerminatorRow(row: any[]): boolean {
+function isTerminatorRow(row: unknown[]): boolean {
   const firstCellStr = String(row[0] || "").toLowerCase().trim();
   const joinedStr = row.slice(0, Math.min(5, row.length)).map(c => String(c || "").toLowerCase().trim()).join(" ");
   return (
@@ -245,7 +245,7 @@ function isTerminatorRow(row: any[]): boolean {
   );
 }
 
-function hasDataAhead(data: any[][], fromRow: number, lookAhead: number): boolean {
+function hasDataAhead(data: unknown[][], fromRow: number, lookAhead: number): boolean {
   const limit = Math.min(fromRow + lookAhead, data.length);
   for (let j = fromRow; j < limit; j++) {
     const r = data[j];
@@ -256,7 +256,7 @@ function hasDataAhead(data: any[][], fromRow: number, lookAhead: number): boolea
   return false;
 }
 
-function findDataEndRow(data: any[][], startRow: number, colCount: number): number {
+function findDataEndRow(data: unknown[][], startRow: number): number {
   const MAX_EMPTY_ROWS = 3;
   const LOOK_AHEAD = 50;
   let consecutiveEmpty = 0;
@@ -581,7 +581,7 @@ export function sheetNameConfidenceAdjustment(sheetName: string, sectionKey: str
  * multi-project (ad-hoc) trackers. Returns array of sub-project names.
  */
 export function detectMultiProjectSubProjects(
-  data: any[][],
+  data: unknown[][],
   dataStartRow: number,
   dataEndRow: number
 ): string[] {
@@ -649,7 +649,7 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
 
       if (headerResult) {
         const dataStartRow = headerResult.rowIndex + 1;
-        const dataEndRow = findDataEndRow(data, dataStartRow, data[0]?.length || 0);
+        const dataEndRow = findDataEndRow(data, dataStartRow);
         const confidence = computeConfidence(sectionKey, headerResult.headers, nameMatched);
         const sheetAdj = sheetNameConfidenceAdjustment(ws.name, sectionKey);
         const effectiveConfidence = (nameMatched ? confidence + 0.5 : confidence) + sheetAdj;
@@ -662,7 +662,7 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
         const relaxedResult = findHeaderRow(data, sectionKey, 200);
         if (relaxedResult) {
           const dataStartRow = relaxedResult.rowIndex + 1;
-          const dataEndRow = findDataEndRow(data, dataStartRow, data[0]?.length || 0);
+          const dataEndRow = findDataEndRow(data, dataStartRow);
           const confidence = computeConfidence(sectionKey, relaxedResult.headers, true);
           const sheetAdj = sheetNameConfidenceAdjustment(ws.name, sectionKey);
           const effectiveConfidence = confidence + 0.5 + sheetAdj;
@@ -743,9 +743,12 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
           bestCandidate.headerResult.headers
         );
         if (projectInfo) {
+          // projectInfo's date fields are all `string | null`; derivedDates
+          // supplies the same field names. Index through a string-keyed view.
+          const piDates = projectInfo as Record<string, string | null>;
           for (const [key, val] of Object.entries(derivedDates)) {
-            if (val && !(projectInfo as any)[key]) {
-              (projectInfo as any)[key] = val;
+            if (val && !piDates[key]) {
+              piDates[key] = val as string | null;
             }
           }
         }
@@ -799,7 +802,7 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
 
     if (bestSection && bestHeader && bestScore >= 2) {
       const dataStartRow = bestHeader.rowIndex + 1;
-      const dataEndRow = findDataEndRow(data, dataStartRow, data[0]?.length || 0);
+      const dataEndRow = findDataEndRow(data, dataStartRow);
       const confidence = computeConfidence(bestSection, bestHeader.headers, false);
 
       sections.push({

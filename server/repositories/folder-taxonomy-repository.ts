@@ -15,7 +15,7 @@
  *   `folder_taxonomy.internal_key` and a hard delete would cascade.
  */
 
-import { and, asc, eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "../db";
 import {
   folderTaxonomy,

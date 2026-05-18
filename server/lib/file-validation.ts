@@ -103,9 +103,9 @@ export async function validateMagicBytes(filePath: string, declaredMime: string)
     }
 
     return null;
-  } catch (err: any) {
+  } catch (err) {
     try { fs.unlinkSync(filePath); } catch {}
-    return `File validation failed: ${err.message}`;
+    return `File validation failed: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
 

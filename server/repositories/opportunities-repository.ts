@@ -522,7 +522,13 @@ export class OpportunitiesRepository {
    * `null` and `tasks` as `[]` so the UI can render the empty state.
    * `actingUserId` is retained for signature compatibility but unused.
    */
-  async getOpportunityWithWorkflow(opportunityId: number, _actingUserId: number | null) {
+  async getOpportunityWithWorkflow(opportunityId: number, actingUserId: number | null) {
+    // `actingUserId` is retained for call-site signature compatibility but
+    // is intentionally unused since the lazy auto-spawn was removed (see
+    // doc comment above). Reference it so it is not flagged as dead — the
+    // proper cleanup is to drop the parameter and its single caller arg in
+    // server/departments/opportunities-routes.ts.
+    void actingUserId;
     const [opp] = await db
       .select({
         opp: opportunities,

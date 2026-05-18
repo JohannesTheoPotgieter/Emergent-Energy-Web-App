@@ -55,10 +55,10 @@ async function readRow(
   // We read SELECT * because tracked field names are dynamic strings.
   // Drizzle's typed-column path doesn't support that; the column set
   // for these tables is small enough that the row weight is fine.
-  const [row] = await (tx as typeof db)
+  const [row] = await tx
     .select()
-    .from(ref as any)
-    .where(eq((ref as any).id, rowId))
+    .from(ref)
+    .where(eq(ref.id, rowId))
     .limit(1);
   if (!row) return null;
   const r = row as Record<string, unknown>;
@@ -121,7 +121,7 @@ export async function bulkKeepAppForRow(
     results.push({ fieldName: f.fieldName, liveValue: (live ?? null) as OverrideValue | null });
   }
   const ref = tableRef(op.table);
-  await (tx as typeof db).update(ref as any).set({ manualOverrides: next }).where(eq((ref as any).id, op.rowId));
+  await tx.update(ref).set({ manualOverrides: next }).where(eq(ref.id, op.rowId));
   return results;
 }
 
@@ -182,7 +182,7 @@ export async function bulkAcceptExcelForRow(
     const update: Record<string, unknown> = {};
     if (overridesChanged) update.manualOverrides = nextOverrides;
     if (snapshotChanged) update.importSnapshot = nextSnapshot;
-    await (tx as typeof db).update(ref as any).set(update as any).where(eq((ref as any).id, op.rowId));
+    await tx.update(ref).set(update).where(eq(ref.id, op.rowId));
   }
   return results;
 }

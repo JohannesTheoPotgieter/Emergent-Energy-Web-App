@@ -1,4 +1,35 @@
-export interface CosLineInput {
+/**
+ * The subset of line fields the realisation gate actually reads. Every field
+ * is optional/nullable because the canonical check guards each access
+ * (`?? ""`, `=== undefined`). `CosLineInput` extends this so existing callers
+ * that pass the full shape remain valid, while leaner adapted rows (e.g.
+ * `CostLineForRecognition`) can also be passed without an `any` cast.
+ */
+export interface RealisationInput {
+  cosStatusOverride?: string | null;
+  cosRealised?: boolean | null;
+  expenseInvoiceNumber?: string | null;
+  /** Actual cost amount. When provided, zero-amount lines are not considered realised. */
+  amountExVat?: string | number | null;
+  /** Invoice-date confirmation signal from the source sheet. */
+  invoiceDateFontColor?: string | null;
+  /** Boolean equivalent of black-font confirmation. */
+  invoiceDateConfirmed?: boolean | null;
+  /** Allocation-aware QB evidence total assigned to this line (ex-VAT). */
+  lineAssignedQbExVat?: number | null;
+  /** Optional precomputed line amount (ex-VAT). Falls back to amountExVat. */
+  lineAmountExVat?: number | null;
+  // The fields below are not read by the realisation gate, but are accepted
+  // so full `CosLineInput` object literals can be passed without an excess-
+  // property error. They remain optional for leaner adapted rows.
+  status?: string | null;
+  expenseInvoicedDate?: string | null;
+  expensePoNumber?: string | null;
+  paymentDate?: string | null;
+  today?: string;
+}
+
+export interface CosLineInput extends RealisationInput {
   status: string | null;
   cosStatusOverride: string | null;
   cosRealised: boolean | null;
@@ -73,7 +104,7 @@ export const OVERRIDE_NOT_REALISED = new Set(["PLANNED", "COMMITTED", "INVOICED"
  * Month bucketing for period reporting is a separate concern handled by
  * getCosEffectiveDateAndSource().
  */
-export function isCanonicalCosRealised(input: CosLineInput): boolean {
+export function isCanonicalCosRealised(input: RealisationInput): boolean {
   // 1. Admin override takes absolute precedence.
   const override = (input.cosStatusOverride ?? "").toUpperCase().trim();
   if (OVERRIDE_REALISED.has(override)) return true;
@@ -192,7 +223,7 @@ export function getCosRealisationWarnings(input: CosLineInput): string[] {
  * COS Tracker drifts from QuickBooks.
  */
 export function isPastMonthAutoRealised(
-  exp: { cosStatusOverride?: string | null; expenseInvoiceNumber?: string | null } & Record<string, any>,
+  exp: { cosStatusOverride?: string | null; expenseInvoiceNumber?: string | null },
   monthKey: string | null,
   currentMonthKey: string,
 ): boolean {
@@ -222,7 +253,7 @@ export function isPastMonthAutoRealised(
  * anchor or aggregate vs per-project views will disagree.
  */
 export function isEffectivelyRealised(
-  exp: any,
+  exp: RealisationInput,
   monthKey: string | null,
   currentMonthKey: string,
 ): boolean {
@@ -237,10 +268,10 @@ export function isEffectivelyRealised(
  * auto-promoted lines are excluded so they don't double-count.
  */
 export function isEffectivelyCommitted(
-  exp: any,
+  exp: RealisationInput,
   monthKey: string | null,
   currentMonthKey: string,
-  classifyCosStatusFull: (e: any) => string,
+  classifyCosStatusFull: (e: RealisationInput) => string,
 ): boolean {
   if (isPastMonthAutoRealised(exp, monthKey, currentMonthKey)) return false;
   if (isCanonicalCosRealised(exp)) return false;

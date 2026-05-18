@@ -82,7 +82,14 @@ export async function queryImportSyncState(projectId?: number): Promise<ImportSy
     LEFT JOIN conflicts c ON c.project_id = pb.project_id
     LEFT JOIN unresolved_resolutions ur ON ur.project_id = pb.project_id
     ORDER BY pb.project_name
-  `).then((r: any) => r.rows ?? r);
+  `).then((r: unknown): unknown => {
+    // db.execute() result shape differs by driver: node-postgres returns
+    // `{ rows: [...] }`, others return the array directly.
+    if (r && typeof r === "object" && "rows" in r) {
+      return (r as { rows: unknown }).rows;
+    }
+    return r;
+  });
 
   return rows as ImportSyncStateRepositoryRow[];
 }

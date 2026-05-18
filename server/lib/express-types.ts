@@ -11,11 +11,16 @@ export interface AuthenticatedUser {
   department?: string | null;
 }
 
-export function getUserId(req: any): number | null {
+/** Minimal shape needed to read the session user off an Express request. */
+interface RequestWithUser {
+  user?: unknown;
+}
+
+export function getUserId(req: RequestWithUser): number | null {
   const user = req.user as AuthenticatedUser | undefined;
   return user?.id ?? null;
 }
 
-export function getUser(req: any): AuthenticatedUser | null {
+export function getUser(req: RequestWithUser): AuthenticatedUser | null {
   return (req.user as AuthenticatedUser) ?? null;
 }

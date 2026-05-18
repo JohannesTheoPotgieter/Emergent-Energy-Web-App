@@ -1,6 +1,14 @@
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { projectInfo, projectExecutionState, type ProjectInfo } from "@shared/schema";
 import { db } from "../db";
+
+type ProjectInfoWithExecution = ProjectInfo & Record<string, unknown>;
+
+/** Row shape of the project_info ⟕ project_execution_state left join. */
+type ProjectInfoJoinRow = {
+  project_info: typeof projectInfo.$inferSelect;
+  project_execution_state: typeof projectExecutionState.$inferSelect | null;
+};
 import {
   shouldUseLegacyProjectInfoReadFallback,
   listLegacyCompatibleProjectInfo,
@@ -17,7 +25,7 @@ export class ProjectInfoReadRepository {
     return this._dbInstance || db;
   }
 
-  async getAll(): Promise<any[]> {
+  async getAll(): Promise<ProjectInfoWithExecution[]> {
     try {
       const rows = await this.dbInstance
         .select()
@@ -25,10 +33,10 @@ export class ProjectInfoReadRepository {
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
         .orderBy(desc(projectInfo.updatedAt))
         .limit(2000);
-      return rows.map((r: any) => {
+      return (rows as ProjectInfoJoinRow[]).map((r): ProjectInfoWithExecution => {
         // Filter out null values from execution state so they don't overwrite project_info fields
-        const execState = r.project_execution_state ?? {};
-        const nonNullExecState: Record<string, any> = {};
+        const execState: Record<string, unknown> = r.project_execution_state ?? {};
+        const nonNullExecState: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(execState)) {
           if (value !== null && value !== undefined) {
             nonNullExecState[key] = value;

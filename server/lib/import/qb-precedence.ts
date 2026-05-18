@@ -55,14 +55,40 @@ export interface QbDocSnapshot {
 
 export interface QbVariance {
   field: string;
-  workbookValue: any;
-  qbValue: any;
+  workbookValue: unknown;
+  qbValue: unknown;
   resolution: "qb_locked" | "auto_realised" | "missing_preserved";
   notes?: string;
+  // Stamped by applyQbPrecedence() for the audit-log writer.
+  qbLinkId?: number | null;
+  qbDocId?: number | null;
+  qbRealmId?: string | null;
+}
+
+/**
+ * Minimal structural surface of the Drizzle transaction used by the
+ * DB-touching helpers below. The real handle is typed `any` at its source
+ * (`server/db.ts`, dual pg / dev-SQLite driver); this narrows it without
+ * widening back to `any`.
+ */
+interface QbTx {
+  select(): {
+    from(table: unknown): {
+      where(condition: unknown): { limit(n: number): Promise<Record<string, unknown>[]> };
+    };
+  };
+  update(table: unknown): {
+    set(values: Record<string, unknown>): {
+      where(condition: unknown): Promise<unknown> & {
+        returning(columns: Record<string, unknown>): Promise<unknown[]>;
+      };
+    };
+  };
+  execute(query: import("drizzle-orm").SQL): Promise<unknown>;
 }
 
 export interface QbPrecedenceResult {
-  finalValues: Record<string, any>;
+  finalValues: Record<string, unknown>;
   isLinked: boolean;
   lockedFields: string[];
   autoRealised: boolean;
@@ -106,7 +132,7 @@ export const QB_LOCKED_REVENUE_FIELDS = [
 // Pure merge logic (no DB)
 // ---------------------------------------------------------------------------
 
-function toNumberOrNull(v: any): number | null {
+function toNumberOrNull(v: unknown): number | null {
   if (v == null || v === "") return null;
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : null;
@@ -119,7 +145,7 @@ function isQbPaid(doc: QbDocSnapshot): boolean {
   return false;
 }
 
-function valuesDiffer(a: any, b: any): boolean {
+function valuesDiffer(a: unknown, b: unknown): boolean {
   if (a == null && b == null) return false;
   if (a == null || b == null) return true;
   // Number-aware comparison for monetary fields
@@ -137,7 +163,7 @@ function valuesDiffer(a: any, b: any): boolean {
  */
 export function mergeQbValues(opts: {
   appEntityType: QbAppEntityType;
-  proposedValues: Record<string, any>;
+  proposedValues: Record<string, unknown>;
   link: QbLinkSnapshot | null;
   doc: QbDocSnapshot | null;
 }): QbPrecedenceResult {
@@ -155,13 +181,13 @@ export function mergeQbValues(opts: {
   }
 
   const lockedFields = appEntityType === "cost_line" ? QB_LOCKED_COST_FIELDS : QB_LOCKED_REVENUE_FIELDS;
-  const finalValues: Record<string, any> = { ...proposedValues };
+  const finalValues: Record<string, unknown> = { ...proposedValues };
   const variances: QbVariance[] = [];
 
   // Resolve QB authoritative values for the locked fields. Prefer the
   // doc snapshot (richer, has VAT decomposition) and fall back to the
   // link snapshot (always present).
-  const qbAuthoritative: Record<string, any> = {
+  const qbAuthoritative: Record<string, unknown> = {
     amountExVat: doc?.qbAmountExVat ?? link.qbAmount ?? null,
     vat: doc?.qbTaxAmount ?? null,
     invoiceNumber: doc?.qbDocNumber ?? link.qbDocNumber ?? null,
@@ -225,10 +251,10 @@ export function mergeQbValues(opts: {
  * already-inserted normalized_*_lines.id.
  */
 export async function applyQbPrecedence(opts: {
-  tx: any;
+  tx: QbTx;
   appEntityType: QbAppEntityType;
   appEntityId: number | null;
-  proposedValues: Record<string, any>;
+  proposedValues: Record<string, unknown>;
 }): Promise<QbPrecedenceResult> {
   const { tx, appEntityType, appEntityId, proposedValues } = opts;
 
@@ -259,7 +285,7 @@ export async function applyQbPrecedence(opts: {
     return mergeQbValues({ appEntityType, proposedValues, link: null, doc: null });
   }
 
-  const link = linkRows[0] as QbLinkSnapshot & { deletedAt: any };
+  const link = linkRows[0] as unknown as QbLinkSnapshot & { deletedAt: unknown };
 
   const docRows = await tx
     .select()
@@ -272,14 +298,14 @@ export async function applyQbPrecedence(opts: {
     ))
     .limit(1);
 
-  const doc = (docRows[0] ?? null) as QbDocSnapshot | null;
+  const doc = (docRows[0] ?? null) as unknown as QbDocSnapshot | null;
   const result = mergeQbValues({ appEntityType, proposedValues, link, doc });
 
   // Stamp the link/doc IDs into each variance for the audit log writer.
   for (const v of result.variances) {
-    (v as any).qbLinkId = link.id;
-    (v as any).qbDocId = doc?.id ?? null;
-    (v as any).qbRealmId = link.qbRealmId;
+    v.qbLinkId = link.id;
+    v.qbDocId = doc?.id ?? null;
+    v.qbRealmId = link.qbRealmId;
   }
 
   return result;
@@ -293,7 +319,7 @@ export async function applyQbPrecedence(opts: {
  * Returns the active link if any (for variance logging), otherwise null.
  */
 export async function lookupQbLink(opts: {
-  tx: any;
+  tx: QbTx;
   appEntityType: QbAppEntityType;
   appEntityId: number;
 }): Promise<QbLinkSnapshot | null> {
@@ -311,7 +337,7 @@ export async function lookupQbLink(opts: {
     ))
     .limit(1);
 
-  return (linkRows[0] ?? null) as QbLinkSnapshot | null;
+  return (linkRows[0] ?? null) as unknown as QbLinkSnapshot | null;
 }
 
 /**
@@ -319,7 +345,7 @@ export async function lookupQbLink(opts: {
  * to log MUST NOT fail the import — wrap in try/catch at call site.
  */
 export async function writeQbVariances(opts: {
-  tx: any;
+  tx: QbTx;
   importRunId: number;
   projectId: number;
   appEntityType: QbAppEntityType;
@@ -336,9 +362,9 @@ export async function writeQbVariances(opts: {
        field_name, workbook_value, qb_value, resolution, notes)
     VALUES ${sql.join(
       variances.map((v) => {
-        const link = (v as any).qbLinkId ?? null;
-        const doc = (v as any).qbDocId ?? null;
-        const realm = (v as any).qbRealmId ?? null;
+        const link = v.qbLinkId ?? null;
+        const doc = v.qbDocId ?? null;
+        const realm = v.qbRealmId ?? null;
         return sql`(
           ${importRunId}, ${projectId}, ${appEntityType}, ${appEntityId},
           ${link}, ${doc}, ${realm},
@@ -364,7 +390,7 @@ export async function writeQbVariances(opts: {
  * QB-linked).
  */
 export async function repointQbLinks(opts: {
-  tx: any;
+  tx: QbTx;
   appEntityType: QbAppEntityType;
   oldAppEntityId: number;
   newAppEntityId: number;

@@ -9,8 +9,37 @@
  * columns aren't referenced in most existing Drizzle insert value maps.
  */
 
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
+
+/**
+ * Minimal structural surface of the Drizzle db / transaction object that the
+ * temporal helpers actually touch. The concrete db instance is typed `any`
+ * at its source (`server/db.ts`) because it must support both the Postgres
+ * and dev-SQLite drivers; this interface narrows it to the two methods used
+ * here without widening anything back to `any`.
+ */
+interface TemporalTx {
+  execute(query: SQL): Promise<unknown>;
+  update(table: PgTable): {
+    set(values: Record<string, unknown>): {
+      where(condition: SQL): Promise<unknown>;
+    };
+  };
+}
+
+/**
+ * Extract the affected-row count from a raw driver result. The pg
+ * `QueryResult` exposes `rowCount`; the dev-SQLite path does not, in which
+ * case we conservatively report 0.
+ */
+function extractRowCount(result: unknown): number {
+  if (result && typeof result === "object" && "rowCount" in result) {
+    const n = Number((result as { rowCount: number | null }).rowCount);
+    return Number.isFinite(n) ? n : 0;
+  }
+  return 0;
+}
 
 /**
  * Valid temporal financial table names (must match schema).
@@ -35,7 +64,7 @@ export const TEMPORAL_TABLES = new Set([
  * @returns Number of rows soft-closed
  */
 export async function softCloseRows(
-  tx: any,
+  tx: TemporalTx,
   tableName: string,
   whereClause: string,
 ): Promise<number> {
@@ -48,7 +77,7 @@ export async function softCloseRows(
     WHERE (effective_to IS NULL)
       AND (${whereClause})
   `));
-  return (result as any).rowCount ?? 0;
+  return extractRowCount(result);
 }
 
 /**
@@ -60,17 +89,17 @@ export async function softCloseRows(
  * @param condition - Drizzle SQL condition (from eq(), and(), etc.)
  */
 export async function softCloseByCondition(
-  tx: any,
+  tx: TemporalTx,
   table: PgTable,
-  condition: any,
+  condition: SQL,
 ): Promise<number> {
   const result = await tx.update(table)
-    .set({ effectiveTo: new Date() } as any)
+    .set({ effectiveTo: new Date() })
     .where(
       // Only close rows that are currently active (effective_to IS NULL)
       sql`${condition} AND ${sql.raw('"effective_to" IS NULL')}`
     );
-  return (result as any).rowCount ?? 0;
+  return extractRowCount(result);
 }
 
 /**
@@ -81,7 +110,7 @@ export async function softCloseByCondition(
  * @param effectiveFrom - Override timestamp (default: new Date())
  * @returns The values with temporal columns added
  */
-export function addTemporalColumns<T extends Record<string, any>>(
+export function addTemporalColumns<T extends Record<string, unknown>>(
   values: T | T[],
   snapshotRunId: number | null = null,
   effectiveFrom?: Date,
@@ -148,7 +177,7 @@ export function dedupeCostLineInserts<T extends {
  * Uses Drizzle sql tagged template for safe parameterization.
  */
 export async function softCloseByProjectId(
-  tx: any,
+  tx: TemporalTx,
   tableName: string,
   projectId: number,
 ): Promise<number> {
@@ -161,7 +190,7 @@ export async function softCloseByProjectId(
     WHERE (effective_to IS NULL)
       AND (project_id = ${projectId})
   `);
-  return (result as any).rowCount ?? 0;
+  return extractRowCount(result);
 }
 
 /**
@@ -169,7 +198,7 @@ export async function softCloseByProjectId(
  * Uses Drizzle sql tagged template for safe parameterization.
  */
 export async function softCloseByProjectName(
-  tx: any,
+  tx: TemporalTx,
   tableName: string,
   projectName: string,
 ): Promise<number> {
@@ -182,7 +211,7 @@ export async function softCloseByProjectName(
     WHERE (effective_to IS NULL)
       AND (project_name = ${projectName})
   `);
-  return (result as any).rowCount ?? 0;
+  return extractRowCount(result);
 }
 
 /**
@@ -190,7 +219,7 @@ export async function softCloseByProjectName(
  * Uses Drizzle sql tagged template for safe parameterization.
  */
 export async function softCloseByImportRunId(
-  tx: any,
+  tx: TemporalTx,
   tableName: string,
   importRunId: number,
 ): Promise<number> {
@@ -203,5 +232,5 @@ export async function softCloseByImportRunId(
     WHERE (effective_to IS NULL)
       AND (import_run_id = ${importRunId})
   `);
-  return (result as any).rowCount ?? 0;
+  return extractRowCount(result);
 }

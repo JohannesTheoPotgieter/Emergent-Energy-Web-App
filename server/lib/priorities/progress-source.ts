@@ -42,22 +42,33 @@ function clampPct(n: number): number {
   return Math.max(0, Math.min(100, Math.round(n)));
 }
 
+/**
+ * `db.execute()` is typed `any` at its source (dual pg / dev-SQLite driver).
+ * Narrow the raw result's first row without re-introducing `any`.
+ */
+function firstRow(result: unknown): Record<string, unknown> | undefined {
+  if (result && typeof result === "object" && "rows" in result) {
+    const rows = (result as { rows?: unknown }).rows;
+    if (Array.isArray(rows)) return rows[0] as Record<string, unknown> | undefined;
+  }
+  return Array.isArray(result) ? (result[0] as Record<string, unknown> | undefined) : undefined;
+}
+
 async function computeProjectPhase(ref: ProgressSourceRef): Promise<ComputedProgress> {
   if (!ref.projectId || !ref.phaseCode) return NULL_RESULT;
   // Read project's current canonical stage_code.
-  const rows: any = await db.execute(sql`
+  const row = firstRow(await db.execute(sql`
     SELECT current_stage_code, project_name
     FROM project_info
     WHERE id = ${ref.projectId}
     LIMIT 1
-  `);
-  const row = rows.rows?.[0] || rows[0];
+  `));
   if (!row) return NULL_RESULT;
   const targetIdx = PHASES.findIndex((p) => p.code === ref.phaseCode);
   const currentIdx = PHASES.findIndex((p) => p.code === row.current_stage_code);
   if (targetIdx < 0) return NULL_RESULT;
   const targetPhase = PHASES[targetIdx];
-  const projName = row.project_name || `Project #${ref.projectId}`;
+  const projName = (row.project_name as string | null) || `Project #${ref.projectId}`;
   if (currentIdx < 0) {
     // Non-canonical / orthogonal status (Hold, Closed, legacy code) —
     // treat as "unknown phase" rather than 0%, so the priority falls back
@@ -75,34 +86,33 @@ async function computeProjectPhase(ref: ProgressSourceRef): Promise<ComputedProg
 
 async function computeProjectPercent(ref: ProgressSourceRef): Promise<ComputedProgress> {
   if (!ref.projectId) return NULL_RESULT;
-  const rows: any = await db.execute(sql`
+  const row = firstRow(await db.execute(sql`
     SELECT pi.project_name, dpk.avg_actual_pct_complete
     FROM project_info pi
     LEFT JOIN derived_project_kpis dpk ON dpk.project_id = pi.id
     WHERE pi.id = ${ref.projectId}
     LIMIT 1
-  `);
-  const row = rows.rows?.[0] || rows[0];
+  `));
   if (!row) return NULL_RESULT;
   const raw = row.avg_actual_pct_complete;
+  const projName = (row.project_name as string | null) ?? `Project #${ref.projectId}`;
   if (raw == null) {
-    return { value: 0, label: `${row.project_name} has no progress data yet` };
+    return { value: 0, label: `${projName} has no progress data yet` };
   }
   const pct = clampPct(Number(raw));
-  return { value: pct, label: `${row.project_name} overall % complete` };
+  return { value: pct, label: `${projName} overall % complete` };
 }
 
 async function computeMilestoneRevenue(ref: ProgressSourceRef): Promise<ComputedProgress> {
   if (!ref.milestoneId) return NULL_RESULT;
-  const rows: any = await db.execute(sql`
+  const row = firstRow(await db.execute(sql`
     SELECT id, milestone_name, paid_date, invoice_number, project_name
     FROM normalized_revenue_lines
     WHERE id = ${ref.milestoneId} AND deleted_at IS NULL AND effective_to IS NULL
     LIMIT 1
-  `);
-  const row = rows.rows?.[0] || rows[0];
+  `));
   if (!row) return NULL_RESULT;
-  const name = row.milestone_name || `Milestone #${ref.milestoneId}`;
+  const name = (row.milestone_name as string | null) || `Milestone #${ref.milestoneId}`;
   if (row.paid_date) {
     return { value: 100, label: `${name} paid` };
   }
@@ -120,7 +130,7 @@ async function computeTasksRollup(ref: ProgressSourceRef): Promise<ComputedProgr
   // Bind the int[] as a single parameter via PG's standard literal syntax;
   // avoids any sql.raw() concatenation surface.
   const arrayLiteral = `{${ids.join(",")}}`;
-  const rows: any = await db.execute(sql`
+  const row = firstRow(await db.execute(sql`
     SELECT
       COALESCE(AVG(COALESCE(pm.percent_complete, wi.percent_complete, 0))::numeric, 0) AS avg_pct,
       COUNT(*) AS n
@@ -128,11 +138,11 @@ async function computeTasksRollup(ref: ProgressSourceRef): Promise<ComputedProgr
     LEFT JOIN work_item_pm pm ON pm.work_item_id = wi.id
     WHERE wi.id = ANY(${arrayLiteral}::int[])
       AND wi.deleted_at IS NULL
-  `);
-  const row = rows.rows?.[0] || rows[0];
-  if (!row || Number(row.n) === 0) return NULL_RESULT;
+  `));
+  const n = Number(row?.n);
+  if (!row || n === 0) return NULL_RESULT;
   const pct = clampPct(Number(row.avg_pct));
-  return { value: pct, label: `${row.n} task${Number(row.n) === 1 ? "" : "s"} averaged` };
+  return { value: pct, label: `${n} task${n === 1 ? "" : "s"} averaged` };
 }
 
 /**
@@ -141,7 +151,7 @@ async function computeTasksRollup(ref: ProgressSourceRef): Promise<ComputedProgr
  */
 export async function computePriorityProgress(
   type: string | null | undefined,
-  ref: any,
+  ref: unknown,
 ): Promise<ComputedProgress> {
   if (!type || type === "manual") return NULL_RESULT;
   const safeRef: ProgressSourceRef = (ref && typeof ref === "object" ? ref : {}) as ProgressSourceRef;
@@ -158,8 +168,8 @@ export async function computePriorityProgress(
       default:
         return NULL_RESULT;
     }
-  } catch (err: any) {
-    console.warn("[priority-progress-source] compute failed:", err?.message);
+  } catch (err) {
+    console.warn("[priority-progress-source] compute failed:", err instanceof Error ? err.message : String(err));
     return NULL_RESULT;
   }
 }

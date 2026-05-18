@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { eq, isNull, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import {
   projectInfo,
   qcChecklist,

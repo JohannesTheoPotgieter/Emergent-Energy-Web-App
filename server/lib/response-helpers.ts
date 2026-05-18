@@ -18,12 +18,12 @@ function snakeToCamel(str: string): string {
  * Recursively convert all snake_case keys in an object (or array of objects)
  * to camelCase.  Leaves non-plain-object values (Date, null, primitives) alone.
  */
-export function camelCaseKeys<T = any>(data: T): T {
+export function camelCaseKeys<T = unknown>(data: T): T {
   if (data === null || data === undefined) return data;
   if (Array.isArray(data)) return data.map(camelCaseKeys) as unknown as T;
-  if (typeof data === "object" && data.constructor === Object) {
+  if (typeof data === "object" && (data as object).constructor === Object) {
     const result: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(data)) {
+    for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
       result[snakeToCamel(key)] = camelCaseKeys(value);
     }
     return result as T;
@@ -55,13 +55,13 @@ export function coerceDecimals<T extends Record<string, unknown>>(
   row: T,
   decimalFields: string[],
 ): T {
-  const result = { ...row };
+  const result: Record<string, unknown> = { ...row };
   for (const field of decimalFields) {
     if (field in result) {
-      (result as any)[field] = toNumber(result[field]) ?? result[field];
+      result[field] = toNumber(result[field]) ?? result[field];
     }
   }
-  return result;
+  return result as T;
 }
 
 /**
@@ -85,10 +85,11 @@ export function safeJsonb<T>(value: unknown, fallback: T): T {
  * Extract rows from a raw db.execute() result, handling both
  * Postgres (result.rows) and the direct-array pattern.
  */
-export function extractRows(result: unknown): any[] {
-  if (Array.isArray(result)) return result;
+export function extractRows(result: unknown): Record<string, unknown>[] {
+  if (Array.isArray(result)) return result as Record<string, unknown>[];
   if (result && typeof result === "object" && "rows" in result) {
-    return (result as any).rows ?? [];
+    const rows = (result as { rows?: unknown }).rows;
+    return Array.isArray(rows) ? (rows as Record<string, unknown>[]) : [];
   }
   return [];
 }

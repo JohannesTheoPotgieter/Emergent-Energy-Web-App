@@ -111,13 +111,13 @@ export interface ConflictEngineResult {
  * does not produce a false CONFLICT. Without a field name we keep the
  * legacy basic behaviour.
  */
-function normVal(val: any, fieldName?: string): string {
+function normVal(val: unknown, fieldName?: string): string {
   return fieldName
     ? normalizeWithFieldType(val, fieldName)
     : normalizeBasic(val);
 }
 
-function isBlank(val: any): boolean {
+function isBlank(val: unknown): boolean {
   return normalizeBasic(val) === "";
 }
 
@@ -130,9 +130,9 @@ function isBlank(val: any): boolean {
  */
 export function classifyField(
   fieldName: string,
-  baseline: any,
-  current: any,
-  uploaded: any,
+  baseline: unknown,
+  current: unknown,
+  uploaded: unknown,
 ): FieldMerge {
   const b = normVal(baseline, fieldName);
   const c = normVal(current, fieldName);
@@ -189,7 +189,7 @@ function getCompareFields(section: SectionType): string[] {
 export function mergeRow(
   section: SectionType,
   matchedRow: MatchedRow,
-  baselineRow: Record<string, any> | null,
+  baselineRow: Record<string, unknown> | null,
 ): RowMergeResult {
   const fields: FieldMerge[] = [];
   const compareFields = getCompareFields(section);
@@ -255,21 +255,21 @@ export function mergeRow(
  * carry DB ids.
  */
 export interface BaselineLookup {
-  byBusinessKey: Map<string, Record<string, any>>;
-  byRowId: Map<number, Record<string, any>>;
+  byBusinessKey: Map<string, Record<string, unknown>>;
+  byRowId: Map<number, Record<string, unknown>>;
 }
 
 export function buildBaselineLookup(
   section: SectionType,
   projectId: number,
   baselineNormalization: NormalizationResult | null,
-  generateBusinessKey: (section: SectionType, projectId: number, row: Record<string, any>) => BusinessKey,
+  generateBusinessKey: (section: SectionType, projectId: number, row: Record<string, unknown>) => BusinessKey,
 ): BaselineLookup {
-  const byBusinessKey = new Map<string, Record<string, any>>();
-  const byRowId = new Map<number, Record<string, any>>();
+  const byBusinessKey = new Map<string, Record<string, unknown>>();
+  const byRowId = new Map<number, Record<string, unknown>>();
   if (!baselineNormalization) return { byBusinessKey, byRowId };
 
-  let rows: Record<string, any>[];
+  let rows: Record<string, unknown>[];
   switch (section) {
     case "PLAN": rows = baselineNormalization.planTasks; break;
     case "REVENUE": rows = baselineNormalization.revenueLines; break;
@@ -279,7 +279,7 @@ export function buildBaselineLookup(
   for (const row of rows) {
     const bk = generateBusinessKey(section, projectId, row);
     byBusinessKey.set(bk.key, row);
-    const id = (row as any).id;
+    const id = row.id;
     if (typeof id === "number" && Number.isFinite(id)) {
       byRowId.set(id, row);
     }
@@ -364,7 +364,7 @@ export function runConflictEngine(
   matchedRowsBySection: Record<SectionType, MatchedRow[]>,
   baselineNormalization: NormalizationResult | null,
   projectId: number,
-  generateBusinessKey: (section: SectionType, projectId: number, row: Record<string, any>) => BusinessKey,
+  generateBusinessKey: (section: SectionType, projectId: number, row: Record<string, unknown>) => BusinessKey,
 ): ConflictEngineResult {
   const allRows: RowMergeResult[] = [];
   const sectionSummaries: Record<string, SectionConflictSummary | null> = {

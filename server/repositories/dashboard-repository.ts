@@ -83,7 +83,7 @@ export async function getDashboardImportHealth(): Promise<ImportHealth> {
   const history: ImportHistoryEntry[] = recent.map((r: RecentRow): ImportHistoryEntry => {
     const ts = r.committedAt ?? r.uploadedAt;
     return {
-      timestamp: ts ? new Date(ts as any).toISOString() : new Date().toISOString(),
+      timestamp: ts ? new Date(ts).toISOString() : new Date().toISOString(),
       status: classifyImportStatus(r.status),
       recordsProcessed: Number(r.recordsSucceeded ?? r.recordsAttempted ?? 0),
       errors: Number(r.recordsFailed ?? 0),
@@ -294,7 +294,7 @@ export async function getDashboardAttentionItems(): Promise<AttentionItemsRespon
 
   // ── Engineering blockers ─────────────────────────────────────
   const engineeringBlockers: AttentionItem[] = engBlockerRows.map((r: EngBlockerRow): AttentionItem => {
-    const age = ageDays(r.updatedAt as any);
+    const age = ageDays(r.updatedAt);
     return {
       id: r.id,
       name: r.title,
@@ -310,14 +310,14 @@ export async function getDashboardAttentionItems(): Promise<AttentionItemsRespon
     id: r.id,
     name: r.title,
     owner: null,
-    ageDays: ageDays(r.createdAt as any),
+    ageDays: ageDays(r.createdAt),
     severity: severityFromQcWarning(r.severity ?? null),
     link: r.projectId != null ? `/projects/${r.projectId}` : "/quality",
   }));
 
   // ── Overdue actions (pending financial edits) ────────────────
   const overdueActions: AttentionItem[] = pendingEditRows.map((r: PendingEditRow): AttentionItem => {
-    const age = ageDays(r.createdAt as any);
+    const age = ageDays(r.createdAt);
     return {
       id: r.id,
       name: r.editSummary,

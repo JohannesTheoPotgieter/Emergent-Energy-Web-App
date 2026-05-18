@@ -36,6 +36,58 @@ import { projectInfo } from "@shared/schema/projects";
 import { smartImportRuns } from "@shared/schema/imports";
 import { users } from "@shared/schema/users";
 import { db } from "../db";
+import type { FieldValue } from "../lib/import/merge-engine";
+
+/** Parsed jsonb object (importSnapshot / manualOverrides cells). */
+type JsonbRecord = Record<string, unknown>;
+
+/** A manual-override jsonb entry: `{ value, editedBy?, editedAt?, note? }`. */
+interface OverrideEntry {
+  value: unknown;
+  editedBy?: number | null;
+  editedAt?: string | null;
+  note?: string | null;
+}
+
+function isOverrideEntry(v: unknown): v is OverrideEntry {
+  return v != null && typeof v === "object" && "value" in v;
+}
+
+/**
+ * Coerce a dynamic jsonb / column value to the scalar `FieldValue` the
+ * merge-engine comparator accepts. Non-scalar values (objects/arrays) are
+ * normalised to their JSON string so equality still works deterministically.
+ */
+function toFieldValue(v: unknown): FieldValue {
+  if (v == null) return v as null | undefined;
+  if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+    return v;
+  }
+  return JSON.stringify(v);
+}
+
+/** Display-side coercion: scalars pass through, everything else → null. */
+function scalarOrNull(v: unknown): string | number | boolean | null {
+  if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+    return v;
+  }
+  return null;
+}
+
+/**
+ * Drift source rows expose the canonical columns plus the dynamic tracked
+ * fields addressed via `row[fieldName]`. `WorkItem` plan rows share the
+ * shape (importSnapshot / manualOverrides / cellFormat live columns).
+ */
+type DriftSourceRow = {
+  id: number;
+  projectId: number;
+  sourceRow: number | null;
+  rowHash?: string | null;
+  importSnapshot?: unknown;
+  manualOverrides?: unknown;
+  cellFormat?: unknown;
+} & Record<string, unknown>;
 
 export class TrackerReplicaRepository {
   private _dbInstance?: typeof db;
@@ -354,9 +406,9 @@ export class TrackerReplicaRepository {
       EXPENDITURE_TRACKED_FIELDS,
     } = await import("@shared/excel-vs-app/contract");
 
-    function readJsonbObject(v: unknown): Record<string, any> {
+    function readJsonbObject(v: unknown): JsonbRecord {
       if (!v || typeof v !== "object" || Array.isArray(v)) return {};
-      return v as Record<string, any>;
+      return v as JsonbRecord;
     }
 
     function classify(
@@ -366,12 +418,12 @@ export class TrackerReplicaRepository {
       hasOverrideEntry: boolean,
     ): "none" | "verified" | "unverified" {
       const display = hasOverrideEntry ? override : live;
-      if (valuesEqual(display as any, snapshot as any)) return "none";
+      if (valuesEqual(toFieldValue(display), toFieldValue(snapshot))) return "none";
       return hasOverrideEntry ? "verified" : "unverified";
     }
 
     function buildRowFields(
-      row: Record<string, any>,
+      row: DriftSourceRow,
       trackedFields: readonly string[],
     ) {
       const snapshot = readJsonbObject(row.importSnapshot);
@@ -382,20 +434,22 @@ export class TrackerReplicaRepository {
         const live = row[f] ?? null;
         const snap = snapshot[f] ?? null;
         const overrideEntry = overrides[f];
-        const hasOverride = overrideEntry != null && typeof overrideEntry === "object" && "value" in overrideEntry;
+        const hasOverride = isOverrideEntry(overrideEntry);
         const overrideValue = hasOverride ? overrideEntry.value : null;
         const driftClass = classify(live, snap, overrideValue, hasOverride);
+        const cellFmt =
+          cellFormat && typeof cellFormat === "object"
+            ? (cellFormat as Record<string, DriftRowField["cellFormat"]>)[f] ?? null
+            : null;
         fields.push({
           fieldName: f,
-          liveValue: live as any,
-          snapshotValue: snap as any,
-          overrideValue: hasOverride ? (overrideValue as any) : null,
-          overrideEditor: hasOverride ? (overrideEntry.editedBy ?? null) : null,
-          overrideEditedAt: hasOverride ? (overrideEntry.editedAt ?? null) : null,
-          overrideReason: hasOverride ? (overrideEntry.note ?? null) : null,
-          cellFormat: cellFormat && typeof cellFormat === "object" && (cellFormat as any)[f]
-            ? (cellFormat as any)[f]
-            : null,
+          liveValue: scalarOrNull(live),
+          snapshotValue: scalarOrNull(snap),
+          overrideValue: hasOverride ? scalarOrNull(overrideValue) : null,
+          overrideEditor: hasOverride ? overrideEntry.editedBy ?? null : null,
+          overrideEditedAt: hasOverride ? overrideEntry.editedAt ?? null : null,
+          overrideReason: hasOverride ? overrideEntry.note ?? null : null,
+          cellFormat: cellFmt,
           drift: driftClass,
         });
       }
@@ -460,24 +514,31 @@ export class TrackerReplicaRepository {
         .orderBy(asc(workItems.sortOrder), asc(workItems.sourceRow)),
     ]);
 
-    const costLines: DriftRow[] = costRows.map((r: any) => ({
+    // The Drizzle row types are a structural superset of DriftSourceRow at
+    // runtime (id/projectId/sourceRow + the dynamic tracked-field columns);
+    // narrow once at the boundary so the helpers stay precisely typed.
+    const costSrc = costRows as unknown as DriftSourceRow[];
+    const revSrc = revRows as unknown as DriftSourceRow[];
+    const planSrc = planRows as unknown as DriftSourceRow[];
+
+    const costLines: DriftRow[] = costSrc.map((r) => ({
       id: r.id,
       rowHash: r.rowHash ?? null,
-      displayLabel: r.description ?? `Row ${r.sourceRow ?? r.id}`,
+      displayLabel: typeof r.description === "string" ? r.description : `Row ${r.sourceRow ?? r.id}`,
       sourceRow: r.sourceRow ?? null,
       fields: buildRowFields(r, EXPENDITURE_TRACKED_FIELDS),
     }));
-    const revenueLines: DriftRow[] = revRows.map((r: any) => ({
+    const revenueLines: DriftRow[] = revSrc.map((r) => ({
       id: r.id,
       rowHash: r.rowHash ?? null,
-      displayLabel: r.milestoneName ?? `Row ${r.sourceRow ?? r.id}`,
+      displayLabel: typeof r.milestoneName === "string" ? r.milestoneName : `Row ${r.sourceRow ?? r.id}`,
       sourceRow: r.sourceRow ?? null,
       fields: buildRowFields(r, REVENUE_TRACKED_FIELDS),
     }));
-    const planTasks: DriftRow[] = planRows.map((r: any) => ({
+    const planTasks: DriftRow[] = planSrc.map((r) => ({
       id: r.id,
       rowHash: r.rowHash ?? null,
-      displayLabel: r.title ?? `Task ${r.sourceRow ?? r.id}`,
+      displayLabel: typeof r.title === "string" ? r.title : `Task ${r.sourceRow ?? r.id}`,
       sourceRow: r.sourceRow ?? null,
       fields: buildRowFields(r, PLAN_TRACKED_FIELDS),
     }));
@@ -493,9 +554,9 @@ export class TrackerReplicaRepository {
         PLAN: summarise(planTasks),
       },
       legacyRowsWithoutSnapshot: {
-        EXPENDITURE: countLegacyRows(costRows as any[]),
-        REVENUE: countLegacyRows(revRows as any[]),
-        PLAN: countLegacyRows(planRows as any[]),
+        EXPENDITURE: countLegacyRows(costSrc),
+        REVENUE: countLegacyRows(revSrc),
+        PLAN: countLegacyRows(planSrc),
       },
     };
   }
@@ -523,13 +584,13 @@ export class TrackerReplicaRepository {
       EXPENDITURE_TRACKED_FIELDS,
     } = await import("@shared/excel-vs-app/contract");
 
-    function readJsonbObject(v: unknown): Record<string, any> {
+    function readJsonbObject(v: unknown): JsonbRecord {
       if (!v || typeof v !== "object" || Array.isArray(v)) return {};
-      return v as Record<string, any>;
+      return v as JsonbRecord;
     }
 
     function summariseRows(
-      rows: Array<Record<string, any>>,
+      rows: DriftSourceRow[],
       trackedFields: readonly string[],
     ): { verified: number; unverified: number; legacyRows: number } {
       let verified = 0, unverified = 0, legacyRows = 0;
@@ -541,9 +602,9 @@ export class TrackerReplicaRepository {
           const live = row[f] ?? null;
           const snap = snapshot[f] ?? null;
           const overrideEntry = overrides[f];
-          const hasOverride = overrideEntry != null && typeof overrideEntry === "object" && "value" in overrideEntry;
+          const hasOverride = isOverrideEntry(overrideEntry);
           const display = hasOverride ? overrideEntry.value : live;
-          if (valuesEqual(display as any, snap as any)) continue;
+          if (valuesEqual(toFieldValue(display), toFieldValue(snap))) continue;
           if (hasOverride) verified++;
           else unverified++;
         }
@@ -590,9 +651,11 @@ export class TrackerReplicaRepository {
         .where(isNull(workItems.deletedAt)),
     ]);
 
-    const costByProject = bucketBy(costRows as any[]);
-    const revByProject = bucketBy(revRows as any[]);
-    const planByProject = bucketBy(planRows as any[]);
+    // Same boundary narrowing as getDriftDetail: the Drizzle rows are a
+    // structural superset of DriftSourceRow at runtime.
+    const costByProject = bucketBy(costRows as unknown as DriftSourceRow[]);
+    const revByProject = bucketBy(revRows as unknown as DriftSourceRow[]);
+    const planByProject = bucketBy(planRows as unknown as DriftSourceRow[]);
 
     return projects.map((p: { id: number; projectName: string }) => {
       const costSummary = summariseRows(costByProject.get(p.id) ?? [], EXPENDITURE_TRACKED_FIELDS);

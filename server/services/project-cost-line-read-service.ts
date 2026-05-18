@@ -88,7 +88,7 @@ export function toCanonicalUiRow(row: RawCostLineRow, resolvedProjectName: strin
     lineageType: identity.lineageType,
     isCurrent: true,
     importRunId: Number(row.importRunId),
-    effectiveFrom: row.effectiveFrom ?? null,
+    effectiveFrom: row.effectiveFrom != null ? new Date(row.effectiveFrom) : null,
     idempotencyKey: row.idempotencyKey ?? null,
   };
 }

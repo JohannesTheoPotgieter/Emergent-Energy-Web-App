@@ -10,6 +10,8 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 
+type ProjectRevenueSummaryInsert = typeof projectRevenueSummary.$inferInsert;
+
 export class FinanceTemporalRepository {
   private _dbInstance?: typeof db;
 
@@ -125,17 +127,24 @@ export class FinanceTemporalRepository {
   }
 
   async upsertProjectRevenueSummary(data: InsertProjectRevenueSummary): Promise<ProjectRevenueSummary> {
-    const existing = await this.getProjectRevenueSummary((data as any).projectName);
+    const existing = await this.getProjectRevenueSummary(data.projectName);
     if (existing) {
       // Temporal: soft-close old row, insert new version (Prompt 10)
-      await softCloseByProjectName(this.dbInstance, "project_revenue_summary", (data as any).projectName);
+      await softCloseByProjectName(this.dbInstance, "project_revenue_summary", data.projectName);
+      // addTemporalColumns returns `T | T[]`; we always pass a single object,
+      // so narrow back to the single insert shape for the typed query builder.
+      const values = addTemporalColumns({
+        ...data,
+        capturedAt: new Date(),
+      }) as ProjectRevenueSummaryInsert;
       const inserted = await this.dbInstance.insert(projectRevenueSummary)
-        .values(addTemporalColumns({ ...data, capturedAt: new Date() }) as any)
+        .values(values)
         .returning();
       return inserted[0];
     } else {
+      const values = addTemporalColumns({ ...data }) as ProjectRevenueSummaryInsert;
       const inserted = await this.dbInstance.insert(projectRevenueSummary)
-        .values(addTemporalColumns(data) as any)
+        .values(values)
         .returning();
       return inserted[0];
     }

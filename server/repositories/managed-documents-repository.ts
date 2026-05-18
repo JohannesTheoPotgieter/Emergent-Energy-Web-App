@@ -6,7 +6,7 @@
  * MUST go through this repo (no direct db.select() in routes).
  */
 
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "../db";
 import {
   managedDocuments,

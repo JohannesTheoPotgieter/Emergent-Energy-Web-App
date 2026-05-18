@@ -53,8 +53,28 @@ export interface KpiAggregateBundle {
   };
 }
 
-function rows0(r: any): any {
-  return (Array.isArray(r) ? r : (r as any).rows || [])[0] || {};
+/**
+ * Normalize a `db.execute()` result to its first row. The result shape
+ * differs by driver: node-postgres returns `{ rows: [...] }`, others return
+ * the array directly. Returns an empty object when there is no first row.
+ */
+function rows0(r: unknown): Record<string, unknown> {
+  const arr = Array.isArray(r)
+    ? r
+    : r && typeof r === "object" && "rows" in r
+      ? (r as { rows: unknown[] }).rows
+      : [];
+  return (arr[0] as Record<string, unknown> | undefined) ?? {};
+}
+
+/** Driver-agnostic accessor for the full row array of a `db.execute()`. */
+function execRows(r: unknown): unknown[] {
+  if (Array.isArray(r)) return r;
+  if (r && typeof r === "object" && "rows" in r) {
+    const rows = (r as { rows: unknown }).rows;
+    return Array.isArray(rows) ? rows : [];
+  }
+  return [];
 }
 const num = (v: unknown): number => (v == null || v === "" ? 0 : Number(v) || 0);
 
@@ -116,11 +136,11 @@ export async function getKpiAggregates(): Promise<KpiAggregateBundle> {
     `).then(rows0),
     db
       .execute(sql`SELECT status FROM project_eng_stages`)
-      .then((r: any) => summarizeEngineeringStatuses((r.rows || []) as Array<{ status: unknown }>))
+      .then((r: unknown) => summarizeEngineeringStatuses(execRows(r) as Array<{ status: unknown }>))
       .catch(() => ({ total: 0, complete: 0, inProgress: 0, notStarted: 0 })),
     db
       .execute(sql`SELECT status FROM qc_item_instance`)
-      .then((r: any) => summarizeQualityStatuses((r.rows || []) as Array<{ status: unknown }>))
+      .then((r: unknown) => summarizeQualityStatuses(execRows(r) as Array<{ status: unknown }>))
       .catch(() => ({ total: 0, approved: 0, pending: 0, failed: 0 })),
     db
       .execute(sql`SELECT COUNT(*) as c FROM work_items WHERE deleted_at IS NULL AND legacy_table = 'operational_tasks'`)
@@ -177,23 +197,23 @@ export async function getKpiAggregates(): Promise<KpiAggregateBundle> {
       totalPlanTasks: num(planProgress.total_plan_tasks),
     },
     engineering: {
-      total: num((engAgg as any).total),
-      complete: num((engAgg as any).complete),
-      inProgress: num((engAgg as any).inProgress),
-      notStarted: num((engAgg as any).notStarted),
+      total: num(engAgg.total),
+      complete: num(engAgg.complete),
+      inProgress: num(engAgg.inProgress),
+      notStarted: num(engAgg.notStarted),
     },
     quality: {
-      total: num((qcAgg as any).total),
-      approved: num((qcAgg as any).approved),
-      pending: num((qcAgg as any).pending),
-      failed: num((qcAgg as any).failed),
+      total: num(qcAgg.total),
+      approved: num(qcAgg.approved),
+      pending: num(qcAgg.pending),
+      failed: num(qcAgg.failed),
     },
     workItems: {
-      operationalTaskCount: num((opCount as any).c),
-      personalTaskCount: num((ptCount as any).c),
-      totalCount: num((wiCount as any).c),
+      operationalTaskCount: num(opCount.c),
+      personalTaskCount: num(ptCount.c),
+      totalCount: num(wiCount.c),
     },
-    portfolios: { count: num((pCount as any).c) },
+    portfolios: { count: num(pCount.c) },
     inflows: {
       totalMilestoneValue: num(inflowAgg.total_milestone_value),
       inBankCount: num(inflowAgg.in_bank_count),

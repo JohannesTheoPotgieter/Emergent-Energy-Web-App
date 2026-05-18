@@ -41,7 +41,7 @@ export interface BusinessKey {
   rowLabel: string;
 }
 
-export interface MatchedRow<TFile = Record<string, any>, TExisting = Record<string, any>> {
+export interface MatchedRow<TFile = Record<string, unknown>, TExisting = Record<string, unknown>> {
   classification: RowClassification;
   businessKey: BusinessKey;
   /** Incoming row from the file (null for MISSING_FROM_UPLOAD) */
@@ -95,6 +95,12 @@ export interface ChangedField {
 function norm(val: string | null | undefined): string {
   if (!val) return "";
   return val.toLowerCase().trim().replace(/\s+/g, " ");
+}
+
+/** Coerce an unknown row value to `string | null`. */
+function strOrNull(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
+  return typeof v === "string" ? v : String(v);
 }
 
 /** Build a composite key from parts, joining with "|" */
@@ -256,7 +262,7 @@ export function expenditureBusinessKey(
  * back to the legacy "treat null/undefined/0/blank as equivalent"
  * behaviour so the duplicate-group similarity scorer is unaffected.
  */
-function normalizeForCompare(val: any, fieldName?: string): string {
+function normalizeForCompare(val: unknown, fieldName?: string): string {
   return fieldName
     ? normalizeWithFieldType(val, fieldName)
     : normalizeBasic(val);
@@ -264,8 +270,8 @@ function normalizeForCompare(val: any, fieldName?: string): string {
 
 /** Compare two rows field-by-field, ignoring import metadata fields */
 export function compareFields(
-  fileRow: Record<string, any>,
-  existingRow: Record<string, any>,
+  fileRow: Record<string, unknown>,
+  existingRow: Record<string, unknown>,
   compareFieldNames: string[],
 ): ChangedField[] {
   const changed: ChangedField[] = [];
@@ -331,14 +337,14 @@ export const EXPENDITURE_COMPARE_FIELDS = [
 export type SectionType = "PLAN" | "REVENUE" | "EXPENDITURE";
 
 interface FileEntry {
-  row: Record<string, any>;
+  row: Record<string, unknown>;
   bk: BusinessKey;
   fileIndex: number;
   warnings: string[];
 }
 
 interface DbEntry {
-  row: Record<string, any> & { id: number };
+  row: Record<string, unknown> & { id: number };
   bk: BusinessKey;
 }
 
@@ -356,8 +362,8 @@ const SIMILARITY_FIELDS: Record<SectionType, string[]> = {
 
 function similarityScore(
   section: SectionType,
-  fileRow: Record<string, any>,
-  dbRow: Record<string, any>,
+  fileRow: Record<string, unknown>,
+  dbRow: Record<string, unknown>,
 ): number {
   let score = 0;
   for (const field of SIMILARITY_FIELDS[section]) {
@@ -418,7 +424,7 @@ function pairDuplicateGroup(
         // already stamps it with a #pk suffix equal to its own id, prefer
         // matching it to a file row in the same ordinal slot within the
         // group. This preserves stable identity across commits.
-        const pkFromRef = extractPkSuffix((d.row as any).externalRef);
+        const pkFromRef = extractPkSuffix(strOrNull(d.row.externalRef));
         if (pkFromRef != null && pkFromRef === d.row.id) {
           score += 0.5;
         }
@@ -507,13 +513,13 @@ function buildCanonicalExternalRef(
    * is returned so existing test fixtures and edge code paths (e.g. db-only
    * MISSING_FROM_UPLOAD without a source_sheet stored) continue to work.
    */
-  row?: Record<string, any> | null,
+  row?: Record<string, unknown> | null,
 ): string | undefined {
   // Only PLAN uses work_items.external_ref for identity. REVENUE and
   // EXPENDITURE are temporal tables with their own id columns.
   if (section !== "PLAN") return undefined;
   if (row && (row.sourceSheet || row.sourceRow != null)) {
-    return buildNewPlanExternalRef(projectId, row as any);
+    return buildNewPlanExternalRef(projectId, row as unknown as Parameters<typeof buildNewPlanExternalRef>[1]);
   }
   return buildLegacyPlanExternalRef(projectId, rowUid);
 }
@@ -535,8 +541,8 @@ function buildCanonicalExternalRef(
 export function matchRows(
   section: SectionType,
   projectId: number,
-  fileRows: Record<string, any>[],
-  existingRows: Array<Record<string, any> & { id: number }>,
+  fileRows: Record<string, unknown>[],
+  existingRows: Array<Record<string, unknown> & { id: number }>,
 ): MatchedRow[] {
   // Bucket file entries by business key (preserves file order within group).
   const fileEntries: FileEntry[] = new Array(fileRows.length);
@@ -597,14 +603,14 @@ export function matchRows(
   const lockedDbIds = new Set<number>();
   if (section === "PLAN") {
     for (const row of dbSorted) {
-      const ref = (row as any).externalRef;
+      const ref = strOrNull(row.externalRef);
       if (typeof ref === "string" && ref.length > 0 && !dbByExternalRef.has(ref)) {
         dbByExternalRef.set(ref, { row, bk: generateBusinessKey(section, projectId, row) });
       }
     }
     for (let i = 0; i < fileRows.length; i++) {
       const fileRow = fileRows[i];
-      const newRef = buildNewPlanExternalRef(projectId, fileRow as any);
+      const newRef = buildNewPlanExternalRef(projectId, fileRow as unknown as Parameters<typeof buildNewPlanExternalRef>[1]);
       const viaNew = dbByExternalRef.get(newRef);
       if (viaNew && !lockedDbIds.has(viaNew.row.id)) {
         fileIdxToDb.set(i, viaNew);
@@ -677,7 +683,7 @@ export function matchRows(
     existingId: number | null;
     fileIndex: number | null;
     inDuplicateGroup: boolean;
-    sourceRow?: Record<string, any> | null;
+    sourceRow?: Record<string, unknown> | null;
   }): { rowUid: string; canonicalExternalRef: string | undefined } {
     const { bkKey, existingId, fileIndex, inDuplicateGroup, sourceRow } = opts;
     let rowUid: string;
@@ -809,7 +815,7 @@ export function matchRows(
     // identity and must not be overwritten by an unrelated NEW insert.
     const dbRefOwners = new Map<string, number>(); // externalRef → owner DB id
     for (const dbRow of existingRows) {
-      const ref = (dbRow as any).externalRef;
+      const ref = strOrNull(dbRow.externalRef);
       if (typeof ref === "string" && ref.length > 0) dbRefOwners.set(ref, dbRow.id);
     }
 
@@ -826,7 +832,7 @@ export function matchRows(
       const intraResultCollision = seenRefs.has(candidate);
 
       if (driftCollision || intraResultCollision) {
-        const sourceRow = (r.fileRow as any)?.sourceRow;
+        const sourceRow = r.fileRow?.sourceRow;
         const suffix = r.existingRowId != null
           ? `#pk${r.existingRowId}`
           : `#row${sourceRow ?? r.fileIndex ?? "x"}`;
@@ -860,13 +866,15 @@ export function matchRows(
 // Key dispatch
 // ---------------------------------------------------------------------------
 
-export function generateBusinessKey(section: SectionType, projectId: number, row: Record<string, any>): BusinessKey {
+export function generateBusinessKey(section: SectionType, projectId: number, row: Record<string, unknown>): BusinessKey {
+  // Section determines which structural shape `row` actually has; the
+  // dynamic record is bridged to the specific param type via `unknown`.
   switch (section) {
     case "PLAN":
-      return planBusinessKey(projectId, row as any);
+      return planBusinessKey(projectId, row as unknown as Parameters<typeof planBusinessKey>[1]);
     case "REVENUE":
-      return revenueBusinessKey(projectId, row as any);
+      return revenueBusinessKey(projectId, row as unknown as Parameters<typeof revenueBusinessKey>[1]);
     case "EXPENDITURE":
-      return expenditureBusinessKey(projectId, row as any);
+      return expenditureBusinessKey(projectId, row as unknown as Parameters<typeof expenditureBusinessKey>[1]);
   }
 }

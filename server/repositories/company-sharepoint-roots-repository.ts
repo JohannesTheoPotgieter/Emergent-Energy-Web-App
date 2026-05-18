@@ -6,7 +6,7 @@
  * "Company" surface.
  */
 
-import { and, asc, eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "../db";
 import {
   companySharepointRoots,

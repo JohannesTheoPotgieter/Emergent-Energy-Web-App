@@ -1,7 +1,7 @@
 import type ExcelJS from "exceljs";
 import type { DetectionResult } from "./detector";
 import type { MappingResult } from "./mapper";
-import { worksheetToArray, parseDate, parseNumber, parsePercent, parseStatus, daysBetween, lastDayOfMonthFromDate } from "./utils";
+import { worksheetToArray, parseDate, parseNumber, parseStatus, daysBetween, lastDayOfMonthFromDate } from "./utils";
 
 /**
  * Per-cell formatting captured from the source workbook, keyed by canonical
@@ -198,11 +198,10 @@ export interface NormalizationResult {
     suggestedAction: string | null;
     issueType: string;
     issueFingerprint: string;
-    payloadJson: any;
+    payloadJson: unknown;
   }>;
 }
 
-type SectionType = "PLAN" | "REVENUE" | "EXPENDITURE";
 type IssueEntry = NormalizationResult["issues"][number];
 type CategoryAllocationEntry = NormalizationResult["categoryAllocations"][number];
 
@@ -243,7 +242,7 @@ function makeFingerprint(issueType: string, section: string, key: string): strin
 }
 
 function extractCostedSummary(
-  data: any[][],
+  data: unknown[][],
   headerRowIndex: number
 ): NormalizationResult["costedSummary"] {
   let plannedRevenue: number | null = null;
@@ -323,7 +322,7 @@ function extractCostedSummary(
  * trackers that don't have the metadata block).
  */
 function extractProjectPlanMetadata(
-  data: any[][],
+  data: unknown[][],
   headerRowIndex: number,
 ): {
   baselineCompletionDate: string | null;
@@ -348,7 +347,7 @@ function extractProjectPlanMetadata(
   let hasAny = false;
 
   // Locate the value cell adjacent to a label. Returns { value, colIndex }.
-  function findAdjacent(row: any[], labelCol: number): { value: any; colIndex: number } | null {
+  function findAdjacent(row: unknown[], labelCol: number): { value: unknown; colIndex: number } | null {
     for (let c = labelCol + 1; c < Math.min(row.length, labelCol + 6); c++) {
       const v = row[c];
       if (v === null || v === undefined) continue;
@@ -482,11 +481,12 @@ const EXCEL_ERROR_VALUES = new Set(["#REF!", "#DIV/0!", "#VALUE!", "#N/A", "#NAM
  * Check if a cell value is an Excel error. Returns the error string if so, null otherwise.
  * Also handles ExcelJS error object format: { error: "#REF!" }
  */
-function getExcelError(value: any): string | null {
+function getExcelError(value: unknown): string | null {
   if (value == null) return null;
   // ExcelJS error object format
-  if (typeof value === "object" && value.error && typeof value.error === "string") {
-    if (EXCEL_ERROR_VALUES.has(value.error)) return value.error;
+  if (typeof value === "object") {
+    const err = (value as { error?: unknown }).error;
+    if (typeof err === "string" && EXCEL_ERROR_VALUES.has(err)) return err;
   }
   if (typeof value === "string") {
     const trimmed = value.trim();
@@ -495,7 +495,7 @@ function getExcelError(value: any): string | null {
   return null;
 }
 
-function findNumericValueInRow(row: any[], startCol: number): number | null {
+function findNumericValueInRow(row: unknown[], startCol: number): number | null {
   for (let c = startCol; c < Math.min(row.length, startCol + 5); c++) {
     const v = row[c];
     if (v == null) continue;
@@ -511,7 +511,7 @@ function getColIndex(mappings: MappingResult, canonicalField: string): number {
   return mapping ? mapping.colIndex : -1;
 }
 
-function cellStr(row: any[], colIndex: number): string | null {
+function cellStr(row: unknown[], colIndex: number): string | null {
   if (colIndex < 0 || colIndex >= row.length) return null;
   const v = row[colIndex];
   if (v == null || String(v).trim() === "") return null;
@@ -524,7 +524,9 @@ function cellStr(row: any[], colIndex: number): string | null {
  * Handles: direct ARGB, direct RGB, theme colors, themed objects, and edge cases.
  * Returns null/unconfirmed as safe default when color can't be resolved.
  */
-function extractFontColorHex(fontColor: any): string | null {
+type ExcelColorLike = Partial<ExcelJS.Color> & { rgb?: string };
+
+function extractFontColorHex(fontColor: ExcelColorLike | null | undefined): string | null {
   if (!fontColor) return null;
   // Direct ARGB: "FFFF0000" → strip alpha → "FF0000"
   if (fontColor.argb && typeof fontColor.argb === "string") {
@@ -596,12 +598,12 @@ function getCellFontColor(ws: ExcelJS.Worksheet, rowIdx: number, colIdx: number)
  * cannot be resolved without the workbook theme XML; callers treat
  * `null` as "no fill captured".
  */
-function extractFillColorHex(fill: any): string | null {
+function extractFillColorHex(fill: ExcelJS.Fill | null | undefined): string | null {
   if (!fill) return null;
   // ExcelJS exposes solid pattern fills as { type: "pattern", pattern: "solid", fgColor: { argb } }.
   // We only capture solid fills; gradient / striped / etc. are surfaced as null.
   if (fill.type !== "pattern") return null;
-  const fg = fill.fgColor;
+  const fg: ExcelColorLike | undefined = fill.fgColor;
   if (!fg) return null;
   if (typeof fg.argb === "string") {
     const argb = fg.argb;
@@ -736,7 +738,7 @@ function deriveIndentLevel(taskNo: string): number {
 }
 
 function extractPlanTasks(
-  data: any[][],
+  data: unknown[][],
   mapping: MappingResult,
   sheetName: string,
   startRow: number,
@@ -986,7 +988,7 @@ function extractPlanTasks(
 }
 
 function extractRevenueLines(
-  data: any[][],
+  data: unknown[][],
   mapping: MappingResult,
   sheetName: string,
   startRow: number,
@@ -1218,7 +1220,7 @@ function extractSubProjectFromCategory(category: string | null): string | null {
 
 /** Exported for unit testing. Internal — public API is `normalizeData`. */
 export function extractCostLines(
-  data: any[][],
+  data: unknown[][],
   mapping: MappingResult,
   sheetName: string,
   startRow: number,
@@ -1276,11 +1278,6 @@ export function extractCostLines(
   // Positional fallback: if "Total Revenue" synonym not matched, try the rightmost budget pane column.
   // This handles "ERROR on REV" or other broken headers where the column position is still correct.
   if (jCatCol < 0 && bm && bm.length > 0) {
-    // The rightmost budget pane column by position (highest colIndex) that we haven't already mapped.
-    const mappedBudgetCols = new Set(bm.map((m: any) => m.colIndex));
-    // Also check if there's a column to the right of the highest mapped column.
-    const maxMappedCol = Math.max(...bm.map((m: any) => m.colIndex));
-
     // Look at the raw budget headers from the section detection for unmapped columns.
     // The J_cat column is typically the rightmost populated budget-pane column.
     // We check if the column right of "Total COS" (if found) has numeric data on row 2 (grand total).
@@ -1323,7 +1320,6 @@ export function extractCostLines(
   const invoiceNumbers = new Set<string>();
   let currentCategoryKey: string | null = null;
   let currentCategoryNumber: string | null = null;
-  let currentCategoryName: string | null = null;
   const seenCategoryNumbers = new Set<string>();
 
   // 1:N actual extraction state: track the most recently emitted costed
@@ -1450,7 +1446,6 @@ export function extractCostLines(
         if (catNum !== currentCategoryNumber && !seenCategoryNumbers.has(catNum)) {
           seenCategoryNumbers.add(catNum);
           currentCategoryNumber = catNum;
-          currentCategoryName = catName;
           currentCategoryKey = normalizedKey;
 
           // S06: Extract J_cat and X_cat from the budget pane columns on this row.
@@ -1499,12 +1494,10 @@ export function extractCostLines(
           // Same category number seen again after a different one — update tracking.
           currentCategoryNumber = catNum;
           currentCategoryKey = normalizedKey;
-          currentCategoryName = catName;
         }
       } else if (!currentCategoryKey) {
         // Non-numbered category text — use as-is only if we haven't seen a numbered one yet.
         currentCategoryKey = rawCategory;
-        currentCategoryName = rawCategory;
       }
     }
     const category = currentCategoryKey || rawCategory;

@@ -24,6 +24,25 @@ function toStr(value: unknown): string | null {
   return String(value);
 }
 
+type SqlRow = Record<string, unknown>;
+
+/**
+ * `db.execute()` is typed `any` at its source (dual pg / dev-SQLite driver).
+ * These helpers narrow a raw result to the row shape this module reads
+ * without re-introducing `any`.
+ */
+function rowsOf(result: unknown): SqlRow[] {
+  const rows =
+    result && typeof result === "object" && "rows" in result
+      ? (result as { rows?: unknown }).rows
+      : result;
+  return Array.isArray(rows) ? (rows as SqlRow[]) : [];
+}
+
+function firstRow(result: unknown): SqlRow | undefined {
+  return rowsOf(result)[0];
+}
+
 export interface FinanceExceptionSummary {
   generatedAt: string;
   /** Cost lines with an invoice_number but no po_number. */
@@ -175,15 +194,15 @@ export async function getFinanceExceptionSummary(): Promise<FinanceExceptionSumm
     `),
   ]);
 
-  const missingPoInvoices = toInt((missingPo.rows[0] as any)?.count);
-  const costMissingSourceLineage = toInt((costLineage.rows[0] as any)?.count);
-  const revenueMissingSourceLineage = toInt((revLineage.rows[0] as any)?.count);
-  const unmatchedCostInvoices = toInt((unmatchedCostInvoicesRow.rows[0] as any)?.count);
-  const unmatchedRevenuePayments = toInt((unmatchedRevenueRow.rows[0] as any)?.count);
-  const duplicateLinkCandidates = toInt((duplicateRow.rows[0] as any)?.count);
-  const costOverridesInEffect = toInt((costOverrideRow.rows[0] as any)?.count);
-  const revenueOverridesInEffect = toInt((revenueOverrideRow.rows[0] as any)?.count);
-  const cosDerivationDriftRows = toInt((driftRow.rows[0] as any)?.count);
+  const missingPoInvoices = toInt(firstRow(missingPo)?.count);
+  const costMissingSourceLineage = toInt(firstRow(costLineage)?.count);
+  const revenueMissingSourceLineage = toInt(firstRow(revLineage)?.count);
+  const unmatchedCostInvoices = toInt(firstRow(unmatchedCostInvoicesRow)?.count);
+  const unmatchedRevenuePayments = toInt(firstRow(unmatchedRevenueRow)?.count);
+  const duplicateLinkCandidates = toInt(firstRow(duplicateRow)?.count);
+  const costOverridesInEffect = toInt(firstRow(costOverrideRow)?.count);
+  const revenueOverridesInEffect = toInt(firstRow(revenueOverrideRow)?.count);
+  const cosDerivationDriftRows = toInt(firstRow(driftRow)?.count);
 
   const totalExceptionCount =
     missingPoInvoices +
@@ -320,7 +339,7 @@ export async function getFinanceExceptionQueue(limitPerCategory = DEFAULT_QUEUE_
 
   const rows: FinanceExceptionQueueRow[] = [];
 
-  for (const raw of missingPo.rows as any[]) {
+  for (const raw of rowsOf(missingPo)) {
     rows.push({
       category: "missing_po",
       costLineId: toInt(raw.id),
@@ -334,7 +353,7 @@ export async function getFinanceExceptionQueue(limitPerCategory = DEFAULT_QUEUE_
     });
   }
 
-  for (const raw of unmatchedCost.rows as any[]) {
+  for (const raw of rowsOf(unmatchedCost)) {
     rows.push({
       category: "unmatched_cost_invoice",
       costLineId: toInt(raw.id),
@@ -348,7 +367,7 @@ export async function getFinanceExceptionQueue(limitPerCategory = DEFAULT_QUEUE_
     });
   }
 
-  for (const raw of unmatchedRev.rows as any[]) {
+  for (const raw of rowsOf(unmatchedRev)) {
     rows.push({
       category: "unmatched_revenue_payment",
       revenueLineId: toInt(raw.id),
@@ -362,7 +381,7 @@ export async function getFinanceExceptionQueue(limitPerCategory = DEFAULT_QUEUE_
     });
   }
 
-  for (const raw of duplicates.rows as any[]) {
+  for (const raw of rowsOf(duplicates)) {
     const entityType = toStr(raw.app_entity_type);
     const entityId = toInt(raw.app_entity_id);
     rows.push({
@@ -379,7 +398,7 @@ export async function getFinanceExceptionQueue(limitPerCategory = DEFAULT_QUEUE_
     });
   }
 
-  for (const raw of costOverride.rows as any[]) {
+  for (const raw of rowsOf(costOverride)) {
     rows.push({
       category: "cost_override",
       costLineId: toInt(raw.id),
@@ -396,7 +415,7 @@ export async function getFinanceExceptionQueue(limitPerCategory = DEFAULT_QUEUE_
     });
   }
 
-  for (const raw of revOverride.rows as any[]) {
+  for (const raw of rowsOf(revOverride)) {
     rows.push({
       category: "revenue_override",
       revenueLineId: toInt(raw.id),

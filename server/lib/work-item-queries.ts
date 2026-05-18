@@ -10,6 +10,18 @@ import { sql } from "drizzle-orm";
 import type { UnifiedTask } from "@shared/types/unified-task";
 import { fromWorkItem } from "@shared/types/unified-task";
 
+/**
+ * `db.execute()` is typed `any` at its source (dual pg / dev-SQLite driver).
+ * Narrow a raw result to its row array without re-introducing `any`.
+ */
+function rowsOf(result: unknown): Record<string, unknown>[] {
+  if (result && typeof result === "object" && "rows" in result) {
+    const rows = (result as { rows?: unknown }).rows;
+    if (Array.isArray(rows)) return rows as Record<string, unknown>[];
+  }
+  return Array.isArray(result) ? (result as Record<string, unknown>[]) : [];
+}
+
 // ── Raw query with JOINs ─────────────────────────────────────────────
 
 /**
@@ -103,17 +115,13 @@ export async function queryWorkItems(opts: {
     ${limitClause}
   `));
 
-  const rows = (result as any).rows || [];
-  return rows.map(mergeExtensionRow);
+  return rowsOf(result).map(mergeExtensionRow);
 }
 
 /**
  * Fetch a single work_item by ID with all extensions.
  */
 export async function getWorkItemById(id: number): Promise<UnifiedTask | null> {
-  const items = await queryWorkItems({ includeDeleted: false });
-  // Use the general query but filter — for a single item this is fine
-  // In production this would be optimized with a WHERE clause
   const result = await db.execute(sql.raw(`
     SELECT
       wi.*,
@@ -124,7 +132,7 @@ export async function getWorkItemById(id: number): Promise<UnifiedTask | null> {
     LIMIT 1
   `));
 
-  const rows = (result as any).rows || [];
+  const rows = rowsOf(result);
   if (rows.length === 0) return null;
   return mergeExtensionRow(rows[0]);
 }
@@ -143,10 +151,12 @@ export async function getAssignmentsByWorkItemIds(ids: number[]): Promise<Map<nu
   `));
 
   const map = new Map<number, number[]>();
-  for (const row of (result as any).rows || []) {
-    const list = map.get(row.work_item_id) || [];
-    list.push(row.user_id);
-    map.set(row.work_item_id, list);
+  for (const row of rowsOf(result)) {
+    const workItemId = Number(row.work_item_id);
+    const userId = Number(row.user_id);
+    const list = map.get(workItemId) || [];
+    list.push(userId);
+    map.set(workItemId, list);
   }
   return map;
 }
@@ -158,7 +168,7 @@ export async function getAssignmentsByWorkItemIds(ids: number[]): Promise<Map<nu
  * Extension columns are prefixed with pm_, eng_, sched_ to avoid collisions.
  * Falls back to core work_items columns when extension is NULL.
  */
-function mergeExtensionRow(row: Record<string, any>): UnifiedTask {
+function mergeExtensionRow(row: Record<string, unknown>): UnifiedTask {
   return fromWorkItem({
     // Core fields pass through from wi.*
     ...row,

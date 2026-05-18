@@ -75,18 +75,25 @@ export class ProjectInfoRepository {
 
   async upsert(info: InsertProjectInfo, existing: ProjectInfo | undefined): Promise<ProjectInfo> {
     if (existing) {
-      const { executionEnabled, ...updateFields } = info as any;
+      // `info` may carry project_execution_state columns (e.g.
+      // `executionEnabled`) at runtime; that key is routed via the split
+      // tables, so strip it off the project_info UPDATE set. Viewing `info`
+      // as the merged UpdateProjectInfoFields shape keeps this `any`-free.
+      const updateFields: Partial<UpdateProjectInfoFields> = {
+        ...(info as UpdateProjectInfoFields),
+      };
+      delete updateFields.executionEnabled;
       const [updated] = await this.dbInstance
         .update(projectInfo)
         .set({ ...updateFields, updatedAt: new Date() })
-        .where(eq(projectInfo.projectName, (info as any).projectName))
+        .where(eq(projectInfo.projectName, info.projectName))
         .returning();
       await syncProjectSplitTables(updated.id, updateFields, this.dbInstance);
       return updated;
     }
     const insertFields = { ...info, executionEnabled: false, updatedAt: new Date() };
     const [created] = await this.dbInstance.insert(projectInfo).values(insertFields).returning();
-    await syncProjectSplitTablesAfterInsert(created.id, insertFields as any, this.dbInstance);
+    await syncProjectSplitTablesAfterInsert(created.id, insertFields, this.dbInstance);
     return created;
   }
 

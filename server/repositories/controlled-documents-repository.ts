@@ -25,7 +25,7 @@ import {
   type ControlledDocumentState,
   type ProjectSharepointRoot,
 } from "@shared/schema/documents";
-import { approvals, type Approval } from "@shared/schema/collaboration";
+import { approvals } from "@shared/schema/collaboration";
 import { users, type User } from "@shared/schema/users";
 import { projectInfo } from "@shared/schema/projects";
 import { extractCostingValues } from "../services/excel-extraction-service";

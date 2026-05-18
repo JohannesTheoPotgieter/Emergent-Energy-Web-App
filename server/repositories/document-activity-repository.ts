@@ -6,7 +6,7 @@
  * activity tab and the global activity feed.
  */
 
-import { and, desc, eq, SQL, sql } from "drizzle-orm";
+import { and, desc, eq, SQL } from "drizzle-orm";
 import { db } from "../db";
 import {
   documentActivity,
@@ -61,7 +61,7 @@ export async function recordActivity(
         action: input.action,
         sizeBytes: input.sizeBytes ?? null,
         requestId: input.requestId ?? null,
-        metadata: (input.metadata as any) ?? null,
+        metadata: input.metadata ?? null,
       } satisfies InsertDocumentActivity)
       .returning();
     return row ?? null;

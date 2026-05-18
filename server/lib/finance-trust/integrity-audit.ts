@@ -23,6 +23,18 @@ function toInt(value: unknown): number {
   return Number.isFinite(n) ? Math.trunc(n) : 0;
 }
 
+/**
+ * `db.execute()` is typed `any` at its source (dual pg / dev-SQLite driver).
+ * Narrow a raw COUNT(*) result to its first row without re-introducing `any`.
+ */
+function firstRow(result: unknown): Record<string, unknown> | undefined {
+  const rows =
+    result && typeof result === "object" && "rows" in result
+      ? (result as { rows?: unknown }).rows
+      : result;
+  return Array.isArray(rows) ? (rows[0] as Record<string, unknown> | undefined) : undefined;
+}
+
 export interface FinanceIntegrityFinding {
   key: string;
   severity: "info" | "warn" | "high";
@@ -181,11 +193,11 @@ export async function buildFinanceIntegrityReport(): Promise<FinanceIntegrityRep
     `),
   ]);
 
-  const costDupes = toInt((costDuplicateInvoiceRow.rows[0] as any)?.count);
-  const revenueDupes = toInt((revenueDuplicateInvoiceRow.rows[0] as any)?.count);
-  const mappingDupes = toInt((mappingDuplicateRow.rows[0] as any)?.count);
-  const crossRealmLinks = toInt((crossRealmLinkRow.rows[0] as any)?.count);
-  const orphanedCostLines = toInt((activeCostLinesWithoutProject.rows[0] as any)?.count);
+  const costDupes = toInt(firstRow(costDuplicateInvoiceRow)?.count);
+  const revenueDupes = toInt(firstRow(revenueDuplicateInvoiceRow)?.count);
+  const mappingDupes = toInt(firstRow(mappingDuplicateRow)?.count);
+  const crossRealmLinks = toInt(firstRow(crossRealmLinkRow)?.count);
+  const orphanedCostLines = toInt(firstRow(activeCostLinesWithoutProject)?.count);
 
   const findings: FinanceIntegrityFinding[] = [
     {

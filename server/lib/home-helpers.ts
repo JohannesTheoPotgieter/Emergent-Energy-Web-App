@@ -127,7 +127,15 @@ export function isHoliday(dateStr: string): boolean {
 
 // ── Plan date extraction helpers ──
 
-export function findMaxEndDate(plans: any[], patterns: string[]): string | null {
+interface PlanDateRow {
+  highLevelProgramme?: string | null;
+  trueActualEnd?: string | null;
+  actualEnd?: string | null;
+  trueActualStart?: string | null;
+  actualStart?: string | null;
+}
+
+export function findMaxEndDate(plans: PlanDateRow[], patterns: string[]): string | null {
   let maxDate: string | null = null;
   for (const task of plans) {
     const desc = (task.highLevelProgramme || '').toLowerCase();
@@ -142,7 +150,7 @@ export function findMaxEndDate(plans: any[], patterns: string[]): string | null 
   return maxDate;
 }
 
-export function findMinStartDate(plans: any[], patterns: string[]): string | null {
+export function findMinStartDate(plans: PlanDateRow[], patterns: string[]): string | null {
   let minDate: string | null = null;
   for (const task of plans) {
     const desc = (task.highLevelProgramme || '').toLowerCase();

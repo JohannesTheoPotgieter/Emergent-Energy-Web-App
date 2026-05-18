@@ -123,15 +123,15 @@ describe("Phase 5: Frontend sub-project filters", () => {
 describe("Phase 6: Null safety for new fields", () => {
   it("adaptCostToExpense uses nullish coalescing for all new fields", () => {
     const source = read("server/lib/data-merge.ts");
-    expect(source).toContain("(cost as any).budgetQty ?? null");
-    expect(source).toContain("(cost as any).subProjectName ?? null");
-    expect(source).toContain("(cost as any).revenueRecognitionAmount ?? null");
+    expect(source).toContain("budgetQty: cost.budgetQty ?? null");
+    expect(source).toContain("subProjectName: cost.subProjectName ?? null");
+    expect(source).toContain("revenueRecognitionAmount: cost.revenueRecognitionAmount ?? null");
   });
 
   it("adaptRevenueToInflow uses nullish coalescing for subProjectName", () => {
     const source = read("server/lib/data-merge.ts");
     const inflowBlock = source.substring(source.indexOf("function adaptRevenueToInflow"));
-    expect(inflowBlock).toContain("(rev as any).subProjectName ?? null");
+    expect(inflowBlock).toContain("subProjectName: rev.subProjectName ?? null");
   });
 });
 

@@ -13,7 +13,7 @@
 import type { NormalizationResult } from "./normalizer";
 import { detectImportMode, loadCurrentPlanRows, loadCurrentRevenueRows, loadCurrentCostRows, loadBaselineForPlanner } from "./baseline";
 import type { ImportMode } from "./baseline";
-import { runConflictEngine, type ConflictEngineResult, type ConflictSummary } from "./conflict-engine";
+import { runConflictEngine, type ConflictEngineResult } from "./conflict-engine";
 
 // ---------------------------------------------------------------------------
 // Canonical source declarations — the authoritative table for each section.
@@ -41,7 +41,6 @@ import {
   type MatchConfidence,
   type RowClassification,
   type ChangedField,
-  type BusinessKey,
 } from "./row-matcher";
 
 // ---------------------------------------------------------------------------
@@ -213,7 +212,7 @@ export async function runImportPlanner(
   const matchedRowsBySection: Record<SectionType, MatchedRow[]> = { PLAN: [], REVENUE: [], EXPENDITURE: [] };
 
   if (normalization.planTasks.length > 0 || planRows.length > 0) {
-    const matched = matchRows("PLAN", projectId, normalization.planTasks, planRows as any);
+    const matched = matchRows("PLAN", projectId, normalization.planTasks, planRows);
     matchedRowsBySection.PLAN = matched;
     planSection = buildSectionPlan(CANONICAL_SOURCES.PLAN, matched, normalization.planTasks.length, planRows.length);
     collectWarnings(matched, "PLAN", warnings);
@@ -229,14 +228,14 @@ export async function runImportPlanner(
   // wipe-on-missing-sheet failure is far more damaging. Operators clear a
   // section explicitly via the UI's soft-delete path.
   if (normalization.revenueLines.length > 0) {
-    const matched = matchRows("REVENUE", projectId, normalization.revenueLines, revenueRows as any);
+    const matched = matchRows("REVENUE", projectId, normalization.revenueLines, revenueRows);
     matchedRowsBySection.REVENUE = matched;
     revenueSection = buildSectionPlan(CANONICAL_SOURCES.REVENUE, matched, normalization.revenueLines.length, revenueRows.length);
     collectWarnings(matched, "REVENUE", warnings);
   }
 
   if (normalization.costLines.length > 0) {
-    const matched = matchRows("EXPENDITURE", projectId, normalization.costLines, costRows as any);
+    const matched = matchRows("EXPENDITURE", projectId, normalization.costLines, costRows);
     matchedRowsBySection.EXPENDITURE = matched;
     expenditureSection = buildSectionPlan(CANONICAL_SOURCES.EXPENDITURE, matched, normalization.costLines.length, costRows.length);
     collectWarnings(matched, "EXPENDITURE", warnings);
@@ -273,7 +272,7 @@ function buildBaselinePlan(
   warnings: string[],
   lastCommittedRunId: number | null = null,
 ): PlannerResult {
-  function baselineSectionPlan(canonicalSource: string, rows: Record<string, any>[]): SectionPlan | null {
+  function baselineSectionPlan(canonicalSource: string, rows: object[]): SectionPlan | null {
     if (rows.length === 0) return null;
     return {
       canonicalSource,
@@ -288,7 +287,11 @@ function buildBaselinePlan(
         rowUid: `baseline#${i}`,
         keyType: "PRIMARY" as const,
         matchConfidence: "HIGH" as const,
-        rowLabel: (r as any).taskName || (r as any).milestoneName || (r as any).description || `Row ${i + 1}`,
+        rowLabel: ((): string => {
+          const rec = r as Record<string, unknown>;
+          const v = rec.taskName ?? rec.milestoneName ?? rec.description;
+          return typeof v === "string" && v ? v : `Row ${i + 1}`;
+        })(),
         fileIndex: i,
         existingRowId: null,
         changedFields: [],

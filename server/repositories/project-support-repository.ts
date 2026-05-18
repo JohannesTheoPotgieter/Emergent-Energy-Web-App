@@ -48,7 +48,7 @@ export class ProjectSupportRepository {
   }
 
   async upsertProjectEditableFields(data: InsertProjectEditableFields): Promise<ProjectEditableFields> {
-    const existing = await this.getProjectEditableFields((data as any).projectName);
+    const existing = await this.getProjectEditableFields(data.projectName);
     if (existing) {
       const updated = await this.dbInstance.update(projectEditableFields)
         .set({ ...data, updatedAt: new Date() })

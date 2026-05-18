@@ -26,7 +26,8 @@ export async function getAssignedEvidenceByCostLineIds(costLineIds: number[]): P
     .groupBy(quickbooksCostAllocations.costLineId);
 
   const out = new Map<number, number>();
-  for (const row of rows as any[]) {
+  const typedRows = rows as Array<{ costLineId: number | null; assignedExVat: number | string | null }>;
+  for (const row of typedRows) {
     const id = Number(row.costLineId);
     const amt = Number(row.assignedExVat || 0);
     if (!Number.isFinite(id)) continue;

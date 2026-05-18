@@ -66,8 +66,8 @@ export interface BucketCostLinesOptions {
  * row; adapted expense rows expose the amount as `expenseActualTotal`.
  */
 function isEffectivelyRealisedLocal(exp: CostLineForRecognition, monthKey: string | null, currentMonthKey: string): boolean {
-  if (isPastMonthAutoRealised(exp as any, monthKey, currentMonthKey)) return true;
-  if (!isCosRealised(exp as any)) return false;
+  if (isPastMonthAutoRealised(exp, monthKey, currentMonthKey)) return true;
+  if (!isCosRealised(exp)) return false;
   return monthKey ? monthKey <= currentMonthKey : true;
 }
 

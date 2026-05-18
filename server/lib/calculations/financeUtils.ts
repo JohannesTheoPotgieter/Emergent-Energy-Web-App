@@ -9,7 +9,7 @@
  */
 
 import { classifyCosStatus, type CosStatus } from './stateClassifier';
-import { isCanonicalCosRealised, getCosRealisationWarnings, type CosLineInput } from '../finance/cos-realisation';
+import { isCanonicalCosRealised } from '../finance/cos-realisation';
 import { computeCostEvidence } from '../finance/qb-allocation';
 
 // ─── Static fallback COS budget (FY2025-2026) ───

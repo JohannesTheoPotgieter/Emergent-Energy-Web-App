@@ -21,8 +21,28 @@ import { addTemporalColumns } from "../temporal-helpers";
 import { projectRevenueSummary } from "@shared/schema";
 import { and, eq, isNull } from "drizzle-orm";
 
+/**
+ * Minimal structural surface of the Drizzle transaction used here. The real
+ * handle is typed `any` at its source (`server/db.ts`, dual pg / dev-SQLite
+ * driver); this narrows it to the builder chains touched in this file
+ * without widening back to `any`.
+ */
+type MaterializerTx = {
+  select(columns: Record<string, unknown>): {
+    from(table: unknown): {
+      where(condition: unknown): { limit(n: number): Promise<Array<{ id: number }>> };
+    };
+  };
+  update(table: unknown): {
+    set(values: Record<string, unknown>): { where(condition: unknown): Promise<unknown> };
+  };
+  insert(table: unknown): {
+    values(values: Record<string, unknown> | Record<string, unknown>[]): Promise<unknown>;
+  };
+};
+
 export interface MaterializerContext {
-  tx: any;
+  tx: MaterializerTx;
   projectId: number;
   projectName: string;
   runId: number;
@@ -55,7 +75,7 @@ export async function materializeDerivatives(ctx: MaterializerContext): Promise<
           isNull(projectRevenueSummary.effectiveTo),
         ))
         .limit(1);
-      const vals: Record<string, any> = {};
+      const vals: Record<string, unknown> = {};
       if (cs.plannedRevenue != null) vals.plannedRevenue = String(cs.plannedRevenue);
       if (cs.plannedExpenditure != null) vals.plannedExpenditure = String(cs.plannedExpenditure);
       if (cs.plannedProfit != null) vals.plannedProfit = String(cs.plannedProfit);
@@ -72,7 +92,7 @@ export async function materializeDerivatives(ctx: MaterializerContext): Promise<
             isNull(projectRevenueSummary.effectiveTo),
           ));
       } else {
-        await tx.insert(projectRevenueSummary).values(addTemporalColumns({ projectName, projectId, ...vals }, runId, commitTimestamp) as any);
+        await tx.insert(projectRevenueSummary).values(addTemporalColumns({ projectName, projectId, ...vals }, runId, commitTimestamp));
       }
       result.projectRevenueSummaryUpdated = true;
     }

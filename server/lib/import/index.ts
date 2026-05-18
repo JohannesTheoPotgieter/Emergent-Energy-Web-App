@@ -17,11 +17,12 @@ export async function runSmartImportPreview(buffer: Buffer, fileName: string): P
     // ExcelJS declares `interface Buffer extends ArrayBuffer` globally, creating a merge
     // conflict with @types/node's generic Buffer in TS6/ES2024. Cast is safe at runtime.
     await workbook.xlsx.load(buffer as Buffer & ArrayBuffer);
-  } catch (parseErr: any) {
+  } catch {
     const isXlsm = fileName.toLowerCase().endsWith(".xlsm");
     if (isXlsm) {
       try {
-        await (workbook as any).xlsx.load(buffer, { ignoreNodes: ['dataValidations'] });
+        // Same TS6/ES2024 Buffer/ArrayBuffer merge conflict as above — cast is safe at runtime.
+        await workbook.xlsx.load(buffer as Buffer & ArrayBuffer, { ignoreNodes: ['dataValidations'] });
       } catch {
         throw new Error(`PARSE_ERROR: The file "${fileName}" appears to be corrupt or is not a valid Excel file. Please re-export it from Excel and try again.`);
       }

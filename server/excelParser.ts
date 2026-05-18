@@ -275,7 +275,7 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
   let projectInfo: UpdateProjectInfoFields | null = null;
   const expenses: InsertProgramExpense[] = [];
   const inflows: InsertProgramInflows[] = [];
-  const planItems: InsertProjectPlan[] = [];
+  const planItems: Omit<InsertProjectPlan, "projectId">[] = [];
 
   const sheetNames = workbook.worksheets.map(ws => ws.name);
 
@@ -834,9 +834,9 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
     warnings.push("Missing 'Revenue Tracking' sheet");
   }
 
-  const cashflowPoints: InsertCashflowPoint[] = [];
-  const financeRevenueMonthly: InsertFinanceRevenueMonthly[] = [];
-  const financeCosMonthly: InsertFinanceCosMonthly[] = [];
+  const cashflowPoints: Omit<InsertCashflowPoint, "projectId">[] = [];
+  const financeRevenueMonthly: Omit<InsertFinanceRevenueMonthly, "projectId">[] = [];
+  const financeCosMonthly: Omit<InsertFinanceCosMonthly, "projectId">[] = [];
 
   if (sheetNames.includes("Cashflow")) {
     try {

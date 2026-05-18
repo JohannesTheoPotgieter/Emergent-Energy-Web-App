@@ -3,11 +3,11 @@ import {
   cashflowWeeklyManual, cashflowBalanceHistory, opexBudgetMonthly,
   opexWeeklyManual, availablePaymentOverrides, availablePaymentHistory,
   trackerMonthlyManual,
-  type CashflowWeeklyManual, type InsertCashflowWeeklyManual,
+  type CashflowWeeklyManual,
   type CashflowBalanceHistory, type InsertCashflowBalanceHistory,
-  type OpexBudgetMonthly, type InsertOpexBudgetMonthly,
-  type OpexWeeklyManual, type InsertOpexWeeklyManual,
-  type AvailablePaymentOverride, type InsertAvailablePaymentOverride,
+  type OpexBudgetMonthly,
+  type OpexWeeklyManual,
+  type AvailablePaymentOverride,
   type AvailablePaymentHistory, type InsertAvailablePaymentHistory,
   type TrackerMonthlyManual, type InsertTrackerMonthlyManual,
 } from "@shared/schema";
@@ -157,7 +157,7 @@ export class FinanceSupportRepository {
 
   async upsertTrackerMonthlyManual(data: InsertTrackerMonthlyManual): Promise<TrackerMonthlyManual> {
     const existing = await this.dbInstance.select().from(trackerMonthlyManual)
-      .where(and(eq(trackerMonthlyManual.trackerType, (data as any).trackerType), eq(trackerMonthlyManual.monthKey, (data as any).monthKey)));
+      .where(and(eq(trackerMonthlyManual.trackerType, data.trackerType), eq(trackerMonthlyManual.monthKey, data.monthKey)));
     if (existing[0]) {
       const updated = await this.dbInstance.update(trackerMonthlyManual)
         .set({ ...data, updatedAt: new Date() })

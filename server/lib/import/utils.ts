@@ -4,9 +4,12 @@ import { normalizeWithLegacy } from "@shared/utils/status-normalization";
 // Excel formula error values — these should be treated as null
 const EXCEL_ERRORS = new Set(["#REF!", "#DIV/0!", "#VALUE!", "#N/A", "#NAME?", "#NULL!", "#NUM!"]);
 
-function isExcelError(value: any): boolean {
+function isExcelError(value: unknown): boolean {
   if (value == null) return false;
-  if (typeof value === "object" && value.error && EXCEL_ERRORS.has(value.error)) return true;
+  if (typeof value === "object") {
+    const err = (value as { error?: unknown }).error;
+    if (typeof err === "string" && EXCEL_ERRORS.has(err)) return true;
+  }
   if (typeof value === "string" && EXCEL_ERRORS.has(value.trim())) return true;
   return false;
 }
@@ -19,18 +22,18 @@ function excelSerialToDate(serial: number): { y: number; m: number; d: number } 
   return { y: date.getFullYear(), m: date.getMonth() + 1, d: date.getDate() };
 }
 
-function isDateLike(v: any): v is Date {
+function isDateLike(v: unknown): v is Date {
   return v != null && Object.prototype.toString.call(v) === "[object Date]" && !isNaN((v as Date).getTime());
 }
 
-export function parseDate(value: any): string | null {
+export function parseDate(value: unknown): string | null {
   if (!value) return null;
   if (isExcelError(value)) return null;
 
   // ExcelJS returns formula cells as { formula, result } or { sharedFormula, result }.
   // Unwrap to the cached result before any further checks. Cross-realm safe via toString.
   if (typeof value === "object" && !isDateLike(value) && "result" in value) {
-    value = (value as any).result;
+    value = (value as { result?: unknown }).result;
     if (!value) return null;
     if (isExcelError(value)) return null;
   }
@@ -99,14 +102,14 @@ export function lastDayOfMonthFromDate(dateStr: string | null): string | null {
   return eom.toISOString().split("T")[0];
 }
 
-export function parseNumber(value: any): string | null {
+export function parseNumber(value: unknown): string | null {
   if (value === null || value === undefined || value === "") return null;
   if (isExcelError(value)) return null;
   const num = parseFloat(String(value).replace(/[,$]/g, ""));
   return isNaN(num) ? null : String(num);
 }
 
-export function parsePercent(value: any): string | null {
+export function parsePercent(value: unknown): string | null {
   if (value === null || value === undefined || value === "") return null;
   let num = parseFloat(String(value).replace(/%/g, ""));
   if (isNaN(num)) return null;
@@ -114,7 +117,7 @@ export function parsePercent(value: any): string | null {
   return String(num);
 }
 
-export function parseStatus(value: any): number | null {
+export function parseStatus(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
 
   if (typeof value === "number") {
@@ -298,28 +301,29 @@ export function normalizeSmartImportStatus(value: unknown): SmartImportStatus | 
   return null;
 }
 
-export function getCellRawValue(cell: ExcelJS.Cell): any {
+export function getCellRawValue(cell: ExcelJS.Cell): unknown {
   if (!cell || !cell.value) return null;
-  const v = cell.value;
+  const v: unknown = cell.value;
   if (typeof v === "object" && v !== null) {
-    if ("result" in v) return (v as any).result;
+    if ("result" in v) return (v as { result: unknown }).result;
     if ("error" in v) return null;
     if (v instanceof Date) return v;
     if ("richText" in v) {
-      return (v as any).richText.map((rt: any) => rt.text).join("");
+      const rt = (v as { richText: Array<{ text: string }> }).richText;
+      return rt.map((seg) => seg.text).join("");
     }
-    if ("text" in v) return (v as any).text;
+    if ("text" in v) return (v as { text: unknown }).text;
   }
   return v;
 }
 
-export function worksheetToArray(ws: ExcelJS.Worksheet): any[][] {
-  const data: any[][] = [];
+export function worksheetToArray(ws: ExcelJS.Worksheet): unknown[][] {
+  const data: unknown[][] = [];
   const rowCount = ws.rowCount;
   const colCount = ws.columnCount;
   for (let r = 1; r <= rowCount; r++) {
     const row = ws.getRow(r);
-    const rowData: any[] = [];
+    const rowData: unknown[] = [];
     for (let c = 1; c <= colCount; c++) {
       const cell = row.getCell(c);
       rowData.push(getCellRawValue(cell));
@@ -329,7 +333,7 @@ export function worksheetToArray(ws: ExcelJS.Worksheet): any[][] {
   return data;
 }
 
-export function normalizeHeader(header: any): string {
+export function normalizeHeader(header: unknown): string {
   return String(header || "")
     .toLowerCase()
     .trim()

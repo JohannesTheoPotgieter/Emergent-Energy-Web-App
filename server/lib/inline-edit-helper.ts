@@ -14,8 +14,27 @@
  *   3. Bulk field-level edits (for the old fieldName/overrideValue pattern)
  */
 
-import { eq, and, sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
+
+/**
+ * Minimal structural surface of the Drizzle db / transaction object used
+ * here. The concrete handle is typed `any` at its source (`server/db.ts`,
+ * dual pg / dev-SQLite driver); this narrows it to the one method touched
+ * without widening back to `any`.
+ */
+interface RawExecTx {
+  execute(query: SQL): Promise<unknown>;
+}
+
+/** Narrow a raw db.execute() result to its first row. */
+function firstRow(result: unknown): Record<string, unknown> | undefined {
+  if (result && typeof result === "object" && "rows" in result) {
+    const rows = (result as { rows?: unknown }).rows;
+    if (Array.isArray(rows)) return rows[0] as Record<string, unknown> | undefined;
+  }
+  return Array.isArray(result) ? (result[0] as Record<string, unknown> | undefined) : undefined;
+}
 
 /**
  * Apply an inline edit to a base table row.
@@ -34,9 +53,9 @@ import { db } from "../db";
 export async function inlineEdit(
   tableName: string,
   rowId: number,
-  fields: Record<string, any>,
+  fields: Record<string, unknown>,
   userId: number | null,
-  txOrDb: any = db,
+  txOrDb: RawExecTx = db,
 ): Promise<void> {
   // Build the SET clause for the fields being edited
   const fieldEntries = Object.entries(fields).filter(([k]) => k !== 'id');
@@ -101,20 +120,21 @@ export async function inlineEdit(
 export async function revertToImported(
   tableName: string,
   rowId: number,
-  txOrDb: any = db,
+  txOrDb: RawExecTx = db,
 ): Promise<boolean> {
   // Check if row has a snapshot to revert from
   const result = await txOrDb.execute(sql.raw(
     `SELECT import_snapshot FROM ${tableName} WHERE id = ${rowId}`
   ));
-  const rows = result.rows as any[];
-  if (!rows[0]?.import_snapshot) return false;
+  const firstSnapshotRow = firstRow(result);
+  const rawSnapshot = firstSnapshotRow?.import_snapshot;
+  if (!rawSnapshot) return false;
 
-  let snapshot: Record<string, any>;
+  let snapshot: Record<string, unknown>;
   try {
-    snapshot = typeof rows[0].import_snapshot === 'string'
-      ? JSON.parse(rows[0].import_snapshot)
-      : rows[0].import_snapshot;
+    snapshot = typeof rawSnapshot === 'string'
+      ? JSON.parse(rawSnapshot)
+      : (rawSnapshot as Record<string, unknown>);
   } catch {
     console.error(`[inline-edit] Corrupted import_snapshot JSON for ${tableName} row ${rowId}`);
     return false;
@@ -155,11 +175,11 @@ export async function applyFieldOverrides(
   rowId: number,
   overrides: Array<{ fieldName: string; overrideValue: string | null }>,
   userId: number | null,
-  txOrDb: any = db,
+  txOrDb: RawExecTx = db,
 ): Promise<void> {
   if (overrides.length === 0) return;
 
-  const fields: Record<string, any> = {};
+  const fields: Record<string, unknown> = {};
   for (const { fieldName, overrideValue } of overrides) {
     const snakeCol = camelToSnake(fieldName);
     fields[snakeCol] = overrideValue === '__null__' ? null : overrideValue;

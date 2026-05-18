@@ -9,6 +9,14 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 
+type MytoolSettingsRow = typeof mytoolSettings.$inferSelect;
+type InsertMytoolSettings = typeof mytoolSettings.$inferInsert;
+// Returned when no settings row exists yet — the editable subset only.
+type MytoolSettingsDefaults = Pick<
+  MytoolSettingsRow,
+  "enabled" | "allowedRoles" | "defaultPriorityHorizon"
+>;
+
 export class MytoolStateRepository {
   private _dbInstance?: typeof db;
 
@@ -32,7 +40,7 @@ export class MytoolStateRepository {
 
   async upsertMytoolDailyReview(data: InsertMytoolDailyReview): Promise<MytoolDailyReview> {
     const now = new Date();
-    const existing = await this.getMytoolDailyReview((data as any).ownerUserId, (data as any).date);
+    const existing = await this.getMytoolDailyReview(data.ownerUserId, data.date);
     if (existing) {
       const [updated] = await this.dbInstance.update(mytoolDailyReviews)
         .set({ ...data, updatedAt: now })
@@ -53,11 +61,11 @@ export class MytoolStateRepository {
 
   async upsertMytoolUserPreferences(data: InsertMytoolUserPreferences): Promise<MytoolUserPreferences> {
     const now = new Date();
-    const existing = await this.getMytoolUserPreferences((data as any).ownerUserId);
+    const existing = await this.getMytoolUserPreferences(data.ownerUserId);
     if (existing) {
       const [updated] = await this.dbInstance.update(mytoolUserPreferences)
         .set({ ...data, updatedAt: now })
-        .where(eq(mytoolUserPreferences.ownerUserId, (data as any).ownerUserId))
+        .where(eq(mytoolUserPreferences.ownerUserId, data.ownerUserId))
         .returning();
       return updated;
     }
@@ -66,7 +74,7 @@ export class MytoolStateRepository {
   }
 
   // Settings
-  async getMytoolSettings(): Promise<any> {
+  async getMytoolSettings(): Promise<MytoolSettingsRow | MytoolSettingsDefaults> {
     const [settings] = await this.dbInstance.select().from(mytoolSettings);
     if (!settings) {
       return { enabled: true, allowedRoles: 'admin', defaultPriorityHorizon: 'week' };
@@ -74,7 +82,7 @@ export class MytoolStateRepository {
     return settings;
   }
 
-  async updateMytoolSettings(data: any): Promise<any> {
+  async updateMytoolSettings(data: Partial<InsertMytoolSettings>): Promise<MytoolSettingsRow> {
     const [existing] = await this.dbInstance.select().from(mytoolSettings);
     if (existing) {
       const [updated] = await this.dbInstance.update(mytoolSettings)

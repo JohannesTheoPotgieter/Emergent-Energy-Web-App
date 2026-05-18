@@ -6,7 +6,7 @@
  * version string — mirrored in `sharepointVersionId`).
  */
 
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   documentRevisions,

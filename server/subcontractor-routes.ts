@@ -590,10 +590,11 @@ router.delete("/api/subcontractor-dashboard/counterparty/:name", requireAuth, re
         await softCloseByCondition(
           tx,
           normalizedCostLines,
+          // both operands are always defined, so or() never returns undefined
           or(
             eq(normalizedCostLines.counterpartyId, cpId),
             sql`LOWER(TRIM(${normalizedCostLines.counterpartyName})) = ${normalized}`,
-          ),
+          )!,
         );
         await tx.delete(counterparties).where(eq(counterparties.id, cpId));
       } else {

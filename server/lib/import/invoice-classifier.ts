@@ -1,6 +1,6 @@
 import { db } from "../../db";
-import { invoicePatternRules, invoicePatternMatches, counterparties } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { invoicePatternRules, type InvoicePatternRule } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 export interface ClassificationResult {
   sourceRow: number;
@@ -137,7 +137,7 @@ export async function classifyCostLines(
     .from(invoicePatternRules)
     .where(eq(invoicePatternRules.isActive, true));
 
-  const rules: ActiveRule[] = activeRules.map((r: any) => ({
+  const rules: ActiveRule[] = activeRules.map((r: InvoicePatternRule) => ({
     id: r.id,
     patternType: r.patternType,
     patternValue: r.patternValue,
@@ -218,6 +218,11 @@ export function generateRuleFromInvoice(
   patternType: "PREFIX" | "TOKEN_SHAPE";
   patternValue: string;
 } {
+  // Accepted for call-site signature stability; the generated rule is
+  // derived purely from the normalised invoice number.
+  void inferredType;
+  void counterpartyId;
+  void counterpartyName;
   const prefix = extractPrefix(norm);
   if (prefix) {
     return { patternType: "PREFIX", patternValue: prefix };

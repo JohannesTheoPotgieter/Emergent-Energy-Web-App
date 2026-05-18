@@ -26,6 +26,18 @@ import { getFyWindow } from "../lib/fy-window";
 
 const COS_TOLERANCE_RULE_TYPE = "cos_tolerance_band_pct";
 
+/**
+ * Error carrying an HTTP `status`. The dashboard route maps `.status === 400`
+ * to a 400 response, so the property name must stay `status` (not the
+ * ApiError `statusCode`) for backwards compatibility with that consumer.
+ */
+class HttpStatusError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+    this.name = "HttpStatusError";
+  }
+}
+
 export interface OutstandingRevenueRow {
   id: number;
   projectId: number;
@@ -629,10 +641,36 @@ export interface FinancialSummaryOptions {
   now?: Date;
   /** Test-only: in-memory inputs to bypass the DB. */
   inputs?: {
-    revenueLines: any[];
-    costLines: any[];
+    revenueLines: RevCalcRow[];
+    costLines: CostCalcRow[];
     opexBudget: Array<{ monthKey: string; amount: string | number | null }>;
   };
+}
+
+// Row shapes produced by the financial-summary select projections (and the
+// test-only `inputs` arrays). Field types mirror the underlying Drizzle
+// columns; `adminOverride` is the `adminDateOverride` column aliased.
+interface RevCalcRow {
+  amount: string | null;
+  expectedDate: string | null;
+  adminOverride: string | null;
+  paidDate: string | null;
+}
+
+interface CostCalcRow {
+  amount: string | null;
+  budgetTotal: string | null;
+  invoiceDate: string | null;
+  invoiceNumber: string | null;
+  poNumber: string | null;
+  forecastDate: string | null;
+  adminOverride: string | null;
+  paidDate: string | null;
+  status: string | null;
+  cosStatusOverride: string | null;
+  cosRealised: boolean | null;
+  invoiceDateFontColor: string | null;
+  invoiceDateConfirmed: boolean | null;
 }
 
 const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -670,9 +708,7 @@ function resolvePeriodWindow(opts: FinancialSummaryOptions): { from: string; to:
     }
     case "custom": {
       if (!opts.from || !opts.to) {
-        const err = new Error("custom period requires from and to ISO dates");
-        (err as any).status = 400;
-        throw err;
+        throw new HttpStatusError(400, "custom period requires from and to ISO dates");
       }
       return { from: opts.from, to: opts.to };
     }
@@ -777,7 +813,7 @@ export async function getFinancialSummary(
   for (const r of revRows) {
     const amount = num(r.amount);
     const paidIso = isoOrNull(r.paidDate);
-    const expectedIso = isoOrNull((r as any).adminOverride ?? r.expectedDate);
+    const expectedIso = isoOrNull(r.adminOverride ?? r.expectedDate);
 
     if (inWindow(expectedIso, from, to)) revPlan += amount;
     if (paidIso != null && inWindow(paidIso, from, to)) revActual += amount;
@@ -809,23 +845,23 @@ export async function getFinancialSummary(
     const amount = num(c.amount);
     const budget = num(c.budgetTotal);
     const invoiceIso = isoOrNull(c.invoiceDate);
-    const forecastIso = isoOrNull((c as any).adminOverride ?? c.forecastDate);
+    const forecastIso = isoOrNull(c.adminOverride ?? c.forecastDate);
     const planDateIso = forecastIso ?? invoiceIso; // best-known cost date for plan window
 
     if (inWindow(planDateIso, from, to)) cosPlan += budget;
 
     const realised = isCanonicalCosRealised({
-      status: (c.status as any) ?? null,
-      cosStatusOverride: (c.cosStatusOverride as any) ?? null,
-      cosRealised: (c.cosRealised as any) ?? null,
-      expenseInvoiceNumber: (c.invoiceNumber as any) ?? null,
+      status: c.status ?? null,
+      cosStatusOverride: c.cosStatusOverride ?? null,
+      cosRealised: c.cosRealised ?? null,
+      expenseInvoiceNumber: c.invoiceNumber ?? null,
       expenseInvoicedDate: invoiceIso,
-      expensePoNumber: (c.poNumber as any) ?? null,
+      expensePoNumber: c.poNumber ?? null,
       paymentDate: isoOrNull(c.paidDate),
       today: todayIso,
-      amountExVat: c.amount as any,
-      invoiceDateFontColor: (c.invoiceDateFontColor as any) ?? null,
-      invoiceDateConfirmed: (c.invoiceDateConfirmed as any) ?? null,
+      amountExVat: c.amount,
+      invoiceDateFontColor: c.invoiceDateFontColor ?? null,
+      invoiceDateConfirmed: c.invoiceDateConfirmed ?? null,
     });
 
     if (realised) {

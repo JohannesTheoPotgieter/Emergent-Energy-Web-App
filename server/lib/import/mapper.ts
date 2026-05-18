@@ -1,6 +1,6 @@
 import type { DetectedSection, LayoutVariant } from "./detector";
 import { SECTION_ANCHORS, getSynonymsForSection } from "./synonyms";
-import { normalizeHeader, stringSimilarity, diceCoefficient } from "./utils";
+import { stringSimilarity, diceCoefficient } from "./utils";
 import type ExcelJS from "exceljs";
 import { db } from "../../db";
 import { mappingRules } from "@shared/schema";
