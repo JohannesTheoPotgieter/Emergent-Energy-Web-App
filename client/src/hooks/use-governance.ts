@@ -3,9 +3,9 @@ import { getQueryFn, apiRequest } from "@/lib/queryClient";
 
 export function useQualityGovernance() {
   return useQuery<{
-    commissioningReviews: any[];
-    openSnags: any[];
-    qualityChecklist: any[];
+    commissioningReviews: unknown[];
+    openSnags: unknown[];
+    qualityChecklist: unknown[];
   }>({
     queryKey: ["/api/governance/quality"],
     queryFn: getQueryFn({ on401: "throw" }),
@@ -14,9 +14,9 @@ export function useQualityGovernance() {
 
 export function useComplianceGovernance() {
   return useQuery<{
-    ssegByProject: any[];
-    authoritySubmissions: any[];
-    meteringPending: any[];
+    ssegByProject: unknown[];
+    authoritySubmissions: unknown[];
+    meteringPending: unknown[];
   }>({
     queryKey: ["/api/governance/compliance"],
     queryFn: getQueryFn({ on401: "throw" }),

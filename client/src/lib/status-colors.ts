@@ -4,7 +4,7 @@
  *
  * Centralised to eliminate copy-pasted color logic.
  */
-import { normalizeToUniversalStatus, UNIVERSAL_STATUS_META, type UniversalDisplayStatus } from "@shared/task-status";
+import { normalizeToUniversalStatus, UNIVERSAL_STATUS_META } from "@shared/task-status";
 
 // ─── RAG (Red / Amber / Green) ───────────────────────────────────────────────
 

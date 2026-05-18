@@ -11,7 +11,41 @@ export interface ProjectOperationalStatus {
   latestUpdate: string | null;
 }
 
-export function deriveProjectOperationalStatus(project: any): ProjectOperationalStatus {
+/**
+ * Loosely-shaped project record accepted by {@link deriveProjectOperationalStatus}.
+ * Callers pass raw summary rows that may use snake_case (raw SQL endpoints) or
+ * camelCase (Drizzle) field names, so every field is optional.
+ */
+export interface OperationalStatusInput {
+  phase?: string | null;
+  executionPhase?: string | null;
+  pd?: string | null;
+  pd_owner?: string | null;
+  pm?: string | null;
+  pm_owner?: string | null;
+  pd_pm_handover_status?: string | null;
+  pdPmHandoverStatus?: string | null;
+  has_tracker_import?: boolean | null;
+  hasTrackerImport?: boolean | null;
+  excel_tracker_link?: unknown;
+  excelTrackerLink?: unknown;
+  client_handover_date?: string | null;
+  om_handover_date?: string | null;
+  commissioning_date?: string | null;
+  latest_update?: string | null;
+  comments?: string | null;
+  shared_summary?: {
+    project?: {
+      lifecycleStageLabel?: string | null;
+      lifecycleStage?: string | null;
+    } | null;
+    latestUpdate?: {
+      text?: string | null;
+    } | null;
+  } | null;
+}
+
+export function deriveProjectOperationalStatus(project: OperationalStatusInput): ProjectOperationalStatus {
   const stage = project.shared_summary?.project?.lifecycleStageLabel
     || project.shared_summary?.project?.lifecycleStage
     || project.phase

@@ -2,15 +2,18 @@ import { useState, useCallback, useEffect } from "react";
 
 const GUIDANCE_KEY = "ux_guidance";
 
-function getGuidanceStore(): Record<string, any> {
+type GuidanceStore = Record<string, unknown>;
+
+function getGuidanceStore(): GuidanceStore {
   try {
-    return JSON.parse(localStorage.getItem(GUIDANCE_KEY) || "{}");
+    const parsed: unknown = JSON.parse(localStorage.getItem(GUIDANCE_KEY) || "{}");
+    return parsed !== null && typeof parsed === "object" ? (parsed as GuidanceStore) : {};
   } catch {
     return {};
   }
 }
 
-function setGuidanceStore(data: Record<string, any>) {
+function setGuidanceStore(data: GuidanceStore) {
   localStorage.setItem(GUIDANCE_KEY, JSON.stringify(data));
 }
 
@@ -73,7 +76,8 @@ export function useLastSelection(fieldId: string) {
 
   const getLastValue = useCallback((): string | null => {
     const store = getGuidanceStore();
-    return store[key] || null;
+    const value = store[key];
+    return typeof value === "string" ? value : null;
   }, [key]);
 
   const saveLastValue = useCallback((value: string) => {

@@ -15,16 +15,17 @@ export async function copyTeamsMessage(payload: TeamsClipboardPayload): Promise<
     typeof navigator !== "undefined" &&
     typeof window !== "undefined" &&
     "clipboard" in navigator &&
-    typeof (window as any).ClipboardItem !== "undefined"
+    typeof window.ClipboardItem !== "undefined" &&
+    typeof navigator.clipboard.write === "function"
   ) {
     try {
       const htmlBlob = new Blob([html], { type: "text/html" });
       const textBlob = new Blob([plain], { type: "text/plain" });
-      const item = new (window as any).ClipboardItem({
+      const item = new ClipboardItem({
         "text/html": htmlBlob,
         "text/plain": textBlob,
       });
-      await (navigator.clipboard as any).write([item]);
+      await navigator.clipboard.write([item]);
       return;
     } catch {
       // Fall through to plain-text path below.

@@ -21,21 +21,21 @@ export function usePerformanceV1() {
 }
 
 export function useGateReports() {
-  return useQuery<{ blockedGates: any[]; exceptionAgeing: any[] }>({
+  return useQuery<{ blockedGates: unknown[]; exceptionAgeing: unknown[] }>({
     queryKey: ["/api/reports/gate-reports"],
     queryFn: getQueryFn({ on401: "throw" }),
   });
 }
 
 export function useOperationalReports() {
-  return useQuery<{ commissioningQueue: any[]; handoverQueue: any[]; weeklyCompliance: any[] }>({
+  return useQuery<{ commissioningQueue: unknown[]; handoverQueue: unknown[]; weeklyCompliance: unknown[] }>({
     queryKey: ["/api/reports/operational"],
     queryFn: getQueryFn({ on401: "throw" }),
   });
 }
 
 export function useQualityComplianceReports() {
-  return useQuery<{ qualityBlockers: any[]; complianceBlockers: any[] }>({
+  return useQuery<{ qualityBlockers: unknown[]; complianceBlockers: unknown[] }>({
     queryKey: ["/api/reports/quality-compliance"],
     queryFn: getQueryFn({ on401: "throw" }),
   });

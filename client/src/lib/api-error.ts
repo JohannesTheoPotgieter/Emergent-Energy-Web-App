@@ -68,13 +68,21 @@ export class ApiError extends Error {
   }
 }
 
-export function parseApiError(response: Response, body: any): ApiError {
-  const code = body?.error || "SERVER_ERROR";
-  const message = body?.message || response.statusText || "Request failed";
-  const details = body?.details;
+export function parseApiError(response: Response, body: unknown): ApiError {
+  const record: Record<string, unknown> =
+    body !== null && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  const code = (typeof record.error === "string" ? record.error : undefined) as ErrorCode | undefined;
+  const message =
+    (typeof record.message === "string" ? record.message : undefined) ||
+    response.statusText ||
+    "Request failed";
+  const details =
+    record.details !== null && typeof record.details === "object"
+      ? (record.details as Record<string, string>)
+      : undefined;
 
   return new ApiError({
-    code,
+    code: code ?? "SERVER_ERROR",
     status: response.status,
     message,
     details,

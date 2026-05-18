@@ -7,8 +7,7 @@
  */
 
 import { queryOptions } from "@tanstack/react-query";
-import { getErrorMessage } from "./errors";
-import { parseApiError, networkError, ApiError } from "./api-error";
+import { parseApiError, networkError } from "./api-error";
 import { runAsyncAction } from "./async-action";
 
 const API_BASE = "/api";
@@ -51,7 +50,11 @@ function getCsrfToken(): string | undefined {
  * the server on login. See docs/runbooks/secrets-rotation.md and the
  * comment block above.
  */
-export function setAuthToken(_token: string | null) {
+export function setAuthToken(token: string | null) {
+  // `token` is intentionally ignored: browser auth is carried by the
+  // httpOnly session cookie. The parameter is retained only for source
+  // compatibility with the AuthProvider call site (see comment block above).
+  void token;
   // Always clear any stale legacy token; never write a new one.
   try {
     localStorage.removeItem("auth_token");
@@ -92,7 +95,7 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
     }
 
     if (!response.ok) {
-      let errorData: any = {};
+      let errorData: unknown = {};
       try {
         errorData = await response.json();
       } catch {
@@ -171,7 +174,7 @@ export const uploadApi = {
       }
 
       if (!response.ok) {
-        let errorData: any = {};
+        let errorData: unknown = {};
         try {
           errorData = await response.json();
         } catch {

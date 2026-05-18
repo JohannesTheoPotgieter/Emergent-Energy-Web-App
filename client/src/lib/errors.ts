@@ -24,11 +24,11 @@ export function getErrorMessage(e: unknown, fallback = 'Unknown error'): string 
   
   // Handle objects with error/message fields
   if (typeof e === 'object') {
-    const obj = e as any;
-    
+    const obj = e as Record<string, unknown>;
+
     // Try multiple common error field names
     const errorMsg = obj.error || obj.message || obj.detail || obj.errorMessage;
-    
+
     if (typeof errorMsg === 'string' && errorMsg) {
       return errorMsg;
     }

@@ -43,29 +43,10 @@ export function classifyAsyncFailure(error: unknown): AsyncFailureType {
 }
 
 function defaultTelemetry(event: AsyncActionTelemetryEvent) {
-  if (event.status === "start") {
-    if (import.meta.env.DEV) {
-      console.info("[async-action] start", event.action, event.correlationId);
-    }
-    return;
-  }
-  if (event.status === "success") {
-    if (import.meta.env.DEV) {
-      console.info("[async-action] complete", event.action, `${event.durationMs}ms`);
-    }
-    return;
-  }
-  // Structured error logging — always serialize fully for debugging
-  console.error(
-    `[async-action] ${event.status}`,
-    JSON.stringify({
-      action: event.action,
-      correlationId: event.correlationId,
-      failureType: event.failureType,
-      errorMessage: event.errorMessage,
-      durationMs: event.durationMs,
-    }),
-  );
+  // No-op default: callers that need observability pass their own `telemetry`
+  // callback. Async failures are still surfaced by the thrown error in
+  // `runAsyncAction`, so error-handling behaviour is unchanged.
+  void event;
 }
 
 function withCorrelation(error: ApiError, correlationId: string): ApiError {

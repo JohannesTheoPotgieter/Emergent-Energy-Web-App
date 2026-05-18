@@ -1,5 +1,5 @@
 import type { PageRegistryEntry } from "@/config/page-registry";
-import { resolveUserLens, type LensRole, DEFAULT_LENS_PROFILES } from "@shared/schema/role-based-upgrade";
+import { resolveUserLens, DEFAULT_LENS_PROFILES } from "@shared/schema/role-based-upgrade";
 
 export type RoleAwareSection =
   | "MY_WORK"

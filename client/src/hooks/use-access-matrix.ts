@@ -2,7 +2,6 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { normalizeRoleForPermissions, type PermissionAction, type PermissionEntity } from "@shared/schema";
 import { parseDisabledSubPages } from "@/config/app-navigation";
-import { NAVIGATION_PERMISSION_MODEL, validateNavigationPermissionModel } from "@/config/navigation-permissions";
 import { evaluateEntityAccess, evaluatePathAccess } from "@/config/runtime-access";
 import { useAuth } from "./use-auth";
 import { useLensContext } from "./use-lens-context";
@@ -68,15 +67,6 @@ export function useAccessMatrix() {
   }, [effectiveRole, permissions?.sections, permissions?.entityPermissions, permissions?.userOverrides]);
 
   const canViewPath = useMemo(() => {
-    if (import.meta.env.DEV) {
-      validateNavigationPermissionModel().forEach((issue) => {
-        const log = issue.severity === "error" ? console.error : console.warn;
-        log(`[NavPermissions] ${issue.message}`);
-      });
-    }
-    const knownNavPaths = new Set(
-      NAVIGATION_PERMISSION_MODEL.flatMap((section) => section.items.map((item) => item.path.split("?")[0])),
-    );
     return (path: string) => {
       const result = evaluatePathAccess({
         role: effectiveRole,
@@ -88,9 +78,6 @@ export function useAccessMatrix() {
         },
         failOpenForUnknown: false,
       });
-      if (!result.allowed && import.meta.env.DEV && knownNavPaths.has(path.split("?")[0])) {
-        console.warn(`[AccessMatrix] Blocked path "${path}" due to ${result.reason}.`);
-      }
       return result.allowed;
     };
   }, [effectiveRole, permissions?.sections, permissions?.entityPermissions, permissions?.userOverrides]);

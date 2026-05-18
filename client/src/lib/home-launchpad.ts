@@ -82,19 +82,48 @@ type HomeWorkCandidate = {
   createdAt: string | null;
 };
 
+/**
+ * Raw task row from the unified my-work feed. Field names vary by source
+ * (camelCase vs snake_case) so every field is optional; values are simple
+ * primitives. Indexed access stays type-safe without resorting to `any`.
+ */
+type TaskRow = {
+  id?: string | number | null;
+  title?: string | null;
+  actionDescription?: string | null;
+  projectName?: string | null;
+  project_name?: string | null;
+  priority?: string | null;
+  ragStatus?: string | null;
+  status?: string | null;
+  dueAt?: string | null;
+  due_at?: string | null;
+  dueDate?: string | null;
+  due_date?: string | null;
+  endDate?: string | null;
+  end_date?: string | null;
+  scheduledDate?: string | null;
+  scheduled_date?: string | null;
+  createdAt?: string | null;
+  created_at?: string | null;
+  updatedAt?: string | null;
+  updated_at?: string | null;
+  requestedAt?: string | null;
+};
+
 type AllTaskData = {
-  personal?: Array<Record<string, any>>;
-  operational?: Array<Record<string, any>>;
+  personal?: TaskRow[];
+  operational?: TaskRow[];
   approvals?: {
-    engineering?: Array<Record<string, any>>;
-    quality?: Array<Record<string, any>>;
-    general?: Array<Record<string, any>>;
+    engineering?: TaskRow[];
+    quality?: TaskRow[];
+    general?: TaskRow[];
   };
-  trRegister?: Array<Record<string, any>>;
-  deliverables?: Array<Record<string, any>>;
-  planTasks?: Array<Record<string, any>>;
-  engineeringTasks?: Array<Record<string, any>>;
-  qualityTasks?: Array<Record<string, any>>;
+  trRegister?: TaskRow[];
+  deliverables?: TaskRow[];
+  planTasks?: TaskRow[];
+  engineeringTasks?: TaskRow[];
+  qualityTasks?: TaskRow[];
 } | null;
 
 const PRIORITY_ORDER: Record<string, number> = {

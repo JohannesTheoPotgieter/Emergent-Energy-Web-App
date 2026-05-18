@@ -1,3 +1,22 @@
+// Minimal File System Access API surface. These members exist at runtime in
+// Chromium browsers but are not always present in the TS DOM lib, so we model
+// just the slice this module uses instead of widening to `any`.
+interface FileSystemWritableStream {
+  write(data: string | Blob): Promise<void>;
+  close(): Promise<void>;
+}
+interface WritableFileHandle {
+  createWritable(): Promise<FileSystemWritableStream>;
+}
+interface DirectoryPickerWindow {
+  showDirectoryPicker(options?: { mode?: "read" | "readwrite" }): Promise<FileSystemDirectoryHandle>;
+}
+
+function asWritableHandle(handle: FileSystemFileHandle): WritableFileHandle {
+  // FileSystemFileHandle.createWritable is part of the File System Access API.
+  return handle as unknown as WritableFileHandle;
+}
+
 function engFetch(url: string) {
   const token = localStorage.getItem("auth_token");
   const headers: Record<string, string> = {};
@@ -7,12 +26,48 @@ function engFetch(url: string) {
   return fetch(url, { headers, credentials: "include" });
 }
 
+interface StageExportStage {
+  templateName: string;
+  templateSortOrder?: number | null;
+  status: string;
+  templatePurpose?: string | null;
+  overrideReason?: string | null;
+  templateInputs?: string[] | null;
+  raciResponsible?: string | null;
+  raciAccountable?: string | null;
+  raciConsulted?: string | null;
+  raciInformed?: string | null;
+  failureModes?: string[] | null;
+}
+
+interface StageExportTask {
+  sequence: number;
+  templateTitle: string;
+  status: string;
+  isRequired?: boolean;
+  notes?: string | null;
+}
+
+interface StageExportDeliverable {
+  id: number;
+  fileName: string;
+  versionTag?: string | null;
+  notes?: string | null;
+}
+
+interface StageExportApproval {
+  approverRole: string;
+  approverUserName?: string | null;
+  status: string;
+  comments?: string | null;
+}
+
 interface StageExportData {
-  stage: any;
-  tasks: any[];
-  deliverableTemplates: any[];
-  uploadedDeliverables: any[];
-  approvals: any[];
+  stage: StageExportStage;
+  tasks: StageExportTask[];
+  deliverableTemplates: unknown[];
+  uploadedDeliverables: StageExportDeliverable[];
+  approvals: StageExportApproval[];
 }
 
 function buildStageSummaryHtml(data: StageExportData, projectName: string): string {
@@ -69,7 +124,7 @@ ${tasks.map(t => `<tr>
 <h2>Deliverables (${uploadedDeliverables.length})</h2>
 <table>
 <tr><th>File</th><th>Version</th><th>Notes</th></tr>
-${uploadedDeliverables.length ? uploadedDeliverables.map((d: any) => `<tr>
+${uploadedDeliverables.length ? uploadedDeliverables.map((d) => `<tr>
 <td>${d.fileName}</td>
 <td>${d.versionTag || ""}</td>
 <td>${d.notes || ""}</td>
@@ -79,7 +134,7 @@ ${uploadedDeliverables.length ? uploadedDeliverables.map((d: any) => `<tr>
 ${approvals.length ? `<h2>Approvals</h2>
 <table>
 <tr><th>Role</th><th>Status</th><th>Comments</th></tr>
-${approvals.map((a: any) => `<tr>
+${approvals.map((a) => `<tr>
 <td>${a.approverRole === "QA_REVIEW" ? "QA Review" : "Technical Signoff"}${a.approverUserName ? ` (${a.approverUserName})` : ""}</td>
 <td><span class="badge ${a.status}">${a.status}</span></td>
 <td>${a.comments || ""}</td>
@@ -113,12 +168,12 @@ function buildStageSummaryJson(data: StageExportData, projectName: string): stri
       required: t.isRequired,
       notes: t.notes,
     })),
-    deliverables: data.uploadedDeliverables.map((d: any) => ({
+    deliverables: data.uploadedDeliverables.map((d) => ({
       fileName: d.fileName,
       version: d.versionTag,
       notes: d.notes,
     })),
-    approvals: data.approvals.map((a: any) => ({
+    approvals: data.approvals.map((a) => ({
       role: a.approverRole,
       status: a.status,
       comments: a.comments,
@@ -151,12 +206,12 @@ async function exportViaFSA(data: StageExportData, projectName: string, dirHandl
   const stageDir = await engDir.getDirectoryHandle(stageFolderName, { create: true });
 
   const htmlFile = await stageDir.getFileHandle("stage_summary.html", { create: true });
-  const htmlWritable = await (htmlFile as any).createWritable();
+  const htmlWritable = await asWritableHandle(htmlFile).createWritable();
   await htmlWritable.write(buildStageSummaryHtml(data, projectName));
   await htmlWritable.close();
 
   const jsonFile = await stageDir.getFileHandle("stage_summary.json", { create: true });
-  const jsonWritable = await (jsonFile as any).createWritable();
+  const jsonWritable = await asWritableHandle(jsonFile).createWritable();
   await jsonWritable.write(buildStageSummaryJson(data, projectName));
   await jsonWritable.close();
 
@@ -164,7 +219,7 @@ async function exportViaFSA(data: StageExportData, projectName: string, dirHandl
     try {
       const { blob, fileName } = await downloadDeliverableBlob(del.id);
       const delFile = await stageDir.getFileHandle(fileName, { create: true });
-      const delWritable = await (delFile as any).createWritable();
+      const delWritable = await asWritableHandle(delFile).createWritable();
       await delWritable.write(blob);
       await delWritable.close();
     } catch {
@@ -205,48 +260,52 @@ async function exportViaZip(stages: StageExportData[], projectName: string): Pro
   URL.revokeObjectURL(url);
 }
 
-export async function exportStagePack(stageId: number, projectId: number, projectName: string, stageName: string) {
-  try {
-    const data = await fetchStageData(stageId, projectId);
+export async function exportStagePack(
+  stageId: number,
+  projectId: number,
+  projectName: string,
+  stageName?: string,
+) {
+  // `stageName` is accepted for call-site compatibility; the stage label is
+  // derived from the fetched stage data, so the argument is intentionally unused.
+  void stageName;
+  const data = await fetchStageData(stageId, projectId);
 
-    if ("showDirectoryPicker" in window) {
-      try {
-        const dirHandle = await (window as any).showDirectoryPicker({ mode: "readwrite" });
-        await exportViaFSA(data, projectName, dirHandle);
-        return;
-      } catch (e: any) {
-        if (e.name === "AbortError") return;
-      }
+  if ("showDirectoryPicker" in window) {
+    try {
+      const dirHandle = await (window as unknown as DirectoryPickerWindow).showDirectoryPicker({ mode: "readwrite" });
+      await exportViaFSA(data, projectName, dirHandle);
+      return;
+    } catch (e: unknown) {
+      if (e instanceof Error && e.name === "AbortError") return;
     }
-
-    await exportViaZip([data], projectName);
-  } catch (err) {
-    throw err;
   }
+
+  await exportViaZip([data], projectName);
 }
 
-export async function exportAllStagesPack(projectId: number, projectName: string, stagesList: any[]) {
-  try {
-    const allData: StageExportData[] = [];
-    for (const stage of stagesList) {
-      const data = await fetchStageData(stage.id, projectId);
-      allData.push(data);
-    }
-
-    if ("showDirectoryPicker" in window) {
-      try {
-        const dirHandle = await (window as any).showDirectoryPicker({ mode: "readwrite" });
-        for (const data of allData) {
-          await exportViaFSA(data, projectName, dirHandle);
-        }
-        return;
-      } catch (e: any) {
-        if (e.name === "AbortError") return;
-      }
-    }
-
-    await exportViaZip(allData, projectName);
-  } catch (err) {
-    throw err;
+export async function exportAllStagesPack(
+  projectId: number,
+  projectName: string,
+  stagesList: Array<{ id: number }>,
+) {
+  const allData: StageExportData[] = [];
+  for (const stage of stagesList) {
+    const data = await fetchStageData(stage.id, projectId);
+    allData.push(data);
   }
+
+  if ("showDirectoryPicker" in window) {
+    try {
+      const dirHandle = await (window as unknown as DirectoryPickerWindow).showDirectoryPicker({ mode: "readwrite" });
+      for (const data of allData) {
+        await exportViaFSA(data, projectName, dirHandle);
+      }
+      return;
+    } catch (e: unknown) {
+      if (e instanceof Error && e.name === "AbortError") return;
+    }
+  }
+
+  await exportViaZip(allData, projectName);
 }

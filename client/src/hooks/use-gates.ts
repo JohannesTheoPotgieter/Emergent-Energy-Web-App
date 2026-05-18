@@ -67,7 +67,7 @@ export function useGatesReady() {
 
 export function useGatesExceptions(view?: string) {
   const queryParam = view ? `?view=${view}` : "";
-  return useQuery<{ exceptions: any[] }>({
+  return useQuery<{ exceptions: unknown[] }>({
     queryKey: [`/api/gates/exceptions${queryParam}`],
     queryFn: getQueryFn({ on401: "throw" }),
   });
@@ -81,7 +81,7 @@ export function useGatesExceptionCounts() {
 }
 
 export function useGatesClientUpdates() {
-  return useQuery<{ projects: any[] }>({
+  return useQuery<{ projects: unknown[] }>({
     queryKey: ["/api/gates/client-updates"],
     queryFn: getQueryFn({ on401: "throw" }),
   });
@@ -89,7 +89,7 @@ export function useGatesClientUpdates() {
 
 export function useGatesHandovers(view?: string) {
   const queryParam = view ? `?view=${view}` : "";
-  return useQuery<{ projects: any[] }>({
+  return useQuery<{ projects: unknown[] }>({
     queryKey: [`/api/gates/handovers${queryParam}`],
     queryFn: getQueryFn({ on401: "throw" }),
   });

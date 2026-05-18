@@ -7,7 +7,6 @@
  */
 
 import type { CanonicalModule } from "@shared/schema/role-based-upgrade";
-import { CANONICAL_MODULES, CANONICAL_MODULE_LABELS, MODULE_TO_NAV_GROUPS } from "@shared/schema/role-based-upgrade";
 import { PAGE_REGISTRY, type PageRegistryEntry } from "./page-registry";
 
 export interface ModuleDefinition {

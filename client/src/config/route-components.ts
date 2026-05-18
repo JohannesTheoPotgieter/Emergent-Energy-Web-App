@@ -156,7 +156,7 @@ const AdminIntegrationsPage = lazyWithRetry(() => import("@/pages/admin-integrat
  * registry↔router parity can be asserted in unit tests without pulling in
  * the full App tree.
  */
-export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
+export const ROUTE_COMPONENTS: Record<string, ComponentType> = {
   CompanyOverviewPage,
   CompanyTeamPage,
   Dashboard,

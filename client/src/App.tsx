@@ -21,7 +21,6 @@ import { Suspense, useEffect, useState } from "react";
 import { useVersionCheck } from "@/hooks/use-version-check";
 import { Download, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { lazyWithRetry } from "@/lib/lazy-with-retry";
 import { ROUTE_COMPONENTS } from "@/config/route-components";
 import { useScreenAvailability } from "@/hooks/use-screen-availability";
 
@@ -31,7 +30,7 @@ import HomePage from "@/pages/home";
 import NotFound from "@/pages/not-found";
 import MsCallbackPage from "@/pages/ms-callback";
 
-type RouteConfig = { path: string; component?: React.ComponentType<any>; redirectTo?: string };
+type RouteConfig = { path: string; component?: React.ComponentType; redirectTo?: string };
 
 const NAVIGATION_MODE = {
   desktop: "cockpit",
@@ -93,7 +92,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   const effectiveRole = normalizeRoleForPermissions(user?.role || companyRole);
 
   if (process.env.NODE_ENV !== "production") {
-    (window as any).__navMode = navMode;
+    (window as Window & { __navMode?: string }).__navMode = navMode;
   }
 
   const { canViewPath, loading: accessLoading, permissionsError, refetchPermissions } = useAccessMatrix();

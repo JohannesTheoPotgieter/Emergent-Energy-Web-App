@@ -13,7 +13,7 @@ import { toast } from "@/hooks/use-toast";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
-    let body: any = {};
+    let body: unknown = {};
     try {
       body = await res.json();
     } catch {
@@ -61,7 +61,7 @@ export async function apiRequest(
       body: data ? JSON.stringify(data) : undefined,
       credentials: "include",
     });
-  } catch (err) {
+  } catch {
     throw networkError();
   }
 

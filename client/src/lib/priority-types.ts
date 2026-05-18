@@ -36,7 +36,12 @@ export interface PriorityRow {
   } | null;
   progressSource: {
     type: string;
-    ref: any;
+    ref: {
+      projectId?: number;
+      phaseCode?: string;
+      milestoneId?: number;
+      workItemIds?: number[];
+    } | null;
     value: number | null;
     label: string;
   } | null;

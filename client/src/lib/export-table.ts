@@ -8,8 +8,12 @@ export interface ExportColumn {
   header: string;
 }
 
-function getNestedValue(obj: any, key: string): string {
-  const val = key.split(".").reduce((o, k) => o?.[k], obj);
+function getNestedValue(obj: Record<string, unknown>, key: string): string {
+  const val = key.split(".").reduce<unknown>(
+    (o, k) =>
+      o !== null && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined,
+    obj,
+  );
   if (val == null) return "";
   if (val instanceof Date) return val.toISOString().split("T")[0];
   return String(val);
@@ -22,7 +26,7 @@ function escapeCSV(val: string): string {
   return val;
 }
 
-export function exportToCSV(data: any[], columns: ExportColumn[], filename: string) {
+export function exportToCSV(data: Array<Record<string, unknown>>, columns: ExportColumn[], filename: string) {
   const header = columns.map(c => escapeCSV(c.header)).join(",");
   const rows = data.map(row =>
     columns.map(c => escapeCSV(getNestedValue(row, c.key))).join(",")
@@ -32,7 +36,7 @@ export function exportToCSV(data: any[], columns: ExportColumn[], filename: stri
   downloadBlob(blob, `${filename}.csv`);
 }
 
-export async function exportToExcel(data: any[], columns: ExportColumn[], filename: string) {
+export async function exportToExcel(data: Array<Record<string, unknown>>, columns: ExportColumn[], filename: string) {
   const { Workbook } = await import("exceljs");
   const workbook = new Workbook();
   const sheet = workbook.addWorksheet("Data");

@@ -6,7 +6,7 @@
  * For legacy auth/project API calls, see api.ts.
  */
 
-import { parseApiError, networkError, ApiError } from "./api-error";
+import { parseApiError, networkError } from "./api-error";
 
 /** Raw fetch with auth headers — returns the raw Response (caller handles .ok / .json()). */
 export function engFetchRaw(url: string, options?: RequestInit): Promise<Response> {
@@ -33,7 +33,7 @@ export async function engFetch(url: string, options?: RequestInit) {
       window.location.href = "/auth/login";
     }
 
-    let body: any = {};
+    let body: unknown = {};
     try {
       body = await res.json();
     } catch {
@@ -49,10 +49,10 @@ export async function engFetch(url: string, options?: RequestInit) {
   return res.json();
 }
 
-export async function engPatch(url: string, body: Record<string, any>) {
+export async function engPatch(url: string, body: Record<string, unknown>) {
   return engFetch(url, { method: "PATCH", body: JSON.stringify(body) });
 }
 
-export async function engPost(url: string, body: Record<string, any>) {
+export async function engPost(url: string, body: Record<string, unknown>) {
   return engFetch(url, { method: "POST", body: JSON.stringify(body) });
 }

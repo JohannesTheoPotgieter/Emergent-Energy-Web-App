@@ -1,13 +1,17 @@
-type ApiRequestFn = (method: string, url: string, data?: unknown) => Promise<any>;
+type ApiRequestFn = (method: string, url: string, data?: unknown) => Promise<unknown>;
 
 export type CreateMilestoneFlowResult =
   | { ok: true; rowNumber: number | null }
   | { ok: false; kind: "validation" | "backend"; message: string };
 
-async function readPayload(response: any): Promise<any> {
-  if (response && typeof response.json === "function") {
+async function readPayload(response: unknown): Promise<unknown> {
+  if (
+    response !== null &&
+    typeof response === "object" &&
+    typeof (response as { json?: unknown }).json === "function"
+  ) {
     try {
-      return await response.json();
+      return await (response as { json: () => Promise<unknown> }).json();
     } catch {
       return {};
     }
@@ -34,7 +38,11 @@ export async function createMilestoneFlow(params: {
     });
 
     const createPayload = await readPayload(createRes);
-    const rowNumber = typeof createPayload?.rowNumber === "number" ? createPayload.rowNumber : null;
+    const payloadRowNumber =
+      createPayload !== null && typeof createPayload === "object"
+        ? (createPayload as { rowNumber?: unknown }).rowNumber
+        : undefined;
+    const rowNumber = typeof payloadRowNumber === "number" ? payloadRowNumber : null;
 
     const selectedRowNumbers = (params.selectedRowNumbers || []).filter((rn) => rn != null);
     if (selectedRowNumbers.length > 0 && rowNumber != null) {
@@ -46,11 +54,17 @@ export async function createMilestoneFlow(params: {
     }
 
     return { ok: true, rowNumber };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : typeof error === "string"
+          ? error
+          : "Could not create milestone";
     return {
       ok: false,
       kind: "backend",
-      message: error?.message || "Could not create milestone",
+      message: message || "Could not create milestone",
     };
   }
 }
