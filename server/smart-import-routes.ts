@@ -2273,7 +2273,10 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         const detectedInfo = summary.detection?.projectInfo;
         const newProjectFields = {
           projectName,
-          phase: detectedInfo?.phase || "PLANNING",
+          // 2026-05-18 — phase is no longer sourced from the import. Always
+          // seed new projects with the canonical "PLANNING" default; project
+          // phase is owned by the lifecycle, not Smart Import.
+          phase: "PLANNING",
           sizeKwp: detectedInfo?.sizeKwp || null,
           pd: detectedInfo?.pd || null,
           contractValue: detectedInfo?.contractValue || null,
@@ -2760,12 +2763,12 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         if (detectedInfo.pd && (!existingProject?.pd || !existingProject.pd.trim())) updates.pd = String(detectedInfo.pd);
         if (detectedInfo.pm && (!existingProject?.pm || !existingProject.pm.trim())) updates.pm = String(detectedInfo.pm);
         if (detectedInfo.contractValue) updates.contractValue = String(detectedInfo.contractValue);
-        const rawPhase = detectedInfo.phase ? String(detectedInfo.phase).trim() : null;
-        if (rawPhase && VALID_PHASES.includes(rawPhase.toLowerCase())) {
-          updates.phase = rawPhase;
-          updates.executionPhase = rawPhase;
-          updates.phaseUpdatedAt = new Date();
-        }
+        // 2026-05-18 — phase removed from Excel import. The Smart Import
+        // pipeline no longer writes project_info.phase / executionPhase.
+        // Project phase is owned by the canonical lifecycle
+        // (lifecycle-routes.ts). The VALID_PHASES list above is retained
+        // for any future re-introduction but is intentionally unused now.
+        void VALID_PHASES;
         // Practical Completion now has a dedicated column on
         // project_execution_state. The detector pulls it from the workbook's
         // project-info block; syncProjectSplitTables routes it through to

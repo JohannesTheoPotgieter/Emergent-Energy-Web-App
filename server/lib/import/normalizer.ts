@@ -782,7 +782,11 @@ function extractPlanTasks(
   const pctCompleteCol = getColIndex(mapping, "pct_complete");
   const expectedPctCol = getColIndex(mapping, "expected_pct");
   const ownerCol = getColIndex(mapping, "owner");
-  const phaseCol = getColIndex(mapping, "phase");
+  // 2026-05-18 — phase removed from Excel import. We deliberately ignore
+  // any "Phase" column in the file so it cannot leak free-text phase labels
+  // into work_items or downstream consumers. Project phase is owned by the
+  // canonical lifecycle (lifecycle-routes.ts).
+  const phaseCol = -1;
   // The legacy `comment` synonym was renamed to `tracker_comments` in PR1
   // (it was previously conflated with Resource 2). We resolve via the new
   // canonical name and dual-write into the existing `comment` field
