@@ -19,6 +19,7 @@ import { buildPhase1AReconciliationReport } from "../services/promoted-read-comp
 import { isPhase1ADomainEnabled, isPhase1AEndpointEnabled, type Phase1AFlagSet } from "../services/phase1a-reconciliation-policy";
 import { queryStr, queryInt, paramStr, paramInt } from "../lib/req-parse";
 import { logAuditFromReq } from "../audit-logger";
+import { normalizeSharePointFolderPath } from "../sharepoint";
 
 /**
  * Body schema for POST /api/admin/sp-settings — used to validate the COO/CEO
@@ -40,6 +41,8 @@ const SP_SETTINGS_BODY = z.object({
 const SP_TEST_BODY = z.object({
   siteId: z.string().trim().min(1, "siteId is required"),
   driveId: z.string().trim().min(1, "driveId is required"),
+  folderItemId: z.string().trim().nullable().optional(),
+  folderPath: z.string().trim().nullable().optional(),
 }).strict();
 
 const SP_IMPORT_SINGLE_BODY = z.object({
@@ -421,7 +424,7 @@ router.post("/api/admin/sp-settings", requireAuth, requireAdmin, async (req, res
     siteId: body.siteId,
     driveId: body.driveId,
     folderItemId: body.folderItemId ?? null,
-    folderPath: body.folderPath ?? null,
+    folderPath: normalizeSharePointFolderPath(body.folderPath) ?? null,
     intervalMinutes: body.intervalMinutes,
     enabled: body.enabled,
     updatedBy: userId,
@@ -452,11 +455,21 @@ router.post("/api/admin/sp-settings/test", requireAuth, requireAdmin, async (req
     });
   }
   const { testConnection } = await import("../sharepoint");
-  const result = await testConnection(parsed.data.siteId, parsed.data.driveId);
+  const result = await testConnection(
+    parsed.data.siteId,
+    parsed.data.driveId,
+    parsed.data.folderItemId ?? undefined,
+    parsed.data.folderPath ?? undefined,
+  );
   logAuditFromReq(req, {
     entityType: "sp_settings",
     action: "test_connection",
-    changesJson: { siteId: parsed.data.siteId, driveId: parsed.data.driveId },
+    changesJson: {
+      siteId: parsed.data.siteId,
+      driveId: parsed.data.driveId,
+      folderItemId: parsed.data.folderItemId ?? null,
+      folderPath: normalizeSharePointFolderPath(parsed.data.folderPath) ?? null,
+    },
   });
   res.json(result);
 });

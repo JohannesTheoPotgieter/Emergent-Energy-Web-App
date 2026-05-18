@@ -405,8 +405,19 @@ interface SpSettings {
 interface TestConnectionResult {
   ok: boolean;
   message?: string;
+  nextAction?: string;
   siteName?: string;
   driveName?: string;
+}
+
+function normalizeFolderPath(folderPath: string | null | undefined): string | null {
+  const normalized = (folderPath ?? "")
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "")
+    .replace(/\/{2,}/g, "/");
+  return normalized || null;
 }
 
 function nextRunEstimate(lastRunAt: string | null, intervalMinutes: number): string {
@@ -492,14 +503,14 @@ function SharePointAutoImportPanel() {
           siteId: form.siteId.trim(),
           driveId: form.driveId.trim(),
           folderItemId: form.folderItemId || null,
-          folderPath: form.folderPath || null,
+          folderPath: normalizeFolderPath(form.folderPath),
           intervalMinutes: form.intervalMinutes,
           enabled: form.enabled,
         }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body?.error || `HTTP ${res.status}`);
+        throw new Error(body?.message || body?.error || `HTTP ${res.status}`);
       }
       toast({ title: "Auto-import settings saved" });
       setDirty(false);
@@ -527,11 +538,16 @@ function SharePointAutoImportPanel() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ siteId: form.siteId.trim(), driveId: form.driveId.trim() }),
+        body: JSON.stringify({
+          siteId: form.siteId.trim(),
+          driveId: form.driveId.trim(),
+          folderItemId: form.folderItemId || null,
+          folderPath: normalizeFolderPath(form.folderPath),
+        }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setTestResult({ ok: false, message: body?.error || `HTTP ${res.status}` });
+        setTestResult({ ok: false, message: body?.message || body?.error || `HTTP ${res.status}`, nextAction: body?.nextAction });
       } else {
         setTestResult(body as TestConnectionResult);
       }
@@ -553,7 +569,7 @@ function SharePointAutoImportPanel() {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body?.error || `HTTP ${res.status}`);
+        throw new Error(body?.message || body?.error || `HTTP ${res.status}`);
       }
       toast({ title: "Import started", description: "Will refresh shortly." });
       // Give the scheduler a moment to update lastRunAt then refetch.
@@ -648,7 +664,7 @@ function SharePointAutoImportPanel() {
             <Label htmlFor="sp-folder-path">Folder Path (optional)</Label>
             <Input
               id="sp-folder-path"
-              placeholder="/Active Trackers/2026"
+              placeholder="Active Trackers/2026"
               value={form.folderPath ?? ""}
               onChange={(e) => patch("folderPath", e.target.value || null)}
               data-testid="input-sp-folder-path"
@@ -736,6 +752,9 @@ function SharePointAutoImportPanel() {
               )}
               {testResult.message && !testResult.ok && (
                 <div className="text-xs">{testResult.message}</div>
+              )}
+              {testResult.nextAction && !testResult.ok && (
+                <div className="text-xs text-muted-foreground mt-1">{testResult.nextAction}</div>
               )}
             </div>
           </div>
