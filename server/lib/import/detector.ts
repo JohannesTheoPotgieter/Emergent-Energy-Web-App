@@ -454,7 +454,11 @@ function extractProjectInfo(
   const pd = findLabeledValue(["project director", "project developer", "pd:", "pd name"]);
   const pm = findLabeledValue(["project managers", "project manager", "pm:", "pm name"]);
   const contractValue = findLabeledValue(["contract value", "contract amount", "total contract", "project value"], "number");
-  const phase = findLabeledValue(["phase", "execution phase", "current phase", "project phase"]);
+  // 2026-05-18 — phase removed from Excel import (no longer read from file).
+  // Project phase is owned by the canonical lifecycle (lifecycle-routes.ts),
+  // not by the Smart Import pipeline. Always return null so downstream
+  // writers cannot propagate Excel "Phase" values into project_info.
+  const phase = null;
 
   const pdHandoverDate = findLabeledValue(["pd handover", "handover date", "design handover"], "date");
   const constructionStartDate = findLabeledValue(["construction start", "construction commencement", "site start"], "date");

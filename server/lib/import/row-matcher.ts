@@ -349,7 +349,7 @@ interface DbEntry {
  * pairing is the one that preserves as much content identity as possible.
  */
 const SIMILARITY_FIELDS: Record<SectionType, string[]> = {
-  PLAN: ["taskName", "startDate", "endDate", "durationDays", "owner", "phase", "sourceRow"],
+  PLAN: ["taskName", "startDate", "endDate", "durationDays", "owner", "sourceRow"],
   REVENUE: ["milestoneName", "description", "amountExVat", "invoiceNumber", "invoiceDate", "sourceRow"],
   EXPENDITURE: ["description", "costCategory", "counterpartyName", "amountExVat", "invoiceNumber", "invoiceDate", "poNumber", "sourceRow"],
 };
