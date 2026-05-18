@@ -1179,7 +1179,6 @@ html[data-layout-mode="desktop"] [data-shadcn-dialog][data-state="open"] {
   border-radius: var(--radius-lg, 0.5rem) !important;
   border-bottom-left-radius: var(--radius-lg, 0.5rem) !important;
   border-bottom-right-radius: var(--radius-lg, 0.5rem) !important;
-  inset-inline: auto !important;
 }
 
 /* Wide-dialog opt-in: shadcn Dialog content marked with data-wide-dialog
@@ -1190,9 +1189,9 @@ html[data-layout-mode="desktop"] [data-shadcn-dialog][data-state="open"] {
    keep the 42rem cap. */
 html[data-layout-mode="desktop"] [data-shadcn-dialog][data-wide-dialog][data-state="open"],
 [data-shadcn-dialog][data-wide-dialog][data-state="open"] {
-  width: min(calc(100vw - 2rem), 70rem) !important;
-  max-width: min(calc(100vw - 2rem), 70rem) !important;
-  max-height: min(86dvh, 780px) !important;
+  width: min(calc(100vw - 1rem), 1280px) !important;
+  max-width: min(calc(100vw - 1rem), 1280px) !important;
+  max-height: min(92dvh, 920px) !important;
 }
 
 /* Force-mobile: render shadcn Dialog content as a full-width bottom sheet

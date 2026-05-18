@@ -2673,22 +2673,43 @@ export default function CashflowPage() {
           </DialogContent>
         </Dialog>
         <Dialog open={!!qbLinkContext} onOpenChange={(open) => !open && setQbLinkContext(null)}>
-          <DialogContent className="max-w-4xl" data-testid="dialog-cashflow-qb-match">
-            <DialogHeader>
-              <DialogTitle>Open QuickBooks match</DialogTitle>
-              <DialogDescription>
-                Search QuickBooks, link the app line, and review the live payment status without
-                leaving cashflow.
-                {qbLinkContext?.label ? ` Seeded from ${qbLinkContext.label}.` : ''}
-              </DialogDescription>
-            </DialogHeader>
-            {qbLinkContext && (
-              <FindQbMatchesPanel
-                key={`${qbLinkContext.scope}-${qbLinkContext.initialSearch}`}
-                defaultScope={qbLinkContext.scope}
-                initialSearch={qbLinkContext.initialSearch}
-              />
-            )}
+          <DialogContent
+            style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              right: 'auto',
+              bottom: 'auto',
+              transform: 'translate(-50%, -50%)',
+              width: 'min(calc(100vw - 1rem), 1280px)',
+              maxWidth: 'min(calc(100vw - 1rem), 1280px)',
+              height: 'min(92dvh, 920px)',
+              maxHeight: 'min(92dvh, 920px)',
+              zIndex: 60,
+            }}
+            className="z-[60] h-[min(92dvh,920px)] w-[min(1280px,calc(100vw-1rem))] max-w-none max-h-[min(92dvh,920px)] overflow-hidden p-0 sm:p-0"
+            data-wide-dialog=""
+            data-testid="dialog-cashflow-qb-match"
+          >
+            <div className="flex h-full max-h-[min(92dvh,920px)] min-h-0 flex-col">
+              <DialogHeader className="shrink-0 border-b border-border bg-background px-4 py-3 pr-12 sm:px-5 sm:py-4">
+                <DialogTitle className="text-base font-semibold">Open QuickBooks match</DialogTitle>
+                <DialogDescription className="text-xs sm:text-sm">
+                  Search QuickBooks, link the app line, and review the live payment status without
+                  leaving cashflow.
+                  {qbLinkContext?.label ? ` Seeded from ${qbLinkContext.label}.` : ''}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/60 px-3 py-3 sm:px-5 sm:py-4">
+                {qbLinkContext && (
+                  <FindQbMatchesPanel
+                    key={`${qbLinkContext.scope}-${qbLinkContext.initialSearch}`}
+                    defaultScope={qbLinkContext.scope}
+                    initialSearch={qbLinkContext.initialSearch}
+                  />
+                )}
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       </div>

@@ -208,6 +208,79 @@ function classifyApproveError(err: unknown): {
   };
 }
 
+type ProposalAction = "accept" | "decline";
+
+const REQUIRED_PROPOSAL_SCHEMA_MARKERS = [
+  "qb_link_proposed_cascade_history",
+  "qb_link_proposed_cascades",
+] as const;
+
+function nestedErrorParts(err: unknown): Array<{ code?: unknown; constraint?: unknown; relation?: unknown; message?: unknown; stack?: unknown; name?: unknown }> {
+  const parts: Array<{ code?: unknown; constraint?: unknown; relation?: unknown; message?: unknown; stack?: unknown; name?: unknown }> = [];
+  let current: unknown = err;
+  for (let i = 0; i < 3 && current && typeof current === "object"; i++) {
+    const item = current as { code?: unknown; constraint?: unknown; relation?: unknown; message?: unknown; stack?: unknown; name?: unknown; cause?: unknown };
+    parts.push(item);
+    current = item.cause;
+  }
+  return parts;
+}
+
+function classifyProposalActionError(action: ProposalAction, err: unknown): {
+  statusCode: number;
+  code: string;
+  reason: string;
+  message: string;
+} {
+  if (err instanceof ApiError) {
+    return {
+      statusCode: err.statusCode,
+      code: err.code,
+      reason: err.code,
+      message: err.message,
+    };
+  }
+
+  const parts = nestedErrorParts(err);
+  const dbCode = parts.find((part) => typeof part.code === "string" && /^\d{5}$/.test(part.code))?.code as string | undefined;
+  const relation = parts.find((part) => typeof part.relation === "string")?.relation as string | undefined;
+  const constraint = parts.find((part) => typeof part.constraint === "string")?.constraint as string | undefined;
+  const combinedMessage = parts
+    .map((part) => (typeof part.message === "string" ? part.message : ""))
+    .filter(Boolean)
+    .join("\n");
+  const lowerMessage = combinedMessage.toLowerCase();
+  const referencesProposalSchema = REQUIRED_PROPOSAL_SCHEMA_MARKERS.some((marker) =>
+    lowerMessage.includes(marker) || relation === marker || constraint === marker,
+  );
+
+  if (dbCode === "42P01" || referencesProposalSchema) {
+    return {
+      statusCode: 500,
+      code: "proposal_schema_missing",
+      reason: dbCode ? `pg_${dbCode}` : "proposal_schema_missing",
+      message: "QuickBooks cascade proposal schema is out of date. Run migrations, then retry.",
+    };
+  }
+
+  if (dbCode) {
+    const constraintSuffix = constraint ? ` (${constraint})` : "";
+    return {
+      statusCode: 500,
+      code: `proposal_${action}_database_error`,
+      reason: `pg_${dbCode}`,
+      message: `Database error while trying to ${action} proposal${constraintSuffix} - see server logs.`,
+    };
+  }
+
+  return {
+    statusCode: 500,
+    code: `proposal_${action}_failed`,
+    reason: "unexpected_error",
+    message: `Failed to ${action} proposal - see server logs.`,
+  };
+}
+
 const findBodySchema = z
   .object({
     scope: z.enum(SCOPES),
@@ -2220,8 +2293,14 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           throw inner;
         }
       } catch (err) {
-        logApiError("qb.cascade_proposals.accept", err);
-        return sendError(res, serverError("Failed to accept proposal."));
+        const classified = classifyProposalActionError("accept", err);
+        logApiError(`qb.cascade_proposals.accept.${classified.reason}`, err);
+        return res.status(classified.statusCode).json({
+          error: classified.code,
+          code: classified.code,
+          reason: classified.reason,
+          message: classified.message,
+        });
       }
     },
   );
@@ -2269,8 +2348,14 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           throw inner;
         }
       } catch (err) {
-        logApiError("qb.cascade_proposals.decline", err);
-        return sendError(res, serverError("Failed to decline proposal."));
+        const classified = classifyProposalActionError("decline", err);
+        logApiError(`qb.cascade_proposals.decline.${classified.reason}`, err);
+        return res.status(classified.statusCode).json({
+          error: classified.code,
+          code: classified.code,
+          reason: classified.reason,
+          message: classified.message,
+        });
       }
     },
   );
