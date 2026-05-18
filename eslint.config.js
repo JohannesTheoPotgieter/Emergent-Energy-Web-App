@@ -163,5 +163,22 @@ export default [
       '@typescript-eslint/no-require-imports': 'off',
     },
   },
+  {
+    // CLI scripts, QA/test harnesses, audit probes and build tooling write
+    // to stdout/stderr by design — console is their output mechanism, not
+    // debug debt. Runtime code (server/**, client/**) is NOT exempt and
+    // must use the structured logger.
+    files: [
+      'scripts/**/*.{ts,tsx,js,mjs,cjs}',
+      'script/**/*.{ts,tsx,js,mjs,cjs}',
+      'qa/**/*.{ts,tsx,js,mjs,cjs}',
+      'audit/**/*.{ts,tsx,js,mjs,cjs}',
+      '*.config.{js,ts,mjs,cjs}',
+      'vite-plugin-*.ts',
+    ],
+    rules: {
+      'no-console': 'off',
+    },
+  },
   prettierConfig,
 ];
