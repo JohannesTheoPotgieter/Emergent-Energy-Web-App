@@ -391,7 +391,7 @@ export function TaskDetailDrawer({
       return { supported: false, status: "failed", error: "showSaveFilePicker is unavailable in this runtime." };
     }
     try {
-      // @ts-ignore
+      // @ts-expect-error showSaveFilePicker is not in the DOM lib typings yet
       const handle = await window.showSaveFilePicker({ suggestedName });
       const writable = await handle.createWritable();
       await writable.write(await file.arrayBuffer());

@@ -304,7 +304,8 @@ export default function PhaseTemplatesPage() {
 
   const togglePhase = (phase: string) => {
     const next = new Set(expandedPhases);
-    next.has(phase) ? next.delete(phase) : next.add(phase);
+    if (next.has(phase)) next.delete(phase);
+    else next.add(phase);
     setExpandedPhases(next);
   };
 

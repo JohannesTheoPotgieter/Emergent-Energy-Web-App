@@ -940,7 +940,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
         title: "Sent for approval",
         description: `${successCount} item${successCount !== 1 ? "s" : ""} submitted for review. Open the Approvals tab to review them.`,
       });
-      onNavigateSubTab && setTimeout(() => onNavigateSubTab("approvals"), 800);
+      if (onNavigateSubTab) setTimeout(() => onNavigateSubTab("approvals"), 800);
     }
   };
 

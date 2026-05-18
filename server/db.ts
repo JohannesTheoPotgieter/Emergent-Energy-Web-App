@@ -19,7 +19,7 @@ let postgresPool: pg.Pool | null = null;
 
 declare global {
   // Prevent duplicate pool creation under dev hot-reload in the same Node.js process.
-  // eslint-disable-next-line no-var
+   
   var __emergentPostgresPool: pg.Pool | undefined;
 }
 

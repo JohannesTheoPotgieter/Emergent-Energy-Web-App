@@ -72,7 +72,7 @@ export function ProjectApprovalsTab({
     url.searchParams.set("qualityFilter", "actionable_for_approval");
     url.searchParams.set("chip", "create-from-quality");
     setLocation(url.pathname + url.search);
-    onNavigateSubTab && onNavigateSubTab("checklist");
+    if (onNavigateSubTab) onNavigateSubTab("checklist");
   };
 
   const { data: approvals = [], isLoading } = useQuery<ApprovalItem[]>({

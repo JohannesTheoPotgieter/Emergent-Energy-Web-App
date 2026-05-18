@@ -5,7 +5,17 @@ import reactHooks from 'eslint-plugin-react-hooks';
 
 export default [
   {
-    ignores: ['node_modules/**', 'dist/**', 'build/**', '**/*.d.ts', 'qa/artifacts/**'],
+    // scripts/_archive is dead archived code (already excluded from
+    // tsconfig.check.json); tmp/ holds dev scratch + data dumps, not source.
+    ignores: [
+      'node_modules/**',
+      'dist/**',
+      'build/**',
+      '**/*.d.ts',
+      'qa/artifacts/**',
+      'scripts/_archive/**',
+      'tmp/**',
+    ],
   },
   {
     files: ['**/*.{ts,tsx,js,mjs,cjs}'],
@@ -143,6 +153,14 @@ export default [
           ],
         },
       ],
+    },
+  },
+  {
+    // CommonJS files legitimately use require(); no-require-imports targets
+    // ESM modules only. Placed after the recommended ruleset so it wins.
+    files: ['**/*.cjs'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
     },
   },
   prettierConfig,

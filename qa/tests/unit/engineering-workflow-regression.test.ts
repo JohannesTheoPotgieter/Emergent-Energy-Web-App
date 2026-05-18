@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, it, expect } from "vitest";
 import {
   TASK_STATUSES,
@@ -133,8 +135,8 @@ describe("parent-child completion contract", () => {
   // in the terminal set. We test the set against the canonical statuses.
 
   // Read the terminal set from the source to ensure drift detection
-  const cascadeSource = require("fs").readFileSync(
-    require("path").join(__dirname, "..", "..", "..", "server", "services", "task-cascade-service.ts"),
+  const cascadeSource = fs.readFileSync(
+    path.join(__dirname, "..", "..", "..", "server", "services", "task-cascade-service.ts"),
     "utf8",
   );
 

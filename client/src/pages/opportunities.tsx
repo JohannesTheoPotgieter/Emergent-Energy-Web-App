@@ -371,7 +371,7 @@ export default function OpportunitiesPage() {
       window.history.replaceState(null, "", next);
     }
     // run once on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   // Pipedrive "last synced" indicator — driven entirely client-side from

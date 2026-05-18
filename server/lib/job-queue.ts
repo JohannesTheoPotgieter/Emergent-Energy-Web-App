@@ -111,6 +111,9 @@ function memoryRegisterWorker(queueName: string, handler: JobHandler): void {
 let bullQueues: Map<string, import("bullmq").Queue> | null = null;
 let bullWorkers: Map<string, import("bullmq").Worker> | null = null;
 let bullConnection: import("ioredis").default | null = null;
+// bullmq is an optional dependency loaded lazily so the app runs without
+// Redis. Cache the resolved module here once initBull succeeds.
+let bullModule: typeof import("bullmq") | null = null;
 let _useBull = false;
 
 async function initBull(): Promise<boolean> {
@@ -118,6 +121,7 @@ async function initBull(): Promise<boolean> {
   if (!redisUrl) return false;
 
   try {
+    bullModule = await import("bullmq");
     const Redis = (await import("ioredis")).default;
     const conn = new Redis(redisUrl, {
       maxRetriesPerRequest: null, // BullMQ requirement
@@ -143,9 +147,9 @@ function getBullQueue(queueName: string): import("bullmq").Queue {
   if (!bullQueues) throw new Error("BullMQ not initialized");
   let q = bullQueues.get(queueName);
   if (!q) {
-    // Lazy-import already resolved at this point since initBull succeeded
-    const { Queue } = require("bullmq") as typeof import("bullmq");
-    q = new Queue(queueName, { connection: bullConnection! });
+    // initBull resolved and cached the bullmq module before any queue use.
+    if (!bullModule) throw new Error("BullMQ module not loaded");
+    q = new bullModule.Queue(queueName, { connection: bullConnection! });
     bullQueues.set(queueName, q);
   }
   return q;
@@ -202,7 +206,7 @@ export async function registerWorker(
 
   if (_useBull && bullConnection) {
     try {
-      const { Worker } = await import("bullmq");
+      const { Worker } = bullModule ?? (await import("bullmq"));
       const worker = new Worker(
         queueName,
         async (job) => {

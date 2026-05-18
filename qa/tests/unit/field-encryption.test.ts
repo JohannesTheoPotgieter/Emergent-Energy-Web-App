@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 
 // Set a test encryption key before importing the module
@@ -113,8 +115,6 @@ describe("field-encryption (AES-256-GCM, versioned)", () => {
   // ── Schema comments present ──
 
   it("schema has encryption comments on bank fields", () => {
-    const fs = require("fs");
-    const path = require("path");
     const schema = fs.readFileSync(path.join(process.cwd(), "shared/schema/finance.ts"), "utf8");
     expect(schema).toContain("stored encrypted at rest; decrypt only in server/lib/field-encryption.ts");
   });
@@ -122,8 +122,6 @@ describe("field-encryption (AES-256-GCM, versioned)", () => {
   // ── Write paths use encrypt ──
 
   it("subcontractor routes use encryptField on write paths", () => {
-    const fs = require("fs");
-    const path = require("path");
     const routes = fs.readFileSync(path.join(process.cwd(), "server/subcontractor-routes.ts"), "utf8");
     expect(routes).toContain("encryptField(bankAccountNumber)");
     expect(routes).toContain("encryptField(bankBranchCode)");
@@ -132,8 +130,6 @@ describe("field-encryption (AES-256-GCM, versioned)", () => {
   // ── Read paths use decrypt ──
 
   it("subcontractor routes use decryptField on read paths", () => {
-    const fs = require("fs");
-    const path = require("path");
     const routes = fs.readFileSync(path.join(process.cwd(), "server/subcontractor-routes.ts"), "utf8");
     expect(routes).toContain("decryptField(row.bank_account_number");
     expect(routes).toContain("decryptField(row.bank_branch_code");

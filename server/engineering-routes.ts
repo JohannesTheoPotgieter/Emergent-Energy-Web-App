@@ -129,7 +129,7 @@ export const FORBIDDEN_BODY_KEYS = new Set<string>([
   "isShared",
 ]);
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- return type
+ 
 // is intentionally `any`-shaped so existing spread-style update bodies keep
 // compiling without per-field assertions. Engineering PR 2 (#909) pairs
 // this denylist with `.passthrough()` Zod schemas — Zod validates the

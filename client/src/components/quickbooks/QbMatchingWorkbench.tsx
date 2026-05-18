@@ -830,7 +830,8 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
                       onCheckedChange={(checked) => {
                         setSelectedIds((prev) => {
                           const next = new Set(prev);
-                          checked ? next.add(row.id) : next.delete(row.id);
+                          if (checked) next.add(row.id);
+                          else next.delete(row.id);
                           return next;
                         });
                       }}

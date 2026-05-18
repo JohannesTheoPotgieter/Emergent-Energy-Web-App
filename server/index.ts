@@ -34,6 +34,9 @@ declare module "express-session" {
 }
 
 declare global {
+  // Express type augmentation requires declaration-merging into its
+  // namespace — the idiomatic and only supported way to extend req.user.
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface User {
       id: number;
