@@ -51,6 +51,6 @@ export const insertDashboardSnapshotSchema = createInsertSchema(dashboardSnapsho
   id: true,
   createdAt: true,
   updatedAt: true,
-} as any);
+});
 export type InsertDashboardSnapshot = z.infer<typeof insertDashboardSnapshotSchema>;
 export type DashboardSnapshot = typeof dashboardSnapshots.$inferSelect;

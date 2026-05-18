@@ -1,6 +1,6 @@
 // C1: Construction module schema — site activities, snags, inspections, contractor assignments
 
-import { pgTable, text, integer, decimal, timestamp, serial, boolean, date } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, serial, date } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { users } from "./users";
@@ -26,7 +26,7 @@ export const siteActivities = pgTable("site_activities", {
   deletedAt: timestamp("deleted_at"),
 });
 
-export const insertSiteActivitySchema = createInsertSchema(siteActivities).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertSiteActivitySchema = createInsertSchema(siteActivities).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertSiteActivity = z.infer<typeof insertSiteActivitySchema>;
 export type SiteActivity = typeof siteActivities.$inferSelect;
 
@@ -51,7 +51,7 @@ export const snags = pgTable("snags", {
   deletedAt: timestamp("deleted_at"),
 });
 
-export const insertSnagSchema = createInsertSchema(snags).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertSnagSchema = createInsertSchema(snags).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertSnag = z.infer<typeof insertSnagSchema>;
 export type Snag = typeof snags.$inferSelect;
 
@@ -74,7 +74,7 @@ export const siteInspections = pgTable("site_inspections", {
   deletedAt: timestamp("deleted_at"),
 });
 
-export const insertSiteInspectionSchema = createInsertSchema(siteInspections).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertSiteInspectionSchema = createInsertSchema(siteInspections).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertSiteInspection = z.infer<typeof insertSiteInspectionSchema>;
 export type SiteInspection = typeof siteInspections.$inferSelect;
 
@@ -94,6 +94,6 @@ export const contractorAssignments = pgTable("contractor_assignments", {
   deletedAt: timestamp("deleted_at"),
 });
 
-export const insertContractorAssignmentSchema = createInsertSchema(contractorAssignments).omit({ id: true, createdAt: true } as any);
+export const insertContractorAssignmentSchema = createInsertSchema(contractorAssignments).omit({ id: true, createdAt: true });
 export type InsertContractorAssignment = z.infer<typeof insertContractorAssignmentSchema>;
 export type ContractorAssignment = typeof contractorAssignments.$inferSelect;

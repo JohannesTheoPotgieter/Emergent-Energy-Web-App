@@ -1419,7 +1419,15 @@ export const ENTITY_REGISTRY: EntityRegistryEntry[] = [
  * Do NOT change the field set here without updating the resolver.
  */
 export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = ENTITY_REGISTRY.map(
-  ({ title, description, category, ...rest }) => rest,
+  (entry): EntityPermissionRule => ({
+    entity: entry.entity,
+    view_roles: entry.view_roles,
+    create_roles: entry.create_roles,
+    edit_roles: entry.edit_roles,
+    approve_roles: entry.approve_roles,
+    override_roles: entry.override_roles,
+    delete_roles: entry.delete_roles,
+  }),
 );
 
 export function findEntityRegistry(entity: PermissionEntity): EntityRegistryEntry | undefined {

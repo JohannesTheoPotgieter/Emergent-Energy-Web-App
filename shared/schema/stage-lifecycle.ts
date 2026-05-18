@@ -191,7 +191,7 @@ export const stageDefinitions = pgTable("stage_definitions", {
   deletedBy: integer("deleted_by"),
 });
 
-export const insertStageDefinitionSchema = createInsertSchema(stageDefinitions).omit({ id: true, createdAt: true, updatedAt: true, deletedAt: true, deletedBy: true } as any);
+export const insertStageDefinitionSchema = createInsertSchema(stageDefinitions).omit({ id: true, createdAt: true, updatedAt: true, deletedAt: true, deletedBy: true });
 export type InsertStageDefinition = z.infer<typeof insertStageDefinitionSchema>;
 export type StageDefinition = typeof stageDefinitions.$inferSelect;
 
@@ -221,7 +221,7 @@ export const stageChecklistTemplates = pgTable("stage_checklist_templates", {
   editReason: text("edit_reason"),
 });
 
-export const insertStageChecklistTemplateSchema = createInsertSchema(stageChecklistTemplates).omit({ id: true, createdAt: true, updatedAt: true, deletedAt: true, deletedBy: true } as any);
+export const insertStageChecklistTemplateSchema = createInsertSchema(stageChecklistTemplates).omit({ id: true, createdAt: true, updatedAt: true, deletedAt: true, deletedBy: true });
 export type InsertStageChecklistTemplate = z.infer<typeof insertStageChecklistTemplateSchema>;
 export type StageChecklistTemplate = typeof stageChecklistTemplates.$inferSelect;
 
@@ -251,7 +251,7 @@ export const projectStageInstances = pgTable("project_stage_instances", {
   stageStatusIdx: index("psi_stage_status_idx").on(table.stageStatus),
 }));
 
-export const insertProjectStageInstanceSchema = createInsertSchema(projectStageInstances).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertProjectStageInstanceSchema = createInsertSchema(projectStageInstances).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProjectStageInstance = z.infer<typeof insertProjectStageInstanceSchema>;
 export type ProjectStageInstance = typeof projectStageInstances.$inferSelect;
 
@@ -301,7 +301,7 @@ export const projectStageRequirements = pgTable("project_stage_requirements", {
   autoStatusIdx: index("psr_auto_status_idx").on(table.autoStatus),
 }));
 
-export const insertProjectStageRequirementSchema = createInsertSchema(projectStageRequirements).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertProjectStageRequirementSchema = createInsertSchema(projectStageRequirements).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProjectStageRequirement = z.infer<typeof insertProjectStageRequirementSchema>;
 export type ProjectStageRequirement = typeof projectStageRequirements.$inferSelect;
 
@@ -325,7 +325,7 @@ export const projectStageEvidence = pgTable("project_stage_evidence", {
   notes: text("notes"),
 });
 
-export const insertProjectStageEvidenceSchema = createInsertSchema(projectStageEvidence).omit({ id: true, uploadedAt: true } as any);
+export const insertProjectStageEvidenceSchema = createInsertSchema(projectStageEvidence).omit({ id: true, uploadedAt: true });
 export type InsertProjectStageEvidence = z.infer<typeof insertProjectStageEvidenceSchema>;
 export type ProjectStageEvidence = typeof projectStageEvidence.$inferSelect;
 
@@ -348,7 +348,7 @@ export const projectStageDecisions = pgTable("project_stage_decisions", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertProjectStageDecisionSchema = createInsertSchema(projectStageDecisions).omit({ id: true, createdAt: true } as any);
+export const insertProjectStageDecisionSchema = createInsertSchema(projectStageDecisions).omit({ id: true, createdAt: true });
 export type InsertProjectStageDecision = z.infer<typeof insertProjectStageDecisionSchema>;
 export type ProjectStageDecision = typeof projectStageDecisions.$inferSelect;
 
@@ -378,7 +378,7 @@ export const projectStageExceptions = pgTable("project_stage_exceptions", {
   statusIdx: index("pse_status_idx").on(table.status),
 }));
 
-export const insertProjectStageExceptionSchema = createInsertSchema(projectStageExceptions).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertProjectStageExceptionSchema = createInsertSchema(projectStageExceptions).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProjectStageException = z.infer<typeof insertProjectStageExceptionSchema>;
 export type ProjectStageException = typeof projectStageExceptions.$inferSelect;
 
@@ -404,7 +404,7 @@ export const projectStageExceptionHistory = pgTable("project_stage_exception_his
   exceptionIdIdx: index("pseh_exception_id_idx").on(table.exceptionId),
 }));
 
-export const insertProjectStageExceptionHistorySchema = createInsertSchema(projectStageExceptionHistory).omit({ id: true, changedAt: true } as any);
+export const insertProjectStageExceptionHistorySchema = createInsertSchema(projectStageExceptionHistory).omit({ id: true, changedAt: true });
 export type InsertProjectStageExceptionHistory = z.infer<typeof insertProjectStageExceptionHistorySchema>;
 export type ProjectStageExceptionHistory = typeof projectStageExceptionHistory.$inferSelect;
 
@@ -431,7 +431,7 @@ export const projectStageDependencies = pgTable("project_stage_dependencies", {
   statusIdx: index("psd_status_idx").on(table.status),
 }));
 
-export const insertProjectStageDependencySchema = createInsertSchema(projectStageDependencies).omit({ id: true, createdAt: true } as any);
+export const insertProjectStageDependencySchema = createInsertSchema(projectStageDependencies).omit({ id: true, createdAt: true });
 export type InsertProjectStageDependency = z.infer<typeof insertProjectStageDependencySchema>;
 export type ProjectStageDependency = typeof projectStageDependencies.$inferSelect;
 
@@ -483,7 +483,7 @@ export const stageGateEvidenceSnapshots = pgTable("stage_gate_evidence_snapshots
   trafficLightIdx: index("sges_traffic_light_idx").on(table.trafficLight),
 }));
 
-export const insertStageGateEvidenceSnapshotSchema = createInsertSchema(stageGateEvidenceSnapshots).omit({ id: true, advancedAt: true } as any);
+export const insertStageGateEvidenceSnapshotSchema = createInsertSchema(stageGateEvidenceSnapshots).omit({ id: true, advancedAt: true });
 export type InsertStageGateEvidenceSnapshot = z.infer<typeof insertStageGateEvidenceSnapshotSchema>;
 export type StageGateEvidenceSnapshot = typeof stageGateEvidenceSnapshots.$inferSelect;
 
@@ -520,6 +520,6 @@ export const projectAccess = pgTable("project_access", {
   userIdIdx: index("pa_user_id_idx").on(table.userId),
 }));
 
-export const insertProjectAccessSchema = createInsertSchema(projectAccess).omit({ id: true, grantedAt: true, deletedAt: true, deletedBy: true } as any);
+export const insertProjectAccessSchema = createInsertSchema(projectAccess).omit({ id: true, grantedAt: true, deletedAt: true, deletedBy: true });
 export type InsertProjectAccess = z.infer<typeof insertProjectAccessSchema>;
 export type ProjectAccess = typeof projectAccess.$inferSelect;

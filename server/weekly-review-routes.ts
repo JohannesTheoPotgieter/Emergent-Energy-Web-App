@@ -4,6 +4,7 @@ import { z } from "zod";
 import { logAuditFromReq } from "./audit-logger";
 import { requirePermission } from "./permission-middleware";
 import { type AuthenticatedUser, getEffectiveUser, requireAuth } from "./auth-context";
+import { paramStr } from "./lib/req-params";
 import { WeeklyReviewService } from "./services/weekly-review-service";
 import { type WeeklyReviewUpdate } from "./repositories/weekly-review.repository";
 
@@ -45,7 +46,7 @@ export function registerWeeklyReviewRoutes(app: Express): void {
 
   app.post("/api/weekly-reviews/:projectName", requireAuth, requirePermission('weekly_review_wizard', 'create'), async (req: Request, res: Response) => {
     try {
-      const { projectName } = req.params;
+      const projectName = paramStr(req.params.projectName);
       const user = getEffectiveUser(req);
       const userId = user?.id;
       const body = z.object({

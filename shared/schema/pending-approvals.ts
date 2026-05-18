@@ -71,6 +71,6 @@ export const pendingApprovalHistory = pgTable("pending_approval_history", {
   pendingApprovalIdIdx: index("pah_pending_approval_id_idx").on(table.pendingApprovalId),
 }));
 
-export const insertPendingApprovalHistorySchema = createInsertSchema(pendingApprovalHistory).omit({ id: true, changedAt: true } as any);
+export const insertPendingApprovalHistorySchema = createInsertSchema(pendingApprovalHistory).omit({ id: true, changedAt: true });
 export type InsertPendingApprovalHistory = z.infer<typeof insertPendingApprovalHistorySchema>;
 export type PendingApprovalHistory = typeof pendingApprovalHistory.$inferSelect;

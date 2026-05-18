@@ -24,7 +24,7 @@ export const commissioningSources = pgTable("commissioning_sources", {
   uniqueProject: unique().on(table.projectId),
 }));
 
-export const insertCommissioningSourceSchema = createInsertSchema(commissioningSources).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertCommissioningSourceSchema = createInsertSchema(commissioningSources).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertCommissioningSource = z.infer<typeof insertCommissioningSourceSchema>;
 export type CommissioningSource = typeof commissioningSources.$inferSelect;
 
@@ -107,6 +107,6 @@ export const commissioningSnapshots = pgTable("commissioning_snapshots", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertCommissioningSnapshotSchema = createInsertSchema(commissioningSnapshots).omit({ id: true, createdAt: true } as any);
+export const insertCommissioningSnapshotSchema = createInsertSchema(commissioningSnapshots).omit({ id: true, createdAt: true });
 export type InsertCommissioningSnapshot = z.infer<typeof insertCommissioningSnapshotSchema>;
 export type CommissioningSnapshot = typeof commissioningSnapshots.$inferSelect;

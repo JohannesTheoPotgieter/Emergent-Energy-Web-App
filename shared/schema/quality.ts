@@ -1,5 +1,4 @@
-import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, pgEnum, serial, real, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -17,7 +16,7 @@ export const qcTemplate = pgTable("qc_template", {
   deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
-export const insertQcTemplateSchema = createInsertSchema(qcTemplate).omit({ id: true, createdAt: true } as any);
+export const insertQcTemplateSchema = createInsertSchema(qcTemplate).omit({ id: true, createdAt: true });
 export type InsertQcTemplate = z.infer<typeof insertQcTemplateSchema>;
 export type QcTemplate = typeof qcTemplate.$inferSelect;
 
@@ -28,7 +27,7 @@ export const qcTemplatePhase = pgTable("qc_template_phase", {
   phaseName: text("phase_name").notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
 });
-export const insertQcTemplatePhaseSchema = createInsertSchema(qcTemplatePhase).omit({ id: true } as any);
+export const insertQcTemplatePhaseSchema = createInsertSchema(qcTemplatePhase).omit({ id: true });
 export type InsertQcTemplatePhase = z.infer<typeof insertQcTemplatePhaseSchema>;
 export type QcTemplatePhase = typeof qcTemplatePhase.$inferSelect;
 
@@ -38,7 +37,7 @@ export const qcTemplateGroup = pgTable("qc_template_group", {
   groupName: text("group_name").notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
 });
-export const insertQcTemplateGroupSchema = createInsertSchema(qcTemplateGroup).omit({ id: true } as any);
+export const insertQcTemplateGroupSchema = createInsertSchema(qcTemplateGroup).omit({ id: true });
 export type InsertQcTemplateGroup = z.infer<typeof insertQcTemplateGroupSchema>;
 export type QcTemplateGroup = typeof qcTemplateGroup.$inferSelect;
 
@@ -50,7 +49,7 @@ export const qcTemplateItem = pgTable("qc_template_item", {
   isEvidenceRequired: boolean("is_evidence_required").notNull().default(false),
   defaultSeverity: text("default_severity").notNull().default("Medium"),
 });
-export const insertQcTemplateItemSchema = createInsertSchema(qcTemplateItem).omit({ id: true } as any);
+export const insertQcTemplateItemSchema = createInsertSchema(qcTemplateItem).omit({ id: true });
 export type InsertQcTemplateItem = z.infer<typeof insertQcTemplateItemSchema>;
 export type QcTemplateItem = typeof qcTemplateItem.$inferSelect;
 
@@ -64,7 +63,7 @@ export const qcTemplateRiskQuestion = pgTable("qc_template_risk_question", {
   triggerCondition: text("trigger_condition").default("yes"),
   triggerSeverity: text("trigger_severity").default("Medium"),
 });
-export const insertQcTemplateRiskQuestionSchema = createInsertSchema(qcTemplateRiskQuestion).omit({ id: true } as any);
+export const insertQcTemplateRiskQuestionSchema = createInsertSchema(qcTemplateRiskQuestion).omit({ id: true });
 export type InsertQcTemplateRiskQuestion = z.infer<typeof insertQcTemplateRiskQuestionSchema>;
 export type QcTemplateRiskQuestion = typeof qcTemplateRiskQuestion.$inferSelect;
 
@@ -75,7 +74,7 @@ export const qcTemplatePostmortemMetric = pgTable("qc_template_postmortem_metric
   scoringRuleJson: jsonb("scoring_rule_json"),
   metricGroup: text("metric_group").notNull().default("contractor_quality"),
 });
-export const insertQcTemplatePostmortemMetricSchema = createInsertSchema(qcTemplatePostmortemMetric).omit({ id: true } as any);
+export const insertQcTemplatePostmortemMetricSchema = createInsertSchema(qcTemplatePostmortemMetric).omit({ id: true });
 export type InsertQcTemplatePostmortemMetric = z.infer<typeof insertQcTemplatePostmortemMetricSchema>;
 export type QcTemplatePostmortemMetric = typeof qcTemplatePostmortemMetric.$inferSelect;
 
@@ -88,7 +87,7 @@ export const qcChecklist = pgTable("qc_checklist", {
   status: text("status").notNull().default("active"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
-export const insertQcChecklistSchema = createInsertSchema(qcChecklist).omit({ id: true, createdAt: true } as any);
+export const insertQcChecklistSchema = createInsertSchema(qcChecklist).omit({ id: true, createdAt: true });
 export type InsertQcChecklist = z.infer<typeof insertQcChecklistSchema>;
 export type QcChecklist = typeof qcChecklist.$inferSelect;
 
@@ -113,7 +112,7 @@ export const qcItemInstance = pgTable("qc_item_instance", {
   scheduledStartTime: text("scheduled_start_time"),
   scheduledEndTime: text("scheduled_end_time"),
 });
-export const insertQcItemInstanceSchema = createInsertSchema(qcItemInstance).omit({ id: true, lastUpdatedAt: true } as any);
+export const insertQcItemInstanceSchema = createInsertSchema(qcItemInstance).omit({ id: true, lastUpdatedAt: true });
 export type InsertQcItemInstance = z.infer<typeof insertQcItemInstanceSchema>;
 export type QcItemInstance = typeof qcItemInstance.$inferSelect;
 
@@ -127,7 +126,7 @@ export const qcItemEvidence = pgTable("qc_item_evidence", {
   deletedAt: timestamp("deleted_at"),
   deletedBy: integer("deleted_by"),
 });
-export const insertQcItemEvidenceSchema = createInsertSchema(qcItemEvidence).omit({ id: true, createdAt: true, deletedAt: true, deletedBy: true } as any);
+export const insertQcItemEvidenceSchema = createInsertSchema(qcItemEvidence).omit({ id: true, createdAt: true, deletedAt: true, deletedBy: true });
 export type InsertQcItemEvidence = z.infer<typeof insertQcItemEvidenceSchema>;
 export type QcItemEvidence = typeof qcItemEvidence.$inferSelect;
 
@@ -141,7 +140,7 @@ export const qcRiskAnswer = pgTable("qc_risk_answer", {
   lastUpdatedBy: integer("last_updated_by"),
   lastUpdatedAt: timestamp("last_updated_at").notNull().defaultNow(),
 });
-export const insertQcRiskAnswerSchema = createInsertSchema(qcRiskAnswer).omit({ id: true, lastUpdatedAt: true } as any);
+export const insertQcRiskAnswerSchema = createInsertSchema(qcRiskAnswer).omit({ id: true, lastUpdatedAt: true });
 export type InsertQcRiskAnswer = z.infer<typeof insertQcRiskAnswerSchema>;
 export type QcRiskAnswer = typeof qcRiskAnswer.$inferSelect;
 
@@ -156,7 +155,7 @@ export const qcPlanLink = pgTable("qc_plan_link", {
   linkType: text("link_type").notNull().default("phase_task"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
-export const insertQcPlanLinkSchema = createInsertSchema(qcPlanLink).omit({ id: true, createdAt: true } as any);
+export const insertQcPlanLinkSchema = createInsertSchema(qcPlanLink).omit({ id: true, createdAt: true });
 export type InsertQcPlanLink = z.infer<typeof insertQcPlanLinkSchema>;
 export type QcPlanLink = typeof qcPlanLink.$inferSelect;
 
@@ -177,7 +176,7 @@ export const qcWarning = pgTable("qc_warning", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
-export const insertQcWarningSchema = createInsertSchema(qcWarning).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertQcWarningSchema = createInsertSchema(qcWarning).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertQcWarning = z.infer<typeof insertQcWarningSchema>;
 export type QcWarning = typeof qcWarning.$inferSelect;
 
@@ -189,7 +188,7 @@ export const qcWarningEvent = pgTable("qc_warning_event", {
   actorUserId: integer("actor_user_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
-export const insertQcWarningEventSchema = createInsertSchema(qcWarningEvent).omit({ id: true, createdAt: true } as any);
+export const insertQcWarningEventSchema = createInsertSchema(qcWarningEvent).omit({ id: true, createdAt: true });
 export type InsertQcWarningEvent = z.infer<typeof insertQcWarningEventSchema>;
 export type QcWarningEvent = typeof qcWarningEvent.$inferSelect;
 
@@ -202,7 +201,7 @@ export const qcPostmortem = pgTable("qc_postmortem", {
   completedByUserId: integer("completed_by_user_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
-export const insertQcPostmortemSchema = createInsertSchema(qcPostmortem).omit({ id: true, createdAt: true } as any);
+export const insertQcPostmortemSchema = createInsertSchema(qcPostmortem).omit({ id: true, createdAt: true });
 export type InsertQcPostmortem = z.infer<typeof insertQcPostmortemSchema>;
 export type QcPostmortem = typeof qcPostmortem.$inferSelect;
 
@@ -214,7 +213,7 @@ export const qcPostmortemMetricValue = pgTable("qc_postmortem_metric_value", {
   inputValueChoice: text("input_value_choice"),
   score: real("score"),
 });
-export const insertQcPostmortemMetricValueSchema = createInsertSchema(qcPostmortemMetricValue).omit({ id: true } as any);
+export const insertQcPostmortemMetricValueSchema = createInsertSchema(qcPostmortemMetricValue).omit({ id: true });
 export type InsertQcPostmortemMetricValue = z.infer<typeof insertQcPostmortemMetricValueSchema>;
 export type QcPostmortemMetricValue = typeof qcPostmortemMetricValue.$inferSelect;
 
@@ -225,7 +224,7 @@ export const qcPostmortemSummary = pgTable("qc_postmortem_summary", {
   engineeringQualityScore: real("engineering_quality_score"),
   redFlag: boolean("red_flag").notNull().default(false),
 });
-export const insertQcPostmortemSummarySchema = createInsertSchema(qcPostmortemSummary).omit({ id: true } as any);
+export const insertQcPostmortemSummarySchema = createInsertSchema(qcPostmortemSummary).omit({ id: true });
 export type InsertQcPostmortemSummary = z.infer<typeof insertQcPostmortemSummarySchema>;
 export type QcPostmortemSummary = typeof qcPostmortemSummary.$inferSelect;
 
@@ -239,7 +238,7 @@ export const qcAccessChallenge = pgTable("qc_access_challenge", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
-export const insertQcAccessChallengeSchema = createInsertSchema(qcAccessChallenge).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertQcAccessChallengeSchema = createInsertSchema(qcAccessChallenge).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertQcAccessChallenge = z.infer<typeof insertQcAccessChallengeSchema>;
 export type QcAccessChallenge = typeof qcAccessChallenge.$inferSelect;
 
@@ -267,7 +266,7 @@ export const commissioningItems = pgTable("commissioning_items", {
   deletedAt: timestamp("deleted_at"),
   deletedBy: integer("deleted_by"),
 });
-export const insertCommissioningItemSchema = createInsertSchema(commissioningItems).omit({ id: true, createdAt: true, updatedAt: true, completedAt: true, deletedAt: true, deletedBy: true } as any);
+export const insertCommissioningItemSchema = createInsertSchema(commissioningItems).omit({ id: true, createdAt: true, updatedAt: true, completedAt: true, deletedAt: true, deletedBy: true });
 export type InsertCommissioningItem = z.infer<typeof insertCommissioningItemSchema>;
 export type CommissioningItem = typeof commissioningItems.$inferSelect;
 
@@ -399,7 +398,7 @@ export const ncrReports = pgTable("ncr_reports", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
-export const insertNcrReportSchema = createInsertSchema(ncrReports).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertNcrReportSchema = createInsertSchema(ncrReports).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertNcrReport = z.infer<typeof insertNcrReportSchema>;
 export type NcrReport = typeof ncrReports.$inferSelect;
 

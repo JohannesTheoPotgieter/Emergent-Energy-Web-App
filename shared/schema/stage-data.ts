@@ -26,7 +26,7 @@ export const projectStageData = pgTable("project_stage_data", {
   projectIdIdx: index("psd_data_project_id_idx").on(table.projectId),
 }));
 
-export const insertProjectStageDataSchema = createInsertSchema(projectStageData).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertProjectStageDataSchema = createInsertSchema(projectStageData).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProjectStageData = z.infer<typeof insertProjectStageDataSchema>;
 export type ProjectStageData = typeof projectStageData.$inferSelect;
 
@@ -141,7 +141,7 @@ export const projectCharters = pgTable("project_charters", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-export const insertProjectCharterSchema = createInsertSchema(projectCharters).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertProjectCharterSchema = createInsertSchema(projectCharters).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProjectCharter = z.infer<typeof insertProjectCharterSchema>;
 export type ProjectCharter = typeof projectCharters.$inferSelect;
 

@@ -29,7 +29,7 @@ import {
   type Budget, type InsertBudget,
   type UploadMetadata, type InsertUploadMetadata,
   type RefreshLog, type InsertRefreshLog,
-  type ProjectInfo, type InsertProjectInfo,
+  type ProjectInfo, type InsertProjectInfo, type UpdateProjectInfoFields,
   type ProgramExpense, type InsertProgramExpense,
   type ProgramInflows, type InsertProgramInflows,
   type ProjectPlan, type InsertProjectPlan,
@@ -134,7 +134,7 @@ export interface IStorage {
   getProjectInfoById(id: number): Promise<ProjectInfo | undefined>;
   getAllProjectInfo(): Promise<any[]>;
   upsertProjectInfo(info: InsertProjectInfo): Promise<ProjectInfo>;
-  updateProjectInfoById(id: number, fields: Partial<InsertProjectInfo>): Promise<ProjectInfo | undefined>;
+  updateProjectInfoById(id: number, fields: UpdateProjectInfoFields): Promise<ProjectInfo | undefined>;
   deleteProjectInfo(projectName: string): Promise<void>;
   markProjectsActive(activeNames: string[]): Promise<void>;
   getProjectCounts(): Promise<{ active: number; historical: number; total: number }>;
@@ -734,7 +734,7 @@ export class DatabaseStorage implements IStorage {
     return this.projectInfoReadRepository.getById(id);
   }
 
-  async updateProjectInfoById(id: number, fields: Partial<InsertProjectInfo>): Promise<ProjectInfo | undefined> {
+  async updateProjectInfoById(id: number, fields: UpdateProjectInfoFields): Promise<ProjectInfo | undefined> {
     return this.projectInfoRepository.updateById(id, fields);
   }
 

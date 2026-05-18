@@ -1,5 +1,4 @@
-import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, pgEnum, serial, boolean, jsonb, unique, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -54,7 +53,7 @@ export const mytoolRecurrenceTemplates = pgTable("mytool_recurrence_templates", 
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-export const insertMytoolRecurrenceTemplateSchema = createInsertSchema(mytoolRecurrenceTemplates).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertMytoolRecurrenceTemplateSchema = createInsertSchema(mytoolRecurrenceTemplates).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertMytoolRecurrenceTemplate = z.infer<typeof insertMytoolRecurrenceTemplateSchema>;
 export type MytoolRecurrenceTemplate = typeof mytoolRecurrenceTemplates.$inferSelect;
 
@@ -77,7 +76,7 @@ export const mytoolTimeblocks = pgTable("mytool_timeblocks", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-export const insertMytoolTimeblockSchema = createInsertSchema(mytoolTimeblocks).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertMytoolTimeblockSchema = createInsertSchema(mytoolTimeblocks).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertMytoolTimeblock = z.infer<typeof insertMytoolTimeblockSchema>;
 export type MytoolTimeblock = typeof mytoolTimeblocks.$inferSelect;
 
@@ -93,7 +92,7 @@ export const mytoolDailyReviews = pgTable("mytool_daily_reviews", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-export const insertMytoolDailyReviewSchema = createInsertSchema(mytoolDailyReviews).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertMytoolDailyReviewSchema = createInsertSchema(mytoolDailyReviews).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertMytoolDailyReview = z.infer<typeof insertMytoolDailyReviewSchema>;
 export type MytoolDailyReview = typeof mytoolDailyReviews.$inferSelect;
 
@@ -143,7 +142,7 @@ export const mytoolCompanyPriorities = pgTable("mytool_company_priorities", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-export const insertMytoolCompanyPrioritySchema = createInsertSchema(mytoolCompanyPriorities).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertMytoolCompanyPrioritySchema = createInsertSchema(mytoolCompanyPriorities).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertMytoolCompanyPriority = z.infer<typeof insertMytoolCompanyPrioritySchema>;
 export type MytoolCompanyPriority = typeof mytoolCompanyPriorities.$inferSelect;
 
@@ -170,7 +169,7 @@ export const priorityActivity = pgTable("priority_activity", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertPriorityActivitySchema = createInsertSchema(priorityActivity).omit({ id: true, createdAt: true } as any);
+export const insertPriorityActivitySchema = createInsertSchema(priorityActivity).omit({ id: true, createdAt: true });
 export type InsertPriorityActivity = z.infer<typeof insertPriorityActivitySchema>;
 export type PriorityActivity = typeof priorityActivity.$inferSelect;
 
@@ -186,7 +185,7 @@ export const priorityLinks = pgTable("priority_links", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertPriorityLinkSchema = createInsertSchema(priorityLinks).omit({ id: true, createdAt: true } as any);
+export const insertPriorityLinkSchema = createInsertSchema(priorityLinks).omit({ id: true, createdAt: true });
 export type InsertPriorityLink = z.infer<typeof insertPriorityLinkSchema>;
 export type PriorityLink = typeof priorityLinks.$inferSelect;
 
@@ -201,7 +200,7 @@ export const priorityProjects = pgTable("priority_projects", {
   uniquePriorityProject: unique("priority_projects_unique").on(table.priorityId, table.projectId),
 }));
 
-export const insertPriorityProjectSchema = createInsertSchema(priorityProjects).omit({ id: true, linkedAt: true } as any);
+export const insertPriorityProjectSchema = createInsertSchema(priorityProjects).omit({ id: true, linkedAt: true });
 export type InsertPriorityProject = z.infer<typeof insertPriorityProjectSchema>;
 export type PriorityProject = typeof priorityProjects.$inferSelect;
 
@@ -219,7 +218,7 @@ export const priorityComments = pgTable("priority_comments", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertPriorityCommentSchema = createInsertSchema(priorityComments).omit({ id: true, createdAt: true } as any);
+export const insertPriorityCommentSchema = createInsertSchema(priorityComments).omit({ id: true, createdAt: true });
 export type InsertPriorityComment = z.infer<typeof insertPriorityCommentSchema>;
 export type PriorityComment = typeof priorityComments.$inferSelect;
 
@@ -251,7 +250,7 @@ export const priorityOpportunities = pgTable("priority_opportunities", {
   uniquePriorityOpportunity: unique("priority_opportunities_unique").on(table.priorityId, table.opportunityId),
 }));
 
-export const insertPriorityOpportunitySchema = createInsertSchema(priorityOpportunities).omit({ id: true, linkedAt: true } as any);
+export const insertPriorityOpportunitySchema = createInsertSchema(priorityOpportunities).omit({ id: true, linkedAt: true });
 export type InsertPriorityOpportunity = z.infer<typeof insertPriorityOpportunitySchema>;
 export type PriorityOpportunity = typeof priorityOpportunities.$inferSelect;
 
@@ -265,7 +264,7 @@ export const mytoolUserPreferences = pgTable("mytool_user_preferences", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-export const insertMytoolUserPreferencesSchema = createInsertSchema(mytoolUserPreferences).omit({ updatedAt: true } as any);
+export const insertMytoolUserPreferencesSchema = createInsertSchema(mytoolUserPreferences).omit({ updatedAt: true });
 export type InsertMytoolUserPreferences = z.infer<typeof insertMytoolUserPreferencesSchema>;
 export type MytoolUserPreferences = typeof mytoolUserPreferences.$inferSelect;
 
@@ -284,7 +283,7 @@ export const mytoolEmailLinks = pgTable("mytool_email_links", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertMytoolEmailLinkSchema = createInsertSchema(mytoolEmailLinks).omit({ id: true, createdAt: true } as any);
+export const insertMytoolEmailLinkSchema = createInsertSchema(mytoolEmailLinks).omit({ id: true, createdAt: true });
 export type InsertMytoolEmailLink = z.infer<typeof insertMytoolEmailLinkSchema>;
 export type MytoolEmailLink = typeof mytoolEmailLinks.$inferSelect;
 
@@ -297,7 +296,7 @@ export const mytoolDodTemplates = pgTable("mytool_dod_templates", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertMytoolDodTemplateSchema = createInsertSchema(mytoolDodTemplates).omit({ id: true, createdAt: true } as any);
+export const insertMytoolDodTemplateSchema = createInsertSchema(mytoolDodTemplates).omit({ id: true, createdAt: true });
 export type InsertMytoolDodTemplate = z.infer<typeof insertMytoolDodTemplateSchema>;
 export type MytoolDodTemplate = typeof mytoolDodTemplates.$inferSelect;
 
@@ -321,6 +320,6 @@ export const triageRules = pgTable("triage_rules", {
   enabled: boolean("enabled").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
-export const insertTriageRuleSchema = createInsertSchema(triageRules).omit({ id: true, createdAt: true } as any);
+export const insertTriageRuleSchema = createInsertSchema(triageRules).omit({ id: true, createdAt: true });
 export type InsertTriageRule = z.infer<typeof insertTriageRuleSchema>;
 export type TriageRule = typeof triageRules.$inferSelect;

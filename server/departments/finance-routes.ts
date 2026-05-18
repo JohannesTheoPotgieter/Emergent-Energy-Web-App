@@ -37,7 +37,7 @@ import { validateBody } from '../middleware/validateBody';
 // `res.status(500).json(...)` sites with `sendError(res, serverError(msg))`.
 // User-facing messages are preserved; the response shape now carries
 // `code` + (in dev) `detail` + traceId per server/lib/api-error.ts.
-import { sendError, serverError } from '../lib/api-error';
+import { sendError, serverError, notFound } from '../lib/api-error';
 
 // ── Finance write-surface Zod schemas (Phase 2b-PR2) ──
 // .passthrough() for now so existing UI payloads survive; tighten in a
@@ -7747,8 +7747,15 @@ router.post(
         });
       }
 
+      const projectRow = await storage.getProjectInfo(projectName);
+      const projectId = projectRow?.id ?? existingSummary?.projectId ?? null;
+      if (projectId == null) {
+        return sendError(res, notFound('Project'));
+      }
+
       const saved = await storage.upsertProjectRevenueSummary({
         projectName,
+        projectId,
         plannedRevenue: revenue?.toString() ?? null,
         plannedExpenditure: expenditure?.toString() ?? null,
         plannedProfit:

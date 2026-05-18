@@ -88,7 +88,7 @@ export const stageAcceptances = pgTable("stage_acceptances", {
   stageCodeIdx: index("sa_stage_code_idx").on(table.stageCode),
 }));
 
-export const insertStageAcceptanceSchema = createInsertSchema(stageAcceptances).omit({ id: true, createdAt: true } as any);
+export const insertStageAcceptanceSchema = createInsertSchema(stageAcceptances).omit({ id: true, createdAt: true });
 export type InsertStageAcceptance = z.infer<typeof insertStageAcceptanceSchema>;
 export type StageAcceptance = typeof stageAcceptances.$inferSelect;
 
@@ -113,7 +113,7 @@ export const acceptanceReservations = pgTable("acceptance_reservations", {
   statusIdx: index("ar_status_idx").on(table.status),
 }));
 
-export const insertAcceptanceReservationSchema = createInsertSchema(acceptanceReservations).omit({ id: true, createdAt: true } as any);
+export const insertAcceptanceReservationSchema = createInsertSchema(acceptanceReservations).omit({ id: true, createdAt: true });
 export type InsertAcceptanceReservation = z.infer<typeof insertAcceptanceReservationSchema>;
 export type AcceptanceReservation = typeof acceptanceReservations.$inferSelect;
 
@@ -140,7 +140,7 @@ export const clientCommitments = pgTable("client_commitments", {
   statusIdx: index("cc_status_idx").on(table.status),
 }));
 
-export const insertClientCommitmentSchema = createInsertSchema(clientCommitments).omit({ id: true, createdAt: true } as any);
+export const insertClientCommitmentSchema = createInsertSchema(clientCommitments).omit({ id: true, createdAt: true });
 export type InsertClientCommitment = z.infer<typeof insertClientCommitmentSchema>;
 export type ClientCommitment = typeof clientCommitments.$inferSelect;
 
@@ -167,7 +167,7 @@ export const evidenceRequests = pgTable("evidence_requests", {
   stageCodeIdx: index("er_stage_code_idx").on(table.stageCode),
 }));
 
-export const insertEvidenceRequestSchema = createInsertSchema(evidenceRequests).omit({ id: true, createdAt: true } as any);
+export const insertEvidenceRequestSchema = createInsertSchema(evidenceRequests).omit({ id: true, createdAt: true });
 export type InsertEvidenceRequest = z.infer<typeof insertEvidenceRequestSchema>;
 export type EvidenceRequest = typeof evidenceRequests.$inferSelect;
 
@@ -199,6 +199,6 @@ export const clientUpdates = pgTable("client_updates", {
   statusIdx: index("cu_status_idx").on(table.clientUpdateStatus),
 }));
 
-export const insertClientUpdateSchema = createInsertSchema(clientUpdates).omit({ id: true, createdAt: true } as any);
+export const insertClientUpdateSchema = createInsertSchema(clientUpdates).omit({ id: true, createdAt: true });
 export type InsertClientUpdate = z.infer<typeof insertClientUpdateSchema>;
 export type ClientUpdate = typeof clientUpdates.$inferSelect;

@@ -469,8 +469,8 @@ export function registerWorkingPlanRoutes(app: Express) {
         changedTasks: changedTasks || null,
         criticalPathDelta: criticalPathDelta || null,
         userNote: userNote || null,
-        clientNotified: 0,
-        documentationUpdated: 0,
+        clientNotified: false,
+        documentationUpdated: false,
         createdBy: createdBy || null,
       });
 

@@ -1,19 +1,44 @@
-import { eq, isNull, not, and, SQL } from "drizzle-orm";
+import { eq, getTableColumns, isNull, not, SQL } from "drizzle-orm";
+import type { Column } from "drizzle-orm";
 import { timestamp, integer, text } from "drizzle-orm/pg-core";
-import type { PgTable } from "drizzle-orm/pg-core";
+import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type SoftDeleteTable = {
-  deletedAt: unknown;
+  deletedAt: Column;
 };
 
 export type FullSoftDeleteTable = SoftDeleteTable & {
-  deletedBy?: unknown;
-  deleteReason?: unknown;
-  restoredAt?: unknown;
-  restoredBy?: unknown;
+  deletedBy?: Column;
+  deleteReason?: Column;
+  restoredAt?: Column;
+  restoredBy?: Column;
 };
+
+/**
+ * Values that may be written when soft-deleting / restoring a row:
+ * timestamps, the actor's user id, a freeform reason, or the isActive flag.
+ */
+type SoftDeleteSetValue = Date | number | string | boolean | null;
+type SoftDeleteSetFields = Record<string, SoftDeleteSetValue>;
+
+/**
+ * Minimal structural view of the Drizzle database client used by the
+ * mutation helpers below. `shared/` is dialect-agnostic (node-postgres in
+ * prod, better-sqlite3 in the dev fallback), so we describe exactly the
+ * update-builder chain these helpers rely on rather than importing a
+ * concrete server-side database type.
+ */
+export interface SoftDeleteDb {
+  update(table: PgTable): {
+    set(values: SoftDeleteSetFields): {
+      where(condition: SQL): {
+        returning(): Promise<unknown[]>;
+      };
+    };
+  };
+}
 
 // ─── Column Definitions (reuse when adding soft-delete to tables) ────────────
 
@@ -41,11 +66,11 @@ export const softDeleteColumnsExtended = {
 
 /** Filter for non-deleted rows. Use in .where() clauses. */
 export const notDeleted = <T extends SoftDeleteTable>(table: T): SQL =>
-  isNull(table.deletedAt as any);
+  isNull(table.deletedAt);
 
 /** Filter for deleted rows only (admin/recovery views). */
 export const onlyDeleted = <T extends SoftDeleteTable>(table: T): SQL => {
-  const { deletedAt } = table as any;
+  const { deletedAt } = table;
   // isNotNull equivalent
   return not(isNull(deletedAt));
 };
@@ -60,19 +85,20 @@ export const onlyDeleted = <T extends SoftDeleteTable>(table: T): SQL => {
  *   await applySoftDelete(db, approvals, id, userId, "Duplicate record");
  */
 export function applySoftDelete<T extends PgTable>(
-  db: any,
+  db: SoftDeleteDb,
   table: T,
   id: number,
   userId?: number | null,
   reason?: string | null,
 ) {
   const now = new Date();
-  const setFields: Record<string, any> = { deletedAt: now };
+  const setFields: SoftDeleteSetFields = { deletedAt: now };
   if (userId != null) setFields.deletedBy = userId;
   if (reason) setFields.deleteReason = reason;
 
+  const tableColumns = getTableColumns(table);
+
   // Also sync isActive to false if the table has it
-  const tableColumns = (table as any)[Symbol.for("drizzle:Columns")] ?? (table as any)._.columns ?? {};
   if (tableColumns.isActive) {
     setFields.isActive = false;
   }
@@ -80,7 +106,7 @@ export function applySoftDelete<T extends PgTable>(
   return db
     .update(table)
     .set(setFields)
-    .where(eq((table as any).id, id))
+    .where(eq(tableColumns.id as PgColumn, id))
     .returning();
 }
 
@@ -91,13 +117,13 @@ export function applySoftDelete<T extends PgTable>(
  *   await applySoftRestore(db, approvals, id, userId);
  */
 export function applySoftRestore<T extends PgTable>(
-  db: any,
+  db: SoftDeleteDb,
   table: T,
   id: number,
   userId?: number | null,
 ) {
   const now = new Date();
-  const setFields: Record<string, any> = {
+  const setFields: SoftDeleteSetFields = {
     deletedAt: null,
     deletedBy: null,
     deleteReason: null,
@@ -105,8 +131,9 @@ export function applySoftRestore<T extends PgTable>(
   };
   if (userId != null) setFields.restoredBy = userId;
 
+  const tableColumns = getTableColumns(table);
+
   // Sync isActive to true if the table has it
-  const tableColumns = (table as any)[Symbol.for("drizzle:Columns")] ?? (table as any)._.columns ?? {};
   if (tableColumns.isActive) {
     setFields.isActive = true;
   }
@@ -114,6 +141,6 @@ export function applySoftRestore<T extends PgTable>(
   return db
     .update(table)
     .set(setFields)
-    .where(eq((table as any).id, id))
+    .where(eq(tableColumns.id as PgColumn, id))
     .returning();
 }

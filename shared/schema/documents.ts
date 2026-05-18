@@ -101,7 +101,7 @@ export const controlledDocumentTypes = pgTable("controlled_document_types", {
 }));
 
 export const insertControlledDocumentTypeSchema = createInsertSchema(controlledDocumentTypes)
-  .omit({ id: true, createdAt: true, updatedAt: true } as any);
+  .omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertControlledDocumentType = z.infer<typeof insertControlledDocumentTypeSchema>;
 export type ControlledDocumentType = typeof controlledDocumentTypes.$inferSelect;
 
@@ -177,7 +177,7 @@ export const controlledDocuments = pgTable("controlled_documents", {
 }));
 
 export const insertControlledDocumentSchema = createInsertSchema(controlledDocuments)
-  .omit({ id: true, createdAt: true, updatedAt: true } as any);
+  .omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertControlledDocument = z.infer<typeof insertControlledDocumentSchema>;
 export type ControlledDocument = typeof controlledDocuments.$inferSelect;
 
@@ -212,7 +212,7 @@ export const projectSharepointRoots = pgTable("project_sharepoint_roots", {
 });
 
 export const insertProjectSharepointRootSchema = createInsertSchema(projectSharepointRoots)
-  .omit({ id: true, configuredAt: true, updatedAt: true } as any);
+  .omit({ id: true, configuredAt: true, updatedAt: true });
 export type InsertProjectSharepointRoot = z.infer<typeof insertProjectSharepointRootSchema>;
 export type ProjectSharepointRoot = typeof projectSharepointRoots.$inferSelect;
 
@@ -297,7 +297,7 @@ export const companySharepointRoots = pgTable("company_sharepoint_roots", {
 });
 
 export const insertCompanySharepointRootSchema = createInsertSchema(companySharepointRoots)
-  .omit({ id: true, createdAt: true, updatedAt: true } as any);
+  .omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertCompanySharepointRoot = z.infer<typeof insertCompanySharepointRootSchema>;
 export type CompanySharepointRoot = typeof companySharepointRoots.$inferSelect;
 
@@ -345,7 +345,7 @@ export const managedDocuments = pgTable("managed_documents", {
 }));
 
 export const insertManagedDocumentSchema = createInsertSchema(managedDocuments)
-  .omit({ id: true, createdAt: true, updatedAt: true } as any);
+  .omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertManagedDocument = z.infer<typeof insertManagedDocumentSchema>;
 export type ManagedDocument = typeof managedDocuments.$inferSelect;
 
@@ -374,7 +374,7 @@ export const documentRevisions = pgTable("document_revisions", {
 }));
 
 export const insertDocumentRevisionSchema = createInsertSchema(documentRevisions)
-  .omit({ id: true, uploadedAt: true } as any);
+  .omit({ id: true, uploadedAt: true });
 export type InsertDocumentRevision = z.infer<typeof insertDocumentRevisionSchema>;
 export type DocumentRevision = typeof documentRevisions.$inferSelect;
 
@@ -391,7 +391,7 @@ export const documentLocks = pgTable("document_locks", {
 });
 
 export const insertDocumentLockSchema = createInsertSchema(documentLocks)
-  .omit({ lockedAt: true } as any);
+  .omit({ lockedAt: true });
 export type InsertDocumentLock = z.infer<typeof insertDocumentLockSchema>;
 export type DocumentLock = typeof documentLocks.$inferSelect;
 
@@ -417,7 +417,7 @@ export const documentComments = pgTable("document_comments", {
 }));
 
 export const insertDocumentCommentSchema = createInsertSchema(documentComments)
-  .omit({ id: true, createdAt: true } as any);
+  .omit({ id: true, createdAt: true });
 export type InsertDocumentComment = z.infer<typeof insertDocumentCommentSchema>;
 export type DocumentComment = typeof documentComments.$inferSelect;
 
@@ -462,7 +462,7 @@ export const documentActivity = pgTable("document_activity", {
 }));
 
 export const insertDocumentActivitySchema = createInsertSchema(documentActivity)
-  .omit({ id: true, createdAt: true } as any);
+  .omit({ id: true, createdAt: true });
 export type InsertDocumentActivity = z.infer<typeof insertDocumentActivitySchema>;
 export type DocumentActivity = typeof documentActivity.$inferSelect;
 
@@ -632,7 +632,7 @@ export const projectFolders = pgTable("project_folders", {
 }));
 
 export const insertProjectFolderSchema = createInsertSchema(projectFolders)
-  .omit({ id: true, createdAt: true, updatedAt: true } as any);
+  .omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProjectFolder = z.infer<typeof insertProjectFolderSchema>;
 export type ProjectFolder = typeof projectFolders.$inferSelect;
 

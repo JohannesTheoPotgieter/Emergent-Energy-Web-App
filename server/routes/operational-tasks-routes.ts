@@ -160,7 +160,7 @@ export function registerOperationalTasksRoutes(app: Express) {
       if (req.body.priority) req.body.priority = normalizePriority(req.body.priority);
       const task = await storage.createOperationalTask(req.body);
       await storage.createTaskActivityLog({
-        taskId: task.id,
+        workItemId: task.id,
         actorId: (req.user as any)?.id || null,
         actionType: 'created',
         fieldName: null,
@@ -283,7 +283,7 @@ export function registerOperationalTasksRoutes(app: Express) {
         });
 
         await storage.createTaskActivityLog({
-          taskId: newTask.id,
+          workItemId: newTask.id,
           actorId: (req.user as any)?.id || null,
           actionType: 'promoted',
           fieldName: null,
@@ -323,7 +323,7 @@ export function registerOperationalTasksRoutes(app: Express) {
       const task = await storage.getOperationalTask(id);
       if (task) {
         await storage.createTaskActivityLog({
-          taskId: id,
+          workItemId: id,
           actorId: (req.user as any)?.id || null,
           actionType: 'deleted',
           fieldName: null,
@@ -356,7 +356,7 @@ export function registerOperationalTasksRoutes(app: Express) {
       const updated = await storage.updateOperationalTask(id, { primaryWorkstream: targetWorkstream });
 
       await storage.createTaskActivityLog({
-        taskId: id,
+        workItemId: id,
         actorId: (req.user as any)?.id || null,
         actionType: 'converted',
         fieldName: 'primaryWorkstream',
@@ -453,7 +453,7 @@ export function registerOperationalTasksRoutes(app: Express) {
         for (const [key, value] of Object.entries(updates)) {
           if ((oldTask as any)[key] !== value) {
             await storage.createTaskActivityLog({
-              taskId,
+              workItemId: taskId,
               actorId: (req.user as any)?.id || null,
               actionType: 'updated',
               fieldName: key,

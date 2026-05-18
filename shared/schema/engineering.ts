@@ -1,5 +1,4 @@
-import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, pgEnum, serial, boolean, date, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -41,7 +40,7 @@ export const deliverables = pgTable("deliverables", {
   scheduledStartTime: text("scheduled_start_time"),
   scheduledEndTime: text("scheduled_end_time"),
 });
-export const insertDeliverableSchema = createInsertSchema(deliverables).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertDeliverableSchema = createInsertSchema(deliverables).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertDeliverable = z.infer<typeof insertDeliverableSchema>;
 export type Deliverable = typeof deliverables.$inferSelect;
 
@@ -55,7 +54,7 @@ export const deliverableVersions = pgTable("deliverable_versions", {
   createdByUserId: integer("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
-export const insertDeliverableVersionSchema = createInsertSchema(deliverableVersions).omit({ id: true, createdAt: true } as any);
+export const insertDeliverableVersionSchema = createInsertSchema(deliverableVersions).omit({ id: true, createdAt: true });
 export type InsertDeliverableVersion = z.infer<typeof insertDeliverableVersionSchema>;
 export type DeliverableVersion = typeof deliverableVersions.$inferSelect;
 
@@ -72,7 +71,7 @@ export const deliverableFiles = pgTable("deliverable_files", {
   uploadedByUserId: integer("uploaded_by_user_id").references(() => users.id, { onDelete: "set null" }),
   uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
 });
-export const insertDeliverableFileSchema = createInsertSchema(deliverableFiles).omit({ id: true, uploadedAt: true } as any);
+export const insertDeliverableFileSchema = createInsertSchema(deliverableFiles).omit({ id: true, uploadedAt: true });
 export type InsertDeliverableFile = z.infer<typeof insertDeliverableFileSchema>;
 export type DeliverableFile = typeof deliverableFiles.$inferSelect;
 
@@ -86,7 +85,7 @@ export const deliverableEvents = pgTable("deliverable_events", {
   actorUserId: integer("actor_user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
-export const insertDeliverableEventSchema = createInsertSchema(deliverableEvents).omit({ id: true, createdAt: true } as any);
+export const insertDeliverableEventSchema = createInsertSchema(deliverableEvents).omit({ id: true, createdAt: true });
 export type InsertDeliverableEvent = z.infer<typeof insertDeliverableEventSchema>;
 export type DeliverableEvent = typeof deliverableEvents.$inferSelect;
 
@@ -137,7 +136,7 @@ export const engStageTemplates = pgTable("eng_stage_templates", {
   createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
-export const insertEngStageTemplateSchema = createInsertSchema(engStageTemplates).omit({ id: true, createdAt: true } as any);
+export const insertEngStageTemplateSchema = createInsertSchema(engStageTemplates).omit({ id: true, createdAt: true });
 export type InsertEngStageTemplate = z.infer<typeof insertEngStageTemplateSchema>;
 export type EngStageTemplate = typeof engStageTemplates.$inferSelect;
 
@@ -152,7 +151,7 @@ export const engTaskTemplates = pgTable("eng_task_templates", {
   deletedAt: timestamp("deleted_at"),
   deletedBy: integer("deleted_by").references(() => users.id, { onDelete: "set null" }),
 });
-export const insertEngTaskTemplateSchema = createInsertSchema(engTaskTemplates).omit({ id: true } as any);
+export const insertEngTaskTemplateSchema = createInsertSchema(engTaskTemplates).omit({ id: true });
 export type InsertEngTaskTemplate = z.infer<typeof insertEngTaskTemplateSchema>;
 export type EngTaskTemplate = typeof engTaskTemplates.$inferSelect;
 
@@ -167,7 +166,7 @@ export const engDeliverableTemplates = pgTable("eng_deliverable_templates", {
   deletedAt: timestamp("deleted_at"),
   deletedBy: integer("deleted_by").references(() => users.id, { onDelete: "set null" }),
 });
-export const insertEngDeliverableTemplateSchema = createInsertSchema(engDeliverableTemplates).omit({ id: true } as any);
+export const insertEngDeliverableTemplateSchema = createInsertSchema(engDeliverableTemplates).omit({ id: true });
 export type InsertEngDeliverableTemplate = z.infer<typeof insertEngDeliverableTemplateSchema>;
 export type EngDeliverableTemplate = typeof engDeliverableTemplates.$inferSelect;
 
@@ -186,7 +185,7 @@ export const projectEngStages = pgTable("project_eng_stages", {
   createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
-export const insertProjectEngStageSchema = createInsertSchema(projectEngStages).omit({ id: true, createdAt: true } as any);
+export const insertProjectEngStageSchema = createInsertSchema(projectEngStages).omit({ id: true, createdAt: true });
 export type InsertProjectEngStage = z.infer<typeof insertProjectEngStageSchema>;
 export type ProjectEngStage = typeof projectEngStages.$inferSelect;
 
@@ -204,7 +203,7 @@ export const projectEngTasks = pgTable("project_eng_tasks", {
   workItemId: integer("work_item_id").references(() => workItems.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
-export const insertProjectEngTaskSchema = createInsertSchema(projectEngTasks).omit({ id: true, createdAt: true } as any);
+export const insertProjectEngTaskSchema = createInsertSchema(projectEngTasks).omit({ id: true, createdAt: true });
 export type InsertProjectEngTask = z.infer<typeof insertProjectEngTaskSchema>;
 export type ProjectEngTask = typeof projectEngTasks.$inferSelect;
 
@@ -267,7 +266,7 @@ export const projectEngDeliverables = pgTable("project_eng_deliverables", {
   asBuiltBy: integer("as_built_by").references(() => users.id, { onDelete: "set null" }),
   supersededById: integer("superseded_by_id"),
 });
-export const insertProjectEngDeliverableSchema = createInsertSchema(projectEngDeliverables).omit({ id: true, uploadedAt: true } as any);
+export const insertProjectEngDeliverableSchema = createInsertSchema(projectEngDeliverables).omit({ id: true, uploadedAt: true });
 export type InsertProjectEngDeliverable = z.infer<typeof insertProjectEngDeliverableSchema>;
 export type ProjectEngDeliverable = typeof projectEngDeliverables.$inferSelect;
 
@@ -284,7 +283,7 @@ export const projectEngApprovals = pgTable("project_eng_approvals", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
-export const insertProjectEngApprovalSchema = createInsertSchema(projectEngApprovals).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertProjectEngApprovalSchema = createInsertSchema(projectEngApprovals).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProjectEngApproval = z.infer<typeof insertProjectEngApprovalSchema>;
 export type ProjectEngApproval = typeof projectEngApprovals.$inferSelect;
 
@@ -341,7 +340,7 @@ export const drawingRegister = pgTable("drawing_register", {
   deletedAt: timestamp("deleted_at"),
 });
 
-export const insertDrawingRegisterSchema = createInsertSchema(drawingRegister).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertDrawingRegisterSchema = createInsertSchema(drawingRegister).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertDrawingRegister = z.infer<typeof insertDrawingRegisterSchema>;
 export type DrawingRegister = typeof drawingRegister.$inferSelect;
 
@@ -396,7 +395,7 @@ export const engTransmittals = pgTable("eng_transmittals", {
   projectEngStageId: integer("project_eng_stage_id").references(() => projectEngStages.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
-export const insertEngTransmittalSchema = createInsertSchema(engTransmittals).omit({ id: true, createdAt: true } as any);
+export const insertEngTransmittalSchema = createInsertSchema(engTransmittals).omit({ id: true, createdAt: true });
 export type InsertEngTransmittal = z.infer<typeof insertEngTransmittalSchema>;
 export type EngTransmittal = typeof engTransmittals.$inferSelect;
 
@@ -410,6 +409,6 @@ export const engTransmittalItems = pgTable("eng_transmittal_items", {
   releasedForAtIssue: text("released_for_at_issue"), // snapshot of releasedFor at time of transmittal
   notes: text("notes"),
 });
-export const insertEngTransmittalItemSchema = createInsertSchema(engTransmittalItems).omit({ id: true } as any);
+export const insertEngTransmittalItemSchema = createInsertSchema(engTransmittalItems).omit({ id: true });
 export type InsertEngTransmittalItem = z.infer<typeof insertEngTransmittalItemSchema>;
 export type EngTransmittalItem = typeof engTransmittalItems.$inferSelect;

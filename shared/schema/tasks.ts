@@ -1,10 +1,10 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, jsonb, unique, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 import { users } from "./users";
-import { projectInfo, clients, engineeringTickets } from "./projects";
+import { projectInfo, clients } from "./projects";
 
 // ===================== TASK CONSTANTS =====================
 
@@ -48,7 +48,7 @@ export const taskComments = pgTable("task_comments", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertTaskCommentSchema = createInsertSchema(taskComments).omit({ id: true, createdAt: true } as any);
+export const insertTaskCommentSchema = createInsertSchema(taskComments).omit({ id: true, createdAt: true });
 export type InsertTaskComment = z.infer<typeof insertTaskCommentSchema>;
 export type TaskComment = typeof taskComments.$inferSelect;
 
@@ -60,7 +60,7 @@ export const taskChecklists = pgTable("task_checklists", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertTaskChecklistSchema = createInsertSchema(taskChecklists).omit({ id: true, createdAt: true } as any);
+export const insertTaskChecklistSchema = createInsertSchema(taskChecklists).omit({ id: true, createdAt: true });
 export type InsertTaskChecklist = z.infer<typeof insertTaskChecklistSchema>;
 export type TaskChecklist = typeof taskChecklists.$inferSelect;
 
@@ -73,7 +73,7 @@ export const taskChecklistItems = pgTable("task_checklist_items", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertTaskChecklistItemSchema = createInsertSchema(taskChecklistItems).omit({ id: true, createdAt: true } as any);
+export const insertTaskChecklistItemSchema = createInsertSchema(taskChecklistItems).omit({ id: true, createdAt: true });
 export type InsertTaskChecklistItem = z.infer<typeof insertTaskChecklistItemSchema>;
 export type TaskChecklistItem = typeof taskChecklistItems.$inferSelect;
 
@@ -88,7 +88,7 @@ export const taskAttachments = pgTable("task_attachments", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertTaskAttachmentSchema = createInsertSchema(taskAttachments).omit({ id: true, createdAt: true } as any);
+export const insertTaskAttachmentSchema = createInsertSchema(taskAttachments).omit({ id: true, createdAt: true });
 export type InsertTaskAttachment = z.infer<typeof insertTaskAttachmentSchema>;
 export type TaskAttachment = typeof taskAttachments.$inferSelect;
 
@@ -106,7 +106,7 @@ export const taskDeliverables = pgTable("task_deliverables", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertTaskDeliverableSchema = createInsertSchema(taskDeliverables).omit({ id: true, createdAt: true, acknowledged: true, acknowledgedAt: true } as any);
+export const insertTaskDeliverableSchema = createInsertSchema(taskDeliverables).omit({ id: true, createdAt: true, acknowledged: true, acknowledgedAt: true });
 export type InsertTaskDeliverable = z.infer<typeof insertTaskDeliverableSchema>;
 export type TaskDeliverable = typeof taskDeliverables.$inferSelect;
 
@@ -121,7 +121,7 @@ export const taskActivityLog = pgTable("task_activity_log", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertTaskActivityLogSchema = createInsertSchema(taskActivityLog).omit({ id: true, createdAt: true } as any);
+export const insertTaskActivityLogSchema = createInsertSchema(taskActivityLog).omit({ id: true, createdAt: true });
 export type InsertTaskActivityLog = z.infer<typeof insertTaskActivityLogSchema>;
 export type TaskActivityLog = typeof taskActivityLog.$inferSelect;
 
@@ -133,7 +133,7 @@ export const taskWatchers = pgTable("task_watchers", {
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
-export const insertTaskWatcherSchema = createInsertSchema(taskWatchers).omit({ id: true, createdAt: true } as any);
+export const insertTaskWatcherSchema = createInsertSchema(taskWatchers).omit({ id: true, createdAt: true });
 export type InsertTaskWatcher = z.infer<typeof insertTaskWatcherSchema>;
 export type TaskWatcher = typeof taskWatchers.$inferSelect;
 
@@ -286,7 +286,7 @@ export const workItems = pgTable("work_items", {
     .on(table.workstream, table.engineeringTicketId, table.projectId)
     .where(sql`${table.deletedAt} IS NULL AND ${table.engineeringTicketId} IS NOT NULL`),
 }));
-export const insertWorkItemSchema = createInsertSchema(workItems).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertWorkItemSchema = createInsertSchema(workItems).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertWorkItem = z.infer<typeof insertWorkItemSchema>;
 export type WorkItem = typeof workItems.$inferSelect;
 
@@ -319,7 +319,7 @@ export const workItemPm = pgTable("work_item_pm", {
   linkedDeliverableId: integer("linked_deliverable_id"),
   linkedQualityItemInstanceId: integer("linked_quality_item_instance_id"),
 });
-export const insertWorkItemPmSchema = createInsertSchema(workItemPm).omit({ id: true } as any);
+export const insertWorkItemPmSchema = createInsertSchema(workItemPm).omit({ id: true });
 export type InsertWorkItemPm = z.infer<typeof insertWorkItemPmSchema>;
 export type WorkItemPm = typeof workItemPm.$inferSelect;
 
@@ -338,7 +338,7 @@ export const workItemEngineering = pgTable("work_item_engineering", {
   sourceSheet: text("source_sheet"),
   importRunId: integer("import_run_id"),
 });
-export const insertWorkItemEngineeringSchema = createInsertSchema(workItemEngineering).omit({ id: true } as any);
+export const insertWorkItemEngineeringSchema = createInsertSchema(workItemEngineering).omit({ id: true });
 export type InsertWorkItemEngineering = z.infer<typeof insertWorkItemEngineeringSchema>;
 export type WorkItemEngineering = typeof workItemEngineering.$inferSelect;
 
@@ -368,7 +368,7 @@ export const workItemScheduling = pgTable("work_item_scheduling", {
   recurrenceEndDate: date("recurrence_end_date"),
   recurrenceParentId: integer("recurrence_parent_id"),
 });
-export const insertWorkItemSchedulingSchema = createInsertSchema(workItemScheduling).omit({ id: true } as any);
+export const insertWorkItemSchedulingSchema = createInsertSchema(workItemScheduling).omit({ id: true });
 export type InsertWorkItemScheduling = z.infer<typeof insertWorkItemSchedulingSchema>;
 export type WorkItemScheduling = typeof workItemScheduling.$inferSelect;
 
@@ -382,7 +382,7 @@ export const workItemAssignments = pgTable("work_item_assignments", {
 }, (table) => ({
   uniqueWorkItemUserRole: unique("uq_work_item_user_role").on(table.workItemId, table.userId, table.role),
 }));
-export const insertWorkItemAssignmentSchema = createInsertSchema(workItemAssignments).omit({ id: true, createdAt: true } as any);
+export const insertWorkItemAssignmentSchema = createInsertSchema(workItemAssignments).omit({ id: true, createdAt: true });
 export type InsertWorkItemAssignment = z.infer<typeof insertWorkItemAssignmentSchema>;
 export type WorkItemAssignment = typeof workItemAssignments.$inferSelect;
 
@@ -395,7 +395,7 @@ export const workItemDependencies = pgTable("work_item_dependencies", {
   deletedAt: timestamp("deleted_at"),
   deletedBy: integer("deleted_by"),
 });
-export const insertWorkItemDependencySchema = createInsertSchema(workItemDependencies).omit({ id: true, deletedAt: true, deletedBy: true } as any);
+export const insertWorkItemDependencySchema = createInsertSchema(workItemDependencies).omit({ id: true, deletedAt: true, deletedBy: true });
 export type InsertWorkItemDependency = z.infer<typeof insertWorkItemDependencySchema>;
 export type WorkItemDependency = typeof workItemDependencies.$inferSelect;
 
@@ -408,7 +408,7 @@ export const workItemStatusHistory = pgTable("work_item_status_history", {
   changedAt: timestamp("changed_at").notNull().defaultNow(),
   reason: text("reason"),
 });
-export const insertWorkItemStatusHistorySchema = createInsertSchema(workItemStatusHistory).omit({ id: true, changedAt: true } as any);
+export const insertWorkItemStatusHistorySchema = createInsertSchema(workItemStatusHistory).omit({ id: true, changedAt: true });
 export type InsertWorkItemStatusHistory = z.infer<typeof insertWorkItemStatusHistorySchema>;
 export type WorkItemStatusHistory = typeof workItemStatusHistory.$inferSelect;
 
@@ -426,7 +426,7 @@ export const taskTags = pgTable("task_tags", {
   deletedAt: timestamp("deleted_at"),
   deletedBy: integer("deleted_by"),
 });
-export const insertTaskTagSchema = createInsertSchema(taskTags).omit({ id: true, createdAt: true, deletedAt: true, deletedBy: true } as any);
+export const insertTaskTagSchema = createInsertSchema(taskTags).omit({ id: true, createdAt: true, deletedAt: true, deletedBy: true });
 export type InsertTaskTag = z.infer<typeof insertTaskTagSchema>;
 export type TaskTag = typeof taskTags.$inferSelect;
 
@@ -438,7 +438,7 @@ export const workItemTags = pgTable("work_item_tags", {
 }, (table) => ({
   uniqueWorkItemTag: unique("work_item_tags_unique").on(table.workItemId, table.tagId),
 }));
-export const insertWorkItemTagSchema = createInsertSchema(workItemTags).omit({ id: true, createdAt: true } as any);
+export const insertWorkItemTagSchema = createInsertSchema(workItemTags).omit({ id: true, createdAt: true });
 export type InsertWorkItemTag = z.infer<typeof insertWorkItemTagSchema>;
 export type WorkItemTag = typeof workItemTags.$inferSelect;
 
@@ -453,6 +453,6 @@ export const taskTimeEntries = pgTable("task_time_entries", {
   deletedAt: timestamp("deleted_at"),
   deletedBy: integer("deleted_by"),
 });
-export const insertTaskTimeEntrySchema = createInsertSchema(taskTimeEntries).omit({ id: true, createdAt: true, deletedAt: true, deletedBy: true } as any);
+export const insertTaskTimeEntrySchema = createInsertSchema(taskTimeEntries).omit({ id: true, createdAt: true, deletedAt: true, deletedBy: true });
 export type InsertTaskTimeEntry = z.infer<typeof insertTaskTimeEntrySchema>;
 export type TaskTimeEntry = typeof taskTimeEntries.$inferSelect;

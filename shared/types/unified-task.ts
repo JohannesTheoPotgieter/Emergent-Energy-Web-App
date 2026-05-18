@@ -147,15 +147,51 @@ export interface ResolvedUser {
 
 // ── Adapter: work_items row → UnifiedTask ────────────────────────────
 
+/** Convert a camelCase key to its snake_case database-column form. */
+type CamelToSnake<S extends string> = S extends `${infer Head}${infer Tail}`
+  ? Head extends Uppercase<Head>
+    ? Head extends Lowercase<Head>
+      ? `${Head}${CamelToSnake<Tail>}` // non-alpha (e.g. digit) — no underscore
+      : `_${Lowercase<Head>}${CamelToSnake<Tail>}`
+    : `${Head}${CamelToSnake<Tail>}`
+  : S;
+
+/**
+ * Precise structural view of a work_items row: every UnifiedTask field
+ * may be present under its camelCase OR snake_case name, each carrying
+ * exactly its UnifiedTask field type, all optional. Used internally by
+ * `fromWorkItem` after it narrows the loosely-typed input.
+ */
+type WorkItemRowShape = {
+  [K in keyof UnifiedTask as K | CamelToSnake<K & string>]?: UnifiedTask[K];
+} & {
+  /** Legacy snake_case alias for `workstream` seen in some raw JOINs. */
+  work_stream?: UnifiedTask["workstream"];
+};
+
+/**
+ * A work_items row as it actually arrives at the boundary: from raw SQL
+ * JOINs, Drizzle selects, or API responses, with arbitrary key casing
+ * and driver-dependent value representations. `fromWorkItem` narrows it
+ * to `WorkItemRowShape` before reading individual fields.
+ */
+export type WorkItemRow = Record<string, unknown>;
+
 /**
  * Convert a work_items row (with optional extension data) into a UnifiedTask.
  *
- * Accepts any object shape since rows may come from raw SQL JOINs, Drizzle
- * selects, or API responses. Uses snake_case OR camelCase field names.
+ * Accepts a loosely-shaped row since data may come from raw SQL JOINs,
+ * Drizzle selects, or API responses. Uses snake_case OR camelCase field names.
  */
-export function fromWorkItem(row: Record<string, any>, overrides?: Partial<UnifiedTask>): UnifiedTask {
+export function fromWorkItem(input: WorkItemRow, overrides?: Partial<UnifiedTask>): UnifiedTask {
+  // Narrow the untyped boundary row to the precise column shape. Field
+  // presence/casing varies by source; the shape encodes every accepted
+  // alias with its UnifiedTask field type.
+  const row = input as WorkItemRowShape;
   return {
-    id: row.id,
+    // work_items rows always carry their primary key; the loose boundary
+    // shape can't prove it, so assert the invariant (no runtime change).
+    id: row.id as number,
     title: row.title ?? "",
     description: row.description ?? null,
     status: row.status ?? "not_started",
@@ -245,7 +281,7 @@ export function fromWorkItem(row: Record<string, any>, overrides?: Partial<Unifi
 // ── Backward-compat adapters ─────────────────────────────────────────
 
 /** Map UnifiedTask → legacy OperationalTask shape (response compat) */
-export function toOperationalTaskShape(t: UnifiedTask): Record<string, any> {
+export function toOperationalTaskShape(t: UnifiedTask): Record<string, unknown> {
   return {
     id: t.legacyId ?? t.id,
     workItemId: t.id,
@@ -304,7 +340,7 @@ export function toOperationalTaskShape(t: UnifiedTask): Record<string, any> {
 }
 
 /** Map UnifiedTask → legacy EngineeringTask shape (response compat) */
-export function toEngineeringTaskShape(t: UnifiedTask): Record<string, any> {
+export function toEngineeringTaskShape(t: UnifiedTask): Record<string, unknown> {
   return {
     id: t.id,
     projectId: t.projectId,
@@ -380,7 +416,7 @@ export function workItemPriorityToPersonal(priority: string | null): string {
 }
 
 /** Map UnifiedTask → MytoolTask-compatible shape (response compat for /api/mytool/tasks) */
-export function toPersonalTaskShape(t: UnifiedTask): Record<string, any> {
+export function toPersonalTaskShape(t: UnifiedTask): Record<string, unknown> {
   return {
     id: t.id,
     ownerUserId: t.ownerUserId,

@@ -9,7 +9,7 @@
  */
 import ExcelJS from "exceljs";
 import type {
-  InsertProjectInfo,
+  UpdateProjectInfoFields,
   InsertProgramExpense,
   InsertProgramInflows,
   InsertProjectPlan,
@@ -20,13 +20,15 @@ import type {
 
 export interface ParseResult {
   projectName: string;
-  projectInfo: InsertProjectInfo | null;
+  projectInfo: UpdateProjectInfoFields | null;
   expenses: InsertProgramExpense[];
   inflows: InsertProgramInflows[];
-  planItems: InsertProjectPlan[];
-  cashflowPoints: InsertCashflowPoint[];
-  financeRevenueMonthly: InsertFinanceRevenueMonthly[];
-  financeCosMonthly: InsertFinanceCosMonthly[];
+  // projectId is resolved from projectName at persist time, not at parse
+  // time — these rows are keyed by projectName until then.
+  planItems: Omit<InsertProjectPlan, "projectId">[];
+  cashflowPoints: Omit<InsertCashflowPoint, "projectId">[];
+  financeRevenueMonthly: Omit<InsertFinanceRevenueMonthly, "projectId">[];
+  financeCosMonthly: Omit<InsertFinanceCosMonthly, "projectId">[];
   warnings: string[];
   expensesParsed: number;
   inflowsParsed: number;
@@ -270,7 +272,7 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see backfillInvoiceConfirmed: @types/node 20.19 Buffer mismatch with ExcelJS
   await workbook.xlsx.load(buffer as any);
 
-  let projectInfo: InsertProjectInfo | null = null;
+  let projectInfo: UpdateProjectInfoFields | null = null;
   const expenses: InsertProgramExpense[] = [];
   const inflows: InsertProgramInflows[] = [];
   const planItems: InsertProjectPlan[] = [];

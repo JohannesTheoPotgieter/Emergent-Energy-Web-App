@@ -39,7 +39,7 @@ export const projectClientCommitments = pgTable("project_client_commitments", {
   statusIdx: index("pcc_status_idx").on(table.status),
 }));
 
-export const insertProjectClientCommitmentSchema = createInsertSchema(projectClientCommitments).omit({ id: true, createdAt: true } as any);
+export const insertProjectClientCommitmentSchema = createInsertSchema(projectClientCommitments).omit({ id: true, createdAt: true });
 export type InsertProjectClientCommitment = z.infer<typeof insertProjectClientCommitmentSchema>;
 export type ProjectClientCommitment = typeof projectClientCommitments.$inferSelect;
 
@@ -71,7 +71,7 @@ export const projectClientUpdates = pgTable("project_client_updates", {
   statusIdx: index("pcu_status_idx").on(table.status),
 }));
 
-export const insertProjectClientUpdateSchema = createInsertSchema(projectClientUpdates).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertProjectClientUpdateSchema = createInsertSchema(projectClientUpdates).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProjectClientUpdate = z.infer<typeof insertProjectClientUpdateSchema>;
 export type ProjectClientUpdate = typeof projectClientUpdates.$inferSelect;
 
@@ -101,7 +101,7 @@ export const projectQueries = pgTable("project_queries", {
   assignedToIdx: index("pq_assigned_to_idx").on(table.assignedToUserId),
 }));
 
-export const insertProjectQuerySchema = createInsertSchema(projectQueries).omit({ id: true, createdAt: true } as any);
+export const insertProjectQuerySchema = createInsertSchema(projectQueries).omit({ id: true, createdAt: true });
 export type InsertProjectQuery = z.infer<typeof insertProjectQuerySchema>;
 export type ProjectQuery = typeof projectQueries.$inferSelect;
 
@@ -127,6 +127,6 @@ export const projectStageFinancialCloseTracks = pgTable("project_stage_financial
   stageInstanceIdx: index("psfct_stage_instance_idx").on(table.stageInstanceId),
 }));
 
-export const insertProjectStageFinancialCloseTrackSchema = createInsertSchema(projectStageFinancialCloseTracks).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertProjectStageFinancialCloseTrackSchema = createInsertSchema(projectStageFinancialCloseTracks).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProjectStageFinancialCloseTrack = z.infer<typeof insertProjectStageFinancialCloseTrackSchema>;
 export type ProjectStageFinancialCloseTrack = typeof projectStageFinancialCloseTracks.$inferSelect;

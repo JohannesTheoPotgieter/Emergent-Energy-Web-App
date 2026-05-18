@@ -12,7 +12,7 @@
  */
 
 import { sql } from "drizzle-orm";
-import { pgTable, text, integer, timestamp, pgEnum, serial, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, pgEnum, serial, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { users } from "./users";
@@ -82,7 +82,7 @@ export const emailProjectLinks = pgTable("email_project_links", {
 }));
 
 export const insertEmailProjectLinkSchema = createInsertSchema(emailProjectLinks)
-  .omit({ id: true, createdAt: true } as any);
+  .omit({ id: true, createdAt: true });
 export type InsertEmailProjectLink = z.infer<typeof insertEmailProjectLinkSchema>;
 export type EmailProjectLink = typeof emailProjectLinks.$inferSelect;
 
@@ -121,7 +121,7 @@ export const teamsProjectLinks = pgTable("teams_project_links", {
 }));
 
 export const insertTeamsProjectLinkSchema = createInsertSchema(teamsProjectLinks)
-  .omit({ id: true, createdAt: true } as any);
+  .omit({ id: true, createdAt: true });
 export type InsertTeamsProjectLink = z.infer<typeof insertTeamsProjectLinkSchema>;
 export type TeamsProjectLink = typeof teamsProjectLinks.$inferSelect;
 

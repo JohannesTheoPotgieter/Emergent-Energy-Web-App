@@ -954,7 +954,7 @@ router.post("/api/outlook/email-to-task", requireAuth, requireAdmin, async (req,
       operationalTaskId = opTask.id;
 
       await storage.createTaskActivityLog({
-        taskId: opTask.id,
+        workItemId: opTask.id,
         actorId: userId,
         actionType: 'created',
         fieldName: 'source',

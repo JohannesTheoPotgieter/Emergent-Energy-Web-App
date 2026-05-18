@@ -52,7 +52,7 @@ export const users = pgTable("users", {
   deletedAt: timestamp("deleted_at"),
 });
 
-export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true } as any);
+export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 
@@ -69,7 +69,7 @@ export const errorLogs = pgTable("error_logs", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertErrorLogSchema = createInsertSchema(errorLogs).omit({ id: true, createdAt: true } as any);
+export const insertErrorLogSchema = createInsertSchema(errorLogs).omit({ id: true, createdAt: true });
 export type InsertErrorLog = z.infer<typeof insertErrorLogSchema>;
 export type ErrorLog = typeof errorLogs.$inferSelect;
 
@@ -202,7 +202,7 @@ export const roleCredentials = pgTable("role_credentials", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
-export const insertRoleCredentialSchema = createInsertSchema(roleCredentials).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertRoleCredentialSchema = createInsertSchema(roleCredentials).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertRoleCredential = z.infer<typeof insertRoleCredentialSchema>;
 export type RoleCredential = typeof roleCredentials.$inferSelect;
 
@@ -387,7 +387,7 @@ export const rolePermissions = pgTable("role_permissions", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-export const insertRolePermissionSchema = createInsertSchema(rolePermissions).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertRolePermissionSchema = createInsertSchema(rolePermissions).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
 export type RolePermission = typeof rolePermissions.$inferSelect;
 
@@ -413,7 +413,7 @@ export const roleTemplates = pgTable("role_templates", {
   seededAt: timestamp("seeded_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
-export const insertRoleTemplateSchema = createInsertSchema(roleTemplates).omit({ id: true, seededAt: true, updatedAt: true } as any);
+export const insertRoleTemplateSchema = createInsertSchema(roleTemplates).omit({ id: true, seededAt: true, updatedAt: true });
 export type InsertRoleTemplate = z.infer<typeof insertRoleTemplateSchema>;
 export type RoleTemplate = typeof roleTemplates.$inferSelect;
 

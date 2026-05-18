@@ -1,5 +1,5 @@
 import { eq, ilike, inArray } from "drizzle-orm";
-import { projectInfo, projectExecutionState, type InsertProjectInfo, type ProjectInfo } from "@shared/schema";
+import { projectInfo, projectExecutionState, type InsertProjectInfo, type ProjectInfo, type UpdateProjectInfoFields } from "@shared/schema";
 import { db } from "../db";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "../lib/project-info-sync";
 
@@ -14,10 +14,16 @@ export class ProjectInfoRepository {
     return this._dbInstance || db;
   }
 
-  async updateById(id: number, fields: Partial<InsertProjectInfo>): Promise<ProjectInfo | undefined> {
+  async updateById(id: number, fields: UpdateProjectInfoFields): Promise<ProjectInfo | undefined> {
+    // `fields` may carry project_execution_state / project_settings columns
+    // (e.g. escalationLevel, phase); those are routed to their own tables by
+    // syncProjectSplitTables below. The project_info UPDATE only consumes the
+    // InsertProjectInfo subset — narrow here so the typed query builder is
+    // accurate rather than relying on Drizzle to drop unknown keys.
+    const projectInfoFields = fields as Partial<InsertProjectInfo>;
     const [updated] = await this.dbInstance
       .update(projectInfo)
-      .set({ ...fields, updatedAt: new Date() })
+      .set({ ...projectInfoFields, updatedAt: new Date() })
       .where(eq(projectInfo.id, id))
       .returning();
     if (updated) {

@@ -153,7 +153,7 @@ export const roleLensProfiles = pgTable("role_lens_profiles", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-export const insertRoleLensProfileSchema = createInsertSchema(roleLensProfiles).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertRoleLensProfileSchema = createInsertSchema(roleLensProfiles).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertRoleLensProfile = z.infer<typeof insertRoleLensProfileSchema>;
 export type RoleLensProfile = typeof roleLensProfiles.$inferSelect;
 
@@ -178,7 +178,7 @@ export const roleHomepageWidgets = pgTable("role_homepage_widgets", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-export const insertRoleHomepageWidgetSchema = createInsertSchema(roleHomepageWidgets).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertRoleHomepageWidgetSchema = createInsertSchema(roleHomepageWidgets).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertRoleHomepageWidget = z.infer<typeof insertRoleHomepageWidgetSchema>;
 export type RoleHomepageWidget = typeof roleHomepageWidgets.$inferSelect;
 
@@ -212,7 +212,7 @@ export const contracts = pgTable("contracts", {
   deletedBy: integer("deleted_by"),
 });
 
-export const insertContractSchema = createInsertSchema(contracts).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertContractSchema = createInsertSchema(contracts).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertContract = z.infer<typeof insertContractSchema>;
 export type Contract = typeof contracts.$inferSelect;
 
@@ -247,7 +247,7 @@ export const ssegApplications = pgTable("sseg_applications", {
   deletedAt: timestamp("deleted_at"),
 });
 
-export const insertSsegApplicationSchema = createInsertSchema(ssegApplications).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertSsegApplicationSchema = createInsertSchema(ssegApplications).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertSsegApplication = z.infer<typeof insertSsegApplicationSchema>;
 export type SsegApplication = typeof ssegApplications.$inferSelect;
 

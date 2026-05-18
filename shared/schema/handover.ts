@@ -27,7 +27,7 @@ export const handoverPacks = pgTable("handover_packs", {
   deletedAt: timestamp("deleted_at"),
 });
 
-export const insertHandoverPackSchema = createInsertSchema(handoverPacks).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertHandoverPackSchema = createInsertSchema(handoverPacks).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertHandoverPack = z.infer<typeof insertHandoverPackSchema>;
 export type HandoverPack = typeof handoverPacks.$inferSelect;
 
@@ -46,7 +46,7 @@ export const handoverChecklistItems = pgTable("handover_checklist_items", {
   notes: text("notes"),
 });
 
-export const insertHandoverChecklistItemSchema = createInsertSchema(handoverChecklistItems).omit({ id: true } as any);
+export const insertHandoverChecklistItemSchema = createInsertSchema(handoverChecklistItems).omit({ id: true });
 export type InsertHandoverChecklistItem = z.infer<typeof insertHandoverChecklistItemSchema>;
 export type HandoverChecklistItem = typeof handoverChecklistItems.$inferSelect;
 
@@ -71,7 +71,7 @@ export const ssegItems = pgTable("sseg_items", {
   deletedAt: timestamp("deleted_at"),
 });
 
-export const insertSsegItemSchema = createInsertSchema(ssegItems).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertSsegItemSchema = createInsertSchema(ssegItems).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertSsegItem = z.infer<typeof insertSsegItemSchema>;
 export type SsegItem = typeof ssegItems.$inferSelect;
 
@@ -91,7 +91,7 @@ export const lessonsLearnt = pgTable("lessons_learnt", {
   deletedAt: timestamp("deleted_at"),
 });
 
-export const insertLessonsLearntSchema = createInsertSchema(lessonsLearnt).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertLessonsLearntSchema = createInsertSchema(lessonsLearnt).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertLessonsLearnt = z.infer<typeof insertLessonsLearntSchema>;
 export type LessonsLearnt = typeof lessonsLearnt.$inferSelect;
 
@@ -112,7 +112,7 @@ export const handoverStakeholders = pgTable("handover_stakeholders", {
   deletedBy: integer("deleted_by"),
 });
 
-export const insertHandoverStakeholderSchema = createInsertSchema(handoverStakeholders).omit({ id: true, createdAt: true, deletedAt: true, deletedBy: true } as any);
+export const insertHandoverStakeholderSchema = createInsertSchema(handoverStakeholders).omit({ id: true, createdAt: true, deletedAt: true, deletedBy: true });
 export type InsertHandoverStakeholder = z.infer<typeof insertHandoverStakeholderSchema>;
 export type HandoverStakeholder = typeof handoverStakeholders.$inferSelect;
 
@@ -185,7 +185,7 @@ export const omHandovers = pgTable("om_handovers", {
   deletedAt: timestamp("deleted_at"),
 });
 
-export const insertOmHandoverSchema = createInsertSchema(omHandovers).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertOmHandoverSchema = createInsertSchema(omHandovers).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertOmHandover = z.infer<typeof insertOmHandoverSchema>;
 export type OmHandover = typeof omHandovers.$inferSelect;
 
@@ -209,7 +209,7 @@ export const omHandoverHistory = pgTable("om_handover_history", {
   reason: text("reason"),
   detailsJson: jsonb("details_json"),
 });
-export const insertOmHandoverHistorySchema = createInsertSchema(omHandoverHistory).omit({ id: true, changedAt: true } as any);
+export const insertOmHandoverHistorySchema = createInsertSchema(omHandoverHistory).omit({ id: true, changedAt: true });
 export type InsertOmHandoverHistory = z.infer<typeof insertOmHandoverHistorySchema>;
 export type OmHandoverHistory = typeof omHandoverHistory.$inferSelect;
 

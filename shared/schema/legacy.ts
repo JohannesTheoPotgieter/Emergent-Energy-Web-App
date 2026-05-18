@@ -98,7 +98,7 @@ export const uploadMetadata = pgTable("upload_metadata", {
   status: text("status").notNull().default('success'),
 });
 
-export const insertUploadMetadataSchema = createInsertSchema(uploadMetadata).omit({ id: true, uploadedAt: true } as any);
+export const insertUploadMetadataSchema = createInsertSchema(uploadMetadata).omit({ id: true, uploadedAt: true });
 export type InsertUploadMetadata = z.infer<typeof insertUploadMetadataSchema>;
 export type UploadMetadata = typeof uploadMetadata.$inferSelect;
 
@@ -110,6 +110,6 @@ export const refreshLogs = pgTable("refresh_logs", {
   status: text("status").notNull().default('success'),
 });
 
-export const insertRefreshLogSchema = createInsertSchema(refreshLogs).omit({ id: true, refreshedAt: true } as any);
+export const insertRefreshLogSchema = createInsertSchema(refreshLogs).omit({ id: true, refreshedAt: true });
 export type InsertRefreshLog = z.infer<typeof insertRefreshLogSchema>;
 export type RefreshLog = typeof refreshLogs.$inferSelect;

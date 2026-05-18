@@ -27,7 +27,7 @@ export const hseIncidents = pgTable("hse_incidents", {
   deletedAt: timestamp("deleted_at"),
 });
 
-export const insertHseIncidentSchema = createInsertSchema(hseIncidents).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertHseIncidentSchema = createInsertSchema(hseIncidents).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertHseIncident = z.infer<typeof insertHseIncidentSchema>;
 export type HseIncident = typeof hseIncidents.$inferSelect;
 
@@ -51,7 +51,7 @@ export const correctiveActions = pgTable("corrective_actions", {
   deletedAt: timestamp("deleted_at"),
 });
 
-export const insertCorrectiveActionSchema = createInsertSchema(correctiveActions).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertCorrectiveActionSchema = createInsertSchema(correctiveActions).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertCorrectiveAction = z.infer<typeof insertCorrectiveActionSchema>;
 export type CorrectiveAction = typeof correctiveActions.$inferSelect;
 
@@ -107,7 +107,7 @@ export const safetyFileItems = pgTable("safety_file_items", {
   deletedAt: timestamp("deleted_at"),
 });
 
-export const insertSafetyFileItemSchema = createInsertSchema(safetyFileItems).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertSafetyFileItemSchema = createInsertSchema(safetyFileItems).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertSafetyFileItem = z.infer<typeof insertSafetyFileItemSchema>;
 export type SafetyFileItem = typeof safetyFileItems.$inferSelect;
 

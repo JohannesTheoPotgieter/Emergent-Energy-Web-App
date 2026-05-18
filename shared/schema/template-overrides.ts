@@ -30,6 +30,6 @@ export const templateOverrides = pgTable("template_overrides", {
 
 export const insertTemplateOverrideSchema = createInsertSchema(templateOverrides).omit({
   id: true, createdAt: true, updatedAt: true, overriddenAt: true, deletedAt: true, deletedBy: true,
-} as any);
+});
 export type InsertTemplateOverride = z.infer<typeof insertTemplateOverrideSchema>;
 export type TemplateOverride = typeof templateOverrides.$inferSelect;

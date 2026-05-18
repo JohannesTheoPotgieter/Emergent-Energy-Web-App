@@ -61,7 +61,7 @@ export const insertIntegrationSchema = createInsertSchema(integrations).omit({
   createdAt: true,
   updatedAt: true,
   deletedAt: true,
-} as any);
+});
 export type InsertIntegration = z.infer<typeof insertIntegrationSchema>;
 export type Integration = typeof integrations.$inferSelect;
 
@@ -89,7 +89,7 @@ export const integrationRunEvents = pgTable("integration_run_events", {
 export const insertIntegrationRunEventSchema = createInsertSchema(integrationRunEvents).omit({
   id: true,
   createdAt: true,
-} as any);
+});
 export type InsertIntegrationRunEvent = z.infer<typeof insertIntegrationRunEventSchema>;
 export type IntegrationRunEvent = typeof integrationRunEvents.$inferSelect;
 
@@ -221,7 +221,7 @@ export const insertQuickBooksInvoiceLinkSchema = createInsertSchema(
   createdAt: true,
   updatedAt: true,
   deletedAt: true,
-} as any);
+});
 export type InsertQuickBooksInvoiceLink = z.infer<typeof insertQuickBooksInvoiceLinkSchema>;
 export type QuickBooksInvoiceLink = typeof quickbooksInvoiceLinks.$inferSelect;
 
@@ -282,7 +282,7 @@ export const insertQuickBooksDocumentSchema = createInsertSchema(
   createdAt: true,
   updatedAt: true,
   deletedAt: true,
-} as any);
+});
 export type InsertQuickBooksDocument = z.infer<typeof insertQuickBooksDocumentSchema>;
 export type QuickBooksDocument = typeof quickbooksDocuments.$inferSelect;
 
@@ -383,7 +383,7 @@ export const insertQuickBooksCostAllocationSchema = createInsertSchema(
   createdAt: true,
   updatedAt: true,
   deletedAt: true,
-} as any);
+});
 export type InsertQuickBooksCostAllocation = z.infer<typeof insertQuickBooksCostAllocationSchema>;
 export type QuickBooksCostAllocation = typeof quickbooksCostAllocations.$inferSelect;
 
@@ -451,7 +451,7 @@ export const insertQuickBooksCustomerMappingSchema = createInsertSchema(
   createdAt: true,
   updatedAt: true,
   deletedAt: true,
-} as any);
+});
 export type InsertQuickBooksCustomerMapping = z.infer<typeof insertQuickBooksCustomerMappingSchema>;
 export type QuickBooksCustomerMapping = typeof quickbooksCustomerMappings.$inferSelect;
 
@@ -515,7 +515,7 @@ export const insertQuickBooksVendorMappingSchema = createInsertSchema(
   createdAt: true,
   updatedAt: true,
   deletedAt: true,
-} as any);
+});
 export type InsertQuickBooksVendorMapping = z.infer<typeof insertQuickBooksVendorMappingSchema>;
 export type QuickBooksVendorMapping = typeof quickbooksVendorMappings.$inferSelect;
 
@@ -706,7 +706,7 @@ export const insertQbLinkProposedCascadeSchema = createInsertSchema(
   createdAt: true,
   updatedAt: true,
   deletedAt: true,
-} as any);
+});
 export type InsertQbLinkProposedCascade = z.infer<typeof insertQbLinkProposedCascadeSchema>;
 export type QbLinkProposedCascade = typeof qbLinkProposedCascades.$inferSelect;
 
@@ -732,7 +732,7 @@ export const qbLinkProposedCascadeHistory = pgTable("qb_link_proposed_cascade_hi
   cascadeIdIdx: index("qlpch_cascade_id_idx").on(table.cascadeId),
 }));
 
-export const insertQbLinkProposedCascadeHistorySchema = createInsertSchema(qbLinkProposedCascadeHistory).omit({ id: true, changedAt: true } as any);
+export const insertQbLinkProposedCascadeHistorySchema = createInsertSchema(qbLinkProposedCascadeHistory).omit({ id: true, changedAt: true });
 export type InsertQbLinkProposedCascadeHistory = z.infer<typeof insertQbLinkProposedCascadeHistorySchema>;
 export type QbLinkProposedCascadeHistory = typeof qbLinkProposedCascadeHistory.$inferSelect;
 
