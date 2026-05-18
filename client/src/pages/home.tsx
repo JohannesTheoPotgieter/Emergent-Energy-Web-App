@@ -807,21 +807,3 @@ function DayCellChips({ dayEvents, d, iso }: { dayEvents: UpcomingEvent[]; d: Da
     </div>
   );
 }
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      {totalEvents > 0 && (
-        <div className="flex items-center gap-3 mt-2 text-[10px] text-muted-foreground flex-wrap">
-          <span className="font-semibold uppercase tracking-wider">Legend</span>
-          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Construction / Inflow</span>
-          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-500" /> Commissioning / PC</span>
-          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-violet-500" /> Handover</span>
-          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> PD Handover</span>
-          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Payment Due</span>
-        </div>
-      )}
-    </div>
-  );
-}
