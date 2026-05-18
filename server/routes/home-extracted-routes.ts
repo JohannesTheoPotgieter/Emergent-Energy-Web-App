@@ -493,13 +493,10 @@ export function registerHomeExtractedRoutes(app: Express): void {
 
       for (const c of outflowRows) {
         if (c.paidDate) continue;
-        // Outflow planning date priority:
-        //   1. admin_date_override — finance's explicit override
-        //   2. forecast_payment_date — finance's forecast of when we plan to pay
-        //   3. invoice_date — fallback for legacy lines with no forecast set
-        // Previously we used invoice_date directly, which excluded any invoice
-        // raised before the calendar window even if still unpaid and due soon.
-        const dt = ((c.adminDateOverride || c.forecastPaymentDate || c.invoiceDate || "") as string).slice(0, 10);
+        // Use the actual planned payment date (forecast_payment_date) only.
+        // Lines without a payment date set are intentionally excluded — they
+        // need finance to set a payment date in the COS Tracker to appear.
+        const dt = ((c.forecastPaymentDate || "") as string).slice(0, 10);
         if (dt >= rangeStart && dt <= rangeEnd) {
           events.push({
             type: "payment_out",
