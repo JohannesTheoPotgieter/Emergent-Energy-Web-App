@@ -493,10 +493,13 @@ export function registerHomeExtractedRoutes(app: Express): void {
 
       for (const c of outflowRows) {
         if (c.paidDate) continue;
-        // Use the actual planned payment date (forecast_payment_date) only.
-        // Lines without a payment date set are intentionally excluded — they
-        // need finance to set a payment date in the COS Tracker to appear.
-        const dt = ((c.forecastPaymentDate || "") as string).slice(0, 10);
+        // Use the planned payment date for cost lines. On cost lines the
+        // equivalent of revenue's "expected payment date" is
+        // "forecast_payment_date" (see field-labels.ts). An explicit
+        // admin_date_override in the Tracker takes precedence. Lines with
+        // neither set are intentionally excluded — finance must populate a
+        // payment date for them to appear on the calendar.
+        const dt = ((c.adminDateOverride || c.forecastPaymentDate || "") as string).slice(0, 10);
         if (dt >= rangeStart && dt <= rangeEnd) {
           events.push({
             type: "payment_out",
