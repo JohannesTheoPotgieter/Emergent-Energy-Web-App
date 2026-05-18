@@ -9,7 +9,6 @@
  * - Raw error strings are never rendered; a friendly message is shown and the
  *   technical detail is logged to the console for engineers.
  */
-import { useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -64,7 +63,7 @@ export function IntegrationStatusCard({
   statusReason,
   lastSyncAt,
   lastCheckedAt,
-  technicalError,
+  technicalError: _technicalError,
   description,
   stats,
   extra,
@@ -72,13 +71,6 @@ export function IntegrationStatusCard({
   refreshing,
   testId,
 }: IntegrationStatusCardProps) {
-  // Keep technical error detail out of the COO's view but available to engineers.
-  useEffect(() => {
-    if (technicalError) {
-      console.error(`[Integration:${name}] ${technicalError}`);
-    }
-  }, [name, technicalError]);
-
   const presentation = STATUS_PRESENTATION[status];
   const healthy = status === "connected";
   const problem = status === "error" || status === "needs_attention";

@@ -174,8 +174,8 @@ export function LocalFolderTab({ projectName }: { projectName: string }) {
             const file = await entry.getFile();
             item.size = file.size;
             item.lastModified = file.lastModified;
-          } catch (err) {
-            console.error("[LocalFolder] Error reading file metadata:", err);
+          } catch {
+            // Metadata unavailable for this entry — list it without size/date.
           }
         }
         items.push(item);
@@ -212,8 +212,8 @@ export function LocalFolderTab({ projectName }: { projectName: string }) {
             setDirHandle(stored);
           }
         }
-      } catch (err) {
-        console.error("[LocalFolder] Error restoring saved folder handle:", err);
+      } catch {
+        // Saved handle invalid/permission lost — user can re-select the folder.
       }
       setInitializing(false);
     })();

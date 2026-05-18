@@ -27,13 +27,13 @@ export function registerAllApprovalHandlers() {
 
   // ----- 1. Pipedrive opportunity create ---------------------------------
   registerApprovalHandler("pipedrive_opportunity_create", async (payload) => {
-    const [row] = await db.insert(opportunities).values(payload as any).returning({ id: opportunities.id });
+    const [row] = await db.insert(opportunities).values(payload as typeof opportunities.$inferInsert).returning({ id: opportunities.id });
     return String(row.id);
   });
 
   // ----- 1b. Pipedrive client create -------------------------------------
   registerApprovalHandler("pipedrive_client_create", async (payload) => {
-    const [row] = await db.insert(clients).values(payload as any).returning({ id: clients.id });
+    const [row] = await db.insert(clients).values(payload as typeof clients.$inferInsert).returning({ id: clients.id });
     return String(row.id);
   });
 
@@ -42,16 +42,16 @@ export function registerAllApprovalHandlers() {
     // jsonb round-trip turns Date instances into ISO strings; coerce the
     // known timestamp/date columns back so Drizzle accepts them. Other
     // fields are passthrough.
-    const p: any = { ...payload };
+    const p: Record<string, unknown> = { ...payload };
     if (typeof p.lastPulledAt === "string") p.lastPulledAt = new Date(p.lastPulledAt);
-    if (typeof p.dueDate === "string" && p.dueDate.length === 0) p.dueDate = null;
-    const [row] = await db.insert(intakeRequests).values(p).returning({ id: intakeRequests.id });
+    if (typeof p.dueDate === "string" && (p.dueDate as string).length === 0) p.dueDate = null;
+    const [row] = await db.insert(intakeRequests).values(p as typeof intakeRequests.$inferInsert).returning({ id: intakeRequests.id });
     return String(row.id);
   });
 
   // ----- 16b. SharePoint project_info shell create -----------------------
   registerApprovalHandler("sharepoint_project_shell_create", async (payload) => {
-    const [row] = await db.insert(projectInfo).values(payload as any).returning({ id: projectInfo.id });
+    const [row] = await db.insert(projectInfo).values(payload as typeof projectInfo.$inferInsert).returning({ id: projectInfo.id });
     return String(row.id);
   });
 
@@ -63,7 +63,7 @@ export function registerAllApprovalHandlers() {
     const [row] = await db
       .insert(cosPeriodLocks)
       .values({
-        ...(payload as any),
+        ...(payload as typeof cosPeriodLocks.$inferInsert),
         autoLocked: false,
         lockedByUserId: ctx.decidedByUserId,
       })
@@ -73,7 +73,7 @@ export function registerAllApprovalHandlers() {
 
   // ----- 14. EE info-updates seed ---------------------------------------
   registerApprovalHandler("ee_info_update_seed", async (payload) => {
-    const [row] = await db.insert(eeInfoNodes).values(payload as any).returning({ id: eeInfoNodes.id });
+    const [row] = await db.insert(eeInfoNodes).values(payload as typeof eeInfoNodes.$inferInsert).returning({ id: eeInfoNodes.id });
     return String(row.id);
   });
 }

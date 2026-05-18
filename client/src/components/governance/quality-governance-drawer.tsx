@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useQualityGovernance, useQualityAction } from "@/hooks/use-governance";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,11 +6,35 @@ import { useLocation } from "wouter";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger,
 } from "@/components/ui/sheet";
-import { CheckCircle, XCircle, AlertTriangle, Clock, Shield } from "lucide-react";
+import { CheckCircle,   Clock, Shield } from "lucide-react";
 import { PageSkeleton } from "@/components/ui/page-states";
 import { OwnerName } from "@/components/OwnerName";
 
+interface CommissioningReviewRow {
+  project_id: number;
+  project_name: string;
+  readiness_pct: number;
+  days_in_stage: number;
+}
+
+interface OpenSnagRow {
+  id: number;
+  project_name: string;
+  status: string;
+  owner_user_id: number | null | undefined;
+  owner_name: string | null | undefined;
+  age_days: number;
+}
+
+interface QualityChecklistRow {
+  project_id: number;
+  project_name: string;
+  completion_pct: number;
+}
+
 export function QualityGovernanceDrawer({ trigger }: { trigger: React.ReactNode }) {
+  // useQualityGovernance() types its arrays as unknown[]; assert the row
+  // shapes the API actually returns at each render boundary.
   const { data, isLoading } = useQualityGovernance();
   const actionMutation = useQualityAction();
   const [, navigate] = useLocation();
@@ -44,7 +67,7 @@ export function QualityGovernanceDrawer({ trigger }: { trigger: React.ReactNode 
                   <p className="text-xs text-muted-foreground">No commissioning reviews pending.</p>
                 ) : (
                   <div className="space-y-2">
-                    {data!.commissioningReviews.map((r: any) => (
+                    {(data!.commissioningReviews as CommissioningReviewRow[]).map((r) => (
                       <div key={r.project_id} className="flex items-center justify-between border rounded p-2">
                         <div>
                           <p
@@ -83,7 +106,7 @@ export function QualityGovernanceDrawer({ trigger }: { trigger: React.ReactNode 
                   <p className="text-xs text-muted-foreground">No open quality items.</p>
                 ) : (
                   <div className="space-y-1">
-                    {data!.openSnags.slice(0, 20).map((s: any) => (
+                    {(data!.openSnags as OpenSnagRow[]).slice(0, 20).map((s) => (
                       <div key={s.id} className="flex items-center justify-between border rounded p-2 text-xs">
                         <div className="flex-1 min-w-0">
                           <span className="font-medium">{s.project_name}</span>
@@ -122,7 +145,7 @@ export function QualityGovernanceDrawer({ trigger }: { trigger: React.ReactNode 
                   <p className="text-xs text-muted-foreground">No quality checklist data.</p>
                 ) : (
                   <div className="space-y-1">
-                    {data!.qualityChecklist.map((q: any) => (
+                    {(data!.qualityChecklist as QualityChecklistRow[]).map((q) => (
                       <div key={q.project_id} className="flex items-center justify-between text-xs">
                         <span className="font-medium">{q.project_name}</span>
                         <div className="flex items-center gap-2">

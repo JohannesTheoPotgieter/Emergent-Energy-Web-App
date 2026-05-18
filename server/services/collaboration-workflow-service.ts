@@ -24,33 +24,27 @@ import {
   projectStageInstances,
   projectStageRequirements,
   QUERY_ROUTING,
-  type InsertStageAcceptance,
   type StageAcceptance,
-  type InsertAcceptanceReservation,
-  type AcceptanceReservation,
-  type InsertProjectClientCommitment,
   type ProjectClientCommitment,
-  type InsertEvidenceRequest,
   type EvidenceRequest,
-  type InsertProjectQuery,
   type ProjectQuery,
-  type InsertProjectClientUpdate,
   type ProjectClientUpdate,
 } from "@shared/schema";
+import logger from "../lib/logger";
 
 // ── Legacy Write Guards ───────────────────────────────────────
 // Phase 3: Runtime guards that throw if anyone attempts to write to legacy tables.
 // These exist to catch any missed code paths during the observation window.
 
-function blockLegacyCommitmentWrite(operation: string): never {
+function _blockLegacyCommitmentWrite(operation: string): never {
   const msg = `[LEGACY_GUARD] Write to deprecated client_commitments table blocked (${operation}). Use projectClientCommitments instead.`;
-  console.error(msg);
+  logger.error(msg);
   throw new Error(msg);
 }
 
-function blockLegacyUpdateWrite(operation: string): never {
+function _blockLegacyUpdateWrite(operation: string): never {
   const msg = `[LEGACY_GUARD] Write to deprecated client_updates table blocked (${operation}). Use projectClientUpdates instead.`;
-  console.error(msg);
+  logger.error(msg);
   throw new Error(msg);
 }
 
@@ -58,8 +52,8 @@ function blockLegacyUpdateWrite(operation: string): never {
 // Temporary logging for the 90-day observation window.
 // If this fires, something is still reading from legacy tables.
 
-function logLegacyRead(table: string, caller: string): void {
-  console.warn(`[LEGACY_TELEMETRY] Legacy read from ${table} in ${caller} — this should not happen after cutover`);
+function _logLegacyRead(table: string, caller: string): void {
+  logger.warn(`[LEGACY_TELEMETRY] Legacy read from ${table} in ${caller} — this should not happen after cutover`);
 }
 
 // ── Acceptances ────────────────────────────────────────────
@@ -184,7 +178,7 @@ export async function updateClientCommitment(id: number, params: {
   deliveredDate?: string;
   notes?: string;
 }) {
-  const updates: Record<string, any> = {};
+  const updates: Partial<typeof projectClientCommitments.$inferInsert> = {};
   if (params.status) updates.status = params.status;
   if (params.deliveredDate) updates.deliveredDate = new Date(params.deliveredDate);
   if (params.status === 'DELIVERED' && !params.deliveredDate) updates.deliveredDate = new Date();
@@ -398,7 +392,7 @@ export async function updateClientUpdate(id: number, params: {
   clientUpdateStatus?: string;
   clientUpdateSentBy?: number;
 }) {
-  const updates: Record<string, any> = { updatedAt: new Date() };
+  const updates: Partial<typeof projectClientUpdates.$inferInsert> = { updatedAt: new Date() };
   // Support both canonical and legacy param names
   const effectiveStatus = params.status || params.clientUpdateStatus;
   if (effectiveStatus) updates.status = effectiveStatus.toUpperCase();
@@ -434,7 +428,7 @@ export async function generateClientUpdateDraft(projectId: number): Promise<{
     .from(projectStageInstances)
     .where(eq(projectStageInstances.projectId, projectId));
 
-  const currentStage = stages.find((s: any) => s.stageStatus === 'IN_PROGRESS') || stages[0];
+  const currentStage = stages.find((s: typeof projectStageInstances.$inferSelect) => s.stageStatus === 'IN_PROGRESS') || stages[0];
   const stageName = currentStage?.stageCode?.replace(/_/g, ' ').replace(/S\d+\s/, '') || 'Unknown';
 
   // Get recent completed requirements
@@ -457,8 +451,8 @@ export async function generateClientUpdateDraft(projectId: number): Promise<{
       eq(projectStageDependencies.status, 'WAITING'),
     ));
 
-  const completedItems = recentCompleted.map((r: any) => `- ${r.itemName}`).join('\n') || '- No recently completed items';
-  const blockerItems = openDeps.map((d: any) => `- ${d.description} (waiting on ${d.toDepartment})`).join('\n') || '- No current blockers';
+  const completedItems = recentCompleted.map((r: typeof projectStageRequirements.$inferSelect) => `- ${r.itemName}`).join('\n') || '- No recently completed items';
+  const blockerItems = openDeps.map((d: typeof projectStageDependencies.$inferSelect) => `- ${d.description} (waiting on ${d.toDepartment})`).join('\n') || '- No current blockers';
 
   return {
     progressSummaryText: `Project is currently in ${stageName} stage. Readiness: ${currentStage?.readinessPct ?? 0}%.`,

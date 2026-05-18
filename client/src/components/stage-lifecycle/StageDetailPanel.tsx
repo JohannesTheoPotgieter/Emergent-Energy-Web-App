@@ -3,7 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useStageDetail, useTransitionStage, useHydrateChecklist, useUpdateRequirement, useInitializeStages } from "@/hooks/use-stage-lifecycle";
+import { useStageDetail, useTransitionStage, useHydrateChecklist,  useInitializeStages } from "@/hooks/use-stage-lifecycle";
 import { useToast } from "@/hooks/use-toast";
 import { CurrentGateCard } from "./CurrentGateCard";
 import { ExceptionDialog } from "./ExceptionDialog";
@@ -20,7 +20,7 @@ import { Stage9ClientHandover } from "@/components/stage-workspaces/Stage9Client
 import { Stage10PostHandoverReview } from "@/components/stage-workspaces/Stage10PostHandoverReview";
 import { getValidNextStates } from "@shared/utils/stage-state-machine";
 import type { StageStatus } from "@shared/schema";
-import { Loader2, FileText, ShieldAlert, ArrowRight, Link2, PlayCircle, Milestone } from "lucide-react";
+import { Loader2, FileText, ShieldAlert, ArrowRight,  PlayCircle, Milestone } from "lucide-react";
 
 interface StageDetailPanelProps {
   projectId: number;
@@ -122,12 +122,6 @@ export function StageDetailPanel({ projectId, stageCode, isAdmin = false }: Stag
         const createdCount = result?.createdCount ?? 0;
         const templatesFound = result?.templatesFound ?? 0;
         setLastTemplatesFound(templatesFound);
-
-        console.info("[stage-lifecycle] hydrate checklist result", {
-          stageCode,
-          createdCount,
-          templatesFound,
-        });
 
         if (templatesFound === 0 || createdCount === 0) {
           toast({
@@ -257,7 +251,7 @@ export function StageDetailPanel({ projectId, stageCode, isAdmin = false }: Stag
                 <p className="text-sm text-muted-foreground">No evidence uploaded yet.</p>
               ) : (
                 <div className="space-y-1">
-                  {evidence.map((e: any) => (
+                  {evidence.map((e) => (
                     <div key={e.id} className="flex items-center gap-2 text-sm py-1">
                       <FileText className="h-4 w-4 text-muted-foreground" />
                       <a href={e.fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex-1">
@@ -289,7 +283,7 @@ export function StageDetailPanel({ projectId, stageCode, isAdmin = false }: Stag
                 <p className="text-sm text-muted-foreground">No exceptions.</p>
               ) : (
                 <div className="space-y-2">
-                  {exceptions.map((ex: any) => (
+                  {exceptions.map((ex) => (
                     <div key={ex.id} className="rounded border p-2 text-sm">
                       <div className="flex items-center gap-2">
                         <Badge variant="outline" className="text-[10px]">{ex.status}</Badge>

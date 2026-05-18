@@ -7,8 +7,16 @@ interface FinanceCosTabProps {
   projectName: string;
 }
 
+interface CosRow {
+  category: string;
+  monthEndDate: string;
+  value?: string | number | null;
+}
+
+type PivotRow = { category: string } & Record<string, string | number | null | undefined>;
+
 export function FinanceCosTab({ projectName }: FinanceCosTabProps) {
-  const { data: monthlyCos = [], isLoading, error } = useQuery({
+  const { data: monthlyCos = [], isLoading, error } = useQuery<CosRow[]>({
     queryKey: ["finance-cos", projectName],
     queryFn: async () => {
       const res = await fetch(`/api/finance/cos?projectName=${encodeURIComponent(projectName)}`, { credentials: "include" });
@@ -38,32 +46,32 @@ export function FinanceCosTab({ projectName }: FinanceCosTabProps) {
     );
   }
 
-  const cosData = Array.isArray(monthlyCos) ? monthlyCos : [];
+  const cosData: CosRow[] = Array.isArray(monthlyCos) ? monthlyCos : [];
 
-  const formatCurrency = (amount: any) => {
-    const num = parseFloat(amount);
+  const formatCurrency = (amount: unknown) => {
+    const num = parseFloat(String(amount ?? ""));
     if (isNaN(num) || num === 0) return "-";
     return new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(num);
   };
 
-  const formatMonth = (dateStr: any) => {
+  const formatMonth = (dateStr: unknown) => {
     if (!dateStr) return "-";
     try {
-      const date = new Date(dateStr);
+      const date = new Date(dateStr as string | number | Date);
       return date.toLocaleDateString('en-AU', { month: 'short', year: 'numeric' });
     } catch {
       return "-";
     }
   };
 
-  const categories = Array.from(new Set(cosData.map((r: any) => r.category)));
-  const months = Array.from(new Set(cosData.map((r: any) => r.monthEndDate))).sort();
+  const categories = Array.from(new Set(cosData.map((r) => r.category)));
+  const months = Array.from(new Set(cosData.map((r) => r.monthEndDate))).sort();
 
   const pivotedData = categories.map(category => {
-    const row: any = { category };
+    const row: PivotRow = { category };
     months.forEach(month => {
-      const item = cosData.find((r: any) => r.category === category && r.monthEndDate === month);
-      row[month as string] = item?.value;
+      const item = cosData.find((r) => r.category === category && r.monthEndDate === month);
+      row[month] = item?.value;
     });
     return row;
   });
@@ -87,7 +95,7 @@ export function FinanceCosTab({ projectName }: FinanceCosTabProps) {
               <TableHeader>
                 <TableRow>
                   <TableHead className="sticky left-0 bg-background">Category</TableHead>
-                  {months.map((month: any) => (
+                  {months.map((month) => (
                     <TableHead key={month} className="text-right whitespace-nowrap">
                       {formatMonth(month)}
                     </TableHead>
@@ -95,10 +103,10 @@ export function FinanceCosTab({ projectName }: FinanceCosTabProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {pivotedData.map((row: any, idx: number) => (
+                {pivotedData.map((row, idx) => (
                   <TableRow key={idx}>
                     <TableCell className="font-medium sticky left-0 bg-background">{row.category}</TableCell>
-                    {months.map((month: any) => (
+                    {months.map((month) => (
                       <TableCell key={month} className="text-right font-mono text-sm">
                         {formatCurrency(row[month])}
                       </TableCell>

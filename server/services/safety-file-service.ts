@@ -56,7 +56,7 @@ export async function seedDefaultSafetyFileItems(params: {
   const existingCodes = new Set((existing as Array<{ itemCode: string }>).map((r) => r.itemCode));
 
   const toInsert = DEFAULT_SAFETY_FILE_SEED.filter((seed) => !existingCodes.has(seed.itemCode)).map(
-    (seed) => ({
+    (seed): typeof safetyFileItems.$inferInsert => ({
       projectId: params.projectId,
       itemCode: seed.itemCode,
       itemName: seed.itemName,
@@ -72,7 +72,7 @@ export async function seedDefaultSafetyFileItems(params: {
     return { inserted: 0, dueDate: dueDateIso };
   }
 
-  await db.insert(safetyFileItems).values(toInsert as any);
+  await db.insert(safetyFileItems).values(toInsert);
   return { inserted: toInsert.length, dueDate: dueDateIso };
 }
 

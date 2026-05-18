@@ -38,7 +38,7 @@ function statusColor(s: string) {
   return "bg-muted text-muted-foreground";
 }
 
-export function ProjectHandoverTab({ projectId, projectName, initialFilter = "all" }: Props) {
+export function ProjectHandoverTab({ projectId, projectName: _projectName, initialFilter = "all" }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);

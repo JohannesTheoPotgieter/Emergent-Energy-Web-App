@@ -6,7 +6,7 @@
  */
 
 import { db } from "../db";
-import { eq, and, sql, isNull, inArray, gte, lte, lt, desc, asc, or, ne } from "drizzle-orm";
+import { eq, and, isNull, ne } from "drizzle-orm";
 import {
   projectInfo,
   projectExecutionState,
@@ -30,15 +30,11 @@ import {
   projectEngDeliverables,
   pendingApprovals,
 } from "@shared/schema";
-import { PHASES, PHASE_BY_CODE, resolveCanonicalPhase } from "@shared/phases";
+import { PHASES, resolveCanonicalPhase } from "@shared/phases";
 import {
-  ALL_DEPARTMENTS,
-  DEPARTMENT_WEIGHTS,
   calculateDepartmentScore,
   calculateCompanyScore,
-  type Department,
   type DepartmentScore,
-  type KpiScore,
 } from "@shared/config/kpi-registry";
 import { computeQcProgress } from "@shared/quality-governance";
 import { evaluateRevenueArStatus, isRevenueSettled } from "../lib/finance/revenue-ar-status";
@@ -255,10 +251,6 @@ export async function getCompanyOverviewData() {
     }
   }
 
-  // Backward-compat aliases
-  const receivedRevenueFytd = cashReceivedFytd;
-  const paidCostFytd = cashPaidFytd;
-
   // Realised GP uses realised revenue and realised COS (not cash concepts)
   const realisedGrossMarginPct = computeMarginPct(realisedRevenueFytd, realisedCostFytd, { precision: 1, zeroRevenueValue: 0 }) ?? 0;
   // Total-line GP (all revenue lines vs all cost lines in FY)
@@ -388,9 +380,6 @@ export async function getCompanyOverviewData() {
   // ── Department KPI values ──────────────────────────────────────────
 
   // --- Project Development ---
-  const activeOpps = allOpportunities.filter(
-    (o) => o.status === "active" || o.status === "won"
-  );
   const signedDeals = allOpportunities.filter((o) => o.signedDate && isInFy(o.signedDate));
   const signedPipelineValue = signedDeals.reduce((sum, o) => sum + toNum(o.estimatedValue), 0);
   const wonDeals = allOpportunities.filter((o) => o.status === "won");
@@ -481,8 +470,6 @@ export async function getCompanyOverviewData() {
   ]);
 
   // --- Engineering ---
-  const completedEngStages = engStages.filter((s) => s.status === "complete");
-  const allEngTasksActive = engTasks.filter((t) => t.status !== "complete" && t.status !== "cancelled");
   const overdueEngTasks = engTasks.filter((t) => {
     if (!t.dueDate || t.status === "complete" || t.status === "cancelled") return false;
     return t.dueDate < today;

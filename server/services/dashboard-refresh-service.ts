@@ -19,13 +19,14 @@
  *   - unknown: no successful refresh ever
  */
 
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import {
   dashboardSnapshots,
   type DashboardFreshnessState,
   type DashboardSnapshot,
 } from "@shared/schema";
 import { db } from "../db";
+import logger from "../lib/logger";
 
 // ===================== DEFAULTS =====================
 
@@ -111,7 +112,7 @@ async function fireDashboardAlertHook(def: DashboardDefinition): Promise<void> {
       staleWindowMs: def.staleWindowMs,
     });
   } catch (err) {
-    console.warn("[DashboardRefresh] alert dispatch hook failed:", err);
+    logger.warn("[DashboardRefresh] alert dispatch hook failed:", err);
   }
 }
 
@@ -161,7 +162,7 @@ async function refreshDashboardInner(
       const [updated] = await db
         .update(dashboardSnapshots)
         .set({
-          payloadJson: payload as any,
+          payloadJson: payload,
           status: "ok",
           errorDetail: null,
           computedAt: now,
@@ -179,7 +180,7 @@ async function refreshDashboardInner(
       .values({
         dashboardKey: key,
         scopeKey,
-        payloadJson: payload as any,
+        payloadJson: payload,
         status: "ok",
         computedAt: now,
         lastSuccessAt: now,

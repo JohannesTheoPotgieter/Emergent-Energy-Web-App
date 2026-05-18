@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
+import {} from "@/components/ui/label";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useStageDetail } from "@/hooks/use-stage-lifecycle";
 import { useStageData, useSaveStageData } from "@/hooks/use-stage-data";
@@ -217,7 +217,7 @@ export function Stage3FinancialClose({ projectId, isAdmin }: Stage3Props) {
                   </p>
                 ) : (
                   <div className="space-y-1">
-                    {evidence.map((e: any) => (
+                    {evidence.map((e) => (
                       <div key={e.id} className="flex items-center gap-2 text-sm py-1">
                         <FileText className="h-4 w-4 text-muted-foreground" />
                         <a href={e.fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex-1">{e.title}</a>

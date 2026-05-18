@@ -2,15 +2,38 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getQueryFn } from "@/lib/queryClient";
-import { Settings2, Clock, FileCheck, AlertTriangle } from "lucide-react";
+import {  Clock, FileCheck, AlertTriangle } from "lucide-react";
+
+interface ExceptionThreshold {
+  autoEscalationDays?: number;
+  escalationTarget?: string;
+  riskLevels?: string[];
+}
+
+interface DeliverableTrack {
+  code: string;
+  label: string;
+  isRequired?: boolean;
+}
+
+interface GateConfig {
+  slaTimers?: {
+    omReviewDays?: number;
+    clientHandoverDays?: number;
+    exceptionEscalationDays?: number;
+    weeklyUpdateOverdueDays?: number;
+    postHandoverReviewOverdueDays?: number;
+  };
+  deliverableTracks?: DeliverableTrack[];
+}
 
 export function GateConfigCard() {
-  const { data: thresholds } = useQuery<{ thresholds: any }>({
+  const { data: thresholds } = useQuery<{ thresholds: ExceptionThreshold }>({
     queryKey: ["/api/admin/exception-thresholds"],
     queryFn: getQueryFn({ on401: "throw" }),
   });
 
-  const { data: gateConfig } = useQuery<{ config: any }>({
+  const { data: gateConfig } = useQuery<{ config: GateConfig }>({
     queryKey: ["/api/admin/gate-config"],
     queryFn: getQueryFn({ on401: "throw" }),
   });
@@ -90,7 +113,7 @@ export function GateConfigCard() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {tracks.map((t: any) => (
+            {tracks.map((t) => (
               <div key={t.code} className="border rounded p-2 text-xs">
                 <p className="font-medium">{t.label}</p>
                 <Badge variant="outline" className={`text-[10px] mt-1 ${t.isRequired ? "bg-blue-100 text-blue-800" : ""}`}>

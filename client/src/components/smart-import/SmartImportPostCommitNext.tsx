@@ -9,10 +9,11 @@
  */
 
 import { Sparkles, Clock, RefreshCw, MailCheck } from "lucide-react";
+import type { PlanningData, CommitResult } from "./types";
 
 interface SmartImportPostCommitNextProps {
-  planning?: any | null;
-  commitResult?: any | null;
+  planning?: PlanningData | null;
+  commitResult?: CommitResult | null;
 }
 
 interface NextLine {

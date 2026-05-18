@@ -4,7 +4,7 @@
  * Generates the full data payload for the Engineering Monthly Report.
  */
 
-import { eq, and, sql, isNull, inArray } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { db } from "../db";
 import {
   projectInfo,
@@ -21,8 +21,61 @@ import {
 import { parseMonth, getMonthLabel } from "./pm-monthly-report-service";
 import { isTaskComplete } from "@shared/task-status";
 import { toCanonicalStatus } from "../work-items-adapter";
+import logger from "../lib/logger";
 
 const INACTIVE_STATUSES = ["Cancelled", "Archived", "Complete", "Closed", "Handover Complete", "Completed"];
+
+// Composite/projection row shapes. The shared `db` handle is typed `any`
+// (see server/db.ts), so Drizzle row inference is lost; these interfaces
+// restore type-safety for the fields this report reads.
+interface EngProjectRow {
+  id: number;
+  isActive?: boolean | null;
+  phase?: string | null;
+  projectName?: string | null;
+  totalTasks?: number | null;
+  [key: string]: unknown;
+}
+interface EngWorkItemRow {
+  projectId: number | null;
+  status?: string | null;
+  completedAt?: string | Date | null;
+  endDate?: string | null;
+  ownerName?: string | null;
+}
+interface EngDeliverableRow {
+  id: number;
+  projectId: number | null;
+  projectName?: string | null;
+  title?: string | null;
+  deliverableType?: string | null;
+  status?: string | null;
+  currentVersion?: number | string | null;
+  ownerUserId?: number | null;
+  reviewerUserId?: number | null;
+  updatedAt?: string | Date | null;
+}
+interface EngDeliverableVersionRow {
+  deliverableId: number | null;
+  status?: string | null;
+  versionNumber?: number | string | null;
+  createdAt?: string | Date | null;
+}
+interface EngStageRow {
+  id: number;
+  projectId: number | null;
+  stageTemplateId?: number | null;
+  status?: string | null;
+  startedAt?: string | Date | null;
+  completedAt?: string | Date | null;
+}
+interface EngApprovalRow {
+  projectEngStageId: number | null;
+  status?: string | null;
+  approverUserId?: number | null;
+  approverRole?: string | null;
+  updatedAt?: string | Date | null;
+}
 
 /** Canonical check: is this work_items.status a terminal/complete state?
  *  Uses toCanonicalStatus to normalize legacy DB values before checking. */
@@ -32,7 +85,7 @@ function isComplete(rawStatus: string | null | undefined): boolean {
 
 /** Canonical check: is this status a cancelled state? */
 function isCancelled(rawStatus: string | null | undefined): boolean {
-  const s = toCanonicalStatus(rawStatus);
+  const _s = toCanonicalStatus(rawStatus);
   // No canonical cancelled status exists in TASK_STATUSES, so treat as
   // not-cancelled. If a "cancelled" status is added, this will pick it up.
   return false;
@@ -41,12 +94,6 @@ function isCancelled(rawStatus: string | null | undefined): boolean {
 /** Canonical check: is this an active (open, non-complete, non-cancelled) task? */
 function isActive(rawStatus: string | null | undefined): boolean {
   return !isComplete(rawStatus) && !isCancelled(rawStatus);
-}
-
-function toNum(v: unknown): number {
-  if (v === null || v === undefined || v === "") return 0;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
 }
 
 function isDateStrInMonth(dateStr: string | null | undefined, monthStartStr: string, monthEndStr: string): boolean {
@@ -81,7 +128,7 @@ export async function generateEngineeringReportData(month: string) {
     allStages,
     stageTemplates,
     allApprovals,
-    allMetrics,
+    _allMetrics,
     allUsers,
   ] = await Promise.all([
     db.select().from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)),
@@ -95,19 +142,27 @@ export async function generateEngineeringReportData(month: string) {
     db.select({ id: users.id, name: users.name }).from(users),
   ]);
 
-  const projectMap: Map<number, any> = new Map(allProjectRows.map((r: any) => [r.project_info.id, { ...r.project_info, ...(r.project_execution_state || {}), id: r.project_info.id }]));
-  const userMap: Map<number, any> = new Map(allUsers.map((u: any) => [u.id, u.name]));
-  const stageTemplateMap: Map<number, any> = new Map(stageTemplates.map((s: any) => [s.id, s]));
+  const projectMap: Map<number, EngProjectRow> = new Map(
+    (allProjectRows as Array<{ project_info: Record<string, unknown> & { id: number }; project_execution_state?: Record<string, unknown> | null }>).map(
+      (r) => [r.project_info.id, { ...r.project_info, ...(r.project_execution_state || {}), id: r.project_info.id } as EngProjectRow],
+    ),
+  );
+  const userMap: Map<number, string | null> = new Map(
+    (allUsers as Array<{ id: number; name: string | null }>).map((u) => [u.id, u.name]),
+  );
+  const stageTemplateMap: Map<number, Record<string, unknown>> = new Map(
+    (stageTemplates as Array<Record<string, unknown> & { id: number }>).map((s) => [s.id, s]),
+  );
 
-  const activeProjects = [...projectMap.values()].filter((p: any) => {
+  const activeProjects = [...projectMap.values()].filter((p) => {
     if (!p.isActive) return false;
     const phase = (p.phase || "").trim();
     return !INACTIVE_STATUSES.some(s => s.toLowerCase() === phase.toLowerCase());
   });
-  const activeProjectIds = new Set(activeProjects.map((p: any) => p.id));
+  const activeProjectIds = new Set(activeProjects.map((p) => p.id));
 
   // Filter engineering work items to active projects
-  const engWorkItems = allWorkItemRows.filter((w: any) => activeProjectIds.has(w.projectId));
+  const engWorkItems = (allWorkItemRows as EngWorkItemRow[]).filter((w) => w.projectId != null && activeProjectIds.has(w.projectId));
 
   // ===== SECTION 1: Engineering KPIs =====
   // Metric definitions:
@@ -117,28 +172,28 @@ export async function generateEngineeringReportData(month: string) {
   //   activeTasks: subset that are open (not complete, not cancelled)
   //   tasksPlannedToCompleteThisMonth: subset where endDate falls in the report month
   const totalEngTasks = engWorkItems.length;
-  const completedThisMonth = engWorkItems.filter((w: any) => w.completedAt && isTimestampInMonth(w.completedAt, monthStart, monthEnd)).length;
-  const totalCompleted = engWorkItems.filter((w: any) => isComplete(w.status)).length;
+  const completedThisMonth = engWorkItems.filter((w) => w.completedAt && isTimestampInMonth(w.completedAt, monthStart, monthEnd)).length;
+  const totalCompleted = engWorkItems.filter((w) => isComplete(w.status)).length;
 
-  const activeDeliverables = allDeliverables.filter((d: any) => activeProjectIds.has(d.projectId));
+  const activeDeliverables = (allDeliverables as EngDeliverableRow[]).filter((d) => d.projectId != null && activeProjectIds.has(d.projectId));
 
-  const activeTaskCount = engWorkItems.filter((w: any) => isActive(w.status)).length;
+  const activeTaskCount = engWorkItems.filter((w) => isActive(w.status)).length;
 
-  const tasksPlannedToCompleteThisMonth = engWorkItems.filter((w: any) => {
+  const tasksPlannedToCompleteThisMonth = engWorkItems.filter((w) => {
     if (isCancelled(w.status)) return false;
     return isDateStrInMonth(w.endDate, monthStartStr, monthEndStr);
   }).length;
 
-  const activeDeliverableIds = new Set(activeDeliverables.map((d: any) => d.id));
-  const deliverableVersionEvents = allDeliverableVersions.filter((v: any) =>
-    activeDeliverableIds.has(v.deliverableId) && isTimestampInMonth(v.createdAt, monthStart, monthEnd),
+  const activeDeliverableIds = new Set(activeDeliverables.map((d) => d.id));
+  const deliverableVersionEvents = (allDeliverableVersions as EngDeliverableVersionRow[]).filter((v) =>
+    v.deliverableId != null && activeDeliverableIds.has(v.deliverableId) && isTimestampInMonth(v.createdAt, monthStart, monthEnd),
   );
-  const submittedEvents = deliverableVersionEvents.filter((v: any) => String(v.status || "").toUpperCase() === "NEEDS APPROVAL").length;
-  const approvedEvents = deliverableVersionEvents.filter((v: any) => {
+  const submittedEvents = deliverableVersionEvents.filter((v) => String(v.status || "").toUpperCase() === "NEEDS APPROVAL").length;
+  const approvedEvents = deliverableVersionEvents.filter((v) => {
     const status = String(v.status || "").toUpperCase();
     return status === "QC APPROVED" || status === "COMPLETE";
   }).length;
-  const rejectedEvents = deliverableVersionEvents.filter((v: any) => String(v.status || "").toUpperCase() === "PROVIDE FEEDBACK").length;
+  const rejectedEvents = deliverableVersionEvents.filter((v) => String(v.status || "").toUpperCase() === "PROVIDE FEEDBACK").length;
 
   const kpis = {
     totalEngineeringTasks: totalEngTasks,
@@ -148,7 +203,7 @@ export async function generateEngineeringReportData(month: string) {
     deliverablesSubmitted: submittedEvents,
     deliverablesApproved: approvedEvents,
     deliverablesRejected: rejectedEvents,
-    openBlockers: engWorkItems.filter((w: any) =>
+    openBlockers: engWorkItems.filter((w) =>
       w.endDate && w.endDate < monthEndStr && isActive(w.status)
     ).length,
   };
@@ -156,23 +211,24 @@ export async function generateEngineeringReportData(month: string) {
   // ===== SECTION 2: Per-project task completion =====
   const tasksByProject = new Map<number, typeof engWorkItems>();
   for (const w of engWorkItems) {
+    if (w.projectId == null) continue;
     if (!tasksByProject.has(w.projectId)) tasksByProject.set(w.projectId, []);
     tasksByProject.get(w.projectId)!.push(w);
   }
 
-  const perProjectTasks = activeProjects.map((p: any) => {
+  const perProjectTasks = activeProjects.map((p) => {
     const tasks = tasksByProject.get(p.id) || [];
     const total = tasks.length;
-    const completed = tasks.filter((t: any) => isComplete(t.status)).length;
-    const inProgress = tasks.filter((t: any) => toCanonicalStatus(t.status) === "in_progress").length;
-    const notStarted = tasks.filter((t: any) => {
+    const completed = tasks.filter((t) => isComplete(t.status)).length;
+    const inProgress = tasks.filter((t) => toCanonicalStatus(t.status) === "in_progress").length;
+    const notStarted = tasks.filter((t) => {
       const s = toCanonicalStatus(t.status);
       return s === "to_do" || s === "not_started";
     }).length;
-    const overdue = tasks.filter((t: any) =>
+    const overdue = tasks.filter((t) =>
       t.endDate && t.endDate < monthEndStr && isActive(t.status)
     ).length;
-    const completedThisMonth = tasks.filter((t: any) => t.completedAt && isTimestampInMonth(t.completedAt, monthStart, monthEnd)).length;
+    const completedThisMonth = tasks.filter((t) => t.completedAt && isTimestampInMonth(t.completedAt, monthStart, monthEnd)).length;
 
     return {
       projectId: p.id,
@@ -189,18 +245,19 @@ export async function generateEngineeringReportData(month: string) {
 
   // ===== SECTION 3: Deliverable status =====
   // Build version history by deliverable
-  const versionsByDeliverable = new Map<number, typeof allDeliverableVersions>();
-  for (const v of allDeliverableVersions) {
+  const versionsByDeliverable = new Map<number, EngDeliverableVersionRow[]>();
+  for (const v of (allDeliverableVersions as EngDeliverableVersionRow[])) {
+    if (v.deliverableId == null) continue;
     if (!versionsByDeliverable.has(v.deliverableId)) versionsByDeliverable.set(v.deliverableId, []);
     versionsByDeliverable.get(v.deliverableId)!.push(v);
   }
 
-  const deliverableRegister = activeDeliverables.map((d: any) => {
-    const proj = projectMap.get(d.projectId);
-    const versions = (versionsByDeliverable.get(d.id) || []).map((v: any) => ({
+  const deliverableRegister = activeDeliverables.map((d) => {
+    const proj = d.projectId != null ? projectMap.get(d.projectId) : undefined;
+    const versions = (versionsByDeliverable.get(d.id) || []).map((v) => ({
       versionNumber: v.versionNumber,
       status: v.status,
-      createdAt: v.createdAt?.toISOString() || null,
+      createdAt: v.createdAt instanceof Date ? v.createdAt.toISOString() : (v.createdAt ?? null),
     }));
     return {
       projectId: d.projectId,
@@ -222,24 +279,24 @@ export async function generateEngineeringReportData(month: string) {
     approvedThisMonth: approvedEvents,
     rejectedThisMonth: rejectedEvents,
     // Legacy deliverables table uses mixed-case status — normalize for comparison.
-    pendingReview: activeDeliverables.filter((d: any) => toCanonicalStatus(d.status) === "needs_approval").length,
+    pendingReview: activeDeliverables.filter((d) => toCanonicalStatus(d.status) === "needs_approval").length,
     tasksPlannedToCompleteThisMonth,
     activeTasks: activeTaskCount,
   };
 
   // ===== SECTION 4: Stage/Gate progress =====
-  const activeStages = allStages.filter((s: any) => activeProjectIds.has(s.projectId));
+  const activeStages = (allStages as EngStageRow[]).filter((s) => s.projectId != null && activeProjectIds.has(s.projectId));
 
-  const stageGateProgress = activeStages.map((s: any) => {
-    const proj = projectMap.get(s.projectId);
-    const template = stageTemplateMap.get(s.stageTemplateId);
+  const stageGateProgress = activeStages.map((s) => {
+    const proj = s.projectId != null ? projectMap.get(s.projectId) : undefined;
+    const template = s.stageTemplateId != null ? stageTemplateMap.get(s.stageTemplateId) : undefined;
     return {
       projectId: s.projectId,
       projectName: proj?.projectName || "",
-      stageName: template?.name || `Stage ${s.stageTemplateId}`,
+      stageName: (template?.name as string | undefined) || `Stage ${s.stageTemplateId}`,
       status: s.status,
-      startedAt: s.startedAt?.toISOString() || null,
-      completedAt: s.completedAt?.toISOString() || null,
+      startedAt: s.startedAt instanceof Date ? s.startedAt.toISOString() : (s.startedAt ?? null),
+      completedAt: s.completedAt instanceof Date ? s.completedAt.toISOString() : (s.completedAt ?? null),
       completedThisMonth: s.completedAt ? isTimestampInMonth(s.completedAt, monthStart, monthEnd) : false,
     };
   });
@@ -253,8 +310,8 @@ export async function generateEngineeringReportData(month: string) {
     r.assignedTasks++;
     if (t.completedAt && isTimestampInMonth(t.completedAt, monthStart, monthEnd)) r.completedThisMonth++;
     if (t.endDate && t.endDate < monthEndStr && isActive(t.status)) r.overdue++;
-    const proj = projectMap.get(t.projectId);
-    if (proj) r.projects.add(proj.projectName);
+    const proj = t.projectId != null ? projectMap.get(t.projectId) : undefined;
+    if (proj && proj.projectName) r.projects.add(proj.projectName);
   }
 
   const resourceWorkload = [...engResourceMap.values()].map(r => ({
@@ -266,24 +323,24 @@ export async function generateEngineeringReportData(month: string) {
   }));
 
   // ===== SECTION 6: Approvals =====
-  const activeStageIds = new Set(activeStages.map((s: any) => s.id));
-  const activeApprovals = allApprovals.filter((a: any) => activeStageIds.has(a.projectEngStageId));
+  const activeStageIds = new Set(activeStages.map((s) => s.id));
+  const activeApprovals = (allApprovals as EngApprovalRow[]).filter((a) => a.projectEngStageId != null && activeStageIds.has(a.projectEngStageId));
 
-  const approvalRegister = activeApprovals.map((a: any) => {
-    const stage = allStages.find((s: any) => s.id === a.projectEngStageId);
-    const proj = stage ? projectMap.get(stage.projectId) : null;
+  const approvalRegister = activeApprovals.map((a) => {
+    const stage = (allStages as EngStageRow[]).find((s) => s.id === a.projectEngStageId);
+    const proj = stage && stage.projectId != null ? projectMap.get(stage.projectId) : null;
     return {
       projectId: stage?.projectId || 0,
       projectName: proj?.projectName || "",
       approvalType: a.approverRole,
       status: a.status,
       approverName: a.approverUserId ? (userMap.get(a.approverUserId) || null) : null,
-      date: a.updatedAt?.toISOString() || null,
+      date: a.updatedAt instanceof Date ? a.updatedAt.toISOString() : (a.updatedAt ?? null),
     };
   });
 
   const duration = Date.now() - startTs;
-  console.log(`[Engineering Monthly Report] Data generation for ${month} took ${duration}ms`);
+  logger.info(`[Engineering Monthly Report] Data generation for ${month} took ${duration}ms`);
 
   return {
     meta: {

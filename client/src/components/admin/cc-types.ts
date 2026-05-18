@@ -103,7 +103,7 @@ export interface SystemIssue {
   userName: string | null;
   projectName: string | null;
   createdAt: string;
-  details: Record<string, any> | null;
+  details: Record<string, unknown> | null;
   requestPath: string | null;
 }
 

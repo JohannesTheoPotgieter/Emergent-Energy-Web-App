@@ -26,14 +26,12 @@
  * code we're retiring).
  */
 
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "../db";
 import { approvals, type Approval } from "@shared/schema/collaboration";
 import {
   managedDocuments,
-  documentApprovalRequirements,
   projectFolders,
-  folderTaxonomy,
   MANAGED_DOCUMENT_APPROVAL_TYPE,
   type ManagedDocument,
   type DocumentApprovalRequirement,
@@ -42,6 +40,7 @@ import { users, type User } from "@shared/schema/users";
 import { getManagedDocumentById } from "../repositories/managed-documents-repository";
 import { findMatchingRequirement } from "../repositories/document-approval-requirements-repository";
 import { createNotification, notifyUsers } from "./notification-service";
+import logger from "../lib/logger";
 
 // =========================================================================
 // Types returned to route handlers
@@ -263,7 +262,7 @@ export async function requestApproval(input: RequestApprovalInput): Promise<Requ
     relatedEntityType: MANAGED_DOCUMENT_APPROVAL_TYPE,
     relatedEntityId: managedDocumentId,
   }).catch((err) => {
-    console.error("[managed-doc-approvals] notify approvers failed:", err);
+    logger.error("[managed-doc-approvals] notify approvers failed:", err);
   });
 
   return {
@@ -347,7 +346,7 @@ export async function recordApproval(input: RecordApprovalInput): Promise<Record
           relatedEntityType: MANAGED_DOCUMENT_APPROVAL_TYPE,
           relatedEntityId: documentId,
         }).catch((err) =>
-          console.error("[managed-doc-approvals] notify submitter (approved) failed:", err),
+          logger.error("[managed-doc-approvals] notify submitter (approved) failed:", err),
         );
       }
       return { approval: decided, document: updated ?? doc, documentFinalised: true };
@@ -390,7 +389,7 @@ export async function recordApproval(input: RecordApprovalInput): Promise<Record
         relatedEntityType: MANAGED_DOCUMENT_APPROVAL_TYPE,
         relatedEntityId: documentId,
       }).catch((err) =>
-        console.error("[managed-doc-approvals] notify submitter (approved) failed:", err),
+        logger.error("[managed-doc-approvals] notify submitter (approved) failed:", err),
       );
     }
     return { approval: decided, document: updated ?? doc, documentFinalised: true };
@@ -482,7 +481,7 @@ export async function recordRejection(input: RecordRejectionInput): Promise<Reco
         relatedEntityType: MANAGED_DOCUMENT_APPROVAL_TYPE,
         relatedEntityId: documentId,
       }).catch((err) =>
-        console.error("[managed-doc-approvals] notify submitter (rejected) failed:", err),
+        logger.error("[managed-doc-approvals] notify submitter (rejected) failed:", err),
       );
     }
   }

@@ -6,7 +6,7 @@ import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { cn } from "@/lib/utils";
 import { StatusChip } from "@/components/ui/status-chip";
 import {
-  ADMIN_SURFACES,
+  
   type AdminSurfaceId,
   type AdminSurfaceMeta,
   getAdminSurfaceMeta,
@@ -31,7 +31,7 @@ function mapToneToStatus(tone: StatusTone = "neutral") {
   return tone;
 }
 
-function SurfaceLinkCard({
+function _SurfaceLinkCard({
   surface,
   active,
 }: {

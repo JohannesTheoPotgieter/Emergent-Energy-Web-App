@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useStageDecisions } from "@/hooks/use-stage-lifecycle";
 import { apiRequest } from "@/lib/queryClient";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, FileText, Filter } from "lucide-react";
+import { Plus, FileText} from "lucide-react";
 import { DECISION_CATEGORY_TYPES, LIFECYCLE_DEPARTMENTS, STAGE_CODES } from "@shared/schema";
 
 const DECISION_TYPE_LABELS: Record<string, string> = {

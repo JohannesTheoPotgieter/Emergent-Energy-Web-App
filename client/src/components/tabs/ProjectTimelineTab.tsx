@@ -26,7 +26,7 @@ type ProjectEvent = {
   sourceEntityType: string;
   sourceEntityId: string;
   summary: string;
-  details: Record<string, any> | null;
+  details: Record<string, unknown> | null;
 };
 
 const EVENT_FILTERS = [

@@ -17,6 +17,7 @@
  */
 
 import { CalendarDays, Flag, TrendingUp } from "lucide-react";
+import type { PlanningData } from "./types";
 
 interface PlanRow {
   isMilestone?: boolean;
@@ -26,7 +27,7 @@ interface PlanRow {
 }
 
 interface ScheduleImpactProps {
-  planning: any | null;
+  planning: PlanningData | null;
 }
 
 function safeDate(v: unknown): Date | null {

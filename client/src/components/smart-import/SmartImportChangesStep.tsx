@@ -21,9 +21,10 @@ import { useState } from "react";
 import { SECTION_LABELS, CLASSIFICATION_LABELS } from "./labels";
 import { SmartImportQbProtectionsCallout } from "./SmartImportQbProtectionsCallout";
 import { SmartImportScheduleImpact } from "./SmartImportScheduleImpact";
+import type { PlanningData, PlanData } from "./types";
 
 interface ChangesStepProps {
-  planning: any;
+  planning: PlanningData | null;
   planError?: string | null;
   /** Run id is needed to fetch QuickBooks protection summary (compact form). */
   runId?: number | null;
@@ -35,7 +36,7 @@ interface ChangesStepProps {
 
 interface SectionSummaryCardProps {
   sectionKey: string;
-  plan: any;
+  plan: PlanData | undefined;
 }
 
 function SectionSummaryCard({ sectionKey, plan }: SectionSummaryCardProps) {
@@ -119,7 +120,7 @@ function SectionSummaryCard({ sectionKey, plan }: SectionSummaryCardProps) {
               </tr>
             </thead>
             <tbody>
-              {plan.rows.slice(0, 50).map((row: any, idx: number) => (
+              {plan.rows.slice(0, 50).map((row, idx) => (
                 <tr key={idx} className="border-t border-slate-100">
                   <td className="py-1 pr-2">
                     <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${
@@ -128,13 +129,13 @@ function SectionSummaryCard({ sectionKey, plan }: SectionSummaryCardProps) {
                       row.classification === "UNCHANGED" ? "bg-slate-50 text-slate-500 border-slate-200" :
                       "bg-amber-50 text-amber-700 border-amber-200"
                     }`}>
-                      {CLASSIFICATION_LABELS[row.classification] || row.classification}
+                      {(row.classification && CLASSIFICATION_LABELS[row.classification]) || row.classification}
                     </Badge>
                   </td>
                   <td className="py-1 pr-2 font-medium">{String(row.rowLabel || `Row ${idx + 1}`)}</td>
                   <td className="py-1 text-muted-foreground">
-                    {row.changedFields?.length > 0 && (
-                      <span>{row.changedFields.length} field{row.changedFields.length > 1 ? "s" : ""} changed</span>
+                    {(row.changedFields?.length ?? 0) > 0 && (
+                      <span>{row.changedFields!.length} field{row.changedFields!.length > 1 ? "s" : ""} changed</span>
                     )}
                   </td>
                 </tr>

@@ -9,6 +9,15 @@ import { Button } from "@/components/ui/button";
 import { useSaveStageData } from "@/hooks/use-stage-data";
 import { Save, Loader2 } from "lucide-react";
 
+export type FieldValue = string | number | boolean | null | undefined;
+
+/** Coerce a stored field value into a controlled-input-safe string. */
+function toInputValue(v: FieldValue): string | number {
+  if (v === null || v === undefined || v === false) return "";
+  if (v === true) return "";
+  return v;
+}
+
 export interface FieldDef {
   key: string;
   label: string;
@@ -23,12 +32,12 @@ interface StageDataFormProps {
   stageCode: string;
   title: string;
   fields: FieldDef[];
-  data: Record<string, any>;
-  onDataChange?: (data: Record<string, any>) => void;
+  data: Record<string, FieldValue>;
+  onDataChange?: (data: Record<string, FieldValue>) => void;
 }
 
 export function StageDataForm({ projectId, stageCode, title, fields, data, onDataChange }: StageDataFormProps) {
-  const [localData, setLocalData] = useState<Record<string, any>>(data);
+  const [localData, setLocalData] = useState<Record<string, FieldValue>>(data);
   const [dirty, setDirty] = useState(false);
   const saveMutation = useSaveStageData(projectId, stageCode);
   const prevDataRef = useRef(data);
@@ -42,7 +51,7 @@ export function StageDataForm({ projectId, stageCode, title, fields, data, onDat
     }
   }, [data]);
 
-  const handleChange = useCallback((key: string, value: any) => {
+  const handleChange = useCallback((key: string, value: FieldValue) => {
     setLocalData(prev => {
       const next = { ...prev, [key]: value };
       onDataChange?.(next);
@@ -101,7 +110,7 @@ export function StageDataForm({ projectId, stageCode, title, fields, data, onDat
               {field.type === "text" && (
                 <Input
                   id={field.key}
-                  value={localData[field.key] || ""}
+                  value={toInputValue(localData[field.key])}
                   onChange={e => handleChange(field.key, e.target.value)}
                   placeholder={field.placeholder}
                   className="mt-1 h-8 text-sm"
@@ -112,7 +121,7 @@ export function StageDataForm({ projectId, stageCode, title, fields, data, onDat
                 <Input
                   id={field.key}
                   type="number"
-                  value={localData[field.key] ?? ""}
+                  value={toInputValue(localData[field.key])}
                   onChange={e => handleChange(field.key, e.target.value ? Number(e.target.value) : undefined)}
                   placeholder={field.placeholder}
                   className="mt-1 h-8 text-sm"
@@ -123,7 +132,7 @@ export function StageDataForm({ projectId, stageCode, title, fields, data, onDat
                 <Input
                   id={field.key}
                   type="date"
-                  value={localData[field.key] || ""}
+                  value={toInputValue(localData[field.key])}
                   onChange={e => handleChange(field.key, e.target.value)}
                   className="mt-1 h-8 text-sm"
                 />
@@ -132,7 +141,7 @@ export function StageDataForm({ projectId, stageCode, title, fields, data, onDat
               {field.type === "textarea" && (
                 <Textarea
                   id={field.key}
-                  value={localData[field.key] || ""}
+                  value={toInputValue(localData[field.key])}
                   onChange={e => handleChange(field.key, e.target.value)}
                   placeholder={field.placeholder}
                   className="mt-1 text-sm min-h-[60px]"
@@ -142,7 +151,7 @@ export function StageDataForm({ projectId, stageCode, title, fields, data, onDat
 
               {field.type === "select" && field.options && (
                 <Select
-                  value={localData[field.key] || ""}
+                  value={String(toInputValue(localData[field.key]))}
                   onValueChange={val => handleChange(field.key, val)}
                 >
                   <SelectTrigger className="mt-1 h-8 text-sm">

@@ -9,6 +9,31 @@ import {
 import { CheckCircle, Clock, FileText, AlertTriangle } from "lucide-react";
 import { PageSkeleton } from "@/components/ui/page-states";
 
+interface SsegRow {
+  id: number;
+  project_name: string;
+  item_type: string;
+  authority?: string | null;
+  status: string;
+  is_overdue?: boolean;
+  days_since_submission: number;
+}
+
+interface AuthoritySubmissionRow {
+  authority: string | null;
+  total: number;
+  approved: number;
+  pending: number;
+  overdue: number;
+}
+
+interface MeteringRow {
+  project_id: number;
+  project_name: string;
+  current_stage_code: string;
+  pending_metering_count: number;
+}
+
 function statusColor(status: string) {
   if (status === "approved") return "bg-green-100 text-green-800";
   if (status === "submitted") return "bg-blue-100 text-blue-800";
@@ -17,6 +42,8 @@ function statusColor(status: string) {
 }
 
 export function ComplianceGovernanceDrawer({ trigger }: { trigger: React.ReactNode }) {
+  // useComplianceGovernance() types its arrays as unknown[]; assert the row
+  // shapes the API actually returns at each render boundary.
   const { data, isLoading } = useComplianceGovernance();
   const actionMutation = useComplianceAction();
   const [, navigate] = useLocation();
@@ -49,7 +76,7 @@ export function ComplianceGovernanceDrawer({ trigger }: { trigger: React.ReactNo
                   <p className="text-xs text-muted-foreground">No SSEG items.</p>
                 ) : (
                   <div className="space-y-1">
-                    {data!.ssegByProject.slice(0, 30).map((s: any) => (
+                    {(data!.ssegByProject as SsegRow[]).slice(0, 30).map((s) => (
                       <div key={s.id} className="flex items-center justify-between border rounded p-2 text-xs">
                         <div className="flex-1 min-w-0">
                           <span
@@ -112,7 +139,7 @@ export function ComplianceGovernanceDrawer({ trigger }: { trigger: React.ReactNo
                         </tr>
                       </thead>
                       <tbody>
-                        {data!.authoritySubmissions.map((a: any) => (
+                        {(data!.authoritySubmissions as AuthoritySubmissionRow[]).map((a) => (
                           <tr key={a.authority} className="border-b">
                             <td className="p-2 font-medium">{a.authority || "Unknown"}</td>
                             <td className="p-2 text-right">{a.total}</td>
@@ -141,7 +168,7 @@ export function ComplianceGovernanceDrawer({ trigger }: { trigger: React.ReactNo
                   <p className="text-xs text-muted-foreground">No metering items pending.</p>
                 ) : (
                   <div className="space-y-1">
-                    {data!.meteringPending.map((m: any) => (
+                    {(data!.meteringPending as MeteringRow[]).map((m) => (
                       <div key={m.project_id} className="flex items-center justify-between border rounded p-2 text-xs">
                         <div>
                           <span className="font-medium">{m.project_name}</span>

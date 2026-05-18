@@ -18,10 +18,11 @@ import { useState } from "react";
 import { SECTION_LABELS, IMPORT_MODE_LABELS } from "./labels";
 import { SmartImportQbProtectionsCallout } from "./SmartImportQbProtectionsCallout";
 import { SmartImportPlanNarrative } from "./SmartImportPlanNarrative";
+import type { PreviewData, PlanningData } from "./types";
 
 interface FoundStepProps {
-  preview: any;
-  planning: any | null;
+  preview: PreviewData | null;
+  planning: PlanningData | null;
   onContinue: () => void;
   onBack: () => void;
   /** Run id is needed to fetch QuickBooks protection summary. */
@@ -100,7 +101,7 @@ export function SmartImportFoundStep({ preview, planning, onContinue, onBack, ru
         <div data-testid="found-sections">
           <span className="text-sm font-medium text-slate-600 block mb-2">Sections found</span>
           <div className="grid gap-2">
-            {sections.map((sec: any, idx: number) => {
+            {sections.map((sec, idx) => {
               const rowCount = sec.dataRows ?? (sec.dataEndRowIndex != null && sec.dataStartRowIndex != null
                 ? sec.dataEndRowIndex - sec.dataStartRowIndex + 1
                 : null);
@@ -112,7 +113,7 @@ export function SmartImportFoundStep({ preview, planning, onContinue, onBack, ru
                 >
                   <div className="w-2 h-2 rounded-full bg-emerald-500" />
                   <span className="text-sm font-medium flex-1">
-                    {SECTION_LABELS[sec.section] || String(sec.section || "")}
+                    {(sec.section && SECTION_LABELS[sec.section]) || String(sec.section || "")}
                   </span>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     {rowCount != null && (
@@ -142,7 +143,7 @@ export function SmartImportFoundStep({ preview, planning, onContinue, onBack, ru
                 {unmatched.length} sheet{unmatched.length > 1 ? "s were" : " was"} skipped
               </p>
               <ul className="text-xs space-y-0.5">
-                {unmatched.map((u: any, i: number) => (
+                {unmatched.map((u, i) => (
                   <li key={i}>&quot;{String(u.sheetName || "")}&quot; {u.reason ? `\u2014 ${String(u.reason)}` : ""}</li>
                 ))}
               </ul>
@@ -198,21 +199,21 @@ export function SmartImportFoundStep({ preview, planning, onContinue, onBack, ru
           </button>
           {showAdvanced && (
             <div className="mt-2 bg-slate-50 rounded-lg p-3 text-xs space-y-2" data-testid="found-advanced-panel">
-              {planning?.warnings?.length > 0 && (
+              {(planning?.warnings?.length ?? 0) > 0 && (
                 <div>
                   <p className="font-medium text-slate-600 mb-1">Planner warnings</p>
                   <ul className="space-y-0.5 text-slate-500">
-                    {planning.warnings.map((w: any, i: number) => <li key={i}>{typeof w === "object" ? JSON.stringify(w) : String(w)}</li>)}
+                    {planning!.warnings!.map((w, i) => <li key={i}>{typeof w === "object" ? JSON.stringify(w) : String(w)}</li>)}
                   </ul>
                 </div>
               )}
-              {sections.map((sec: any, i: number) => (
+              {sections.map((sec, i) => (
                 <div key={i}>
                   <p className="font-medium text-slate-600">{String(sec.section || "")}</p>
                   <p className="text-slate-500">
-                    Sheet: {String(sec.sheetName || "")}, Header row: {sec.headerRowIndex + 1}, Data rows: {sec.dataStartRowIndex + 1}–{sec.dataEndRowIndex + 1}
+                    Sheet: {String(sec.sheetName || "")}, Header row: {(sec.headerRowIndex ?? 0) + 1}, Data rows: {(sec.dataStartRowIndex ?? 0) + 1}–{(sec.dataEndRowIndex ?? 0) + 1}
                     {sec.layoutVariant && sec.layoutVariant !== "UNKNOWN" ? `, Layout: ${String(sec.layoutVariant)}` : ""}
-                    , Confidence: {Math.round(sec.confidence * 100)}%
+                    , Confidence: {Math.round((sec.confidence ?? 0) * 100)}%
                   </p>
                 </div>
               ))}

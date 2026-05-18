@@ -11,7 +11,24 @@ const RISK_COLORS: Record<string, string> = {
   LOW: "bg-green-100 text-green-800",
 };
 
+interface BlockedGateRow {
+  project_name: string;
+  stage_code: string;
+  owner_user_id: number | null | undefined;
+  owner_name: string | null | undefined;
+  waiting_on_department?: string | null;
+  days_blocked: number;
+}
+
+interface ExceptionAgeingRow {
+  risk_level: string;
+  count: number;
+  avg_age: number;
+  max_age: number;
+}
+
 export function GateReports() {
+  // useGateReports() types its arrays as unknown[]; assert the API row shapes.
   const { data, isLoading } = useGateReports();
 
   if (isLoading) return <div className="animate-pulse h-32 bg-muted rounded" />;
@@ -43,7 +60,7 @@ export function GateReports() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data!.blockedGates.map((g: any, i: number) => (
+                  {(data!.blockedGates as BlockedGateRow[]).map((g, i) => (
                     <tr key={i} className="border-b">
                       <td className="p-2 font-medium">{g.project_name}</td>
                       <td className="p-2">{g.stage_code}</td>
@@ -79,7 +96,7 @@ export function GateReports() {
             <p className="text-xs text-muted-foreground">No open exceptions.</p>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {data!.exceptionAgeing.map((e: any) => (
+              {(data!.exceptionAgeing as ExceptionAgeingRow[]).map((e) => (
                 <div key={e.risk_level} className="border rounded-lg p-3 text-center">
                   <Badge variant="outline" className={`text-[10px] ${RISK_COLORS[e.risk_level] || ""}`}>
                     {e.risk_level}

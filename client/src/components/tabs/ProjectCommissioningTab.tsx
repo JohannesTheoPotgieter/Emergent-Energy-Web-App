@@ -27,7 +27,7 @@ import {
   ChevronDown,
   ChevronRight,
   Trash2,
-  RotateCcw,
+  
 } from "lucide-react";
 
 function getAuthHeaders(): Record<string, string> {
@@ -105,7 +105,7 @@ interface ProjectCommissioningTabProps {
   projectName: string;
 }
 
-export function ProjectCommissioningTab({ projectId, projectName }: ProjectCommissioningTabProps) {
+export function ProjectCommissioningTab({ projectId, projectName: _projectName }: ProjectCommissioningTabProps) {
   const queryClient = useQueryClient();
   const [itemType, setItemType] = useState<"commissioning" | "closeout">("commissioning");
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -344,7 +344,7 @@ function ChecklistItem({
   evidence,
   overrideReason,
   onOverrideReasonChange,
-  onAttachEvidence,
+  onAttachEvidence: _onAttachEvidence,
 }: {
   item: CommissioningItem;
   isExpanded: boolean;

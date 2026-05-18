@@ -25,6 +25,18 @@ export interface NotificationTriggerResult {
 }
 
 /**
+ * db.execute() result shape differs by driver: node-postgres returns
+ * `{ rows: [...] }`, others return the array directly. Normalize to a
+ * typed array without leaking `any`.
+ */
+function extractRows<T>(result: unknown): T[] {
+  if (result && typeof result === "object" && "rows" in result) {
+    return ((result as { rows?: unknown }).rows as T[]) ?? [];
+  }
+  return Array.isArray(result) ? (result as T[]) : [];
+}
+
+/**
  * Check all notification triggers and create notifications.
  * Call this on a schedule (e.g., every hour) or after relevant data changes.
  */
@@ -69,7 +81,7 @@ async function notifyOverdueSnags(): Promise<{ count: number; notified: number }
       AND s.assigned_to_user_id IS NOT NULL
     LIMIT 50
   `);
-  const rows = (result as any).rows || [];
+  const rows = extractRows<{ id: number; title: string; assigned_to_user_id: number; project_id: number }>(result);
   let notified = 0;
   for (const row of rows) {
     try {
@@ -97,7 +109,7 @@ async function notifyOverdueApprovals(): Promise<{ count: number; notified: numb
       AND a.assigned_approver IS NOT NULL
     LIMIT 50
   `);
-  const rows = (result as any).rows || [];
+  const rows = extractRows<{ id: number; title: string; assigned_approver: number; project_id: number }>(result);
   let notified = 0;
   for (const row of rows) {
     try {
@@ -126,7 +138,7 @@ async function notifyUpcomingInspections(): Promise<{ count: number; notified: n
       AND si.inspector_user_id IS NOT NULL
     LIMIT 50
   `);
-  const rows = (result as any).rows || [];
+  const rows = extractRows<{ id: number; inspection_type: string; inspector_user_id: number; project_id: number }>(result);
   let notified = 0;
   for (const row of rows) {
     try {
@@ -156,7 +168,7 @@ async function notifyLateProcurementDeliveries(): Promise<{ count: number; notif
       AND p.pm_user_id IS NOT NULL
     LIMIT 50
   `);
-  const rows = (result as any).rows || [];
+  const rows = extractRows<{ id: number; title: string; project_id: number; pm_user_id: number }>(result);
   let notified = 0;
   for (const row of rows) {
     try {
@@ -186,7 +198,7 @@ async function notifyStalledHandovers(): Promise<{ count: number; notified: numb
       AND p.pm_user_id IS NOT NULL
     LIMIT 50
   `);
-  const rows = (result as any).rows || [];
+  const rows = extractRows<{ id: number; pack_type: string; project_id: number; pm_user_id: number }>(result);
   let notified = 0;
   for (const row of rows) {
     try {

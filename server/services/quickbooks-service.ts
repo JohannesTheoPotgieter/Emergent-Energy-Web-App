@@ -17,6 +17,7 @@ import {
 } from './integration-health-service';
 import { isConnectorMocked } from '../lib/connector-mode';
 import * as qbMocks from '../mocks/quickbooks-fixtures';
+import logger from "../lib/logger";
 
 export const QB_INTEGRATION_NAME = 'quickbooks';
 
@@ -67,10 +68,10 @@ function getClientCredentials(): { clientId: string; clientSecret: string } {
   const clientSecret = process.env.QUICKBOOKS_CLIENT_SECRET;
 
   // Diagnostic: verify env vars are loaded (shows first/last 4 chars only)
-  console.log(
+  logger.info(
     `[QuickBooks] QUICKBOOKS_CLIENT_ID: ${clientId ? `"${maskMiddle(clientId)}" (length=${clientId.length})` : 'UNDEFINED/EMPTY'}`,
   );
-  console.log(
+  logger.info(
     `[QuickBooks] QUICKBOOKS_CLIENT_SECRET: ${clientSecret ? `"${maskMiddle(clientSecret)}" (length=${clientSecret.length})` : 'UNDEFINED/EMPTY'}`,
   );
 
@@ -120,13 +121,13 @@ async function saveQuickBooksMetadata(metadata: QuickBooksTokenMetadata): Promis
         'Financial data can still be managed manually. QuickBooks data will sync on the next successful connection.',
       alertTarget: 'COO_ADMIN',
       metadata,
-    } as any);
+    } satisfies typeof integrations.$inferInsert);
     return;
   }
 
   await db
     .update(integrations)
-    .set({ metadata, updatedAt: new Date() } as any)
+    .set({ metadata, updatedAt: new Date() })
     .where(eq(integrations.id, row.id));
 }
 
@@ -157,11 +158,11 @@ async function postToTokenEndpoint(body: URLSearchParams): Promise<IntuitTokenRe
 
   // Diagnostic: log token request details (mask the Base64 payload)
   const b64Part = authHeader.replace('Basic ', '');
-  console.log(`[QuickBooks] Token endpoint: ${QB_TOKEN_ENDPOINT}`);
-  console.log(
+  logger.info(`[QuickBooks] Token endpoint: ${QB_TOKEN_ENDPOINT}`);
+  logger.info(
     `[QuickBooks] Authorization header: Basic ${b64Part.slice(0, 6)}...${b64Part.slice(-6)} (base64 length=${b64Part.length})`,
   );
-  console.log(`[QuickBooks] Token body params: ${[...body.keys()].join(', ')}`);
+  logger.info(`[QuickBooks] Token body params: ${[...body.keys()].join(', ')}`);
 
   const response = await fetch(QB_TOKEN_ENDPOINT, {
     method: 'POST',
@@ -183,7 +184,7 @@ async function postToTokenEndpoint(body: URLSearchParams): Promise<IntuitTokenRe
       `clientId=${maskMiddle(clientId)}(len=${clientId.length})`,
       `secret=${maskMiddle(clientSecret)}(len=${clientSecret.length})`,
     ].join(' | ');
-    console.error(`[QuickBooks] Token exchange failed: ${diag}`);
+    logger.error(`[QuickBooks] Token exchange failed: ${diag}`);
     throw new Error(
       `QuickBooks token endpoint returned ${response.status}: ${text || response.statusText}. Diagnostics: clientId=${maskMiddle(clientId)}(len=${clientId.length}), secret=${maskMiddle(clientSecret)}(len=${clientSecret.length})`,
     );
@@ -390,11 +391,11 @@ async function recordQbRun(params: {
       metadata: params.metadata ?? null,
     });
   } catch (err) {
-    console.warn('[QuickBooks] recordIntegrationRun failed:', err);
+    logger.warn('[QuickBooks] recordIntegrationRun failed:', err);
   }
 }
 
-async function qbGet<T = any>(path: string): Promise<T> {
+async function qbGet<T = unknown>(path: string): Promise<T> {
   const startedAt = new Date();
   try {
     const { accessToken, realmId } = await getValidAccessToken();
@@ -470,7 +471,7 @@ async function qbGet<T = any>(path: string): Promise<T> {
   }
 }
 
-export async function queryQuickBooks<T = any>(_entity: string, query: string): Promise<T> {
+export async function queryQuickBooks<T = unknown>(_entity: string, query: string): Promise<T> {
   if (isConnectorMocked('quickbooks')) {
     // Best-effort query routing for local dev. The UI only uses a handful
     // of entity types; anything else returns an empty QueryResponse.
@@ -486,10 +487,10 @@ export async function queryQuickBooks<T = any>(_entity: string, query: string): 
   return qbGet<T>(path);
 }
 
-export async function getCompanyInfo(): Promise<any> {
+export async function getCompanyInfo(): Promise<QbCompanyInfoResponse> {
   if (isConnectorMocked('quickbooks')) return qbMocks.mockCompanyInfo();
   const { realmId } = await getValidAccessToken();
-  const info = await qbGet<any>(`/companyinfo/${encodeURIComponent(realmId)}?minorversion=70`);
+  const info = await qbGet<QbCompanyInfoResponse>(`/companyinfo/${encodeURIComponent(realmId)}?minorversion=70`);
 
   // Cache the company name for the status endpoint.
   try {
@@ -514,16 +515,16 @@ function buildDateClause(field: string, startDate?: string, endDate?: string): s
   return clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
 }
 
-export async function getInvoices(startDate?: string, endDate?: string): Promise<any> {
+export async function getInvoices(startDate?: string, endDate?: string): Promise<QbQueryResponse> {
   if (isConnectorMocked('quickbooks')) return qbMocks.mockInvoices(startDate, endDate);
   const where = buildDateClause('TxnDate', startDate, endDate);
   const maxResults = 500;
   let startPosition = 1;
-  const allInvoices: any[] = [];
+  const allInvoices: QbEntity[] = [];
 
   while (true) {
     const query = `SELECT * FROM Invoice${where} ORDERBY TxnDate DESC STARTPOSITION ${startPosition} MAXRESULTS ${maxResults}`;
-    const page = await queryQuickBooks<any>('Invoice', query);
+    const page = await queryQuickBooks<QbQueryResponse>('Invoice', query);
     const invoices = page?.QueryResponse?.Invoice ?? [];
     allInvoices.push(...invoices);
     if (invoices.length < maxResults) break;
@@ -540,16 +541,16 @@ export async function getInvoices(startDate?: string, endDate?: string): Promise
   };
 }
 
-export async function getCustomers(): Promise<any> {
+export async function getCustomers(): Promise<QbQueryResponse> {
   if (isConnectorMocked('quickbooks')) return qbMocks.mockCustomers();
   const query = `SELECT * FROM Customer WHERE Active = true MAXRESULTS 1000`;
-  return queryQuickBooks('Customer', query);
+  return queryQuickBooks<QbQueryResponse>('Customer', query);
 }
 
-export async function getVendors(): Promise<any> {
+export async function getVendors(): Promise<QbQueryResponse> {
   if (isConnectorMocked('quickbooks')) return qbMocks.mockVendors();
   const query = `SELECT * FROM Vendor WHERE Active = true MAXRESULTS 1000`;
-  return queryQuickBooks('Vendor', query);
+  return queryQuickBooks<QbQueryResponse>('Vendor', query);
 }
 
 /**
@@ -557,7 +558,7 @@ export async function getVendors(): Promise<any> {
  * to re-derive VAT/amount/vendor on the server rather than trusting the
  * client-supplied snapshot. Returns the raw Bill object or null if missing.
  */
-export async function getBillById(id: string): Promise<any | null> {
+export async function getBillById(id: string): Promise<QbEntity | null> {
   if (isConnectorMocked('quickbooks')) return qbMocks.mockBillById(id);
   if (!id) return null;
   // QB QL is not SQL-safe for arbitrary IDs. Reject anything outside the
@@ -566,22 +567,22 @@ export async function getBillById(id: string): Promise<any | null> {
     throw new Error('Invalid QuickBooks Bill Id format');
   }
   const query = `SELECT * FROM Bill WHERE Id = '${id}'`;
-  const resp = await queryQuickBooks<any>('Bill', query);
+  const resp = await queryQuickBooks<QbQueryResponse>('Bill', query);
   const bills = resp?.QueryResponse?.Bill;
   if (Array.isArray(bills) && bills.length > 0) return bills[0];
   return null;
 }
 
-export async function getBills(startDate?: string, endDate?: string): Promise<any> {
+export async function getBills(startDate?: string, endDate?: string): Promise<QbQueryResponse> {
   if (isConnectorMocked('quickbooks')) return qbMocks.mockBills(startDate, endDate);
   const where = buildDateClause('TxnDate', startDate, endDate);
   const maxResults = 500;
   let startPosition = 1;
-  const allBills: any[] = [];
+  const allBills: QbEntity[] = [];
 
   while (true) {
     const query = `SELECT * FROM Bill${where} ORDERBY TxnDate DESC STARTPOSITION ${startPosition} MAXRESULTS ${maxResults}`;
-    const page = await queryQuickBooks<any>('Bill', query);
+    const page = await queryQuickBooks<QbQueryResponse>('Bill', query);
     const bills = page?.QueryResponse?.Bill ?? [];
     allBills.push(...bills);
     if (bills.length < maxResults) break;
@@ -598,25 +599,25 @@ export async function getBills(startDate?: string, endDate?: string): Promise<an
   };
 }
 
-export async function getProfitAndLossReport(startDate: string, endDate: string): Promise<any> {
-  if (isConnectorMocked('quickbooks')) return qbMocks.mockProfitAndLossReport(startDate, endDate);
+export async function getProfitAndLossReport(startDate: string, endDate: string): Promise<QbReport> {
+  if (isConnectorMocked('quickbooks')) return qbMocks.mockProfitAndLossReport(startDate, endDate) as QbReport;
   const params = new URLSearchParams({
     start_date: startDate,
     end_date: endDate,
     minorversion: '70',
   });
-  return qbGet<any>(`/reports/ProfitAndLoss?${params.toString()}`);
+  return qbGet<QbReport>(`/reports/ProfitAndLoss?${params.toString()}`);
 }
 
-export async function getMonthlyPnLReport(startDate: string, endDate: string): Promise<any> {
-  if (isConnectorMocked('quickbooks')) return qbMocks.mockMonthlyPnLReport(startDate, endDate);
+export async function getMonthlyPnLReport(startDate: string, endDate: string): Promise<QbReport> {
+  if (isConnectorMocked('quickbooks')) return qbMocks.mockMonthlyPnLReport(startDate, endDate) as QbReport;
   const params = new URLSearchParams({
     start_date: startDate,
     end_date: endDate,
     summarize_column_by: 'Month',
     minorversion: '70',
   });
-  return qbGet<any>(`/reports/ProfitAndLoss?${params.toString()}`);
+  return qbGet<QbReport>(`/reports/ProfitAndLoss?${params.toString()}`);
 }
 
 /**
@@ -639,17 +640,58 @@ export interface MonthlyPnLAccountDetail {
   amount: number;
 }
 
+/** A QuickBooks entity object (Invoice, Bill, Customer, …). Fields vary by type. */
+export type QbEntity = Record<string, unknown>;
+
+/** QuickBooks /companyinfo response (only the field we read). */
+export interface QbCompanyInfoResponse {
+  CompanyInfo?: { CompanyName?: string };
+}
+
+/** Generic QuickBooks v3 /query response envelope. */
+export interface QbQueryResponse {
+  QueryResponse?: {
+    Invoice?: QbEntity[];
+    Bill?: QbEntity[];
+    Customer?: QbEntity[];
+    Vendor?: QbEntity[];
+    startPosition?: number;
+    maxResults?: number;
+  };
+  time?: string;
+}
+
+/** Minimal structural shape of a QuickBooks v3 report payload. */
+interface QbReportColData {
+  id?: string | number;
+  value?: string | number | null;
+}
+interface QbReportColumn {
+  MetaData?: Array<{ Name?: string; Value?: string }>;
+}
+interface QbReportRow {
+  type?: string;
+  Header?: { ColData?: QbReportColData[] };
+  Summary?: { ColData?: QbReportColData[] };
+  ColData?: QbReportColData[];
+  Rows?: { Row?: QbReportRow[] };
+}
+interface QbReport {
+  Columns?: { Column?: QbReportColumn[] };
+  Rows?: { Row?: QbReportRow[] };
+}
+
 export function extractMonthlyAccountDetailsFromPnL(
-  report: any,
+  report: QbReport,
   matchAccount: (account: { id: string | null; name: string | null }) => boolean,
 ): MonthlyPnLAccountDetail[] {
   const out: MonthlyPnLAccountDetail[] = [];
   try {
-    const cols: any[] = report?.Columns?.Column ?? [];
+    const cols: QbReportColumn[] = report?.Columns?.Column ?? [];
     const monthByCol = new Map<number, string>();
     cols.forEach((col, idx) => {
-      const meta: any[] = col?.MetaData ?? [];
-      const startDate = meta.find((m: any) => m?.Name === 'StartDate')?.Value;
+      const meta = col?.MetaData ?? [];
+      const startDate = meta.find((m) => m?.Name === 'StartDate')?.Value;
       const dm = String(startDate || '').match(/^(\d{4})-(\d{2})/);
       if (dm) monthByCol.set(idx, `${dm[1]}-${dm[2]}`);
     });
@@ -657,7 +699,7 @@ export function extractMonthlyAccountDetailsFromPnL(
 
     const readCells = (
       account: { id: string | null; name: string | null },
-      cellsArr: any[],
+      cellsArr: QbReportColData[],
     ): void => {
       monthByCol.forEach((monthKey, idx) => {
         const cell = cellsArr[idx];
@@ -669,7 +711,7 @@ export function extractMonthlyAccountDetailsFromPnL(
       });
     };
 
-    const visit = (row: any): void => {
+    const visit = (row: QbReportRow): void => {
       if (!row) return;
       if (row.type === 'Section' || row.Header || row.Summary) {
         const headerCell = row?.Header?.ColData?.[0] ?? {};
@@ -678,7 +720,7 @@ export function extractMonthlyAccountDetailsFromPnL(
           name: headerCell?.value ? String(headerCell.value) : null,
         };
         if ((account.id || account.name) && matchAccount(account)) {
-          const sumCells: any[] = row?.Summary?.ColData ?? [];
+          const sumCells: QbReportColData[] = row?.Summary?.ColData ?? [];
           if (sumCells.length) readCells(account, sumCells);
         }
       }
@@ -690,11 +732,11 @@ export function extractMonthlyAccountDetailsFromPnL(
         };
         if (matchAccount(account)) readCells(account, row.ColData);
       }
-      const children: any[] = row?.Rows?.Row ?? [];
+      const children: QbReportRow[] = row?.Rows?.Row ?? [];
       for (const child of children) visit(child);
     };
 
-    const top: any[] = report?.Rows?.Row ?? [];
+    const top: QbReportRow[] = report?.Rows?.Row ?? [];
     for (const row of top) visit(row);
   } catch {
     // Defensive - return whatever we've parsed.
@@ -703,23 +745,23 @@ export function extractMonthlyAccountDetailsFromPnL(
 }
 
 export function extractMonthlyAccountTotalsFromPnL(
-  report: any,
+  report: QbReport,
   matchAccount: (account: { id: string | null; name: string | null }) => boolean,
 ): Map<string, number> {
   const out = new Map<string, number>();
   try {
-    const cols: any[] = report?.Columns?.Column ?? [];
+    const cols: QbReportColumn[] = report?.Columns?.Column ?? [];
     // Build column-index → YYYY-MM. Account col is index 0; Total col is last.
     const monthByCol = new Map<number, string>();
     cols.forEach((col, idx) => {
-      const meta: any[] = col?.MetaData ?? [];
-      const startDate = meta.find((m: any) => m?.Name === 'StartDate')?.Value;
+      const meta = col?.MetaData ?? [];
+      const startDate = meta.find((m) => m?.Name === 'StartDate')?.Value;
       const dm = String(startDate || '').match(/^(\d{4})-(\d{2})/);
       if (dm) monthByCol.set(idx, `${dm[1]}-${dm[2]}`);
     });
     if (monthByCol.size === 0) return out;
 
-    const readCells = (cellsArr: any[]): void => {
+    const readCells = (cellsArr: QbReportColData[]): void => {
       monthByCol.forEach((monthKey, idx) => {
         const cell = cellsArr[idx];
         const v = cell?.value;
@@ -730,7 +772,7 @@ export function extractMonthlyAccountTotalsFromPnL(
       });
     };
 
-    const visit = (row: any): boolean => {
+    const visit = (row: QbReportRow): boolean => {
       if (!row) return false;
       // Section row — check Header.ColData[0] for account match (handles
       // QB accounts that have sub-accounts and therefore appear as a
@@ -742,7 +784,7 @@ export function extractMonthlyAccountTotalsFromPnL(
           name: headerCell?.value ? String(headerCell.value) : null,
         };
         if ((account.id || account.name) && matchAccount(account)) {
-          const sumCells: any[] = row?.Summary?.ColData ?? [];
+          const sumCells: QbReportColData[] = row?.Summary?.ColData ?? [];
           if (sumCells.length) {
             readCells(sumCells);
           }
@@ -760,14 +802,14 @@ export function extractMonthlyAccountTotalsFromPnL(
         }
       }
       // Recurse into nested sections.
-      const children: any[] = row?.Rows?.Row ?? [];
+      const children: QbReportRow[] = row?.Rows?.Row ?? [];
       for (const child of children) {
         visit(child);
       }
       return false;
     };
 
-    const top: any[] = report?.Rows?.Row ?? [];
+    const top: QbReportRow[] = report?.Rows?.Row ?? [];
     for (const row of top) {
       visit(row);
     }

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Badge } from "@/components/ui/badge";
+import {} from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -9,8 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import {
-  ArrowLeft, User, Activity, TrendingUp, DollarSign,
-  CalendarDays, Target, Loader2, ChevronDown, ArrowUpRight,
+  ArrowLeft, User, Activity, TrendingUp, 
+   Target, Loader2, ChevronDown, ArrowUpRight,
   AlertTriangle, ShoppingCart, Shield, GitPullRequest, Wrench, CheckCircle2,
   FileWarning, Ban, ClipboardCheck,
 } from "lucide-react";
@@ -71,7 +71,7 @@ function RagIndicator({ color, label }: { color: "green" | "amber" | "red"; labe
   );
 }
 
-function StatBlock({ label, value, color, suffix }: { label: string; value: string; color?: string; suffix?: string }) {
+function _StatBlock({ label, value, color, suffix }: { label: string; value: string; color?: string; suffix?: string }) {
   return (
     <div className="text-center px-3 py-1">
       <p className="text-[10px] font-semibold text-[var(--cmd-text-muted)] uppercase tracking-wider mb-1">{label}</p>

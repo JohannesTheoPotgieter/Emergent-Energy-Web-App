@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { HelpCircle, X, ChevronDown, ChevronUp } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { HelpCircle, X} from "lucide-react";
+import {} from "@/components/ui/button";
 import { useTipDismissed } from "@/hooks/use-guidance";
 
 interface InlineTipProps {

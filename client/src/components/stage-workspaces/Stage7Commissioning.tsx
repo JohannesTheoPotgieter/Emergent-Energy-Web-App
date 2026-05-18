@@ -49,6 +49,19 @@ const FIELDS: FieldDef[] = [
 // quality_review_status → QA List section status
 // engineering_acceptance_status → Inspection Report section status
 
+interface CommissioningSection {
+  sectionKey: string;
+  sectionName: string;
+  isRequired?: boolean;
+  isCompleteForGate?: boolean;
+  rawStatus?: string | null;
+  displayStatus?: string | null;
+}
+
+interface CommissioningDashboard {
+  sections?: CommissioningSection[];
+}
+
 interface Stage7Props {
   projectId: number;
   isAdmin?: boolean;
@@ -68,7 +81,7 @@ export function Stage7Commissioning({ projectId, isAdmin }: Stage7Props) {
   const [exceptionReqCode, setExceptionReqCode] = useState<string>();
 
   // Workbook status from commissioning dashboard API (read-only)
-  const { data: wbDashboard } = useQuery<any>({
+  const { data: wbDashboard } = useQuery<CommissioningDashboard | null>({
     queryKey: ["commissioning-dashboard", projectId],
     queryFn: async () => {
       const res = await fetch(`/api/commissioning-dashboard/${projectId}`, { headers: getAuthHeaders(), credentials: "include" });
@@ -130,9 +143,9 @@ export function Stage7Commissioning({ projectId, isAdmin }: Stage7Props) {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {wbDashboard?.sections?.length > 0 ? (
+                {(wbDashboard?.sections?.length ?? 0) > 0 ? (
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
-                    {(wbDashboard.sections as any[]).filter((s: any) => s.isRequired).map((s: any) => (
+                    {wbDashboard!.sections!.filter((s) => s.isRequired).map((s) => (
                       <div key={s.sectionKey} className="border rounded-md p-2">
                         <div className="text-muted-foreground">{s.sectionName}</div>
                         <div className="font-medium mt-0.5 flex items-center gap-1">
@@ -214,7 +227,7 @@ export function Stage7Commissioning({ projectId, isAdmin }: Stage7Props) {
                   </p>
                 ) : (
                   <div className="space-y-1">
-                    {evidence.map((e: any) => (
+                    {evidence.map((e) => (
                       <div key={e.id} className="flex items-center gap-2 text-sm py-1">
                         <FileText className="h-4 w-4 text-muted-foreground" />
                         <a href={e.fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex-1">{e.title}</a>

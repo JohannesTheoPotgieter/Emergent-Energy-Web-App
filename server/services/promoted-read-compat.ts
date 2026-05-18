@@ -1,9 +1,26 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import logger from "../lib/logger";
+
+/** Free-form SQL result row. */
+type SqlRow = Record<string, unknown>;
+
+/**
+ * db.execute() result shape differs by driver: node-postgres returns
+ * `{ rows: [...] }`, others return the array directly. Normalize to a
+ * typed row array without leaking `any`.
+ */
+function rowsOf(result: unknown): SqlRow[] {
+  if (result && typeof result === "object" && "rows" in result) {
+    return ((result as { rows?: unknown }).rows as SqlRow[]) ?? [];
+  }
+  return Array.isArray(result) ? (result as SqlRow[]) : [];
+}
 
 function isMissingCoreSchemaError(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error ?? "");
-  return /relation.*does not exist|no such table|schema.*does not exist/i.test(msg) || (error as any)?.code === '42P01';
+  const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: unknown }).code : undefined;
+  return /relation.*does not exist|no such table|schema.*does not exist/i.test(msg) || code === '42P01';
 }
 
 export type ComparisonStatus = "ready" | "partial" | "blocked";
@@ -78,15 +95,15 @@ export async function getDomainRolloutReadinessReport(): Promise<DomainRolloutRe
              blocker_summary
       FROM core.v_domain_rollout_readiness
       ORDER BY domain
-    `).then((r: any) => r.rows ?? r);
+    `).then((r: unknown) => rowsOf(r));
 
-    const domains: DomainRolloutReadiness[] = rows.map((row: any) => ({
+    const domains: DomainRolloutReadiness[] = rows.map((row: SqlRow) => ({
       domain: String(row.domain),
       readiness: row.readiness as ComparisonStatus,
       blockerCount: Number(row.blocker_count ?? 0),
       mismatchCount: Number(row.mismatch_count ?? 0),
       mismatchCategories: Array.isArray(row.mismatch_categories) ? row.mismatch_categories : [],
-      sampleIds: Array.isArray(row.sample_ids) ? row.sample_ids.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v)) : [],
+      sampleIds: Array.isArray(row.sample_ids) ? row.sample_ids.map((v: unknown) => Number(v)).filter((v: number) => Number.isFinite(v)) : [],
       safeReadOnlyPromotedUse: Boolean(row.safe_read_only_promoted_use),
       safeDualWritePreview: Boolean(row.safe_dual_write_preview),
       safeFullCutoverLater: Boolean(row.safe_full_cutover_later),
@@ -94,9 +111,9 @@ export async function getDomainRolloutReadinessReport(): Promise<DomainRolloutRe
     }));
 
     return { unavailable: false, domains };
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (isMissingCoreSchemaError(error)) {
-      console.warn("[promoted-read-compat] core.v_domain_rollout_readiness missing, returning unavailable sentinel");
+      logger.warn("[promoted-read-compat] core.v_domain_rollout_readiness missing, returning unavailable sentinel");
       return { unavailable: true, reason: "core_view_missing", domains: [] };
     }
     throw error;
@@ -123,9 +140,9 @@ export async function getCutoverPostValidationReport(): Promise<CutoverPostValid
              updated_by
       FROM core.v_cutover_post_validation
       ORDER BY domain
-    `).then((r: any) => r.rows ?? r);
+    `).then((r: unknown) => rowsOf(r));
 
-    return rows.map((row: any) => ({
+    return rows.map((row: SqlRow) => ({
       domain: String(row.domain),
       cutoverState: String(row.cutover_state),
       promotedReadPrimary: Boolean(row.promoted_read_primary),
@@ -137,14 +154,14 @@ export async function getCutoverPostValidationReport(): Promise<CutoverPostValid
       blockerCount: Number(row.blocker_count ?? 0),
       mismatchCount: Number(row.mismatch_count ?? 0),
       mismatchCategories: Array.isArray(row.mismatch_categories) ? row.mismatch_categories : [],
-      sampleIds: Array.isArray(row.sample_ids) ? row.sample_ids.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v)) : [],
+      sampleIds: Array.isArray(row.sample_ids) ? row.sample_ids.map((v: unknown) => Number(v)).filter((v: number) => Number.isFinite(v)) : [],
       blockerSummary: String(row.blocker_summary ?? ""),
-      updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : new Date(0).toISOString(),
+      updatedAt: row.updated_at ? new Date(String(row.updated_at)).toISOString() : new Date(0).toISOString(),
       updatedBy: String(row.updated_by ?? "system"),
     }));
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (isMissingCoreSchemaError(error)) {
-      console.warn("[promoted-read-compat] core.v_cutover_post_validation missing, returning empty");
+      logger.warn("[promoted-read-compat] core.v_cutover_post_validation missing, returning empty");
       return [];
     }
     throw error;
@@ -258,12 +275,12 @@ function limitIds(ids: number[], max = 20): number[] {
 export async function compareCoreProjectsReadiness(): Promise<DomainComparisonSummary> {
   try {
     const [legacyRows, promotedRows] = await Promise.all([
-      db.execute(sql`SELECT id, project_name, client_id, phase FROM public.project_info ORDER BY id`).then((r: any) => r.rows ?? r),
-      db.execute(sql`SELECT id, project_name, client_id, phase FROM core.projects ORDER BY id`).then((r: any) => r.rows ?? r),
+      db.execute(sql`SELECT id, project_name, client_id, phase FROM public.project_info ORDER BY id`).then((r: unknown) => rowsOf(r)),
+      db.execute(sql`SELECT id, project_name, client_id, phase FROM core.projects ORDER BY id`).then((r: unknown) => rowsOf(r)),
     ]);
 
-    const promotedById = new Map<number, any>(promotedRows.map((row: any) => [Number(row.id), row]));
-    const legacyById = new Map<number, any>(legacyRows.map((row: any) => [Number(row.id), row]));
+    const promotedById = new Map<number, SqlRow>(promotedRows.map((row: SqlRow) => [Number(row.id), row]));
+    const legacyById = new Map<number, SqlRow>(legacyRows.map((row: SqlRow) => [Number(row.id), row]));
 
     const missingInPromoted: number[] = [];
     const fieldMismatch: number[] = [];
@@ -283,7 +300,7 @@ export async function compareCoreProjectsReadiness(): Promise<DomainComparisonSu
     }
 
     const extraInPromoted = promotedRows
-      .map((row: any) => Number(row.id))
+      .map((row: SqlRow) => Number(row.id))
       .filter((id: number) => !legacyById.has(id));
 
     const mismatchCategories: string[] = [];
@@ -309,9 +326,9 @@ export async function compareCoreProjectsReadiness(): Promise<DomainComparisonSu
       sampleFieldMismatchIds: limitIds(fieldMismatch),
       notes: ["Project master parity uses id-preserving mapping from public.project_info to core.projects."],
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (isMissingCoreSchemaError(error)) {
-      console.warn("[promoted-read-compat] core.projects missing, returning blocked status");
+      logger.warn("[promoted-read-compat] core.projects missing, returning blocked status");
       return blockedDomainSummary("projects", "core.projects table does not exist");
     }
     throw error;
@@ -321,12 +338,12 @@ export async function compareCoreProjectsReadiness(): Promise<DomainComparisonSu
 export async function compareCoreClientsReadiness(): Promise<DomainComparisonSummary> {
   try {
     const [legacyRows, promotedRows] = await Promise.all([
-      db.execute(sql`SELECT id, name, client_id FROM public.clients ORDER BY id`).then((r: any) => r.rows ?? r),
-      db.execute(sql`SELECT id, name, client_code FROM core.clients ORDER BY id`).then((r: any) => r.rows ?? r),
+      db.execute(sql`SELECT id, name, client_id FROM public.clients ORDER BY id`).then((r: unknown) => rowsOf(r)),
+      db.execute(sql`SELECT id, name, client_code FROM core.clients ORDER BY id`).then((r: unknown) => rowsOf(r)),
     ]);
 
-    const promotedById = new Map<number, any>(promotedRows.map((row: any) => [Number(row.id), row]));
-    const legacyById = new Map<number, any>(legacyRows.map((row: any) => [Number(row.id), row]));
+    const promotedById = new Map<number, SqlRow>(promotedRows.map((row: SqlRow) => [Number(row.id), row]));
+    const legacyById = new Map<number, SqlRow>(legacyRows.map((row: SqlRow) => [Number(row.id), row]));
     const missingInPromoted: number[] = [];
     const fieldMismatch: number[] = [];
 
@@ -344,7 +361,7 @@ export async function compareCoreClientsReadiness(): Promise<DomainComparisonSum
     }
 
     const extraInPromoted = promotedRows
-      .map((row: any) => Number(row.id))
+      .map((row: SqlRow) => Number(row.id))
       .filter((id: number) => !legacyById.has(id));
 
     const mismatchCategories: string[] = [];
@@ -370,9 +387,9 @@ export async function compareCoreClientsReadiness(): Promise<DomainComparisonSum
       sampleFieldMismatchIds: limitIds(fieldMismatch),
       notes: ["client_id (legacy) is compared against client_code (promoted compatibility field)."],
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (isMissingCoreSchemaError(error)) {
-      console.warn("[promoted-read-compat] core.clients missing, returning blocked status");
+      logger.warn("[promoted-read-compat] core.clients missing, returning blocked status");
       return blockedDomainSummary("clients", "core.clients table does not exist");
     }
     throw error;
@@ -382,12 +399,12 @@ export async function compareCoreClientsReadiness(): Promise<DomainComparisonSum
 export async function compareCorePortfoliosReadiness(): Promise<DomainComparisonSummary> {
   try {
     const [legacyRows, promotedRows] = await Promise.all([
-      db.execute(sql`SELECT id, name, description FROM public.portfolios ORDER BY id`).then((r: any) => r.rows ?? r),
-      db.execute(sql`SELECT id, name, description FROM core.portfolios ORDER BY id`).then((r: any) => r.rows ?? r),
+      db.execute(sql`SELECT id, name, description FROM public.portfolios ORDER BY id`).then((r: unknown) => rowsOf(r)),
+      db.execute(sql`SELECT id, name, description FROM core.portfolios ORDER BY id`).then((r: unknown) => rowsOf(r)),
     ]);
 
-    const promotedById = new Map<number, any>(promotedRows.map((row: any) => [Number(row.id), row]));
-    const legacyById = new Map<number, any>(legacyRows.map((row: any) => [Number(row.id), row]));
+    const promotedById = new Map<number, SqlRow>(promotedRows.map((row: SqlRow) => [Number(row.id), row]));
+    const legacyById = new Map<number, SqlRow>(legacyRows.map((row: SqlRow) => [Number(row.id), row]));
     const missingInPromoted: number[] = [];
     const fieldMismatch: number[] = [];
 
@@ -405,7 +422,7 @@ export async function compareCorePortfoliosReadiness(): Promise<DomainComparison
     }
 
     const extraInPromoted = promotedRows
-      .map((row: any) => Number(row.id))
+      .map((row: SqlRow) => Number(row.id))
       .filter((id: number) => !legacyById.has(id));
 
     const mismatchCategories: string[] = [];
@@ -431,9 +448,9 @@ export async function compareCorePortfoliosReadiness(): Promise<DomainComparison
       sampleFieldMismatchIds: limitIds(fieldMismatch),
       notes: ["Portfolio core fields are compared; ownership metadata remains legacy-served in operational routes."],
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (isMissingCoreSchemaError(error)) {
-      console.warn("[promoted-read-compat] core.portfolios missing, returning blocked status");
+      logger.warn("[promoted-read-compat] core.portfolios missing, returning blocked status");
       return blockedDomainSummary("portfolios", "core.portfolios table does not exist");
     }
     throw error;
@@ -443,16 +460,16 @@ export async function compareCorePortfoliosReadiness(): Promise<DomainComparison
 export async function compareCoreProjectPortfolioAssignmentsReadiness(): Promise<DomainComparisonSummary> {
   try {
     const [legacyRows, promotedRows] = await Promise.all([
-      db.execute(sql`SELECT project_id, portfolio_id FROM public.project_portfolio_assignments ORDER BY project_id, portfolio_id`).then((r: any) => r.rows ?? r),
-      db.execute(sql`SELECT project_id, portfolio_id FROM core.project_portfolio_assignments ORDER BY project_id, portfolio_id`).then((r: any) => r.rows ?? r),
+      db.execute(sql`SELECT project_id, portfolio_id FROM public.project_portfolio_assignments ORDER BY project_id, portfolio_id`).then((r: unknown) => rowsOf(r)),
+      db.execute(sql`SELECT project_id, portfolio_id FROM core.project_portfolio_assignments ORDER BY project_id, portfolio_id`).then((r: unknown) => rowsOf(r)),
     ]);
 
-    const toKey = (row: any) => `${Number(row.project_id)}::${Number(row.portfolio_id)}`;
+    const toKey = (row: SqlRow) => `${Number(row.project_id)}::${Number(row.portfolio_id)}`;
     const legacyKeys = new Set<string>(legacyRows.map(toKey));
     const promotedKeys = new Set<string>(promotedRows.map(toKey));
 
-    const missingInPromoted = legacyRows.map(toKey).filter((key: any) => !promotedKeys.has(key));
-    const extraInPromoted = promotedRows.map(toKey).filter((key: any) => !legacyKeys.has(key));
+    const missingInPromoted = legacyRows.map(toKey).filter((key: string) => !promotedKeys.has(key));
+    const extraInPromoted = promotedRows.map(toKey).filter((key: string) => !legacyKeys.has(key));
 
     return {
       domain: "project_portfolio_assignments",
@@ -470,14 +487,14 @@ export async function compareCoreProjectPortfolioAssignmentsReadiness(): Promise
         ...(missingInPromoted.length ? ["missing_assignment_links"] : []),
         ...(extraInPromoted.length ? ["extra_promoted_assignment_links"] : []),
       ],
-      sampleMissingInPromotedIds: limitIds(missingInPromoted.map((key: any) => Number(key.split("::")[0]))),
-      sampleExtraInPromotedIds: limitIds(extraInPromoted.map((key: any) => Number(key.split("::")[0]))),
+      sampleMissingInPromotedIds: limitIds(missingInPromoted.map((key: string) => Number(key.split("::")[0]))),
+      sampleExtraInPromotedIds: limitIds(extraInPromoted.map((key: string) => Number(key.split("::")[0]))),
       sampleFieldMismatchIds: [],
       notes: ["Assignment comparison is keyed by project_id + portfolio_id pairs."],
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (isMissingCoreSchemaError(error)) {
-      console.warn("[promoted-read-compat] core.project_portfolio_assignments missing, returning blocked status");
+      logger.warn("[promoted-read-compat] core.project_portfolio_assignments missing, returning blocked status");
       return blockedDomainSummary("project_portfolio_assignments", "core.project_portfolio_assignments table does not exist");
     }
     throw error;
@@ -493,18 +510,18 @@ export async function compareProjectWorkItemCountsReadiness(): Promise<DomainCom
         WHERE deleted_at IS NULL
         GROUP BY project_id
         ORDER BY project_id
-      `).then((r: any) => r.rows ?? r),
+      `).then((r: unknown) => rowsOf(r)),
       db.execute(sql`
         SELECT project_id, COUNT(*)::INTEGER AS cnt
         FROM core.work_items
         WHERE source_table = 'public.work_items'
         GROUP BY project_id
         ORDER BY project_id
-      `).then((r: any) => r.rows ?? r),
+      `).then((r: unknown) => rowsOf(r)),
     ]);
 
-    const promotedByProject = new Map<number, number>(promotedRows.map((row: any) => [Number(row.project_id), Number(row.cnt)]));
-    const legacyByProject = new Map<number, number>(legacyRows.map((row: any) => [Number(row.project_id), Number(row.cnt)]));
+    const promotedByProject = new Map<number, number>(promotedRows.map((row: SqlRow) => [Number(row.project_id), Number(row.cnt)]));
+    const legacyByProject = new Map<number, number>(legacyRows.map((row: SqlRow) => [Number(row.project_id), Number(row.cnt)]));
 
     const allProjectIds = new Set<number>([...legacyByProject.keys(), ...promotedByProject.keys()]);
     const mismatches: number[] = [];
@@ -517,29 +534,29 @@ export async function compareProjectWorkItemCountsReadiness(): Promise<DomainCom
 
     return {
       domain: "work_item_counts",
-      legacyCount: legacyRows.reduce((sum: number, row: any) => sum + Number(row.cnt), 0),
-      promotedCount: promotedRows.reduce((sum: number, row: any) => sum + Number(row.cnt), 0),
-      missingInPromotedCount: legacyRows.filter((row: any) => !promotedByProject.has(Number(row.project_id))).length,
-      extraInPromotedCount: promotedRows.filter((row: any) => !legacyByProject.has(Number(row.project_id))).length,
+      legacyCount: legacyRows.reduce((sum: number, row: SqlRow) => sum + Number(row.cnt), 0),
+      promotedCount: promotedRows.reduce((sum: number, row: SqlRow) => sum + Number(row.cnt), 0),
+      missingInPromotedCount: legacyRows.filter((row: SqlRow) => !promotedByProject.has(Number(row.project_id))).length,
+      extraInPromotedCount: promotedRows.filter((row: SqlRow) => !legacyByProject.has(Number(row.project_id))).length,
       fieldMismatchCount: mismatches.length,
       status: classifyStatus({
-        missingInPromotedCount: legacyRows.filter((row: any) => !promotedByProject.has(Number(row.project_id))).length,
-        extraInPromotedCount: promotedRows.filter((row: any) => !legacyByProject.has(Number(row.project_id))).length,
+        missingInPromotedCount: legacyRows.filter((row: SqlRow) => !promotedByProject.has(Number(row.project_id))).length,
+        extraInPromotedCount: promotedRows.filter((row: SqlRow) => !legacyByProject.has(Number(row.project_id))).length,
         fieldMismatchCount: mismatches.length,
       }),
       mismatchCategories: mismatches.length ? ["work_item_count_delta_by_project"] : [],
       sampleMissingInPromotedIds: limitIds(
-        legacyRows.filter((row: any) => !promotedByProject.has(Number(row.project_id))).map((row: any) => Number(row.project_id)),
+        legacyRows.filter((row: SqlRow) => !promotedByProject.has(Number(row.project_id))).map((row: SqlRow) => Number(row.project_id)),
       ),
       sampleExtraInPromotedIds: limitIds(
-        promotedRows.filter((row: any) => !legacyByProject.has(Number(row.project_id))).map((row: any) => Number(row.project_id)),
+        promotedRows.filter((row: SqlRow) => !legacyByProject.has(Number(row.project_id))).map((row: SqlRow) => Number(row.project_id)),
       ),
       sampleFieldMismatchIds: limitIds(mismatches),
       notes: ["Work-item comparison is read-only reporting only; operational write paths remain legacy."],
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (isMissingCoreSchemaError(error)) {
-      console.warn("[promoted-read-compat] core.work_items missing, returning blocked status");
+      logger.warn("[promoted-read-compat] core.work_items missing, returning blocked status");
       return blockedDomainSummary("work_item_counts", "core.work_items table does not exist");
     }
     throw error;
@@ -584,12 +601,12 @@ export async function listClientsFromPromotedCoreCompat() {
         WHERE pc.id = c.id AND pc.deleted_at IS NOT NULL
       )
       ORDER BY c.name ASC
-    `).then((r: any) => r.rows ?? r);
+    `).then((r: unknown) => rowsOf(r));
 
     return rows;
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (isMissingCoreSchemaError(error)) {
-      console.warn("[promoted-read-compat] core.clients missing, falling back to public.clients");
+      logger.warn("[promoted-read-compat] core.clients missing, falling back to public.clients");
       const rows = await db.execute(sql`
         SELECT
           id,
@@ -602,7 +619,7 @@ export async function listClientsFromPromotedCoreCompat() {
         FROM public.clients
         WHERE deleted_at IS NULL
         ORDER BY name ASC
-      `).then((r: any) => r.rows ?? r);
+      `).then((r: unknown) => rowsOf(r));
       return rows;
     }
     throw error;
@@ -654,12 +671,12 @@ export async function listProjectInfoFromPromotedCoreCompat() {
         p.updated_at AS "updatedAt"
       FROM core.projects p
       ORDER BY p.project_name ASC
-    `).then((r: any) => r.rows ?? r);
+    `).then((r: unknown) => rowsOf(r));
 
     return rows;
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (isMissingCoreSchemaError(error)) {
-      console.warn("[promoted-read-compat] core.projects missing, falling back to public.project_info");
+      logger.warn("[promoted-read-compat] core.projects missing, falling back to public.project_info");
       const { storage } = await import("../storage");
       return storage.getAllProjectInfo();
     }
@@ -671,13 +688,13 @@ export async function listProjectInfoFromPromotedCoreCompat() {
 export async function compareProjectDetailMasterReadiness(): Promise<DomainComparisonSummary> {
   try {
     const [legacyRows, promotedRows, teamRows] = await Promise.all([
-      db.execute(sql`SELECT id, project_name, client_id, phase, rag_status FROM public.project_info ORDER BY id`).then((r: any) => r.rows ?? r),
-      db.execute(sql`SELECT id, project_name, client_id, phase, rag_status FROM core.projects ORDER BY id`).then((r: any) => r.rows ?? r),
-      db.execute(sql`SELECT DISTINCT project_name FROM public.project_team_members`).then((r: any) => r.rows ?? r),
+      db.execute(sql`SELECT id, project_name, client_id, phase, rag_status FROM public.project_info ORDER BY id`).then((r: unknown) => rowsOf(r)),
+      db.execute(sql`SELECT id, project_name, client_id, phase, rag_status FROM core.projects ORDER BY id`).then((r: unknown) => rowsOf(r)),
+      db.execute(sql`SELECT DISTINCT project_name FROM public.project_team_members`).then((r: unknown) => rowsOf(r)),
     ]);
 
-    const promotedById = new Map<number, any>(promotedRows.map((row: any) => [Number(row.id), row]));
-    const legacyById = new Map<number, any>(legacyRows.map((row: any) => [Number(row.id), row]));
+    const promotedById = new Map<number, SqlRow>(promotedRows.map((row: SqlRow) => [Number(row.id), row]));
+    const legacyById = new Map<number, SqlRow>(legacyRows.map((row: SqlRow) => [Number(row.id), row]));
 
     const missingInPromoted: number[] = [];
     const fieldMismatch: number[] = [];
@@ -700,11 +717,11 @@ export async function compareProjectDetailMasterReadiness(): Promise<DomainCompa
     }
 
     const extraInPromoted = promotedRows
-      .map((row: any) => Number(row.id))
+      .map((row: SqlRow) => Number(row.id))
       .filter((id: number) => !legacyById.has(id));
 
-    const teamProjectNames = new Set(teamRows.map((row: any) => String(row.project_name ?? "").trim().toLowerCase()).filter(Boolean));
-    const legacyProjectNames = new Set(legacyRows.map((row: any) => String(row.project_name ?? "").trim().toLowerCase()).filter(Boolean));
+    const teamProjectNames = new Set(teamRows.map((row: SqlRow) => String(row.project_name ?? "").trim().toLowerCase()).filter(Boolean));
+    const legacyProjectNames = new Set(legacyRows.map((row: SqlRow) => String(row.project_name ?? "").trim().toLowerCase()).filter(Boolean));
     const orphanTeamProjects = [...teamProjectNames].filter((name) => !legacyProjectNames.has(name));
 
     const mismatchCategories: string[] = [];
@@ -734,9 +751,9 @@ export async function compareProjectDetailMasterReadiness(): Promise<DomainCompa
         `Team membership summary currently sourced from legacy project_team_members; orphaned project names observed: ${orphanTeamProjects.length}.`,
       ],
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (isMissingCoreSchemaError(error)) {
-      console.warn("[promoted-read-compat] core.projects missing for detail comparison, returning blocked status");
+      logger.warn("[promoted-read-compat] core.projects missing for detail comparison, returning blocked status");
       return blockedDomainSummary("project_detail_master", "core.projects table does not exist");
     }
     throw error;
@@ -797,21 +814,21 @@ export async function listProjectDetailFromPromotedCoreCompat(): Promise<Project
       LEFT JOIN assignment_summary a ON a.project_id = p.id
       LEFT JOIN team_members t ON t.project_id = p.id
       ORDER BY p.project_name ASC
-    `).then((r: any) => r.rows ?? r);
+    `).then((r: unknown) => rowsOf(r));
 
-    return rows.map((row: any) => ({
+    return rows.map((row: SqlRow) => ({
       ...row,
       id: Number(row.id),
       clientId: row.clientId == null ? null : Number(row.clientId),
-      portfolioMembership: Array.isArray(row.portfolioMembership) ? row.portfolioMembership : JSON.parse(row.portfolioMembership || '[]'),
-      teamMembers: Array.isArray(row.teamMembers) ? row.teamMembers : JSON.parse(row.teamMembers || '[]'),
+      portfolioMembership: Array.isArray(row.portfolioMembership) ? row.portfolioMembership : JSON.parse(String(row.portfolioMembership || '[]')),
+      teamMembers: Array.isArray(row.teamMembers) ? row.teamMembers : JSON.parse(String(row.teamMembers || '[]')),
     }));
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (isMissingCoreSchemaError(error)) {
-      console.warn("[promoted-read-compat] core schema tables missing for project detail, falling back to public.project_info");
+      logger.warn("[promoted-read-compat] core schema tables missing for project detail, falling back to public.project_info");
       const { storage } = await import("../storage");
       const allInfo = await storage.getAllProjectInfo();
-      return allInfo.map((row: any) => ({
+      return allInfo.map((row) => ({
         id: row.id,
         projectName: row.projectName,
         phase: row.phase ?? null,
@@ -828,22 +845,22 @@ export async function listProjectDetailFromPromotedCoreCompat(): Promise<Project
 }
 
 export async function buildWorkItemSummaryDiagnostics(limitProjects = 200): Promise<WorkItemSummaryDiagnostics> {
-  let promotedRows: any[] = [];
+  let promotedRows: SqlRow[] = [];
   const [legacyRows, projectRows] = await Promise.all([
-    db.execute(sql`SELECT id, project_id, status, owner, phase FROM public.work_items WHERE deleted_at IS NULL`).then((r: any) => r.rows ?? r),
-    db.execute(sql`SELECT id, project_name FROM public.project_info`).then((r: any) => r.rows ?? r),
+    db.execute(sql`SELECT id, project_id, status, owner, phase FROM public.work_items WHERE deleted_at IS NULL`).then((r: unknown) => rowsOf(r)),
+    db.execute(sql`SELECT id, project_name FROM public.project_info`).then((r: unknown) => rowsOf(r)),
   ]);
   try {
-    promotedRows = await db.execute(sql`SELECT id, project_id, status, owner_user_id, source_domain FROM core.work_items WHERE source_table = 'public.work_items'`).then((r: any) => r.rows ?? r);
-  } catch (error: any) {
+    promotedRows = await db.execute(sql`SELECT id, project_id, status, owner_user_id, source_domain FROM core.work_items WHERE source_table = 'public.work_items'`).then((r: unknown) => rowsOf(r));
+  } catch (error: unknown) {
     if (isMissingCoreSchemaError(error)) {
-      console.warn("[promoted-read-compat] core.work_items missing, returning diagnostics with empty promoted data");
+      logger.warn("[promoted-read-compat] core.work_items missing, returning diagnostics with empty promoted data");
     } else {
       throw error;
     }
   }
 
-  const projectNameMap = new Map<number, string>(projectRows.map((row: any) => [Number(row.id), row.project_name]));
+  const projectNameMap = new Map<number, string>(projectRows.map((row: SqlRow) => [Number(row.id), row.project_name]));
 
   const initBucket = () => ({
     legacyCount: 0,
@@ -929,17 +946,17 @@ export async function buildWorkItemSummaryDiagnostics(limitProjects = 200): Prom
 export async function compareImportsGovernanceReadiness(): Promise<DomainComparisonSummary> {
   try {
     const [pendingRequestsRows, unresolvedAckRows, openConflictsRows] = await Promise.all([
-      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM imports.source_update_requests WHERE status IN ('pending', 'open')`).then((r: any) => r.rows ?? r),
+      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM imports.source_update_requests WHERE status IN ('pending', 'open')`).then((r: unknown) => rowsOf(r)),
       db.execute(sql`
         SELECT COUNT(*)::INTEGER AS cnt
         FROM imports.v_source_update_ack_gaps g
         WHERE CARDINALITY(g.missing_roles) > 0
-      `).then((r: any) => r.rows ?? r),
-      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM imports.data_conflicts WHERE status = 'open'`).then((r: any) => r.rows ?? r),
+      `).then((r: unknown) => rowsOf(r)),
+      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM imports.data_conflicts WHERE status = 'open'`).then((r: unknown) => rowsOf(r)),
     ]);
 
     const pendingRequests = Number(pendingRequestsRows[0]?.cnt ?? 0);
-    const unresolvedAcknowledgements = unresolvedAckRows.reduce((sum: number, row: any) => sum + Number(row.cnt ?? 0), 0);
+    const unresolvedAcknowledgements = unresolvedAckRows.reduce((sum: number, row: SqlRow) => sum + Number(row.cnt ?? 0), 0);
     const openConflicts = Number(openConflictsRows[0]?.cnt ?? 0);
 
     const mismatchCategories: string[] = [];
@@ -964,9 +981,9 @@ export async function compareImportsGovernanceReadiness(): Promise<DomainCompari
         `Pending requests: ${pendingRequests}, unresolved ack gaps: ${unresolvedAcknowledgements}, open conflicts: ${openConflicts}.`,
       ],
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (isMissingCoreSchemaError(error)) {
-      console.warn("[promoted-read-compat] imports schema missing, returning blocked status");
+      logger.warn("[promoted-read-compat] imports schema missing, returning blocked status");
       return blockedDomainSummary("imports_governance", "imports schema tables do not exist");
     }
     throw error;
@@ -992,12 +1009,12 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
 
   try {
     const [legacyRows, promotedRows] = await Promise.all([
-      db.execute(sql`SELECT project_id, phase, execution_gate_status, rag_status FROM public.project_execution_state WHERE deleted_at IS NULL`).then((r: any) => r.rows ?? r),
-      db.execute(sql`SELECT legacy_project_info_id, phase, execution_gate_status, rag_status FROM core.projects`).then((r: any) => r.rows ?? r),
+      db.execute(sql`SELECT project_id, phase, execution_gate_status, rag_status FROM public.project_execution_state WHERE deleted_at IS NULL`).then((r: unknown) => rowsOf(r)),
+      db.execute(sql`SELECT legacy_project_info_id, phase, execution_gate_status, rag_status FROM core.projects`).then((r: unknown) => rowsOf(r)),
     ]);
     const legacyCount = legacyRows.length;
     const promotedCount = promotedRows.length;
-    const promotedByProjectId = new Map<number, any>(promotedRows.map((row: any) => [Number(row.legacy_project_info_id), row]));
+    const promotedByProjectId = new Map<number, SqlRow>(promotedRows.map((row: SqlRow) => [Number(row.legacy_project_info_id), row]));
 
     let phaseStageMismatchCount = 0;
     let ragMismatchCount = 0;
@@ -1040,7 +1057,7 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
         { metric: "rag_status_mismatch_rate_percent", comparator: "lte", threshold: 0.2, actual: ragMismatchRate, passed: ragMismatchRate <= 0.2 },
       ]),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     checks.push({
       domain: "lifecycle_gates",
       status: "blocked",
@@ -1048,15 +1065,15 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
       promotedCount: 0,
       deltaCount: 0,
       mismatchCategories: ["lifecycle_gate_check_unavailable"],
-      notes: [isMissingCoreSchemaError(error) ? "Required lifecycle/gate promoted schema objects are missing." : `Lifecycle/gate check failed: ${String(error?.message || "unknown_error")}`],
+      notes: [isMissingCoreSchemaError(error) ? "Required lifecycle/gate promoted schema objects are missing." : `Lifecycle/gate check failed: ${(error instanceof Error ? error.message : "unknown_error")}`],
       thresholdEvaluation: evaluatePhase1AThresholdOutcome([{ metric: "lifecycle_check_available", comparator: "eq", threshold: 1, actual: 0, passed: false }]),
     });
   }
 
   try {
     const [legacyStatusRows, promotedStatusRows] = await Promise.all([
-      db.execute(sql`SELECT LOWER(COALESCE(status, 'unknown')) AS status, COUNT(*)::INTEGER AS cnt FROM public.approvals WHERE deleted_at IS NULL GROUP BY LOWER(COALESCE(status, 'unknown'))`).then((r: any) => r.rows ?? r),
-      db.execute(sql`SELECT LOWER(COALESCE(status, 'unknown')) AS status, COUNT(*)::INTEGER AS cnt FROM documentation.document_approvals GROUP BY LOWER(COALESCE(status, 'unknown'))`).then((r: any) => r.rows ?? r),
+      db.execute(sql`SELECT LOWER(COALESCE(status, 'unknown')) AS status, COUNT(*)::INTEGER AS cnt FROM public.approvals WHERE deleted_at IS NULL GROUP BY LOWER(COALESCE(status, 'unknown'))`).then((r: unknown) => rowsOf(r)),
+      db.execute(sql`SELECT LOWER(COALESCE(status, 'unknown')) AS status, COUNT(*)::INTEGER AS cnt FROM documentation.document_approvals GROUP BY LOWER(COALESCE(status, 'unknown'))`).then((r: unknown) => rowsOf(r)),
     ]);
     const legacyDist: Record<string, number> = {};
     const promotedDist: Record<string, number> = {};
@@ -1097,7 +1114,7 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
         { metric: "stale_items_over_15m", comparator: "lte", threshold: 10, actual: 0, passed: true },
       ]),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     checks.push({
       domain: "approvals",
       status: "blocked",
@@ -1105,7 +1122,7 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
       promotedCount: 0,
       deltaCount: 0,
       mismatchCategories: ["approvals_check_unavailable"],
-      notes: [isMissingCoreSchemaError(error) ? "Required approvals promoted schema objects are missing." : `Approvals check failed: ${String(error?.message || "unknown_error")}`],
+      notes: [isMissingCoreSchemaError(error) ? "Required approvals promoted schema objects are missing." : `Approvals check failed: ${(error instanceof Error ? error.message : "unknown_error")}`],
       thresholdEvaluation: evaluatePhase1AThresholdOutcome([{ metric: "approvals_check_available", comparator: "eq", threshold: 1, actual: 0, passed: false }]),
     });
   }
@@ -1120,7 +1137,7 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
           COUNT(rl.id)::INTEGER AS promoted_count
         FROM public.program_inflows li
         LEFT JOIN finance.revenue_lines rl ON rl.legacy_program_inflow_id = li.id
-      `).then((r: any) => r.rows ?? r),
+      `).then((r: unknown) => rowsOf(r)),
       db.execute(sql`
         SELECT
           COALESCE(SUM(COALESCE(le.budget_total, 0)), 0)::NUMERIC AS legacy_sum,
@@ -1129,15 +1146,15 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
           COUNT(cl.id)::INTEGER AS promoted_count
         FROM public.program_expense le
         LEFT JOIN finance.cost_lines cl ON cl.legacy_program_expense_id = le.id
-      `).then((r: any) => r.rows ?? r),
+      `).then((r: unknown) => rowsOf(r)),
       db.execute(sql`
         SELECT COUNT(*)::INTEGER AS cnt FROM public.program_inflows li
         WHERE NOT EXISTS (SELECT 1 FROM finance.revenue_lines rl WHERE rl.legacy_program_inflow_id = li.id)
-      `).then((r: any) => r.rows ?? r),
+      `).then((r: unknown) => rowsOf(r)),
       db.execute(sql`
         SELECT COUNT(*)::INTEGER AS cnt FROM public.program_expense le
         WHERE NOT EXISTS (SELECT 1 FROM finance.cost_lines cl WHERE cl.legacy_program_expense_id = le.id)
-      `).then((r: any) => r.rows ?? r),
+      `).then((r: unknown) => rowsOf(r)),
     ]);
 
     const revLegacySum = Number(revenueAmountRows[0]?.legacy_sum ?? 0);
@@ -1176,7 +1193,7 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
         { metric: "unresolved_project_mappings", comparator: "eq", threshold: 0, actual: unresolvedMappings, passed: unresolvedMappings === 0 },
       ]),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     checks.push({
       domain: "finance",
       status: "blocked",
@@ -1184,22 +1201,22 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
       promotedCount: 0,
       deltaCount: 0,
       mismatchCategories: ["finance_check_unavailable"],
-      notes: [isMissingCoreSchemaError(error) ? "Required finance promoted schema objects are missing." : `Finance check failed: ${String(error?.message || "unknown_error")}`],
+      notes: [isMissingCoreSchemaError(error) ? "Required finance promoted schema objects are missing." : `Finance check failed: ${(error instanceof Error ? error.message : "unknown_error")}`],
       thresholdEvaluation: evaluatePhase1AThresholdOutcome([{ metric: "finance_check_available", comparator: "eq", threshold: 1, actual: 0, passed: false }]),
     });
   }
 
   try {
     const [legacyRows, mappedRows, unmappedRows] = await Promise.all([
-      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM public.deliverables`).then((r: any) => r.rows ?? r),
+      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM public.deliverables`).then((r: unknown) => rowsOf(r)),
       db.execute(sql`
         SELECT COUNT(*)::INTEGER AS cnt FROM public.deliverables d
         INNER JOIN documentation.documents doc ON doc.legacy_deliverable_id = d.id
-      `).then((r: any) => r.rows ?? r),
+      `).then((r: unknown) => rowsOf(r)),
       db.execute(sql`
         SELECT COUNT(*)::INTEGER AS cnt FROM public.deliverables d
         WHERE NOT EXISTS (SELECT 1 FROM documentation.documents doc WHERE doc.legacy_deliverable_id = d.id)
-      `).then((r: any) => r.rows ?? r),
+      `).then((r: unknown) => rowsOf(r)),
     ]);
     const legacyCount = Number(legacyRows[0]?.cnt ?? 0);
     const mappedCount = Number(mappedRows[0]?.cnt ?? 0);
@@ -1227,7 +1244,7 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
         { metric: "missing_required_delta", comparator: "eq", threshold: 0, actual: missingCount, passed: missingCount === 0 },
       ]),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     checks.push({
       domain: "deliverables",
       status: "blocked",
@@ -1235,7 +1252,7 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
       promotedCount: 0,
       deltaCount: 0,
       mismatchCategories: ["deliverables_check_unavailable"],
-      notes: [isMissingCoreSchemaError(error) ? "Required deliverables promoted schema objects are missing." : `Deliverables check failed: ${String(error?.message || "unknown_error")}`],
+      notes: [isMissingCoreSchemaError(error) ? "Required deliverables promoted schema objects are missing." : `Deliverables check failed: ${(error instanceof Error ? error.message : "unknown_error")}`],
       thresholdEvaluation: evaluatePhase1AThresholdOutcome([{ metric: "deliverables_check_available", comparator: "eq", threshold: 1, actual: 0, passed: false }]),
     });
   }
@@ -1249,12 +1266,12 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
           SUM(CASE WHEN cc.id IS NOT NULL AND LOWER(TRIM(lc.name)) = LOWER(TRIM(cc.name)) THEN 1 ELSE 0 END)::INTEGER AS name_match_count
         FROM public.clients lc
         LEFT JOIN core.clients cc ON cc.legacy_id = lc.id
-      `).then((r: any) => r.rows ?? r),
+      `).then((r: unknown) => rowsOf(r)),
       db.execute(sql`
         SELECT COUNT(*)::INTEGER AS cnt FROM public.clients lc
         WHERE NOT EXISTS (SELECT 1 FROM core.clients cc WHERE cc.legacy_id = lc.id)
-      `).then((r: any) => r.rows ?? r),
-      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM public.counterparties WHERE is_active = true`).then((r: any) => r.rows ?? r),
+      `).then((r: unknown) => rowsOf(r)),
+      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM public.counterparties WHERE is_active = true`).then((r: unknown) => rowsOf(r)),
       db.execute(sql`
         SELECT COUNT(DISTINCT cp.id)::INTEGER AS cnt
         FROM public.counterparties cp
@@ -1263,7 +1280,7 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
             SELECT 1 FROM finance.cost_lines cl
             WHERE LOWER(TRIM(cl.counterparty_name)) = LOWER(TRIM(cp.name_canonical))
           )
-      `).then((r: any) => r.rows ?? r),
+      `).then((r: unknown) => rowsOf(r)),
     ]);
 
     const clientLegacyCount = Number(clientMatchRows[0]?.legacy_count ?? 0);
@@ -1276,8 +1293,6 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
     const legacyCount = clientLegacyCount + activeCounterparties;
     const promotedCount = clientMatchedCount + resolvedCounterparties;
 
-    const clientResolutionPct = clientLegacyCount === 0 ? 100 : (clientMatchedCount / clientLegacyCount) * 100;
-    const counterpartyResolutionPct = activeCounterparties === 0 ? 100 : (resolvedCounterparties / activeCounterparties) * 100;
     const overallResolutionPct = legacyCount === 0 ? 100 : (promotedCount / legacyCount) * 100;
     const contactRetrievalPct = clientLegacyCount === 0 ? 100 : (clientNameMatchCount / clientLegacyCount) * 100;
 
@@ -1303,7 +1318,7 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
         { metric: "contact_retrieval_match_percent", comparator: "gte", threshold: 99.9, actual: contactRetrievalPct, passed: contactRetrievalPct >= 99.9 },
       ]),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     checks.push({
       domain: "party_contacts",
       status: "blocked",
@@ -1311,7 +1326,7 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
       promotedCount: 0,
       deltaCount: 0,
       mismatchCategories: ["party_contact_check_unavailable"],
-      notes: [isMissingCoreSchemaError(error) ? "Required party/contact promoted schema objects are missing." : `Party/contact check failed: ${String(error?.message || "unknown_error")}`],
+      notes: [isMissingCoreSchemaError(error) ? "Required party/contact promoted schema objects are missing." : `Party/contact check failed: ${(error instanceof Error ? error.message : "unknown_error")}`],
       thresholdEvaluation: evaluatePhase1AThresholdOutcome([{ metric: "party_contact_check_available", comparator: "eq", threshold: 1, actual: 0, passed: false }]),
     });
   }

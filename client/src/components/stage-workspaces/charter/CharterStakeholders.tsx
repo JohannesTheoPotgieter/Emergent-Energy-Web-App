@@ -7,7 +7,7 @@ import type { ProjectCharter } from "@shared/schema";
 
 interface CharterStakeholdersProps {
   charter: Partial<ProjectCharter>;
-  onChange: (field: string, value: any) => void;
+  onChange: <K extends keyof ProjectCharter>(field: K, value: ProjectCharter[K]) => void;
 }
 
 export function CharterStakeholders({ charter, onChange }: CharterStakeholdersProps) {

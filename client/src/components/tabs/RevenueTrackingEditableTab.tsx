@@ -469,7 +469,7 @@ export function RevenueTrackingEditableTab({ projectName }: RevenueTrackingEdita
                       );
                     })}
 
-                    {newRows.map((nr, nIdx) => (
+                    {newRows.map((nr) => (
                       <TableRow
                         key={`new-${nr.rowNumber}`}
                         data-testid={`row-new-milestone-${nr.rowNumber}`}

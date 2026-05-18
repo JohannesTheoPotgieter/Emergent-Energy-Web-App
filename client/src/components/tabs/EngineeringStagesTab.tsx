@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
@@ -32,7 +32,6 @@ import {
   FolderOpen,
   HardDrive,
   FileSignature,
-  Mail,
 } from "lucide-react";
 import { exportStagePack, exportAllStagesPack } from "@/lib/stage-export";
 import { engFetchRaw as engFetch } from "@/lib/eng-fetch";
@@ -72,7 +71,7 @@ interface EngineeringStagesTabProps {
   userRole: string;
 }
 
-export default function EngineeringStagesTab({ projectId, projectName, isAdmin, userRole }: EngineeringStagesTabProps) {
+export default function EngineeringStagesTab({ projectId, projectName, isAdmin: _isAdmin, userRole }: EngineeringStagesTabProps) {
   const [selectedStageId, setSelectedStageId] = useState<number | null>(null);
   const [generating, setGenerating] = useState(false);
   const { toast } = useToast();
@@ -1095,7 +1094,7 @@ function TaskRow({ task, projectId, stageId, allDeliverables, isCoo, userRole }:
                 triggerClassName="h-9 text-xs"
                 data-testid="select-task-sp-folder"
                 options={[
-                  ...savedPaths.map((p, i) => ({ value: p, label: p })),
+                  ...savedPaths.map((p) => ({ value: p, label: p })),
                   { value: "__custom__", label: "Enter custom path..." },
                   { value: "", label: "Skip (no SharePoint path)" },
                 ]}
@@ -1137,8 +1136,8 @@ function getSavedFolderPaths(): string[] {
   try {
     const saved = localStorage.getItem(SP_FOLDER_KEY);
     if (saved) return JSON.parse(saved);
-  } catch (err) {
-    console.error("[EngineeringStages] Error loading saved folder paths:", err);
+  } catch {
+    // Corrupt/unreadable localStorage value — fall back to defaults below.
   }
   return DEFAULT_SP_FOLDERS;
 }
@@ -1147,7 +1146,7 @@ function saveFolderPaths(paths: string[]) {
   localStorage.setItem(SP_FOLDER_KEY, JSON.stringify(paths));
 }
 
-function DeliverablesSection({ stageId, projectId, templates, uploaded }: {
+function DeliverablesSection({ stageId, projectId: _projectId, templates, uploaded }: {
   stageId: number; projectId: number; templates: any[]; uploaded: any[];
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -1341,7 +1340,7 @@ function DeliverablesSection({ stageId, projectId, templates, uploaded }: {
                 triggerClassName="h-9 text-xs"
                 data-testid="select-sp-folder"
                 options={[
-                  ...savedPaths.map((p, i) => ({ value: p, label: p })),
+                  ...savedPaths.map((p) => ({ value: p, label: p })),
                   { value: "__custom__", label: "Enter custom path..." },
                   { value: "", label: "Skip (no SharePoint path)" },
                 ]}

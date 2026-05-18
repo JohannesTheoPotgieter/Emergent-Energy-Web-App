@@ -20,7 +20,7 @@
  *      so the request still surfaces when Graph is mocked or down.
  *
  * Failure mode: every send is wrapped — a Graph or DB error is
- * logged with `console.warn` and swallowed. The caller's resolve
+ * logged with `logger.warn` and swallowed. The caller's resolve
  * action MUST NOT fail because email failed.
  */
 import { db } from "../db";
@@ -29,6 +29,7 @@ import { users } from "@shared/schema";
 import { sendMail } from "../outlook";
 import { createNotification } from "./notification-service";
 import type { DiffSection } from "@shared/excel-vs-app/contract";
+import logger from "../lib/logger";
 
 export type ResolveAction = "keep_app" | "request_approval";
 export type EmailSection = DiffSection | "MIXED";
@@ -170,8 +171,8 @@ async function resolveRecipients(): Promise<Array<{ id: number; email: string; n
     return rows.filter((r: { id: number; email: string; name: string }) =>
       typeof r.email === "string" && r.email.includes("@"),
     );
-  } catch (err: any) {
-    console.warn("[excel-update-mailer] recipient lookup failed:", err?.message ?? err);
+  } catch (err: unknown) {
+    logger.warn("[excel-update-mailer] recipient lookup failed:", err instanceof Error ? err.message : err);
     return [];
   }
 }
@@ -192,7 +193,7 @@ export async function sendExcelUpdateRequest(input: ExcelUpdateRequestInput): Pr
 }> {
   const recipients = await resolveRecipients();
   if (recipients.length === 0) {
-    console.warn("[excel-update-mailer] no active recipients in roles", EXCEL_UPDATE_RECIPIENT_ROLES.join(","));
+    logger.warn("[excel-update-mailer] no active recipients in roles", EXCEL_UPDATE_RECIPIENT_ROLES.join(","));
     return { recipients: 0, emailSent: false, notifications: 0 };
   }
 
@@ -221,8 +222,8 @@ export async function sendExcelUpdateRequest(input: ExcelUpdateRequestInput): Pr
       bodyType: "HTML",
     });
     emailSent = true;
-  } catch (err: any) {
-    console.warn("[excel-update-mailer] sendMail failed:", err?.message ?? err);
+  } catch (err: unknown) {
+    logger.warn("[excel-update-mailer] sendMail failed:", err instanceof Error ? err.message : err);
   }
 
   let notifications = 0;
@@ -245,8 +246,8 @@ export async function sendExcelUpdateRequest(input: ExcelUpdateRequestInput): Pr
         projectName: input.projectName,
       });
       if (created) notifications++;
-    } catch (err: any) {
-      console.warn("[excel-update-mailer] in-app notify failed:", err?.message ?? err);
+    } catch (err: unknown) {
+      logger.warn("[excel-update-mailer] in-app notify failed:", err instanceof Error ? err.message : err);
     }
   }
 

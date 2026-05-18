@@ -38,11 +38,20 @@ export function saWorkingDays(startDateStr: string | null, endDateStr: string | 
 
 // ── Milestone Date Inference ─────────────────────────────────────
 
+/** Subset of plan-task fields used for milestone-date inference. */
+export interface PlanTaskDateRow {
+  highLevelProgramme?: string | null;
+  trueActualEnd?: string | null;
+  actualEnd?: string | null;
+  trueActualStart?: string | null;
+  actualStart?: string | null;
+}
+
 /**
  * Find the latest (max) end date from plan tasks matching description patterns.
  * Used to infer milestone dates (commissioning, handover, etc.) from plan task descriptions.
  */
-export function findMaxEndDate(plans: any[], patterns: string[]): string | null {
+export function findMaxEndDate(plans: PlanTaskDateRow[], patterns: string[]): string | null {
   let maxDate: string | null = null;
   for (const task of plans) {
     const desc = (task.highLevelProgramme || "").toLowerCase();
@@ -61,7 +70,7 @@ export function findMaxEndDate(plans: any[], patterns: string[]): string | null 
  * Find the earliest (min) start date from plan tasks matching description patterns.
  * Used to infer construction start date from plan task descriptions.
  */
-export function findMinStartDate(plans: any[], patterns: string[]): string | null {
+export function findMinStartDate(plans: PlanTaskDateRow[], patterns: string[]): string | null {
   let minDate: string | null = null;
   for (const task of plans) {
     const desc = (task.highLevelProgramme || "").toLowerCase();

@@ -81,7 +81,7 @@ function formatRelativeDate(dateStr: string | null) {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
-export function ProjectChatTab({ projectName, projectInfoId }: { projectName: string; projectInfoId: number | null }) {
+export function ProjectChatTab({ projectName: _projectName, projectInfoId }: { projectName: string; projectInfoId: number | null }) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -110,7 +110,7 @@ export function ProjectChatTab({ projectName, projectInfoId }: { projectName: st
       if (!emailsRes.ok || !eventsRes.ok) throw new Error("Failed to load Microsoft items");
       const emails = await emailsRes.json();
       const events = await eventsRes.json();
-      return [...emails, ...events].filter((i: any) => !i.linkedProjectId);
+      return ([...emails, ...events] as ProjectCommunicationItem[]).filter((i) => !i.linkedProjectId);
     },
     enabled: !!projectInfoId,
   });

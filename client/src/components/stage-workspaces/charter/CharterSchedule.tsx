@@ -5,7 +5,7 @@ import type { ProjectCharter } from "@shared/schema";
 
 interface CharterScheduleProps {
   charter: Partial<ProjectCharter>;
-  onChange: (field: string, value: any) => void;
+  onChange: <K extends keyof ProjectCharter>(field: K, value: ProjectCharter[K]) => void;
 }
 
 const SCHEDULE_FIELDS: { key: keyof ProjectCharter; label: string }[] = [

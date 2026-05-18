@@ -182,7 +182,7 @@ function RevenueDetailDrawer({ month, onClose, defaultFilter = "all" }: { month:
           </div>
           <select
             value={stateFilter}
-            onChange={(e) => setStateFilter(e.target.value as any)}
+            onChange={(e) => setStateFilter(e.target.value as "all" | "realised" | "unrealised")}
             className="h-9 px-3 text-sm border border-slate-200 rounded-lg bg-slate-50 hover:bg-white transition-colors cursor-pointer"
             data-testid="select-revenue-drawer-filter"
           >
@@ -306,12 +306,12 @@ export function RevenueTrackerTab({ projectName, projectId }: RevenueTrackerTabP
 
   const commitEdit = useCallback(() => {
     if (!editing) return;
-    const payload: Record<string, string> = {
+    const payload: { trackerType: string; monthKey: string; budget?: string } = {
       trackerType: "REV",
       monthKey: editing.monthKey,
+      [editing.field]: editing.value,
     };
-    payload[editing.field] = editing.value;
-    mutation.mutate(payload as any);
+    mutation.mutate(payload);
     setEditing(null);
   }, [editing, mutation]);
 

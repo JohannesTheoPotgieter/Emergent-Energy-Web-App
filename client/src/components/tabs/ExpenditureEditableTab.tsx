@@ -12,10 +12,10 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { useToast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/lib/errors";
 import {
-  Save, RotateCcw, Loader2, ChevronDown, ChevronRight, Filter,
+  Save, RotateCcw, Loader2, ChevronDown, ChevronRight, 
   Columns, ChevronsUpDown, ChevronsDownUp, Plus, Link, Unlink,
-  X, Search, ListPlus, ClipboardList, CalendarIcon, Palette,
-  TrendingUp, TrendingDown, DollarSign, BarChart3, Percent,
+  X, Search, ListPlus, ClipboardList, CalendarIcon, 
+  TrendingUp, TrendingDown, DollarSign, BarChart3, 
   CircleDot, Wallet, CheckCircle2, AlertTriangle
 } from "lucide-react";
 import { humaniseField } from "@/lib/field-labels";
@@ -44,7 +44,7 @@ import { FieldHint } from "@/components/ui/field-hint";
 import { FinanceTrustStrip } from "@/components/finance/FinanceTrustStrip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { format, parse, isValid } from "date-fns";
+import { format,  isValid } from "date-fns";
 import {
   Table,
   TableBody,
@@ -1307,7 +1307,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
       case "linkedTask":
         return renderLinkedTask(exp);
       case "cosStatus": {
-        const computedStatus = exp.computedCosStatus || exp.cosStatus;
+        const _computedStatus = exp.computedCosStatus || exp.cosStatus;
         const badge = getCosStatusBadge(exp.cosStatus);
         // Only senior finance / admin roles can open the override dialog —
         // mirrors the backend requireCosOverrideRole middleware so users without

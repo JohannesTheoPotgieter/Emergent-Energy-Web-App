@@ -59,7 +59,7 @@ export default function RAGDistributionChart({ data, onChartClick }: RAGDistribu
           <PieChart>
             <Pie
               data={chartData}
-              onClick={(row: any) => onChartClick?.(row?.name)}
+              onClick={(row: { name?: string }) => onChartClick?.(row?.name)}
               dataKey="value"
               nameKey="name"
               cx="50%"

@@ -5,7 +5,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import {
   projectStageDependencies,
-  type InsertProjectStageDependency,
   type ProjectStageDependency,
 } from "@shared/schema";
 import { db } from "../db";
@@ -43,7 +42,7 @@ export async function createDependency(params: CreateDependencyParams): Promise<
 
 export async function resolveDependency(
   depId: number,
-  actorUserId: number,
+  _actorUserId: number,
 ): Promise<ProjectStageDependency> {
   await db
     .update(projectStageDependencies)

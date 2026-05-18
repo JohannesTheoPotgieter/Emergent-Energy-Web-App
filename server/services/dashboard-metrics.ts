@@ -20,11 +20,11 @@ import { qcWarning, qcChecklist, qcItemInstance } from "@shared/schema";
 import { computeQcProgress } from "@shared/quality-governance";
 import { cacheGet, cacheSet, cacheDelete, cacheClear } from "../lib/cache";
 import { enqueueJob, registerWorker, QUEUE_NAMES } from "../lib/job-queue";
-import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { computeMarginPct } from "../lib/finance/margin";
 import { computeEffectiveRag } from "@shared/utils/effective-rag";
 import { getCosRealisedAmountForNclRow } from "../lib/calculations/financeUtils";
 import { getAssignedEvidenceByCostLineIds } from "../lib/finance/qb-allocation-read";
+import logger from "../lib/logger";
 
 const REFRESH_COOLDOWN_MS = 5 * 60 * 1000; // Skip projects refreshed within 5 minutes
 const CONCURRENCY_LIMIT = 5; // Max parallel project refreshes
@@ -91,7 +91,7 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
   let totalCost = 0,
     paidCost = 0,
     outstandingCost = 0,
-    realisedCost = 0;
+    _realisedCost = 0;
   for (const row of costRows) {
     const amt = toNum(row.amountExVat);
     totalCost += amt;
@@ -100,7 +100,7 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
     } else {
       outstandingCost += amt;
     }
-    realisedCost += getCosRealisedAmountForNclRow(
+    _realisedCost += getCosRealisedAmountForNclRow(
       row as any,
       assignedByCostLineId.get(row.id) ?? null,
     );
@@ -318,7 +318,7 @@ export async function refreshAllMetrics(): Promise<{ refreshed: number; failed: 
       } else {
         failed++;
         failedProjectIds.push(batch[j].id);
-        console.warn(`[dashboard-metrics] Failed to refresh project ${batch[j].id}:`, (results[j] as PromiseRejectedResult).reason?.message);
+        logger.warn(`[dashboard-metrics] Failed to refresh project ${batch[j].id}:`, (results[j] as PromiseRejectedResult).reason?.message);
       }
     }
   }
@@ -502,7 +502,7 @@ export function refreshProjectMetricsAsync(projectId: number): void {
     cacheSet(`${PENDING_KEY_PREFIX}${projectId}`, now, PENDING_REFRESH_TTL),
     cacheSet(PROGRAM_PENDING_KEY, now, PENDING_REFRESH_TTL),
   ]).catch((err) =>
-    console.warn(
+    logger.warn(
       `[dashboard-metrics] Sync invalidate failed for project ${projectId}:`,
       (err as Error)?.message,
     ),
@@ -517,7 +517,7 @@ export function refreshProjectMetricsAsync(projectId: number): void {
     refreshProjectMetrics(projectId)
       .then(() => invalidateProjectMetricsCache(projectId))
       .catch((err) =>
-        console.warn(
+        logger.warn(
           `[dashboard-metrics] Async refresh failed for project ${projectId}:`,
           err.message,
         ),
@@ -534,7 +534,7 @@ export function refreshProgramMetricsAsync(): void {
     refreshProgramMetrics()
       .then(() => invalidateAllMetricsCache())
       .catch((err) =>
-        console.warn(
+        logger.warn(
           `[dashboard-metrics] Async program refresh failed:`,
           err.message,
         ),
@@ -572,5 +572,5 @@ registerWorker(QUEUE_NAMES.METRICS_REFRESH, async (data) => {
     await invalidateAllMetricsCache();
   }
 }).catch((err) => {
-  console.warn(`[dashboard-metrics] Failed to register metrics worker: ${err.message}`);
+  logger.warn(`[dashboard-metrics] Failed to register metrics worker: ${err.message}`);
 });

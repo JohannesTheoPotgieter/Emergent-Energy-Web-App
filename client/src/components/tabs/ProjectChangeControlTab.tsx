@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { queryClient } from "@/lib/queryClient";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -133,7 +133,7 @@ function statusLabel(s: string): string {
   return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export function ProjectChangeControlTab({ projectId, projectName }: ProjectChangeControlTabProps) {
+export function ProjectChangeControlTab({ projectId, projectName: _projectName }: ProjectChangeControlTabProps) {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 

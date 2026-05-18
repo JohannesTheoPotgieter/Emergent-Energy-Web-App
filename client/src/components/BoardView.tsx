@@ -8,15 +8,29 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Plus, User, Flag, GripVertical, Clock, AlertCircle, Eye } from "lucide-react";
+import { Plus, User, Flag, GripVertical, Clock,  Eye } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
+import { getTaskWorkflowBlockReason, type WorkflowTaskLike } from "@/lib/task-workflow-guard";
 import { withDeliverableRequirementTag } from "@shared/task-deliverable-requirement";
 
 interface BoardViewProps {
   projectName: string;
   onTaskClick: (taskId: number) => void;
+}
+
+interface BoardTask extends WorkflowTaskLike {
+  id: number;
+  title: string;
+  status: string;
+  priority: string;
+  isBaseline?: boolean;
+  creatorId?: number | null;
+  ownerUserId?: number | null;
+  assigneeUserIds?: number[];
+  assignees?: string[];
+  dueDate?: string | null;
+  percentComplete?: number;
 }
 
 const COLUMNS = [
@@ -52,7 +66,7 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
   const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
   const dragStartedRef = useRef(false);
 
-  const { data: tasks = [], isLoading } = useQuery<any[]>({
+  const { data: tasks = [], isLoading } = useQuery<BoardTask[]>({
     queryKey: ["operational-tasks", projectName],
     queryFn: async () => {
       const res = await fetch(`/api/operational-tasks/${encodeURIComponent(projectName)}`, { credentials: "include" });
@@ -122,7 +136,7 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
     e.preventDefault();
     const taskId = parseInt(e.dataTransfer.getData("text/plain"), 10);
     if (!isNaN(taskId)) {
-      const task = tasks.find((t: any) => t.id === taskId);
+      const task = tasks.find((t) => t.id === taskId);
       if (task && task.status !== newStatus) {
         const blockedReason = getTaskWorkflowBlockReason(task, newStatus);
         if (blockedReason) {
@@ -184,7 +198,7 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
       </div>
       <div className="flex gap-4 overflow-x-auto pb-4 min-h-[500px]" data-testid="board-view">
       {COLUMNS.map((col) => {
-        const columnTasks = tasks.filter((t: any) => {
+        const columnTasks = tasks.filter((t) => {
           if (col.status === "Done") return t.status === "Done" || t.status === "Complete";
           return t.status === col.status;
         });
@@ -218,7 +232,7 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
                   </div>
                 )}
 
-                {columnTasks.map((task: any) => (
+                {columnTasks.map((task) => (
                   <Card
                     key={task.id}
                     draggable
@@ -273,7 +287,7 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
                         </div>
                       )}
 
-                      {task.percentComplete > 0 && (
+                      {(task.percentComplete ?? 0) > 0 && (
                         <div className="space-y-1">
                           <div className="flex items-center justify-between text-xs text-muted-foreground">
                             <span>{task.percentComplete}%</span>

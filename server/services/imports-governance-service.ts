@@ -15,7 +15,7 @@ export interface ImportSyncStateRow {
 export async function listImportSyncState(projectId?: number): Promise<ImportSyncStateRow[]> {
   const rows = await queryImportSyncState(projectId);
 
-  return rows.map((row: any) => ({
+  return rows.map((row) => ({
     projectId: Number(row.project_id),
     projectName: row.project_name ? String(row.project_name) : null,
     latestImportRunId: row.latest_import_run_id ? Number(row.latest_import_run_id) : null,

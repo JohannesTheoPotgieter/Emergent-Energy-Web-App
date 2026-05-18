@@ -12,7 +12,7 @@ import {
   type AssigneeType,
   type CanonicalAssignment,
   fetchAssignables,
-  getAssigneeBadgeLabel,
+  
   getAuthHeaders,
   resolveLegacyExternalEntry,
 } from "@/lib/assignables";
@@ -180,7 +180,7 @@ export default function UserAssignmentPicker({
       toast({ title: "Assignment updated" });
       setOpen(false);
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({ title: error?.message || "Failed to update assignment", variant: "destructive" });
     },
   });

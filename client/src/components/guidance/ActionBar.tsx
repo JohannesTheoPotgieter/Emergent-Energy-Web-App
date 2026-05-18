@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronRight, AlertTriangle, Info, Zap, ChevronDown, ChevronUp, User, AlertCircle } from "lucide-react";
+import { ChevronRight, AlertTriangle, Info,  ChevronDown, ChevronUp, User, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { NextAction, BlockerInfo, OwnerInfo } from "@/hooks/use-guidance";
 

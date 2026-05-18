@@ -81,7 +81,7 @@ export function Stage4PdPmHandover({ projectId, isAdmin }: Stage4Props) {
   const [charterDraft, setCharterDraft] = useState<Partial<ProjectCharter>>({});
   const [charterDirty, setCharterDirty] = useState(false);
 
-  const handleCharterChange = useCallback((field: string, value: any) => {
+  const handleCharterChange = useCallback(<K extends keyof ProjectCharter>(field: K, value: ProjectCharter[K]) => {
     setCharterDraft(prev => ({ ...prev, [field]: value }));
     setCharterDirty(true);
   }, []);
@@ -234,7 +234,7 @@ export function Stage4PdPmHandover({ projectId, isAdmin }: Stage4Props) {
                   </p>
                 ) : (
                   <div className="space-y-1">
-                    {evidence.map((e: any) => (
+                    {evidence.map((e) => (
                       <div key={e.id} className="flex items-center gap-2 text-sm py-1">
                         <FileText className="h-4 w-4 text-muted-foreground" />
                         <a href={e.fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex-1">{e.title}</a>

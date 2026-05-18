@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -8,9 +8,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import {
   History, FileUp, Edit, Shield, GitMerge, Cpu, Users, Settings,
   ChevronLeft, ChevronRight, Loader2, ArrowRight,
+  type LucideIcon,
 } from "lucide-react";
 
-const SOURCE_ICONS: Record<string, any> = {
+const SOURCE_ICONS: Record<string, LucideIcon> = {
   IMPORT: FileUp,
   MANUAL_EDIT: Edit,
   OVERRIDE: Shield,
@@ -29,6 +30,39 @@ const SOURCE_COLORS: Record<string, string> = {
   COUNTERPARTY_UPDATE: "bg-pink-100 text-pink-700",
   SYSTEM: "bg-muted text-foreground",
 };
+
+interface ChangeSetSummary {
+  id: number;
+  source: string;
+  action: string;
+  summary: string | null;
+  createdAt: string;
+  overrideCategory?: string | null;
+  overrideComment?: string | null;
+}
+
+interface ProjectHistoryResponse {
+  items: ChangeSetSummary[];
+  pagination?: { page: number; totalPages: number; total: number };
+}
+
+interface FieldChange {
+  id: number;
+  fieldName: string;
+  oldValue: string | number | null;
+  newValue: string | number | null;
+}
+
+interface ChangeSetDetail {
+  source: string;
+  action: string;
+  summary: string | null;
+  createdAt: string;
+  entityType: string;
+  overrideCategory?: string | null;
+  overrideComment?: string | null;
+  fieldChanges: FieldChange[];
+}
 
 function authFetch(url: string) {
   const token = localStorage.getItem("auth_token");
@@ -49,7 +83,7 @@ export function ProjectHistoryTab({ projectName }: { projectName: string }) {
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [selectedChangeSetId, setSelectedChangeSetId] = useState<number | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useQuery<ProjectHistoryResponse>({
     queryKey: ["project-history", projectName, page, sourceFilter],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(page), limit: "30" });
@@ -60,7 +94,7 @@ export function ProjectHistoryTab({ projectName }: { projectName: string }) {
     },
   });
 
-  const { data: detail, isLoading: detailLoading } = useQuery({
+  const { data: detail, isLoading: detailLoading } = useQuery<ChangeSetDetail | null>({
     queryKey: ["changeset-detail", selectedChangeSetId],
     queryFn: async () => {
       if (!selectedChangeSetId) return null;
@@ -118,7 +152,7 @@ export function ProjectHistoryTab({ projectName }: { projectName: string }) {
         <div className="relative">
           <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-border" />
           <div className="space-y-3">
-            {items.map((cs: any) => {
+            {items.map((cs) => {
               const Icon = SOURCE_ICONS[cs.source] || Settings;
               const colorClass = SOURCE_COLORS[cs.source] || SOURCE_COLORS.SYSTEM;
               return (
@@ -235,7 +269,7 @@ export function ProjectHistoryTab({ projectName }: { projectName: string }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {detail.fieldChanges.map((fc: any) => (
+                        {detail.fieldChanges.map((fc) => (
                           <tr key={fc.id} className="border-t" data-testid={`field-change-${fc.fieldName}`}>
                             <td className="p-2 font-mono text-xs">{fc.fieldName}</td>
                             <td className="p-2 text-red-600">{fc.oldValue ?? "—"}</td>

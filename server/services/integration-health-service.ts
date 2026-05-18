@@ -14,7 +14,7 @@
  * Read-only for C1. Alerting on status transitions is wired in C3.
  */
 
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import {
   integrations,
   integrationRunEvents,
@@ -25,6 +25,7 @@ import {
   type IntegrationRunStatus,
 } from "@shared/schema";
 import { db } from "../db";
+import logger from "../lib/logger";
 
 /** 25 hours — gives a nightly job one grace hour before going stale. */
 export const INTEGRATION_HEALTHY_WINDOW_MS = 25 * 60 * 60 * 1000;
@@ -145,7 +146,7 @@ export async function recordIntegrationRun(params: {
       recordsProcessed: params.recordsProcessed ?? null,
       errorCode: params.errorCode ?? null,
       errorDetail: params.errorDetail ?? null,
-      metadata: (params.metadata as any) ?? null,
+      metadata: params.metadata ?? null,
     })
     .returning();
 
@@ -161,7 +162,7 @@ export async function recordIntegrationRun(params: {
     const { checkAndDispatchIntegrationAlert } = await import("./integration-alert-monitor");
     await checkAndDispatchIntegrationAlert(integration.id);
   } catch (err) {
-    console.warn("[IntegrationHealth] alert dispatch hook failed:", err);
+    logger.warn("[IntegrationHealth] alert dispatch hook failed:", err);
   }
 
   return event as IntegrationRunEvent;
@@ -338,7 +339,7 @@ export async function upsertIntegration(params: {
         fallbackDescription:
           params.fallbackDescription ?? (existing as Integration).fallbackDescription,
         alertTarget: params.alertTarget ?? (existing as Integration).alertTarget,
-        metadata: (params.metadata as any) ?? (existing as Integration).metadata,
+        metadata: params.metadata ?? (existing as Integration).metadata,
         updatedAt: new Date(),
       })
       .where(eq(integrations.id, (existing as Integration).id))
@@ -356,7 +357,7 @@ export async function upsertIntegration(params: {
       ownerProcess: params.ownerProcess ?? null,
       fallbackDescription: params.fallbackDescription ?? null,
       alertTarget: params.alertTarget ?? null,
-      metadata: (params.metadata as any) ?? null,
+      metadata: params.metadata ?? null,
     })
     .returning();
   return inserted as Integration;

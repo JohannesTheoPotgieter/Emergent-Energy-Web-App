@@ -17,8 +17,8 @@
 
 import { db } from "../db";
 import { workItems, workItemAssignments } from "@shared/schema";
-import { eq, and, isNull, desc } from "drizzle-orm";
-import { getWorkItemsAsMytoolTasks, isWorkItemsEnabled } from "../work-items-adapter";
+import { eq, and, isNull } from "drizzle-orm";
+import { getWorkItemsAsMytoolTasks } from "../work-items-adapter";
 
 /** Get personal tasks for a user from the canonical work_items table. */
 export async function getPersonalTasks(userId: number) {
@@ -79,7 +79,7 @@ export async function createPersonalTask(userId: number, task: {
   await db.insert(workItemAssignments).values({
     workItemId: created.id,
     userId,
-    role: "OWNER" as any,
+    role: "OWNER",
   }).onConflictDoNothing();
 
   return created;

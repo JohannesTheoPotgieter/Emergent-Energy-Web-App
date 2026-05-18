@@ -13,8 +13,9 @@ import {
 } from "@/components/ui/dialog";
 import {
   Wrench, ShieldCheck, FileCheck, Clock, CheckCircle2,
-  AlertTriangle, ThumbsUp, ThumbsDown, Loader2, ExternalLink,
+   ThumbsUp, ThumbsDown, Loader2, 
   Filter, Inbox, Send,
+  type LucideIcon,
 } from "lucide-react";
 
 function engFetch(url: string, options?: RequestInit) {
@@ -36,12 +37,25 @@ interface ApprovalItem {
   assignee: string;
   createdAt: string;
   updatedAt: string;
-  meta: Record<string, any>;
+  meta: Record<string, unknown>;
+}
+
+interface GeneralApprovalRow {
+  id: number;
+  title: string;
+  projectId: number | null;
+  status: string;
+  assignedApproverName?: string | null;
+  requestedByName?: string | null;
+  requestedAt: string;
+  decidedAt?: string | null;
+  approvalCategory?: string | null;
+  dueDate?: string | null;
 }
 
 type FilterType = "all" | "engineering" | "quality" | "deliverable" | "general";
 
-const TYPE_CONFIG: Record<string, { icon: any; color: string; label: string }> = {
+const TYPE_CONFIG: Record<string, { icon: LucideIcon; color: string; label: string }> = {
   engineering: { icon: Wrench, color: "text-amber-600 bg-amber-50 border-amber-200", label: "Engineering Gate" },
   quality: { icon: ShieldCheck, color: "text-emerald-600 bg-emerald-50 border-emerald-200", label: "Quality Review" },
   deliverable: { icon: FileCheck, color: "text-blue-600 bg-blue-50 border-blue-200", label: "Deliverable" },
@@ -57,7 +71,7 @@ export function ProjectApprovalsTab({
   projectInfoId: number | null;
   onNavigateSubTab?: (sub: string) => void;
 }) {
-  const { user } = useAuth();
+  const { user: _user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
@@ -86,12 +100,12 @@ export function ProjectApprovalsTab({
       const pendingItems: ApprovalItem[] = [];
       if (pendingRes.ok) {
         const data = await pendingRes.json();
-        pendingItems.push(...(data.items || []).filter((a: any) => a.projectName === projectName));
+        pendingItems.push(...((data.items || []) as ApprovalItem[]).filter((a) => a.projectName === projectName));
       }
 
       if (generalRes && generalRes.ok) {
         const gData = await generalRes.json();
-        const generalItems: ApprovalItem[] = (gData.approvals || []).map((g: any) => ({
+        const generalItems: ApprovalItem[] = ((gData.approvals || []) as GeneralApprovalRow[]).map((g) => ({
           id: `gen-${g.id}`,
           type: "general" as const,
           title: g.title,

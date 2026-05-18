@@ -1,7 +1,7 @@
-import { useState } from "react";
+import {} from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
+import {} from "@/components/ui/input";
 import { Link } from "wouter";
 import {
   Play,
@@ -11,9 +11,9 @@ import {
   Clock,
   Inbox,
   X,
-  GripVertical,
+  
   Repeat,
-  ArrowRight,
+  
   AlertCircle,
   ChevronRight,
 } from "lucide-react";
@@ -126,7 +126,7 @@ export default function TaskCard({
 }: TaskCardProps) {
   const isDone = task.status === "done";
   const isBlocked = task.status === "blocked" || task.status === "waiting";
-  const pCfg = priorityConfig[task.priority] || priorityConfig.normal;
+  const _pCfg = priorityConfig[task.priority] || priorityConfig.normal;
 
   return (
     <div

@@ -2,7 +2,7 @@
 // STAGE LIFECYCLE SERVICE — Core CRUD + business logic
 // ============================================================
 
-import { and, desc, eq, sql, isNull } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import {
   projectStageInstances,
   projectStageRequirements,
@@ -14,7 +14,6 @@ import {
   stageGateEvidenceSnapshots,
   projectExecutionState,
   projectInfo,
-  STAGE_CODES,
   TERMINAL_STAGE_CODES,
   SEQUENTIAL_STAGE_CODES,
   type StageCode,
@@ -38,6 +37,7 @@ import {
   computeDaysInStage,
   STAGE_SEQUENCE,
 } from "../../shared/utils/stage-state-machine";
+import logger from "../lib/logger";
 
 // ── B1: Stage Gate Evidence Snapshots — audit trail helpers ──
 
@@ -213,7 +213,7 @@ export async function captureStageGateSnapshot(params: {
 
     return row;
   } catch (err) {
-    console.error("[StageGateSnapshot] Failed to capture snapshot (transition continues):", err);
+    logger.error("[StageGateSnapshot] Failed to capture snapshot (transition continues):", err);
     return null;
   }
 }
@@ -321,7 +321,7 @@ async function ensureStageDefinitions() {
   const toSeed = DEFAULT_STAGE_DEFS.filter(d => !existingCodes.has(d.stageCode));
   if (toSeed.length > 0) {
     await db.insert(stageDefinitions).values(toSeed).onConflictDoNothing();
-    console.log(`[Stage Lifecycle] Seeded ${toSeed.length} stage definitions`);
+    logger.info(`[Stage Lifecycle] Seeded ${toSeed.length} stage definitions`);
   }
 }
 

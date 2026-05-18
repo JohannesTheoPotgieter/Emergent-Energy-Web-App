@@ -50,7 +50,7 @@ export function CcFeatureFlagsCard() {
       toast({ title: "Feature flag updated", description: `${vars.key} set to ${vars.value ? "ON" : "OFF"}` });
       setOverrideDraft(null);
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "Update failed", description: err?.message || "Failed to update flag", variant: "destructive" });
     },
   });

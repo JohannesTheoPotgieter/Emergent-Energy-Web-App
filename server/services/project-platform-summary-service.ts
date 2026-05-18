@@ -32,6 +32,19 @@ import {
   getCanonicalFinanceByProjectIds,
   getCanonicalTaskSummaryByProjectIds,
 } from "./canonical-dashboard-kpi-service";
+import logger from "../lib/logger";
+
+/**
+ * db.execute() result shape differs by driver: node-postgres returns
+ * `{ rows: [...] }`, others return the array directly. Type-only helper —
+ * does not alter any query or snapshot guard.
+ */
+function extractExecRows<T>(result: unknown): T[] {
+  if (result && typeof result === "object" && "rows" in result) {
+    return ((result as { rows?: unknown }).rows as T[]) ?? [];
+  }
+  return Array.isArray(result) ? (result as T[]) : [];
+}
 
 function toIsoString(value: unknown): string | null {
   if (!value) return null;
@@ -349,7 +362,10 @@ export async function getPlatformProjectSummaryMap(params?: {
       sourceEntityType: "work_item",
       sourceEntityId: String(row.workItemId),
       canonical: true,
-    } as any);
+      // NOTE: assigneeType "user" is a legacy value not in AssigneeType
+      // (should be "internal_user"). Behaviour preserved; flagged as a latent
+      // bug. Double-assert through unknown rather than leak `any`.
+    } as unknown as SharedAssigneeContract);
     assigneesByProject.set(row.projectId, target);
     assigneeSeenByProject.set(row.projectId, seen);
   }
@@ -371,7 +387,10 @@ export async function getPlatformProjectSummaryMap(params?: {
       sourceEntityType: "work_item",
       sourceEntityId: String(row.workItemId),
       canonical: false,
-    } as any);
+      // NOTE: assigneeType "user" is a legacy value not in AssigneeType
+      // (should be "internal_user"). Behaviour preserved; flagged as a latent
+      // bug. Double-assert through unknown rather than leak `any`.
+    } as unknown as SharedAssigneeContract);
     assigneesByProject.set(row.projectId, target);
     assigneeSeenByProject.set(row.projectId, seen);
   }
@@ -404,7 +423,10 @@ export async function getPlatformProjectSummaryMap(params?: {
         sourceEntityType: "project",
         sourceEntityId: String(row.id),
         canonical: false,
-      } as any);
+        // NOTE: assigneeType "user" is a legacy value not in AssigneeType
+        // (should be "internal_user"). Behaviour preserved; flagged as a latent
+        // bug. Double-assert through unknown rather than leak `any`.
+      } as unknown as SharedAssigneeContract);
     }
 
     if (row.pdUserId || row.pd) {
@@ -421,7 +443,10 @@ export async function getPlatformProjectSummaryMap(params?: {
         sourceEntityType: "project",
         sourceEntityId: String(row.id),
         canonical: false,
-      } as any);
+        // NOTE: assigneeType "user" is a legacy value not in AssigneeType
+        // (should be "internal_user"). Behaviour preserved; flagged as a latent
+        // bug. Double-assert through unknown rather than leak `any`.
+      } as unknown as SharedAssigneeContract);
     }
 
     const latestUpdateAt = toIsoString(editable?.latestUpdateAt);
@@ -578,7 +603,7 @@ export async function getProjectListSummaries(
   const idArrayLiteral = `{${ids.join(",")}}`;
   const liveTaskByProject = new Map<number, { avgPct: number | null; avgExpectedPct: number | null; totalCount: number }>();
   try {
-    const liveTaskRows: any = await db.execute(sql`
+    const liveTaskRows: unknown = await db.execute(sql`
       SELECT
         wi.project_id,
         AVG(COALESCE(pm.percent_complete, wi.percent_complete, 0))::float8 AS avg_pct,
@@ -590,7 +615,7 @@ export async function getProjectListSummaries(
         AND wi.deleted_at IS NULL
       GROUP BY wi.project_id
     `);
-    const rows = liveTaskRows.rows || liveTaskRows;
+    const rows = extractExecRows<{ project_id: number | string; avg_pct: number | string | null; avg_expected_pct: number | string | null; total_count: number | string | null }>(liveTaskRows);
     for (const r of rows) {
       liveTaskByProject.set(Number(r.project_id), {
         avgPct: r.avg_pct == null ? null : Number(r.avg_pct),
@@ -598,16 +623,16 @@ export async function getProjectListSummaries(
         totalCount: Number(r.total_count || 0),
       });
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     // Defensive — if the live aggregation fails we still serve the cache values
     // rather than 500'ing the whole list.
-    console.warn("[project-list-summaries] live task aggregation failed:", err?.message);
+    logger.warn("[project-list-summaries] live task aggregation failed:", err instanceof Error ? err.message : err);
   }
 
   // 3. Live finance aggregation from normalized_cost_lines.
   const liveFinanceByProject = new Map<number, { plannedRevenue: number; realisedRevenue: number; plannedCost: number; realisedCost: number }>();
   try {
-    const liveFinRows: any = await db.execute(sql`
+    const liveFinRows: unknown = await db.execute(sql`
       SELECT
         project_id,
         COALESCE(SUM(NULLIF(revenue_recognition_amount, '')::numeric), 0)::float8 AS planned_revenue,
@@ -620,7 +645,7 @@ export async function getProjectListSummaries(
         AND deleted_at IS NULL
       GROUP BY project_id
     `);
-    const rows = liveFinRows.rows || liveFinRows;
+    const rows = extractExecRows<{ project_id: number | string; planned_revenue: number | string | null; realised_revenue: number | string | null; planned_cost: number | string | null; realised_cost: number | string | null }>(liveFinRows);
     for (const r of rows) {
       liveFinanceByProject.set(Number(r.project_id), {
         plannedRevenue: Number(r.planned_revenue || 0),
@@ -629,8 +654,8 @@ export async function getProjectListSummaries(
         realisedCost: Number(r.realised_cost || 0),
       });
     }
-  } catch (err: any) {
-    console.warn("[project-list-summaries] live finance aggregation failed:", err?.message);
+  } catch (err: unknown) {
+    logger.warn("[project-list-summaries] live finance aggregation failed:", err instanceof Error ? err.message : err);
   }
 
   for (const row of baseRows) {

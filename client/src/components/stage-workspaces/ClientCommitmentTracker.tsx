@@ -9,7 +9,7 @@ import {
   useCreateClientCommitment,
   useUpdateClientCommitment,
 } from "@/hooks/use-collaboration-workflow";
-import { Plus, CheckCircle2, Clock, AlertTriangle, XCircle } from "lucide-react";
+import { Plus, CheckCircle2} from "lucide-react";
 import { STAGE_CODES } from "@shared/schema";
 import type { ClientCommitment } from "@shared/schema";
 

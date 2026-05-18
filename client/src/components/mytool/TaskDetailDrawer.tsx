@@ -11,27 +11,24 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { Link } from "wouter";
+import {} from "wouter";
 import {
   Save,
   Loader2,
   Trash2,
   CheckCircle2,
   Play,
-  Ban,
+  
   Clock,
   Circle,
   AlertCircle,
   Zap,
   Target,
   FileText,
-  ExternalLink,
   Calendar,
-  User,
   FolderOpen,
   Building2,
   ChevronRight,
-  X,
 } from "lucide-react";
 import type { TaskItem, TaskStatus, TaskPriority } from "./TaskCard";
 import { PriorityBadge, StatusIcon } from "./TaskCard";
@@ -167,7 +164,7 @@ export default function TaskDetailDrawer({ task, open, onOpenChange, onInvalidat
       invalidateAll();
       toast({ title: "Task updated" });
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       const msg = error?.message || "";
       if (msg.includes("Definition of Done")) {
         setDodRequired(true);

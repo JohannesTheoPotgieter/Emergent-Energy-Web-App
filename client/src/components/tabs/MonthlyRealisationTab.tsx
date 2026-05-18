@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import {} from "@/components/ui/badge";
+import {} from "@/components/ui/button";
 import {
   Bar,
   XAxis,
@@ -12,11 +12,11 @@ import {
   Legend,
   ResponsiveContainer,
   ComposedChart,
-  Line,
+  
 } from "recharts";
 import {
-  Loader2, CheckCircle2, Clock, AlertTriangle, FileText, Search,
-  ChevronDown, ChevronRight, DollarSign, TrendingDown, Activity, Target,
+  Loader2,     Search,
+    DollarSign, TrendingDown, Activity, Target,
   X,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -186,7 +186,7 @@ function MonthDetailDrawer({ month, onClose, defaultFilter = "all" }: { month: P
           </div>
           <select
             value={stateFilter}
-            onChange={(e) => setStateFilter(e.target.value as any)}
+            onChange={(e) => setStateFilter(e.target.value as "all" | "realised" | "committed" | "unrealised")}
             className="h-9 px-3 text-sm border border-border rounded-lg bg-muted/50 hover:bg-card transition-colors cursor-pointer"
             data-testid="select-drawer-filter"
           >

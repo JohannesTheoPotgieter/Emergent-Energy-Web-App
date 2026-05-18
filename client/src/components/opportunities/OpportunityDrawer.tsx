@@ -52,7 +52,7 @@ import {
   getEngineeringTicketStatusBadgeClass,
   normalizeEngineeringTicketStatus,
   isTicketDoneForReporting,
-  isTicketBlocked,
+  
 } from "@shared/engineering-ticket-status";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -570,7 +570,7 @@ export function OpportunityDetailBody({ opportunityId, active, variant = "inline
                 opportunityId={data.crm.id}
                 defaultName={data.crm.dealName || data.clientName || `Opportunity ${data.crm.id}`}
                 clientId={null}
-                defaultStage={(data.crm.stage as any) || "won"}
+                defaultStage={data.crm.stage || "won"}
                 onClose={() => setConvertOpen(false)}
                 onConverted={() => {
                   setConvertOpen(false);
@@ -599,7 +599,7 @@ function HeaderStat({ label, value }: { label: string; value: string | null | un
   );
 }
 
-function SectionCard({
+function _SectionCard({
   title,
   icon,
   testId,
@@ -722,7 +722,7 @@ function ticketAgeDays(iso: string | null): number | null {
 function TicketRow({
   ticket,
   siblingProject,
-  opportunityId,
+  opportunityId: _opportunityId,
 }: {
   ticket: OpportunityTicket;
   siblingProject: { id: number; name: string } | null;

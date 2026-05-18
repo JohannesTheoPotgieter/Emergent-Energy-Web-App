@@ -13,7 +13,7 @@ const RED_ARGB = "FFDC3545";
 const AMBER_ARGB = "FFFFC107";
 const GREEN_ARGB = "FF28A745";
 
-function ragFill(rag: string | null): ExcelJS.Fill | undefined {
+function ragFill(rag: string | null | undefined): ExcelJS.Fill | undefined {
   const upper = (rag || "").toUpperCase();
   if (upper === "RED") return { type: "pattern", pattern: "solid", fgColor: { argb: RED_ARGB } };
   if (upper === "AMBER") return { type: "pattern", pattern: "solid", fgColor: { argb: AMBER_ARGB } };
@@ -29,7 +29,31 @@ function styleHeaderRow(sheet: ExcelJS.Worksheet) {
   headerRow.height = 22;
 }
 
-function addSheet(workbook: ExcelJS.Workbook, name: string, columns: Array<{ header: string; key: string; width?: number }>, rows: any[]) {
+type SheetRow = Record<string, unknown>;
+
+/** Structural shape of the monthly-report snapshot consumed by the Excel renderer. */
+export interface MonthlyReportExcelData {
+  kpis?: Record<string, number | undefined>;
+  financials?: {
+    revenueSummary?: SheetRow[];
+    costSummary?: SheetRow[];
+    grossProfit?: SheetRow[];
+  };
+  projectStatus?: Array<SheetRow & { ragStatus?: string | null }>;
+  tasks?: {
+    perProject?: SheetRow[];
+    resourceUtilisation?: SheetRow[];
+  };
+  raidItems?: { items?: SheetRow[] };
+  quality?: { qcProgress?: SheetRow[] };
+  procurement?: SheetRow[];
+  deliverables?: { register?: SheetRow[] };
+  stageGates?: SheetRow[];
+  resources?: SheetRow[];
+  approvals?: SheetRow[];
+}
+
+function addSheet(workbook: ExcelJS.Workbook, name: string, columns: Array<{ header: string; key: string; width?: number }>, rows: SheetRow[]) {
   const sheet = workbook.addWorksheet(name);
   sheet.columns = columns;
   for (const row of rows) sheet.addRow(row);
@@ -37,7 +61,7 @@ function addSheet(workbook: ExcelJS.Workbook, name: string, columns: Array<{ hea
   return sheet;
 }
 
-export async function generateReportExcel(reportType: string, data: any, month: string, res: Response) {
+export async function generateReportExcel(reportType: string, data: MonthlyReportExcelData, month: string, res: Response) {
   const workbook = new ExcelJS.Workbook();
   const monthLabel = getMonthLabel(month);
 
@@ -57,7 +81,7 @@ export async function generateReportExcel(reportType: string, data: any, month: 
   res.end();
 }
 
-function generatePmExcel(workbook: ExcelJS.Workbook, data: any, monthLabel: string) {
+function generatePmExcel(workbook: ExcelJS.Workbook, data: MonthlyReportExcelData, monthLabel: string) {
   const kpis = data.kpis || {};
 
   // Summary KPIs sheet
@@ -75,7 +99,7 @@ function generatePmExcel(workbook: ExcelJS.Workbook, data: any, monthLabel: stri
     { metric: "Construction Starts", value: kpis.constructionStarts ?? 0 },
     { metric: "Commissionings", value: kpis.commissionings ?? 0 },
     { metric: "Client Handovers (Planned)", value: kpis.clientHandoversPlanned ?? kpis.clientHandovers ?? 0 },
-    { metric: "Planned GP Margin %", value: (kpis.plannedGpMarginPctMonth ?? kpis.blendedGpMarginPct) ? `${(kpis.plannedGpMarginPctMonth ?? kpis.blendedGpMarginPct).toFixed(1)}%` : "0%" },
+    { metric: "Planned GP Margin %", value: ((m) => (m ? `${m.toFixed(1)}%` : "0%"))(kpis.plannedGpMarginPctMonth ?? kpis.blendedGpMarginPct) },
     { metric: "Projects at Risk", value: kpis.projectsAtRisk ?? 0 },
     { metric: "Avg Health Score", value: kpis.avgHealthScore ? kpis.avgHealthScore.toFixed(1) : "0" },
   ];
@@ -193,7 +217,7 @@ function generatePmExcel(workbook: ExcelJS.Workbook, data: any, monthLabel: stri
   ], data.procurement || []);
 }
 
-function generateEngineeringExcel(workbook: ExcelJS.Workbook, data: any, monthLabel: string) {
+function generateEngineeringExcel(workbook: ExcelJS.Workbook, data: MonthlyReportExcelData, monthLabel: string) {
   const kpis = data.kpis || {};
 
   // Summary KPIs

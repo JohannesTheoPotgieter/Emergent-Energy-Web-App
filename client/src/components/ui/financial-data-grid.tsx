@@ -4,6 +4,7 @@ import { formatRand, formatPercent } from "@/lib/safeMoney";
 import { ChevronDown, ChevronUp, ArrowUpDown } from "lucide-react";
 
 export type ColumnFormat = "currency" | "percent" | "number" | "text" | "date";
+export type CellValue = string | number | null | undefined;
 export type SortDirection = "asc" | "desc" | null;
 
 export interface FinancialColumn<T> {
@@ -19,11 +20,11 @@ export interface FinancialColumn<T> {
   /** Sortable */
   sortable?: boolean;
   /** Custom render */
-  render?: (value: any, row: T) => React.ReactNode;
+  render?: (value: CellValue, row: T) => React.ReactNode;
   /** Min width */
   minWidth?: string;
   /** Show as bold/highlighted when condition met */
-  highlight?: (value: any, row: T) => boolean;
+  highlight?: (value: CellValue, row: T) => boolean;
 }
 
 export interface FinancialDataGridProps<T> {
@@ -46,13 +47,13 @@ export interface FinancialDataGridProps<T> {
   className?: string;
 }
 
-function formatValue(value: any, format?: ColumnFormat): string {
+function formatValue(value: CellValue, format?: ColumnFormat): string {
   if (value === null || value === undefined || value === "") return "—";
   switch (format) {
     case "currency": return formatRand(value, { decimals: 0 });
     case "percent": return formatPercent(value, { decimals: 1 });
     case "number": return Number(value).toLocaleString("en-ZA");
-    case "date": return value;
+    case "date": return String(value);
     default: return String(value);
   }
 }

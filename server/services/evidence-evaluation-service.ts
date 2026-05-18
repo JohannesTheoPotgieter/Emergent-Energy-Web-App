@@ -1,6 +1,34 @@
 import { sql } from "drizzle-orm";
 import { db } from "../db";
 
+/**
+ * db.execute() result shape differs by driver: node-postgres returns
+ * `{ rows: [...] }`, others return the array directly. Normalize to a
+ * typed array without leaking `any`.
+ */
+function asRows<T>(r: unknown): T[] {
+  if (Array.isArray(r)) return r as T[];
+  if (r && typeof r === "object" && "rows" in r) {
+    return ((r as { rows?: unknown }).rows as T[]) ?? [];
+  }
+  return [];
+}
+
+interface EvidenceRequirementDefRow {
+  requirement_key: string;
+  label: string;
+  evidence_type: string;
+  is_required: boolean | null;
+  weight: number | string | null;
+  min_count: number | string | null;
+  threshold_percent: number | string | null;
+}
+
+interface EvidenceCollectedRow {
+  requirement_key: string;
+  evidence_type: string;
+}
+
 export type EvidenceRequirement = {
   requirementKey: string;
   label: string;
@@ -118,7 +146,7 @@ export async function evaluateEvidence(params: {
 }) {
   const { projectId, completionType, sourceType, sourceRef, additionalEvidence = [], evaluatorUserId, evaluatorName } = params;
 
-  const reqRows: any[] = await db.execute(sql.raw(`
+  const reqResult: unknown = await db.execute(sql.raw(`
     SELECT requirement_key, label, evidence_type, is_required, weight, min_count, threshold_percent
     FROM evidence_requirement_definitions
     WHERE active = true
@@ -127,7 +155,8 @@ export async function evaluateEvidence(params: {
       AND (source_ref IS NULL OR source_ref = '${sourceRef.replace(/'/g, "''")}')
       AND (project_id IS NULL OR project_id = ${projectId})
     ORDER BY id
-  `)).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
+  `));
+  const reqRows = asRows<EvidenceRequirementDefRow>(reqResult);
 
   const requirements: EvidenceRequirement[] = reqRows.map((r) => ({
     requirementKey: r.requirement_key,
@@ -141,7 +170,7 @@ export async function evaluateEvidence(params: {
   const thresholdFromDb = reqRows.map((r) => Number(r.threshold_percent)).find((n) => Number.isFinite(n) && n > 0);
   const threshold = thresholdFromDb || getDefaultThreshold(completionType);
 
-  const collectedRows: any[] = await db.execute(sql.raw(`
+  const collectedResult: unknown = await db.execute(sql.raw(`
     SELECT requirement_key, evidence_type
     FROM evidence_collected_items
     WHERE project_id = ${projectId}
@@ -149,7 +178,8 @@ export async function evaluateEvidence(params: {
       AND source_type = '${sourceType.replace(/'/g, "''")}'
       AND source_ref = '${sourceRef.replace(/'/g, "''")}'
       AND deleted_at IS NULL
-  `)).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
+  `));
+  const collectedRows = asRows<EvidenceCollectedRow>(collectedResult);
 
   const collected: EvidenceInput[] = [
     ...collectedRows.map((r) => ({ requirementKey: r.requirement_key, evidenceType: r.evidence_type })),

@@ -34,11 +34,30 @@ interface ProjectSubcontractorsTabProps {
   projectName: string;
 }
 
+interface SubcontractorSummary {
+  counterpartyName: string;
+  counterpartyType?: string;
+  isCore?: boolean;
+  totalSpendExVat?: number;
+  openAmount?: number;
+  invoiceCount?: number;
+  avgTurnaroundDays?: number;
+}
+
+interface SubcontractorLine {
+  invoiceNumber?: string;
+  invoiceDate?: string | null;
+  paidDate?: string | null;
+  amountExVat?: number;
+  costCategory?: string;
+  status?: string;
+}
+
 export function ProjectSubcontractorsTab({ projectName }: ProjectSubcontractorsTabProps) {
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error } = useQuery<{ counterparties: SubcontractorSummary[] }>({
     queryKey: ["project-subcontractors", projectName],
     queryFn: async () => {
       const res = await fetch(
@@ -51,15 +70,15 @@ export function ProjectSubcontractorsTab({ projectName }: ProjectSubcontractorsT
     enabled: !!projectName,
   });
 
-  const counterparties = data?.counterparties || [];
-  const filtered = counterparties.filter((cp: any) =>
+  const counterparties: SubcontractorSummary[] = data?.counterparties || [];
+  const filtered = counterparties.filter((cp) =>
     !search || cp.counterpartyName?.toLowerCase().includes(search.toLowerCase())
   );
 
-  const totalSpend = filtered.reduce((s: number, cp: any) => s + (cp.totalSpendExVat || 0), 0);
-  const totalOpen = filtered.reduce((s: number, cp: any) => s + (cp.openAmount || 0), 0);
-  const installerCount = filtered.filter((cp: any) => cp.counterpartyType === "INSTALLER").length;
-  const supplierCount = filtered.filter((cp: any) => cp.counterpartyType === "SUPPLIER").length;
+  const totalSpend = filtered.reduce((s: number, cp) => s + (cp.totalSpendExVat || 0), 0);
+  const totalOpen = filtered.reduce((s: number, cp) => s + (cp.openAmount || 0), 0);
+  const installerCount = filtered.filter((cp) => cp.counterpartyType === "INSTALLER").length;
+  const supplierCount = filtered.filter((cp) => cp.counterpartyType === "SUPPLIER").length;
 
   if (isLoading) {
     return (
@@ -167,7 +186,7 @@ export function ProjectSubcontractorsTab({ projectName }: ProjectSubcontractorsT
       </div>
 
       <div className="space-y-2">
-        {filtered.map((cp: any, i: number) => {
+        {filtered.map((cp, i) => {
           const isExpanded = expanded === cp.counterpartyName;
           return (
             <Card
@@ -194,9 +213,9 @@ export function ProjectSubcontractorsTab({ projectName }: ProjectSubcontractorsT
                     </div>
                     <div className="flex items-center gap-4 text-xs text-muted-foreground">
                       <span>{cp.invoiceCount} invoice{cp.invoiceCount !== 1 ? "s" : ""}</span>
-                      <span className="font-mono font-medium text-foreground">{formatCurrency(cp.totalSpendExVat)}</span>
-                      {cp.openAmount > 0 && (
-                        <span className="text-amber-600 font-mono">{formatCurrency(cp.openAmount)} open</span>
+                      <span className="font-mono font-medium text-foreground">{formatCurrency(cp.totalSpendExVat ?? 0)}</span>
+                      {(cp.openAmount ?? 0) > 0 && (
+                        <span className="text-amber-600 font-mono">{formatCurrency(cp.openAmount ?? 0)} open</span>
                       )}
                       {cp.avgTurnaroundDays != null && (
                         <span>{cp.avgTurnaroundDays}d avg turnaround</span>
@@ -223,7 +242,7 @@ export function ProjectSubcontractorsTab({ projectName }: ProjectSubcontractorsT
 }
 
 function ExpandedDetail({ counterpartyName }: { counterpartyName: string }) {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useQuery<{ lines: SubcontractorLine[] }>({
     queryKey: ["subcontractor-detail", counterpartyName],
     queryFn: async () => {
       const res = await fetch(
@@ -244,7 +263,7 @@ function ExpandedDetail({ counterpartyName }: { counterpartyName: string }) {
     );
   }
 
-  const lines = data?.lines || [];
+  const lines: SubcontractorLine[] = data?.lines || [];
   if (lines.length === 0) {
     return <div className="px-4 pb-3 text-xs text-slate-500">No cost lines found.</div>;
   }
@@ -264,16 +283,16 @@ function ExpandedDetail({ counterpartyName }: { counterpartyName: string }) {
             </tr>
           </thead>
           <tbody>
-            {lines.map((l: any, idx: number) => {
+            {lines.map((l, idx) => {
               const isFuture = l.paidDate && new Date(l.paidDate) > new Date();
               return (
                 <tr key={idx} className="border-b border-slate-50 hover:bg-muted/50">
                   <td className="py-1.5 px-1 text-muted-foreground">{l.costCategory || "—"}</td>
                   <td className="py-1.5 px-1 font-mono text-muted-foreground">{l.invoiceNumber || "—"}</td>
-                  <td className="py-1.5 px-1 text-right font-mono font-medium">{formatCurrency(parseFloat(l.amountExVat || "0"))}</td>
-                  <td className="py-1.5 px-1 text-muted-foreground">{formatDate(l.invoiceDate)}</td>
+                  <td className="py-1.5 px-1 text-right font-mono font-medium">{formatCurrency(parseFloat(String(l.amountExVat ?? "0")))}</td>
+                  <td className="py-1.5 px-1 text-muted-foreground">{formatDate(l.invoiceDate ?? null)}</td>
                   <td className={`py-1.5 px-1 ${isFuture ? "text-red-500 font-medium" : "text-muted-foreground"}`}>
-                    {formatDate(l.paidDate)}
+                    {formatDate(l.paidDate ?? null)}
                     {isFuture && <span className="text-[8px] ml-0.5">(future)</span>}
                   </td>
                   <td className="py-1.5 px-1">

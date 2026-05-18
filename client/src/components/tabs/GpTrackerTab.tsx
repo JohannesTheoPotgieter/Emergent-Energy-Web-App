@@ -178,7 +178,7 @@ function GpDetailDrawer({ month, onClose, defaultFilter = "all" }: { month: GpMo
           </div>
           <select
             value={stateFilter}
-            onChange={(e) => setStateFilter(e.target.value as any)}
+            onChange={(e) => setStateFilter(e.target.value as "all" | "realised" | "unrealised")}
             className="h-9 px-3 text-sm border border-slate-200 rounded-lg bg-slate-50 hover:bg-white transition-colors cursor-pointer"
             data-testid="select-gp-drawer-filter"
           >

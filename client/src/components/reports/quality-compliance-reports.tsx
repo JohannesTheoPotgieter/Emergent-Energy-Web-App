@@ -9,7 +9,14 @@ const STAGE_LABELS: Record<string, string> = {
   S09_CLIENT_HANDOVER: "Client Handover",
 };
 
+interface BlockerRow {
+  project_name: string;
+  stage_code: string;
+  blocker_count: number;
+}
+
 export function QualityComplianceReports() {
+  // useQualityComplianceReports() types its arrays as unknown[]; assert shapes.
   const { data, isLoading } = useQualityComplianceReports();
 
   if (isLoading) return <div className="animate-pulse h-32 bg-muted rounded" />;
@@ -30,7 +37,7 @@ export function QualityComplianceReports() {
               <p className="text-xs text-muted-foreground">No quality blockers.</p>
             ) : (
               <div className="space-y-1">
-                {data!.qualityBlockers.map((q: any, i: number) => (
+                {(data!.qualityBlockers as BlockerRow[]).map((q, i) => (
                   <div key={i} className="flex items-center justify-between text-xs border rounded p-2">
                     <div>
                       <span className="font-medium">{q.project_name}</span>
@@ -59,7 +66,7 @@ export function QualityComplianceReports() {
               <p className="text-xs text-muted-foreground">No compliance blockers.</p>
             ) : (
               <div className="space-y-1">
-                {data!.complianceBlockers.map((c: any, i: number) => (
+                {(data!.complianceBlockers as BlockerRow[]).map((c, i) => (
                   <div key={i} className="flex items-center justify-between text-xs border rounded p-2">
                     <div>
                       <span className="font-medium">{c.project_name}</span>

@@ -415,7 +415,7 @@ export async function commitCustomerCascade(input: {
         qbCustomerName: input.qbCustomerName,
         qbRealmId: input.qbRealmId,
         source: "suggestion",
-        confidence: String(input.confidence) as any,
+        confidence: String(input.confidence),
         lockedAt: new Date(),
         lockedBy: input.userId ?? null,
         suggestionRunId: input.suggestionId,
@@ -427,7 +427,7 @@ export async function commitCustomerCascade(input: {
           qbCustomerId: input.qbCustomerId,
           qbCustomerName: input.qbCustomerName,
           source: "suggestion",
-          confidence: String(input.confidence) as any,
+          confidence: String(input.confidence),
           lockedAt: new Date(),
           lockedBy: input.userId ?? null,
           suggestionRunId: input.suggestionId,
@@ -462,7 +462,7 @@ export async function commitCustomerCascade(input: {
         acceptedAt: new Date(),
         acceptedBy: input.userId ?? null,
         acceptedQbId: input.qbCustomerId,
-        acceptedConfidence: String(input.confidence) as any,
+        acceptedConfidence: String(input.confidence),
       })
       .where(eq(quickbooksMatchSuggestions.id, input.suggestionId));
   });
@@ -513,7 +513,7 @@ export async function commitVendorCascade(input: {
         counterpartyId: input.counterpartyId,
         counterpartyName: input.counterpartyName,
         source: "suggestion",
-        confidence: String(input.confidence) as any,
+        confidence: String(input.confidence),
         lockedAt: new Date(),
         lockedBy: input.userId ?? null,
         suggestionRunId: input.suggestionId,
@@ -525,7 +525,7 @@ export async function commitVendorCascade(input: {
           counterpartyId: input.counterpartyId,
           counterpartyName: input.counterpartyName,
           source: "suggestion",
-          confidence: String(input.confidence) as any,
+          confidence: String(input.confidence),
           lockedAt: new Date(),
           lockedBy: input.userId ?? null,
           suggestionRunId: input.suggestionId,
@@ -551,7 +551,7 @@ export async function commitVendorCascade(input: {
         acceptedAt: new Date(),
         acceptedBy: input.userId ?? null,
         acceptedQbId: input.qbVendorId,
-        acceptedConfidence: String(input.confidence) as any,
+        acceptedConfidence: String(input.confidence),
       })
       .where(eq(quickbooksMatchSuggestions.id, input.suggestionId));
   });

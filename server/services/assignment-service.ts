@@ -18,6 +18,7 @@ import {
   users,
   workItemAssignments,
   workItems,
+  type PermissionEntity,
 } from "@shared/schema";
 
 // AssigneeType is a string union used in the entity_assignments table
@@ -26,6 +27,7 @@ import { db } from "../db";
 import { getEffectiveUser } from "../auth-context";
 import { logAuditFromReq } from "../audit-logger";
 import { evaluateAuthorityForRequest } from "../permission-middleware";
+import logger from "../lib/logger";
 
 export const ASSIGNMENT_ENTITY_TYPES = [
   "personal_task",
@@ -292,7 +294,7 @@ export async function listAssignableDirectory(search?: string | null): Promise<A
   ]);
 
   const entries: AssignableDirectoryEntry[] = [
-    ...internalUsers.map((user: any) => ({
+    ...internalUsers.map((user: { id: number; name: string | null; email: string | null; role: string | null }) => ({
       assigneeType: "internal_user" as const,
       assigneeId: user.id,
       displayLabel: user.name,
@@ -303,7 +305,7 @@ export async function listAssignableDirectory(search?: string | null): Promise<A
       isActive: true,
       roleTags: user.role ? [user.role] : [],
     })),
-    ...externalCounterparties.map((counterparty: any) => ({
+    ...externalCounterparties.map((counterparty: { id: number; nameCanonical: string | null; typeDefault: string | null; isActive: boolean | null; roleTags: unknown }) => ({
       assigneeType: "external_counterparty" as const,
       assigneeId: counterparty.id,
       displayLabel: counterparty.nameCanonical,
@@ -314,7 +316,7 @@ export async function listAssignableDirectory(search?: string | null): Promise<A
       isActive: Boolean(counterparty.isActive),
       roleTags: parseStringArray(counterparty.roleTags),
     })),
-    ...externalContacts.map((contact: any) => ({
+    ...externalContacts.map((contact: { id: number; name: string | null; counterpartyName: string | null; email: string | null; counterpartyId: number | null; isActive: boolean | null; roleTags: unknown }) => ({
       assigneeType: "external_contact" as const,
       assigneeId: contact.id,
       displayLabel: contact.name,
@@ -450,10 +452,10 @@ async function getCanonicalAssignments(
   if (rows.length === 0) return [];
 
   const resolvedTargets = await Promise.all(
-    rows.map((row: any) => resolveAssignableTarget(row.assigneeType as AssigneeType, row.assigneeId)),
+    rows.map((row: typeof entityAssignments.$inferSelect) => resolveAssignableTarget(row.assigneeType as AssigneeType, row.assigneeId)),
   );
 
-  return rows.map((row: any, index: number) => {
+  return rows.map((row: typeof entityAssignments.$inferSelect, index: number) => {
     const resolved = resolvedTargets[index];
     return {
       id: row.id,
@@ -611,7 +613,7 @@ async function getLegacyAssignments(executor: Queryable, entityType: AssignmentE
         .orderBy(asc(workItemAssignments.id));
 
       if (rows.length === 0) return [];
-      return rows.map((row: any) => ({
+      return rows.map((row: { userId: number | null; role: string | null; name: string | null; email: string | null }) => ({
         id: null,
         entityType,
         entityId,
@@ -887,7 +889,7 @@ async function assertAssignmentPermission(req: Request, entityType: AssignmentEn
     throw new Error("Authentication required");
   }
 
-  const permissionEntity = ENTITY_PERMISSION_BY_TYPE[entityType] as any;
+  const permissionEntity = ENTITY_PERMISSION_BY_TYPE[entityType] as PermissionEntity;
   const [assignEval, reassignEval] = await Promise.all([
     evaluateAuthorityForRequest(req, permissionEntity, "assign"),
     evaluateAuthorityForRequest(req, permissionEntity, "reassign"),
@@ -1045,7 +1047,7 @@ export async function setEntityAssignment(req: Request, input: SetEntityAssignme
   const mode = input.mode || "replace";
   const assigneeId = toInt(input.assigneeId);
   const entityId = toInt(input.entityId);
-  console.log("[Assignment] setEntityAssignment called:", { entityType: input.entityType, inputEntityId: input.entityId, entityId, inputAssigneeId: input.assigneeId, assigneeId, assigneeType: input.assigneeType, mode, userId: user.id });
+  logger.info("[Assignment] setEntityAssignment called:", { entityType: input.entityType, inputEntityId: input.entityId, entityId, inputAssigneeId: input.assigneeId, assigneeId, assigneeType: input.assigneeType, mode, userId: user.id });
 
   if (!entityId) {
     throw new Error("A valid entity ID is required");
@@ -1081,11 +1083,11 @@ export async function setEntityAssignment(req: Request, input: SetEntityAssignme
     throw new Error("Selected assignee is inactive");
   }
 
-  console.log("[Assignment] Starting transaction:", { entityType: input.entityType, entityId, assignmentRole, mode, assigneeType: input.assigneeType, assigneeId });
-  return db.transaction(async (tx: any) => {
+  logger.info("[Assignment] Starting transaction:", { entityType: input.entityType, entityId, assignmentRole, mode, assigneeType: input.assigneeType, assigneeId });
+  return db.transaction(async (tx: Queryable) => {
     const projectId = await getEntityProjectId(tx as Queryable, input.entityType, entityId);
     const before = await getCanonicalAssignments(tx as Queryable, input.entityType, entityId);
-    console.log("[Assignment] Before state:", before.length, "active assignments");
+    logger.info("[Assignment] Before state:", before.length, "active assignments");
 
     if (mode === "remove") {
       // Remove only the specific assignee, leave others intact
@@ -1144,7 +1146,7 @@ export async function setEntityAssignment(req: Request, input: SetEntityAssignme
 
     await syncLegacyAssignments(tx as Queryable, input.entityType, entityId);
     const after = await getCanonicalAssignments(tx as Queryable, input.entityType, entityId);
-    console.log("[Assignment] After state:", after.length, "active assignments, ids:", after.map(a => `${a.assigneeType}:${a.assigneeId}`).join(", "));
+    logger.info("[Assignment] After state:", after.length, "active assignments, ids:", after.map(a => `${a.assigneeType}:${a.assigneeId}`).join(", "));
 
     logAuditFromReq(req, {
       entityType: "assignment",

@@ -10,7 +10,7 @@ import {
   Clock,
   DollarSign,
   FileText,
-  HardHat,
+  
   Loader2,
   RefreshCw,
   Shield,
@@ -83,7 +83,7 @@ async function fetchHistory(projectId: number) {
   return body.reviews;
 }
 
-export default function FinancialReviewTab({ projectId, projectName }: FinancialReviewTabProps) {
+export default function FinancialReviewTab({ projectId, projectName: _projectName }: FinancialReviewTabProps) {
   const queryClient = useQueryClient();
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["budgetReview", "procurementReview"]));
 

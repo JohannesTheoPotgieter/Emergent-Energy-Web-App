@@ -6,10 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
-  ChevronRight, ChevronDown, ChevronLeft, ArrowRight, ArrowLeft,
+  ChevronRight, ChevronDown,  ArrowRight, ArrowLeft,
   Loader2, Play, BookOpen, Map, Lightbulb, ExternalLink,
   CheckCircle2, CircleDot, AlertTriangle, FileText, FolderOpen,
-  Users, Target, Wrench, Shield, Clock, Zap, Baby,
+  Users, Target, Wrench,   Zap, Baby,
   LayoutList, ChevronUp, Link2, Award, GraduationCap,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -551,7 +551,7 @@ function EmptyState({
 
 function StepPlayer({
   node,
-  detail,
+  detail: _detail,
   children: childNodes,
   nextNode,
   prevNode,
@@ -562,7 +562,7 @@ function StepPlayer({
   onSelectChild,
   detailsOpen,
   setDetailsOpen,
-  isCOO,
+  isCOO: _isCOO,
 }: {
   node: StoryNode;
   detail: any;

@@ -2,11 +2,11 @@
   "_documentation": "EE-QA-015 baseline — files above the FILE_SIZE_THRESHOLD LOC. The CI guard `qa/tests/unit/file-size-ratchet.test.ts` fails if any of these grow OR a NEW file lands over the threshold. To regenerate after a split, run `npx tsx scripts/build-file-size-baseline.ts` and commit the new JSON.",
   "threshold": 1500,
   "buffer": 50,
-  "generated": "2026-05-17",
+  "generated": "2026-05-18",
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
-      "loc": 9269
+      "loc": 9276
     },
     {
       "file": "client/src/pages/smart-import.tsx",
@@ -78,7 +78,7 @@
     },
     {
       "file": "client/src/components/quickbooks/QbMatchingWorkbench.tsx",
-      "loc": 2204
+      "loc": 2205
     },
     {
       "file": "server/departments/project-routes.ts",
@@ -101,12 +101,12 @@
       "loc": 2120
     },
     {
-      "file": "server/lib/import/normalizer.ts",
-      "loc": 2117
-    },
-    {
       "file": "server/ee-info-routes.ts",
       "loc": 2111
+    },
+    {
+      "file": "server/lib/import/normalizer.ts",
+      "loc": 2110
     },
     {
       "file": "client/src/pages/lifecycle-board.tsx",
@@ -182,15 +182,11 @@
     },
     {
       "file": "shared/schema/projects.ts",
-      "loc": 1577
+      "loc": 1589
     },
     {
       "file": "client/src/pages/subcontractor-dashboard.tsx",
       "loc": 1568
-    },
-    {
-      "file": "client/src/components/tabs/ProjectPlanTab.tsx",
-      "loc": 1565
     },
     {
       "file": "server/services/stage-lifecycle-service.ts",

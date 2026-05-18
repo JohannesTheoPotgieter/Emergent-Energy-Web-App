@@ -1,10 +1,7 @@
-import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
 import type { Request } from "express";
-import * as schema from "@shared/schema";
+import { users, projectEvents } from "@shared/schema";
 import { db } from "../db";
-
-const users = schema.users;
-const projectEvents = (schema as { projectEvents?: any }).projectEvents;
 
 export type ProjectEventType =
   | "project.created"
@@ -52,14 +49,14 @@ export interface CreateProjectEventInput {
 }
 
 export function actorFromReq(req: Request): { actorUserId: number | null; actorRole: string | null } {
-  const user = (req as any).user as any;
+  const user = req.user;
   return {
     actorUserId: user?.id ?? null,
     actorRole: user?.role ?? null,
   };
 }
 
-export async function createProjectEvent(input: CreateProjectEventInput, tx: any = db) {
+export async function createProjectEvent(input: CreateProjectEventInput, tx: typeof db = db) {
   if (!projectEvents) {
     return null;
   }
@@ -101,7 +98,7 @@ export async function listProjectEvents(params: {
   }
 
   const { projectId, eventTypes, actorUserId, from, to, order = "desc", limit = 200 } = params;
-  const conditions: any[] = [eq(projectEvents.projectId, projectId)];
+  const conditions: SQL[] = [eq(projectEvents.projectId, projectId)];
 
   if (eventTypes && eventTypes.length > 0) {
     conditions.push(inArray(projectEvents.eventType, eventTypes));

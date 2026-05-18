@@ -87,7 +87,7 @@ export default function DependencyManager({ taskId, projectId }: DependencyManag
       setLagDays(0);
       toast({ title: "Dependency added" });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({
         title: "Failed to add dependency",
         description: err?.message || "Could not create dependency",
@@ -104,7 +104,7 @@ export default function DependencyManager({ taskId, projectId }: DependencyManag
       invalidateDependencyCaches();
       toast({ title: "Dependency removed" });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({
         title: "Failed to remove dependency",
         description: err?.message || "Could not delete dependency",

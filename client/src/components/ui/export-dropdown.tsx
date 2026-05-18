@@ -9,7 +9,7 @@ import { Download, FileSpreadsheet, FileText } from "lucide-react";
 import { exportToCSV, exportToExcel, type ExportColumn } from "@/lib/export-table";
 
 interface ExportDropdownProps {
-  data: any[];
+  data: Array<Record<string, unknown>>;
   columns: ExportColumn[];
   filename: string;
 }

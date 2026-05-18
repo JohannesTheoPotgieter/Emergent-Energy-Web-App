@@ -13,9 +13,9 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { useToast } from "@/hooks/use-toast";
 import { type AssignableDirectoryEntry, fetchAssignables, getAssigneeBadgeLabel, getAuthHeaders as authHeaders } from "@/lib/assignables";
 import {
-  Upload, FileText, Package, DollarSign, ListChecks,
+  Upload,   DollarSign, ListChecks,
   ChevronRight, Check, ChevronsUpDown, Loader2,
-  X, Paperclip, Download, ArrowLeft, Info, FolderOpen,
+  X, Paperclip,  ArrowLeft, Info, FolderOpen,
 } from "lucide-react";
 
 type LinkType = "work_item" | "cost_line" | "revenue_line" | null;

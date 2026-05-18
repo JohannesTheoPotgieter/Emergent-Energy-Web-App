@@ -9,7 +9,7 @@ import {
   useUpdateClientUpdate,
   useGenerateClientUpdateDraft,
 } from "@/hooks/use-collaboration-workflow";
-import { Mail, Wand2, Send, Loader2, AlertCircle } from "lucide-react";
+import { Mail, Wand2, Send,  AlertCircle } from "lucide-react";
 import type { ClientUpdate } from "@shared/schema";
 
 const STATUS_BADGES: Record<string, { label: string; color: string }> = {
@@ -40,7 +40,7 @@ export function ClientUpdateEditor({ projectId }: ClientUpdateEditorProps) {
   });
 
   const updates = data?.updates || [];
-  const latestUpdate = updates[0];
+  const _latestUpdate = updates[0];
   const lastSentDate = updates.find((u: ClientUpdate) => u.clientUpdateStatus === "sent")?.sentDate;
   const daysSinceUpdate = lastSentDate
     ? Math.floor((Date.now() - new Date(lastSentDate).getTime()) / 86400000)

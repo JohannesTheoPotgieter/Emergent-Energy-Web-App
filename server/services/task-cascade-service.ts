@@ -17,7 +17,7 @@ import { workItems } from "@shared/schema";
 interface CascadeResult {
   parentUpdated: boolean;
   childrenUpdated: number;
-  changes: Record<string, any>;
+  changes: Record<string, unknown>;
 }
 
 // ── Completed statuses ──────────────────────────────────────────────
@@ -96,7 +96,7 @@ export async function rollupParentDates(parentId: number): Promise<CascadeResult
 
   const avgPct = totalWeight > 0 ? Math.round(totalPct / totalWeight) : 0;
 
-  const updates: Record<string, any> = { updatedAt: new Date() };
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
   if (minStart) {
     updates.startDate = minStart;
     result.changes.startDate = minStart.toISOString();
@@ -144,7 +144,7 @@ export async function cascadeStatusToParent(childTaskId: number): Promise<Cascad
 
   if (siblings.length === 0) return result;
 
-  const allComplete = siblings.every((s: any) => TERMINAL_STATUSES.has(s.status || ""));
+  const allComplete = siblings.every((s: { id: number; status: string | null }) => TERMINAL_STATUSES.has(s.status || ""));
 
   if (allComplete) {
     const [parent] = await db.select({ status: workItems.status }).from(workItems).where(eq(workItems.id, child.parentId));
@@ -180,12 +180,12 @@ export async function cascadeStatusToChildren(parentId: number, newStatus: strin
     and(eq(workItems.parentId, parentId), isNull(workItems.deletedAt))
   );
 
-  const childrenToUpdate = children.filter((c: any) => !TERMINAL_STATUSES.has(c.status || "") && c.status !== newStatus);
+  const childrenToUpdate = children.filter((c: { id: number; status: string | null }) => !TERMINAL_STATUSES.has(c.status || "") && c.status !== newStatus);
 
   if (childrenToUpdate.length === 0) return result;
 
-  const ids = childrenToUpdate.map((c: any) => c.id);
-  const updates: Record<string, any> = {
+  const ids = childrenToUpdate.map((c: { id: number; status: string | null }) => c.id);
+  const updates: Record<string, unknown> = {
     status: newStatus,
     updatedAt: new Date(),
   };
@@ -195,7 +195,7 @@ export async function cascadeStatusToChildren(parentId: number, newStatus: strin
   }
 
   await db.update(workItems).set(updates).where(
-    sql`${workItems.id} IN (${sql.join(ids.map((id: any) => sql`${id}`), sql`, `)})`
+    sql`${workItems.id} IN (${sql.join(ids.map((id: number) => sql`${id}`), sql`, `)})`
   );
 
   result.childrenUpdated = ids.length;
@@ -225,10 +225,10 @@ export async function validateParentCompletion(parentId: number): Promise<string
 
   if (children.length === 0) return null; // No children, can complete freely
 
-  const incomplete = children.filter((c: any) => !TERMINAL_STATUSES.has(c.status || ""));
+  const incomplete = children.filter((c: { id: number; title: string | null; status: string | null }) => !TERMINAL_STATUSES.has(c.status || ""));
 
   if (incomplete.length > 0) {
-    const names = incomplete.slice(0, 3).map((c: any) => `"${c.title}"`).join(", ");
+    const names = incomplete.slice(0, 3).map((c: { id: number; title: string | null; status: string | null }) => `"${c.title}"`).join(", ");
     const more = incomplete.length > 3 ? ` and ${incomplete.length - 3} more` : "";
     return `Cannot complete: ${incomplete.length} subtask${incomplete.length > 1 ? "s" : ""} still open (${names}${more})`;
   }
@@ -244,7 +244,7 @@ export async function validateParentCompletion(parentId: number): Promise<string
  */
 export async function runCascadesAfterUpdate(
   taskId: number,
-  updates: { status?: string; startDate?: any; endDate?: any; dueDate?: any }
+  updates: { status?: string; startDate?: string | Date | null; endDate?: string | Date | null; dueDate?: string | Date | null }
 ): Promise<{ dateResult: CascadeResult; statusResult: CascadeResult; childStatusResult: CascadeResult }> {
   const dateResult: CascadeResult = { parentUpdated: false, childrenUpdated: 0, changes: {} };
   const statusResult: CascadeResult = { parentUpdated: false, childrenUpdated: 0, changes: {} };

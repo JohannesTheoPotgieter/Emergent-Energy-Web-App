@@ -17,7 +17,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { ShieldCheck, ShieldAlert, ShieldOff, Loader2 } from "lucide-react";
+import { ShieldCheck,  ShieldOff, Loader2 } from "lucide-react";
 import { getAuthHeaders } from "@/pages/smart-import";
 import { fieldLabel, QB_PROTECTIONS_LABELS } from "./labels";
 

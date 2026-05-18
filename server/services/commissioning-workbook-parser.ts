@@ -41,8 +41,6 @@ const SECTION_DEFS: SectionDef[] = [
   { key: "final_completion_certificate", sheetName: "Final Completion Certificate", approvalCells: null, isRequired: false },
 ];
 
-const REQUIRED_SHEET_KEYS = SECTION_DEFS.filter((s) => s.isRequired).map((s) => s.key);
-
 // ===================== PARSE RESULT =====================
 
 export interface CommissioningParseResult {
@@ -74,7 +72,7 @@ function cellToString(cell: ExcelJS.Cell | undefined): string {
       return typeof v.result === "string" ? v.result.trim() : String(v.result);
     }
     if ("richText" in v && Array.isArray(v.richText)) {
-      return v.richText.map((rt: any) => rt.text || "").join("").trim();
+      return v.richText.map((rt: { text?: string }) => rt.text || "").join("").trim();
     }
   }
   return String(v).trim();
@@ -228,7 +226,7 @@ function parseSection(wb: ExcelJS.Workbook, def: SectionDef, warnings: string[])
 
 // ===================== O&M HANDOVER CHECKLIST =====================
 
-function parseOmHandoverChecklist(wb: ExcelJS.Workbook, warnings: string[]): {
+function parseOmHandoverChecklist(wb: ExcelJS.Workbook, _warnings: string[]): {
   checklist: OmHandoverChecklistItem[];
   sseg: { application?: string; approval?: string };
 } {

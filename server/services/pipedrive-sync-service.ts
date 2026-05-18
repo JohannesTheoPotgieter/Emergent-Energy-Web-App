@@ -44,6 +44,7 @@ import {
   type StructuredSyncError,
   type SyncErrorClass,
 } from "./pipedrive-field-mapping";
+import logger from "../lib/logger";
 
 /** Drizzle's transaction callback receives a `tx` whose surface mirrors
  *  `db`. Typing it as `typeof db` matches the codebase convention used in
@@ -305,7 +306,7 @@ export async function syncPipedriveDeals(
     const stages = await client.getStages();
     for (const s of stages) stageIdToName.set(s.id, s.name);
   } catch (err) {
-    console.warn("[PipedriveSync] Could not fetch stage definitions:", err);
+    logger.warn("[PipedriveSync] Could not fetch stage definitions:", err);
   }
 
   const labelMap = new Map<string, string>();
@@ -316,7 +317,7 @@ export async function syncPipedriveDeals(
       for (const opt of labelField.options) labelMap.set(String(opt.id), opt.label);
     }
   } catch (err) {
-    console.warn("[PipedriveSync] Could not fetch dealFields for label mapping:", err);
+    logger.warn("[PipedriveSync] Could not fetch dealFields for label mapping:", err);
   }
 
   const userByEmail = new Map<string, number>();
@@ -326,7 +327,7 @@ export async function syncPipedriveDeals(
       if (u.email) userByEmail.set(u.email.trim().toLowerCase(), u.id);
     }
   } catch (err) {
-    console.warn("[PipedriveSync] Could not load users for owner mapping:", err);
+    logger.warn("[PipedriveSync] Could not load users for owner mapping:", err);
   }
 
   try {
@@ -456,7 +457,7 @@ async function safeRecordRun(params: {
       },
     });
   } catch (err) {
-    console.error("[PipedriveSync] Failed to record integration health event:", err);
+    logger.error("[PipedriveSync] Failed to record integration health event:", err);
   }
 }
 

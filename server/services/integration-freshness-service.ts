@@ -11,7 +11,7 @@
  * This service is READ-ONLY. It does not mutate integration state.
  */
 
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "../db";
 import {
   integrations,

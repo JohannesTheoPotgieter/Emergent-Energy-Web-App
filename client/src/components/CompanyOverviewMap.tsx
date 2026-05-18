@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +13,7 @@ import {
   Search, Network, GitBranch, ChevronRight, ChevronDown,
   Edit2, Save, X, Plus, Trash2, Loader2, Users,
   Clock, Building2, Layers, Target, AlertCircle,
-  Link2, Activity, MapPin, Eye, FileText, Shield,
+  Link2, Activity, MapPin,  FileText, Shield,
   ArrowDown, CheckCircle2, Wrench, Scale, HardHat,
   Briefcase, ClipboardList, Cog, Truck, Factory,
 } from "lucide-react";

@@ -12,7 +12,7 @@ import {
   ArrowLeft, CheckCircle2, Loader2, AlertCircle,
   Plus, RefreshCw, Check, Minus, Shield, FileSpreadsheet, Upload,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, type ComponentProps } from "react";
 import { useLocation } from "wouter";
 import { getAuthHeaders } from "@/pages/smart-import";
 import { SECTION_LABELS, CONFIRM_LABELS, RESULT_LABELS, IMPORT_MODE_LABELS } from "./labels";
@@ -22,11 +22,12 @@ import { SmartImportIntegrityCheck } from "./SmartImportIntegrityCheck";
 import { SmartImportPreflightPanel } from "./SmartImportPreflightPanel";
 import { SmartImportDownstreamImpact } from "./SmartImportDownstreamImpact";
 import { SmartImportPostCommitNext } from "./SmartImportPostCommitNext";
+import type { PlanningData, PreviewData, CommitResult } from "./types";
 
 interface ConfirmStepProps {
   runId: number;
-  planning: any;
-  preview?: any;
+  planning: PlanningData | null;
+  preview?: PreviewData | null;
   decisions: Record<string, "keep_app" | "accept_file">;
   onBack: () => void;
   onCommitComplete?: () => void;
@@ -46,12 +47,12 @@ function SummaryRow({ icon, count, label, color }: { icon: React.ReactNode; coun
 
 export function SmartImportConfirmStep({ runId, planning, preview, decisions, onBack, onCommitComplete, onStartNew }: ConfirmStepProps) {
   const [committing, setCommitting] = useState(false);
-  const [commitResult, setCommitResult] = useState<any>(null);
+  const [commitResult, setCommitResult] = useState<CommitResult | null>(null);
   const [commitError, setCommitError] = useState<string | null>(null);
   const [, navigate] = useLocation();
 
   const sections = planning?.sections || {};
-  const conflicts = planning?.conflicts;
+  const _conflicts = planning?.conflicts;
   const importMode = planning?.importMode || "BASELINE";
 
   // Aggregate counts across sections
@@ -70,7 +71,10 @@ export function SmartImportConfirmStep({ runId, planning, preview, decisions, on
     setCommitting(true);
     setCommitError(null);
     try {
-      const body: any = { preserveManualEdits: true };
+      const body: {
+        preserveManualEdits: boolean;
+        v2ConflictResolutions?: Record<string, "keep_app" | "accept_file">;
+      } = { preserveManualEdits: true };
       if (totalDecisions > 0) {
         body.v2ConflictResolutions = decisions;
       }
@@ -86,8 +90,8 @@ export function SmartImportConfirmStep({ runId, planning, preview, decisions, on
       const data = await res.json();
       setCommitResult(data);
       onCommitComplete?.();
-    } catch (err: any) {
-      setCommitError(err.message || "Something went wrong during import.");
+    } catch (err) {
+      setCommitError(err instanceof Error ? err.message : "Something went wrong during import.");
     } finally {
       setCommitting(false);
     }
@@ -146,7 +150,12 @@ export function SmartImportConfirmStep({ runId, planning, preview, decisions, on
 
           {Array.isArray(commitResult?.v2?.rowWarnings) && commitResult.v2.rowWarnings.length > 0 && (
             <div className="border-t pt-3">
-              <SmartImportPreflightPanel rowWarnings={commitResult.v2.rowWarnings} variant="post-commit" />
+              {/* rowWarnings is an opaque server array; the panel reads it
+                  defensively. Assert the panel's row-warning view. */}
+              <SmartImportPreflightPanel
+                rowWarnings={commitResult.v2.rowWarnings as ComponentProps<typeof SmartImportPreflightPanel>["rowWarnings"]}
+                variant="post-commit"
+              />
             </div>
           )}
 
@@ -239,7 +248,12 @@ export function SmartImportConfirmStep({ runId, planning, preview, decisions, on
             coordinates before the user commits. */}
         {preview?.preflight && (preview.preflight.warnings?.length ?? 0) > 0 && (
           <div className="border-t pt-3">
-            <SmartImportPreflightPanel preflight={preview.preflight} variant="pre-commit" />
+            {/* preflight is an opaque server object the panel reads
+                defensively; assert the panel's preflight view. */}
+            <SmartImportPreflightPanel
+              preflight={preview.preflight as ComponentProps<typeof SmartImportPreflightPanel>["preflight"]}
+              variant="pre-commit"
+            />
           </div>
         )}
 

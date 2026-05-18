@@ -2,7 +2,14 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Info, XCircle } from "lucide-react";
 
-async function fetchNcr(id: number): Promise<{ ncr: any }> {
+interface NcrSummary {
+  title?: string | null;
+  severity?: string | null;
+  status?: string | null;
+  project_name?: string | null;
+}
+
+async function fetchNcr(id: number): Promise<{ ncr: NcrSummary }> {
   const token = localStorage.getItem("auth_token");
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -25,7 +32,7 @@ export function NcrLegacyDeepLinkBanner() {
     return v && /^\d+$/.test(v) ? Number(v) : null;
   }, []);
 
-  const { data, isError } = useQuery<{ ncr: any }>({
+  const { data, isError } = useQuery<{ ncr: NcrSummary }>({
     queryKey: ["quality-ncr-detail", ncrId],
     queryFn: () => fetchNcr(ncrId as number),
     enabled: ncrId !== null && !dismissed,

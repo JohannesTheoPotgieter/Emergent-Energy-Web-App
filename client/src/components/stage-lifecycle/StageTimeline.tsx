@@ -1,4 +1,4 @@
-import { Badge } from "@/components/ui/badge";
+import {} from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ProjectStageInstance } from "@shared/schema";
 import { STAGE_SEQUENCE } from "@shared/utils/stage-state-machine";

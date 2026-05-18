@@ -8,9 +8,20 @@ export interface ProjectCompletion {
   delta: number;
 }
 
-export function computeProjectCompletion(plans: any[]): ProjectCompletion {
+/** Subset of plan-task fields used to compute completion KPIs. */
+export interface ProjectCompletionPlanRow {
+  actualPctComplete?: number | string | null;
+  percentComplete?: number | string | null;
+  expectedPctComplete?: number | string | null;
+  expectedProgress?: number | string | null;
+  actualStart?: string | null;
+  actualEnd?: string | null;
+  durationDays?: number | null;
+}
+
+export function computeProjectCompletion(plans: ProjectCompletionPlanRow[]): ProjectCompletion {
   const todayStr = new Date().toISOString().split("T")[0];
-  const validPlans = plans.filter((p: any) => {
+  const validPlans = plans.filter((p) => {
     const hasActual = (p.actualPctComplete ?? p.percentComplete) != null;
     const hasExpected = (p.expectedPctComplete ?? p.expectedProgress) != null;
     const hasDateRange = p.actualStart && p.actualEnd;
@@ -25,7 +36,7 @@ export function computeProjectCompletion(plans: any[]): ProjectCompletion {
   for (const p of validPlans) {
     const dur = p.durationDays && p.durationDays > 0 ? p.durationDays : 1;
     const act = p.actualPctComplete ?? p.percentComplete ?? 0;
-    weightedActual += (parseFloat(act) || 0) * dur;
+    weightedActual += (parseFloat(String(act)) || 0) * dur;
 
     let exp = p.expectedPctComplete ?? p.expectedProgress ?? null;
     if (exp == null) {
@@ -39,7 +50,7 @@ export function computeProjectCompletion(plans: any[]): ProjectCompletion {
       const tEnd = p.actualEnd?.substring(0, 10) ?? null;
       exp = expectedPctFromDates(tStart, tEnd, todayStr) ?? 0;
     }
-    weightedExpected += (parseFloat(exp) || 0) * dur;
+    weightedExpected += (parseFloat(String(exp)) || 0) * dur;
     totalWeight += dur;
   }
 

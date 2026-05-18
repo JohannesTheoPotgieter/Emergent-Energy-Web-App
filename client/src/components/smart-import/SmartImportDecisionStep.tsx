@@ -7,9 +7,10 @@ import {
 import { useMemo } from "react";
 import { SECTION_LABELS, CONFLICT_ACTIONS, fieldLabel } from "./labels";
 import { SmartImportDecisionIntro } from "./SmartImportDecisionIntro";
+import type { PlanningData } from "./types";
 
 interface DecisionStepProps {
-  planning: any;
+  planning: PlanningData | null;
   decisions: Record<string, "keep_app" | "accept_file">;
   onDecision: (key: string, value: "keep_app" | "accept_file") => void;
   onBulkDecision: (value: "keep_app" | "accept_file") => void;
@@ -40,15 +41,15 @@ export function SmartImportDecisionStep({
     const rows: FlatDecisionRow[] = [];
     for (const r of planning.conflicts.allRows) {
       if (r.conflictStatus !== "HAS_CONFLICTS") continue;
-      for (const f of r.fields) {
+      for (const f of r.fields ?? []) {
         if (!f.requiresDecision) continue;
         rows.push({
           decisionKey: `${r.rowKey}::${f.fieldName}`,
           displayLabel: r.displayLabel || "",
           section: r.section || "",
-          fieldName: f.fieldName,
-          currentAppValue: f.currentAppValue,
-          uploadedValue: f.uploadedValue,
+          fieldName: f.fieldName ?? "",
+          currentAppValue: f.currentAppValue == null ? null : String(f.currentAppValue),
+          uploadedValue: f.uploadedValue == null ? null : String(f.uploadedValue),
         });
       }
     }

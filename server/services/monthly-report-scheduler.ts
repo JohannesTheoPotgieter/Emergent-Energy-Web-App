@@ -11,6 +11,7 @@ import { eq, and } from "drizzle-orm";
 import { generatePmReportData } from "./pm-monthly-report-service";
 import { generateEngineeringReportData } from "./engineering-monthly-report-service";
 import { logAudit } from "../audit-logger";
+import logger from "../lib/logger";
 
 let schedulerInterval: ReturnType<typeof setInterval> | null = null;
 let lastCheckedDate = "";
@@ -38,7 +39,7 @@ async function generateMonthlyReport(reportType: "pm" | "engineering", month: st
     .limit(1);
 
   if (existing) {
-    console.log(`[Monthly Report Scheduler] ${reportType} report for ${month} already exists (status: ${existing.status}), skipping`);
+    logger.info(`[Monthly Report Scheduler] ${reportType} report for ${month} already exists (status: ${existing.status}), skipping`);
     return false;
   }
 
@@ -57,8 +58,9 @@ async function generateMonthlyReport(reportType: "pm" | "engineering", month: st
     }).returning({ id: monthlyReportSnapshots.id });
   } catch (err: unknown) {
     // Handle unique constraint violation (race condition — another instance already created it)
-    if ((err instanceof Error ? err.message : String(err))?.includes("unique") || (err instanceof Error ? err.message : String(err))?.includes("duplicate") || (err as any).code === "23505") {
-      console.log(`[Monthly Report Scheduler] ${reportType} report for ${month} was created by another instance, skipping`);
+    const errCode = typeof err === "object" && err !== null && "code" in err ? (err as { code?: unknown }).code : undefined;
+    if ((err instanceof Error ? err.message : String(err))?.includes("unique") || (err instanceof Error ? err.message : String(err))?.includes("duplicate") || errCode === "23505") {
+      logger.info(`[Monthly Report Scheduler] ${reportType} report for ${month} was created by another instance, skipping`);
       return false;
     }
     throw err;
@@ -81,14 +83,14 @@ async function generateMonthlyReport(reportType: "pm" | "engineering", month: st
     },
   }).catch(() => {});
 
-  console.log(`[Monthly Report Scheduler] Auto-generated ${reportType} draft report for ${month}`);
+  logger.info(`[Monthly Report Scheduler] Auto-generated ${reportType} draft report for ${month}`);
   return true;
 }
 
 export function startMonthlyReportScheduler(): void {
   if (schedulerInterval) return;
 
-  console.log("[Monthly Report Scheduler] Starting scheduler (checks every hour)");
+  logger.info("[Monthly Report Scheduler] Starting scheduler (checks every hour)");
 
   // Check every hour if it's the 1st of the month
   schedulerInterval = setInterval(async () => {
@@ -105,18 +107,18 @@ export function startMonthlyReportScheduler(): void {
     isRunning = true;
     const previousMonth = getPreviousMonth();
 
-    console.log(`[Monthly Report Scheduler] 1st of month detected. Generating reports for ${previousMonth}...`);
+    logger.info(`[Monthly Report Scheduler] 1st of month detected. Generating reports for ${previousMonth}...`);
 
     try {
       await generateMonthlyReport("pm", previousMonth);
     } catch (err: unknown) {
-      console.error(`[Monthly Report Scheduler] Failed to generate PM report for ${previousMonth}:`, (err instanceof Error ? err.message : String(err)));
+      logger.error(`[Monthly Report Scheduler] Failed to generate PM report for ${previousMonth}:`, (err instanceof Error ? err.message : String(err)));
     }
 
     try {
       await generateMonthlyReport("engineering", previousMonth);
     } catch (err: unknown) {
-      console.error(`[Monthly Report Scheduler] Failed to generate Engineering report for ${previousMonth}:`, (err instanceof Error ? err.message : String(err)));
+      logger.error(`[Monthly Report Scheduler] Failed to generate Engineering report for ${previousMonth}:`, (err instanceof Error ? err.message : String(err)));
     }
 
     isRunning = false;
@@ -127,6 +129,6 @@ export function stopMonthlyReportScheduler(): void {
   if (schedulerInterval) {
     clearInterval(schedulerInterval);
     schedulerInterval = null;
-    console.log("[Monthly Report Scheduler] Stopped");
+    logger.info("[Monthly Report Scheduler] Stopped");
   }
 }

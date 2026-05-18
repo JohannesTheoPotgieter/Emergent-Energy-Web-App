@@ -15,6 +15,7 @@
 
 import { BookOpen } from "lucide-react";
 import { SECTION_LABELS } from "./labels";
+import type { PlanningData, PreviewData } from "./types";
 
 interface PlanRow {
   isMilestone?: boolean;
@@ -26,8 +27,8 @@ interface PlanRow {
 }
 
 interface SmartImportPlanNarrativeProps {
-  planning: any | null;
-  preview?: any | null;
+  planning: PlanningData | null;
+  preview?: PreviewData | null;
 }
 
 function safeDate(value: unknown): Date | null {
@@ -46,14 +47,17 @@ function approximateSpanMonths(a: Date, b: Date): number {
 }
 
 export function SmartImportPlanNarrative({ planning, preview }: SmartImportPlanNarrativeProps) {
-  const planRows: PlanRow[] = planning?.sections?.PLAN?.rows ?? preview?.normalization?.planTasks ?? [];
+  // PLAN section rows and normalized planTasks are the same task shape on the
+  // wire; assert the local PlanRow view used for narrative rendering.
+  const planRows = (planning?.sections?.PLAN?.rows ?? preview?.normalization?.planTasks ?? []) as PlanRow[];
   const hasPlan = Array.isArray(planRows) && planRows.length > 0;
 
   if (!hasPlan) {
     // Generic fallback narrative when there's no plan section (e.g. a
     // revenue-only or expenditure-only upload).
-    const sectionNames = planning?.sections
-      ? Object.keys(planning.sections).filter((k) => planning.sections[k])
+    const sectionsMap = planning?.sections;
+    const sectionNames = sectionsMap
+      ? Object.keys(sectionsMap).filter((k) => sectionsMap[k])
       : [];
     const labels = sectionNames.map((k) => SECTION_LABELS[k] || k);
     return (

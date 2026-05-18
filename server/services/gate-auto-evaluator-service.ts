@@ -471,7 +471,7 @@ export const EVALUATOR_BINDINGS: EvaluatorBinding[] = [
     phaseCode: "S02_DESIGN_COST_PROPOSAL",
     itemCode: "bom_priced",
     evaluate: (ctx) => {
-      const planned = ctx.costLines.filter((l) => (l as any).status === "planned" || l.status === "planned");
+      const planned = ctx.costLines.filter((l) => l.status === "planned");
       if (planned.length === 0) return NOT_DETECTED();
       return detected("complete", `${planned.length} planned cost lines on BOM`, {
         evidenceRef: `cost_lines:project:${ctx.projectId}`,
@@ -643,7 +643,7 @@ export const EVALUATOR_BINDINGS: EvaluatorBinding[] = [
     itemCode: "financial_baseline_confirmed",
     evaluate: (ctx) => {
       const planned = asNumber(ctx.revenueSummary?.plannedRevenue);
-      const plannedExp = asNumber((ctx.revenueSummary as any)?.plannedExpenditure);
+      const plannedExp = asNumber((ctx.revenueSummary as { plannedExpenditure?: unknown } | null)?.plannedExpenditure);
       if (planned <= 0 || plannedExp <= 0) return NOT_DETECTED();
       return detected(
         "complete",
@@ -856,10 +856,10 @@ export const EVALUATOR_BINDINGS: EvaluatorBinding[] = [
     evaluate: (ctx) => {
       const snap = ctx.commissioningSnapshots[0];
       if (!snap) return NOT_DETECTED();
-      const sections = (snap.parsedSections as any[]) ?? [];
-      const testSections = sections.filter((s: any) => /test|measurement|electrical/i.test(s.sectionType ?? ""));
+      const sections = (snap.parsedSections as Array<{ sectionType?: string | null; isCompleteForGate?: boolean; displayStatus?: string | null }>) ?? [];
+      const testSections = sections.filter((s) => /test|measurement|electrical/i.test(s.sectionType ?? ""));
       if (testSections.length === 0) return NOT_DETECTED();
-      const completeForGate = testSections.filter((s: any) => s.isCompleteForGate);
+      const completeForGate = testSections.filter((s) => s.isCompleteForGate);
       if (completeForGate.length === testSections.length) {
         return detected("complete", `${testSections.length} commissioning test sections complete`, {
           evidenceRef: `commissioning_snapshot:${snap.id}`,
@@ -894,8 +894,8 @@ export const EVALUATOR_BINDINGS: EvaluatorBinding[] = [
     evaluate: (ctx) => {
       const snap = ctx.commissioningSnapshots[0];
       if (!snap) return NOT_DETECTED();
-      const sections = (snap.parsedSections as any[]) ?? [];
-      const perf = sections.find((s: any) => /performance|pr/i.test(s.sectionType ?? "") && s.displayStatus === "complete");
+      const sections = (snap.parsedSections as Array<{ sectionType?: string | null; displayStatus?: string | null }>) ?? [];
+      const perf = sections.find((s) => /performance|pr/i.test(s.sectionType ?? "") && s.displayStatus === "complete");
       if (!perf) return NOT_DETECTED();
       return detected("complete", `Performance section complete in commissioning snapshot`, {
         evidenceRef: `commissioning_snapshot:${snap.id}`,
@@ -1153,13 +1153,13 @@ export const EVALUATOR_BINDINGS: EvaluatorBinding[] = [
     evaluate: (ctx) => {
       const w = ctx.workItems.find((w) => {
         if (!/3.month|three.month|post.handover|review/i.test(w.title ?? "")) return false;
-        const start = (w as any).startDate;
+        const start = w.startDate;
         if (!start) return false;
         const days = (new Date(start).getTime() - Date.now()) / 86400_000;
         return days >= 30 && days <= 180;
       });
       if (!w) return NOT_DETECTED();
-      return detected("complete", `Review scheduled for ${fmtDate((w as any).startDate)}`, {
+      return detected("complete", `Review scheduled for ${fmtDate(w.startDate)}`, {
         evidenceRef: `work_item:${w.id}`,
         evidenceUrl: `/work-items/${w.id}`,
       });
@@ -1188,8 +1188,8 @@ export const EVALUATOR_BINDINGS: EvaluatorBinding[] = [
     itemCode: "performance_vs_design",
     evaluate: (ctx) => {
       const snap = ctx.commissioningSnapshots[0];
-      const sections = (snap?.parsedSections as any[]) ?? [];
-      const sec = sections.find((s: any) => /performance.vs.design|performance.review/i.test(s.sectionType ?? ""));
+      const sections = (snap?.parsedSections as Array<{ sectionType?: string | null; displayStatus?: string | null }>) ?? [];
+      const sec = sections.find((s) => /performance.vs.design|performance.review/i.test(s.sectionType ?? ""));
       if (sec && sec.displayStatus === "complete") {
         return detected("complete", `Commissioning performance-vs-design section complete`, {
           evidenceRef: `commissioning_snapshot:${snap.id}`,

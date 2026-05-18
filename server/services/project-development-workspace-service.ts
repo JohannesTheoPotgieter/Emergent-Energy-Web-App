@@ -61,16 +61,21 @@ function requiresQualityStatus(engineeringStatus: string): boolean {
   return ["na", "n/a", "not applicable", "not started"].every((token) => !normalized.includes(token));
 }
 
-function normalizeDeliverables(value: unknown): Record<string, any> {
+/** OM-handover record with dual camelCase/snake_case field access. */
+type HandoverRecord = Record<string, unknown>;
+/** Map of deliverable key → nested deliverable object (free-form JSON). */
+type DeliverablesMap = Record<string, Record<string, unknown> | undefined>;
+
+function normalizeDeliverables(value: unknown): DeliverablesMap {
   if (!value) return {};
   if (typeof value === "string") {
     try {
-      return JSON.parse(value);
+      return JSON.parse(value) as DeliverablesMap;
     } catch {
       return {};
     }
   }
-  if (typeof value === "object") return value as Record<string, any>;
+  if (typeof value === "object") return value as DeliverablesMap;
   return {};
 }
 
@@ -364,7 +369,7 @@ export function buildProjectDevelopmentWorkspaceFromSources(params: {
     executionGateStatus: string | null;
     executionEnabled: boolean;
   };
-  handover: any | null;
+  handover: HandoverRecord | null;
   latestUpdate?: {
     text: string | null;
     updatedAt: string | null;
@@ -651,7 +656,7 @@ export function computePdPmSubmitBlockers(params: {
     pd?: string | null;
     clientId?: number | null;
   };
-  handover: any;
+  handover: HandoverRecord;
   workspace: ProjectDevelopmentWorkspacePayload;
 }): string[] {
   const deliverables = normalizeDeliverables(params.handover?.deliverables);
@@ -705,7 +710,7 @@ export function computePdPmSubmitBlockers(params: {
   }
 
   // PD→PM V2 required readiness sections.
-  const handoverFormData = params.handover?.handoverFormData ?? params.handover?.handover_form_data ?? {};
+  const handoverFormData = (params.handover?.handoverFormData ?? params.handover?.handover_form_data ?? {}) as Record<string, unknown>;
   const hasObject = handoverFormData && typeof handoverFormData === "object";
   const risksTable = Array.isArray(handoverFormData?.risksTable) ? handoverFormData.risksTable : [];
   const paymentMilestones = Array.isArray(handoverFormData?.paymentMilestones) ? handoverFormData.paymentMilestones : [];
@@ -739,7 +744,7 @@ export async function getProjectDevelopmentWorkspace(params: {
   phase?: string | null;
   executionGateStatus?: string | null;
   executionEnabled?: boolean;
-  handover: any | null;
+  handover: HandoverRecord | null;
 }): Promise<ProjectDevelopmentWorkspacePayload> {
   const [editableRows, intakeRows, pdTicketRows, raidRows, microsoftRows, communicationTimelineRows, phaseHistoryRows, workItemRows, summaryMap] = await Promise.all([
     db
@@ -835,9 +840,9 @@ export async function getProjectDevelopmentWorkspace(params: {
     getPlatformProjectSummaryMap({ projectIds: [params.projectId] }),
   ]);
 
-  const intakeRequestIds = intakeRows.map((row: any) => row.id);
-  const pdTicketIds = pdTicketRows.map((row: any) => row.id);
-  const workItemIds = workItemRows.map((row: any) => row.id);
+  const intakeRequestIds = intakeRows.map((row: { id: number }) => row.id);
+  const pdTicketIds = pdTicketRows.map((row: { id: number }) => row.id);
+  const workItemIds = workItemRows.map((row: { id: number }) => row.id);
 
   const [intakeTaskRows, pdTicketTaskRows, workItemDependencyRows] = await Promise.all([
     intakeRequestIds.length > 0
@@ -914,7 +919,16 @@ export async function getProjectDevelopmentWorkspace(params: {
     pdTicketTaskRows,
     workItemRows,
     workItemDependencyRows,
-    raidRows: raidRows.map((row: any) => ({
+    raidRows: raidRows.map((row: {
+      id: number;
+      type: string | null;
+      title: string | null;
+      status: string | null;
+      priority: string | null;
+      dueDate: string | null;
+      mitigationResponse: string | null;
+      updatedAt: Date | null;
+    }) => ({
       id: row.id,
       type: row.type,
       title: row.title,
@@ -985,11 +999,11 @@ export async function getProjectDevelopmentWorkspaceRollup(): Promise<WorkspaceR
   }
   const today = new Date().toISOString().slice(0, 10);
 
-  let projects: any[];
-  let oppRows: any[];
-  let ticketRows: any[];
-  let workItemAggRows: any[];
-  let raidAggRows: any[];
+  let projects: Array<{ id: number; projectName: string | null; clientId: number | null; phase: string | null; opportunityId: number | null; ragStatus: string | null; updatedAt: Date | null }>;
+  let oppRows: Array<{ id: number; stage: string | null }>;
+  let ticketRows: Array<{ projectId: number | null; status: string | null; dueDate: string | null; createdAt: Date | null }>;
+  let workItemAggRows: Array<{ projectId: number | null; total: number; completed: number; blocked: number; overdue: number; lastActivityAt: string | null }>;
+  let raidAggRows: Array<{ projectId: number | null; open: number }>;
   try {
     [projects, oppRows, ticketRows, workItemAggRows, raidAggRows] = await Promise.all([
       db

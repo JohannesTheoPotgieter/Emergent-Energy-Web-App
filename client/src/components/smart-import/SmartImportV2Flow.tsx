@@ -21,6 +21,7 @@ import { SmartImportFoundStep } from "./SmartImportFoundStep";
 import { SmartImportChangesStep } from "./SmartImportChangesStep";
 import { SmartImportDecisionStep } from "./SmartImportDecisionStep";
 import { SmartImportConfirmStep } from "./SmartImportConfirmStep";
+import type { PreviewData, PlanningData } from "./types";
 
 interface V2FlowProps {
   /** Called when the user enters bulk mode (multiple files uploaded) */
@@ -36,8 +37,8 @@ interface V2FlowProps {
 export function SmartImportV2Flow({ onBulkMode, initialRunId, onBack, onRunIdChange }: V2FlowProps) {
   const [step, setStep] = useState(initialRunId ? 2 : 1);
   const [runId, setRunId] = useState<number | null>(initialRunId || null);
-  const [preview, setPreview] = useState<any>(null);
-  const [planning, setPlanning] = useState<any>(null);
+  const [preview, setPreview] = useState<PreviewData | null>(null);
+  const [planning, setPlanning] = useState<PlanningData | null>(null);
   const [loadingPlan, setLoadingPlan] = useState(false);
   const [planError, setPlanError] = useState<string | null>(null);
   const [decisions, setDecisions] = useState<Record<string, "keep_app" | "accept_file">>({});
@@ -66,7 +67,6 @@ export function SmartImportV2Flow({ onBulkMode, initialRunId, onBack, onRunIdCha
         setPlanError(errData.error || `Plan request failed (${planRes.status})`);
       }
     } catch (err) {
-      console.error("[SmartImportV2] Failed to load planner data:", err);
       setPlanError(err instanceof Error ? err.message : "Failed to load plan data");
     } finally {
       setLoadingPlan(false);
@@ -83,7 +83,7 @@ export function SmartImportV2Flow({ onBulkMode, initialRunId, onBack, onRunIdCha
   }, [initialRunId, loadPlannerData, onRunIdChange]);
 
   // Handle single file upload completion
-  const handleUploaded = useCallback((newRunId: number, newPreview: any) => {
+  const handleUploaded = useCallback((newRunId: number, newPreview: PreviewData | null) => {
     setRunId(newRunId);
     setPreview(newPreview);
     setDecisions({});
@@ -113,7 +113,7 @@ export function SmartImportV2Flow({ onBulkMode, initialRunId, onBack, onRunIdCha
     const newDecisions: Record<string, "keep_app" | "accept_file"> = {};
     for (const row of planning.conflicts.allRows) {
       if (row.conflictStatus !== "HAS_CONFLICTS") continue;
-      for (const field of row.fields) {
+      for (const field of row.fields ?? []) {
         if (field.requiresDecision) {
           newDecisions[`${row.rowKey}::${field.fieldName}`] = value;
         }

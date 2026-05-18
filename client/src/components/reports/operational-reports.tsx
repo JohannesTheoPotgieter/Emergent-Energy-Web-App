@@ -9,7 +9,24 @@ const STAGE_LABELS: Record<string, string> = {
   S09_CLIENT_HANDOVER: "Client Handover",
 };
 
+interface CommissioningQueueRow {
+  project_name: string;
+  pm?: string | null;
+  stage_status: string;
+  readiness_pct: number;
+  days_in_stage: number;
+}
+
+interface WeeklyComplianceRow {
+  project_name: string;
+  pm?: string | null;
+  current_stage_code: string;
+  compliance_status: string;
+  last_review_date?: string | null;
+}
+
 export function OperationalReports() {
+  // useOperationalReports() types its arrays as unknown[]; assert API row shapes.
   const { data, isLoading } = useOperationalReports();
 
   if (isLoading) return <div className="animate-pulse h-32 bg-muted rounded" />;
@@ -40,7 +57,7 @@ export function OperationalReports() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data!.commissioningQueue.map((p: any, i: number) => (
+                  {(data!.commissioningQueue as CommissioningQueueRow[]).map((p, i) => (
                     <tr key={i} className="border-b">
                       <td className="p-2 font-medium">{p.project_name}</td>
                       <td className="p-2 text-muted-foreground">{p.pm || "-"}</td>
@@ -80,7 +97,7 @@ export function OperationalReports() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data!.weeklyCompliance.map((p: any, i: number) => (
+                  {(data!.weeklyCompliance as WeeklyComplianceRow[]).map((p, i) => (
                     <tr key={i} className="border-b">
                       <td className="p-2 font-medium">{p.project_name}</td>
                       <td className="p-2 text-muted-foreground">{p.pm || "-"}</td>

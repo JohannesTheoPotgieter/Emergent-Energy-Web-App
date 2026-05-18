@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   pendingApprovals,
@@ -60,7 +60,7 @@ export async function proposeApproval(input: ProposeApprovalInput): Promise<Prop
       kind: input.kind,
       targetTable: input.targetTable,
       summary: input.summary,
-      payload: input.payload as any,
+      payload: input.payload,
       sourceLabel: input.sourceLabel,
       sourceRef: input.sourceRef ?? null,
     })
@@ -129,9 +129,9 @@ export async function approvePending(id: number, decidedByUserId: number): Promi
   let appliedRecordId: string;
   try {
     appliedRecordId = await handler(row.payload as Record<string, unknown>, { decidedByUserId });
-  } catch (err: any) {
+  } catch (err: unknown) {
     return db.transaction(async (tx: typeof db) => {
-      const errorMessage = err?.message ?? String(err);
+      const errorMessage = err instanceof Error ? err.message : String(err);
       const [failed] = await tx
         .update(pendingApprovals)
         .set({

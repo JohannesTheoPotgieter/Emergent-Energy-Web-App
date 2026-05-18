@@ -49,7 +49,11 @@ export default function DrilldownDrawer({
     return q.toString();
   }, [context]);
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error } = useQuery<{
+    rows?: Array<Record<string, unknown>>;
+    aggregates?: { rowCount?: number };
+    appliedFilters?: Record<string, unknown>;
+  }>({
     queryKey: ["report-drilldown", endpoint, queryParams],
     enabled: open,
     queryFn: async () => {
@@ -105,7 +109,7 @@ export default function DrilldownDrawer({
                 </tr>
               </thead>
               <tbody>
-                {rows.length === 0 ? <tr><td className="p-4" colSpan={columns.length || 1}>No rows found.</td></tr> : rows.map((r: any, i: number) => (
+                {rows.length === 0 ? <tr><td className="p-4" colSpan={columns.length || 1}>No rows found.</td></tr> : rows.map((r, i) => (
                   <tr key={i} className="border-b">
                     {columns.map(c => <td key={c} className="px-2 py-1.5">{String(r[c] ?? "—")}</td>)}
                   </tr>

@@ -1,6 +1,6 @@
 import { db } from "../db";
 import { notifications, notificationThrottle } from "@shared/schema";
-import { eq, and, sql, desc } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 
 interface CreateNotificationParams {
   recipientUserId: number;

@@ -3,7 +3,7 @@ import { useUnifiedApprovals, useApprovalAction } from "@/hooks/use-approvals";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
-import { CheckCircle, XCircle, MessageSquare, UserPlus, Clock, AlertTriangle } from "lucide-react";
+import { CheckCircle, XCircle,   Clock, AlertTriangle } from "lucide-react";
 import { PageSkeleton } from "@/components/ui/page-states";
 import { PHASES } from "@shared/phases";
 
@@ -66,7 +66,7 @@ export function UnifiedApprovalsQueue() {
         </div>
       ) : (
         <div className="space-y-2">
-          {approvals.map((a: any) => {
+          {approvals.map((a) => {
             const isOverdue = a.age_days > 3;
             return (
               <div

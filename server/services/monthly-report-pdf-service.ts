@@ -7,7 +7,6 @@ import PDFDocument from "pdfkit";
 import { getMonthLabel } from "./pm-monthly-report-service";
 
 const EE_GREEN = "#1a5c3a";
-const EE_GREEN_LIGHT = "#4a7c5e";
 const WHITE = "#ffffff";
 const GREY = "#666666";
 const LIGHT_GREY = "#f5f5f5";
@@ -15,7 +14,7 @@ const RED = "#DC3545";
 const AMBER = "#FFC107";
 const GREEN = "#28A745";
 
-function ragColor(rag: string | null): string {
+function ragColor(rag: string | null | undefined): string {
   const upper = (rag || "").toUpperCase();
   if (upper === "RED") return RED;
   if (upper === "AMBER") return AMBER;
@@ -31,7 +30,105 @@ function formatPct(val: number): string {
   return `${val.toFixed(1)}%`;
 }
 
-export async function generateReportPdf(reportType: string, data: any, month: string): Promise<Buffer> {
+type Str = string | null | undefined;
+type Num = number | null | undefined;
+
+/** Structural shape of the monthly-report snapshot consumed by the PDF renderer. */
+export interface MonthlyReportPdfData {
+  meta?: {
+    generatedAt?: string | number | null;
+    periodType?: Str;
+    periodStart?: Str;
+    periodEnd?: Str;
+  };
+  kpis?: Record<string, Num>;
+  financials?: {
+    grossProfit?: Array<{
+      projectName?: Str;
+      revenue?: Num;
+      cost?: Num;
+      grossProfit?: Num;
+      gpMarginPct?: Num;
+    }>;
+  };
+  projectStatus?: Array<{
+    projectName?: Str;
+    phase?: Str;
+    ragStatus?: Str;
+    pm?: Str;
+    healthScore?: number | null;
+  }>;
+  tasks?: {
+    perProject?: Array<{
+      projectName?: Str;
+      totalTasks?: Num;
+      completed?: Num;
+      inProgress?: Num;
+      overdue?: Num;
+      completionPct?: Num;
+    }>;
+    programmeMetrics?: {
+      tasksCompletedThisMonth?: Num;
+      overdueTasks?: Num;
+      milestonesAchieved?: Num;
+      totalActiveTasks?: Num;
+    };
+  };
+  raidItems?: {
+    items?: Array<{
+      projectName?: Str;
+      type?: Str;
+      title?: Str;
+      priority?: Str;
+      ownerName?: Str;
+      dueDate?: Str;
+    }>;
+  };
+  quality?: {
+    qcProgress?: Array<{
+      projectName?: Str;
+      checklistStatus?: Str;
+      itemsApplicable?: Num;
+      itemsApproved?: Num;
+      progressPct?: Num;
+      openWarnings?: Num;
+    }>;
+  };
+  procurement?: Array<{
+    projectName?: Str;
+    title?: Str;
+    category?: Str;
+    actualCost?: Num;
+    expectedCost?: Num;
+    supplierName?: Str;
+    status?: Str;
+  }>;
+  deliverables?: {
+    register?: Array<{
+      projectName?: Str;
+      title?: Str;
+      type?: Str;
+      status?: Str;
+      ownerName?: Str;
+    }>;
+  };
+  stageGates?: Array<{
+    projectName?: Str;
+    stageName?: Str;
+    status?: Str;
+    startedAt?: string | number | null;
+    completedAt?: string | number | null;
+  }>;
+  resources?: Array<{
+    resource?: Str;
+    assignedTasks?: Num;
+    completedThisMonth?: Num;
+    overdue?: Num;
+    projectCount?: Num;
+  }>;
+}
+
+export async function generateReportPdf(reportType: string, data: MonthlyReportPdfData, month: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: "A4", margin: 40 });
     const chunks: Buffer[] = [];
@@ -97,7 +194,7 @@ export async function generateReportPdf(reportType: string, data: any, month: st
     // ===== PAGE 3+: Tables =====
     if (reportType === "pm") {
       // Financial Summary
-      if (data.financials?.grossProfit?.length > 0) {
+      if ((data.financials?.grossProfit?.length ?? 0) > 0) {
         doc.addPage();
         doc.fillColor(EE_GREEN).fontSize(16).text("Financial Summary — Gross Profit", 40, 40);
         doc.moveTo(40, 62).lineTo(doc.page.width - 40, 62).strokeColor(EE_GREEN).stroke();
@@ -116,7 +213,7 @@ export async function generateReportPdf(reportType: string, data: any, month: st
         tableY += 18;
 
         // Data rows
-        const gpRows = (data.financials.grossProfit || []).slice(0, 30);
+        const gpRows = (data.financials?.grossProfit || []).slice(0, 30);
         for (let ri = 0; ri < gpRows.length; ri++) {
           if (tableY > doc.page.height - 60) { doc.addPage(); tableY = 40; }
           const r = gpRows[ri];
@@ -138,7 +235,7 @@ export async function generateReportPdf(reportType: string, data: any, month: st
       }
 
       // Project Status
-      if (data.projectStatus?.length > 0) {
+      if ((data.projectStatus?.length ?? 0) > 0) {
         doc.addPage();
         doc.fillColor(EE_GREEN).fontSize(16).text("Project Status Overview", 40, 40);
         doc.moveTo(40, 62).lineTo(doc.page.width - 40, 62).strokeColor(EE_GREEN).stroke();
@@ -177,7 +274,7 @@ export async function generateReportPdf(reportType: string, data: any, month: st
         }
       }
       // Task Summary
-      if (data.tasks?.perProject?.length > 0) {
+      if ((data.tasks?.perProject?.length ?? 0) > 0) {
         doc.addPage();
         doc.fillColor(EE_GREEN).fontSize(16).text("Task Summary", 40, 40);
         doc.moveTo(40, 62).lineTo(doc.page.width - 40, 62).strokeColor(EE_GREEN).stroke();
@@ -201,7 +298,7 @@ export async function generateReportPdf(reportType: string, data: any, month: st
         });
         tableY += 18;
 
-        const taskRows = (data.tasks.perProject || []).slice(0, 35);
+        const taskRows = (data.tasks?.perProject || []).slice(0, 35);
         for (let ri = 0; ri < taskRows.length; ri++) {
           if (tableY > doc.page.height - 60) { doc.addPage(); tableY = 40; }
           const r = taskRows[ri];
@@ -217,7 +314,7 @@ export async function generateReportPdf(reportType: string, data: any, month: st
       }
 
       // RAID Summary
-      if (data.raidItems?.items?.length > 0) {
+      if ((data.raidItems?.items?.length ?? 0) > 0) {
         doc.addPage();
         doc.fillColor(EE_GREEN).fontSize(16).text("RAID Summary — Open Items", 40, 40);
         doc.moveTo(40, 62).lineTo(doc.page.width - 40, 62).strokeColor(EE_GREEN).stroke();
@@ -234,7 +331,7 @@ export async function generateReportPdf(reportType: string, data: any, month: st
         });
         tableY += 18;
 
-        const raidRows = (data.raidItems.items || []).slice(0, 40);
+        const raidRows = (data.raidItems?.items || []).slice(0, 40);
         for (let ri = 0; ri < raidRows.length; ri++) {
           if (tableY > doc.page.height - 60) { doc.addPage(); tableY = 40; }
           const r = raidRows[ri];
@@ -250,7 +347,7 @@ export async function generateReportPdf(reportType: string, data: any, month: st
       }
 
       // Quality Summary
-      if (data.quality?.qcProgress?.length > 0) {
+      if ((data.quality?.qcProgress?.length ?? 0) > 0) {
         doc.addPage();
         doc.fillColor(EE_GREEN).fontSize(16).text("Quality — QC Progress", 40, 40);
         doc.moveTo(40, 62).lineTo(doc.page.width - 40, 62).strokeColor(EE_GREEN).stroke();
@@ -267,7 +364,7 @@ export async function generateReportPdf(reportType: string, data: any, month: st
         });
         tableY += 18;
 
-        const qcRows = (data.quality.qcProgress || []).slice(0, 35);
+        const qcRows = (data.quality?.qcProgress || []).slice(0, 35);
         for (let ri = 0; ri < qcRows.length; ri++) {
           if (tableY > doc.page.height - 60) { doc.addPage(); tableY = 40; }
           const r = qcRows[ri];
@@ -283,7 +380,7 @@ export async function generateReportPdf(reportType: string, data: any, month: st
       }
 
       // Procurement Summary
-      if (data.procurement?.length > 0) {
+      if ((data.procurement?.length ?? 0) > 0) {
         doc.addPage();
         doc.fillColor(EE_GREEN).fontSize(16).text("Procurement Summary", 40, 40);
         doc.moveTo(40, 62).lineTo(doc.page.width - 40, 62).strokeColor(EE_GREEN).stroke();
@@ -317,7 +414,7 @@ export async function generateReportPdf(reportType: string, data: any, month: st
       }
     } else {
       // Engineering: Task Completion
-      if (data.tasks?.perProject?.length > 0) {
+      if ((data.tasks?.perProject?.length ?? 0) > 0) {
         doc.addPage();
         doc.fillColor(EE_GREEN).fontSize(16).text("Engineering Task Completion", 40, 40);
         doc.moveTo(40, 62).lineTo(doc.page.width - 40, 62).strokeColor(EE_GREEN).stroke();
@@ -334,7 +431,7 @@ export async function generateReportPdf(reportType: string, data: any, month: st
         });
         tableY += 18;
 
-        const rows = (data.tasks.perProject || []).slice(0, 35);
+        const rows = (data.tasks?.perProject || []).slice(0, 35);
         for (let ri = 0; ri < rows.length; ri++) {
           if (tableY > doc.page.height - 60) { doc.addPage(); tableY = 40; }
           const r = rows[ri];
@@ -350,7 +447,7 @@ export async function generateReportPdf(reportType: string, data: any, month: st
       }
 
       // Deliverables
-      if (data.deliverables?.register?.length > 0) {
+      if ((data.deliverables?.register?.length ?? 0) > 0) {
         doc.addPage();
         doc.fillColor(EE_GREEN).fontSize(16).text("Deliverable Register", 40, 40);
         doc.moveTo(40, 62).lineTo(doc.page.width - 40, 62).strokeColor(EE_GREEN).stroke();
@@ -367,7 +464,7 @@ export async function generateReportPdf(reportType: string, data: any, month: st
         });
         tableY += 18;
 
-        const rows = (data.deliverables.register || []).slice(0, 35);
+        const rows = (data.deliverables?.register || []).slice(0, 35);
         for (let ri = 0; ri < rows.length; ri++) {
           if (tableY > doc.page.height - 60) { doc.addPage(); tableY = 40; }
           const r = rows[ri];
@@ -383,7 +480,7 @@ export async function generateReportPdf(reportType: string, data: any, month: st
       }
 
       // Engineering: Stage Gate Progress
-      if (data.stageGates?.length > 0) {
+      if ((data.stageGates?.length ?? 0) > 0) {
         doc.addPage();
         doc.fillColor(EE_GREEN).fontSize(16).text("Stage Gate Progress", 40, 40);
         doc.moveTo(40, 62).lineTo(doc.page.width - 40, 62).strokeColor(EE_GREEN).stroke();
@@ -416,7 +513,7 @@ export async function generateReportPdf(reportType: string, data: any, month: st
       }
 
       // Engineering: Resource Workload
-      if (data.resources?.length > 0) {
+      if ((data.resources?.length ?? 0) > 0) {
         doc.addPage();
         doc.fillColor(EE_GREEN).fontSize(16).text("Resource Workload", 40, 40);
         doc.moveTo(40, 62).lineTo(doc.page.width - 40, 62).strokeColor(EE_GREEN).stroke();

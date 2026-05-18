@@ -87,8 +87,8 @@ export function SmartImportCreateProjectDialog({
       }
       const created = (await res.json()) as CreatedProject;
       onCreated(created);
-    } catch (err: any) {
-      setError(err?.message || "Could not create project");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create project");
     } finally {
       setSubmitting(false);
     }

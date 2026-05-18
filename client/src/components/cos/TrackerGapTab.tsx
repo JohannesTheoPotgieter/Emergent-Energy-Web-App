@@ -129,7 +129,7 @@ function downloadCsv(filename: string, rows: GapRow[]) {
     "is_ignored",
     "ignore_reason",
   ];
-  const escape = (v: any) => {
+  const escape = (v: unknown) => {
     if (v == null) return "";
     const s = String(v).replace(/"/g, '""');
     return /[",\n]/.test(s) ? `"${s}"` : s;
@@ -386,7 +386,7 @@ export function TrackerGapTab() {
       )}
 
       {data && (
-        <Tabs value={bucket} onValueChange={(v) => setBucket(v as any)}>
+        <Tabs value={bucket} onValueChange={(v) => setBucket(v as "tracker_gap" | "unmapped_class" | "unmapped_no_class")}>
           <TabsList className="bg-muted/60">
             <TabsTrigger value="tracker_gap" data-testid="tab-bucket-tracker-gap">
               <AlertTriangle className="h-3.5 w-3.5 mr-1.5" />

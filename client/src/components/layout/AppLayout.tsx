@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import {} from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback} from "@/components/ui/avatar";
+import {} from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Menu, Search, Plus, Calendar, Mail, MessageSquare, CalendarClock, ChevronRight, ChevronDown, Building2, UserCircle2, LogOut, X, Sun, Moon, Monitor, Home, MoreHorizontal, Smartphone, Laptop, MonitorSmartphone, BarChart3, LayoutGrid, Wrench, CheckCircle2, Settings, FolderOpen, ShieldCheck, FileText } from "lucide-react";
+import { Menu, Search,  Calendar, Mail, MessageSquare, CalendarClock, ChevronRight, ChevronDown, Building2, UserCircle2, LogOut, X, Sun, Moon, Monitor, Home, MoreHorizontal, Smartphone, Laptop, MonitorSmartphone, BarChart3, LayoutGrid, Wrench, CheckCircle2, Settings, FolderOpen, ShieldCheck, FileText } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { buildVisibleTopSections, getBreadcrumbs, linkIsActive } from "@/config/app-navigation";
@@ -84,7 +84,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [loadingSearch, setLoadingSearch] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [quickCreateOpen, setQuickCreateOpen] = useState(false);
+  const [_quickCreateOpen, _setQuickCreateOpen] = useState(false);
   const [microsoftMenuOpen, setMicrosoftMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const { canAccessEntityAction, canViewPath, disabledSubPages, effectiveRole } = useAccessMatrix();
@@ -172,7 +172,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [lens.activeLens, lens.getActiveLensProfile, navigate]);
 
   const activeSection = useMemo(() => visibleSections.find((section) => section.match(location)) ?? visibleSections[0], [location, visibleSections]);
-  const quickCreateActions = useMemo(() => {
+  const _quickCreateActions = useMemo(() => {
     if (!actionLaunchpadEnabled) return [];
     return getAvailableQuickCreateActions({ canAccessEntityAction, canViewPath });
   }, [actionLaunchpadEnabled, canAccessEntityAction, canViewPath]);

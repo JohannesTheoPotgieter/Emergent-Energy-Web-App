@@ -15,9 +15,10 @@
 
 import { Users, Bell, ShieldAlert } from "lucide-react";
 import { SECTION_LABELS } from "./labels";
+import type { PlanningData } from "./types";
 
 interface SmartImportDownstreamImpactProps {
-  planning: any | null;
+  planning: PlanningData | null;
   projectName?: string | null;
 }
 

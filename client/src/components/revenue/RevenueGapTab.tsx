@@ -143,7 +143,7 @@ function downloadCsv(filename: string, rows: GapRow[]) {
     "is_ignored",
     "ignore_reason",
   ];
-  const escape = (v: any) => {
+  const escape = (v: unknown) => {
     if (v == null) return "";
     const s = String(v).replace(/"/g, '""');
     return /[",\n]/.test(s) ? `"${s}"` : s;

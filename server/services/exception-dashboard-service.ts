@@ -116,31 +116,36 @@ export async function getExceptionDashboard(params: { userId: number; role?: str
   const { db } = await import("../db");
   const cluster = normalizeRoleCluster(params.role);
 
-  const scopedProjects = await db
+  type ScopedProjectRow = { id: number; projectName: string | null; pmUserId: number | null };
+  const scopedProjects: ScopedProjectRow[] = await db
     .select({ id: projectInfo.id, projectName: projectInfo.projectName, pmUserId: projectInfo.pmUserId })
     .from(projectInfo)
     .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
     .where(isNull(projectExecutionState.deletedAt));
 
   const projectIdsByRole = (() => {
-    if (["coo", "program_manager", "finance"].includes(cluster)) return scopedProjects.map((p: any) => p.id);
-    if (["project_manager", "construction"].includes(cluster)) return scopedProjects.filter((p: any) => p.pmUserId === params.userId).map((p: any) => p.id);
-    return scopedProjects.map((p: any) => p.id);
+    if (["coo", "program_manager", "finance"].includes(cluster)) return scopedProjects.map((p: ScopedProjectRow) => p.id);
+    if (["project_manager", "construction"].includes(cluster)) return scopedProjects.filter((p: ScopedProjectRow) => p.pmUserId === params.userId).map((p: ScopedProjectRow) => p.id);
+    return scopedProjects.map((p: ScopedProjectRow) => p.id);
   })();
 
-  const finalProjectIds = params.projectId ? projectIdsByRole.filter((id: any) => id === params.projectId) : projectIdsByRole;
+  const finalProjectIds = params.projectId ? projectIdsByRole.filter((id) => id === params.projectId) : projectIdsByRole;
   if (!finalProjectIds.length) return { roleCluster: cluster, items: [] as ExceptionItem[] };
 
-  const projectNameById = new Map<number, string>(scopedProjects.map((p: any) => [p.id, p.projectName]));
-  const userRows = await db.select({ id: users.id, name: users.name }).from(users);
-  const userNameById = new Map<number, string>(userRows.map((u: any) => [u.id, u.name || `User #${u.id}`]));
+  const projectNameById = new Map<number, string>(
+    scopedProjects.map((p): [number, string] => [p.id, p.projectName ?? ""]),
+  );
+  const userRows: Array<{ id: number; name: string | null }> = await db.select({ id: users.id, name: users.name }).from(users);
+  const userNameById = new Map<number, string>(
+    userRows.map((u): [number, string] => [u.id, u.name || `User #${u.id}`]),
+  );
 
   const openWorkItems = await db.select().from(workItems).where(and(inArray(workItems.projectId, finalProjectIds), isNull(workItems.deletedAt), notInArray(workItems.status, ["Done", "Closed", "Completed"])));
   const pendingApprovals = await db.select().from(approvals).where(and(eq(approvals.status, "pending"), inArray(approvals.projectId, finalProjectIds)));
   const procurement = await db.select().from(procurementItems).where(inArray(procurementItems.projectId, finalProjectIds));
   const invoices = await db.select().from(invoiceCaptures).where(inArray(invoiceCaptures.projectId, finalProjectIds));
   const raids = await db.select().from(raidItems).where(and(inArray(raidItems.projectId, finalProjectIds), eq(raidItems.status, "open")));
-  const warnings = await db.select().from(qcWarning).where(and(inArray(qcWarning.projectName, Array.from(new Set(finalProjectIds.map((id: any) => projectNameById.get(id) || "")))), ne(qcWarning.status, "resolved")));
+  const warnings = await db.select().from(qcWarning).where(and(inArray(qcWarning.projectName, Array.from(new Set(finalProjectIds.map((id) => projectNameById.get(id) || "")))), ne(qcWarning.status, "resolved")));
   const gates = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName, executionGateStatus: projectExecutionState.executionGateStatus, executionGateReason: projectExecutionState.executionGateReason, executionEnabled: projectExecutionState.executionEnabled }).from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)).where(inArray(projectInfo.id, finalProjectIds));
   const deliverableRows = await db.select().from(deliverables).where(inArray(deliverables.projectId, finalProjectIds));
 

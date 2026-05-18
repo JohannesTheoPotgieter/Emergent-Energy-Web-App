@@ -126,7 +126,12 @@ export async function resolveProjectScope(
   // For assignment-derived IDs that don't have names yet, resolve them
   if (projectIds.size > 0) {
     const missingNameIds = [...projectIds].filter(
-      (id) => ![...ownedProjects, ...teamProjects].some((r) => (r as any).id === id || (r as any).projectId === id),
+      (id) =>
+        ![...ownedProjects, ...teamProjects].some(
+          (r) =>
+            ("id" in r && r.id === id) ||
+            ("projectId" in r && r.projectId === id),
+        ),
     );
     if (missingNameIds.length > 0) {
       const nameRows = await db

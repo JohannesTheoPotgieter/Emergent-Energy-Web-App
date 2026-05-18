@@ -23,11 +23,11 @@ import {
 import {
   Plus, Search, Trash2, ChevronDown, ChevronRight,
   CheckCircle2, Clock, Circle, Ban, Loader2,
-  Milestone, FolderPlus, Hash, RefreshCw, Target,
-  Calendar, AlertCircle, ChevronLeft, ZoomIn, ArrowRight,
+  Milestone, FolderPlus, Hash,  Target,
+  Calendar, AlertCircle, ChevronLeft,  ArrowRight,
   GripVertical, MoreHorizontal, ArrowDownToLine, Unlink,
-  ArrowUp, ArrowDown, Diamond, FolderOpen, Link2, Link2Off,
-  Columns3, Save, RotateCcw, X, Eye, EyeOff, Info, Filter,
+  ArrowUp, ArrowDown, Diamond, FolderOpen, Link2, 
+  Columns3, Save, RotateCcw, X, Eye, EyeOff, Info, 
 } from "lucide-react";
 import {
   Popover, PopoverContent, PopoverTrigger,
@@ -35,8 +35,8 @@ import {
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 import { getAuthHeaders } from "@/lib/assignables";
 import {
-  format, addDays, differenceInDays, parseISO, isValid, startOfDay,
-  eachWeekOfInterval, startOfWeek, endOfWeek, isSameDay,
+  format, addDays, differenceInDays,  isValid, startOfDay,
+  eachWeekOfInterval, startOfWeek, endOfWeek, 
 } from "date-fns";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { styleForCell } from "@/lib/tracker-cell-format";
@@ -157,7 +157,7 @@ interface ResolvedKeyDate {
 
 const STATUSES = ["Not Started", "In Progress", "Blocked", "Done"] as const;
 
-const statusIcon = (s: string) => {
+const _statusIcon = (s: string) => {
   switch (s) {
     case "Done": return <CheckCircle2 className="h-3 w-3 text-emerald-600" />;
     case "In Progress": return <Loader2 className="h-3 w-3 text-blue-600" />;
@@ -990,7 +990,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     invalidateProjectV2Queries(qc, projectId ?? null);
       toast({ title: "Predecessor added" });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "Failed to add predecessor", description: err?.message || "Could not create dependency", variant: "destructive" });
     },
   });
@@ -1005,7 +1005,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     invalidateProjectV2Queries(qc, projectId ?? null);
       toast({ title: "Predecessor removed" });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "Failed to remove predecessor", description: err?.message || "Could not delete dependency", variant: "destructive" });
     },
   });
@@ -1075,12 +1075,12 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       setNewTaskTitle("");
       toast({ title: "Task created" });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "Create task failed", description: err?.message || "Could not create task", variant: "destructive" });
     },
   });
 
-  const structureMutation = useMutation({
+  const _structureMutation = useMutation({
     mutationFn: async ({ operation, data }: { operation: string; data: any }) => {
       await apiRequest("POST", "/api/project-plan/structure", { operation, projectName, data });
     },
@@ -1088,7 +1088,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       invalidateTaskCaches();
     invalidateProjectV2Queries(qc, projectId ?? null);
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "Structure change failed", description: err?.message || "Could not update plan structure", variant: "destructive" });
     },
   });
@@ -1102,7 +1102,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     invalidateProjectV2Queries(qc, projectId ?? null);
       toast({ title: "WBS numbering refreshed" });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "Refresh WBS failed", description: err?.message || "Could not renumber tasks", variant: "destructive" });
     },
   });
@@ -1141,7 +1141,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       setSelectedIds(new Set());
       toast({ title: `${ids.length} task(s) deleted` });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "Delete failed", description: err?.message || "Could not delete task(s)", variant: "destructive" });
     },
   });
@@ -1432,7 +1432,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     invalidateProjectV2Queries(qc, projectId ?? null);
       toast({ title: "Task number updated" });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "Update failed", description: err?.message || "Could not update task number", variant: "destructive" });
     },
   });
@@ -1454,7 +1454,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       setConvertMilestoneDialogOpen(false);
       setConvertMilestoneTask(null);
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "Convert to milestone failed", description: err?.message || "Could not convert task", variant: "destructive" });
     },
   });
@@ -1471,7 +1471,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     invalidateProjectV2Queries(qc, projectId ?? null);
       toast({ title: "Converted to regular task" });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "Convert failed", description: err?.message || "Could not convert milestone", variant: "destructive" });
     },
   });
@@ -1493,7 +1493,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       setGroupUnderDialogOpen(false);
       setGroupUnderTask(null);
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "Group tasks failed", description: err?.message || "Could not group tasks under parent", variant: "destructive" });
     },
   });
@@ -1513,7 +1513,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     invalidateProjectV2Queries(qc, projectId ?? null);
       toast({ title: "Task ungrouped & WBS renumbered" });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "Ungroup failed", description: err?.message || "Could not remove from group", variant: "destructive" });
     },
   });
@@ -1532,7 +1532,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     invalidateProjectV2Queries(qc, projectId ?? null);
       toast({ title: "Tasks reordered" });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "Reorder failed", description: err?.message || "Could not reorder tasks", variant: "destructive" });
     },
   });
@@ -1644,11 +1644,11 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     return "bg-emerald-50 ring-1 ring-emerald-400 ring-inset";
   };
 
-  const getChildTasks = (parentId: number) => {
+  const _getChildTasks = (parentId: number) => {
     return tasks.filter(t => t.parentTaskId === parentId);
   };
 
-  const parentCandidates = useMemo(() => {
+  const _parentCandidates = useMemo(() => {
     return tasks.filter(t => {
       const isMilestone = t.isVirtualMilestone || t.isMilestone;
       const hasChildren = t.isParent || t.childCount > 0;

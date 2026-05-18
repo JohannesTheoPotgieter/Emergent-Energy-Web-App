@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Badge } from "@/components/ui/badge";
+import {} from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -51,11 +51,29 @@ interface BreadcrumbItem {
   name: string;
 }
 
-export function SharePointFilesTab({ projectName }: { projectName: string }) {
+interface SpConfig {
+  driveId?: string;
+  folderItemId?: string;
+  folderPath?: string;
+}
+
+interface SpDriveItem {
+  id: string;
+  name: string;
+  isFolder?: boolean;
+  childCount?: number;
+  size?: number;
+  mimeType?: string;
+  webUrl?: string;
+  downloadUrl?: string;
+  lastModified?: string;
+}
+
+export function SharePointFilesTab({ projectName: _projectName }: { projectName: string }) {
   const [folderStack, setFolderStack] = useState<BreadcrumbItem[]>([]);
   const currentFolderId = folderStack.length > 0 ? folderStack[folderStack.length - 1].id : undefined;
 
-  const { data: spSettings, isLoading: settingsLoading } = useQuery({
+  const { data: spSettings, isLoading: settingsLoading } = useQuery<SpConfig | null>({
     queryKey: ["sp-config"],
     queryFn: async () => {
       const res = await fetch("/api/sp-config", {
@@ -70,10 +88,10 @@ export function SharePointFilesTab({ projectName }: { projectName: string }) {
   const driveId = spSettings?.driveId;
   const browseFolderId = currentFolderId || spSettings?.folderItemId || undefined;
 
-  const { data: items = [], isLoading: itemsLoading, refetch } = useQuery({
+  const { data: items = [], isLoading: itemsLoading, refetch } = useQuery<SpDriveItem[]>({
     queryKey: ["sp-project-files", driveId, browseFolderId],
     queryFn: async () => {
-      const params = new URLSearchParams({ driveId });
+      const params = new URLSearchParams({ driveId: driveId ?? "" });
       if (browseFolderId) params.set("folderId", browseFolderId);
       const res = await fetch(`/api/sp-project-files?${params.toString()}`, {
         headers: authHeaders(),
@@ -85,8 +103,8 @@ export function SharePointFilesTab({ projectName }: { projectName: string }) {
     enabled: !!driveId,
   });
 
-  const folders = items.filter((i: any) => i.isFolder).sort((a: any, b: any) => a.name.localeCompare(b.name));
-  const files = items.filter((i: any) => !i.isFolder).sort((a: any, b: any) => a.name.localeCompare(b.name));
+  const folders = items.filter((i) => i.isFolder).sort((a, b) => a.name.localeCompare(b.name));
+  const files = items.filter((i) => !i.isFolder).sort((a, b) => a.name.localeCompare(b.name));
 
   const navigateToFolder = (id: string, name: string) => {
     setFolderStack([...folderStack, { id, name }]);
@@ -185,7 +203,7 @@ export function SharePointFilesTab({ projectName }: { projectName: string }) {
               </div>
             )}
 
-            {folders.map((f: any) => (
+            {folders.map((f) => (
               <div
                 key={f.id}
                 className="flex items-center gap-3 px-4 py-2.5 hover:bg-blue-50/50 cursor-pointer border-b transition-colors"
@@ -201,7 +219,7 @@ export function SharePointFilesTab({ projectName }: { projectName: string }) {
               </div>
             ))}
 
-            {files.map((f: any) => (
+            {files.map((f) => (
               <div
                 key={f.id}
                 className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/50 border-b transition-colors"
@@ -211,7 +229,7 @@ export function SharePointFilesTab({ projectName }: { projectName: string }) {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm truncate">{f.name}</p>
                   <p className="text-[10px] text-muted-foreground">
-                    {formatSize(f.size)}
+                    {formatSize(f.size ?? 0)}
                     {f.lastModified && ` · ${new Date(f.lastModified).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`}
                   </p>
                 </div>
@@ -234,7 +252,7 @@ export function SharePointFilesTab({ projectName }: { projectName: string }) {
                       className="h-7 w-7 p-0"
                       onClick={() => {
                         const a = document.createElement("a");
-                        a.href = f.downloadUrl;
+                        a.href = f.downloadUrl ?? "";
                         a.download = f.name;
                         a.click();
                       }}

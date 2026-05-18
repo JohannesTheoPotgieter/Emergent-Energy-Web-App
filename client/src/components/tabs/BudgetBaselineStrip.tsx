@@ -4,7 +4,7 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
-import { DollarSign, Lock, TrendingDown, TrendingUp } from "lucide-react";
+import {  Lock, TrendingDown, TrendingUp } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 
 interface BudgetBaseline {

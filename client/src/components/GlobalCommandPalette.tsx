@@ -147,7 +147,7 @@ export function GlobalCommandPalette() {
 
   const visibleItems = NAV_ITEMS.filter((item) => canViewPath(item.path));
 
-  const groups = visibleItems.reduce<Record<string, typeof visibleItems>>(
+  const _groups = visibleItems.reduce<Record<string, typeof visibleItems>>(
     (acc, item) => {
       const group = item.group;
       if (!acc[group]) acc[group] = [];

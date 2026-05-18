@@ -12,7 +12,7 @@ function extractText(node: React.ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node)
   if (Array.isArray(node)) return node.map(extractText).join("")
   if (React.isValidElement(node)) {
-    return extractText((node.props as any).children)
+    return extractText((node.props as { children?: React.ReactNode }).children)
   }
   return ""
 }
@@ -21,11 +21,13 @@ function countItems(children: React.ReactNode): number {
   let count = 0
   React.Children.forEach(children, (child) => {
     if (!React.isValidElement(child)) return
-    if ((child.type as any)?.displayName === "SelectItem") {
+    const childType = child.type as { displayName?: string }
+    if (childType?.displayName === "SelectItem") {
       count++
     }
-    if ((child.props as any)?.children) {
-      count += countItems((child.props as any).children)
+    const childProps = child.props as { children?: React.ReactNode }
+    if (childProps?.children) {
+      count += countItems(childProps.children)
     }
   })
   return count

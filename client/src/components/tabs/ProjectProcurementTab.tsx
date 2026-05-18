@@ -112,7 +112,7 @@ function formatDate(d: string | null | undefined): string {
   }
 }
 
-function formatDateInput(d: string | null | undefined): string {
+function _formatDateInput(d: string | null | undefined): string {
   if (!d) return "";
   try {
     return new Date(d).toISOString().split("T")[0];
@@ -686,7 +686,7 @@ function ProcurementRow({
 function ExpandedProcurementDetail({
   item,
   projectId,
-  supplierOptions,
+  supplierOptions: _supplierOptions,
 }: {
   item: any;
   projectId: number;
@@ -1370,7 +1370,7 @@ function TraceabilitySubTab({ projectId, projectName, items }: { projectId: numb
   );
 }
 
-function PurchaseOrdersSubTab({ projectName, projectId }: { projectName: string; projectId: number }) {
+function PurchaseOrdersSubTab({ projectName, projectId: _projectId }: { projectName: string; projectId: number }) {
   const { data: poList = [], isLoading } = useQuery<any[]>({
     queryKey: ["po-list", projectName],
     queryFn: async () => {
@@ -1697,7 +1697,7 @@ function InvoicesSubTab({
   items: any[];
   supplierOptions: { value: string; label: string }[];
 }) {
-  const queryClient = useQueryClient();
+  const _queryClient = useQueryClient();
   const [captureOpen, setCaptureOpen] = useState(false);
 
   const { data: invoices = [], isLoading } = useQuery<any[]>({

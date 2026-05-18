@@ -365,7 +365,7 @@ export default function TaskDetailDrawer({
       invalidateProjectQueries(queryClient, projectName);
       toast({ title: "Converted to milestone" });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "Convert failed", description: err?.message || "Could not convert to milestone", variant: "destructive" });
     },
   });
@@ -382,7 +382,7 @@ export default function TaskDetailDrawer({
       invalidateAll();
       toast({ title: "Duration updated" });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       if (!err?.message?.includes("read-only")) {
         toast({ title: "Update failed", description: err?.message || "Could not update duration", variant: "destructive" });
       }
@@ -668,7 +668,7 @@ function TaskDetailContent({
   const isMilestone = taskAny.isMilestone || false;
   const baselineStartDate = taskAny.baselineStartDate || null;
   const baselineEndDate = taskAny.baselineEndDate || null;
-  const rowNumber = taskAny.rowNumber ?? null;
+  const _rowNumber = taskAny.rowNumber ?? null;
   const deliverableRequired = hasDeliverableRequirementFlag(taskAny);
   const explicitDeliverableRequirement = hasDeliverableRequirementTag(taskAny.tags);
   const deliverableRequirementLocked = !!task.linkedDeliverableId;

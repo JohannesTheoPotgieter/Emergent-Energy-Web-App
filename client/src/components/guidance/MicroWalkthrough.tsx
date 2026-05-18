@@ -16,7 +16,7 @@ interface MicroWalkthroughProps {
 }
 
 export function MicroWalkthrough({ screenId, steps, className = "" }: MicroWalkthroughProps) {
-  const { completed, markCompleted, reset } = useWalkthroughCompleted(screenId);
+  const { completed, markCompleted, reset: _reset } = useWalkthroughCompleted(screenId);
   const [currentStep, setCurrentStep] = useState(0);
   const [visible, setVisible] = useState(!completed);
 

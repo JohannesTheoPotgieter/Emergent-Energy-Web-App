@@ -1,6 +1,6 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { normalizeToUniversalStatus, UNIVERSAL_STATUS_META, type UniversalDisplayStatus } from "@shared/task-status";
+import { normalizeToUniversalStatus, UNIVERSAL_STATUS_META} from "@shared/task-status";
 import { RAG_COLORS, type RagLevel } from "@/lib/status-colors";
 
 // ─── Universal Status Badge ──────────────────────────────────────────────────

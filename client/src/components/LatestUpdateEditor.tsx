@@ -27,7 +27,7 @@ interface LatestUpdateEditorProps {
   testIdSuffix?: string;
 }
 
-export function LatestUpdateCell({ projectName, displayName, latestUpdate, latestUpdateBy, latestUpdateAt }: {
+export function LatestUpdateCell({ projectName: _projectName, displayName: _displayName, latestUpdate, latestUpdateBy, latestUpdateAt }: {
   projectName: string;
   displayName?: string;
   latestUpdate: string | null;

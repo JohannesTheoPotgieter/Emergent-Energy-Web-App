@@ -38,9 +38,9 @@ export interface StageGateEvaluationResult {
   overrideId: number | null;
 }
 
-function asRecord(value: unknown): Record<string, any> {
+function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object") return {};
-  return value as Record<string, any>;
+  return value as Record<string, unknown>;
 }
 
 function isNonEmpty(value: unknown): boolean {
@@ -49,7 +49,7 @@ function isNonEmpty(value: unknown): boolean {
   return true;
 }
 
-async function evaluateSingleRequirement(projectId: number, project: any, definition: any): Promise<MissingGateItem | null> {
+async function evaluateSingleRequirement(projectId: number, project: Record<string, unknown>, definition: typeof stageGateDefinitions.$inferSelect): Promise<MissingGateItem | null> {
   const requirementType = definition.requirementType as GateRequirementType;
   const requirementKey = String(definition.requirementKey || "unspecified");
   const cfg = asRecord(definition.requirementConfig);
@@ -91,15 +91,15 @@ async function evaluateSingleRequirement(projectId: number, project: any, defini
       const rows = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(approvals)
-        .where(and(eq(approvals.projectId, projectId), eq(approvals.status, status as any), notDeleted(approvals)));
+        .where(and(eq(approvals.projectId, projectId), eq(approvals.status, status as (typeof approvals.$inferSelect)["status"]), notDeleted(approvals)));
       count = Number(rows[0]?.count || 0);
     } else if (table === "project_eng_deliverables") {
-      const r: any = await db.execute(sql`
+      const r = await db.execute(sql`
         SELECT count(*)::int AS count
         FROM project_eng_deliverables d
         JOIN project_eng_stages s ON s.id = d.project_eng_stage_id
         WHERE s.project_id = ${projectId}
-      `);
+      `) as { rows?: Array<{ count?: number }> };
       count = Number((r?.rows?.[0]?.count ?? 0));
     }
 
@@ -137,12 +137,12 @@ async function evaluateSingleRequirement(projectId: number, project: any, defini
   }
 
   if (requirementType === "required_document") {
-    const r: any = await db.execute(sql`
+    const r = await db.execute(sql`
       SELECT count(*)::int AS count
       FROM project_eng_deliverables d
       JOIN project_eng_stages s ON s.id = d.project_eng_stage_id
       WHERE s.project_id = ${projectId}
-    `);
+    `) as { rows?: Array<{ count?: number }> };
     const count = Number((r?.rows?.[0]?.count ?? 0));
     if (count < 1) {
       return {
@@ -251,7 +251,7 @@ export async function evaluateStageGate(params: {
     if (missing) missingItems.push(missing);
   }
 
-  let activeOverride: any = null;
+  let activeOverride: typeof stageGateOverrides.$inferSelect | null = null;
   if (missingItems.length > 0) {
     const rows = await db
       .select()

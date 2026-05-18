@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 import { useLensContext } from "@/hooks/use-lens-context";
-import { LENS_ROLE_LABELS, type LensRole } from "@shared/schema/role-based-upgrade";
+import { LENS_ROLE_LABELS} from "@shared/schema/role-based-upgrade";
 import { Eye, EyeOff, ChevronDown, Shield, User } from "lucide-react";
 
 export function LensSwitcher() {

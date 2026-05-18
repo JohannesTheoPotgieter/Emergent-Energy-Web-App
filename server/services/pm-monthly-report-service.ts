@@ -5,7 +5,7 @@
  * All financial calculations match dashboard-metrics.ts and report-routes.ts exactly.
  */
 
-import { eq, and, sql, isNull, inArray } from "drizzle-orm";
+import { eq, and, isNull, inArray } from "drizzle-orm";
 import { db } from "../db";
 import {
   projectInfo,
@@ -29,9 +29,9 @@ import {
 } from "@shared/schema";
 import { computeQcProgress } from "@shared/quality-governance";
 import { desc } from "drizzle-orm";
-import { isDateBlack } from "../lib/calculations/stateClassifier";
 import { getCosRealisedAmountForNclRow } from "../lib/calculations/financeUtils";
 import { getAssignedEvidenceByCostLineIds } from "../lib/finance/qb-allocation-read";
+import logger from "../lib/logger";
 
 const COMPLETED_STATUSES = ["COMPLETE", "COMPLETED", "DONE"];
 const CANCELLED_STATUSES = ["CANCELLED", "CANCELED"];
@@ -116,7 +116,7 @@ export async function generatePmReportData(month: string) {
     allRevLines,
     allCostLines,
     allMetrics,
-    programMetricsRows,
+    _programMetricsRows,
     allWorkItemRows,
     allRaidRows,
     allQcChecklists,
@@ -523,7 +523,7 @@ export async function generatePmReportData(month: string) {
   });
 
   const duration = Date.now() - startTs;
-  console.log(`[PM Monthly Report] Data generation for ${month} took ${duration}ms`);
+  logger.info(`[PM Monthly Report] Data generation for ${month} took ${duration}ms`);
 
   const STALENESS_THRESHOLD_DAYS = 7;
   const lastImportAt = lastImportRows[0]?.committedAt || null;

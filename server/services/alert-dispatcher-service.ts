@@ -19,6 +19,7 @@ import { eq } from "drizzle-orm";
 import { users } from "@shared/schema";
 import { db } from "../db";
 import { enqueueJob, registerWorker, QUEUE_NAMES } from "../lib/job-queue";
+import logger from "../lib/logger";
 import { createNotification } from "./notification-service";
 
 export interface AlertPayload {
@@ -87,7 +88,7 @@ async function notificationSendWorker(data: unknown): Promise<void> {
   }
 
   if (recipientIds.size === 0) {
-    console.warn(
+    logger.warn(
       `[AlertDispatcher] No recipients resolved for ${payload.eventType} (alertTarget=${payload.alertTarget}). Skipping.`,
     );
     return;
@@ -108,7 +109,7 @@ async function notificationSendWorker(data: unknown): Promise<void> {
     } catch (err) {
       // Re-throw so BullMQ retries the whole job. The throttle table
       // makes per-recipient retries idempotent.
-      console.warn(
+      logger.warn(
         `[AlertDispatcher] createNotification failed for user=${userId} event=${payload.eventType}:`,
         err,
       );

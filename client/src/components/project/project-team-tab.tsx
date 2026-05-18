@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { Users, Plus, Trash2, Pencil } from "lucide-react";
+import { Users, Plus, Trash2} from "lucide-react";
 import { PROJECT_ROLES, ACCESS_LEVELS } from "@shared/schema/stage-lifecycle";
 
 const ACCESS_COLORS: Record<string, string> = {
@@ -24,7 +24,7 @@ const ACCESS_COLORS: Record<string, string> = {
 export function ProjectTeamTab({ projectId }: { projectId: number }) {
   const { data, isLoading } = useProjectAccess(projectId);
   const addMutation = useAddProjectAccess(projectId);
-  const updateMutation = useUpdateProjectAccess(projectId);
+  const _updateMutation = useUpdateProjectAccess(projectId);
   const removeMutation = useRemoveProjectAccess(projectId);
 
   const [addOpen, setAddOpen] = useState(false);

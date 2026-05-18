@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   AlertCircle,
   FileText, Plus, Trash2, Download, Send, Package, Loader2,
-  ChevronDown, ChevronUp, Eye, Copy, ArrowUp, ArrowDown, GripVertical, ShieldCheck,
+  ChevronDown, ChevronUp,  Copy, ArrowUp, ArrowDown,  ShieldCheck,
 } from "lucide-react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -163,13 +163,13 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
         URL.revokeObjectURL(url);
       }
     },
-    onError: (err: any) => toast({ title: "Failed to generate PO", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: "Failed to generate PO", description: err.message, variant: "destructive" }),
   });
 
 
   const [selectedApproverByPo, setSelectedApproverByPo] = useState<Record<number, string>>({});
 
-  const submitForApprovalMutation = useMutation({
+  const _submitForApprovalMutation = useMutation({
     mutationFn: async ({ poId, assignedApproverUserId }: { poId: number; assignedApproverUserId: number }) => {
       const res = await fetch(`/api/po/${poId}/submit`, {
         method: "POST",
@@ -186,7 +186,7 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
       qc.invalidateQueries({ queryKey: ["po-list", projectName] });
       toast({ title: "PO submitted for approval" });
     },
-    onError: (err: any) => toast({ title: "Failed to submit PO", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: "Failed to submit PO", description: err.message, variant: "destructive" }),
   });
 
   const submitMutation = useMutation({
@@ -211,7 +211,7 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
       setSubmitForPoId(null);
       setSelectedApproverId("");
     },
-    onError: (err: any) => toast({ title: "Submit failed", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: "Submit failed", description: err.message, variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({

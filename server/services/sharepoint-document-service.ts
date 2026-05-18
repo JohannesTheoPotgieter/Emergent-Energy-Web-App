@@ -56,6 +56,33 @@ export interface GraphVersion {
   lastModifiedBy?: { displayName?: string; email?: string };
 }
 
+/** Identity sub-object Graph attaches to lastModifiedBy / checkedOutBy. */
+interface GraphIdentity {
+  user?: { displayName?: string; email?: string };
+}
+
+/** Raw driveItem shape from Microsoft Graph (only fields we consume). */
+interface RawGraphDriveItem {
+  id: string | number;
+  name?: string;
+  parentReference?: { path?: string };
+  folder?: unknown;
+  size?: number;
+  lastModifiedDateTime?: string;
+  lastModifiedBy?: GraphIdentity;
+  webUrl?: string;
+  eTag?: string;
+  publication?: { checkedOutBy?: GraphIdentity };
+}
+
+/** Raw version shape from Microsoft Graph (only fields we consume). */
+interface RawGraphVersion {
+  id: string | number;
+  size?: number;
+  lastModifiedDateTime?: string;
+  lastModifiedBy?: GraphIdentity;
+}
+
 // ------------------------------------------------------------------
 // Token helpers
 // ------------------------------------------------------------------
@@ -142,7 +169,7 @@ function pathFromParentRef(parent: { path?: string } | undefined, name: string):
   return cleaned ? `${cleaned}/${name}` : name;
 }
 
-function mapGraphItem(item: any): GraphItem {
+function mapGraphItem(item: RawGraphDriveItem): GraphItem {
   return {
     id: String(item.id),
     name: String(item.name ?? ""),
@@ -182,7 +209,7 @@ export async function listChildren(
   const url = parentItemId
     ? `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${parentItemId}/children`
     : `https://graph.microsoft.com/v1.0/drives/${driveId}/root/children`;
-  const data = await graphGetJson<{ value?: any[] }>(url, token, "listChildren");
+  const data = await graphGetJson<{ value?: RawGraphDriveItem[] }>(url, token, "listChildren");
   return (data.value ?? []).map(mapGraphItem);
 }
 
@@ -196,7 +223,7 @@ export async function getItem(
   const token = await appOnlyToken();
   const url = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${itemId}`;
   try {
-    const data = await graphGetJson<any>(url, token, "getItem");
+    const data = await graphGetJson<RawGraphDriveItem>(url, token, "getItem");
     return mapGraphItem(data);
   } catch (err) {
     if (err instanceof ApiError && err.statusCode === 404) return null;
@@ -237,8 +264,8 @@ export async function listVersions(
   }
   const token = await appOnlyToken();
   const url = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${itemId}/versions`;
-  const data = await graphGetJson<{ value?: any[] }>(url, token, "listVersions");
-  return (data.value ?? []).map((v: any) => ({
+  const data = await graphGetJson<{ value?: RawGraphVersion[] }>(url, token, "listVersions");
+  return (data.value ?? []).map((v: RawGraphVersion) => ({
     id: String(v.id),
     sizeBytes: typeof v.size === "number" ? v.size : undefined,
     lastModifiedDateTime: v.lastModifiedDateTime,

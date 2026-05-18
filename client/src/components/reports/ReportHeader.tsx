@@ -54,7 +54,7 @@ function navigateMonth(month: string, direction: -1 | 1): string {
 }
 
 export default function ReportHeader({
-  title, month, onMonthChange, status, generatedAt, regeneratedAt, reportId,
+  title, month, onMonthChange, status, generatedAt, regeneratedAt, reportId: _reportId,
   onRegenerate, onReview, onPublish, onRevert, onExportPdf, onExportExcel,
   onCompare, onHistory, isLoading,
 }: ReportHeaderProps) {

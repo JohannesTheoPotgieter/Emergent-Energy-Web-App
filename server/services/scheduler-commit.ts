@@ -25,12 +25,11 @@
  * errors.** Unexpected exceptions (DB connectivity, etc.) still bubble.
  */
 
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   smartImportRuns,
   normalizedCostLines,
-  normalizedRevenueLines,
   normalizedExecutionPhases,
   projectInfo,
   workItems,
@@ -68,6 +67,7 @@ import { recordImportChange } from "../lib/audit/diff-engine";
 import { logAudit } from "../audit-logger";
 import { refreshProjectMetricsAsync } from "./dashboard-metrics";
 import { normalizeAllocationConfidence } from "../lib/import/utils";
+import logger from "../lib/logger";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -235,7 +235,7 @@ export async function commitSmartImportRunAsSystem(
       }
     }
   } catch (planErr) {
-    console.warn(
+    logger.warn(
       "[SchedulerCommit] v2 conflict re-check failed (continuing):",
       planErr instanceof Error ? planErr.message : String(planErr),
     );
@@ -319,7 +319,7 @@ export async function commitSmartImportRunAsSystem(
             .set({ preImportSnapshot: snapshotRows })
             .where(eq(smartImportRuns.id, runId));
         } catch (snapErr) {
-          console.warn("[SchedulerCommit] Pre-import snapshot failed (non-blocking):", snapErr instanceof Error ? snapErr.message : String(snapErr));
+          logger.warn("[SchedulerCommit] Pre-import snapshot failed (non-blocking):", snapErr instanceof Error ? snapErr.message : String(snapErr));
         }
       }
 
@@ -405,7 +405,7 @@ export async function commitSmartImportRunAsSystem(
           importMetrics.summary.written = r.written;
         }
       } catch (auxErr) {
-        console.error("[SchedulerCommit] Auxiliary writer failure (non-blocking):", auxErr);
+        logger.error("[SchedulerCommit] Auxiliary writer failure (non-blocking):", auxErr);
       }
 
       // Per-section metrics
@@ -522,7 +522,7 @@ export async function commitSmartImportRunAsSystem(
               isNull(normalizedCostLines.revenueRecognitionAmount),
             ));
         } catch (reconErr) {
-          console.warn("[SchedulerCommit] noRevenueLinked recon failed (non-blocking):", reconErr instanceof Error ? reconErr.message : String(reconErr));
+          logger.warn("[SchedulerCommit] noRevenueLinked recon failed (non-blocking):", reconErr instanceof Error ? reconErr.message : String(reconErr));
         }
       }
 
@@ -585,7 +585,7 @@ export async function commitSmartImportRunAsSystem(
           tx, projectId, projectName, runId, commitTimestamp, norm,
         });
       } catch (matErr) {
-        console.warn("[SchedulerCommit] project_revenue_summary refresh failed (non-blocking):", matErr instanceof Error ? matErr.message : String(matErr));
+        logger.warn("[SchedulerCommit] project_revenue_summary refresh failed (non-blocking):", matErr instanceof Error ? matErr.message : String(matErr));
       }
 
       // S13: re-link expense_task_links
@@ -623,7 +623,7 @@ export async function commitSmartImportRunAsSystem(
             }
           }
         } catch (linkErr) {
-          console.warn("[SchedulerCommit] Canonical link re-pointing failed (non-blocking):", linkErr instanceof Error ? linkErr.message : String(linkErr));
+          logger.warn("[SchedulerCommit] Canonical link re-pointing failed (non-blocking):", linkErr instanceof Error ? linkErr.message : String(linkErr));
         }
       }
 
@@ -667,7 +667,7 @@ export async function commitSmartImportRunAsSystem(
             });
           }
         } catch (v2ResLogErr) {
-          console.warn("[SchedulerCommit] v2 conflict resolution logging failed (non-blocking):", v2ResLogErr instanceof Error ? v2ResLogErr.message : String(v2ResLogErr));
+          logger.warn("[SchedulerCommit] v2 conflict resolution logging failed (non-blocking):", v2ResLogErr instanceof Error ? v2ResLogErr.message : String(v2ResLogErr));
         }
       }
     });
@@ -690,9 +690,9 @@ export async function commitSmartImportRunAsSystem(
     const causeMsg = pgCause
       ? ` | PG: ${pgCause?.message || ""} [${pgCause?.code || ""}] constraint=${pgCause?.constraint || ""} detail=${pgCause?.detail || ""}`
       : "";
-    console.error("[SchedulerCommit] Transaction failed for run", runId, err);
+    logger.error("[SchedulerCommit] Transaction failed for run", runId, err);
     if (pgCause) {
-      console.error("[SchedulerCommit] PostgreSQL cause:", {
+      logger.error("[SchedulerCommit] PostgreSQL cause:", {
         message: pgCause?.message,
         detail: pgCause?.detail,
         code: pgCause?.code,
@@ -735,7 +735,7 @@ export async function commitSmartImportRunAsSystem(
       ],
     });
   } catch (auditErr) {
-    console.warn("[SchedulerCommit] Audit logging failed (non-blocking):", auditErr instanceof Error ? auditErr.message : String(auditErr));
+    logger.warn("[SchedulerCommit] Audit logging failed (non-blocking):", auditErr instanceof Error ? auditErr.message : String(auditErr));
   }
 
   // M1: also write to `audit_events` so scheduler-committed runs appear in
@@ -754,7 +754,7 @@ export async function commitSmartImportRunAsSystem(
       changesJson: { counts, preservedOverrides: 0, preservedManualEdits: 0, triggeredBy: "scheduler" },
     });
   } catch (auditErr) {
-    console.warn("[SchedulerCommit] audit_events write failed (non-blocking):", auditErr instanceof Error ? auditErr.message : String(auditErr));
+    logger.warn("[SchedulerCommit] audit_events write failed (non-blocking):", auditErr instanceof Error ? auditErr.message : String(auditErr));
   }
 
   try {
@@ -774,7 +774,7 @@ export async function commitSmartImportRunAsSystem(
       summaryJson: { counts, source: "scheduler" } as any,
     });
   } catch (logErr) {
-    console.warn("[SchedulerCommit] import_logs write failed (non-blocking):", logErr instanceof Error ? logErr.message : String(logErr));
+    logger.warn("[SchedulerCommit] import_logs write failed (non-blocking):", logErr instanceof Error ? logErr.message : String(logErr));
   }
 
   refreshProjectMetricsAsync(projectId);

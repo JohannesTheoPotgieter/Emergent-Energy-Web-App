@@ -297,10 +297,12 @@ export async function getCompanyTeamData(): Promise<CompanyTeamData> {
   }
 
   const hasAnyActiveProjects = activeProjects.length > 0;
-  const hasAnyAllocationData = allocationRows.some((r: any) => Number(r.nonNullAllocCount ?? 0) > 0);
+  const hasAnyAllocationData = allocationRows.some(
+    (r: (typeof allocationRows)[number]) => Number(r.nonNullAllocCount ?? 0) > 0,
+  );
 
   const people = assembleTeamPeople({
-    users: allUsers.map((u: any) => ({
+    users: allUsers.map((u: (typeof allUsers)[number]) => ({
       id: u.id,
       name: u.name,
       role: u.role ?? null,

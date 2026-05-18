@@ -211,7 +211,7 @@ export function Stage8OmHandover({ projectId, isAdmin }: Stage8Props) {
                   </p>
                 ) : (
                   <div className="space-y-1">
-                    {evidence.map((e: any) => (
+                    {evidence.map((e) => (
                       <div key={e.id} className="flex items-center gap-2 text-sm py-1">
                         <FileText className="h-4 w-4 text-muted-foreground" />
                         <a href={e.fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex-1">{e.title}</a>

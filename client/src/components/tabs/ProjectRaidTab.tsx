@@ -102,7 +102,7 @@ interface ProjectRaidTabProps {
   projectName: string;
 }
 
-export function ProjectRaidTab({ projectId, projectName }: ProjectRaidTabProps) {
+export function ProjectRaidTab({ projectId, projectName: _projectName }: ProjectRaidTabProps) {
   const queryClient = useQueryClient();
   const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -128,7 +128,7 @@ export function ProjectRaidTab({ projectId, projectName }: ProjectRaidTabProps) 
     enabled: !!projectId,
   });
 
-  const { data: users = [] } = useQuery<{ id: number; name?: string; username: string }[]>({
+  const { data: users = [] } = useQuery<Array<{ id: number; name?: string; fullName?: string; full_name?: string; username: string }>>({
     queryKey: ["users-list"],
     queryFn: async () => {
       const res = await fetch("/api/users/assignable", { headers: getAuthHeaders(), credentials: "include" });
@@ -174,7 +174,7 @@ export function ProjectRaidTab({ projectId, projectName }: ProjectRaidTabProps) 
   const openCount = items.filter(i => i.status === "open" || i.status === "mitigating").length;
   const closedCount = items.filter(i => i.status === "closed" || i.status === "resolved").length;
 
-  const userOptions = users.map((u: any) => ({
+  const userOptions = users.map((u) => ({
     value: String(u.id),
     label: u.name || u.fullName || u.full_name || u.username || `User ${u.id}`,
   }));
@@ -380,7 +380,7 @@ function SummaryCard({ label, count, color, testId }: { label: string; count: nu
 
 function ExpandedRaidItem({
   item,
-  userOptions,
+  userOptions: _userOptions,
   onUpdate,
   onDelete,
   isUpdating,

@@ -1,8 +1,8 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo,  useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { invalidateDashboardQueries } from "@/lib/queryClient";
-import { PermissionGate } from "@/components/PermissionGate";
+import {} from "@/components/PermissionGate";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { styleForCell } from "@/lib/tracker-cell-format";
@@ -12,8 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   Loader2, Clock, AlertTriangle, Save, XCircle,
-  Edit2, FileText, DollarSign, TrendingUp, BanknoteIcon, Check,
-  ChevronDown, ChevronRight, Info, Bell, X, Link, Unlink
+  Edit2, FileText, DollarSign,  BanknoteIcon, 
+  ChevronDown, ChevronRight, Info, Bell, X,  Unlink
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -566,7 +566,7 @@ export function RevenueTrackingTab({ projectName, highlightId, projectId }: Reve
   const cancelEditing = () => { setEditingRow(null); setEditValues({}); };
 
   const saveRowEdits = (rowNumber: number) => {
-    const row = milestones.find((m) => m.rowNumber === rowNumber);
+    const _row = milestones.find((m) => m.rowNumber === rowNumber);
     const invoiceNumber = String(editValues.invoiceNumber || "").trim();
     const invoiceRaisedDate = String(editValues.invoiceRaisedDate || "").trim();
     const expectedPaymentDate = String(editValues.date || "").trim();
@@ -691,7 +691,7 @@ export function RevenueTrackingTab({ projectName, highlightId, projectId }: Reve
   const reconciliation = data.reconciliation;
   const riskSignals = data.riskSignals || [];
 
-  const StatusBadge = ({ status, flags, milestone }: { status: string; flags: string[]; milestone: Milestone }) => {
+  const StatusBadge = ({ status, flags: _flags, milestone }: { status: string; flags: string[]; milestone: Milestone }) => {
     const hasInvoice = !!milestone.milestoneInvoiceNumber;
     const isPending = toggleInBankMutation.isPending;
 

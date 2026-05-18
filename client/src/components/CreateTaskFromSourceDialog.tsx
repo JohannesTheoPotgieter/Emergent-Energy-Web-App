@@ -115,7 +115,7 @@ export default function CreateTaskFromSourceDialog({ open, onOpenChange, source 
       queryClient.invalidateQueries({ queryKey: ["/api/operational-tasks"] });
       queryClient.invalidateQueries({ queryKey: ["/api/mytool/tasks"] });
     },
-    onError: (err: any) =>
+    onError: (err: Error) =>
       toast({
         title: "Failed to create item",
         description: err.message,

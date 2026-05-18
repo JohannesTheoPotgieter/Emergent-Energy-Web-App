@@ -7,7 +7,7 @@ import {
   format,
   addMonths,
   subMonths,
-  isSameDay,
+  
   isToday,
   startOfWeek,
   endOfWeek,
@@ -16,11 +16,19 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ChevronLeft, ChevronRight, Calendar, Flag, Clock, AlertCircle } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar, Flag,  AlertCircle } from "lucide-react";
 
 interface CalendarViewProps {
   projectName: string;
   onTaskClick: (taskId: number) => void;
+}
+
+interface CalendarTask {
+  id: number;
+  title: string;
+  status?: string;
+  priority: string;
+  dueDate?: string | null;
 }
 
 const PRIORITY_DOT: Record<string, string> = {
@@ -49,7 +57,7 @@ function parseTaskDate(dateStr: string | null | undefined): Date | null {
 export default function CalendarView({ projectName, onTaskClick }: CalendarViewProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
-  const { data: tasks = [], isLoading } = useQuery<any[]>({
+  const { data: tasks = [], isLoading } = useQuery<CalendarTask[]>({
     queryKey: ["operational-tasks", projectName],
     queryFn: async () => {
       const res = await fetch(`/api/operational-tasks/${encodeURIComponent(projectName)}`, { credentials: "include" });
@@ -67,7 +75,7 @@ export default function CalendarView({ projectName, onTaskClick }: CalendarViewP
   }, [currentMonth]);
 
   const tasksByDate = useMemo(() => {
-    const map = new Map<string, any[]>();
+    const map = new Map<string, CalendarTask[]>();
     for (const task of tasks) {
       const date = parseTaskDate(task.dueDate);
       if (date) {
@@ -146,7 +154,7 @@ export default function CalendarView({ projectName, onTaskClick }: CalendarViewP
 
                 <div className="space-y-0.5 max-h-[60px] overflow-y-auto">
                   {dayTasks.length <= 3 ? (
-                    dayTasks.map((task: any) => (
+                    dayTasks.map((task) => (
                       <button
                         key={task.id}
                         onClick={() => onTaskClick(task.id)}
@@ -161,7 +169,7 @@ export default function CalendarView({ projectName, onTaskClick }: CalendarViewP
                     ))
                   ) : (
                     <>
-                      {dayTasks.slice(0, 2).map((task: any) => (
+                      {dayTasks.slice(0, 2).map((task) => (
                         <button
                           key={task.id}
                           onClick={() => onTaskClick(task.id)}
@@ -186,7 +194,7 @@ export default function CalendarView({ projectName, onTaskClick }: CalendarViewP
                             {format(day, "EEEE, MMM d")}
                           </div>
                           <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                            {dayTasks.map((task: any) => (
+                            {dayTasks.map((task) => (
                               <button
                                 key={task.id}
                                 onClick={() => onTaskClick(task.id)}
@@ -204,7 +212,7 @@ export default function CalendarView({ projectName, onTaskClick }: CalendarViewP
                                     <Flag className="h-2 w-2 mr-0.5" />
                                     {task.priority}
                                   </Badge>
-                                  <span className={`text-[9px] ${STATUS_COLOR[task.status] || "text-muted-foreground"}`}>
+                                  <span className={`text-[9px] ${(task.status && STATUS_COLOR[task.status]) || "text-muted-foreground"}`}>
                                     {task.status}
                                   </span>
                                 </div>

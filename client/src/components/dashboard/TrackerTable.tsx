@@ -10,8 +10,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Download, Search, Filter, FileSpreadsheet } from "lucide-react";
-import { format } from "date-fns";
+import { Download, Search} from "lucide-react";
+import {} from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -39,7 +39,7 @@ export function TrackerTable<T extends { id: string | number, sourceSheet?: stri
   onRowClick
 }: TrackerTableProps<T>) {
   const [search, setSearch] = useState("");
-  const [filterValue, setFilterValue] = useState("all");
+  const [filterValue, _setFilterValue] = useState("all");
 
   const filteredData = data.filter(item => {
     // Search logic (naive)

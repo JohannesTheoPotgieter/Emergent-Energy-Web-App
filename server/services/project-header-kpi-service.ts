@@ -14,7 +14,7 @@ import {
 import { db } from "../db";
 import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { computeMarginPct } from "../lib/finance/margin";
-import { isCanonicalCosRealised, OVERRIDE_REALISED, OVERRIDE_NOT_REALISED } from "../lib/finance/cos-realisation";
+import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
 // Post-merge sequence — S04/S05 share the index of their replacement
 // so legacy stage references still order correctly.
 const STAGE_ORDER = new Map([

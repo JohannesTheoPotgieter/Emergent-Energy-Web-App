@@ -25,7 +25,7 @@ interface AcceptanceWorkflowProps {
   isAdmin?: boolean;
 }
 
-export function AcceptanceWorkflow({ projectId, stageCode, isAdmin }: AcceptanceWorkflowProps) {
+export function AcceptanceWorkflow({ projectId, stageCode, isAdmin: _isAdmin }: AcceptanceWorkflowProps) {
   const { data: acceptanceData } = useAcceptances(projectId, stageCode);
   const { data: reservationData } = useAcceptanceReservations(projectId, stageCode);
   const createMutation = useCreateAcceptance(projectId);
@@ -64,9 +64,9 @@ export function AcceptanceWorkflow({ projectId, stageCode, isAdmin }: Acceptance
     setReservations(reservations.filter((_, i) => i !== idx));
   };
 
-  const updateReservationField = (idx: number, field: string, value: string) => {
+  const updateReservationField = (idx: number, field: "description" | "deadline", value: string) => {
     const updated = [...reservations];
-    (updated[idx] as any)[field] = value;
+    updated[idx] = { ...updated[idx], [field]: value };
     setReservations(updated);
   };
 

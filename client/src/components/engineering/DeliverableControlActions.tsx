@@ -110,8 +110,8 @@ export function DeliverableControlActions({
         for (const key of invalidateKeys) qc.invalidateQueries({ queryKey: key });
       }
       onChanged?.();
-    } catch (err: any) {
-      toast({ title: "Action failed", description: err.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Action failed", description: err instanceof Error ? err.message : "Action failed", variant: "destructive" });
     } finally {
       setPendingTo(null);
     }

@@ -20,7 +20,7 @@
  * catch the 24h milestone reliably, large enough not to thrash.
  */
 
-import { and, eq, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   taskReminderState,
   workItems,
@@ -29,6 +29,7 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 import { dispatchAlert } from "./alert-dispatcher-service";
+import logger from "../lib/logger";
 
 export const TASK_REMINDER_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -225,23 +226,23 @@ export function startTaskReminderScheduler(): void {
   setTimeout(() => {
     runTaskReminderPass()
       .then((r) =>
-        console.log(
+        logger.info(
           `[TaskReminder] initial pass: scanned=${r.scanned} fired=${r.fired} skipped=${r.skipped}`,
         ),
       )
-      .catch((err) => console.warn("[TaskReminder] initial pass error:", err));
+      .catch((err) => logger.warn("[TaskReminder] initial pass error:", err));
   }, 60_000);
 
   timer = setInterval(() => {
     runTaskReminderPass()
       .then((r) => {
         if (r.fired > 0) {
-          console.log(
+          logger.info(
             `[TaskReminder] cycle: scanned=${r.scanned} fired=${r.fired} skipped=${r.skipped}`,
           );
         }
       })
-      .catch((err) => console.warn("[TaskReminder] cycle error:", err));
+      .catch((err) => logger.warn("[TaskReminder] cycle error:", err));
   }, TASK_REMINDER_INTERVAL_MS);
 
   if (typeof timer.unref === "function") timer.unref();

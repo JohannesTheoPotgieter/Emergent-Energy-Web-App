@@ -17,6 +17,7 @@
  */
 
 import { isConnectorMocked, logConnectorModeOnce } from "../lib/connector-mode";
+import logger from "../lib/logger";
 
 export interface SharepointFileRef {
   driveId: string;
@@ -123,7 +124,7 @@ export async function promoteDraftToApproved(params: {
     : null;
 
   if (isConnectorMocked("ms-graph")) {
-    console.log(
+    logger.info(
       `[sharepoint-doc-control mock] promoteDraftToApproved: ` +
       `${params.draftFile.path} -> ${approvedPath}` +
       (supersededPath ? `; superseded ${params.previousApproved!.path} -> ${supersededPath}` : ""),
@@ -158,7 +159,7 @@ export async function ensureDocControlFolders(params: {
 }): Promise<void> {
   logConnectorModeOnce("ms-graph");
   if (isConnectorMocked("ms-graph")) {
-    console.log(
+    logger.info(
       `[sharepoint-doc-control mock] ensureDocControlFolders at ` +
       `${params.projectRootPath}/${params.typeSubPath}/{Drafts,Approved,History}`,
     );

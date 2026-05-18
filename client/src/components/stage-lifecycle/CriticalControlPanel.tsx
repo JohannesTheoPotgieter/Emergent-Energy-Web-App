@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { useProjectStages, useInitializeStages, useAdvanceToStage, type StageDashboardPayload } from "@/hooks/use-stage-lifecycle";
+import { useProjectStages, useInitializeStages, useAdvanceToStage} from "@/hooks/use-stage-lifecycle";
 import { STAGE_SEQUENCE } from "@shared/utils/stage-state-machine";
 import { PHASES } from "@shared/phases";
 import { useToast } from "@/hooks/use-toast";
@@ -15,8 +15,8 @@ import {
   AlertTriangle,
   ShieldAlert,
   ChevronRight,
-  CheckCircle2,
-  XCircle,
+  
+  
   Loader2,
   PlayCircle,
   FastForward,
@@ -26,6 +26,11 @@ interface CriticalControlPanelProps {
   projectId: number;
   onViewGate?: () => void;
   isAdmin?: boolean;
+}
+
+interface AdvanceResult {
+  skipped?: unknown[];
+  currentStage: string;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -117,7 +122,7 @@ export function CriticalControlPanel({ projectId, onViewGate, isAdmin = false }:
     );
   }
 
-  const { currentStage, statusSentence, openExceptionCount, openDependencyCount, requirements } = data;
+  const { currentStage, statusSentence, openExceptionCount, openDependencyCount, requirements: _requirements } = data;
   const stageLabel = STAGE_LABELS[currentStage.stageCode] || currentStage.stageCode;
   const statusLabel = STATUS_LABELS[currentStage.stageStatus] || currentStage.stageStatus;
   const statusColor = STATUS_COLORS[currentStage.stageStatus] || "bg-gray-100 text-gray-700";
@@ -151,7 +156,7 @@ export function CriticalControlPanel({ projectId, onViewGate, isAdmin = false }:
     advanceMutation.mutate(
       { targetStageCode: selectedTarget, reason: advanceReason || undefined },
       {
-        onSuccess: (result: any) => {
+        onSuccess: (result: AdvanceResult) => {
           const skippedCount = result.skipped?.length || 0;
           toast({
             title: "Project advanced",

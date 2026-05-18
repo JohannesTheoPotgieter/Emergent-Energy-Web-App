@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import { PageEmpty } from "@/components/ui/page-states";
-import { HardHat, Plus, AlertTriangle, ClipboardCheck } from "lucide-react";
+import { HardHat, Plus,  ClipboardCheck } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 
 interface Props { projectId: number; projectName: string; }
@@ -22,7 +22,7 @@ interface SnagRow { id: number; title: string; severity: string; status: string;
 
 const SEVERITIES = ["critical", "major", "minor", "observation"];
 
-export function ProjectConstructionTab({ projectId, projectName }: Props) {
+export function ProjectConstructionTab({ projectId, projectName: _projectName }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);

@@ -41,6 +41,7 @@ import {
 } from "../lib/import/project-match";
 import { resolveSchedulerConflictPolicy } from "../imports/scheduler-conflict-policy";
 import { commitSmartImportRunAsSystem } from "./scheduler-commit";
+import logger from "../lib/logger";
 
 export interface ScheduledImportV2Result {
   triggerType: "schedule" | "manual";
@@ -120,7 +121,7 @@ async function processFileV2(file: {
     plannerResult = await runImportPlanner(autoMappedProjectId, preview.normalization);
   } catch (err) {
     // Planner failures shouldn't lose the file — we still want to park it.
-    console.warn(`[ScheduledImportV2] Planner failed for ${fileName}:`, err instanceof Error ? err.message : err);
+    logger.warn(`[ScheduledImportV2] Planner failed for ${fileName}:`, err instanceof Error ? err.message : err);
   }
 
   // Apply scheduler conflict policy to decide what the commit step would do.
@@ -200,12 +201,12 @@ async function processFileV2(file: {
           eq(smartImportRuns.id, run.id),
           inArray(smartImportRuns.status, ["preview", "awaiting_review"]),
         ));
-      console.log(`[ScheduledImportV2] Commit deferred for run ${run.id}: ${commitResult.status}`);
+      logger.info(`[ScheduledImportV2] Commit deferred for run ${run.id}: ${commitResult.status}`);
       return { status: "parked", runId: run.id };
     } catch (commitErr) {
       // Transaction failed — mark as awaiting_review (guarded so a racing
       // UI commit isn't clobbered) and report the file as failed.
-      console.error(`[ScheduledImportV2] Auto-commit failed for run ${run.id}:`, commitErr instanceof Error ? commitErr.message : commitErr);
+      logger.error(`[ScheduledImportV2] Auto-commit failed for run ${run.id}:`, commitErr instanceof Error ? commitErr.message : commitErr);
       try {
         await db.update(smartImportRuns)
           .set({ status: "awaiting_review" })
@@ -251,7 +252,7 @@ export async function runScheduledImportV2(opts: {
       // omit runId — we're not using the change ledger for v2 dispatch
     );
   } catch (err) {
-    console.warn("[ScheduledImportV2] detectChanges housekeeping failed (non-blocking):", err instanceof Error ? err.message : err);
+    logger.warn("[ScheduledImportV2] detectChanges housekeeping failed (non-blocking):", err instanceof Error ? err.message : err);
   }
 
   // List current files in the configured folder.

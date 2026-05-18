@@ -7,9 +7,19 @@ import { Input } from "@/components/ui/input";
 import { getQueryFn, apiRequest } from "@/lib/queryClient";
 import { Layers, Pencil, Check, X } from "lucide-react";
 
+interface StageDefinition {
+  id: number;
+  stageName: string;
+  stageCode: string;
+  stageSequence: number;
+  description?: string | null;
+  isActive?: boolean;
+  defaultOwnerRole?: string | null;
+}
+
 export function StageDefinitionsCard() {
   const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery<{ definitions: any[] }>({
+  const { data, isLoading } = useQuery<{ definitions: StageDefinition[] }>({
     queryKey: ["/api/admin/stage-definitions"],
     queryFn: getQueryFn({ on401: "throw" }),
   });
@@ -29,7 +39,7 @@ export function StageDefinitionsCard() {
     },
   });
 
-  const startEdit = (def: any) => {
+  const startEdit = (def: StageDefinition) => {
     setEditingId(def.id);
     setEditName(def.stageName);
     setEditDesc(def.description || "");
@@ -48,7 +58,7 @@ export function StageDefinitionsCard() {
           <div className="animate-pulse h-24 bg-muted rounded" />
         ) : (
           <div className="space-y-2">
-            {(data?.definitions ?? []).map((def: any) => (
+            {(data?.definitions ?? []).map((def) => (
               <div key={def.id} className="flex items-center gap-2 border rounded p-2">
                 <Badge variant="outline" className="text-[10px] shrink-0 w-10 justify-center">
                   {def.stageSequence}
