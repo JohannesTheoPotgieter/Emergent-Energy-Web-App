@@ -19,8 +19,14 @@ export default function OverviewPage() {
   const [revenueSheetOpen, setRevenueSheetOpen] = useState(false);
   const [cosSheetOpen, setCosSheetOpen] = useState(false);
 
-  const behindCount = filteredProjects.filter((p) => p.behindPlan).length;
-  const onScheduleCount = filteredProjects.length - behindCount;
+  const scheduleMeasuredProjects = filteredProjects.filter(
+    (p) => p.actualProgressPct != null && p.expectedProgressPct != null,
+  );
+  const scheduleDataMissingCount = filteredProjects.length - scheduleMeasuredProjects.length;
+  const scheduleDataSuffix =
+    scheduleDataMissingCount > 0 ? `; ${scheduleDataMissingCount} missing schedule data` : "";
+  const behindCount = scheduleMeasuredProjects.filter((p) => p.behindPlan).length;
+  const onScheduleCount = scheduleMeasuredProjects.length - behindCount;
   const fullySignedCount = filteredProjects.filter(
     (p) => p.cpSigned && p.signedStatus === "SIGNED",
   ).length;
@@ -35,7 +41,7 @@ export default function OverviewPage() {
           label="Projects Behind Schedule"
           value={String(behindCount)}
           valueClass={behindCount === 0 ? "text-emerald-600" : behindCount <= 2 ? "text-amber-600" : "text-red-600"}
-          sub={`${onScheduleCount} of ${filteredProjects.length} projects on track`}
+          sub={`${onScheduleCount} of ${scheduleMeasuredProjects.length} measured projects on track${scheduleDataSuffix}`}
           icon={<Clock className="w-5 h-5" />}
           cta="View all projects"
           onClick={() => setScheduleSheetOpen(true)}
@@ -46,7 +52,7 @@ export default function OverviewPage() {
           label="On Schedule Rate"
           value={`${kpis.onScheduleRate}%`}
           valueClass={kpis.onScheduleRate >= 70 ? "text-emerald-600" : kpis.onScheduleRate >= 50 ? "text-amber-600" : "text-red-600"}
-          sub={`${onScheduleCount} of ${filteredProjects.length} projects not more than 5% behind expected`}
+          sub={`${onScheduleCount} of ${scheduleMeasuredProjects.length} measured projects not more than 5% behind expected${scheduleDataSuffix}`}
           icon={<Activity className="w-5 h-5" />}
           cta="View schedule breakdown"
           onClick={() => setScheduleSheetOpen(true)}
@@ -288,7 +294,7 @@ export default function OverviewPage() {
           </div>
 
           <p className="text-[10px] text-muted-foreground mt-2 px-0.5">
-            "Behind" = actual progress more than 5 pp below expected. Sorted worst variance first.
+            "Behind" = actual progress more than 5 pp below expected. Missing schedule data is excluded from the on-schedule rate. Sorted worst variance first.
           </p>
 
           <div className="mt-3 border rounded-lg overflow-auto max-h-[65vh]">
@@ -308,14 +314,20 @@ export default function OverviewPage() {
               </thead>
               <tbody>
                 {[...filteredProjects]
-                  .sort((a, b) => ((a.scheduleVariancePct ?? 0) - (b.scheduleVariancePct ?? 0)))
+                  .sort((a, b) => {
+                    const aHasScheduleData = a.actualProgressPct != null && a.expectedProgressPct != null;
+                    const bHasScheduleData = b.actualProgressPct != null && b.expectedProgressPct != null;
+                    if (aHasScheduleData !== bHasScheduleData) return aHasScheduleData ? -1 : 1;
+                    return (a.scheduleVariancePct ?? 0) - (b.scheduleVariancePct ?? 0);
+                  })
                   .map((p) => {
-                    const onSchedule = !p.behindPlan; // same source as tile values
+                    const hasScheduleData = p.actualProgressPct != null && p.expectedProgressPct != null;
+                    const onSchedule = hasScheduleData && !p.behindPlan; // same source as tile values
                     const variance = p.scheduleVariancePct ?? 0;
                     return (
                       <tr
                         key={p.projectId}
-                        className={`border-t border-border/40 hover:bg-muted/30 cursor-pointer ${!onSchedule ? "bg-red-50/30" : ""}`}
+                        className={`border-t border-border/40 hover:bg-muted/30 cursor-pointer ${hasScheduleData && !onSchedule ? "bg-red-50/30" : !hasScheduleData ? "bg-slate-50/40" : ""}`}
                         onClick={() => { openProject(p, "plan"); setScheduleSheetOpen(false); }}
                       >
                         <td className="py-2.5 px-3 font-medium truncate max-w-[180px]">{p.projectName}</td>
@@ -340,9 +352,11 @@ export default function OverviewPage() {
                           {p.scheduleVariancePct != null ? `${variance > 0 ? "+" : ""}${variance}%` : "—"}
                         </td>
                         <td className="py-2.5 px-3 text-center">
-                          {onSchedule
-                            ? <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px]">On Schedule</Badge>
-                            : <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">Behind Plan</Badge>}
+                          {!hasScheduleData
+                            ? <Badge className="bg-slate-100 text-slate-700 border-slate-200 text-[10px] whitespace-nowrap">No Schedule Data</Badge>
+                            : onSchedule
+                              ? <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] whitespace-nowrap">On Schedule</Badge>
+                              : <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px] whitespace-nowrap">Behind Plan</Badge>}
                         </td>
                         <td className="py-2.5 px-1 text-center">
                           <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600">
