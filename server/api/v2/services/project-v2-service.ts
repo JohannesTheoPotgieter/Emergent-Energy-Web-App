@@ -1,10 +1,17 @@
 import * as repo from "../repositories/project-v2-repository";
+import type {
+  WorkItemPayload,
+  ProcurementItemPayload,
+  InvoicePayload,
+  EngineeringDesignPayload,
+  QualityCheckPayload,
+} from "../repositories/project-v2-repository";
 import { ApiV2Error, paginationMeta } from "../utils/http";
 import { db } from "../../../db";
 import { dashboardProjectMetrics, dashboardProgramMetrics } from "@shared/schema";
 import { ADMIN_ROLES } from "@shared/schema/users";
 import { refreshAllMetrics, refreshProjectMetricsAsync } from "../../../services/dashboard-metrics";
-import { cacheGet, cacheSet, isRedisCache } from "../../../lib/cache";
+import { cacheGet, cacheSet } from "../../../lib/cache";
 
 export async function listProjectsService(params: { q?: string; page: number; pageSize: number; sortBy?: string; sortDir: "asc" | "desc"; scopeProjectIds?: Set<number> | null; priorityId?: number }) {
   const { rows, total } = await repo.listProjects(params);
@@ -44,54 +51,54 @@ export const projectProcurementService = repo.getProjectProcurement;
 export async function developmentHandoverService(projectId: number, userId: number, reason: string) {
   const updated = await repo.transitionProjectToConstruction(projectId, userId, reason);
   if (!updated) throw new ApiV2Error("NOT_FOUND", 404, "Project not found");
-  if ((updated as any).invalidTransition) {
-    throw new ApiV2Error("VALIDATION_ERROR", 400, `Invalid lifecycle transition from ${(updated as any).currentPhase} to Construction`);
+  if ("invalidTransition" in updated && updated.invalidTransition) {
+    throw new ApiV2Error("VALIDATION_ERROR", 400, `Invalid lifecycle transition from ${updated.currentPhase} to Construction`);
   }
   return updated;
 }
 
-export async function createWorkItemService(projectId: number, payload: any, userId: number) {
+export async function createWorkItemService(projectId: number, payload: WorkItemPayload, userId: number) {
   const created = await repo.createWorkItem(projectId, payload, userId);
   refreshProjectMetricsAsync(projectId);
   return created;
 }
 
-export async function patchWorkItemService(projectId: number, id: number, payload: any) {
+export async function patchWorkItemService(projectId: number, id: number, payload: Partial<WorkItemPayload>) {
   const updated = await repo.patchWorkItem(projectId, id, payload);
   if (!updated) throw new ApiV2Error("NOT_FOUND", 404, "Work item not found");
   refreshProjectMetricsAsync(projectId);
   return updated;
 }
 
-export async function createMilestoneService(projectId: number, payload: any, userId: number) {
+export async function createMilestoneService(projectId: number, payload: WorkItemPayload, userId: number) {
   return repo.createWorkItem(projectId, { ...payload, isMilestone: true }, userId);
 }
 
-export async function patchMilestoneService(projectId: number, id: number, payload: any) {
+export async function patchMilestoneService(projectId: number, id: number, payload: Partial<WorkItemPayload>) {
   return patchWorkItemService(projectId, id, { ...payload, isMilestone: true });
 }
 
-export async function createProcurementItemService(projectId: number, payload: any) {
+export async function createProcurementItemService(projectId: number, payload: ProcurementItemPayload) {
   return repo.createProcurementItem(projectId, payload);
 }
 
-export async function patchProcurementItemService(projectId: number, id: number, payload: any) {
+export async function patchProcurementItemService(projectId: number, id: number, payload: Partial<ProcurementItemPayload>) {
   const updated = await repo.patchProcurementItem(projectId, id, payload);
   if (!updated) throw new ApiV2Error("NOT_FOUND", 404, "Procurement item not found");
   return updated;
 }
 
-export async function createPurchaseOrderService(projectId: number, payload: any) {
+export async function createPurchaseOrderService(projectId: number, payload: ProcurementItemPayload) {
   return repo.createPurchaseOrder(projectId, payload);
 }
 
-export async function patchPurchaseOrderService(projectId: number, id: number, payload: any) {
+export async function patchPurchaseOrderService(projectId: number, id: number, payload: Partial<ProcurementItemPayload>) {
   const updated = await repo.patchPurchaseOrder(projectId, id, payload);
   if (!updated) throw new ApiV2Error("NOT_FOUND", 404, "Purchase order not found");
   return updated;
 }
 
-export async function createInvoiceService(projectId: number, payload: any, userId: number) {
+export async function createInvoiceService(projectId: number, payload: InvoicePayload, userId: number) {
   return repo.createInvoice(projectId, payload, userId);
 }
 
@@ -101,7 +108,7 @@ export async function financeSummaryService(projectId: number) {
 
 export async function financeCashflowService(projectId: number) {
   const rows = await repo.getFinanceCashflow(projectId);
-  return { byStatus: rows.map((r: any) => ({ ...r, projected: Number(r.projected) || 0, actual: Number(r.actual) || 0 })) };
+  return { byStatus: rows.map((r: { status: unknown; projected: unknown; actual: unknown }) => ({ ...r, projected: Number(r.projected) || 0, actual: Number(r.actual) || 0 })) };
 }
 
 export async function financeCosService(projectId: number) {
@@ -114,42 +121,42 @@ export async function financeRevenueService(projectId: number) {
 
 export async function financeExpenditureService(projectId: number) {
   const lines = await repo.getFinanceCostLines(projectId);
-  return { committed: lines.filter((l: any) => ["APPROVED", "INVOICED", "PAID"].includes(String(l.status ?? ""))), planned: lines.filter((l: any) => String(l.status ?? "") === "PLANNED") };
+  return { committed: lines.filter((l: { status: unknown }) => ["APPROVED", "INVOICED", "PAID"].includes(String(l.status ?? ""))), planned: lines.filter((l: { status: unknown }) => String(l.status ?? "") === "PLANNED") };
 }
 
-export async function createFinanceVariationService(projectId: number, payload: any, userId: number) {
+export async function createFinanceVariationService(projectId: number, payload: WorkItemPayload, userId: number) {
   return repo.createFinanceVariation(projectId, payload, userId);
 }
 
-export async function patchFinanceVariationService(projectId: number, id: number, payload: any) {
+export async function patchFinanceVariationService(projectId: number, id: number, payload: Partial<WorkItemPayload>) {
   const updated = await repo.patchFinanceVariation(projectId, id, payload);
   if (!updated) throw new ApiV2Error("NOT_FOUND", 404, "Finance variation not found");
   return updated;
 }
 
 export const listEngineeringDesignsService = repo.listEngineeringDesigns;
-export async function createEngineeringDesignService(projectId: number, payload: any, userId: number) {
+export async function createEngineeringDesignService(projectId: number, payload: EngineeringDesignPayload & { projectEngStageId: number }, userId: number) {
   const stage = await repo.getEngineeringStageByProject(projectId, payload.projectEngStageId);
   if (!stage) throw new ApiV2Error("NOT_FOUND", 404, "Engineering stage not found for project");
   const created = await repo.createEngineeringDesign(payload, userId);
   if (!created) throw new ApiV2Error("VALIDATION_ERROR", 400, "Engineering stage does not exist");
   return created;
 }
-export async function patchEngineeringDesignService(projectId: number, id: number, payload: any, userId: number) {
+export async function patchEngineeringDesignService(projectId: number, id: number, payload: Partial<EngineeringDesignPayload>, userId: number) {
   const scopeMatch = await repo.listEngineeringDesigns(projectId);
-  if (!scopeMatch.some((d: any) => d.id === id)) throw new ApiV2Error("NOT_FOUND", 404, "Design not found");
+  if (!scopeMatch.some((d: { id: number }) => d.id === id)) throw new ApiV2Error("NOT_FOUND", 404, "Design not found");
   const updated = await repo.patchEngineeringDesign(id, payload, userId);
   if (!updated) throw new ApiV2Error("NOT_FOUND", 404, "Design not found");
   return updated;
 }
 
 export const listQualityChecksService = repo.listQualityChecks;
-export async function createQualityCheckService(projectId: number, payload: any) {
+export async function createQualityCheckService(projectId: number, payload: QualityCheckPayload & { checklistId: number }) {
   const checklist = await repo.getChecklistByProject(projectId, payload.checklistId);
   if (!checklist) throw new ApiV2Error("VALIDATION_ERROR", 400, "Checklist does not belong to project");
   return repo.createQualityCheck(payload);
 }
-export async function patchQualityCheckService(projectId: number, id: number, payload: any) {
+export async function patchQualityCheckService(projectId: number, id: number, payload: Partial<QualityCheckPayload>) {
   const scopeMatch = await repo.getQualityCheckByProject(projectId, id);
   if (!scopeMatch) throw new ApiV2Error("NOT_FOUND", 404, "Quality check not found");
   const updated = await repo.patchQualityCheck(id, payload);
@@ -247,7 +254,8 @@ export async function dashboardLastRefreshService(userId: number, role: string) 
   // but there's no global scheduled auto-refresh; return null to indicate manual-only.
   const nextAutoRefreshAt: string | null = null;
 
-  const isAdmin = ADMIN_ROLES.includes(role as any);
+  // Widen the role-literal array to string[] for a safe membership test.
+  const isAdmin = (ADMIN_ROLES as readonly string[]).includes(role);
   let manualRefreshAllowed = false;
   if (isAdmin) {
     const { allowed } = await checkRefreshRateLimit(userId);
@@ -332,7 +340,7 @@ export async function getProjectFinanceDetailService(projectId: number) {
     repo.getFinanceRevenueLines(projectId),
     repo.getFinanceCashflow(projectId),
   ]);
-  const cashflow = rawCashflow.map((r: any) => ({ ...r, projected: Number(r.projected) || 0, actual: Number(r.actual) || 0 }));
+  const cashflow = rawCashflow.map((r: { status: unknown; projected: unknown; actual: unknown }) => ({ ...r, projected: Number(r.projected) || 0, actual: Number(r.actual) || 0 }));
 
   return { costLines, revenueLines, cashflow };
 }

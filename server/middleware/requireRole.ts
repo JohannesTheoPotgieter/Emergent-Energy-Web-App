@@ -13,12 +13,13 @@
 import type { NextFunction, Request, Response } from "express";
 import { normalizeRoleForPermissions } from "@shared/schema";
 import { getEffectiveUser } from "../auth-context";
+import logger from "../lib/logger";
 
 const warned = new Set<string>();
 function warnOnce(roleSig: string) {
   if (warned.has(roleSig)) return;
   warned.add(roleSig);
-  console.log(
+  logger.info(
     `[permissions] requireRole([${roleSig}]) is a legacy gate. ` +
       `Prefer requirePermission(entity, action) — see docs/permissions.md.`,
   );

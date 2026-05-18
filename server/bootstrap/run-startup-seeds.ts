@@ -107,11 +107,11 @@ export async function runStartupSeeds(options: {
 
   try {
     const storyCheck = await db.execute(sql.raw(`SELECT COUNT(*) as cnt FROM ee_info_nodes WHERE stage_code IS NOT NULL AND stage_code != 'DEMO' AND node_type = 'lifecycle_stage'`));
-    const storyCount = parseInt(String((storyCheck as any).rows?.[0]?.cnt || "0"));
+    const storyCount = parseInt(String((storyCheck as { rows?: Array<{ cnt?: unknown }> }).rows?.[0]?.cnt || "0"));
     if (storyCount === 0) await seedStoryLifecycleData();
 
     const demoCheck = await db.execute(sql.raw(`SELECT COUNT(*) as cnt FROM ee_info_nodes WHERE stage_code = 'DEMO'`));
-    const demoCount = parseInt(String((demoCheck as any).rows?.[0]?.cnt || "0"));
+    const demoCount = parseInt(String((demoCheck as { rows?: Array<{ cnt?: unknown }> }).rows?.[0]?.cnt || "0"));
     if (demoCount === 0) await seedStoryDemoData();
   } catch (err) {
     log(`[Story] Seed error (non-fatal): ${err}`, "Startup");

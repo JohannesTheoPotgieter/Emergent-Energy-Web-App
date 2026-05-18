@@ -86,3 +86,23 @@ export const financeVariationCreateSchema = projectContextSchema.extend({
   priority: z.string().optional(),
 });
 export const financeVariationPatchSchema = financeVariationCreateSchema.partial().extend({ id: z.number().int().positive() });
+
+// Payload types — these mirror what the generic `validate()` helper hands
+// to the service/repository layer. We use `z.input` (pre-parse shape:
+// defaulted/optional fields stay optional) because that is what the
+// helper's generic resolves to at the call sites; the runtime values
+// still have Zod defaults applied.
+export type WorkItemCreateInput = z.input<typeof workItemCreateSchema>;
+export type WorkItemPatchInput = z.input<typeof workItemPatchSchema>;
+export type MilestoneCreateInput = z.input<typeof milestoneCreateSchema>;
+export type ProcurementItemCreateInput = z.input<typeof procurementItemCreateSchema>;
+export type ProcurementItemPatchInput = z.input<typeof procurementItemPatchSchema>;
+export type ProcurementPoCreateInput = z.input<typeof procurementPoCreateSchema>;
+export type ProcurementPoPatchInput = z.input<typeof procurementPoPatchSchema>;
+export type InvoiceCreateInput = z.input<typeof invoiceCreateSchema>;
+export type EngineeringDesignCreateInput = z.input<typeof engineeringDesignCreateSchema>;
+export type EngineeringDesignPatchInput = z.input<typeof engineeringDesignPatchSchema>;
+export type QualityCheckCreateInput = z.input<typeof qualityCheckCreateSchema>;
+export type QualityCheckPatchInput = z.input<typeof qualityCheckPatchSchema>;
+export type FinanceVariationCreateInput = z.input<typeof financeVariationCreateSchema>;
+export type FinanceVariationPatchInput = z.infer<typeof financeVariationPatchSchema>;

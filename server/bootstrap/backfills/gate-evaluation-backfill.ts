@@ -40,7 +40,11 @@ export async function runGateEvaluationBackfill(
         AND pes.phase != ''
     `);
 
-    const projects = (result as any).rows ?? [];
+    const projects = ((result as { rows?: unknown[] }).rows ?? []) as Array<{
+      project_id: number;
+      phase: string | null;
+      current_stage_code: string | null;
+    }>;
     if (projects.length === 0) {
       await markBackfillComplete(BACKFILL_KEY, { projectsEvaluated: 0, reason: "no_active_projects" });
       return;

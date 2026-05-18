@@ -8,6 +8,10 @@ import { runIntegrityGuard } from "./backfills/integrity-guard";
 import { runRoleLensBackfill } from "./backfills/role-lens-backfill";
 import { hasBackfillRun, markBackfillComplete } from "./backfills/backfill-registry";
 
+function errMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export async function runStartupBackfills(options: {
   startupBackfillEnabled: boolean;
   allowStartupMutations: boolean;
@@ -23,19 +27,19 @@ export async function runStartupBackfills(options: {
   await runProjectIdsBackfill().catch((err) => log(`[Backfill] Project IDs error: ${err}`, "Startup:Backfill"));
   await runUserAssignmentBackfill(log).catch((err) => log(`[Backfill] User ID sync error: ${err}`, "Startup:Backfill"));
   await runMsAssignmentCleanup(log).catch((err) => log(`[MS-Filter] Assignment cleanup error: ${err}`, "Startup:Backfill"));
-  await runWorkItemsBackfill(startupBackfillEnabled, allowStartupMutations).catch((err: any) =>
-    log(`[Backfill] work_items backfill failed: ${err?.message || err}`, "Startup:Backfill"),
+  await runWorkItemsBackfill(startupBackfillEnabled, allowStartupMutations).catch((err: unknown) =>
+    log(`[Backfill] work_items backfill failed: ${errMessage(err)}`, "Startup:Backfill"),
   );
-  await runAssigneeUserIdsBackfill(log).catch((err: any) =>
-    log(`[Backfill] assignee_user_ids sync error: ${err?.message || err}`, "Startup:Backfill"),
+  await runAssigneeUserIdsBackfill(log).catch((err: unknown) =>
+    log(`[Backfill] assignee_user_ids sync error: ${errMessage(err)}`, "Startup:Backfill"),
   );
-  await runIntegrityGuard(log).catch((err: any) =>
-    log(`[Backfill] integrity guard error: ${err?.message || err}`, "Startup:Backfill"),
+  await runIntegrityGuard(log).catch((err: unknown) =>
+    log(`[Backfill] integrity guard error: ${errMessage(err)}`, "Startup:Backfill"),
   );
 
   // Role-based UX upgrade: backfill lens profiles, widgets, contracts, SSEG applications
-  await runRoleLensBackfill().catch((err: any) =>
-    log(`[Backfill] role lens backfill error: ${err?.message || err}`, "Startup:Backfill"),
+  await runRoleLensBackfill().catch((err: unknown) =>
+    log(`[Backfill] role lens backfill error: ${errMessage(err)}`, "Startup:Backfill"),
   );
 
   // Mark all startup backfills as complete

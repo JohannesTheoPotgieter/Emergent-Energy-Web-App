@@ -43,7 +43,7 @@ export async function recordAudit(input: {
     entityType: input.entityType,
     entityId: input.entityId,
     action: input.action,
-    changesJson: (input.changesJson ?? null) as any,
+    changesJson: (input.changesJson ?? null) as typeof auditEvents.$inferInsert.changesJson,
     projectName: input.projectName,
     requestPath: input.requestPath,
     requestMethod: input.requestMethod,

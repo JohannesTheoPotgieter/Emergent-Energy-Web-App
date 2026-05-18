@@ -53,7 +53,12 @@ export async function runStageInstanceBackfill(
       GROUP BY pes.project_id, pes.execution_phase, pes.phase, pes.current_stage_code
     `));
 
-    const rows = (projectsWithoutStages as any).rows ?? [];
+    const rows = ((projectsWithoutStages as { rows?: unknown[] }).rows ?? []) as Array<{
+      project_id: number;
+      execution_phase: string | null;
+      phase: string | null;
+      current_stage_code: string | null;
+    }>;
     if (rows.length === 0) {
       return; // Nothing to backfill
     }
@@ -103,7 +108,7 @@ export async function runStageInstanceBackfill(
 
       // Create all 10 stage instances
       const now = new Date();
-      const toInsert = definitions.map((def: any) => ({
+      const toInsert = definitions.map((def: typeof stageDefinitions.$inferSelect) => ({
         projectId,
         stageCode: def.stageCode,
         stageStatus: "NOT_STARTED" as const,

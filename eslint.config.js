@@ -35,7 +35,13 @@ export default [
       ...tseslint.configs.recommended.rules,
       'no-console': 'warn',
       '@typescript-eslint/no-explicit-any': 'warn', // TODO: upgrade to 'error' once any count is below 500
-      '@typescript-eslint/no-unused-vars': 'warn', // TODO: upgrade to 'error' once unused vars are cleaned up
+      // The bare 'warn' override above the recommended preset dropped its
+      // default ignore patterns, so the `_`-prefix convention for
+      // intentionally-unused bindings did not work. Restore it explicitly.
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrors: 'none' },
+      ], // TODO: upgrade to 'error' once unused vars are cleaned up
       '@typescript-eslint/no-unused-expressions': 'warn',
       '@typescript-eslint/no-this-alias': 'warn',
       '@typescript-eslint/ban-ts-comment': 'warn',

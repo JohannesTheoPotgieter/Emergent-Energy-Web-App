@@ -22,7 +22,7 @@ export async function hasBackfillRun(name: string): Promise<boolean> {
     const result = await db.execute(
       sql.raw(`SELECT value FROM app_settings WHERE key = 'backfill:${name.replace(/'/g, "''")}' LIMIT 1`),
     );
-    const rows = (result as any).rows ?? [];
+    const rows = (result as { rows?: unknown[] }).rows ?? [];
     return rows.length > 0;
   } catch {
     return false; // Table may not exist yet during early startup
@@ -35,7 +35,7 @@ export async function hasBackfillRun(name: string): Promise<boolean> {
  */
 export async function markBackfillComplete(
   name: string,
-  metadata?: Record<string, any>,
+  metadata?: Record<string, unknown>,
 ): Promise<void> {
   const value = JSON.stringify({
     completedAt: new Date().toISOString(),

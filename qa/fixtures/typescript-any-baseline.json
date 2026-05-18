@@ -1,6 +1,6 @@
 {
   "_documentation": "EE-QA-023 baseline — count of `any` occurrences across client/src, server, and shared. The CI guard `qa/tests/unit/typescript-any-ratchet.test.ts` fails if the current count exceeds this baseline. The number can only go DOWN — every removed `any` makes the codebase safer. To regenerate after a cleanup PR, run `npx tsx scripts/build-any-baseline.ts` and bake the new value into `max` here. NOTE: the script currently emits `{total, generated}` but the test reads `{max, buffer}` — update `max` manually until the script is reconciled with the test schema.",
-  "max": 6171,
+  "max": 5987,
   "buffer": 50,
   "generated": "2026-05-18"
 }

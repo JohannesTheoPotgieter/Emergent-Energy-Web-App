@@ -28,6 +28,7 @@ import {
   isQbReconnectRequiredError,
   queryQuickBooks,
 } from "../services/quickbooks-service";
+import logger from "../lib/logger";
 
 const INTEGRATION_NAME = "quickbooks-payment-refresh";
 const DAILY_MS = 24 * 60 * 60 * 1000;
@@ -79,7 +80,7 @@ async function refreshPaymentStatus(): Promise<RefreshResult> {
     await getValidAccessToken();
   } catch (err) {
     if (isQbReconnectRequiredError(err)) {
-      console.warn(
+      logger.warn(
         "[qb-payment-refresh] Skipping run — QuickBooks refresh token rejected by Intuit (invalid_grant). The connection must be re-authorised via the QuickBooks integration screen before nightly payment-status refresh can resume.",
       );
       return { processed: 0, updated: 0, errors: 0, needsReconnect: true };
@@ -157,7 +158,7 @@ async function refreshPaymentStatus(): Promise<RefreshResult> {
       }
     } catch (err) {
       errors++;
-      console.error(`[qb-payment-refresh] Error refreshing link ${link.id}:`, err);
+      logger.error(`[qb-payment-refresh] Error refreshing link ${link.id}:`, err);
     }
   }
 
@@ -216,7 +217,7 @@ export function scheduleQbPaymentRefresh(): void {
     if (lastRunDate === today) return;
     lastRunDate = today;
     await runWithAudit().catch((err) =>
-      console.error("[qb-payment-refresh] Unhandled error in scheduler:", err),
+      logger.error("[qb-payment-refresh] Unhandled error in scheduler:", err),
     );
   };
 
@@ -229,7 +230,7 @@ export function scheduleQbPaymentRefresh(): void {
     scheduledInterval.unref();
   }
 
-  console.log("[qb-payment-refresh] Nightly payment-status refresh scheduler registered.");
+  logger.info("[qb-payment-refresh] Nightly payment-status refresh scheduler registered.");
 }
 
 /** Testing hook. */

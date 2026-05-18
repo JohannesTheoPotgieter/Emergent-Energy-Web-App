@@ -25,7 +25,7 @@ export async function runIntegrityGuard(
       ON CONFLICT (project_id) DO NOTHING
       RETURNING project_id
     `));
-    const count = (res as any).rows?.length ?? 0;
+    const count = (res as { rows?: unknown[] }).rows?.length ?? 0;
     if (count > 0) {
       log(`Backfilled ${count} missing project_execution_state rows`, SRC);
     }
@@ -44,7 +44,7 @@ export async function runIntegrityGuard(
         AND is_active = true
       RETURNING project_id
     `));
-    const count = (res as any).rows?.length ?? 0;
+    const count = (res as { rows?: unknown[] }).rows?.length ?? 0;
     if (count > 0) {
       log(`Set default current_stage_code for ${count} projects`, SRC);
     }
@@ -62,7 +62,7 @@ export async function runIntegrityGuard(
       ON CONFLICT (project_id) DO NOTHING
       RETURNING project_id
     `));
-    const count = (res as any).rows?.length ?? 0;
+    const count = (res as { rows?: unknown[] }).rows?.length ?? 0;
     if (count > 0) {
       log(`Backfilled ${count} missing project_settings rows`, SRC);
     }
@@ -90,7 +90,7 @@ export async function runIntegrityGuard(
       ON CONFLICT (project_id) DO NOTHING
       RETURNING project_id
     `));
-    const count = (res as any).rows?.length ?? 0;
+    const count = (res as { rows?: unknown[] }).rows?.length ?? 0;
     if (count > 0) {
       log(`Backfilled ${count} missing dashboard_project_metrics rows`, SRC);
     }

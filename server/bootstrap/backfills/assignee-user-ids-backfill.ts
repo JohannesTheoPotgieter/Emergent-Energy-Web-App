@@ -28,7 +28,10 @@ export async function runAssigneeUserIdsBackfill(log: (message: string, source?:
         AND (assignee_user_ids IS NULL OR array_length(assignee_user_ids, 1) = 0 OR array_length(assignee_user_ids, 1) IS NULL)
       ORDER BY id LIMIT 200 OFFSET ${otOffset}
     `);
-    const rows = (otRows as any).rows || [];
+    const rows = ((otRows as { rows?: unknown[] }).rows ?? []) as Array<{
+      id: number;
+      assignees: string[] | null;
+    }>;
     if (rows.length === 0) break;
     for (const row of rows) {
       const ids = await resolveNamesForBackfill(row.assignees || []);
@@ -50,7 +53,10 @@ export async function runAssigneeUserIdsBackfill(log: (message: string, source?:
         AND (owner_user_ids IS NULL OR array_length(owner_user_ids, 1) = 0 OR array_length(owner_user_ids, 1) IS NULL)
       ORDER BY id LIMIT 200 OFFSET ${trOffset}
     `);
-    const rows = (trRows as any).rows || [];
+    const rows = ((trRows as { rows?: unknown[] }).rows ?? []) as Array<{
+      id: number;
+      owners: string[] | null;
+    }>;
     if (rows.length === 0) break;
     for (const row of rows) {
       const ids = await resolveNamesForBackfill(row.owners || []);

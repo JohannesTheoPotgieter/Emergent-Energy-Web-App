@@ -78,7 +78,8 @@ export async function runStartupOrchestrator(options: {
         SET status = (CASE WHEN status::text = 'PREVIEW' THEN 'SUPERSEDED' ELSE 'superseded' END)::smart_import_status
         WHERE status::text IN ('PREVIEW', 'preview', 'AWAITING_REVIEW', 'awaiting_review')
       `));
-      const cleared = (clearResult as any).rowCount ?? (clearResult as any).rows?.length ?? 0;
+      const clearRes = clearResult as { rowCount?: number | null; rows?: unknown[] };
+      const cleared = clearRes.rowCount ?? clearRes.rows?.length ?? 0;
       if (cleared > 0) log(`Cleared ${cleared} staged import runs`, "Startup:ImportCleanup");
     } catch (err: unknown) {
       log(`Import cleanup skipped: ${(err instanceof Error ? err.message : String(err))}`, "Startup:ImportCleanup");
@@ -94,7 +95,7 @@ export async function runStartupOrchestrator(options: {
   if (!effectiveDataSeedEnabled && !isProduction && getDbMode() === "postgres") {
     try {
       const countResult = await db.execute(sql.raw(`SELECT COUNT(*) as cnt FROM project_info`));
-      const count = parseInt(String((countResult as any).rows?.[0]?.cnt ?? "0"), 10);
+      const count = parseInt(String((countResult as { rows?: Array<{ cnt?: unknown }> }).rows?.[0]?.cnt ?? "0"), 10);
       if (count === 0) {
         log("PostgreSQL project_info is empty — auto-enabling data seed migration (dev only)", "Startup:DataSeed");
         effectiveDataSeedEnabled = true;

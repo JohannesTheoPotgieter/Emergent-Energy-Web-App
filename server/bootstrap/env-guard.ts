@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import logger from "../lib/logger";
 
 export function enforceRuntimeEnvironmentGuards(): { sessionSecret: string; isStrictRuntime: boolean } {
   const sessionSecret = process.env.SESSION_SECRET;
@@ -10,7 +11,7 @@ export function enforceRuntimeEnvironmentGuards(): { sessionSecret: string; isSt
 
   if (!sessionSecret) {
     const fallback = crypto.randomBytes(32).toString("hex");
-    console.warn("[Session] SESSION_SECRET not set — using random ephemeral secret. Sessions will not survive restarts. Set SESSION_SECRET for production.");
+    logger.warn("[Session] SESSION_SECRET not set — using random ephemeral secret. Sessions will not survive restarts. Set SESSION_SECRET for production.");
     return { sessionSecret: fallback, isStrictRuntime };
   }
 

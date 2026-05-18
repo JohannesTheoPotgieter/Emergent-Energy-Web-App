@@ -15,12 +15,13 @@
 import type { NextFunction, Request, Response } from 'express';
 import { normalizeRoleForPermissions } from '@shared/schema';
 import { requirePermission } from '../permission-middleware';
+import logger from '../lib/logger';
 
 let warned = false;
 function warnOnce(name: string) {
   if (warned) return;
   warned = true;
-  console.log(
+  logger.info(
     `[permissions] ${name} is a thin shim around requirePermission('admin','edit'). ` +
       `New code should call requirePermission directly — see docs/permissions.md.`,
   );

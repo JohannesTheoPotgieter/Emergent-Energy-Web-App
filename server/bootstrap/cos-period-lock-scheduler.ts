@@ -32,6 +32,7 @@ import {
   previousMonthFirst,
   toIsoDateSast,
 } from "../lib/finance/period-lock";
+import logger from "../lib/logger";
 
 const DAILY_MS = 24 * 60 * 60 * 1000;
 const JITTER_MS = 60 * 1000; // ±60s jitter so multiple instances do not all fire at once
@@ -120,7 +121,7 @@ export async function runCosPeriodAutoLockCheck(opts?: { now?: Date }): Promise<
     .from(cosPeriodLocks)
     .where(
       and(
-        eq(cosPeriodLocks.periodMonth, prevMonth as any),
+        eq(cosPeriodLocks.periodMonth, prevMonth),
         isNull(cosPeriodLocks.unlockedAt),
       ),
     )
@@ -151,7 +152,7 @@ export async function runCosPeriodAutoLockCheck(opts?: { now?: Date }): Promise<
     sourceRef: `cos-period:${prevMonth}`,
   });
 
-  console.log(`[cos-period-lock] Proposed lock for ${prevMonth} (awaiting approval).`);
+  logger.info(`[cos-period-lock] Proposed lock for ${prevMonth} (awaiting approval).`);
   return {
     ranAt: today,
     targetMonth: prevMonth,
@@ -178,7 +179,7 @@ export function scheduleCosPeriodAutoLock(): void {
       lastRunDate = today;
       await runCosPeriodAutoLockCheck();
     } catch (err) {
-      console.error("[cos-period-lock] Scheduler run failed:", err);
+      logger.error("[cos-period-lock] Scheduler run failed:", err);
     }
   };
 
@@ -191,7 +192,7 @@ export function scheduleCosPeriodAutoLock(): void {
   if (typeof scheduledInterval.unref === "function") {
     scheduledInterval.unref();
   }
-  console.log("[cos-period-lock] Auto-lock scheduler registered (daily + 1 immediate run).");
+  logger.info("[cos-period-lock] Auto-lock scheduler registered (daily + 1 immediate run).");
 }
 
 /** Testing hook — stop the scheduler and reset state. */

@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { z, type ZodSchema } from "zod";
+import logger from "../../../lib/logger";
 
 export class ApiV2Error extends Error {
   constructor(
@@ -29,10 +30,10 @@ export function validateResponse<T>(schema: ZodSchema<T>, data: unknown, endpoin
   if (!result.success) {
     const message = `Response validation failed for ${endpointLabel}: ${result.error.message}`;
     if (process.env.NODE_ENV === "production") {
-      console.warn(message);
+      logger.warn(message);
       return data as T;
     }
-    console.error(message, result.error.flatten());
+    logger.error(message, result.error.flatten());
     return data as T;
   }
   return result.data;

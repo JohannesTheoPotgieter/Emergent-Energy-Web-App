@@ -14,13 +14,13 @@
 
 import { db } from "../../db";
 import { sql, eq } from "drizzle-orm";
+import logger from "../../lib/logger";
 import { hasBackfillRun, markBackfillComplete } from "./backfill-registry";
 import {
   roleLensProfiles,
   roleHomepageWidgets,
   contracts,
   ssegApplications,
-  lensSimulationSessions,
   roleHomepageSnapshots,
   DEFAULT_LENS_PROFILES,
   LENS_ROLES,
@@ -49,14 +49,14 @@ export async function runRoleLensBackfill(): Promise<BackfillReport> {
   // One-time guard: skip if already completed
   if (await hasBackfillRun("role_lens_v1")) return report;
 
-  console.log("[RoleLensBackfill] Starting role-based UX upgrade backfill...");
+  logger.info("[RoleLensBackfill] Starting role-based UX upgrade backfill...");
 
   // ============= STEP 1: Create Tables (Idempotent) =============
   try {
     await createTablesIfNotExist(report);
   } catch (err) {
     report.errors.push(`Table creation failed: ${err instanceof Error ? err.message : String(err)}`);
-    console.error("[RoleLensBackfill] Table creation error:", err);
+    logger.error("[RoleLensBackfill] Table creation error:", err);
     return report;
   }
 
@@ -65,7 +65,7 @@ export async function runRoleLensBackfill(): Promise<BackfillReport> {
     await backfillLensProfiles(report);
   } catch (err) {
     report.errors.push(`Lens profiles backfill failed: ${err instanceof Error ? err.message : String(err)}`);
-    console.error("[RoleLensBackfill] Lens profiles error:", err);
+    logger.error("[RoleLensBackfill] Lens profiles error:", err);
   }
 
   // ============= STEP 3: Backfill role_homepage_widgets =============
@@ -73,7 +73,7 @@ export async function runRoleLensBackfill(): Promise<BackfillReport> {
     await backfillHomepageWidgets(report);
   } catch (err) {
     report.errors.push(`Homepage widgets backfill failed: ${err instanceof Error ? err.message : String(err)}`);
-    console.error("[RoleLensBackfill] Widgets error:", err);
+    logger.error("[RoleLensBackfill] Widgets error:", err);
   }
 
   // ============= STEP 4: Backfill contracts from projects =============
@@ -81,7 +81,7 @@ export async function runRoleLensBackfill(): Promise<BackfillReport> {
     await backfillContracts(report);
   } catch (err) {
     report.errors.push(`Contracts backfill failed: ${err instanceof Error ? err.message : String(err)}`);
-    console.error("[RoleLensBackfill] Contracts error:", err);
+    logger.error("[RoleLensBackfill] Contracts error:", err);
   }
 
   // ============= STEP 5: Backfill SSEG applications =============
@@ -89,7 +89,7 @@ export async function runRoleLensBackfill(): Promise<BackfillReport> {
     await backfillSsegApplications(report);
   } catch (err) {
     report.errors.push(`SSEG backfill failed: ${err instanceof Error ? err.message : String(err)}`);
-    console.error("[RoleLensBackfill] SSEG error:", err);
+    logger.error("[RoleLensBackfill] SSEG error:", err);
   }
 
   // ============= STEP 6: Populate role homepage snapshots =============
@@ -97,17 +97,17 @@ export async function runRoleLensBackfill(): Promise<BackfillReport> {
     await populateHomepageSnapshots(report);
   } catch (err) {
     report.errors.push(`Homepage snapshots failed: ${err instanceof Error ? err.message : String(err)}`);
-    console.error("[RoleLensBackfill] Snapshots error:", err);
+    logger.error("[RoleLensBackfill] Snapshots error:", err);
   }
 
   // ============= STEP 7: Persist migration report =============
   try {
     await persistMigrationReport(report);
   } catch (err) {
-    console.error("[RoleLensBackfill] Report persistence error:", err);
+    logger.error("[RoleLensBackfill] Report persistence error:", err);
   }
 
-  console.log("[RoleLensBackfill] Backfill complete.", JSON.stringify(report, null, 2));
+  logger.info("[RoleLensBackfill] Backfill complete. " + JSON.stringify(report, null, 2));
 
   // Mark as complete so it never runs again
   await markBackfillComplete("role_lens_v1", {
@@ -246,7 +246,7 @@ async function createTablesIfNotExist(report: BackfillReport) {
         await db.execute(sql.raw(table.ddl));
         report.tablesCreated.push(table.name);
       }
-    } catch (err) {
+    } catch {
       // If CREATE IF NOT EXISTS still succeeds, that's fine
       report.tablesSkipped.push(table.name);
     }
@@ -455,7 +455,7 @@ async function backfillContracts(report: BackfillReport) {
           notes: `Auto-backfilled from project ${project.name}`,
         });
         backfilled++;
-      } catch (err) {
+      } catch {
         skipped++;
       }
     }
@@ -487,7 +487,7 @@ async function backfillContracts(report: BackfillReport) {
             notes: `Auto-backfilled from opportunity ${opp.project_name || opp.id}`,
           });
           backfilled++;
-        } catch (err) {
+        } catch {
           skipped++;
         }
       }
@@ -545,7 +545,7 @@ async function backfillSsegApplications(report: BackfillReport) {
           notes: `Backfilled from sseg_items #${item.id}. ${(item.notes as string) || ''}`.trim(),
         });
         backfilled++;
-      } catch (err) {
+      } catch {
         skipped++;
       }
     }
@@ -573,7 +573,7 @@ async function populateHomepageSnapshots(report: BackfillReport) {
       }
 
       // Compute basic snapshot data from available tables
-      const snapshotData: Record<string, any> = {
+      const snapshotData: Record<string, unknown> = {
         computedAt: new Date().toISOString(),
         lensRole: lens,
       };
@@ -639,8 +639,8 @@ async function persistMigrationReport(report: BackfillReport) {
         updated_by = EXCLUDED.updated_by,
         updated_at = NOW()
     `));
-    console.log("[RoleLensBackfill] Migration report persisted to app_settings.");
+    logger.info("[RoleLensBackfill] Migration report persisted to app_settings.");
   } catch (err) {
-    console.error("[RoleLensBackfill] Failed to persist migration report:", err);
+    logger.error("[RoleLensBackfill] Failed to persist migration report:", err);
   }
 }

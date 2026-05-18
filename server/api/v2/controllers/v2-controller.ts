@@ -4,6 +4,7 @@ import { recordAudit } from "../services/audit-service";
 import * as service from "../services/project-v2-service";
 import { ApiV2Error, asyncHandler, created, ok, paginationQuerySchema, validate, validateResponse } from "../utils/http";
 import { getProjectScope } from "../../../middleware/project-scope-middleware";
+import { getEffectiveUser, type AuthenticatedUser } from "../../../auth-context";
 import { scopeProjectIds } from "../../../services/project-access-service";
 import { computeProjectPermissions } from "../middleware/permission-helper";
 import {
@@ -33,7 +34,18 @@ import {
   workItemPatchSchema,
 } from "../validators/project-v2-validators";
 
-const actor = (req: Request) => ({ actorRole: (req.user as any).role, userId: (req.user as any).id, userName: (req.user as any).name });
+// All controllers below run behind requireAuth, so the effective user is
+// always present; this narrows away the null and avoids `any` access.
+const reqUser = (req: Request): AuthenticatedUser => {
+  const user = getEffectiveUser(req);
+  if (!user) throw new ApiV2Error("AUTH_REQUIRED", 401, "Authentication required");
+  return user;
+};
+
+const actor = (req: Request) => {
+  const u = reqUser(req);
+  return { actorRole: u.role, userId: u.id, userName: u.name };
+};
 
 
 const assertBodyProjectContext = (routeProjectId: number, payload: { projectId?: number }) => {
@@ -43,17 +55,17 @@ const assertBodyProjectContext = (routeProjectId: number, payload: { projectId?:
 };
 
 export const me = asyncHandler(async (req: Request, res: Response) => {
-  const user = req.user as any;
+  const user = reqUser(req);
   ok(res, { id: user.id, email: user.email, name: user.name, role: user.role });
 });
 
 export const mePermissions = asyncHandler(async (req: Request, res: Response) => {
-  const role = (req.user as any).role;
+  const role = reqUser(req).role;
   ok(res, { role, permissions: permissionsForRole(role) });
 });
 
 export const dashboardByRole = asyncHandler(async (req: Request, res: Response) => {
-  const role = String(req.params.role || (req.user as any).role);
+  const role = String(req.params.role || reqUser(req).role);
   const scope = getProjectScope(req);
   ok(res, await service.dashboardByRoleService(role, scopeProjectIds(scope)));
 });
@@ -94,8 +106,8 @@ export const projectDevelopment = asyncHandler(async (req, res) => {
 
 export const developmentHandover = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
-  assertPermission((req.user as any).role, "development.write");
-  const updated = await service.developmentHandoverService(projectId, (req.user as any).id, String(req.body?.reason || "handover"));
+  assertPermission(reqUser(req).role, "development.write");
+  const updated = await service.developmentHandoverService(projectId, reqUser(req).id, String(req.body?.reason || "handover"));
   await recordAudit({ ...actor(req), entityType: "project", entityId: String(projectId), action: "DEVELOPMENT_HANDOVER", requestPath: req.path, requestMethod: req.method, changesJson: { phase: updated.phase } });
   created(res, { projectId, transitionedTo: updated.phase });
 });
@@ -103,18 +115,18 @@ export const developmentHandover = asyncHandler(async (req, res) => {
 export const engineeringDesigns = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
   if (req.method === "POST") {
-    assertPermission((req.user as any).role, "engineering.write");
+    assertPermission(reqUser(req).role, "engineering.write");
     const payload = validate(engineeringDesignCreateSchema, req.body, "Invalid engineering design payload");
     assertBodyProjectContext(projectId, payload);
-    const row = await service.createEngineeringDesignService(projectId, payload, (req.user as any).id);
+    const row = await service.createEngineeringDesignService(projectId, payload, reqUser(req).id);
     await recordAudit({ ...actor(req), entityType: "engineering_design", entityId: String(row.id), action: "CREATE" });
     const permissions = await computeProjectPermissions(req);
     return created(res, { ...row, permissions });
   }
   if (req.method === "PATCH") {
-    assertPermission((req.user as any).role, "engineering.write");
+    assertPermission(reqUser(req).role, "engineering.write");
     const payload = validate(engineeringDesignPatchSchema, req.body, "Invalid engineering design patch payload");
-    const row = await service.patchEngineeringDesignService(projectId, payload.id, payload, (req.user as any).id);
+    const row = await service.patchEngineeringDesignService(projectId, payload.id, payload, reqUser(req).id);
     await recordAudit({ ...actor(req), entityType: "engineering_design", entityId: String(row.id), action: "PATCH" });
     const permissions = await computeProjectPermissions(req);
     return ok(res, { ...row, permissions });
@@ -129,7 +141,7 @@ export const engineeringDesigns = asyncHandler(async (req, res) => {
 export const qualityChecks = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
   if (req.method === "POST") {
-    assertPermission((req.user as any).role, "quality.write");
+    assertPermission(reqUser(req).role, "quality.write");
     const payload = validate(qualityCheckCreateSchema, req.body, "Invalid quality check payload");
     assertBodyProjectContext(projectId, payload);
     const row = await service.createQualityCheckService(projectId, payload);
@@ -138,7 +150,7 @@ export const qualityChecks = asyncHandler(async (req, res) => {
     return created(res, { ...row, permissions });
   }
   if (req.method === "PATCH") {
-    assertPermission((req.user as any).role, "quality.write");
+    assertPermission(reqUser(req).role, "quality.write");
     const payload = validate(qualityCheckPatchSchema, req.body, "Invalid quality check patch payload");
     const row = await service.patchQualityCheckService(projectId, payload.id, payload);
     await recordAudit({ ...actor(req), entityType: "quality_check", entityId: String(row.id), action: "PATCH" });
@@ -162,18 +174,18 @@ export const projectWorkItems = asyncHandler(async (req, res) => {
 });
 
 export const createWorkItem = asyncHandler(async (req, res) => {
-  assertPermission((req.user as any).role, "work_items.write");
+  assertPermission(reqUser(req).role, "work_items.write");
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
   const payload = validate(workItemCreateSchema, req.body, "Invalid work item payload");
   assertBodyProjectContext(projectId, payload);
-  const createdRow = await service.createWorkItemService(projectId, payload, (req.user as any).id);
+  const createdRow = await service.createWorkItemService(projectId, payload, reqUser(req).id);
   await recordAudit({ ...actor(req), entityType: "work_item", entityId: String(createdRow.id), action: "CREATE" });
   const permissions = await computeProjectPermissions(req);
   created(res, { ...createdRow, permissions });
 });
 
 export const patchWorkItem = asyncHandler(async (req, res) => {
-  assertPermission((req.user as any).role, "work_items.write");
+  assertPermission(reqUser(req).role, "work_items.write");
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
   const { id } = validate(idParamSchema, req.params, "Invalid id");
   const payload = validate(workItemPatchSchema, req.body, "Invalid work item patch payload");
@@ -193,18 +205,18 @@ export const projectMilestones = asyncHandler(async (req, res) => {
 });
 
 export const createMilestone = asyncHandler(async (req, res) => {
-  assertPermission((req.user as any).role, "milestones.write");
+  assertPermission(reqUser(req).role, "milestones.write");
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
   const payload = validate(milestoneCreateSchema, req.body, "Invalid milestone payload");
   assertBodyProjectContext(projectId, payload);
-  const row = await service.createMilestoneService(projectId, payload, (req.user as any).id);
+  const row = await service.createMilestoneService(projectId, payload, reqUser(req).id);
   await recordAudit({ ...actor(req), entityType: "milestone", entityId: String(row.id), action: "CREATE" });
   const permissions = await computeProjectPermissions(req);
   created(res, { ...row, permissions });
 });
 
 export const patchMilestone = asyncHandler(async (req, res) => {
-  assertPermission((req.user as any).role, "milestones.write");
+  assertPermission(reqUser(req).role, "milestones.write");
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
   const { id } = validate(idParamSchema, req.params, "Invalid id");
   const payload = validate(milestonePatchSchema, req.body, "Invalid milestone patch payload");
@@ -233,7 +245,7 @@ export const procurementItemsList = asyncHandler(async (req, res) => {
 });
 
 export const createProcurementItem = asyncHandler(async (req, res) => {
-  assertPermission((req.user as any).role, "procurement.write");
+  assertPermission(reqUser(req).role, "procurement.write");
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
   const payload = validate(procurementItemCreateSchema, req.body, "Invalid procurement item payload");
   assertBodyProjectContext(projectId, payload);
@@ -244,7 +256,7 @@ export const createProcurementItem = asyncHandler(async (req, res) => {
 });
 
 export const patchProcurementItem = asyncHandler(async (req, res) => {
-  assertPermission((req.user as any).role, "procurement.write");
+  assertPermission(reqUser(req).role, "procurement.write");
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
   const { id } = validate(idParamSchema, req.params, "Invalid id");
   const payload = validate(procurementItemPatchSchema, req.body, "Invalid procurement patch payload");
@@ -257,7 +269,7 @@ export const patchProcurementItem = asyncHandler(async (req, res) => {
 export const procurementPos = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
   if (req.method === "POST") {
-    assertPermission((req.user as any).role, "procurement.write");
+    assertPermission(reqUser(req).role, "procurement.write");
     const payload = validate(procurementPoCreateSchema, req.body, "Invalid purchase order payload");
     assertBodyProjectContext(projectId, payload);
     const row = await service.createPurchaseOrderService(projectId, payload);
@@ -266,7 +278,7 @@ export const procurementPos = asyncHandler(async (req, res) => {
     return created(res, { ...row, permissions });
   }
   if (req.method === "PATCH") {
-    assertPermission((req.user as any).role, "procurement.write");
+    assertPermission(reqUser(req).role, "procurement.write");
     const { id } = validate(idParamSchema, req.params, "Invalid id");
     const payload = validate(procurementPoPatchSchema, req.body, "Invalid purchase order patch payload");
     const row = await service.patchPurchaseOrderService(projectId, id, payload);
@@ -284,10 +296,10 @@ export const procurementPos = asyncHandler(async (req, res) => {
 export const procurementInvoices = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
   if (req.method === "POST") {
-    assertPermission((req.user as any).role, "invoice.write");
+    assertPermission(reqUser(req).role, "invoice.write");
     const payload = validate(invoiceCreateSchema, req.body, "Invalid invoice payload");
     assertBodyProjectContext(projectId, payload);
-    const row = await service.createInvoiceService(projectId, payload, (req.user as any).id);
+    const row = await service.createInvoiceService(projectId, payload, reqUser(req).id);
     await recordAudit({ ...actor(req), entityType: "invoice", entityId: String(row.id), action: "CREATE" });
     const permissions = await computeProjectPermissions(req);
     return created(res, { ...row, permissions });
@@ -327,16 +339,16 @@ export const financeExpenditure = asyncHandler(async (req, res) => {
 export const financeVariations = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
   if (req.method === "POST") {
-    assertPermission((req.user as any).role, "finance.write");
+    assertPermission(reqUser(req).role, "finance.write");
     const payload = validate(financeVariationCreateSchema, req.body, "Invalid finance variation payload");
     assertBodyProjectContext(projectId, payload);
-    const row = await service.createFinanceVariationService(projectId, payload, (req.user as any).id);
+    const row = await service.createFinanceVariationService(projectId, payload, reqUser(req).id);
     await recordAudit({ ...actor(req), entityType: "finance_variation", entityId: String(row.id), action: "CREATE" });
     const permissions = await computeProjectPermissions(req);
     return created(res, { ...row, permissions });
   }
   if (req.method === "PATCH") {
-    assertPermission((req.user as any).role, "finance.write");
+    assertPermission(reqUser(req).role, "finance.write");
     const payload = validate(financeVariationPatchSchema, req.body, "Invalid finance variation patch payload");
     const row = await service.patchFinanceVariationService(projectId, payload.id, payload);
     await recordAudit({ ...actor(req), entityType: "finance_variation", entityId: String(row.id), action: "PATCH" });
@@ -366,7 +378,7 @@ export const auditActivity = asyncHandler(async (_req, res) => ok(res, await ser
 export const dashboardMetrics = asyncHandler(async (_req, res) => ok(res, await service.dashboardMetricsService()));
 
 export const dashboardRefresh = asyncHandler(async (req, res) => {
-  const userId = (req.user as any).id;
+  const userId = reqUser(req).id;
   const rateLimitResult = await service.checkRefreshRateLimit(userId);
   if (!rateLimitResult.allowed) {
     return res.status(429).json({
@@ -381,8 +393,8 @@ export const dashboardRefresh = asyncHandler(async (req, res) => {
 });
 
 export const dashboardLastRefresh = asyncHandler(async (req, res) => {
-  const userId = (req.user as any).id;
-  const role = (req.user as any).role;
+  const userId = reqUser(req).id;
+  const role = reqUser(req).role;
   ok(res, await service.dashboardLastRefreshService(userId, role));
 });
 

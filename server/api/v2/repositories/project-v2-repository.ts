@@ -1,8 +1,43 @@
 import { and, asc, count, desc, eq, ilike, inArray, isNull, sql } from "drizzle-orm";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { db } from "../../../db";
+import * as schema from "@shared/schema";
 import { auditEvents, invoiceCaptures, normalizedCostLines, normalizedRevenueLines, procurementItems, projectEngDeliverables, projectEngStages, projectInfo, projectPhaseHistory, projectRevenueSummary, qcChecklist, qcItemInstance, smartImportRuns, workItems, workItemPm, workItemEngineering, workItemScheduling, users, counterparties, projectExecutionState, projectSettings, projectTeamMembers, dashboardProjectMetrics, qcWarning, qcItemEvidence, priorityProjects } from "@shared/schema";
 import { syncProjectSplitTables } from "../../../lib/project-info-sync";
 import { recordAudit } from "../services/audit-service";
+
+import type {
+  WorkItemCreateInput,
+  ProcurementItemCreateInput,
+  InvoiceCreateInput,
+  EngineeringDesignCreateInput,
+  QualityCheckCreateInput,
+} from "../validators/project-v2-validators";
+
+// Payloads reaching the repository have already been Zod-validated at the
+// controller; their public type is the validator's inferred input type.
+// They additionally carry optional planning/scheduling extension fields.
+// Accepted by createWorkItem and its specialisations (milestone / finance
+// variation). `title` is the only hard requirement; workstream/status are
+// supplied by the caller or defaulted, and the optional planning columns
+// come from the work_items extension tables.
+export type WorkItemPayload = { title: string } & Partial<WorkItemCreateInput> &
+  Partial<
+    typeof workItems.$inferInsert &
+      typeof workItemPm.$inferInsert &
+      typeof workItemEngineering.$inferInsert &
+      typeof workItemScheduling.$inferInsert
+  >;
+export type ProcurementItemPayload = ProcurementItemCreateInput;
+export type InvoicePayload = InvoiceCreateInput;
+export type EngineeringDesignPayload = EngineeringDesignCreateInput;
+export type QualityCheckPayload = QualityCheckCreateInput;
+
+// Drizzle Postgres handle (schema-typed). The runtime `db` is declared
+// `any` in server/db.ts (out of scope here); a transaction handle is
+// structurally a schema-typed NodePgDatabase, which gives correct column
+// inference inside the transaction callback.
+type Tx = NodePgDatabase<typeof schema>;
 
 export async function listProjects(params: { q?: string; page: number; pageSize: number; sortBy?: string; sortDir: "asc" | "desc"; scopeProjectIds?: Set<number> | null; priorityId?: number }) {
   const filters = [isNull(projectExecutionState.deletedAt)];
@@ -22,7 +57,7 @@ export async function listProjects(params: { q?: string; page: number; pageSize:
     const linkedProjects = await db.select({ projectId: priorityProjects.projectId })
       .from(priorityProjects)
       .where(eq(priorityProjects.priorityId, params.priorityId));
-    const linkedIds = linkedProjects.map((l: any) => l.projectId);
+    const linkedIds = linkedProjects.map((l: { projectId: number }) => l.projectId);
     if (linkedIds.length === 0) return { rows: [], total: 0 };
     filters.push(inArray(projectInfo.id, linkedIds));
   }
@@ -32,7 +67,13 @@ export async function listProjects(params: { q?: string; page: number; pageSize:
   const totalRow = await db.select({ total: count() }).from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)).where(where);
   const order = params.sortDir === "desc" ? desc(projectInfo.updatedAt) : asc(projectInfo.updatedAt);
   const joinedRows = await db.select({ pi: projectInfo, pes: projectExecutionState }).from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)).where(where).orderBy(order).limit(params.pageSize).offset((params.page - 1) * params.pageSize);
-  const rows = joinedRows.map((r: any) => ({ ...r.pi, ...r.pes, id: r.pi.id }));
+  const rows = joinedRows.map(
+    (r: { pi: typeof projectInfo.$inferSelect; pes: typeof projectExecutionState.$inferSelect | null }) => ({
+      ...r.pi,
+      ...r.pes,
+      id: r.pi.id,
+    }),
+  );
   return { rows, total: Number(totalRow[0]?.total ?? 0) };
 }
 
@@ -42,8 +83,16 @@ export async function getProjectById(projectId: number) {
 }
 
 export async function transitionProjectToConstruction(projectId: number, userId: number, reason: string) {
-  return db.transaction(async (tx: any) => {
-    const [current] = await tx.select().from(projectInfo).where(eq(projectInfo.id, projectId)).limit(1);
+  return db.transaction(async (tx: Tx) => {
+    // Schema drift: `project_info` has a runtime `phase` column (written
+    // below + by migrations) that is not declared on the Drizzle table,
+    // so widen the inferred row to expose it.
+    const currentRows = (await tx
+      .select()
+      .from(projectInfo)
+      .where(eq(projectInfo.id, projectId))
+      .limit(1)) as Array<typeof projectInfo.$inferSelect & { phase: string | null }>;
+    const current = currentRows[0];
     if (!current) return null;
     if ((current.phase ?? "Development") !== "Development") {
       return { invalidTransition: true as const, currentPhase: current.phase ?? "Development" };
@@ -79,7 +128,11 @@ export async function getProjectWorkItems(projectId: number, isMilestone?: boole
   return db.select().from(workItems).where(and(...filters)).orderBy(desc(workItems.updatedAt));
 }
 
-export async function createWorkItem(projectId: number, payload: any, userId: number) {
+export async function createWorkItem(projectId: number, payload: WorkItemPayload, userId: number) {
+  // Callers (milestone / finance-variation specialisations) always set a
+  // workstream via spread before reaching here; default defensively so the
+  // dedupe lookup stays well-typed against the enum column.
+  const workstream = (payload.workstream ?? "PM") as typeof workItems.$inferSelect.workstream;
   const [existing] = await db
     .select()
     .from(workItems)
@@ -87,7 +140,7 @@ export async function createWorkItem(projectId: number, payload: any, userId: nu
       and(
         eq(workItems.projectId, projectId),
         eq(workItems.title, payload.title),
-        eq(workItems.workstream, payload.workstream),
+        eq(workItems.workstream, workstream),
         eq(workItems.isMilestone, Boolean(payload.isMilestone)),
         isNull(workItems.deletedAt),
       ),
@@ -157,7 +210,7 @@ export async function createWorkItem(projectId: number, payload: any, userId: nu
   return created;
 }
 
-export async function patchWorkItem(projectId: number, id: number, payload: any) {
+export async function patchWorkItem(projectId: number, id: number, payload: Partial<typeof workItems.$inferInsert>) {
   const [updated] = await db.update(workItems).set({ ...payload, updatedAt: new Date() }).where(and(eq(workItems.projectId, projectId), eq(workItems.id, id), isNull(workItems.deletedAt))).returning();
   return updated ?? null;
 }
@@ -175,8 +228,8 @@ export async function getProjectProcurement(projectId: number) {
     items,
     invoices,
     summary: {
-      openItems: items.filter((item: any) => !["closed", "received"].includes(String(item.status ?? ""))).length,
-      pendingInvoices: invoices.filter((invoice: any) => ["captured", "submitted", "verified"].includes(String(invoice.status ?? ""))).length,
+      openItems: items.filter((item: typeof procurementItems.$inferSelect) => !["closed", "received"].includes(String(item.status ?? ""))).length,
+      pendingInvoices: invoices.filter((invoice: typeof invoiceCaptures.$inferSelect) => ["captured", "submitted", "verified"].includes(String(invoice.status ?? ""))).length,
     },
   };
 }
@@ -185,12 +238,12 @@ export async function listProcurementItems(projectId: number) {
   return db.select().from(procurementItems).where(eq(procurementItems.projectId, projectId)).orderBy(desc(procurementItems.updatedAt));
 }
 
-export async function createProcurementItem(projectId: number, payload: any) {
+export async function createProcurementItem(projectId: number, payload: ProcurementItemPayload) {
   const [created] = await db.insert(procurementItems).values({ ...payload, projectId }).returning();
   return created;
 }
 
-export async function patchProcurementItem(projectId: number, id: number, payload: any) {
+export async function patchProcurementItem(projectId: number, id: number, payload: Partial<ProcurementItemPayload>) {
   const [updated] = await db.update(procurementItems).set({ ...payload, updatedAt: new Date() }).where(and(eq(procurementItems.projectId, projectId), eq(procurementItems.id, id))).returning();
   return updated ?? null;
 }
@@ -199,11 +252,11 @@ export async function listPurchaseOrders(projectId: number) {
   return db.select().from(procurementItems).where(and(eq(procurementItems.projectId, projectId), sql`${procurementItems.poId} is not null`)).orderBy(desc(procurementItems.updatedAt));
 }
 
-export async function createPurchaseOrder(projectId: number, payload: any) {
+export async function createPurchaseOrder(projectId: number, payload: ProcurementItemPayload) {
   return createProcurementItem(projectId, { ...payload, status: payload.status ?? "ordered", category: payload.category ?? "service" });
 }
 
-export async function patchPurchaseOrder(projectId: number, id: number, payload: any) {
+export async function patchPurchaseOrder(projectId: number, id: number, payload: Partial<ProcurementItemPayload>) {
   return patchProcurementItem(projectId, id, payload);
 }
 
@@ -211,7 +264,7 @@ export async function listInvoices(projectId: number) {
   return db.select().from(invoiceCaptures).where(eq(invoiceCaptures.projectId, projectId)).orderBy(desc(invoiceCaptures.updatedAt));
 }
 
-export async function createInvoice(projectId: number, payload: any, userId: number) {
+export async function createInvoice(projectId: number, payload: InvoicePayload, userId: number) {
   const [created] = await db.insert(invoiceCaptures).values({ ...payload, projectId, capturedByUserId: userId }).returning();
   return created;
 }
@@ -278,11 +331,11 @@ export async function listFinanceVariations(projectId: number) {
   return db.select().from(workItems).where(and(eq(workItems.projectId, projectId), eq(workItems.workstream, "FINANCE"), eq(workItems.type, "VARIATION"), isNull(workItems.deletedAt))).orderBy(desc(workItems.updatedAt));
 }
 
-export async function createFinanceVariation(projectId: number, payload: any, userId: number) {
+export async function createFinanceVariation(projectId: number, payload: WorkItemPayload, userId: number) {
   return createWorkItem(projectId, { ...payload, workstream: "FINANCE", type: "VARIATION", status: payload.status ?? "Not Started" }, userId);
 }
 
-export async function patchFinanceVariation(projectId: number, id: number, payload: any) {
+export async function patchFinanceVariation(projectId: number, id: number, payload: Partial<typeof workItems.$inferInsert>) {
   return patchWorkItem(projectId, id, payload);
 }
 
@@ -309,7 +362,7 @@ export async function listEngineeringDesigns(projectId: number) {
     .orderBy(desc(projectEngDeliverables.uploadedAt));
 }
 
-export async function createEngineeringDesign(payload: any, userId: number) {
+export async function createEngineeringDesign(payload: EngineeringDesignPayload, userId: number) {
   const [stage] = await db.select({ id: projectEngStages.id }).from(projectEngStages).where(eq(projectEngStages.id, payload.projectEngStageId)).limit(1);
   if (!stage) return null;
   const [created] = await db.insert(projectEngDeliverables).values({ ...payload, uploadedBy: userId }).returning();
@@ -324,7 +377,7 @@ export async function getEngineeringStageByProject(projectId: number, stageId: n
   return stage ?? null;
 }
 
-export async function patchEngineeringDesign(id: number, payload: any, userId: number) {
+export async function patchEngineeringDesign(id: number, payload: Partial<EngineeringDesignPayload>, userId: number) {
   const [updated] = await db.update(projectEngDeliverables).set({ ...payload, approvedBy: payload.approvalStatus === "approved" ? userId : undefined, approvedAt: payload.approvalStatus === "approved" ? new Date() : undefined }).where(eq(projectEngDeliverables.id, id)).returning();
   return updated ?? null;
 }
@@ -332,7 +385,7 @@ export async function patchEngineeringDesign(id: number, payload: any, userId: n
 export async function getProjectQuality(projectId: number) {
   const checklists = await db.select().from(qcChecklist).where(eq(qcChecklist.projectId, projectId));
   if (!checklists.length) return { checklists: [], checks: [] };
-  const checks = await db.select().from(qcItemInstance).where(inArray(qcItemInstance.checklistId, checklists.map((c: any) => c.id))).orderBy(desc(qcItemInstance.lastUpdatedAt));
+  const checks = await db.select().from(qcItemInstance).where(inArray(qcItemInstance.checklistId, checklists.map((c: typeof qcChecklist.$inferSelect) => c.id))).orderBy(desc(qcItemInstance.lastUpdatedAt));
   return { checklists, checks };
 }
 
@@ -340,7 +393,7 @@ export async function listQualityChecks(projectId: number) {
   return getProjectQuality(projectId);
 }
 
-export async function createQualityCheck(payload: any) {
+export async function createQualityCheck(payload: QualityCheckPayload) {
   const [created] = await db.insert(qcItemInstance).values(payload).returning();
   return created;
 }
@@ -354,7 +407,7 @@ export async function getChecklistByProject(projectId: number, checklistId: numb
   return checklist ?? null;
 }
 
-export async function patchQualityCheck(id: number, payload: any) {
+export async function patchQualityCheck(id: number, payload: Partial<QualityCheckPayload>) {
   const [updated] = await db.update(qcItemInstance).set({ ...payload, lastUpdatedAt: new Date(), approvedAt: payload.approved ? new Date() : undefined }).where(eq(qcItemInstance.id, id)).returning();
   return updated ?? null;
 }
@@ -476,10 +529,10 @@ export async function getProjectQualitySummary(projectId: number) {
   ]);
   let checklistProgress: number | null = null;
   if (checklists.length > 0) {
-    const checklistIds = checklists.map((c: any) => c.id);
+    const checklistIds = checklists.map((c: typeof qcChecklist.$inferSelect) => c.id);
     const instances = await db.select().from(qcItemInstance).where(inArray(qcItemInstance.checklistId, checklistIds));
-    const applicable = instances.filter((i: any) => i.isApplicable);
-    const approved = applicable.filter((i: any) => i.approved);
+    const applicable = instances.filter((i: typeof qcItemInstance.$inferSelect) => i.isApplicable);
+    const approved = applicable.filter((i: typeof qcItemInstance.$inferSelect) => i.approved);
     checklistProgress = applicable.length > 0 ? approved.length / applicable.length : null;
   }
   return { checklistProgress, openWarnings: warnings.length };
@@ -487,16 +540,16 @@ export async function getProjectQualitySummary(projectId: number) {
 
 export async function getProjectPlanWorkItems(projectId: number, workstreamFilter?: string) {
   const filters = [eq(workItems.projectId, projectId), isNull(workItems.deletedAt)];
-  if (workstreamFilter) filters.push(eq(workItems.workstream, workstreamFilter as any));
+  if (workstreamFilter) filters.push(eq(workItems.workstream, workstreamFilter as typeof workItems.$inferSelect.workstream));
   return db.select().from(workItems).where(and(...filters));
 }
 
 export async function getProjectQualityDetail(projectId: number) {
   const checklists = await db.select().from(qcChecklist).where(eq(qcChecklist.projectId, projectId));
-  let items: any[] = [];
-  let evidence: any[] = [];
+  let items: (typeof qcItemInstance.$inferSelect)[] = [];
+  let evidence: (typeof qcItemEvidence.$inferSelect)[] = [];
   if (checklists.length > 0) {
-    const checklistIds = checklists.map((c: any) => c.id);
+    const checklistIds = checklists.map((c: typeof qcChecklist.$inferSelect) => c.id);
     [items, evidence] = await Promise.all([
       db.select().from(qcItemInstance).where(inArray(qcItemInstance.checklistId, checklistIds)),
       db.select().from(qcItemEvidence).where(eq(qcItemEvidence.projectId, projectId)),
@@ -508,9 +561,9 @@ export async function getProjectQualityDetail(projectId: number) {
 export async function getProjectEngineeringDetail(projectId: number) {
   const stages = await db.select().from(projectEngStages).where(eq(projectEngStages.projectId, projectId));
   const engWorkItems = await db.select().from(workItems).where(and(eq(workItems.projectId, projectId), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
-  let deliverables: any[] = [];
+  let deliverables: (typeof projectEngDeliverables.$inferSelect)[] = [];
   if (stages.length > 0) {
-    const stageIds = stages.map((s: any) => s.id);
+    const stageIds = stages.map((s: typeof projectEngStages.$inferSelect) => s.id);
     deliverables = await db.select().from(projectEngDeliverables).where(inArray(projectEngDeliverables.projectEngStageId, stageIds));
   }
   return { stages, workItems: engWorkItems, deliverables };

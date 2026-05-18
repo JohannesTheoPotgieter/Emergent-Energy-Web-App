@@ -13,6 +13,7 @@ import {
   isProjectAccessible,
   type ProjectScope,
 } from "../services/project-access-service";
+import { getEffectiveUser } from "../auth-context";
 
 // ---------------------------------------------------------------------------
 // Symbol for attaching scope to the request (same pattern as auth-context.ts)
@@ -45,7 +46,7 @@ export async function attachProjectScope(
   // Avoid double-resolution within the same request
   if (r[HAS_RESOLVED_SCOPE]) return next();
 
-  const user = req.user as any;
+  const user = getEffectiveUser(req);
   if (!user?.id) {
     // No user — let auth middleware handle rejection
     r[HAS_RESOLVED_SCOPE] = true;

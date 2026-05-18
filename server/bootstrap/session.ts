@@ -5,6 +5,11 @@ import type { Express } from "express";
 import { dbMode, dbConfig, getPostgresPool } from "../db";
 type LoggerFn = (message: string, source?: string) => void;
 
+// The idle-timeout middleware stamps the session with a last-activity
+// timestamp. This is a local view of that extra field (the canonical
+// express-session SessionData augmentation lives outside this module).
+type SessionWithActivity = session.Session & { lastActivity?: number };
+
 export type SessionBootstrapOptions = {
   app: Express;
   sessionSecret: string;
@@ -106,12 +111,13 @@ export function configureSession(options: SessionBootstrapOptions): void {
   app.use((req, _res, next) => {
     if (req.session) {
       const now = Date.now();
-      const lastActivity = (req.session as any).lastActivity as number | undefined;
+      const sess = req.session as SessionWithActivity;
+      const lastActivity = sess.lastActivity;
       if (lastActivity && now - lastActivity > IDLE_TIMEOUT) {
         req.session.destroy(() => {});
         return next();
       }
-      (req.session as any).lastActivity = now;
+      sess.lastActivity = now;
     }
     next();
   });

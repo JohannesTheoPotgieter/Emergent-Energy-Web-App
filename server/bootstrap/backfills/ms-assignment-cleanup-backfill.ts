@@ -2,6 +2,14 @@ import { sql } from "drizzle-orm";
 import { db } from "../../db";
 import { getAssignableUsers, getAllUsers } from "../../user-resolver";
 
+// db.execute() returns either an array (SQLite driver) or a { rows } object
+// (pg driver). This helper normalises both to a typed row array.
+function asRows<T>(result: unknown): T[] {
+  if (Array.isArray(result)) return result as T[];
+  const rows = (result as { rows?: unknown[] }).rows;
+  return (rows ?? []) as T[];
+}
+
 export async function runMsAssignmentCleanup(log: (message: string, source?: string) => void) {
   const assignable = await getAssignableUsers();
   const assignableIds = new Set(assignable.map((u) => u.id));
@@ -16,7 +24,9 @@ export async function runMsAssignmentCleanup(log: (message: string, source?: str
 
   let opCleared = 0;
   let trCleared = 0;
-  const opRows2: any[] = await db.execute(sql.raw(`SELECT id, assignee_user_ids FROM operational_tasks WHERE array_length(assignee_user_ids, 1) > 0`)).then((r: any) => Array.isArray(r) ? r : r.rows || []);
+  const opRows2 = asRows<{ id: number | string; assignee_user_ids: number[] | null }>(
+    await db.execute(sql.raw(`SELECT id, assignee_user_ids FROM operational_tasks WHERE array_length(assignee_user_ids, 1) > 0`)),
+  );
   for (const row of opRows2) {
     const ids: number[] = row.assignee_user_ids || [];
     const filtered = ids.filter((id: number) => assignableIds.has(id));
@@ -28,7 +38,9 @@ export async function runMsAssignmentCleanup(log: (message: string, source?: str
     }
   }
 
-  const trRows2: any[] = await db.execute(sql.raw(`SELECT id, owner_user_ids FROM tr_items WHERE array_length(owner_user_ids, 1) > 0`)).then((r: any) => Array.isArray(r) ? r : r.rows || []);
+  const trRows2 = asRows<{ id: number | string; owner_user_ids: number[] | null }>(
+    await db.execute(sql.raw(`SELECT id, owner_user_ids FROM tr_items WHERE array_length(owner_user_ids, 1) > 0`)),
+  );
   for (const row of trRows2) {
     const ids: number[] = row.owner_user_ids || [];
     const filtered = ids.filter((id: number) => assignableIds.has(id));

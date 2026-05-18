@@ -2,8 +2,20 @@ import { sql } from "drizzle-orm";
 import { db } from "../../db";
 import { resolveNameToUserId } from "../../user-resolver";
 
+// db.execute() returns either an array (SQLite driver) or a { rows } object
+// (pg driver). This helper normalises both to a typed row array.
+function asRows<T>(result: unknown): T[] {
+  if (Array.isArray(result)) return result as T[];
+  const rows = (result as { rows?: unknown[] }).rows;
+  return (rows ?? []) as T[];
+}
+
 export async function runUserAssignmentBackfill(log: (message: string, source?: string) => void) {
-  const opRows: any[] = await db.execute(sql.raw(`SELECT id, assignees, assignee_user_ids FROM operational_tasks WHERE array_length(assignees, 1) > 0`)).then((r: any) => Array.isArray(r) ? r : r.rows || []);
+  const opRows = asRows<{
+    id: number | string;
+    assignees: string[] | null;
+    assignee_user_ids: number[] | null;
+  }>(await db.execute(sql.raw(`SELECT id, assignees, assignee_user_ids FROM operational_tasks WHERE array_length(assignees, 1) > 0`)));
   let opFixed = 0;
   for (const row of opRows) {
     const names: string[] = row.assignees || [];
@@ -26,7 +38,11 @@ export async function runUserAssignmentBackfill(log: (message: string, source?: 
     }
   }
 
-  const trRows: any[] = await db.execute(sql.raw(`SELECT id, owners, owner_user_ids FROM tr_items WHERE array_length(owners, 1) > 0`)).then((r: any) => Array.isArray(r) ? r : r.rows || []);
+  const trRows = asRows<{
+    id: number | string;
+    owners: string[] | null;
+    owner_user_ids: number[] | null;
+  }>(await db.execute(sql.raw(`SELECT id, owners, owner_user_ids FROM tr_items WHERE array_length(owners, 1) > 0`)));
   let trFixed = 0;
   for (const row of trRows) {
     const names: string[] = row.owners || [];

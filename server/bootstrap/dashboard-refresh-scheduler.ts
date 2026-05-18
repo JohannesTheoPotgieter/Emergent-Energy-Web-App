@@ -12,6 +12,7 @@ import {
   refreshAllDashboards,
   registerDashboard,
 } from "../services/dashboard-refresh-service";
+import logger from "../lib/logger";
 
 let refreshTimer: NodeJS.Timeout | null = null;
 
@@ -25,7 +26,7 @@ async function registerOrgWideDashboards(): Promise<void> {
       compute: async () => getCompanyOverviewData(),
     });
   } catch (err) {
-    console.error("[DashboardRefresh] Failed to register company_overview:", err);
+    logger.error("[DashboardRefresh] Failed to register company_overview:", err);
   }
 
   // Integration health — C1 surface, refreshed by this loop so we don't
@@ -38,7 +39,7 @@ async function registerOrgWideDashboards(): Promise<void> {
       compute: async () => getIntegrationHealth(),
     });
   } catch (err) {
-    console.error("[DashboardRefresh] Failed to register integration_health:", err);
+    logger.error("[DashboardRefresh] Failed to register integration_health:", err);
   }
 
   // O&M handover — B8 close-to-handover dashboard.
@@ -50,7 +51,7 @@ async function registerOrgWideDashboards(): Promise<void> {
       compute: async () => getOmHandoverDashboard(),
     });
   } catch (err) {
-    console.error("[DashboardRefresh] Failed to register om_handover:", err);
+    logger.error("[DashboardRefresh] Failed to register om_handover:", err);
   }
 }
 
@@ -61,16 +62,16 @@ async function registerOrgWideDashboards(): Promise<void> {
 export async function runDashboardRefreshCycle(): Promise<void> {
   try {
     const result = await refreshAllDashboards();
-    console.log(
+    logger.info(
       `[DashboardRefresh] cycle complete: refreshed=${result.refreshed}, failed=${result.failed}`,
     );
     if (result.failed > 0) {
       for (const d of result.durations.filter((x) => !x.ok)) {
-        console.warn(`[DashboardRefresh] failed: ${d.key} (${d.ms}ms)`);
+        logger.warn(`[DashboardRefresh] failed: ${d.key} (${d.ms}ms)`);
       }
     }
   } catch (err) {
-    console.error("[DashboardRefresh] cycle threw:", err);
+    logger.error("[DashboardRefresh] cycle threw:", err);
   }
 }
 
@@ -83,13 +84,13 @@ export async function scheduleDashboardRefresh(): Promise<void> {
   // Kick one immediate refresh so readers don't see an empty cache.
   // Don't await — let it run in the background.
   runDashboardRefreshCycle().catch((err) => {
-    console.error("[DashboardRefresh] initial cycle error:", err);
+    logger.error("[DashboardRefresh] initial cycle error:", err);
   });
 
   if (refreshTimer) clearInterval(refreshTimer);
   refreshTimer = setInterval(() => {
     runDashboardRefreshCycle().catch((err) => {
-      console.error("[DashboardRefresh] scheduled cycle error:", err);
+      logger.error("[DashboardRefresh] scheduled cycle error:", err);
     });
   }, DASHBOARD_REFRESH_INTERVAL_MS);
 
