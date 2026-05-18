@@ -16,7 +16,7 @@
 import { isConnectorMocked } from "../lib/connector-mode";
 import { getSharePointToken } from "../sharepoint-token";
 import { getSsoTokenForUser } from "../ms-account-service";
-import { ApiError, badRequest, conflict, forbidden, notFound } from "../lib/api-error";
+import { ApiError, badRequest, conflict, notFound } from "../lib/api-error";
 import {
   mockListChildren,
   mockGetItem,
@@ -91,8 +91,23 @@ async function graphFetch(
   if (res.ok) return res;
 
   // Never leak the Graph response body to the caller.
-  if (res.status === 401 || res.status === 403) {
-    throw forbidden(`SharePoint denied the ${context} request.`);
+  if (res.status === 401) {
+    throw new ApiError(
+      401,
+      "SHAREPOINT_TOKEN_UNAUTHORIZED",
+      `Microsoft rejected the SharePoint token for ${context}.`,
+      undefined,
+      "Reconnect Microsoft sign-in or the Microsoft connector, then retry.",
+    );
+  }
+  if (res.status === 403) {
+    throw new ApiError(
+      403,
+      "SHAREPOINT_ACCESS_DENIED",
+      `SharePoint denied access to ${context}.`,
+      undefined,
+      "Grant the connected Microsoft account and signed-in user access to the SharePoint site/library, and ensure Graph Sites/Files permissions have admin consent.",
+    );
   }
   if (res.status === 404) {
     throw notFound("SharePoint item");
