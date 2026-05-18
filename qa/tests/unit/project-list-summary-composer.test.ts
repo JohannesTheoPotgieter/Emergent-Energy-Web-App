@@ -60,6 +60,14 @@ describe("composeProjectListSummaryRow", () => {
       expect(out.ragSource).toBe("derived");
     });
 
+    it("normalizes canonical 0..1 live values before deriving RAG", () => {
+      const out = composeProjectListSummaryRow(baseInput({
+        liveTask: { avgPct: 0.2, avgExpectedPct: 0.5, totalCount: 10 },
+      }));
+      expect(out.ragStatus).toBe("red");
+      expect(out.ragSource).toBe("derived");
+    });
+
     it("returns null RAG with 'missing' source when no expected baseline exists", () => {
       // No expected_pct_complete on any task → can't compute variance →
       // shouldn't fabricate a colour from raw progress alone.
@@ -112,6 +120,14 @@ describe("composeProjectListSummaryRow", () => {
     it("falls back to live AVG when cache is null", () => {
       const out = composeProjectListSummaryRow(baseInput({
         liveTask: { avgPct: 41.3, avgExpectedPct: null, totalCount: 5 },
+      }));
+      expect(out.percentComplete).toBe(41);
+      expect(out.percentCompleteSource).toBe("live");
+    });
+
+    it("normalizes canonical 0..1 live AVG values to display percent", () => {
+      const out = composeProjectListSummaryRow(baseInput({
+        liveTask: { avgPct: 0.413, avgExpectedPct: null, totalCount: 5 },
       }));
       expect(out.percentComplete).toBe(41);
       expect(out.percentCompleteSource).toBe("live");

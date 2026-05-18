@@ -32,6 +32,7 @@ import {
   getCanonicalFinanceByProjectIds,
   getCanonicalTaskSummaryByProjectIds,
 } from "./canonical-dashboard-kpi-service";
+import { chooseProgressPercent, toDisplayProgressPercent } from "../lib/priorities/progress-percent";
 
 function toIsoString(value: unknown): string | null {
   if (!value) return null;
@@ -702,9 +703,11 @@ export interface ComposeProjectListSummaryInput {
  * we don't fabricate a colour from raw progress alone.
  */
 function deriveRagFromScheduleVariance(actualPct: number | null, expectedPct: number | null): "green" | "amber" | "red" | null {
-  if (actualPct == null || !Number.isFinite(actualPct)) return null;
-  if (expectedPct == null || !Number.isFinite(expectedPct)) return null;
-  const variance = actualPct - expectedPct;
+  const actual = toDisplayProgressPercent(actualPct);
+  const expected = toDisplayProgressPercent(expectedPct);
+  if (actual == null) return null;
+  if (expected == null) return null;
+  const variance = actual - expected;
   if (variance >= -5) return "green";
   if (variance >= -15) return "amber";
   return "red";
@@ -717,22 +720,15 @@ export function composeProjectListSummaryRow(input: ComposeProjectListSummaryInp
   //    A cached zero is treated as a cache miss because the materialised
   //    `derived_project_kpis` row is initialised to 0 before the first
   //    refresh — surfacing "0%" for projects that already have task
-  //    progress is the bug this fix was raised against.
-  let percentComplete: number | null;
-  let percentCompleteSource: PercentCompleteSource;
-  const cachedPctIsAuthoritative = base.cachedPercentComplete != null
-    && Number.isFinite(base.cachedPercentComplete)
-    && base.cachedPercentComplete > 0;
-  if (cachedPctIsAuthoritative) {
-    percentComplete = Math.round(base.cachedPercentComplete!);
-    percentCompleteSource = "cache";
-  } else if (liveTask && liveTask.avgPct != null && Number.isFinite(liveTask.avgPct) && liveTask.totalCount > 0) {
-    percentComplete = Math.round(liveTask.avgPct);
-    percentCompleteSource = "live";
-  } else {
-    percentComplete = null;
-    percentCompleteSource = "missing";
-  }
+  //    progress is the bug this fix was raised against. Live task progress
+  //    is stored on the canonical 0..1 scale, so normalize before display.
+  const progressChoice = chooseProgressPercent({
+    cachedPct: base.cachedPercentComplete,
+    liveAvgPct: liveTask?.avgPct ?? null,
+    liveTaskCount: liveTask?.totalCount ?? 0,
+  });
+  const percentComplete = progressChoice.source === "missing" ? null : progressChoice.value;
+  const percentCompleteSource: PercentCompleteSource = progressChoice.source;
 
   // ── RAG fallback: stored → derived (schedule variance: actual − expected
   //    progress, bucketed by the same thresholds dashboard / lifecycle use)

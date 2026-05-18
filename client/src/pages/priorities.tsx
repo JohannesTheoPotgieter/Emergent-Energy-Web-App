@@ -520,48 +520,23 @@ export default function PrioritiesPage() {
               }
             />
 
-            {/* Task management section — always shown so + Add Task is accessible */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-foreground">
-                  My Tasks
-                  {myTasks.length > 0 && (
-                    <span className="ml-2 text-xs text-muted-foreground font-normal">
-                      ({filteredMyTasks.length}{filteredMyTasks.length !== myTasks.length ? ` of ${myTasks.length}` : ""})
-                    </span>
-                  )}
-                </h3>
-                <div className="flex items-center gap-2">
-                  <p className="text-xs text-muted-foreground hidden sm:block">
-                    Use <em>Make priority</em> to escalate any task up the chain.
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-xs"
-                    onClick={() => setCreateTaskDialogOpen(true)}
-                  >
-                    <Plus className="w-3.5 h-3.5 mr-1" /> Add Task
-                  </Button>
-                </div>
-              </div>
-              <MyWorkTasksList
-                tasks={filteredMyTasks}
-                onPromote={async (id) => {
-                  await promoteTaskMutation.mutateAsync(id);
-                }}
-                promotingId={promoteTaskMutation.isPending ? (promoteTaskMutation.variables ?? null) as number | null : null}
-                onUpdateStatus={(id, status) => updateTaskStatusMutation.mutate({ id, status })}
-                onDelete={(id) => deleteTaskMutation.mutate(id)}
-                updatingId={updatingTaskId}
-                deletingId={deletingTaskId}
-                emptyMessage={
-                  levelFilter !== "all" || healthFilter !== "all"
-                    ? "No tasks match the active filter."
-                    : "No tasks yet — click + Add Task to create your first personal task, or tasks assigned to you will appear here."
-                }
-              />
-            </div>
+            <MyWorkTasksList
+              tasks={filteredMyTasks}
+              onPromote={async (id) => {
+                await promoteTaskMutation.mutateAsync(id);
+              }}
+              promotingId={promoteTaskMutation.isPending ? (promoteTaskMutation.variables ?? null) as number | null : null}
+              onUpdateStatus={(id, status) => updateTaskStatusMutation.mutateAsync({ id, status }).then(() => undefined)}
+              onDelete={(id) => deleteTaskMutation.mutate(id)}
+              onAddTask={() => setCreateTaskDialogOpen(true)}
+              updatingId={updatingTaskId}
+              deletingId={deletingTaskId}
+              emptyMessage={
+                levelFilter !== "all" || healthFilter !== "all"
+                  ? "No tasks match the active filter."
+                  : "No tasks yet - click Add Task to create your first personal task, or tasks assigned to you will appear here."
+              }
+            />
           </div>
         </TabsContent>
 
