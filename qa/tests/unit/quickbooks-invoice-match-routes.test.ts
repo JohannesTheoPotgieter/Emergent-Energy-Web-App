@@ -147,6 +147,24 @@ describe("invoice-matches — vendor/customer mapping cascade (item 4, post-casc
   });
 });
 
+describe("invoice-matches — cascade proposal accept diagnostics", () => {
+  it("does not collapse unexpected accept failures into the opaque fallback toast", () => {
+    const beforeDecline =
+      ROUTES.match(
+        /app\.post\(\s*"\/api\/quickbooks\/invoice-matches\/proposals\/:id\/accept"[\s\S]*?app\.post\(\s*"\/api\/quickbooks\/invoice-matches\/proposals\/:id\/decline"/,
+      )?.[0] ?? "";
+
+    expect(beforeDecline).toContain("classifyProposalActionError");
+    expect(beforeDecline).not.toContain('serverError("Failed to accept proposal.")');
+  });
+
+  it("maps missing cascade proposal schema to a migration-specific operator message", () => {
+    expect(ROUTES).toContain("proposal_schema_missing");
+    expect(ROUTES).toContain("Run migrations, then retry");
+    expect(ROUTES).toContain("qb_link_proposed_cascade_history");
+  });
+});
+
 describe("invoice-matches — qbCounterpartyId threaded through scorer", () => {
   it("ScoredCandidate carries qbCounterpartyId field in the service", () => {
     expect(SERVICE).toContain("qbCounterpartyId");
