@@ -493,13 +493,13 @@ export function registerHomeExtractedRoutes(app: Express): void {
 
       for (const c of outflowRows) {
         if (c.paidDate) continue;
-        // Use the planned payment date for cost lines. On cost lines the
-        // equivalent of revenue's "expected payment date" is
-        // "forecast_payment_date" (see field-labels.ts). An explicit
-        // admin_date_override in the Tracker takes precedence. Lines with
-        // neither set are intentionally excluded — finance must populate a
-        // payment date for them to appear on the calendar.
-        const dt = ((c.adminDateOverride || c.forecastPaymentDate || "") as string).slice(0, 10);
+        // Date priority for planning view:
+        //   1. admin_date_override — explicit override in the Tracker
+        //   2. forecast_payment_date — finance's planned pay date
+        //   3. invoice_date — fallback for legacy lines with no forecast set
+        // The fallback exists because most cost lines today only have an
+        // invoice_date populated; without it the calendar would be empty.
+        const dt = ((c.adminDateOverride || c.forecastPaymentDate || c.invoiceDate || "") as string).slice(0, 10);
         if (dt >= rangeStart && dt <= rangeEnd) {
           events.push({
             type: "payment_out",
