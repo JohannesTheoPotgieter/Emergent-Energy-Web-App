@@ -405,9 +405,12 @@ export function registerHomeExtractedRoutes(app: Express): void {
           const matches = m.patterns.some((p) => desc.includes(p));
           if (!matches) continue;
 
+          // Look-ahead uses the canonical schedule date (actual when present,
+          // planned otherwise) so future milestones — whose actuals are still
+          // null — are visible on the calendar.
           const dateVal = m.mode === "start"
-            ? (task.actualStart || "")
-            : (task.actualEnd || "");
+            ? (task.actualStart || task.startDate || "")
+            : (task.actualEnd || task.endDate || "");
           if (!dateVal || !/^\d{4}-\d{2}-\d{2}/.test(dateVal)) continue;
           const dt = dateVal.slice(0, 10);
           if (dt < rangeStart || dt > rangeEnd) continue;
@@ -438,10 +441,21 @@ export function registerHomeExtractedRoutes(app: Express): void {
         description: normalizedRevenueLines.description,
         milestoneName: normalizedRevenueLines.milestoneName,
         paidDate: normalizedRevenueLines.paidDate,
+        paidDateConfirmed: normalizedRevenueLines.paidDateConfirmed,
+        paidDateFontColor: normalizedRevenueLines.paidDateFontColor,
+        inBankDate: normalizedRevenueLines.inBankDate,
       }).from(normalizedRevenueLines).where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)));
 
       for (const r of inflowRows) {
-        if (r.paidDate) continue;
+        // Per COO rule: only treat as received when in_bank_date is set OR
+        // paid_date is confirmed (paidDateConfirmed=true OR black/#000000 font).
+        // An unconfirmed (red) paid_date is just a forecast and should remain
+        // visible on the look-ahead calendar.
+        const inBank = !!r.inBankDate;
+        const paidColor = String(r.paidDateFontColor || "").toLowerCase();
+        const confirmedPaid =
+          !!r.paidDate && (r.paidDateConfirmed === true || paidColor.includes("black") || paidColor.includes("000000"));
+        if (inBank || confirmedPaid) continue;
         const dt = (r.expectedPaymentDate || "").slice(0, 10);
         if (dt >= rangeStart && dt <= rangeEnd) {
           events.push({
@@ -465,10 +479,18 @@ export function registerHomeExtractedRoutes(app: Express): void {
         description: normalizedCostLines.description,
         counterpartyName: normalizedCostLines.counterpartyName,
         paidDate: normalizedCostLines.paidDate,
+        paidDateConfirmed: normalizedCostLines.paidDateConfirmed,
+        paidDateFontColor: normalizedCostLines.paidDateFontColor,
       }).from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
 
       for (const c of outflowRows) {
-        if (c.paidDate) continue;
+        // Same confirmation gate as inflows: an unconfirmed (red) paid_date is
+        // just a forecast — keep it on the look-ahead calendar. Only skip when
+        // payment is confirmed.
+        const cPaidColor = String(c.paidDateFontColor || "").toLowerCase();
+        const cConfirmedPaid =
+          !!c.paidDate && (c.paidDateConfirmed === true || cPaidColor.includes("black") || cPaidColor.includes("000000"));
+        if (cConfirmedPaid) continue;
         // Date priority for planning view:
         //   1. admin_date_override — explicit override in the Tracker
         //   2. forecast_payment_date — finance's planned pay date

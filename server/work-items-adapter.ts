@@ -575,6 +575,12 @@ export async function getAllPMWorkItemsAsProjectPlan(): Promise<any[]> {
       // § 3.7 HARD: actuals fields hold actuals only. Never fall back to planned.
       actualStart: wi.actualStart,
       actualEnd: wi.actualEnd,
+      // startDate/endDate are the canonical scheduled values (commit-executor
+      // populates them as `actualStart ?? planStart` / `actualEnd ?? planEnd`),
+      // so look-ahead views can read these for future-dated milestones whose
+      // actuals are still null without violating the actuals-only rule above.
+      startDate: wi.startDate,
+      endDate: wi.endDate,
       actualPctComplete: wi.percentComplete,
       expectedPctComplete: null,
       durationDays: wi.duration,
