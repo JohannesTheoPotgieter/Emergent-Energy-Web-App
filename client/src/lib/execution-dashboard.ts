@@ -32,6 +32,14 @@ export interface ExecutionDashboardProject {
   criticalActionCount: number;
   overdueInflowFy: number;
   overdueOutflowFy: number;
+  plannedRevenueMonth: number;
+  realisedRevenueMonth: number;
+  openRevenueMonth: number;
+  plannedCosMonth: number;
+  realisedCosMonth: number;
+  openCosMonth: number;
+  inflowsWeek: number;
+  outflowsWeek: number;
   cpSigned: boolean;
   signedStatus: string;
 }

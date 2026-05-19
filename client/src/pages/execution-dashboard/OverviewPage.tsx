@@ -18,6 +18,8 @@ export default function OverviewPage() {
   const [contractSheetOpen, setContractSheetOpen] = useState(false);
   const [revenueSheetOpen, setRevenueSheetOpen] = useState(false);
   const [cosSheetOpen, setCosSheetOpen] = useState(false);
+  const [inflowSheetOpen, setInflowSheetOpen] = useState(false);
+  const [outflowSheetOpen, setOutflowSheetOpen] = useState(false);
 
   const scheduleMeasuredProjects = filteredProjects.filter(
     (p) => p.actualProgressPct != null && p.expectedProgressPct != null,
@@ -100,8 +102,8 @@ export default function OverviewPage() {
           title={formatZar(dashboard?.kpis.projectInflowsThisWeek ?? 0)}
           sub="Revenue payments received Mon–Sun this week · all active projects"
           icon={<Banknote className="w-5 h-5" />}
-          cta="Open cashflow register"
-          onClick={() => setLocation("/cashflow")}
+          cta="View by project"
+          onClick={() => setInflowSheetOpen(true)}
         />
 
         {/* 7 — Outflows This Week */}
@@ -111,8 +113,8 @@ export default function OverviewPage() {
           title={formatZar(dashboard?.kpis.projectOutflowsThisWeek ?? 0)}
           sub="Expenditure payments made Mon–Sun this week · all active projects"
           icon={<TrendingDown className="w-5 h-5" />}
-          cta="Open cashflow register"
-          onClick={() => setLocation("/cashflow")}
+          cta="View by project"
+          onClick={() => setOutflowSheetOpen(true)}
         />
 
         {/* 8 — Portfolio GP% */}
@@ -123,7 +125,7 @@ export default function OverviewPage() {
           sub={`GP ${formatZarCompact(kpis.grossProfitFy)} on ${formatZarCompact(kpis.plannedRevenueFy)} planned revenue · FY`}
           icon={<TrendingUp className="w-5 h-5" />}
           cta="View finance breakdown"
-          onClick={() => setRevenueSheetOpen(true)}
+          onClick={() => setLocation("/execution-dashboard/finance")}
         />
 
         {/* 9 — Overdue Receivables */}
@@ -135,49 +137,52 @@ export default function OverviewPage() {
           sub="Revenue milestones past planned date without confirmed payment · FY"
           icon={<AlertOctagon className="w-5 h-5" />}
           cta="View outstanding revenue"
-          onClick={() => setRevenueSheetOpen(true)}
+          onClick={() => setLocation("/execution-dashboard/finance")}
         />
       </div>
 
-      {/* Revenue outstanding drill-down Sheet */}
+      {/* Rev Outstanding This Month drill-down */}
       <Sheet open={revenueSheetOpen} onOpenChange={setRevenueSheetOpen}>
         <SheetContent className="sm:max-w-[860px] w-full overflow-y-auto">
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2">
               <DollarSign className="w-5 h-5 text-amber-500" />
-              Revenue &amp; Cashflow — By Project
+              Rev Outstanding This Month — By Project
             </SheetTitle>
           </SheetHeader>
           <p className="text-[11px] text-muted-foreground mt-2">
-            Sorted by open revenue (largest first). Figures are for the current financial year for currently filtered projects.
+            Revenue lines with an invoice date in the current month. Realised = invoice number raised
+            with a confirmed (black) invoice date. Sorted by open (largest first).
           </p>
-          <div className="mt-3 border rounded-lg overflow-auto max-h-[72vh]">
+          <div className="mt-3 border rounded-lg overflow-auto max-h-[72vh]" data-testid="sheet-rev-outstanding-month">
             <table className="w-full text-sm">
               <thead className="bg-muted/50 sticky top-0 z-10">
                 <tr className="text-[11px] uppercase tracking-wider text-muted-foreground border-b">
                   <th className="text-left py-2.5 px-3 font-medium">Project</th>
                   <th className="text-left py-2.5 px-3 font-medium hidden sm:table-cell">PM</th>
-                  <th className="text-right py-2.5 px-3 font-medium">Planned Rev</th>
-                  <th className="text-right py-2.5 px-3 font-medium">Received</th>
-                  <th className="text-right py-2.5 px-3 font-medium">Open</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Planned Rev (Month)</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Realised (Month)</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Open (Month)</th>
                   <th className="w-8"></th>
                 </tr>
               </thead>
               <tbody>
-                {[...filteredProjects]
-                  .sort((a, b) => (b.openInflowFy ?? 0) - (a.openInflowFy ?? 0))
+                {[...allProjects]
+                  .filter((p) => (p.plannedRevenueMonth ?? 0) > 0 || (p.openRevenueMonth ?? 0) !== 0)
+                  .sort((a, b) => (b.openRevenueMonth ?? 0) - (a.openRevenueMonth ?? 0))
                   .map((p) => (
                     <tr
                       key={p.projectId}
+                      data-testid={`row-rev-month-${p.projectId}`}
                       className="border-t border-border/40 hover:bg-muted/30 cursor-pointer"
                       onClick={() => { openProject(p, "revenue"); setRevenueSheetOpen(false); }}
                     >
                       <td className="py-2.5 px-3 font-medium truncate max-w-[180px]">{p.projectName}</td>
                       <td className="py-2.5 px-3 text-xs text-muted-foreground hidden sm:table-cell">{p.pm || "—"}</td>
-                      <td className="py-2.5 px-3 text-right tabular-nums text-muted-foreground">{formatZarCompact(p.plannedRevenueFy)}</td>
-                      <td className="py-2.5 px-3 text-right tabular-nums text-emerald-600 font-semibold">{formatZarCompact(p.receivedInflowFy)}</td>
-                      <td className={`py-2.5 px-3 text-right tabular-nums font-bold ${p.openInflowFy > 0 ? "text-amber-600" : "text-emerald-600"}`}>
-                        {formatZarCompact(p.openInflowFy)}
+                      <td className="py-2.5 px-3 text-right tabular-nums text-muted-foreground">{formatZarCompact(p.plannedRevenueMonth ?? 0)}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums text-emerald-600 font-semibold">{formatZarCompact(p.realisedRevenueMonth ?? 0)}</td>
+                      <td className={`py-2.5 px-3 text-right tabular-nums font-bold ${(p.openRevenueMonth ?? 0) > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+                        {formatZarCompact(p.openRevenueMonth ?? 0)}
                       </td>
                       <td className="py-2.5 px-1 text-center">
                         <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600">
@@ -186,13 +191,16 @@ export default function OverviewPage() {
                       </td>
                     </tr>
                   ))}
+                {allProjects.every((p) => (p.plannedRevenueMonth ?? 0) === 0 && (p.openRevenueMonth ?? 0) === 0) && (
+                  <tr><td colSpan={6} className="py-6 text-center text-xs text-muted-foreground">No revenue invoice-dated this month.</td></tr>
+                )}
               </tbody>
               <tfoot className="bg-muted/40 border-t-2 border-border sticky bottom-0">
                 <tr className="text-[11px] font-semibold">
-                  <td className="py-2 px-3" colSpan={2}>Total ({filteredProjects.length} projects)</td>
-                  <td className="py-2 px-3 text-right tabular-nums">{formatZar(filteredProjects.reduce((s, p) => s + p.plannedRevenueFy, 0))}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-emerald-600">{formatZar(filteredProjects.reduce((s, p) => s + p.receivedInflowFy, 0))}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-amber-600">{formatZar(filteredProjects.reduce((s, p) => s + p.openInflowFy, 0))}</td>
+                  <td className="py-2 px-3" colSpan={2}>Total · all active projects</td>
+                  <td className="py-2 px-3 text-right tabular-nums">{formatZar(allProjects.reduce((s, p) => s + (p.plannedRevenueMonth ?? 0), 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-emerald-600">{formatZar(allProjects.reduce((s, p) => s + (p.realisedRevenueMonth ?? 0), 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-amber-600" data-testid="text-rev-outstanding-month-total">{formatZar(allProjects.reduce((s, p) => s + (p.openRevenueMonth ?? 0), 0))}</td>
                   <td></td>
                 </tr>
               </tfoot>
@@ -201,45 +209,48 @@ export default function OverviewPage() {
         </SheetContent>
       </Sheet>
 
-      {/* COS outstanding drill-down Sheet */}
+      {/* COS Outstanding This Month drill-down */}
       <Sheet open={cosSheetOpen} onOpenChange={setCosSheetOpen}>
         <SheetContent className="sm:max-w-[860px] w-full overflow-y-auto">
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2">
               <TrendingDown className="w-5 h-5 text-orange-500" />
-              Cost of Sales &amp; Expenditure — By Project
+              COS Outstanding This Month — By Project
             </SheetTitle>
           </SheetHeader>
           <p className="text-[11px] text-muted-foreground mt-2">
-            Sorted by open expenditure (largest first). Figures are for the current financial year for currently filtered projects.
+            Cost lines with an invoice date in the current month. Realised = invoice number raised
+            with a confirmed (black) invoice date. Sorted by open (largest first).
           </p>
-          <div className="mt-3 border rounded-lg overflow-auto max-h-[72vh]">
+          <div className="mt-3 border rounded-lg overflow-auto max-h-[72vh]" data-testid="sheet-cos-outstanding-month">
             <table className="w-full text-sm">
               <thead className="bg-muted/50 sticky top-0 z-10">
                 <tr className="text-[11px] uppercase tracking-wider text-muted-foreground border-b">
                   <th className="text-left py-2.5 px-3 font-medium">Project</th>
                   <th className="text-left py-2.5 px-3 font-medium hidden sm:table-cell">PM</th>
-                  <th className="text-right py-2.5 px-3 font-medium">Planned COS</th>
-                  <th className="text-right py-2.5 px-3 font-medium">Paid</th>
-                  <th className="text-right py-2.5 px-3 font-medium">Open</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Planned COS (Month)</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Realised (Month)</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Open (Month)</th>
                   <th className="w-8"></th>
                 </tr>
               </thead>
               <tbody>
-                {[...filteredProjects]
-                  .sort((a, b) => (b.openExpenditureFy ?? 0) - (a.openExpenditureFy ?? 0))
+                {[...allProjects]
+                  .filter((p) => (p.plannedCosMonth ?? 0) > 0 || (p.openCosMonth ?? 0) !== 0)
+                  .sort((a, b) => (b.openCosMonth ?? 0) - (a.openCosMonth ?? 0))
                   .map((p) => (
                     <tr
                       key={p.projectId}
+                      data-testid={`row-cos-month-${p.projectId}`}
                       className="border-t border-border/40 hover:bg-muted/30 cursor-pointer"
                       onClick={() => { openProject(p, "expenditure"); setCosSheetOpen(false); }}
                     >
                       <td className="py-2.5 px-3 font-medium truncate max-w-[180px]">{p.projectName}</td>
                       <td className="py-2.5 px-3 text-xs text-muted-foreground hidden sm:table-cell">{p.pm || "—"}</td>
-                      <td className="py-2.5 px-3 text-right tabular-nums text-muted-foreground">{formatZarCompact(p.plannedExpenditureFy)}</td>
-                      <td className="py-2.5 px-3 text-right tabular-nums text-emerald-600 font-semibold">{formatZarCompact(p.paidExpenditureFy)}</td>
-                      <td className={`py-2.5 px-3 text-right tabular-nums font-bold ${p.openExpenditureFy > 0 ? "text-orange-600" : "text-emerald-600"}`}>
-                        {formatZarCompact(p.openExpenditureFy)}
+                      <td className="py-2.5 px-3 text-right tabular-nums text-muted-foreground">{formatZarCompact(p.plannedCosMonth ?? 0)}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums text-emerald-600 font-semibold">{formatZarCompact(p.realisedCosMonth ?? 0)}</td>
+                      <td className={`py-2.5 px-3 text-right tabular-nums font-bold ${(p.openCosMonth ?? 0) > 0 ? "text-orange-600" : "text-emerald-600"}`}>
+                        {formatZarCompact(p.openCosMonth ?? 0)}
                       </td>
                       <td className="py-2.5 px-1 text-center">
                         <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600">
@@ -248,17 +259,156 @@ export default function OverviewPage() {
                       </td>
                     </tr>
                   ))}
+                {allProjects.every((p) => (p.plannedCosMonth ?? 0) === 0 && (p.openCosMonth ?? 0) === 0) && (
+                  <tr><td colSpan={6} className="py-6 text-center text-xs text-muted-foreground">No cost invoice-dated this month.</td></tr>
+                )}
               </tbody>
               <tfoot className="bg-muted/40 border-t-2 border-border sticky bottom-0">
                 <tr className="text-[11px] font-semibold">
-                  <td className="py-2 px-3" colSpan={2}>Total ({filteredProjects.length} projects)</td>
-                  <td className="py-2 px-3 text-right tabular-nums">{formatZar(filteredProjects.reduce((s, p) => s + p.plannedExpenditureFy, 0))}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-emerald-600">{formatZar(filteredProjects.reduce((s, p) => s + p.paidExpenditureFy, 0))}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-orange-600">{formatZar(filteredProjects.reduce((s, p) => s + p.openExpenditureFy, 0))}</td>
+                  <td className="py-2 px-3" colSpan={2}>Total · all active projects</td>
+                  <td className="py-2 px-3 text-right tabular-nums">{formatZar(allProjects.reduce((s, p) => s + (p.plannedCosMonth ?? 0), 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-emerald-600">{formatZar(allProjects.reduce((s, p) => s + (p.realisedCosMonth ?? 0), 0))}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-orange-600" data-testid="text-cos-outstanding-month-total">{formatZar(allProjects.reduce((s, p) => s + (p.openCosMonth ?? 0), 0))}</td>
                   <td></td>
                 </tr>
               </tfoot>
             </table>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Revenue Inflows This Week drill-down */}
+      <Sheet open={inflowSheetOpen} onOpenChange={setInflowSheetOpen}>
+        <SheetContent className="sm:max-w-[760px] w-full overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <Banknote className="w-5 h-5 text-emerald-500" />
+              Revenue Inflows This Week — By Project
+            </SheetTitle>
+          </SheetHeader>
+          <p className="text-[11px] text-muted-foreground mt-2">
+            Revenue lines with a payment date Mon–Sun this week, regardless of confirmation. Sorted largest first.
+          </p>
+          <div className="mt-3 border rounded-lg overflow-auto max-h-[72vh]" data-testid="sheet-inflows-week">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 sticky top-0 z-10">
+                <tr className="text-[11px] uppercase tracking-wider text-muted-foreground border-b">
+                  <th className="text-left py-2.5 px-3 font-medium">Project</th>
+                  <th className="text-left py-2.5 px-3 font-medium hidden sm:table-cell">PM</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Received This Week</th>
+                  <th className="w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...allProjects]
+                  .filter((p) => (p.inflowsWeek ?? 0) > 0)
+                  .sort((a, b) => (b.inflowsWeek ?? 0) - (a.inflowsWeek ?? 0))
+                  .map((p) => (
+                    <tr
+                      key={p.projectId}
+                      data-testid={`row-inflow-week-${p.projectId}`}
+                      className="border-t border-border/40 hover:bg-muted/30 cursor-pointer"
+                      onClick={() => { openProject(p, "revenue"); setInflowSheetOpen(false); }}
+                    >
+                      <td className="py-2.5 px-3 font-medium truncate max-w-[220px]">{p.projectName}</td>
+                      <td className="py-2.5 px-3 text-xs text-muted-foreground hidden sm:table-cell">{p.pm || "—"}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums font-bold text-emerald-600">
+                        {formatZarCompact(p.inflowsWeek ?? 0)}
+                      </td>
+                      <td className="py-2.5 px-1 text-center">
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600">
+                          <ArrowRight className="w-4 h-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                {allProjects.every((p) => (p.inflowsWeek ?? 0) === 0) && (
+                  <tr><td colSpan={4} className="py-6 text-center text-xs text-muted-foreground">No revenue payments dated this week.</td></tr>
+                )}
+              </tbody>
+              <tfoot className="bg-muted/40 border-t-2 border-border sticky bottom-0">
+                <tr className="text-[11px] font-semibold">
+                  <td className="py-2 px-3" colSpan={2}>Total · all active projects</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-emerald-600" data-testid="text-inflows-week-total">
+                    {formatZar(allProjects.reduce((s, p) => s + (p.inflowsWeek ?? 0), 0))}
+                  </td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <div className="mt-3 flex justify-end">
+            <Button size="sm" variant="outline" onClick={() => { setInflowSheetOpen(false); setLocation("/cashflow"); }}>
+              Open full cashflow register →
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Expenditure Outflows This Week drill-down */}
+      <Sheet open={outflowSheetOpen} onOpenChange={setOutflowSheetOpen}>
+        <SheetContent className="sm:max-w-[760px] w-full overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <TrendingDown className="w-5 h-5 text-orange-500" />
+              Expenditure Outflows This Week — By Project
+            </SheetTitle>
+          </SheetHeader>
+          <p className="text-[11px] text-muted-foreground mt-2">
+            Cost lines with a payment date Mon–Sun this week, regardless of confirmation. Sorted largest first.
+          </p>
+          <div className="mt-3 border rounded-lg overflow-auto max-h-[72vh]" data-testid="sheet-outflows-week">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 sticky top-0 z-10">
+                <tr className="text-[11px] uppercase tracking-wider text-muted-foreground border-b">
+                  <th className="text-left py-2.5 px-3 font-medium">Project</th>
+                  <th className="text-left py-2.5 px-3 font-medium hidden sm:table-cell">PM</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Paid This Week</th>
+                  <th className="w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...allProjects]
+                  .filter((p) => (p.outflowsWeek ?? 0) > 0)
+                  .sort((a, b) => (b.outflowsWeek ?? 0) - (a.outflowsWeek ?? 0))
+                  .map((p) => (
+                    <tr
+                      key={p.projectId}
+                      data-testid={`row-outflow-week-${p.projectId}`}
+                      className="border-t border-border/40 hover:bg-muted/30 cursor-pointer"
+                      onClick={() => { openProject(p, "expenditure"); setOutflowSheetOpen(false); }}
+                    >
+                      <td className="py-2.5 px-3 font-medium truncate max-w-[220px]">{p.projectName}</td>
+                      <td className="py-2.5 px-3 text-xs text-muted-foreground hidden sm:table-cell">{p.pm || "—"}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums font-bold text-orange-600">
+                        {formatZarCompact(p.outflowsWeek ?? 0)}
+                      </td>
+                      <td className="py-2.5 px-1 text-center">
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600">
+                          <ArrowRight className="w-4 h-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                {allProjects.every((p) => (p.outflowsWeek ?? 0) === 0) && (
+                  <tr><td colSpan={4} className="py-6 text-center text-xs text-muted-foreground">No cost payments dated this week.</td></tr>
+                )}
+              </tbody>
+              <tfoot className="bg-muted/40 border-t-2 border-border sticky bottom-0">
+                <tr className="text-[11px] font-semibold">
+                  <td className="py-2 px-3" colSpan={2}>Total · all active projects</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-orange-600" data-testid="text-outflows-week-total">
+                    {formatZar(allProjects.reduce((s, p) => s + (p.outflowsWeek ?? 0), 0))}
+                  </td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <div className="mt-3 flex justify-end">
+            <Button size="sm" variant="outline" onClick={() => { setOutflowSheetOpen(false); setLocation("/cashflow"); }}>
+              Open full cashflow register →
+            </Button>
           </div>
         </SheetContent>
       </Sheet>
