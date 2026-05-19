@@ -1446,6 +1446,8 @@ export function registerLifecycleRoutes(app: Express) {
               invoiceDate: normalizedCostLines.invoiceDate,
               approvedDate: normalizedCostLines.approvedDate,
               forecastPaymentDate: normalizedCostLines.forecastPaymentDate,
+              revenueRecognitionAmount: normalizedCostLines.revenueRecognitionAmount,
+              noRevenueLinked: normalizedCostLines.noRevenueLinked,
               cosRealised: normalizedCostLines.cosRealised,
               poNumber: normalizedCostLines.poNumber,
               invoiceDateConfirmed: normalizedCostLines.invoiceDateConfirmed,
@@ -1545,9 +1547,11 @@ export function registerLifecycleRoutes(app: Express) {
 
           // Month/week buckets are window-only (always evaluated, never FY-gated)
           // so the tiles read the same data when FY scope changes.
-          const invDateKey = row.invoiceDate ? String(row.invoiceDate).slice(0, 10) : null;
-          const inCurrentMonth = !!invDateKey && invDateKey.startsWith(currentMonthKey);
-          const realisedNow = isInvoiceRealised(row);
+          // NOTE: The "REV due this month" tile is derived from COS lines'
+          // revenueRecognitionAmount (see cost-line loop below), because revenue
+          // milestones are realised as their linked COS work is invoiced. The
+          // revenue-line table only captures a fraction of in-month REV
+          // activity, so it is NOT used for the month bucket here.
           const pdKey = row.paidDate ? String(row.paidDate).slice(0, 10) : null;
           const inCurrentWeek = !!pdKey && pdKey >= weekStartKey && pdKey <= weekEndKey;
 
@@ -1557,10 +1561,6 @@ export function registerLifecycleRoutes(app: Express) {
               if (received) entry.receivedInflow += amount;
               else if (dateKey && dateKey < today) entry.inflowRisk += amount;
               entry.fyRevenueItems += 1;
-            }
-            if (inCurrentMonth) {
-              entry.plannedRevenueMonth += amount;
-              if (realisedNow) entry.realisedRevenueMonth += amount;
             }
             if (inCurrentWeek) entry.inflowsWeek += amount;
           };
@@ -1608,6 +1608,12 @@ export function registerLifecycleRoutes(app: Express) {
           const pdKey = row.paidDate ? String(row.paidDate).slice(0, 10) : null;
           const inCurrentWeek = !!pdKey && pdKey >= weekStartKey && pdKey <= weekEndKey;
 
+          // 2026-05-19: REV month bucket is derived from COS revenue
+          // recognition (per COO direction: when COS is realised, the
+          // associated REV is also realised). Each COS line carries the
+          // revenue it underwrites in `revenueRecognitionAmount`.
+          const revRecog =
+            parseFloat(String((row as any).revenueRecognitionAmount ?? '') || '0') || 0;
           const addTo = (entry: ReturnType<typeof emptyFin>) => {
             if (inFyScope) {
               entry.plannedExpenditure += amount;
@@ -1618,6 +1624,10 @@ export function registerLifecycleRoutes(app: Express) {
             if (inCurrentMonth) {
               entry.plannedCosMonth += amount;
               if (realisedNow) entry.realisedCosMonth += amount;
+              if (revRecog > 0 && !(row as any).noRevenueLinked) {
+                entry.plannedRevenueMonth += revRecog;
+                if (realisedNow) entry.realisedRevenueMonth += revRecog;
+              }
             }
             if (inCurrentWeek) entry.outflowsWeek += amount;
           };
