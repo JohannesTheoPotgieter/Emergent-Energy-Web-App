@@ -716,7 +716,7 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
       // parent detection. work_items has no native row_number column;
       // the downstream loop synthesizes one from this stable order. See
       // work-items-adapter.ts → getAllWorkItemsForProgress.
-      db.execute(sql`SELECT wi.id, wi.project_id, pi.project_name, wi.percent_complete, wi.expected_pct_complete, wi.duration, wi.wbs_code, wi.start_date, wi.end_date, wi.actual_start, wi.actual_end, wi.title, wi.type, wi.indent_level, wi.parent_id, wi.sort_order, wi.source_row, wi.workstream FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id WHERE wi.workstream IN ('PM', 'ENG', 'QUALITY') AND wi.deleted_at IS NULL ORDER BY wi.project_id ASC, wi.sort_order ASC NULLS LAST, wi.source_row ASC NULLS LAST, wi.id ASC`).catch((e: any) => { console.warn("[dept-projects] workItems failed:", e.message); return { rows: [] }; }),
+      db.execute(sql`SELECT wi.id, wi.project_id, pi.project_name, wi.percent_complete, wi.expected_pct_complete, wi.duration, wi.wbs_code, wi.start_date, wi.end_date, wi.actual_start, wi.actual_end, wi.title, wi.type, wi.is_milestone, wi.indent_level, wi.parent_id, wi.sort_order, wi.source_row, wi.workstream FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id WHERE wi.workstream = 'PM' AND wi.deleted_at IS NULL ORDER BY wi.project_id ASC, wi.sort_order ASC NULLS LAST, wi.source_row ASC NULLS LAST, wi.id ASC`).catch((e: any) => { console.warn("[dept-projects] workItems failed:", e.message); return { rows: [] }; }),
       db.execute(sql`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`).catch(() => ({ rows: [] })),
       db.execute(sql`SELECT DISTINCT ON (project_id) project_id, phase_name FROM normalized_execution_phases ORDER BY project_id, created_at DESC`).catch((e: any) => { console.warn("[dept-projects] phaseRows failed:", e.message); return { rows: [] }; }),
     ]);
@@ -973,8 +973,6 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
         // Plan tab pill. Without this, legacy-import phantoms count
         // as 0%-complete leaves and pull Actual % down.
         const filteredWorkItems = projectWorkItems.filter((wi: any) => {
-          const ws = wi.workstream || "PM";
-          if (ws === "ENG" || ws === "QUALITY") return true;
           const hasWbs = wi.wbs_code && String(wi.wbs_code).trim().length > 0;
           const hasPlannedStart = !!wi.start_date;
           const hasPlannedEnd = !!wi.end_date;
