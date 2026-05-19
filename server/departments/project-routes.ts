@@ -966,6 +966,26 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
       const todayDate = today;
 
       if (projectWorkItems.length > 0) {
+        // 2026-05-19: Mirror the Plan tab API filter
+        // (server/routes/planning-tasks-routes.ts:257-277) so phantom
+        // rows (PM tasks with no WBS, or PM tasks with no schedule
+        // dates at all) are excluded the same way they are from the
+        // Plan tab pill. Without this, legacy-import phantoms count
+        // as 0%-complete leaves and pull Actual % down.
+        const filteredWorkItems = projectWorkItems.filter((wi: any) => {
+          const ws = wi.workstream || "PM";
+          if (ws === "ENG" || ws === "QUALITY") return true;
+          const hasWbs = wi.wbs_code && String(wi.wbs_code).trim().length > 0;
+          const hasPlannedStart = !!wi.start_date;
+          const hasPlannedEnd = !!wi.end_date;
+          const hasActualStart = !!wi.actual_start;
+          const hasActualEnd = !!wi.actual_end;
+          const isMilestone = wi.type === 'milestone' || wi.is_milestone === true;
+          if (isMilestone && hasWbs) return true;
+          if (!hasWbs) return false;
+          if (!hasPlannedStart && !hasPlannedEnd && !hasActualStart && !hasActualEnd) return false;
+          return true;
+        });
         // Synthesize a per-project row_number from the SQL-ordered list
         // (sort_order, source_row, id) and resolve parent_id → parent
         // row_number so the canonical helper has correct hierarchy
@@ -973,11 +993,11 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
         // then sort_order, so iterating in array order is workbook
         // top-to-bottom.
         const idToRow = new Map<number, number>();
-        projectWorkItems.forEach((wi: any, idx: number) => {
+        filteredWorkItems.forEach((wi: any, idx: number) => {
           if (wi.id != null) idToRow.set(Number(wi.id), idx + 1);
         });
         const progress = computeProjectProgress(
-          projectWorkItems.map((wi: any, idx: number) => ({
+          filteredWorkItems.map((wi: any, idx: number) => ({
             taskNo: wi.wbs_code ?? null,
             rowNumber: idx + 1,
             parentRowNumber: wi.parent_id != null ? (idToRow.get(Number(wi.parent_id)) ?? null) : null,

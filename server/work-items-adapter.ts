@@ -415,7 +415,7 @@ export async function getAllWorkItemsForProgress(): Promise<any[]> {
   // workbook position via (sortOrder, sourceRow); we synthesize a
   // per-project rowNumber from that order so the helper's leaf-detection
   // heuristic still works.
-  const items = await db
+  const rawItems = await db
     .select({
       id: workItems.id,
       projectId: workItems.projectId,
@@ -449,6 +449,28 @@ export async function getAllWorkItemsForProgress(): Promise<any[]> {
     // the same row set as the Plan tab — which the COO confirmed
     // matches the Excel project-plan top-row rollup.
     .orderBy(asc(workItems.projectId), asc(workItems.sortOrder), asc(workItems.sourceRow), asc(workItems.id));
+
+  // 2026-05-19: Mirror the Plan tab API's post-fetch row filter from
+  // server/routes/planning-tasks-routes.ts:257-277 so phantom rows
+  // (PM tasks with no WBS, or PM tasks with no schedule dates at all)
+  // are excluded from the dashboard rollup the same way they're
+  // excluded from the Plan tab pill. ENG/QUALITY tasks always pass,
+  // and milestones pass only if they have a WBS code. Without this,
+  // legacy-import phantom rows count as 0%-complete leaves and pull
+  // Actual % down.
+  const items = rawItems.filter((wi: any) => {
+    const ws = wi.workstream || "PM";
+    if (ws === "ENG" || ws === "QUALITY") return true;
+    const hasWbs = wi.wbsCode && String(wi.wbsCode).trim().length > 0;
+    const hasPlannedStart = !!wi.startDate;
+    const hasPlannedEnd = !!wi.endDate;
+    const hasActualStart = !!wi.actualStart;
+    const hasActualEnd = !!wi.actualEnd;
+    if (wi.isMilestone && hasWbs) return true;
+    if (!hasWbs) return false;
+    if (!hasPlannedStart && !hasPlannedEnd && !hasActualStart && !hasActualEnd) return false;
+    return true;
+  });
 
   const projectIds: number[] = Array.from(new Set(items.map((i: any) => i.projectId).filter((id: any): id is number => typeof id === "number")));
   let projectNameMap = new Map<number, string>();
