@@ -28,6 +28,7 @@ import { evaluateRevenueArStatus } from "../lib/finance/revenue-ar-status";
 import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
 import { parseIntParam } from "../lib/req-params";
 import { computeProjectProgress } from "../lib/kpi-formulas";
+import { computeAllProjectPlanPills } from "../services/plan-rollup-service";
 
 /**
  * Helper: derive the COS month-key (YYYY-MM, UTC anchor) for a cost line.
@@ -846,6 +847,25 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
         .filter(([name]) => !!name),
     );
 
+    // 2026-05-19: Precompute Plan-tab pill numbers for every project in
+    // one batch so the per-project loop below can look them up by id and
+    // produce the IDENTICAL Actual % / Expected % shown on the project
+    // detail Plan tab. See server/services/plan-rollup-service.ts.
+    const projectsSummaryPills = await computeAllProjectPlanPills({
+      projectIds: allProjectInfo.map((p: any) => p.id).filter((id: any) => typeof id === 'number'),
+      workstream: 'PM',
+      todayIso: today,
+    });
+    // Name-keyed view of the same pill map so we can still resolve a pill
+    // when the per-project loop fails to match `info.id` (e.g. a name in
+    // `allProjectNames` that does not appear in `projectInfoMap`). This
+    // preserves the pre-refactor behaviour where progress numbers were
+    // computed from `projectWorkItems` regardless of `info` resolution.
+    const projectsSummaryPillsByName = new Map<string, ReturnType<typeof projectsSummaryPills.get>>();
+    for (const pill of projectsSummaryPills.values()) {
+      if (pill?.projectName) projectsSummaryPillsByName.set(toCanonicalProjectName(pill.projectName), pill);
+    }
+
     const projectsSummary = Array.from(allProjectNames).map(projectName => {
       const info = projectInfoMap.get(projectName) || projectInfoByCanonical.get(toCanonicalProjectName(projectName));
       const projectExpenses = expensesByProject.get(projectName) || [];
@@ -957,64 +977,23 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
       let projectPctComplete: number | null = null;
       let expectedPctComplete: number | null = null;
 
-      // 2026-05-19: Single source of truth for project Actual % / Expected %.
-      // The /api/projects-summary "Progress Delta" column now goes through
-      // the same `computeProjectProgress` helper as the Plan tab, Schedule
-      // Status modal, Program Dashboard, and COO Home — fed from PM + ENG
-      // + QUALITY work_items — so every surface shows the same numbers
-      // and they match the Excel project-plan top-row rollup.
+      // 2026-05-19: Single source of truth via the Plan-tab pill service.
+      // The /api/projects-summary "Progress Delta" column now goes
+      // through the SAME pipeline as the project detail Plan tab pill,
+      // so every surface shows the same numbers and they match the
+      // Excel project-plan top-row rollup. The pill map is precomputed
+      // before this loop. See server/services/plan-rollup-service.ts.
       const todayDate = today;
 
       if (projectWorkItems.length > 0) {
-        // 2026-05-19: Mirror the Plan tab API filter
-        // (server/routes/planning-tasks-routes.ts:257-277) so phantom
-        // rows (PM tasks with no WBS, or PM tasks with no schedule
-        // dates at all) are excluded the same way they are from the
-        // Plan tab pill. Without this, legacy-import phantoms count
-        // as 0%-complete leaves and pull Actual % down.
-        const filteredWorkItems = projectWorkItems.filter((wi: any) => {
-          const hasWbs = wi.wbs_code && String(wi.wbs_code).trim().length > 0;
-          const hasPlannedStart = !!wi.start_date;
-          const hasPlannedEnd = !!wi.end_date;
-          const hasActualStart = !!wi.actual_start;
-          const hasActualEnd = !!wi.actual_end;
-          const isMilestone = wi.type === 'milestone' || wi.is_milestone === true;
-          if (isMilestone && hasWbs) return true;
-          if (!hasWbs) return false;
-          if (!hasPlannedStart && !hasPlannedEnd && !hasActualStart && !hasActualEnd) return false;
-          return true;
-        });
-        // Synthesize a per-project row_number from the SQL-ordered list
-        // (sort_order, source_row, id) and resolve parent_id → parent
-        // row_number so the canonical helper has correct hierarchy
-        // metadata. The upstream SQL already ORDER BYs by project_id
-        // then sort_order, so iterating in array order is workbook
-        // top-to-bottom.
-        const idToRow = new Map<number, number>();
-        filteredWorkItems.forEach((wi: any, idx: number) => {
-          if (wi.id != null) idToRow.set(Number(wi.id), idx + 1);
-        });
-        const progress = computeProjectProgress(
-          filteredWorkItems.map((wi: any, idx: number) => ({
-            taskNo: wi.wbs_code ?? null,
-            rowNumber: idx + 1,
-            parentRowNumber: wi.parent_id != null ? (idToRow.get(Number(wi.parent_id)) ?? null) : null,
-            indentLevel: wi.indent_level ?? null,
-            durationDays: wi.duration ?? null,
-            actualPctComplete: wi.percent_complete !== null && wi.percent_complete !== undefined ? Number(wi.percent_complete) : null,
-            expectedPctComplete: wi.expected_pct_complete !== null && wi.expected_pct_complete !== undefined ? Number(wi.expected_pct_complete) : null,
-            startDate: wi.start_date ? String(wi.start_date).substring(0, 10) : null,
-            endDate: wi.end_date ? String(wi.end_date).substring(0, 10) : null,
-            actualStartDate: wi.actual_start ? String(wi.actual_start).substring(0, 10) : null,
-            actualEndDate: wi.actual_end ? String(wi.actual_end).substring(0, 10) : null,
-          })),
-          todayDate,
-        );
-        // computeProjectProgress returns 0..100; downstream consumers
-        // expect 0..1 (matches the legacy projectPctComplete scale).
-        projectPctComplete = progress.leafCount > 0 ? progress.actualPct / 100 : null;
-        expectedPctComplete = progress.leafCount > 0 ? progress.expectedPct / 100 : null;
-      } else {
+        const pill = (info?.id ? projectsSummaryPills.get(info.id) : undefined)
+          ?? projectsSummaryPillsByName.get(toCanonicalProjectName(projectName));
+        if (pill && pill.leafCount > 0 && pill.actualPct != null && pill.expectedPct != null) {
+          // Pill returns 0..100; downstream consumers expect 0..1.
+          projectPctComplete = (pill.actualPct as number) / 100;
+          expectedPctComplete = (pill.expectedPct as number) / 100;
+        }
+      } else if (projectWorkItems.length === 0) {
         // Legacy plan_tasks fallback (projects with no work_items rows yet).
         const SECTION_HEADERS = ['no.', 'no', '#'];
         const filteredPlans = projectPlans.filter(p => {

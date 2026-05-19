@@ -25,6 +25,7 @@ import {
 } from '@shared/schema';
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from './lib/project-info-sync';
 import { getAllPMWorkItemsAsProjectPlan, getAllWorkItemsForProgress } from './work-items-adapter';
+import { computeAllProjectPlanPills } from './services/plan-rollup-service';
 import { logAuditFromReq } from './audit-logger';
 import { requirePermission } from './permission-middleware';
 import { actorFromReq, createProjectEvent } from './services/project-event-service';
@@ -900,28 +901,15 @@ export function registerLifecycleRoutes(app: Express) {
         )
         .then((r: any) => r.rows || r);
 
-      // Use the unified progress source (PM + ENG + QUALITY) so the
-      // Schedule Status modal, the "Projects Behind Schedule" card, and
-      // the COO Home progress chips produce the SAME numbers as the
-      // project's Plan tab and the Excel project-plan top-row rollup.
-      // See work-items-adapter.ts → getAllWorkItemsForProgress for the
-      // rationale.
-      const rawPlanTasks = (await getAllWorkItemsForProgress()).map((wi: any) => ({
-        projectName: wi.projectName,
-        actualPctComplete: wi.actualPctComplete,
-        expectedPctComplete: wi.expectedPctComplete,
-        durationDays: wi.durationDays,
-        taskNo: wi.taskNo,
-        rowNumber: wi.rowNumber,
-        parentRowNumber: wi.parentRowNumber ?? null,
-        indentLevel: wi.indentLevel ?? null,
-        startDate: wi.startDate,
-        endDate: wi.endDate,
-        actualStart: wi.actualStart,
-        actualEnd: wi.actualEnd,
-      }));
-
-      const allPlanTasks = rawPlanTasks;
+      // 2026-05-19: Single source of truth for project Actual % / Expected %.
+      // Route through the Plan-tab pipeline so the Schedule Status modal,
+      // the "Projects Behind Schedule" card, and the COO Home chips use
+      // identical numbers to the project detail Plan tab pill (and the
+      // Excel project-plan top-row rollup). See server/services/plan-rollup-service.ts.
+      const planPillsScheduleStatus = await computeAllProjectPlanPills({ workstream: 'PM' });
+      const rawPlanTasks: Array<{ projectName: string }> = Array.from(
+        planPillsScheduleStatus.values(),
+      ).map((p) => ({ projectName: p.projectName }));
 
       const trackerProjectNames = new Set<string>();
       const expenseNames = await db
@@ -1094,24 +1082,9 @@ export function registerLifecycleRoutes(app: Express) {
 
       const milestoneKeys = new Set<string>();
 
-      // Group plan tasks by project for leaf-task identification (matching UnifiedPlanTab)
-      const lcPlanTasksByNorm = new Map<string, any[]>();
-      for (const p of allPlanTasks) {
-        const name = p.projectName;
-        if (!name) continue;
-        const taskNo = (p.taskNo || '').toString().toLowerCase().trim();
-        const isSummary = taskNo === 'no.' || taskNo === 'no' || taskNo === '#';
-        if (isSummary) continue;
-        if (p.rowNumber && milestoneKeys.has(`${name}::${p.rowNumber}`)) continue;
-        const norm = normalizeName(name);
-        if (!lcPlanTasksByNorm.has(norm)) lcPlanTasksByNorm.set(norm, []);
-        lcPlanTasksByNorm.get(norm)!.push(p);
-      }
-
-      // Per-project progress via the canonical helper in
-      // server/lib/kpi-formulas.ts. weightedPct / totalWeight here are
-      // shaped so the downstream serialisation (line ~1826) still divides
-      // and produces the same pct that the Plan tab pill shows.
+      // 2026-05-19: Drive per-project Actual % / Expected % from the
+      // Plan-tab pill service so this surface and the project's Plan tab
+      // produce identical numbers. See server/services/plan-rollup-service.ts.
       const planByNorm = new Map<
         string,
         {
@@ -1122,34 +1095,19 @@ export function registerLifecycleRoutes(app: Express) {
           totalExpWeight: number;
         }
       >();
-      for (const [norm, tasks] of lcPlanTasksByNorm) {
-        const progress = computeProjectProgress(
-          tasks.map((p: any) => ({
-            taskNo: p.taskNo ?? null,
-            rowNumber: p.rowNumber ?? null,
-            parentRowNumber: p.parentRowNumber ?? null,
-            indentLevel: p.indentLevel ?? null,
-            durationDays: p.durationDays ?? null,
-            actualPctComplete: p.actualPctComplete ?? null,
-            expectedPctComplete: p.expectedPctComplete ?? null,
-            startDate: p.startDate ?? null,
-            endDate: p.endDate ?? null,
-            actualStartDate: p.actualStart ?? null,
-            actualEndDate: p.actualEnd ?? null,
-          })),
-          todayDate,
-        );
-        const hasItems = progress.leafCount > 0;
+      for (const pill of planPillsScheduleStatus.values()) {
+        const norm = normalizeName(pill.projectName);
+        const hasItems = pill.leafCount > 0 && pill.actualPct != null && pill.expectedPct != null;
         // Helper returns 0..100; downstream code expects weightedPct on
         // the same scale as actualPctComplete (0..1) divided by totalWeight,
         // then multiplied by 100 (see line 1828). So we store weightedPct
         // pre-scaled to 0..1 and totalWeight = 1, which lets the existing
         // `(weightedPct / totalWeight) * 100` produce the canonical pct.
         planByNorm.set(norm, {
-          total: progress.leafCount,
-          weightedPct: hasItems ? progress.actualPct / 100 : 0,
+          total: pill.leafCount,
+          weightedPct: hasItems ? (pill.actualPct as number) / 100 : 0,
           totalWeight: hasItems ? 1 : 0,
-          weightedExpPct: hasItems ? progress.expectedPct / 100 : 0,
+          weightedExpPct: hasItems ? (pill.expectedPct as number) / 100 : 0,
           totalExpWeight: hasItems ? 1 : 0,
         });
       }
@@ -1379,23 +1337,18 @@ export function registerLifecycleRoutes(app: Express) {
         // Helpers matching program-dashboard logic
         const hasText = (v: any) => typeof v === 'string' && v.trim().length > 0;
 
-        // 2026-05-19: Use the canonical helper so the Execution Dashboard
-        // "All Projects" table is fed the same row set (PM + ENG + QUALITY)
-        // and ordering (workbook top-to-bottom via sort_order/source_row)
-        // as the Plan tab and Schedule Status modal — single source of
-        // truth for Actual %, Expected %, Variance. The helper already
-        // returns rowNumber + parentRowNumber resolved from work_items
-        // self-ref so computeProjectProgress' parent detection works
-        // correctly. See server/work-items-adapter.ts.
-        const rawPlanTasksFull = await getAllWorkItemsForProgress();
-
-        // Group by projectId for per-project computation
-        const planTasksByProjectId = new Map<number, any[]>();
-        for (const wi of rawPlanTasksFull) {
-          if (!wi.projectId) continue;
-          if (!planTasksByProjectId.has(wi.projectId)) planTasksByProjectId.set(wi.projectId, []);
-          planTasksByProjectId.get(wi.projectId)!.push(wi);
-        }
+        // 2026-05-19: Single source of truth for Actual % / Expected %.
+        // The Execution Dashboard "All Projects" table now consumes the
+        // Plan-tab pill service so each project's row reports the
+        // IDENTICAL numbers shown on its project detail Plan tab pill
+        // (and the Excel project-plan top-row rollup). See
+        // server/services/plan-rollup-service.ts.
+        const planPillsExec = await computeAllProjectPlanPills({
+          projectIds: activeProjects.map((p) => p.id),
+          workstream: 'PM',
+          todayIso: today,
+          fy,
+        });
 
         const planFyItemsByNorm = new Map<string, number>();
         const planByNorm = new Map<
@@ -1408,63 +1361,18 @@ export function registerLifecycleRoutes(app: Express) {
             fyItems: number;
           }
         >();
-        const PLAN_SECTION_HEADERS = new Set(['no.', 'no', '#']);
-
         for (const project of activeProjects) {
+          const pill = planPillsExec.get(project.id);
+          if (!pill) continue;
           const norm = normalizeName(project.projectName);
-          const tasks = planTasksByProjectId.get(project.id);
-          if (!tasks || tasks.length === 0) continue;
-
-          // Strip section-header rows AND rows with no WBS + no dates.
-          // Matches planning-tasks-routes.ts:256-265 which the plan tab uses.
-          const filtered = tasks.filter((t: any) => {
-            const wbs = (t.taskNo || '').toString().toLowerCase().trim();
-            if (PLAN_SECTION_HEADERS.has(wbs)) return false;
-            const hasWbs = t.taskNo && String(t.taskNo).trim().length > 0;
-            const hasStart = t.startDate && String(t.startDate).trim().length > 0;
-            const hasEnd = t.endDate && String(t.endDate).trim().length > 0;
-            if (!hasWbs && !hasStart && !hasEnd) return false;
-            return true;
-          });
-
-          // FY membership: any task with a date inside the financial year
-          const fyItemCount = fy.allData
-            ? filtered.length
-            : filtered.filter((t: any) => {
-                const d = t.startDate ?? t.endDate;
-                return d && isDateInRange(String(d).slice(0, 10), fy.start, fy.end);
-              }).length;
-          planFyItemsByNorm.set(norm, fyItemCount);
-
-          const progress = computeProjectProgress(
-            filtered.map((t: any) => ({
-              taskNo: t.taskNo ?? null,
-              rowNumber: t.rowNumber ?? null,
-              parentRowNumber: t.parentRowNumber ?? null,
-              indentLevel: t.indentLevel ?? null,
-              durationDays: t.durationDays ?? null,
-              actualPctComplete: t.actualPctComplete ?? null,
-              expectedPctComplete: t.expectedPctComplete ?? null,
-              startDate: t.startDate ? String(t.startDate) : null,
-              endDate: t.endDate ? String(t.endDate) : null,
-              actualStartDate: t.actualStart ? String(t.actualStart) : null,
-              actualEndDate: t.actualEnd ? String(t.actualEnd) : null,
-            })),
-            today,
-          );
-
-          // computeProjectProgress returns the final percentages on a
-          // 0..100 scale. The downstream serialiser (~line 1828) does
-          // `(weightedPct / totalWeight) * 100`, so pre-scale to 0..1 and
-          // pin totalWeight = 1 — that produces the same canonical pct
-          // the Plan tab pill displays for the same project.
-          const hasItems = progress.leafCount > 0;
+          planFyItemsByNorm.set(norm, pill.fyItems);
+          const hasItems = pill.leafCount > 0 && pill.actualPct != null && pill.expectedPct != null;
           planByNorm.set(norm, {
-            weightedPct: hasItems ? progress.actualPct / 100 : 0,
+            weightedPct: hasItems ? (pill.actualPct as number) / 100 : 0,
             totalWeight: hasItems ? 1 : 0,
-            weightedExpPct: hasItems ? progress.expectedPct / 100 : 0,
+            weightedExpPct: hasItems ? (pill.expectedPct as number) / 100 : 0,
             totalExpWeight: hasItems ? 1 : 0,
-            fyItems: fyItemCount,
+            fyItems: pill.fyItems,
           });
         }
 
@@ -2199,7 +2107,7 @@ export function registerLifecycleRoutes(app: Express) {
             recordCounts: {
               activeProjects: activeProjects.length,
               dashboardProjects: projectRows.length,
-              planTasks: rawPlanTasksFull.length,
+              planTasks: planPillsExec.size,
               revenueLines: revenueLines.length,
               costLines: costLines.length,
               engineeringTasks: engTasks.length,

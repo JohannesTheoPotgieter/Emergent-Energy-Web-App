@@ -21,6 +21,7 @@ import { logAuditFromReq } from "../audit-logger";
 import { classifyExpenseState } from "../lib/calculations/stateClassifier";
 import { resolveInflowEffectiveDates } from "../lib/cashflow-helpers";
 import { getAllPMWorkItemsAsProjectPlan, getAllWorkItemsForProgress } from "../work-items-adapter";
+import { computeAllProjectPlanPills } from "../services/plan-rollup-service";
 import { safeNum, isWithinDays, isThisWeek, isThisMonth, getFYRange, findMaxEndDate, findMinStartDate } from "../lib/home-helpers";
 import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
 import {
@@ -92,46 +93,20 @@ export function registerHomeExtractedRoutes(app: Express): void {
         phaseDistribution[phase].kw += safeNum(p.sizeKwp);
       }
 
-      // 2026-05-19: COO Home now consumes the SAME progress source as
-      // the Plan tab, the Schedule Status modal, the Program Dashboard,
-      // and the All Projects list — `getAllWorkItemsForProgress` +
-      // `computeProjectProgress` — so on-schedule / behind-schedule
-      // counts on this page agree with every other surface and with
-      // the Excel project-plan top-row rollup.
-      const todayStr = today;
-      const { computeProjectProgress } = await import("../lib/kpi-formulas");
-      const progressTasksAll = await getAllWorkItemsForProgress();
-      const tasksByProject = new Map<string, any[]>();
-      for (const t of progressTasksAll) {
-        if (!t.projectName) continue;
-        if (!tasksByProject.has(t.projectName)) tasksByProject.set(t.projectName, []);
-        tasksByProject.get(t.projectName)!.push(t);
-      }
-
+      // 2026-05-19: COO Home consumes the Plan-tab pill service so the
+      // on-schedule / behind-schedule counts here match every other
+      // surface (project detail Plan tab pill, Schedule Status modal,
+      // Program Dashboard, Execution Dashboard) and the Excel project-plan
+      // top-row rollup. See server/services/plan-rollup-service.ts.
+      const planPillsHome = await computeAllProjectPlanPills({ workstream: 'PM' });
       const projectDeltaValues: { projectName: string; delta: number; avgActual: number; avgExpected: number }[] = [];
-      for (const [projectName, tasks] of Array.from(tasksByProject.entries())) {
-        const progress = computeProjectProgress(
-          tasks.map((t: any) => ({
-            taskNo: t.taskNo ?? null,
-            rowNumber: t.rowNumber ?? null,
-            parentRowNumber: t.parentRowNumber ?? null,
-            indentLevel: t.indentLevel ?? null,
-            durationDays: t.durationDays ?? null,
-            actualPctComplete: t.actualPctComplete ?? null,
-            expectedPctComplete: t.expectedPctComplete ?? null,
-            startDate: t.startDate ?? null,
-            endDate: t.endDate ?? null,
-            actualStartDate: t.actualStart ?? null,
-            actualEndDate: t.actualEnd ?? null,
-          })),
-          todayStr,
-        );
-        if (progress.leafCount > 0) {
+      for (const pill of planPillsHome.values()) {
+        if (pill.leafCount > 0 && pill.actualPct != null && pill.expectedPct != null) {
           projectDeltaValues.push({
-            projectName,
-            delta: progress.actualPct - progress.expectedPct,
-            avgActual: progress.actualPct,
-            avgExpected: progress.expectedPct,
+            projectName: pill.projectName,
+            delta: (pill.actualPct as number) - (pill.expectedPct as number),
+            avgActual: pill.actualPct as number,
+            avgExpected: pill.expectedPct as number,
           });
         }
       }
