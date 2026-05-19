@@ -20,7 +20,7 @@ import { requirePermission } from "../permission-middleware";
 import { logAuditFromReq } from "../audit-logger";
 import { classifyExpenseState } from "../lib/calculations/stateClassifier";
 import { resolveInflowEffectiveDates } from "../lib/cashflow-helpers";
-import { getAllPMWorkItemsAsProjectPlan } from "../work-items-adapter";
+import { getAllPMWorkItemsAsProjectPlan, getAllWorkItemsForProgress } from "../work-items-adapter";
 import { safeNum, isWithinDays, isThisWeek, isThisMonth, getFYRange, findMaxEndDate, findMinStartDate } from "../lib/home-helpers";
 import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
 import {
@@ -92,46 +92,47 @@ export function registerHomeExtractedRoutes(app: Express): void {
         phaseDistribution[phase].kw += safeNum(p.sizeKwp);
       }
 
+      // 2026-05-19: COO Home now consumes the SAME progress source as
+      // the Plan tab, the Schedule Status modal, the Program Dashboard,
+      // and the All Projects list — `getAllWorkItemsForProgress` +
+      // `computeProjectProgress` — so on-schedule / behind-schedule
+      // counts on this page agree with every other surface and with
+      // the Excel project-plan top-row rollup.
       const todayStr = today;
-      const projectDeltas = new Map<string, { weightedActual: number; weightedExpected: number; totalWeight: number }>();
-      for (const plan of allPlans) {
-        if ((plan as any).rowNumber < 0 && (plan as any).isVirtual) continue;
-        const taskNo2 = (plan.taskNo || '').toString().toLowerCase().trim();
-        const isSummary2 = taskNo2 === 'no.' || taskNo2 === 'no' || taskNo2 === '#';
-        if (isSummary2) continue;
-        if (!projectDeltas.has(plan.projectName)) {
-          projectDeltas.set(plan.projectName, { weightedActual: 0, weightedExpected: 0, totalWeight: 0 });
-        }
-        const pd = projectDeltas.get(plan.projectName)!;
-        const dur = plan.durationDays && plan.durationDays > 0 ? plan.durationDays : 1;
-        pd.weightedActual += (plan.actualPctComplete ?? 0) * dur;
-        let exp = plan.expectedPctComplete;
-        if (exp == null || exp === undefined) {
-          const tStart = plan.actualStart?.substring?.(0, 10) || (plan as any).startDate?.substring?.(0, 10);
-          const tEnd = plan.actualEnd?.substring?.(0, 10) || (plan as any).endDate?.substring?.(0, 10);
-          if (tStart && tEnd && /^\d{4}-\d{2}-\d{2}/.test(tStart) && /^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
-            if (todayStr >= tEnd) exp = 1.0;
-            else if (todayStr <= tStart) exp = 0.0;
-            else {
-              const totalDays = Math.max(1, (new Date(tEnd).getTime() - new Date(tStart).getTime()) / 86400000);
-              const elapsedDays = (new Date(todayStr).getTime() - new Date(tStart).getTime()) / 86400000;
-              exp = Math.min(elapsedDays / totalDays, 1.0);
-            }
-          } else {
-            exp = 0;
-          }
-        }
-        pd.weightedExpected += (exp ?? 0) * dur;
-        pd.totalWeight += dur;
+      const { computeProjectProgress } = await import("../lib/kpi-formulas");
+      const progressTasksAll = await getAllWorkItemsForProgress();
+      const tasksByProject = new Map<string, any[]>();
+      for (const t of progressTasksAll) {
+        if (!t.projectName) continue;
+        if (!tasksByProject.has(t.projectName)) tasksByProject.set(t.projectName, []);
+        tasksByProject.get(t.projectName)!.push(t);
       }
 
       const projectDeltaValues: { projectName: string; delta: number; avgActual: number; avgExpected: number }[] = [];
-      for (const [projectName, pd] of Array.from(projectDeltas.entries())) {
-        if (pd.totalWeight > 0) {
-          const avgActual = pd.weightedActual / pd.totalWeight;
-          const avgExpected = pd.weightedExpected / pd.totalWeight;
-          const delta = (avgActual - avgExpected) * 100;
-          projectDeltaValues.push({ projectName, delta, avgActual: avgActual * 100, avgExpected: avgExpected * 100 });
+      for (const [projectName, tasks] of Array.from(tasksByProject.entries())) {
+        const progress = computeProjectProgress(
+          tasks.map((t: any) => ({
+            taskNo: t.taskNo ?? null,
+            rowNumber: t.rowNumber ?? null,
+            parentRowNumber: t.parentRowNumber ?? null,
+            indentLevel: t.indentLevel ?? null,
+            durationDays: t.durationDays ?? null,
+            actualPctComplete: t.actualPctComplete ?? null,
+            expectedPctComplete: t.expectedPctComplete ?? null,
+            startDate: t.startDate ?? null,
+            endDate: t.endDate ?? null,
+            actualStartDate: t.actualStart ?? null,
+            actualEndDate: t.actualEnd ?? null,
+          })),
+          todayStr,
+        );
+        if (progress.leafCount > 0) {
+          projectDeltaValues.push({
+            projectName,
+            delta: progress.actualPct - progress.expectedPct,
+            avgActual: progress.actualPct,
+            avgExpected: progress.expectedPct,
+          });
         }
       }
 

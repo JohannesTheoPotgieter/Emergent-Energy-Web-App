@@ -24,7 +24,7 @@ import {
   financeCosMonthly,
   projectExecutionState,
 } from "@shared/schema";
-import { getAllPMWorkItemsAsProjectPlan } from "../work-items-adapter";
+import { getAllWorkItemsForProgress } from "../work-items-adapter";
 import { computeProjectProgress, pctTo100 } from "../lib/kpi-formulas";
 import { isDateBlack } from "../lib/calculations/stateClassifier";
 import { isCosRealised as isCosRealisedShared } from "../lib/calculations/financeUtils";
@@ -178,7 +178,7 @@ export async function getProgramDashboardData(
         db.select().from(smartImportRuns).where(eq(smartImportRuns.status, 'committed')),
         db.select().from(workItems).where(and(eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt))),
         db.execute(sql`SELECT id, project_id, status, title, due_date, assigned_approver FROM approvals`).catch(() => ({ rows: [] })).then((r: any) => (r.rows ?? []) as any[]),
-        getAllPMWorkItemsAsProjectPlan(),
+        getAllWorkItemsForProgress(),
         db.execute(sql`SELECT id, project_id, project_name, severity, status, title, owner_user_id, due_date FROM qc_warning`).catch(() => ({ rows: [] })).then((r: any) => (r.rows ?? []) as any[]),
         db.execute(sql`SELECT id, name FROM users`).then((r: any) => (r.rows ?? []) as any[]),
         // Guard: skips historical snapshots where effectiveTo IS NOT NULL (cashflow_points)

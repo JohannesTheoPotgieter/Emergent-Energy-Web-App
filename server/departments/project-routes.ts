@@ -27,6 +27,7 @@ import { getProjectHeaderKpis, recomputeHeaderKpiProjectionForActiveProjects } f
 import { evaluateRevenueArStatus } from "../lib/finance/revenue-ar-status";
 import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
 import { parseIntParam } from "../lib/req-params";
+import { computeProjectProgress } from "../lib/kpi-formulas";
 
 /**
  * Helper: derive the COS month-key (YYYY-MM, UTC anchor) for a cost line.
@@ -707,7 +708,15 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
       storage.getAllOperationalTasks().catch((e: any) => { console.warn("[dept-projects] allOpTasks failed:", e.message); return []; }),
       db.execute(sql`SELECT DISTINCT file_name FROM upload_metadata`).catch((e: any) => { console.warn("[dept-projects] uploadMetadata failed:", e.message); return { rows: [] }; }),
       db.execute(sql`SELECT DISTINCT project_name FROM smart_import_runs WHERE status = 'committed'`).catch((e: any) => { console.warn("[dept-projects] smartImportRuns failed:", e.message); return { rows: [] }; }),
-      db.execute(sql`SELECT wi.project_id, pi.project_name, wi.percent_complete, wi.duration, wi.wbs_code, wi.start_date, wi.end_date, wi.title, wi.type FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id WHERE wi.workstream = 'PM' AND wi.source = 'SMART_IMPORT' AND wi.deleted_at IS NULL`).catch((e: any) => { console.warn("[dept-projects] workItems failed:", e.message); return { rows: [] }; }),
+      // 2026-05-19: Broadened from PM-only to PM + ENG + QUALITY so the
+      // /api/projects-summary "Progress Delta" column matches the Plan
+      // tab and Excel project-plan rollup. Ordered by (project_id,
+      // sort_order, source_row, id) to preserve workbook top-to-bottom
+      // ordering — required by computeProjectProgress' indent-adjacency
+      // parent detection. work_items has no native row_number column;
+      // the downstream loop synthesizes one from this stable order. See
+      // work-items-adapter.ts → getAllWorkItemsForProgress.
+      db.execute(sql`SELECT wi.id, wi.project_id, pi.project_name, wi.percent_complete, wi.expected_pct_complete, wi.duration, wi.wbs_code, wi.start_date, wi.end_date, wi.actual_start, wi.actual_end, wi.title, wi.type, wi.indent_level, wi.parent_id, wi.sort_order, wi.source_row, wi.workstream FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id WHERE wi.workstream IN ('PM', 'ENG', 'QUALITY') AND wi.deleted_at IS NULL ORDER BY wi.project_id ASC, wi.sort_order ASC NULLS LAST, wi.source_row ASC NULLS LAST, wi.id ASC`).catch((e: any) => { console.warn("[dept-projects] workItems failed:", e.message); return { rows: [] }; }),
       db.execute(sql`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`).catch(() => ({ rows: [] })),
       db.execute(sql`SELECT DISTINCT ON (project_id) project_id, phase_name FROM normalized_execution_phases ORDER BY project_id, created_at DESC`).catch((e: any) => { console.warn("[dept-projects] phaseRows failed:", e.message); return { rows: [] }; }),
     ]);
@@ -948,62 +957,47 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
       let projectPctComplete: number | null = null;
       let expectedPctComplete: number | null = null;
 
-      // Use the same leaf-task simple-average approach as the planning-tasks
-      // route (UnifiedPlanTab) so the delta shown in the project list matches
-      // the delta badge on the project detail page.
+      // 2026-05-19: Single source of truth for project Actual % / Expected %.
+      // The /api/projects-summary "Progress Delta" column now goes through
+      // the same `computeProjectProgress` helper as the Plan tab, Schedule
+      // Status modal, Program Dashboard, and COO Home — fed from PM + ENG
+      // + QUALITY work_items — so every surface shows the same numbers
+      // and they match the Excel project-plan top-row rollup.
       const todayDate = today;
-      const calcExpectedPct = (startStr: string | null, endStr: string | null): number | null => {
-        if (!startStr || !endStr || !/^\d{4}-\d{2}-\d{2}/.test(startStr) || !/^\d{4}-\d{2}-\d{2}/.test(endStr)) return null;
-        if (todayDate >= endStr) return 1.0;
-        if (todayDate <= startStr) return 0.0;
-        const startMs = new Date(startStr).getTime();
-        const endMs = new Date(endStr).getTime();
-        const totalDays = Math.max(1, (endMs - startMs) / 86400000);
-        const elapsed = (new Date(todayDate).getTime() - startMs) / 86400000;
-        return Math.min(elapsed / totalDays, 1.0);
-      };
 
       if (projectWorkItems.length > 0) {
-        // Exclude section-header rows and blank rows (matching plan tab filter)
-        const PLAN_SECTION_HEADERS_PR = new Set(['no.', 'no', '#']);
-        const nonHeaderItems = projectWorkItems.filter((wi: any) => {
-          if (wi.type === 'milestone') return false;
-          const wbs = (wi.wbs_code || '').toString().toLowerCase().trim();
-          if (PLAN_SECTION_HEADERS_PR.has(wbs)) return false;
-          const hasWbs = wi.wbs_code && String(wi.wbs_code).trim().length > 0;
-          const hasStart = wi.start_date && String(wi.start_date).trim().length > 0;
-          const hasEnd = wi.end_date && String(wi.end_date).trim().length > 0;
-          if (!hasWbs && !hasStart && !hasEnd) return false;
-          return true;
+        // Synthesize a per-project row_number from the SQL-ordered list
+        // (sort_order, source_row, id) and resolve parent_id → parent
+        // row_number so the canonical helper has correct hierarchy
+        // metadata. The upstream SQL already ORDER BYs by project_id
+        // then sort_order, so iterating in array order is workbook
+        // top-to-bottom.
+        const idToRow = new Map<number, number>();
+        projectWorkItems.forEach((wi: any, idx: number) => {
+          if (wi.id != null) idToRow.set(Number(wi.id), idx + 1);
         });
-        // Build parent-child map from WBS codes to identify leaf tasks
-        const wbsSet = new Set(nonHeaderItems.map((wi: any) => wi.wbs_code).filter(Boolean));
-        const parentWbs = new Set<string>();
-        for (const wbs of wbsSet) {
-          const parts = String(wbs).split('.');
-          if (parts.length > 1) {
-            parentWbs.add(parts.slice(0, -1).join('.'));
-          }
-        }
-        const leafItems = nonHeaderItems.filter((wi: any) => {
-          return !wi.wbs_code || !parentWbs.has(String(wi.wbs_code));
-        });
-
-        const items = leafItems.length > 0 ? leafItems : nonHeaderItems;
-        let actualSum = 0;
-        let expSum = 0;
-        let expCount = 0;
-        for (const wi of items) {
-          actualSum += wi.percent_complete !== null && wi.percent_complete !== undefined ? Number(wi.percent_complete) : 0;
-          const tStart = wi.start_date ? String(wi.start_date).substring(0, 10) : null;
-          const tEnd = wi.end_date ? String(wi.end_date).substring(0, 10) : null;
-          const exp = calcExpectedPct(tStart, tEnd);
-          if (exp !== null) { expSum += exp; expCount++; }
-        }
-        projectPctComplete = items.length > 0 ? actualSum / items.length : null;
-        expectedPctComplete = expCount > 0 ? expSum / expCount : null;
+        const progress = computeProjectProgress(
+          projectWorkItems.map((wi: any, idx: number) => ({
+            taskNo: wi.wbs_code ?? null,
+            rowNumber: idx + 1,
+            parentRowNumber: wi.parent_id != null ? (idToRow.get(Number(wi.parent_id)) ?? null) : null,
+            indentLevel: wi.indent_level ?? null,
+            durationDays: wi.duration ?? null,
+            actualPctComplete: wi.percent_complete !== null && wi.percent_complete !== undefined ? Number(wi.percent_complete) : null,
+            expectedPctComplete: wi.expected_pct_complete !== null && wi.expected_pct_complete !== undefined ? Number(wi.expected_pct_complete) : null,
+            startDate: wi.start_date ? String(wi.start_date).substring(0, 10) : null,
+            endDate: wi.end_date ? String(wi.end_date).substring(0, 10) : null,
+            actualStartDate: wi.actual_start ? String(wi.actual_start).substring(0, 10) : null,
+            actualEndDate: wi.actual_end ? String(wi.actual_end).substring(0, 10) : null,
+          })),
+          todayDate,
+        );
+        // computeProjectProgress returns 0..100; downstream consumers
+        // expect 0..1 (matches the legacy projectPctComplete scale).
+        projectPctComplete = progress.leafCount > 0 ? progress.actualPct / 100 : null;
+        expectedPctComplete = progress.leafCount > 0 ? progress.expectedPct / 100 : null;
       } else {
-        // Build parent-child map from rowNumber/indentLevel to identify leaf tasks
+        // Legacy plan_tasks fallback (projects with no work_items rows yet).
         const SECTION_HEADERS = ['no.', 'no', '#'];
         const filteredPlans = projectPlans.filter(p => {
           const tn = (p.taskNo || '').toString().toLowerCase().trim();
@@ -1011,41 +1005,24 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
           if (p.rowNumber && milestoneKeys.has(`${projectName}::${p.rowNumber}`)) return false;
           return true;
         });
-
-        // Identify parent rows: any row whose rowNumber is referenced as another row's parentRowNumber
-        const parentRows = new Set<number>();
-        for (const p of filteredPlans) {
-          if ((p as any).parentRowNumber) parentRows.add((p as any).parentRowNumber);
-        }
-        // Also detect parents via indent level: if a task is followed by a more-indented task
-        for (let i = 0; i < filteredPlans.length - 1; i++) {
-          const currIndent = (filteredPlans[i] as any).indentLevel ?? 0;
-          const nextIndent = (filteredPlans[i + 1] as any).indentLevel ?? 0;
-          if (nextIndent > currIndent && filteredPlans[i].rowNumber) {
-            parentRows.add(filteredPlans[i].rowNumber!);
-          }
-        }
-
-        const leafPlans = filteredPlans.filter(p => !p.rowNumber || !parentRows.has(p.rowNumber));
-        const items = leafPlans.length > 0 ? leafPlans : filteredPlans;
-
-        let actualSum = 0;
-        let expSum = 0;
-        let expCount = 0;
-        for (const task of items) {
-          actualSum += task.actualPctComplete ?? 0;
-          if (task.expectedPctComplete !== null && task.expectedPctComplete !== undefined) {
-            expSum += task.expectedPctComplete;
-            expCount++;
-          } else {
-            const tStart = task.actualStart?.substring(0, 10) ?? null;
-            const tEnd = task.actualEnd?.substring(0, 10) ?? null;
-            const exp = calcExpectedPct(tStart, tEnd);
-            if (exp !== null) { expSum += exp; expCount++; }
-          }
-        }
-        projectPctComplete = items.length > 0 ? actualSum / items.length : null;
-        expectedPctComplete = expCount > 0 ? expSum / expCount : null;
+        const progress = computeProjectProgress(
+          filteredPlans.map((p: any) => ({
+            taskNo: p.taskNo ?? null,
+            rowNumber: p.rowNumber ?? null,
+            parentRowNumber: p.parentRowNumber ?? null,
+            indentLevel: p.indentLevel ?? null,
+            durationDays: p.durationDays ?? null,
+            actualPctComplete: p.actualPctComplete ?? null,
+            expectedPctComplete: p.expectedPctComplete ?? null,
+            startDate: p.startDate ?? null,
+            endDate: p.endDate ?? null,
+            actualStartDate: p.actualStart ?? null,
+            actualEndDate: p.actualEnd ?? null,
+          })),
+          todayDate,
+        );
+        projectPctComplete = progress.leafCount > 0 ? progress.actualPct / 100 : null;
+        expectedPctComplete = progress.leafCount > 0 ? progress.expectedPct / 100 : null;
       }
       const deltaVsExpected = (projectPctComplete !== null && expectedPctComplete !== null)
         ? projectPctComplete - expectedPctComplete : null;

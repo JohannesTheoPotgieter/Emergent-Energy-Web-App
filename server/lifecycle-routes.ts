@@ -24,7 +24,7 @@ import {
   cashflowPoints,
 } from '@shared/schema';
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from './lib/project-info-sync';
-import { getAllPMWorkItemsAsProjectPlan } from './work-items-adapter';
+import { getAllPMWorkItemsAsProjectPlan, getAllWorkItemsForProgress } from './work-items-adapter';
 import { logAuditFromReq } from './audit-logger';
 import { requirePermission } from './permission-middleware';
 import { actorFromReq, createProjectEvent } from './services/project-event-service';
@@ -900,13 +900,23 @@ export function registerLifecycleRoutes(app: Express) {
         )
         .then((r: any) => r.rows || r);
 
-      const rawPlanTasks = (await getAllPMWorkItemsAsProjectPlan()).map((wi: any) => ({
+      // Use the unified progress source (PM + ENG + QUALITY) so the
+      // Schedule Status modal, the "Projects Behind Schedule" card, and
+      // the COO Home progress chips produce the SAME numbers as the
+      // project's Plan tab and the Excel project-plan top-row rollup.
+      // See work-items-adapter.ts → getAllWorkItemsForProgress for the
+      // rationale.
+      const rawPlanTasks = (await getAllWorkItemsForProgress()).map((wi: any) => ({
         projectName: wi.projectName,
         actualPctComplete: wi.actualPctComplete,
         expectedPctComplete: wi.expectedPctComplete,
         durationDays: wi.durationDays,
         taskNo: wi.taskNo,
         rowNumber: wi.rowNumber,
+        parentRowNumber: wi.parentRowNumber ?? null,
+        indentLevel: wi.indentLevel ?? null,
+        startDate: wi.startDate,
+        endDate: wi.endDate,
         actualStart: wi.actualStart,
         actualEnd: wi.actualEnd,
       }));
