@@ -20,6 +20,8 @@ export default function OverviewPage() {
   const [cosSheetOpen, setCosSheetOpen] = useState(false);
   const [inflowSheetOpen, setInflowSheetOpen] = useState(false);
   const [outflowSheetOpen, setOutflowSheetOpen] = useState(false);
+  const [overdueArSheetOpen, setOverdueArSheetOpen] = useState(false);
+  const [overdueApSheetOpen, setOverdueApSheetOpen] = useState(false);
 
   const scheduleMeasuredProjects = filteredProjects.filter(
     (p) => p.actualProgressPct != null && p.expectedProgressPct != null,
@@ -136,8 +138,20 @@ export default function OverviewPage() {
           valueClass={(kpis.overdueInflowFy ?? 0) === 0 ? "text-emerald-600" : "text-red-600"}
           sub="Revenue milestones past planned date without confirmed payment · FY"
           icon={<AlertOctagon className="w-5 h-5" />}
-          cta="View outstanding revenue"
-          onClick={() => setLocation("/execution-dashboard/finance")}
+          cta="View by project"
+          onClick={() => setOverdueArSheetOpen(true)}
+        />
+
+        {/* 10 — Overdue Payables */}
+        <KpiTile
+          label="Overdue Payables"
+          value={formatZarCompact(kpis.overdueOutflowFy ?? 0)}
+          title={formatZar(kpis.overdueOutflowFy ?? 0)}
+          valueClass={(kpis.overdueOutflowFy ?? 0) === 0 ? "text-emerald-600" : "text-red-600"}
+          sub="Supplier invoices past planned payment date without confirmed payment · FY"
+          icon={<AlertOctagon className="w-5 h-5" />}
+          cta="View by project"
+          onClick={() => setOverdueApSheetOpen(true)}
         />
       </div>
 
@@ -409,6 +423,134 @@ export default function OverviewPage() {
             <Button size="sm" variant="outline" onClick={() => { setOutflowSheetOpen(false); setLocation("/cashflow"); }}>
               Open full cashflow register →
             </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Overdue Receivables drill-down */}
+      <Sheet open={overdueArSheetOpen} onOpenChange={setOverdueArSheetOpen}>
+        <SheetContent className="sm:max-w-[760px] w-full overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <AlertOctagon className="w-5 h-5 text-red-500" />
+              Overdue Receivables — By Project
+            </SheetTitle>
+          </SheetHeader>
+          <p className="text-[11px] text-muted-foreground mt-2">
+            Revenue milestones whose planned payment date has passed without a confirmed receipt.
+            Same logic as the Revenue tab on the project detail page. Sorted largest first.
+          </p>
+          <div className="mt-3 border rounded-lg overflow-auto max-h-[72vh]" data-testid="sheet-overdue-ar">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 sticky top-0 z-10">
+                <tr className="text-[11px] uppercase tracking-wider text-muted-foreground border-b">
+                  <th className="text-left py-2.5 px-3 font-medium">Project</th>
+                  <th className="text-left py-2.5 px-3 font-medium hidden sm:table-cell">PM</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Overdue</th>
+                  <th className="w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...allProjects]
+                  .filter((p) => (p.overdueInflowFy ?? 0) > 0)
+                  .sort((a, b) => (b.overdueInflowFy ?? 0) - (a.overdueInflowFy ?? 0))
+                  .map((p) => (
+                    <tr
+                      key={p.projectId}
+                      data-testid={`row-overdue-ar-${p.projectId}`}
+                      className="border-t border-border/40 hover:bg-muted/30 cursor-pointer"
+                      onClick={() => { openProject(p, "revenue"); setOverdueArSheetOpen(false); }}
+                    >
+                      <td className="py-2.5 px-3 font-medium truncate max-w-[220px]">{p.projectName}</td>
+                      <td className="py-2.5 px-3 text-xs text-muted-foreground hidden sm:table-cell">{p.pm || "—"}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums font-bold text-red-600">
+                        {formatZarCompact(p.overdueInflowFy ?? 0)}
+                      </td>
+                      <td className="py-2.5 px-1 text-center">
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600">
+                          <ArrowRight className="w-4 h-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                {allProjects.every((p) => (p.overdueInflowFy ?? 0) === 0) && (
+                  <tr><td colSpan={4} className="py-6 text-center text-xs text-muted-foreground">No overdue receivables.</td></tr>
+                )}
+              </tbody>
+              <tfoot className="bg-muted/40 border-t-2 border-border sticky bottom-0">
+                <tr className="text-[11px] font-semibold">
+                  <td className="py-2 px-3" colSpan={2}>Total · all active projects</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-red-600" data-testid="text-overdue-ar-total">
+                    {formatZar(allProjects.reduce((s, p) => s + (p.overdueInflowFy ?? 0), 0))}
+                  </td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Overdue Payables drill-down */}
+      <Sheet open={overdueApSheetOpen} onOpenChange={setOverdueApSheetOpen}>
+        <SheetContent className="sm:max-w-[760px] w-full overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <AlertOctagon className="w-5 h-5 text-red-500" />
+              Overdue Payables — By Project
+            </SheetTitle>
+          </SheetHeader>
+          <p className="text-[11px] text-muted-foreground mt-2">
+            Supplier invoices whose planned payment date has passed without a confirmed payment.
+            Same logic as "Show overdue supplier" on the project detail Expenditure tab. Sorted largest first.
+          </p>
+          <div className="mt-3 border rounded-lg overflow-auto max-h-[72vh]" data-testid="sheet-overdue-ap">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 sticky top-0 z-10">
+                <tr className="text-[11px] uppercase tracking-wider text-muted-foreground border-b">
+                  <th className="text-left py-2.5 px-3 font-medium">Project</th>
+                  <th className="text-left py-2.5 px-3 font-medium hidden sm:table-cell">PM</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Overdue</th>
+                  <th className="w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...allProjects]
+                  .filter((p) => (p.overdueOutflowFy ?? 0) > 0)
+                  .sort((a, b) => (b.overdueOutflowFy ?? 0) - (a.overdueOutflowFy ?? 0))
+                  .map((p) => (
+                    <tr
+                      key={p.projectId}
+                      data-testid={`row-overdue-ap-${p.projectId}`}
+                      className="border-t border-border/40 hover:bg-muted/30 cursor-pointer"
+                      onClick={() => { openProject(p, "expenditure"); setOverdueApSheetOpen(false); }}
+                    >
+                      <td className="py-2.5 px-3 font-medium truncate max-w-[220px]">{p.projectName}</td>
+                      <td className="py-2.5 px-3 text-xs text-muted-foreground hidden sm:table-cell">{p.pm || "—"}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums font-bold text-red-600">
+                        {formatZarCompact(p.overdueOutflowFy ?? 0)}
+                      </td>
+                      <td className="py-2.5 px-1 text-center">
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600">
+                          <ArrowRight className="w-4 h-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                {allProjects.every((p) => (p.overdueOutflowFy ?? 0) === 0) && (
+                  <tr><td colSpan={4} className="py-6 text-center text-xs text-muted-foreground">No overdue payables.</td></tr>
+                )}
+              </tbody>
+              <tfoot className="bg-muted/40 border-t-2 border-border sticky bottom-0">
+                <tr className="text-[11px] font-semibold">
+                  <td className="py-2 px-3" colSpan={2}>Total · all active projects</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-red-600" data-testid="text-overdue-ap-total">
+                    {formatZar(allProjects.reduce((s, p) => s + (p.overdueOutflowFy ?? 0), 0))}
+                  </td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
         </SheetContent>
       </Sheet>
