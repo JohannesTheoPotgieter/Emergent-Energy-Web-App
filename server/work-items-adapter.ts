@@ -384,6 +384,125 @@ export async function getWorkItemsAsMytoolTasks(userId: number): Promise<any[]> 
   }));
 }
 
+/**
+ * Canonical progress-source query. Returns ALL Smart-Import work_items
+ * across PM + ENG + QUALITY workstreams for every project, shaped for
+ * `computeProjectProgress` (server/lib/kpi-formulas.ts).
+ *
+ * Why this exists: pre-2026-05-19, every project-schedule dashboard
+ * (Execution / Program / Schedule Status modal / All Projects Progress
+ * Delta / PM monthly report / COO Home) fed `computeProjectProgress`
+ * from `getAllPMWorkItemsAsProjectPlan()` — PM-only — while the Plan
+ * tab on the project detail page fed it from `getAllWorkItemsForPlanTab`
+ * — PM + ENG + QUALITY. Same helper, different inputs → same project
+ * row showed Actual % 26% / Expected % 32% on the Plan tab and Actual
+ * % 7% / Expected % 39% on the Schedule Status modal. The Plan tab's
+ * values matched the Excel project-plan top-row rollup; the dashboards
+ * did not.
+ *
+ * This helper is the single source of truth for "progress across the
+ * whole project" so all surfaces produce the same numbers. The PM-only
+ * variant below is retained for callers that legitimately need to
+ * filter to a single workstream (e.g. workstream-specific completion
+ * counts).
+ */
+export async function getAllWorkItemsForProgress(): Promise<any[]> {
+  // Deterministic workbook-order is critical: computeProjectProgress'
+  // parent detection walks the array and treats row i as a parent when
+  // row i+1 is more deeply indented. If ordering is unstable, the same
+  // project can flip-flop which tasks count as leaves between requests.
+  // work_items has no native row_number column — Smart Import preserves
+  // workbook position via (sortOrder, sourceRow); we synthesize a
+  // per-project rowNumber from that order so the helper's leaf-detection
+  // heuristic still works.
+  const items = await db
+    .select({
+      id: workItems.id,
+      projectId: workItems.projectId,
+      title: workItems.title,
+      wbsCode: workItems.wbsCode,
+      startDate: workItems.startDate,
+      endDate: workItems.endDate,
+      actualStart: workItems.actualStart,
+      actualEnd: workItems.actualEnd,
+      duration: workItems.duration,
+      percentComplete: workItems.percentComplete,
+      expectedPctComplete: workItems.expectedPctComplete,
+      type: workItems.type,
+      status: workItems.status,
+      isMilestone: workItems.isMilestone,
+      indentLevel: workItems.indentLevel,
+      parentId: workItems.parentId,
+      sortOrder: workItems.sortOrder,
+      sourceRow: workItems.sourceRow,
+      workstream: workItems.workstream,
+    })
+    .from(workItems)
+    .where(
+      and(
+        sql`${workItems.workstream} IN ('PM', 'ENG', 'QUALITY')`,
+        isNull(workItems.deletedAt),
+      )
+    )
+    // 2026-05-19: Scope intentionally matches getAllWorkItemsForPlanTab
+    // (no source='SMART_IMPORT' filter) so the dashboard rollup is fed
+    // the same row set as the Plan tab — which the COO confirmed
+    // matches the Excel project-plan top-row rollup.
+    .orderBy(asc(workItems.projectId), asc(workItems.sortOrder), asc(workItems.sourceRow), asc(workItems.id));
+
+  const projectIds: number[] = Array.from(new Set(items.map((i: any) => i.projectId).filter((id: any): id is number => typeof id === "number")));
+  let projectNameMap = new Map<number, string>();
+  if (projectIds.length > 0) {
+    const projects = await db
+      .select({ id: projectInfo.id, projectName: projectInfo.projectName })
+      .from(projectInfo)
+      .where(inArray(projectInfo.id, projectIds));
+    for (const row of projects) {
+      projectNameMap.set(row.id, row.projectName);
+    }
+  }
+
+  // Build parent map from work_items.parent_id (real FK self-ref) so the
+  // helper has accurate parent_row_number info — not just the indent
+  // adjacency heuristic.
+  const idToRowByProject = new Map<number, Map<number, number>>();
+  const rowCounterByProject = new Map<number, number>();
+  const firstPass: { wi: any; rowNum: number; pId: number }[] = [];
+  for (const wi of items) {
+    const pId = wi.projectId || 0;
+    const rowNum = (rowCounterByProject.get(pId) || 0) + 1;
+    rowCounterByProject.set(pId, rowNum);
+    if (!idToRowByProject.has(pId)) idToRowByProject.set(pId, new Map());
+    idToRowByProject.get(pId)!.set(wi.id, rowNum);
+    firstPass.push({ wi, rowNum, pId });
+  }
+
+  return firstPass.map(({ wi, rowNum, pId }) => {
+    const parentRowNumber = wi.parentId && idToRowByProject.get(pId)?.get(wi.parentId) || null;
+    return {
+      id: wi.id,
+      projectId: wi.projectId,
+      projectName: wi.projectId ? (projectNameMap.get(wi.projectId) || "") : "",
+      highLevelProgramme: wi.title,
+      title: wi.title,
+      taskNo: wi.wbsCode,
+      rowNumber: rowNum,
+      parentRowNumber,
+      indentLevel: wi.indentLevel ?? (wi.wbsCode ? (wi.wbsCode.split('.').length - 1) : 0),
+      // § 3.7 HARD: actuals fields hold actuals only. Never fall back to planned.
+      actualStart: wi.actualStart,
+      actualEnd: wi.actualEnd,
+      startDate: wi.startDate,
+      endDate: wi.endDate,
+      actualPctComplete: wi.percentComplete,
+      expectedPctComplete: wi.expectedPctComplete,
+      durationDays: wi.duration,
+      isMilestone: wi.isMilestone === true || wi.type === "milestone",
+      workstream: wi.workstream,
+    };
+  });
+}
+
 export async function getAllPMWorkItemsAsProjectPlan(): Promise<any[]> {
   const items = await db
     .select({

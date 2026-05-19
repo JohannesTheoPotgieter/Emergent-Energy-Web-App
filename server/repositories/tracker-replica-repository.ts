@@ -16,7 +16,7 @@
  * helpers (apply / clear) live in `server/lib/manual-overrides.ts`
  * because they're shared between the import engine and the diff page.
  */
-import { eq, and, isNull, asc, desc, inArray } from "drizzle-orm";
+import { eq, and, isNull, asc, desc, inArray, sql } from "drizzle-orm";
 import {
   normalizedRevenueLines,
   normalizedCostLines,
@@ -183,9 +183,12 @@ export class TrackerReplicaRepository {
   }
 
   /**
-   * Active PM-workstream Smart-Import work_items for the project, ordered by
-   * sortOrder then sourceRow so the resulting list matches the workbook
-   * top-to-bottom.
+   * Active Smart-Import work_items (PM + ENG + QUALITY) for the project,
+   * ordered by sortOrder then sourceRow so the resulting list matches the
+   * workbook top-to-bottom. Broadened from PM-only on 2026-05-19 so the
+   * tracker replica's Actual % / Expected % computation matches the Plan
+   * tab and the Excel project-plan rollup (see
+   * work-items-adapter.ts → getAllWorkItemsForProgress).
    */
   async getProgramPlanTasks(projectId: number): Promise<WorkItem[]> {
     return this.dbInstance
@@ -195,7 +198,7 @@ export class TrackerReplicaRepository {
         and(
           eq(workItems.projectId, projectId),
           eq(workItems.source, "SMART_IMPORT"),
-          eq(workItems.workstream, "PM"),
+          sql`${workItems.workstream} IN ('PM', 'ENG', 'QUALITY')`,
           isNull(workItems.deletedAt),
         ),
       )
