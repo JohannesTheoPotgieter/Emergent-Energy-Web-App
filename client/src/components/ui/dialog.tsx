@@ -57,7 +57,7 @@ const DialogContent = React.forwardRef<
       {...props}
     >
       {children}
-      <DialogPrimitive.Close className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground opacity-70 transition-opacity hover:opacity-100 hover:bg-muted/60 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent sm:right-4 sm:top-4 sm:h-7 sm:w-7">
+      <DialogPrimitive.Close className="absolute right-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground opacity-70 transition-opacity hover:opacity-100 hover:bg-muted/60 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent sm:right-4 sm:top-4 sm:h-7 sm:w-7">
         <X className="h-4 w-4" />
         <span className="sr-only">Close</span>
       </DialogPrimitive.Close>
@@ -66,6 +66,10 @@ const DialogContent = React.forwardRef<
 ))
 DialogContent.displayName = DialogPrimitive.Content.displayName
 
+// DialogContent is the scrollable container (overflow-y-auto), so a tall form
+// will scroll the title and actions out of view. Pin the header and footer
+// with `sticky` so they remain visible while the body scrolls — keeps every
+// dialog easy to navigate without forcing each caller to add boilerplate.
 const DialogHeader = ({
   className,
   ...props
@@ -73,6 +77,8 @@ const DialogHeader = ({
   <div
     className={cn(
       "flex flex-col space-y-1.5 text-center sm:text-left",
+      "sticky top-0 z-10 -mx-4 -mt-4 px-4 pt-4 pb-2 bg-background border-b border-border/60",
+      "sm:-mx-5 sm:-mt-5 sm:px-5 sm:pt-5 sm:pb-3 sm:pr-12",
       className
     )}
     {...props}
@@ -87,6 +93,8 @@ const DialogFooter = ({
   <div
     className={cn(
       "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2",
+      "sticky bottom-0 z-10 -mx-4 -mb-4 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] bg-background border-t border-border/60",
+      "sm:-mx-5 sm:-mb-5 sm:px-5 sm:pt-3 sm:pb-5",
       className
     )}
     {...props}

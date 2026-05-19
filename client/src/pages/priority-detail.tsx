@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -1185,7 +1185,7 @@ export default function PriorityDetailPage() {
               showProjectPicker={false}
               showProgressSourcePicker={canUseAdvancedPriorityFields}
             />
-            <div className="flex justify-end gap-2 mt-2">
+            <DialogFooter className="gap-2">
               <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
               <Button
                 onClick={() => updatePriorityMutation.mutate()}
@@ -1194,7 +1194,7 @@ export default function PriorityDetailPage() {
               >
                 {updatePriorityMutation.isPending ? "Saving..." : "Save changes"}
               </Button>
-            </div>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       )}
