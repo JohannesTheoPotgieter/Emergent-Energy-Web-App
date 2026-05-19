@@ -321,7 +321,15 @@ function buildOverdueFinanceLedger(params: {
     if (!hasText(row.invoiceNumber)) continue; // actual AP invoices only
     const amount = parseFloat(row.amountExVat || '0') || 0;
     if (amount <= 0) continue;
-    const dueDate = hasText(row.approvedDate) ? String(row.approvedDate).slice(0, 10) : null;
+    // 2026-05-19: AP due date = approved → forecast → invoice (project Expenditure
+    // tab uses the same fallback chain; approved_date is rarely populated so
+    // relying on it alone silently dropped ~all overdue payables).
+    const dueDate =
+      (hasText(row.approvedDate) ? String(row.approvedDate).slice(0, 10) : null) ||
+      (hasText((row as any).forecastPaymentDate)
+        ? String((row as any).forecastPaymentDate).slice(0, 10)
+        : null) ||
+      (hasText(row.invoiceDate) ? String(row.invoiceDate).slice(0, 10) : null);
     const invoiceDate = hasText(row.invoiceDate) ? String(row.invoiceDate).slice(0, 10) : null;
     const keyDate = dueDate || invoiceDate;
     if (!isDateInRange(keyDate, fyStart, fyEnd)) continue;
@@ -386,23 +394,23 @@ function buildOverdueFinanceLedger(params: {
     const keyDate = dueDate || invoiceDate;
     if (!isDateInRange(keyDate, fyStart, fyEnd)) continue;
 
-    const arState = evaluateRevenueArStatus({
-      status: row.status,
-      paidDate: row.paidDate,
-      paidDateConfirmed: row.paidDateConfirmed,
-      paidDateFontColor: row.paidDateFontColor,
-      inBankDate: row.inBankDate,
-      dueDate,
-      invoiceNumber: row.invoiceNumber,
-      amount,
-      today,
-    });
-    if (arState.isSettled) continue;
+    // 2026-05-19: COO direction — a revenue line is settled only when there is
+    // confirmed (black) paid_date, in_bank_date, or QB-captured payment evidence.
+    // The status string alone ("paid") is NOT trusted because PMs frequently
+    // pencil in a paid_date with a red (unconfirmed) font color while marking
+    // status='paid'; that should still surface as overdue.
+    const inBank = hasText(row.inBankDate);
+    const paidColor = String(row.paidDateFontColor || '').toLowerCase();
+    const paidColorBlack = paidColor.includes('black') || paidColor.includes('000000');
+    const confirmedPaid =
+      hasText(row.paidDate) && (row.paidDateConfirmed === true || paidColorBlack);
+    const isSettled = inBank || confirmedPaid;
+    if (isSettled) continue;
     if (!dueDate) {
       arMissingDueDate += 1;
       continue;
     }
-    if (!arState.isOverdue) continue;
+    if (!(dueDate < today)) continue;
 
     const dedupeKey = `${row.projectId || row.projectName}::${row.sourceRow || ''}::${row.invoiceNumber}`;
     if (arSeen.has(dedupeKey)) continue;
@@ -1437,6 +1445,7 @@ export function registerLifecycleRoutes(app: Express) {
               paidDateFontColor: normalizedCostLines.paidDateFontColor,
               invoiceDate: normalizedCostLines.invoiceDate,
               approvedDate: normalizedCostLines.approvedDate,
+              forecastPaymentDate: normalizedCostLines.forecastPaymentDate,
               cosRealised: normalizedCostLines.cosRealised,
               poNumber: normalizedCostLines.poNumber,
               invoiceDateConfirmed: normalizedCostLines.invoiceDateConfirmed,
@@ -2168,6 +2177,7 @@ export function registerLifecycleRoutes(app: Express) {
             invoiceNumber: normalizedCostLines.invoiceNumber,
             invoiceDate: normalizedCostLines.invoiceDate,
             approvedDate: normalizedCostLines.approvedDate,
+            forecastPaymentDate: normalizedCostLines.forecastPaymentDate,
             paidDate: normalizedCostLines.paidDate,
             paidDateConfirmed: normalizedCostLines.paidDateConfirmed,
             paidDateFontColor: normalizedCostLines.paidDateFontColor,
