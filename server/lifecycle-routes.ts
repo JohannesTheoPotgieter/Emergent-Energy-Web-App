@@ -1391,6 +1391,8 @@ export function registerLifecycleRoutes(app: Express) {
               inBankDate: normalizedRevenueLines.inBankDate,
               status: normalizedRevenueLines.status,
               invoiceDate: normalizedRevenueLines.invoiceDate,
+              invoiceDateConfirmed: normalizedRevenueLines.invoiceDateConfirmed,
+              invoiceDateFontColor: normalizedRevenueLines.invoiceDateFontColor,
               expectedPaymentDate: normalizedRevenueLines.expectedPaymentDate,
               sourceRow: normalizedRevenueLines.sourceRow,
             }),
@@ -1951,85 +1953,74 @@ export function registerLifecycleRoutes(app: Express) {
             ? Number(((contractsCompleteCount / projectRows.length) * 100).toFixed(1))
             : 0;
 
-        const currentMonthKey = today.slice(0, 7);
+        // SAST-anchored month key so UTC-midnight rollover doesn't
+        // misclassify a SAST line into the prior month.
+        const currentMonthKey = new Date(Date.now() + 2 * 3600 * 1000)
+          .toISOString()
+          .slice(0, 7);
+
+        // 2026-05-19: Rev / COS Outstanding This Month — invoice-realisation
+        // model (NOT payment). A line is "due to be realised this month"
+        // when its invoice_date falls in the current month; it is
+        // "realised" when it has an invoice_number AND a confirmed black
+        // invoice_date (invoiceDateConfirmed === true OR
+        // invoiceDateFontColor === 'black'). Outstanding = bucket − realised.
+        const isInvoiceRealised = (row: any): boolean => {
+          const invNo = String(row.invoiceNumber ?? '').trim();
+          if (!invNo) return false;
+          if (!row.invoiceDate) return false;
+          return row.invoiceDateConfirmed === true || row.invoiceDateFontColor === 'black';
+        };
+
         let revenueOutstandingThisMonth = 0;
         for (const row of revenueLines) {
-          const dateKey = pickFirstPopulatedDate(row as any, [
-            'expectedPaymentDate',
-            'invoiceDate',
-            'paidDate',
-            'inBankDate',
-          ]);
-          if (!dateKey || !dateKey.startsWith(currentMonthKey)) continue;
+          const invDate = (row as any).invoiceDate
+            ? String((row as any).invoiceDate).slice(0, 10)
+            : null;
+          if (!invDate || !invDate.startsWith(currentMonthKey)) continue;
           const amount = parseFloat((row as any).amountExVat || '0') || 0;
-          const paidDateIsPast = !!(row as any).paidDate && (row as any).paidDate <= today;
-          const received =
-            (paidDateIsPast &&
-              ((row as any).paidDateConfirmed === true ||
-                (row as any).paidDateFontColor === 'black')) ||
-            !!(row as any).inBankDate;
-          if (!received) revenueOutstandingThisMonth += amount;
+          if (!isInvoiceRealised(row)) revenueOutstandingThisMonth += amount;
         }
 
         let cosPlannedMonth = 0;
         let cosRealisedMonth = 0;
         for (const row of costLines) {
-          const dateKey = pickFirstPopulatedDate(row as any, [
-            'approvedDate',
-            'invoiceDate',
-            'paidDate',
-          ]);
-          if (!dateKey || !dateKey.startsWith(currentMonthKey)) continue;
+          const invDate = (row as any).invoiceDate
+            ? String((row as any).invoiceDate).slice(0, 10)
+            : null;
+          if (!invDate || !invDate.startsWith(currentMonthKey)) continue;
           const amount = parseFloat((row as any).amountExVat || '0') || 0;
-          const costPaidDateIsPast = !!(row as any).paidDate && (row as any).paidDate <= today;
-          const COS_REALISED_OVERRIDES_LOCAL = OVERRIDE_REALISED;
-          const COS_NOT_REALISED_OVERRIDES_LOCAL = OVERRIDE_NOT_REALISED;
-          const cosOverride = String((row as any).cosStatusOverride ?? '')
-            .trim()
-            .toUpperCase();
-          let paid: boolean;
-          if (COS_REALISED_OVERRIDES_LOCAL.has(cosOverride)) paid = costPaidDateIsPast;
-          else if (COS_NOT_REALISED_OVERRIDES_LOCAL.has(cosOverride)) paid = false;
-          else
-            paid =
-              costPaidDateIsPast &&
-              ((row as any).paidDateConfirmed === true ||
-                (row as any).paidDateFontColor === 'black');
           cosPlannedMonth += amount;
-          if (paid) cosRealisedMonth += amount;
+          if (isInvoiceRealised(row)) cosRealisedMonth += amount;
         }
         const cosOutstandingThisMonth = cosPlannedMonth - cosRealisedMonth;
 
-        // Inflows / outflows this week from cashflow_points.
-        // All stored date strings are SAST (UTC+2, no DST). Anchor the week
-        // boundary in SAST by shifting the current timestamp by +2 h before
-        // extracting day-of-week, matching the SAST helper used elsewhere.
+        // 2026-05-19: Inflows / Outflows This Week — cash-movement model.
+        // Sum revenue.paid_date and cost.paid_date entries that fall in the
+        // current ISO week (Mon-Sun, SAST anchored), regardless of font
+        // color / confirmation per COO direction (any entry with a
+        // payment date in the week counts as movement).
         const nowSast = new Date(Date.now() + 2 * 3600 * 1000);
-        const dayOfWeek = nowSast.getUTCDay(); // 0=Sun, in SAST
+        const dayOfWeek = nowSast.getUTCDay();
         const weekStart = new Date(nowSast);
-        weekStart.setUTCDate(nowSast.getUTCDate() - ((dayOfWeek + 6) % 7)); // Mon SAST
-        weekStart.setUTCHours(0, 0, 0, 0); // zero time so ISO slice gives the SAST date not day-1
+        weekStart.setUTCDate(nowSast.getUTCDate() - ((dayOfWeek + 6) % 7));
+        weekStart.setUTCHours(0, 0, 0, 0);
         const weekEnd = new Date(weekStart);
         weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
         const weekStartKey = weekStart.toISOString().slice(0, 10);
         const weekEndKey = weekEnd.toISOString().slice(0, 10);
-        const cashflowRows = await db
-          .select({
-            seriesName: cashflowPoints.seriesName,
-            value: cashflowPoints.value,
-            pointDate: cashflowPoints.pointDate,
-          })
-          .from(cashflowPoints)
-          .where(isNull(cashflowPoints.effectiveTo));
+
         let projectInflowsThisWeek = 0;
+        for (const row of revenueLines) {
+          const pd = (row as any).paidDate ? String((row as any).paidDate).slice(0, 10) : null;
+          if (!pd || pd < weekStartKey || pd > weekEndKey) continue;
+          projectInflowsThisWeek += parseFloat((row as any).amountExVat || '0') || 0;
+        }
         let projectOutflowsThisWeek = 0;
-        for (const row of cashflowRows) {
-          const d = row.pointDate ? String(row.pointDate).slice(0, 10) : null;
-          if (!d || d < weekStartKey || d > weekEndKey) continue;
-          const val = parseFloat(String(row.value ?? '0')) || 0;
-          const series = (row.seriesName ?? '').toLowerCase();
-          if (series.includes('revenue')) projectInflowsThisWeek += val;
-          else if (series.includes('expenditure')) projectOutflowsThisWeek += val;
+        for (const row of costLines) {
+          const pd = (row as any).paidDate ? String((row as any).paidDate).slice(0, 10) : null;
+          if (!pd || pd < weekStartKey || pd > weekEndKey) continue;
+          projectOutflowsThisWeek += parseFloat((row as any).amountExVat || '0') || 0;
         }
 
         const overrideInEffect = costLines.some((row: any) => {
