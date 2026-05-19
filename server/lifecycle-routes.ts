@@ -1379,31 +1379,19 @@ export function registerLifecycleRoutes(app: Express) {
         // Helpers matching program-dashboard logic
         const hasText = (v: any) => typeof v === 'string' && v.trim().length > 0;
 
-        // Direct query: includes wbsCode + expectedPctComplete for WBS-based parent detection
-        // Smart Import never sets parentId FK, so WBS prefix-stripping is the only reliable
-        // parent detector — matching the approach in planning-tasks-routes.ts lines 583-588.
-        const rawPlanTasks = await db
-          .select({
-            id: workItems.id,
-            projectId: workItems.projectId,
-            percentComplete: workItems.percentComplete,
-            expectedPctComplete: workItems.expectedPctComplete,
-            wbsCode: workItems.wbsCode,
-            startDate: workItems.startDate,
-            endDate: workItems.endDate,
-          })
-          .from(workItems)
-          .where(
-            and(
-              eq(workItems.workstream, 'PM'),
-              sql`${workItems.source} = 'SMART_IMPORT'`,
-              isNull(workItems.deletedAt),
-            ),
-          );
+        // 2026-05-19: Use the canonical helper so the Execution Dashboard
+        // "All Projects" table is fed the same row set (PM + ENG + QUALITY)
+        // and ordering (workbook top-to-bottom via sort_order/source_row)
+        // as the Plan tab and Schedule Status modal — single source of
+        // truth for Actual %, Expected %, Variance. The helper already
+        // returns rowNumber + parentRowNumber resolved from work_items
+        // self-ref so computeProjectProgress' parent detection works
+        // correctly. See server/work-items-adapter.ts.
+        const rawPlanTasksFull = await getAllWorkItemsForProgress();
 
         // Group by projectId for per-project computation
-        const planTasksByProjectId = new Map<number, typeof rawPlanTasks>();
-        for (const wi of rawPlanTasks) {
+        const planTasksByProjectId = new Map<number, any[]>();
+        for (const wi of rawPlanTasksFull) {
           if (!wi.projectId) continue;
           if (!planTasksByProjectId.has(wi.projectId)) planTasksByProjectId.set(wi.projectId, []);
           planTasksByProjectId.get(wi.projectId)!.push(wi);
@@ -1422,7 +1410,6 @@ export function registerLifecycleRoutes(app: Express) {
         >();
         const PLAN_SECTION_HEADERS = new Set(['no.', 'no', '#']);
 
-        type PlanTask = (typeof rawPlanTasks)[number];
         for (const project of activeProjects) {
           const norm = normalizeName(project.projectName);
           const tasks = planTasksByProjectId.get(project.id);
@@ -1430,10 +1417,10 @@ export function registerLifecycleRoutes(app: Express) {
 
           // Strip section-header rows AND rows with no WBS + no dates.
           // Matches planning-tasks-routes.ts:256-265 which the plan tab uses.
-          const filtered = tasks.filter((t: PlanTask) => {
-            const wbs = (t.wbsCode || '').toString().toLowerCase().trim();
+          const filtered = tasks.filter((t: any) => {
+            const wbs = (t.taskNo || '').toString().toLowerCase().trim();
             if (PLAN_SECTION_HEADERS.has(wbs)) return false;
-            const hasWbs = t.wbsCode && String(t.wbsCode).trim().length > 0;
+            const hasWbs = t.taskNo && String(t.taskNo).trim().length > 0;
             const hasStart = t.startDate && String(t.startDate).trim().length > 0;
             const hasEnd = t.endDate && String(t.endDate).trim().length > 0;
             if (!hasWbs && !hasStart && !hasEnd) return false;
@@ -1443,25 +1430,25 @@ export function registerLifecycleRoutes(app: Express) {
           // FY membership: any task with a date inside the financial year
           const fyItemCount = fy.allData
             ? filtered.length
-            : filtered.filter((t: PlanTask) => {
+            : filtered.filter((t: any) => {
                 const d = t.startDate ?? t.endDate;
                 return d && isDateInRange(String(d).slice(0, 10), fy.start, fy.end);
               }).length;
           planFyItemsByNorm.set(norm, fyItemCount);
 
           const progress = computeProjectProgress(
-            filtered.map((t: PlanTask) => ({
-              taskNo: (t as any).wbsCode ?? null,
-              rowNumber: (t as any).rowNumber ?? null,
-              parentRowNumber: (t as any).parentRowNumber ?? null,
-              indentLevel: (t as any).indentLevel ?? null,
-              durationDays: (t as any).durationDays ?? null,
-              actualPctComplete: (t as any).percentComplete ?? null,
-              expectedPctComplete: (t as any).expectedPctComplete ?? null,
+            filtered.map((t: any) => ({
+              taskNo: t.taskNo ?? null,
+              rowNumber: t.rowNumber ?? null,
+              parentRowNumber: t.parentRowNumber ?? null,
+              indentLevel: t.indentLevel ?? null,
+              durationDays: t.durationDays ?? null,
+              actualPctComplete: t.actualPctComplete ?? null,
+              expectedPctComplete: t.expectedPctComplete ?? null,
               startDate: t.startDate ? String(t.startDate) : null,
               endDate: t.endDate ? String(t.endDate) : null,
-              actualStartDate: (t as any).actualStartDate ? String((t as any).actualStartDate) : null,
-              actualEndDate: (t as any).actualEndDate ? String((t as any).actualEndDate) : null,
+              actualStartDate: t.actualStart ? String(t.actualStart) : null,
+              actualEndDate: t.actualEnd ? String(t.actualEnd) : null,
             })),
             today,
           );
@@ -2212,7 +2199,7 @@ export function registerLifecycleRoutes(app: Express) {
             recordCounts: {
               activeProjects: activeProjects.length,
               dashboardProjects: projectRows.length,
-              planTasks: rawPlanTasks.length,
+              planTasks: rawPlanTasksFull.length,
               revenueLines: revenueLines.length,
               costLines: costLines.length,
               engineeringTasks: engTasks.length,
