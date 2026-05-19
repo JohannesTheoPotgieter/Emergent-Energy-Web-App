@@ -1313,6 +1313,25 @@ export function registerLifecycleRoutes(app: Express) {
       try {
         const fy = resolveDashboardFinanceScope(req.query);
         const today = new Date().toISOString().slice(0, 10);
+        // SAST-anchored window keys, shared by per-project rollups and KPI totals.
+        const _sastNow = new Date(Date.now() + 2 * 3600 * 1000);
+        const currentMonthKey = _sastNow.toISOString().slice(0, 7);
+        const _dayOfWeek = _sastNow.getUTCDay();
+        const _weekStart = new Date(_sastNow);
+        _weekStart.setUTCDate(_sastNow.getUTCDate() - ((_dayOfWeek + 6) % 7));
+        _weekStart.setUTCHours(0, 0, 0, 0);
+        const _weekEnd = new Date(_weekStart);
+        _weekEnd.setUTCDate(_weekStart.getUTCDate() + 6);
+        const weekStartKey = _weekStart.toISOString().slice(0, 10);
+        const weekEndKey = _weekEnd.toISOString().slice(0, 10);
+        // Realisation gate per COO direction: invoice raised = invoice_number
+        // present AND a confirmed (black) invoice_date.
+        const isInvoiceRealised = (row: any): boolean => {
+          const invNo = String(row.invoiceNumber ?? '').trim();
+          if (!invNo) return false;
+          if (!row.invoiceDate) return false;
+          return row.invoiceDateConfirmed === true || row.invoiceDateFontColor === 'black';
+        };
         const activeProjects = (await db
           .select(
             selectDefinedFields({
@@ -1465,32 +1484,24 @@ export function registerLifecycleRoutes(app: Express) {
         for (const item of overdueLedger.ar.items)
           addOverdue(item.projectId || null, item.projectName, 'ar', item.outstandingAmount || 0);
 
-        const finByProjectId = new Map<
-          number,
-          {
-            plannedRevenue: number;
-            receivedInflow: number;
-            plannedExpenditure: number;
-            paidExpenditure: number;
-            fyRevenueItems: number;
-            fyCostItems: number;
-            inflowRisk: number;
-            outflowRisk: number;
-          }
-        >();
-        const finByNorm = new Map<
-          string,
-          {
-            plannedRevenue: number;
-            receivedInflow: number;
-            plannedExpenditure: number;
-            paidExpenditure: number;
-            fyRevenueItems: number;
-            fyCostItems: number;
-            inflowRisk: number;
-            outflowRisk: number;
-          }
-        >();
+        type FinEntry = {
+          plannedRevenue: number;
+          receivedInflow: number;
+          plannedExpenditure: number;
+          paidExpenditure: number;
+          fyRevenueItems: number;
+          fyCostItems: number;
+          inflowRisk: number;
+          outflowRisk: number;
+          plannedRevenueMonth: number;
+          realisedRevenueMonth: number;
+          plannedCosMonth: number;
+          realisedCosMonth: number;
+          inflowsWeek: number;
+          outflowsWeek: number;
+        };
+        const finByProjectId = new Map<number, FinEntry>();
+        const finByNorm = new Map<string, FinEntry>();
         const emptyFin = () => ({
           plannedRevenue: 0,
           receivedInflow: 0,
@@ -1500,6 +1511,13 @@ export function registerLifecycleRoutes(app: Express) {
           fyCostItems: 0,
           inflowRisk: 0,
           outflowRisk: 0,
+          // Per-project month/week buckets so KPI drill-downs match the tiles.
+          plannedRevenueMonth: 0,
+          realisedRevenueMonth: 0,
+          plannedCosMonth: 0,
+          realisedCosMonth: 0,
+          inflowsWeek: 0,
+          outflowsWeek: 0,
         });
 
         for (const row of revenueLines) {
@@ -1510,17 +1528,32 @@ export function registerLifecycleRoutes(app: Express) {
             'paidDate',
             'inBankDate',
           ]);
-          if (!fy.allData && !isDateInRange(dateKey, fy.start, fy.end)) continue;
+          const inFyScope = fy.allData || isDateInRange(dateKey, fy.start, fy.end);
           const paidDateIsPast = !!row.paidDate && row.paidDate <= today;
           const paidConfirmed =
             paidDateIsPast && (row.paidDateConfirmed === true || row.paidDateFontColor === 'black');
           const received = paidConfirmed || !!row.inBankDate;
 
+          // Month/week buckets are window-only (always evaluated, never FY-gated)
+          // so the tiles read the same data when FY scope changes.
+          const invDateKey = row.invoiceDate ? String(row.invoiceDate).slice(0, 10) : null;
+          const inCurrentMonth = !!invDateKey && invDateKey.startsWith(currentMonthKey);
+          const realisedNow = isInvoiceRealised(row);
+          const pdKey = row.paidDate ? String(row.paidDate).slice(0, 10) : null;
+          const inCurrentWeek = !!pdKey && pdKey >= weekStartKey && pdKey <= weekEndKey;
+
           const addTo = (entry: ReturnType<typeof emptyFin>) => {
-            entry.plannedRevenue += amount;
-            if (received) entry.receivedInflow += amount;
-            else if (dateKey && dateKey < today) entry.inflowRisk += amount;
-            entry.fyRevenueItems += 1;
+            if (inFyScope) {
+              entry.plannedRevenue += amount;
+              if (received) entry.receivedInflow += amount;
+              else if (dateKey && dateKey < today) entry.inflowRisk += amount;
+              entry.fyRevenueItems += 1;
+            }
+            if (inCurrentMonth) {
+              entry.plannedRevenueMonth += amount;
+              if (realisedNow) entry.realisedRevenueMonth += amount;
+            }
+            if (inCurrentWeek) entry.inflowsWeek += amount;
           };
           if (row.projectId) {
             if (!finByProjectId.has(row.projectId)) finByProjectId.set(row.projectId, emptyFin());
@@ -1541,7 +1574,7 @@ export function registerLifecycleRoutes(app: Express) {
             'invoiceDate',
             'paidDate',
           ]);
-          if (!fy.allData && !isDateInRange(dateKey, fy.start, fy.end)) continue;
+          const inFyScope = fy.allData || isDateInRange(dateKey, fy.start, fy.end);
           const costPaidDateIsPast = !!row.paidDate && row.paidDate <= today;
           const costPaidConfirmed =
             costPaidDateIsPast &&
@@ -1558,11 +1591,26 @@ export function registerLifecycleRoutes(app: Express) {
             paid = costPaidConfirmed;
           }
 
+          // Month bucket — same invoice-realisation rule as revenue.
+          const invDateKey = row.invoiceDate ? String(row.invoiceDate).slice(0, 10) : null;
+          const inCurrentMonth = !!invDateKey && invDateKey.startsWith(currentMonthKey);
+          const realisedNow = isInvoiceRealised(row);
+          // Week bucket — paid_date in current SAST week (no confirmation gate).
+          const pdKey = row.paidDate ? String(row.paidDate).slice(0, 10) : null;
+          const inCurrentWeek = !!pdKey && pdKey >= weekStartKey && pdKey <= weekEndKey;
+
           const addTo = (entry: ReturnType<typeof emptyFin>) => {
-            entry.plannedExpenditure += amount;
-            if (paid) entry.paidExpenditure += amount;
-            else if (dateKey && dateKey < today) entry.outflowRisk += amount;
-            entry.fyCostItems += 1;
+            if (inFyScope) {
+              entry.plannedExpenditure += amount;
+              if (paid) entry.paidExpenditure += amount;
+              else if (dateKey && dateKey < today) entry.outflowRisk += amount;
+              entry.fyCostItems += 1;
+            }
+            if (inCurrentMonth) {
+              entry.plannedCosMonth += amount;
+              if (realisedNow) entry.realisedCosMonth += amount;
+            }
+            if (inCurrentWeek) entry.outflowsWeek += amount;
           };
           if (row.projectId) {
             if (!finByProjectId.has(row.projectId)) finByProjectId.set(row.projectId, emptyFin());
@@ -1899,6 +1947,14 @@ export function registerLifecycleRoutes(app: Express) {
             grossMarginPctFy,
             overdueInflowFy: projectOverdue.ar,
             overdueOutflowFy: projectOverdue.ap,
+            plannedRevenueMonth: fin.plannedRevenueMonth,
+            realisedRevenueMonth: fin.realisedRevenueMonth,
+            openRevenueMonth: fin.plannedRevenueMonth - fin.realisedRevenueMonth,
+            plannedCosMonth: fin.plannedCosMonth,
+            realisedCosMonth: fin.realisedCosMonth,
+            openCosMonth: fin.plannedCosMonth - fin.realisedCosMonth,
+            inflowsWeek: fin.inflowsWeek,
+            outflowsWeek: fin.outflowsWeek,
             engineeringStatus,
             qualityStatus,
             importFreshness,
@@ -1953,75 +2009,18 @@ export function registerLifecycleRoutes(app: Express) {
             ? Number(((contractsCompleteCount / projectRows.length) * 100).toFixed(1))
             : 0;
 
-        // SAST-anchored month key so UTC-midnight rollover doesn't
-        // misclassify a SAST line into the prior month.
-        const currentMonthKey = new Date(Date.now() + 2 * 3600 * 1000)
-          .toISOString()
-          .slice(0, 7);
-
-        // 2026-05-19: Rev / COS Outstanding This Month — invoice-realisation
-        // model (NOT payment). A line is "due to be realised this month"
-        // when its invoice_date falls in the current month; it is
-        // "realised" when it has an invoice_number AND a confirmed black
-        // invoice_date (invoiceDateConfirmed === true OR
-        // invoiceDateFontColor === 'black'). Outstanding = bucket − realised.
-        const isInvoiceRealised = (row: any): boolean => {
-          const invNo = String(row.invoiceNumber ?? '').trim();
-          if (!invNo) return false;
-          if (!row.invoiceDate) return false;
-          return row.invoiceDateConfirmed === true || row.invoiceDateFontColor === 'black';
-        };
-
-        let revenueOutstandingThisMonth = 0;
-        for (const row of revenueLines) {
-          const invDate = (row as any).invoiceDate
-            ? String((row as any).invoiceDate).slice(0, 10)
-            : null;
-          if (!invDate || !invDate.startsWith(currentMonthKey)) continue;
-          const amount = parseFloat((row as any).amountExVat || '0') || 0;
-          if (!isInvoiceRealised(row)) revenueOutstandingThisMonth += amount;
-        }
-
-        let cosPlannedMonth = 0;
-        let cosRealisedMonth = 0;
-        for (const row of costLines) {
-          const invDate = (row as any).invoiceDate
-            ? String((row as any).invoiceDate).slice(0, 10)
-            : null;
-          if (!invDate || !invDate.startsWith(currentMonthKey)) continue;
-          const amount = parseFloat((row as any).amountExVat || '0') || 0;
-          cosPlannedMonth += amount;
-          if (isInvoiceRealised(row)) cosRealisedMonth += amount;
-        }
-        const cosOutstandingThisMonth = cosPlannedMonth - cosRealisedMonth;
-
-        // 2026-05-19: Inflows / Outflows This Week — cash-movement model.
-        // Sum revenue.paid_date and cost.paid_date entries that fall in the
-        // current ISO week (Mon-Sun, SAST anchored), regardless of font
-        // color / confirmation per COO direction (any entry with a
-        // payment date in the week counts as movement).
-        const nowSast = new Date(Date.now() + 2 * 3600 * 1000);
-        const dayOfWeek = nowSast.getUTCDay();
-        const weekStart = new Date(nowSast);
-        weekStart.setUTCDate(nowSast.getUTCDate() - ((dayOfWeek + 6) % 7));
-        weekStart.setUTCHours(0, 0, 0, 0);
-        const weekEnd = new Date(weekStart);
-        weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
-        const weekStartKey = weekStart.toISOString().slice(0, 10);
-        const weekEndKey = weekEnd.toISOString().slice(0, 10);
-
-        let projectInflowsThisWeek = 0;
-        for (const row of revenueLines) {
-          const pd = (row as any).paidDate ? String((row as any).paidDate).slice(0, 10) : null;
-          if (!pd || pd < weekStartKey || pd > weekEndKey) continue;
-          projectInflowsThisWeek += parseFloat((row as any).amountExVat || '0') || 0;
-        }
-        let projectOutflowsThisWeek = 0;
-        for (const row of costLines) {
-          const pd = (row as any).paidDate ? String((row as any).paidDate).slice(0, 10) : null;
-          if (!pd || pd < weekStartKey || pd > weekEndKey) continue;
-          projectOutflowsThisWeek += parseFloat((row as any).amountExVat || '0') || 0;
-        }
+        // KPI totals are summed from per-project rollups so the tile totals
+        // and the drill-down sheet totals stay in sync.
+        const revenueOutstandingThisMonth = projectRows.reduce(
+          (s, p) => s + (p.openRevenueMonth || 0),
+          0,
+        );
+        const cosOutstandingThisMonth = projectRows.reduce(
+          (s, p) => s + (p.openCosMonth || 0),
+          0,
+        );
+        const projectInflowsThisWeek = projectRows.reduce((s, p) => s + (p.inflowsWeek || 0), 0);
+        const projectOutflowsThisWeek = projectRows.reduce((s, p) => s + (p.outflowsWeek || 0), 0);
 
         const overrideInEffect = costLines.some((row: any) => {
           const raw = row.cosStatusOverride;
