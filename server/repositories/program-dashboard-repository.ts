@@ -26,6 +26,7 @@ import {
 } from "@shared/schema";
 import { getAllWorkItemsForProgress } from "../work-items-adapter";
 import { computeProjectProgress, pctTo100 } from "../lib/kpi-formulas";
+import { computeAllProjectPlanPills } from "../services/plan-rollup-service";
 import { isDateBlack } from "../lib/calculations/stateClassifier";
 import { isCosRealised as isCosRealisedShared } from "../lib/calculations/financeUtils";
 import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
@@ -284,34 +285,31 @@ export async function getProgramDashboardData(
     planTasksByProjectId.get(proj.id)!.push(t);
   }
 
-  // Per-project Actual % / Expected % via the canonical formula in
-  // server/lib/kpi-formulas.ts. The Plan tab pill values, this dashboard,
-  // and the All Projects table all funnel through the same helper so the
-  // same project row reports the same numbers everywhere.
-  for (const [projId, tasks] of planTasksByProjectId) {
+  // 2026-05-19: Per-project Actual % / Expected % via the Plan-tab pill
+  // service so this dashboard, the project detail Plan tab pill, the
+  // Schedule Status modal, the Execution Dashboard, and the COO Home
+  // chips all produce identical numbers. See
+  // server/services/plan-rollup-service.ts.
+  const planPillsProgram = await computeAllProjectPlanPills({
+    projectIds: Array.from(rowsByProject.keys()),
+    workstream: 'PM',
+    todayIso: today,
+  });
+  for (const [projId] of planTasksByProjectId) {
     const row = rowsByProject.get(projId);
     if (!row) continue;
-
-    const progress = computeProjectProgress(
-      tasks.map((t: any) => ({
-        taskNo: t.taskNo ?? null,
-        rowNumber: t.rowNumber ?? null,
-        parentRowNumber: t.parentRowNumber ?? null,
-        indentLevel: t.indentLevel ?? null,
-        durationDays: t.durationDays ?? null,
-        actualPctComplete: t.actualPctComplete ?? null,
-        expectedPctComplete: t.expectedPctComplete ?? null,
-        startDate: t.startDate ?? null,
-        endDate: t.endDate ?? null,
-        actualStartDate: t.actualStart ?? null,
-        actualEndDate: t.actualEnd ?? null,
-      })),
-      today,
-    );
-    row._taskActual = progress.actualPct;
-    row._taskExpected = progress.expectedPct;
-    row._taskWeight = progress.leafCount > 0 ? 1 : 0;
-    row._expCount = progress.leafCount > 0 ? 1 : 0;
+    const pill = planPillsProgram.get(projId);
+    if (!pill || pill.leafCount === 0 || pill.actualPct == null || pill.expectedPct == null) {
+      row._taskActual = 0;
+      row._taskExpected = 0;
+      row._taskWeight = 0;
+      row._expCount = 0;
+      continue;
+    }
+    row._taskActual = pill.actualPct;
+    row._taskExpected = pill.expectedPct;
+    row._taskWeight = 1;
+    row._expCount = 1;
   }
 
   for (const r of revenueRows) {
