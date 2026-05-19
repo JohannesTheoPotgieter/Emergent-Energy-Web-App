@@ -75,7 +75,7 @@ export default function OverviewPage() {
           value={formatZarCompact(dashboard?.kpis.revenueOutstandingThisMonth ?? 0)}
           title={formatZar(dashboard?.kpis.revenueOutstandingThisMonth ?? 0)}
           valueClass="text-amber-600"
-          sub="Revenue planned but not yet received this month · all active projects"
+          sub="Revenue due to be realised this month, still outstanding · all active projects"
           icon={<DollarSign className="w-5 h-5" />}
           cta="View by project"
           onClick={() => setRevenueSheetOpen(true)}
@@ -87,7 +87,7 @@ export default function OverviewPage() {
           value={formatZarCompact(dashboard?.kpis.cosOutstandingThisMonth ?? 0)}
           title={formatZar(dashboard?.kpis.cosOutstandingThisMonth ?? 0)}
           valueClass="text-amber-600"
-          sub="Cost of sales planned but not yet paid this month · all active projects"
+          sub="COS due to be realised this month, still outstanding · all active projects"
           icon={<TrendingDown className="w-5 h-5" />}
           cta="View by project"
           onClick={() => setCosSheetOpen(true)}
@@ -98,7 +98,7 @@ export default function OverviewPage() {
           label="Revenue Inflows This Week"
           value={formatZarCompact(dashboard?.kpis.projectInflowsThisWeek ?? 0)}
           title={formatZar(dashboard?.kpis.projectInflowsThisWeek ?? 0)}
-          sub="Cashflow revenue series expected Mon–Sun this week · all active projects"
+          sub="Revenue payments received Mon–Sun this week · all active projects"
           icon={<Banknote className="w-5 h-5" />}
           cta="Open cashflow register"
           onClick={() => setLocation("/cashflow")}
@@ -109,7 +109,7 @@ export default function OverviewPage() {
           label="Expenditure Outflows This Week"
           value={formatZarCompact(dashboard?.kpis.projectOutflowsThisWeek ?? 0)}
           title={formatZar(dashboard?.kpis.projectOutflowsThisWeek ?? 0)}
-          sub="Cashflow expenditure series expected Mon–Sun this week · all active projects"
+          sub="Expenditure payments made Mon–Sun this week · all active projects"
           icon={<TrendingDown className="w-5 h-5" />}
           cta="Open cashflow register"
           onClick={() => setLocation("/cashflow")}
