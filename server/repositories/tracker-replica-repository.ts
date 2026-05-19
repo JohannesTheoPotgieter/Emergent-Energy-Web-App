@@ -198,7 +198,7 @@ export class TrackerReplicaRepository {
         and(
           eq(workItems.projectId, projectId),
           eq(workItems.source, "SMART_IMPORT"),
-          sql`${workItems.workstream} IN ('PM', 'ENG', 'QUALITY')`,
+          eq(workItems.workstream, "PM"),
           isNull(workItems.deletedAt),
         ),
       )

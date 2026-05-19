@@ -440,27 +440,23 @@ export async function getAllWorkItemsForProgress(): Promise<any[]> {
     .from(workItems)
     .where(
       and(
-        sql`${workItems.workstream} IN ('PM', 'ENG', 'QUALITY')`,
+        eq(workItems.workstream, 'PM'),
         isNull(workItems.deletedAt),
       )
     )
-    // 2026-05-19: Scope intentionally matches getAllWorkItemsForPlanTab
-    // (no source='SMART_IMPORT' filter) so the dashboard rollup is fed
-    // the same row set as the Plan tab — which the COO confirmed
-    // matches the Excel project-plan top-row rollup.
+    // 2026-05-19: PM-only scope — COO confirmed dashboards must match
+    // the Plan tab pill with workstream filter set to "Project" (PM),
+    // which is what matches the Excel project-plan top-row rollup.
     .orderBy(asc(workItems.projectId), asc(workItems.sortOrder), asc(workItems.sourceRow), asc(workItems.id));
 
   // 2026-05-19: Mirror the Plan tab API's post-fetch row filter from
   // server/routes/planning-tasks-routes.ts:257-277 so phantom rows
   // (PM tasks with no WBS, or PM tasks with no schedule dates at all)
   // are excluded from the dashboard rollup the same way they're
-  // excluded from the Plan tab pill. ENG/QUALITY tasks always pass,
-  // and milestones pass only if they have a WBS code. Without this,
-  // legacy-import phantom rows count as 0%-complete leaves and pull
-  // Actual % down.
+  // excluded from the Plan tab pill. Milestones pass only if they
+  // have a WBS code. Without this, legacy-import phantom rows count
+  // as 0%-complete leaves and pull Actual % down.
   const items = rawItems.filter((wi: any) => {
-    const ws = wi.workstream || "PM";
-    if (ws === "ENG" || ws === "QUALITY") return true;
     const hasWbs = wi.wbsCode && String(wi.wbsCode).trim().length > 0;
     const hasPlannedStart = !!wi.startDate;
     const hasPlannedEnd = !!wi.endDate;
