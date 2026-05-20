@@ -154,6 +154,116 @@ function formatRand(n: number): string {
   return `${n < 0 ? "-" : ""}R ${formatted}`;
 }
 
+function reportPlanReconciliation(wb: ExcelJS.Workbook, planTasks: any[]): void {
+  console.log("\n=== Project Plan reconciliation ===");
+
+  const sheet =
+    wb.getWorksheet("Project Plan") ??
+    wb.getWorksheet("Plan") ??
+    wb.getWorksheet("Project plan");
+  if (!sheet) {
+    console.warn("  [skip] No 'Project Plan' sheet found in workbook");
+    return;
+  }
+
+  // Total imported plan tasks
+  const imported = planTasks.length;
+  const withWbs = planTasks.filter((t) => t.taskNo && String(t.taskNo).trim()).length;
+  const withStartDate = planTasks.filter((t) => t.startDate).length;
+  const withEndDate = planTasks.filter((t) => t.endDate).length;
+  const withActualStart = planTasks.filter((t) => t.actualStartDate).length;
+  const withActualEnd = planTasks.filter((t) => t.actualEndDate).length;
+  const withPctComplete = planTasks.filter((t) => t.pctComplete != null).length;
+  const milestones = planTasks.filter((t) => t.isMilestone).length;
+  const withParent = planTasks.filter((t) => t.parentTaskNo).length;
+  const maxDepth = planTasks.reduce((m, t) => Math.max(m, t.indentLevel ?? 0), 0);
+
+  console.log(`  Plan tasks imported     : ${imported}`);
+  console.log(`    with WBS code         : ${withWbs}`);
+  console.log(`    with plan start date  : ${withStartDate}`);
+  console.log(`    with plan end date    : ${withEndDate}`);
+  console.log(`    with actual start     : ${withActualStart}`);
+  console.log(`    with actual end       : ${withActualEnd}`);
+  console.log(`    with % complete       : ${withPctComplete}`);
+  console.log(`    milestones detected   : ${milestones}`);
+  console.log(`    with parent in WBS    : ${withParent}`);
+  console.log(`    max WBS depth         : ${maxDepth}`);
+
+  // Check parent integrity — every parentTaskNo must exist as a taskNo in
+  // the import. Otherwise the parent-resolution pass will silently leave
+  // the row at root level and the frontend tree will look broken.
+  const allTaskNos = new Set(planTasks.map((t) => String(t.taskNo ?? "").trim()).filter(Boolean));
+  const orphans = planTasks.filter(
+    (t) => t.parentTaskNo && !allTaskNos.has(String(t.parentTaskNo).trim()),
+  );
+  if (orphans.length > 0) {
+    console.log(`\n  WBS orphans (${orphans.length}) — parentTaskNo references that don't exist as a taskNo:`);
+    for (const o of orphans.slice(0, 10)) {
+      console.log(`    row ${o.sourceRow}: WBS=${o.taskNo} parentTaskNo=${o.parentTaskNo} title="${o.taskName ?? ""}"`);
+    }
+    if (orphans.length > 10) console.log(`    ... (${orphans.length - 10} more)`);
+  }
+
+  // Check that the actual ↔ plan relationship is consistent: where actual
+  // dates exist, plan dates should also exist (a row can't be "in progress"
+  // without ever being planned). Surface anything weird.
+  const actualWithoutPlan = planTasks.filter(
+    (t) => (t.actualStartDate || t.actualEndDate) && !(t.startDate || t.endDate),
+  );
+  if (actualWithoutPlan.length > 0) {
+    console.log(`\n  Tasks with actual dates but no plan dates (${actualWithoutPlan.length}):`);
+    for (const t of actualWithoutPlan.slice(0, 10)) {
+      console.log(
+        `    row ${t.sourceRow}: WBS=${t.taskNo} title="${t.taskName ?? ""}" actualStart=${t.actualStartDate ?? "∅"} actualEnd=${t.actualEndDate ?? "∅"}`,
+      );
+    }
+    if (actualWithoutPlan.length > 10) console.log(`    ... (${actualWithoutPlan.length - 10} more)`);
+  }
+
+  // Sanity check date ordering — endDate should be >= startDate when both
+  // present (calendar string compare works for YYYY-MM-DD).
+  const inverted = planTasks.filter(
+    (t) => t.startDate && t.endDate && String(t.endDate) < String(t.startDate),
+  );
+  if (inverted.length > 0) {
+    console.log(`\n  Tasks with end-before-start (${inverted.length}):`);
+    for (const t of inverted.slice(0, 10)) {
+      console.log(
+        `    row ${t.sourceRow}: WBS=${t.taskNo} title="${t.taskName ?? ""}" start=${t.startDate} end=${t.endDate}`,
+      );
+    }
+    if (inverted.length > 10) console.log(`    ... (${inverted.length - 10} more)`);
+  }
+
+  // Surface rows dropped by the normalizer (skipped due to missing WBS or
+  // no plan/actual date) so the operator can decide whether the workbook
+  // is missing data or those rows are intentional section headers.
+  const data = worksheetToArray(sheet);
+  let candidateRows = 0;
+  for (let r = 0; r < data.length; r++) {
+    const a = data[r];
+    const taskNoRaw = a[1]; // col B = "No."
+    const taskNameRaw = a[2]; // col C = task name (one of several possible cols)
+    if (
+      (taskNoRaw != null && String(taskNoRaw).trim()) ||
+      (taskNameRaw != null && String(taskNameRaw).trim())
+    ) {
+      candidateRows++;
+    }
+  }
+  const droppedCandidates = candidateRows - imported;
+  if (droppedCandidates > 5) {
+    console.log(
+      `\n  Heuristic: ~${droppedCandidates} non-blank Project Plan rows did NOT make it into the import.`,
+    );
+    console.log("    (likely section headers, summary rows, or rows missing both WBS + dates.)");
+  }
+
+  console.log(
+    `\n  Result: ${orphans.length === 0 && actualWithoutPlan.length === 0 && inverted.length === 0 ? "OK — plan structure looks consistent" : "DIAGNOSTICS — see above"}`,
+  );
+}
+
 function reportSection(label: string, pivot: MonthCategoryTotals, lines: MonthCategoryTotals): boolean {
   console.log(`\n=== ${label} ===`);
   const months = Array.from(new Set([...pivot.byMonth.keys(), ...lines.byMonth.keys()])).sort();
@@ -252,6 +362,12 @@ async function main() {
   } else {
     console.warn("\n[skip] Finance - Revenue sheet not found in workbook");
   }
+
+  // ── Plan section ────────────────────────────────────────────────────
+  // Walk the Project Plan sheet directly and compare task-by-task to what
+  // the Smart Import normalizer extracted. Surfaces dropped plan rows,
+  // missing WBS / dates / percent-complete, and broken parent links.
+  reportPlanReconciliation(wb, preview.normalization.planTasks);
 
   // Report lines that get filtered out before bucketing so they can be
   // confirmed as legitimately excluded vs an import-side bug.
