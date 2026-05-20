@@ -24,6 +24,22 @@ export const spSettings = pgTable("sp_settings", {
   intervalMinutes: integer("interval_minutes").notNull().default(30),
   enabled: boolean("enabled").notNull().default(false),
   lastRunAt: timestamp("last_run_at"),
+  /**
+   * Last tick that completed without a thrown error. The scheduler's
+   * skip-if-recent gate uses this column, not `lastRunAt`, so a
+   * misconfigured tenant doesn't sit silent for 30 min after one
+   * successful run was followed by a 403.
+   */
+  lastSuccessAt: timestamp("last_success_at"),
+  /** Wall-clock of the most recent failing tick, if any. */
+  lastErrorAt: timestamp("last_error_at"),
+  /**
+   * Short machine code for the failure, suitable for switching on in the
+   * admin UI (e.g. SHAREPOINT_TOKEN_UNAUTHORIZED, SHAREPOINT_ACCESS_DENIED).
+   */
+  lastErrorCode: text("last_error_code"),
+  /** Full, sanitised human-readable error message (already redacts tokens). */
+  lastErrorMessage: text("last_error_message"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
 });

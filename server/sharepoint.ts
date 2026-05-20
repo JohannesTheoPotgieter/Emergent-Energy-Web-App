@@ -1,7 +1,8 @@
 import { storage } from "./storage";
 import type { SpFile, InsertSpFile, InsertChangeLedger, InsertImportRun } from "@shared/schema";
-import { getSharePointToken } from "./sharepoint-token";
+import { getSharePointToken, clearSharePointTokenCache } from "./sharepoint-token";
 import { ApiError } from "./lib/api-error";
+import { isConnectorMocked } from "./lib/connector-mode";
 
 /** @deprecated Use getSharePointToken() from sharepoint-token.ts directly. Re-exported for backward compatibility. */
 export const getAccessToken = getSharePointToken;
@@ -35,6 +36,10 @@ function graphErrorDetails(text: string): Record<string, string> | undefined {
 function graphApiError(status: number, text: string, context: string): ApiError {
   const details = graphErrorDetails(text);
   if (status === 401) {
+    // The cached token is what produced the 401 — drop it so the very
+    // next call goes back to the Replit connector for a fresh one.
+    // Skipping this leaves a dead token in the cache for ~50 min.
+    clearSharePointTokenCache();
     return new ApiError(
       401,
       "SHAREPOINT_TOKEN_UNAUTHORIZED",
@@ -101,6 +106,14 @@ export async function testConnection(
   folderItemId?: string,
   folderPath?: string,
 ): Promise<{ ok: boolean; success: boolean; siteName?: string; driveName?: string; message?: string; nextAction?: string }> {
+  if (isConnectorMocked("ms-graph")) {
+    return {
+      ok: true,
+      success: true,
+      siteName: "Mock SharePoint Site",
+      driveName: "Mock Documents Library",
+    };
+  }
   try {
     const site = await graphGet(`https://graph.microsoft.com/v1.0/sites/${siteId}`, "get SharePoint site");
     const drive = await graphGet(`https://graph.microsoft.com/v1.0/drives/${driveId}`, "get SharePoint drive");
@@ -123,6 +136,13 @@ export async function listFolderChildren(
   folderItemId?: string,
   folderPath?: string
 ): Promise<any[]> {
+  if (isConnectorMocked("ms-graph")) {
+    // No mock tracker workbooks in the fixture set today — return an
+    // empty list so the scheduler completes a clean tick without
+    // attempting to hit Graph. Add a fixture file here if QA needs to
+    // exercise the import flow end-to-end in dev.
+    return [];
+  }
   let url: string;
   if (folderItemId) {
     url = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${folderItemId}/children?$filter=file ne null`;
@@ -145,6 +165,12 @@ export async function browseFolders(
   driveId: string,
   folderId?: string
 ): Promise<{ id: string; name: string; path: string; childCount: number; isFolder: boolean }[]> {
+  if (isConnectorMocked("ms-graph")) {
+    return [
+      { id: "mock-folder-trackers", name: "Active Trackers", path: "/Active Trackers", childCount: 0, isFolder: true },
+      { id: "mock-folder-archive", name: "Archive", path: "/Archive", childCount: 0, isFolder: true },
+    ];
+  }
   let url: string;
   if (folderId) {
     url = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${folderId}/children`;
@@ -176,11 +202,28 @@ export async function downloadSingleFile(driveId: string, itemId: string): Promi
 }
 
 export async function downloadFileContent(driveId: string, itemId: string): Promise<Buffer> {
+  if (isConnectorMocked("ms-graph")) {
+    // Defensive: callers only reach this after listFolderChildren returned
+    // an item id, which in mock mode is empty (see above). Return an empty
+    // buffer rather than throwing so an accidentally-wired call doesn't
+    // surface as a hard failure in a dev session.
+    return Buffer.alloc(0);
+  }
   const url = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${itemId}/content`;
   return graphGetBuffer(url, "download SharePoint file content");
 }
 
 export async function getFileMetadata(driveId: string, itemId: string): Promise<any> {
+  if (isConnectorMocked("ms-graph")) {
+    return {
+      id: itemId,
+      name: "mock-file.xlsx",
+      eTag: "mock-etag",
+      cTag: "mock-ctag",
+      size: 0,
+      lastModifiedDateTime: new Date().toISOString(),
+    };
+  }
   const url = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${itemId}`;
   return graphGet(url, "get SharePoint file metadata");
 }
@@ -192,6 +235,9 @@ export async function detectChanges(
   folderPath?: string,
   runId?: number
 ): Promise<{ created: number; modified: number; deleted: number; ledgerEntries: number }> {
+  if (isConnectorMocked("ms-graph")) {
+    return { created: 0, modified: 0, deleted: 0, ledgerEntries: 0 };
+  }
   const children = await listFolderChildren(driveId, folderItemId, folderPath);
 
   let created = 0, modified = 0, deleted = 0, ledgerEntries = 0;

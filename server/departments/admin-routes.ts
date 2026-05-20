@@ -513,13 +513,44 @@ router.post("/api/admin/import/single", requireAuth, requireAdmin, async (req, r
 });
 
 router.post("/api/admin/import/run", requireAuth, requireAdmin, async (req, res) => {
-  const { runFullImport } = await import("../importPipeline");
   const actor = req.user?.email || req.user?.name || "admin";
-  const result = await runFullImport("manual", actor);
+  // Match the scheduled tick's pipeline selector so Run Now and the
+  // scheduler never diverge — both pick V2 by default; opt out with
+  // AUTO_IMPORT_V2_ENABLED=false. Accept ?force=true (or { force: true }
+  // in body) to override the enabled-flag gate when a super-user wants
+  // to test a paused configuration.
+  const useV2 = process.env.AUTO_IMPORT_V2_ENABLED !== "false";
+  const force = req.body?.force === true || req.query?.force === "true";
+
+  let result: unknown;
+  if (useV2) {
+    const { runScheduledImportV2 } = await import("../services/scheduled-import-v2");
+    const { storage: store } = await import("../storage");
+    const settings = await store.getSpSettings();
+    if (!settings) {
+      return res.status(400).json({ error: "SharePoint settings not configured." });
+    }
+    if (!settings.enabled && !force) {
+      return res.status(409).json({
+        error: "SharePoint auto-import is currently disabled.",
+        code: "SP_IMPORT_DISABLED",
+        nextAction: "Enable the schedule first, or pass ?force=true to override.",
+      });
+    }
+    result = await runScheduledImportV2({ triggerType: "manual", triggeredBy: actor });
+  } else {
+    const { runFullImport } = await import("../importPipeline");
+    result = await runFullImport("manual", actor, { force });
+  }
+
   logAuditFromReq(req, {
     entityType: "admin",
     action: "import_run",
-    changesJson: { description: "Full SharePoint import triggered manually" },
+    changesJson: {
+      description: "Full SharePoint import triggered manually",
+      pipeline: useV2 ? "v2" : "v1",
+      force,
+    },
   });
   res.json(result);
 });
