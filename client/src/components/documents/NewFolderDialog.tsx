@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useCreateFolder } from "./use-documents";
+import { SharePointErrorAlert } from "./SharePointErrorAlert";
 import type { DocumentRootScope } from "./types";
 
 interface Props {
@@ -16,7 +17,7 @@ interface Props {
 
 export function NewFolderDialog({ open, onOpenChange, scope, rootId, parentItemId }: Props) {
   const [name, setName] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const createFolder = useCreateFolder();
 
   async function submit() {
@@ -26,7 +27,7 @@ export function NewFolderDialog({ open, onOpenChange, scope, rootId, parentItemI
       onOpenChange(false);
       setName("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create folder");
+      setError(err);
     }
   }
 
@@ -46,7 +47,7 @@ export function NewFolderDialog({ open, onOpenChange, scope, rootId, parentItemI
             maxLength={200}
             data-testid="documents-new-folder-name"
           />
-          {error && <p className="text-xs text-destructive">{error}</p>}
+          <SharePointErrorAlert error={error} />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

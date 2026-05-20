@@ -25,13 +25,15 @@
  * Documents Administration page.
  */
 
-import { eq } from "drizzle-orm";
+import { asc, eq, isNull } from "drizzle-orm";
 import { db } from "./db";
 import {
   folderTaxonomy,
   companySharepointRoots,
+  projectSharepointRoots,
   type InsertFolderTaxonomy,
 } from "@shared/schema/documents";
+import { projectInfo } from "@shared/schema/projects";
 import { isConnectorMocked } from "./lib/connector-mode";
 
 // =========================================================================
@@ -512,25 +514,53 @@ export async function seedFolderTaxonomy(): Promise<{ inserted: number; skipped:
   }
 
   // In mock-connector mode, also auto-seed a placeholder 'active_projects'
-  // company SharePoint root so provisioning works end-to-end without a
-  // super-user manually configuring it. Production deployments register
-  // the real root via the admin UI (PUT /api/admin/company-sharepoint-roots/:kind).
+  // company SharePoint root AND wire the first available project to the
+  // mock project tree so /api/documents/roots returns something browsable
+  // out of the box. Production deployments register real roots via the
+  // admin UI (PUT /api/admin/company-sharepoint-roots/:kind) and the
+  // intake provisioning flow.
+  //
+  // The drive / item ids MUST match the in-memory mock store in
+  // server/mocks/ms-graph-fixtures.ts — otherwise mockListChildren()
+  // returns empty and the UI appears broken.
   if (isConnectorMocked("ms-graph")) {
-    const [existing] = await db
+    const [existingCompany] = await db
       .select({ id: companySharepointRoots.id })
       .from(companySharepointRoots)
       .where(eq(companySharepointRoots.kind, "active_projects"))
       .limit(1);
-    if (!existing) {
+    if (!existingCompany) {
       await db.insert(companySharepointRoots).values({
         kind: "active_projects",
         displayName: "Active Projects (mock)",
-        driveId: "mock-drive-id",
-        rootItemId: "mock-active-projects-root",
+        driveId: "drive-company-mock",
+        rootItemId: "co-root",
         rootPath: "01 - Clients/01 - active projects (1)",
         sortOrder: 0,
         active: true,
       });
+    }
+
+    const [firstProject] = await db
+      .select({ id: projectInfo.id, name: projectInfo.projectName })
+      .from(projectInfo)
+      .where(isNull(projectInfo.deletedAt))
+      .orderBy(asc(projectInfo.id))
+      .limit(1);
+    if (firstProject) {
+      const [existingProjRoot] = await db
+        .select({ id: projectSharepointRoots.id })
+        .from(projectSharepointRoots)
+        .where(eq(projectSharepointRoots.projectId, firstProject.id))
+        .limit(1);
+      if (!existingProjRoot) {
+        await db.insert(projectSharepointRoots).values({
+          projectId: firstProject.id,
+          driveId: "drive-project-mock",
+          rootItemId: "proj-root",
+          rootPath: firstProject.name ?? "Project (mock)",
+        });
+      }
     }
   }
 

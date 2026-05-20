@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { parseApiError } from "@/lib/api-error";
 import type {
   CompanyRootSummary,
   DocumentComment,
@@ -112,7 +113,15 @@ export function useUploadDocument() {
         `/api/documents/${input.scope}/${input.rootId}/upload`,
         { method: "POST", body: form, credentials: "include", headers },
       );
-      if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+      if (!res.ok) {
+        let body: unknown = {};
+        try {
+          body = await res.json();
+        } catch {
+          body = { message: res.statusText };
+        }
+        throw parseApiError(res, body);
+      }
       return res.json();
     },
     onSuccess: (_data, vars) => {
