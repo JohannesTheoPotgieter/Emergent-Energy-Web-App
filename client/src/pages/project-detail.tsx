@@ -2018,7 +2018,7 @@ export default function ProjectDetailPage() {
               { key: "rev-tracker", label: "Revenue Tracker", icon: TrendingUp, visible: canViewSubTab.revenue },
               { key: "gp-tracker", label: "GP Tracker", icon: TrendingUp, visible: canViewSubTab.revenue && canViewSubTab.expenditure },
               { key: "cashflow", label: "Cashflow", icon: Activity, visible: canViewSubTab.cashflow },
-              { key: "procurement", label: "QB Procurement", icon: CreditCard, visible: true },
+              { key: "procurement", label: "Procurement", icon: CreditCard, visible: true },
               { key: "subcontractors", label: "Subs", icon: Users, visible: canViewSubTab.subcontractors },
               { key: "qb-recon", label: "QB Recon", icon: Plug, visible: canViewSubTab.expenditure },
             ].filter(st => st.visible).map(st => (
