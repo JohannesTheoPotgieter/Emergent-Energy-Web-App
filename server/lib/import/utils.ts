@@ -144,16 +144,46 @@ export function parsePercent(value: any): string | null {
 
 export function parseStatus(value: any): number | null {
   if (value === null || value === undefined || value === "") return null;
+  if (isExcelError(value)) return null;
+
+  // ExcelJS formula cell — unwrap to the cached result before measuring.
+  if (typeof value === "object" && !isDateLike(value) && "result" in value) {
+    value = (value as any).result;
+    if (value === null || value === undefined || value === "") return null;
+    if (isExcelError(value)) return null;
+  }
+
+  // Excel boolean cells. Tracker workbooks occasionally use TRUE/FALSE as
+  // "done / not started" markers; treat them as 100% / 0%.
+  if (typeof value === "boolean") {
+    return value ? 1 : 0;
+  }
 
   if (typeof value === "number") {
-    return value > 1 ? value / 100 : value;
+    if (!Number.isFinite(value)) return null;
+    if (value < 0) return 0;
+    if (value <= 1) return value;
+    if (value <= 100) return value / 100;
+    return 1; // defensive clamp — values >100 stored as 100% complete
   }
 
   if (typeof value === "string") {
-    const num = parseFloat(value.replace(/%/g, ""));
-    if (!isNaN(num)) {
-      return num > 1 ? num / 100 : num;
-    }
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    // Plain status keywords used in older trackers. The workbook usually
+    // also has a numeric % column, but when a tracker has only the text
+    // version we still want sensible defaults.
+    const lower = trimmed.toLowerCase();
+    if (lower === "complete" || lower === "completed" || lower === "done") return 1;
+    if (lower === "not started" || lower === "not-started") return 0;
+
+    const num = parseFloat(trimmed.replace(/%/g, ""));
+    if (!Number.isFinite(num)) return null;
+    if (num < 0) return 0;
+    if (num <= 1) return num;
+    if (num <= 100) return num / 100;
+    return 1;
   }
 
   return null;

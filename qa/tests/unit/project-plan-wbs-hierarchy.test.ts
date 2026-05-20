@@ -174,6 +174,48 @@ describe("Project Plan — WBS hierarchy + plan-vs-actuals contract", () => {
     }
   });
 
+  it("Mondi: percent-complete distribution includes partial progress (not all 0 or 1)", async () => {
+    // Regression guard: an earlier parser bug rounded everything to 0
+    // or 1, which made every in-progress task look completely stuck or
+    // already done. A real tracker has a mix.
+    const preview = await previewWorkbook(
+      "attached_assets/Mondi_Tracker_Rev02_1778768350564.xlsm",
+      "Mondi_Tracker_Rev02.xlsm",
+    );
+    const pcts = preview.normalization.planTasks
+      .map((t) => t.pctComplete)
+      .filter((v): v is number => v != null);
+
+    expect(pcts.length).toBeGreaterThan(50);
+
+    // At least one task in the (0, 1) open interval — partial progress.
+    const partial = pcts.filter((v) => v > 0 && v < 1);
+    expect(partial.length).toBeGreaterThan(0);
+
+    // No outliers — every value must be in 0..1.
+    for (const v of pcts) {
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThanOrEqual(1);
+      expect(Number.isFinite(v)).toBe(true);
+    }
+  });
+
+  it("Mondi: a partially-complete task reflects the workbook value (within 0.01)", async () => {
+    // Snapshot a known plan row's percent so future parser tweaks can't
+    // silently rescale it. The workbook has task "2" at ≈99.9% complete
+    // ("On track but not yet closed"); a regression that rescales it to
+    // 9.99% or 100% would be a visible defect on every dashboard.
+    const preview = await previewWorkbook(
+      "attached_assets/Mondi_Tracker_Rev02_1778768350564.xlsm",
+      "Mondi_Tracker_Rev02.xlsm",
+    );
+    const target = preview.normalization.planTasks.find((t) => t.taskNo === "2");
+    expect(target, 'expected task no="2" in Mondi tracker').toBeTruthy();
+    expect(target!.pctComplete).not.toBeNull();
+    expect(target!.pctComplete!).toBeGreaterThan(0.9);
+    expect(target!.pctComplete!).toBeLessThanOrEqual(1);
+  });
+
   it("plan dates remain stable under TZ=Africa/Johannesburg", async () => {
     // Regression for the same TZ leak that hit cost-line invoice dates:
     // the plan-row date columns use parseDate too, so when the workbook
