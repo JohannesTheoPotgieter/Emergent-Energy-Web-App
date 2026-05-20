@@ -11,7 +11,17 @@
  */
 
 import type { NormalizationResult } from "./normalizer";
-import { detectImportMode, loadCurrentPlanRows, loadCurrentRevenueRows, loadCurrentCostRows, loadBaselineForPlanner } from "./baseline";
+import {
+  detectImportMode,
+  loadCurrentPlanRows,
+  loadCurrentRevenueRows,
+  loadCurrentCostRows,
+  loadBaselineForPlanner,
+  loadDeletedPlanRows,
+  loadDeletedRevenueRows,
+  loadDeletedCostRows,
+  type DeletedRowSummary,
+} from "./baseline";
 import type { ImportMode } from "./baseline";
 import { runConflictEngine, type ConflictEngineResult, type ConflictSummary } from "./conflict-engine";
 
@@ -102,11 +112,42 @@ export interface PlannerResult {
   };
   /** 3-way conflict detection results (null for BASELINE imports) */
   conflicts: ConflictEngineResult | null;
+  /**
+   * File rows whose business key matches a previously-soft-deleted DB row.
+   * The operator deleted the row in the app, then the same row reappeared
+   * in the re-imported workbook. The commit endpoint refuses to commit
+   * until each candidate has a decision: `keep_deleted` (skip the file
+   * row, row stays deleted) or `restore_and_apply` (un-delete the row and
+   * apply the file's values). Empty array means no clashes.
+   */
+  resurrections: ResurrectionCandidate[];
   /** Global planner warnings */
   warnings: string[];
   /** When the plan was generated */
   generatedAt: string;
 }
+
+export interface ResurrectionCandidate {
+  /** Stable key used to match the decision in the commit payload. */
+  resurrectionKey: string;
+  section: SectionType;
+  /** Human-readable row label for the UI ("Inverter PO #INV-001 — R 17,500"). */
+  rowLabel: string;
+  /** Business key derived from the file row. */
+  businessKey: string;
+  /** Existing soft-deleted row's primary id. */
+  deletedRowId: number;
+  /** Whichever delete signal fired — deletedAt (work_items) or effectiveTo (lines). */
+  deletedAt: string | null;
+  /** Index into the file's section array (so the executor can find the file values). */
+  fileIndex: number;
+  /** Compact preview of the file values for operator review. */
+  filePreview: Record<string, string | number | null>;
+  /** Compact preview of the soft-deleted row values for comparison. */
+  deletedPreview: Record<string, string | number | null>;
+}
+
+export type ResurrectionDecision = "keep_deleted" | "restore_and_apply";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -194,12 +235,24 @@ export async function runImportPlanner(
     return buildBaselinePlan(normalization, warnings, baselineInfo.lastCommittedRunId);
   }
 
-  // INCREMENTAL — load current state, baseline snapshot, and run matching + conflicts
-  const [planRows, revenueRows, costRows, baselineNormalization] = await Promise.all([
+  // INCREMENTAL — load current state, baseline snapshot, soft-deleted rows
+  // (for resurrection detection) and run matching + conflicts.
+  const [
+    planRows,
+    revenueRows,
+    costRows,
+    baselineNormalization,
+    deletedPlanRows,
+    deletedRevenueRows,
+    deletedCostRows,
+  ] = await Promise.all([
     loadCurrentPlanRows(projectId),
     loadCurrentRevenueRows(projectId),
     loadCurrentCostRows(projectId),
     loadBaselineForPlanner(projectId),
+    loadDeletedPlanRows(projectId),
+    loadDeletedRevenueRows(projectId),
+    loadDeletedCostRows(projectId),
   ]);
 
   if (!baselineNormalization) {
@@ -250,6 +303,25 @@ export async function runImportPlanner(
     generateBusinessKey,
   );
 
+  // Resurrection detection — any NEW file rows whose business key collides
+  // with a row the operator previously soft-deleted in the app surface here
+  // so the commit endpoint can force an explicit operator decision instead
+  // of silently re-inserting a duplicate. See PlannerResult.resurrections.
+  const resurrections = detectResurrections(
+    projectId,
+    matchedRowsBySection,
+    {
+      PLAN: deletedPlanRows,
+      REVENUE: deletedRevenueRows,
+      EXPENDITURE: deletedCostRows,
+    },
+    {
+      PLAN: normalization.planTasks,
+      REVENUE: normalization.revenueLines,
+      EXPENDITURE: normalization.costLines,
+    },
+  );
+
   return {
     importMode: "INCREMENTAL",
     lastCommittedRunId: baselineInfo.lastCommittedRunId,
@@ -259,9 +331,98 @@ export async function runImportPlanner(
       EXPENDITURE: expenditureSection,
     },
     conflicts,
+    resurrections,
     warnings,
     generatedAt: new Date().toISOString(),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Resurrection detector
+// ---------------------------------------------------------------------------
+//
+// The active baseline excludes soft-deleted rows, so the row-matcher would
+// classify a file row whose business key matches a deleted row as NEW. That
+// silently re-inserts a duplicate. The operator's explicit "delete this row
+// in the app" intent gets clobbered by the next file upload.
+//
+// This pass walks the NEW classifications, generates the business key from
+// the file row, and looks up deleted rows by the same key. Each hit
+// produces a ResurrectionCandidate that the commit endpoint requires the
+// operator to resolve before the run can be committed.
+
+export function detectResurrections(
+  projectId: number,
+  matched: Record<SectionType, MatchedRow[]>,
+  deletedBySection: Record<SectionType, DeletedRowSummary[]>,
+  fileBySection: Record<SectionType, any[]>,
+): ResurrectionCandidate[] {
+  const out: ResurrectionCandidate[] = [];
+
+  for (const section of ["PLAN", "REVENUE", "EXPENDITURE"] as const) {
+    const deleted = deletedBySection[section];
+    if (!deleted || deleted.length === 0) continue;
+
+    // Map every soft-deleted row to its business key so the lookup is O(N+M).
+    const deletedByKey = new Map<string, DeletedRowSummary>();
+    for (const d of deleted) {
+      const bk = generateBusinessKey(section, projectId, d.row as any);
+      // First-write-wins; the loader already orders newest-first for PLAN.
+      if (!deletedByKey.has(bk.key)) {
+        deletedByKey.set(bk.key, d);
+      }
+    }
+
+    const fileRows = fileBySection[section] ?? [];
+    for (const mr of matched[section]) {
+      if (mr.classification !== "NEW") continue;
+      const hit = deletedByKey.get(mr.businessKey.key);
+      if (!hit) continue;
+      const fileRow = mr.fileIndex != null ? fileRows[mr.fileIndex] : null;
+      if (!fileRow) continue;
+
+      out.push({
+        resurrectionKey: `${section}::${mr.businessKey.key}`,
+        section,
+        rowLabel: mr.businessKey.rowLabel || `${section} row`,
+        businessKey: mr.businessKey.key,
+        deletedRowId: hit.id,
+        deletedAt:
+          hit.deletedAt?.toISOString() ??
+          hit.effectiveTo?.toISOString() ??
+          null,
+        fileIndex: mr.fileIndex ?? -1,
+        filePreview: previewForSection(section, fileRow),
+        deletedPreview: previewForSection(section, hit.row),
+      });
+    }
+  }
+
+  return out;
+}
+
+const PREVIEW_FIELDS: Record<SectionType, string[]> = {
+  PLAN: ["taskName", "taskNo", "startDate", "endDate", "actualStartDate", "actualEndDate", "owner", "status"],
+  REVENUE: ["milestoneName", "amountExVat", "invoiceNumber", "invoiceDate", "expectedPaymentDate", "status"],
+  EXPENDITURE: ["costCategory", "description", "counterpartyName", "amountExVat", "invoiceNumber", "invoiceDate", "status"],
+};
+
+function previewForSection(section: SectionType, row: any): Record<string, string | number | null> {
+  const fields = PREVIEW_FIELDS[section];
+  const out: Record<string, string | number | null> = {};
+  for (const f of fields) {
+    const v = row?.[f];
+    if (v == null || v === "") {
+      out[f] = null;
+    } else if (typeof v === "number") {
+      out[f] = v;
+    } else if (typeof v === "string") {
+      out[f] = v.length > 80 ? `${v.slice(0, 77)}…` : v;
+    } else {
+      out[f] = String(v);
+    }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -309,6 +470,7 @@ function buildBaselinePlan(
       EXPENDITURE: baselineSectionPlan(CANONICAL_SOURCES.EXPENDITURE, normalization.costLines),
     },
     conflicts: null, // No conflicts on baseline import
+    resurrections: [], // No prior deletes are possible on a baseline import
     warnings,
     generatedAt: new Date().toISOString(),
   };

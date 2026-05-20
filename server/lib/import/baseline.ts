@@ -12,7 +12,7 @@ import {
   normalizedRevenueLines,
   workItems,
 } from "@shared/schema";
-import { eq, and, desc, isNull } from "drizzle-orm";
+import { eq, and, desc, isNull, isNotNull, or } from "drizzle-orm";
 import type { NormalizationResult } from "./normalizer";
 import { snapshotBaselineEnabled } from "./feature-flags";
 
@@ -171,6 +171,163 @@ export async function loadCurrentCostRows(projectId: number) {
         and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)),
       ),
     );
+}
+
+// ---------------------------------------------------------------------------
+// Soft-deleted row loaders — fetch rows that the operator has removed in the
+// app since the last import. These are NOT used for matching active rows
+// (which would re-pull them as if they were live), but the planner cross-
+// references them against the file's NEW rows so a re-import that brings
+// back a row the operator explicitly deleted surfaces as an explicit
+// "resurrection" decision rather than silently re-inserting a duplicate.
+//
+// Cost / revenue lines: soft-delete signal is `effectiveTo IS NOT NULL`
+//   (temporal closure) OR `deletedAt IS NOT NULL` (hard soft-delete).
+//   Both forms are emitted from the legacy DELETE routes.
+// Work items: soft-delete signal is `deletedAt IS NOT NULL` only — the
+//   temporal columns don't exist on work_items.
+// ---------------------------------------------------------------------------
+
+export interface DeletedRowSummary<TRow = Record<string, unknown>> {
+  id: number;
+  deletedAt: Date | null;
+  effectiveTo: Date | null;
+  row: TRow;
+}
+
+/**
+ * Load soft-deleted PLAN rows (work_items) for a given project.
+ * Returns the most-recently-deleted row when the same business key has
+ * been soft-deleted more than once — the operator's latest intent wins.
+ */
+export async function loadDeletedPlanRows(projectId: number): Promise<Array<DeletedRowSummary>> {
+  const rows = await db
+    .select({
+      id: workItems.id,
+      deletedAt: workItems.deletedAt,
+      taskName: workItems.title,
+      taskNo: workItems.wbsCode,
+      startDate: workItems.startDate,
+      endDate: workItems.endDate,
+      actualStartDate: workItems.actualStart,
+      actualEndDate: workItems.actualEnd,
+      owner: workItems.ownerName,
+      status: workItems.status,
+      pctComplete: workItems.percentComplete,
+      subProjectName: workItems.subProjectName,
+      externalRef: workItems.externalRef,
+    })
+    .from(workItems)
+    .where(
+      and(
+        eq(workItems.projectId, projectId),
+        eq(workItems.source, "SMART_IMPORT"),
+        eq(workItems.workstream, "PM"),
+        isNotNull(workItems.deletedAt),
+      ),
+    )
+    .orderBy(desc(workItems.deletedAt));
+
+  return rows.map((r: any) => ({
+    id: r.id,
+    deletedAt: r.deletedAt,
+    effectiveTo: null,
+    row: r,
+  }));
+}
+
+/**
+ * Load soft-deleted REVENUE rows for a given project.
+ * A revenue line is treated as deleted when EITHER deletedAt OR
+ * effectiveTo is set — operators delete via the active-row UI which
+ * closes the temporal version (effectiveTo) without setting deletedAt.
+ */
+export async function loadDeletedRevenueRows(projectId: number): Promise<Array<DeletedRowSummary>> {
+  const rows = await db
+    .select({
+      id: normalizedRevenueLines.id,
+      deletedAt: normalizedRevenueLines.deletedAt,
+      effectiveTo: normalizedRevenueLines.effectiveTo,
+      milestoneName: normalizedRevenueLines.milestoneName,
+      milestoneNo: normalizedRevenueLines.milestoneNo,
+      milestonePercent: normalizedRevenueLines.milestonePercent,
+      description: normalizedRevenueLines.description,
+      amountExVat: normalizedRevenueLines.amountExVat,
+      vat: normalizedRevenueLines.vat,
+      invoiceNumber: normalizedRevenueLines.invoiceNumber,
+      invoiceDate: normalizedRevenueLines.invoiceDate,
+      expectedPaymentDate: normalizedRevenueLines.expectedPaymentDate,
+      paidDate: normalizedRevenueLines.paidDate,
+      inBankDate: normalizedRevenueLines.inBankDate,
+      status: normalizedRevenueLines.status,
+      subProjectName: normalizedRevenueLines.subProjectName,
+      importRunId: normalizedRevenueLines.importRunId,
+    })
+    .from(normalizedRevenueLines)
+    .where(
+      and(
+        eq(normalizedRevenueLines.projectId, projectId),
+        or(
+          isNotNull(normalizedRevenueLines.deletedAt),
+          isNotNull(normalizedRevenueLines.effectiveTo),
+        ),
+      ),
+    );
+
+  return rows.map((r: any) => ({
+    id: r.id,
+    deletedAt: r.deletedAt,
+    effectiveTo: r.effectiveTo,
+    row: r,
+  }));
+}
+
+/**
+ * Load soft-deleted EXPENDITURE rows for a given project.
+ * Mirrors loadDeletedRevenueRows.
+ */
+export async function loadDeletedCostRows(projectId: number): Promise<Array<DeletedRowSummary>> {
+  const rows = await db
+    .select({
+      id: normalizedCostLines.id,
+      deletedAt: normalizedCostLines.deletedAt,
+      effectiveTo: normalizedCostLines.effectiveTo,
+      costCategory: normalizedCostLines.costCategory,
+      counterpartyName: normalizedCostLines.counterpartyName,
+      description: normalizedCostLines.description,
+      amountExVat: normalizedCostLines.amountExVat,
+      budgetQty: normalizedCostLines.budgetQty,
+      budgetRate: normalizedCostLines.budgetRate,
+      budgetTotal: normalizedCostLines.budgetTotal,
+      budgetCos: normalizedCostLines.budgetCos,
+      invoiceNumber: normalizedCostLines.invoiceNumber,
+      invoiceDate: normalizedCostLines.invoiceDate,
+      approvedDate: normalizedCostLines.approvedDate,
+      paidDate: normalizedCostLines.paidDate,
+      forecastPaymentDate: normalizedCostLines.forecastPaymentDate,
+      poNumber: normalizedCostLines.poNumber,
+      status: normalizedCostLines.status,
+      subProjectName: normalizedCostLines.subProjectName,
+      revenueRecognitionAmount: normalizedCostLines.revenueRecognitionAmount,
+      importRunId: normalizedCostLines.importRunId,
+    })
+    .from(normalizedCostLines)
+    .where(
+      and(
+        eq(normalizedCostLines.projectId, projectId),
+        or(
+          isNotNull(normalizedCostLines.deletedAt),
+          isNotNull(normalizedCostLines.effectiveTo),
+        ),
+      ),
+    );
+
+  return rows.map((r: any) => ({
+    id: r.id,
+    deletedAt: r.deletedAt,
+    effectiveTo: r.effectiveTo,
+    row: r,
+  }));
 }
 
 // ---------------------------------------------------------------------------
