@@ -172,8 +172,7 @@ export function invalidateDashboardQueries(qc: QueryClient) {
              key.startsWith('/api/cos-tracker') ||
              key.startsWith('/api/gp-tracker') ||
              key === 'revenue-tracker-project' ||
-             key === 'revenue-tab' ||
-             key === 'finance-revenue';
+             key === 'revenue-tab';
     }
     return false;
   }});
@@ -190,8 +189,7 @@ export function invalidateProjectQueries(qc: QueryClient, projectName: string) {
   qc.invalidateQueries({ queryKey: ["program-expenses", projectName] });
   qc.invalidateQueries({ queryKey: ["program-inflows", projectName] });
   qc.invalidateQueries({ queryKey: ["quality-summary", projectName] });
-  qc.invalidateQueries({ queryKey: ["finance-revenue", projectName] });
-  qc.invalidateQueries({ queryKey: ["finance-cos", projectName] });
+  qc.invalidateQueries({ queryKey: ["gp-tracker-project", projectName] });
 }
 
 function handleGlobalError(error: unknown) {
