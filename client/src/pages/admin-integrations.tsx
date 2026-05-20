@@ -398,6 +398,10 @@ interface SpSettings {
   intervalMinutes: number;
   enabled: boolean;
   lastRunAt: string | null;
+  lastSuccessAt?: string | null;
+  lastErrorAt?: string | null;
+  lastErrorCode?: string | null;
+  lastErrorMessage?: string | null;
   updatedAt?: string;
   updatedBy?: number | null;
 }
@@ -616,6 +620,35 @@ function SharePointAutoImportPanel() {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Last-error banner — shown when the most recent tick threw and
+            there hasn't been a successful run since. Surfaces the typed
+            error code + message so the admin can diagnose without reading
+            server logs. */}
+        {settingsQuery.data?.lastErrorAt &&
+          (!settingsQuery.data.lastSuccessAt ||
+            new Date(settingsQuery.data.lastErrorAt).getTime() >
+              new Date(settingsQuery.data.lastSuccessAt).getTime()) && (
+            <div
+              className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-900"
+              role="alert"
+              data-testid="sp-import-last-error"
+            >
+              <p className="font-medium">
+                Last tick failed
+                {settingsQuery.data.lastErrorCode ? ` — ${settingsQuery.data.lastErrorCode}` : ""}
+              </p>
+              {settingsQuery.data.lastErrorMessage && (
+                <p className="mt-1 break-words">{settingsQuery.data.lastErrorMessage}</p>
+              )}
+              <p className="mt-1 text-red-700">
+                Failed at {formatRelativeWithAbsoluteZA(settingsQuery.data.lastErrorAt)}.
+                {settingsQuery.data.lastSuccessAt
+                  ? ` Last success: ${formatRelativeWithAbsoluteZA(settingsQuery.data.lastSuccessAt)}.`
+                  : " No successful runs yet."}
+              </p>
+            </div>
+          )}
+
         {/* Status strip */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
           <div className="rounded-lg border bg-muted/30 px-3 py-2">
@@ -629,7 +662,9 @@ function SharePointAutoImportPanel() {
           <div className="rounded-lg border bg-muted/30 px-3 py-2">
             <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Next run</div>
             <div className="font-medium" data-testid="text-next-run-at">
-              {enabled ? nextRunEstimate(settingsQuery.data?.lastRunAt ?? null, form.intervalMinutes) : "Disabled"}
+              {enabled
+                ? nextRunEstimate(settingsQuery.data?.lastSuccessAt ?? null, form.intervalMinutes)
+                : "Disabled"}
             </div>
           </div>
           <div className="rounded-lg border bg-muted/30 px-3 py-2">

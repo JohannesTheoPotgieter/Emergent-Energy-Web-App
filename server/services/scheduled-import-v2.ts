@@ -31,6 +31,8 @@ import { db } from "../db";
 import { storage } from "../storage";
 import { smartImportRuns } from "@shared/schema";
 import { detectChanges, downloadFileContent, listFolderChildren } from "../sharepoint";
+import { isConnectorMocked } from "../lib/connector-mode";
+import { ApiError } from "../lib/api-error";
 import { runSmartImportPreview, type SmartImportPreview } from "../lib/import";
 import { runImportPlanner } from "../lib/import/planner";
 import {
@@ -240,36 +242,10 @@ export async function runScheduledImportV2(opts: {
     throw new Error("SharePoint settings not configured");
   }
 
-  // Refresh the sp_files / change_ledger book-keeping so v2 stays consistent
-  // with v1's diff detector. v1's runId-scoped ledger is unused here.
-  try {
-    await detectChanges(
-      settings.siteId,
-      settings.driveId,
-      settings.folderItemId || undefined,
-      settings.folderPath || undefined,
-      // omit runId — we're not using the change ledger for v2 dispatch
-    );
-  } catch (err) {
-    console.warn("[ScheduledImportV2] detectChanges housekeeping failed (non-blocking):", err instanceof Error ? err.message : err);
-  }
-
-  // List current files in the configured folder.
-  let folderChildren: Array<{ id: string; name: string }>;
-  try {
-    folderChildren = await listFolderChildren(
-      settings.driveId,
-      settings.folderItemId || undefined,
-      settings.folderPath || undefined,
-    );
-  } catch (err) {
-    throw new Error(`SharePoint folder listing failed: ${err instanceof Error ? err.message : String(err)}`);
-  }
-
   const result: ScheduledImportV2Result = {
     triggerType: opts.triggerType,
     triggeredBy: opts.triggeredBy,
-    filesDiscovered: folderChildren.length,
+    filesDiscovered: 0,
     filesCommitted: 0,
     filesParked: 0,
     filesSkipped: 0,
@@ -280,42 +256,122 @@ export async function runScheduledImportV2(opts: {
     durationMs: 0,
   };
 
-  for (const child of folderChildren) {
-    try {
-      const outcome = await processFileV2(
-        { id: child.id, name: child.name, driveId: settings.driveId },
-        opts.triggeredBy,
-      );
-      if (outcome.status === "committed") {
-        result.filesCommitted++;
-        if (outcome.runId) {
-          result.runIds.push(outcome.runId);
-          result.committedRunIds.push(outcome.runId);
-        }
-      } else if (outcome.status === "parked") {
-        result.filesParked++;
-        if (outcome.runId) result.runIds.push(outcome.runId);
-      } else if (outcome.status === "skipped") {
-        result.filesSkipped++;
-      } else {
-        result.filesFailed++;
-        if (outcome.error) result.errors.push({ fileName: child.name, error: outcome.error });
-        if (outcome.runId) result.runIds.push(outcome.runId);
-      }
-    } catch (err) {
-      result.filesFailed++;
-      result.errors.push({
-        fileName: child.name,
-        error: err instanceof Error ? err.message : String(err),
-      });
+  let scheduledError: { code: string; message: string } | null = null;
+
+  try {
+    // Mock-mode short-circuit: in dev with no connector configured we do
+    // a no-op success tick so the admin UI can see lastSuccessAt update,
+    // proving the loop is alive.
+    if (isConnectorMocked("ms-graph")) {
+      result.durationMs = Date.now() - startedAt;
+      return result;
     }
+
+    // Refresh the sp_files / change_ledger book-keeping so v2 stays
+    // consistent with v1's diff detector. v1's runId-scoped ledger is
+    // unused here.
+    try {
+      await detectChanges(
+        settings.siteId,
+        settings.driveId,
+        settings.folderItemId || undefined,
+        settings.folderPath || undefined,
+      );
+    } catch (err) {
+      console.warn("[ScheduledImportV2] detectChanges housekeeping failed (non-blocking):", err instanceof Error ? err.message : err);
+    }
+
+    // List current files in the configured folder.
+    let folderChildren: Array<{ id: string; name: string }>;
+    try {
+      folderChildren = await listFolderChildren(
+        settings.driveId,
+        settings.folderItemId || undefined,
+        settings.folderPath || undefined,
+      );
+    } catch (err) {
+      throw new Error(`SharePoint folder listing failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    result.filesDiscovered = folderChildren.length;
+
+    for (const child of folderChildren) {
+      try {
+        const outcome = await processFileV2(
+          { id: child.id, name: child.name, driveId: settings.driveId },
+          opts.triggeredBy,
+        );
+        if (outcome.status === "committed") {
+          result.filesCommitted++;
+          if (outcome.runId) {
+            result.runIds.push(outcome.runId);
+            result.committedRunIds.push(outcome.runId);
+          }
+        } else if (outcome.status === "parked") {
+          result.filesParked++;
+          if (outcome.runId) result.runIds.push(outcome.runId);
+        } else if (outcome.status === "skipped") {
+          result.filesSkipped++;
+        } else {
+          result.filesFailed++;
+          if (outcome.error) result.errors.push({ fileName: child.name, error: outcome.error });
+          if (outcome.runId) result.runIds.push(outcome.runId);
+        }
+      } catch (err) {
+        result.filesFailed++;
+        result.errors.push({
+          fileName: child.name,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    return result;
+  } catch (err) {
+    scheduledError = {
+      code: err instanceof ApiError ? err.code : "SCHEDULED_IMPORT_FAILED",
+      message: err instanceof Error ? err.message : String(err),
+    };
+    throw err;
+  } finally {
+    // Persist tick outcome unconditionally so the admin UI never shows
+    // "Last run: Never" while ticks are actually firing. Last-error
+    // columns are cleared on success, set on failure.
+    const now = new Date();
+    const base = {
+      siteId: settings.siteId,
+      driveId: settings.driveId,
+      folderItemId: settings.folderItemId,
+      folderPath: settings.folderPath,
+      intervalMinutes: settings.intervalMinutes,
+      enabled: settings.enabled,
+      updatedBy: settings.updatedBy,
+      lastRunAt: now,
+    };
+    try {
+      if (scheduledError) {
+        await storage.upsertSpSettings({
+          ...base,
+          lastErrorAt: now,
+          lastErrorCode: scheduledError.code,
+          lastErrorMessage: scheduledError.message,
+          lastSuccessAt: settings.lastSuccessAt ?? null,
+        });
+      } else {
+        await storage.upsertSpSettings({
+          ...base,
+          lastSuccessAt: now,
+          lastErrorAt: null,
+          lastErrorCode: null,
+          lastErrorMessage: null,
+        });
+      }
+    } catch (persistErr) {
+      console.warn(
+        "[ScheduledImportV2] Failed to persist tick outcome:",
+        persistErr instanceof Error ? persistErr.message : persistErr,
+      );
+    }
+    result.durationMs = Date.now() - startedAt;
   }
-
-  await storage.upsertSpSettings({
-    ...settings,
-    lastRunAt: new Date(),
-  });
-
-  result.durationMs = Date.now() - startedAt;
-  return result;
 }

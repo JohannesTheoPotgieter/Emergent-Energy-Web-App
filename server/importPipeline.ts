@@ -180,11 +180,19 @@ export async function processLedgerEntry(entry: ChangeLedger): Promise<void> {
 
 export async function runFullImport(
   triggerType: "manual" | "schedule",
-  triggeredBy: string = "system"
+  triggeredBy: string = "system",
+  opts: { force?: boolean } = {},
 ): Promise<{ runId: number; summary: any }> {
   const settings = await storage.getSpSettings();
   if (!settings) {
     throw new Error("SharePoint settings not configured");
+  }
+  // Run Now (manual) used to ignore the enabled flag entirely. The
+  // schedule tick is gated by `settings.enabled`; mirror that here so a
+  // paused configuration can't be force-run from the admin panel without
+  // an explicit override.
+  if (!settings.enabled && !opts.force) {
+    throw new Error("SharePoint auto-import is currently disabled. Enable it (or pass force) to run.");
   }
 
   const run = await storage.createImportRun({
@@ -232,18 +240,38 @@ export async function runFullImport(
       summaryJson: summary,
     });
 
+    const now = new Date();
     await storage.upsertSpSettings({
       ...settings,
-      lastRunAt: new Date(),
+      lastRunAt: now,
+      lastSuccessAt: now,
+      lastErrorAt: null,
+      lastErrorCode: null,
+      lastErrorMessage: null,
     });
 
     return { runId: run.id, summary };
   } catch (err: unknown) {
+    const now = new Date();
     await storage.updateImportRun(run.id, {
       status: "fail",
-      finishedAt: new Date(),
+      finishedAt: now,
       summaryJson: { error: (err instanceof Error ? err.message : String(err)) },
     });
+    // Surface the failure on the admin panel so "Last run: Never" doesn't
+    // hide a stuck integration. Best-effort — never throw out of the
+    // catch from a persistence problem.
+    try {
+      await storage.upsertSpSettings({
+        ...settings,
+        lastRunAt: now,
+        lastErrorAt: now,
+        lastErrorCode: (err as { code?: string } | undefined)?.code || "IMPORT_FAILED",
+        lastErrorMessage: (err instanceof Error ? err.message : String(err))?.substring(0, 1000) || "Unknown error",
+      });
+    } catch (persistErr) {
+      console.warn("[SharePoint] Failed to persist sp_settings error state:", persistErr instanceof Error ? persistErr.message : persistErr);
+    }
     throw err;
   }
 }
@@ -449,8 +477,17 @@ export function startScheduler(): void {
       if (!settings || !settings.enabled) return;
 
       const interval = settings.intervalMinutes * 60 * 1000;
+      const now = Date.now();
       const lastRun = settings.lastRunAt ? new Date(settings.lastRunAt).getTime() : 0;
-      if (Date.now() - lastRun < interval) return;
+      const lastSuccess = settings.lastSuccessAt ? new Date(settings.lastSuccessAt).getTime() : 0;
+      // Skip-gate semantics:
+      //  - Never hammer Graph faster than once per 60 s, even on retries.
+      //  - After a SUCCESSFUL tick, wait the full configured interval.
+      //  - After a FAILED tick (lastSuccess older than lastRun) only the
+      //    60 s floor applies, so a fixed Site ID picks up on the next
+      //    tick instead of waiting a full interval.
+      if (now - lastRun < 60_000) return;
+      if (lastSuccess > 0 && now - lastSuccess < interval) return;
 
       isRunning = true;
       console.log("[SharePoint] Scheduled import starting...");
@@ -458,7 +495,10 @@ export function startScheduler(): void {
       const MAX_RETRIES = 3;
       const BACKOFF_BASE_MS = 2000;
       let lastError: any = null;
-      const useV2 = process.env.AUTO_IMPORT_V2_ENABLED === "true";
+      // V2 is the canonical pipeline as of Phase 6 (writes smart_import_runs
+      // rows the UI shows). Default on; setting AUTO_IMPORT_V2_ENABLED=false
+      // is the explicit opt-out for environments still on v1.
+      const useV2 = process.env.AUTO_IMPORT_V2_ENABLED !== "false";
 
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
