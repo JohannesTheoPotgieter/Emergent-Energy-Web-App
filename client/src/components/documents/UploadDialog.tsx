@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useUploadDocument } from "./use-documents";
+import { SharePointErrorAlert } from "./SharePointErrorAlert";
 import type { DocumentRootScope } from "./types";
 
 interface Props {
@@ -15,7 +16,7 @@ interface Props {
 
 export function UploadDialog({ open, onOpenChange, scope, rootId, parentItemId }: Props) {
   const [file, setFile] = useState<File | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const uploader = useUploadDocument();
 
@@ -28,7 +29,7 @@ export function UploadDialog({ open, onOpenChange, scope, rootId, parentItemId }
       setFile(null);
       if (fileRef.current) fileRef.current.value = "";
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
+      setError(err);
     }
   }
 
@@ -46,7 +47,7 @@ export function UploadDialog({ open, onOpenChange, scope, rootId, parentItemId }
             data-testid="documents-upload-input"
           />
           <p className="text-xs text-muted-foreground">Files up to 4 MiB. Larger files will be added in a later update.</p>
-          {error && <p className="text-xs text-destructive">{error}</p>}
+          <SharePointErrorAlert error={error} />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

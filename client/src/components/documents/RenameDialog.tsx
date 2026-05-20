@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useRenameItem } from "./use-documents";
+import { SharePointErrorAlert } from "./SharePointErrorAlert";
 import type { DocumentRootScope, GraphItem } from "./types";
 
 interface Props {
@@ -16,7 +17,7 @@ interface Props {
 
 export function RenameDialog({ open, onOpenChange, scope, rootId, item }: Props) {
   const [name, setName] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const rename = useRenameItem();
 
   useEffect(() => {
@@ -30,7 +31,7 @@ export function RenameDialog({ open, onOpenChange, scope, rootId, item }: Props)
       await rename.mutateAsync({ scope, rootId, itemId: item.id, name: name.trim() });
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Rename failed");
+      setError(err);
     }
   }
 
@@ -50,7 +51,7 @@ export function RenameDialog({ open, onOpenChange, scope, rootId, item }: Props)
             maxLength={200}
             data-testid="documents-rename-input"
           />
-          {error && <p className="text-xs text-destructive">{error}</p>}
+          <SharePointErrorAlert error={error} />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

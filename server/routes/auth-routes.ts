@@ -19,6 +19,7 @@ import {
   setRevokedUserTokenVersionFloor,
 } from "../auth-context";
 import { ApiError, sendError, unauthorized, serverError, logApiError } from "../lib/api-error";
+import { ensureMsAccount } from "../ms-account-service";
 
 const MAX_SESSIONS_PER_USER = 3;
 
@@ -325,6 +326,29 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
       req.logIn(sessionUser, async (loginError) => {
         if (loginError) {
           return res.redirect("/auth/login?error=ms_session_failed");
+        }
+
+        // Persist the delegated SSO token + MSAL token cache so server-side
+        // SharePoint / Outlook writes (uploads, folder creates, checkouts)
+        // can be made on behalf of this user. Failing this MUST NOT block
+        // the sign-in — log and continue; the user can re-trigger via the
+        // documents page reconnect CTA.
+        if (result.accessToken) {
+          try {
+            await ensureMsAccount(
+              dbUser.id,
+              result.msProfile!,
+              result.account?.tenantId ?? undefined,
+              { accessToken: result.accessToken, expiresOn: result.expiresOn },
+              result.tokenCache ?? null,
+            );
+          } catch (msAccountErr) {
+            console.error(
+              "[MS Auth] Failed to persist ms_accounts row for user",
+              dbUser.id,
+              msAccountErr instanceof Error ? msAccountErr.message : msAccountErr,
+            );
+          }
         }
 
         try {
