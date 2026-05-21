@@ -19,6 +19,27 @@ export const projectPermissionsSchema = z.object({
 });
 export type ProjectPermissions = z.infer<typeof projectPermissionsSchema>;
 
+// ─── Import Lineage ─────────────────────────────────────────────────────────
+
+export const projectImportLineageSchema = z.object({
+  latestImport: z.object({
+    importRunId: z.number(),
+    sourceFileName: z.string().nullable(),
+    importType: z.string().nullable(),
+    status: z.string().nullable(),
+    uploadedAt: z.string().nullable(),
+    committedAt: z.string().nullable(),
+    recordsSucceeded: z.number().nullable(),
+    recordsFailed: z.number().nullable(),
+  }).nullable(),
+  freshness: z.object({
+    state: z.enum(["live", "stale", "missing", "reconciled", "unknown"]),
+    daysSinceImport: z.number().nullable(),
+    warning: z.string().nullable(),
+  }),
+});
+export type ProjectImportLineage = z.infer<typeof projectImportLineageSchema>;
+
 // ─── Finance Summary ──────────────────────────────────────────────
 
 export const financeSummarySchema = z.object({
@@ -187,6 +208,7 @@ export const projectDetailResponseSchema = z.object({
   qualitySummary: qualitySummarySchema,
   team: z.array(teamMemberSchema),
   permissions: projectPermissionsSchema,
+  importLineage: projectImportLineageSchema,
 });
 export type ProjectDetailResponse = z.infer<typeof projectDetailResponseSchema>;
 

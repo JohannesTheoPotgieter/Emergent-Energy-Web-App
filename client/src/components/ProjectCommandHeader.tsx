@@ -19,6 +19,9 @@ import CaptureDeliverable from "@/components/CaptureDeliverable";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
 import { formatNextMilestoneSummary, type NextMilestoneSummary } from "@/lib/next-milestone";
 import { buildProjectSummaryChipDestinations, type ProjectSummaryChipKey } from "@/lib/project-summary-chip-navigation";
+import { summarizeImportLineage } from "@/lib/project-detail-navigation";
+import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
+import type { ProjectImportLineage } from "@shared/api-types/project-v2";
 
 function getPhaseLabel(phase: string | null): string {
   if (!phase) return "Unknown";
@@ -57,6 +60,10 @@ interface CommandHeaderProps {
   projectInfoId: number | null;
   isAdmin: boolean;
   canSetRag: boolean;
+  canViewFinance: boolean;
+  canViewQuality: boolean;
+  canViewProcurement: boolean;
+  importLineage?: ProjectImportLineage | null;
   pdAssignableUsers: { id: number; name: string; username: string; role: string }[];
   pmAssignableUsers: { id: number; name: string; username: string; role: string }[];
 }
@@ -82,7 +89,7 @@ function StatBlock({ label, value, color, suffix }: { label: string; value: stri
   );
 }
 
-function useAlertStripData(projectInfoId: number | null, projectName?: string) {
+function useAlertStripData(projectInfoId: number | null, projectName: string | undefined, gates: { quality: boolean; procurement: boolean }) {
   const token = localStorage.getItem("auth_token");
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -97,7 +104,7 @@ function useAlertStripData(projectInfoId: number | null, projectName?: string) {
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
-    enabled,
+    enabled: enabled && gates.procurement,
     staleTime: 60000,
     retry: false,
   });
@@ -138,7 +145,7 @@ function useAlertStripData(projectInfoId: number | null, projectName?: string) {
     retry: false,
   });
 
-  const qualityEnabled = !!projectName;
+  const qualityEnabled = !!projectName && gates.quality;
   const qualitySummary = useQuery<{
     governance?: {
       evidenceGapCount?: number;
@@ -220,7 +227,17 @@ function useAlertStripData(projectInfoId: number | null, projectName?: string) {
   };
 }
 
-function AlertStrip({ projectInfoId, projectName }: { projectInfoId: number | null; projectName?: string }) {
+function AlertStrip({
+  projectInfoId,
+  projectName,
+  canViewQuality,
+  canViewProcurement,
+}: {
+  projectInfoId: number | null;
+  projectName?: string;
+  canViewQuality: boolean;
+  canViewProcurement: boolean;
+}) {
   const [, setLocation] = useLocation();
   const {
     overdueProcurement,
@@ -235,7 +252,7 @@ function AlertStrip({ projectInfoId, projectName }: { projectInfoId: number | nu
     allLoading,
     allFailed,
     anyLoaded,
-  } = useAlertStripData(projectInfoId, projectName);
+  } = useAlertStripData(projectInfoId, projectName, { quality: canViewQuality, procurement: canViewProcurement });
 
   if (!projectInfoId) return null;
   if (allFailed) return null;
@@ -341,6 +358,7 @@ export function ProjectCommandHeader({
   contractValue, revenueRealisedPct, cosRealisedPct, marginDelta,
   scheduleRag, costRag, qualityRag, ragStatus,
   nextMilestone, projectInfoId, isAdmin, canSetRag,
+  canViewFinance, canViewQuality, canViewProcurement, importLineage,
   pdAssignableUsers, pmAssignableUsers,
 }: CommandHeaderProps) {
   const [, setLocation] = useLocation();
@@ -364,7 +382,7 @@ export function ProjectCommandHeader({
     },
     onSuccess: () => {
       toast({ title: "Health status updated" });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] });
+      invalidateProjectV2Queries(queryClient, projectInfoId, projectName);
       setRagDialogOpen(false);
       setRagComment("");
     },
@@ -391,6 +409,7 @@ export function ProjectCommandHeader({
 
   const phaseAccent = phase ? PHASE_ACCENT[phase] || "border-slate-400" : "border-slate-400";
   const nextMilestoneDisplay = formatNextMilestoneSummary(nextMilestone, { truncateAt: 18 });
+  const importStatus = summarizeImportLineage(importLineage);
 
   return (
     <div className="command-header" data-testid="project-command-header">
@@ -432,7 +451,7 @@ export function ProjectCommandHeader({
                           const newPd = val === "__unassigned" ? "" : val;
                           if (projectInfoId) {
                             engFetchPatch(`/api/lifecycle-board/projects/${projectInfoId}`, { pd: newPd })
-                              .then(() => { queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] }); });
+                              .then(() => { invalidateProjectV2Queries(queryClient, projectInfoId, projectName); });
                           }
                         }}
                         triggerClassName="h-6 text-[11px] w-auto min-w-[90px] border-[var(--cmd-border)] bg-transparent text-[var(--cmd-text-secondary)] border-dashed"
@@ -460,7 +479,7 @@ export function ProjectCommandHeader({
                           const matched = pmAssignableUsers.find((u) => u.name === newPm);
                           if (projectInfoId) {
                             engFetchPatch(`/api/lifecycle-board/projects/${projectInfoId}`, { pm: newPm, pmUserId: matched?.id ?? null })
-                              .then(() => { queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] }); });
+                              .then(() => { invalidateProjectV2Queries(queryClient, projectInfoId, projectName); });
                           }
                         }}
                         triggerClassName="h-6 text-[11px] w-auto min-w-[90px] border-[var(--cmd-border)] bg-transparent text-[var(--cmd-text-secondary)] border-dashed"
@@ -487,11 +506,25 @@ export function ProjectCommandHeader({
                     <TrendingUp className="h-3.5 w-3.5 text-[var(--cmd-text-muted)]" />
                     <span className="font-medium">{completion}</span>
                   </span>
+
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 ${
+                      importStatus.tone === "success"
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : importStatus.tone === "warning"
+                          ? "border-amber-200 bg-amber-50 text-amber-800"
+                          : "border-gray-200 bg-gray-50 text-gray-700"
+                    }`}
+                    data-testid="project-import-lineage"
+                    title={importStatus.detail}
+                  >
+                    Tracker import: <span className="font-semibold">{importStatus.label}</span>
+                  </span>
                 </div>
 
                 <div className="flex items-center gap-2">
                   <CaptureDeliverable projectId={projectInfoId ?? undefined} projectName={projectName} />
-                  <POGenerator projectName={projectName} projectManager={pm !== "—" ? pm : undefined} />
+                  {canViewProcurement && <POGenerator projectName={projectName} projectManager={pm !== "—" ? pm : undefined} />}
                 </div>
               </div>
 
@@ -521,29 +554,51 @@ export function ProjectCommandHeader({
             <div className="grid grid-cols-2 sm:grid-cols-5 divide-x divide-[var(--cmd-border)]">
               <div className="p-3 text-center" data-testid="kpi-contract">
                 <p className="text-[10px] font-medium text-[var(--cmd-text-muted)] uppercase tracking-wider mb-0.5">Contract</p>
-                <p className="text-base sm:text-lg font-bold text-[var(--cmd-text)]">R{(contractValue / 1000000).toFixed(1)}M</p>
+                {canViewFinance ? (
+                  <p className="text-base sm:text-lg font-bold text-[var(--cmd-text)]">R{(contractValue / 1000000).toFixed(1)}M</p>
+                ) : (
+                  <p className="text-xs font-semibold text-[var(--cmd-text-muted)]">Restricted</p>
+                )}
               </div>
               <div className="p-3 text-center" data-testid="kpi-revenue">
                 <p className="text-[10px] font-medium text-[var(--cmd-text-muted)] uppercase tracking-wider mb-0.5">Inflows Realised</p>
-                <p className={`text-base sm:text-lg font-bold ${revenueRealisedPct >= 80 ? "text-[var(--cmd-green)]" : revenueRealisedPct >= 40 ? "text-[var(--cmd-amber)]" : "text-[var(--cmd-text)]"}`}>{revenueRealisedPct.toFixed(1)}%</p>
+                {canViewFinance ? (
+                  <p className={`text-base sm:text-lg font-bold ${revenueRealisedPct >= 80 ? "text-[var(--cmd-green)]" : revenueRealisedPct >= 40 ? "text-[var(--cmd-amber)]" : "text-[var(--cmd-text)]"}`}>{revenueRealisedPct.toFixed(1)}%</p>
+                ) : (
+                  <p className="text-xs font-semibold text-[var(--cmd-text-muted)]">Restricted</p>
+                )}
               </div>
               <div className="p-3 text-center" data-testid="kpi-cos">
                 <p className="text-[10px] font-medium text-[var(--cmd-text-muted)] uppercase tracking-wider mb-0.5">COS Realised</p>
-                <p className="text-base sm:text-lg font-bold text-[var(--cmd-text)]">{cosRealisedPct.toFixed(1)}%</p>
+                {canViewFinance ? (
+                  <p className="text-base sm:text-lg font-bold text-[var(--cmd-text)]">{cosRealisedPct.toFixed(1)}%</p>
+                ) : (
+                  <p className="text-xs font-semibold text-[var(--cmd-text-muted)]">Restricted</p>
+                )}
               </div>
               <div className="p-3 text-center" data-testid="kpi-margin">
                 <p className="text-[10px] font-medium text-[var(--cmd-text-muted)] uppercase tracking-wider mb-0.5">Margin Δ</p>
-                <p className={`text-base sm:text-lg font-bold ${marginDelta >= 0 ? "text-[var(--cmd-green)]" : "text-[var(--cmd-red)]"}`}>
-                  {marginDelta >= 0 ? "+" : ""}{marginDelta.toFixed(1)}%
-                </p>
+                {canViewFinance ? (
+                  <p className={`text-base sm:text-lg font-bold ${marginDelta >= 0 ? "text-[var(--cmd-green)]" : "text-[var(--cmd-red)]"}`}>
+                    {marginDelta >= 0 ? "+" : ""}{marginDelta.toFixed(1)}%
+                  </p>
+                ) : (
+                  <p className="text-xs font-semibold text-[var(--cmd-text-muted)]">Restricted</p>
+                )}
               </div>
               <div className="p-3 text-center col-span-2 sm:col-span-1" data-testid="kpi-milestone">
                 <p className="text-[10px] font-medium text-[var(--cmd-text-muted)] uppercase tracking-wider mb-0.5">Next Milestone</p>
-                <p className={`text-xs font-semibold truncate ${nextMilestoneDisplay.allPaid ? "text-[var(--cmd-green)]" : "text-[var(--cmd-text-secondary)]"}`}>
-                  {nextMilestoneDisplay.label}
-                </p>
-                {nextMilestoneDisplay.dateLabel && (
-                  <p className="text-[10px] text-[var(--cmd-text-muted)] mt-0.5">{nextMilestoneDisplay.dateLabel}</p>
+                {canViewFinance ? (
+                  <>
+                    <p className={`text-xs font-semibold truncate ${nextMilestoneDisplay.allPaid ? "text-[var(--cmd-green)]" : "text-[var(--cmd-text-secondary)]"}`}>
+                      {nextMilestoneDisplay.label}
+                    </p>
+                    {nextMilestoneDisplay.dateLabel && (
+                      <p className="text-[10px] text-[var(--cmd-text-muted)] mt-0.5">{nextMilestoneDisplay.dateLabel}</p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-xs font-semibold text-[var(--cmd-text-muted)]">Restricted</p>
                 )}
               </div>
             </div>
@@ -561,7 +616,12 @@ export function ProjectCommandHeader({
             </div>
           </div>
 
-          <AlertStrip projectInfoId={projectInfoId} projectName={projectName} />
+          <AlertStrip
+            projectInfoId={projectInfoId}
+            projectName={projectName}
+            canViewQuality={canViewQuality}
+            canViewProcurement={canViewProcurement}
+          />
         </div>
       </div>
 

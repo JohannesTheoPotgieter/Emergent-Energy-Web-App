@@ -15,6 +15,7 @@ vi.mock("../../server/api/v2/repositories/project-v2-repository", async (importO
     getProjectMetricsFromMaterialized: vi.fn(),
     getProjectPlanSummary: vi.fn(),
     getProjectQualitySummary: vi.fn(),
+    getLatestProjectImportRun: vi.fn(),
   };
 });
 
@@ -59,6 +60,7 @@ describe("project-v2 service regressions", () => {
     } as any);
     vi.mocked(repo.getProjectPlanSummary).mockResolvedValue({ taskCount: 0, tasksCompleted: 0, tasksInProgress: 0, tasksOverdue: 0, tasksActive: 0, completionPct: null } as any);
     vi.mocked(repo.getProjectQualitySummary).mockResolvedValue({ checklistProgress: null, openWarnings: 0 } as any);
+    vi.mocked(repo.getLatestProjectImportRun).mockResolvedValue(null as any);
 
     const result = await service.getConsolidatedProjectService(12);
     expect(result.financeSummary.totalRevenue).toBe(900);

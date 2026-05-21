@@ -81,7 +81,7 @@ export function useProjectEngineering(projectId: number | undefined, enabled: bo
   });
 }
 
-export function invalidateProjectV2Queries(queryClient: QueryClient, projectId: number | null | undefined) {
+export function invalidateProjectV2Queries(queryClient: QueryClient, projectId: number | null | undefined, projectName?: string | null) {
   if (!projectId) return;
   queryClient.invalidateQueries({ queryKey: ["v2-project-detail", projectId] });
   queryClient.invalidateQueries({ queryKey: ["v2-project-finance", projectId] });
@@ -90,4 +90,14 @@ export function invalidateProjectV2Queries(queryClient: QueryClient, projectId: 
   queryClient.invalidateQueries({ queryKey: ["v2-project-engineering", projectId] });
   queryClient.invalidateQueries({ queryKey: ["project-header-kpis", projectId] });
   queryClient.invalidateQueries({ queryKey: ["health-summary"] });
+  if (projectName) {
+    queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] });
+    queryClient.invalidateQueries({ queryKey: ["project-plan", projectName] });
+    queryClient.invalidateQueries({ queryKey: ["health-summary", projectName] });
+    queryClient.invalidateQueries({ queryKey: ["program-inflows", projectName] });
+    queryClient.invalidateQueries({ queryKey: ["program-expenses", projectName] });
+    queryClient.invalidateQueries({ queryKey: ["revenue-tab", projectName] });
+    queryClient.invalidateQueries({ queryKey: ["expenditure-breakdown", projectName, projectId] });
+    queryClient.invalidateQueries({ queryKey: ["cashflow", projectName] });
+  }
 }

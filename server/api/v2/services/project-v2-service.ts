@@ -265,17 +265,68 @@ function toNum(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function toIso(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString();
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function buildImportLineage(run: Awaited<ReturnType<typeof repo.getLatestProjectImportRun>>) {
+  if (!run) {
+    return {
+      latestImport: null,
+      freshness: {
+        state: "missing" as const,
+        daysSinceImport: null,
+        warning: "No committed tracker import found",
+      },
+    };
+  }
+
+  const committedAt = toIso(run.committedAt);
+  const uploadedAt = toIso(run.uploadedAt);
+  const effectiveAt = committedAt ?? uploadedAt;
+  const daysSinceImport = effectiveAt
+    ? Math.floor((Date.now() - new Date(effectiveAt).getTime()) / 86_400_000)
+    : null;
+  const state = daysSinceImport === null
+    ? "unknown"
+    : daysSinceImport > 7
+      ? "stale"
+      : "live";
+
+  return {
+    latestImport: {
+      importRunId: run.importRunId,
+      sourceFileName: run.sourceFileName,
+      importType: run.importType,
+      status: run.status,
+      uploadedAt,
+      committedAt,
+      recordsSucceeded: run.recordsSucceeded,
+      recordsFailed: run.recordsFailed,
+    },
+    freshness: {
+      state,
+      daysSinceImport,
+      warning: state === "stale" ? `Tracker import is ${daysSinceImport} days old` : null,
+    },
+  };
+}
+
 export async function getConsolidatedProjectService(projectId: number) {
   const project = await repo.getProjectById(projectId);
   if (!project) throw new ApiV2Error("NOT_FOUND", 404, "Project not found");
 
-  const [execState, settings, team, metrics, planSummary, qualitySummary] = await Promise.all([
+  const [execState, settings, team, metrics, planSummary, qualitySummary, latestImportRun] = await Promise.all([
     repo.getProjectExecutionState(projectId),
     repo.getProjectSettings(projectId),
     repo.getProjectTeam(projectId),
     repo.getProjectMetricsFromMaterialized(projectId),
     repo.getProjectPlanSummary(projectId),
     repo.getProjectQualitySummary(projectId),
+    repo.getLatestProjectImportRun(projectId, project.projectName),
   ]);
 
   const financeSummary = {
@@ -319,6 +370,7 @@ export async function getConsolidatedProjectService(projectId: number) {
     planSummary,
     qualitySummary,
     team,
+    importLineage: buildImportLineage(latestImportRun),
     // permissions added by controller
   };
 }

@@ -24,10 +24,10 @@ describe("Project detail hook contract", () => {
     expect(chipHook).toBeLessThan(notFoundGuard);
   });
 
-  it("keeps the default department/subtab on PM plan route", () => {
+  it("keeps the default department/subtab on the command-centre route", () => {
     const source = fs.readFileSync(SOURCE_PATH, "utf8");
 
-    expect(source).toContain('const [activeDept, setActiveDept] = useState<string>(resolvedFromUrl?.dept || "pm")');
-    expect(source).toContain('const [activeSubTab, setActiveSubTab] = useState<string>(resolvedFromUrl?.subTab || "plan")');
+    expect(source).toContain('const [activeDept, setActiveDept] = useState<string>(resolvedFromUrl?.dept || "overview")');
+    expect(source).toContain('const [activeSubTab, setActiveSubTab] = useState<string>(resolvedFromUrl?.sub || "command")');
   });
 });
