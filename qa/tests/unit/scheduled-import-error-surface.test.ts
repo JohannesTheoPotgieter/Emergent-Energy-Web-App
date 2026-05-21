@@ -37,94 +37,142 @@ function read(relPath: string): string {
   return fs.readFileSync(path.join(process.cwd(), relPath), "utf8");
 }
 
-describe("Scheduled import — failure envelope persistence", () => {
+describe("Shared failure envelope — applies to both folder + file imports", () => {
+  const envelopeSrc = read("server/lib/import/failure-envelope.ts");
   const schedulerSrc = read("server/services/scheduled-import-v2.ts");
+  const routeSrc = read("server/smart-import-routes.ts");
 
-  it("declares the operator-facing failure envelope shape", () => {
-    expect(schedulerSrc).toContain("interface FileFailureEnvelope");
-    expect(schedulerSrc).toContain('step: "download" | "preview" | "planner" | "auto_commit"');
-    expect(schedulerSrc).toContain("message: string");
-    expect(schedulerSrc).toContain("raw: string");
-    expect(schedulerSrc).toContain("failedAt: string");
-    expect(schedulerSrc).toContain("fileName: string");
+  it("declares the operator-facing envelope shape in a shared module", () => {
+    expect(envelopeSrc).toContain("interface ImportFailureEnvelope");
+    expect(envelopeSrc).toContain('"upload"');
+    expect(envelopeSrc).toContain('"download"');
+    expect(envelopeSrc).toContain('"preview"');
+    expect(envelopeSrc).toContain('"planner"');
+    expect(envelopeSrc).toContain('"auto_commit"');
+    expect(envelopeSrc).toContain('"commit"');
+    expect(envelopeSrc).toContain("message: string");
+    expect(envelopeSrc).toContain("raw: string");
+    expect(envelopeSrc).toContain("failedAt: string");
+    expect(envelopeSrc).toContain("fileName: string");
   });
 
-  it("buildFailureMessage adds operator-friendly suggestions for known error patterns", () => {
-    expect(schedulerSrc).toContain("Re-authorise the SharePoint connection");
-    expect(schedulerSrc).toContain("Grant the integration user read access");
-    expect(schedulerSrc).toContain("file may have been moved or renamed");
-    expect(schedulerSrc).toContain("scheduler will retry on the next tick");
-    expect(schedulerSrc).toContain("Re-export the file from Excel");
-    expect(schedulerSrc).toContain("Add the project to the app first");
+  it("buildImportFailureEnvelope adds operator-friendly suggestions for known error patterns", () => {
+    expect(envelopeSrc).toContain("Re-authorise the SharePoint connection");
+    expect(envelopeSrc).toContain("Grant the integration user read access");
+    expect(envelopeSrc).toContain("file may have been moved or renamed");
+    expect(envelopeSrc).toContain("scheduler will retry on the next tick");
+    expect(envelopeSrc).toContain("Re-export the file from Excel");
+    expect(envelopeSrc).toContain("Add the project to the app first");
+    expect(envelopeSrc).toContain("Split the workbook"); // upload size-limit hint
+    expect(envelopeSrc).toContain("rows you previously deleted"); // resurrection hint
   });
 
-  it("recordFailedFileRun persists failures as a smart_import_runs row so the Tower can show them", () => {
-    expect(schedulerSrc).toContain("async function recordFailedFileRun");
-    expect(schedulerSrc).toContain('status: "failed"');
-    expect(schedulerSrc).toContain("error: envelope,");
+  it("persistFailedImportRun inserts a `failed` smart_import_runs row with the envelope", () => {
+    expect(envelopeSrc).toContain("export async function persistFailedImportRun");
+    expect(envelopeSrc).toContain('status: "failed"');
+    expect(envelopeSrc).toContain("error: opts.envelope,");
   });
 
-  it("download failure path uses the envelope + persists a failed run", () => {
-    expect(schedulerSrc).toMatch(
-      /buildFailureMessage\("download",\s*fileName,\s*err\)/,
-    );
-    // After the download try/catch we must call recordFailedFileRun before
-    // returning. The proximity check guards against a future refactor that
-    // re-introduces the silent-drop behaviour.
-    const downloadIdx = schedulerSrc.indexOf('buildFailureMessage("download"');
-    const recordIdx = schedulerSrc.indexOf("recordFailedFileRun", downloadIdx);
-    expect(downloadIdx).toBeGreaterThan(0);
-    expect(recordIdx).toBeGreaterThan(downloadIdx);
-    expect(recordIdx - downloadIdx).toBeLessThan(400); // both within the same catch block
+  it("scheduler uses the shared envelope on every failure path", () => {
+    expect(schedulerSrc).toContain('from "../lib/import/failure-envelope"');
+    expect(schedulerSrc).toContain('buildImportFailureEnvelope("download"');
+    expect(schedulerSrc).toContain('buildImportFailureEnvelope("preview"');
+    expect(schedulerSrc).toContain('buildImportFailureEnvelope("auto_commit"');
+    expect(schedulerSrc).toContain("persistFailedImportRun({");
   });
 
-  it("preview failure path uses the envelope + persists a failed run", () => {
-    expect(schedulerSrc).toContain('buildFailureMessage("preview"');
-    const previewIdx = schedulerSrc.indexOf('buildFailureMessage("preview"');
-    const recordIdx = schedulerSrc.indexOf("recordFailedFileRun", previewIdx);
-    expect(previewIdx).toBeGreaterThan(0);
-    expect(recordIdx).toBeGreaterThan(previewIdx);
-    expect(recordIdx - previewIdx).toBeLessThan(400);
+  it("manual /upload route uses the same shared envelope", () => {
+    expect(routeSrc).toContain('from "./lib/import/failure-envelope"');
+    expect(routeSrc).toContain('buildImportFailureEnvelope("upload"');
+    expect(routeSrc).toContain("persistFailedImportRun({");
+    expect(routeSrc).toContain('manualUpload: { triggerType: "manual" }');
   });
 
-  it("auto-commit failure folds the envelope into the existing run's summaryJson", () => {
-    expect(schedulerSrc).toContain('buildFailureMessage("auto_commit"');
-    expect(schedulerSrc).toContain("summaryJson: { ...summaryJson, error: envelope }");
+  it("manual upload returns the failed run id so the client can deep-link to the Tower", () => {
+    expect(routeSrc).toContain("failedRunId,");
   });
 });
 
-describe("Import Control Tower — error surface wiring", () => {
+describe("Folder-batch grouping — one batchRunId per scheduler tick", () => {
+  const schedulerSrc = read("server/services/scheduled-import-v2.ts");
   const routeSrc = read("server/smart-import-routes.ts");
+
+  it("scheduler mints a batchRunId once per tick and threads it through every file", () => {
+    expect(schedulerSrc).toContain("makeBatchRunId");
+    expect(schedulerSrc).toContain("const batchRunId = makeBatchRunId()");
+    expect(schedulerSrc).toContain("result.batchRunId = batchRunId");
+  });
+
+  it("processFileV2 takes the batchRunId and stamps it on every summaryJson", () => {
+    expect(schedulerSrc).toContain("batchRunId: string,");
+    expect(schedulerSrc).toContain("schedulerV2: { triggerType: \"schedule\", batchRunId }");
+    expect(schedulerSrc).toContain("batchRunId,"); // also stamped on the success path
+  });
+
+  it("ScheduledImportV2Result surfaces the batch id so the caller can route to it", () => {
+    expect(schedulerSrc).toContain("batchRunId: string | null;");
+  });
+
+  it("history endpoint extracts batchRunId + source from each run's summaryJson", () => {
+    expect(routeSrc).toContain("summary.schedulerV2.batchRunId");
+    expect(routeSrc).toContain('source: "scheduler" | "manual"');
+    expect(routeSrc).toContain("batchRunId,");
+  });
+
+  it("history endpoint accepts ?batchRunId= to filter to a single folder pickup", () => {
+    expect(routeSrc).toContain('req.query.batchRunId');
+    expect(routeSrc).toContain("filtered.filter((r: any) => {");
+    expect(routeSrc).toContain("sched.batchRunId === batchRunId");
+  });
+});
+
+describe("Import Control Tower — error rendering + back-link wiring", () => {
   const towerSrc = read("client/src/pages/import-control-tower.tsx");
 
-  it("history endpoint exposes errorMessage / errorStep / errorAt on every run", () => {
-    expect(routeSrc).toContain("errorMessage: errorEnvelope?.message ?? null");
-    expect(routeSrc).toContain("errorStep: errorEnvelope?.step ?? null");
-    expect(routeSrc).toContain("errorAt: errorEnvelope?.failedAt ?? null");
-  });
-
-  it("history endpoint reads the envelope from summaryJson.error", () => {
-    expect(routeSrc).toContain("summary.error && typeof summary.error === \"object\"");
-    expect(routeSrc).toContain("summary.error.message");
-    expect(routeSrc).toContain("summary.error.step");
-  });
-
-  it("Tower row type includes the error fields", () => {
+  it("row type includes error + batch + source fields", () => {
     expect(towerSrc).toContain("errorMessage: string | null");
-    expect(towerSrc).toContain("errorStep:");
-    expect(towerSrc).toContain("errorAt: string | null");
+    expect(towerSrc).toContain('errorStep: "upload"');
+    expect(towerSrc).toContain("batchRunId: string | null");
+    expect(towerSrc).toContain('source: "scheduler" | "manual"');
   });
 
-  it("Tower renders the error inline in the expanded row", () => {
-    expect(towerSrc).toContain("run.errorMessage &&");
+  it("expanded row covers every error step label", () => {
+    expect(towerSrc).toContain("Could not accept the upload");
     expect(towerSrc).toContain("Could not download from SharePoint");
     expect(towerSrc).toContain("Could not parse the workbook");
     expect(towerSrc).toContain("Could not plan the import");
     expect(towerSrc).toContain("Auto-commit failed");
+    expect(towerSrc).toContain("Commit failed");
   });
 
-  it("Tower attaches the error message as a tooltip on the failed status badge", () => {
-    expect(towerSrc).toContain("title={run.errorMessage}");
-    expect(towerSrc).toContain('data-testid={`status-with-error-${run.id}`}');
+  it("Tower reads ?batchRunId= from the URL and renders the batch-context banner", () => {
+    expect(towerSrc).toContain('batchRunIdFromUrl');
+    expect(towerSrc).toContain('data-testid="batch-context-banner"');
+    expect(towerSrc).toContain("Folder Import Batch");
+    expect(towerSrc).toContain('data-testid="button-clear-batch-filter"');
+  });
+
+  it("Tower exposes Source + Batch in the expanded row", () => {
+    expect(towerSrc).toContain('data-testid={`text-source-${run.id}`}');
+    expect(towerSrc).toContain("Folder pickup (scheduled)");
+    expect(towerSrc).toContain("Manual upload");
+    expect(towerSrc).toContain('data-testid={`link-back-to-batch-${run.id}`}');
+  });
+
+  it("Open-in-wizard button preserves the batch context via URL", () => {
+    expect(towerSrc).toContain('data-testid={`button-open-wizard-${run.id}`}');
+    expect(towerSrc).toContain("/admin/smart-import?");
+    expect(towerSrc).toContain('qs.set("batchRunId", carryBatch)');
+    expect(towerSrc).toContain('qs.set("runId", String(run.id))');
+  });
+});
+
+describe("Smart Import wizard — back-to-batch link from a folder-sourced file", () => {
+  const wizardSrc = read("client/src/pages/smart-import.tsx");
+
+  it("wizard reads ?batchRunId= and renders the back-to-folder banner", () => {
+    expect(wizardSrc).toContain('data-testid="batch-context-banner"');
+    expect(wizardSrc).toContain("← Back to folder import results");
+    expect(wizardSrc).toContain('/admin/import-control-tower?batchRunId=');
   });
 });

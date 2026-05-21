@@ -25,6 +25,7 @@ import {
   Eye,
   Upload,
   Filter,
+  ExternalLink,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -47,12 +48,19 @@ interface ImportRun {
   unresolvedBlockers: number;
   unresolvedWarnings: number;
   resolvedIssues: number;
-  // Operator-friendly error envelope from scheduled-import-v2 when a file
-  // failed download/preview/auto-commit. Null on success or when the run
-  // pre-dates the failure-envelope persistence.
+  // Operator-friendly error envelope from scheduled-import-v2 or the
+  // manual /api/smart-import/upload route. Null on success or when the
+  // run pre-dates the failure-envelope persistence.
   errorMessage: string | null;
-  errorStep: "download" | "preview" | "planner" | "auto_commit" | null;
+  errorStep: "upload" | "download" | "preview" | "planner" | "auto_commit" | "commit" | null;
   errorAt: string | null;
+  // Folder-pickup batch id (one per scheduler tick) so the Tower can
+  // group all files from the same pickup behind a single
+  // ?batchRunId=… URL and the smart-import wizard can show a "Back to
+  // batch" link from a single file detail.
+  batchRunId: string | null;
+  /** "scheduler" = folder pickup, "manual" = single-file upload. */
+  source: "scheduler" | "manual";
 }
 
 interface ImportIssue {
@@ -126,8 +134,18 @@ export default function ImportControlTowerPage() {
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [expandedRun, setExpandedRun] = useState<number | null>(null);
 
+  // `?batchRunId=…` filters the tower to a single folder-pickup batch —
+  // the "folder import completion screen". The smart-import wizard, the
+  // toast that fires after a manual pickup, and the link in the
+  // expanded-row "Back to batch" affordance all route here.
+  const batchRunIdFromUrl = (() => {
+    if (typeof window === "undefined") return null;
+    const v = new URLSearchParams(window.location.search).get("batchRunId");
+    return v && v.trim().length > 0 ? v : null;
+  })();
+
   const { data: runs = [], isLoading, isError, error, refetch } = useQuery<ImportRun[]>({
-    queryKey: ["/api/import-control-tower/history", typeFilter, statusFilter],
+    queryKey: ["/api/import-control-tower/history", typeFilter, statusFilter, batchRunIdFromUrl],
     queryFn: async () => {
       const token = localStorage.getItem("auth_token");
       const headers: Record<string, string> = {};
@@ -135,6 +153,7 @@ export default function ImportControlTowerPage() {
       const params = new URLSearchParams();
       if (typeFilter !== "all") params.set("importType", typeFilter);
       if (statusFilter !== "all") params.set("status", statusFilter);
+      if (batchRunIdFromUrl) params.set("batchRunId", batchRunIdFromUrl);
       const res = await fetch(`/api/import-control-tower/history?${params.toString()}`, { headers, credentials: "include" });
       if (!res.ok) throw new Error("Failed to load import history");
       return res.json();
@@ -190,8 +209,12 @@ export default function ImportControlTowerPage() {
       data-testid="import-control-tower-page"
       header={
         <PageHeader
-          title="Import Control Tower"
-          subtitle="Monitor, investigate, and retry all import operations"
+          title={batchRunIdFromUrl ? "Folder Import Batch" : "Import Control Tower"}
+          subtitle={
+            batchRunIdFromUrl
+              ? `Files picked up in batch ${batchRunIdFromUrl}`
+              : "Monitor, investigate, and retry all import operations"
+          }
           actions={
             <Button
               data-testid="button-refresh"
@@ -205,6 +228,63 @@ export default function ImportControlTowerPage() {
         />
       }
     >
+      {batchRunIdFromUrl && (
+        <div
+          className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900"
+          data-testid="batch-context-banner"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-semibold">Viewing one folder-pickup batch</p>
+              <p className="text-xs">
+                Showing every file picked up by the scheduler in this run.
+                Open any file's details — the back-link returns here.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              data-testid="button-clear-batch-filter"
+              onClick={() => {
+                window.location.href = "/admin/import-control-tower";
+              }}
+            >
+              View all runs →
+            </Button>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-5">
+            <div>
+              <span className="text-blue-700">Files</span>
+              <div className="text-base font-semibold">{runs.length}</div>
+            </div>
+            <div>
+              <span className="text-blue-700">Committed</span>
+              <div className="text-base font-semibold text-emerald-700">
+                {runs.filter((r) => r.status === "committed").length}
+              </div>
+            </div>
+            <div>
+              <span className="text-blue-700">Pending</span>
+              <div className="text-base font-semibold text-blue-700">
+                {runs.filter((r) => r.status === "preview" || r.status === "awaiting_review").length}
+              </div>
+            </div>
+            <div>
+              <span className="text-blue-700">Failed</span>
+              <div className="text-base font-semibold text-red-700">
+                {runs.filter((r) => r.status === "failed").length}
+              </div>
+            </div>
+            <div>
+              <span className="text-blue-700">Skipped</span>
+              <div className="text-base font-semibold">
+                {runs.filter((r) => r.status === "skipped" || r.status === "superseded").length}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <Card>
           <CardContent className="pt-4 pb-3 text-center">
@@ -373,8 +453,26 @@ export default function ImportControlTowerPage() {
                               size="sm"
                               onClick={() => setSelectedRunId(run.id)}
                               disabled={run.totalIssues === 0}
+                              title="View issues"
                             >
                               <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              data-testid={`button-open-wizard-${run.id}`}
+                              variant="ghost"
+                              size="sm"
+                              title="Open in Smart Import wizard"
+                              onClick={() => {
+                                // Preserve the batch context so the wizard
+                                // can show "Back to folder import results".
+                                const carryBatch = run.batchRunId ?? batchRunIdFromUrl;
+                                const qs = new URLSearchParams();
+                                qs.set("runId", String(run.id));
+                                if (carryBatch) qs.set("batchRunId", carryBatch);
+                                window.location.href = `/admin/smart-import?${qs.toString()}`;
+                              }}
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
                             </Button>
                             {(run.status === "FAILED" || run.status === "ROLLED_BACK") && (
                               <Button
@@ -383,6 +481,7 @@ export default function ImportControlTowerPage() {
                                 size="sm"
                                 onClick={() => retryMutation.mutate(run.id)}
                                 disabled={retryMutation.isPending}
+                                title="Retry import"
                               >
                                 <RotateCcw className="h-3.5 w-3.5" />
                               </Button>
@@ -402,10 +501,12 @@ export default function ImportControlTowerPage() {
                                   <XCircle className="h-4 w-4 mt-0.5 shrink-0 text-red-700" />
                                   <div className="min-w-0">
                                     <p className="text-xs font-semibold uppercase tracking-wide text-red-700">
+                                      {run.errorStep === "upload" && "Could not accept the upload"}
                                       {run.errorStep === "download" && "Could not download from SharePoint"}
                                       {run.errorStep === "preview" && "Could not parse the workbook"}
                                       {run.errorStep === "planner" && "Could not plan the import"}
                                       {run.errorStep === "auto_commit" && "Auto-commit failed"}
+                                      {run.errorStep === "commit" && "Commit failed"}
                                       {!run.errorStep && "Import failure"}
                                     </p>
                                     <p className="mt-1 text-sm text-red-900">{run.errorMessage}</p>
@@ -419,6 +520,12 @@ export default function ImportControlTowerPage() {
                               </div>
                             )}
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                              <div>
+                                <span className="text-muted-foreground">Source:</span>
+                                <div className="mt-1" data-testid={`text-source-${run.id}`}>
+                                  {run.source === "scheduler" ? "Folder pickup (scheduled)" : "Manual upload"}
+                                </div>
+                              </div>
                               <div>
                                 <span className="text-muted-foreground">Sections:</span>
                                 <div className="flex gap-1 mt-1 flex-wrap">
@@ -439,6 +546,26 @@ export default function ImportControlTowerPage() {
                                 <span className="text-muted-foreground">Import Type:</span>
                                 <div className="mt-1">{run.importType || "—"}</div>
                               </div>
+                              {run.batchRunId && (
+                                <div>
+                                  <span className="text-muted-foreground">Batch:</span>
+                                  <div className="mt-1">
+                                    {batchRunIdFromUrl === run.batchRunId ? (
+                                      <span className="text-xs text-muted-foreground" data-testid={`text-batch-current-${run.id}`}>
+                                        Viewing this batch
+                                      </span>
+                                    ) : (
+                                      <a
+                                        href={`/admin/import-control-tower?batchRunId=${encodeURIComponent(run.batchRunId)}`}
+                                        className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline"
+                                        data-testid={`link-back-to-batch-${run.id}`}
+                                      >
+                                        ← Open batch
+                                      </a>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>
