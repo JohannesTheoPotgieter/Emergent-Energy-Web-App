@@ -14,13 +14,33 @@ function isExcelError(value: any): boolean {
 function excelSerialToDate(serial: number): { y: number; m: number; d: number } | null {
   if (serial < 1) return null;
   if (serial > 59) serial -= 1;
-  const epoch = new Date(1899, 11, 31);
-  const date = new Date(epoch.getTime() + serial * 86400000);
-  return { y: date.getFullYear(), m: date.getMonth() + 1, d: date.getDate() };
+  // Anchor on UTC midnight Dec 31, 1899 so the day-arithmetic is server-TZ-independent.
+  // Reading via getUTC* preserves the calendar day regardless of process.env.TZ.
+  const epoch = Date.UTC(1899, 11, 31);
+  const date = new Date(epoch + serial * 86400000);
+  return { y: date.getUTCFullYear(), m: date.getUTCMonth() + 1, d: date.getUTCDate() };
 }
 
 function isDateLike(v: any): v is Date {
   return v != null && Object.prototype.toString.call(v) === "[object Date]" && !isNaN((v as Date).getTime());
+}
+
+function dateObjectToYmd(d: Date): string {
+  // ExcelJS returns date cells as JS Date objects. Excel cell formats are
+  // calendar-day values with no timezone, but the resulting Date can carry a
+  // wall-clock offset from whatever timezone the file was saved in. Compare
+  // the UTC representation to the local representation and use whichever
+  // pins the day at midnight — that's the "intended" calendar day.
+  const utcMidnight = d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0;
+  if (utcMidnight) {
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+  }
+  const localMidnight = d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0;
+  if (localMidnight) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  // Neither end is midnight (mixed wall-clock): fall back to UTC components.
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 }
 
 export function parseDate(value: any): string | null {
@@ -36,12 +56,12 @@ export function parseDate(value: any): string | null {
   }
 
   if (isDateLike(value)) {
-    return (value as Date).toISOString().split("T")[0];
+    return dateObjectToYmd(value as Date);
   }
 
   if (value instanceof Date) {
     if (isNaN(value.getTime())) return null;
-    return value.toISOString().split("T")[0];
+    return dateObjectToYmd(value);
   }
 
   if (typeof value === "number") {
@@ -56,25 +76,33 @@ export function parseDate(value: any): string | null {
   }
 
   if (typeof value === "string") {
-    // Match canonical date-only forms first to avoid local-timezone drift
-    // from `new Date(...)` interpreting "YYYY-MM-DD" as UTC midnight.
-    const yyyymmdd = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (yyyymmdd) {
-      return value.substring(0, 10);
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    // YYYY-MM-DD or YYYY/MM/DD or YYYY.MM.DD — calendar form, no TZ shift.
+    const ymd = trimmed.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[T\s]|$)/);
+    if (ymd) {
+      const [, y, m, d] = ymd;
+      if (Number(m) >= 1 && Number(m) <= 12 && Number(d) >= 1 && Number(d) <= 31) {
+        return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+      }
     }
 
-    const ddmmyyyy = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-    if (ddmmyyyy) {
-      const [, day, month, year] = ddmmyyyy;
-      return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    // DD/MM/YYYY or DD-MM-YYYY (South African / European order).
+    const dmy = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+    if (dmy) {
+      const [, day, month, year] = dmy;
+      if (Number(month) >= 1 && Number(month) <= 12 && Number(day) >= 1 && Number(day) <= 31) {
+        return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+      }
     }
 
-    const parsed = new Date(value);
+    // Fall back to JS Date parser, then extract via UTC components so the
+    // calendar day survives on non-UTC servers (Replit defaults to UTC, but
+    // the SAST Replit project setup can override TZ to Africa/Johannesburg).
+    const parsed = new Date(trimmed);
     if (!isNaN(parsed.getTime())) {
-      const year = parsed.getUTCFullYear();
-      const month = String(parsed.getUTCMonth() + 1).padStart(2, "0");
-      const day = String(parsed.getUTCDate()).padStart(2, "0");
-      return `${year}-${month}-${day}`;
+      return dateObjectToYmd(parsed);
     }
   }
 
@@ -116,16 +144,46 @@ export function parsePercent(value: any): string | null {
 
 export function parseStatus(value: any): number | null {
   if (value === null || value === undefined || value === "") return null;
+  if (isExcelError(value)) return null;
+
+  // ExcelJS formula cell — unwrap to the cached result before measuring.
+  if (typeof value === "object" && !isDateLike(value) && "result" in value) {
+    value = (value as any).result;
+    if (value === null || value === undefined || value === "") return null;
+    if (isExcelError(value)) return null;
+  }
+
+  // Excel boolean cells. Tracker workbooks occasionally use TRUE/FALSE as
+  // "done / not started" markers; treat them as 100% / 0%.
+  if (typeof value === "boolean") {
+    return value ? 1 : 0;
+  }
 
   if (typeof value === "number") {
-    return value > 1 ? value / 100 : value;
+    if (!Number.isFinite(value)) return null;
+    if (value < 0) return 0;
+    if (value <= 1) return value;
+    if (value <= 100) return value / 100;
+    return 1; // defensive clamp — values >100 stored as 100% complete
   }
 
   if (typeof value === "string") {
-    const num = parseFloat(value.replace(/%/g, ""));
-    if (!isNaN(num)) {
-      return num > 1 ? num / 100 : num;
-    }
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    // Plain status keywords used in older trackers. The workbook usually
+    // also has a numeric % column, but when a tracker has only the text
+    // version we still want sensible defaults.
+    const lower = trimmed.toLowerCase();
+    if (lower === "complete" || lower === "completed" || lower === "done") return 1;
+    if (lower === "not started" || lower === "not-started") return 0;
+
+    const num = parseFloat(trimmed.replace(/%/g, ""));
+    if (!Number.isFinite(num)) return null;
+    if (num < 0) return 0;
+    if (num <= 1) return num;
+    if (num <= 100) return num / 100;
+    return 1;
   }
 
   return null;

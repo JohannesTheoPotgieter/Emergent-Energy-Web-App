@@ -13,7 +13,7 @@ import { Progress } from "@/components/ui/progress";
 import {
   Upload, FileSpreadsheet, CheckCircle2, AlertCircle, AlertTriangle,
   Info, ArrowRight, ArrowLeft, Loader2, X, XCircle, Check, ChevronDown, ChevronUp,
-  Pencil, History, Zap, SkipForward,
+  Pencil, History, Zap, SkipForward, Trash2,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import {
@@ -2456,6 +2456,20 @@ export function PreviewCommitStep({
     }>;
   } | null>(null);
   const [v2ConflictResolutions, setV2ConflictResolutions] = useState<Record<string, "keep_app" | "accept_file">>({});
+  const [resurrectionWarning, setResurrectionWarning] = useState<{
+    message: string;
+    candidates: Array<{
+      resurrectionKey: string;
+      section: "PLAN" | "REVENUE" | "EXPENDITURE";
+      rowLabel: string;
+      businessKey: string;
+      deletedRowId: number;
+      deletedAt: string | null;
+      filePreview: Record<string, string | number | null>;
+      deletedPreview: Record<string, string | number | null>;
+    }>;
+  } | null>(null);
+  const [resurrectionDecisions, setResurrectionDecisions] = useState<Record<string, "keep_deleted" | "restore_and_apply">>({});
   const [previouslyDeletedWarning, setPreviouslyDeletedWarning] = useState<{ message: string; deletedBy: string; deletedAt: string } | null>(null);
   const [recencyWarning, setRecencyWarning] = useState<{ message: string; error: string } | null>(null);
   const [blockerWarning, setBlockerWarning] = useState<{
@@ -2512,9 +2526,13 @@ export function PreviewCommitStep({
     try {
       // Auto-include any pending v2 conflict resolutions (preserves manual edits across multi-step flows).
       const hasV2Resolutions = Object.keys(v2ConflictResolutions).length > 0;
+      const hasResurrectionDecisions = Object.keys(resurrectionDecisions).length > 0;
       const body: Record<string, any> = { ...extraBody };
       if (hasV2Resolutions && body.v2ConflictResolutions === undefined) {
         body.v2ConflictResolutions = v2ConflictResolutions;
+      }
+      if (hasResurrectionDecisions && body.resurrectionDecisions === undefined) {
+        body.resurrectionDecisions = resurrectionDecisions;
       }
       const res = await fetch(`/api/smart-import/${runId}/commit`, {
         method: "POST",
@@ -2533,6 +2551,8 @@ export function PreviewCommitStep({
         setDuplicateProjectWarning(null);
         setV2ConflictsWarning(null);
         setV2ConflictResolutions({});
+        setResurrectionWarning(null);
+        setResurrectionDecisions({});
         toast({ title: "Import Committed!", description: "Data has been imported successfully" });
       } else {
         const err = await res.json().catch(() => ({ error: "Commit failed" }));
@@ -2555,6 +2575,21 @@ export function PreviewCommitStep({
             }
           }
           setV2ConflictResolutions(defaults);
+        } else if (err.error === "resurrection_decision_required") {
+          // File contains rows the operator previously deleted in the
+          // app. The server refuses to silently re-insert. Surface the
+          // list and force a per-row choice. Default to "keep_deleted"
+          // so the operator's prior delete intent wins unless they
+          // explicitly opt to restore.
+          setResurrectionWarning({
+            message: err.message,
+            candidates: err.resurrections || [],
+          });
+          const defaults: Record<string, "keep_deleted" | "restore_and_apply"> = {};
+          for (const c of err.resurrections || []) {
+            defaults[c.resurrectionKey] = "keep_deleted";
+          }
+          setResurrectionDecisions(defaults);
         } else if (err.error === "previously_deleted") {
           setPreviouslyDeletedWarning({ message: err.message, deletedBy: err.deletedBy, deletedAt: err.deletedAt });
         } else if (err.error === "import_older_than_existing" || err.error === "import_equal_date") {
@@ -3177,6 +3212,120 @@ export function PreviewCommitStep({
                     </>
                   )}
                 </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {resurrectionWarning && resurrectionWarning.candidates.length > 0 && (
+        <Card className="border-rose-200 bg-rose-50">
+          <CardContent className="p-6">
+            <div className="space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="rounded-full bg-rose-100 p-2">
+                  <Trash2 className="h-5 w-5 text-rose-700" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-rose-900">Re-importing previously deleted rows</h3>
+                  <p className="mt-1 text-sm text-rose-800">{safeStr(resurrectionWarning.message)}</p>
+                  <p className="mt-1 text-xs text-rose-700">
+                    For each row below, choose <strong>Keep deleted</strong> (skip the file row, leave the row deleted) or
+                    {" "}<strong>Restore</strong> (un-delete the row and apply the file values).
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {resurrectionWarning.candidates.map((c) => {
+                  const decision = resurrectionDecisions[c.resurrectionKey] ?? "keep_deleted";
+                  const renderPreview = (label: string, rec: Record<string, string | number | null>) => {
+                    const entries = Object.entries(rec).filter(([, v]) => v !== null && v !== "");
+                    if (entries.length === 0) return <p className="text-xs text-muted-foreground">—</p>;
+                    return (
+                      <dl className="grid grid-cols-1 gap-1 text-xs sm:grid-cols-2">
+                        {entries.map(([k, v]) => (
+                          <div key={k} className="flex gap-1.5">
+                            <dt className="text-muted-foreground">{k}:</dt>
+                            <dd className="font-mono">{String(v)}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    );
+                  };
+                  return (
+                    <div
+                      key={c.resurrectionKey}
+                      className="rounded-md border border-rose-200 bg-white p-3"
+                      data-testid={`resurrection-${c.resurrectionKey}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium">
+                            <span className="mr-2 inline-flex rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-rose-700">
+                              {c.section}
+                            </span>
+                            {c.rowLabel}
+                          </p>
+                          {c.deletedAt && (
+                            <p className="mt-0.5 text-[11px] text-muted-foreground">
+                              Deleted in app on {new Date(c.deletedAt).toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex shrink-0 gap-1">
+                          <Button
+                            size="sm"
+                            variant={decision === "keep_deleted" ? "default" : "outline"}
+                            onClick={() =>
+                              setResurrectionDecisions((prev) => ({
+                                ...prev,
+                                [c.resurrectionKey]: "keep_deleted",
+                              }))
+                            }
+                            data-testid={`btn-keep-deleted-${c.resurrectionKey}`}
+                          >
+                            Keep deleted
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={decision === "restore_and_apply" ? "default" : "outline"}
+                            onClick={() =>
+                              setResurrectionDecisions((prev) => ({
+                                ...prev,
+                                [c.resurrectionKey]: "restore_and_apply",
+                              }))
+                            }
+                            data-testid={`btn-restore-${c.resurrectionKey}`}
+                          >
+                            Restore
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase text-muted-foreground">Deleted in app</p>
+                          {renderPreview("deleted", c.deletedPreview)}
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase text-muted-foreground">In uploaded file</p>
+                          {renderPreview("file", c.filePreview)}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center justify-end gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => doCommit({ resurrectionDecisions })}
+                  disabled={committing}
+                  data-testid="btn-commit-with-resurrection-decisions"
+                >
+                  {committing ? "Committing..." : "Commit with these choices"}
+                </Button>
               </div>
             </div>
           </CardContent>
