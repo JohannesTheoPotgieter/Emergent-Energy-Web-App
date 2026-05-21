@@ -10,7 +10,7 @@
     },
     {
       "file": "client/src/pages/smart-import.tsx",
-      "loc": 5010
+      "loc": 5040
     },
     {
       "file": "server/engineering-routes.ts",
@@ -18,7 +18,7 @@
     },
     {
       "file": "server/smart-import-routes.ts",
-      "loc": 3811
+      "loc": 3881
     },
     {
       "file": "server/lifecycle-routes.ts",

@@ -46,6 +46,7 @@ import { newImportMetrics, emitImportMetrics, threeWayMergeEnabled } from "./lib
 import { matchRows, generateBusinessKey, type SectionType, type MatchedRow } from "./lib/import/row-matcher";
 import { runConflictEngine, type RowMergeResult } from "./lib/import/conflict-engine";
 import { loadCurrentPlanRows, loadCurrentRevenueRows, loadCurrentCostRows, loadBaselineForPlanner, detectImportMode, loadDeletedPlanRows, loadDeletedRevenueRows, loadDeletedCostRows } from "./lib/import/baseline";
+import { buildImportFailureEnvelope, persistFailedImportRun } from "./lib/import/failure-envelope";
 import {
   smartImportRuns,
   importIssues,
@@ -517,7 +518,42 @@ router.post("/api/smart-import/upload", requireAuth, requirePermission("smart_im
       userMessage = "The uploaded file could not be found on the server. Please try uploading again.";
       statusCode = 400;
     }
-    res.status(statusCode).json({ error: userMessage });
+
+    // Persist the failure as a `failed` smart_import_runs row so it shows
+    // up in the Import Control Tower next to the scheduled folder runs.
+    // Without this, single-file upload failures were toast-only — the
+    // operator never saw why an upload didn't land. Same envelope shape
+    // as the scheduler (server/lib/import/failure-envelope.ts) so the
+    // Tower's rendering pass treats both paths identically.
+    let failedRunId: number | null = null;
+    try {
+      const userId = (req as any).user?.id ?? null;
+      const fileName = req.file?.originalname ?? "unknown.xlsx";
+      const envelope = buildImportFailureEnvelope("upload", fileName, userMessage);
+      const fileHash = req.file?.buffer
+        ? crypto.createHash("sha256").update(req.file.buffer).digest("hex")
+        : null;
+      failedRunId = await persistFailedImportRun({
+        fileName,
+        fileHash,
+        envelope,
+        extraSummary: { manualUpload: { triggerType: "manual" } },
+        projectName: "Unmatched — upload failure",
+        uploadedBy: userId,
+      });
+    } catch (persistErr) {
+      console.warn(
+        "[smart-import] could not persist failed upload row (non-blocking):",
+        persistErr instanceof Error ? persistErr.message : persistErr,
+      );
+    }
+
+    res.status(statusCode).json({
+      error: userMessage,
+      // Frontend uses this to link directly to the Tower so the operator
+      // can see the structured envelope alongside other failed runs.
+      failedRunId,
+    });
   }
 });
 
@@ -3624,6 +3660,7 @@ router.get("/api/import-control-tower/history", requireAuth, requirePermission("
   try {
     const importType = req.query.importType as string | undefined;
     const status = req.query.status as string | undefined;
+    const batchRunId = (req.query.batchRunId as string | undefined)?.trim() || undefined;
     const limit = parseInt(req.query.limit as string) || 100;
 
     const runs = await db
@@ -3650,6 +3687,12 @@ router.get("/api/import-control-tower/history", requireAuth, requirePermission("
     if (status && status !== "all") {
       filtered = filtered.filter((r: any) => r.status === status);
     }
+    if (batchRunId) {
+      filtered = filtered.filter((r: any) => {
+        const sched = (r.summaryJson as any)?.schedulerV2;
+        return typeof sched?.batchRunId === "string" && sched.batchRunId === batchRunId;
+      });
+    }
 
     const enriched = await Promise.all(filtered.map(async (run: any) => {
       const issues = await db.select().from(importIssues)
@@ -3671,6 +3714,28 @@ router.get("/api/import-control-tower/history", requireAuth, requirePermission("
         uploaderName = u?.name || null;
       }
 
+      // Surface scheduler / commit failure envelope so the Control Tower
+      // shows the failure step + operator-friendly message + suggestion
+      // without the operator opening the issues drawer. See
+      // server/lib/import/failure-envelope.ts:buildImportFailureEnvelope.
+      const errorEnvelope = (summary && typeof summary === "object" && summary.error && typeof summary.error === "object")
+        ? {
+            step: typeof summary.error.step === "string" ? summary.error.step : null,
+            message: typeof summary.error.message === "string" ? summary.error.message : null,
+            failedAt: typeof summary.error.failedAt === "string" ? summary.error.failedAt : null,
+          }
+        : null;
+
+      // Batch id stamped by the scheduler so the Tower can group every
+      // file from one folder pickup under a single ?batchRunId=… view
+      // and the smart-import wizard can show a "Back to batch" link.
+      const batchRunId = (summary && typeof summary === "object" && summary.schedulerV2
+        && typeof summary.schedulerV2 === "object"
+        && typeof summary.schedulerV2.batchRunId === "string")
+        ? summary.schedulerV2.batchRunId
+        : null;
+      const source: "scheduler" | "manual" = batchRunId ? "scheduler" : "manual";
+
       return {
         id: run.id,
         projectName: run.projectName,
@@ -3690,6 +3755,11 @@ router.get("/api/import-control-tower/history", requireAuth, requirePermission("
         unresolvedBlockers: failedIssues.length,
         unresolvedWarnings: issues.filter((i: any) => i.severity !== "BLOCKER" && !i.resolved).length,
         resolvedIssues: issues.filter((i: any) => i.resolved).length,
+        errorMessage: errorEnvelope?.message ?? null,
+        errorStep: errorEnvelope?.step ?? null,
+        errorAt: errorEnvelope?.failedAt ?? null,
+        batchRunId,
+        source,
       };
     }));
 

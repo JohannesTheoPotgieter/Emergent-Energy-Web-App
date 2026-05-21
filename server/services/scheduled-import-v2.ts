@@ -36,6 +36,11 @@ import { ApiError } from "../lib/api-error";
 import { runSmartImportPreview, type SmartImportPreview } from "../lib/import";
 import { runImportPlanner } from "../lib/import/planner";
 import {
+  buildImportFailureEnvelope,
+  persistFailedImportRun,
+  type ImportFailureEnvelope,
+} from "../lib/import/failure-envelope";
+import {
   checkRerunProtection,
   extractProjectNameFromFilename,
   findProjectMatches,
@@ -47,6 +52,12 @@ import { commitSmartImportRunAsSystem } from "./scheduler-commit";
 export interface ScheduledImportV2Result {
   triggerType: "schedule" | "manual";
   triggeredBy: string;
+  /**
+   * Batch id stamped on every file's summaryJson.schedulerV2 during this
+   * tick. Operators land on the Import Control Tower filtered by this id
+   * to see the entire folder-import completion screen.
+   */
+  batchRunId: string | null;
   filesDiscovered: number;
   filesCommitted: number;
   filesParked: number;
@@ -69,28 +80,55 @@ function computeHash(buffer: Buffer): string {
 }
 
 /**
+ * Build an ISO-keyed batch identifier for one scheduler tick.
+ * Every file processed in this tick stamps it on summaryJson.schedulerV2.batchRunId
+ * so the Import Control Tower can group them under a single "Folder Import
+ * Batch" view (filtered + breadcrumbed) — see /admin/import-control-tower
+ * with ?batchRunId=<id>.
+ */
+function makeBatchRunId(): string {
+  return `batch_${new Date().toISOString()}`;
+}
+
+/**
  * Process a single SharePoint file: download → preview → match project →
  * insert smart_import_runs row in `awaiting_review` state with full diagnostics.
  *
  * Returns the outcome so the caller can tally a summary.
  */
-async function processFileV2(file: {
-  id: string;
-  name: string;
-  driveId: string;
-}, triggeredBy: string): Promise<FileOutcome> {
+async function processFileV2(
+  file: {
+    id: string;
+    name: string;
+    driveId: string;
+  },
+  triggeredBy: string,
+  batchRunId: string,
+): Promise<FileOutcome> {
+  const fileName = file.name;
+  const extraSummary = {
+    schedulerV2: { triggerType: "schedule", batchRunId },
+  };
   let buffer: Buffer;
   try {
     buffer = await downloadFileContent(file.driveId, file.id);
   } catch (err) {
+    const envelope = buildImportFailureEnvelope("download", fileName, err);
+    const runId = await persistFailedImportRun({
+      fileName,
+      fileHash: null,
+      envelope,
+      extraSummary,
+      projectName: "Unmatched — scheduler failure",
+    });
     return {
       status: "failed",
-      error: `Download failed: ${err instanceof Error ? err.message : String(err)}`,
+      runId: runId ?? undefined,
+      error: envelope.message,
     };
   }
 
   const fileHash = computeHash(buffer);
-  const fileName = file.name;
 
   // Skip exact re-runs (same hash already imported AND committed).
   const rerun = await checkRerunProtection(fileHash);
@@ -103,9 +141,18 @@ async function processFileV2(file: {
   try {
     preview = await runSmartImportPreview(buffer, fileName);
   } catch (err) {
+    const envelope = buildImportFailureEnvelope("preview", fileName, err);
+    const runId = await persistFailedImportRun({
+      fileName,
+      fileHash,
+      envelope,
+      extraSummary,
+      projectName: "Unmatched — scheduler failure",
+    });
     return {
       status: "failed",
-      error: `Preview failed: ${err instanceof Error ? err.message : String(err)}`,
+      runId: runId ?? undefined,
+      error: envelope.message,
     };
   }
 
@@ -138,6 +185,7 @@ async function processFileV2(file: {
     schedulerV2: {
       triggeredBy,
       triggerType: "schedule",
+      batchRunId,
       extractedProjectName: extractedName,
       autoMappedProjectId,
       autoMappedProjectName: autoMappedProjectId && bestMatch ? bestMatch.projectName : null,
@@ -205,12 +253,19 @@ async function processFileV2(file: {
       console.log(`[ScheduledImportV2] Commit deferred for run ${run.id}: ${commitResult.status}`);
       return { status: "parked", runId: run.id };
     } catch (commitErr) {
-      // Transaction failed — mark as awaiting_review (guarded so a racing
-      // UI commit isn't clobbered) and report the file as failed.
-      console.error(`[ScheduledImportV2] Auto-commit failed for run ${run.id}:`, commitErr instanceof Error ? commitErr.message : commitErr);
+      // Transaction failed — fold a structured failure envelope into the
+      // existing run's summaryJson so the Tower can show what went wrong
+      // alongside the parked-for-review row. The status is left at
+      // `awaiting_review` (guarded so a racing UI commit isn't clobbered)
+      // so the operator can still resolve manually.
+      const envelope = buildImportFailureEnvelope("auto_commit", fileName, commitErr);
+      console.error(`[ScheduledImportV2] ${envelope.message} (run ${run.id})`);
       try {
         await db.update(smartImportRuns)
-          .set({ status: "awaiting_review" })
+          .set({
+            status: "awaiting_review",
+            summaryJson: { ...summaryJson, error: envelope },
+          })
           .where(and(
             eq(smartImportRuns.id, run.id),
             inArray(smartImportRuns.status, ["preview", "awaiting_review"]),
@@ -219,7 +274,7 @@ async function processFileV2(file: {
       return {
         status: "failed",
         runId: run.id,
-        error: `Auto-commit failed: ${commitErr instanceof Error ? commitErr.message : String(commitErr)}`,
+        error: envelope.message,
       };
     }
   }
@@ -245,6 +300,7 @@ export async function runScheduledImportV2(opts: {
   const result: ScheduledImportV2Result = {
     triggerType: opts.triggerType,
     triggeredBy: opts.triggeredBy,
+    batchRunId: null,
     filesDiscovered: 0,
     filesCommitted: 0,
     filesParked: 0,
@@ -294,12 +350,18 @@ export async function runScheduledImportV2(opts: {
     }
 
     result.filesDiscovered = folderChildren.length;
+    // One batch id per scheduler tick so the Tower can group / filter
+    // every file from this folder pickup under a single "Folder Import
+    // Batch" view (see import-control-tower.tsx ?batchRunId=...).
+    const batchRunId = makeBatchRunId();
+    result.batchRunId = batchRunId;
 
     for (const child of folderChildren) {
       try {
         const outcome = await processFileV2(
           { id: child.id, name: child.name, driveId: settings.driveId },
           opts.triggeredBy,
+          batchRunId,
         );
         if (outcome.status === "committed") {
           result.filesCommitted++;
