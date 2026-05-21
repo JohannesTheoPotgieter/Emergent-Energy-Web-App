@@ -11,10 +11,17 @@ function canonicalProjectName(projectName: unknown): string {
 }
 
 export function getExpenseBusinessKey(row: ExpenseLikeRow): string {
+  const rowHash = row.rowHash ?? row._rowHash ?? null;
   const sourceRow = row._sourceRow ?? row.sourceRow ?? row.rowNumber ?? null;
   const projectId = row.projectId ?? null;
 
-  // Primary key: projectId + sourceRow. This survives project renames and tracker aliases.
+  // Primary key: projectId + rowHash for imported rows. This keeps legitimate
+  // repeated source rows separate after the importer has stable invoice-line identity.
+  if (projectId != null && rowHash) {
+    return `pid:${projectId}::hash:${rowHash}`;
+  }
+
+  // Fallback key: projectId + sourceRow. This survives project renames and tracker aliases.
   if (projectId != null && sourceRow != null) {
     return `pid:${projectId}::row:${sourceRow}`;
   }

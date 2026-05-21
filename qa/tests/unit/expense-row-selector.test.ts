@@ -18,6 +18,18 @@ describe("expense row selector", () => {
     expect(selected.diagnostics.duplicatesRemoved).toBe(1);
   });
 
+  it("does not collapse imported rows with the same source row when row hashes differ", () => {
+    const rows = [
+      { id: 201, _isNormalized: true, projectId: 10, _sourceRow: 73, rowHash: "hash-a", updatedAt: "2026-02-01T00:00:00Z" },
+      { id: 202, _isNormalized: true, projectId: 10, _sourceRow: 73, rowHash: "hash-b", updatedAt: "2026-02-01T00:00:00Z" },
+    ];
+
+    const selected = selectWinningExpenseRows(rows);
+    const ids = selected.winners.map((r) => r.id).sort((a, b) => a - b);
+    expect(ids).toEqual([201, 202]);
+    expect(selected.diagnostics.duplicatesRemoved).toBe(0);
+  });
+
   it("handles normalized and legacy collision for same business line with deterministic winner", () => {
     const normalized = { id: 903001, _isNormalized: true, projectId: 12, _sourceRow: 8, approvedDate: "2026-03-01", updatedAt: "2026-03-01T00:00:00Z" };
     const legacy = { id: 3001, _isNormalized: false, projectId: 12, rowNumber: 8, lineStatus: "Approved", updatedAt: "2026-03-05T00:00:00Z" };
