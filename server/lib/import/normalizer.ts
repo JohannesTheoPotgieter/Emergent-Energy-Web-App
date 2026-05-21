@@ -516,6 +516,13 @@ function cellStr(row: any[], colIndex: number): string | null {
   const v = row[colIndex];
   if (v == null || String(v).trim() === "") return null;
   if (getExcelError(v) !== null) return null;
+  const raw = typeof v === "object"
+    && Object.prototype.toString.call(v) !== "[object Date]"
+    && "result" in v
+    ? (v as any).result
+    : v;
+  const dateValue = parseDate(v);
+  if (dateValue && Object.prototype.toString.call(raw) === "[object Date]") return dateValue;
   return String(v).trim();
 }
 

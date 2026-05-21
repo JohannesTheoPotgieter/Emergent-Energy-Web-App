@@ -354,6 +354,16 @@ function resolveMergeResult(
   };
 }
 
+export function resolvedValueOrExisting(
+  values: Record<string, FieldValue>,
+  fieldName: string,
+  existingValue: FieldValue,
+): FieldValue {
+  return Object.prototype.hasOwnProperty.call(values, fieldName)
+    ? values[fieldName] ?? null
+    : existingValue;
+}
+
 // ---------------------------------------------------------------------------
 // Field resolution — apply merge decisions to build final row values
 // ---------------------------------------------------------------------------
@@ -448,7 +458,7 @@ export interface PlanWriteContext {
 export async function writePlanIncremental(ctx: PlanWriteContext): Promise<SectionCommitResult> {
   const { tx, projectId, projectName, runId, userId, matchedRows, mergeResults, conflictDecisions } = ctx;
   const { workItemsTable: workItems } = ctx;
-  const { eq, and, sql: sqlTag, isNull, inArray } = await import("drizzle-orm");
+  const { eq, and, sql: sqlTag, isNull, inArray, desc } = await import("drizzle-orm");
   const { users } = await import("@shared/schema");
 
   // Build a name/email → userId lookup map for owner resolution.
@@ -535,6 +545,7 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
         eq(workItems.rowHash, rowHash),
         isNull(workItems.deletedAt),
       ))
+      .orderBy(desc(workItems.importRunId), desc(workItems.updatedAt), desc(workItems.id))
       .limit(1);
     return rows.length > 0 ? (rows[0] as Record<string, unknown>) : null;
   }
@@ -1037,6 +1048,32 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
         .set({ deletedAt: commitNow })
         .where(inArray(workItems.id, stale));
     }
+
+    // Historical imports could leave several active work_items with the
+    // same stable row_hash. Once a hash is seen in the current workbook,
+    // all duplicate active rows are indistinguishable copies from the
+    // importer's point of view and must collapse to a single canonical row,
+    // otherwise the project plan can never match the workbook row-for-row.
+    await tx.execute(sqlTag`
+      WITH ranked AS (
+        SELECT
+          id,
+          row_number() OVER (
+            PARTITION BY project_id, row_hash
+            ORDER BY import_run_id DESC NULLS LAST, updated_at DESC NULLS LAST, id DESC
+          ) AS rn
+        FROM work_items
+        WHERE project_id = ${projectId}
+          AND source = 'SMART_IMPORT'
+          AND deleted_at IS NULL
+          AND row_hash IS NOT NULL
+      )
+      UPDATE work_items wi
+      SET deleted_at = ${commitNow}
+      FROM ranked r
+      WHERE wi.id = r.id
+        AND r.rn > 1
+    `);
   }
 
   // ── parentId pass ──
@@ -1427,12 +1464,12 @@ export async function writeRevenueIncremental(ctx: TemporalWriteContext): Promis
       let qbLinkedRow = false;
       if (qbPrecedenceOn) {
         const proposed: Record<string, any> = {
-          amountExVat: resolved.values.amountExVat ?? existingRow.amountExVat,
-          vat: resolved.values.vat ?? existingRow.vat,
+          amountExVat: resolvedValueOrExisting(resolved.values, "amountExVat", existingRow.amountExVat),
+          vat: resolvedValueOrExisting(resolved.values, "vat", existingRow.vat),
           invoiceNumber: resolved.values.invoiceNumber ?? existingRow.invoiceNumber,
-          invoiceDate: resolved.values.invoiceDate ?? existingRow.invoiceDate,
-          paidDate: resolved.values.paidDate ?? existingRow.paidDate,
-          inBankDate: resolved.values.inBankDate ?? existingRow.inBankDate,
+          invoiceDate: resolvedValueOrExisting(resolved.values, "invoiceDate", existingRow.invoiceDate),
+          paidDate: resolvedValueOrExisting(resolved.values, "paidDate", existingRow.paidDate),
+          inBankDate: resolvedValueOrExisting(resolved.values, "inBankDate", existingRow.inBankDate),
         };
         const qbResult = await applyQbPrecedence({
           tx,
@@ -1478,17 +1515,17 @@ export async function writeRevenueIncremental(ctx: TemporalWriteContext): Promis
         milestoneName: existingRow.milestoneName,
         milestoneNo: fileRow.milestoneNo || existingRow.milestoneNo || null,
         milestonePercent: resolved.values.milestonePercent ?? existingRow.milestonePercent ?? null,
-        amountExVat: resolved.values.amountExVat ?? existingRow.amountExVat,
-        vat: resolved.values.vat ?? existingRow.vat,
+        amountExVat: resolvedValueOrExisting(resolved.values, "amountExVat", existingRow.amountExVat),
+        vat: resolvedValueOrExisting(resolved.values, "vat", existingRow.vat),
         invoiceNumber: resolved.values.invoiceNumber ?? existingRow.invoiceNumber,
-        invoiceDate: resolved.values.invoiceDate ?? existingRow.invoiceDate,
+        invoiceDate: resolvedValueOrExisting(resolved.values, "invoiceDate", existingRow.invoiceDate),
         invoiceDateFontColor: fileRow.invoiceDateFontColor ?? existingRow.invoiceDateFontColor,
-        invoiceDateConfirmed: resolved.values.invoiceDateConfirmed ?? existingRow.invoiceDateConfirmed,
-        expectedPaymentDate: resolved.values.expectedPaymentDate ?? existingRow.expectedPaymentDate,
-        paidDate: resolved.values.paidDate ?? existingRow.paidDate,
+        invoiceDateConfirmed: resolvedValueOrExisting(resolved.values, "invoiceDateConfirmed", existingRow.invoiceDateConfirmed),
+        expectedPaymentDate: resolvedValueOrExisting(resolved.values, "expectedPaymentDate", existingRow.expectedPaymentDate),
+        paidDate: resolvedValueOrExisting(resolved.values, "paidDate", existingRow.paidDate),
         paidDateFontColor: fileRow.paidDateFontColor ?? existingRow.paidDateFontColor,
-        paidDateConfirmed: resolved.values.paidDateConfirmed ?? existingRow.paidDateConfirmed,
-        inBankDate: resolved.values.inBankDate ?? existingRow.inBankDate,
+        paidDateConfirmed: resolvedValueOrExisting(resolved.values, "paidDateConfirmed", existingRow.paidDateConfirmed),
+        inBankDate: resolvedValueOrExisting(resolved.values, "inBankDate", existingRow.inBankDate),
         status: normalizeRevenueLineStatus(resolved.values.status ?? existingRow.status),
         sourceSheet: existingRow.sourceSheet || fileRow.sourceSheet,
         sourceRow: existingRow.sourceRow || fileRow.sourceRow,
@@ -1978,10 +2015,10 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
       let qbForceCosRealised: boolean | null = null;
       if (qbPrecedenceOn) {
         const proposed: Record<string, any> = {
-          amountExVat: resolved.values.amountExVat ?? existing.amountExVat,
+          amountExVat: resolvedValueOrExisting(resolved.values, "amountExVat", existing.amountExVat),
           invoiceNumber: resolved.values.invoiceNumber ?? existing.invoiceNumber,
-          invoiceDate: resolved.values.invoiceDate ?? existing.invoiceDate,
-          paidDate: resolved.values.paidDate ?? existing.paidDate,
+          invoiceDate: resolvedValueOrExisting(resolved.values, "invoiceDate", existing.invoiceDate),
+          paidDate: resolvedValueOrExisting(resolved.values, "paidDate", existing.paidDate),
           inBankDate: resolved.values.inBankDate ?? existing.inBankDate,
           cosRealised: existing.cosRealised,
         };
@@ -2039,40 +2076,40 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
         counterpartyId: changedCpMatch?.id ?? null,
         counterpartyType: (changedCpMatch?.type as any) ?? null,
         description: fileRow.description ?? existing.description,
-        amountExVat: resolved.values.amountExVat ?? existing.amountExVat,
+        amountExVat: resolvedValueOrExisting(resolved.values, "amountExVat", existing.amountExVat),
         invoiceNumber: fileRow.invoiceNumber ?? existing.invoiceNumber,
-        invoiceDate: resolved.values.invoiceDate ?? existing.invoiceDate,
+        invoiceDate: resolvedValueOrExisting(resolved.values, "invoiceDate", existing.invoiceDate),
         invoiceDateFontColor: fileRow.invoiceDateFontColor ?? existing.invoiceDateFontColor,
-        invoiceDateConfirmed: resolved.values.invoiceDateConfirmed ?? existing.invoiceDateConfirmed,
-        approvedDate: resolved.values.approvedDate ?? existing.approvedDate,
-        paidDate: resolved.values.paidDate ?? existing.paidDate,
+        invoiceDateConfirmed: resolvedValueOrExisting(resolved.values, "invoiceDateConfirmed", existing.invoiceDateConfirmed),
+        approvedDate: resolvedValueOrExisting(resolved.values, "approvedDate", existing.approvedDate),
+        paidDate: resolvedValueOrExisting(resolved.values, "paidDate", existing.paidDate),
         paidDateFontColor: fileRow.paidDateFontColor ?? existing.paidDateFontColor,
-        paidDateConfirmed: resolved.values.paidDateConfirmed ?? existing.paidDateConfirmed,
+        paidDateConfirmed: resolvedValueOrExisting(resolved.values, "paidDateConfirmed", existing.paidDateConfirmed),
         poNumber: resolved.values.poNumber ?? existing.poNumber,
         // Recalculate cosRealised from the resolved invoice number (canonical invoice-only rule).
         // QB precedence override: force cosRealised=true when QB shows Paid.
         cosRealised: qbForceCosRealised === true
           ? true
           : !!((resolved.values.invoiceNumber ?? existing.invoiceNumber) && String(resolved.values.invoiceNumber ?? existing.invoiceNumber).trim()),
-        cashflowConfirmed: resolved.values.cashflowConfirmed ?? existing.cashflowConfirmed,
+        cashflowConfirmed: resolvedValueOrExisting(resolved.values, "cashflowConfirmed", existing.cashflowConfirmed),
         status: normalizeCostLineStatus(resolved.values.status ?? existing.status),
         sourceSheet: fileRow.sourceSheet ?? existing.sourceSheet,
         sourceRow: fileRow.sourceRow ?? existing.sourceRow,
         importRunId: runId,
         turnaroundDays: fileRow.turnaroundDays,
-        budgetQty: resolved.values.budgetQty ?? existing.budgetQty,
-        budgetRate: resolved.values.budgetRate ?? existing.budgetRate,
-        budgetTotal: resolved.values.budgetTotal ?? existing.budgetTotal,
-        budgetCos: resolved.values.budgetCos ?? existing.budgetCos,
-        revenueRecognitionAmount: resolved.values.revenueRecognitionAmount ?? existing.revenueRecognitionAmount,
-        forecastPaymentDate: resolved.values.forecastPaymentDate ?? existing.forecastPaymentDate,
+        budgetQty: resolvedValueOrExisting(resolved.values, "budgetQty", existing.budgetQty),
+        budgetRate: resolvedValueOrExisting(resolved.values, "budgetRate", existing.budgetRate),
+        budgetTotal: resolvedValueOrExisting(resolved.values, "budgetTotal", existing.budgetTotal),
+        budgetCos: resolvedValueOrExisting(resolved.values, "budgetCos", existing.budgetCos),
+        revenueRecognitionAmount: resolvedValueOrExisting(resolved.values, "revenueRecognitionAmount", existing.revenueRecognitionAmount),
+        forecastPaymentDate: resolvedValueOrExisting(resolved.values, "forecastPaymentDate", existing.forecastPaymentDate),
         subProjectName: fileRow.subProjectName ?? existing.subProjectName,
         // PR2A tracker columns.
-        actualQty: resolved.values.actualQty ?? existing.actualQty ?? null,
-        actualRate: resolved.values.actualRate ?? existing.actualRate ?? null,
+        actualQty: resolvedValueOrExisting(resolved.values, "actualQty", existing.actualQty) ?? null,
+        actualRate: resolvedValueOrExisting(resolved.values, "actualRate", existing.actualRate) ?? null,
         comments: resolved.values.comments ?? existing.comments ?? null,
         checkFlag: resolved.values.checkFlag ?? existing.checkFlag ?? null,
-        savingOverrun: resolved.values.savingOverrun ?? existing.savingOverrun ?? null,
+        savingOverrun: resolvedValueOrExisting(resolved.values, "savingOverrun", existing.savingOverrun) ?? null,
         usdExchangeRate: resolved.values.usdExchangeRate ?? existing.usdExchangeRate ?? null,
         pricePerWatt: resolved.values.pricePerWatt ?? existing.pricePerWatt ?? null,
         // Carry forward app-owned fields.
