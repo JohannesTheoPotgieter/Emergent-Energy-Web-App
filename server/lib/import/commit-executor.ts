@@ -1781,7 +1781,9 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
       categoryKey: typeof f.categoryKey === "string" ? f.categoryKey : null,
       costCategory: typeof f.costCategory === "string" ? f.costCategory : null,
       description: typeof f.description === "string" ? f.description : null,
+      amountExVat: f.amountExVat as string | number | null,
       invoiceNumber: typeof f.invoiceNumber === "string" ? f.invoiceNumber : null,
+      invoiceDate: f.invoiceDate as string | Date | null,
     }) : null;
 
     if (rowHash) {
@@ -1791,7 +1793,7 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
           sourceSheet: typeof f.sourceSheet === "string" ? f.sourceSheet : null,
           ref: null,
           reason: "duplicate_row_hash",
-          cause: `Duplicate row hash within this import for EXPENDITURE row — second occurrence skipped to avoid silent overwrite.`,
+          cause: `Duplicate EXPENDITURE row within this import: same description, invoice amount, invoice number, and invoice date. Second occurrence skipped to avoid double counting.`,
         });
         console.warn(
           `[SmartImport] EXPENDITURE duplicate row_hash within file (hash=${rowHash}); skipping second occurrence.`,
@@ -1802,8 +1804,21 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
     }
 
     if (mr.classification === "UNCHANGED") {
-      counts.unchanged++;
-      continue;
+      const existing = (mr.existingRow ?? {}) as Record<string, unknown>;
+      const sameSourceSheet = String(existing.sourceSheet ?? "") === String(f.sourceSheet ?? "");
+      const sameSourceRow = String(existing.sourceRow ?? "") === String(f.sourceRow ?? "");
+      const sameDescription = String(existing.description ?? "") === String(f.description ?? "");
+      const sameInvoiceNumber = String(existing.invoiceNumber ?? "") === String(f.invoiceNumber ?? "");
+      const sameRowHash = !rowHash || existing.rowHash === rowHash;
+      const shouldRefreshUnchangedExpenditure = !sameRowHash ||
+        !sameSourceSheet ||
+        !sameSourceRow ||
+        !sameDescription ||
+        !sameInvoiceNumber;
+      if (!shouldRefreshUnchangedExpenditure) {
+        counts.unchanged++;
+        continue;
+      }
     }
 
     // PR2C — match the existing active row by hash first; fall back to the
@@ -1931,7 +1946,7 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
       }
     }
 
-    if (mr.classification === "CHANGED" || mr.classification === "CONFLICT_PLACEHOLDER" || mr.classification === "NEW") {
+    if (mr.classification === "CHANGED" || mr.classification === "CONFLICT_PLACEHOLDER" || mr.classification === "NEW" || mr.classification === "UNCHANGED") {
       // CHANGED / CONFLICT_PLACEHOLDER, OR a NEW that resolved into an
       // existing hash match (see fall-through above).
       if (!existingForMerge) {
@@ -1940,6 +1955,10 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
       const existingId = existingForMerge.id;
       const existing = (hashMatchedRow ?? mr.existingRow ?? {}) as Record<string, any>;
       const fileRow = f;
+      const needsMetadataRefresh = String(existing.sourceSheet ?? "") !== String(fileRow.sourceSheet ?? "") ||
+        String(existing.sourceRow ?? "") !== String(fileRow.sourceRow ?? "") ||
+        String(existing.description ?? "") !== String(fileRow.description ?? "") ||
+        String(existing.invoiceNumber ?? "") !== String(fileRow.invoiceNumber ?? "");
 
       const resolved = resolveMergeResult(
         merge,
@@ -1993,7 +2012,7 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
       // PR2C — idempotency. If the merge produced no material change AND
       // QB has nothing to add AND the existing row already carries the
       // canonical hash, skip the write entirely.
-      if (!resolved.hasMaterialChanges && qbVariancesForRow.length === 0 && !needsHashUpgrade) {
+      if (!resolved.hasMaterialChanges && qbVariancesForRow.length === 0 && !needsHashUpgrade && !needsMetadataRefresh) {
         counts.unchanged++;
         continue;
       }
@@ -2008,20 +2027,20 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
         : null;
       // Re-resolve counterparty from the incoming name (file wins on CHANGED rows;
       // falls back to the existing FK when the name didn't change and had a match).
-      const changedCpName = resolved.values.counterpartyName ?? existing.counterpartyName;
+      const changedCpName = fileRow.counterpartyName ?? existing.counterpartyName;
       const changedCpMatch = resolveCounterparty(changedCpName) ?? (
         existing.counterpartyId ? { id: existing.counterpartyId as number, type: existing.counterpartyType as string } : null
       );
       const [inserted] = await tx.insert(normalizedCostLines).values({
         projectId,
         projectName,
-        costCategory: resolved.values.costCategory ?? existing.costCategory,
+        costCategory: fileRow.costCategory ?? existing.costCategory,
         counterpartyName: changedCpName,
         counterpartyId: changedCpMatch?.id ?? null,
         counterpartyType: (changedCpMatch?.type as any) ?? null,
-        description: existing.description,
+        description: fileRow.description ?? existing.description,
         amountExVat: resolved.values.amountExVat ?? existing.amountExVat,
-        invoiceNumber: resolved.values.invoiceNumber ?? existing.invoiceNumber,
+        invoiceNumber: fileRow.invoiceNumber ?? existing.invoiceNumber,
         invoiceDate: resolved.values.invoiceDate ?? existing.invoiceDate,
         invoiceDateFontColor: fileRow.invoiceDateFontColor ?? existing.invoiceDateFontColor,
         invoiceDateConfirmed: resolved.values.invoiceDateConfirmed ?? existing.invoiceDateConfirmed,
@@ -2037,8 +2056,8 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
           : !!((resolved.values.invoiceNumber ?? existing.invoiceNumber) && String(resolved.values.invoiceNumber ?? existing.invoiceNumber).trim()),
         cashflowConfirmed: resolved.values.cashflowConfirmed ?? existing.cashflowConfirmed,
         status: normalizeCostLineStatus(resolved.values.status ?? existing.status),
-        sourceSheet: existing.sourceSheet || fileRow.sourceSheet,
-        sourceRow: existing.sourceRow || fileRow.sourceRow,
+        sourceSheet: fileRow.sourceSheet ?? existing.sourceSheet,
+        sourceRow: fileRow.sourceRow ?? existing.sourceRow,
         importRunId: runId,
         turnaroundDays: fileRow.turnaroundDays,
         budgetQty: resolved.values.budgetQty ?? existing.budgetQty,
@@ -2047,7 +2066,7 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
         budgetCos: resolved.values.budgetCos ?? existing.budgetCos,
         revenueRecognitionAmount: resolved.values.revenueRecognitionAmount ?? existing.revenueRecognitionAmount,
         forecastPaymentDate: resolved.values.forecastPaymentDate ?? existing.forecastPaymentDate,
-        subProjectName: existing.subProjectName,
+        subProjectName: fileRow.subProjectName ?? existing.subProjectName,
         // PR2A tracker columns.
         actualQty: resolved.values.actualQty ?? existing.actualQty ?? null,
         actualRate: resolved.values.actualRate ?? existing.actualRate ?? null,

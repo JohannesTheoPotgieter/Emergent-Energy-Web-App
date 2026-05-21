@@ -30,9 +30,14 @@ interface PreflightShape {
 interface RowWarning {
   section: string;
   code?: string;
+  reason?: string;
   message?: string;
+  cause?: string;
   externalRef?: string | null;
+  ref?: string | null;
   rowUid?: string | null;
+  sourceSheet?: string | null;
+  sourceRow?: number | null;
 }
 
 interface Props {
@@ -182,11 +187,16 @@ export function SmartImportPreflightPanel({ preflight, rowWarnings, variant = "p
                 {commitWarnings.slice(0, 50).map((w, idx) => (
                   <li key={idx} className="border-t border-current/10 pt-1 first:border-t-0 first:pt-0">
                     <div className="opacity-90">
-                      <span className="opacity-60">[{w.section}{w.code ? `:${w.code}` : ""}]</span> {w.message || "(no message)"}
+                      <span className="opacity-60">[{w.section}{(w.code ?? w.reason) ? `:${w.code ?? w.reason}` : ""}]</span> {w.message ?? w.cause ?? "(no message)"}
                     </div>
-                    {w.externalRef && (
-                      <div className="opacity-60 truncate" title={w.externalRef}>
-                        → {w.externalRef}
+                    {(w.sourceSheet || w.sourceRow != null) && (
+                      <div className="opacity-60 truncate" title={`${w.sourceSheet ?? ""}${w.sourceRow != null ? ` R${w.sourceRow}` : ""}`.trim()}>
+                        {w.sourceSheet ?? "Source"}{w.sourceRow != null ? ` R${w.sourceRow}` : ""}
+                      </div>
+                    )}
+                    {(w.externalRef ?? w.ref) && (
+                      <div className="opacity-60 truncate" title={w.externalRef ?? w.ref ?? ""}>
+                        ref: {w.externalRef ?? w.ref}
                       </div>
                     )}
                   </li>

@@ -261,6 +261,41 @@ describe("row-matcher duplicate-business-key pairing", () => {
     expect(ids).toEqual(new Set([800, 801]));
   });
 
+  it("EXPENDITURE: identity is description + amount + invoice number + invoice date", async () => {
+    const { expenditureBusinessKey } = await import("../../../server/lib/import/row-matcher");
+    const a = expenditureBusinessKey(7, {
+      description: "Due diligence",
+      amountExVat: "1000.00",
+      invoiceNumber: "INV-001",
+      invoiceDate: "2026-06-30",
+      costCategory: "11. Due Dilligence",
+      counterpartyName: "Supplier A",
+      subProjectName: "Phase 1",
+    });
+    const b = expenditureBusinessKey(7, {
+      description: "Due diligence",
+      amountExVat: 1000,
+      invoiceNumber: "INV-001",
+      invoiceDate: "2026-06-30T00:00:00.000Z",
+      costCategory: "Different category",
+      counterpartyName: "Supplier B",
+      subProjectName: "Phase 2",
+    });
+    const c = expenditureBusinessKey(7, {
+      description: "Due diligence",
+      amountExVat: "1000.01",
+      invoiceNumber: "INV-001",
+      invoiceDate: "2026-06-30",
+      costCategory: "11. Due Dilligence",
+      counterpartyName: "Supplier A",
+      subProjectName: "Phase 1",
+    });
+
+    expect(a.key).toBe(b.key);
+    expect(a.keyType).toBe("PRIMARY");
+    expect(a.key).not.toBe(c.key);
+  });
+
   // -------------------------------------------------------------------------
   // Legacy #pk<id> identity hint: preserves stable pairing
   // -------------------------------------------------------------------------
