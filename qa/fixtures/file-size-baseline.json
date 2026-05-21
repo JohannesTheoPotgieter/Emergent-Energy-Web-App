@@ -46,11 +46,11 @@
     },
     {
       "file": "server/routes/quickbooks-invoice-matches.routes.ts",
-      "loc": 2652
+      "loc": 2654
     },
     {
       "file": "server/services/quickbooks-reconciliation-service.ts",
-      "loc": 2505
+      "loc": 2630
     },
     {
       "file": "server/lib/import/commit-executor.ts",
@@ -70,7 +70,7 @@
     },
     {
       "file": "client/src/components/tabs/ExpenditureEditableTab.tsx",
-      "loc": 2243
+      "loc": 2242
     },
     {
       "file": "client/src/pages/cos.tsx",
@@ -89,12 +89,12 @@
       "loc": 2128
     },
     {
-      "file": "client/src/components/tabs/QualityTab.tsx",
-      "loc": 2126
+      "file": "client/src/pages/project-detail.tsx",
+      "loc": 2128
     },
     {
-      "file": "client/src/pages/project-detail.tsx",
-      "loc": 2125
+      "file": "client/src/components/tabs/QualityTab.tsx",
+      "loc": 2126
     },
     {
       "file": "server/lib/import/normalizer.ts",
