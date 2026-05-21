@@ -299,6 +299,15 @@ export async function refreshAccessToken(): Promise<QuickBooksTokenMetadata> {
   }
 }
 
+// In-process mutex so concurrent requests near the expiry window don't
+// each fire their own refresh. Intuit rotates the refresh token on
+// every call (see refreshAccessToken comment about
+// `tokenResponse.refresh_token || existing.refreshToken`), so two
+// parallel refreshes invalidate each other and the next cycle ends in
+// `needs_reconnect`. The mutex collapses concurrent callers onto one
+// in-flight refresh promise.
+let refreshInFlight: Promise<{ accessToken: string; realmId: string }> | null = null;
+
 export async function getValidAccessToken(): Promise<{ accessToken: string; realmId: string }> {
   if (isConnectorMocked('quickbooks')) return qbMocks.mockQuickBooksAccessToken();
   const metadata = await loadQuickBooksMetadata();
@@ -311,11 +320,22 @@ export async function getValidAccessToken(): Promise<{ accessToken: string; real
   const isExpired = !expiresAt || expiresAt - Date.now() < ACCESS_TOKEN_EARLY_REFRESH_MS;
 
   if (isExpired) {
-    const refreshed = await refreshAccessToken();
-    if (!refreshed.accessToken || !refreshed.realmId) {
-      throw new Error('QuickBooks refresh did not return a usable access token.');
+    if (refreshInFlight) {
+      // A concurrent caller is already refreshing; reuse its result.
+      return refreshInFlight;
     }
-    return { accessToken: refreshed.accessToken, realmId: refreshed.realmId };
+    refreshInFlight = (async () => {
+      try {
+        const refreshed = await refreshAccessToken();
+        if (!refreshed.accessToken || !refreshed.realmId) {
+          throw new Error('QuickBooks refresh did not return a usable access token.');
+        }
+        return { accessToken: refreshed.accessToken, realmId: refreshed.realmId };
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+    return refreshInFlight;
   }
 
   return { accessToken: metadata.accessToken, realmId: metadata.realmId };
@@ -528,6 +548,12 @@ function buildDateClause(field: string, startDate?: string, endDate?: string): s
   return clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
 }
 
+// Bounded pagination guard. At 500 docs/page, 200 pages caps the loop
+// at 100,000 documents — large enough to never block a real tenant
+// in practice, small enough that a QB-side bug that always returns
+// 500 rows (or a missing date filter) doesn't spin forever.
+const MAX_PAGINATION_PAGES = 200;
+
 export async function getInvoices(startDate?: string, endDate?: string): Promise<any> {
   if (isConnectorMocked('quickbooks')) return qbMocks.mockInvoices(startDate, endDate);
   const where = buildDateClause('TxnDate', startDate, endDate);
@@ -535,13 +561,16 @@ export async function getInvoices(startDate?: string, endDate?: string): Promise
   let startPosition = 1;
   const allInvoices: any[] = [];
 
-  while (true) {
+  for (let page = 0; page < MAX_PAGINATION_PAGES; page++) {
     const query = `SELECT * FROM Invoice${where} ORDERBY TxnDate DESC STARTPOSITION ${startPosition} MAXRESULTS ${maxResults}`;
-    const page = await queryQuickBooks<any>('Invoice', query);
-    const invoices = page?.QueryResponse?.Invoice ?? [];
+    const result = await queryQuickBooks<any>('Invoice', query);
+    const invoices = result?.QueryResponse?.Invoice ?? [];
     allInvoices.push(...invoices);
     if (invoices.length < maxResults) break;
     startPosition += maxResults;
+    if (page === MAX_PAGINATION_PAGES - 1) {
+      console.warn(`[QB] getInvoices hit MAX_PAGINATION_PAGES=${MAX_PAGINATION_PAGES}; results truncated. Tighten startDate/endDate or raise the cap.`);
+    }
   }
 
   return {
@@ -593,13 +622,16 @@ export async function getBills(startDate?: string, endDate?: string): Promise<an
   let startPosition = 1;
   const allBills: any[] = [];
 
-  while (true) {
+  for (let page = 0; page < MAX_PAGINATION_PAGES; page++) {
     const query = `SELECT * FROM Bill${where} ORDERBY TxnDate DESC STARTPOSITION ${startPosition} MAXRESULTS ${maxResults}`;
-    const page = await queryQuickBooks<any>('Bill', query);
-    const bills = page?.QueryResponse?.Bill ?? [];
+    const result = await queryQuickBooks<any>('Bill', query);
+    const bills = result?.QueryResponse?.Bill ?? [];
     allBills.push(...bills);
     if (bills.length < maxResults) break;
     startPosition += maxResults;
+    if (page === MAX_PAGINATION_PAGES - 1) {
+      console.warn(`[QB] getBills hit MAX_PAGINATION_PAGES=${MAX_PAGINATION_PAGES}; results truncated. Tighten startDate/endDate or raise the cap.`);
+    }
   }
 
   return {

@@ -22,7 +22,7 @@
  *     in the March period even though it is already 2026-04-01 UTC.
  */
 
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import { calendarHoliday, cosPeriodLocks } from "@shared/schema";
 import { db } from "../../db";
 
@@ -331,8 +331,12 @@ export async function getCosPeriodLockStatuses(params: {
     .from(cosPeriodLocks)
     .where(
       and(
-        sql`${cosPeriodLocks.periodMonth} >= ${params.fromMonth}::date`,
-        sql`${cosPeriodLocks.periodMonth} <= ${params.toMonth}::date`,
+        // Drizzle's gte/lte handles the cast safely on both PG (date
+        // column) and SQLite (text). Previously used `::date` casts
+        // which threw on SQLite and broke the dashboard's padlock UI
+        // in dev. CLAUDE.md DO-NOT list explicitly forbids `::` casts.
+        gte(cosPeriodLocks.periodMonth, params.fromMonth as any),
+        lte(cosPeriodLocks.periodMonth, params.toMonth as any),
         isNull(cosPeriodLocks.unlockedAt),
       ),
     );

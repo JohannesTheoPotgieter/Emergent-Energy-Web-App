@@ -56,7 +56,11 @@ export interface OutstandingCostRow {
 
 // Match the enum literal types in shared/schema/finance.ts so Drizzle's
 // inArray() inference accepts them without casts.
-const REVENUE_OUTSTANDING_STATES: Array<"planned" | "invoiced"> = ["planned", "invoiced"];
+// 'paid' included: cheque/transfer issued but not yet bank-reconciled
+// = real outstanding AR. Excluding it understated outstanding revenue
+// by every line in flight between payment-recorded and bank-matched.
+// 'in_bank' and 'realised' are settled and correctly excluded.
+const REVENUE_OUTSTANDING_STATES: Array<"planned" | "invoiced" | "paid"> = ["planned", "invoiced", "paid"];
 const COST_OUTSTANDING_STATES: Array<"planned" | "invoiced" | "approved"> = [
   "planned",
   "invoiced",
@@ -550,6 +554,10 @@ export async function loadCosToleranceBandsByProject(): Promise<Map<number, numb
       and(
         eq(financialIntegrationRules.ruleType, COS_TOLERANCE_RULE_TYPE),
         eq(financialIntegrationRules.isActive, true),
+        // Without this, soft-deleted bands silently stayed in force —
+        // upsertCosToleranceBand below resets deletedAt:null on update,
+        // so a "deleted" band could resurrect on next save.
+        isNull(financialIntegrationRules.deletedAt),
       ),
     )) as Array<{ projectId: number | null; ruleConfig: string }>;
 
@@ -584,6 +592,10 @@ export async function upsertCosToleranceBand(
   userId: number,
   projectName: string,
 ): Promise<void> {
+  // Look up only ACTIVE rows. Without the deletedAt filter, a previous
+  // delete would resurrect on the next save (the UPDATE branch below
+  // would re-activate it) instead of inserting a clean new row, which
+  // surprises operators and loses the history of the delete event.
   const existing = (await db
     .select({ id: financialIntegrationRules.id })
     .from(financialIntegrationRules)
@@ -591,6 +603,7 @@ export async function upsertCosToleranceBand(
       and(
         eq(financialIntegrationRules.projectId, projectId),
         eq(financialIntegrationRules.ruleType, COS_TOLERANCE_RULE_TYPE),
+        isNull(financialIntegrationRules.deletedAt),
       ),
     )
     .limit(1)) as Array<{ id: number }>;

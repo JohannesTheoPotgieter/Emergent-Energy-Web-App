@@ -2269,7 +2269,10 @@ router.post(
         newValue: String(newVal),
         computedValue: compVal != null ? String(compVal) : null,
         delta: delta != null ? String(delta) : null,
-        changedBy: user?.username || null,
+        // AuthenticatedUser carries `name` / `email`, not `username`.
+        // Using `username` silently wrote null on every opening-balance
+        // edit, hollowing the audit trail.
+        changedBy: user?.name || user?.email || null,
       });
 
       const result = await storage.upsertCashflowWeeklyManual(
@@ -2334,7 +2337,10 @@ router.delete(
           newValue: '0',
           computedValue: null,
           delta: null,
-          changedBy: user?.username || null,
+          // AuthenticatedUser carries `name` / `email`, not `username`.
+        // Using `username` silently wrote null on every opening-balance
+        // edit, hollowing the audit trail.
+        changedBy: user?.name || user?.email || null,
         });
         await storage.deleteCashflowWeeklyManual(weekStartDate);
       }

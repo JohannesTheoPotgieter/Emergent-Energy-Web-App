@@ -167,7 +167,12 @@ function normalizeName(value: string | null | undefined): string {
 function amountToNumber(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  const parsed = Number(String(value));
+  // Number("") returns 0 in JS — treat empty / whitespace strings as
+  // null so a QB line with `"Amount": ""` doesn't masquerade as zero
+  // and tolerance-match other zero-amount lines.
+  const trimmed = String(value).trim();
+  if (trimmed === "") return null;
+  const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
@@ -637,8 +642,14 @@ export function parsePnLCosMonthly(report: any): Map<string, number> {
   for (let i = 1; i < colData.length && i - 1 < monthKeys.length; i++) {
     const mk = monthKeys[i - 1];
     if (!mk) continue;
-    const value = parseFloat(String(colData[i]?.value || "0"));
-    if (Number.isFinite(value) && value !== 0) result.set(mk, value);
+    // Keep zero values so a legit "R 0 COGS this month" doesn't get
+    // silently dropped — downstream readers then substituted fallbacks
+    // and reported missing data instead of zero. Skip only when the
+    // raw cell is absent (e.g., QB returned no Summary column).
+    const raw = colData[i]?.value;
+    if (raw === undefined || raw === null) continue;
+    const value = parseFloat(String(raw));
+    if (Number.isFinite(value)) result.set(mk, value);
   }
 
   return result;
