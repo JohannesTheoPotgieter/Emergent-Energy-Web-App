@@ -119,7 +119,12 @@ export function mockBills(startDate?: string, endDate?: string) {
       CurrencyRef: { value: "ZAR" },
       TxnTaxDetail: { TotalTax: 6375 },
       Line: [
-        { Amount: 42500, Description: "Jinko Tiger 545W panels ×12" },
+        {
+          Amount: 42500,
+          Description: "Jinko Tiger 545W panels ×12",
+          DetailType: "AccountBasedExpenseLineDetail",
+          AccountBasedExpenseLineDetail: { AccountRef: { value: "acc-cos-mat", name: "Cost of Sales — Materials" } },
+        },
         { Amount: 6375, Description: "VAT 15%" },
       ],
     },
@@ -134,7 +139,12 @@ export function mockBills(startDate?: string, endDate?: string) {
       CurrencyRef: { value: "ZAR" },
       TxnTaxDetail: { TotalTax: 19200 },
       Line: [
-        { Amount: 128000, Description: "Site electrical install — Umhlanga" },
+        {
+          Amount: 128000,
+          Description: "Site electrical install — Umhlanga",
+          DetailType: "AccountBasedExpenseLineDetail",
+          AccountBasedExpenseLineDetail: { AccountRef: { value: "acc-cos-sub", name: "Cost of Sales — Subcontractor" } },
+        },
         { Amount: 19200, Description: "VAT 15%" },
       ],
     },
@@ -149,7 +159,12 @@ export function mockBills(startDate?: string, endDate?: string) {
       CurrencyRef: { value: "ZAR" },
       TxnTaxDetail: { TotalTax: 45000 },
       Line: [
-        { Amount: 300000, Description: "Civil works — Sandton" },
+        {
+          Amount: 300000,
+          Description: "Civil works — Sandton",
+          DetailType: "AccountBasedExpenseLineDetail",
+          AccountBasedExpenseLineDetail: { AccountRef: { value: "acc-cos-sub", name: "Cost of Sales — Subcontractor" } },
+        },
         { Amount: 45000, Description: "VAT 15%" },
       ],
     },
@@ -165,7 +180,14 @@ export function mockBills(startDate?: string, endDate?: string) {
       VendorRef: { value: "vend-1", name: "Acme Solar Supplies" },
       CurrencyRef: { value: "ZAR" },
       TxnTaxDetail: { TotalTax: 6375 },
-      Line: [{ Amount: 42500, Description: "Duplicate invoice — for scoring demo" }],
+      Line: [
+        {
+          Amount: 42500,
+          Description: "Duplicate invoice — for scoring demo",
+          DetailType: "AccountBasedExpenseLineDetail",
+          AccountBasedExpenseLineDetail: { AccountRef: { value: "acc-cos-mat", name: "Cost of Sales — Materials" } },
+        },
+      ],
     },
     // Scoring fixture: tier 3 (85) + amount_mismatch warning.
     // Same invoice number as an app line but QB amount differs.
@@ -179,7 +201,14 @@ export function mockBills(startDate?: string, endDate?: string) {
       VendorRef: { value: "vend-2", name: "XYZ Electrical" },
       CurrencyRef: { value: "ZAR" },
       TxnTaxDetail: { TotalTax: 14250 },
-      Line: [{ Amount: 95000, Description: "Electrical supply — revised quote" }],
+      Line: [
+        {
+          Amount: 95000,
+          Description: "Electrical supply — revised quote",
+          DetailType: "AccountBasedExpenseLineDetail",
+          AccountBasedExpenseLineDetail: { AccountRef: { value: "acc-cos-mat", name: "Cost of Sales — Materials" } },
+        },
+      ],
     },
     // Scoring fixture: qb_payment_inconsistent warning.
     // QB balance is 0.008 (rounds to 0.01 after toMoney), which is ≤ 0.01
@@ -195,7 +224,38 @@ export function mockBills(startDate?: string, endDate?: string) {
       VendorRef: { value: "vend-3", name: "Atlas Construction" },
       CurrencyRef: { value: "ZAR" },
       TxnTaxDetail: { TotalTax: 19565.22 },
-      Line: [{ Amount: 130434.78, Description: "Civil works — Randburg (payment residual demo)" }],
+      Line: [
+        {
+          Amount: 130434.78,
+          Description: "Civil works — Randburg (payment residual demo)",
+          DetailType: "AccountBasedExpenseLineDetail",
+          AccountBasedExpenseLineDetail: { AccountRef: { value: "acc-cos-sub", name: "Cost of Sales — Subcontractor" } },
+        },
+      ],
+    },
+    // Whitelist demo: NON-COS bill tagged to a project class. With the
+    // COS account-name whitelist active (QB_COS_ACCOUNT_NAME_PATTERNS
+    // including "cost of sales"), this Bill is excluded from project
+    // COS even though its vendor + class would otherwise pull it in.
+    // Use case: project rent / shared overhead miscoded to a project.
+    {
+      Id: "bill-7",
+      DocNumber: "RENT-2026-04",
+      TxnDate: iso(7),
+      DueDate: iso(-23),
+      TotalAmt: 28750,
+      Balance: 28750,
+      VendorRef: { value: "vend-1", name: "Acme Solar Supplies" },
+      CurrencyRef: { value: "ZAR" },
+      TxnTaxDetail: { TotalTax: 3750 },
+      Line: [
+        {
+          Amount: 25000,
+          Description: "Site office rent — April",
+          DetailType: "AccountBasedExpenseLineDetail",
+          AccountBasedExpenseLineDetail: { AccountRef: { value: "acc-rent", name: "Rent & Site Office" } },
+        },
+      ],
     },
   ];
   const start = startDate ? new Date(startDate).getTime() : -Infinity;

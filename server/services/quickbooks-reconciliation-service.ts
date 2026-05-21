@@ -48,6 +48,10 @@ import {
   QB_ASSIGNMENT_TOLERANCE_EX_VAT,
   toMoney,
 } from "../lib/finance/qb-allocation";
+import {
+  classifyBillAccounts,
+  parseAccountNamePatterns,
+} from "@shared/config/qb-account-classification";
 
 const AMOUNT_TOLERANCE = 1; // R1 — generous enough to absorb rounding.
 
@@ -66,6 +70,12 @@ export interface QuickBooksBillSummary {
   balance: number | null;
   vendorName: string | null;
   vendorId: string | null;
+  /**
+   * Unique QB AccountRef.name values across this bill's expense lines.
+   * Empty when QB returned a Bill with no usable line detail (synthetic
+   * header). Used by the COS account-name whitelist (qb-account-classification.ts).
+   */
+  accountNames: string[];
 }
 
 export interface AppCostLineSummary {
@@ -114,6 +124,17 @@ export interface ReconciliationSummary {
   totalAppAmount: number;
   totalQbAmount: number;
   amountVariance: number;
+  /**
+   * COS account-name whitelist diagnostics. Populated only when the
+   * whitelist is active (QB_COS_ACCOUNT_NAME_PATTERNS env var set);
+   * absent otherwise so existing consumers see no behavioural change.
+   */
+  cosAccountFilter?: {
+    enabled: boolean;
+    patterns: string[];
+    excludedNonCosBillCount: number;
+    excludedNonCosAccountNames: string[];
+  };
 }
 
 export interface ReconciliationResult {
@@ -164,6 +185,20 @@ export function billRawToSummary(raw: any): QuickBooksBillSummary {
     totalAmt: raw?.TotalAmt,
     totalTax: raw?.TxnTaxDetail?.TotalTax,
   });
+  // Collect distinct AccountRef.name values across this bill's expense
+  // lines so the COS account-name whitelist can filter on them. Synthetic
+  // header-only bills return an empty list (classifier treats unknown
+  // accounts as "keep" rather than silently dropping evidence).
+  const accountNamesSet = new Set<string>();
+  const rawLines: any[] = Array.isArray(raw?.Line) ? raw.Line : [];
+  for (const line of rawLines) {
+    const detail =
+      line?.AccountBasedExpenseLineDetail ?? line?.ItemBasedExpenseLineDetail ?? null;
+    const name = detail?.AccountRef?.name;
+    if (typeof name === "string" && name.trim().length > 0) {
+      accountNamesSet.add(name);
+    }
+  }
   return {
     id: String(raw?.Id ?? ""),
     docNumber: raw?.DocNumber ?? null,
@@ -177,6 +212,7 @@ export function billRawToSummary(raw: any): QuickBooksBillSummary {
     balance: amountToNumber(raw?.Balance),
     vendorName,
     vendorId,
+    accountNames: Array.from(accountNamesSet),
   };
 }
 
@@ -1554,15 +1590,58 @@ export async function saveCostAllocationsForBill(params: {
 
 // ===================== MATCHING CORE =====================
 
+export interface MatchCostLinesOptions {
+  /**
+   * COS account-name whitelist. When non-empty, Bills whose lines reference
+   * NO matching GL account are excluded from auto-matching (linked rows are
+   * still honoured — operator overrides win). When empty/undefined the
+   * filter is inactive and all bills participate.
+   */
+  cosAccountPatterns?: string[];
+}
+
+export interface MatchCostLinesResult {
+  rows: ReconciliationRow[];
+  excludedNonCosBills: QuickBooksBillSummary[];
+}
+
 export function matchCostLinesToBills(
   costLines: AppCostLineSummary[],
   bills: QuickBooksBillSummary[],
   links: QuickBooksInvoiceLink[],
+  options: MatchCostLinesOptions = {},
 ): ReconciliationRow[] {
+  return matchCostLinesToBillsWithDiagnostics(costLines, bills, links, options).rows;
+}
+
+export function matchCostLinesToBillsWithDiagnostics(
+  costLines: AppCostLineSummary[],
+  bills: QuickBooksBillSummary[],
+  links: QuickBooksInvoiceLink[],
+  options: MatchCostLinesOptions = {},
+): MatchCostLinesResult {
   const rows: ReconciliationRow[] = [];
+  const patterns = options.cosAccountPatterns ?? [];
+  const excludedNonCosBills: QuickBooksBillSummary[] = [];
+
+  // Apply COS account-name whitelist BEFORE matching. Linked rows below
+  // bypass this filter — once an operator has manually linked a Bill to a
+  // cost line we trust the override even if its account is outside the
+  // whitelist (might be a misconfigured pattern).
+  const cosFiltered: QuickBooksBillSummary[] = patterns.length === 0
+    ? bills
+    : bills.filter((b) => {
+        const verdict = classifyBillAccounts(b, patterns);
+        if (!verdict.isCos) excludedNonCosBills.push(b);
+        return verdict.isCos;
+      });
 
   const billsById = new Map<string, QuickBooksBillSummary>();
-  for (const b of bills) billsById.set(b.id, b);
+  for (const b of cosFiltered) billsById.set(b.id, b);
+  // Linked rows can reference bills outside the COS-filtered pool — keep
+  // a separate lookup so we still honour operator overrides.
+  const allBillsById = new Map<string, QuickBooksBillSummary>();
+  for (const b of bills) allBillsById.set(b.id, b);
 
   const costLinesById = new Map<number, AppCostLineSummary>();
   for (const c of costLines) costLinesById.set(c.id, c);
@@ -1570,11 +1649,13 @@ export function matchCostLinesToBills(
   const usedCostLineIds = new Set<number>();
   const usedBillIds = new Set<string>();
 
-  // 1. Persistent links first (highest trust).
+  // 1. Persistent links first (highest trust). Bypasses the COS filter —
+  // operator overrides win even if the linked bill's account isn't on the
+  // whitelist (the whitelist might be wrong; the link is explicit).
   for (const link of links) {
     if (link.appEntityType !== "cost_line" || link.qbEntityType !== "bill") continue;
     const cost = costLinesById.get(link.appEntityId) ?? null;
-    const bill = billsById.get(link.qbEntityId) ?? null;
+    const bill = allBillsById.get(link.qbEntityId) ?? null;
     if (!cost && !bill) continue;
 
     const variance =
@@ -1595,13 +1676,13 @@ export function matchCostLinesToBills(
     if (bill) usedBillIds.add(bill.id);
   }
 
-  // 2. Exact invoice number + amount.
+  // 2. Exact invoice number + amount. Only considers COS-filtered bills.
   for (const cost of costLines) {
     if (usedCostLineIds.has(cost.id)) continue;
     const normCost = normalizeInvoiceNumber(cost.invoiceNumber);
     if (!normCost) continue;
 
-    const match = bills.find((b) => {
+    const match = cosFiltered.find((b) => {
       if (usedBillIds.has(b.id)) return false;
       const normBill = normalizeInvoiceNumber(b.docNumber);
       if (!normBill || normBill !== normCost) return false;
@@ -1626,13 +1707,15 @@ export function matchCostLinesToBills(
     }
   }
 
-  // 3. Fuzzy: vendor + amount tolerance + same month.
+  // 3. Fuzzy: vendor + amount tolerance + same month. Only considers
+  // COS-filtered bills (a non-COS bill from the same vendor with the
+  // same amount shouldn't be silently absorbed into project COS).
   for (const cost of costLines) {
     if (usedCostLineIds.has(cost.id)) continue;
     const normVendor = normalizeName(cost.counterpartyName);
     if (!normVendor) continue;
 
-    const match = bills.find((b) => {
+    const match = cosFiltered.find((b) => {
       if (usedBillIds.has(b.id)) return false;
       if (normalizeName(b.vendorName) !== normVendor) return false;
       if (!amountsWithinTolerance(cost.amountExVat, b.totalAmount)) return false;
@@ -1670,8 +1753,10 @@ export function matchCostLinesToBills(
     });
   }
 
-  // 5. QB-only.
-  for (const bill of bills) {
+  // 5. QB-only. Only COS-filtered bills surface here — excluded non-COS
+  // bills are returned separately on the diagnostics path so the operator
+  // can review them without cluttering the project's recon table.
+  for (const bill of cosFiltered) {
     if (usedBillIds.has(bill.id)) continue;
     rows.push({
       matchType: "qb_only",
@@ -1683,10 +1768,18 @@ export function matchCostLinesToBills(
     });
   }
 
-  return rows;
+  return { rows, excludedNonCosBills };
 }
 
-export function buildSummary(rows: ReconciliationRow[]): ReconciliationSummary {
+export interface BuildSummaryDiagnostics {
+  cosAccountPatterns?: string[];
+  excludedNonCosBills?: QuickBooksBillSummary[];
+}
+
+export function buildSummary(
+  rows: ReconciliationRow[],
+  diagnostics: BuildSummaryDiagnostics = {},
+): ReconciliationSummary {
   let linked = 0;
   let exact = 0;
   let fuzzy = 0;
@@ -1721,6 +1814,19 @@ export function buildSummary(rows: ReconciliationRow[]): ReconciliationSummary {
     }
   }
 
+  const patterns = diagnostics.cosAccountPatterns ?? [];
+  const excludedNonCosBills = diagnostics.excludedNonCosBills ?? [];
+  const cosAccountFilter: ReconciliationSummary["cosAccountFilter"] = patterns.length > 0
+    ? {
+        enabled: true,
+        patterns,
+        excludedNonCosBillCount: excludedNonCosBills.length,
+        excludedNonCosAccountNames: Array.from(
+          new Set(excludedNonCosBills.flatMap((b) => b.accountNames)),
+        ).sort(),
+      }
+    : undefined;
+
   return {
     linkedCount: linked,
     autoExactCount: exact,
@@ -1730,10 +1836,20 @@ export function buildSummary(rows: ReconciliationRow[]): ReconciliationSummary {
     totalAppAmount: Number(totalApp.toFixed(2)),
     totalQbAmount: Number(totalQb.toFixed(2)),
     amountVariance: Number((totalQb - totalApp).toFixed(2)),
+    ...(cosAccountFilter ? { cosAccountFilter } : {}),
   };
 }
 
 // ===================== HIGH-LEVEL ORCHESTRATION =====================
+
+/**
+ * Read the COS account-name whitelist from the environment. When the env
+ * var is unset OR parses to an empty list, returns [] which keeps the
+ * reconciliation behaviour identical to the pre-whitelist code path.
+ */
+export function readCosAccountPatternsFromEnv(): string[] {
+  return parseAccountNamePatterns(process.env.QB_COS_ACCOUNT_NAME_PATTERNS);
+}
 
 export async function runProjectCostReconciliation(
   projectId: number,
@@ -1754,13 +1870,22 @@ export async function runProjectCostReconciliation(
   const costLines = costLineRows.map(costLineToSummary);
   const links = await fetchLinksForCostLines(costLines.map((c) => c.id));
 
-  const rows = matchCostLinesToBills(costLines, bills, links);
-  const summary = buildSummary(rows);
+  const cosAccountPatterns = readCosAccountPatternsFromEnv();
+  const matchResult = matchCostLinesToBillsWithDiagnostics(
+    costLines,
+    bills,
+    links,
+    { cosAccountPatterns },
+  );
+  const summary = buildSummary(matchResult.rows, {
+    cosAccountPatterns,
+    excludedNonCosBills: matchResult.excludedNonCosBills,
+  });
 
   return {
     projectId,
     summary,
-    rows,
+    rows: matchResult.rows,
     generatedAt: new Date().toISOString(),
   };
 }

@@ -25,6 +25,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { EnergyLoader } from "@/components/ui/energy-loader";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
 import { ExpenditureEditableTab } from "@/components/tabs/ExpenditureEditableTab";
+import { GpTrackerTab } from "@/components/tabs/GpTrackerTab";
 import { QuickBooksReconciliationTab } from "@/components/tabs/QuickBooksReconciliationTab";
 // Legacy finance tab imports removed — revenue/GP/COS now under PD department
 import { CashflowTab } from "@/components/tabs/CashflowTab";
@@ -2011,10 +2012,11 @@ export default function ProjectDetailPage() {
           {/* Finance sub-tabs */}
           <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="finance-sub-tabs">
             {[
-              { key: "revenue", label: "Revenue", icon: DollarSign, visible: canViewSubTab.revenue },
-              { key: "cost-lines", label: "Cost Lines", icon: CreditCard, visible: canViewSubTab.expenditure },
+              { key: "revenue", label: "Milestone Tracker", icon: DollarSign, visible: canViewSubTab.revenue },
+              { key: "cost-lines", label: "Expenditure Breakdown", icon: CreditCard, visible: canViewSubTab.expenditure },
               { key: "cos-tracker", label: "COS Tracker", icon: CheckCircle, visible: canViewSubTab.expenditure },
               { key: "rev-tracker", label: "Revenue Tracker", icon: TrendingUp, visible: canViewSubTab.revenue },
+              { key: "gp-tracker", label: "GP Tracker", icon: TrendingUp, visible: canViewSubTab.revenue && canViewSubTab.expenditure },
               { key: "cashflow", label: "Cashflow", icon: Activity, visible: canViewSubTab.cashflow },
               { key: "procurement", label: "Procurement", icon: CreditCard, visible: true },
               { key: "subcontractors", label: "Subs", icon: Users, visible: canViewSubTab.subcontractors },
@@ -2027,7 +2029,7 @@ export default function ProjectDetailPage() {
           </div>
 
           {/* Budget baseline strip */}
-          {projectInfoId && (activeSubTab === "revenue" || activeSubTab === "cost-lines") && (
+          {projectInfoId && (activeSubTab === "revenue" || activeSubTab === "cost-lines" || activeSubTab === "gp-tracker") && (
             <BudgetBaselineStrip projectId={projectInfoId} actualRevenue={totalRevenueActual} />
           )}
 
@@ -2035,6 +2037,7 @@ export default function ProjectDetailPage() {
           {activeSubTab === "cost-lines" && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} projectId={projectInfoId ?? null} highlightId={highlightType === 'expense' ? highlightId : null} initialFilter={costFilter || undefined} />}
           {activeSubTab === "cos-tracker" && canViewSubTab.expenditure && <MonthlyRealisationTab projectName={projectName} projectId={projectInfoId ?? null} />}
           {activeSubTab === "rev-tracker" && canViewSubTab.revenue && <RevenueTrackerTab projectName={projectName} projectId={projectInfoId ?? null} />}
+          {activeSubTab === "gp-tracker" && canViewSubTab.revenue && canViewSubTab.expenditure && <GpTrackerTab projectName={projectName} projectId={projectInfoId ?? null} />}
           {activeSubTab === "cashflow" && canViewSubTab.cashflow && <CashflowTab projectName={projectName} canOverrideFinance={v2Perms?.canOverrideFinance ?? false} />}
           {activeSubTab === "procurement" && projectInfoId && <ProjectProcurementTab projectId={projectInfoId} projectName={projectName} initialFilter={procurementFilter || undefined} />}
           {activeSubTab === "subcontractors" && canViewSubTab.subcontractors && <ProjectSubcontractorsTab projectName={projectName} />}

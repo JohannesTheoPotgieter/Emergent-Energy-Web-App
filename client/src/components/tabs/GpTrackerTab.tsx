@@ -14,8 +14,25 @@ import {
 } from "recharts";
 import {
   Loader2, Search, DollarSign, TrendingUp, Activity, Target, X, Percent,
+  AlertTriangle,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+
+interface CategoryAllocationHealthEntry {
+  projectId: number;
+  projectName: string;
+  status: "healthy" | "partial" | "missing" | "no_lines";
+  allocations: number;
+  allocationsWithRevenue: number;
+  parentLines: number;
+  linesWithoutAllocation: number;
+  actualsRows: number;
+}
+
+interface CategoryAllocationHealthResponse {
+  summary: { total: number; healthy: number; partial: number; missing: number; noLines: number };
+  projects: CategoryAllocationHealthEntry[];
+}
 
 interface GpTrackerTabProps {
   projectName: string;
@@ -275,6 +292,31 @@ export function GpTrackerTab({ projectName, projectId }: GpTrackerTabProps) {
     enabled: !!projectName,
   });
 
+  // Category allocation health — GP per line = (line.actualTotal /
+  // category.totalActualTotal) × category.revenueAllocation. If the
+  // workbook's column J is missing for a category, GP silently resolves
+  // to 0 for every line in that category. Surface it loudly here.
+  const { data: allocationHealth } = useQuery<CategoryAllocationHealthResponse>({
+    queryKey: ["/api/finance/category-allocation-health"],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch("/api/finance/category-allocation-health", {
+        credentials: "include",
+        headers,
+      });
+      if (!res.ok) throw new Error("Failed to fetch allocation health");
+      return res.json();
+    },
+    staleTime: 5 * 60_000,
+  });
+
+  const projectHealth = useMemo<CategoryAllocationHealthEntry | null>(() => {
+    if (!allocationHealth || !projectId) return null;
+    return allocationHealth.projects.find((p) => p.projectId === projectId) ?? null;
+  }, [allocationHealth, projectId]);
+
   const months = data?.months ?? [];
   const totalMilestoneRevenue = data?.totalMilestoneRevenue ?? 0;
   const totalCOS = data?.totalCOS ?? 0;
@@ -385,6 +427,26 @@ export function GpTrackerTab({ projectName, projectId }: GpTrackerTabProps) {
 
   return (
     <div className="space-y-6" data-testid="gp-tracker-tab">
+      {projectHealth && (projectHealth.status === "missing" || projectHealth.status === "partial") && (
+        <Card className="border-amber-300 bg-amber-50/60 shadow-sm" data-testid="card-gp-allocation-health-warning">
+          <CardContent className="p-4 flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+            <div className="text-sm">
+              <p className="font-semibold text-amber-900">
+                Category revenue allocation {projectHealth.status === "missing" ? "missing" : "incomplete"}
+              </p>
+              <p className="text-amber-800/90 mt-0.5 leading-relaxed">
+                {projectHealth.linesWithoutAllocation} cost line(s) have no
+                category-revenue allocation (workbook column J). Revenue per line
+                renders as <code className="px-1 rounded bg-amber-100">R 0</code>{" "}
+                for those rows rather than a guessed number — fix column J in the
+                workbook and re-import to unblock GP. {projectHealth.allocationsWithRevenue} of {projectHealth.allocations} categories carry a value today.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card className="border-emerald-200/80 bg-gradient-to-r from-emerald-50 to-emerald-50/30 shadow-sm" data-testid="card-gp-guidance">
         <CardContent className="p-4 flex items-start gap-3">
           <div className="rounded-xl bg-emerald-200/60 p-2.5 mt-0.5 shrink-0">

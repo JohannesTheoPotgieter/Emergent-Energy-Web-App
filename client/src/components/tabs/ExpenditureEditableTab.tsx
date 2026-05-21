@@ -550,7 +550,6 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
                  key.startsWith('/api/revenue-tracking/') ||
                  key === 'revenue-tracker-project' ||
                  key === 'revenue-tab' ||
-                 key === 'finance-revenue' ||
                  key === 'dashboard' ||
                  key === 'cashflow';
         }
