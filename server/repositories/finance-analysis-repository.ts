@@ -345,10 +345,10 @@ export interface DsoDpoPoint {
 
 export async function computeDsoDpoTrend(weeks: number): Promise<DsoDpoPoint[]> {
   const today = new Date();
-  const dayOfWeek = today.getUTCDay() || 7; // Sunday = 7
-  const monday = new Date(today);
-  monday.setUTCDate(today.getUTCDate() - (dayOfWeek - 1));
-  monday.setUTCHours(0, 0, 0, 0);
+  // Anchor "this week's Monday" to SAST so the cutoff doesn't slip a
+  // day when the server is UTC and the operator just rolled into a
+  // new week on their SAST calendar.
+  const monday = sastWeekStart(today);
   const cutoff = new Date(monday);
   cutoff.setUTCDate(monday.getUTCDate() - weeks * 7);
   const cutoffIso = cutoff.toISOString().slice(0, 10);
@@ -416,10 +416,7 @@ function bucketByWeek(
     // (e.g. "2026-04-01T14:30:00Z") doesn't drift by ±1 day vs an invoice_date
     // stored as a date-only string ("2026-03-01").
     const days = Math.max(0, diffDays(paid, invoice));
-    const dayOfWeek = paid.getUTCDay() || 7;
-    const wkStart = new Date(paid);
-    wkStart.setUTCDate(paid.getUTCDate() - (dayOfWeek - 1));
-    wkStart.setUTCHours(0, 0, 0, 0);
+    const wkStart = sastWeekStart(paid);
     const offsetWeeks = Math.round((thisMonday.getTime() - wkStart.getTime()) / (7 * 86_400_000));
     if (offsetWeeks < 0 || offsetWeeks >= weeks) continue;
     const key = wkStart.toISOString().slice(0, 10);
@@ -533,6 +530,21 @@ function parseDate(value: unknown): Date | null {
   if (!trimmed) return null;
   const parsed = new Date(trimmed.length === 10 ? `${trimmed}T00:00:00.000Z` : trimmed);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+// SAST-anchored Monday-of-week for weekly bucketing. Using
+// d.getUTCDay() directly shifted the row into the previous ISO week
+// for any paid_date stored as a full datetime after 22:00 SAST (post-
+// midnight UTC). Returns a UTC Date stamped at the Monday's SAST
+// midnight expressed as UTC midnight so `toISOString().slice(0,10)`
+// yields the operator's bucket label ("YYYY-MM-DD"). Caller MUST NOT
+// re-apply .setUTCHours(0,0,0,0) — it's already done.
+function sastWeekStart(d: Date): Date {
+  const shifted = new Date(d.getTime() + 120 * 60 * 1000);
+  const dow = shifted.getUTCDay() || 7; // ISO: Sunday => 7
+  shifted.setUTCDate(shifted.getUTCDate() - (dow - 1));
+  shifted.setUTCHours(0, 0, 0, 0);
+  return shifted;
 }
 
 function dateToIso(value: unknown): string | null {
