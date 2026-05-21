@@ -4100,6 +4100,25 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
             description: "The data changed while you were resolving — please review the updated list.",
             variant: "destructive",
           });
+        } else if (err?.error === "resurrection_decision_required" && Array.isArray(err.resurrections)) {
+          setCommitResults((prev) =>
+            prev.map((r) =>
+              r.runId === activeConflictResult.runId
+                ? {
+                    ...r,
+                    status: "resurrection_pending" as const,
+                    error: err.error,
+                    conflicts: undefined,
+                    resurrections: err.resurrections as BulkResurrectionCandidate[],
+                  }
+                : r,
+            ),
+          );
+          setActiveConflictRunId(null);
+          toast({
+            title: "Deleted rows need approval",
+            description: `${activeConflictResult.projectName} has previously deleted rows to approve before it can finish.`,
+          });
         } else {
           toast({
             title: "Commit failed",

@@ -40,6 +40,14 @@ describe("Smart Import bulk resurrection recovery", () => {
     expect(page).toMatch(/handleRestoreAndReimportAllResurrections/);
   });
 
+  it("conflict re-commit moves a row to resurrection_pending when deleted rows are the next blocker", () => {
+    const handler = page.match(/const handleResolveAndRecommit[\s\S]+?\n  \};\n/);
+    expect(handler).not.toBeNull();
+    expect(handler![0]).toMatch(/err\?\.error === "resurrection_decision_required"/);
+    expect(handler![0]).toMatch(/status:\s*"resurrection_pending"\s+as const/);
+    expect(handler![0]).toMatch(/resurrections:\s*err\.resurrections as BulkResurrectionCandidate\[\]/);
+  });
+
   it("result component renders per-file and all-files restore/reimport controls", () => {
     expect(flow).toMatch(/resurrection_pending/);
     expect(flow).toMatch(/resurrectionCount\?:\s*number/);
