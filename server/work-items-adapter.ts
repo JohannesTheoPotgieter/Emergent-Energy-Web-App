@@ -31,6 +31,27 @@ export async function isWorkItemsEnabled(): Promise<boolean> {
   return getFeatureFlag(WORK_ITEMS_FLAG);
 }
 
+export async function hasPlanWorkItemsForProject(projectName: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: workItems.id })
+    .from(workItems)
+    .where(
+      and(
+        eq(workItems.workstream, "PM"),
+        eq(workItems.source, "SMART_IMPORT"),
+        isNull(workItems.deletedAt),
+        sql`EXISTS (
+          SELECT 1 FROM project_info pi
+          WHERE pi.id = ${workItems.projectId}
+          AND pi.project_name = ${projectName}
+        )`
+      )
+    )
+    .limit(1);
+
+  return rows.length > 0;
+}
+
 export async function getWorkItemsAsNormalizedPlanTasks(projectName: string): Promise<any[]> {
   const items = await db
     .select()

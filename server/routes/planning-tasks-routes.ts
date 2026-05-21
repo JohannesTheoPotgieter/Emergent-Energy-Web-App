@@ -9,7 +9,7 @@ import { requireAdmin } from "../middleware/requireAdmin";
 import { ApiError, sendError, badRequest, notFound, validationError, unauthorized, serverError, forbidden } from "../lib/api-error";
 import { validateTaskCreate, validateTaskUpdate } from "../lib/task-validation";
 import { normalizeStatus, normalizePriority } from "../lib/canonical-task-engine";
-import { isWorkItemsEnabled, getAllWorkItemsForPlanTab, toCanonicalStatus } from "../work-items-adapter";
+import { isWorkItemsEnabled, getAllWorkItemsForPlanTab, hasPlanWorkItemsForProject, toCanonicalStatus } from "../work-items-adapter";
 import { expectedPctFromDates } from "../lib/kpi-formulas";
 import { projectEngineeringTicket } from "@shared/lib/engineering-ticket-view";
 import { softDeleteCanonicalWorkItemByLegacyTaskId } from "../canonical-boundaries";
@@ -190,7 +190,9 @@ export function registerPlanningTasksRoutes(app: Express) {
     try {
       const projectName = decodeURIComponent(paramStr(req, "projectName"));
 
-      const useCanonical = await isWorkItemsEnabled();
+      const flagAllowsCanonical = await isWorkItemsEnabled();
+      const hasImportedCanonicalRows = flagAllowsCanonical ? false : await hasPlanWorkItemsForProject(projectName);
+      const useCanonical = flagAllowsCanonical || hasImportedCanonicalRows;
 
       let baselineTasks: any[] = [];
       let operationalTasks: any[] = [];

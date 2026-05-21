@@ -130,6 +130,15 @@ describe("writePlanIncremental dedup guards", () => {
     expect(exec).toContain("clampPercent(fileRow.pctComplete)");
     expect(exec).toContain("clampPercent(fileRow.expectedPctComplete)");
   });
+
+  it("refreshes WBS metadata and workbook ordering on incremental updates", () => {
+    expect(exec).toContain("const incomingWbsCode");
+    expect(exec).toContain("wbsCode: incomingWbsCode");
+    expect(exec).toContain("outlineNumber: incomingWbsCode");
+    expect(exec).toContain("sortOrder: sourceSortOrder");
+    expect(exec).toMatch(/mr\.classification\s*===\s*"CHANGED"[\s\S]*wiUpdates\.wbsCode\s*=\s*incomingWbsCode/);
+    expect(exec).toMatch(/parentId pass/);
+  });
 });
 
 // ---------------------------------------------------------------------------
