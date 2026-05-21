@@ -193,4 +193,19 @@ describe("normalizer.extractCostLines — § 3.7 paidDate is actuals-only (no fo
     expect(line.cashflowConfirmed).toBe(true);
     expect(line.forecastPaymentDate).toBe("2026-03-01");
   });
+
+  it("normalizes date-valued text cells to a stable yyyy-mm-dd description", () => {
+    const result = buildAndExtract([{
+      description: new Date(Date.UTC(2026, 1, 1)) as any,
+      amount: 1000,
+      invoiceNumber: "INV-006",
+      invoiceDate: new Date(Date.UTC(2026, 1, 28)),
+      paidDate: new Date(Date.UTC(2026, 2, 7)),
+      poNumber: "PO-006",
+      forecastPaymentDate: null,
+    }]);
+
+    expect(result.lines).toHaveLength(1);
+    expect(result.lines[0].description).toBe("2026-02-01");
+  });
 });
