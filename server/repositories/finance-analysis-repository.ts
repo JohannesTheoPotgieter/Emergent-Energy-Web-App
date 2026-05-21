@@ -12,6 +12,7 @@ import { db } from "../db";
 import {
   normalizedRevenueLines,
   normalizedCostLines,
+  normalizedCostLineActuals,
   paymentTerms,
   counterparties,
   projectPlan,
@@ -203,17 +204,30 @@ export async function listProjectCosRows(): Promise<ProjectCosRow[]> {
     .from(projectRevenueSummary)
     .where(isNull(projectRevenueSummary.effectiveTo));
 
+  // Sum from the child actuals table — each row is one invoiced actual
+  // for its parent cost line. Reading parent.amountExVat instead inflated
+  // invoicedToDate for split-paid lines (one parent → N actuals): the
+  // parent carries the costed total once, while the actuals each carry
+  // their per-invoice amount. We want the latter for "actually invoiced
+  // to date." Snapshot + soft-delete guarded on both tables to keep this
+  // consistent with the rest of the repo.
   const invoicedRows = await db
     .select({
-      projectId: normalizedCostLines.projectId,
-      amount: normalizedCostLines.amountExVat,
+      projectId: normalizedCostLineActuals.projectId,
+      amount: normalizedCostLineActuals.actualTotal,
     })
-    .from(normalizedCostLines)
+    .from(normalizedCostLineActuals)
+    .innerJoin(
+      normalizedCostLines,
+      eq(normalizedCostLineActuals.costLineId, normalizedCostLines.id),
+    )
     .where(
       and(
+        isNull(normalizedCostLineActuals.effectiveTo),
+        isNull(normalizedCostLineActuals.deletedAt),
         isNull(normalizedCostLines.effectiveTo),
         isNull(normalizedCostLines.deletedAt),
-        inArray(normalizedCostLines.status, COST_INVOICED_OR_PAID),
+        isNotNull(normalizedCostLineActuals.invoiceNumber),
       ),
     );
 
@@ -267,21 +281,32 @@ export async function listCounterpartyMonthlyCos(monthsBack: number): Promise<Co
   cutoff.setUTCMonth(cutoff.getUTCMonth() - monthsBack);
   const cutoffIso = cutoff.toISOString().slice(0, 10);
 
+  // Bucket invoiced amounts by counterparty+month using child actuals
+  // (per-invoice grain) and JOIN to parent only for counterparty
+  // metadata. Reading parent.amountExVat + parent.invoiceDate double-
+  // counted split-paid lines as one big bucket for the parent's date,
+  // even when the underlying invoices fell across multiple months.
   const rows = await db
     .select({
       counterpartyId: normalizedCostLines.counterpartyId,
       counterpartyName: normalizedCostLines.counterpartyName,
-      invoiceDate: normalizedCostLines.invoiceDate,
-      amount: normalizedCostLines.amountExVat,
+      invoiceDate: normalizedCostLineActuals.invoiceDate,
+      amount: normalizedCostLineActuals.actualTotal,
     })
-    .from(normalizedCostLines)
+    .from(normalizedCostLineActuals)
+    .innerJoin(
+      normalizedCostLines,
+      eq(normalizedCostLineActuals.costLineId, normalizedCostLines.id),
+    )
     .where(
       and(
+        isNull(normalizedCostLineActuals.effectiveTo),
+        isNull(normalizedCostLineActuals.deletedAt),
         isNull(normalizedCostLines.effectiveTo),
         isNull(normalizedCostLines.deletedAt),
-        inArray(normalizedCostLines.status, COST_INVOICED_OR_PAID),
-        isNotNull(normalizedCostLines.invoiceDate),
-        gte(normalizedCostLines.invoiceDate, cutoffIso),
+        isNotNull(normalizedCostLineActuals.invoiceNumber),
+        isNotNull(normalizedCostLineActuals.invoiceDate),
+        gte(normalizedCostLineActuals.invoiceDate, cutoffIso),
       ),
     );
 

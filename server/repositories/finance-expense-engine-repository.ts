@@ -219,6 +219,7 @@ export class FinanceExpenseEngineRepository {
         .where(and(
           eq(normalizedCostLines.id, canonicalId),
           isNull(normalizedCostLines.effectiveTo),
+          isNull(normalizedCostLines.deletedAt),
         ))
         .limit(1);
       if (current?.updatedAt) {
@@ -240,6 +241,7 @@ export class FinanceExpenseEngineRepository {
       .where(and(
         eq(normalizedCostLines.id, canonicalId),
         isNull(normalizedCostLines.effectiveTo),
+        isNull(normalizedCostLines.deletedAt),
       ))
       .returning();
     if (!result[0]) return undefined;
@@ -412,6 +414,7 @@ export class FinanceExpenseEngineRepository {
         and(
           eq(normalizedCostLines.id, id),
           isNull(normalizedCostLines.effectiveTo),
+          isNull(normalizedCostLines.deletedAt),
         ),
       )
       .limit(1);
@@ -441,6 +444,7 @@ export class FinanceExpenseEngineRepository {
         and(
           eq(normalizedCostLines.id, id),
           isNull(normalizedCostLines.effectiveTo),
+          isNull(normalizedCostLines.deletedAt),
         ),
       )
       .limit(1);

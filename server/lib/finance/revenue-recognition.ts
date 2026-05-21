@@ -49,7 +49,14 @@ const stripTrackerSuffix = (s: string | null | undefined): string =>
 
 const toNum = (v: unknown): number => {
   if (v == null || v === "") return 0;
-  const n = parseFloat(String(v));
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  // Strip thousand separators / currency prefixes that may survive a
+  // UI write path. parseFloat silently truncated "1,234.56" to 1 — a
+  // ~99% revenue loss. Number() on the same string yields NaN. Cleaning
+  // first preserves the intended value for either input shape.
+  const cleaned = String(v).replace(/[^\d.\-]/g, "");
+  if (cleaned === "" || cleaned === "-" || cleaned === ".") return 0;
+  const n = Number(cleaned);
   return Number.isFinite(n) ? n : 0;
 };
 

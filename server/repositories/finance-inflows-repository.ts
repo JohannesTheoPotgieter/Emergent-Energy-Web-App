@@ -253,6 +253,7 @@ export class FinanceInflowsRepository {
       .where(and(
         eq(normalizedRevenueLines.id, canonicalId),
         isNull(normalizedRevenueLines.effectiveTo),
+        isNull(normalizedRevenueLines.deletedAt),
       ))
       .returning();
     if (!result[0]) return undefined;
@@ -357,6 +358,7 @@ export class FinanceInflowsRepository {
         and(
           eq(normalizedRevenueLines.id, id),
           isNull(normalizedRevenueLines.effectiveTo),
+          isNull(normalizedRevenueLines.deletedAt),
         ),
       )
       .limit(1);
@@ -513,6 +515,7 @@ export class FinanceInflowsRepository {
         eq(normalizedRevenueLines.projectName, args.projectName),
         eq(normalizedRevenueLines.sourceRow, args.sourceRow),
         isNull(normalizedRevenueLines.effectiveTo),
+        isNull(normalizedRevenueLines.deletedAt),
       ));
   }
 
@@ -523,6 +526,7 @@ export class FinanceInflowsRepository {
       .where(and(
         eq(normalizedRevenueLines.id, id),
         isNull(normalizedRevenueLines.effectiveTo),
+        isNull(normalizedRevenueLines.deletedAt),
       ));
   }
 }
