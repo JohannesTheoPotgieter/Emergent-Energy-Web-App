@@ -16,7 +16,7 @@
  * in labels.ts without touching JSX.
  */
 
-import { Files, CheckCircle2, AlertTriangle, AlertCircle, Bell, ExternalLink, ShieldCheck } from "lucide-react";
+import { Files, CheckCircle2, AlertTriangle, AlertCircle, Bell, ExternalLink, ShieldCheck, RefreshCw } from "lucide-react";
 import { BULK_LABELS } from "./labels";
 
 interface SmartImportBulkIntroProps {
@@ -82,10 +82,12 @@ export interface BulkResultProject {
    *  like "Create new" so the correct run is re-committed. */
   runId: number;
   projectName: string;
-  status: "committed" | "skipped" | "failed" | "conflicts_pending";
+  status: "committed" | "skipped" | "failed" | "conflicts_pending" | "resurrection_pending";
   error?: string;
   /** Number of unresolved 3-way conflicts (only set when status === "conflicts_pending"). */
   conflictCount?: number;
+  /** Number of deleted rows that need restore approval before this file can reimport. */
+  resurrectionCount?: number;
 }
 
 interface SmartImportBulkResultNextProps {
@@ -112,8 +114,20 @@ interface SmartImportBulkResultNextProps {
    * `duplicate_project_candidate` with `confirmNewProject: true`.
    */
   onCreateNewProjectAll?: () => void;
+  /**
+   * Called when the operator approves restoring previously deleted rows
+   * for one row and wants that run re-committed immediately.
+   */
+  onRestoreAndReimport?: (runId: number, projectName: string) => void;
+  /**
+   * Called when the operator approves restoring previously deleted rows
+   * across every affected bulk result row.
+   */
+  onRestoreAndReimportAll?: () => void;
   /** True while a create-new request is in flight. */
   busyCreatingNew?: boolean;
+  /** True while restore/reimport requests are in flight. */
+  busyRestoringResurrections?: boolean;
 }
 
 export function SmartImportBulkResultNext({
@@ -123,12 +137,16 @@ export function SmartImportBulkResultNext({
   onResolveConflicts,
   onCreateNewProject,
   onCreateNewProjectAll,
+  onRestoreAndReimport,
+  onRestoreAndReimportAll,
   busyCreatingNew,
+  busyRestoringResurrections,
 }: SmartImportBulkResultNextProps) {
   const committed = projects.filter((p) => p.status === "committed");
   const duplicateFailures = projects.filter(
     (p) => p.status === "failed" && p.error === "duplicate_project_candidate"
   );
+  const resurrectionPending = projects.filter((p) => p.status === "resurrection_pending");
 
   return (
     <div className="space-y-4" data-testid="bulk-result-next">
@@ -176,6 +194,34 @@ export function SmartImportBulkResultNext({
         </div>
       )}
 
+      {resurrectionPending.length > 0 && onRestoreAndReimportAll && (
+        <div
+          className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3"
+          data-testid="bulk-resurrection-banner"
+        >
+          <div className="flex items-start gap-2 min-w-0">
+            <RefreshCw className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-amber-900 min-w-0">
+              <div className="font-semibold">
+                {resurrectionPending.length} file{resurrectionPending.length === 1 ? "" : "s"} need deleted rows restored before reimport
+              </div>
+              <div className="text-xs text-amber-800/90">
+                Approve the restore decision once here instead of opening every file one by one.
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onRestoreAndReimportAll}
+            disabled={busyRestoringResurrections}
+            data-testid="btn-restore-reimport-all"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-60 disabled:cursor-not-allowed px-3 py-1.5 rounded flex-shrink-0"
+          >
+            {busyRestoringResurrections ? "Reimporting..." : `Approve & reimport all (${resurrectionPending.length})`}
+          </button>
+        </div>
+      )}
+
       <div className="rounded-lg border border-border">
         <div className="px-4 py-2 border-b bg-muted/40 text-sm font-semibold" data-testid="bulk-per-file-heading">
           {BULK_LABELS.result.perFileHeading}
@@ -187,7 +233,7 @@ export function SmartImportBulkResultNext({
                 <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
               ) : p.status === "skipped" ? (
                 <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
-              ) : p.status === "conflicts_pending" ? (
+              ) : p.status === "conflicts_pending" || p.status === "resurrection_pending" ? (
                 <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
               ) : (
                 <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
@@ -200,7 +246,14 @@ export function SmartImportBulkResultNext({
                     : "Conflicts need a decision"}
                 </span>
               )}
-              {p.status !== "conflicts_pending" && p.error && (
+              {p.status === "resurrection_pending" && (
+                <span className="text-xs text-amber-700 max-w-[260px] truncate" title="Previously deleted rows need approval before reimport">
+                  {p.resurrectionCount
+                    ? `${p.resurrectionCount} deleted row${p.resurrectionCount === 1 ? "" : "s"} need restore approval`
+                    : "Deleted rows need restore approval"}
+                </span>
+              )}
+              {p.status !== "conflicts_pending" && p.status !== "resurrection_pending" && p.error && (
                 <span className="text-xs text-red-600 max-w-[240px] truncate" title={p.error}>
                   {p.error}
                 </span>
@@ -236,6 +289,17 @@ export function SmartImportBulkResultNext({
                     className="inline-flex items-center gap-1 text-xs font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 disabled:opacity-60 disabled:cursor-not-allowed px-2 py-1 rounded border border-amber-300"
                   >
                     Create new
+                  </button>
+                )}
+                {p.status === "resurrection_pending" && onRestoreAndReimport && (
+                  <button
+                    type="button"
+                    onClick={() => onRestoreAndReimport(p.runId, p.projectName)}
+                    disabled={busyRestoringResurrections}
+                    data-testid={`btn-restore-reimport-${idx}`}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 disabled:opacity-60 disabled:cursor-not-allowed px-2 py-1 rounded border border-amber-300"
+                  >
+                    Approve & reimport{p.resurrectionCount ? ` (${p.resurrectionCount})` : ""}
                   </button>
                 )}
                 {p.status === "failed" && onRetry && (

@@ -3750,16 +3750,30 @@ export interface PendingRun {
   resolvedIssues: number;
 }
 
+interface BulkResurrectionCandidate {
+  resurrectionKey: string;
+  section: "PLAN" | "REVENUE" | "EXPENDITURE";
+  rowLabel: string;
+  businessKey: string;
+  deletedRowId: number;
+  deletedAt: string | null;
+  filePreview: Record<string, string | number | null>;
+  deletedPreview: Record<string, string | number | null>;
+}
+
 export interface BulkCommitResult {
   runId: number;
   projectName: string;
-  status: "committed" | "skipped" | "failed" | "conflicts_pending";
+  status: "committed" | "skipped" | "failed" | "conflicts_pending" | "resurrection_pending";
   counts?: any;
   error?: string;
   /** Populated when status === "conflicts_pending" — payload from the
    *  server's `v2_conflicts_detected` 409 envelope. The bulk panel uses
    *  these to drive the per-file conflict resolution dialog. */
   conflicts?: V2ConflictRow[];
+  /** Populated when status === "resurrection_pending" from the server's
+   *  `resurrection_decision_required` 409 envelope. */
+  resurrections?: BulkResurrectionCandidate[];
 }
 
 export interface SmartImportRunHistoryItem {
@@ -3938,6 +3952,7 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
     const BATCH_SIZE = 3;
 
     let conflictsPending = 0;
+    let resurrectionPending = 0;
 
     for (let i = 0; i < committableRuns.length; i += BATCH_SIZE) {
       const batch = committableRuns.slice(i, i + BATCH_SIZE);
@@ -3977,6 +3992,19 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
                 conflicts: err.conflicts as V2ConflictRow[],
               };
             }
+            // Previously deleted rows need an explicit restore decision.
+            // Capture the payload so bulk operators can approve and
+            // reimport from the results screen instead of opening each
+            // file in the single-file wizard.
+            if (err?.error === "resurrection_decision_required" && Array.isArray(err.resurrections)) {
+              return {
+                runId: run.id,
+                projectName: run.projectName,
+                status: "resurrection_pending" as const,
+                error: err.error,
+                resurrections: err.resurrections as BulkResurrectionCandidate[],
+              };
+            }
             return { runId: run.id, projectName: run.projectName, status: "failed" as const, error: err.error || "Commit failed" };
           } catch {
             return { runId: run.id, projectName: run.projectName, status: "failed" as const, error: "Network error" };
@@ -3989,6 +4017,7 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
         results.push(val);
         if (val.status === "committed") committed++;
         else if (val.status === "conflicts_pending") conflictsPending++;
+        else if (val.status === "resurrection_pending") resurrectionPending++;
         else failed++;
       }
       setProgress(Math.round(((i + batch.length) / total) * 100));
@@ -3997,10 +4026,11 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
     setProgress(100);
     setCommitDone(true);
     setCommitResults(results);
-    const pendingSuffix = conflictsPending > 0 ? `, ${conflictsPending} need conflict review` : "";
+    const conflictSuffix = conflictsPending > 0 ? `, ${conflictsPending} need conflict review` : "";
+    const resurrectionSuffix = resurrectionPending > 0 ? `, ${resurrectionPending} need restore approval` : "";
     toast({
       title: "Bulk Commit Complete",
-      description: `${committed} committed, ${failed} failed${pendingSuffix} out of ${total}`,
+      description: `${committed} committed, ${failed} failed${conflictSuffix}${resurrectionSuffix} out of ${total}`,
     });
     setCommitting(false);
   };
@@ -4085,11 +4115,175 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
     }
   };
 
+  // ── Restore/reimport override for resurrection_decision_required ──────
+  // Bulk recovery for resurrection_decision_required failures. This is
+  // the same explicit `restore_and_apply` choice the single-file wizard
+  // offers, applied across the selected bulk row or every affected row.
+  const [restoringResurrections, setRestoringResurrections] = useState(false);
+
+  const buildRestoreResurrectionDecisions = (
+    candidates: BulkResurrectionCandidate[],
+  ): Record<string, "keep_deleted" | "restore_and_apply"> => {
+    const decisions: Record<string, "keep_deleted" | "restore_and_apply"> = {};
+    for (const c of candidates) {
+      decisions[c.resurrectionKey] = "restore_and_apply";
+    }
+    return decisions;
+  };
+
+  const recommitWithRestoredRows = async (
+    runId: number,
+    projectName: string,
+    resurrections: BulkResurrectionCandidate[],
+  ): Promise<"committed" | "needs_review" | "failed"> => {
+    const decisions = buildRestoreResurrectionDecisions(resurrections);
+    try {
+      const res = await fetch(`/api/smart-import/${runId}/commit`, {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          forceCommit: true,
+          acknowledgeEqualDate: true,
+          forceRecreate: true,
+          acknowledgeManualEdits: true,
+          resurrectionDecisions: decisions,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCommitResults((prev) =>
+          prev.map((r) =>
+            r.runId === runId
+              ? {
+                  ...r,
+                  status: "committed" as const,
+                  counts: data.counts,
+                  error: undefined,
+                  conflicts: undefined,
+                  resurrections: undefined,
+                }
+              : r,
+          ),
+        );
+        return "committed";
+      }
+
+      const err = await res.json().catch(() => ({ error: "Commit failed" }));
+      if (err?.error === "v2_conflicts_detected" && Array.isArray(err.conflicts)) {
+        setCommitResults((prev) =>
+          prev.map((r) =>
+            r.runId === runId
+              ? {
+                  ...r,
+                  status: "conflicts_pending" as const,
+                  error: undefined,
+                  conflicts: err.conflicts as V2ConflictRow[],
+                  resurrections: undefined,
+                }
+              : r,
+          ),
+        );
+        return "needs_review";
+      }
+
+      if (err?.error === "resurrection_decision_required" && Array.isArray(err.resurrections)) {
+        setCommitResults((prev) =>
+          prev.map((r) =>
+            r.runId === runId
+              ? {
+                  ...r,
+                  status: "resurrection_pending" as const,
+                  error: err.error,
+                  resurrections: err.resurrections as BulkResurrectionCandidate[],
+                }
+              : r,
+          ),
+        );
+        return "needs_review";
+      }
+
+      setCommitResults((prev) =>
+        prev.map((r) =>
+          r.runId === runId
+            ? {
+                ...r,
+                status: "failed" as const,
+                error: err.message || err.error || "Commit failed",
+                resurrections: undefined,
+              }
+            : r,
+        ),
+      );
+      toast({
+        title: `Could not reimport "${projectName}"`,
+        description: err.message || err.error || "Commit failed",
+        variant: "destructive",
+      });
+      return "failed";
+    } catch {
+      toast({
+        title: "Network error",
+        description: `Could not reimport "${projectName}".`,
+        variant: "destructive",
+      });
+      return "failed";
+    }
+  };
+
+  const handleRestoreAndReimportRun = async (runId: number, projectName: string) => {
+    const hit = commitResults.find(
+      (r) => r.runId === runId && r.status === "resurrection_pending",
+    );
+    if (!hit?.resurrections?.length) return;
+    setRestoringResurrections(true);
+    try {
+      const outcome = await recommitWithRestoredRows(hit.runId, hit.projectName, hit.resurrections);
+      if (outcome === "committed") {
+        toast({
+          title: "Reimport complete",
+          description: `"${projectName}" restored deleted rows and imported successfully.`,
+        });
+      } else if (outcome === "needs_review") {
+        toast({
+          title: "More review needed",
+          description: `"${projectName}" moved to the next review step.`,
+        });
+      }
+    } finally {
+      setRestoringResurrections(false);
+    }
+  };
+
+  const handleRestoreAndReimportAllResurrections = async () => {
+    const targets = commitResults.filter(
+      (r) => r.status === "resurrection_pending" && r.resurrections?.length,
+    );
+    if (targets.length === 0) return;
+    setRestoringResurrections(true);
+    let committedCount = 0;
+    let needsReview = 0;
+    let failedCount = 0;
+    try {
+      for (const target of targets) {
+        const outcome = await recommitWithRestoredRows(
+          target.runId,
+          target.projectName,
+          target.resurrections ?? [],
+        );
+        if (outcome === "committed") committedCount++;
+        else if (outcome === "needs_review") needsReview++;
+        else failedCount++;
+      }
+      toast({
+        title: "Restore and reimport complete",
+        description: `${committedCount} committed${needsReview > 0 ? `, ${needsReview} still need review` : ""}${failedCount > 0 ? `, ${failedCount} failed` : ""}.`,
+      });
+    } finally {
+      setRestoringResurrections(false);
+    }
+  };
+
   // ── Create-new override for duplicate_project_candidate failures ──────
-  // When the smart-import duplicate guard blocks a row, the operator can
-  // click "Create new" to re-commit that same run with confirmNewProject:
-  // true, which tells the server to skip the similarity check and create
-  // a fresh project_info row.
   const [creatingNewProject, setCreatingNewProject] = useState(false);
 
   const recommitAsNewProject = async (runId: number, projectName: string): Promise<boolean> => {
@@ -4110,7 +4304,7 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
         setCommitResults((prev) =>
           prev.map((r) =>
             r.runId === runId
-              ? { ...r, status: "committed" as const, counts: data.counts, error: undefined, conflicts: undefined }
+              ? { ...r, status: "committed" as const, counts: data.counts, error: undefined, conflicts: undefined, resurrections: undefined }
               : r,
           ),
         );
@@ -4120,7 +4314,7 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
       setCommitResults((prev) =>
         prev.map((r) =>
           r.runId === runId
-            ? { ...r, status: "failed" as const, error: err.error || "Commit failed" }
+            ? { ...r, status: "failed" as const, error: err.error || "Commit failed", resurrections: undefined }
             : r,
         ),
       );
@@ -4214,6 +4408,7 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
     const failed = commitResults.filter(r => r.status === "failed");
     const skipped = commitResults.filter(r => r.status === "skipped");
     const conflictsPending = commitResults.filter(r => r.status === "conflicts_pending");
+    const resurrectionPending = commitResults.filter(r => r.status === "resurrection_pending");
     return (
       <div className="space-y-4" data-testid="bulk-commit-results">
         <Card className="bg-card rounded-xl shadow-sm">
@@ -4222,9 +4417,9 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
               <CheckCircle2 className="w-8 h-8 text-emerald-600" />
             </div>
             <h3 className="text-lg font-semibold text-emerald-700" data-testid="text-bulk-success">
-              {failed.length === 0 && conflictsPending.length === 0
+              {failed.length === 0 && conflictsPending.length === 0 && resurrectionPending.length === 0
                 ? BULK_LABELS.result.titleCommittedOnly
-                : committed.length === 0 && conflictsPending.length === 0
+                : committed.length === 0 && conflictsPending.length === 0 && resurrectionPending.length === 0
                   ? BULK_LABELS.result.titleFailedOnly
                   : BULK_LABELS.result.titleMixed}
             </h3>
@@ -4235,6 +4430,11 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
               {conflictsPending.length > 0 && (
                 <Badge className="bg-amber-50 text-amber-700 border-amber-200 px-3 py-1" data-testid="badge-conflicts-count">
                   {conflictsPending.length} Need conflict review
+                </Badge>
+              )}
+              {resurrectionPending.length > 0 && (
+                <Badge className="bg-amber-50 text-amber-700 border-amber-200 px-3 py-1" data-testid="badge-resurrection-count">
+                  {resurrectionPending.length} Need restore approval
                 </Badge>
               )}
               {skipped.length > 0 && (
@@ -4261,6 +4461,7 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
               conflictCount: r.conflicts
                 ? r.conflicts.reduce((sum, row) => sum + (row.fields?.length ?? 0), 0)
                 : undefined,
+              resurrectionCount: r.resurrections?.length,
             }))}
             onViewProject={(name) => navigate(`/projects?name=${encodeURIComponent(name)}`)}
             onRetry={(name) => {
@@ -4270,7 +4471,10 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
             onResolveConflicts={handleOpenConflictResolver}
             onCreateNewProject={handleCreateNewProjectForRun}
             onCreateNewProjectAll={handleCreateNewProjectForAllDuplicates}
+            onRestoreAndReimport={handleRestoreAndReimportRun}
+            onRestoreAndReimportAll={handleRestoreAndReimportAllResurrections}
             busyCreatingNew={creatingNewProject}
+            busyRestoringResurrections={restoringResurrections}
           />
         )}
 
