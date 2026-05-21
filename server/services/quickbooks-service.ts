@@ -507,10 +507,24 @@ export async function getCompanyInfo(): Promise<any> {
   return info;
 }
 
+// QB Query Language isn't SQL, but it still gets injected if we
+// interpolate user-controlled strings. Restrict date params to the
+// exact YYYY-MM-DD shape we expect and throw on anything else.
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+function assertIsoDate(value: string | undefined, field: string): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (!ISO_DATE_RE.test(value)) {
+    throw new Error(`Invalid ${field}: expected YYYY-MM-DD, got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
 function buildDateClause(field: string, startDate?: string, endDate?: string): string {
+  const start = assertIsoDate(startDate, 'startDate');
+  const end = assertIsoDate(endDate, 'endDate');
   const clauses: string[] = [];
-  if (startDate) clauses.push(`${field} >= '${startDate}'`);
-  if (endDate) clauses.push(`${field} <= '${endDate}'`);
+  if (start) clauses.push(`${field} >= '${start}'`);
+  if (end) clauses.push(`${field} <= '${end}'`);
   return clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
 }
 
