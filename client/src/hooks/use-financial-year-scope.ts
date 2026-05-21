@@ -22,8 +22,13 @@ export interface FinancialYearScope {
 }
 
 export function getCurrentFinancialYear(date = new Date()): number {
-  const year = date.getFullYear();
-  const month = date.getMonth() + 1;
+  // Anchor to SAST so the FY boundary doesn't depend on where the user's
+  // laptop happens to be (e.g. a CEO viewing from London) and so the
+  // client stays in lockstep with the server, which now anchors to SAST
+  // too (see getFYRange in server/departments/finance-routes.ts).
+  const sast = new Date(date.getTime() + 120 * 60 * 1000);
+  const year = sast.getUTCFullYear();
+  const month = sast.getUTCMonth() + 1;
   return month >= 9 ? year + 1 : year;
 }
 

@@ -93,7 +93,7 @@ import {
   QuickBooksLinkConflictError,
   QuickBooksAllocationToleranceError,
 } from "../services/quickbooks-reconciliation-service";
-import { effectiveAllocatedAmountExVat } from "@shared/config/qb-allocations";
+import { effectiveAllocatedAmountExVat, checkQbAllocationSum } from "@shared/config/qb-allocations";
 import {
   getBillById,
   getBills,
@@ -1677,6 +1677,67 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           const row = await financeInflowsRepository.getRevenueLineForMatching(body.appEntityId);
           if (!row) return sendError(res, notFound("Revenue line"));
           projectId = row.projectId ?? null;
+        }
+
+        // Server-side allocation guard. The /approve transactional path
+        // runs the same check through validateConfirmAllocationsInput;
+        // without this guard a caller with financials:override could
+        // attach an arbitrary cost line to a QB bill with an inflated
+        // allocation (e.g., 10× the bill total) and the only enforcement
+        // would be the optional client-side preview — easy to skip.
+        if (body.allocatedAmountExVat != null) {
+          if (!Number.isFinite(body.allocatedAmountExVat) || body.allocatedAmountExVat <= 0) {
+            return sendError(
+              res,
+              new ApiError(
+                400,
+                "invalid_allocation_amount",
+                "allocatedAmountExVat must be a positive number",
+              ),
+            );
+          }
+          // Bill summary carries an ex-VAT figure (qbAmountExVat); invoice
+          // summary's totalAmount is ex-VAT for the revenue side.
+          const qbDocTotalExVat = isCost
+            ? billRawToSummary(qbDoc).qbAmountExVat
+            : invoiceRawToSummary(qbDoc).totalAmount;
+          if (qbDocTotalExVat == null) {
+            return sendError(
+              res,
+              new ApiError(
+                400,
+                "qb_amount_unknown",
+                "QuickBooks doc has no ex-VAT amount — cannot validate allocation. Refresh QB data and retry.",
+              ),
+            );
+          }
+          const existingLinks = await qbLinksRepository.listActiveLinksForQbDoc(
+            isCost ? "bill" : "invoice",
+            body.qbEntityId,
+          );
+          const siblingAllocations = existingLinks
+            .filter((l) => !(l.appEntityType === (isCost ? "cost_line" : "revenue_line") && l.appEntityId === body.appEntityId))
+            .map((l) => ({
+              allocatedAmountExVat:
+                effectiveAllocatedAmountExVat({
+                  allocatedAmountExVat: (l as any).allocatedAmountExVat,
+                  qbAmount: (l as any).qbAmount,
+                }) ?? 0,
+            }));
+          const tolerance = checkQbAllocationSum(qbDocTotalExVat, [
+            ...siblingAllocations,
+            { allocatedAmountExVat: body.allocatedAmountExVat },
+          ]);
+          if (!tolerance.ok) {
+            return sendError(
+              res,
+              new ApiError(
+                409,
+                "allocation_exceeds_qb_total",
+                `Allocation would exceed QB doc total. Sum R ${tolerance.sum.toFixed(2)} vs total R ${qbDocTotalExVat.toFixed(2)} (delta R ${(tolerance.delta ?? 0).toFixed(2)}, tolerance R ${tolerance.tolerance.toFixed(2)}).`,
+              ),
+            );
+          }
         }
 
         try {

@@ -46,6 +46,17 @@ const COS_OVERRIDE_ROLES = new Set([
 ]);
 
 export function requireCosOverrideRole(req: Request, res: Response, next: NextFunction) {
+  // Defence-in-depth — chain after requireAuth in every call site
+  // today, but a future router that forgets that order would slip
+  // through with no auth check. Explicit verification here closes
+  // the gap with a 401 instead of trusting whatever req.user happens
+  // to be.
+  const isAuth = typeof (req as any).isAuthenticated === 'function'
+    ? (req as any).isAuthenticated()
+    : !!req.user;
+  if (!isAuth || !req.user) {
+    return res.status(401).json({ error: 'unauthorised', reason: 'Authentication required.' });
+  }
   const rawRole = req.user?.role;
   const normalized = normalizeRoleForPermissions(rawRole);
   if (COS_OVERRIDE_ROLES.has(rawRole ?? '') || COS_OVERRIDE_ROLES.has(normalized)) {

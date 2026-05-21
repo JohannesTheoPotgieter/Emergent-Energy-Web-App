@@ -374,7 +374,22 @@ function DetailRow({
       return res.json();
     },
     onSuccess: () => {
+      // Date overrides change which month a cost line buckets into.
+      // Cashflow buckets on payment date; COS Tracker on invoice date;
+      // GP Tracker derives from both. Without fanning out the invalidate,
+      // those surfaces stayed stale until a manual refetch.
       queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
+      queryClient.invalidateQueries({ predicate: (q) => {
+        const k = q.queryKey[0];
+        return typeof k === 'string' && (
+          k.startsWith('/api/cos-tracker') ||
+          k.startsWith('/api/revenue-tracker') ||
+          k.startsWith('/api/gp-tracker') ||
+          k.startsWith('/api/finance/lines') ||
+          k.startsWith('/api/expenditure-breakdown') ||
+          k.startsWith('/api/revenue-tab')
+        );
+      } });
       toast({ title: 'Expense date override saved' });
     },
     onError: (err: Error) => {
@@ -404,7 +419,19 @@ function DetailRow({
       return res.json();
     },
     onSuccess: () => {
+      // See expense-override mutation above — same fan-out reasoning.
       queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
+      queryClient.invalidateQueries({ predicate: (q) => {
+        const k = q.queryKey[0];
+        return typeof k === 'string' && (
+          k.startsWith('/api/cos-tracker') ||
+          k.startsWith('/api/revenue-tracker') ||
+          k.startsWith('/api/gp-tracker') ||
+          k.startsWith('/api/finance/lines') ||
+          k.startsWith('/api/expenditure-breakdown') ||
+          k.startsWith('/api/revenue-tab')
+        );
+      } });
       toast({ title: 'Inflow date override saved' });
     },
     onError: (err: Error) => {

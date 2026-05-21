@@ -219,6 +219,7 @@ export class FinanceExpenseEngineRepository {
         .where(and(
           eq(normalizedCostLines.id, canonicalId),
           isNull(normalizedCostLines.effectiveTo),
+          isNull(normalizedCostLines.deletedAt),
         ))
         .limit(1);
       if (current?.updatedAt) {
@@ -240,6 +241,7 @@ export class FinanceExpenseEngineRepository {
       .where(and(
         eq(normalizedCostLines.id, canonicalId),
         isNull(normalizedCostLines.effectiveTo),
+        isNull(normalizedCostLines.deletedAt),
       ))
       .returning();
     if (!result[0]) return undefined;
@@ -412,6 +414,7 @@ export class FinanceExpenseEngineRepository {
         and(
           eq(normalizedCostLines.id, id),
           isNull(normalizedCostLines.effectiveTo),
+          isNull(normalizedCostLines.deletedAt),
         ),
       )
       .limit(1);
@@ -441,6 +444,7 @@ export class FinanceExpenseEngineRepository {
         and(
           eq(normalizedCostLines.id, id),
           isNull(normalizedCostLines.effectiveTo),
+          isNull(normalizedCostLines.deletedAt),
         ),
       )
       .limit(1);
@@ -575,9 +579,42 @@ export class FinanceExpenseEngineRepository {
       .where(and(
         eq(normalizedCostLines.id, expenseId),
         isNull(normalizedCostLines.effectiveTo),
+        isNull(normalizedCostLines.deletedAt),
       ))
       .returning();
     return updated ?? null;
+  }
+
+  /**
+   * Snapshot of the date columns + project context a period-lock check
+   * needs before a write. Returns null when the row is gone or
+   * historical. Effective date = adminDateOverride ?? invoiceDate.
+   */
+  async getCostLineForLockCheck(id: number): Promise<{
+    id: number;
+    projectId: number | null;
+    projectName: string | null;
+    invoiceDate: string | null;
+    paidDate: string | null;
+    adminDateOverride: string | null;
+  } | null> {
+    const [row] = await this.dbInstance
+      .select({
+        id: normalizedCostLines.id,
+        projectId: normalizedCostLines.projectId,
+        projectName: normalizedCostLines.projectName,
+        invoiceDate: normalizedCostLines.invoiceDate,
+        paidDate: normalizedCostLines.paidDate,
+        adminDateOverride: normalizedCostLines.adminDateOverride,
+      })
+      .from(normalizedCostLines)
+      .where(and(
+        eq(normalizedCostLines.id, id),
+        isNull(normalizedCostLines.effectiveTo),
+        isNull(normalizedCostLines.deletedAt),
+      ))
+      .limit(1);
+    return row ?? null;
   }
 }
 
