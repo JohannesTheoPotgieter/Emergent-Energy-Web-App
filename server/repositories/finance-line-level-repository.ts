@@ -177,8 +177,15 @@ const classifyBucket = (
   return confirmed ? "realised" : "committed";
 };
 
+// Anchor to SAST (UTC+2 year-round, no DST). Server is UTC but the
+// operator's calendar is South African — using getUTCMonth here while
+// the client uses local-tz getMonth caused the "current month" boundary
+// to drift by ~2h every month-end, so a line invoiced at 23:30 SAST on
+// the last day of the month was classified realised by the server but
+// the client still painted the same month as live.
+const SAST_OFFSET_MS = 120 * 60 * 1000;
 const todayMonthKey = (): string => {
-  const d = new Date();
+  const d = new Date(Date.now() + SAST_OFFSET_MS);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 };
 
@@ -751,12 +758,32 @@ const emptyMonth = (key: string): MonthlyReconRow => ({
   realisedGpPct: null,
 });
 
-const finalizeMonth = (row: MonthlyReconRow): MonthlyReconRow => ({
-  ...row,
-  gpPct: row.revenue !== 0 ? row.gp / row.revenue : null,
-  plannedGpPct: row.plannedRevenue !== 0 ? row.plannedGp / row.plannedRevenue : null,
-  realisedGpPct: row.realisedRevenue !== 0 ? row.realisedGp / row.realisedRevenue : null,
-});
+// Round to 2dp at finalisation. Per-line `+=` accumulators accumulate
+// FP drift (each `Number(decimalString)` carries full FP precision);
+// for large projects (hundreds of lines, R 200M+ totals) the drift
+// reaches the cent level and downstream `Math.abs(a-b) <= 0.01`
+// tolerance checks falsely fail. Bucketed at the finalisation step so
+// intermediate per-line maths stay precise but the surfaced row is
+// stable.
+const r2 = (n: number): number => Number(n.toFixed(2));
+const finalizeMonth = (row: MonthlyReconRow): MonthlyReconRow => {
+  const rounded: MonthlyReconRow = {
+    ...row,
+    cos: r2(row.cos),
+    revenue: r2(row.revenue),
+    gp: r2(row.gp),
+    plannedCos: r2(row.plannedCos),
+    plannedRevenue: r2(row.plannedRevenue),
+    plannedGp: r2(row.plannedGp),
+    realisedCos: r2(row.realisedCos),
+    realisedRevenue: r2(row.realisedRevenue),
+    realisedGp: r2(row.realisedGp),
+    gpPct: row.revenue !== 0 ? row.gp / row.revenue : null,
+    plannedGpPct: row.plannedRevenue !== 0 ? row.plannedGp / row.plannedRevenue : null,
+    realisedGpPct: row.realisedRevenue !== 0 ? row.realisedGp / row.realisedRevenue : null,
+  };
+  return rounded;
+};
 
 export function aggregateLinesByMonth(lines: FinanceLine[]): {
   byMonth: MonthlyReconRow[];

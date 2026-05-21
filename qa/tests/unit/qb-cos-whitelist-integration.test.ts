@@ -91,6 +91,8 @@ describe("matchCostLinesToBills — COS account-name whitelist (integration)", (
       patterns: ["cost of sales"],
       excludedNonCosBillCount: 1,
       excludedNonCosAccountNames: ["Rent & Site Office"],
+      linkedNonCosBillCount: 0,
+      linkedNonCosAccountNames: [],
     });
   });
 

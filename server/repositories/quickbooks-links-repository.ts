@@ -160,4 +160,25 @@ export class QuickBooksLinksRepository {
         ),
       );
   }
+
+  /**
+   * All active links targeting a specific QB document. Used by the
+   * manual-link allocation guard to sum sibling allocations and reject
+   * over-allocation before writing a new link.
+   */
+  async listActiveLinksForQbDoc(
+    qbEntityType: "bill" | "invoice",
+    qbEntityId: string,
+  ): Promise<QuickBooksInvoiceLink[]> {
+    return this.dbInstance
+      .select()
+      .from(quickbooksInvoiceLinks)
+      .where(
+        and(
+          eq(quickbooksInvoiceLinks.qbEntityType, qbEntityType),
+          eq(quickbooksInvoiceLinks.qbEntityId, qbEntityId),
+          isNull(quickbooksInvoiceLinks.deletedAt),
+        ),
+      );
+  }
 }

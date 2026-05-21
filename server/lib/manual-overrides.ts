@@ -26,7 +26,7 @@
  *   - docs/excel-vs-app-diff-plan.md § B.8–B.9
  *   - docs/excel-vs-app-workstream-b-impl.md § Commit 2
  */
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "../db";
 import { normalizedCostLines, normalizedRevenueLines } from "@shared/schema/finance";
 import { workItems } from "@shared/schema/tasks";
@@ -94,12 +94,23 @@ async function fetchRowDispatch(
   table: OverrideTableName,
   rowId: number,
 ): Promise<RowWithOverrides | null> {
+  // Snapshot + soft-delete guard on both read and write. A stale rowId
+  // referring to a since-replaced historical row would otherwise return
+  // (and the writer below would mutate) the wrong record.
   if (table === "normalized_cost_lines") {
-    const [row] = await tx.select().from(normalizedCostLines).where(eq(normalizedCostLines.id, rowId)).limit(1);
+    const [row] = await tx.select().from(normalizedCostLines).where(and(
+      eq(normalizedCostLines.id, rowId),
+      isNull(normalizedCostLines.effectiveTo),
+      isNull(normalizedCostLines.deletedAt),
+    )).limit(1);
     return (row ?? null) as RowWithOverrides | null;
   }
   if (table === "normalized_revenue_lines") {
-    const [row] = await tx.select().from(normalizedRevenueLines).where(eq(normalizedRevenueLines.id, rowId)).limit(1);
+    const [row] = await tx.select().from(normalizedRevenueLines).where(and(
+      eq(normalizedRevenueLines.id, rowId),
+      isNull(normalizedRevenueLines.effectiveTo),
+      isNull(normalizedRevenueLines.deletedAt),
+    )).limit(1);
     return (row ?? null) as RowWithOverrides | null;
   }
   const [row] = await tx.select().from(workItems).where(eq(workItems.id, rowId)).limit(1);
@@ -113,11 +124,19 @@ async function writeOverridesDispatch(
   next: ManualOverridesMap,
 ): Promise<void> {
   if (table === "normalized_cost_lines") {
-    await tx.update(normalizedCostLines).set({ manualOverrides: next }).where(eq(normalizedCostLines.id, rowId));
+    await tx.update(normalizedCostLines).set({ manualOverrides: next }).where(and(
+      eq(normalizedCostLines.id, rowId),
+      isNull(normalizedCostLines.effectiveTo),
+      isNull(normalizedCostLines.deletedAt),
+    ));
     return;
   }
   if (table === "normalized_revenue_lines") {
-    await tx.update(normalizedRevenueLines).set({ manualOverrides: next }).where(eq(normalizedRevenueLines.id, rowId));
+    await tx.update(normalizedRevenueLines).set({ manualOverrides: next }).where(and(
+      eq(normalizedRevenueLines.id, rowId),
+      isNull(normalizedRevenueLines.effectiveTo),
+      isNull(normalizedRevenueLines.deletedAt),
+    ));
     return;
   }
   await tx.update(workItems).set({ manualOverrides: next }).where(eq(workItems.id, rowId));

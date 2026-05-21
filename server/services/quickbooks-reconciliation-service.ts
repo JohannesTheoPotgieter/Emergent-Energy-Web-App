@@ -134,6 +134,14 @@ export interface ReconciliationSummary {
     patterns: string[];
     excludedNonCosBillCount: number;
     excludedNonCosAccountNames: string[];
+    /**
+     * Count of operator-linked bills that the whitelist WOULD have
+     * excluded if not for the manual link. These survive in project
+     * COS forever unless reviewed — the UI should offer a "review"
+     * affordance when this is non-zero.
+     */
+    linkedNonCosBillCount: number;
+    linkedNonCosAccountNames: string[];
   };
 }
 
@@ -159,7 +167,12 @@ function normalizeName(value: string | null | undefined): string {
 function amountToNumber(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  const parsed = Number(String(value));
+  // Number("") returns 0 in JS — treat empty / whitespace strings as
+  // null so a QB line with `"Amount": ""` doesn't masquerade as zero
+  // and tolerance-match other zero-amount lines.
+  const trimmed = String(value).trim();
+  if (trimmed === "") return null;
+  const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
@@ -189,14 +202,26 @@ export function billRawToSummary(raw: any): QuickBooksBillSummary {
   // lines so the COS account-name whitelist can filter on them. Synthetic
   // header-only bills return an empty list (classifier treats unknown
   // accounts as "keep" rather than silently dropping evidence).
+  //
+  // Walks every DetailType, not just AccountBased/ItemBased. QB will
+  // sometimes return Bills with JournalEntryLineDetail or other custom
+  // shapes; before, those came through with empty accountNames and the
+  // whitelist would let them through unchecked. Now we look up
+  // AccountRef on the line itself AND inside any AccountRef-bearing
+  // detail bag we find.
   const accountNamesSet = new Set<string>();
   const rawLines: any[] = Array.isArray(raw?.Line) ? raw.Line : [];
   for (const line of rawLines) {
-    const detail =
-      line?.AccountBasedExpenseLineDetail ?? line?.ItemBasedExpenseLineDetail ?? null;
-    const name = detail?.AccountRef?.name;
-    if (typeof name === "string" && name.trim().length > 0) {
-      accountNamesSet.add(name);
+    const candidates = [
+      line?.AccountBasedExpenseLineDetail?.AccountRef?.name,
+      line?.ItemBasedExpenseLineDetail?.AccountRef?.name,
+      line?.JournalEntryLineDetail?.AccountRef?.name,
+      line?.AccountRef?.name,
+    ];
+    for (const name of candidates) {
+      if (typeof name === "string" && name.trim().length > 0) {
+        accountNamesSet.add(name);
+      }
     }
   }
   return {
@@ -617,8 +642,14 @@ export function parsePnLCosMonthly(report: any): Map<string, number> {
   for (let i = 1; i < colData.length && i - 1 < monthKeys.length; i++) {
     const mk = monthKeys[i - 1];
     if (!mk) continue;
-    const value = parseFloat(String(colData[i]?.value || "0"));
-    if (Number.isFinite(value) && value !== 0) result.set(mk, value);
+    // Keep zero values so a legit "R 0 COGS this month" doesn't get
+    // silently dropped — downstream readers then substituted fallbacks
+    // and reported missing data instead of zero. Skip only when the
+    // raw cell is absent (e.g., QB returned no Summary column).
+    const raw = colData[i]?.value;
+    if (raw === undefined || raw === null) continue;
+    const value = parseFloat(String(raw));
+    if (Number.isFinite(value)) result.set(mk, value);
   }
 
   return result;
@@ -1003,7 +1034,8 @@ import {
 export type QuickBooksAllocationFailureReason =
   | "out_of_tolerance"
   | "duplicate_app_entity"
-  | "non_positive_allocation";
+  | "non_positive_allocation"
+  | "qb_amount_unknown";
 
 export class QuickBooksAllocationToleranceError extends Error {
   readonly code = "quickbooks_allocation_out_of_tolerance";
@@ -1195,6 +1227,21 @@ export function validateConfirmAllocationsInput(
         duplicateKey: key,
       });
     }
+  }
+  // Reject when the QB doc total is unknown. checkQbAllocationSum
+  // short-circuits to ok=true in that case so the sum-vs-total
+  // invariant can't be enforced; without this gate a caller could
+  // attach any allocation to a Bill whose TotalAmt didn't come through.
+  // Operators should refresh QB data and retry once the total is known.
+  if (input.qbDocTotalExVat === null || input.qbDocTotalExVat === undefined) {
+    throw new QuickBooksAllocationToleranceError({
+      qbEntityId: input.qbEntityId,
+      qbDocTotalExVat: null,
+      sum: input.allocations.reduce((s, a) => s + Number(a.allocatedAmountExVat || 0), 0),
+      delta: null,
+      tolerance: 0,
+      reason: "qb_amount_unknown",
+    });
   }
   const tolerance = checkQbAllocationSum(input.qbDocTotalExVat, input.allocations);
   if (!tolerance.ok && !input.allowOutOfTolerance) {
@@ -1603,6 +1650,13 @@ export interface MatchCostLinesOptions {
 export interface MatchCostLinesResult {
   rows: ReconciliationRow[];
   excludedNonCosBills: QuickBooksBillSummary[];
+  /**
+   * Bills surviving the whitelist only because an operator manually
+   * linked them. Surfaced so the UI can offer a "review these links"
+   * affordance — without it, stale operator overrides keep counting
+   * toward project COS forever and the only signal is silent.
+   */
+  linkedNonCosBills: QuickBooksBillSummary[];
 }
 
 export function matchCostLinesToBills(
@@ -1623,17 +1677,20 @@ export function matchCostLinesToBillsWithDiagnostics(
   const rows: ReconciliationRow[] = [];
   const patterns = options.cosAccountPatterns ?? [];
   const excludedNonCosBills: QuickBooksBillSummary[] = [];
+  const linkedNonCosBills: QuickBooksBillSummary[] = [];
 
   // Apply COS account-name whitelist BEFORE matching. Linked rows below
   // bypass this filter — once an operator has manually linked a Bill to a
   // cost line we trust the override even if its account is outside the
   // whitelist (might be a misconfigured pattern).
+  const isCosBill = (b: QuickBooksBillSummary): boolean =>
+    patterns.length === 0 || classifyBillAccounts(b, patterns).isCos;
   const cosFiltered: QuickBooksBillSummary[] = patterns.length === 0
     ? bills
     : bills.filter((b) => {
-        const verdict = classifyBillAccounts(b, patterns);
-        if (!verdict.isCos) excludedNonCosBills.push(b);
-        return verdict.isCos;
+        const cos = isCosBill(b);
+        if (!cos) excludedNonCosBills.push(b);
+        return cos;
       });
 
   const billsById = new Map<string, QuickBooksBillSummary>();
@@ -1651,12 +1708,18 @@ export function matchCostLinesToBillsWithDiagnostics(
 
   // 1. Persistent links first (highest trust). Bypasses the COS filter —
   // operator overrides win even if the linked bill's account isn't on the
-  // whitelist (the whitelist might be wrong; the link is explicit).
+  // whitelist (the whitelist might be wrong; the link is explicit). But
+  // we track which linked bills WOULD have been excluded so the UI can
+  // surface a "review these survivors" affordance — without that signal
+  // a stale operator link to a non-COS bill keeps counting forever.
   for (const link of links) {
     if (link.appEntityType !== "cost_line" || link.qbEntityType !== "bill") continue;
     const cost = costLinesById.get(link.appEntityId) ?? null;
     const bill = allBillsById.get(link.qbEntityId) ?? null;
     if (!cost && !bill) continue;
+    if (bill && patterns.length > 0 && !isCosBill(bill)) {
+      linkedNonCosBills.push(bill);
+    }
 
     const variance =
       cost?.amountExVat !== null && cost?.amountExVat !== undefined &&
@@ -1768,12 +1831,13 @@ export function matchCostLinesToBillsWithDiagnostics(
     });
   }
 
-  return { rows, excludedNonCosBills };
+  return { rows, excludedNonCosBills, linkedNonCosBills };
 }
 
 export interface BuildSummaryDiagnostics {
   cosAccountPatterns?: string[];
   excludedNonCosBills?: QuickBooksBillSummary[];
+  linkedNonCosBills?: QuickBooksBillSummary[];
 }
 
 export function buildSummary(
@@ -1816,6 +1880,7 @@ export function buildSummary(
 
   const patterns = diagnostics.cosAccountPatterns ?? [];
   const excludedNonCosBills = diagnostics.excludedNonCosBills ?? [];
+  const linkedNonCosBills = diagnostics.linkedNonCosBills ?? [];
   const cosAccountFilter: ReconciliationSummary["cosAccountFilter"] = patterns.length > 0
     ? {
         enabled: true,
@@ -1823,6 +1888,10 @@ export function buildSummary(
         excludedNonCosBillCount: excludedNonCosBills.length,
         excludedNonCosAccountNames: Array.from(
           new Set(excludedNonCosBills.flatMap((b) => b.accountNames)),
+        ).sort(),
+        linkedNonCosBillCount: linkedNonCosBills.length,
+        linkedNonCosAccountNames: Array.from(
+          new Set(linkedNonCosBills.flatMap((b) => b.accountNames)),
         ).sort(),
       }
     : undefined;
@@ -1880,6 +1949,7 @@ export async function runProjectCostReconciliation(
   const summary = buildSummary(matchResult.rows, {
     cosAccountPatterns,
     excludedNonCosBills: matchResult.excludedNonCosBills,
+    linkedNonCosBills: matchResult.linkedNonCosBills,
   });
 
   return {

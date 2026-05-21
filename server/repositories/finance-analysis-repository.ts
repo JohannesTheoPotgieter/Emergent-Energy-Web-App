@@ -12,6 +12,7 @@ import { db } from "../db";
 import {
   normalizedRevenueLines,
   normalizedCostLines,
+  normalizedCostLineActuals,
   paymentTerms,
   counterparties,
   projectPlan,
@@ -55,7 +56,11 @@ export interface OutstandingCostRow {
 
 // Match the enum literal types in shared/schema/finance.ts so Drizzle's
 // inArray() inference accepts them without casts.
-const REVENUE_OUTSTANDING_STATES: Array<"planned" | "invoiced"> = ["planned", "invoiced"];
+// 'paid' included: cheque/transfer issued but not yet bank-reconciled
+// = real outstanding AR. Excluding it understated outstanding revenue
+// by every line in flight between payment-recorded and bank-matched.
+// 'in_bank' and 'realised' are settled and correctly excluded.
+const REVENUE_OUTSTANDING_STATES: Array<"planned" | "invoiced" | "paid"> = ["planned", "invoiced", "paid"];
 const COST_OUTSTANDING_STATES: Array<"planned" | "invoiced" | "approved"> = [
   "planned",
   "invoiced",
@@ -203,17 +208,30 @@ export async function listProjectCosRows(): Promise<ProjectCosRow[]> {
     .from(projectRevenueSummary)
     .where(isNull(projectRevenueSummary.effectiveTo));
 
+  // Sum from the child actuals table — each row is one invoiced actual
+  // for its parent cost line. Reading parent.amountExVat instead inflated
+  // invoicedToDate for split-paid lines (one parent → N actuals): the
+  // parent carries the costed total once, while the actuals each carry
+  // their per-invoice amount. We want the latter for "actually invoiced
+  // to date." Snapshot + soft-delete guarded on both tables to keep this
+  // consistent with the rest of the repo.
   const invoicedRows = await db
     .select({
-      projectId: normalizedCostLines.projectId,
-      amount: normalizedCostLines.amountExVat,
+      projectId: normalizedCostLineActuals.projectId,
+      amount: normalizedCostLineActuals.actualTotal,
     })
-    .from(normalizedCostLines)
+    .from(normalizedCostLineActuals)
+    .innerJoin(
+      normalizedCostLines,
+      eq(normalizedCostLineActuals.costLineId, normalizedCostLines.id),
+    )
     .where(
       and(
+        isNull(normalizedCostLineActuals.effectiveTo),
+        isNull(normalizedCostLineActuals.deletedAt),
         isNull(normalizedCostLines.effectiveTo),
         isNull(normalizedCostLines.deletedAt),
-        inArray(normalizedCostLines.status, COST_INVOICED_OR_PAID),
+        isNotNull(normalizedCostLineActuals.invoiceNumber),
       ),
     );
 
@@ -267,21 +285,32 @@ export async function listCounterpartyMonthlyCos(monthsBack: number): Promise<Co
   cutoff.setUTCMonth(cutoff.getUTCMonth() - monthsBack);
   const cutoffIso = cutoff.toISOString().slice(0, 10);
 
+  // Bucket invoiced amounts by counterparty+month using child actuals
+  // (per-invoice grain) and JOIN to parent only for counterparty
+  // metadata. Reading parent.amountExVat + parent.invoiceDate double-
+  // counted split-paid lines as one big bucket for the parent's date,
+  // even when the underlying invoices fell across multiple months.
   const rows = await db
     .select({
       counterpartyId: normalizedCostLines.counterpartyId,
       counterpartyName: normalizedCostLines.counterpartyName,
-      invoiceDate: normalizedCostLines.invoiceDate,
-      amount: normalizedCostLines.amountExVat,
+      invoiceDate: normalizedCostLineActuals.invoiceDate,
+      amount: normalizedCostLineActuals.actualTotal,
     })
-    .from(normalizedCostLines)
+    .from(normalizedCostLineActuals)
+    .innerJoin(
+      normalizedCostLines,
+      eq(normalizedCostLineActuals.costLineId, normalizedCostLines.id),
+    )
     .where(
       and(
+        isNull(normalizedCostLineActuals.effectiveTo),
+        isNull(normalizedCostLineActuals.deletedAt),
         isNull(normalizedCostLines.effectiveTo),
         isNull(normalizedCostLines.deletedAt),
-        inArray(normalizedCostLines.status, COST_INVOICED_OR_PAID),
-        isNotNull(normalizedCostLines.invoiceDate),
-        gte(normalizedCostLines.invoiceDate, cutoffIso),
+        isNotNull(normalizedCostLineActuals.invoiceNumber),
+        isNotNull(normalizedCostLineActuals.invoiceDate),
+        gte(normalizedCostLineActuals.invoiceDate, cutoffIso),
       ),
     );
 
@@ -316,10 +345,10 @@ export interface DsoDpoPoint {
 
 export async function computeDsoDpoTrend(weeks: number): Promise<DsoDpoPoint[]> {
   const today = new Date();
-  const dayOfWeek = today.getUTCDay() || 7; // Sunday = 7
-  const monday = new Date(today);
-  monday.setUTCDate(today.getUTCDate() - (dayOfWeek - 1));
-  monday.setUTCHours(0, 0, 0, 0);
+  // Anchor "this week's Monday" to SAST so the cutoff doesn't slip a
+  // day when the server is UTC and the operator just rolled into a
+  // new week on their SAST calendar.
+  const monday = sastWeekStart(today);
   const cutoff = new Date(monday);
   cutoff.setUTCDate(monday.getUTCDate() - weeks * 7);
   const cutoffIso = cutoff.toISOString().slice(0, 10);
@@ -387,10 +416,7 @@ function bucketByWeek(
     // (e.g. "2026-04-01T14:30:00Z") doesn't drift by ±1 day vs an invoice_date
     // stored as a date-only string ("2026-03-01").
     const days = Math.max(0, diffDays(paid, invoice));
-    const dayOfWeek = paid.getUTCDay() || 7;
-    const wkStart = new Date(paid);
-    wkStart.setUTCDate(paid.getUTCDate() - (dayOfWeek - 1));
-    wkStart.setUTCHours(0, 0, 0, 0);
+    const wkStart = sastWeekStart(paid);
     const offsetWeeks = Math.round((thisMonday.getTime() - wkStart.getTime()) / (7 * 86_400_000));
     if (offsetWeeks < 0 || offsetWeeks >= weeks) continue;
     const key = wkStart.toISOString().slice(0, 10);
@@ -506,6 +532,21 @@ function parseDate(value: unknown): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+// SAST-anchored Monday-of-week for weekly bucketing. Using
+// d.getUTCDay() directly shifted the row into the previous ISO week
+// for any paid_date stored as a full datetime after 22:00 SAST (post-
+// midnight UTC). Returns a UTC Date stamped at the Monday's SAST
+// midnight expressed as UTC midnight so `toISOString().slice(0,10)`
+// yields the operator's bucket label ("YYYY-MM-DD"). Caller MUST NOT
+// re-apply .setUTCHours(0,0,0,0) — it's already done.
+function sastWeekStart(d: Date): Date {
+  const shifted = new Date(d.getTime() + 120 * 60 * 1000);
+  const dow = shifted.getUTCDay() || 7; // ISO: Sunday => 7
+  shifted.setUTCDate(shifted.getUTCDate() - (dow - 1));
+  shifted.setUTCHours(0, 0, 0, 0);
+  return shifted;
+}
+
 function dateToIso(value: unknown): string | null {
   const d = parseDate(value);
   return d ? d.toISOString().slice(0, 10) : null;
@@ -525,6 +566,10 @@ export async function loadCosToleranceBandsByProject(): Promise<Map<number, numb
       and(
         eq(financialIntegrationRules.ruleType, COS_TOLERANCE_RULE_TYPE),
         eq(financialIntegrationRules.isActive, true),
+        // Without this, soft-deleted bands silently stayed in force —
+        // upsertCosToleranceBand below resets deletedAt:null on update,
+        // so a "deleted" band could resurrect on next save.
+        isNull(financialIntegrationRules.deletedAt),
       ),
     )) as Array<{ projectId: number | null; ruleConfig: string }>;
 
@@ -559,6 +604,10 @@ export async function upsertCosToleranceBand(
   userId: number,
   projectName: string,
 ): Promise<void> {
+  // Look up only ACTIVE rows. Without the deletedAt filter, a previous
+  // delete would resurrect on the next save (the UPDATE branch below
+  // would re-activate it) instead of inserting a clean new row, which
+  // surprises operators and loses the history of the delete event.
   const existing = (await db
     .select({ id: financialIntegrationRules.id })
     .from(financialIntegrationRules)
@@ -566,6 +615,7 @@ export async function upsertCosToleranceBand(
       and(
         eq(financialIntegrationRules.projectId, projectId),
         eq(financialIntegrationRules.ruleType, COS_TOLERANCE_RULE_TYPE),
+        isNull(financialIntegrationRules.deletedAt),
       ),
     )
     .limit(1)) as Array<{ id: number }>;

@@ -15,7 +15,7 @@
  * No live columns are mutated — the invariant "live column = Excel"
  * still holds (see `manual-overrides.ts` header).
  */
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "../db";
 import { normalizedCostLines, normalizedRevenueLines } from "@shared/schema/finance";
 import { workItems } from "@shared/schema/tasks";
@@ -55,10 +55,17 @@ async function readRow(
   // We read SELECT * because tracked field names are dynamic strings.
   // Drizzle's typed-column path doesn't support that; the column set
   // for these tables is small enough that the row weight is fine.
+  // Snapshot + soft-delete guard. A stale rowId from a since-replaced
+  // line would otherwise return the historical row, and the follow-on
+  // UPDATE in bulkAcceptExcelForRow / bulkKeepAppForRow would mutate it.
   const [row] = await (tx as typeof db)
     .select()
     .from(ref as any)
-    .where(eq((ref as any).id, rowId))
+    .where(and(
+      eq((ref as any).id, rowId),
+      isNull((ref as any).effectiveTo),
+      isNull((ref as any).deletedAt),
+    ))
     .limit(1);
   if (!row) return null;
   const r = row as Record<string, unknown>;
@@ -121,7 +128,14 @@ export async function bulkKeepAppForRow(
     results.push({ fieldName: f.fieldName, liveValue: (live ?? null) as OverrideValue | null });
   }
   const ref = tableRef(op.table);
-  await (tx as typeof db).update(ref as any).set({ manualOverrides: next }).where(eq((ref as any).id, op.rowId));
+  await (tx as typeof db)
+    .update(ref as any)
+    .set({ manualOverrides: next })
+    .where(and(
+      eq((ref as any).id, op.rowId),
+      isNull((ref as any).effectiveTo),
+      isNull((ref as any).deletedAt),
+    ));
   return results;
 }
 
@@ -182,7 +196,11 @@ export async function bulkAcceptExcelForRow(
     const update: Record<string, unknown> = {};
     if (overridesChanged) update.manualOverrides = nextOverrides;
     if (snapshotChanged) update.importSnapshot = nextSnapshot;
-    await (tx as typeof db).update(ref as any).set(update as any).where(eq((ref as any).id, op.rowId));
+    await (tx as typeof db).update(ref as any).set(update as any).where(and(
+      eq((ref as any).id, op.rowId),
+      isNull((ref as any).effectiveTo),
+      isNull((ref as any).deletedAt),
+    ));
   }
   return results;
 }

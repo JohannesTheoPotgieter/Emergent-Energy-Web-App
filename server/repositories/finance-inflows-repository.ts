@@ -253,6 +253,7 @@ export class FinanceInflowsRepository {
       .where(and(
         eq(normalizedRevenueLines.id, canonicalId),
         isNull(normalizedRevenueLines.effectiveTo),
+        isNull(normalizedRevenueLines.deletedAt),
       ))
       .returning();
     if (!result[0]) return undefined;
@@ -357,6 +358,7 @@ export class FinanceInflowsRepository {
         and(
           eq(normalizedRevenueLines.id, id),
           isNull(normalizedRevenueLines.effectiveTo),
+          isNull(normalizedRevenueLines.deletedAt),
         ),
       )
       .limit(1);
@@ -448,9 +450,44 @@ export class FinanceInflowsRepository {
       .where(and(
         eq(normalizedRevenueLines.id, inflowId),
         isNull(normalizedRevenueLines.effectiveTo),
+        isNull(normalizedRevenueLines.deletedAt),
       ))
       .returning();
     return updated ?? null;
+  }
+
+  /**
+   * Snapshot of date columns + project context a period-lock check needs
+   * before a write. Returns null when the row is historical or deleted.
+   * Effective date = adminDateOverride ?? paidDate ?? inBankDate ?? invoiceDate.
+   */
+  async getRevenueLineForLockCheck(id: number): Promise<{
+    id: number;
+    projectId: number | null;
+    projectName: string | null;
+    invoiceDate: string | null;
+    paidDate: string | null;
+    inBankDate: string | null;
+    adminDateOverride: string | null;
+  } | null> {
+    const [row] = await this.dbInstance
+      .select({
+        id: normalizedRevenueLines.id,
+        projectId: normalizedRevenueLines.projectId,
+        projectName: normalizedRevenueLines.projectName,
+        invoiceDate: normalizedRevenueLines.invoiceDate,
+        paidDate: normalizedRevenueLines.paidDate,
+        inBankDate: normalizedRevenueLines.inBankDate,
+        adminDateOverride: normalizedRevenueLines.adminDateOverride,
+      })
+      .from(normalizedRevenueLines)
+      .where(and(
+        eq(normalizedRevenueLines.id, id),
+        isNull(normalizedRevenueLines.effectiveTo),
+        isNull(normalizedRevenueLines.deletedAt),
+      ))
+      .limit(1);
+    return row ?? null;
   }
 
   /**
@@ -478,6 +515,7 @@ export class FinanceInflowsRepository {
         eq(normalizedRevenueLines.projectName, args.projectName),
         eq(normalizedRevenueLines.sourceRow, args.sourceRow),
         isNull(normalizedRevenueLines.effectiveTo),
+        isNull(normalizedRevenueLines.deletedAt),
       ));
   }
 
@@ -488,6 +526,7 @@ export class FinanceInflowsRepository {
       .where(and(
         eq(normalizedRevenueLines.id, id),
         isNull(normalizedRevenueLines.effectiveTo),
+        isNull(normalizedRevenueLines.deletedAt),
       ));
   }
 }
