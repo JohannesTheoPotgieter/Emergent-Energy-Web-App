@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, ilike, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "../../../db";
 import { auditEvents, invoiceCaptures, normalizedCostLines, normalizedRevenueLines, procurementItems, projectEngDeliverables, projectEngStages, projectInfo, projectPhaseHistory, projectRevenueSummary, qcChecklist, qcItemInstance, smartImportRuns, workItems, workItemPm, workItemEngineering, workItemScheduling, users, counterparties, projectExecutionState, projectSettings, projectTeamMembers, dashboardProjectMetrics, qcWarning, qcItemEvidence, priorityProjects } from "@shared/schema";
 import { syncProjectSplitTables } from "../../../lib/project-info-sync";
@@ -39,6 +39,28 @@ export async function listProjects(params: { q?: string; page: number; pageSize:
 export async function getProjectById(projectId: number) {
   const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId)).limit(1);
   return project ?? null;
+}
+
+export async function getLatestProjectImportRun(projectId: number, projectName: string) {
+  const [run] = await db
+    .select({
+      importRunId: smartImportRuns.id,
+      sourceFileName: smartImportRuns.sourceFileName,
+      importType: smartImportRuns.importType,
+      status: smartImportRuns.status,
+      uploadedAt: smartImportRuns.uploadedAt,
+      committedAt: smartImportRuns.committedAt,
+      recordsSucceeded: smartImportRuns.recordsSucceeded,
+      recordsFailed: smartImportRuns.recordsFailed,
+    })
+    .from(smartImportRuns)
+    .where(and(
+      or(eq(smartImportRuns.projectId, projectId), eq(smartImportRuns.projectName, projectName)),
+      eq(smartImportRuns.status, "committed"),
+    ))
+    .orderBy(desc(sql`coalesce(${smartImportRuns.committedAt}, ${smartImportRuns.uploadedAt})`))
+    .limit(1);
+  return run ?? null;
 }
 
 export async function transitionProjectToConstruction(projectId: number, userId: number, reason: string) {
