@@ -758,12 +758,32 @@ const emptyMonth = (key: string): MonthlyReconRow => ({
   realisedGpPct: null,
 });
 
-const finalizeMonth = (row: MonthlyReconRow): MonthlyReconRow => ({
-  ...row,
-  gpPct: row.revenue !== 0 ? row.gp / row.revenue : null,
-  plannedGpPct: row.plannedRevenue !== 0 ? row.plannedGp / row.plannedRevenue : null,
-  realisedGpPct: row.realisedRevenue !== 0 ? row.realisedGp / row.realisedRevenue : null,
-});
+// Round to 2dp at finalisation. Per-line `+=` accumulators accumulate
+// FP drift (each `Number(decimalString)` carries full FP precision);
+// for large projects (hundreds of lines, R 200M+ totals) the drift
+// reaches the cent level and downstream `Math.abs(a-b) <= 0.01`
+// tolerance checks falsely fail. Bucketed at the finalisation step so
+// intermediate per-line maths stay precise but the surfaced row is
+// stable.
+const r2 = (n: number): number => Number(n.toFixed(2));
+const finalizeMonth = (row: MonthlyReconRow): MonthlyReconRow => {
+  const rounded: MonthlyReconRow = {
+    ...row,
+    cos: r2(row.cos),
+    revenue: r2(row.revenue),
+    gp: r2(row.gp),
+    plannedCos: r2(row.plannedCos),
+    plannedRevenue: r2(row.plannedRevenue),
+    plannedGp: r2(row.plannedGp),
+    realisedCos: r2(row.realisedCos),
+    realisedRevenue: r2(row.realisedRevenue),
+    realisedGp: r2(row.realisedGp),
+    gpPct: row.revenue !== 0 ? row.gp / row.revenue : null,
+    plannedGpPct: row.plannedRevenue !== 0 ? row.plannedGp / row.plannedRevenue : null,
+    realisedGpPct: row.realisedRevenue !== 0 ? row.realisedGp / row.realisedRevenue : null,
+  };
+  return rounded;
+};
 
 export function aggregateLinesByMonth(lines: FinanceLine[]): {
   byMonth: MonthlyReconRow[];

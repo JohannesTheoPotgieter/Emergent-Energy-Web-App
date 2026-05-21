@@ -1437,7 +1437,11 @@ router.get(
         let actualOutflowsSum = 0;
         let forecastOutflowsSum = 0;
         let pastDueUnpaidSum = 0;
-        const todayStr = new Date().toISOString().split('T')[0];
+        // SAST-anchored "today" so the past-due gate matches operator
+        // expectation. Server is UTC; raw new Date().toISOString() flips
+        // to "tomorrow" 2 hours before midnight SAST and would toggle a
+        // payment between Past Due Unpaid / not for that 2-hour window.
+        const todayStr = new Date(Date.now() + 120 * 60 * 1000).toISOString().split('T')[0];
         for (const expense of itemExpenses) {
           // Bottom-up: only aggregate leaf-node (item) rows, matching project-detail level logic
           if (projectFilters && !projectFilters.has(expense.projectName || '')) continue;
@@ -6104,7 +6108,13 @@ async function revenueTrackerHandler(req: Request, res: Response) {
       });
     }
 
-    const totalMilestoneRevenue = Array.from(revenueByProject.values()).reduce((s, v) => s + v, 0);
+    // FY-scoped revenue total so the headline tile matches the monthly
+    // rows. revenueByProject is built across ALL years; months[] is
+    // already FY-filtered. (totalCOS retained as the all-time sum from
+    // cosByProject — the revenue tracker handler doesn't FY-filter the
+    // COS map and patching that flow safely is bigger than this fix;
+    // tracked as a follow-up.)
+    const totalMilestoneRevenue = months.reduce((s, m) => s + (m.totalRevenue || 0), 0);
     const totalCOS = Array.from(cosByProject.values()).reduce((s, v) => s + v, 0);
 
     setFinanceTrustHeaders(res, {
