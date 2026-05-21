@@ -45,6 +45,7 @@ export interface RawCostLineRow {
   updatedAt?: Date | string | null;
   createdAt?: Date | string | null;
   source?: string | null;
+  rowHash?: string | null;
   [key: string]: unknown;
 }
 
@@ -53,6 +54,14 @@ export function toCanonicalKey(row: RawCostLineRow): { key: string; lineageType:
   const sourceSheet = row.sourceSheet ? String(row.sourceSheet) : null;
   const sourceRow = row.sourceRow != null ? Number(row.sourceRow) : null;
   const idempotencyKey = row.idempotencyKey ? String(row.idempotencyKey) : null;
+  const rowHash = row.rowHash ? String(row.rowHash) : null;
+
+  if (rowHash) {
+    return {
+      key: `${projectId}|row_hash|${rowHash}`,
+      lineageType: "IMPORTED",
+    };
+  }
 
   if (sourceRow != null) {
     return {

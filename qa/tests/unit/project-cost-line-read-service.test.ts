@@ -42,6 +42,15 @@ describe("project-cost-line-read-service identity", () => {
     expect(ids).toEqual([11, 12]);
   });
 
+  it("keeps distinct imported rows that share stale source-row metadata when row hashes differ", () => {
+    const rows = dedupeCurrentLineage([
+      { id: 20, projectId: 7, sourceSheet: "Expenditure Breakdown", sourceRow: 73, rowHash: "hash-a", updatedAt: "2026-02-01T00:00:00Z" },
+      { id: 21, projectId: 7, sourceSheet: "Expenditure Breakdown", sourceRow: 73, rowHash: "hash-b", updatedAt: "2026-02-01T00:00:00Z" },
+    ]);
+    const ids = rows.map((r) => r.id).sort((a, b) => a - b);
+    expect(ids).toEqual([20, 21]);
+  });
+
   it("returns canonical UI row contract metadata", () => {
     const mapped = toCanonicalUiRow({
       id: 200,
@@ -83,8 +92,8 @@ describe("finance routes delegate project expenditure reads to canonical service
 
   it("program-expenses route reads canonical cost line service unconditionally", () => {
     const block = routes.substring(
-      routes.indexOf('"/api/program-expenses"'),
-      routes.indexOf('"/api/program-expenses/:projectName"')
+      routes.indexOf("'/api/program-expenses'"),
+      routes.indexOf("router.get('/api/program-expenses/:projectName'")
     );
     expect(block).toContain("resolveProjectIdByName(projectName)");
     expect(block).toContain("getCanonicalProjectCostLines(");
@@ -95,8 +104,8 @@ describe("finance routes delegate project expenditure reads to canonical service
 
   it("project-name expenditure routes use scoped high-risk reader helper", () => {
     const expenditureBlock = routes.substring(
-      routes.indexOf('"/api/expenditure-breakdown/:projectName"'),
-      routes.indexOf('"/api/finance/revenue/overrides"')
+      routes.indexOf("router.get('/api/expenditure-breakdown/:projectName'"),
+      routes.indexOf("'/api/finance/revenue/overrides'")
     );
     expect(expenditureBlock).toContain("getHighRiskProjectCostReadRows(projectName, projectIdParam)");
   });

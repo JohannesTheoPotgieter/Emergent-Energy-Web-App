@@ -88,6 +88,7 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
     id: -cost.id,
     projectName: resolvedName,
     projectId: (cost as any).projectId ?? null,
+    rowHash: (cost as any).rowHash ?? null,
     rowNumber: (cost as any).sourceRow || cost.id,
     rowType: "item",
     expenseCategory: cost.costCategory || "General",
