@@ -327,6 +327,185 @@ async function ensureSqliteSchema() {
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // SharePoint document management tables used by project Quality/Engineering registers.
+    await db.run(sql.raw(`
+      CREATE TABLE IF NOT EXISTS company_sharepoint_roots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL UNIQUE,
+        display_name TEXT NOT NULL,
+        drive_id TEXT,
+        root_item_id TEXT,
+        root_path TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `));
+
+    await db.run(sql.raw(`
+      CREATE TABLE IF NOT EXISTS project_sharepoint_roots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL UNIQUE,
+        drive_id TEXT,
+        root_item_id TEXT,
+        root_path TEXT NOT NULL,
+        configured_by_user_id INTEGER,
+        configured_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `));
+
+    await db.run(sql.raw(`
+      CREATE TABLE IF NOT EXISTS managed_documents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        root_scope TEXT NOT NULL,
+        project_id INTEGER,
+        company_root_id INTEGER,
+        parent_folder_id INTEGER,
+        drive_id TEXT NOT NULL,
+        drive_item_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        path TEXT NOT NULL,
+        current_revision_id INTEGER,
+        owner_user_id INTEGER,
+        state TEXT NOT NULL DEFAULT 'draft',
+        created_by_user_id INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        deleted_at TEXT
+      )
+    `));
+    try { await db.run(sql.raw(`ALTER TABLE managed_documents ADD COLUMN parent_folder_id INTEGER`)); } catch {}
+    await db.run(sql.raw(`CREATE UNIQUE INDEX IF NOT EXISTS managed_documents_drive_item_idx ON managed_documents(drive_id, drive_item_id)`));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS managed_documents_project_idx ON managed_documents(project_id)`));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS managed_documents_company_root_idx ON managed_documents(company_root_id)`));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS managed_documents_owner_idx ON managed_documents(owner_user_id)`));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS managed_documents_parent_folder_idx ON managed_documents(parent_folder_id)`));
+
+    await db.run(sql.raw(`
+      CREATE TABLE IF NOT EXISTS document_revisions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        document_id INTEGER NOT NULL,
+        revision_number INTEGER NOT NULL,
+        sharepoint_version_id TEXT,
+        size_bytes INTEGER,
+        content_hash TEXT,
+        uploaded_by_user_id INTEGER,
+        uploaded_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        notes TEXT,
+        is_current INTEGER NOT NULL DEFAULT 0,
+        is_controlled INTEGER NOT NULL DEFAULT 0
+      )
+    `));
+    await db.run(sql.raw(`CREATE UNIQUE INDEX IF NOT EXISTS document_revisions_doc_rev_idx ON document_revisions(document_id, revision_number)`));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS document_revisions_current_idx ON document_revisions(document_id, is_current)`));
+
+    await db.run(sql.raw(`
+      CREATE TABLE IF NOT EXISTS document_locks (
+        document_id INTEGER PRIMARY KEY,
+        locked_by_user_id INTEGER NOT NULL,
+        locked_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        expires_at TEXT,
+        client_agent TEXT
+      )
+    `));
+
+    await db.run(sql.raw(`
+      CREATE TABLE IF NOT EXISTS document_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        document_id INTEGER NOT NULL,
+        revision_id INTEGER,
+        parent_comment_id INTEGER,
+        author_user_id INTEGER NOT NULL,
+        body TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        edited_at TEXT,
+        deleted_at TEXT
+      )
+    `));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS document_comments_doc_idx ON document_comments(document_id, created_at)`));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS document_comments_parent_idx ON document_comments(parent_comment_id)`));
+
+    await db.run(sql.raw(`
+      CREATE TABLE IF NOT EXISTS document_comment_mentions (
+        comment_id INTEGER NOT NULL,
+        mentioned_user_id INTEGER NOT NULL
+      )
+    `));
+    await db.run(sql.raw(`CREATE UNIQUE INDEX IF NOT EXISTS document_comment_mentions_pk ON document_comment_mentions(comment_id, mentioned_user_id)`));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS document_comment_mentions_user_idx ON document_comment_mentions(mentioned_user_id)`));
+
+    await db.run(sql.raw(`
+      CREATE TABLE IF NOT EXISTS document_activity (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        actor_role TEXT,
+        root_scope TEXT NOT NULL,
+        project_id INTEGER,
+        company_root_id INTEGER,
+        document_id INTEGER,
+        revision_id INTEGER,
+        drive_id TEXT NOT NULL,
+        item_id TEXT,
+        item_path TEXT,
+        item_name TEXT,
+        action TEXT NOT NULL,
+        size_bytes INTEGER,
+        request_id TEXT,
+        metadata TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS document_activity_project_idx ON document_activity(project_id, created_at)`));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS document_activity_document_idx ON document_activity(document_id, created_at)`));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS document_activity_user_idx ON document_activity(user_id, created_at)`));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS document_activity_action_idx ON document_activity(action, created_at)`));
+
+    await db.run(sql.raw(`
+      CREATE TABLE IF NOT EXISTS project_document_links (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL,
+        managed_document_id INTEGER,
+        domain TEXT NOT NULL,
+        document_type TEXT NOT NULL,
+        discipline TEXT,
+        revision TEXT,
+        status TEXT NOT NULL DEFAULT 'draft',
+        review_status TEXT NOT NULL DEFAULT 'draft',
+        current_revision INTEGER NOT NULL DEFAULT 1,
+        superseded INTEGER NOT NULL DEFAULT 0,
+        owner_user_id INTEGER,
+        due_date TEXT,
+        prepared_by_user_id INTEGER,
+        reviewed_by_user_id INTEGER,
+        approved_by_user_id INTEGER,
+        approved_at TEXT,
+        requires_preng_signoff INTEGER NOT NULL DEFAULT 0,
+        preng_signed_off_by_user_id INTEGER,
+        preng_signed_off_at TEXT,
+        close_out_evidence_required INTEGER NOT NULL DEFAULT 0,
+        close_out_evidence_linked INTEGER NOT NULL DEFAULT 0,
+        sharepoint_drive_id TEXT,
+        sharepoint_item_id TEXT,
+        sharepoint_web_url TEXT,
+        sharepoint_folder_path TEXT,
+        file_name TEXT,
+        last_synced_at TEXT,
+        sync_confidence TEXT NOT NULL DEFAULT 'high',
+        notes TEXT,
+        created_by_user_id INTEGER,
+        updated_by_user_id INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        deleted_at TEXT
+      )
+    `));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS project_document_links_project_domain_idx ON project_document_links(project_id, domain)`));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS project_document_links_managed_document_idx ON project_document_links(managed_document_id)`));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS project_document_links_sharepoint_item_idx ON project_document_links(sharepoint_drive_id, sharepoint_item_id)`));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS project_document_links_status_idx ON project_document_links(status, review_status)`));
     
     // Project Plan table (matches Drizzle schema)
     await db.run(sql`

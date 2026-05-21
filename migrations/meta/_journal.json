@@ -463,6 +463,13 @@
       "when": 1779500000000,
       "tag": "0067_sp_settings_error_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1779600000000,
+      "tag": "0068_project_document_links",
+      "breakpoints": true
     }
   ]
 }

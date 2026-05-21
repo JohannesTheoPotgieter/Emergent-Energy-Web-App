@@ -41,6 +41,7 @@
  * Idempotent: safe to run repeatedly.
  */
 
+import "dotenv/config";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -92,6 +93,8 @@ const MODERN_MIGRATION_PROBES: Record<
   "0054_role_upgrade_tables": (c) => tableExists(c, "role_lens_profiles"),
   "0055_qb_documents_payment_status": (c) =>
     columnExists(c, "quickbooks_documents", "qb_balance"),
+  "0068_project_document_links": (c) =>
+    tableExists(c, "project_document_links"),
 };
 
 async function tableExists(client: Client, table: string): Promise<boolean> {
