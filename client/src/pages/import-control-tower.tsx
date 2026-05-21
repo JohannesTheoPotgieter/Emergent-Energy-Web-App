@@ -47,6 +47,12 @@ interface ImportRun {
   unresolvedBlockers: number;
   unresolvedWarnings: number;
   resolvedIssues: number;
+  // Operator-friendly error envelope from scheduled-import-v2 when a file
+  // failed download/preview/auto-commit. Null on success or when the run
+  // pre-dates the failure-envelope persistence.
+  errorMessage: string | null;
+  errorStep: "download" | "preview" | "planner" | "auto_commit" | null;
+  errorAt: string | null;
 }
 
 interface ImportIssue {
@@ -320,7 +326,15 @@ export default function ImportControlTowerPage() {
                         <TableCell className="text-xs text-muted-foreground" data-testid={`text-timestamp-${run.id}`}>
                           {run.uploadedAt ? format(new Date(run.uploadedAt), "dd MMM yyyy HH:mm") : "—"}
                         </TableCell>
-                        <TableCell>{statusBadge(run.status)}</TableCell>
+                        <TableCell>
+                          {run.errorMessage ? (
+                            <span title={run.errorMessage} data-testid={`status-with-error-${run.id}`}>
+                              {statusBadge(run.status)}
+                            </span>
+                          ) : (
+                            statusBadge(run.status)
+                          )}
+                        </TableCell>
                         <TableCell className="text-center">
                           <div className="text-xs space-y-0.5">
                             <div data-testid={`text-records-attempted-${run.id}`}>{run.recordsAttempted} attempted</div>
@@ -379,6 +393,31 @@ export default function ImportControlTowerPage() {
                       {expandedRun === run.id && (
                         <TableRow key={`${run.id}-detail`}>
                           <TableCell colSpan={10} className="bg-muted/30 p-4">
+                            {run.errorMessage && (
+                              <div
+                                className="mb-4 rounded-md border border-red-200 bg-red-50 p-3"
+                                data-testid={`text-error-message-${run.id}`}
+                              >
+                                <div className="flex items-start gap-2">
+                                  <XCircle className="h-4 w-4 mt-0.5 shrink-0 text-red-700" />
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-red-700">
+                                      {run.errorStep === "download" && "Could not download from SharePoint"}
+                                      {run.errorStep === "preview" && "Could not parse the workbook"}
+                                      {run.errorStep === "planner" && "Could not plan the import"}
+                                      {run.errorStep === "auto_commit" && "Auto-commit failed"}
+                                      {!run.errorStep && "Import failure"}
+                                    </p>
+                                    <p className="mt-1 text-sm text-red-900">{run.errorMessage}</p>
+                                    {run.errorAt && (
+                                      <p className="mt-1 text-[11px] text-red-700">
+                                        {format(new Date(run.errorAt), "dd MMM yyyy HH:mm")}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                               <div>
                                 <span className="text-muted-foreground">Sections:</span>

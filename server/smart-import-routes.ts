@@ -3671,6 +3671,18 @@ router.get("/api/import-control-tower/history", requireAuth, requirePermission("
         uploaderName = u?.name || null;
       }
 
+      // Surface scheduler / commit failure envelope so the Control Tower
+      // shows the failure step + operator-friendly message + suggestion
+      // without the operator opening the issues drawer. See
+      // server/services/scheduled-import-v2.ts:buildFailureMessage.
+      const errorEnvelope = (summary && typeof summary === "object" && summary.error && typeof summary.error === "object")
+        ? {
+            step: typeof summary.error.step === "string" ? summary.error.step : null,
+            message: typeof summary.error.message === "string" ? summary.error.message : null,
+            failedAt: typeof summary.error.failedAt === "string" ? summary.error.failedAt : null,
+          }
+        : null;
+
       return {
         id: run.id,
         projectName: run.projectName,
@@ -3690,6 +3702,9 @@ router.get("/api/import-control-tower/history", requireAuth, requirePermission("
         unresolvedBlockers: failedIssues.length,
         unresolvedWarnings: issues.filter((i: any) => i.severity !== "BLOCKER" && !i.resolved).length,
         resolvedIssues: issues.filter((i: any) => i.resolved).length,
+        errorMessage: errorEnvelope?.message ?? null,
+        errorStep: errorEnvelope?.step ?? null,
+        errorAt: errorEnvelope?.failedAt ?? null,
       };
     }));
 

@@ -69,6 +69,96 @@ function computeHash(buffer: Buffer): string {
 }
 
 /**
+ * Operator-friendly error envelope persisted on every failed file so the
+ * Import Control Tower can show why a SharePoint pickup didn't make it
+ * into the app, without the operator chasing logs.
+ */
+interface FileFailureEnvelope {
+  /** Which pipeline step failed — operators read this first. */
+  step: "download" | "preview" | "planner" | "auto_commit";
+  /** Human-friendly message: file name + cause + (optional) suggestion. */
+  message: string;
+  /** Raw error string for support / audit follow-up. */
+  raw: string;
+  /** When the failure happened. */
+  failedAt: string;
+  /** Always copy the source file name so the Tower can group by file. */
+  fileName: string;
+}
+
+function buildFailureMessage(
+  step: FileFailureEnvelope["step"],
+  fileName: string,
+  raw: unknown,
+): FileFailureEnvelope {
+  const rawString = raw instanceof Error ? raw.message : String(raw ?? "");
+  const baseLabel = {
+    download: `Could not download "${fileName}" from SharePoint`,
+    preview: `Could not parse "${fileName}" as a Smart Import workbook`,
+    planner: `Could not plan the import for "${fileName}"`,
+    auto_commit: `Auto-commit failed for "${fileName}"`,
+  }[step];
+
+  const suggestionByPattern: Array<{ rx: RegExp; hint: string }> = [
+    { rx: /401|unauthor/i, hint: "Re-authorise the SharePoint connection in Admin → Integrations." },
+    { rx: /403|forbid|access denied/i, hint: "Grant the integration user read access to the folder." },
+    { rx: /404|not found/i, hint: "The file may have been moved or renamed in SharePoint." },
+    { rx: /timeout|timed out|ETIMEDOUT/i, hint: "SharePoint is responding slowly — the scheduler will retry on the next tick." },
+    { rx: /PARSE_ERROR|corrupt|not a valid Excel/i, hint: "Re-export the file from Excel and re-upload it." },
+    { rx: /Missing.*sheet|section.*missing/i, hint: "Confirm the workbook includes the expected Project Plan / Revenue Tracking / Expenditure Breakdown sheets." },
+    { rx: /no project|project not found|extracted/i, hint: "Add the project to the app first OR rename the file to match an existing project code." },
+  ];
+  const hint = suggestionByPattern.find((s) => s.rx.test(rawString))?.hint;
+
+  const message = hint ? `${baseLabel}: ${rawString}. ${hint}` : `${baseLabel}: ${rawString}`;
+  return {
+    step,
+    message,
+    raw: rawString,
+    failedAt: new Date().toISOString(),
+    fileName,
+  };
+}
+
+/**
+ * Persist a failed file as a `failed` smart_import_runs row so the Control
+ * Tower's existing list view surfaces it alongside successful runs. Without
+ * this, errors raised before the run row is created (download / preview
+ * failures) were only console-logged and the operator never saw which files
+ * failed in last night's batch.
+ */
+async function recordFailedFileRun(
+  fileName: string,
+  fileHash: string | null,
+  envelope: FileFailureEnvelope,
+): Promise<number | null> {
+  try {
+    const [row] = await db
+      .insert(smartImportRuns)
+      .values({
+        projectId: null,
+        projectName: "Unmatched — scheduler failure",
+        uploadedBy: null,
+        sourceFileName: fileName,
+        sourceFileHash: fileHash,
+        status: "failed",
+        summaryJson: {
+          schedulerV2: { triggerType: "schedule" },
+          error: envelope,
+        },
+      })
+      .returning({ id: smartImportRuns.id });
+    return row?.id ?? null;
+  } catch (err) {
+    console.error(
+      `[ScheduledImportV2] Could not persist failure row for ${fileName}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
+}
+
+/**
  * Process a single SharePoint file: download → preview → match project →
  * insert smart_import_runs row in `awaiting_review` state with full diagnostics.
  *
@@ -79,18 +169,21 @@ async function processFileV2(file: {
   name: string;
   driveId: string;
 }, triggeredBy: string): Promise<FileOutcome> {
+  const fileName = file.name;
   let buffer: Buffer;
   try {
     buffer = await downloadFileContent(file.driveId, file.id);
   } catch (err) {
+    const envelope = buildFailureMessage("download", fileName, err);
+    const runId = await recordFailedFileRun(fileName, null, envelope);
     return {
       status: "failed",
-      error: `Download failed: ${err instanceof Error ? err.message : String(err)}`,
+      runId: runId ?? undefined,
+      error: envelope.message,
     };
   }
 
   const fileHash = computeHash(buffer);
-  const fileName = file.name;
 
   // Skip exact re-runs (same hash already imported AND committed).
   const rerun = await checkRerunProtection(fileHash);
@@ -103,9 +196,12 @@ async function processFileV2(file: {
   try {
     preview = await runSmartImportPreview(buffer, fileName);
   } catch (err) {
+    const envelope = buildFailureMessage("preview", fileName, err);
+    const runId = await recordFailedFileRun(fileName, fileHash, envelope);
     return {
       status: "failed",
-      error: `Preview failed: ${err instanceof Error ? err.message : String(err)}`,
+      runId: runId ?? undefined,
+      error: envelope.message,
     };
   }
 
@@ -205,12 +301,19 @@ async function processFileV2(file: {
       console.log(`[ScheduledImportV2] Commit deferred for run ${run.id}: ${commitResult.status}`);
       return { status: "parked", runId: run.id };
     } catch (commitErr) {
-      // Transaction failed — mark as awaiting_review (guarded so a racing
-      // UI commit isn't clobbered) and report the file as failed.
-      console.error(`[ScheduledImportV2] Auto-commit failed for run ${run.id}:`, commitErr instanceof Error ? commitErr.message : commitErr);
+      // Transaction failed — fold a structured failure envelope into the
+      // existing run's summaryJson so the Tower can show what went wrong
+      // alongside the parked-for-review row. The status is left at
+      // `awaiting_review` (guarded so a racing UI commit isn't clobbered)
+      // so the operator can still resolve manually.
+      const envelope = buildFailureMessage("auto_commit", fileName, commitErr);
+      console.error(`[ScheduledImportV2] ${envelope.message} (run ${run.id})`);
       try {
         await db.update(smartImportRuns)
-          .set({ status: "awaiting_review" })
+          .set({
+            status: "awaiting_review",
+            summaryJson: { ...summaryJson, error: envelope },
+          })
           .where(and(
             eq(smartImportRuns.id, run.id),
             inArray(smartImportRuns.status, ["preview", "awaiting_review"]),
@@ -219,7 +322,7 @@ async function processFileV2(file: {
       return {
         status: "failed",
         runId: run.id,
-        error: `Auto-commit failed: ${commitErr instanceof Error ? commitErr.message : String(commitErr)}`,
+        error: envelope.message,
       };
     }
   }
