@@ -25,6 +25,7 @@ import { registerDocumentManagementAdminRoutes } from './document-management-adm
 import { registerDocumentProvisioningRoutes } from './document-provisioning.routes';
 import { registerManagedDocumentApprovalRoutes } from './managed-document-approvals.routes';
 import { registerDocumentReadinessRoutes } from './document-readiness.routes';
+import { registerProjectDocumentRegisterRoutes } from './project-document-register.routes';
 import { registerTrackerReplicaRoutes } from './tracker-replica.routes';
 import { registerExcelVsAppRoutes } from './excel-vs-app.routes';
 import { registerReconciliationRoutes } from './reconciliation.routes';
@@ -49,6 +50,7 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerDocumentProvisioningRoutes(app);
   registerManagedDocumentApprovalRoutes(app);
   registerDocumentReadinessRoutes(app);
+  registerProjectDocumentRegisterRoutes(app);
   registerTrackerReplicaRoutes(app);
   registerExcelVsAppRoutes(app);
   registerReconciliationRoutes(app);

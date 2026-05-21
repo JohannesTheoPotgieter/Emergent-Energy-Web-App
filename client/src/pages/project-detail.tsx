@@ -53,6 +53,7 @@ import FinancialReviewTab from "@/components/tabs/FinancialReviewTab";
 import { ProjectHandoverTab } from "@/components/tabs/ProjectHandoverTab";
 import { BudgetBaselineStrip } from "@/components/tabs/BudgetBaselineStrip";
 import { DrawingRegisterTab } from "@/components/tabs/DrawingRegisterTab";
+import { ProjectDocumentRegisterPanel } from "@/components/project-documents/ProjectDocumentRegisterPanel";
 import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { useAuth } from "@/hooks/use-auth";
 import DataSourceDebug from "@/components/DataSourceDebug";
@@ -1902,6 +1903,7 @@ export default function ProjectDetailPage() {
             {[
               { key: "tasks", label: "Tasks", icon: ListTodo },
               { key: "drawings", label: "Drawings", icon: FileText },
+              { key: "documents", label: "Documents", icon: FolderOpen },
             ].map(st => (
               <Button key={st.key} size="sm" variant={activeSubTab === st.key ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab(st.key)} data-testid={`subtab-${st.key}`}>
                 <st.icon className="h-3 w-3 mr-1" /> {st.label}
@@ -1911,6 +1913,7 @@ export default function ProjectDetailPage() {
 
           {(activeSubTab === "tasks" || activeSubTab === "timeline") && projectInfoId && <EngTasksTab projectInfoId={projectInfoId} isAdmin={isAdmin} projectName={projectName} initialStatusFilter={engFilter || undefined} />}
           {activeSubTab === "drawings" && projectInfoId && <DrawingRegisterTab projectId={projectInfoId} projectName={projectName} />}
+          {activeSubTab === "documents" && projectInfoId && <ProjectDocumentRegisterPanel projectId={projectInfoId} projectName={projectName} domain="engineering" />}
         </div>
       )}
 
@@ -1935,6 +1938,7 @@ export default function ProjectDetailPage() {
           <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="quality-sub-tabs">
             {[
               { key: "checklist", label: "QC Checklist", icon: ClipboardList },
+              { key: "documents", label: "Documents", icon: FolderOpen },
               { key: "history", label: "History", icon: History },
               { key: "approvals", label: "Approvals", icon: FileCheck },
             ].map(st => (
@@ -1945,6 +1949,7 @@ export default function ProjectDetailPage() {
           </div>
 
           {activeSubTab === "checklist" && <QualityTab projectName={projectName} projectInfoId={projectInfoId ?? null} initialStatusFilter={qualityFilter || undefined} chip={qualityChip || undefined} onNavigateSubTab={(sub) => setActiveSubTab(sub)} />}
+          {activeSubTab === "documents" && projectInfoId && <ProjectDocumentRegisterPanel projectId={projectInfoId} projectName={projectName} domain="quality" />}
           {activeSubTab === "history" && (
             <div className="space-y-2">
               <WeeklyReviewWizard
