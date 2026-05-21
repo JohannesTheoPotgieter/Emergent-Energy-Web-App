@@ -119,20 +119,15 @@ export function getExpenseEffectiveDateAndSource(expense: ExpenseLikeRow): { dat
 
 /**
  * COS/Revenue/GP month bucketing date resolution.
- * Per finance rule (April 2026): COS and REV realisation are ALWAYS bucketed by
- * invoice_date. Only cashflow uses payment date. Rows without an invoice_date
- * are not realised yet and intentionally return null so they fall out of
- * realisation aggregates.
+ * Excel parity rule: COS and REV recognition are bucketed by invoice_date
+ * only (Expenditure Breakdown column T). Only cashflow uses payment date or
+ * manual scheduling overrides. Rows without invoice_date intentionally return
+ * null so they fall out of actual COS/REV month aggregates.
  *
- * The only override is adminDateOverride — an explicit operator-set move that
- * supersedes invoice_date when finance needs to reclassify a line into a
- * different period.
- *
- * Different from getExpenseEffectiveDateAndSource which is payment-date-first
- * (cashflow).
+ * Different from getExpenseEffectiveDateAndSource, which is payment-date-first
+ * and honours adminDateOverride for cashflow planning.
  */
 export function getCosEffectiveDateAndSource(expense: ExpenseLikeRow): { date: string | null; source: string | null } {
-  if (expense.adminDateOverride) return { date: expense.adminDateOverride, source: "adminDateOverride" };
   if (expense.expenseInvoicedDate) return { date: expense.expenseInvoicedDate, source: "expenseInvoicedDate" };
   return { date: null, source: null };
 }

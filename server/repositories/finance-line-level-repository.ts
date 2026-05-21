@@ -573,11 +573,10 @@ export function deriveFinanceLinesFromRows(
   for (const a of actualsRows) {
     const parent = parentById.get(a.costLineId);
     const invoiceRaisedDate = isoDate(a.invoiceDate);
-    // Recognition date: prefer invoice date (col T); fall back to
-    // forecast payment date (col H) so no-invoice lines bucket the
-    // same way the COS / Revenue trackers bucket them.
-    const recognitionDate =
-      invoiceRaisedDate ?? isoDate(parent?.forecastPaymentDate ?? null);
+    // Recognition date: Excel parity requires invoice date only
+    // (Expenditure Breakdown col T). Forecast/payment dates are cashflow
+    // planning inputs and must not move actual COS/REV recognition.
+    const recognitionDate = invoiceRaisedDate;
     if (!inWindow(recognitionDate, opts.fyStart, opts.fyEnd)) continue;
 
     const actualTotal = toNum(a.actualTotal);
@@ -683,8 +682,8 @@ export function deriveFinanceLinesFromRows(
         monthKey(recognitionDate),
         currentMonthKey,
       ),
-      // Use the resolved recognition date so no-invoice lines bucket
-      // on forecast_payment_date (matches COS / Revenue tabs).
+      // Use invoice-date recognition only. No-invoice lines remain
+      // unrecognised for actual COS/REV month rollups.
       recognitionMonth: monthKey(recognitionDate),
       derivationWarning: warning,
     });
