@@ -16,6 +16,8 @@ const conflictDecisionEnum = z.enum(["keep_app", "accept_file"]);
 const moneyImpactBodySchema = z
   .object({ decisions: z.record(z.string(), conflictDecisionEnum).optional() })
   .passthrough();
+const resurrectionDecisionEnum = z.enum(["keep_deleted", "restore_and_apply"]);
+
 const commitBodySchema = z
   .object({
     forceCommit: z.boolean().optional(),
@@ -23,6 +25,13 @@ const commitBodySchema = z
     acknowledgeManualEdits: z.boolean().optional(),
     preserveManualEdits: z.boolean().optional(),
     v2ConflictResolutions: z.record(z.string(), conflictDecisionEnum).optional(),
+    // Operator decisions for file rows whose business key matches a row
+    // the operator previously soft-deleted in the app. Keyed by the
+    // resurrectionKey emitted from the planner. Required when planner
+    // returns any resurrection candidates — see /api/smart-import/:runId/plan.
+    resurrectionDecisions: z
+      .record(z.string(), resurrectionDecisionEnum)
+      .optional(),
   })
   .passthrough();
 import { db } from "./db";
@@ -36,7 +45,7 @@ import { writePlanIncremental, writeRevenueIncremental, writeExpenditureIncremen
 import { newImportMetrics, emitImportMetrics, threeWayMergeEnabled } from "./lib/import/feature-flags";
 import { matchRows, generateBusinessKey, type SectionType, type MatchedRow } from "./lib/import/row-matcher";
 import { runConflictEngine, type RowMergeResult } from "./lib/import/conflict-engine";
-import { loadCurrentPlanRows, loadCurrentRevenueRows, loadCurrentCostRows, loadBaselineForPlanner, detectImportMode } from "./lib/import/baseline";
+import { loadCurrentPlanRows, loadCurrentRevenueRows, loadCurrentCostRows, loadBaselineForPlanner, detectImportMode, loadDeletedPlanRows, loadDeletedRevenueRows, loadDeletedCostRows } from "./lib/import/baseline";
 import {
   smartImportRuns,
   importIssues,
@@ -1955,6 +1964,9 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
     // Run the planner to detect true conflicts (both app and file diverged from baseline).
     // Unresolved conflicts block commit.
     const v2ConflictResolutions = req.body?.v2ConflictResolutions as Record<string, "keep_app" | "accept_file"> | undefined;
+    const resurrectionDecisions = req.body?.resurrectionDecisions as
+      | Record<string, "keep_deleted" | "restore_and_apply">
+      | undefined;
     const preserveManualEditsEarly = req.body?.preserveManualEdits === true;
 
     if (!preserveManualEditsEarly && run.projectId) {
@@ -1962,6 +1974,27 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       if (summary?.normalization) {
         try {
           const plannerResult = await runImportPlanner(run.projectId, summary.normalization);
+
+          // Resurrection gate — when a file row's business key matches a
+          // row the operator previously soft-deleted in the app, the
+          // commit cannot proceed silently. The operator must explicitly
+          // choose `keep_deleted` (skip the file row, row stays deleted)
+          // or `restore_and_apply` (un-delete and overwrite with the file
+          // values). The decisions map is keyed by `resurrectionKey`.
+          if (plannerResult.resurrections.length > 0) {
+            const allResolved = plannerResult.resurrections.every(
+              (r) => resurrectionDecisions?.[r.resurrectionKey],
+            );
+            if (!allResolved) {
+              return res.status(409).json({
+                error: "resurrection_decision_required",
+                message: `This file contains ${plannerResult.resurrections.length} row(s) you previously deleted in the app. Choose whether to keep them deleted or restore them with the new values before committing.`,
+                resurrections: plannerResult.resurrections,
+                hint: "Send resurrectionDecisions: { '<resurrectionKey>': 'keep_deleted' | 'restore_and_apply' } in the commit body.",
+              });
+            }
+          }
+
           if (plannerResult.conflicts?.hasBlockingConflicts) {
             const unresolvedConflicts = plannerResult.conflicts.allRows
               .filter(r => r.conflictStatus === "HAS_CONFLICTS")
@@ -2409,6 +2442,114 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       // section-wide replace.
       const commitTimestamp = new Date();
       const baselineInfo = await detectImportMode(projectId);
+
+      // ── Resurrection pre-pass ──
+      // Apply operator decisions for file rows that match previously
+      // soft-deleted rows BEFORE the matcher runs, so the matcher sees a
+      // consistent active baseline. `restore_and_apply` clears deletedAt /
+      // effectiveTo on the soft-deleted row so the matcher pulls it in as
+      // an active CHANGED row. `keep_deleted` removes the file row from the
+      // section payload entirely so no NEW insert happens for that key.
+      if (resurrectionDecisions && Object.keys(resurrectionDecisions).length > 0) {
+        const restoreIds: { plan: number[]; revenue: number[]; cost: number[] } = {
+          plan: [],
+          revenue: [],
+          cost: [],
+        };
+        const dropKeysBySection: Record<SectionType, Set<string>> = {
+          PLAN: new Set(),
+          REVENUE: new Set(),
+          EXPENDITURE: new Set(),
+        };
+
+        // Re-derive the resurrection candidates so we can match decisions
+        // back to deleted row ids — we don't pass them through the wire.
+        const [
+          deletedPlanForCommit,
+          deletedRevenueForCommit,
+          deletedCostForCommit,
+        ] = await Promise.all([
+          loadDeletedPlanRows(projectId),
+          loadDeletedRevenueRows(projectId),
+          loadDeletedCostRows(projectId),
+        ]);
+
+        const deletedKeyMaps = {
+          PLAN: new Map(
+            deletedPlanForCommit.map((d) => [
+              generateBusinessKey("PLAN", projectId, d.row as any).key,
+              d,
+            ]),
+          ),
+          REVENUE: new Map(
+            deletedRevenueForCommit.map((d) => [
+              generateBusinessKey("REVENUE", projectId, d.row as any).key,
+              d,
+            ]),
+          ),
+          EXPENDITURE: new Map(
+            deletedCostForCommit.map((d) => [
+              generateBusinessKey("EXPENDITURE", projectId, d.row as any).key,
+              d,
+            ]),
+          ),
+        } as const;
+
+        for (const [resurrectionKey, decision] of Object.entries(resurrectionDecisions)) {
+          const sep = resurrectionKey.indexOf("::");
+          if (sep < 0) continue;
+          const section = resurrectionKey.slice(0, sep) as SectionType;
+          const businessKey = resurrectionKey.slice(sep + 2);
+          if (decision === "keep_deleted") {
+            dropKeysBySection[section].add(businessKey);
+            continue;
+          }
+          if (decision === "restore_and_apply") {
+            const hit = deletedKeyMaps[section].get(businessKey);
+            if (!hit) continue;
+            if (section === "PLAN") restoreIds.plan.push(hit.id);
+            else if (section === "REVENUE") restoreIds.revenue.push(hit.id);
+            else restoreIds.cost.push(hit.id);
+          }
+        }
+
+        if (restoreIds.plan.length > 0) {
+          await tx
+            .update(workItems)
+            .set({ deletedAt: null })
+            .where(inArray(workItems.id, restoreIds.plan));
+        }
+        if (restoreIds.revenue.length > 0) {
+          await tx
+            .update(normalizedRevenueLines)
+            .set({ deletedAt: null, effectiveTo: null })
+            .where(inArray(normalizedRevenueLines.id, restoreIds.revenue));
+        }
+        if (restoreIds.cost.length > 0) {
+          await tx
+            .update(normalizedCostLines)
+            .set({ deletedAt: null, effectiveTo: null })
+            .where(inArray(normalizedCostLines.id, restoreIds.cost));
+        }
+
+        // Drop `keep_deleted` rows from the normalization payload so the
+        // matcher doesn't see them at all.
+        if (dropKeysBySection.PLAN.size > 0 && Array.isArray(norm.planTasks)) {
+          norm.planTasks = norm.planTasks.filter(
+            (r: any) => !dropKeysBySection.PLAN.has(generateBusinessKey("PLAN", projectId, r).key),
+          );
+        }
+        if (dropKeysBySection.REVENUE.size > 0 && Array.isArray(norm.revenueLines)) {
+          norm.revenueLines = norm.revenueLines.filter(
+            (r: any) => !dropKeysBySection.REVENUE.has(generateBusinessKey("REVENUE", projectId, r).key),
+          );
+        }
+        if (dropKeysBySection.EXPENDITURE.size > 0 && Array.isArray(norm.costLines)) {
+          norm.costLines = norm.costLines.filter(
+            (r: any) => !dropKeysBySection.EXPENDITURE.has(generateBusinessKey("EXPENDITURE", projectId, r).key),
+          );
+        }
+      }
 
       // Load current state for matching
       const [planRows, revenueRows, costRows, baselineNorm] = await Promise.all([
