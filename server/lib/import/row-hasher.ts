@@ -29,9 +29,11 @@
 
 import { createHash } from "node:crypto";
 
+import { normalizeWithFieldType } from "./value-normalization";
+
 const HASH_VERSION_PLAN = 1;
 const HASH_VERSION_REVENUE = 1;
-const HASH_VERSION_EXPENDITURE = 1;
+const HASH_VERSION_EXPENDITURE = 2;
 const HASH_VERSION_ACTUAL = 1;
 
 const FIELD_SEPARATOR = "";
@@ -48,6 +50,14 @@ function hashIdentity(version: number, section: string, parts: unknown[]): strin
   const normalized = parts.map(normalize);
   const payload = [String(version), section, ...normalized].join(FIELD_SEPARATOR);
   return createHash("sha256").update(payload).digest("hex");
+}
+
+function normalizeAmountIdentity(value: unknown): string {
+  return normalizeWithFieldType(value, "amountExVat");
+}
+
+function normalizeDateIdentity(value: unknown): string {
+  return normalizeWithFieldType(value, "invoiceDate");
 }
 
 /**
@@ -99,27 +109,29 @@ export function hashRevenueRow(input: {
 }
 
 /**
- * EXPENDITURE identity = (project_id, category_key, description,
- * invoice_number fallback).
+ * EXPENDITURE identity = (project_id, line item description,
+ * invoice amount, invoice number, invoice date).
  *
- * Cost lines are identified by category + description in the costed
- * pane. Invoice number is added as a tiebreaker because the same
- * description can repeat across batched invoices. PO number is
- * intentionally NOT in the identity — it's manually edited frequently
- * and would cause spurious mismatches.
+ * Two expenditure rows are duplicates only when the line item
+ * description, invoice amount, invoice number, and invoice date all
+ * match. PO number is intentionally NOT in the identity because it is
+ * manually edited frequently and would cause spurious mismatches.
  */
 export function hashExpenditureRow(input: {
   projectId: number | string;
   categoryKey?: string | null;
   costCategory?: string | null;
   description?: string | null;
+  amountExVat?: string | number | null;
   invoiceNumber?: string | null;
+  invoiceDate?: string | Date | null;
 }): string {
   return hashIdentity(HASH_VERSION_EXPENDITURE, "EXPENDITURE", [
     input.projectId,
-    input.categoryKey || input.costCategory || "",
     input.description ?? "",
+    normalizeAmountIdentity(input.amountExVat),
     input.invoiceNumber ?? "",
+    normalizeDateIdentity(input.invoiceDate),
   ]);
 }
 

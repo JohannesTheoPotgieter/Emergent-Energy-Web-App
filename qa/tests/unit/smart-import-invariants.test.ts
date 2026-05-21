@@ -168,6 +168,15 @@ describe("§5 commit-executor — single-project write scope", () => {
     expect(src).not.toMatch(/scenario_id/);
     expect(src).not.toMatch(/from\s+["']@shared\/schema\/scenarios/);
   });
+
+  it("EXPENDITURE row hash uses invoice-line identity before duplicate skips", () => {
+    expect(src).toMatch(/amountExVat:\s*f\.amountExVat/);
+    expect(src).toMatch(/invoiceDate:\s*f\.invoiceDate/);
+    expect(src).toMatch(/same description, invoice amount, invoice number, and invoice date/);
+    expect(src).toMatch(/shouldRefreshUnchangedExpenditure/);
+    expect(src).toMatch(/needsMetadataRefresh/);
+    expect(src).toMatch(/mr\.classification === "UNCHANGED"/);
+  });
 });
 
 describe("§5 scenario-table isolation across import pipeline", () => {

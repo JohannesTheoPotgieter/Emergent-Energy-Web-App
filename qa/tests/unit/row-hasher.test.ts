@@ -67,42 +67,80 @@ describe("hashRevenueRow", () => {
 });
 
 describe("hashExpenditureRow", () => {
-  it("uses project + category + description + invoice for identity", () => {
+  it("uses project + description + amount + invoice number + invoice date for identity", () => {
     const a = hashExpenditureRow({
       projectId: 7,
       categoryKey: "1. Panels",
       description: "Panels Budget",
+      amountExVat: "1000.00",
       invoiceNumber: "INV-001",
+      invoiceDate: "2026-06-30",
     });
     const b = hashExpenditureRow({
       projectId: 7,
-      categoryKey: "1. Panels",
+      categoryKey: "2. Different Category",
       description: "Panels Budget",
+      amountExVat: 1000,
       invoiceNumber: "INV-001",
+      invoiceDate: new Date("2026-06-30T00:00:00.000Z"),
     });
     expect(a).toBe(b);
   });
 
-  it("treats different invoice numbers on the same description as different rows", () => {
+  it("treats different invoice fields on the same description as different rows", () => {
     const a = hashExpenditureRow({
       projectId: 7,
       categoryKey: "1. Panels",
       description: "Panels - Batch",
+      amountExVat: "1000.00",
       invoiceNumber: "INV-001",
+      invoiceDate: "2026-06-30",
     });
     const b = hashExpenditureRow({
       projectId: 7,
       categoryKey: "1. Panels",
       description: "Panels - Batch",
       invoiceNumber: "INV-002",
+      amountExVat: "1000.00",
+      invoiceDate: "2026-06-30",
+    });
+    const c = hashExpenditureRow({
+      projectId: 7,
+      categoryKey: "1. Panels",
+      description: "Panels - Batch",
+      invoiceNumber: "INV-001",
+      amountExVat: "1000.01",
+      invoiceDate: "2026-06-30",
+    });
+    const d = hashExpenditureRow({
+      projectId: 7,
+      categoryKey: "1. Panels",
+      description: "Panels - Batch",
+      invoiceNumber: "INV-001",
+      amountExVat: "1000.00",
+      invoiceDate: "2026-07-31",
     });
     expect(a).not.toBe(b);
+    expect(a).not.toBe(c);
+    expect(a).not.toBe(d);
   });
 
-  it("falls back from categoryKey to costCategory", () => {
+  it("does not treat category as part of expenditure identity", () => {
     const ck = hashExpenditureRow({ projectId: 7, categoryKey: "1. Panels", description: "x" });
     const cc = hashExpenditureRow({ projectId: 7, costCategory: "1. Panels", description: "x" });
     expect(ck).toBe(cc);
+  });
+
+  it("does not collapse repeated descriptions when amount or invoice date differs", () => {
+    const base = {
+      projectId: 7,
+      description: "2026-06-01T00:00:00.000Z",
+      invoiceNumber: null,
+    };
+    const may = hashExpenditureRow({ ...base, amountExVat: "102000.00", invoiceDate: "2026-05-31" });
+    const jun = hashExpenditureRow({ ...base, amountExVat: "18257.60", invoiceDate: "2026-06-30" });
+
+    expect(may).not.toBe(jun);
   });
 });
 

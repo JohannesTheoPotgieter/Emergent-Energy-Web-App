@@ -16,9 +16,9 @@
  *   Amount is compared as a field, never part of identity.
  *
  * EXPENDITURE:
- *   Primary:  projectId + invoiceNumber (when invoiceNumber exists and is non-empty)
- *   Fallback: projectId + subProjectName + norm(costCategory) + norm(counterpartyName) + norm(description)
- *   Budget and amount are compared as fields, never part of identity.
+ *   Primary:  projectId + line item description + invoice amount + invoice number + invoice date
+ *   Fallback: the same tuple with lower confidence when one or more identity fields are blank
+ *   Category, counterparty, PO number and sub-project are compared as fields, not identity.
  */
 
 import { normalizeWithFieldType, normalizeBasic } from "./value-normalization";
@@ -190,44 +190,27 @@ export function expenditureBusinessKey(
   projectId: number,
   row: {
     invoiceNumber?: string | null;
+    amountExVat?: string | number | null;
+    invoiceDate?: string | Date | null;
     costCategory?: string | null;
     counterpartyName?: string | null;
     description?: string | null;
     subProjectName?: string | null;
   },
 ): BusinessKey {
-  const sub = norm(row.subProjectName);
-
-  // Primary: projectId + invoiceNumber (when non-empty)
-  const inv = row.invoiceNumber?.trim();
-  if (inv) {
-    return {
-      key: compositeKey(String(projectId), norm(inv)),
-      keyType: "PRIMARY",
-      matchConfidence: "HIGH",
-      rowLabel: row.description || row.invoiceNumber || "",
-    };
-  }
-
-  // Fallback: projectId + subProjectName + norm(costCategory) + norm(counterpartyName) + norm(description)
-  const cat = norm(row.costCategory);
-  const cp = norm(row.counterpartyName);
   const desc = norm(row.description);
+  const amount = normalizeWithFieldType(row.amountExVat, "amountExVat");
+  const inv = norm(row.invoiceNumber);
+  const invoiceDate = normalizeWithFieldType(row.invoiceDate, "invoiceDate");
 
-  // Assess confidence based on how many fallback fields are populated
-  const populatedCount = [cat, cp, desc].filter(Boolean).length;
-  let confidence: MatchConfidence;
-  if (populatedCount >= 3) {
-    confidence = "MEDIUM";
-  } else if (populatedCount >= 2) {
-    confidence = "MEDIUM";
-  } else {
-    confidence = "LOW";
-  }
+  const populatedCount = [desc, amount, inv, invoiceDate].filter(Boolean).length;
+  const confidence: MatchConfidence = populatedCount >= 4 ? "HIGH"
+    : populatedCount >= 2 ? "MEDIUM"
+      : "LOW";
 
-  if (!desc && !cat && !cp) {
+  if (!desc && !amount && !inv && !invoiceDate) {
     return {
-      key: compositeKey(String(projectId), sub, `__empty_cost_${Math.random().toString(36).slice(2, 10)}`),
+      key: compositeKey(String(projectId), `__empty_cost_${Math.random().toString(36).slice(2, 10)}`),
       keyType: "FALLBACK",
       matchConfidence: "LOW",
       rowLabel: "(empty cost line)",
@@ -235,8 +218,8 @@ export function expenditureBusinessKey(
   }
 
   return {
-    key: compositeKey(String(projectId), sub, cat, cp, desc),
-    keyType: "FALLBACK",
+    key: compositeKey(String(projectId), desc, amount, inv, invoiceDate),
+    keyType: populatedCount >= 4 ? "PRIMARY" : "FALLBACK",
     matchConfidence: confidence,
     rowLabel: row.description || row.costCategory || "",
   };
