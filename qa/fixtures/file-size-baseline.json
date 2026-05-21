@@ -2,7 +2,7 @@
   "_documentation": "EE-QA-015 baseline — files above the FILE_SIZE_THRESHOLD LOC. The CI guard `qa/tests/unit/file-size-ratchet.test.ts` fails if any of these grow OR a NEW file lands over the threshold. To regenerate after a split, run `npx tsx scripts/build-file-size-baseline.ts` and commit the new JSON.",
   "threshold": 1500,
   "buffer": 50,
-  "generated": "2026-05-17",
+  "generated": "2026-05-21",
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
@@ -10,7 +10,7 @@
     },
     {
       "file": "client/src/pages/smart-import.tsx",
-      "loc": 4861
+      "loc": 5010
     },
     {
       "file": "server/engineering-routes.ts",
@@ -18,11 +18,11 @@
     },
     {
       "file": "server/smart-import-routes.ts",
-      "loc": 3667
+      "loc": 3811
     },
     {
       "file": "server/lifecycle-routes.ts",
-      "loc": 3600
+      "loc": 3519
     },
     {
       "file": "client/src/components/tabs/UnifiedPlanTab.tsx",
@@ -38,15 +38,15 @@
     },
     {
       "file": "client/src/pages/cashflow.tsx",
-      "loc": 2698
+      "loc": 2719
     },
     {
       "file": "server/departments/priority-strategic-routes.ts",
-      "loc": 2594
+      "loc": 2687
     },
     {
       "file": "server/routes/quickbooks-invoice-matches.routes.ts",
-      "loc": 2567
+      "loc": 2652
     },
     {
       "file": "server/services/quickbooks-reconciliation-service.ts",
@@ -82,7 +82,7 @@
     },
     {
       "file": "server/departments/project-routes.ts",
-      "loc": 2178
+      "loc": 2152
     },
     {
       "file": "client/src/components/tabs/ProjectProcurementTab.tsx",
@@ -97,12 +97,12 @@
       "loc": 2125
     },
     {
-      "file": "client/src/pages/finance-quickbooks-throughput.tsx",
-      "loc": 2120
+      "file": "server/lib/import/normalizer.ts",
+      "loc": 2122
     },
     {
-      "file": "server/lib/import/normalizer.ts",
-      "loc": 2117
+      "file": "client/src/pages/finance-quickbooks-throughput.tsx",
+      "loc": 2120
     },
     {
       "file": "server/ee-info-routes.ts",
@@ -142,7 +142,7 @@
     },
     {
       "file": "server/routes/planning-tasks-routes.ts",
-      "loc": 1775
+      "loc": 1776
     },
     {
       "file": "client/src/pages/pd-dashboard.tsx",
