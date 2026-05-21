@@ -309,7 +309,8 @@ export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'hse' | '
   | 'performance' | 'project_access_mgmt'
   | 'hse_dashboard' | 'hse_compliance' | 'hse_sseg' | 'hse_incidents'
   | 'company_team'
-  | 'documents' | 'documents_provision' | 'documents_admin'
+  | 'documents' | 'project_document_register' | 'engineering_documents' | 'quality_documents' | 'sharepoint_sync'
+  | 'documents_provision' | 'documents_admin'
   | 'excel_vs_app';
 export type PermissionAction = 'view' | 'create' | 'edit' | 'approve' | 'override' | 'delete';
 export const AUTHORITY_ACTIONS = [

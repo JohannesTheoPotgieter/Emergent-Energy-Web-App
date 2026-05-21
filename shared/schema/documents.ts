@@ -18,7 +18,7 @@
 
 import { sql } from "drizzle-orm";
 import {
-  pgTable, text, integer, timestamp, pgEnum, serial, boolean, jsonb, index, uniqueIndex,
+  pgTable, text, integer, timestamp, pgEnum, serial, boolean, jsonb, index, uniqueIndex, date,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
@@ -277,6 +277,37 @@ export const managedDocumentStateEnum = pgEnum("managed_document_state_enum", [
   "archived",
 ]);
 
+export const projectDocumentDomainEnum = pgEnum("project_document_domain_enum", [
+  "engineering",
+  "quality",
+]);
+
+export const projectDocumentStatusEnum = pgEnum("project_document_status_enum", [
+  "draft",
+  "submitted_for_review",
+  "changes_required",
+  "approved",
+  "superseded",
+  "rejected",
+  "archived",
+]);
+
+export const projectDocumentReviewStatusEnum = pgEnum("project_document_review_status_enum", [
+  "draft",
+  "submitted_for_review",
+  "changes_required",
+  "approved",
+  "rejected",
+]);
+
+export const projectDocumentSyncConfidenceEnum = pgEnum("project_document_sync_confidence_enum", [
+  "high",
+  "medium",
+  "low",
+  "stale",
+  "broken",
+]);
+
 // =====================================================================
 // Company-wide SharePoint roots — e.g. HR, Templates, Policies.
 // Project roots already exist via projectSharepointRoots above.
@@ -348,6 +379,58 @@ export const insertManagedDocumentSchema = createInsertSchema(managedDocuments)
   .omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertManagedDocument = z.infer<typeof insertManagedDocumentSchema>;
 export type ManagedDocument = typeof managedDocuments.$inferSelect;
+
+// =====================================================================
+// project_document_links — project-facing metadata for SharePoint files.
+// =====================================================================
+
+export const projectDocumentLinks = pgTable("project_document_links", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  managedDocumentId: integer("managed_document_id").references(() => managedDocuments.id, { onDelete: "set null" }),
+  domain: projectDocumentDomainEnum("domain").notNull(),
+  documentType: text("document_type").notNull(),
+  discipline: text("discipline"),
+  revision: text("revision"),
+  status: projectDocumentStatusEnum("status").notNull().default("draft"),
+  reviewStatus: projectDocumentReviewStatusEnum("review_status").notNull().default("draft"),
+  currentRevision: boolean("current_revision").notNull().default(true),
+  superseded: boolean("superseded").notNull().default(false),
+  ownerUserId: integer("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  dueDate: date("due_date"),
+  preparedByUserId: integer("prepared_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  reviewedByUserId: integer("reviewed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  approvedByUserId: integer("approved_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  approvedAt: timestamp("approved_at"),
+  requiresPrengSignoff: boolean("requires_preng_signoff").notNull().default(false),
+  prengSignedOffByUserId: integer("preng_signed_off_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  prengSignedOffAt: timestamp("preng_signed_off_at"),
+  closeOutEvidenceRequired: boolean("close_out_evidence_required").notNull().default(false),
+  closeOutEvidenceLinked: boolean("close_out_evidence_linked").notNull().default(false),
+  sharepointDriveId: text("sharepoint_drive_id"),
+  sharepointItemId: text("sharepoint_item_id"),
+  sharepointWebUrl: text("sharepoint_web_url"),
+  sharepointFolderPath: text("sharepoint_folder_path"),
+  fileName: text("file_name"),
+  lastSyncedAt: timestamp("last_synced_at"),
+  syncConfidence: projectDocumentSyncConfidenceEnum("sync_confidence").notNull().default("high"),
+  notes: text("notes"),
+  createdByUserId: integer("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  updatedByUserId: integer("updated_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+}, (t) => ({
+  projectDomainIdx: index("project_document_links_project_domain_idx").on(t.projectId, t.domain),
+  managedDocumentIdx: index("project_document_links_managed_document_idx").on(t.managedDocumentId),
+  sharepointItemIdx: index("project_document_links_sharepoint_item_idx").on(t.sharepointDriveId, t.sharepointItemId),
+  statusIdx: index("project_document_links_status_idx").on(t.status, t.reviewStatus),
+}));
+
+export const insertProjectDocumentLinkSchema = createInsertSchema(projectDocumentLinks)
+  .omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertProjectDocumentLink = z.infer<typeof insertProjectDocumentLinkSchema>;
+export type ProjectDocumentLink = typeof projectDocumentLinks.$inferSelect;
 
 // =====================================================================
 // document_revisions — per-doc version history (mirrors Graph version id).
