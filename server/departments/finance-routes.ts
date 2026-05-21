@@ -1969,6 +1969,56 @@ router.post(
       const userId = (req as any).user?.id;
       const now = new Date();
 
+      // Period-lock guard. A date override moves the line between months —
+      // both the source month (where the row currently sits) and the target
+      // month (where it would land) need to be unlocked, or the caller has
+      // to be in the COO/CFO/CEO override whitelist. Without this guard a
+      // user with cashflow:edit can re-date an expense OUT of a locked
+      // period and bypass the COS realisation-toggle's period-lock control
+      // via a sibling endpoint.
+      const lockSnapshot = await financeExpenseRepository.getCostLineForLockCheck(
+        Number(expenseId),
+      );
+      if (!lockSnapshot) {
+        return res.status(404).json({ error: 'Expense line not found in canonical cost lines' });
+      }
+      const sourceEffectiveDate =
+        lockSnapshot.adminDateOverride || lockSnapshot.invoiceDate || lockSnapshot.paidDate || null;
+      const targetEffectiveDate =
+        dateOverride || lockSnapshot.invoiceDate || lockSnapshot.paidDate || null;
+      for (const [label, date] of [
+        ['source', sourceEffectiveDate] as const,
+        ['target', targetEffectiveDate] as const,
+      ]) {
+        if (!date) continue;
+        const lock = await checkCosPeriodLock({ effectiveDate: date, role: req.user?.role });
+        if (lock?.locked && !lock.canOverride) {
+          return res.status(423).json({
+            error: 'period_locked',
+            period: lock.period,
+            lockedAt: lock.lockedAt,
+            message: `COS period ${lock.period} (${label} of date override) is locked. Only COO / CFO / CEO can move cost-line dates across this month.`,
+          });
+        }
+        if (lock?.locked && lock.canOverride) {
+          logAuditFromReq(req, {
+            entityType: 'normalized_cost_line',
+            entityId: String(expenseId),
+            action: 'cos.locked_period_override',
+            projectName: lockSnapshot.projectName ?? undefined,
+            changesJson: {
+              period: lock.period,
+              reason: `expense-date-override (${label})`,
+              sourceDate: sourceEffectiveDate,
+              targetDate: targetEffectiveDate,
+              lockedAt: lock.lockedAt,
+              overriddenByUserId: req.user?.id ?? null,
+              overriddenByRole: req.user?.role ?? null,
+            },
+          });
+        }
+      }
+
       const overrideFields = {
         adminDateOverride: dateOverride || null,
         adminDateOverrideReason: reason || null,
@@ -2054,6 +2104,61 @@ router.post(
 
       const userId = (req as any).user?.id;
       const now = new Date();
+
+      // Period-lock guard. Mirror of the expense-date-override guard above —
+      // re-dating an inflow changes which month its recognition lands in, so
+      // both the source and target periods need to be unlocked or the caller
+      // has to be in the COO/CFO/CEO override whitelist.
+      const lockSnapshot = await financeInflowsRepository.getRevenueLineForLockCheck(
+        Number(inflowId),
+      );
+      if (!lockSnapshot) {
+        return res.status(404).json({ error: 'Inflow line not found in canonical revenue lines' });
+      }
+      const sourceEffectiveDate =
+        lockSnapshot.adminDateOverride
+        || lockSnapshot.paidDate
+        || lockSnapshot.inBankDate
+        || lockSnapshot.invoiceDate
+        || null;
+      const targetEffectiveDate =
+        dateOverride
+        || lockSnapshot.paidDate
+        || lockSnapshot.inBankDate
+        || lockSnapshot.invoiceDate
+        || null;
+      for (const [label, date] of [
+        ['source', sourceEffectiveDate] as const,
+        ['target', targetEffectiveDate] as const,
+      ]) {
+        if (!date) continue;
+        const lock = await checkCosPeriodLock({ effectiveDate: date, role: req.user?.role });
+        if (lock?.locked && !lock.canOverride) {
+          return res.status(423).json({
+            error: 'period_locked',
+            period: lock.period,
+            lockedAt: lock.lockedAt,
+            message: `Period ${lock.period} (${label} of date override) is locked. Only COO / CFO / CEO can move inflow dates across this month.`,
+          });
+        }
+        if (lock?.locked && lock.canOverride) {
+          logAuditFromReq(req, {
+            entityType: 'normalized_revenue_line',
+            entityId: String(inflowId),
+            action: 'revenue.locked_period_override',
+            projectName: lockSnapshot.projectName ?? undefined,
+            changesJson: {
+              period: lock.period,
+              reason: `inflow-date-override (${label})`,
+              sourceDate: sourceEffectiveDate,
+              targetDate: targetEffectiveDate,
+              lockedAt: lock.lockedAt,
+              overriddenByUserId: req.user?.id ?? null,
+              overriddenByRole: req.user?.role ?? null,
+            },
+          });
+        }
+      }
 
       const overrideFields = {
         adminDateOverride: dateOverride || null,
@@ -5115,6 +5220,47 @@ router.patch(
       };
       if (typeof noRevenueLinked !== 'boolean')
         return res.status(400).json({ error: 'noRevenueLinked (boolean) required' });
+
+      // Period-lock guard. noRevenueLinked changes whether this cost line
+      // counts in unmatched-revenue exception aggregates and realised vs
+      // committed buckets — i.e. it rewrites the reporting shape for the
+      // line's month. Toggling in a locked month silently re-publishes that
+      // month's COS picture, defeating the toggle-realised period-lock
+      // control via a sibling endpoint.
+      const lockSnapshot = await financeExpenseRepository.getCostLineForLockCheck(id);
+      if (lockSnapshot) {
+        const effectiveDate =
+          lockSnapshot.adminDateOverride || lockSnapshot.invoiceDate || lockSnapshot.paidDate || null;
+        if (effectiveDate) {
+          const lock = await checkCosPeriodLock({ effectiveDate, role: req.user?.role });
+          if (lock?.locked && !lock.canOverride) {
+            return res.status(423).json({
+              error: 'period_locked',
+              period: lock.period,
+              lockedAt: lock.lockedAt,
+              message: `COS period ${lock.period} is locked. Only COO / CFO / CEO can toggle the no-revenue-linked flag on cost lines dated in this month.`,
+            });
+          }
+          if (lock?.locked && lock.canOverride) {
+            logAuditFromReq(req, {
+              entityType: 'normalized_cost_line',
+              entityId: String(id),
+              action: 'cos.locked_period_override',
+              projectName: lockSnapshot.projectName ?? undefined,
+              changesJson: {
+                period: lock.period,
+                reason: 'no-revenue-linked toggle under locked-period override',
+                effectiveDate,
+                lockedAt: lock.lockedAt,
+                noRevenueLinked,
+                overriddenByUserId: req.user?.id ?? null,
+                overriddenByRole: req.user?.role ?? null,
+              },
+            });
+          }
+        }
+      }
+
       await updateExpenseFieldsDualTable(
         id,
         { noRevenueLinked },
@@ -6813,6 +6959,22 @@ router.delete(
           .json({ error: 'Project name required', message: 'Project name is required' });
       }
       await storage.deleteProjectPlanOverridesByProject(projectName);
+      try {
+        await recordOverride({
+          actorUserId: req.user?.id,
+          actorRole: req.user?.role,
+          entityType: 'planning_override',
+          entityId: `${projectName}|bulk-delete`,
+          projectName,
+          action: 'PLANNING_OVERRIDE_BULK_DELETED',
+          overrideCategory: 'DATA_CORRECTION',
+          overrideComment: 'Bulk delete of all planning overrides for project',
+          oldRecord: {},
+          newRecord: {},
+        });
+      } catch (auditErr: any) {
+        console.warn('[audit] Planning override bulk-delete audit failed:', auditErr.message);
+      }
       res.json({ message: `Planning overrides deleted for project: ${projectName}` });
     } catch (error) {
       sendError(res, serverError('Failed to delete planning overrides'));
@@ -7128,6 +7290,22 @@ router.delete(
         return res
           .status(400)
           .json({ error: 'Project name required', message: 'Project name is required' });
+      }
+      try {
+        await recordOverride({
+          actorUserId: req.user?.id,
+          actorRole: req.user?.role,
+          entityType: 'revenue_tracking_override',
+          entityId: `${projectName}|bulk-delete`,
+          projectName,
+          action: 'REVENUE_OVERRIDE_BULK_DELETED',
+          overrideCategory: 'DATA_CORRECTION',
+          overrideComment: 'Bulk delete of all revenue tracking overrides for project',
+          oldRecord: {},
+          newRecord: {},
+        });
+      } catch (auditErr: any) {
+        console.warn('[audit] Revenue override bulk-delete audit failed:', auditErr.message);
       }
       // Override tables collapsed into base tables — no separate overrides to delete
       res.json({ message: `Revenue tracking overrides deleted for project: ${projectName}` });
@@ -8109,6 +8287,31 @@ router.post(
       ) {
         return res.status(400).json({ error: 'Override comment is required (min 3 characters)' });
       }
+
+      // Reject overrides targeting fields that gate COS realisation. The
+      // canonical realisation gate (POST /api/cos-tracker/toggle-realised/:id)
+      // enforces invoice-evidence + period-lock + the broader override role
+      // whitelist; routing the same fields through the editable overrides
+      // surface would silently bypass all three. Workbook-source signals
+      // (font colour) follow the import path; they're not user-editable here.
+      const REALISATION_GATED_FIELDS = new Set([
+        'invoiceDateConfirmed',
+        'paymentDateConfirmed',
+        'invoiceDateFontColor',
+        'paymentDateFontColor',
+      ]);
+      const gatedAttempts = (overrides as any[])
+        .filter((o) => REALISATION_GATED_FIELDS.has(String(o?.fieldName)))
+        .map((o) => o.fieldName);
+      if (gatedAttempts.length > 0) {
+        return res.status(400).json({
+          error: 'realisation_gated_field',
+          message:
+            `Cannot edit ${[...new Set(gatedAttempts)].join(', ')} through expenditure overrides. ` +
+            'These fields gate COS realisation — use POST /api/cos-tracker/toggle-realised/:id.',
+        });
+      }
+
       const userId = req.user?.id;
       const userRole = req.user?.role;
 
@@ -8136,7 +8339,9 @@ router.post(
         });
       }
 
-      // Admin/approver: apply overrides directly to base table
+      // Admin/approver: apply overrides directly to base table. The
+      // realisation-gating fields (*DateConfirmed, *DateFontColor) are
+      // intentionally absent — see REALISATION_GATED_FIELDS guard above.
       const fieldToColumnMap: Record<string, string> = {
         expenseInvoicedDate: 'expenseInvoicedDate',
         expensePaymentDate: 'expensePaymentDate',
@@ -8150,8 +8355,6 @@ router.post(
         expenseRateUnit: 'expenseRateUnit',
         budgetQty: 'budgetQty',
         budgetRateUnit: 'budgetRateUnit',
-        invoiceDateFontColor: 'invoiceDateFontColor',
-        paymentDateFontColor: 'paymentDateFontColor',
         supplierName: 'supplierName',
       };
 
@@ -8173,9 +8376,10 @@ router.post(
         budgetTotal: 'budgetTotal',
         budgetQty: 'budgetQty',
         budgetRateUnit: 'budgetRate',
-        // boolean confirmation flags
-        invoiceDateConfirmed: 'invoiceDateConfirmed',
-        paymentDateConfirmed: 'paidDateConfirmed',
+        // NOTE: invoiceDateConfirmed / paidDateConfirmed are deliberately
+        // omitted. They gate COS realisation and must only be written by
+        // the canonical toggle endpoint, which enforces invoice-evidence
+        // and period-lock — see REALISATION_GATED_FIELDS above.
       };
       const trackedSet = new Set<string>(EXPENDITURE_TRACKED_FIELDS as readonly string[]);
       const useOverrides = manualOverridesEnabled();
@@ -8211,32 +8415,63 @@ router.post(
             // Feature flag off: legacy behaviour — write everything to the
             // live column.
             await storage.updateProgramExpenseFields(expenseId, fields);
-            continue;
-          }
-          // Split tracked fields → manual_overrides; untracked fields →
-          // legacy live-column write.
-          const trackedEntries: [string, any][] = [];
-          const untrackedFields: Record<string, any> = {};
-          for (const [legacyKey, value] of Object.entries(fields)) {
-            const canonicalKey = legacyToCanonical[legacyKey] ?? legacyKey;
-            if (trackedSet.has(canonicalKey)) {
-              trackedEntries.push([canonicalKey, value]);
-            } else {
-              untrackedFields[legacyKey] = value;
+          } else {
+            // Split tracked fields → manual_overrides; untracked fields →
+            // legacy live-column write.
+            const trackedEntries: [string, any][] = [];
+            const untrackedFields: Record<string, any> = {};
+            for (const [legacyKey, value] of Object.entries(fields)) {
+              const canonicalKey = legacyToCanonical[legacyKey] ?? legacyKey;
+              if (trackedSet.has(canonicalKey)) {
+                trackedEntries.push([canonicalKey, value]);
+              } else {
+                untrackedFields[legacyKey] = value;
+              }
+            }
+            for (const [canonicalKey, value] of trackedEntries) {
+              await applyManualOverride({
+                table: 'normalized_cost_lines',
+                rowId: expenseId,
+                fieldName: canonicalKey,
+                value: value as any,
+                editedBy: userId ?? null,
+                note: overrideComment.trim(),
+              });
+            }
+            if (Object.keys(untrackedFields).length > 0) {
+              await storage.updateProgramExpenseFields(expenseId, untrackedFields);
             }
           }
-          for (const [canonicalKey, value] of trackedEntries) {
-            await applyManualOverride({
-              table: 'normalized_cost_lines',
-              rowId: expenseId,
-              fieldName: canonicalKey,
-              value: value as any,
-              editedBy: userId ?? null,
-              note: overrideComment.trim(),
-            });
-          }
-          if (Object.keys(untrackedFields).length > 0) {
-            await storage.updateProgramExpenseFields(expenseId, untrackedFields);
+
+          // Audit each override the user requested for this row. Sibling
+          // override endpoints (cashflow planning, revenue tracking) record
+          // one row per field; we do the same so the COO can audit who
+          // touched what.
+          const expense = rowMap.get(
+            (Array.from(rowMap.values()) as any[]).find((e) => e.id === expenseId)?.rowNumber,
+          ) as any;
+          for (const ov of projectOverrides.filter((o: any) => {
+            const colName = fieldToColumnMap[o.fieldName];
+            if (!colName) return false;
+            const e = rowMap.get(o.rowNumber);
+            return e && (e as any).id === expenseId;
+          })) {
+            try {
+              await recordOverride({
+                actorUserId: userId,
+                actorRole: userRole,
+                entityType: 'expenditure_override',
+                entityId: `${pn}|expense${expenseId}|${ov.fieldName}`,
+                projectName: String(pn),
+                action: 'EXPENDITURE_OVERRIDE',
+                overrideCategory,
+                overrideComment: overrideComment.trim(),
+                oldRecord: expense ? { [ov.fieldName]: (expense as any)[ov.fieldName] ?? null } : {},
+                newRecord: { [ov.fieldName]: ov.overrideValue === '__null__' ? null : ov.overrideValue },
+              });
+            } catch (auditErr: any) {
+              console.warn('[audit] Expenditure override audit failed:', auditErr.message);
+            }
           }
         }
       }
@@ -8272,6 +8507,22 @@ router.delete(
         return res
           .status(400)
           .json({ error: 'Project name required', message: 'Project name is required' });
+      }
+      try {
+        await recordOverride({
+          actorUserId: req.user?.id,
+          actorRole: req.user?.role,
+          entityType: 'expenditure_override',
+          entityId: `${projectName}|bulk-delete`,
+          projectName,
+          action: 'EXPENDITURE_OVERRIDE_BULK_DELETED',
+          overrideCategory: 'DATA_CORRECTION',
+          overrideComment: 'Bulk delete of all expenditure overrides for project',
+          oldRecord: {},
+          newRecord: {},
+        });
+      } catch (auditErr: any) {
+        console.warn('[audit] Expenditure override bulk-delete audit failed:', auditErr.message);
       }
       // Override tables collapsed into base tables — no separate overrides to delete
       res.json({ message: `Expenditure overrides deleted for project: ${projectName}` });
@@ -9055,6 +9306,22 @@ router.delete(
           .json({ error: 'Project name required', message: 'Project name is required' });
       }
       await (storage as any).deleteFinanceRevenueOverridesByProject(projectName);
+      try {
+        await recordOverride({
+          actorUserId: req.user?.id,
+          actorRole: req.user?.role,
+          entityType: 'project_revenue_summary',
+          entityId: `${projectName}|bulk-delete`,
+          projectName,
+          action: 'PROJECT_REVENUE_SUMMARY_OVERRIDE_BULK_DELETED',
+          overrideCategory: 'DATA_CORRECTION',
+          overrideComment: 'Bulk delete of all finance revenue overrides for project',
+          oldRecord: {},
+          newRecord: {},
+        });
+      } catch (auditErr: any) {
+        console.warn('[audit] Finance revenue override bulk-delete audit failed:', auditErr.message);
+      }
       res.json({ message: `Finance revenue overrides deleted for project: ${projectName}` });
     } catch (error) {
       sendError(res, serverError('Failed to delete finance revenue overrides'));
