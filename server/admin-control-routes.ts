@@ -49,12 +49,15 @@ function resolveIntegrationStatus({
   configured,
   enabled,
   objectCount,
+  allowConnectedWithoutObjects = false,
 }: {
   connected: boolean;
   configured: boolean;
   enabled?: boolean;
   objectCount: number;
+  allowConnectedWithoutObjects?: boolean;
 }) {
+  if (connected && allowConnectedWithoutObjects) return "connected";
   if (connected && objectCount > 0) return "connected";
   if (connected) return "attention";
   if (enabled || configured || objectCount > 0) return "attention";
@@ -190,9 +193,10 @@ async function buildMicrosoftIntegrationSnapshot() {
         configured: sharepointConfigured,
         enabled: sharepointEnabled,
         objectCount: sharepointObjectCount,
+        allowConnectedWithoutObjects: true,
       }),
       configured: sharepointConfigured || sharepointEnabled,
-      connectedUsers: objectUsers.sharepoint_file,
+      connectedUsers: Math.max(objectUsers.sharepoint_file, sharepointConnected ? activeAccounts : 0),
       siteName: sharepointConfig.siteName || null,
       driveName: sharepointConfig.driveName || null,
     },
