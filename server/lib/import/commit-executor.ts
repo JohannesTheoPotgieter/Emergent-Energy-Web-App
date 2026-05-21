@@ -623,6 +623,8 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
       wbsCode: typeof fileRow.taskNo === "string" ? fileRow.taskNo : null,
       title: typeof fileRow.taskName === "string" ? fileRow.taskName : null,
     }) : null;
+    const incomingWbsCode = typeof fileRow.taskNo === "string" ? fileRow.taskNo : null;
+    const sourceSortOrder = typeof fileRow.sourceRow === "number" ? fileRow.sourceRow : rowIdx + 1;
 
     if (rowHash) {
       // Hash collision (or duplicate-line) protection: if we've already
@@ -764,8 +766,6 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
       }
 
       if (mr.classification === "NEW") {
-        const wbsCode = typeof fileRow.taskNo === "string" ? fileRow.taskNo : null;
-
         // Defensive: if some other active row still carries the canonical ref
         // (e.g. a race, or a legacy row not yet normalized), UPDATE-in-place
         // rather than insert a colliding row. This should be a rare path
@@ -818,8 +818,8 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
             // (Fix 4a) for why this matters for KPI consistency.
             percentComplete: clampPercent(fileRow.pctComplete) ?? 0,
             expectedPctComplete: clampPercent(fileRow.expectedPctComplete),
-            wbsCode,
-            outlineNumber: wbsCode,
+            wbsCode: incomingWbsCode,
+            outlineNumber: incomingWbsCode,
             indentLevel: fileRow.indentLevel ?? 0,
             isMilestone: fileRow.isMilestone ?? false,
             // Phase is owned by the canonical lifecycle (project_info / stage gates).
@@ -830,6 +830,7 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
             ownerName: fileRow.owner || null,
             sourceRow: fileRow.sourceRow || null,
             sourceSheet: fileRow.sourceSheet || null,
+            sortOrder: sourceSortOrder,
             subProjectName: fileRow.subProjectName || null,
             externalRef: canonicalRef,
             // PR2A tracker columns (see normalizer.ts).
@@ -881,8 +882,8 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
           // (Fix 4a) for why this matters for KPI consistency.
           percentComplete: clampPercent(fileRow.pctComplete) ?? 0,
           expectedPctComplete: clampPercent(fileRow.expectedPctComplete),
-          wbsCode,
-          outlineNumber: wbsCode,
+          wbsCode: incomingWbsCode,
+          outlineNumber: incomingWbsCode,
           indentLevel: fileRow.indentLevel ?? 0,
           isMilestone: fileRow.isMilestone ?? false,
           // Phase: see comment in the UPDATE branch above. Smart import does
@@ -894,6 +895,7 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
           externalRef: canonicalRef,
           sourceRow: fileRow.sourceRow || null,
           sourceSheet: fileRow.sourceSheet || null,
+          sortOrder: sourceSortOrder,
           importRunId: runId,
           subProjectName: fileRow.subProjectName || null,
           createdBy: userId || 1,
@@ -936,21 +938,6 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
         // suffix after a dup-group promotion, etc.).
         const existingRef = mr.existingRow?.externalRef ?? null;
         const needsRefNormalize = existingRef !== canonicalRef;
-        const existingRowHashOnDb = mr.existingRow?.rowHash ?? null;
-        const needsHashUpgrade = rowHash != null && existingRowHashOnDb !== rowHash;
-
-        // PR2C — when the merge produced no material change AND the
-        // externalRef + rowHash are already canonical, this row is a
-        // no-op. Re-importing the same workbook should be silent.
-        if (resolved && !resolved.hasMaterialChanges && !needsRefNormalize && !needsHashUpgrade) {
-          counts.unchanged++;
-          if (savepointActive) {
-            await tx.execute(sqlTag.raw(`RELEASE SAVEPOINT ${savepointName}`));
-            savepointActive = false;
-          }
-          continue;
-        }
-
         // Build the column-typed update payload from the resolved merge.
         const wiUpdates: Record<string, unknown> = {
           updatedAt: commitNow,
@@ -979,6 +966,32 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
         }
         // Refresh ownerUserId from the incoming owner text on every update.
         wiUpdates.ownerUserId = resolveOwnerUserId(typeof fileRow.owner === "string" ? fileRow.owner : null);
+        wiUpdates.ownerName = fileRow.owner || null;
+
+        // Non-drift PLAN fields still belong to the workbook. The merge
+        // engine only protects date fields per the Excel-vs-App contract;
+        // WBS identity, title, status, progress, resources, and workbook
+        // ordering refresh on every incremental write so the Plan tab stays
+        // row-for-row aligned with the imported tracker.
+        wiUpdates.title = fileRow.taskName || incomingWbsCode || "Imported plan task";
+        wiUpdates.description = fileRow.comment || null;
+        wiUpdates.status = fileRow.status || "Not Started";
+        wiUpdates.type = fileRow.isMilestone ? "milestone" : "task";
+        wiUpdates.percentComplete = clampPercent(fileRow.pctComplete) ?? 0;
+        wiUpdates.expectedPctComplete = clampPercent(fileRow.expectedPctComplete);
+        wiUpdates.wbsCode = incomingWbsCode;
+        wiUpdates.outlineNumber = incomingWbsCode;
+        wiUpdates.indentLevel = fileRow.indentLevel ?? 0;
+        wiUpdates.isMilestone = fileRow.isMilestone ?? false;
+        wiUpdates.sourceRow = fileRow.sourceRow || null;
+        wiUpdates.sourceSheet = fileRow.sourceSheet || null;
+        wiUpdates.sortOrder = sourceSortOrder;
+        wiUpdates.subProjectName = fileRow.subProjectName || null;
+        wiUpdates.lead = fileRow.lead ?? null;
+        wiUpdates.resource1 = fileRow.resource1 ?? null;
+        wiUpdates.resource2 = fileRow.resource2 ?? null;
+        wiUpdates.trackerComments = fileRow.trackerComments ?? null;
+        wiUpdates.workDays = fileRow.workDays ?? null;
 
         await tx.update(workItems).set(wiUpdates).where(eq(workItems.id, existingId));
         updatedIds.push(existingId);

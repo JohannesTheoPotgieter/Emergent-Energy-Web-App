@@ -312,6 +312,17 @@ async function ensureSqliteSchema() {
         pd TEXT,
         pm TEXT,
         contract_value REAL,
+        canonical_project_id INTEGER,
+        client_id INTEGER,
+        pm_user_id INTEGER,
+        pd_user_id INTEGER,
+        deleted_at TEXT,
+        site_id INTEGER,
+        opportunity_id INTEGER,
+        delivery_model TEXT,
+        project_code TEXT,
+        project_status TEXT NOT NULL DEFAULT 'active',
+        in_dlp INTEGER NOT NULL DEFAULT 0,
         phase TEXT,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
@@ -932,12 +943,45 @@ async function ensureSqliteSchema() {
         actual_start TEXT,
         actual_end TEXT,
         actual_duration INTEGER,
-        sort_order INTEGER DEFAULT 0
+        sort_order INTEGER DEFAULT 0,
+        estimate_minutes INTEGER,
+        task_category TEXT,
+        is_recurring INTEGER DEFAULT 0,
+        recurrence_frequency TEXT,
+        recurrence_interval INTEGER DEFAULT 1,
+        recurrence_days_of_week TEXT,
+        recurrence_end_date TEXT,
+        recurrence_parent_id INTEGER,
+        sub_project_name TEXT,
+        engineering_ticket_id INTEGER,
+        bucket TEXT,
+        pinned_today INTEGER DEFAULT 0,
+        pinned_week INTEGER DEFAULT 0,
+        source_email_id TEXT,
+        source_email_subject TEXT,
+        next_step TEXT,
+        definition_of_done TEXT,
+        completion_note TEXT,
+        funding_type TEXT,
+        size_kwp REAL,
+        province TEXT,
+        gps_coordinates TEXT,
+        batteries_needed INTEGER DEFAULT 0,
+        battery_size REAL,
+        lead TEXT,
+        resource_1 TEXT,
+        resource_2 TEXT,
+        tracker_comments TEXT,
+        work_days INTEGER,
+        cell_format TEXT,
+        row_hash TEXT,
+        import_snapshot TEXT,
+        manual_overrides TEXT
       )
     `);
     await db.run(sql`CREATE INDEX IF NOT EXISTS idx_work_items_project ON work_items(project_id, deleted_at)`);
 
-    // Engineering-specific columns for work_items (safe ALTERs)
+    // Canonical work_items columns that older local SQLite databases may lack.
     try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN hold_reason TEXT`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN blocked_type TEXT`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN approval_required INTEGER NOT NULL DEFAULT 0`)); } catch {}
@@ -948,6 +992,39 @@ async function ensureSqliteSchema() {
     try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN tracking_rag TEXT`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN task_type_tag TEXT`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN blocker_reason TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN estimate_minutes INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN task_category TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN is_recurring INTEGER DEFAULT 0`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN recurrence_frequency TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN recurrence_interval INTEGER DEFAULT 1`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN recurrence_days_of_week TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN recurrence_end_date TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN recurrence_parent_id INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN sub_project_name TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN engineering_ticket_id INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN bucket TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN pinned_today INTEGER DEFAULT 0`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN pinned_week INTEGER DEFAULT 0`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN source_email_id TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN source_email_subject TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN next_step TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN definition_of_done TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN completion_note TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN funding_type TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN size_kwp REAL`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN province TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN gps_coordinates TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN batteries_needed INTEGER DEFAULT 0`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN battery_size REAL`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN lead TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN resource_1 TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN resource_2 TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN tracker_comments TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN work_days INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN cell_format TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN row_hash TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN import_snapshot TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN manual_overrides TEXT`)); } catch {}
 
 
     await db.run(sql`
@@ -961,6 +1038,20 @@ async function ensureSqliteSchema() {
       )
     `);
     await db.run(sql`CREATE INDEX IF NOT EXISTS idx_work_item_assignments_item ON work_item_assignments(work_item_id)`);
+
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS work_item_dependencies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        predecessor_id INTEGER NOT NULL,
+        successor_id INTEGER NOT NULL,
+        dep_type TEXT NOT NULL DEFAULT 'FS',
+        lag_days INTEGER DEFAULT 0,
+        deleted_at TEXT,
+        deleted_by INTEGER
+      )
+    `);
+    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_work_item_dependencies_predecessor ON work_item_dependencies(predecessor_id, deleted_at)`);
+    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_work_item_dependencies_successor ON work_item_dependencies(successor_id, deleted_at)`);
 
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS approvals (
@@ -1328,10 +1419,14 @@ async function ensureSqliteSchema() {
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN excel_tracker_link TEXT`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN canonical_project_id INTEGER`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN client_id INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN pm_user_id INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN pd_user_id INTEGER`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN site_id INTEGER`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN opportunity_id INTEGER`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN delivery_model TEXT`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN project_code TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN project_status TEXT NOT NULL DEFAULT 'active'`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN in_dlp INTEGER NOT NULL DEFAULT 0`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN deleted_at TEXT`)); } catch {}
 
     console.log('[DB] SQLite schema verified');

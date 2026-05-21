@@ -667,15 +667,15 @@ const ALL_COLUMNS: PlanColumn[] = [
   { id: "rowNum", label: "#", width: "w-8", alwaysVisible: true },
   { id: "indicator", label: "Type", width: "w-6" },
   { id: "wbs", label: "WBS", width: "w-12" },
-  { id: "taskName", label: "Task Name", width: "min-w-[140px]", alwaysVisible: true },
+  { id: "taskName", label: "Task Name", width: "min-w-[220px]", alwaysVisible: true },
   { id: "duration", label: "Duration", width: "w-14" },
-  { id: "start", label: "Start", width: "w-[68px]" },
-  { id: "finish", label: "Finish", width: "w-[68px]" },
+  { id: "start", label: "Start", width: "w-[76px]" },
+  { id: "finish", label: "Finish", width: "w-[76px]" },
   { id: "predecessors", label: "Pred.", width: "w-[60px]" },
-  { id: "resource", label: "Resource", width: "w-[70px]" },
-  { id: "workstream", label: "Workstream", width: "w-[80px]" },
+  { id: "resource", label: "Resource", width: "w-[92px]" },
+  { id: "workstream", label: "Workstream", width: "w-[92px]" },
   { id: "pctComplete", label: "% Complete", width: "w-[90px]" },
-  { id: "expectedPct", label: "Expected %", width: "w-[70px]" },
+  { id: "expectedPct", label: "Expected %", width: "w-[82px]" },
   { id: "status", label: "Status", width: "w-10" },
   // Smart Import v2 tracker columns. Off by default so the existing
   // layout is unchanged for users who haven't opted in.
@@ -700,6 +700,10 @@ interface SavedView {
 
 const STORAGE_KEY_COLUMNS = "planTab_visibleColumns";
 const STORAGE_KEY_VIEWS = "planTab_savedViews";
+const PLAN_GRID_HEIGHT_STYLE = {
+  height: "clamp(460px, calc(100vh - 300px), 760px)",
+  minHeight: "460px",
+};
 
 // Module-level holder for non-fatal localStorage load errors so the component
 // can surface them to the user via a toast on mount.
@@ -1656,7 +1660,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     });
   }, [tasks]);
 
-  const ROW_HEIGHT = 32;
+  const ROW_HEIGHT = 34;
 
   if (isLoading) {
     return (
@@ -1671,19 +1675,19 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
 
   return (
     <div className="space-y-3" data-testid="unified-plan-tab">
-      <div className="flex items-center gap-3 flex-wrap overflow-x-auto scrollbar-hide" data-testid="plan-kpi-bar">
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-muted border">
+      <div className="flex items-center gap-2 flex-wrap rounded-lg border border-slate-200 bg-slate-50/80 p-2 shadow-sm" data-testid="plan-kpi-bar">
+        <div className="flex min-h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5">
           <Clock className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="text-xs text-muted-foreground">Total</span>
           <span className="text-sm font-bold tabular-nums" data-testid="kpi-total">{kpis.total}</span>
         </div>
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-50 border border-emerald-200">
+        <div className="flex min-h-8 items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5">
           <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
           <span className="text-xs text-muted-foreground">Done</span>
           <span className="text-sm font-bold tabular-nums text-emerald-700" data-testid="kpi-done">{kpis.done}</span>
         </div>
         {kpis.totalProjectDays !== null && kpis.elapsedDays !== null && (
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-violet-50 border border-violet-200">
+          <div className="flex min-h-8 items-center gap-1.5 rounded-md border border-violet-200 bg-violet-50 px-3 py-1.5">
             <Calendar className="h-3.5 w-3.5 text-violet-500" />
             <span className="text-xs text-muted-foreground">Day</span>
             <span className="text-sm font-bold tabular-nums text-violet-700" data-testid="kpi-elapsed-days">{kpis.elapsedDays}</span>
@@ -1691,7 +1695,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
             <span className="text-sm font-bold tabular-nums text-violet-700" data-testid="kpi-total-days">{kpis.totalProjectDays}</span>
           </div>
         )}
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-blue-50 border border-blue-200">
+        <div className="flex min-h-8 items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5">
           <Target className="h-3.5 w-3.5 text-blue-600" />
           <span className="text-xs text-muted-foreground">Actual %</span>
           <span className="text-sm font-bold tabular-nums text-blue-700" data-testid="kpi-actual">{kpis.avgPct}%</span>
@@ -1706,7 +1710,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
           )}
         </div>
         {kpis.avgExpectedPct !== null && (
-          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border ${kpis.avgPct < kpis.avgExpectedPct ? "bg-amber-50 border-amber-200" : "bg-muted"}`}>
+          <div className={`flex min-h-8 items-center gap-1.5 rounded-md border px-3 py-1.5 ${kpis.avgPct < kpis.avgExpectedPct ? "bg-amber-50 border-amber-200" : "bg-white border-slate-200"}`}>
             <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
             <span className="text-xs text-muted-foreground">Expected %</span>
             <span className="text-sm font-bold tabular-nums" data-testid="kpi-expected">{kpis.avgExpectedPct}%</span>
@@ -1726,14 +1730,14 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
         )}
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap overflow-x-auto scrollbar-hide" data-testid="plan-toolbar">
-        <div className="relative flex-1 max-w-xs">
+      <div className="flex items-center gap-2 flex-wrap rounded-lg border border-slate-200 bg-white p-2 shadow-sm" data-testid="plan-toolbar">
+        <div className="relative min-w-[220px] flex-1 max-w-md">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
             placeholder="Search tasks..."
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            className="pl-8 h-7 text-xs"
+            className="h-8 pl-8 text-xs"
             data-testid="input-search-plan"
           />
         </div>
@@ -1741,7 +1745,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
           value={statusFilter}
           onValueChange={setStatusFilter}
           placeholder="All Statuses"
-          triggerClassName="w-[130px] h-7 text-xs"
+          triggerClassName="w-[140px] h-8 text-xs"
           data-testid="select-status-filter"
           options={[
             { value: "All", label: "All Statuses" },
@@ -1752,7 +1756,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
           value={workstreamFilter}
           onValueChange={setWorkstreamFilter}
           placeholder="All Workstreams"
-          triggerClassName="w-[140px] h-7 text-xs"
+          triggerClassName="w-[160px] h-8 text-xs"
           data-testid="select-workstream-filter"
           options={[
             { value: "All", label: "All Workstreams" },
@@ -1760,12 +1764,14 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
           ]}
         />
 
-        <div className="flex items-center border rounded-md overflow-hidden bg-card shadow-sm" data-testid="toolbar-actions">
+        <div className="flex items-center overflow-hidden rounded-md border border-slate-200 bg-card shadow-sm" data-testid="toolbar-actions">
           <TooltipProvider delayDuration={200}>
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className="h-7 px-2 text-xs border-r hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  className="flex h-8 w-8 items-center justify-center border-r text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label="Add task"
+                  title="Add task"
                   disabled={!isAdmin}
                   onClick={() => { if (!createMutation.isPending) { if (newTaskTitle.trim()) createMutation.mutate(newTaskTitle.trim()); else { setNewTaskTitle("New Task"); createMutation.mutate("New Task"); } } }}
                   data-testid="toolbar-add-task"
@@ -1778,7 +1784,9 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className="h-7 px-2 text-xs border-r hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  className="flex h-8 w-8 items-center justify-center border-r text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label="Add milestone"
+                  title="Add milestone"
                   disabled={!isAdmin}
                   onClick={() => setMilestoneDialogOpen(true)}
                   data-testid="button-create-milestone"
@@ -1791,7 +1799,9 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className="h-7 px-2 text-xs border-r hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  className="flex h-8 w-8 items-center justify-center border-r text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label="Indent selected tasks"
+                  title="Indent selected tasks"
                   disabled={!isAdmin || selectedIds.size === 0}
                   onClick={() => {
                     const selArr = Array.from(selectedIds);
@@ -1816,7 +1826,9 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className="h-7 px-2 text-xs border-r hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  className="flex h-8 w-8 items-center justify-center border-r text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label="Outdent selected tasks"
+                  title="Outdent selected tasks"
                   disabled={!isAdmin || selectedIds.size === 0}
                   onClick={() => {
                     const selArr = Array.from(selectedIds);
@@ -1834,7 +1846,9 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className="h-7 px-2 text-xs border-r hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  className="flex h-8 w-8 items-center justify-center border-r text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label="Move selected task up"
+                  title="Move selected task up"
                   disabled={!isAdmin || selectedIds.size !== 1}
                   onClick={() => {
                     const selId = Array.from(selectedIds)[0];
@@ -1857,7 +1871,9 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className="h-7 px-2 text-xs border-r hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  className="flex h-8 w-8 items-center justify-center border-r text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label="Move selected task down"
+                  title="Move selected task down"
                   disabled={!isAdmin || selectedIds.size !== 1}
                   onClick={() => {
                     const selId = Array.from(selectedIds)[0];
@@ -1880,7 +1896,9 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className="h-7 px-2 text-xs border-r hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 text-red-600"
+                  className="flex h-8 w-8 items-center justify-center border-r text-xs text-red-600 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label="Delete selected tasks"
+                  title="Delete selected tasks"
                   disabled={!isAdmin || selectedIds.size === 0}
                   onClick={() => deleteMutation.mutate(Array.from(selectedIds))}
                   data-testid="toolbar-delete"
@@ -1893,7 +1911,9 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className="h-7 px-2 text-xs hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  className="flex h-8 w-8 items-center justify-center text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label="Renumber WBS"
+                  title="Renumber WBS"
                   disabled={!isAdmin || renumberMutation.isPending}
                   onClick={() => renumberMutation.mutate()}
                   data-testid="button-renumber"
@@ -1909,7 +1929,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
         <div className="ml-auto flex items-center gap-1.5">
           <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
             <PopoverTrigger asChild>
-              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" data-testid="button-column-chooser">
+              <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" data-testid="button-column-chooser">
                 <Columns3 className="h-3 w-3" />
                 Columns
                 {visibleColumns.length < ALL_COLUMNS.length && (
@@ -2074,7 +2094,11 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       )}
 
       <style dangerouslySetInnerHTML={{ __html: sanitizeHtml(`
-        .plan-grid-table { border-collapse: collapse; }
+        .plan-grid-table {
+          border-collapse: collapse;
+          width: max-content;
+          min-width: 100%;
+        }
         .plan-grid-table tbody tr { height: ${ROW_HEIGHT}px; }
         .plan-grid-table tbody td {
           height: ${ROW_HEIGHT}px;
@@ -2089,6 +2113,11 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
         .plan-grid-table thead th {
           height: 28px;
           max-height: 28px;
+          background: rgb(248 250 252);
+          color: rgb(71 85 105);
+          font-size: 10px;
+          letter-spacing: 0;
+          text-transform: uppercase;
           overflow: hidden;
           box-sizing: border-box;
           vertical-align: middle;
@@ -2107,16 +2136,16 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
           .plan-grid-split-handle { display: none !important; }
         }
       `)}} />
-      <div ref={containerRef} className="flex border rounded-md overflow-hidden bg-card" style={{ height: "calc(100vh - 320px)", minHeight: "400px" }} data-testid="plan-grid-container">
+      <div ref={containerRef} className="flex overflow-hidden rounded-lg border border-slate-200 bg-card shadow-sm" style={PLAN_GRID_HEIGHT_STYLE} data-testid="plan-grid-container">
         <div
           ref={bodyScrollRef}
-          className="plan-grid-left-panel flex-shrink-0 overflow-y-auto overflow-x-auto"
+          className="plan-grid-left-panel flex-shrink-0 overflow-y-auto overflow-x-auto bg-white"
           style={{ width: `${splitPct}%` }}
           onScroll={handleBodyScroll}
           data-testid="plan-grid-left"
         >
-          <table className="plan-grid-table text-[11px] border-collapse" style={{ tableLayout: "auto", minWidth: "100%" }}>
-            <thead className="sticky top-0 z-20 bg-muted">
+          <table className="plan-grid-table text-[11px]">
+            <thead className="sticky top-0 z-20 bg-slate-50">
               <tr style={{ height: 28, maxHeight: 28 }}>
                 {isAdmin && <th className="w-5 px-0 py-0 border-b border-r overflow-hidden" style={{ height: 28 }} />}
                 <th className="w-7 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }}>
@@ -2133,15 +2162,15 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                 {isColumnVisible("rowNum") && <th className="w-8 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-row-num">#</th>}
                 {isColumnVisible("indicator") && <th className="w-6 px-0 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-indicator"></th>}
                 {isColumnVisible("wbs") && <th className="w-12 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-wbs">WBS</th>}
-                {isColumnVisible("taskName") && <th className="px-2 py-0 text-left border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28, minWidth: 140 }} data-testid="header-task">Task Name</th>}
+                {isColumnVisible("taskName") && <th className="px-2 py-0 text-left border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28, minWidth: 220 }} data-testid="header-task">Task Name</th>}
                 {isColumnVisible("duration") && <th className="w-14 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-duration">Duration</th>}
-                {isColumnVisible("start") && <th className="w-[68px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-start">Start</th>}
-                {isColumnVisible("finish") && <th className="w-[68px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-end">Finish</th>}
+                {isColumnVisible("start") && <th className="w-[76px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-start">Start</th>}
+                {isColumnVisible("finish") && <th className="w-[76px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-end">Finish</th>}
                 {isColumnVisible("predecessors") && <th className="w-[60px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-predecessors">Pred.</th>}
-                {isColumnVisible("resource") && <th className="w-[70px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-lead">Resource</th>}
-                {isColumnVisible("workstream") && <th className="w-[80px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-workstream">Workstream</th>}
+                {isColumnVisible("resource") && <th className="w-[92px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-lead">Resource</th>}
+                {isColumnVisible("workstream") && <th className="w-[92px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-workstream">Workstream</th>}
                 {isColumnVisible("pctComplete") && <th className="w-[90px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-pct-done">% Complete</th>}
-                {isColumnVisible("expectedPct") && <th className="w-[70px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-expected-pct">Expected %</th>}
+                {isColumnVisible("expectedPct") && <th className="w-[82px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-expected-pct">Expected %</th>}
                 {isColumnVisible("status") && <th className="w-10 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-status">Status</th>}
                 {isColumnVisible("lead") && <th className="w-[80px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-lead-tracker">Lead</th>}
                 {isColumnVisible("resource1") && <th className="w-[90px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-resource-1">Resource 1</th>}
@@ -2302,7 +2331,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                       </td>
                       )}
                       {isColumnVisible("taskName") && (
-                      <td className="px-2 border-r" style={{ minWidth: 140 }} data-testid={`task-name-${task.id}`}>
+                      <td className="px-2 border-r" style={{ minWidth: 220 }} data-testid={`task-name-${task.id}`}>
                         <div className="flex items-center gap-1" style={{ paddingLeft: depth * 16 }}>
                           {hasChildren && (
                             <button
@@ -2591,8 +2620,12 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
         </div>
 
         <div
-          className="plan-grid-split-handle flex-shrink-0 w-1.5 bg-border hover:bg-primary/30 cursor-col-resize transition-colors relative group"
+          className="plan-grid-split-handle group relative w-2 flex-shrink-0 cursor-col-resize bg-slate-200 transition-colors hover:bg-primary/30"
           onMouseDown={handleSplitMouseDown}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize plan and Gantt split"
+          tabIndex={0}
           data-testid="plan-split-handle"
         >
           <div className="absolute inset-y-0 -left-1 -right-1" />
@@ -2601,12 +2634,12 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
 
         <div
           ref={ganttScrollRef}
-          className="plan-grid-gantt-panel flex-1 overflow-auto"
+          className="plan-grid-gantt-panel min-w-[320px] flex-1 overflow-auto bg-white"
           onScroll={handleGanttScroll}
           data-testid="plan-gantt-right"
         >
           <div style={{ width: ganttTotalWidth, minHeight: "100%" }} className="relative">
-            <div className="sticky top-0 z-10 bg-muted border-b flex" style={{ height: 28 }}>
+            <div className="sticky top-0 z-10 flex border-b bg-slate-50" style={{ height: 28 }}>
               {weeks.map((weekStart, i) => {
                 const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
                 const leftPx = differenceInDays(weekStart, ganttRange.start) * dayWidth;
