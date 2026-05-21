@@ -414,8 +414,14 @@ function SourceOfTruthBanner() {
 }
 
 function DashboardGrid({ months }: { months: DashboardMonth[] }) {
-  const now = new Date();
-  const curMk = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  // SAST anchor — matches the server's todayMonthKey() in
+  // finance-line-level-repository.ts. Previously used local-tz
+  // getMonth(), which disagreed with the server for ~2h every month
+  // boundary at SAST midnight, making the "current month" column toggle
+  // between live (no shading) and past (shaded) for half the operator's
+  // morning.
+  const sastNow = new Date(Date.now() + 120 * 60 * 1000);
+  const curMk = `${sastNow.getUTCFullYear()}-${String(sastNow.getUTCMonth() + 1).padStart(2, "0")}`;
 
   return (
     <div className="overflow-x-auto">

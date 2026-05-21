@@ -177,8 +177,15 @@ const classifyBucket = (
   return confirmed ? "realised" : "committed";
 };
 
+// Anchor to SAST (UTC+2 year-round, no DST). Server is UTC but the
+// operator's calendar is South African — using getUTCMonth here while
+// the client uses local-tz getMonth caused the "current month" boundary
+// to drift by ~2h every month-end, so a line invoiced at 23:30 SAST on
+// the last day of the month was classified realised by the server but
+// the client still painted the same month as live.
+const SAST_OFFSET_MS = 120 * 60 * 1000;
 const todayMonthKey = (): string => {
-  const d = new Date();
+  const d = new Date(Date.now() + SAST_OFFSET_MS);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 };
 

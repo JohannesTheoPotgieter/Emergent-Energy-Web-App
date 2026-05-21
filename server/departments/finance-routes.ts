@@ -1086,7 +1086,12 @@ function safeNum(value: unknown): number {
 }
 
 function getFYRange(date: Date = new Date()): { start: string; end: string } {
-  const year = date.getMonth() >= 8 ? date.getFullYear() : date.getFullYear() - 1;
+  // FY = September → August. Anchor to SAST so the boundary doesn't
+  // shift for the 2 hours after midnight UTC on 1 Sept (when local
+  // getMonth() still reports August). Server is UTC-naive in dev/CI.
+  const sast = new Date(date.getTime() + 120 * 60 * 1000);
+  const month0 = sast.getUTCMonth(); // 0-indexed; 8 = September
+  const year = month0 >= 8 ? sast.getUTCFullYear() : sast.getUTCFullYear() - 1;
   return {
     start: `${year}-09-01`,
     end: `${year + 1}-08-31`,
@@ -1126,8 +1131,16 @@ router.get('/api/program/cos', requireAuth, requirePermission('cos', 'view'), as
     const projectCosMap = new Map<string, number>();
     const monthlyCategoryMap = new Map<string, Map<string, number>>();
 
-    const nowCos = new Date();
-    const currentMonthEnd = `${nowCos.getFullYear()}-${String(nowCos.getMonth() + 1).padStart(2, '0')}-31`;
+    // Anchor "today" to SAST so the month-end matches the operator's
+    // calendar regardless of server TZ. Then compute the real last day
+    // of the month (the previous code hardcoded -31, which worked by
+    // lexical luck for 31-day months but dropped first-of-month rows
+    // during the SAST 00:00-02:00 window of any short month).
+    const sastNow = new Date(Date.now() + 120 * 60 * 1000);
+    const year = sastNow.getUTCFullYear();
+    const month1 = sastNow.getUTCMonth() + 1;
+    const lastDayOfMonth = new Date(Date.UTC(year, month1, 0)).getUTCDate();
+    const currentMonthEnd = `${year}-${String(month1).padStart(2, '0')}-${String(lastDayOfMonth).padStart(2, '0')}`;
 
     for (const exp of filtered) {
       const invoiceDate = exp.expenseInvoicedDate;
