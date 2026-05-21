@@ -408,10 +408,24 @@ interface SpSettings {
 
 interface TestConnectionResult {
   ok: boolean;
+  failureCategory?: "missing_token" | "expired_token" | "missing_scope" | "401" | "403" | "404" | "malformed_config" | "graph_outage";
   message?: string;
   nextAction?: string;
   siteName?: string;
   driveName?: string;
+  folderName?: string;
+  siteReachable?: boolean;
+  driveReachable?: boolean;
+  folderReachable?: boolean;
+  fileCount?: number;
+  firstFiveTrackerFilenames?: string[];
+  checks?: Array<{
+    name: "site" | "drive" | "folder" | "children";
+    ok: boolean;
+    httpStatus: number | null;
+    graphErrorCode?: string | null;
+    graphErrorMessage?: string | null;
+  }>;
 }
 
 function normalizeFolderPath(folderPath: string | null | undefined): string | null {
@@ -422,6 +436,15 @@ function normalizeFolderPath(folderPath: string | null | undefined): string | nu
     .replace(/\/+$/, "")
     .replace(/\/{2,}/g, "/");
   return normalized || null;
+}
+
+function sharePointConfigKey(form: Pick<SpSettings, "siteId" | "driveId" | "folderItemId" | "folderPath">): string {
+  return JSON.stringify({
+    siteId: form.siteId.trim(),
+    driveId: form.driveId.trim(),
+    folderItemId: form.folderItemId?.trim() || null,
+    folderPath: normalizeFolderPath(form.folderPath),
+  });
 }
 
 function nextRunEstimate(lastRunAt: string | null, intervalMinutes: number): string {
@@ -468,6 +491,7 @@ function SharePointAutoImportPanel() {
   const [testing, setTesting] = useState(false);
   const [running, setRunning] = useState(false);
   const [testResult, setTestResult] = useState<TestConnectionResult | null>(null);
+  const [lastPassedTestKey, setLastPassedTestKey] = useState<string | null>(null);
   // UI/UX audit X6 — turning auto-commit ON is gated behind a confirmation.
   const [confirmEnableOpen, setConfirmEnableOpen] = useState(false);
 
@@ -485,6 +509,10 @@ function SharePointAutoImportPanel() {
 
   function patch<K extends keyof SpSettings>(key: K, value: SpSettings[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
+    if (key === "siteId" || key === "driveId" || key === "folderItemId" || key === "folderPath") {
+      setTestResult(null);
+      setLastPassedTestKey(null);
+    }
     setDirty(true);
   }
 
@@ -493,6 +521,14 @@ function SharePointAutoImportPanel() {
       toast({
         title: "Site ID and Drive ID are required",
         description: "Paste them from SharePoint or use Test Connection to verify before saving.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (form.enabled && lastPassedTestKey !== sharePointConfigKey(form)) {
+      toast({
+        title: "Test Connection must pass first",
+        description: "Run Test Connection successfully for this Site ID, Drive ID and folder before enabling scheduled imports.",
         variant: "destructive",
       });
       return;
@@ -514,7 +550,9 @@ function SharePointAutoImportPanel() {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body?.message || body?.error || `HTTP ${res.status}`);
+        const category = body?.details?.failureCategory || body?.code || body?.error;
+        const nextAction = body?.nextAction ? ` ${body.nextAction}` : "";
+        throw new Error(`${category ? `${category}: ` : ""}${body?.message || `HTTP ${res.status}`}${nextAction}`);
       }
       toast({ title: "Auto-import settings saved" });
       setDirty(false);
@@ -552,11 +590,15 @@ function SharePointAutoImportPanel() {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         setTestResult({ ok: false, message: body?.message || body?.error || `HTTP ${res.status}`, nextAction: body?.nextAction });
+        setLastPassedTestKey(null);
       } else {
-        setTestResult(body as TestConnectionResult);
+        const result = body as TestConnectionResult;
+        setTestResult(result);
+        setLastPassedTestKey(result.ok ? sharePointConfigKey(form) : null);
       }
     } catch (err) {
       setTestResult({ ok: false, message: err instanceof Error ? err.message : "Unknown error" });
+      setLastPassedTestKey(null);
     } finally {
       setTesting(false);
     }
@@ -595,6 +637,7 @@ function SharePointAutoImportPanel() {
 
   const configured = !!settingsQuery.data;
   const enabled = form.enabled;
+  const hasPassingTestForCurrentConfig = lastPassedTestKey === sharePointConfigKey(form);
 
   return (
     <Card data-testid="sharepoint-autoimport-panel">
@@ -756,7 +799,17 @@ function SharePointAutoImportPanel() {
           }
           requireReason
           reasonLabel="Reason (recorded for audit)"
-          onConfirm={() => patch("enabled", true)}
+          onConfirm={() => {
+            if (!hasPassingTestForCurrentConfig) {
+              toast({
+                title: "Test Connection must pass first",
+                description: "Run Test Connection successfully for this exact SharePoint configuration before enabling scheduled imports.",
+                variant: "destructive",
+              });
+              return;
+            }
+            patch("enabled", true);
+          }}
         />
 
         {/* Test connection result */}
@@ -778,11 +831,30 @@ function SharePointAutoImportPanel() {
               <div className={`font-medium ${testResult.ok ? "text-emerald-800 dark:text-emerald-200" : "text-red-800 dark:text-red-200"}`}>
                 {testResult.ok ? "Connection OK" : "Connection failed"}
               </div>
-              {(testResult.siteName || testResult.driveName) && (
+              {(testResult.siteName || testResult.driveName || testResult.folderName) && (
                 <div className="text-xs text-muted-foreground">
                   {testResult.siteName ? `Site: ${testResult.siteName}` : ""}
                   {testResult.siteName && testResult.driveName ? " · " : ""}
                   {testResult.driveName ? `Drive: ${testResult.driveName}` : ""}
+                  {(testResult.siteName || testResult.driveName) && testResult.folderName ? " · " : ""}
+                  {testResult.folderName ? `Folder: ${testResult.folderName}` : ""}
+                </div>
+              )}
+              {testResult.ok && (
+                <div className="mt-1 space-y-1 text-xs">
+                  <div className="text-emerald-800 dark:text-emerald-200">
+                    Site reachable · Drive reachable · Folder reachable · {testResult.fileCount ?? 0} tracker file{(testResult.fileCount ?? 0) === 1 ? "" : "s"}
+                  </div>
+                  {testResult.firstFiveTrackerFilenames && testResult.firstFiveTrackerFilenames.length > 0 && (
+                    <div className="text-muted-foreground">
+                      First 5: {testResult.firstFiveTrackerFilenames.join(", ")}
+                    </div>
+                  )}
+                </div>
+              )}
+              {!testResult.ok && testResult.failureCategory && (
+                <div className="text-xs font-medium text-red-800 dark:text-red-200">
+                  Category: {testResult.failureCategory}
                 </div>
               )}
               {testResult.message && !testResult.ok && (
@@ -790,6 +862,18 @@ function SharePointAutoImportPanel() {
               )}
               {testResult.nextAction && !testResult.ok && (
                 <div className="text-xs text-muted-foreground mt-1">{testResult.nextAction}</div>
+              )}
+              {!testResult.ok && testResult.checks && testResult.checks.length > 0 && (
+                <div className="mt-2 grid gap-1 text-xs">
+                  {testResult.checks.map((check) => (
+                    <div key={check.name} className="flex flex-wrap gap-x-2 text-muted-foreground">
+                      <span className="font-medium capitalize text-foreground">{check.name}</span>
+                      <span>{check.ok ? "OK" : "Failed"}</span>
+                      {check.httpStatus ? <span>HTTP {check.httpStatus}</span> : null}
+                      {check.graphErrorCode ? <span>{check.graphErrorCode}</span> : null}
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>

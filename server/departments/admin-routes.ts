@@ -19,7 +19,12 @@ import { buildPhase1AReconciliationReport } from "../services/promoted-read-comp
 import { isPhase1ADomainEnabled, isPhase1AEndpointEnabled, type Phase1AFlagSet } from "../services/phase1a-reconciliation-policy";
 import { queryStr, queryInt, paramStr, paramInt } from "../lib/req-parse";
 import { logAuditFromReq } from "../audit-logger";
-import { normalizeSharePointFolderPath } from "../sharepoint";
+import {
+  assertSharePointConnectionHealthyForEnable,
+  normalizeSharePointFolderPath,
+  type SharePointConnectionTestResult,
+} from "../sharepoint";
+import { ApiError } from "../lib/api-error";
 
 /**
  * Body schema for POST /api/admin/sp-settings — used to validate the COO/CEO
@@ -52,6 +57,58 @@ const SP_IMPORT_SINGLE_BODY = z.object({
 }).strict();
 
 const router = Router();
+
+function parseJsonConfig(raw: unknown): Record<string, any> {
+  if (raw && typeof raw === "object") return raw as Record<string, any>;
+  if (typeof raw !== "string") return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+async function recordSharePointConnectionHealth(input: {
+  userId: number | null;
+  siteId: string;
+  driveId: string;
+  folderPath: string | null;
+  result: SharePointConnectionTestResult;
+}): Promise<void> {
+  try {
+    const rows = await db.execute(sql`
+      SELECT config_value
+      FROM ms_integration_settings
+      WHERE config_key = 'sharepoint_project_docs'
+      LIMIT 1
+    `).then((r: any) => r.rows || r);
+    const existing = parseJsonConfig(rows?.[0]?.config_value);
+    const nextConfig = {
+      ...existing,
+      siteId: input.siteId,
+      driveId: input.driveId,
+      folderPath: input.folderPath,
+      siteName: input.result.siteName ?? existing.siteName ?? null,
+      driveName: input.result.driveName ?? existing.driveName ?? null,
+      connectionStatus: input.result.ok ? "connected" : "error",
+      lastTestedAt: new Date().toISOString(),
+      lastErrorCode: input.result.ok ? null : input.result.failureCategory ?? "unknown",
+      lastErrorMessage: input.result.ok ? null : input.result.message ?? null,
+      lastFileCount: input.result.fileCount ?? null,
+      firstFiveTrackerFilenames: input.result.firstFiveTrackerFilenames ?? [],
+    };
+    await db.execute(sql`
+      INSERT INTO ms_integration_settings (config_key, config_value, updated_by, updated_at)
+      VALUES ('sharepoint_project_docs', ${JSON.stringify(nextConfig)}::jsonb, ${input.userId}, NOW())
+      ON CONFLICT (config_key) DO UPDATE SET
+        config_value = ${JSON.stringify(nextConfig)}::jsonb,
+        updated_by = ${input.userId},
+        updated_at = NOW()
+    `);
+  } catch (err) {
+    console.warn("[SharePoint] Failed to persist connection health:", err instanceof Error ? err.message : String(err));
+  }
+}
 
 // `uploadDir` previously hosted the multer instance used by /api/upload and
 // /api/reprocess-all. After those handlers were 410'd (see below) the
@@ -420,6 +477,34 @@ router.post("/api/admin/sp-settings", requireAuth, requireAdmin, async (req, res
   }
   const body = parsed.data;
   const userId = typeof req.user?.id === "number" ? req.user.id : null;
+  if (body.enabled) {
+    try {
+      const health = await assertSharePointConnectionHealthyForEnable(
+        body.siteId,
+        body.driveId,
+        body.folderItemId ?? null,
+        body.folderPath ?? null,
+      );
+      await recordSharePointConnectionHealth({
+        userId,
+        siteId: body.siteId,
+        driveId: body.driveId,
+        folderPath: normalizeSharePointFolderPath(body.folderPath) ?? null,
+        result: health,
+      });
+    } catch (err) {
+      if (err instanceof ApiError) {
+        return res.status(err.statusCode).json({
+          error: err.code,
+          code: err.code,
+          message: err.message,
+          details: err.details,
+          nextAction: err.nextAction,
+        });
+      }
+      throw err;
+    }
+  }
   const settings = await storage.upsertSpSettings({
     siteId: body.siteId,
     driveId: body.driveId,
@@ -461,6 +546,13 @@ router.post("/api/admin/sp-settings/test", requireAuth, requireAdmin, async (req
     parsed.data.folderItemId ?? undefined,
     parsed.data.folderPath ?? undefined,
   );
+  await recordSharePointConnectionHealth({
+    userId: typeof req.user?.id === "number" ? req.user.id : null,
+    siteId: parsed.data.siteId,
+    driveId: parsed.data.driveId,
+    folderPath: normalizeSharePointFolderPath(parsed.data.folderPath) ?? null,
+    result,
+  });
   logAuditFromReq(req, {
     entityType: "sp_settings",
     action: "test_connection",
@@ -469,6 +561,9 @@ router.post("/api/admin/sp-settings/test", requireAuth, requireAdmin, async (req
       driveId: parsed.data.driveId,
       folderItemId: parsed.data.folderItemId ?? null,
       folderPath: normalizeSharePointFolderPath(parsed.data.folderPath) ?? null,
+      ok: result.ok,
+      failureCategory: result.failureCategory ?? null,
+      fileCount: result.fileCount ?? null,
     },
   });
   res.json(result);

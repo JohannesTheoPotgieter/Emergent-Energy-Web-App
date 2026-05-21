@@ -7,6 +7,69 @@ import { isConnectorMocked } from "./lib/connector-mode";
 /** @deprecated Use getSharePointToken() from sharepoint-token.ts directly. Re-exported for backward compatibility. */
 export const getAccessToken = getSharePointToken;
 
+type SharePointFailureCategory =
+  | "missing_token"
+  | "expired_token"
+  | "missing_scope"
+  | "401"
+  | "403"
+  | "404"
+  | "malformed_config"
+  | "graph_outage";
+
+type SharePointCheckName = "site" | "drive" | "folder" | "children";
+
+export interface SharePointGraphCheck {
+  name: SharePointCheckName;
+  endpoint: string;
+  ok: boolean;
+  httpStatus: number | null;
+  graphErrorCode?: string | null;
+  graphErrorMessage?: string | null;
+}
+
+export interface SharePointTokenDiagnostics {
+  exists: boolean;
+  tokenType: "delegated" | "app-only" | "unknown";
+  tenantId: string | null;
+  principalId: string | null;
+  servicePrincipalId: string | null;
+  appId: string | null;
+  expiresAt: string | null;
+  expired: boolean | null;
+  scopes: string[];
+  roles: string[];
+  hasRequiredSharePointAccess: boolean;
+  missingRequiredAccess: string[];
+}
+
+export interface SharePointConnectionDiagnostics {
+  token: SharePointTokenDiagnostics;
+  config: {
+    siteIdLength: number;
+    driveIdLength: number;
+    folderPath: string | null;
+  };
+}
+
+export interface SharePointConnectionTestResult {
+  ok: boolean;
+  success: boolean;
+  failureCategory?: SharePointFailureCategory;
+  message?: string;
+  nextAction?: string;
+  siteName?: string;
+  driveName?: string;
+  folderName?: string;
+  siteReachable?: boolean;
+  driveReachable?: boolean;
+  folderReachable?: boolean;
+  fileCount?: number;
+  firstFiveTrackerFilenames?: string[];
+  checks?: SharePointGraphCheck[];
+  diagnostics?: SharePointConnectionDiagnostics;
+}
+
 export function normalizeSharePointFolderPath(folderPath?: string | null): string | undefined {
   const normalized = (folderPath ?? "")
     .trim()
@@ -17,20 +80,48 @@ export function normalizeSharePointFolderPath(folderPath?: string | null): strin
   return normalized || undefined;
 }
 
-function graphErrorDetails(text: string): Record<string, string> | undefined {
+function encodeGraphDrivePath(folderPath: string): string {
+  return folderPath
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}
+
+interface ParsedGraphError {
+  code?: string;
+  message?: string;
+  requestId?: string;
+  clientRequestId?: string;
+  date?: string;
+}
+
+function parseGraphError(text: string): ParsedGraphError {
   try {
     const parsed = JSON.parse(text);
     const graphError = parsed?.error ?? parsed;
     const inner = graphError?.innerError ?? graphError?.innererror ?? {};
-    const details: Record<string, string> = {};
-    if (typeof graphError?.code === "string") details.graphCode = graphError.code;
-    if (typeof inner?.["request-id"] === "string") details.requestId = inner["request-id"];
-    if (typeof inner?.["client-request-id"] === "string") details.clientRequestId = inner["client-request-id"];
-    if (typeof inner?.date === "string") details.date = inner.date;
-    return Object.keys(details).length > 0 ? details : undefined;
+    return {
+      code: typeof graphError?.code === "string" ? graphError.code : undefined,
+      message: typeof graphError?.message === "string" ? graphError.message : undefined,
+      requestId: typeof inner?.["request-id"] === "string" ? inner["request-id"] : undefined,
+      clientRequestId: typeof inner?.["client-request-id"] === "string" ? inner["client-request-id"] : undefined,
+      date: typeof inner?.date === "string" ? inner.date : undefined,
+    };
   } catch {
-    return undefined;
+    return text ? { message: text.slice(0, 500) } : {};
   }
+}
+
+function graphErrorDetails(text: string): Record<string, string> | undefined {
+  const parsed = parseGraphError(text);
+  const details: Record<string, string> = {};
+  if (parsed.code) details.graphCode = parsed.code;
+  if (parsed.message) details.graphMessage = parsed.message;
+  if (parsed.requestId) details.requestId = parsed.requestId;
+  if (parsed.clientRequestId) details.clientRequestId = parsed.clientRequestId;
+  if (parsed.date) details.date = parsed.date;
+  return Object.keys(details).length > 0 ? details : undefined;
 }
 
 function graphApiError(status: number, text: string, context: string): ApiError {
@@ -75,16 +166,170 @@ function graphApiError(status: number, text: string, context: string): ApiError 
   );
 }
 
-async function graphGet(url: string, context = "read SharePoint data"): Promise<any> {
-  const token = await getSharePointToken();
-  const res = await fetch(url, {
+function failureCategoryFromError(err: unknown): SharePointFailureCategory {
+  if (err instanceof ApiError) {
+    if (err.code === "SHAREPOINT_TOKEN_UNAUTHORIZED") return "401";
+    if (err.code === "SHAREPOINT_ACCESS_DENIED") return "403";
+    if (err.code === "SHAREPOINT_RESOURCE_NOT_FOUND") return "404";
+  }
+  return "graph_outage";
+}
+
+function decodeBase64UrlJson(part: string): Record<string, any> | null {
+  try {
+    const normalized = part.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+const READ_SCOPE_ALIASES = new Set([
+  "Files.Read.All",
+  "Files.ReadWrite.All",
+  "Sites.Read.All",
+  "Sites.ReadWrite.All",
+]);
+
+function decodeTokenDiagnostics(token: string | null): SharePointTokenDiagnostics {
+  if (!token) {
+    return {
+      exists: false,
+      tokenType: "unknown",
+      tenantId: null,
+      principalId: null,
+      servicePrincipalId: null,
+      appId: null,
+      expiresAt: null,
+      expired: null,
+      scopes: [],
+      roles: [],
+      hasRequiredSharePointAccess: false,
+      missingRequiredAccess: ["Files.Read.All or Sites.Read.All"],
+    };
+  }
+
+  const payload = decodeBase64UrlJson(token.split(".")[1] ?? "");
+  const scopes = typeof payload?.scp === "string"
+    ? payload.scp.split(/\s+/).filter(Boolean).sort()
+    : [];
+  const roles = Array.isArray(payload?.roles)
+    ? payload.roles.filter((role: unknown): role is string => typeof role === "string").sort()
+    : [];
+  const expiresAt = typeof payload?.exp === "number"
+    ? new Date(payload.exp * 1000).toISOString()
+    : null;
+  const expired = typeof payload?.exp === "number"
+    ? payload.exp * 1000 <= Date.now()
+    : null;
+  const hasRequiredSharePointAccess = [...scopes, ...roles].some((permission) => READ_SCOPE_ALIASES.has(permission));
+
+  return {
+    exists: true,
+    tokenType: roles.length > 0 ? "app-only" : scopes.length > 0 ? "delegated" : "unknown",
+    tenantId: typeof payload?.tid === "string" ? payload.tid : null,
+    principalId: typeof payload?.oid === "string" ? payload.oid : typeof payload?.sub === "string" ? payload.sub : null,
+    servicePrincipalId: typeof payload?.idtyp === "string" && payload.idtyp === "app" && typeof payload?.oid === "string" ? payload.oid : null,
+    appId: typeof payload?.appid === "string" ? payload.appid : typeof payload?.azp === "string" ? payload.azp : null,
+    expiresAt,
+    expired,
+    scopes,
+    roles,
+    hasRequiredSharePointAccess,
+    missingRequiredAccess: hasRequiredSharePointAccess ? [] : ["Files.Read.All or Sites.Read.All"],
+  };
+}
+
+function buildDiagnostics(
+  token: string | null,
+  siteId: string,
+  driveId: string,
+  folderPath?: string | null,
+): SharePointConnectionDiagnostics {
+  return {
+    token: decodeTokenDiagnostics(token),
+    config: {
+      siteIdLength: siteId.length,
+      driveIdLength: driveId.length,
+      folderPath: normalizeSharePointFolderPath(folderPath) ?? null,
+    },
+  };
+}
+
+function logConnectionDiagnostic(result: SharePointConnectionTestResult): void {
+  if (process.env.NODE_ENV === "test") return;
+  const payload = {
+    ok: result.ok,
+    failureCategory: result.failureCategory ?? null,
+    message: result.message ?? null,
+    checks: result.checks ?? [],
+    diagnostics: result.diagnostics ?? null,
+    fileCount: result.fileCount ?? null,
+    firstFiveTrackerFilenames: result.firstFiveTrackerFilenames ?? [],
+  };
+  const logger = result.ok ? console.info : console.warn;
+  logger("[SharePoint health check]", payload);
+}
+
+interface GraphJsonResult {
+  data?: any;
+  check: SharePointGraphCheck;
+  error?: ApiError;
+}
+
+async function graphGetJsonWithCheck(
+  token: string,
+  endpoint: string,
+  name: SharePointCheckName,
+  context: string,
+): Promise<GraphJsonResult> {
+  const res = await fetch(endpoint, {
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
   });
+  const text = await res.text();
   if (!res.ok) {
-    const text = await res.text();
-    throw graphApiError(res.status, text, context);
+    const parsedError = parseGraphError(text);
+    const error = graphApiError(res.status, text, context);
+    return {
+      check: {
+        name,
+        endpoint,
+        ok: false,
+        httpStatus: res.status,
+        graphErrorCode: parsedError.code ?? null,
+        graphErrorMessage: parsedError.message ?? null,
+      },
+      error,
+    };
   }
-  return res.json();
+
+  let data: any = {};
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = {};
+    }
+  }
+  return {
+    data,
+    check: {
+      name,
+      endpoint,
+      ok: true,
+      httpStatus: res.status,
+      graphErrorCode: null,
+      graphErrorMessage: null,
+    },
+  };
+}
+
+async function graphGet(url: string, context = "read SharePoint data"): Promise<any> {
+  const token = await getSharePointToken();
+  const result = await graphGetJsonWithCheck(token, url, "children", context);
+  if (result.error) throw result.error;
+  return result.data;
 }
 
 async function graphGetBuffer(url: string, context = "download SharePoint file"): Promise<Buffer> {
@@ -105,30 +350,224 @@ export async function testConnection(
   driveId: string,
   folderItemId?: string,
   folderPath?: string,
-): Promise<{ ok: boolean; success: boolean; siteName?: string; driveName?: string; message?: string; nextAction?: string }> {
+): Promise<SharePointConnectionTestResult> {
   if (isConnectorMocked("ms-graph")) {
     return {
       ok: true,
       success: true,
       siteName: "Mock SharePoint Site",
       driveName: "Mock Documents Library",
+      folderReachable: true,
+      siteReachable: true,
+      driveReachable: true,
+      fileCount: 0,
+      firstFiveTrackerFilenames: [],
+      checks: [],
+      diagnostics: buildDiagnostics(null, siteId, driveId, folderPath),
     };
   }
-  try {
-    const site = await graphGet(`https://graph.microsoft.com/v1.0/sites/${siteId}`, "get SharePoint site");
-    const drive = await graphGet(`https://graph.microsoft.com/v1.0/drives/${driveId}`, "get SharePoint drive");
-    if (folderItemId || normalizeSharePointFolderPath(folderPath)) {
-      await listFolderChildren(driveId, folderItemId, folderPath);
-    }
-    return { ok: true, success: true, siteName: site.displayName, driveName: drive.name };
-  } catch (err: unknown) {
-    return {
+  const normalizedFolderPath = normalizeSharePointFolderPath(folderPath);
+  const normalizedSiteId = siteId.trim();
+  const normalizedDriveId = driveId.trim();
+  if (!normalizedSiteId || !normalizedDriveId) {
+    const result: SharePointConnectionTestResult = {
       ok: false,
       success: false,
-      message: (err instanceof Error ? err.message : String(err)),
-      nextAction: err instanceof ApiError ? err.nextAction : undefined,
+      failureCategory: "malformed_config",
+      message: "SharePoint Site ID and Drive ID are required.",
+      nextAction: "Paste the verified SharePoint Site ID and Drive ID, then test again.",
+      diagnostics: buildDiagnostics(null, normalizedSiteId, normalizedDriveId, normalizedFolderPath),
     };
+    logConnectionDiagnostic(result);
+    return result;
   }
+
+  let token: string | null = null;
+  try {
+    token = await getSharePointToken();
+  } catch (err: unknown) {
+    const result: SharePointConnectionTestResult = {
+      ok: false,
+      success: false,
+      failureCategory: "missing_token",
+      message: err instanceof Error ? err.message : "SharePoint token is missing.",
+      nextAction: "Reconnect the Microsoft SharePoint connector, or reconnect Microsoft sign-in with SharePoint file/site scopes.",
+      diagnostics: buildDiagnostics(null, normalizedSiteId, normalizedDriveId, normalizedFolderPath),
+    };
+    logConnectionDiagnostic(result);
+    return result;
+  }
+
+  const diagnostics = buildDiagnostics(token, normalizedSiteId, normalizedDriveId, normalizedFolderPath);
+  if (diagnostics.token.expired) {
+    const result: SharePointConnectionTestResult = {
+      ok: false,
+      success: false,
+      failureCategory: "expired_token",
+      message: "The SharePoint Graph token is expired.",
+      nextAction: "Reconnect Microsoft sign-in or the SharePoint connector so the app receives a fresh token.",
+      diagnostics,
+      checks: [],
+    };
+    logConnectionDiagnostic(result);
+    return result;
+  }
+  if (!diagnostics.token.hasRequiredSharePointAccess) {
+    const result: SharePointConnectionTestResult = {
+      ok: false,
+      success: false,
+      failureCategory: "missing_scope",
+      message: "The Microsoft token is missing SharePoint Graph permission: Files.Read.All or Sites.Read.All.",
+      nextAction: "In Microsoft Entra, grant/admin-consent Files.Read.All or Sites.Read.All for the Microsoft app/connector, then reconnect Microsoft.",
+      diagnostics,
+      checks: [],
+    };
+    logConnectionDiagnostic(result);
+    return result;
+  }
+
+  const checks: SharePointGraphCheck[] = [];
+  const siteEndpoint = `https://graph.microsoft.com/v1.0/sites/${normalizedSiteId}`;
+  const siteResult = await graphGetJsonWithCheck(token, siteEndpoint, "site", "get SharePoint site");
+  checks.push(siteResult.check);
+  if (siteResult.error) {
+    const result: SharePointConnectionTestResult = {
+      ok: false,
+      success: false,
+      failureCategory: failureCategoryFromError(siteResult.error),
+      message: siteResult.error.message,
+      nextAction: siteResult.error.nextAction,
+      siteReachable: false,
+      driveReachable: false,
+      folderReachable: false,
+      checks,
+      diagnostics,
+    };
+    logConnectionDiagnostic(result);
+    return result;
+  }
+
+  const driveEndpoint = `https://graph.microsoft.com/v1.0/drives/${normalizedDriveId}`;
+  const driveResult = await graphGetJsonWithCheck(token, driveEndpoint, "drive", "get SharePoint drive");
+  checks.push(driveResult.check);
+  if (driveResult.error) {
+    const result: SharePointConnectionTestResult = {
+      ok: false,
+      success: false,
+      failureCategory: failureCategoryFromError(driveResult.error),
+      message: driveResult.error.message,
+      nextAction: driveResult.error.nextAction,
+      siteReachable: true,
+      driveReachable: false,
+      folderReachable: false,
+      siteName: siteResult.data?.displayName,
+      checks,
+      diagnostics,
+    };
+    logConnectionDiagnostic(result);
+    return result;
+  }
+
+  let folderEndpoint: string;
+  let childrenEndpoint: string;
+  if (normalizedFolderPath) {
+    const encodedPath = encodeGraphDrivePath(normalizedFolderPath);
+    folderEndpoint = `https://graph.microsoft.com/v1.0/drives/${normalizedDriveId}/root:/${encodedPath}`;
+    childrenEndpoint = `https://graph.microsoft.com/v1.0/drives/${normalizedDriveId}/root:/${encodedPath}:/children`;
+  } else if (folderItemId) {
+    const itemId = folderItemId.trim();
+    folderEndpoint = `https://graph.microsoft.com/v1.0/drives/${normalizedDriveId}/items/${itemId}`;
+    childrenEndpoint = `https://graph.microsoft.com/v1.0/drives/${normalizedDriveId}/items/${itemId}/children`;
+  } else {
+    folderEndpoint = `https://graph.microsoft.com/v1.0/drives/${normalizedDriveId}/root`;
+    childrenEndpoint = `https://graph.microsoft.com/v1.0/drives/${normalizedDriveId}/root/children`;
+  }
+
+  const folderResult = await graphGetJsonWithCheck(token, folderEndpoint, "folder", "get SharePoint folder");
+  checks.push(folderResult.check);
+  if (folderResult.error) {
+    const result: SharePointConnectionTestResult = {
+      ok: false,
+      success: false,
+      failureCategory: failureCategoryFromError(folderResult.error),
+      message: folderResult.error.message,
+      nextAction: folderResult.error.nextAction,
+      siteReachable: true,
+      driveReachable: true,
+      folderReachable: false,
+      siteName: siteResult.data?.displayName,
+      driveName: driveResult.data?.name,
+      checks,
+      diagnostics,
+    };
+    logConnectionDiagnostic(result);
+    return result;
+  }
+
+  const childrenResult = await graphGetJsonWithCheck(token, childrenEndpoint, "children", "list folder children");
+  checks.push(childrenResult.check);
+  if (childrenResult.error) {
+    const result: SharePointConnectionTestResult = {
+      ok: false,
+      success: false,
+      failureCategory: failureCategoryFromError(childrenResult.error),
+      message: childrenResult.error.message,
+      nextAction: childrenResult.error.nextAction,
+      siteReachable: true,
+      driveReachable: true,
+      folderReachable: true,
+      siteName: siteResult.data?.displayName,
+      driveName: driveResult.data?.name,
+      folderName: folderResult.data?.name,
+      checks,
+      diagnostics,
+    };
+    logConnectionDiagnostic(result);
+    return result;
+  }
+
+  const trackerFiles = ((childrenResult.data?.value ?? []) as any[])
+    .filter((item) => item?.file && isTrackerWorkbookName(item.name))
+    .map((item) => String(item.name));
+  const result: SharePointConnectionTestResult = {
+    ok: true,
+    success: true,
+    siteName: siteResult.data?.displayName,
+    driveName: driveResult.data?.name,
+    folderName: folderResult.data?.name,
+    siteReachable: true,
+    driveReachable: true,
+    folderReachable: true,
+    fileCount: trackerFiles.length,
+    firstFiveTrackerFilenames: trackerFiles.slice(0, 5),
+    checks,
+    diagnostics,
+  };
+  logConnectionDiagnostic(result);
+  return result;
+}
+
+function isTrackerWorkbookName(name: unknown): boolean {
+  return typeof name === "string" && /\.(xlsx|xlsm|xls)$/i.test(name);
+}
+
+export async function assertSharePointConnectionHealthyForEnable(
+  siteId: string,
+  driveId: string,
+  folderItemId?: string | null,
+  folderPath?: string | null,
+): Promise<SharePointConnectionTestResult> {
+  const result = await testConnection(siteId, driveId, folderItemId ?? undefined, folderPath ?? undefined);
+  if (!result.ok) {
+    throw new ApiError(
+      409,
+      result.failureCategory ?? "SHAREPOINT_HEALTH_CHECK_FAILED",
+      result.message ?? "SharePoint Test Connection must pass before scheduled import can be enabled.",
+      result.failureCategory ? { failureCategory: result.failureCategory } : undefined,
+      result.nextAction ?? "Run Test Connection successfully, then enable scheduled import.",
+    );
+  }
+  return result;
 }
 
 export async function listFolderChildren(
@@ -149,7 +588,7 @@ export async function listFolderChildren(
   } else {
     const normalizedFolderPath = normalizeSharePointFolderPath(folderPath);
     if (normalizedFolderPath) {
-      url = `https://graph.microsoft.com/v1.0/drives/${driveId}/root:/${normalizedFolderPath}:/children?$filter=file ne null`;
+      url = `https://graph.microsoft.com/v1.0/drives/${driveId}/root:/${encodeGraphDrivePath(normalizedFolderPath)}:/children?$filter=file ne null`;
     } else {
       url = `https://graph.microsoft.com/v1.0/drives/${driveId}/root/children?$filter=file ne null`;
     }
