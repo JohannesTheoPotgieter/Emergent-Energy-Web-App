@@ -4848,6 +4848,36 @@ export default function SmartImportPage() {
       ]}
     >
     <div className="space-y-4 max-w-5xl" data-testid="smart-import-page">
+      {(() => {
+        // Folder-pickup context: when the operator navigated here from a
+        // batch row in the Import Control Tower, the URL carries
+        // ?batchRunId=…. Render a back-link so they can return to the
+        // batch completion screen instead of losing context.
+        const batchRunId =
+          typeof window !== "undefined"
+            ? new URLSearchParams(window.location.search).get("batchRunId")
+            : null;
+        if (!batchRunId) return null;
+        return (
+          <div
+            className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900"
+            data-testid="batch-context-banner"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span>
+                Reviewing a file from a folder-pickup batch.
+              </span>
+              <a
+                href={`/admin/import-control-tower?batchRunId=${encodeURIComponent(batchRunId)}`}
+                className="text-xs font-medium text-blue-800 hover:underline"
+                data-testid="link-back-to-batch"
+              >
+                ← Back to folder import results
+              </a>
+            </div>
+          </div>
+        );
+      })()}
       <div>
         <h1 className="text-2xl font-bold" data-testid="text-smart-import-title">Smart Import Wizard</h1>
         <p className="text-muted-foreground text-sm">Upload and review Excel tracker imports step by step</p>
