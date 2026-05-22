@@ -1,5 +1,5 @@
 import { Express, Request, Response } from "express";
-import { db } from "./db";
+import { db, getDbMode } from "./db";
 import { eq, sql, and } from "drizzle-orm";
 import { purchaseOrders, poReviewAssignments, counterparties } from "@shared/schema";
 import { logAuditFromReq } from "./audit-logger";
@@ -390,6 +390,15 @@ export function registerPoRoutes(app: Express) {
       const poIdNum = parseIntParam(req.params.poId);
       if (isNaN(poIdNum)) return res.status(400).json({ error: "Invalid PO ID" });
 
+      const assignedApproverUserId = Number(req.body?.assignedApproverUserId);
+      if (!assignedApproverUserId || Number.isNaN(assignedApproverUserId)) {
+        return res.status(400).json({
+          error: "assignedApproverUserId is required",
+          message:
+            "Assign an approver from the eligible list (CFO, Program Finance Manager, Program Manager, or COO) before submitting.",
+        });
+      }
+
       // Get current PO
       const poResult = await db.execute(sql`SELECT * FROM purchase_orders WHERE id = ${poIdNum}`);
       const po = rowsFromResult(poResult)[0];
@@ -408,15 +417,6 @@ export function registerPoRoutes(app: Express) {
       // from the eligible list. No more "spray to every eligible user" —
       // accountability is anchored to a single person per PO, with manual
       // delegation available via POST /api/po/:poId/delegate.
-      const assignedApproverUserId = Number(req.body?.assignedApproverUserId);
-      if (!assignedApproverUserId || Number.isNaN(assignedApproverUserId)) {
-        return res.status(400).json({
-          error: "assignedApproverUserId is required",
-          message:
-            "Pick an approver from the eligible list (CFO, Program Finance Manager, Program Manager, or COO) before submitting.",
-        });
-      }
-
       // Validate the chosen approver exists, is active, and holds an
       // eligible role. Fail the submission if not — this is a formal
       // assignment, so a bad target ID should be a clean 400, not a
@@ -757,13 +757,22 @@ export function registerPoRoutes(app: Express) {
   // submit form and the "Delegate to" picker.
   app.get("/api/po/eligible-approvers", jwtAuth, requireAuth, async (_req: Request, res: Response) => {
     try {
-      const result = await db.execute(sql`
-        SELECT id, name, email, role
-        FROM users
-        WHERE role = ANY(${PO_APPROVAL_ELIGIBLE_ROLES}::text[])
-          AND is_active = true
-        ORDER BY role, name
-      `);
+      const roleList = PO_APPROVAL_ELIGIBLE_ROLES.map((role) => `'${role.replace(/'/g, "''")}'`).join(",");
+      const result = getDbMode() === "sqlite"
+        ? await db.execute(sql.raw(`
+            SELECT id, name, email, role
+            FROM users
+            WHERE role IN (${roleList})
+              AND COALESCE(is_active, 1) = 1
+            ORDER BY role, name
+          `))
+        : await db.execute(sql`
+            SELECT id, name, email, role
+            FROM users
+            WHERE role = ANY(${PO_APPROVAL_ELIGIBLE_ROLES}::text[])
+              AND is_active = true
+            ORDER BY role, name
+          `);
       const approvers = rowsFromResult(result).map((u) => ({
         id: Number(u.id),
         name: String(u.name || ""),

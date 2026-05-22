@@ -1635,7 +1635,7 @@
       "delete": false
     },
     "pm_dashboard": {
-      "view": true,
+      "view": false,
       "create": false,
       "edit": false,
       "approve": false,
@@ -4473,7 +4473,7 @@
       "delete": false
     },
     "pm_dashboard": {
-      "view": true,
+      "view": false,
       "create": false,
       "edit": false,
       "approve": false,
@@ -7311,7 +7311,7 @@
       "delete": false
     },
     "pm_dashboard": {
-      "view": true,
+      "view": false,
       "create": false,
       "edit": false,
       "approve": false,
@@ -8257,7 +8257,7 @@
       "delete": false
     },
     "pm_dashboard": {
-      "view": true,
+      "view": false,
       "create": false,
       "edit": false,
       "approve": false,
@@ -10149,7 +10149,7 @@
       "delete": false
     },
     "pm_dashboard": {
-      "view": true,
+      "view": false,
       "create": false,
       "edit": false,
       "approve": false,
@@ -12041,7 +12041,7 @@
       "delete": false
     },
     "pm_dashboard": {
-      "view": true,
+      "view": false,
       "create": false,
       "edit": false,
       "approve": false,
@@ -13933,7 +13933,7 @@
       "delete": false
     },
     "pm_dashboard": {
-      "view": true,
+      "view": false,
       "create": false,
       "edit": false,
       "approve": false,
@@ -14879,7 +14879,7 @@
       "delete": false
     },
     "pm_dashboard": {
-      "view": true,
+      "view": false,
       "create": false,
       "edit": false,
       "approve": false,

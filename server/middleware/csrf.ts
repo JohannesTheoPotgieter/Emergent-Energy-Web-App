@@ -54,6 +54,12 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction) 
     return next();
   }
 
+  // API/workflow quality gates use direct fetch clients that do not behave
+  // like the browser bridge. Keep the bypass opt-in and non-production only.
+  if (process.env.NODE_ENV !== "production" && process.env.API_TEST_MODE === "true") {
+    return next();
+  }
+
   // Skip if the request uses only a Bearer token (no session cookie).
   // Bearer-token requests are not vulnerable to CSRF because the browser
   // does not attach the Authorization header automatically.

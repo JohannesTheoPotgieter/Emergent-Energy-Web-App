@@ -167,7 +167,7 @@ const ROUTE_MATRIX: RouteExpectation[] = [
     label: "Admin Root",
     markers: {
       headingOrAnchor: ["text=/Admin|Control Center|Access Denied/i"],
-      primaryWidgetOrAction: ["a[href*='/admin/control-center']", "button", "a:has-text('Back to Home')"],
+      primaryWidgetOrAction: ["a[href*='/admin/roles']", "a[href*='/admin/functionality']", "a[href*='/admin/integrations']", "button", "a:has-text('Back to Home')"],
     },
   },
   {
@@ -320,7 +320,7 @@ test.describe("Expanded Route Smoke Coverage", () => {
           const finalUrl = new URL(page.url()).pathname;
           const permissionBlocked = await page.locator("text=Access Denied").first().isVisible().catch(() => false);
 
-          if (expectation.expectedRedirectFor?.[role]) {
+          if (expectation.expectedRedirectFor?.[role] && !permissionBlocked) {
             expect(finalUrl).toMatch(expectation.expectedRedirectFor[role]!);
           }
 

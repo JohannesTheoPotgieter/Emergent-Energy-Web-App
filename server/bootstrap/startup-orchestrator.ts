@@ -71,7 +71,7 @@ export async function runStartupOrchestrator(options: {
 
   // Import cleanup writes to production tables. Only run when startup
   // mutations are explicitly allowed (dev, or admin/migration modes).
-  if (startupMutationsAllowed) {
+  if (startupMutationsAllowed && getDbMode() !== "sqlite") {
     try {
       const clearResult = await db.execute(sql.raw(`
         UPDATE smart_import_runs
@@ -83,6 +83,8 @@ export async function runStartupOrchestrator(options: {
     } catch (err: unknown) {
       log(`Import cleanup skipped: ${(err instanceof Error ? err.message : String(err))}`, "Startup:ImportCleanup");
     }
+  } else if (startupMutationsAllowed) {
+    log("Import cleanup skipped in SQLite mode (Postgres enum casts not portable)", "Startup:ImportCleanup");
   } else {
     log("Import cleanup skipped (production read-only mode)", "Startup:ImportCleanup");
   }

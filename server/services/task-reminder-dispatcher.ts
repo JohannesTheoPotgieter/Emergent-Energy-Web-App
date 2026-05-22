@@ -20,14 +20,14 @@
  * catch the 24h milestone reliably, large enough not to thrash.
  */
 
-import { and, eq, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   taskReminderState,
   workItems,
   type TaskReminderKind,
   type WorkItem,
 } from "@shared/schema";
-import { db } from "../db";
+import { db, getDbMode } from "../db";
 import { dispatchAlert } from "./alert-dispatcher-service";
 
 export const TASK_REMINDER_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
@@ -158,6 +158,11 @@ export async function runTaskReminderPass(params: { now?: Date } = {}): Promise<
   const horizon = new Date(todayStart);
   horizon.setDate(horizon.getDate() + 2); // window: yesterday-ish through tomorrow + 1
 
+  const horizonIso = horizon.toISOString().slice(0, 10);
+  const endDateBeforeHorizon = getDbMode() === "sqlite"
+    ? sql`substr(${workItems.endDate}, 1, 10) < ${horizonIso}`
+    : sql`${workItems.endDate}::date < ${horizonIso}::date`;
+
   // Pull a bounded set of candidates: not soft-deleted, with an end
   // date in the relevant window OR overdue and still open.
   const candidates = await db
@@ -167,7 +172,7 @@ export async function runTaskReminderPass(params: { now?: Date } = {}): Promise<
       and(
         isNull(workItems.deletedAt),
         sql`${workItems.endDate} IS NOT NULL`,
-        sql`${workItems.endDate}::date < ${horizon.toISOString().slice(0, 10)}::date`,
+        endDateBeforeHorizon,
       ),
     )
     .limit(2000);

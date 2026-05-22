@@ -111,11 +111,27 @@ export default function HomePage() {
       )}
 
       {/* 1. Greeting */}
-      <div className="mb-5">
-        <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground" data-testid="text-greeting">
-          {greeting}, {displayName}
-        </h1>
-        <p className="text-sm text-muted-foreground mt-0.5" data-testid="text-role-badge">{roleLabel}</p>
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground" data-testid="text-greeting">
+            {greeting}, {displayName}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-0.5" data-testid="text-role-badge">{roleLabel}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/my-work/tasks"
+            className="inline-flex h-9 items-center rounded-md border border-border bg-background px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted"
+          >
+            My Work
+          </Link>
+          <Link
+            href="/company-priorities"
+            className="inline-flex h-9 items-center rounded-md border border-border bg-background px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted"
+          >
+            Priorities
+          </Link>
+        </div>
       </div>
 
       {/* 2+3. Focus Panel - Company Priorities (left) + Do Next (right) merged */}

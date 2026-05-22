@@ -707,7 +707,10 @@ export function registerHandoverRoutes(app: Express) {
         return res.status(404).json({ error: "Project not found." });
       }
       if (!handover) {
-        return res.status(400).json({ error: "Could not submit handover. Likely reason: no draft exists. Save a draft and retry." });
+        return res.status(400).json({
+          error: "Cannot submit handover: no draft exists. Save a draft and retry.",
+          missingItems: ["No handover draft exists"],
+        });
       }
       const workspace = await getProjectDevelopmentWorkspace({
         projectId,

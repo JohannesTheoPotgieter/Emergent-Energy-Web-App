@@ -411,6 +411,16 @@ function requireAdminOrFinancialEditor(req: Request, res: Response, next: NextFu
     });
 }
 
+function requireCosRealisationAdmin(req: Request, res: Response, next: NextFunction) {
+  const role = req.user?.role;
+  if (role === 'COO_ADMIN' || role === 'CEO_ADMIN') return next();
+  return res.status(403).json({
+    error: 'admin_required',
+    message: 'Admin access required',
+    code: 'ADMIN_REQUIRED',
+  });
+}
+
 function isPmOnlyRole(role: string | undefined): boolean {
   return role === 'PROJECT_MANAGER_SITE';
 }
@@ -4787,8 +4797,7 @@ async function updateExpenseFieldsDualTable(
 router.patch(
   '/api/cos-tracker/toggle-realised/:id',
   requireAuth,
-  requireAdmin,
-  validateBody(cosToggleRealisedSchema),
+  requireCosRealisationAdmin,
   async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
@@ -4924,7 +4933,6 @@ router.patch(
   '/api/cos-tracker/override-status/:id',
   requireAuth,
   requireCosOverrideRole,
-  validateBody(cosOverrideStatusSchema),
   async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);

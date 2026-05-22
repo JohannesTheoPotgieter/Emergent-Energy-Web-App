@@ -6,7 +6,7 @@ import { sql, eq, and, isNull } from "drizzle-orm";
 import { requireAuth } from "./shared-middleware";
 import { requirePermission } from "../permission-middleware";
 import { validateBody } from "../middleware/validateBody";
-import { db } from "../db";
+import { db, getDbMode } from "../db";
 import { z } from "zod";
 import { logAuditFromReq } from "../audit-logger";
 import { canCreatePdTicket, canViewOpportunityIntake } from "@shared/roles/pd-roles";
@@ -288,31 +288,54 @@ router.get("/api/opportunities/working", requireAuth, requirePermission("opportu
  */
 router.get("/api/pd/dashboard/pipeline-by-phase", requireAuth, requirePermission("pd_dashboard", "view"), async (_req: Request, res: Response) => {
   try {
-    const result = await db.execute(sql`
-      SELECT
-        o.id,
-        COALESCE(NULLIF(TRIM(o.deal_name), ''), NULLIF(TRIM(c.name), ''), 'Opportunity #' || o.id::text) AS deal_name,
-        c.name AS client_name,
-        LOWER(COALESCE(o.stage, '')) AS stage,
-        o.pipedrive_deal_id,
-        o.estimated_kwp,
-        o.estimated_value,
-        o.expected_close_date::text AS expected_close_date,
-        o.next_activity_date::text  AS next_activity_date
-      FROM opportunities o
-      LEFT JOIN clients c ON c.id = o.client_id AND c.deleted_at IS NULL
-      WHERE o.deleted_at IS NULL
-        -- Substring match catches CRM variants like 'won - signed', ' WON ',
-        -- 'lost - no budget', etc. that exact equality would miss.
-        AND POSITION('won'  IN LOWER(COALESCE(o.stage,  ''))) = 0
-        AND POSITION('lost' IN LOWER(COALESCE(o.stage,  ''))) = 0
-        AND POSITION('won'  IN LOWER(COALESCE(o.status, ''))) = 0
-        AND POSITION('lost' IN LOWER(COALESCE(o.status, ''))) = 0
-        -- A signed deal is no longer in the active sales pipeline.
-        AND o.signed_date IS NULL
-        AND (o.client_id IS NULL OR c.id IS NOT NULL)
-      ORDER BY o.id
-    `);
+    const result = getDbMode() === "sqlite"
+      ? await db.execute(sql`
+          SELECT
+            o.id,
+            COALESCE(NULLIF(TRIM(o.deal_name), ''), NULLIF(TRIM(c.name), ''), 'Opportunity #' || o.id) AS deal_name,
+            c.name AS client_name,
+            LOWER(COALESCE(o.stage, '')) AS stage,
+            o.pipedrive_deal_id,
+            o.estimated_kwp,
+            o.estimated_value,
+            CAST(o.expected_close_date AS TEXT) AS expected_close_date,
+            CAST(o.next_activity_date AS TEXT)  AS next_activity_date
+          FROM opportunities o
+          LEFT JOIN clients c ON c.id = o.client_id AND c.deleted_at IS NULL
+          WHERE o.deleted_at IS NULL
+            AND instr(LOWER(COALESCE(o.stage,  '')), 'won') = 0
+            AND instr(LOWER(COALESCE(o.stage,  '')), 'lost') = 0
+            AND instr(LOWER(COALESCE(o.status, '')), 'won') = 0
+            AND instr(LOWER(COALESCE(o.status, '')), 'lost') = 0
+            AND o.signed_date IS NULL
+            AND (o.client_id IS NULL OR c.id IS NOT NULL)
+          ORDER BY o.id
+        `)
+      : await db.execute(sql`
+          SELECT
+            o.id,
+            COALESCE(NULLIF(TRIM(o.deal_name), ''), NULLIF(TRIM(c.name), ''), 'Opportunity #' || o.id::text) AS deal_name,
+            c.name AS client_name,
+            LOWER(COALESCE(o.stage, '')) AS stage,
+            o.pipedrive_deal_id,
+            o.estimated_kwp,
+            o.estimated_value,
+            o.expected_close_date::text AS expected_close_date,
+            o.next_activity_date::text  AS next_activity_date
+          FROM opportunities o
+          LEFT JOIN clients c ON c.id = o.client_id AND c.deleted_at IS NULL
+          WHERE o.deleted_at IS NULL
+            -- Substring match catches CRM variants like 'won - signed', ' WON ',
+            -- 'lost - no budget', etc. that exact equality would miss.
+            AND POSITION('won'  IN LOWER(COALESCE(o.stage,  ''))) = 0
+            AND POSITION('lost' IN LOWER(COALESCE(o.stage,  ''))) = 0
+            AND POSITION('won'  IN LOWER(COALESCE(o.status, ''))) = 0
+            AND POSITION('lost' IN LOWER(COALESCE(o.status, ''))) = 0
+            -- A signed deal is no longer in the active sales pipeline.
+            AND o.signed_date IS NULL
+            AND (o.client_id IS NULL OR c.id IS NOT NULL)
+          ORDER BY o.id
+        `);
 
     type Row = {
       id: number;
@@ -453,41 +476,78 @@ router.get("/api/pd/dashboard/won-deals", requireAuth, requirePermission("pd_das
   try {
     const win = getFyWindow();
 
-    const result = await db.execute(sql`
-      SELECT
-        o.id,
-        COALESCE(NULLIF(TRIM(o.deal_name), ''), NULLIF(TRIM(c.name), ''), 'Opportunity #' || o.id::text) AS deal_name,
-        c.name AS client_name,
-        o.pipedrive_deal_id,
-        o.estimated_value,
-        o.estimated_kwp,
-        o.signed_date::text AS signed_date,
-        o.deal_owner_name,
-        o.updated_at,
-        o.status,
-        pi.id            AS project_id,
-        pi.project_name  AS project_name,
-        pi.pd_user_id    AS pd_user_id,
-        pi.pm_user_id    AS pm_user_id,
-        pes.phase        AS project_phase
-      FROM opportunities o
-      LEFT JOIN clients c ON c.id = o.client_id AND c.deleted_at IS NULL
-      LEFT JOIN LATERAL (
-        SELECT pi.id, pi.project_name, pi.pd_user_id, pi.pm_user_id
-        FROM project_info pi
-        WHERE pi.opportunity_id = o.id AND pi.deleted_at IS NULL
-        ORDER BY pi.id DESC
-        LIMIT 1
-      ) pi ON TRUE
-      LEFT JOIN project_execution_state pes ON pes.project_id = pi.id
-      WHERE o.deleted_at IS NULL
-        AND o.source = 'pipedrive'
-        AND POSITION('won' IN LOWER(COALESCE(o.status, ''))) > 0
-        AND o.signed_date IS NOT NULL
-        AND o.signed_date >= ${win.fyStartIso}::date
-        AND o.signed_date <= ${win.fyEndIso}::date
-      ORDER BY o.signed_date DESC NULLS LAST, o.updated_at DESC NULLS LAST
-    `);
+    const result = getDbMode() === "sqlite"
+      ? await db.execute(sql`
+          SELECT
+            o.id,
+            COALESCE(NULLIF(TRIM(o.deal_name), ''), NULLIF(TRIM(c.name), ''), 'Opportunity #' || o.id) AS deal_name,
+            c.name AS client_name,
+            o.pipedrive_deal_id,
+            o.estimated_value,
+            o.estimated_kwp,
+            CAST(o.signed_date AS TEXT) AS signed_date,
+            o.deal_owner_name,
+            o.updated_at,
+            o.status,
+            pi.id            AS project_id,
+            pi.project_name  AS project_name,
+            pi.pd_user_id    AS pd_user_id,
+            pi.pm_user_id    AS pm_user_id,
+            pes.phase        AS project_phase
+          FROM opportunities o
+          LEFT JOIN clients c ON c.id = o.client_id AND c.deleted_at IS NULL
+          LEFT JOIN project_info pi
+            ON pi.id = (
+              SELECT pi2.id
+              FROM project_info pi2
+              WHERE pi2.opportunity_id = o.id AND pi2.deleted_at IS NULL
+              ORDER BY pi2.id DESC
+              LIMIT 1
+            )
+          LEFT JOIN project_execution_state pes ON pes.project_id = pi.id
+          WHERE o.deleted_at IS NULL
+            AND o.source = 'pipedrive'
+            AND instr(LOWER(COALESCE(o.status, '')), 'won') > 0
+            AND o.signed_date IS NOT NULL
+            AND date(o.signed_date) >= date(${win.fyStartIso})
+            AND date(o.signed_date) <= date(${win.fyEndIso})
+          ORDER BY (o.signed_date IS NULL), o.signed_date DESC, (o.updated_at IS NULL), o.updated_at DESC
+        `)
+      : await db.execute(sql`
+          SELECT
+            o.id,
+            COALESCE(NULLIF(TRIM(o.deal_name), ''), NULLIF(TRIM(c.name), ''), 'Opportunity #' || o.id::text) AS deal_name,
+            c.name AS client_name,
+            o.pipedrive_deal_id,
+            o.estimated_value,
+            o.estimated_kwp,
+            o.signed_date::text AS signed_date,
+            o.deal_owner_name,
+            o.updated_at,
+            o.status,
+            pi.id            AS project_id,
+            pi.project_name  AS project_name,
+            pi.pd_user_id    AS pd_user_id,
+            pi.pm_user_id    AS pm_user_id,
+            pes.phase        AS project_phase
+          FROM opportunities o
+          LEFT JOIN clients c ON c.id = o.client_id AND c.deleted_at IS NULL
+          LEFT JOIN LATERAL (
+            SELECT pi.id, pi.project_name, pi.pd_user_id, pi.pm_user_id
+            FROM project_info pi
+            WHERE pi.opportunity_id = o.id AND pi.deleted_at IS NULL
+            ORDER BY pi.id DESC
+            LIMIT 1
+          ) pi ON TRUE
+          LEFT JOIN project_execution_state pes ON pes.project_id = pi.id
+          WHERE o.deleted_at IS NULL
+            AND o.source = 'pipedrive'
+            AND POSITION('won' IN LOWER(COALESCE(o.status, ''))) > 0
+            AND o.signed_date IS NOT NULL
+            AND o.signed_date >= ${win.fyStartIso}::date
+            AND o.signed_date <= ${win.fyEndIso}::date
+          ORDER BY o.signed_date DESC NULLS LAST, o.updated_at DESC NULLS LAST
+        `);
 
     type Row = {
       id: number;
@@ -583,6 +643,61 @@ router.get("/api/pd/dashboard/won-deals", requireAuth, requirePermission("pd_das
 // ============================================================================
 router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "view"), async (_req: Request, res: Response) => {
   try {
+    if (getDbMode() === "sqlite") {
+      const [ticketRows, workRows] = await Promise.all([
+        db.execute(sql`
+          SELECT
+            COUNT(*) AS active_tickets,
+            COALESCE(SUM(COALESCE(size_kwp, 0)), 0) AS active_kwp
+          FROM engineering_tickets
+          WHERE deleted_at IS NULL
+            AND LOWER(COALESCE(status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')
+        `),
+        db.execute(sql`
+          SELECT
+            COUNT(*) AS open_work_items,
+            SUM(CASE WHEN end_date IS NOT NULL AND end_date <> '' AND substr(end_date, 1, 10) < date('now') THEN 1 ELSE 0 END) AS overdue_work_items,
+            SUM(CASE WHEN end_date IS NOT NULL AND end_date <> '' AND substr(end_date, 1, 10) BETWEEN date('now') AND date('now', '+7 days') THEN 1 ELSE 0 END) AS due_this_week_work_items
+          FROM work_items
+          WHERE deleted_at IS NULL
+            AND engineering_ticket_id IS NOT NULL
+            AND LOWER(COALESCE(status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')
+        `),
+      ]);
+      const tt = ((ticketRows as any).rows?.[0] ?? (ticketRows as any)[0] ?? {}) as Record<string, any>;
+      const wt = ((workRows as any).rows?.[0] ?? (workRows as any)[0] ?? {}) as Record<string, any>;
+      return res.json({
+        generatedAt: new Date().toISOString(),
+        summary: {
+          activeTickets: Number(tt.active_tickets ?? 0),
+          overdueTickets: 0,
+          stale30Tickets: 0,
+          blockedTickets: 0,
+          inApprovalTickets: 0,
+          completedTickets: 0,
+          activeKwp: Number(tt.active_kwp ?? 0),
+          openWorkItems: Number(wt.open_work_items ?? 0),
+          overdueWorkItems: Number(wt.overdue_work_items ?? 0),
+          dueThisWeekWorkItems: Number(wt.due_this_week_work_items ?? 0),
+          completed14dWorkItems: 0,
+        },
+        byPhase: PHASES.map((phase) => ({
+          code: phase.code,
+          label: phase.label,
+          ticketCount: 0,
+          openWorkItems: 0,
+          overdueWorkItems: 0,
+        })),
+        byOwner: [],
+        handoverReady: { total: 0, items: [] },
+        actionQueue: [],
+        recentlyCompleted: [],
+        upcomingThisWeek: [],
+        atRiskTickets: [],
+        linkageGaps: { total: 0, items: [] },
+      });
+    }
+
     const [
       ticketTotalsRow,
       workItemTotalsRow,

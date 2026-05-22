@@ -119,8 +119,8 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     label: 'Admin',
     iconKey: 'Settings',
     description: 'Administration — settings, imports, templates, users',
-    pageIds: ['adminControlCenter', 'smartImport', 'adminRoles', 'adminActivity', 'adminKpiTraceability', 'adminImportControlTower', 'adminRecovery', 'stageAdmin', 'phaseTemplates', 'engTemplateAdmin', 'adminDatabaseMigration', 'adminMyTool', 'lessonsLearnt', 'handoverHealth', 'adminWorkflowConfig', 'adminBackfill', 'adminPipedrive'],
-    primaryPath: '/admin/control-center',
+    pageIds: ['settingsHome', 'smartImport', 'adminRoles', 'adminActivity', 'adminKpiTraceability', 'adminImportControlTower', 'adminRecovery', 'stageAdmin', 'phaseTemplates', 'engTemplateAdmin', 'adminDatabaseMigration', 'adminMyTool', 'lessonsLearnt', 'handoverHealth', 'adminWorkflowConfig', 'adminBackfill', 'adminPipedrive'],
+    primaryPath: '/settings',
   },
 ];
 

@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 
 const command = process.argv.slice(2).join(' ').trim();
 if (!command) {
@@ -25,6 +25,7 @@ const appEnv = {
   ENABLE_STARTUP_BACKFILL: process.env.ENABLE_STARTUP_BACKFILL || 'false',
   ENABLE_STARTUP_SESSION_RESET: process.env.ENABLE_STARTUP_SESSION_RESET || 'false',
   ENABLE_STARTUP_USER_SEED: process.env.ENABLE_STARTUP_USER_SEED || 'false',
+  API_TEST_MODE: process.env.API_TEST_MODE || 'true',
 };
 
 async function wait(ms: number) {
@@ -50,7 +51,67 @@ async function waitForHealth(timeoutMs: number) {
 }
 
 let appProcess: ReturnType<typeof spawn> | null = null;
+let testProcess: ReturnType<typeof spawn> | null = null;
 let startedByScript = false;
+let cleaningUp = false;
+
+async function runProcess(commandName: string, args: string[], env = appEnv) {
+  const child = spawn(commandName, args, {
+    env,
+    stdio: 'inherit',
+    shell: true,
+  });
+
+  const exitCode: number = await new Promise((resolve) => {
+    child.on('exit', (code) => resolve(code ?? 1));
+    child.on('error', () => resolve(1));
+  });
+
+  return exitCode;
+}
+
+async function killProcessTree(child: ReturnType<typeof spawn> | null) {
+  if (!child?.pid || child.killed) return;
+
+  if (process.platform === 'win32') {
+    await new Promise<void>((resolve) => {
+      execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], () => resolve());
+    });
+    return;
+  }
+
+  try {
+    process.kill(-child.pid, 'SIGTERM');
+  } catch {
+    try {
+      child.kill('SIGTERM');
+    } catch {
+      // Already gone.
+    }
+  }
+}
+
+async function cleanup() {
+  if (cleaningUp) return;
+  cleaningUp = true;
+  await killProcessTree(testProcess);
+  if (startedByScript) {
+    await killProcessTree(appProcess);
+  }
+}
+
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(signal, () => {
+    cleanup().finally(() => process.exit(signal === 'SIGINT' ? 130 : 143));
+  });
+}
+
+if (process.env.SEED_TEST_USERS !== 'false') {
+  const seedExit = await runProcess('npm', ['run', 'seed:test-users']);
+  if (seedExit !== 0) {
+    process.exit(seedExit);
+  }
+}
 
 if (!(await isHealthy())) {
   startedByScript = true;
@@ -59,31 +120,31 @@ if (!(await isHealthy())) {
     env: appEnv,
     stdio: 'inherit',
     shell: true,
+    detached: process.platform !== 'win32',
   });
 
   const healthy = await waitForHealth(START_TIMEOUT_MS);
   if (!healthy) {
     console.error(`Server failed to become healthy at ${HEALTH_URL} within ${START_TIMEOUT_MS}ms`);
-    if (appProcess && !appProcess.killed) {
-      appProcess.kill('SIGTERM');
-    }
+    await cleanup();
     process.exit(1);
   }
   console.log(`Server is healthy at ${HEALTH_URL}`);
 }
 
-const testProcess = spawn(command, {
+testProcess = spawn(command, {
   env: appEnv,
   stdio: 'inherit',
   shell: true,
+  detached: process.platform !== 'win32',
 });
 
 const testExitCode: number = await new Promise((resolve) => {
-  testProcess.on('exit', (code) => resolve(code ?? 1));
+  testProcess?.on('exit', (code) => resolve(code ?? 1));
+  testProcess?.on('error', () => resolve(1));
 });
 
-if (startedByScript && appProcess && !appProcess.killed) {
-  appProcess.kill('SIGTERM');
-}
+testProcess = null;
+await cleanup();
 
 process.exit(testExitCode);

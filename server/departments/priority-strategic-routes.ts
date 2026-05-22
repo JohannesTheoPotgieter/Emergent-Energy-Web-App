@@ -4,7 +4,7 @@ import { requireAuth, requirePriorityAdmin, requirePriorityCreator } from "./sha
 import { requirePermission } from "../permission-middleware";
 import { canPriorityRoleEditPriority, isDepartmentHeadRole, isPriorityAdminRole, isPriorityParentAllowed, isPriorityTerminalStatus } from "@shared/config/priorities";
 import { getEffectiveUser } from "../auth-context";
-import { db } from "../db";
+import { db, getDbMode } from "../db";
 import {
   mytoolCompanyPriorities,
   priorityProjects,
@@ -682,15 +682,22 @@ router.get("/api/priorities", requireAuth, asyncHandler(async (req: Request, res
     const userMap = await getUsersByIds(userIds);
 
     // Build child count map (how many children does each priority have)
-    const childCountResult: any = await db.execute(sql`
-      SELECT parent_id, COUNT(*)::int AS child_count
-      FROM mytool_company_priorities
-      WHERE parent_id IS NOT NULL AND ${activePriorityStatusSql()}
-      GROUP BY parent_id
-    `);
+    const childCountResult: any = getDbMode() === "sqlite"
+      ? await db.execute(sql`
+        SELECT parent_id, COUNT(*) AS child_count
+        FROM mytool_company_priorities
+        WHERE parent_id IS NOT NULL AND ${activePriorityStatusSql()}
+        GROUP BY parent_id
+      `)
+      : await db.execute(sql`
+        SELECT parent_id, COUNT(*)::int AS child_count
+        FROM mytool_company_priorities
+        WHERE parent_id IS NOT NULL AND ${activePriorityStatusSql()}
+        GROUP BY parent_id
+      `);
     const childCountMap = new Map<number, number>();
     for (const row of (childCountResult.rows || childCountResult || [])) {
-      childCountMap.set(row.parent_id, row.child_count);
+      childCountMap.set(Number(row.parent_id), Number(row.child_count || 0));
     }
 
     // Build parent title map
@@ -2181,15 +2188,22 @@ router.get("/api/priorities/:id/children", requireAuth, asyncHandler(async (req:
 
   // Get grandchild counts
   const childIds = children.map((c: typeof children[number]) => c.id);
-  const grandChildResult: any = await db.execute(sql`
-    SELECT parent_id, COUNT(*)::int AS child_count
-    FROM mytool_company_priorities
-    WHERE parent_id = ANY(${childIds}) AND ${activePriorityStatusSql()}
-    GROUP BY parent_id
-  `);
+  const grandChildResult: any = getDbMode() === "sqlite"
+    ? await db.execute(sql`
+      SELECT parent_id, COUNT(*) AS child_count
+      FROM mytool_company_priorities
+      WHERE parent_id IN (${sql.join(childIds.map((id: number) => sql`${id}`), sql`, `)}) AND ${activePriorityStatusSql()}
+      GROUP BY parent_id
+    `)
+    : await db.execute(sql`
+      SELECT parent_id, COUNT(*)::int AS child_count
+      FROM mytool_company_priorities
+      WHERE parent_id = ANY(${childIds}) AND ${activePriorityStatusSql()}
+      GROUP BY parent_id
+    `);
   const grandChildCountMap = new Map<number, number>();
   for (const row of (grandChildResult.rows || grandChildResult || [])) {
-    grandChildCountMap.set(row.parent_id, row.child_count);
+    grandChildCountMap.set(Number(row.parent_id), Number(row.child_count || 0));
   }
 
   const enriched = await Promise.all(

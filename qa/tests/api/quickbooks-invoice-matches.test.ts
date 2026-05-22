@@ -91,6 +91,67 @@ let suggestionIdA: number | null = null;
 let suggestionIdB: number | null = null;
 let suggestionIdC: number | null = null; // for reject flow
 
+function cleanupQbFixtureRows(db: any, costLineIds: Array<number | null>): void {
+  const fixtureQbIds = ["bill-1", "bill-2"];
+  const qbPlaceholders = fixtureQbIds.map(() => "?").join(",");
+
+  db.prepare(`
+    DELETE FROM qb_link_proposed_cascade_history
+    WHERE cascade_id IN (
+      SELECT q.id
+      FROM qb_link_proposed_cascades q
+      JOIN quickbooks_invoice_links l ON l.id = q.link_id
+      WHERE l.qb_entity_id IN (${qbPlaceholders})
+    )
+  `).run(...fixtureQbIds);
+  db.prepare(`
+    DELETE FROM qb_link_proposed_cascades
+    WHERE link_id IN (
+      SELECT id FROM quickbooks_invoice_links
+      WHERE qb_entity_id IN (${qbPlaceholders})
+    )
+  `).run(...fixtureQbIds);
+  db.prepare(`
+    DELETE FROM quickbooks_invoice_links
+    WHERE qb_entity_id IN (${qbPlaceholders})
+  `).run(...fixtureQbIds);
+
+  const ids = costLineIds.filter((id): id is number => typeof id === "number" && Number.isFinite(id));
+  if (ids.length === 0) return;
+  const placeholders = ids.map(() => "?").join(",");
+  const linkedFixtureRows = `
+    SELECT id FROM quickbooks_invoice_links
+    WHERE app_entity_type = 'cost_line'
+      AND app_entity_id IN (${placeholders})
+  `;
+
+  db.prepare(`
+    DELETE FROM qb_link_proposed_cascade_history
+    WHERE cascade_id IN (
+      SELECT id FROM qb_link_proposed_cascades
+      WHERE link_id IN (${linkedFixtureRows})
+    )
+  `).run(...ids);
+  db.prepare(`
+    DELETE FROM qb_link_proposed_cascades
+    WHERE link_id IN (${linkedFixtureRows})
+  `).run(...ids);
+  db.prepare(`
+    DELETE FROM quickbooks_cost_allocations
+    WHERE cost_line_id IN (${placeholders})
+  `).run(...ids);
+  db.prepare(`
+    DELETE FROM quickbooks_invoice_links
+    WHERE app_entity_type = 'cost_line'
+      AND app_entity_id IN (${placeholders})
+  `).run(...ids);
+  db.prepare(`
+    DELETE FROM quickbooks_match_suggestions
+    WHERE scope = 'expense_invoice'
+      AND app_entity_id IN (${placeholders})
+  `).run(...ids);
+}
+
 function ensureTestFixtures(): void {
   if (!fs.existsSync(SQLITE_DB_PATH)) return;
 
@@ -222,6 +283,8 @@ function ensureTestFixtures(): void {
         ) as { id?: number } | undefined;
       testCostLineCId = cResult?.id ?? null;
     }
+
+    cleanupQbFixtureRows(db, [testCostLineAId, testCostLineBId, testCostLineCId]);
   } finally {
     db.close();
   }
@@ -255,9 +318,8 @@ afterAll(() => {
   const db = new Database(SQLITE_DB_PATH);
   try {
     // Remove links created during tests
-    if (testLinkId) {
-      db.prepare("DELETE FROM quickbooks_invoice_links WHERE id = ?").run(testLinkId);
-    }
+    cleanupQbFixtureRows(db, [testCostLineAId, testCostLineBId, testCostLineCId]);
+    if (testLinkId) db.prepare("DELETE FROM quickbooks_invoice_links WHERE id = ?").run(testLinkId);
     // Remove suggestions
     const suggestionIds = [suggestionIdA, suggestionIdB, suggestionIdC].filter(Boolean);
     if (suggestionIds.length > 0) {

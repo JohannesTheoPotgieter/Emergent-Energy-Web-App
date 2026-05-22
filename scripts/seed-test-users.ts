@@ -10,7 +10,7 @@
  * Run with: npx tsx scripts/seed-test-users.ts
  */
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { db, initializeDatabase } from "../server/db";
 import { users } from "@shared/schema";
@@ -45,9 +45,30 @@ const TEST_USERS: SeedUser[] = [
     role: "PROJECT_MANAGER_SITE",
     password: "2035",
   },
+  {
+    username: "paul",
+    email: "paul@emergent.energy",
+    name: "Paul Test Engineer",
+    role: "ENGINEER",
+    password: "2029",
+  },
+  {
+    username: "dean",
+    email: "dean@emergent.energy",
+    name: "Dean Test Quality Manager",
+    role: "QUALITY_MANAGER",
+    password: "2025",
+  },
+  {
+    username: "dayne",
+    email: "dayne@emergent.energy",
+    name: "Dayne Test Admin",
+    role: "COO_ADMIN",
+    password: "TestPassword123!",
+  },
 ];
 
-async function main() {
+export async function seedTestUsers() {
   if (process.env.NODE_ENV === "production") {
     throw new Error("seed-test-users.ts refuses to run in production");
   }
@@ -55,14 +76,25 @@ async function main() {
   await initializeDatabase();
 
   let inserted = 0;
-  let skipped = 0;
+  let updated = 0;
   for (const user of TEST_USERS) {
     const existing = await db.select().from(users).where(eq(users.username, user.username));
+    const passwordHash = await bcrypt.hash(user.password, 12);
     if (existing.length > 0) {
-      skipped++;
+      await db
+        .update(users)
+        .set({
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          password: passwordHash,
+          isActive: true,
+          deletedAt: null,
+        } as any)
+        .where(eq(users.username, user.username));
+      updated++;
       continue;
     }
-    const passwordHash = await bcrypt.hash(user.password, 12);
     await db.insert(users).values({
       username: user.username,
       email: user.email,
@@ -73,7 +105,17 @@ async function main() {
     inserted++;
   }
 
-  console.log(`[seed-test-users] inserted=${inserted} skipped=${skipped}`);
+  await db.execute(sql.raw(`
+    UPDATE users
+    SET username = lower(username)
+    WHERE username IS NOT NULL
+  `)).catch(() => {});
+
+  console.log(`[seed-test-users] inserted=${inserted} updated=${updated}`);
+}
+
+async function main() {
+  await seedTestUsers();
 }
 
 main()

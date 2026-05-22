@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { randomUUID } from "crypto";
 
 const JWT_EXPIRES_IN = "12h";
 
@@ -33,7 +34,7 @@ export interface JWTPayload {
 }
 
 export function generateToken(user: JWTPayload): string {
-  return jwt.sign(user, resolveJwtSecret(), { algorithm: "HS256", expiresIn: JWT_EXPIRES_IN });
+  return jwt.sign(user, resolveJwtSecret(), { algorithm: "HS256", expiresIn: JWT_EXPIRES_IN, jwtid: randomUUID() });
 }
 
 export function verifyToken(token: string): JWTPayload | null {

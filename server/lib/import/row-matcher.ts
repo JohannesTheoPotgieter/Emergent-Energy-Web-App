@@ -208,7 +208,7 @@ export function expenditureBusinessKey(
 
   if (inv) {
     return {
-      key: compositeKey(String(projectId), sub, inv),
+      key: compositeKey(String(projectId), desc, amount, inv, invoiceDate),
       keyType: "PRIMARY",
       matchConfidence: "HIGH",
       rowLabel: row.description || row.costCategory || row.invoiceNumber || "",

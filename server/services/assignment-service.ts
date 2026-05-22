@@ -22,7 +22,7 @@ import {
 
 // AssigneeType is a string union used in the entity_assignments table
 type AssigneeType = string;
-import { db } from "../db";
+import { db, getDbMode } from "../db";
 import { getEffectiveUser } from "../auth-context";
 import { logAuditFromReq } from "../audit-logger";
 import { evaluateAuthorityForRequest } from "../permission-middleware";
@@ -52,6 +52,7 @@ export type AssignmentRole = "OWNER" | "ASSIGNEE" | "APPROVER" | "REVIEWER" | "V
 export type AssignableDirectoryEntry = {
   assigneeType: AssigneeType;
   assigneeId: number;
+  username?: string | null;
   displayLabel: string;
   secondaryLabel: string | null;
   sourceLabel: string;
@@ -266,6 +267,7 @@ export async function listAssignableDirectory(search?: string | null): Promise<A
   const [internalUsers, externalCounterparties, externalContacts] = await Promise.all([
     db.select({
       id: users.id,
+      username: users.username,
       name: users.name,
       email: users.email,
       role: users.role,
@@ -295,6 +297,7 @@ export async function listAssignableDirectory(search?: string | null): Promise<A
     ...internalUsers.map((user: any) => ({
       assigneeType: "internal_user" as const,
       assigneeId: user.id,
+      username: user.username || null,
       displayLabel: user.name,
       secondaryLabel: user.email || user.role || null,
       sourceLabel: "Internal user",
@@ -1082,7 +1085,7 @@ export async function setEntityAssignment(req: Request, input: SetEntityAssignme
   }
 
   console.log("[Assignment] Starting transaction:", { entityType: input.entityType, entityId, assignmentRole, mode, assigneeType: input.assigneeType, assigneeId });
-  return db.transaction(async (tx: any) => {
+  const applyAssignment = async (tx: any) => {
     const projectId = await getEntityProjectId(tx as Queryable, input.entityType, entityId);
     const before = await getCanonicalAssignments(tx as Queryable, input.entityType, entityId);
     console.log("[Assignment] Before state:", before.length, "active assignments");
@@ -1173,5 +1176,14 @@ export async function setEntityAssignment(req: Request, input: SetEntityAssignme
     });
 
     return after;
-  });
+  };
+
+  // better-sqlite3 transactions are synchronous and throw when an async
+  // callback returns a Promise. The local SQLite harness runs as a single
+  // process, so apply the same writes sequentially without the transaction
+  // wrapper while preserving the Postgres transaction for production.
+  if (getDbMode() === "sqlite") {
+    return applyAssignment(db);
+  }
+  return db.transaction(applyAssignment);
 }
