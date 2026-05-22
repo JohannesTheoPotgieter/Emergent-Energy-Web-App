@@ -94,6 +94,10 @@ const LEAK_PATTERNS: Array<{ name: string; regex: RegExp }> = [
     name: "raw error.message in 5xx JSON response",
     regex: /res\.status\(5\d{2}\)\.json\(\s*\{[^}]*\berror\.message\b/,
   },
+  {
+    name: "raw variable.message in 5xx JSON response message field",
+    regex: /res\.status\(5\d{2}\)\.json\(\s*\{[^}]*\bmessage:\s*[a-zA-Z_$][\w$]*\.message\b/,
+  },
 ];
 
 describe("api error-leak guards — entire server tree", () => {

@@ -1,10 +1,10 @@
 # App Route Inventory
 
-**Generated** 2026-05-13T13:45:17.586Z by `script/test-routes.ts`. Do not hand-edit — regenerate with `npm run test:routes`.
+**Generated** 2026-05-22T10:44:01.638Z by `script/test-routes.ts`. Do not hand-edit — regenerate with `npm run test:routes`.
 
 Source: `client/src/config/page-registry.ts`
 
-Total registered paths: 183
+Total registered paths: 184
 
 | Path | Title | Nav group | Permission |
 |------|-------|-----------|------------|
@@ -79,6 +79,7 @@ Total registered paths: 183
 | `/execution-board/construction` | — | — | execution_board |
 | `/execution-board/finance` | — | — | execution_board |
 | `/execution-board/program` | — | — | execution_board |
+| `/execution-board/realisation` | — | — | execution_board |
 | `/execution-dashboard` | — | PROJECT_MANAGEMENT | execution_board |
 | `/feedback` | — | KNOWLEDGE | feedback |
 | `/finance/gp` | — | FINANCE | financials |
