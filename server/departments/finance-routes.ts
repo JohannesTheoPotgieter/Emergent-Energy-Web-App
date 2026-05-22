@@ -31,6 +31,7 @@ import { paramStr, parseIntParam } from '../lib/req-params';
 import { effectiveAllocatedAmountExVat } from '@shared/config/qb-allocations';
 import { requirePermission } from '../permission-middleware';
 import { requireTrackerPermission } from '../lib/finance-route-access';
+import { isProjectAccessibleByName, resolveProjectScope } from '../services/project-access-service';
 import { z } from 'zod';
 import { validateBody } from '../middleware/validateBody';
 // Finance Tier 2: canonical error envelope. Replaces 78 raw
@@ -6512,14 +6513,18 @@ router.get(
 
 // DEPRECATED — prefer /api/projects/:projectName/cost-lines.
 // Scheduled for removal in the next release after consumers migrate.
-// permission-skip: project-scoped read consumed by ExpenditureEditableTab
-// on the project-detail page. Tier 2 audit flagged that `financials:view`
-// blocks PROJECT_MANAGER_SITE / CONSTRUCTION_MANAGER / ENGINEER from their
-// OWN project's data. Proper fix is per-project membership scoping (Tier 3);
-// for now we accept the same broad-auth posture this endpoint had before.
 router.get('/api/program-expenses/:projectName', requireAuth, async (req, res) => {
   try {
     const projectName = paramStr(req.params.projectName);
+    const user = (req as any).user;
+    const scope = await resolveProjectScope(user?.id || 0, user?.role || '', user?.name || '');
+    if (!isProjectAccessibleByName(scope, projectName)) {
+      return res.status(403).json({
+        error: 'FORBIDDEN',
+        code: 'FORBIDDEN',
+        message: 'You do not have access to this project.',
+      });
+    }
     const expenses = await getCanonicalProjectCostLinesByName(projectName).then((r) => r.rows);
     setFinanceTrustHeaders(res, {
       sourceLayer: 'canonical',

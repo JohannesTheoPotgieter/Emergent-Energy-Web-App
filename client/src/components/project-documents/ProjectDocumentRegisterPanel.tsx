@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -20,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiRequest } from "@/lib/queryClient";
+import { useApiMutation } from "@/hooks/use-api-mutation";
 import type { ProjectDocumentDomain } from "@shared/project-document-register";
 
 interface ProjectRootSummary {
@@ -175,7 +176,7 @@ export function ProjectDocumentRegisterPanel({
     },
   });
 
-  const linkMutation = useMutation({
+  const linkMutation = useApiMutation({
     mutationFn: async () => {
       if (!projectRoot || !selectedFile) throw new Error("Select a SharePoint file first.");
       const res = await apiRequest("POST", `/api/projects/${projectId}/document-register/link`, {
@@ -201,9 +202,10 @@ export function ProjectDocumentRegisterPanel({
         dueDate: "",
       });
     },
+    errorToast: "Could not link document",
   });
 
-  const updateMutation = useMutation({
+  const updateMutation = useApiMutation({
     mutationFn: async (input: { id: number; patch: Record<string, unknown> }) => {
       const res = await apiRequest(
         "PATCH",
@@ -215,6 +217,7 @@ export function ProjectDocumentRegisterPanel({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["project-document-register", projectId, domain] });
     },
+    errorToast: "Could not update document",
   });
 
   const response = registerQuery.data;

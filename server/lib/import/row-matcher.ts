@@ -202,13 +202,25 @@ export function expenditureBusinessKey(
   const amount = normalizeWithFieldType(row.amountExVat, "amountExVat");
   const inv = norm(row.invoiceNumber);
   const invoiceDate = normalizeWithFieldType(row.invoiceDate, "invoiceDate");
+  const category = norm(row.costCategory);
+  const counterparty = norm(row.counterpartyName);
+  const sub = norm(row.subProjectName);
 
-  const populatedCount = [desc, amount, inv, invoiceDate].filter(Boolean).length;
+  if (inv) {
+    return {
+      key: compositeKey(String(projectId), sub, inv),
+      keyType: "PRIMARY",
+      matchConfidence: "HIGH",
+      rowLabel: row.description || row.costCategory || row.invoiceNumber || "",
+    };
+  }
+
+  const populatedCount = [desc, amount, invoiceDate, category, counterparty].filter(Boolean).length;
   const confidence: MatchConfidence = populatedCount >= 4 ? "HIGH"
-    : populatedCount >= 2 ? "MEDIUM"
+    : populatedCount >= 3 ? "MEDIUM"
       : "LOW";
 
-  if (!desc && !amount && !inv && !invoiceDate) {
+  if (!desc && !amount && !invoiceDate && !category && !counterparty) {
     return {
       key: compositeKey(String(projectId), `__empty_cost_${Math.random().toString(36).slice(2, 10)}`),
       keyType: "FALLBACK",
@@ -218,7 +230,7 @@ export function expenditureBusinessKey(
   }
 
   return {
-    key: compositeKey(String(projectId), desc, amount, inv, invoiceDate),
+    key: compositeKey(String(projectId), sub, category, counterparty, desc, amount, invoiceDate),
     keyType: populatedCount >= 4 ? "PRIMARY" : "FALLBACK",
     matchConfidence: confidence,
     rowLabel: row.description || row.costCategory || "",

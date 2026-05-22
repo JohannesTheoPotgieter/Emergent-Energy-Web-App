@@ -9,14 +9,14 @@ function read(file: string) {
 describe("project timeline instrumentation", () => {
   it("records stage transition events", () => {
     const source = read("server/lifecycle-routes.ts");
-    expect(source).toContain('eventType: "project.stage_changed"');
+    expect(source).toMatch(/eventType:\s*['"]project\.stage_changed['"]/);
   });
 
   it("records gate and override events", () => {
     const source = read("server/lifecycle-routes.ts");
-    expect(source).toContain('"project.gate_passed"');
-    expect(source).toContain('"project.gate_failed"');
-    expect(source).toContain('"project.override_granted"');
+    expect(source).toMatch(/['"]project\.gate_passed['"]/);
+    expect(source).toMatch(/['"]project\.gate_failed['"]/);
+    expect(source).toMatch(/['"]project\.override_granted['"]/);
   });
 
   it("records approvals, procurement, and invoice events", () => {

@@ -40,11 +40,11 @@ describe("/api/program-expenses route uniqueness", () => {
   const legacyRoutes = read("server/routes.ts");
 
   it("canonical route GET /api/program-expenses exists in finance-routes.ts", () => {
-    expect(financeRoutes).toContain('"/api/program-expenses"');
+    expect(financeRoutes).toMatch(/router\.get\(\s*['"]\/api\/program-expenses['"]/);
   });
 
   it("canonical route GET /api/program-expenses/:projectName exists in finance-routes.ts", () => {
-    expect(financeRoutes).toContain('"/api/program-expenses/:projectName"');
+    expect(financeRoutes).toMatch(/router\.get\(\s*['"]\/api\/program-expenses\/:projectName['"]/);
   });
 
   it("legacy routes.ts does NOT register /api/program-expenses (removed duplicate)", () => {

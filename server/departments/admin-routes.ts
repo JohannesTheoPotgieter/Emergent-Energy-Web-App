@@ -497,8 +497,9 @@ router.post("/api/admin/sp-settings", requireAuth, requireAdmin, async (req, res
         return res.status(err.statusCode).json({
           error: err.code,
           code: err.code,
-          message: err.message,
-          details: err.details,
+          message: err.statusCode >= 500
+            ? "SharePoint connection could not be verified."
+            : "SharePoint connection validation failed.",
           nextAction: err.nextAction,
         });
       }

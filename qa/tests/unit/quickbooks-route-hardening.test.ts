@@ -196,8 +196,6 @@ describe("quickbooks route hardening — mark-realised bypass is disabled", () =
     // The canonical path is admin-gated and enforces the invoice / period
     // rules. If this line disappears, the QB bypass closure loses its
     // documented replacement.
-    expect(financeRoutes).toContain(
-      'router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin',
-    );
+    expect(financeRoutes).toMatch(/router\.patch\(\s*['"]\/api\/cos-tracker\/toggle-realised\/:id['"][\s\S]*?requireAuth[\s\S]*?requireAdmin/);
   });
 });

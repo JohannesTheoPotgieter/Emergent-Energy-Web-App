@@ -162,7 +162,7 @@ function renderPage() {
 /** Wait until the years query has resolved and the FYE selector is visible. */
 async function waitForPageReady() {
   await waitFor(() => {
-    expect(screen.getByTestId("select-fye")).toBeTruthy();
+    expect(screen.getByTestId("select-finance-year")).toBeTruthy();
   });
 }
 
@@ -272,7 +272,7 @@ describe("FyeRevenueTrackingPage — loading state", () => {
     mockedFetchQueryFn.mockImplementation(() => () => new Promise(() => {}));
     renderPage();
     expect(document.querySelector(".animate-pulse")).toBeTruthy();
-    expect(screen.queryByTestId("select-fye")).toBeNull();
+    expect(screen.queryByTestId("select-finance-year")).toBeNull();
   });
 });
 
@@ -289,7 +289,7 @@ describe("FyeRevenueTrackingPage — access denied", () => {
     mockedUsePermission.mockReturnValue({ allowed: false, loading: false });
     renderPage();
     await waitFor(() => {
-      expect(screen.queryByTestId("select-fye")).toBeNull();
+      expect(screen.queryByTestId("select-finance-year")).toBeNull();
     });
   });
 });
@@ -305,21 +305,17 @@ describe("FyeRevenueTrackingPage — full render", () => {
     expect(screen.getByText("FYE Revenue Tracking")).toBeTruthy();
   });
 
-  it("renders the FYE selector with years from the API", async () => {
+  it("renders the shared financial-year selector", async () => {
     renderPage();
     await waitForPageReady();
-    const sel = screen.getByTestId("select-fye") as HTMLSelectElement;
-    expect(sel).toBeTruthy();
-    expect(sel.options.length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByTestId("finance-year-scope-control")).toBeTruthy();
+    expect(screen.getByTestId("select-finance-year")).toBeTruthy();
   });
 
-  it("FYE selector label is linked to the select via htmlFor/id", async () => {
+  it("shared financial-year selector shows a financial-year label", async () => {
     renderPage();
     await waitForPageReady();
-    const label = document.querySelector("label[for='select-fye-year']");
-    expect(label).toBeTruthy();
-    const select = document.getElementById("select-fye-year");
-    expect(select).toBeTruthy();
+    expect(screen.getByTestId("select-finance-year").textContent).toMatch(/FY|All data/i);
   });
 
   it("shows KPI cards after KPI data loads", async () => {

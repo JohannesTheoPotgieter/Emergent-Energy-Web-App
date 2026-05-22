@@ -26,7 +26,10 @@ import {
 } from "@shared/schema";
 import { getAllWorkItemsForProgress } from "../work-items-adapter";
 import { computeProjectProgress, pctTo100 } from "../lib/kpi-formulas";
-import { computeAllProjectPlanPills } from "../services/plan-rollup-service";
+import {
+  computeAllProjectPlanPills,
+  computePlanPillForProject,
+} from "../services/plan-rollup-service";
 import { isDateBlack } from "../lib/calculations/stateClassifier";
 import { isCosRealised as isCosRealisedShared } from "../lib/calculations/financeUtils";
 import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
@@ -290,11 +293,22 @@ export async function getProgramDashboardData(
   // Schedule Status modal, the Execution Dashboard, and the COO Home
   // chips all produce identical numbers. See
   // server/services/plan-rollup-service.ts.
-  const planPillsProgram = await computeAllProjectPlanPills({
-    projectIds: Array.from(rowsByProject.keys()),
-    workstream: 'PM',
-    todayIso: today,
-  });
+  const planPillsProgram = opts.inputs
+    ? new Map(
+        Array.from(rowsByProject.entries()).map(([projectId, row]) => {
+          const canonical = planTasksByProjectId.get(projectId) ?? [];
+          const pill = computePlanPillForProject(canonical, row.projectName, {
+            workstream: 'PM',
+            todayIso: today,
+          });
+          return [projectId, { projectName: row.projectName, ...pill }];
+        }),
+      )
+    : await computeAllProjectPlanPills({
+        projectIds: Array.from(rowsByProject.keys()),
+        workstream: 'PM',
+        todayIso: today,
+      });
   for (const [projId] of planTasksByProjectId) {
     const row = rowsByProject.get(projId);
     if (!row) continue;
