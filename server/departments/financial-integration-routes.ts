@@ -333,13 +333,16 @@ router.post("/api/financial-edit-requests/:id/approve", requireAuth, requireFina
           console.log(`[fin-edit-request] Applied ${overrides.length} expenditure override(s) after approval of request #${requestId}`);
         }
       } catch (applyErr: any) {
-        console.error(`[fin-edit-request] Failed to apply overrides for request #${requestId}:`, applyErr.message);
+        console.error(`[fin-edit-request] Failed to apply overrides for request #${requestId}:`, applyErr);
         // Mark as approved but flag the application failure
         await financialIntegrationRepository.appendReviewCommentOnApprovalFailure(
           requestId,
-          `${comment || ""} [WARNING: Overrides approved but failed to apply: ${applyErr.message}]`.trim(),
+          `${comment || ""} [WARNING: Overrides approved but failed to apply. Review server logs for request #${requestId}.]`.trim(),
         );
-        return res.status(500).json({ error: "Approved but failed to apply overrides", message: applyErr.message });
+        return res.status(500).json({
+          error: "Approved but failed to apply overrides",
+          message: "Overrides were approved, but the apply step failed. Review server logs for the request ID.",
+        });
       }
     }
 
