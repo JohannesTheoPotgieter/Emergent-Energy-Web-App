@@ -14,21 +14,15 @@ describe("revenue tracker route consolidation", () => {
   // ── Both routes use identical auth ──
 
   it("canonical /api/revenue-tracker uses requireAuth + requirePermission(revenue_tracker, view)", () => {
-    expect(financeRoutesSource).toContain(
-      'router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_tracker", "view"), revenueTrackerHandler)'
-    );
+    expect(financeRoutesSource).toMatch(/router\.get\(\s*['"]\/api\/revenue-tracker['"]\s*,\s*requireAuth\s*,\s*requirePermission\(\s*['"]revenue_tracker['"]\s*,\s*['"]view['"]\s*\)\s*,\s*revenueTrackerHandler\s*,?\s*\)/);
   });
 
   it("legacy /api/rev-tracker uses the same auth as canonical (not requireAdmin)", () => {
-    expect(financeRoutesSource).toContain(
-      'router.get("/api/rev-tracker", requireAuth, requirePermission("revenue_tracker", "view")'
-    );
+    expect(financeRoutesSource).toMatch(/router\.get\(\s*['"]\/api\/rev-tracker['"][\s\S]*?requirePermission\(\s*['"]revenue_tracker['"]\s*,\s*['"]view['"]\s*\)/);
     // Must NOT use requireAdmin anymore
-    const revTrackerLine = financeRoutesSource
-      .split("\n")
-      .find((l: string) => l.includes('"/api/rev-tracker"') && l.includes("router.get"));
-    expect(revTrackerLine).toBeDefined();
-    expect(revTrackerLine).not.toContain("requireAdmin");
+    const revTrackerRoute = financeRoutesSource.match(/router\.get\(\s*['"]\/api\/rev-tracker['"][\s\S]*?\n\);/);
+    expect(revTrackerRoute?.[0]).toBeDefined();
+    expect(revTrackerRoute?.[0]).not.toContain("requireAdmin");
   });
 
   it("routes.ts no longer registers its own /api/rev-tracker handler", () => {

@@ -100,9 +100,7 @@ describe("finance-trust — finance-routes.ts uses the shared helper", () => {
   const financeRoutes = read("server/departments/finance-routes.ts");
 
   it("imports setFinanceTrustHeaders from the shared lib", () => {
-    expect(financeRoutes).toContain(
-      'from "../lib/finance-trust/envelope"',
-    );
+    expect(financeRoutes).toMatch(/from\s+['"]\.\.\/lib\/finance-trust\/envelope['"]/);
   });
 
   it("does not re-declare a local header emission body", () => {

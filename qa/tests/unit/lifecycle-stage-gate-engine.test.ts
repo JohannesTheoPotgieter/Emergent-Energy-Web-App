@@ -14,7 +14,7 @@ describe("lifecycle stage gate engine", () => {
 
   it("blocks stage transition with missing requirements", () => {
     const source = read("server/lifecycle-routes.ts");
-    expect(source).toContain('error: "stage_gate_failed"');
+    expect(source).toMatch(/error:\s*['"]stage_gate_failed['"]/);
     expect(source).toContain("missingItems: evaluation.missingItems");
   });
 
@@ -36,7 +36,7 @@ describe("lifecycle stage gate engine", () => {
 
   it("records gate and override events in project timeline", () => {
     const source = read("server/services/lifecycle-stage-gate-service.ts");
-    expect(source).toContain('eventType: allowed ? "project.gate_passed" : "project.gate_failed"');
-    expect(source).toContain('eventType: "project.override_granted"');
+    expect(source).toMatch(/eventType:\s*allowed\s*\?\s*['"]project\.gate_passed['"]\s*:\s*['"]project\.gate_failed['"]/);
+    expect(source).toMatch(/eventType:\s*['"]project\.override_granted['"]/);
   });
 });

@@ -256,6 +256,14 @@
       "override": false,
       "delete": false
     },
+    "engineering_documents": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "excel_vs_app": {
       "view": true,
       "create": false,
@@ -744,6 +752,14 @@
       "override": false,
       "delete": false
     },
+    "project_document_register": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "projects": {
       "view": true,
       "create": false,
@@ -754,6 +770,14 @@
     },
     "quality": {
       "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "quality_documents": {
+      "view": true,
       "create": false,
       "edit": false,
       "approve": false,
@@ -780,6 +804,14 @@
       "view": true,
       "create": true,
       "edit": true,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "sharepoint_sync": {
+      "view": true,
+      "create": false,
+      "edit": false,
       "approve": false,
       "override": false,
       "delete": false
@@ -1170,6 +1202,14 @@
       "override": false,
       "delete": false
     },
+    "engineering_documents": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "excel_vs_app": {
       "view": true,
       "create": false,
@@ -1658,6 +1698,14 @@
       "override": false,
       "delete": false
     },
+    "project_document_register": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "projects": {
       "view": true,
       "create": true,
@@ -1667,6 +1715,14 @@
       "delete": false
     },
     "quality": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "quality_documents": {
       "view": true,
       "create": false,
       "edit": false,
@@ -1691,6 +1747,14 @@
       "delete": false
     },
     "revenue_tracker": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "sharepoint_sync": {
       "view": true,
       "create": false,
       "edit": false,
@@ -2084,6 +2148,14 @@
       "override": true,
       "delete": true
     },
+    "engineering_documents": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": true,
+      "delete": true
+    },
     "excel_vs_app": {
       "view": true,
       "create": false,
@@ -2572,6 +2644,14 @@
       "override": true,
       "delete": true
     },
+    "project_document_register": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": true,
+      "delete": true
+    },
     "projects": {
       "view": true,
       "create": true,
@@ -2581,6 +2661,14 @@
       "delete": true
     },
     "quality": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": true,
+      "delete": true
+    },
+    "quality_documents": {
       "view": true,
       "create": true,
       "edit": true,
@@ -2605,6 +2693,14 @@
       "delete": true
     },
     "revenue_tracker": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": true,
+      "delete": true
+    },
+    "sharepoint_sync": {
       "view": true,
       "create": true,
       "edit": true,
@@ -2998,6 +3094,14 @@
       "override": false,
       "delete": false
     },
+    "engineering_documents": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "excel_vs_app": {
       "view": true,
       "create": false,
@@ -3486,6 +3590,14 @@
       "override": false,
       "delete": false
     },
+    "project_document_register": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "projects": {
       "view": true,
       "create": false,
@@ -3496,6 +3608,14 @@
     },
     "quality": {
       "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "quality_documents": {
+      "view": true,
       "create": false,
       "edit": false,
       "approve": false,
@@ -3523,6 +3643,14 @@
       "create": true,
       "edit": true,
       "approve": true,
+      "override": false,
+      "delete": false
+    },
+    "sharepoint_sync": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
       "override": false,
       "delete": false
     },
@@ -3906,6 +4034,14 @@
     },
     "engineering": {
       "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "engineering_documents": {
+      "view": true,
       "create": false,
       "edit": false,
       "approve": false,
@@ -4400,6 +4536,14 @@
       "override": false,
       "delete": false
     },
+    "project_document_register": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "projects": {
       "view": true,
       "create": true,
@@ -4409,6 +4553,14 @@
       "delete": false
     },
     "quality": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "quality_documents": {
       "view": true,
       "create": true,
       "edit": true,
@@ -4434,6 +4586,14 @@
     },
     "revenue_tracker": {
       "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "sharepoint_sync": {
+      "view": true,
       "create": false,
       "edit": false,
       "approve": false,
@@ -4826,6 +4986,14 @@
       "override": true,
       "delete": true
     },
+    "engineering_documents": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": true,
+      "delete": true
+    },
     "excel_vs_app": {
       "view": true,
       "create": false,
@@ -5314,6 +5482,14 @@
       "override": true,
       "delete": true
     },
+    "project_document_register": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": true,
+      "delete": true
+    },
     "projects": {
       "view": true,
       "create": true,
@@ -5323,6 +5499,14 @@
       "delete": true
     },
     "quality": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": true,
+      "delete": true
+    },
+    "quality_documents": {
       "view": true,
       "create": true,
       "edit": true,
@@ -5347,6 +5531,14 @@
       "delete": true
     },
     "revenue_tracker": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": true,
+      "delete": true
+    },
+    "sharepoint_sync": {
       "view": true,
       "create": true,
       "edit": true,
@@ -5740,6 +5932,14 @@
       "override": false,
       "delete": false
     },
+    "engineering_documents": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "excel_vs_app": {
       "view": true,
       "create": false,
@@ -6228,6 +6428,14 @@
       "override": false,
       "delete": false
     },
+    "project_document_register": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "projects": {
       "view": true,
       "create": false,
@@ -6238,6 +6446,14 @@
     },
     "quality": {
       "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "quality_documents": {
+      "view": true,
       "create": false,
       "edit": false,
       "approve": false,
@@ -6262,6 +6478,14 @@
     },
     "revenue_tracker": {
       "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "sharepoint_sync": {
+      "view": true,
       "create": false,
       "edit": false,
       "approve": false,
@@ -6654,6 +6878,14 @@
       "override": false,
       "delete": false
     },
+    "engineering_documents": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": false,
+      "delete": true
+    },
     "excel_vs_app": {
       "view": true,
       "create": false,
@@ -7142,6 +7374,14 @@
       "override": false,
       "delete": false
     },
+    "project_document_register": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": false,
+      "delete": false
+    },
     "projects": {
       "view": true,
       "create": false,
@@ -7151,6 +7391,14 @@
       "delete": false
     },
     "quality": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "quality_documents": {
       "view": true,
       "create": false,
       "edit": false,
@@ -7177,6 +7425,14 @@
     "revenue_tracker": {
       "view": false,
       "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "sharepoint_sync": {
+      "view": true,
+      "create": true,
       "edit": false,
       "approve": false,
       "override": false,
@@ -7562,6 +7818,14 @@
     },
     "engineering": {
       "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "engineering_documents": {
+      "view": true,
       "create": false,
       "edit": false,
       "approve": false,
@@ -8056,6 +8320,14 @@
       "override": false,
       "delete": false
     },
+    "project_document_register": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "projects": {
       "view": true,
       "create": false,
@@ -8069,6 +8341,14 @@
       "create": true,
       "edit": true,
       "approve": true,
+      "override": false,
+      "delete": false
+    },
+    "quality_documents": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
       "override": false,
       "delete": false
     },
@@ -8090,6 +8370,14 @@
     },
     "revenue_tracker": {
       "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "sharepoint_sync": {
+      "view": true,
       "create": false,
       "edit": false,
       "approve": false,
@@ -8482,6 +8770,14 @@
       "override": false,
       "delete": false
     },
+    "engineering_documents": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "excel_vs_app": {
       "view": true,
       "create": false,
@@ -8970,6 +9266,14 @@
       "override": false,
       "delete": false
     },
+    "project_document_register": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "projects": {
       "view": true,
       "create": false,
@@ -8980,6 +9284,14 @@
     },
     "quality": {
       "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "quality_documents": {
+      "view": true,
       "create": false,
       "edit": false,
       "approve": false,
@@ -9004,6 +9316,14 @@
     },
     "revenue_tracker": {
       "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "sharepoint_sync": {
+      "view": true,
       "create": false,
       "edit": false,
       "approve": false,
@@ -9396,6 +9716,14 @@
       "override": false,
       "delete": false
     },
+    "engineering_documents": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "excel_vs_app": {
       "view": true,
       "create": false,
@@ -9884,6 +10212,14 @@
       "override": false,
       "delete": false
     },
+    "project_document_register": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "projects": {
       "view": true,
       "create": true,
@@ -9893,6 +10229,14 @@
       "delete": false
     },
     "quality": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "quality_documents": {
       "view": true,
       "create": false,
       "edit": false,
@@ -9920,6 +10264,14 @@
       "view": true,
       "create": true,
       "edit": true,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "sharepoint_sync": {
+      "view": true,
+      "create": false,
+      "edit": false,
       "approve": false,
       "override": false,
       "delete": false
@@ -10310,6 +10662,14 @@
       "override": false,
       "delete": false
     },
+    "engineering_documents": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "excel_vs_app": {
       "view": true,
       "create": false,
@@ -10798,6 +11158,14 @@
       "override": false,
       "delete": false
     },
+    "project_document_register": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "projects": {
       "view": true,
       "create": true,
@@ -10810,6 +11178,14 @@
       "view": true,
       "create": false,
       "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "quality_documents": {
+      "view": true,
+      "create": true,
+      "edit": true,
       "approve": false,
       "override": false,
       "delete": false
@@ -10833,6 +11209,14 @@
     "revenue_tracker": {
       "view": true,
       "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "sharepoint_sync": {
+      "view": true,
+      "create": true,
       "edit": false,
       "approve": false,
       "override": false,
@@ -11224,6 +11608,14 @@
       "override": false,
       "delete": false
     },
+    "engineering_documents": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "excel_vs_app": {
       "view": true,
       "create": false,
@@ -11712,6 +12104,14 @@
       "override": false,
       "delete": false
     },
+    "project_document_register": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "projects": {
       "view": true,
       "create": false,
@@ -11721,6 +12121,14 @@
       "delete": false
     },
     "quality": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "quality_documents": {
       "view": true,
       "create": false,
       "edit": false,
@@ -11746,6 +12154,14 @@
     },
     "revenue_tracker": {
       "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "sharepoint_sync": {
+      "view": true,
       "create": false,
       "edit": false,
       "approve": false,
@@ -12138,6 +12554,14 @@
       "override": false,
       "delete": false
     },
+    "engineering_documents": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "excel_vs_app": {
       "view": true,
       "create": false,
@@ -12626,6 +13050,14 @@
       "override": false,
       "delete": false
     },
+    "project_document_register": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "projects": {
       "view": true,
       "create": false,
@@ -12638,6 +13070,14 @@
       "view": true,
       "create": false,
       "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "quality_documents": {
+      "view": true,
+      "create": true,
+      "edit": true,
       "approve": false,
       "override": false,
       "delete": false
@@ -12661,6 +13101,14 @@
     "revenue_tracker": {
       "view": false,
       "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "sharepoint_sync": {
+      "view": true,
+      "create": true,
       "edit": false,
       "approve": false,
       "override": false,
@@ -13045,6 +13493,14 @@
       "delete": false
     },
     "engineering": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "engineering_documents": {
       "view": true,
       "create": false,
       "edit": false,
@@ -13540,6 +13996,14 @@
       "override": false,
       "delete": false
     },
+    "project_document_register": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": false,
+      "delete": false
+    },
     "projects": {
       "view": true,
       "create": false,
@@ -13555,6 +14019,14 @@
       "approve": true,
       "override": false,
       "delete": false
+    },
+    "quality_documents": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": false,
+      "delete": true
     },
     "reports": {
       "view": true,
@@ -13575,6 +14047,14 @@
     "revenue_tracker": {
       "view": false,
       "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "sharepoint_sync": {
+      "view": true,
+      "create": true,
       "edit": false,
       "approve": false,
       "override": false,
@@ -13962,6 +14442,14 @@
       "view": true,
       "create": true,
       "edit": true,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "engineering_documents": {
+      "view": true,
+      "create": false,
+      "edit": false,
       "approve": false,
       "override": false,
       "delete": false
@@ -14454,6 +14942,14 @@
       "override": false,
       "delete": false
     },
+    "project_document_register": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "projects": {
       "view": true,
       "create": false,
@@ -14463,6 +14959,14 @@
       "delete": false
     },
     "quality": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "quality_documents": {
       "view": true,
       "create": false,
       "edit": false,
@@ -14488,6 +14992,14 @@
     },
     "revenue_tracker": {
       "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "sharepoint_sync": {
+      "view": true,
       "create": false,
       "edit": false,
       "approve": false,

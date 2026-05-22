@@ -9,7 +9,7 @@ function read(rel: string) {
 describe("finance core trust report wiring", () => {
   it("registers admin trust-core endpoint", () => {
     const source = read("server/departments/finance-routes.ts");
-    expect(source).toContain('"/api/finance/trust-core-report"');
+    expect(source).toMatch(/['"]\/api\/finance\/trust-core-report['"]/);
     expect(source).toContain("buildFinanceCoreTrustReport");
     // After the trust-envelope refactor, header emission lives in the
     // shared helper. Pin both: finance-routes must import it, and the
@@ -27,8 +27,8 @@ describe("finance core trust report wiring", () => {
     expect(source).toContain("invoiceWithoutPoRows");
     expect(source).toContain("COS realised only from invoiced actuals");
     expect(source).toContain("Payment receipt date remains the cash-realisation date where defined");
-    expect(source).toContain('"/api/program-inflows"');
-    expect(source).toContain('"/api/finance/revenue"');
+    expect(source).toMatch(/['"]\/api\/program-inflows['"]/);
+    expect(source).toMatch(/['"]\/api\/finance\/revenue['"]/);
   });
 
   it("company overview exposes explicit finance trust labels", () => {

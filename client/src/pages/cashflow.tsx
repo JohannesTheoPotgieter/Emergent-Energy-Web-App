@@ -1694,7 +1694,7 @@ export default function CashflowPage() {
         >
           <summary className="cursor-pointer select-none px-2.5 py-1 list-none flex items-center gap-1.5 hover:bg-slate-100/70 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60">
             <span aria-hidden="true" className="text-slate-500">ⓘ</span>
-            <span>Actuals use paid dates; forecasts may fall back to planned-payment dates.</span>
+            <span>Cashflow actuals use payment received / paid dates. Forecast dates may use planned-payment fallback where no canonical payment date exists.</span>
             <ChevronDown
               aria-hidden="true"
               className="ml-auto h-3 w-3 text-slate-400 transition-transform group-open:rotate-180"
@@ -1703,8 +1703,7 @@ export default function CashflowPage() {
             <span className="sr-only hidden group-open:inline">Hide full data trust note</span>
           </summary>
           <p className="px-2.5 pb-2 pt-0.5 text-slate-600 leading-snug">
-            Forecast dates use planned-payment fallback where no canonical payment date exists. Use
-            forecast values as planning data until reconciled.
+            Forecast dates may use planned-payment fallback where no canonical payment date exists. Use forecast values as planning data until reconciled.
           </p>
         </details>
         <FinanceTrustStrip
