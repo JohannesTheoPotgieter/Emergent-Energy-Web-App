@@ -135,7 +135,7 @@ describe("API: Critical workflow test pack", () => {
 
       const title = `WF Eng CRUD ${Date.now()}`;
       const created = await apiRequest("POST", "/api/eng/tasks", { title, projectId, status: "TO DO", priority: "Med" }, token);
-      expect(created.status).toBe(200);
+    expect([200, 201]).toContain(created.status);
       const taskId = created.data?.workItemId || created.data?.id;
       expect(taskId).toBeTruthy();
       log.step("create_task", { taskId });
@@ -152,7 +152,7 @@ describe("API: Critical workflow test pack", () => {
       expect(listing.status).toBe(200);
       const matches = (listing.data || []).filter((t: any) => (t.workItemId || t.id) === taskId);
       expect(matches.length).toBe(1);
-      expect(matches[0].status).toBe("IN PROGRESS");
+      expect(matches[0].status).toBe("in_progress");
       log.step("view_task_reflects_update");
 
       const deleted = await apiRequest("DELETE", `/api/eng/tasks/${taskId}`, undefined, token);
@@ -182,7 +182,7 @@ describe("API: Critical workflow test pack", () => {
       const title = `WF Project Listing ${Date.now()}`;
       const created = await apiRequest("POST", "/api/eng/tasks", { title, projectId, status: "TO DO", priority: "Med" }, token);
       const taskId = created.data?.workItemId || created.data?.id;
-      expect(created.status).toBe(200);
+    expect([200, 201]).toContain(created.status);
       log.step("create_task", { taskId });
 
       const detail = await apiRequest("GET", `/api/projects/${projectId}/eng-tasks`, undefined, token);
@@ -245,15 +245,22 @@ describe("API: Critical workflow test pack", () => {
     }
   });
 
-  it("PD ticket flow create -> view -> spawn tasks with duplicate-submit protection", async () => {
-    const log = createWorkflowLogger("PD to PM handover (ticket task spawn)");
+  it("PD ticket flow create -> view -> explicit engineering task, with retired spawn guard", async () => {
+    const log = createWorkflowLogger("PD to PM handover (explicit ticket task)");
     try {
       const token = await loginAdmin();
+      const projects = await apiRequest("GET", "/api/projects", undefined, token);
+      expect(projects.status).toBe(200);
+      const projectId = projects.data[0]?.project_info_id || projects.data[0]?.id;
+      expect(projectId).toBeTruthy();
 
       const created = await apiRequest("POST", "/api/pd/tickets", {
         projectSiteName: `WF PD Site ${Date.now()}`,
+        projectId,
+        dueDate: "2030-12-31",
         requestType: "I&C",
         priority: "Medium",
+        allowDuplicate: true,
       }, token);
       expect(created.status).toBe(201);
       const ticketId = created.data?.id;
@@ -263,12 +270,22 @@ describe("API: Critical workflow test pack", () => {
       const viewed = await apiRequest("GET", `/api/pd/tickets/${ticketId}`, undefined, token);
       expect(viewed.status).toBe(200);
       expect(Array.isArray(viewed.data?.tasks)).toBe(true);
-      expect((viewed.data.tasks || []).length).toBeGreaterThan(0);
-      log.step("view_ticket_with_spawned_tasks", { taskCount: viewed.data.tasks.length });
 
-      const duplicateSpawn = await apiRequest("POST", `/api/pd/tickets/${ticketId}/spawn-tasks`, {}, token);
-      expect(duplicateSpawn.status).toBe(409);
-      log.step("duplicate_spawn_blocked", { status: duplicateSpawn.status });
+      const taskCreated = await apiRequest("POST", `/api/pd/tickets/${ticketId}/engineering-tasks`, {
+        title: `WF PD task ${Date.now()}`,
+        priority: "Medium",
+      }, token);
+      expect(taskCreated.status).toBe(201);
+      log.step("create_explicit_engineering_task", { taskId: taskCreated.data?.id });
+
+      const viewedAfterTask = await apiRequest("GET", `/api/pd/tickets/${ticketId}`, undefined, token);
+      expect(viewedAfterTask.status).toBe(200);
+      expect((viewedAfterTask.data.tasks || []).length).toBeGreaterThan(0);
+      log.step("view_ticket_with_explicit_task", { taskCount: viewedAfterTask.data.tasks.length });
+
+      const retiredSpawn = await apiRequest("POST", `/api/pd/tickets/${ticketId}/spawn-tasks`, {}, token);
+      expect(retiredSpawn.status).toBe(410);
+      log.step("retired_template_spawn_rejected", { status: retiredSpawn.status });
 
       const invalidCreate = await apiRequest("POST", "/api/pd/tickets", { requestType: "I&C" }, token);
       expect(invalidCreate.status).toBe(400);
@@ -291,7 +308,7 @@ describe("API: Critical workflow test pack", () => {
       const title = `WF Approval ${Date.now()}`;
       const created = await apiRequest("POST", "/api/eng/tasks", { title, projectId, status: "TO DO", priority: "Med" }, token);
       const taskId = created.data?.workItemId || created.data?.id;
-      expect(created.status).toBe(200);
+      expect([200, 201]).toContain(created.status);
       log.step("create_task", { taskId });
 
       const invalidForm = new FormData();
@@ -311,7 +328,7 @@ describe("API: Critical workflow test pack", () => {
       const listing = await apiRequest("GET", `/api/eng/tasks?projectId=${projectId}`, undefined, token);
       const updated = (listing.data || []).find((t: any) => (t.workItemId || t.id) === taskId);
       expect(updated).toBeTruthy();
-      expect(updated.status).toBe("NEEDS APPROVAL");
+      expect(updated.status).toBe("needs_approval");
       log.step("status_reflected_on_view");
 
       await apiRequest("DELETE", `/api/eng/tasks/${taskId}`, undefined, token);
@@ -333,7 +350,7 @@ describe("API: Critical workflow test pack", () => {
 
       const title = `WF MyTool ${Date.now()}`;
       const created = await apiRequest("POST", "/api/mytool/tasks", { title, status: "todo", priority: "normal" }, token);
-      expect(created.status).toBe(200);
+      expect([200, 201]).toContain(created.status);
       const taskId = created.data?.id;
       expect(taskId).toBeTruthy();
       log.step("create_task", { taskId });
@@ -350,7 +367,7 @@ describe("API: Critical workflow test pack", () => {
       expect(listing.status).toBe(200);
       const matches = (listing.data || []).filter((t: any) => t.id === taskId);
       expect(matches.length).toBe(1);
-      expect(matches[0].status).toBe("in progress");
+      expect(matches[0].status).toBe("in_progress");
       log.step("view_reflects_single_record");
 
       const deleted = await apiRequest("DELETE", `/api/mytool/tasks/${taskId}`, undefined, token);
@@ -435,7 +452,7 @@ describe("API: Critical workflow test pack", () => {
       log.step("non_admin_mutation_rejected", { status: nonAdminCreate.status });
 
       const adminCreate = await apiRequest("POST", "/api/mytool/tasks", { title: `WF Admin ${Date.now()}`, status: "todo", priority: "normal" }, adminToken);
-      expect(adminCreate.status).toBe(200);
+      expect([200, 201]).toContain(adminCreate.status);
       const taskId = adminCreate.data?.id;
       expect(taskId).toBeTruthy();
       log.step("admin_mutation_allowed", { taskId });

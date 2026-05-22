@@ -78,15 +78,15 @@ export function registerProjectDevelopmentWorkspaceRollupRoutes(app: Express) {
 
         const [oppTotalRow, linkedProjectsRow, linkedWorkItemsRow] = await Promise.all([
           db
-            .select({ n: sql<number>`COUNT(*)::int` })
+            .select({ n: sql<number>`COUNT(*)` })
             .from(opportunities)
             .where(isNull(opportunities.deletedAt)),
           db
-            .select({ n: sql<number>`COUNT(*)::int` })
+            .select({ n: sql<number>`COUNT(*)` })
             .from(projectInfo)
             .where(and(isNull(projectInfo.deletedAt), isNotNull(projectInfo.opportunityId))),
           db
-            .select({ n: sql<number>`COUNT(*)::int` })
+            .select({ n: sql<number>`COUNT(*)` })
             .from(workItems)
             .innerJoin(engineeringTickets, and(eq(engineeringTickets.id, workItems.engineeringTicketId), isNull(engineeringTickets.deletedAt)))
             .leftJoin(projectInfo, eq(projectInfo.id, engineeringTickets.projectId))

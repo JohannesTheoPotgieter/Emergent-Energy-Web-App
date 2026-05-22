@@ -2,7 +2,7 @@
 // Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
 // add explicit ': any' to .map/.filter callback params on db result rows.
 import type { Express, Request, Response, NextFunction } from "express";
-import { db } from "./db";
+import { db, getDbMode } from "./db";
 import { eq, and, desc, asc, sql, ilike, isNull } from "drizzle-orm";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
@@ -82,6 +82,10 @@ async function resolveLinkedClient(params: {
     } as const;
   }
 
+  const clientNamePredicate = getDbMode() === "sqlite"
+    ? sql`lower(${clients.name}) = lower(${requestedClientName})`
+    : ilike(clients.name, requestedClientName);
+
   const [client] = await db
     .select({
       id: clients.id,
@@ -89,7 +93,7 @@ async function resolveLinkedClient(params: {
       clientCode: clients.clientId,
     })
     .from(clients)
-    .where(ilike(clients.name, requestedClientName))
+    .where(clientNamePredicate)
     .limit(1);
 
   return {
@@ -849,8 +853,16 @@ export function registerTemplateRoutes(app: Express) {
       });
 
       let applyResult = null;
-      const [activeTemplate] = await db.select().from(phaseTemplate)
-        .where(and(eq(phaseTemplate.phase, phase), eq(phaseTemplate.isActive, true)));
+      let activeTemplate = null;
+      try {
+        [activeTemplate] = await db.select().from(phaseTemplate)
+          .where(and(eq(phaseTemplate.phase, phase), eq(phaseTemplate.isActive, true)));
+      } catch (templateErr: any) {
+        if (getDbMode() !== "sqlite" || !/no such table: phase_template/i.test(templateErr?.message || "")) {
+          throw templateErr;
+        }
+        console.warn("[ProjectCreate] Skipping phase template lookup in SQLite: phase_template table is not available");
+      }
 
       if (activeTemplate) {
         applyResult = await applyTemplate(created.id, phase, activeTemplate.id, activeTemplate.version, user!.id);

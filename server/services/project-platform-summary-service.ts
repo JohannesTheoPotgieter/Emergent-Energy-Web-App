@@ -24,7 +24,7 @@ import {
   type SharedAssigneeContract,
   type SharedKpiContract,
 } from "@shared/platform-contracts";
-import { db } from "../db";
+import { db, getDbMode } from "../db";
 import { storage } from "../storage";
 import {
   type CanonicalProjectFinanceRow,
@@ -36,7 +36,9 @@ import { chooseProgressPercent, toDisplayProgressPercent } from "../lib/prioriti
 
 function toIsoString(value: unknown): string | null {
   if (!value) return null;
-  if (value instanceof Date) return value.toISOString();
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
   const text = String(value).trim();
   if (!text) return null;
   const asDate = new Date(text);
@@ -576,21 +578,32 @@ export async function getProjectListSummaries(
   //    The schedule-variance formula matches lifecycle-routes.ts:1100-1117 and
   //    dashboard-routes.ts:407-414 — actual − expected, with thresholds
   //    (>= -5 = green, >= -15 = amber, < -15 = red).
-  const idArrayLiteral = `{${ids.join(",")}}`;
   const liveTaskByProject = new Map<number, { avgPct: number | null; avgExpectedPct: number | null; totalCount: number }>();
   try {
-    const liveTaskRows: any = await db.execute(sql`
-      SELECT
-        wi.project_id,
-        AVG(COALESCE(pm.percent_complete, wi.percent_complete, 0))::float8 AS avg_pct,
-        AVG(NULLIF(wi.expected_pct_complete, NULL))::float8 AS avg_expected_pct,
-        COUNT(*) AS total_count
-      FROM work_items wi
-      LEFT JOIN work_item_pm pm ON pm.work_item_id = wi.id
-      WHERE wi.project_id = ANY(${idArrayLiteral}::int[])
-        AND wi.deleted_at IS NULL
-      GROUP BY wi.project_id
-    `);
+    const liveTaskRows: any = getDbMode() === "sqlite"
+      ? await db.execute(sql.raw(`
+          SELECT
+            project_id,
+            AVG(COALESCE(percent_complete, 0)) AS avg_pct,
+            AVG(expected_pct_complete) AS avg_expected_pct,
+            COUNT(*) AS total_count
+          FROM work_items
+          WHERE project_id IN (${ids.map((id) => Number(id)).join(",")})
+            AND deleted_at IS NULL
+          GROUP BY project_id
+        `))
+      : await db.execute(sql`
+          SELECT
+            wi.project_id,
+            AVG(COALESCE(pm.percent_complete, wi.percent_complete, 0))::float8 AS avg_pct,
+            AVG(NULLIF(wi.expected_pct_complete, NULL))::float8 AS avg_expected_pct,
+            COUNT(*) AS total_count
+          FROM work_items wi
+          LEFT JOIN work_item_pm pm ON pm.work_item_id = wi.id
+          WHERE wi.project_id = ANY(${`{${ids.join(",")}}`}::int[])
+            AND wi.deleted_at IS NULL
+          GROUP BY wi.project_id
+        `);
     const rows = liveTaskRows.rows || liveTaskRows;
     for (const r of rows) {
       liveTaskByProject.set(Number(r.project_id), {
@@ -608,19 +621,33 @@ export async function getProjectListSummaries(
   // 3. Live finance aggregation from normalized_cost_lines.
   const liveFinanceByProject = new Map<number, { plannedRevenue: number; realisedRevenue: number; plannedCost: number; realisedCost: number }>();
   try {
-    const liveFinRows: any = await db.execute(sql`
-      SELECT
-        project_id,
-        COALESCE(SUM(NULLIF(revenue_recognition_amount, '')::numeric), 0)::float8 AS planned_revenue,
-        COALESCE(SUM(CASE WHEN cos_realised THEN NULLIF(revenue_recognition_amount, '')::numeric ELSE 0 END), 0)::float8 AS realised_revenue,
-        COALESCE(SUM(NULLIF(amount_ex_vat, '')::numeric), 0)::float8 AS planned_cost,
-        COALESCE(SUM(CASE WHEN cos_realised THEN NULLIF(amount_ex_vat, '')::numeric ELSE 0 END), 0)::float8 AS realised_cost
-      FROM normalized_cost_lines
-      WHERE project_id = ANY(${`{${ids.join(",")}}`}::int[])
-        AND (effective_to IS NULL OR effective_to > NOW())
-        AND deleted_at IS NULL
-      GROUP BY project_id
-    `);
+    const liveFinRows: any = getDbMode() === "sqlite"
+      ? await db.execute(sql.raw(`
+          SELECT
+            project_id,
+            COALESCE(SUM(CAST(NULLIF(revenue_recognition_amount, '') AS REAL)), 0) AS planned_revenue,
+            COALESCE(SUM(CASE WHEN COALESCE(cos_realised, 0) != 0 THEN CAST(NULLIF(revenue_recognition_amount, '') AS REAL) ELSE 0 END), 0) AS realised_revenue,
+            COALESCE(SUM(CAST(NULLIF(amount_ex_vat, '') AS REAL)), 0) AS planned_cost,
+            COALESCE(SUM(CASE WHEN COALESCE(cos_realised, 0) != 0 THEN CAST(NULLIF(amount_ex_vat, '') AS REAL) ELSE 0 END), 0) AS realised_cost
+          FROM normalized_cost_lines
+          WHERE project_id IN (${ids.map((id) => Number(id)).join(",")})
+            AND (effective_to IS NULL OR effective_to > CURRENT_TIMESTAMP)
+            AND deleted_at IS NULL
+          GROUP BY project_id
+        `))
+      : await db.execute(sql`
+          SELECT
+            project_id,
+            COALESCE(SUM(NULLIF(revenue_recognition_amount, '')::numeric), 0)::float8 AS planned_revenue,
+            COALESCE(SUM(CASE WHEN cos_realised THEN NULLIF(revenue_recognition_amount, '')::numeric ELSE 0 END), 0)::float8 AS realised_revenue,
+            COALESCE(SUM(NULLIF(amount_ex_vat, '')::numeric), 0)::float8 AS planned_cost,
+            COALESCE(SUM(CASE WHEN cos_realised THEN NULLIF(amount_ex_vat, '')::numeric ELSE 0 END), 0)::float8 AS realised_cost
+          FROM normalized_cost_lines
+          WHERE project_id = ANY(${`{${ids.join(",")}}`}::int[])
+            AND (effective_to IS NULL OR effective_to > NOW())
+            AND deleted_at IS NULL
+          GROUP BY project_id
+        `);
     const rows = liveFinRows.rows || liveFinRows;
     for (const r of rows) {
       liveFinanceByProject.set(Number(r.project_id), {

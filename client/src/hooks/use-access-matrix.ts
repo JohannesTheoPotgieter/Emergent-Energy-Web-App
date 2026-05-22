@@ -21,7 +21,7 @@ export function useAccessMatrix() {
   // When simulating, use the lens's effective permission role instead of localStorage
   const effectiveRole = lens.simulation
     ? normalizeRoleForPermissions(lens.effectivePermissionRole)
-    : normalizeRoleForPermissions(companyRole || user?.role || null);
+    : normalizeRoleForPermissions(user?.role || companyRole || null);
 
   const {
     data: permissions,

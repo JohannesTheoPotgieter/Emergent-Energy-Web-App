@@ -649,7 +649,7 @@ export function registerMytoolRoutes(app: Express): void {
 
       console.info("[mytool-task-create] request", { requestId: hasRequestId ? requestId : null, userId, result: "created", taskId: task.id });
       logAuditFromReq(req, { entityType: "mytool_task", action: "create", entityId: String(task.id), changesJson: { description: "MyTool task created", title: req.body.title, bucket } });
-      res.json(task);
+      res.status(hasRequestId ? 200 : 201).json(task);
     } catch (err: any) {
       if (hasRequestId) {
         mytoolTaskIdempotencyStore.fail(userId, requestId);

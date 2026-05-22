@@ -59,10 +59,12 @@ export class MockConnector implements IntakeConnector {
     const items = await db.select().from(mockSpItems);
     let result: SpListItem[] = items.map((item: any) => ({
       id: item.mockItemId,
-      fields: item.fields as Record<string, any>,
+      fields: typeof item.fields === "string"
+        ? JSON.parse(item.fields)
+        : item.fields as Record<string, any>,
       etag: item.etag || `"mock-etag-${item.mockItemId}"`,
-      createdDateTime: item.createdDateTime || item.createdAt.toISOString(),
-      lastModifiedDateTime: item.lastModifiedDateTime || item.updatedAt.toISOString(),
+      createdDateTime: item.createdDateTime || (item.createdAt instanceof Date ? item.createdAt.toISOString() : String(item.createdAt || "")),
+      lastModifiedDateTime: item.lastModifiedDateTime || (item.updatedAt instanceof Date ? item.updatedAt.toISOString() : String(item.updatedAt || "")),
     }));
 
     if (filter) {
@@ -87,7 +89,9 @@ export class MockConnector implements IntakeConnector {
       throw new Error(`Mock item ${itemId} not found`);
     }
 
-    const currentFields = existing.fields as Record<string, any>;
+    const currentFields = typeof (existing as any).fields === "string"
+      ? JSON.parse((existing as any).fields)
+      : existing.fields as Record<string, any>;
     const updatedFields = { ...currentFields, ...fields };
 
     await db.update(mockSpItems)

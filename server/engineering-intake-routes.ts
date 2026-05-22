@@ -290,8 +290,8 @@ export function registerEngineeringIntakeRoutes(app: Express) {
       const connector = getConnector();
       const config = await getConfig();
 
-      const [requestCount] = await db.select({ count: sql<number>`count(*)::int` }).from(intakeRequests);
-      const [conflictCount] = await db.select({ count: sql<number>`count(*)::int` }).from(intakeRequests)
+      const [requestCount] = await db.select({ count: sql<number>`count(*)` }).from(intakeRequests);
+      const [conflictCount] = await db.select({ count: sql<number>`count(*)` }).from(intakeRequests)
         .where(eq(intakeRequests.syncConflict, true));
 
       res.json({

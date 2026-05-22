@@ -619,7 +619,11 @@ export function registerRoleManagementRoutes(app: Express) {
         location: users.location,
         isActive: users.isActive,
       }).from(users);
-      const mapped = allUsers.map((u: any) => ({ ...u, role: mapRole(u.role) }));
+      const mapped = allUsers.map((u: any) => ({
+        ...u,
+        role: mapRole(u.role),
+        isActive: u.isActive !== false && u.isActive !== 0,
+      }));
       res.json(mapped);
     } catch (err: any) {
       throw err;
@@ -849,7 +853,7 @@ export function registerRoleManagementRoutes(app: Express) {
             description: isActive ? "User activated" : "User deactivated",
             userName: updated.name,
             email: updated.email,
-            previousIsActive: userBefore.isActive,
+            previousIsActive: userBefore.isActive !== false && userBefore.isActive !== 0,
             newIsActive: isActive,
           },
         });
@@ -859,12 +863,12 @@ export function registerRoleManagementRoutes(app: Express) {
           changeDetail: {
             userName: updated.name,
             email: updated.email,
-            previousIsActive: userBefore.isActive,
+            previousIsActive: userBefore.isActive !== false && userBefore.isActive !== 0,
             newIsActive: isActive,
           },
         });
 
-        res.json(updated);
+        res.json({ ...updated, isActive: updated.isActive !== false && updated.isActive !== 0 });
       } catch (err: any) {
         throw err;
       }

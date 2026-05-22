@@ -1,22 +1,19 @@
 import type { Express } from "express";
 import passport from "passport";
 import crypto from "crypto";
-import { db } from "../db";
+import { db, getDbMode } from "../db";
 import { users } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
-import { generateToken, verifyToken } from "../jwt";
+import { generateToken } from "../jwt";
 import {
   clearRevokedSessionId,
   clearRevokedUserTokenVersionFloor,
   extractBearerToken,
-  getEffectiveUser,
   getTokenVersionForUser,
   requireAuth,
   revokeSessionId,
   resolveAuthenticatedUser,
   revokeBearerToken,
-  revokeUserTokens,
-  setRevokedUserTokenVersionFloor,
 } from "../auth-context";
 import { ApiError, sendError, unauthorized, serverError, logApiError } from "../lib/api-error";
 import { ensureMsAccount } from "../ms-account-service";
@@ -38,6 +35,8 @@ setInterval(() => {
 
 async function enforceSessionLimit(userId: number, currentSessionId: string, limit: number = MAX_SESSIONS_PER_USER): Promise<void> {
   try {
+    if (getDbMode() === "sqlite") return;
+
     // Use SQL JSON extraction to filter sessions by userId at the DB level (avoids race conditions)
     const userIdStr = String(userId);
     const result = await db.execute(
@@ -165,9 +164,7 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
   });
 
   app.post("/api/auth/logout", requireAuth, async (req, res) => {
-    const currentUser = getEffectiveUser(req);
     const bearerToken = extractBearerToken(req);
-    const bearerPayload = bearerToken ? verifyToken(bearerToken) : null;
     const sessionId = req.sessionID;
 
     try {
@@ -198,11 +195,6 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
         });
       });
 
-      if (currentUser?.id) {
-        const nextTokenVersion = await revokeUserTokens(currentUser.id);
-        const bearerTokenVersion = typeof bearerPayload?.tokenVersion === "number" ? bearerPayload.tokenVersion : 0;
-        setRevokedUserTokenVersionFloor(currentUser.id, Math.max(nextTokenVersion, bearerTokenVersion + 1));
-      }
       if (bearerToken) {
         revokeBearerToken(bearerToken);
       }

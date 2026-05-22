@@ -214,9 +214,8 @@ export const ADMIN_SURFACES: AdminSurfaceMeta[] = [
 ];
 
 // Essential admin tools shown as secondary nav pills. Other admin surfaces
-// remain accessible via command palette, direct URL, and Control Center page.
+// remain accessible via command palette, direct URL, and Settings/Admin hubs.
 const ADMIN_NAV_IDS: AdminSurfaceId[] = [
-  "control-center",
   "smart-import",
   "roles",
   "audit-log",

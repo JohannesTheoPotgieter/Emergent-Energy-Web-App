@@ -15,6 +15,8 @@ import fs from "fs";
 import multer from "multer";
 import { sanitizeFilename, allowedFileFilter } from "../lib/upload-security";
 import { paramStr, parseIntParam } from "../lib/req-params";
+import { validateTaskCreate, validateTaskUpdate } from "../lib/task-validation";
+import { mytoolTaskIdempotencyStore } from "../lib/mytool-task-idempotency";
 
 const router = Router();
 
@@ -57,7 +59,8 @@ const CANONICAL_TO_MYTOOL_STATUS: Record<string, string> = {
   waiting: "waiting", WAITING: "waiting",
 };
 function toMytoolDbStatus(status: string): string {
-  return CANONICAL_TO_MYTOOL_STATUS[status] || CANONICAL_TO_MYTOOL_STATUS[status.toLowerCase()] || "planned";
+  const normalized = status.trim().toLowerCase().replace(/\s+/g, "_");
+  return CANONICAL_TO_MYTOOL_STATUS[status] || CANONICAL_TO_MYTOOL_STATUS[normalized] || "planned";
 }
 
 const CANONICAL_TO_MYTOOL_PRIORITY: Record<string, string> = {
@@ -160,8 +163,18 @@ router.get("/api/mytool/tasks", requireAuth, requireAdmin, async (req, res) => {
 });
 
 router.post("/api/mytool/tasks", requireAuth, requireAdmin, async (req, res) => {
+  const userId = (req.user as any).id;
+  const rawRequestId = req.header("x-idempotency-key") || req.body?.clientRequestId;
+  const requestId = typeof rawRequestId === "string" ? rawRequestId.trim() : "";
+  const hasRequestId = requestId.length > 0;
   try {
-    const userId = (req.user as any).id;
+    const validationErrors = validateTaskCreate(req.body);
+    if (validationErrors.length > 0) {
+      return res.status(400).json({
+        error: "Validation failed",
+        fields: Object.fromEntries(validationErrors.map((err) => [err.field, err.message])),
+      });
+    }
     const bucket = req.body.bucket || 'personal';
     if (bucket === 'project' && !req.body.projectName) {
       return res.status(400).json({ error: "Project name is required when bucket is 'project'" });
@@ -171,9 +184,29 @@ router.post("/api/mytool/tasks", requireAuth, requireAdmin, async (req, res) => 
     }
     if (req.body.status) req.body.status = toMytoolDbStatus(req.body.status);
     if (req.body.priority) req.body.priority = toMytoolDbPriority(req.body.priority);
+
+    if (hasRequestId) {
+      const idempotencyResult = mytoolTaskIdempotencyStore.begin(userId, requestId);
+      if (idempotencyResult.state === "duplicate_pending") {
+        return res.status(409).json({ error: "Duplicate create request in progress", requestId });
+      }
+      if (idempotencyResult.state === "duplicate_completed" && idempotencyResult.taskId) {
+        const existingTask = await storage.getMytoolTask(idempotencyResult.taskId);
+        if (existingTask && existingTask.ownerUserId === userId) {
+          return res.json({ ...existingTask, idempotentReplay: true, requestId });
+        }
+      }
+    }
+
     const task = await storage.createMytoolTask({ ...req.body, bucket, ownerUserId: userId });
-    res.json(task);
+    if (hasRequestId) {
+      mytoolTaskIdempotencyStore.complete(userId, requestId, task.id);
+    }
+    res.status(hasRequestId ? 200 : 201).json(task);
   } catch (err: any) {
+    if (hasRequestId) {
+      mytoolTaskIdempotencyStore.fail(userId, requestId);
+    }
     throw err;
   }
 });
@@ -182,6 +215,13 @@ router.patch("/api/mytool/tasks/:id", requireAuth, requireAdmin, async (req, res
   try {
     const taskId = parseIntParam(req.params.id);
     const userId = (req.user as any).id;
+    const validationErrors = validateTaskUpdate(req.body);
+    if (validationErrors.length > 0) {
+      return res.status(400).json({
+        error: "Validation failed",
+        fields: Object.fromEntries(validationErrors.map((err) => [err.field, err.message])),
+      });
+    }
     const existingTask = await storage.getMytoolTask(taskId);
 
     if (req.body.bucket !== undefined || req.body.projectName !== undefined) {

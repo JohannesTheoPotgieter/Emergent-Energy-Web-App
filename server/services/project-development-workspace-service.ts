@@ -1021,10 +1021,10 @@ export async function getProjectDevelopmentWorkspaceRollup(): Promise<WorkspaceR
       db
         .select({
           projectId: workItems.projectId,
-          total: sql<number>`COUNT(*)::int`,
-          completed: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${workItems.status}, ''))) IN ('completed','complete','closed','resolved','done'))::int`,
-          blocked: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${workItems.status}, ''))) IN ('blocked','on hold'))::int`,
-          overdue: sql<number>`COUNT(*) FILTER (WHERE ${workItems.endDate} IS NOT NULL AND ${workItems.endDate} < ${today} AND LOWER(TRIM(COALESCE(${workItems.status}, ''))) NOT IN ('completed','complete','closed','resolved','done'))::int`,
+          total: sql<number>`COUNT(*)`,
+          completed: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${workItems.status}, ''))) IN ('completed','complete','closed','resolved','done'))`,
+          blocked: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${workItems.status}, ''))) IN ('blocked','on hold'))`,
+          overdue: sql<number>`COUNT(*) FILTER (WHERE ${workItems.endDate} IS NOT NULL AND ${workItems.endDate} < ${today} AND LOWER(TRIM(COALESCE(${workItems.status}, ''))) NOT IN ('completed','complete','closed','resolved','done'))`,
           lastActivityAt: sql<string | null>`MAX(${workItems.updatedAt})`,
         })
         .from(workItems)
@@ -1037,7 +1037,7 @@ export async function getProjectDevelopmentWorkspaceRollup(): Promise<WorkspaceR
           // text BEFORE COALESCE because the empty-string default '' would
           // otherwise be coerced into the enum type and trigger
           // "invalid input value for enum raid_status: ''" (22P02).
-          open: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${raidItems.status}::text, ''))) NOT IN ('completed','complete','closed','resolved','done'))::int`,
+          open: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${raidItems.status}, ''))) NOT IN ('completed','complete','closed','resolved','done'))`,
         })
         .from(raidItems)
         .groupBy(raidItems.projectId),

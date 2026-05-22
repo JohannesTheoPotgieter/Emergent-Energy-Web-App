@@ -1,7 +1,7 @@
 import { Router, type Express, type Request, type Response } from "express";
 import { requireAuth, requireAdmin } from './shared-middleware';
 import { storage } from "../storage";
-import { db } from "../db";
+import { db, getDbMode } from "../db";
 import { requirePermission } from "../permission-middleware";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -719,7 +719,20 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
       // work-items-adapter.ts → getAllWorkItemsForProgress.
       db.execute(sql`SELECT wi.id, wi.project_id, pi.project_name, wi.percent_complete, wi.expected_pct_complete, wi.duration, wi.wbs_code, wi.start_date, wi.end_date, wi.actual_start, wi.actual_end, wi.title, wi.type, wi.is_milestone, wi.indent_level, wi.parent_id, wi.sort_order, wi.source_row, wi.workstream FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id WHERE wi.workstream = 'PM' AND wi.deleted_at IS NULL ORDER BY wi.project_id ASC, wi.sort_order ASC NULLS LAST, wi.source_row ASC NULLS LAST, wi.id ASC`).catch((e: any) => { console.warn("[dept-projects] workItems failed:", e.message); return { rows: [] }; }),
       db.execute(sql`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`).catch(() => ({ rows: [] })),
-      db.execute(sql`SELECT DISTINCT ON (project_id) project_id, phase_name FROM normalized_execution_phases ORDER BY project_id, created_at DESC`).catch((e: any) => { console.warn("[dept-projects] phaseRows failed:", e.message); return { rows: [] }; }),
+      (getDbMode() === "sqlite"
+        ? db.execute(sql`
+            SELECT project_id, phase_name
+            FROM (
+              SELECT
+                project_id,
+                phase_name,
+                ROW_NUMBER() OVER (PARTITION BY project_id ORDER BY created_at DESC, id DESC) AS rn
+              FROM normalized_execution_phases
+            ) ranked_phases
+            WHERE rn = 1
+          `)
+        : db.execute(sql`SELECT DISTINCT ON (project_id) project_id, phase_name FROM normalized_execution_phases ORDER BY project_id, created_at DESC`)
+      ).catch((e: any) => { console.warn("[dept-projects] phaseRows failed:", e.message); return { rows: [] }; }),
     ]);
 
     // Build fallback phase lookup from normalized_execution_phases (populated by smart import)

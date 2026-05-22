@@ -954,10 +954,10 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
         const suggestion = await qbMatchesRepository.getSuggestionById(suggestionId);
         if (!suggestion) return sendError(res, notFound("Suggestion"));
         if (suggestion.acceptedAt) {
-          return sendError(res, conflict("Suggestion already accepted."));
+          return res.status(409).json({ error: "conflict", message: "Suggestion already accepted." });
         }
         if (suggestion.rejectedAt) {
-          return sendError(res, conflict("Suggestion was already rejected."));
+          return res.status(409).json({ error: "conflict", message: "Suggestion was already rejected." });
         }
 
         // Re-derive scope (we stored expense_invoice / incoming_invoice)

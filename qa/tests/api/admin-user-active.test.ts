@@ -57,6 +57,7 @@ async function loginAsAdmin(): Promise<string> {
 function ensureTargetUser(): void {
   if (!fs.existsSync(SQLITE_DB_PATH)) return;
   const db = new Database(SQLITE_DB_PATH);
+  db.pragma("busy_timeout = 10000");
   try {
     const cols = (db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>).map((c) => c.name);
     if (!cols.includes("is_active")) {
@@ -96,6 +97,7 @@ function ensureTargetUser(): void {
 function restoreTargetUserActive(): void {
   if (!fs.existsSync(SQLITE_DB_PATH) || !targetUserId) return;
   const db = new Database(SQLITE_DB_PATH);
+  db.pragma("busy_timeout = 10000");
   try {
     db.prepare("UPDATE users SET is_active = 1 WHERE id = ?").run(targetUserId);
   } finally {

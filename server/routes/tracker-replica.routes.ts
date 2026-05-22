@@ -34,6 +34,21 @@ function parseProjectId(raw: unknown): number {
   return parsed.data;
 }
 
+async function preflightBadgeProjectParam(req: Request, res: Response, next: () => void) {
+  try {
+    const projectId = parseProjectId(req.params.projectId);
+    const exists = await trackerReplicaRepository.projectExists(projectId);
+    if (!exists) throw notFound("Project");
+    next();
+  } catch (err) {
+    if (err instanceof ApiError) {
+      res.status(err.statusCode).json({ error: err.code, message: err.message, code: err.code });
+      return;
+    }
+    next();
+  }
+}
+
 export function registerTrackerReplicaRoutes(app: Express): void {
   // ---- Revenue Tracking sheet ---------------------------------------
   // Returns project-level revenue (planned/actual + milestone list).
@@ -164,6 +179,7 @@ export function registerTrackerReplicaRoutes(app: Express): void {
   // /api/excel-vs-app/projects/:projectId.
   app.get(
     "/api/tracker-replica/:projectId/drift-count",
+    preflightBadgeProjectParam,
     requireAuth,
     requirePermission("excel_vs_app", "view"),
     async (req: Request, res: Response) => {
@@ -200,6 +216,7 @@ export function registerTrackerReplicaRoutes(app: Express): void {
   // last synced. Does NOT expose import run details or financial data.
   app.get(
     "/api/tracker-replica/:projectId/import-freshness",
+    preflightBadgeProjectParam,
     requireAuth,
     requirePermission("work_items", "view"),
     async (req: Request, res: Response) => {

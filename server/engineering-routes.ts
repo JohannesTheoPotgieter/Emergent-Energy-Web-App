@@ -1064,6 +1064,13 @@ export function registerEngineeringRoutes(app: Express) {
       // canonical lowercase form and nothing is silently skipped.
       const rawStatus: string | undefined = req.body?.status;
       const canonicalStatus = rawStatus ? toCanonicalStatus(rawStatus) : undefined;
+      if (rawStatus) {
+        const normalizedRawStatus = rawStatus.trim().toLowerCase().replace(/\s+/g, "_");
+        const isRecognizedStatus = canonicalStatus !== "not_started" || normalizedRawStatus === "not_started";
+        if (!isRecognizedStatus) {
+          return sendError(res, badRequest(`Invalid status. Must be one of: ${TASK_STATUSES.join(", ")}`));
+        }
+      }
       // H8: strip server-controlled keys to prevent mass-assignment.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const updates: Record<string, any> = { ...stripServerFields(req.body), status: canonicalStatus, updatedAt: new Date() };

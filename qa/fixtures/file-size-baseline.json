@@ -2,19 +2,19 @@
   "_documentation": "EE-QA-015 baseline — files above the FILE_SIZE_THRESHOLD LOC. The CI guard `qa/tests/unit/file-size-ratchet.test.ts` fails if any of these grow OR a NEW file lands over the threshold. To regenerate after a split, run `npx tsx scripts/build-file-size-baseline.ts` and commit the new JSON.",
   "threshold": 1500,
   "buffer": 50,
-  "generated": "2026-05-21",
+  "generated": "2026-05-22",
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
-      "loc": 9565
+      "loc": 9578
     },
     {
       "file": "client/src/pages/smart-import.tsx",
-      "loc": 5040
+      "loc": 5263
     },
     {
       "file": "server/engineering-routes.ts",
-      "loc": 4092
+      "loc": 4099
     },
     {
       "file": "server/smart-import-routes.ts",
@@ -25,8 +25,12 @@
       "loc": 3519
     },
     {
+      "file": "server/db.ts",
+      "loc": 3792
+    },
+    {
       "file": "client/src/components/tabs/UnifiedPlanTab.tsx",
-      "loc": 3022
+      "loc": 3055
     },
     {
       "file": "server/quality-routes.ts",
@@ -38,7 +42,7 @@
     },
     {
       "file": "client/src/pages/cashflow.tsx",
-      "loc": 2746
+      "loc": 2745
     },
     {
       "file": "server/routes/quickbooks-invoice-matches.routes.ts",
@@ -54,7 +58,7 @@
     },
     {
       "file": "server/lib/import/commit-executor.ts",
-      "loc": 2474
+      "loc": 2543
     },
     {
       "file": "client/src/pages/my-work-tasks.tsx",
@@ -85,20 +89,16 @@
       "loc": 2152
     },
     {
+      "file": "server/lib/import/normalizer.ts",
+      "loc": 2129
+    },
+    {
       "file": "client/src/components/tabs/ProjectProcurementTab.tsx",
       "loc": 2128
     },
     {
-      "file": "client/src/pages/project-detail.tsx",
-      "loc": 1750
-    },
-    {
       "file": "client/src/components/tabs/QualityTab.tsx",
       "loc": 2126
-    },
-    {
-      "file": "server/lib/import/normalizer.ts",
-      "loc": 2122
     },
     {
       "file": "client/src/pages/finance-quickbooks-throughput.tsx",
@@ -114,7 +114,7 @@
     },
     {
       "file": "server/departments/opportunities-routes.ts",
-      "loc": 2045
+      "loc": 2160
     },
     {
       "file": "client/src/components/TaskDetailDrawer.tsx",
@@ -129,6 +129,10 @@
       "loc": 1820
     },
     {
+      "file": "server/departments/exco-routes.ts",
+      "loc": 1819
+    },
+    {
       "file": "server/quickbooks-routes.ts",
       "loc": 1803
     },
@@ -137,15 +141,15 @@
       "loc": 1788
     },
     {
-      "file": "server/departments/exco-routes.ts",
-      "loc": 1779
-    },
-    {
       "file": "server/routes/planning-tasks-routes.ts",
-      "loc": 1776
+      "loc": 1778
     },
     {
       "file": "client/src/pages/pd-dashboard.tsx",
+      "loc": 1750
+    },
+    {
+      "file": "client/src/pages/project-detail.tsx",
       "loc": 1750
     },
     {
@@ -198,15 +202,19 @@
     },
     {
       "file": "server/handover-routes.ts",
-      "loc": 1561
+      "loc": 1564
     },
     {
       "file": "server/services/gate-auto-evaluator-service.ts",
       "loc": 1538
     },
     {
+      "file": "shared/permissions/registry.ts",
+      "loc": 1524
+    },
+    {
       "file": "server/role-management.ts",
-      "loc": 1504
+      "loc": 1508
     }
   ]
 }

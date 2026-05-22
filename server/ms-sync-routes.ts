@@ -1,7 +1,7 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import { timingSafeEqual } from "crypto";
 import { z } from "zod";
-import { db } from "./db";
+import { db, getDbMode } from "./db";
 import { eq, and, or, desc, asc, sql, inArray, isNull, ne } from "drizzle-orm";
 import { fromWorkItem, toPersonalTaskShape } from "@shared/types/unified-task";
 import {
@@ -333,7 +333,7 @@ export function registerMsSyncRoutes(app: Express) {
         .map((entry) => ({
           id: entry.assigneeId,
           name: entry.displayLabel,
-          username: entry.displayLabel,
+          username: entry.username || entry.displayLabel,
           role: entry.roleTags[0] || "",
           email: entry.secondaryLabel || undefined,
         }));
@@ -588,9 +588,30 @@ export function registerMsSyncRoutes(app: Express) {
           ORDER BY wi.sort_order ASC
         `).then((r: any) => Array.isArray(r) ? r : (r.rows || [])),
 
-        db.select().from(trItems).where(
-            sql`(${userName} = ANY(${trItems.owners}) OR ${userId} = ANY(${trItems.ownerUserIds}))`
-          ).orderBy(desc(trItems.createdAt)),
+        getDbMode() === "sqlite"
+          ? db.execute(sql`
+              SELECT *
+              FROM tr_items
+              WHERE (
+                json_valid(owners)
+                AND EXISTS (
+                  SELECT 1
+                  FROM json_each(owners)
+                  WHERE json_each.value = ${userName}
+                )
+              ) OR (
+                json_valid(owner_user_ids)
+                AND EXISTS (
+                  SELECT 1
+                  FROM json_each(owner_user_ids)
+                  WHERE CAST(json_each.value AS INTEGER) = ${userId}
+                )
+              )
+              ORDER BY created_at DESC
+            `).then((r: any) => Array.isArray(r) ? r : (r.rows || []))
+          : db.select().from(trItems).where(
+              sql`(${userName} = ANY(${trItems.owners}) OR ${userId} = ANY(${trItems.ownerUserIds}))`
+            ).orderBy(desc(trItems.createdAt)),
 
         (async () => {
           const engApprovals = await db.select({
@@ -696,7 +717,34 @@ export function registerMsSyncRoutes(app: Express) {
         ).orderBy(desc(deliverables.updatedAt)),
 
         db.execute(
-          sql`
+          getDbMode() === "sqlite" ? sql`
+              SELECT wi.id, wi.title as task_name, wi.wbs_code as task_no, wi.status,
+                     wi.percent_complete as pct_complete, wi.start_date, wi.end_date,
+                     wi.duration as duration_days, wi.actual_start as actual_start_date,
+                     wi.actual_end as actual_end_date, wi.actual_duration as actual_duration_days,
+                     wi.owner_user_id as assignee_user_id, wi.description as comment,
+                     CASE WHEN wi.type = 'milestone' THEN 1 ELSE 0 END as is_milestone,
+                     wi.project_id as project_id,
+                     pi.project_name as project_name,
+                     wi.legacy_id as import_run_id,
+                     wi.external_ref,
+                     wi.wbs_code as parent_task_no,
+                     wi.parent_id as parent_task_id,
+                     pw.title as parent_task_title,
+                     wi.workstream,
+                     wi.source,
+                     (SELECT wia.role FROM work_item_assignments wia
+                      WHERE wia.work_item_id = wi.id AND wia.user_id = ${userId}
+                      LIMIT 1) as assignment_role
+              FROM work_items wi
+              LEFT JOIN project_info pi ON wi.project_id = pi.id
+              LEFT JOIN work_items pw ON pw.id = wi.parent_id
+              WHERE wi.deleted_at IS NULL
+                AND (wi.workstream IS NULL OR wi.workstream NOT IN ('PERSONAL', 'ENG'))
+                AND (wi.owner_user_id = ${userId}
+                     OR EXISTS (SELECT 1 FROM work_item_assignments wia
+                                WHERE wia.work_item_id = wi.id AND wia.user_id = ${userId}))
+            ` : sql`
               SELECT wi.id, wi.title as task_name, wi.wbs_code as task_no, wi.status,
                      wi.percent_complete as pct_complete, wi.start_date, wi.end_date,
                      wi.duration as duration_days, wi.actual_start as actual_start_date,

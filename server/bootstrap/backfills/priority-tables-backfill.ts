@@ -4,36 +4,59 @@
  * startup. Separate from the startup_backfills_v1 gate so it applies even
  * when that one-time flag is already set.
  */
-import { db } from "../../db";
+import { db, getDbMode } from "../../db";
 import { sql } from "drizzle-orm";
 
 export async function runPriorityTablesDdl(log: (msg: string, src?: string) => void) {
+  const isSqlite = getDbMode() === "sqlite";
   const tables: Array<{ name: string; ddl: string }> = [
     {
       name: "priority_comments",
-      ddl: `
-        CREATE TABLE IF NOT EXISTS priority_comments (
-          id SERIAL PRIMARY KEY,
-          priority_id INTEGER NOT NULL REFERENCES mytool_company_priorities(id) ON DELETE CASCADE,
-          author_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-          author_name TEXT,
-          body TEXT NOT NULL,
-          edited_at TIMESTAMP,
-          deleted_at TIMESTAMP,
-          created_at TIMESTAMP NOT NULL DEFAULT NOW()
-        )
-      `,
+      ddl: isSqlite
+        ? `
+          CREATE TABLE IF NOT EXISTS priority_comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            priority_id INTEGER NOT NULL,
+            author_user_id INTEGER,
+            author_name TEXT,
+            body TEXT NOT NULL,
+            edited_at TEXT,
+            deleted_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+          )
+        `
+        : `
+          CREATE TABLE IF NOT EXISTS priority_comments (
+            id SERIAL PRIMARY KEY,
+            priority_id INTEGER NOT NULL REFERENCES mytool_company_priorities(id) ON DELETE CASCADE,
+            author_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            author_name TEXT,
+            body TEXT NOT NULL,
+            edited_at TIMESTAMP,
+            deleted_at TIMESTAMP,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW()
+          )
+        `,
     },
     {
       name: "priority_watches",
-      ddl: `
-        CREATE TABLE IF NOT EXISTS priority_watches (
-          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          priority_id INTEGER NOT NULL REFERENCES mytool_company_priorities(id) ON DELETE CASCADE,
-          created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-          CONSTRAINT priority_watches_unique PRIMARY KEY(user_id, priority_id)
-        )
-      `,
+      ddl: isSqlite
+        ? `
+          CREATE TABLE IF NOT EXISTS priority_watches (
+            user_id INTEGER NOT NULL,
+            priority_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(user_id, priority_id)
+          )
+        `
+        : `
+          CREATE TABLE IF NOT EXISTS priority_watches (
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            priority_id INTEGER NOT NULL REFERENCES mytool_company_priorities(id) ON DELETE CASCADE,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            CONSTRAINT priority_watches_unique PRIMARY KEY(user_id, priority_id)
+          )
+        `,
     },
   ];
 

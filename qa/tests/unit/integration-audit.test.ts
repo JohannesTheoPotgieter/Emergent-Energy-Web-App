@@ -26,8 +26,8 @@ describe("Phase 3: API endpoints support sub-project filtering", () => {
   // The test below documents the canonical route exists in finance-routes.ts.
   it("program-expenses canonical route exists in finance-routes.ts", () => {
     const financeRoutes = read("server/departments/finance-routes.ts");
-    expect(financeRoutes).toContain('"/api/program-expenses"');
-    expect(financeRoutes).toContain('"/api/program-expenses/:projectName"');
+    expect(financeRoutes).toMatch(/router\.get\(\s*['"]\/api\/program-expenses['"]/);
+    expect(financeRoutes).toMatch(/router\.get\(\s*['"]\/api\/program-expenses\/:projectName['"]/);
   });
 
   it("program-inflows endpoint supports subProject query parameter", () => {

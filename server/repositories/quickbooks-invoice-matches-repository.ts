@@ -8,6 +8,15 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 
+function parseJsonColumn<T>(value: unknown, fallback: T): T {
+  if (typeof value !== "string") return (value ?? fallback) as T;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 export interface CreateSuggestionInput {
   scope: string;
   qbRealmId: string;
@@ -91,7 +100,7 @@ export class QuickBooksInvoiceMatchesRepository {
       .from(quickbooksMatchSuggestions)
       .where(eq(quickbooksMatchSuggestions.id, id))
       .limit(1);
-    return row ?? null;
+    return row ? ({ ...row, candidates: parseJsonColumn(row.candidates, []) } as QuickBooksMatchSuggestion) : null;
   }
 
   async getSuggestionStatusById(id: number): Promise<SuggestionStatusProjection | null> {
@@ -162,7 +171,7 @@ export class QuickBooksInvoiceMatchesRepository {
   }
 
   async listPendingAutoSuggestions(limit: number): Promise<PendingAutoSuggestionRow[]> {
-    return this.dbInstance
+    const rows = await this.dbInstance
       .select({
         id: quickbooksMatchSuggestions.id,
         scope: quickbooksMatchSuggestions.scope,
@@ -181,6 +190,7 @@ export class QuickBooksInvoiceMatchesRepository {
       )
       .orderBy(desc(quickbooksMatchSuggestions.requestedAt))
       .limit(limit);
+    return rows.map((row: any) => ({ ...row, candidates: parseJsonColumn(row.candidates, []) }));
   }
 
   // ── quickbooks_documents ──

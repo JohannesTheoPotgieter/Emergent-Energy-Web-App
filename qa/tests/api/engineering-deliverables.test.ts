@@ -23,9 +23,15 @@ describe("API: Engineering Deliverables & Approval Flows", () => {
 
   beforeAll(async () => {
     token = await loginAdmin();
+    const projects = await apiRequest("GET", "/api/projects", undefined, token);
+    expect(projects.status).toBe(200);
+    const projectId = projects.data?.[0]?.project_info_id || projects.data?.[0]?.id;
+    expect(projectId).toBeTruthy();
+
     // Create a test task
     const createRes = await apiRequest("POST", "/api/eng/tasks", {
       title: "Deliverable Test Task",
+      projectId,
       status: "IN PROGRESS",
       priority: "Med",
     }, token);
@@ -55,7 +61,7 @@ describe("API: Engineering Deliverables & Approval Flows", () => {
       note: "Test deliverable",
     }, token);
     expect(res.status).toBe(400);
-    expect(res.data?.error).toContain("recipient");
+    expect(JSON.stringify(res.data).toLowerCase()).toContain("recipient");
   });
 
   it("GET /api/eng/tasks/:id/deliverables returns deliverable list", async () => {

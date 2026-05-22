@@ -13,7 +13,7 @@
 
 import type { Express, Request, Response } from "express";
 import { jwtAuth, requireAuth } from "../auth-context";
-import { db } from "../db";
+import { db, getDbMode } from "../db";
 import { sql } from "drizzle-orm";
 import { doNextState, type DoNextItem, type DoNextKind } from "@shared/schema/home";
 import { normalizeRoleForPermissions } from "@shared/schema/users";
@@ -172,26 +172,39 @@ async function buildOverdueTaskItems(req: Request, _role: string): Promise<DoNex
   const userId = Number((req as any).user?.id);
   if (!userId) return [];
   try {
-    // work_items.end_date is text — cast for the comparison. owner_user_id is the assignee.
-    const rows: any[] = await db.execute(sql`
-      SELECT w.id, w.title, w.end_date, p.project_name
-      FROM work_items w
-      LEFT JOIN project_info p ON p.id = w.project_id
-      WHERE w.owner_user_id = ${userId}
-        AND w.deleted_at IS NULL
-        AND w.status NOT IN ('complete', 'done', 'closed', 'cancelled')
-        AND w.end_date IS NOT NULL
-        AND w.end_date <> ''
-        -- Strict ISO date prefix + a defensive try_cast: skip rows whose text
-        -- value isn't a real calendar date so the source never throws.
-        AND w.end_date ~ '^\d{4}-\d{2}-\d{2}$'
-        AND (
-          SELECT (substring(w.end_date FROM 1 FOR 10))::date < CURRENT_DATE
-          WHERE substring(w.end_date FROM 1 FOR 10) ~ '^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'
-        ) IS TRUE
-      ORDER BY w.end_date ASC
-      LIMIT 15
-    `).then((r: any) => r.rows ?? r ?? []);
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const query = getDbMode() === "sqlite"
+      ? sql`
+        SELECT w.id, w.title, w.end_date, p.project_name
+        FROM work_items w
+        LEFT JOIN project_info p ON p.id = w.project_id
+        WHERE w.owner_user_id = ${userId}
+          AND w.deleted_at IS NULL
+          AND w.status NOT IN ('complete', 'done', 'closed', 'cancelled')
+          AND w.end_date IS NOT NULL
+          AND w.end_date <> ''
+          AND substr(w.end_date, 1, 10) < ${todayIso}
+        ORDER BY w.end_date ASC
+        LIMIT 15
+      `
+      : sql`
+        SELECT w.id, w.title, w.end_date, p.project_name
+        FROM work_items w
+        LEFT JOIN project_info p ON p.id = w.project_id
+        WHERE w.owner_user_id = ${userId}
+          AND w.deleted_at IS NULL
+          AND w.status NOT IN ('complete', 'done', 'closed', 'cancelled')
+          AND w.end_date IS NOT NULL
+          AND w.end_date <> ''
+          AND w.end_date ~ '^\d{4}-\d{2}-\d{2}$'
+          AND (
+            SELECT (substring(w.end_date FROM 1 FOR 10))::date < CURRENT_DATE
+            WHERE substring(w.end_date FROM 1 FOR 10) ~ '^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'
+          ) IS TRUE
+        ORDER BY w.end_date ASC
+        LIMIT 15
+      `;
+    const rows: any[] = await db.execute(query).then((r: any) => r.rows ?? r ?? []);
 
     return rows.map((r: any): DoNextItem => {
       const since = r.end_date ? new Date(r.end_date).toISOString() : null;
@@ -247,9 +260,6 @@ async function buildBlockedPriorityItems(_req: Request, role: string): Promise<D
 async function buildEscalatedPriorityItems(req: Request, role: string): Promise<DoNextItem[]> {
   const userId = Number((req as any).user?.id);
   if (!userId) return [];
-  // Show escalation events that happened in the last 7 days where:
-  // - the escalation target is this user's scope (dept head / company lead), OR
-  // - this user is the priority owner who needs to follow up
   const ESCALATION_ROLES = new Set([
     "COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER",
     "ENGINEERING_MANAGER", "QUALITY_MANAGER", "HSE_MANAGER", "SSEG_MANAGER",
@@ -257,24 +267,45 @@ async function buildEscalatedPriorityItems(req: Request, role: string): Promise<
   ]);
   if (!ESCALATION_ROLES.has(role)) return [];
   try {
-    const rows: any[] = await db.execute(sql`
-      SELECT
-        pa.id,
-        pa.priority_id,
-        pa.actor_name,
-        pa.to_value,
-        pa.details,
-        pa.created_at,
-        p.title AS priority_title,
-        p.scope AS priority_scope
-      FROM priority_activity pa
-      JOIN mytool_company_priorities p ON p.id = pa.priority_id
-      WHERE pa.action = 'escalated'
-        AND pa.created_at >= NOW() - INTERVAL '7 days'
-        AND p.status NOT IN ('closed', 'complete')
-      ORDER BY pa.created_at DESC
-      LIMIT 8
-    `).then((r: any) => r.rows ?? r ?? []);
+    const sevenDaysAgoIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const query = getDbMode() === "sqlite"
+      ? sql`
+        SELECT
+          pa.id,
+          pa.priority_id,
+          pa.actor_name,
+          pa.to_value,
+          pa.details,
+          pa.created_at,
+          p.title AS priority_title,
+          p.scope AS priority_scope
+        FROM priority_activity pa
+        JOIN mytool_company_priorities p ON p.id = pa.priority_id
+        WHERE pa.action = 'escalated'
+          AND pa.created_at >= ${sevenDaysAgoIso}
+          AND p.status NOT IN ('closed', 'complete')
+        ORDER BY pa.created_at DESC
+        LIMIT 8
+      `
+      : sql`
+        SELECT
+          pa.id,
+          pa.priority_id,
+          pa.actor_name,
+          pa.to_value,
+          pa.details,
+          pa.created_at,
+          p.title AS priority_title,
+          p.scope AS priority_scope
+        FROM priority_activity pa
+        JOIN mytool_company_priorities p ON p.id = pa.priority_id
+        WHERE pa.action = 'escalated'
+          AND pa.created_at >= NOW() - INTERVAL '7 days'
+          AND p.status NOT IN ('closed', 'complete')
+        ORDER BY pa.created_at DESC
+        LIMIT 8
+      `;
+    const rows: any[] = await db.execute(query).then((r: any) => r.rows ?? r ?? []);
 
     return rows.map((r: any): DoNextItem => {
       const reason = (r.details as any)?.reason || r.to_value || "";
