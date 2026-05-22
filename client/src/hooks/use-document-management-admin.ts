@@ -341,6 +341,31 @@ export interface UpsertCompanyRootPayload {
   active?: boolean;
 }
 
+export interface CompanyRootTestResult {
+  ok: boolean;
+  failureCategory?: "missing_token" | "401" | "403" | "404" | "malformed_config" | "graph_outage";
+  message?: string;
+  nextAction?: string;
+  rootPath?: string | null;
+  rootName?: string;
+  driveReachable?: boolean;
+  rootReachable?: boolean;
+  childrenReachable?: boolean;
+  childCount?: number;
+  firstFiveChildren?: Array<{
+    id: string;
+    name: string;
+    isFolder: boolean;
+  }>;
+}
+
+export interface TestCompanyRootPayload {
+  kind: string;
+  driveId?: string | null;
+  rootItemId?: string | null;
+  rootPath?: string | null;
+}
+
 export function useUpsertCompanyRoot() {
   const qc = useQueryClient();
   return useMutation<{ row: CompanySharepointRoot }, Error, UpsertCompanyRootPayload>({
@@ -354,6 +379,19 @@ export function useUpsertCompanyRoot() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: COMPANY_ROOTS_KEY });
+    },
+  });
+}
+
+export function useTestCompanyRoot() {
+  return useMutation<CompanyRootTestResult, Error, TestCompanyRootPayload>({
+    mutationFn: async ({ kind, ...payload }) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/admin/company-sharepoint-roots/${encodeURIComponent(kind)}/test`,
+        payload,
+      );
+      return res.json();
     },
   });
 }

@@ -57,6 +57,7 @@ import {
   getCompanyRootByKind,
   upsertCompanyRoot,
 } from "../repositories/company-sharepoint-roots-repository";
+import * as sp from "../services/sharepoint-document-service";
 import {
   insertFolderTaxonomySchema,
   insertDocumentApprovalRequirementSchema,
@@ -70,6 +71,33 @@ const requirementIdParam = z.coerce.number().int().positive();
 
 const taxonomyUpdateBodySchema = insertFolderTaxonomySchema.partial();
 const requirementUpdateBodySchema = insertDocumentApprovalRequirementSchema.partial();
+const companyRootKindParam = z.string().min(1).max(64).regex(/^[a-z0-9_]+$/);
+const companyRootTestBodySchema = z.object({
+  driveId: z.string().trim().max(256).nullish(),
+  rootItemId: z.string().trim().max(256).nullish(),
+  rootPath: z.string().trim().max(1024).nullish(),
+}).strict();
+
+type CompanyRootTestFailureCategory =
+  | "missing_token"
+  | "401"
+  | "403"
+  | "404"
+  | "malformed_config"
+  | "graph_outage";
+
+function failureCategoryFromRootTestError(err: unknown): CompanyRootTestFailureCategory {
+  if (err instanceof ApiError) {
+    if (err.code === "SHAREPOINT_TOKEN_UNAUTHORIZED") return "401";
+    if (err.code === "SHAREPOINT_ACCESS_DENIED") return "403";
+    if (err.code === "NOT_FOUND") return "404";
+  }
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/connector not configured|not connected|token is missing|missing token/i.test(msg)) {
+    return "missing_token";
+  }
+  return "graph_outage";
+}
 
 /** Translate repo Error.message into the right ApiError. */
 function toApiError(err: unknown, fallback = "Request failed"): ApiError {
@@ -368,6 +396,117 @@ export function registerDocumentManagementAdminRoutes(app: Express): void {
         if (err instanceof ApiError) throw err;
         console.error("[doc-mgmt-admin] list company roots error:", err);
         throw serverError("Failed to load company SharePoint roots");
+      }
+    },
+  );
+
+  app.post(
+    "/api/admin/company-sharepoint-roots/:kind/test",
+    requireAuth,
+    requirePermission("documents_admin", "view"),
+    async (req: Request, res: Response) => {
+      const parsedKind = companyRootKindParam.safeParse(req.params.kind);
+      if (!parsedKind.success) throw badRequest("Invalid root kind");
+      const parsedBody = companyRootTestBodySchema.safeParse(req.body ?? {});
+      if (!parsedBody.success) {
+        throw badRequest("Invalid SharePoint root test payload", {
+          issues: parsedBody.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+        });
+      }
+
+      const savedRoot = await getCompanyRootByKind(parsedKind.data);
+      const driveId = parsedBody.data.driveId?.trim() || savedRoot?.driveId || null;
+      const rootItemId = parsedBody.data.rootItemId?.trim() || savedRoot?.rootItemId || null;
+      const rootPath = parsedBody.data.rootPath?.trim() || savedRoot?.rootPath || null;
+
+      if (!driveId) {
+        res.json({
+          ok: false,
+          failureCategory: "malformed_config",
+          message: "Graph drive ID is required before testing this SharePoint root.",
+          nextAction: "Paste the SharePoint document-library Drive ID, then test again.",
+          rootPath,
+          driveReachable: false,
+          rootReachable: false,
+          childrenReachable: false,
+          childCount: 0,
+        });
+        return;
+      }
+
+      try {
+        let rootItem: Awaited<ReturnType<typeof sp.getItem>> | null = null;
+        if (rootItemId) {
+          rootItem = await sp.getItem(driveId, rootItemId);
+          if (!rootItem) {
+            res.json({
+              ok: false,
+              failureCategory: "404",
+              message: "SharePoint could not find the configured root item.",
+              nextAction: "Check the Graph item ID for the Active Projects folder, then test again.",
+              rootPath,
+              driveReachable: true,
+              rootReachable: false,
+              childrenReachable: false,
+              childCount: 0,
+            });
+            return;
+          }
+          if (!rootItem.isFolder) {
+            res.json({
+              ok: false,
+              failureCategory: "malformed_config",
+              message: "The configured root item is a file, not a folder.",
+              nextAction: "Use the Graph item ID for the Active Projects folder.",
+              rootPath,
+              rootName: rootItem.name,
+              driveReachable: true,
+              rootReachable: true,
+              childrenReachable: false,
+              childCount: 0,
+            });
+            return;
+          }
+        }
+
+        const children = await sp.listChildren(driveId, rootItemId);
+        res.json({
+          ok: true,
+          rootPath,
+          rootName: rootItem?.name ?? "Drive root",
+          driveReachable: true,
+          rootReachable: true,
+          childrenReachable: true,
+          childCount: children.length,
+          firstFiveChildren: children.slice(0, 5).map((item) => ({
+            id: item.id,
+            name: item.name,
+            isFolder: item.isFolder,
+          })),
+        });
+      } catch (err) {
+        const category = failureCategoryFromRootTestError(err);
+        const message = err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "SharePoint root test failed.";
+        const nextAction = err instanceof ApiError
+          ? err.nextAction
+          : category === "missing_token"
+            ? "Reconnect the Microsoft SharePoint connector or Microsoft sign-in, then retry."
+            : "Retry shortly. If it continues, check Microsoft Graph health and the SharePoint configuration.";
+        res.json({
+          ok: false,
+          failureCategory: category,
+          message,
+          nextAction,
+          rootPath,
+          driveReachable: category !== "missing_token" && category !== "401" && category !== "403",
+          rootReachable: false,
+          childrenReachable: false,
+          childCount: 0,
+        });
       }
     },
   );

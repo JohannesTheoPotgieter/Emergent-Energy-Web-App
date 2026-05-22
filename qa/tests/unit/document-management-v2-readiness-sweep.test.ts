@@ -72,6 +72,7 @@ describe("D6 Phase 3.1 — admin UI + webUrl", () => {
   it("admin routes expose GET + PUT for company SharePoint roots", () => {
     expect(adminRoutes).toMatch(/"\/api\/admin\/company-sharepoint-roots"/);
     expect(adminRoutes).toMatch(/"\/api\/admin\/company-sharepoint-roots\/:kind"/);
+    expect(adminRoutes).toMatch(/"\/api\/admin\/company-sharepoint-roots\/:kind\/test"/);
   });
 
   it("admin page renders the Active Projects root configurator", () => {
@@ -79,12 +80,15 @@ describe("D6 Phase 3.1 — admin UI + webUrl", () => {
     expect(adminPage).toContain(`data-testid="active-projects-root-status"`);
     expect(adminPage).toContain(`data-testid="btn-edit-active-projects-root"`);
     expect(adminPage).toContain(`data-testid="input-active-projects-root-drive-id"`);
+    expect(adminPage).toContain(`data-testid="btn-test-active-projects-root"`);
+    expect(adminPage).toContain(`data-testid="active-projects-root-test-result"`);
     expect(adminPage).toContain(`data-testid="btn-save-active-projects-root"`);
   });
 
   it("admin hooks export company-roots query + upsert", () => {
     expect(adminHooks).toMatch(/export function useCompanySharepointRoots/);
     expect(adminHooks).toMatch(/export function useUpsertCompanyRoot/);
+    expect(adminHooks).toMatch(/export function useTestCompanyRoot/);
   });
 
   it("project_folders schema declares webUrl column with backing migration", () => {

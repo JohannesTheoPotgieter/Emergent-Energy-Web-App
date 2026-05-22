@@ -49,10 +49,12 @@ import {
   useVerifyProjectFolders,
   useCompanySharepointRoots,
   useUpsertCompanyRoot,
+  useTestCompanyRoot,
   type CreateTaxonomyPayload,
   type CreateRequirementPayload,
   type ProvisionResult,
   type CompanySharepointRoot,
+  type CompanyRootTestResult,
 } from "@/hooks/use-document-management-admin";
 import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { isSuperAdmin } from "@/lib/access-control";
@@ -1057,6 +1059,8 @@ function CompanyRootCard(props: {
 }) {
   const { root, isLoading } = props;
   const upsert = useUpsertCompanyRoot();
+  const testRoot = useTestCompanyRoot();
+  const [testResult, setTestResult] = useState<CompanyRootTestResult | null>(null);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     displayName: "Active Projects",
@@ -1076,7 +1080,13 @@ function CompanyRootCard(props: {
         rootItemId: root.rootItemId ?? "",
       });
     }
+    setTestResult(null);
     setEditing(true);
+  }
+
+  function patchForm<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
+    setForm((s) => ({ ...s, [key]: value }));
+    setTestResult(null);
   }
 
   async function save() {
@@ -1093,6 +1103,39 @@ function CompanyRootCard(props: {
     } catch (err) {
       toast({
         title: "Save failed",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  }
+
+  async function testConnection() {
+    if (!form.driveId.trim()) {
+      toast({
+        title: "Drive ID required",
+        description: "Paste the Graph drive ID before testing this SharePoint root.",
+        variant: "destructive",
+      });
+      return;
+    }
+    try {
+      const result = await testRoot.mutateAsync({
+        kind: "active_projects",
+        driveId: form.driveId.trim() || null,
+        rootItemId: form.rootItemId.trim() || null,
+        rootPath: form.rootPath.trim() || null,
+      });
+      setTestResult(result);
+      toast({
+        title: result.ok ? "SharePoint root reachable" : "SharePoint root test failed",
+        description: result.ok
+          ? `${result.rootName ?? "Root"} returned ${result.childCount ?? 0} item${(result.childCount ?? 0) === 1 ? "" : "s"}.`
+          : result.nextAction ?? result.message ?? "Check the SharePoint configuration.",
+        variant: result.ok ? undefined : "destructive",
+      });
+    } catch (err) {
+      toast({
+        title: "SharePoint root test failed",
         description: err instanceof Error ? err.message : "Unknown error",
         variant: "destructive",
       });
@@ -1161,7 +1204,7 @@ function CompanyRootCard(props: {
                 <Label>Display name</Label>
                 <Input
                   value={form.displayName}
-                  onChange={(e) => setForm((s) => ({ ...s, displayName: e.target.value }))}
+                  onChange={(e) => patchForm("displayName", e.target.value)}
                   data-testid="input-active-projects-root-display-name"
                 />
               </div>
@@ -1169,7 +1212,7 @@ function CompanyRootCard(props: {
                 <Label>SharePoint path</Label>
                 <Input
                   value={form.rootPath}
-                  onChange={(e) => setForm((s) => ({ ...s, rootPath: e.target.value }))}
+                  onChange={(e) => patchForm("rootPath", e.target.value)}
                   data-testid="input-active-projects-root-path"
                 />
               </div>
@@ -1177,7 +1220,7 @@ function CompanyRootCard(props: {
                 <Label>Graph drive ID</Label>
                 <Input
                   value={form.driveId}
-                  onChange={(e) => setForm((s) => ({ ...s, driveId: e.target.value }))}
+                  onChange={(e) => patchForm("driveId", e.target.value)}
                   placeholder="b!xxxxxx..."
                   data-testid="input-active-projects-root-drive-id"
                 />
@@ -1186,7 +1229,7 @@ function CompanyRootCard(props: {
                 <Label>Graph item ID (parent folder)</Label>
                 <Input
                   value={form.rootItemId}
-                  onChange={(e) => setForm((s) => ({ ...s, rootItemId: e.target.value }))}
+                  onChange={(e) => patchForm("rootItemId", e.target.value)}
                   placeholder="01XXXXXXXXXXXXX..."
                   data-testid="input-active-projects-root-item-id"
                 />
@@ -1196,7 +1239,53 @@ function CompanyRootCard(props: {
               The drive + item IDs come from Graph Explorer or the SharePoint URL. In dev (mock
               connector), placeholder IDs are auto-seeded.
             </p>
+            {testResult && (
+              <div
+                className={`rounded-md border px-3 py-2 text-xs ${
+                  testResult.ok
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                    : "border-rose-200 bg-rose-50 text-rose-900"
+                }`}
+                data-testid="active-projects-root-test-result"
+              >
+                <div className="flex items-center gap-1.5 font-medium">
+                  {testResult.ok ? (
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  ) : (
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                  )}
+                  {testResult.ok ? "Connection OK" : "Connection failed"}
+                  {!testResult.ok && testResult.failureCategory ? ` · ${testResult.failureCategory}` : ""}
+                </div>
+                {testResult.ok ? (
+                  <p className="mt-1 text-emerald-800">
+                    {testResult.rootName ?? "Root"} reachable · {testResult.childCount ?? 0} item{(testResult.childCount ?? 0) === 1 ? "" : "s"} found.
+                  </p>
+                ) : (
+                  <>
+                    {testResult.message && <p className="mt-1">{testResult.message}</p>}
+                    {testResult.nextAction && (
+                      <p className="mt-1 text-rose-700">{testResult.nextAction}</p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
             <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={testConnection}
+                disabled={testRoot.isPending || !form.driveId.trim()}
+                data-testid="btn-test-active-projects-root"
+              >
+                {testRoot.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                )}
+                Test
+              </Button>
               <Button
                 size="sm"
                 onClick={save}
