@@ -20,6 +20,10 @@ const adminRoutes = fs.readFileSync(
   path.join(repoRoot, "server", "routes", "document-management-admin.routes.ts"),
   "utf8",
 );
+const companyRootsRepo = fs.readFileSync(
+  path.join(repoRoot, "server", "repositories", "company-sharepoint-roots-repository.ts"),
+  "utf8",
+);
 const adminPage = fs.readFileSync(
   path.join(repoRoot, "client", "src", "pages", "admin-document-management.tsx"),
   "utf8",
@@ -64,6 +68,21 @@ const adminHooks = fs.readFileSync(
   path.join(repoRoot, "client", "src", "hooks", "use-document-management-admin.ts"),
   "utf8",
 );
+const adminIntegrationsPage = fs.readFileSync(
+  path.join(repoRoot, "client", "src", "pages", "admin-integrations.tsx"),
+  "utf8",
+);
+const documentManagementSharepointPanelPath = path.join(
+  repoRoot,
+  "client",
+  "src",
+  "components",
+  "admin",
+  "document-management-sharepoint-panel.tsx",
+);
+const documentManagementSharepointPanel = fs.existsSync(documentManagementSharepointPanelPath)
+  ? fs.readFileSync(documentManagementSharepointPanelPath, "utf8")
+  : "";
 const journal = JSON.parse(
   fs.readFileSync(path.join(repoRoot, "migrations", "meta", "_journal.json"), "utf8"),
 ) as { entries: Array<{ tag?: string }> };
@@ -89,6 +108,12 @@ describe("D6 Phase 3.1 — admin UI + webUrl", () => {
     expect(adminHooks).toMatch(/export function useCompanySharepointRoots/);
     expect(adminHooks).toMatch(/export function useUpsertCompanyRoot/);
     expect(adminHooks).toMatch(/export function useTestCompanyRoot/);
+  });
+
+  it("company roots repository normalizes active flags for SQLite dev mode", () => {
+    expect(companyRootsRepo).toMatch(/getDbMode/);
+    expect(companyRootsRepo).toMatch(/sqliteBoolean/);
+    expect(companyRootsRepo).not.toContain("eq(companySharepointRoots.active, true)");
   });
 
   it("project_folders schema declares webUrl column with backing migration", () => {
@@ -122,6 +147,41 @@ describe("D6 Phase 3.1 — admin UI + webUrl", () => {
   it("dev seed creates a placeholder active_projects root in mock-connector mode", () => {
     expect(seedFile).toMatch(/isConnectorMocked\(["']ms-graph["']\)/);
     expect(seedFile).toMatch(/kind:\s*["']active_projects["']/);
+  });
+});
+
+describe("D6 Phase 3.2 — Integration Statuses document setup", () => {
+  it("Integration Statuses mounts the document-management SharePoint setup panel", () => {
+    expect(adminIntegrationsPage).toMatch(/DocumentManagementSharePointPanel/);
+    expect(adminIntegrationsPage).toMatch(
+      /@\/components\/admin\/document-management-sharepoint-panel/,
+    );
+  });
+
+  it("document setup panel exposes Engineering and Quality document status cards", () => {
+    expect(documentManagementSharepointPanel).toContain(
+      `data-testid="document-management-sharepoint-panel"`,
+    );
+    expect(documentManagementSharepointPanel).toContain(`integration-engineering-documents-card`);
+    expect(documentManagementSharepointPanel).toContain(`integration-quality-documents-card`);
+  });
+
+  it("document setup panel lets admins maintain and test the shared Active Projects root", () => {
+    expect(documentManagementSharepointPanel).toMatch(/useCompanySharepointRoots/);
+    expect(documentManagementSharepointPanel).toMatch(/useUpsertCompanyRoot/);
+    expect(documentManagementSharepointPanel).toMatch(/useTestCompanyRoot/);
+    expect(documentManagementSharepointPanel).toContain(
+      `data-testid="input-integration-active-projects-root-drive-id"`,
+    );
+    expect(documentManagementSharepointPanel).toContain(
+      `data-testid="btn-integration-test-active-projects-root"`,
+    );
+    expect(documentManagementSharepointPanel).toContain(
+      `data-testid="btn-integration-save-active-projects-root"`,
+    );
+    expect(documentManagementSharepointPanel).toContain(
+      `data-testid="integration-active-projects-root-test-result"`,
+    );
   });
 });
 

@@ -6,8 +6,8 @@
  * "Company" surface.
  */
 
-import { and, asc, eq } from "drizzle-orm";
-import { db } from "../db";
+import { asc, eq } from "drizzle-orm";
+import { db, getDbMode } from "../db";
 import {
   companySharepointRoots,
   type CompanySharepointRoot,
@@ -20,12 +20,16 @@ function isMissingTableError(err: unknown): boolean {
   return /42P01|42703|does not exist|no such table/i.test(msg);
 }
 
+function sqliteBoolean(value: boolean): boolean | 0 | 1 {
+  return getDbMode() === "sqlite" ? (value ? 1 : 0) : value;
+}
+
 export async function listActiveCompanyRoots(): Promise<CompanySharepointRoot[]> {
   try {
     return await db
       .select()
       .from(companySharepointRoots)
-      .where(eq(companySharepointRoots.active, true))
+      .where(eq(companySharepointRoots.active, sqliteBoolean(true) as any))
       .orderBy(asc(companySharepointRoots.sortOrder), asc(companySharepointRoots.displayName));
   } catch (err) {
     if (isMissingTableError(err)) return [];
@@ -72,7 +76,7 @@ export async function upsertCompanyRoot(input: InsertCompanySharepointRoot): Pro
         rootItemId: input.rootItemId ?? null,
         rootPath: input.rootPath,
         sortOrder: input.sortOrder ?? existing.sortOrder,
-        active: input.active ?? existing.active,
+        active: sqliteBoolean(input.active ?? existing.active) as any,
         updatedAt: new Date(),
       })
       .where(eq(companySharepointRoots.id, existing.id))
@@ -81,7 +85,10 @@ export async function upsertCompanyRoot(input: InsertCompanySharepointRoot): Pro
   }
   const [created] = await db
     .insert(companySharepointRoots)
-    .values(input)
+    .values({
+      ...input,
+      active: sqliteBoolean(input.active ?? true) as any,
+    })
     .returning();
   return created;
 }
