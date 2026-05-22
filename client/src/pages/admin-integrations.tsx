@@ -36,6 +36,7 @@ import { Upload, FileSpreadsheet, ExternalLink, RefreshCw, CheckCircle2, AlertTr
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatRelativeWithAbsoluteZA } from "@/lib/datetime";
 import { ConnectionsSection } from "./role-settings";
+import { DocumentManagementSharePointPanel } from "@/components/admin/document-management-sharepoint-panel";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -947,6 +948,7 @@ export default function AdminIntegrationsPage() {
       <div className="space-y-6">
         <SmartImportPanel />
         <SharePointAutoImportPanel />
+        <DocumentManagementSharePointPanel />
         <ConnectionsSection />
       </div>
     </PageLayout>
