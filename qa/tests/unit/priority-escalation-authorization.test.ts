@@ -182,6 +182,26 @@ describe("priorities sprint 2 — per-user shared-task promotion semantics", () 
   });
 });
 
+describe("priorities — break-down child count on detail", () => {
+  it("GET /api/priorities/:id passes a childCountMap to enrichPriority", () => {
+    const source = read("server/departments/priority-strategic-routes.ts");
+    const detailBlock = routeBlock(
+      source,
+      '"/api/priorities/:id"',
+      "// ==================== PUT /api/priorities/:id ====================",
+    );
+
+    // Regression for: parent.childCount was always 0 on the detail page even
+    // after a break-down. The list endpoint built a child-count map but the
+    // detail endpoint never did, so enrichPriority fell back to 0.
+    expect(detailBlock).toContain("childCountMap");
+    expect(detailBlock).toMatch(/enrichPriority\([^)]*childCountMap[^)]*\)/);
+    // The query must only count ACTIVE children — closed/complete kids
+    // should not drive the "N sub-priorities" badge.
+    expect(detailBlock).toContain("activePriorityStatusCondition()");
+  });
+});
+
 describe("priorities sprint 2 — atomic PUT", () => {
   it("PUT priority wraps row update + project-link replacement in db.transaction", () => {
     const source = read("server/departments/priority-strategic-routes.ts");
