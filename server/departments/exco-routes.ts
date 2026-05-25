@@ -368,8 +368,35 @@ router.put("/api/mytool/daily-review", requireAuth, requireAdmin, async (req, re
 });
 
 // ==================== MY TOOL - COMPANY PRIORITIES ====================
+//
+// DEPRECATED — these /api/mytool/company-priorities endpoints predate
+// /api/priorities. Keep them alive for the four pages that still call
+// them (project-lifecycle, engineering-dashboard, my-work-meetings,
+// my-work-admin-settings) but add a Sunset header + console.warn so
+// we can monitor usage and plan removal. Migrate one caller per
+// follow-up sprint, then drop these endpoints.
+//
+// Canonical replacements (see server/departments/priority-strategic-routes.ts):
+//   GET    /api/mytool/company-priorities         →  GET    /api/priorities?scope=company
+//   POST   /api/mytool/company-priorities         →  POST   /api/priorities
+//   PATCH  /api/mytool/company-priorities/:id     →  PUT    /api/priorities/:id
+//   DELETE /api/mytool/company-priorities/:id     →  DELETE /api/priorities/:id  (archives)
+//   GET    /api/mytool/company-priorities/:id/links → priority_links is deprecated;
+//                                                    new code uses priority_projects via
+//                                                    POST/DELETE /api/priorities/:id/projects
+function logLegacyCompanyPriorityCall(req: Request) {
+  console.warn(`[DEPRECATED] ${req.method} ${req.path} hit. Migrate to /api/priorities. Caller=${req.headers["user-agent"] || "unknown"}`);
+}
+function attachLegacyDeprecationHeaders(res: Response) {
+  // RFC 8594 Sunset header + a custom hint pointing at the replacement.
+  res.setHeader("Sunset", new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
+  res.setHeader("Deprecation", "true");
+  res.setHeader("Link", '</api/priorities>; rel="successor-version"');
+}
 
 router.get("/api/mytool/company-priorities", requireAuth, async (req, res) => {
+  logLegacyCompanyPriorityCall(req);
+  attachLegacyDeprecationHeaders(res);
   try {
     const { horizon } = req.query;
     const priorities = await storage.getMytoolCompanyPriorities(horizon as string | undefined);
@@ -432,6 +459,8 @@ router.get("/api/mytool/company-priorities", requireAuth, async (req, res) => {
 });
 
 router.post("/api/mytool/company-priorities", requireAuth, requirePriorityAdmin, async (req, res) => {
+  logLegacyCompanyPriorityCall(req);
+  attachLegacyDeprecationHeaders(res);
   try {
     const parsed = companyPriorityWriteSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -448,6 +477,8 @@ router.post("/api/mytool/company-priorities", requireAuth, requirePriorityAdmin,
 });
 
 router.patch("/api/mytool/company-priorities/:id", requireAuth, requirePriorityAdmin, async (req, res) => {
+  logLegacyCompanyPriorityCall(req);
+  attachLegacyDeprecationHeaders(res);
   try {
     const parsed = companyPriorityWriteSchema.partial().safeParse(req.body);
     if (!parsed.success) {
@@ -461,6 +492,8 @@ router.patch("/api/mytool/company-priorities/:id", requireAuth, requirePriorityA
 });
 
 router.delete("/api/mytool/company-priorities/:id", requireAuth, requirePriorityAdmin, async (req, res) => {
+  logLegacyCompanyPriorityCall(req);
+  attachLegacyDeprecationHeaders(res);
   try {
     await storage.updateMytoolCompanyPriority(parseIntParam(req.params.id), { status: "closed" } as any);
     res.json({ success: true, mode: "soft_close" });
@@ -472,6 +505,8 @@ router.delete("/api/mytool/company-priorities/:id", requireAuth, requirePriority
 // ==================== PRIORITY LINKS (many-to-many) ====================
 
 router.get("/api/mytool/company-priorities/:id/links", requireAuth, async (req, res) => {
+  logLegacyCompanyPriorityCall(req);
+  attachLegacyDeprecationHeaders(res);
   try {
     const priorityId = parseIntParam(req.params.id);
     const links = await db.select().from(priorityLinks).where(eq(priorityLinks.priorityId, priorityId));
@@ -516,6 +551,8 @@ router.get("/api/mytool/priority-links", requireAuth, async (_req, res) => {
 });
 
 router.post("/api/mytool/company-priorities/:id/links", requireAuth, requirePriorityAdmin, async (req, res) => {
+  logLegacyCompanyPriorityCall(req);
+  attachLegacyDeprecationHeaders(res);
   try {
     const priorityId = parseIntParam(req.params.id);
     const { linkType, projectName, taskId, taskType } = req.body;
