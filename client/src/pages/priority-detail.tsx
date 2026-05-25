@@ -353,6 +353,35 @@ export default function PriorityDetailPage() {
     onError: (err) => toast({ title: "Could not close priority", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
+  const archiveMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", `/api/priorities/${priorityId}`);
+    },
+    onSuccess: () => {
+      void invalidatePriorityQueries(queryClient);
+      toast({ title: "Priority archived", description: "It's removed from default views. Restore from the archived filter." });
+    },
+    onError: (err) => {
+      const detail = err instanceof Error ? err.message : "Unknown error";
+      const friendly = /HAS_ACTIVE_CHILDREN/i.test(detail)
+        ? "Close or archive the sub-priorities first."
+        : detail;
+      toast({ title: "Could not archive", description: friendly, variant: "destructive" });
+    },
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", `/api/priorities/${priorityId}/restore`);
+    },
+    onSuccess: () => {
+      void invalidatePriorityQueries(queryClient);
+      invalidateDetail();
+      toast({ title: "Priority restored" });
+    },
+    onError: (err) => toast({ title: "Could not restore", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
+  });
+
   if (isLoading) return <PageSkeleton lines={5} />;
   if (isError) return <PageShell><PageError title="Unable to load priority" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
 
@@ -572,6 +601,37 @@ export default function PriorityDetailPage() {
                   onClick={() => setBreakDownDialogOpen(true)}
                 >
                   <GitBranch className="w-3 h-3 mr-1" /> Break Down
+                </Button>
+              )}
+              {canUsePriorityAdminActions && !(priority as any).deletedAt && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs h-7 text-muted-foreground hover:text-red-600"
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: "Archive this priority?",
+                      description:
+                        "It will be hidden from default views but kept for audit. Admins can restore it from the archived filter. Active sub-priorities must be closed first.",
+                      confirmLabel: "Archive",
+                      destructive: true,
+                    });
+                    if (ok) archiveMutation.mutate();
+                  }}
+                  disabled={archiveMutation.isPending}
+                >
+                  {archiveMutation.isPending ? "Archiving..." : "Archive"}
+                </Button>
+              )}
+              {canUsePriorityAdminActions && (priority as any).deletedAt && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs h-7"
+                  onClick={() => restoreMutation.mutate()}
+                  disabled={restoreMutation.isPending}
+                >
+                  {restoreMutation.isPending ? "Restoring..." : "Restore"}
                 </Button>
               )}
             </div>

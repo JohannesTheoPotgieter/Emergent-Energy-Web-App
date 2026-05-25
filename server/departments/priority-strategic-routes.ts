@@ -59,8 +59,40 @@ function activePriorityStatusSql(columnName = "status") {
   return sql.raw(`${columnName} NOT IN ('closed', 'complete')`);
 }
 
+/**
+ * Default predicate hiding soft-deleted priorities. Applied to every
+ * list/detail read unless the caller opted in via include_archived=true
+ * AND has admin role. See migration 0069.
+ */
+function notDeletedCondition() {
+  return isNull(mytoolCompanyPriorities.deletedAt);
+}
+
+function notDeletedSql(columnName = "deleted_at") {
+  return sql.raw(`${columnName} IS NULL`);
+}
+
 function getDepartmentForRole(role: string | null | undefined): string | undefined {
   return role ? (ROLE_DEPARTMENT_MAP as Record<string, string>)[role] : undefined;
+}
+
+/**
+ * Drizzle's better-sqlite3 driver returns a TEXT timestamp column as a
+ * `new Date(text)` object even when the text is an ISO string the JS
+ * Date constructor accepts. When the value is NULL, it returns a JS
+ * `new Date(null)` which evaluates to "Invalid Date" but is still
+ * `typeof object` — so a `?? null` fallback won't catch it. Normalize
+ * any timestamp-shaped field through this helper before serialising.
+ */
+function normalizeTimestamp(value: any): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) {
+    const t = value.getTime();
+    return Number.isFinite(t) ? value.toISOString() : null;
+  }
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return new Date(value).toISOString();
+  return null;
 }
 
 function nullableNumber(value: number | null | undefined): number | null {
@@ -536,6 +568,7 @@ async function enrichPriority(
     escalated: priority.escalated ?? false,
     escalatedAt: priority.escalatedAt ?? priority.escalated_at ?? null,
     escalationReason: priority.escalationReason ?? priority.escalation_reason ?? null,
+    deletedAt: normalizeTimestamp(priority.deletedAt ?? priority.deleted_at),
     createdAt: priority.createdAt ?? priority.created_at,
     updatedAt: priority.updatedAt ?? priority.updated_at,
   };
@@ -643,6 +676,10 @@ async function enrichPriority(
 //                        &include_team_roles=true  (dept tab: include team's role priorities)
 router.get("/api/priorities", requireAuth, asyncHandler(async (req: Request, res: Response) => {
   const includeCancelled = req.query.include_cancelled === "true";
+  // Archived (soft-deleted) priorities are hidden by default. Only
+  // priority admins may opt in via include_archived=true.
+  const callerRole = getEffectiveUser(req)?.role;
+  const includeArchived = req.query.include_archived === "true" && isPriorityAdminRole(callerRole);
   const rawScope = typeof req.query.scope === "string" ? req.query.scope : undefined;
   const scopeFilter: PriorityScope | null =
     rawScope && PRIORITY_SCOPES.includes(rawScope as PriorityScope)
@@ -662,6 +699,12 @@ router.get("/api/priorities", requireAuth, asyncHandler(async (req: Request, res
     console.error("[Priorities] DB query failed:", dbErr.message);
     const raw: any = await db.execute(sql`SELECT * FROM mytool_company_priorities ORDER BY id`);
     allPriorities = raw.rows || raw || [];
+  }
+
+  // Hide soft-deleted (archived) priorities unless explicitly requested.
+  // (normalizeTimestamp handles better-sqlite3's Invalid-Date object.)
+  if (!includeArchived) {
+    allPriorities = allPriorities.filter((p: any) => normalizeTimestamp(p.deletedAt ?? p.deleted_at) == null);
   }
 
   // Filter out cancelled unless requested
@@ -839,6 +882,10 @@ router.get("/api/priorities/my-work", requireAuth, requirePermission("company_pr
     priorities = raw.rows || raw || [];
   }
   priorities = priorities.filter((p: any) => {
+    // Archived priorities never appear in My Work, even for admins. The
+    // admin's archive view lives behind include_archived=true on the
+    // list endpoint, not the user's daily feed.
+    if (normalizeTimestamp(p.deletedAt ?? p.deleted_at) != null) return false;
     const owner = p.ownerUserId ?? p.owner_user_id ?? null;
     const assigned = p.assignedUserId ?? p.assigned_user_id ?? null;
     if (owner !== userId && assigned !== userId) return false;
@@ -1174,6 +1221,14 @@ router.get("/api/priorities/:id", requireAuth, asyncHandler(async (req: Request,
   if (priorityId === null) throw badRequest("Invalid priority id");
   const [priority] = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
   if (!priority) throw notFound("Priority");
+  // Archived priorities are 404 to non-admins. Admins can fetch via
+  // ?include_archived=true so the restore UI can read the row.
+  // (normalizeTimestamp handles better-sqlite3's "Invalid Date" oddity.)
+  if (normalizeTimestamp(priority.deletedAt) != null) {
+    const callerRole = getEffectiveUser(req)?.role;
+    const wantArchived = req.query.include_archived === "true" && isPriorityAdminRole(callerRole);
+    if (!wantArchived) throw notFound("Priority");
+  }
 
     const metrics = await getPriorityDerivedMetrics(priorityId);
     // Direct child count for the header badge ("3 sub-priorities") on the
@@ -1706,6 +1761,13 @@ async function getPriorityProgressSourceOptions(req: Request, res: Response) {
 }
 
 // ==================== DELETE /api/priorities/:id ====================
+// DELETE = archive (soft-delete). Was previously aliased to "set
+// status=closed", but that's semantically different — a closed priority
+// is still visible on the include-closed view and still relevant for
+// audit. Archive removes the row from every default surface but keeps
+// it restorable. Children stay live with their parent still recorded;
+// archiving a parent with active children is rejected (409) so the
+// caller has to deal with descendants intentionally.
 router.delete(
   "/api/priorities/:id",
   requireAuth,
@@ -1715,21 +1777,74 @@ router.delete(
     if (priorityId === null) throw badRequest("Invalid priority id");
     const existing = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
     if (existing.length === 0) throw notFound("Priority");
+    if (normalizeTimestamp(existing[0].deletedAt) != null) throw badRequest("Priority is already archived");
 
-    // Soft delete: set status to 'closed'
+    const liveChildren = await db
+      .select({ id: mytoolCompanyPriorities.id })
+      .from(mytoolCompanyPriorities)
+      .where(
+        and(
+          eq(mytoolCompanyPriorities.parentId, priorityId),
+          isNull(mytoolCompanyPriorities.deletedAt),
+          activePriorityStatusCondition(),
+        ),
+      );
+    if (liveChildren.length > 0) {
+      throw new ApiError(409, "HAS_ACTIVE_CHILDREN",
+        "Cannot archive a priority with active sub-priorities. Close or archive each child first.",
+        { childCount: liveChildren.length, childIds: liveChildren.map((c: { id: number }) => c.id) });
+    }
+
+    const now = new Date();
     await db.update(mytoolCompanyPriorities)
-      .set({ status: "closed", updatedAt: new Date() })
+      .set({ deletedAt: now.toISOString(), updatedAt: now })
       .where(eq(mytoolCompanyPriorities.id, priorityId));
 
     await recordActivity({
       priorityId,
       actorUserId: getEffectiveUser(req)?.id,
-      action: "closed",
-      fromValue: existing[0].status,
-      toValue: "closed",
+      action: "updated",
+      fromValue: null,
+      toValue: "archived",
+      details: { field: "deletedAt", archived: true },
     });
 
     res.status(204).send();
+  }),
+);
+
+// POST /api/priorities/:id/restore — undo an archive. Admin-only.
+// Idempotent: restoring an already-live priority is a no-op 200.
+router.post(
+  "/api/priorities/:id/restore",
+  requireAuth,
+  requireCooOnly,
+  asyncHandler(async (req: Request, res: Response) => {
+    const priorityId = parseIdParam(req.params.id);
+    if (priorityId === null) throw badRequest("Invalid priority id");
+    const existing = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
+    if (existing.length === 0) throw notFound("Priority");
+
+    if (normalizeTimestamp(existing[0].deletedAt) != null) {
+      const now = new Date();
+      await db.update(mytoolCompanyPriorities)
+        .set({ deletedAt: null, updatedAt: now })
+        .where(eq(mytoolCompanyPriorities.id, priorityId));
+
+      await recordActivity({
+        priorityId,
+        actorUserId: getEffectiveUser(req)?.id,
+        action: "updated",
+        fromValue: "archived",
+        toValue: null,
+        details: { field: "deletedAt", restored: true },
+      });
+    }
+
+    const [updated] = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
+    const metrics = await getPriorityDerivedMetrics(priorityId);
+    const enriched = await enrichPriority(updated, metrics);
+    res.json(enriched);
   }),
 );
 

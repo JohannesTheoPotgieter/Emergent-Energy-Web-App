@@ -139,6 +139,14 @@ export const mytoolCompanyPriorities = pgTable("mytool_company_priorities", {
   escalated: boolean("escalated").notNull().default(false),
   escalatedAt: timestamp("escalated_at"),
   escalationReason: text("escalation_reason"),
+  // Soft-delete (archive) flag. NULL = live, non-null = archived.
+  // All list/detail reads filter `deleted_at IS NULL` by default;
+  // admins opt in via `include_archived=true`. See migration 0069.
+  // mode: "string" — better-sqlite3 stores this as TEXT (ISO string),
+  // and Drizzle's default Date parsing returns "Invalid Date" for
+  // SQLite TEXT timestamps. Keeping it as a string round-trips
+  // correctly across both drivers.
+  deletedAt: timestamp("deleted_at", { mode: "string" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
