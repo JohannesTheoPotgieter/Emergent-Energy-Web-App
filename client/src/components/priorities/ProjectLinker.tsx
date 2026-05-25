@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiRequest } from "@/lib/queryClient";
 import { invalidatePriorityQueries } from "@/lib/priority-query-invalidation";
+import { useToast } from "@/hooks/use-toast";
 
 interface ProjectOption {
   id: number;
@@ -37,6 +38,7 @@ export function ProjectLinker({
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<number[]>([]);
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: allProjects = [] } = useQuery<ProjectOption[]>({
     queryKey: ["/api/v2/projects", "linker"],
@@ -86,8 +88,15 @@ export function ProjectLinker({
     },
     onSuccess: () => {
       void invalidatePriorityQueries(queryClient, priorityId);
+      toast({ title: `Linked ${selected.length} project${selected.length === 1 ? "" : "s"}` });
       onDone();
     },
+    onError: (err) =>
+      toast({
+        title: "Could not link projects",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      }),
   });
 
   const toggle = (id: number, on: boolean) =>

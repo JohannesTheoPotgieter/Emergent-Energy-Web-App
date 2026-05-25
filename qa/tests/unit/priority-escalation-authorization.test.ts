@@ -193,7 +193,9 @@ describe("priorities sprint 2 — atomic PUT", () => {
 
     // The whole write path is inside one transaction so a failure midway
     // through the link replacement rolls back the priority update.
-    expect(putBlock).toMatch(/await db\.transaction\(async \(tx[^)]*\)\s*=>/);
+    // (Uses runInTransaction helper that drops to direct writes on SQLite
+    // dev fallback — better-sqlite3 rejects async callbacks.)
+    expect(putBlock).toMatch(/await runInTransaction\(async \(tx\)\s*=>/);
     // Activities are deferred until after commit so a rolled-back
     // transaction never leaves orphan audit entries.
     expect(putBlock).toContain("pendingActivities");
