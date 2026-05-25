@@ -470,6 +470,9 @@ async function enrichPriority(
     ownerUserId: priority.ownerUserId ?? priority.owner_user_id,
     priorityRank: priority.priorityRank ?? priority.priority_rank,
     horizon: priority.horizon,
+    nextAction: priority.nextAction ?? priority.next_action ?? null,
+    definitionOfDone: priority.definitionOfDone ?? priority.definition_of_done ?? null,
+    support: priority.support ?? null,
     // Cascade fields
     scope: (priority.scope ?? 'company') as PriorityScope,
     parentId: priority.parentId ?? priority.parent_id ?? null,
@@ -2630,13 +2633,16 @@ router.post("/api/priorities/:id/reopen", requireAuth, requirePermission("compan
     .where(eq(mytoolCompanyPriorities.id, priorityId))
     .returning();
 
+  // Use the dedicated "reopened" action so the activity timeline shows
+  // the semantic event, not a generic "updated" entry. The
+  // PriorityActivityAction union already includes "reopened".
   await recordActivity({
     priorityId,
     actorUserId: getEffectiveUser(req)?.id,
-    action: "updated",
+    action: "reopened",
     fromValue: priority.status,
     toValue: "active",
-    details: { field: "status", reopened: true },
+    details: { field: "status" },
   });
 
   const metrics = await getPriorityDerivedMetrics(priorityId);

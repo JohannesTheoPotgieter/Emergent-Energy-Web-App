@@ -767,9 +767,10 @@ export default function PriorityDetailPage() {
                                 });
                                 if (ok) unlinkMutation.mutate(p.id);
                               }}
-                              className="text-muted-foreground hover:text-red-600"
-                              title="Unlink project"
+                              className="text-muted-foreground hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed"
+                              title={unlinkMutation.isPending && unlinkMutation.variables === p.id ? "Unlinking…" : "Unlink project"}
                               aria-label={`Unlink ${p.name}`}
+                              disabled={unlinkMutation.isPending}
                             >
                               <X className="w-3.5 h-3.5" aria-hidden="true" />
                             </button>
