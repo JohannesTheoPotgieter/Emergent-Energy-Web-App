@@ -1506,6 +1506,9 @@ async function ensureSqliteSchema() {
     `));
     await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS idx_mytool_company_priorities_status ON mytool_company_priorities(status)`));
     await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS idx_mytool_company_priorities_owner ON mytool_company_priorities(owner_user_id, assigned_user_id)`));
+    // Soft-delete column (migration 0069). Idempotent for existing dbs.
+    try { await db.run(sql.raw(`ALTER TABLE mytool_company_priorities ADD COLUMN deleted_at TEXT`)); } catch {}
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS idx_priorities_deleted_at ON mytool_company_priorities(deleted_at)`));
 
     await db.run(sql.raw(`
       CREATE TABLE IF NOT EXISTS priority_activity (

@@ -112,6 +112,10 @@ export default function PrioritiesPage() {
   const [levelFilter, setLevelFilter] = useState(initialFilters.level);
   const [healthFilter, setHealthFilter] = useState(initialFilters.health);
   const [showClosed, setShowClosed] = useState(false);
+  // Admin-only "Archived" view. Toggling this switches the list query
+  // to include_archived=true so soft-deleted priorities surface for the
+  // admin to restore.
+  const [showArchived, setShowArchived] = useState(false);
   const [bulkSelected, setBulkSelected] = useState<Set<number>>(new Set());
   // Admins can pick which department to view on the Department tab. Dept
   // heads are pinned to their own department and never see the dropdown.
@@ -133,8 +137,12 @@ export default function PrioritiesPage() {
   };
   const clearBulkSelection = () => setBulkSelected(new Set());
 
-  const listQueryParams = (base: string) =>
-    showClosed ? `${base}&include_cancelled=true` : base;
+  const listQueryParams = (base: string) => {
+    let q = base;
+    if (showClosed) q = `${q}&include_cancelled=true`;
+    if (showArchived && isAdmin) q = `${q}&include_archived=true`;
+    return q;
+  };
 
   // My Priorities — unified feed of priorities AND work_items owned by /
   // assigned to the current user. Backend de-duplicates: work items already
@@ -160,7 +168,7 @@ export default function PrioritiesPage() {
   });
 
   const deptQuery = useQuery<PriorityRow[]>({
-    queryKey: ["/api/priorities", "department", effectiveDeptForQuery, showClosed],
+    queryKey: ["/api/priorities", "department", effectiveDeptForQuery, showClosed, showArchived],
     queryFn: () => fetchPriorities(
       listQueryParams(
         `scope=department${effectiveDeptForQuery ? `&department=${effectiveDeptForQuery}` : ""}&include_team_roles=true`,
@@ -170,7 +178,7 @@ export default function PrioritiesPage() {
   });
 
   const companyQuery = useQuery<PriorityRow[]>({
-    queryKey: ["/api/priorities", "company", showClosed],
+    queryKey: ["/api/priorities", "company", showClosed, showArchived],
     queryFn: () => fetchPriorities(listQueryParams("scope=company")),
     enabled: activeTab === "company",
   });
@@ -493,6 +501,18 @@ export default function PrioritiesPage() {
                 <SelectItem value="healthy">Healthy</SelectItem>
               </SelectContent>
             </Select>
+            {isAdmin && (
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showArchived}
+                  onChange={(e) => setShowArchived(e.target.checked)}
+                  className="rounded"
+                  data-testid="toggle-show-archived"
+                />
+                Show archived
+              </label>
+            )}
             <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
               <input
                 type="checkbox"

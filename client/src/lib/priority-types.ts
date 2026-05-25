@@ -81,6 +81,12 @@ export interface PriorityRow {
    */
   linkedTaskId: number | null;
   linkedTaskType: string | null;
+  /**
+   * Soft-delete timestamp. NULL = live; non-null = archived. Admins
+   * with `?include_archived=true` may receive archived rows; everyone
+   * else gets 404 on the detail and exclusion from the list.
+   */
+  deletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
