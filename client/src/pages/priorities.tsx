@@ -349,7 +349,17 @@ export default function PrioritiesPage() {
     } else if (activeTab === "company") {
       qs.set("scope", "company");
     }
-    window.open(`/api/reports/priorities-pack?${qs.toString()}`, "_blank");
+    // `window.open` returns null on popup-block; surface that instead of
+    // failing silently. A 0-width returned-window also indicates the
+    // browser refused (some hardened configs).
+    const popup = window.open(`/api/reports/priorities-pack?${qs.toString()}`, "_blank");
+    if (!popup || popup.closed) {
+      toast({
+        title: "Couldn't open the export",
+        description: "Your browser blocked the pop-up. Allow pop-ups for this site and try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
