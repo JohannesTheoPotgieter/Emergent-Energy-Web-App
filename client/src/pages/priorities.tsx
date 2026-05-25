@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import {
   canPriorityRoleCreateScope,
+  canPriorityRoleEscalatePriority,
   canPriorityRoleUseAdminAction,
   isPriorityAdminRole,
   isDepartmentHeadRole,
@@ -71,6 +72,16 @@ export default function PrioritiesPage() {
   const isDeptHead = isDepartmentHeadRole(user?.role);
   const canUsePriorityAdminActions = canPriorityRoleUseAdminAction(user?.role);
   const userDepartment = user?.role ? ROLE_DEPARTMENT_MAP[user.role] : undefined;
+  const canEscalatePriorityRow = (p: PriorityRow) =>
+    canPriorityRoleEscalatePriority(
+      { role: user?.role, userId: user?.id, departmentKey: userDepartment ?? null },
+      {
+        scope: p.scope ?? "company",
+        departmentKey: p.departmentKey ?? null,
+        ownerUserId: p.owner?.id ?? null,
+        assignedUserId: p.assignedUserId ?? null,
+      },
+    );
 
   const tabParam = params.get("tab");
   // Three-tier escalation (2026-05-12 COO spec):
@@ -502,7 +513,7 @@ export default function PrioritiesPage() {
               isError={myWorkFeedQuery.isError}
               error={myWorkFeedQuery.error as Error}
               refetch={myWorkFeedQuery.refetch}
-              showEscalate={canUsePriorityAdminActions}
+              showEscalate={canEscalatePriorityRow}
               onEscalate={(id) => {
                 const p = myPriorities.find((x) => x.id === id);
                 if (p) setEscalateTarget({ id: p.id, title: p.title, scope: p.scope });
@@ -514,9 +525,11 @@ export default function PrioritiesPage() {
               onToggleSelect={toggleBulkSelect}
               emptyMessage="Nothing on your priority list yet"
               emptyAction={
-                <Button size="sm" className="mt-3" onClick={() => setCreateDialogOpen(true)}>
-                  <Plus className="w-4 h-4 mr-1" /> Create My Priority
-                </Button>
+                canCreateInActiveTab ? (
+                  <Button size="sm" className="mt-3" onClick={() => setCreateDialogOpen(true)}>
+                    <Plus className="w-4 h-4 mr-1" /> Create My Priority
+                  </Button>
+                ) : undefined
               }
             />
 
@@ -548,7 +561,7 @@ export default function PrioritiesPage() {
               isError={deptQuery.isError}
               error={deptQuery.error as Error}
               refetch={deptQuery.refetch}
-              showEscalate={canUsePriorityAdminActions}
+              showEscalate={canEscalatePriorityRow}
               onEscalate={(id) => {
                 const p = filteredDept.find((x) => x.id === id);
                 if (p) setEscalateTarget({ id: p.id, title: p.title, scope: p.scope });
@@ -566,9 +579,11 @@ export default function PrioritiesPage() {
                   : `No priorities for ${DEPARTMENT_OPTIONS.find((d) => d.value === effectiveDeptForQuery)?.label || "this department"}`
               }
               emptyAction={
-                <Button size="sm" className="mt-3" onClick={() => setCreateDialogOpen(true)}>
-                  <Plus className="w-4 h-4 mr-1" /> Create Department Priority
-                </Button>
+                canCreateInActiveTab ? (
+                  <Button size="sm" className="mt-3" onClick={() => setCreateDialogOpen(true)}>
+                    <Plus className="w-4 h-4 mr-1" /> Create Department Priority
+                  </Button>
+                ) : undefined
               }
             />
           </TabsContent>
