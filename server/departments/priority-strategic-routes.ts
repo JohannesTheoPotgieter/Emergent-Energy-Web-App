@@ -1118,7 +1118,16 @@ router.get("/api/priorities/:id", requireAuth, asyncHandler(async (req: Request,
   if (!priority) throw notFound("Priority");
 
     const metrics = await getPriorityDerivedMetrics(priorityId);
-    const enriched = await enrichPriority(priority, metrics);
+    // Direct child count for the header badge ("3 sub-priorities") on the
+    // detail page. The list endpoint computes this in a single grouped
+    // query; here it's a one-row lookup against the same predicate (active
+    // children only — closed/complete children don't drive the badge).
+    const directChildren = await db
+      .select({ id: mytoolCompanyPriorities.id })
+      .from(mytoolCompanyPriorities)
+      .where(and(eq(mytoolCompanyPriorities.parentId, priorityId), activePriorityStatusCondition()));
+    const childCountMap = new Map<number, number>([[priorityId, directChildren.length]]);
+    const enriched = await enrichPriority(priority, metrics, undefined, undefined, childCountMap);
 
     const { descendantPriorityIds, directProjectIds, rolledUpProjectIds } = await resolveRolledUpScope(priorityId);
 
