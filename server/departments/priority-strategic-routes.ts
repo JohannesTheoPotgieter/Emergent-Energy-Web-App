@@ -199,14 +199,69 @@ const basePrioritySchema = z.object({
   }).nullable().optional(),
 });
 
-const createPrioritySchema = basePrioritySchema;
+/**
+ * Semantic refinement for progress_source_type ↔ progress_source_ref.
+ * Run as a `.superRefine` step on top of both create and update schemas,
+ * since z.partial() can't be called on the output of superRefine.
+ * Without this, a payload like
+ *   { progress_source_type: "milestone_revenue", progress_source_ref: { workItemIds: [...] } }
+ * saves cleanly and the compute function silently returns 0% forever
+ * (see server/lib/priorities/progress-source.ts).
+ */
+function refineProgressSource(
+  data: { progress_source_type?: string | null; progress_source_ref?: any },
+  ctx: z.RefinementCtx,
+) {
+  const type = data.progress_source_type;
+  const ref = data.progress_source_ref;
+  if (!type || type === "manual") return;
+  if (!ref) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["progress_source_ref"],
+      message: `progress_source_ref is required when progress_source_type='${type}'`,
+    });
+    return;
+  }
+  if ((type === "project_phase" || type === "project_percent") && !ref.projectId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["progress_source_ref", "projectId"],
+      message: `projectId is required when progress_source_type='${type}'`,
+    });
+  }
+  if (type === "project_phase" && !ref.phaseCode) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["progress_source_ref", "phaseCode"],
+      message: "phaseCode is required when progress_source_type='project_phase'",
+    });
+  }
+  if (type === "milestone_revenue" && !ref.milestoneId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["progress_source_ref", "milestoneId"],
+      message: "milestoneId is required when progress_source_type='milestone_revenue'",
+    });
+  }
+  if (type === "tasks_rollup" && (!ref.workItemIds || ref.workItemIds.length === 0)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["progress_source_ref", "workItemIds"],
+      message: "workItemIds (non-empty array) is required when progress_source_type='tasks_rollup'",
+    });
+  }
+}
+
+const createPrioritySchema = basePrioritySchema.superRefine(refineProgressSource);
 
 const updatePrioritySchema = basePrioritySchema
   .partial()
   .extend({
     status: statusEnum.optional(),
     priority_rank: z.number().int().nullable().optional(),
-  });
+  })
+  .superRefine(refineProgressSource);
 
 const escalatePrioritySchema = z.object({
   reason: reasonEnum.optional(),

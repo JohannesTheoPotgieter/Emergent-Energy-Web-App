@@ -2388,6 +2388,23 @@ async function ensureSqliteSchema() {
     try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN import_snapshot TEXT`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN manual_overrides TEXT`)); } catch {}
 
+    // work_item_status_history — append-only audit trail for work-item
+    // status transitions. Created lazily here so the SQLite dev/test
+    // fallback can exercise code paths that INSERT into it (e.g.
+    // POST /api/priorities/tasks, status-change flows).
+    await db.run(sql.raw(`
+      CREATE TABLE IF NOT EXISTS work_item_status_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        work_item_id INTEGER NOT NULL,
+        old_status TEXT,
+        new_status TEXT NOT NULL,
+        changed_by INTEGER,
+        changed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        reason TEXT
+      )
+    `));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS idx_wish_work_item ON work_item_status_history(work_item_id)`));
+
     await db.run(sql.raw(`
       CREATE TABLE IF NOT EXISTS work_item_pm (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
