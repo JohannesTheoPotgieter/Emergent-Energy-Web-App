@@ -2,28 +2,28 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useTransitionStage } from "@/hooks/use-stage-lifecycle";
-import { getValidNextStates } from "@shared/utils/stage-state-machine";
+import { getValidNextStates, normalizeStageStatus } from "@shared/utils/stage-state-machine";
 import type { StageStatus, ProjectStageInstance } from "@shared/schema";
 import { ArrowRight, Loader2, Calendar, User, Clock } from "lucide-react";
 
 const STATUS_LABELS: Record<string, string> = {
-  NOT_STARTED: "Not Started",
-  IN_PROGRESS: "In Progress",
-  READY_FOR_REVIEW: "Ready for Review",
-  APPROVED: "Approved",
-  PROGRESSED: "Progressed",
-  EXCEPTION_APPROVED: "Exception Approved",
-  BLOCKED: "Blocked",
+  not_started: "Not Started",
+  in_progress: "In Progress",
+  ready_for_review: "Ready for Review",
+  approved: "Approved",
+  progressed: "Progressed",
+  exception_approved: "Exception Approved",
+  blocked: "Blocked",
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  NOT_STARTED: "bg-gray-100 text-gray-700",
-  IN_PROGRESS: "bg-blue-100 text-blue-700",
-  READY_FOR_REVIEW: "bg-amber-100 text-amber-700",
-  APPROVED: "bg-green-100 text-green-700",
-  PROGRESSED: "bg-emerald-100 text-emerald-700",
-  EXCEPTION_APPROVED: "bg-purple-100 text-purple-700",
-  BLOCKED: "bg-red-100 text-red-700",
+  not_started: "bg-gray-100 text-gray-700",
+  in_progress: "bg-blue-100 text-blue-700",
+  ready_for_review: "bg-amber-100 text-amber-700",
+  approved: "bg-green-100 text-green-700",
+  progressed: "bg-emerald-100 text-emerald-700",
+  exception_approved: "bg-purple-100 text-purple-700",
+  blocked: "bg-red-100 text-red-700",
 };
 
 interface StageWorkspaceShellProps {
@@ -50,11 +50,11 @@ export function StageWorkspaceShell({
   actions,
 }: StageWorkspaceShellProps) {
   const transitionMutation = useTransitionStage(projectId);
-  const currentStatus = stage.stageStatus as StageStatus;
+  const currentStatus = normalizeStageStatus(stage.stageStatus) as StageStatus;
   const validNext = getValidNextStates(currentStatus, isAdmin);
 
   const handleTransition = (newStatus: StageStatus) => {
-    transitionMutation.mutate({ stageCode, newStatus, isOverride: isAdmin });
+    transitionMutation.mutate({ stageCode, newStatus });
   };
 
   const daysInStage = stage.startedAt

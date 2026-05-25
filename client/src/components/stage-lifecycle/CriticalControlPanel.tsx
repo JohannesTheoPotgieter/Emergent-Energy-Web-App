@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useProjectStages, useInitializeStages, useAdvanceToStage, type StageDashboardPayload } from "@/hooks/use-stage-lifecycle";
-import { STAGE_SEQUENCE } from "@shared/utils/stage-state-machine";
+import { STAGE_SEQUENCE, normalizeStageStatus } from "@shared/utils/stage-state-machine";
 import { PHASES } from "@shared/phases";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -29,23 +29,23 @@ interface CriticalControlPanelProps {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  NOT_STARTED: "bg-gray-100 text-gray-700",
-  IN_PROGRESS: "bg-blue-100 text-blue-700",
-  READY_FOR_REVIEW: "bg-amber-100 text-amber-700",
-  APPROVED: "bg-green-100 text-green-700",
-  PROGRESSED: "bg-emerald-100 text-emerald-800",
-  EXCEPTION_APPROVED: "bg-orange-100 text-orange-700",
-  BLOCKED: "bg-red-100 text-red-700",
+  not_started: "bg-gray-100 text-gray-700",
+  in_progress: "bg-blue-100 text-blue-700",
+  ready_for_review: "bg-amber-100 text-amber-700",
+  approved: "bg-green-100 text-green-700",
+  progressed: "bg-emerald-100 text-emerald-800",
+  exception_approved: "bg-orange-100 text-orange-700",
+  blocked: "bg-red-100 text-red-700",
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  NOT_STARTED: "Not Started",
-  IN_PROGRESS: "In Progress",
-  READY_FOR_REVIEW: "Ready for Review",
-  APPROVED: "Approved",
-  PROGRESSED: "Progressed",
-  EXCEPTION_APPROVED: "Exception Approved",
-  BLOCKED: "Blocked",
+  not_started: "Not Started",
+  in_progress: "In Progress",
+  ready_for_review: "Ready for Review",
+  approved: "Approved",
+  progressed: "Progressed",
+  exception_approved: "Exception Approved",
+  blocked: "Blocked",
 };
 
 // Stage labels are derived from the canonical lifecycle in
@@ -119,8 +119,9 @@ export function CriticalControlPanel({ projectId, onViewGate, isAdmin = false }:
 
   const { currentStage, statusSentence, openExceptionCount, openDependencyCount, requirements } = data;
   const stageLabel = STAGE_LABELS[currentStage.stageCode] || currentStage.stageCode;
-  const statusLabel = STATUS_LABELS[currentStage.stageStatus] || currentStage.stageStatus;
-  const statusColor = STATUS_COLORS[currentStage.stageStatus] || "bg-gray-100 text-gray-700";
+  const statusKey = normalizeStageStatus(currentStage.stageStatus);
+  const statusLabel = STATUS_LABELS[statusKey] || currentStage.stageStatus;
+  const statusColor = STATUS_COLORS[statusKey] || "bg-gray-100 text-gray-700";
 
   // Terminal-aware sequence resolution.
   // STAGE_SEQUENCE assigns 0 to S_HOLD and S_DONE; the prior code used
@@ -147,9 +148,10 @@ export function CriticalControlPanel({ projectId, onViewGate, isAdmin = false }:
       });
 
   const handleAdvance = () => {
-    if (!selectedTarget) return;
+    const trimmedReason = advanceReason.trim();
+    if (!selectedTarget || trimmedReason.length === 0) return;
     advanceMutation.mutate(
-      { targetStageCode: selectedTarget, reason: advanceReason || undefined },
+      { targetStageCode: selectedTarget, reason: trimmedReason },
       {
         onSuccess: (result: any) => {
           const skippedCount = result.skipped?.length || 0;
@@ -234,7 +236,7 @@ export function CriticalControlPanel({ projectId, onViewGate, isAdmin = false }:
           <DialogHeader>
             <DialogTitle>Skip to Stage</DialogTitle>
             <DialogDescription>
-              Advance this project to the stage it's actually at. All earlier stages will be marked as completed (Progressed). This is logged in the decision register.
+              Advance this project to the stage it's actually at. All earlier stages will be marked as progressed. This requires COO approval and is logged in the decision register.
             </DialogDescription>
           </DialogHeader>
 
@@ -270,12 +272,12 @@ export function CriticalControlPanel({ projectId, onViewGate, isAdmin = false }:
                     const seq = STAGE_SEQUENCE[c as keyof typeof STAGE_SEQUENCE];
                     return seq >= currentSeq && seq < (STAGE_SEQUENCE[selectedTarget as keyof typeof STAGE_SEQUENCE] || 0);
                   }).length}
-                </strong> stage(s) will be marked as Progressed (skipped). The target stage will be set to In Progress.
+                </strong> stage(s) will be marked as progressed. The target stage will be set to in progress.
               </div>
             )}
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Reason <span className="text-muted-foreground font-normal">(optional)</span></label>
+              <label className="text-sm font-medium">Reason <span className="text-destructive">*</span></label>
               <Textarea
                 placeholder="e.g. Project already in construction — aligning system with reality"
                 value={advanceReason}
@@ -292,7 +294,7 @@ export function CriticalControlPanel({ projectId, onViewGate, isAdmin = false }:
             </Button>
             <Button
               onClick={handleAdvance}
-              disabled={!selectedTarget || advanceMutation.isPending}
+              disabled={!selectedTarget || advanceReason.trim().length === 0 || advanceMutation.isPending}
               data-testid="button-advance-confirm"
             >
               {advanceMutation.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <FastForward className="mr-1.5 h-3.5 w-3.5" />}

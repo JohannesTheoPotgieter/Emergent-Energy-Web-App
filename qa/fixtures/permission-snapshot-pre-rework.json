@@ -2753,7 +2753,7 @@
       "create": true,
       "edit": true,
       "approve": true,
-      "override": true,
+      "override": false,
       "delete": true
     },
     "stage_lifecycle": {
@@ -4645,7 +4645,7 @@
       "create": false,
       "edit": true,
       "approve": false,
-      "override": true,
+      "override": false,
       "delete": false
     },
     "stage_lifecycle": {
@@ -11267,7 +11267,7 @@
       "create": true,
       "edit": true,
       "approve": false,
-      "override": true,
+      "override": false,
       "delete": false
     },
     "stage_lifecycle": {

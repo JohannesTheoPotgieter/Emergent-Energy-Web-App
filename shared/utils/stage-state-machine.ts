@@ -6,6 +6,7 @@
 
 import type { StageStatus, RequirementStatus, StageCode } from "../schema/stage-lifecycle";
 import { SEQUENTIAL_STAGE_CODES, DEPRECATED_STAGE_CODES, TERMINAL_STAGE_CODES } from "../schema/stage-lifecycle";
+import { normalizeWithLegacy } from "./status-normalization";
 
 // Valid state transitions (non-admin) — C6 canonical lowercase_underscore
 export const VALID_STAGE_TRANSITIONS: Record<StageStatus, StageStatus[]> = {
@@ -41,6 +42,70 @@ export function getValidNextStates(current: StageStatus, isAdmin: boolean): Stag
 
 /** Statuses considered "done" for a requirement */
 const COMPLETED_STATUSES: RequirementStatus[] = ['complete', 'not_applicable', 'waived'];
+const COMPLETED_STATUS_SET = new Set<string>(COMPLETED_STATUSES);
+
+export interface GateRequirementInput {
+  status: string;
+  blocksGate: boolean;
+  itemName?: string;
+  evidenceAttached?: boolean | null;
+  evidenceUrl?: string | null;
+  autoStatus?: string | null;
+  autoEvidenceUrl?: string | null;
+}
+
+export interface UnsatisfiedGateRequirement {
+  itemName: string;
+  reason: "not_complete" | "missing_evidence";
+}
+
+export function normalizeStageStatus(status: string | null | undefined): StageStatus {
+  return normalizeWithLegacy(status ?? "") as StageStatus;
+}
+
+export function getEffectiveRequirementStatus(requirement: { status: string; autoStatus?: string | null }): RequirementStatus {
+  const manualStatus = normalizeWithLegacy(requirement.status) as RequirementStatus;
+  if (manualStatus === "not_started" && requirement.autoStatus) {
+    return normalizeWithLegacy(requirement.autoStatus) as RequirementStatus;
+  }
+  return manualStatus;
+}
+
+export function isRequirementComplete(requirement: { status: string; autoStatus?: string | null }): boolean {
+  return COMPLETED_STATUS_SET.has(getEffectiveRequirementStatus(requirement));
+}
+
+function hasRequirementEvidence(requirement: GateRequirementInput): boolean {
+  const hasEvidenceFields =
+    Object.prototype.hasOwnProperty.call(requirement, "evidenceAttached") ||
+    Object.prototype.hasOwnProperty.call(requirement, "evidenceUrl") ||
+    Object.prototype.hasOwnProperty.call(requirement, "autoEvidenceUrl") ||
+    Object.prototype.hasOwnProperty.call(requirement, "autoStatus");
+
+  if (!hasEvidenceFields) return true;
+
+  return Boolean(
+    requirement.evidenceAttached === true ||
+    (typeof requirement.evidenceUrl === "string" && requirement.evidenceUrl.trim().length > 0) ||
+    (typeof requirement.autoEvidenceUrl === "string" && requirement.autoEvidenceUrl.trim().length > 0),
+  );
+}
+
+export function getUnsatisfiedGateClosureRequirements(requirements: GateRequirementInput[]): UnsatisfiedGateRequirement[] {
+  return requirements
+    .filter((requirement) => requirement.blocksGate)
+    .map((requirement) => {
+      const itemName = requirement.itemName || "Unnamed gate requirement";
+      if (!isRequirementComplete(requirement)) {
+        return { itemName, reason: "not_complete" as const };
+      }
+      if (!hasRequirementEvidence(requirement)) {
+        return { itemName, reason: "missing_evidence" as const };
+      }
+      return null;
+    })
+    .filter((requirement): requirement is UnsatisfiedGateRequirement => requirement !== null);
+}
 
 /**
  * Compute readiness percentage from requirement statuses.
@@ -48,26 +113,22 @@ const COMPLETED_STATUSES: RequirementStatus[] = ['complete', 'not_applicable', '
  */
 export function computeReadinessPct(requirements: { status: string; blocksGate: boolean }[]): number {
   if (requirements.length === 0) return 100;
-  const completed = requirements.filter(r => COMPLETED_STATUSES.includes(r.status as RequirementStatus)).length;
+  const completed = requirements.filter(r => isRequirementComplete(r)).length;
   return Math.round((completed / requirements.length) * 100);
 }
 
 /**
  * Check if all gate-blocking requirements are satisfied.
  */
-export function areGateBlockersSatisfied(requirements: { status: string; blocksGate: boolean }[]): boolean {
-  return requirements
-    .filter(r => r.blocksGate)
-    .every(r => COMPLETED_STATUSES.includes(r.status as RequirementStatus));
+export function areGateBlockersSatisfied(requirements: GateRequirementInput[]): boolean {
+  return getUnsatisfiedGateClosureRequirements(requirements).length === 0;
 }
 
 /**
  * Get the list of unsatisfied gate-blocking items.
  */
-export function getUnsatisfiedBlockers(requirements: { status: string; blocksGate: boolean; itemName: string }[]): string[] {
-  return requirements
-    .filter(r => r.blocksGate && !COMPLETED_STATUSES.includes(r.status as RequirementStatus))
-    .map(r => r.itemName);
+export function getUnsatisfiedBlockers(requirements: GateRequirementInput[]): string[] {
+  return getUnsatisfiedGateClosureRequirements(requirements).map(r => r.itemName);
 }
 
 export interface StatusSentenceInput {

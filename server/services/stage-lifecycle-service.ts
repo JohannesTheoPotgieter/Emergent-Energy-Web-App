@@ -17,6 +17,7 @@ import {
   STAGE_CODES,
   TERMINAL_STAGE_CODES,
   SEQUENTIAL_STAGE_CODES,
+  STAGE_STATUSES,
   type StageCode,
   type StageStatus,
   type InsertProjectStageInstance,
@@ -34,9 +35,12 @@ import {
   computeReadinessPct,
   areGateBlockersSatisfied,
   getUnsatisfiedBlockers,
+  getUnsatisfiedGateClosureRequirements,
   generateStatusSentence,
   computeDaysInStage,
   STAGE_SEQUENCE,
+  normalizeStageStatus,
+  isRequirementComplete,
 } from "../../shared/utils/stage-state-machine";
 
 // ── B1: Stage Gate Evidence Snapshots — audit trail helpers ──
@@ -98,7 +102,7 @@ function summarizeRequirements(reqs: ProjectStageRequirement[]): {
   const requirementsSnapshot: RequirementLike[] = reqs.map((r) => {
     const eff = effectiveSnapshotStatus(r);
     const isComplete =
-      eff.status === "COMPLETE" || eff.status === "complete";
+      isRequirementComplete({ status: eff.status });
     if (isComplete) gatesPassed += 1;
     else {
       missingItems.push({
@@ -355,7 +359,7 @@ export async function initializeProjectStages(projectId: number): Promise<Projec
       toCreate.push({
         projectId,
         stageCode: def.stageCode,
-        stageStatus: 'NOT_STARTED',
+        stageStatus: 'not_started',
         readinessPct: 0,
       });
     }
@@ -451,7 +455,7 @@ export async function hydrateStageChecklist(projectId: number, stageCode: string
         itemName: t.itemName,
         itemCode: t.itemCode,
         blocksGate: t.blocksGate,
-        status: 'NOT_STARTED',
+        status: 'not_started',
         // §6b: pin the template version so a future sync can diff cleanly.
         sourceTemplateId: t.id,
         templateVersionAtHydrate: t.version,
@@ -750,6 +754,9 @@ export async function applyTemplateSync(params: ApplyTemplateSyncParams): Promis
 
 // ── Stage Transition ────────────────────────────────────────
 
+export const STAGE_BYPASS_APPROVER_ROLES = new Set<string>(['COO_ADMIN']);
+const STAGE_CLOSEOUT_STATUSES = new Set<StageStatus>(['approved', 'progressed']);
+
 export interface TransitionParams {
   projectId: number;
   stageCode: string;
@@ -779,30 +786,58 @@ export async function transitionStageStatus(params: TransitionParams): Promise<P
     throw new Error(`Stage instance not found for project ${projectId}, stage ${stageCode}`);
   }
 
-  const currentStatus = instance.stageStatus as StageStatus;
-  const isAdmin = isOverride === true;
-
-  if (!canTransition(currentStatus, newStatus, isAdmin)) {
-    throw new Error(`Invalid transition from ${currentStatus} to ${newStatus}${isAdmin ? '' : ' (not admin)'}`);
+  const currentStatus = normalizeStageStatus(instance.stageStatus);
+  const targetStatus = normalizeStageStatus(newStatus);
+  const validStageStatuses = STAGE_STATUSES as readonly string[];
+  if (!validStageStatuses.includes(targetStatus)) {
+    throw new Error(`Invalid stage status: ${newStatus}`);
   }
 
-  // B1 (audit closeout): stage gates NEVER block a transition. We record
-  // what evidence was captured at this moment in stage_gate_evidence_snapshots
-  // and proceed regardless of blocker state. Post-mortems can query the
-  // snapshot history to explain why a project failed six months later.
-  //
-  // The snapshot write happens after the status update below so that the
-  // captured `to_stage_code` is the effective new status.
+  const reasonText = typeof reason === 'string' ? reason.trim() : '';
+  const isBypass = isOverride === true;
+
+  if (isBypass && !STAGE_BYPASS_APPROVER_ROLES.has(actorRole)) {
+    throw new Error('Stage gate bypass requires COO approval.');
+  }
+  if (isBypass && reasonText.length === 0) {
+    throw new Error('Stage gate bypass requires a written reason.');
+  }
+
+  if (!canTransition(currentStatus, targetStatus, isBypass)) {
+    throw new Error(`Invalid transition from ${currentStatus} to ${targetStatus}${isBypass ? '' : ' (not admin)'}`);
+  }
+
+  if (STAGE_CLOSEOUT_STATUSES.has(targetStatus) && !isBypass) {
+    const requirements = await db
+      .select()
+      .from(projectStageRequirements)
+      .where(eq(projectStageRequirements.stageInstanceId, instance.id));
+
+    if (requirements.length === 0) {
+      throw new Error('Stage gate has no checklist evidence. Hydrate the checklist and attach evidence, or request COO bypass.');
+    }
+
+    const unsatisfied = getUnsatisfiedGateClosureRequirements(requirements);
+    if (unsatisfied.length > 0) {
+      const first = unsatisfied.slice(0, 3).map((item) => {
+        const suffix = item.reason === 'missing_evidence' ? 'missing evidence' : 'not complete';
+        return `${item.itemName} (${suffix})`;
+      });
+      throw new Error(
+        `Stage gate blocked: ${first.join(', ')}${unsatisfied.length > 3 ? ` (+${unsatisfied.length - 3} more)` : ''}. Attach evidence or request COO bypass.`,
+      );
+    }
+  }
 
   const updateData: Record<string, any> = {
-    stageStatus: newStatus,
+    stageStatus: targetStatus,
     updatedAt: new Date(),
   };
 
-  if (newStatus === 'in_progress' && !instance.startedAt) {
+  if (targetStatus === 'in_progress' && !instance.startedAt) {
     updateData.startedAt = new Date();
   }
-  if (newStatus === 'progressed' || newStatus === 'approved') {
+  if (targetStatus === 'progressed' || targetStatus === 'approved') {
     updateData.completedAt = new Date();
   }
 
@@ -812,14 +847,17 @@ export async function transitionStageStatus(params: TransitionParams): Promise<P
     .where(eq(projectStageInstances.id, instance.id));
 
   // Log decision
+  const decisionType = isBypass
+    ? 'stage_override'
+    : (STAGE_CLOSEOUT_STATUSES.has(targetStatus) ? 'gate_pass' : 'stage_status_change');
   await db.insert(projectStageDecisions).values({
     projectId,
     stageCode,
-    decisionType: isAdmin ? 'stage_override' : (newStatus === 'approved' ? 'gate_pass' : 'gate_fail'),
-    decisionSummary: `Stage ${stageCode} transitioned from ${currentStatus} to ${newStatus}${reason ? ': ' + reason : ''}`,
+    decisionType,
+    decisionSummary: `Stage ${stageCode} transitioned from ${currentStatus} to ${targetStatus}${reasonText ? ': ' + reasonText : ''}`,
     decidedByUserId: actorUserId,
     decidedDate: new Date(),
-    rationale: reason || null,
+    rationale: reasonText || null,
   });
 
   await recordAudit({
@@ -827,15 +865,15 @@ export async function transitionStageStatus(params: TransitionParams): Promise<P
     userId: actorUserId,
     entityType: "stage",
     entityId: `${projectId}:${stageCode}`,
-    action: isAdmin ? "STAGE_OVERRIDE_STATUS" : "TRANSITION_STAGE_STATUS",
-    changesJson: { projectId, stageCode, fromStatus: currentStatus, toStatus: newStatus, reason: reason ?? null, isOverride: isAdmin === true },
+    action: isBypass ? "STAGE_OVERRIDE_STATUS" : "TRANSITION_STAGE_STATUS",
+    changesJson: { projectId, stageCode, fromStatus: currentStatus, toStatus: targetStatus, reason: reasonText || null, isOverride: isBypass === true },
   });
 
-  // B1: capture stage gate evidence snapshot for post-mortem. Non-blocking.
-  if (newStatus === 'approved' || newStatus === 'progressed') {
-    const transitionType = isAdmin
+  // Capture stage gate evidence snapshot for post-mortem.
+  if (targetStatus === 'approved' || targetStatus === 'progressed') {
+    const transitionType = isBypass
       ? 'admin_advance'
-      : (newStatus === 'approved' ? 'gate_approved' : 'gate_progressed');
+      : (targetStatus === 'approved' ? 'gate_approved' : 'gate_progressed');
     await captureStageGateSnapshot({
       projectId,
       fromStageCode: stageCode,
@@ -843,7 +881,7 @@ export async function transitionStageStatus(params: TransitionParams): Promise<P
       stageInstanceId: instance.id,
       transitionType,
       actorUserId,
-      reason,
+      reason: reasonText || undefined,
     });
   }
 
@@ -943,7 +981,7 @@ export async function updateRequirementStatus(params: UpdateRequirementParams) {
   if (notes !== undefined) {
     updateData.notes = notes;
   }
-  if (status === 'COMPLETE') {
+  if (isRequirementComplete({ status })) {
     updateData.completedByUserId = actorUserId;
     updateData.completedDate = new Date();
   }
@@ -1182,9 +1220,16 @@ export async function advanceToStage(params: {
   actorRole: string;
   reason?: string;
 }): Promise<{ skipped: string[]; currentStage: string }> {
-  const { projectId, targetStageCode, actorUserId, reason } = params;
+  const { projectId, targetStageCode, actorUserId, actorRole, reason } = params;
   const targetSeq = STAGE_SEQUENCE[targetStageCode];
   if (!targetSeq) throw new Error(`Unknown stage code: ${targetStageCode}`);
+  const reasonText = typeof reason === 'string' ? reason.trim() : '';
+  if (!STAGE_BYPASS_APPROVER_ROLES.has(actorRole)) {
+    throw new Error('Stage advance bypass requires COO approval.');
+  }
+  if (reasonText.length === 0) {
+    throw new Error('Stage advance bypass requires a written reason.');
+  }
 
   const instances = await db
     .select()
@@ -1199,12 +1244,13 @@ export async function advanceToStage(params: {
   for (const inst of instances) {
     const seq = STAGE_SEQUENCE[inst.stageCode as StageCode];
     if (seq === undefined) continue;
+    const currentStatus = normalizeStageStatus(inst.stageStatus);
 
-    if (seq < targetSeq && inst.stageStatus !== 'PROGRESSED') {
+    if (seq < targetSeq && currentStatus !== 'progressed') {
       await db
         .update(projectStageInstances)
         .set({
-          stageStatus: 'PROGRESSED',
+          stageStatus: 'progressed',
           startedAt: inst.startedAt || now,
           completedAt: now,
           readinessPct: 100,
@@ -1215,11 +1261,11 @@ export async function advanceToStage(params: {
       await db.insert(projectStageDecisions).values({
         projectId,
         stageCode: inst.stageCode,
-        decisionType: 'STAGE_OVERRIDE',
-        decisionSummary: `Stage ${inst.stageCode} bulk-advanced to PROGRESSED (admin skip-to ${targetStageCode})${reason ? ': ' + reason : ''}`,
+        decisionType: 'stage_override',
+        decisionSummary: `Stage ${inst.stageCode} bulk-advanced to progressed (COO skip-to ${targetStageCode}): ${reasonText}`,
         decidedByUserId: actorUserId,
         decidedDate: now,
-        rationale: reason || 'Admin bulk advance — aligning project with current reality',
+        rationale: reasonText,
       });
 
       // B1: snapshot evidence BEFORE the instance was marked PROGRESSED so
@@ -1232,17 +1278,17 @@ export async function advanceToStage(params: {
         stageInstanceId: inst.id,
         transitionType: 'admin_advance',
         actorUserId,
-        reason: reason || 'Admin bulk advance — aligning project with current reality',
+        reason: reasonText,
       });
 
       skipped.push(inst.stageCode);
     }
 
-    if (seq === targetSeq && inst.stageStatus === 'NOT_STARTED') {
+    if (seq === targetSeq && currentStatus === 'not_started') {
       await db
         .update(projectStageInstances)
         .set({
-          stageStatus: 'IN_PROGRESS',
+          stageStatus: 'in_progress',
           startedAt: now,
           updatedAt: now,
         })
@@ -1251,11 +1297,11 @@ export async function advanceToStage(params: {
       await db.insert(projectStageDecisions).values({
         projectId,
         stageCode: inst.stageCode,
-        decisionType: 'STAGE_OVERRIDE',
-        decisionSummary: `Stage ${inst.stageCode} set to IN_PROGRESS (admin advance target)${reason ? ': ' + reason : ''}`,
+        decisionType: 'stage_override',
+        decisionSummary: `Stage ${inst.stageCode} set to in_progress (COO advance target): ${reasonText}`,
         decidedByUserId: actorUserId,
         decidedDate: now,
-        rationale: reason || 'Admin bulk advance — aligning project with current reality',
+        rationale: reasonText,
       });
     }
   }
@@ -1271,12 +1317,12 @@ export async function advanceToStage(params: {
   await syncCurrentStage(projectId);
 
   await recordAudit({
-    actorRole: params.actorRole,
+    actorRole,
     userId: actorUserId,
     entityType: "project",
     entityId: String(projectId),
     action: "ADVANCE_TO_STAGE",
-    changesJson: { projectId, targetStageCode, skippedStages: skipped, reason: reason ?? null },
+    changesJson: { projectId, targetStageCode, skippedStages: skipped, reason: reasonText },
   });
 
   return { skipped, currentStage: targetStageCode };
@@ -1332,7 +1378,7 @@ async function ensureTerminalStageInstance(
     const [updated] = await db
       .update(projectStageInstances)
       .set({
-        stageStatus: 'IN_PROGRESS',
+        stageStatus: 'in_progress',
         startedAt: existing.startedAt ?? now,
         updatedAt: now,
       })
@@ -1346,7 +1392,7 @@ async function ensureTerminalStageInstance(
     .values({
       projectId,
       stageCode,
-      stageStatus: 'IN_PROGRESS',
+      stageStatus: 'in_progress',
       readinessPct: 0,
       startedAt: now,
     })
@@ -1407,7 +1453,7 @@ export async function placeProjectOnHold(params: TerminalTransitionParams): Prom
   await db.insert(projectStageDecisions).values({
     projectId,
     stageCode: 'S_HOLD',
-    decisionType: 'STAGE_OVERRIDE',
+    decisionType: 'stage_override',
     decisionSummary: `Project placed on hold${
       previousToPersist ? ` (preserved phase ${previousToPersist} for resume)` : ''
     }${reason ? ': ' + reason : ''}`,
@@ -1472,7 +1518,7 @@ export async function resumeProjectFromHold(params: TerminalTransitionParams): P
   await db
     .update(projectStageInstances)
     .set({
-      stageStatus: 'PROGRESSED',
+      stageStatus: 'progressed',
       completedAt: now,
       updatedAt: now,
     })
@@ -1500,7 +1546,7 @@ export async function resumeProjectFromHold(params: TerminalTransitionParams): P
   await db.insert(projectStageDecisions).values({
     projectId,
     stageCode: 'S_HOLD',
-    decisionType: 'STAGE_OVERRIDE',
+    decisionType: 'stage_override',
     decisionSummary: `Project resumed from hold to ${target}${reason ? ': ' + reason : ''}`,
     decidedByUserId: actorUserId,
     decidedDate: now,
@@ -1545,7 +1591,7 @@ export async function markProjectDone(params: TerminalTransitionParams): Promise
   await db.insert(projectStageDecisions).values({
     projectId,
     stageCode: 'S_DONE',
-    decisionType: 'STAGE_OVERRIDE',
+    decisionType: 'stage_override',
     decisionSummary: `Project marked Done (terminal closure)${reason ? ': ' + reason : ''}`,
     decidedByUserId: actorUserId,
     decidedDate: now,

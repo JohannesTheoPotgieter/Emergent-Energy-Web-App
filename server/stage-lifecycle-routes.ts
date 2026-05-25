@@ -40,17 +40,18 @@ import {
   projectStageInstances,
   projectStageRequirements,
   projectStageDecisions,
+  STAGE_STATUSES,
+  type StageStatus,
 } from "@shared/schema";
 import { parseIntParam } from "./lib/req-params";
 import { findEntityRegistry } from "@shared/permissions/registry";
 import { evaluateStageAdvanceDecision } from "./lib/stage-advance-override-eval";
+import { normalizeWithLegacy } from "@shared/utils/status-normalization";
 
-// Plan v3 § 2.6 / D.6 #2 — snapshotted at module init from the canonical
-// entity registry. COO/CEO are the default-path admins (reason optional);
-// any other role in stage_gate.override_roles must supply a reason.
+// Bulk stage advance is a bypass. Protected EPC rules restrict it to
+// COO_ADMIN with a written reason, regardless of broader stage_gate edit rights.
 const STAGE_ADVANCE_DEFAULT_ROLES: ReadonlySet<string> = new Set([
   "COO_ADMIN",
-  "CEO_ADMIN",
 ]);
 const STAGE_ADVANCE_OVERRIDE_ROLES: ReadonlySet<string> = new Set(
   findEntityRegistry("stage_gate")?.override_roles ?? [],
@@ -191,11 +192,15 @@ export function registerStageLifecycleRoutes(app: Express): void {
         const { newStatus, reason, isOverride } = req.body;
 
         if (!newStatus) return res.status(400).json({ error: "newStatus is required" });
+        const normalizedStatus = normalizeWithLegacy(String(newStatus));
+        if (!(STAGE_STATUSES as readonly string[]).includes(normalizedStatus)) {
+          return res.status(400).json({ error: `Invalid stage status: ${newStatus}` });
+        }
 
         const stage = await transitionStageStatus({
           projectId,
           stageCode,
-          newStatus,
+          newStatus: normalizedStatus as StageStatus,
           actorUserId: user.id,
           actorRole: user.role,
           reason,

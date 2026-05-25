@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { evaluateStageAdvanceDecision } from "../../../server/lib/stage-advance-override-eval";
 
-const DEFAULT_ROLES = new Set(["COO_ADMIN", "CEO_ADMIN"]);
+const DEFAULT_ROLES = new Set(["COO_ADMIN"]);
 const OVERRIDE_ROLES = new Set([
   "COO_ADMIN",
   "CEO_ADMIN",
@@ -11,53 +11,14 @@ const OVERRIDE_ROLES = new Set([
 ]);
 
 describe("evaluateStageAdvanceDecision", () => {
-  it("default path: COO_ADMIN with no reason advances cleanly", () => {
+  it("allows COO_ADMIN only when a written reason is provided", () => {
     const decision = evaluateStageAdvanceDecision({
       userRole: "COO_ADMIN",
-      rawReason: undefined,
+      rawReason: "  client signed; aligning lifecycle to actual progress  ",
       defaultRoles: DEFAULT_ROLES,
       overrideRoles: OVERRIDE_ROLES,
     });
-    expect(decision).toEqual({
-      kind: "advance",
-      overrideApplied: false,
-      reason: null,
-    });
-  });
 
-  it("default path: CEO_ADMIN with reason preserves the reason for audit", () => {
-    const decision = evaluateStageAdvanceDecision({
-      userRole: "CEO_ADMIN",
-      rawReason: "  bulk-aligning project to current reality  ",
-      defaultRoles: DEFAULT_ROLES,
-      overrideRoles: OVERRIDE_ROLES,
-    });
-    expect(decision).toEqual({
-      kind: "advance",
-      overrideApplied: false,
-      reason: "bulk-aligning project to current reality",
-    });
-  });
-
-  it("default path: COO_ADMIN with non-string reason still advances (reason becomes null)", () => {
-    const decision = evaluateStageAdvanceDecision({
-      userRole: "COO_ADMIN",
-      rawReason: { not: "a string" },
-      defaultRoles: DEFAULT_ROLES,
-      overrideRoles: OVERRIDE_ROLES,
-    });
-    expect(decision.kind).toBe("advance");
-    if (decision.kind !== "advance") return;
-    expect(decision.reason).toBeNull();
-  });
-
-  it("override path: PROGRAM_MANAGER with valid reason → advance_with_override", () => {
-    const decision = evaluateStageAdvanceDecision({
-      userRole: "PROGRAM_MANAGER",
-      rawReason: "client signed; aligning lifecycle to actual progress",
-      defaultRoles: DEFAULT_ROLES,
-      overrideRoles: OVERRIDE_ROLES,
-    });
     expect(decision).toEqual({
       kind: "advance_with_override",
       overrideApplied: true,
@@ -65,132 +26,93 @@ describe("evaluateStageAdvanceDecision", () => {
     });
   });
 
-  it("override path: CONSTRUCTION_MANAGER with valid reason → advance_with_override (registry expansion)", () => {
+  it("rejects COO_ADMIN without a reason", () => {
     const decision = evaluateStageAdvanceDecision({
-      userRole: "CONSTRUCTION_MANAGER",
-      rawReason: "site mobilised; commissioning gate ready",
-      defaultRoles: DEFAULT_ROLES,
-      overrideRoles: OVERRIDE_ROLES,
-    });
-    expect(decision.kind).toBe("advance_with_override");
-  });
-
-  it("override path: PROGRAM_MANAGER without reason → reject 400 with hint", () => {
-    const decision = evaluateStageAdvanceDecision({
-      userRole: "PROGRAM_MANAGER",
+      userRole: "COO_ADMIN",
       rawReason: undefined,
       defaultRoles: DEFAULT_ROLES,
       overrideRoles: OVERRIDE_ROLES,
     });
+
     expect(decision.kind).toBe("reject");
     if (decision.kind !== "reject") return;
     expect(decision.status).toBe(400);
     expect(decision.body.field).toBe("reason");
-    expect(decision.body.hint).toMatch(/non-empty/);
+    expect(decision.body.error).toMatch(/written reason/);
   });
 
-  it("override path: PROGRAM_MANAGER with whitespace-only reason → reject 400", () => {
-    const decision = evaluateStageAdvanceDecision({
-      userRole: "PROGRAM_MANAGER",
-      rawReason: "    \t  \n  ",
-      defaultRoles: DEFAULT_ROLES,
-      overrideRoles: OVERRIDE_ROLES,
-    });
-    expect(decision.kind).toBe("reject");
-    if (decision.kind !== "reject") return;
-    expect(decision.status).toBe(400);
-  });
-
-  it("override path: PROGRAM_MANAGER with non-string reason → reject 400 (defensive)", () => {
-    const cases: unknown[] = [["a", "b"], { msg: "x" }, 42, true, null];
-    for (const bad of cases) {
+  it("rejects COO_ADMIN with a non-string reason", () => {
+    for (const bad of [["a", "b"], { msg: "x" }, 42, true, null]) {
       const decision = evaluateStageAdvanceDecision({
-        userRole: "PROGRAM_MANAGER",
+        userRole: "COO_ADMIN",
         rawReason: bad,
         defaultRoles: DEFAULT_ROLES,
         overrideRoles: OVERRIDE_ROLES,
       });
       expect(decision.kind).toBe("reject");
+      if (decision.kind !== "reject") return;
+      expect(decision.status).toBe(400);
     }
   });
 
-  it("forbidden: PROJECT_MANAGER_SITE → reject 403 listing authorised roles", () => {
+  it("rejects CEO_ADMIN even when the registry lists CEO as an override role", () => {
     const decision = evaluateStageAdvanceDecision({
-      userRole: "PROJECT_MANAGER_SITE",
-      rawReason: "I tried to advance",
-      defaultRoles: DEFAULT_ROLES,
+      userRole: "CEO_ADMIN",
+      rawReason: "executive alignment",
+      defaultRoles: new Set(["COO_ADMIN", "CEO_ADMIN"]),
       overrideRoles: OVERRIDE_ROLES,
     });
+
     expect(decision.kind).toBe("reject");
     if (decision.kind !== "reject") return;
     expect(decision.status).toBe(403);
-    expect(decision.body.error).toMatch(/CEO_ADMIN/);
     expect(decision.body.error).toMatch(/COO_ADMIN/);
-    expect(decision.body.error).toMatch(/PROGRAM_MANAGER/);
-    expect(decision.body.error).toMatch(/CONSTRUCTION_MANAGER/);
   });
 
-  it("forbidden: ENGINEER → reject 403", () => {
-    const decision = evaluateStageAdvanceDecision({
-      userRole: "ENGINEER",
-      rawReason: "yes",
-      defaultRoles: DEFAULT_ROLES,
-      overrideRoles: OVERRIDE_ROLES,
-    });
-    expect(decision.kind).toBe("reject");
-    if (decision.kind !== "reject") return;
-    expect(decision.status).toBe(403);
+  it("rejects operational roles even with a reason", () => {
+    for (const role of ["PROGRAM_MANAGER", "CONSTRUCTION_MANAGER", "PROJECT_MANAGER_SITE", "ENGINEER"]) {
+      const decision = evaluateStageAdvanceDecision({
+        userRole: role,
+        rawReason: "work is already complete",
+        defaultRoles: DEFAULT_ROLES,
+        overrideRoles: OVERRIDE_ROLES,
+      });
+      expect(decision.kind).toBe("reject");
+      if (decision.kind !== "reject") return;
+      expect(decision.status).toBe(403);
+      expect(decision.body.error).toMatch(/COO_ADMIN/);
+    }
   });
 
-  it("forbidden: undefined userRole → reject 403", () => {
-    const decision = evaluateStageAdvanceDecision({
-      userRole: undefined,
-      rawReason: "anything",
-      defaultRoles: DEFAULT_ROLES,
-      overrideRoles: OVERRIDE_ROLES,
-    });
-    expect(decision.kind).toBe("reject");
-    if (decision.kind !== "reject") return;
-    expect(decision.status).toBe(403);
+  it("rejects missing or blank user roles", () => {
+    for (const userRole of [undefined, ""]) {
+      const decision = evaluateStageAdvanceDecision({
+        userRole,
+        rawReason: "anything",
+        defaultRoles: DEFAULT_ROLES,
+        overrideRoles: OVERRIDE_ROLES,
+      });
+      expect(decision.kind).toBe("reject");
+      if (decision.kind !== "reject") return;
+      expect(decision.status).toBe(403);
+    }
   });
 
-  it("forbidden: empty-string userRole → reject 403 (does not collide with empty-set lookup)", () => {
-    const decision = evaluateStageAdvanceDecision({
-      userRole: "",
-      rawReason: "anything",
-      defaultRoles: DEFAULT_ROLES,
-      overrideRoles: OVERRIDE_ROLES,
-    });
-    expect(decision.kind).toBe("reject");
-    if (decision.kind !== "reject") return;
-    expect(decision.status).toBe(403);
-  });
-
-  it("respects custom default-role set (defensive: helper not coupled to one entity)", () => {
-    const decision = evaluateStageAdvanceDecision({
+  it("does not grant bypass from custom default or override role sets", () => {
+    const cfoDefault = evaluateStageAdvanceDecision({
       userRole: "CFO",
-      rawReason: undefined,
-      defaultRoles: new Set(["CFO"]),
-      overrideRoles: new Set(["CFO", "CCO"]),
-    });
-    expect(decision.kind).toBe("advance");
-  });
-
-  it("respects custom override-role set (defensive)", () => {
-    const ccoBlocked = evaluateStageAdvanceDecision({
-      userRole: "CCO",
       rawReason: "yes",
       defaultRoles: new Set(["CFO"]),
-      overrideRoles: new Set(["CFO"]), // CCO removed
+      overrideRoles: new Set(["CFO"]),
     });
-    expect(ccoBlocked.kind).toBe("reject");
+    expect(cfoDefault.kind).toBe("reject");
 
-    const ccoAllowed = evaluateStageAdvanceDecision({
+    const ccoOverride = evaluateStageAdvanceDecision({
       userRole: "CCO",
       rawReason: "yes",
       defaultRoles: new Set(["CFO"]),
       overrideRoles: new Set(["CFO", "CCO"]),
     });
-    expect(ccoAllowed.kind).toBe("advance_with_override");
+    expect(ccoOverride.kind).toBe("reject");
   });
 });

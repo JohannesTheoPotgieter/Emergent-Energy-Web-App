@@ -18,7 +18,7 @@ import { Stage7Commissioning } from "@/components/stage-workspaces/Stage7Commiss
 import { Stage8OmHandover } from "@/components/stage-workspaces/Stage8OmHandover";
 import { Stage9ClientHandover } from "@/components/stage-workspaces/Stage9ClientHandover";
 import { Stage10PostHandoverReview } from "@/components/stage-workspaces/Stage10PostHandoverReview";
-import { getValidNextStates } from "@shared/utils/stage-state-machine";
+import { getValidNextStates, normalizeStageStatus } from "@shared/utils/stage-state-machine";
 import type { StageStatus } from "@shared/schema";
 import { Loader2, FileText, ShieldAlert, ArrowRight, Link2, PlayCircle, Milestone } from "lucide-react";
 
@@ -29,13 +29,13 @@ interface StageDetailPanelProps {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  NOT_STARTED: "Not Started",
-  IN_PROGRESS: "In Progress",
-  READY_FOR_REVIEW: "Ready for Review",
-  APPROVED: "Approved",
-  PROGRESSED: "Progressed",
-  EXCEPTION_APPROVED: "Exception Approved",
-  BLOCKED: "Blocked",
+  not_started: "Not Started",
+  in_progress: "In Progress",
+  ready_for_review: "Ready for Review",
+  approved: "Approved",
+  progressed: "Progressed",
+  exception_approved: "Exception Approved",
+  blocked: "Blocked",
 };
 
 // Stage codes that have dedicated workspace components
@@ -172,14 +172,13 @@ export function StageDetailPanel({ projectId, stageCode, isAdmin = false }: Stag
 
   // Fallback: Generic stage view (for stages 6-10 until their workspaces are built)
   const { stage, evidence, exceptions, dependencies } = data;
-  const currentStatus = stage.stageStatus as StageStatus;
+  const currentStatus = normalizeStageStatus(stage.stageStatus) as StageStatus;
   const validNext = getValidNextStates(currentStatus, isAdmin);
 
   const handleTransition = (newStatus: StageStatus) => {
     transitionMutation.mutate({
       stageCode,
       newStatus,
-      isOverride: isAdmin,
     });
   };
 

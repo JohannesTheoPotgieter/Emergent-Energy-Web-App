@@ -63,6 +63,17 @@ describe("stage-gate immutability — service guard", () => {
   });
 });
 
+describe("stage-gate closeout blocking", () => {
+  const svc = read("server/services/stage-lifecycle-service.ts");
+
+  it("blocks closeout transitions when gate evidence is missing unless COO bypass is used", () => {
+    expect(svc).not.toMatch(/stage gates NEVER block a transition/);
+    expect(svc).toMatch(/STAGE_BYPASS_APPROVER_ROLES = new Set<string>\(\['COO_ADMIN'\]\)/);
+    expect(svc).toMatch(/getUnsatisfiedGateClosureRequirements\(requirements\)/);
+    expect(svc).toMatch(/Stage gate blocked:/);
+  });
+});
+
 describe("stage-gate immutability — route wiring", () => {
   const routes = read("server/stage-lifecycle-routes.ts");
 
