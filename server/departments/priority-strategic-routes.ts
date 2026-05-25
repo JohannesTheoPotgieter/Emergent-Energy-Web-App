@@ -22,6 +22,7 @@ import {
   opportunities,
   engineeringTickets,
   raidItems,
+  notifications,
 } from "@shared/schema";
 import { ROLE_DEPARTMENT_MAP } from "@shared/schema/users";
 import { eq, and, or, sql, desc, asc, inArray, isNull, isNotNull } from "drizzle-orm";
@@ -74,6 +75,52 @@ function notDeletedSql(columnName = "deleted_at") {
 
 function getDepartmentForRole(role: string | null | undefined): string | undefined {
   return role ? (ROLE_DEPARTMENT_MAP as Record<string, string>)[role] : undefined;
+}
+
+/**
+ * Notify every watcher (plus owner / assignee / accountable exec) about
+ * a priority event. Best-effort: a failed insert never breaks the
+ * triggering mutation. De-dupes recipients, skips the actor (don't
+ * notify yourself), drops the linked_task_id slot of `notifications`
+ * to point at the priority id so the existing notifications panel can
+ * deep-link straight to /priority/:id.
+ *
+ * Wired into: single + bulk escalate, close, reopen, archive, restore.
+ * Not wired into edit/comment/watch — those would be spammy.
+ */
+async function fanoutPriorityNotifications(opts: {
+  priorityId: number;
+  priority: { ownerUserId?: number | null; assignedUserId?: number | null; accountableExecId?: number | null; title?: string | null };
+  actorUserId: number | null | undefined;
+  eventType: string;
+  title: string;
+  body?: string;
+}): Promise<void> {
+  try {
+    const watchers = await db
+      .select({ userId: priorityWatches.userId })
+      .from(priorityWatches)
+      .where(eq(priorityWatches.priorityId, opts.priorityId));
+    const recipients = new Set<number>();
+    for (const w of watchers) if (typeof w.userId === "number") recipients.add(w.userId);
+    if (opts.priority.ownerUserId) recipients.add(opts.priority.ownerUserId);
+    if (opts.priority.assignedUserId) recipients.add(opts.priority.assignedUserId);
+    if (opts.priority.accountableExecId) recipients.add(opts.priority.accountableExecId);
+    if (opts.actorUserId) recipients.delete(opts.actorUserId);
+    if (recipients.size === 0) return;
+    await db.insert(notifications).values(
+      Array.from(recipients).map((userId) => ({
+        recipientUserId: userId,
+        eventType: opts.eventType,
+        title: opts.title,
+        body: opts.body ?? null,
+        linkedTaskId: opts.priorityId,
+        changeDetails: JSON.stringify({ priorityId: opts.priorityId, priorityTitle: opts.priority.title ?? null }),
+      })),
+    );
+  } catch (err: any) {
+    console.warn("[Priorities] watch fan-out failed:", err?.message || err);
+  }
 }
 
 /**
@@ -1826,6 +1873,15 @@ router.delete(
       details: { field: "deletedAt", archived: true },
     });
 
+    await fanoutPriorityNotifications({
+      priorityId,
+      priority: existing[0],
+      actorUserId: getEffectiveUser(req)?.id,
+      eventType: "priority_archived",
+      title: `Archived: ${existing[0].title}`,
+      body: "Hidden from default views. Admins can restore it from the archived filter.",
+    });
+
     res.status(204).send();
   }),
 );
@@ -1855,6 +1911,14 @@ router.post(
         fromValue: "archived",
         toValue: null,
         details: { field: "deletedAt", restored: true },
+      });
+      await fanoutPriorityNotifications({
+        priorityId,
+        priority: existing[0],
+        actorUserId: getEffectiveUser(req)?.id,
+        eventType: "priority_restored",
+        title: `Restored: ${existing[0].title}`,
+        body: "Back in default views.",
       });
     }
 
@@ -1940,6 +2004,13 @@ router.post(
           toValue: status,
           details: { source: "bulk" },
         });
+        await fanoutPriorityNotifications({
+          priorityId: id,
+          priority: row,
+          actorUserId: user.id,
+          eventType: status === "complete" ? "priority_completed" : "priority_closed",
+          title: `${status === "complete" ? "Completed" : "Closed"}: ${row.title}`,
+        });
       }
     }
 
@@ -2017,6 +2088,14 @@ router.post(
           fromValue: row.scope,
           toValue: patch!.scope,
           details: { reason: patch!.escalationReason, source: "bulk", ...(note ? { note } : {}) },
+        });
+        await fanoutPriorityNotifications({
+          priorityId: id,
+          priority: row,
+          actorUserId: user.id,
+          eventType: "priority_escalated",
+          title: `Escalated: ${row.title}`,
+          body: `Moved from ${row.scope} to ${patch!.scope}${note ? ` — ${note}` : ""}`,
         });
       }
     }
@@ -2614,6 +2693,15 @@ router.post(
       details: { reason: patch.escalationReason, ...(note ? { note } : {}) },
     });
 
+    await fanoutPriorityNotifications({
+      priorityId,
+      priority,
+      actorUserId: getEffectiveUser(req)?.id,
+      eventType: "priority_escalated",
+      title: `Escalated: ${priority.title}`,
+      body: `Moved from ${priority.scope} to ${patch.scope}${note ? ` — ${note}` : ""}`,
+    });
+
     // Tier 4 · PR 5 — outbound signal. Emit a RAID "issue" on every directly
     // linked project so department boards pick up the escalation context.
     // Idempotent: we use a stable title so re-running doesn't spam; linked
@@ -3058,6 +3146,15 @@ router.post("/api/priorities/:id/reopen", requireAuth, requirePermission("compan
     fromValue: priority.status,
     toValue: "active",
     details: { field: "status" },
+  });
+
+  await fanoutPriorityNotifications({
+    priorityId,
+    priority,
+    actorUserId: getEffectiveUser(req)?.id,
+    eventType: "priority_reopened",
+    title: `Reopened: ${priority.title}`,
+    body: `Status moved from ${priority.status} back to active.`,
   });
 
   const metrics = await getPriorityDerivedMetrics(priorityId);
