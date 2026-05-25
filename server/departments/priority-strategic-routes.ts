@@ -271,6 +271,7 @@ const basePrioritySchema = z.object({
   parent_id: z.number().int().positive().nullable().optional(),
   department_key: z.string().max(120).nullable().optional(),
   assigned_user_id: z.number().int().positive().nullable().optional(),
+  review_cadence_days: z.number().int().min(1).max(365).nullable().optional(),
   progress_source_type: z.enum(["manual", "project_phase", "project_percent", "milestone_revenue", "tasks_rollup"]).nullable().optional(),
   progress_source_ref: z.object({
     projectId: z.number().int().positive().optional(),
@@ -441,6 +442,11 @@ interface PriorityWithMetrics {
   hasProjects: boolean;
   childCount: number;
   parentTitle: string | null;
+  deletedAt: string | null;
+  reviewCadenceDays: number | null;
+  lastReviewedAt: string | null;
+  lastReviewedByUserId: number | null;
+  dueForReview: boolean;
 }
 
 interface DerivedMetricsRow {
@@ -635,6 +641,9 @@ async function enrichPriority(
     escalatedAt: priority.escalatedAt ?? priority.escalated_at ?? null,
     escalationReason: priority.escalationReason ?? priority.escalation_reason ?? null,
     deletedAt: normalizeTimestamp(priority.deletedAt ?? priority.deleted_at),
+    reviewCadenceDays: priority.reviewCadenceDays ?? priority.review_cadence_days ?? null,
+    lastReviewedAt: normalizeTimestamp(priority.lastReviewedAt ?? priority.last_reviewed_at),
+    lastReviewedByUserId: priority.lastReviewedByUserId ?? priority.last_reviewed_by_user_id ?? null,
     createdAt: priority.createdAt ?? priority.created_at,
     updatedAt: priority.updatedAt ?? priority.updated_at,
   };
@@ -729,6 +738,20 @@ async function enrichPriority(
     hasProjects,
     childCount: childCountMap?.get(p.id) ?? 0,
     parentTitle: p.parentId ? (parentMap?.get(p.parentId) ?? null) : null,
+    // Derived "due for review" flag — true when a cadence is set AND
+    // the time since last review (or creation, if never reviewed) has
+    // exceeded the cadence in days. Computed at read time so we don't
+    // need a cron.
+    dueForReview: (() => {
+      const cadence = (p as any).reviewCadenceDays;
+      if (!cadence || cadence <= 0) return false;
+      const lastIso = normalizeTimestamp((priority as any).lastReviewedAt ?? (priority as any).last_reviewed_at)
+        ?? normalizeTimestamp(priority.createdAt ?? priority.created_at);
+      if (!lastIso) return false;
+      const lastMs = new Date(lastIso).getTime();
+      if (!Number.isFinite(lastMs)) return false;
+      return Date.now() - lastMs > cadence * 24 * 60 * 60 * 1000;
+    })(),
   };
 }
 
@@ -1599,6 +1622,7 @@ router.post(
       parentId: effectiveParentId,
       departmentKey: effectiveDepartmentKey,
       assignedUserId: effectiveAssignedUserId,
+      reviewCadenceDays: (body as any).review_cadence_days ?? null,
       createdAt: now,
       updatedAt: now,
     }).returning();
@@ -1732,6 +1756,8 @@ router.put(
     if (parent_id !== undefined) updates.parentId = parent_id;
     if (department_key !== undefined) updates.departmentKey = department_key;
     if (assigned_user_id !== undefined) updates.assignedUserId = assigned_user_id;
+    const review_cadence_days = (body as any).review_cadence_days;
+    if (review_cadence_days !== undefined) updates.reviewCadenceDays = review_cadence_days;
     const progress_source_type = (body as any).progress_source_type;
     const progress_source_ref = (body as any).progress_source_ref;
     if (progress_source_type !== undefined) updates.progressSourceType = progress_source_type;
@@ -3547,6 +3573,59 @@ router.get("/api/reports/priorities-pack", requireAuth, requirePriorityCreator, 
 }));
 
 // ==================== POST /api/priorities/:id/reopen ====================
+// POST /api/priorities/:id/review — mark this priority as reviewed
+// "right now". Resets the dueForReview countdown for review_cadence_days.
+// Allowed for: priority admins, dept heads in the priority's dept,
+// owner or assignee.
+router.post(
+  "/api/priorities/:id/review",
+  requireAuth,
+  requirePermission("company_priorities", "view"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const priorityId = parseIdParam(req.params.id);
+    if (priorityId === null) throw badRequest("Invalid priority id");
+    const [priority] = await db.select().from(mytoolCompanyPriorities)
+      .where(eq(mytoolCompanyPriorities.id, priorityId));
+    if (!priority || normalizeTimestamp(priority.deletedAt) != null) throw notFound("Priority");
+
+    const user = getEffectiveUser(req)!;
+    const userDept = getDepartmentForRole(user.role);
+    const canReview = canPriorityRoleEditPriority(
+      { role: user.role, userId: user.id, departmentKey: userDept ?? null },
+      {
+        scope: (priority.scope ?? "company") as PriorityScope,
+        departmentKey: priority.departmentKey ?? null,
+        ownerUserId: priority.ownerUserId ?? null,
+        assignedUserId: priority.assignedUserId ?? null,
+      },
+    );
+    if (!canReview) throw forbidden("You cannot mark this priority as reviewed");
+
+    const now = new Date();
+    const [updated] = await db.update(mytoolCompanyPriorities)
+      .set({
+        lastReviewedAt: now.toISOString(),
+        lastReviewedByUserId: user.id,
+        updatedAt: now,
+      })
+      .where(eq(mytoolCompanyPriorities.id, priorityId))
+      .returning();
+
+    await recordActivity({
+      priorityId,
+      actorUserId: user.id,
+      action: "updated",
+      fromValue: null,
+      toValue: "reviewed",
+      details: { field: "lastReviewedAt", at: now.toISOString() },
+    });
+
+    const metrics = await getPriorityDerivedMetrics(priorityId);
+    const enriched = await enrichPriority(updated, metrics);
+    res.json(enriched);
+  }),
+);
+
 router.post("/api/priorities/:id/reopen", requireAuth, requirePermission("company_priorities", "view"), requirePriorityAdmin, asyncHandler(async (req: Request, res: Response) => {
   const priorityId = parseIdParam(req.params.id);
   if (priorityId === null) throw badRequest("Invalid priority id");

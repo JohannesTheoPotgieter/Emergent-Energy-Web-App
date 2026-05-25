@@ -147,6 +147,12 @@ export const mytoolCompanyPriorities = pgTable("mytool_company_priorities", {
   // SQLite TEXT timestamps. Keeping it as a string round-trips
   // correctly across both drivers.
   deletedAt: timestamp("deleted_at", { mode: "string" }),
+  // Review cadence (migration 0072). NULL = no cadence; integer days
+  // (typical: 7/14/30) means the priority is "due for review" when
+  // (last_reviewed_at ?? created_at) + cadence < now.
+  reviewCadenceDays: integer("review_cadence_days"),
+  lastReviewedAt: timestamp("last_reviewed_at", { mode: "string" }),
+  lastReviewedByUserId: integer("last_reviewed_by_user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
