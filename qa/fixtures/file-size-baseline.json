@@ -2,7 +2,7 @@
   "_documentation": "EE-QA-015 baseline — files above the FILE_SIZE_THRESHOLD LOC. The CI guard `qa/tests/unit/file-size-ratchet.test.ts` fails if any of these grow OR a NEW file lands over the threshold. To regenerate after a split, run `npx tsx scripts/build-file-size-baseline.ts` and commit the new JSON.",
   "threshold": 1500,
   "buffer": 50,
-  "generated": "2026-05-22",
+  "generated": "2026-05-25",
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
@@ -21,12 +21,12 @@
       "loc": 3881
     },
     {
-      "file": "server/lifecycle-routes.ts",
-      "loc": 3519
-    },
-    {
       "file": "server/db.ts",
       "loc": 3792
+    },
+    {
+      "file": "server/lifecycle-routes.ts",
+      "loc": 3519
     },
     {
       "file": "client/src/components/tabs/UnifiedPlanTab.tsx",
@@ -41,6 +41,10 @@
       "loc": 2897
     },
     {
+      "file": "server/departments/priority-strategic-routes.ts",
+      "loc": 2766
+    },
+    {
       "file": "client/src/pages/cashflow.tsx",
       "loc": 2745
     },
@@ -51,10 +55,6 @@
     {
       "file": "server/services/quickbooks-reconciliation-service.ts",
       "loc": 2700
-    },
-    {
-      "file": "server/departments/priority-strategic-routes.ts",
-      "loc": 2687
     },
     {
       "file": "server/lib/import/commit-executor.ts",
@@ -86,7 +86,11 @@
     },
     {
       "file": "server/departments/project-routes.ts",
-      "loc": 2152
+      "loc": 2165
+    },
+    {
+      "file": "server/departments/opportunities-routes.ts",
+      "loc": 2160
     },
     {
       "file": "server/lib/import/normalizer.ts",
@@ -111,10 +115,6 @@
     {
       "file": "client/src/pages/lifecycle-board.tsx",
       "loc": 2082
-    },
-    {
-      "file": "server/departments/opportunities-routes.ts",
-      "loc": 2160
     },
     {
       "file": "client/src/components/TaskDetailDrawer.tsx",
@@ -181,6 +181,10 @@
       "loc": 1619
     },
     {
+      "file": "server/services/stage-lifecycle-service.ts",
+      "loc": 1611
+    },
+    {
       "file": "shared/schema/finance.ts",
       "loc": 1608
     },
@@ -194,10 +198,6 @@
     },
     {
       "file": "client/src/components/tabs/ProjectPlanTab.tsx",
-      "loc": 1565
-    },
-    {
-      "file": "server/services/stage-lifecycle-service.ts",
       "loc": 1565
     },
     {
