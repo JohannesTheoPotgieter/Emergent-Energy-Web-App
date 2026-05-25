@@ -279,7 +279,11 @@ export default function PriorityDetailPage() {
 
   const watchMutation = useMutation({
     mutationFn: () => apiRequest(watching ? "DELETE" : "POST", `/api/priorities/${priorityId}/watch`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/watched`] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/watched`] });
+      toast({ title: watching ? "Unwatched" : "Watching priority" });
+    },
+    onError: (err) => toast({ title: "Could not update watch", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
   const addCommentMutation = useMutation({
@@ -304,7 +308,9 @@ export default function PriorityDetailPage() {
     },
     onSuccess: () => {
       invalidateDetail();
+      toast({ title: "Project unlinked" });
     },
+    onError: (err) => toast({ title: "Could not unlink project", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
   const updatePriorityMutation = useMutation({
@@ -330,8 +336,10 @@ export default function PriorityDetailPage() {
     },
     onSuccess: () => {
       invalidateDetail();
+      toast({ title: "Priority updated" });
       setEditDialogOpen(false);
     },
+    onError: (err) => toast({ title: "Could not save changes", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
   const closePriorityMutation = useMutation({
@@ -340,7 +348,9 @@ export default function PriorityDetailPage() {
     },
     onSuccess: () => {
       invalidateDetail();
+      toast({ title: "Priority closed" });
     },
+    onError: (err) => toast({ title: "Could not close priority", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
   if (isLoading) return <PageSkeleton lines={5} />;
@@ -1100,7 +1110,15 @@ export default function PriorityDetailPage() {
                               type="button"
                               className="text-muted-foreground hover:text-red-600 transition-colors"
                               title="Delete comment"
-                              onClick={() => deleteCommentMutation.mutate(c.id)}
+                              onClick={async () => {
+                                const ok = await confirm({
+                                  title: "Delete this comment?",
+                                  description: "The comment will be removed from the activity timeline. This cannot be undone.",
+                                  confirmLabel: "Delete",
+                                  destructive: true,
+                                });
+                                if (ok) deleteCommentMutation.mutate(c.id);
+                              }}
                               disabled={deleteCommentMutation.isPending}
                               aria-label="Delete comment"
                             >

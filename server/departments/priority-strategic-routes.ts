@@ -31,6 +31,7 @@ import { ApiError, badRequest, forbidden, notFound } from "../lib/api-error";
 import { PRIORITY_HEALTH_VALUES, type PriorityHealth, computeEffectivePriorityHealth } from "@shared/kpi-definitions";
 import { PRIORITY_SCOPES, ESCALATION_REASONS, computeEscalatePatch, collectDescendantIds, collectAncestorIds, matchesPriorityListFilter, type PriorityScope, type EscalationReason } from "@shared/config/priorities";
 import { recordActivity, computeUpdateActivities, type PriorityActivityAction } from "./priority-activity-log";
+import { runInTransaction } from "../lib/drizzle-helpers";
 import { computePriorityProgress } from "../lib/priorities/progress-source";
 import { chooseProgressPercent, toDisplayProgressPercent } from "../lib/priorities/progress-percent";
 import { attachProjectScope, getProjectScope } from "../middleware/project-scope-middleware";
@@ -1494,7 +1495,7 @@ router.put(
       toValue?: string | number | null;
     }> = [];
 
-    const updated = await db.transaction(async (tx: typeof db) => {
+    const updated = await runInTransaction(async (tx) => {
       const [row] = await tx.update(mytoolCompanyPriorities)
         .set(updates)
         .where(eq(mytoolCompanyPriorities.id, priorityId))
@@ -2163,7 +2164,7 @@ router.post(
 
     // Atomic: a single UPDATE is inherently atomic. Wrapping in a transaction
     // so later additions (audit-log insert, etc.) inherit the atomicity.
-    const [updated] = await db.transaction(async (tx: typeof db) => {
+    const [updated] = await runInTransaction(async (tx) => {
       return tx.update(mytoolCompanyPriorities)
         .set({
           scope: patch.scope,

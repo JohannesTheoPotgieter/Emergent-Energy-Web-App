@@ -7,6 +7,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { apiRequest } from "@/lib/queryClient";
 import { invalidatePriorityQueries } from "@/lib/priority-query-invalidation";
 import { useUserOptions } from "./usePriorityPickers";
+import { useToast } from "@/hooks/use-toast";
 
 /**
  * Single-priority reassignment dialog. Used from the Department tab card's
@@ -23,6 +24,7 @@ export function AssignPriorityDialog({
 }) {
   const [userId, setUserId] = useState("");
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const userOptions = useUserOptions(open);
 
   const assignMutation = useMutation({
@@ -38,9 +40,16 @@ export function AssignPriorityDialog({
       } else {
         void invalidatePriorityQueries(queryClient);
       }
+      toast({ title: "Priority reassigned" });
       setUserId("");
       onOpenChange(false);
     },
+    onError: (err) =>
+      toast({
+        title: "Could not assign priority",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      }),
   });
 
   return (

@@ -11,6 +11,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { invalidatePriorityQueries } from "@/lib/priority-query-invalidation";
 import { DEPARTMENT_OPTIONS } from "@shared/config/priorities";
 import { useUserOptions } from "./usePriorityPickers";
+import { useToast } from "@/hooks/use-toast";
 
 interface BreakDownRow {
   title: string;
@@ -30,6 +31,7 @@ export function BreakDownDialog({
   onOpenChange: (v: boolean) => void;
 }) {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [rows, setRows] = useState<BreakDownRow[]>([emptyRow()]);
   const userOptions = useUserOptions(open);
 
@@ -44,11 +46,19 @@ export function BreakDownDialog({
         }));
       await apiRequest("POST", `/api/priorities/${priorityId}/break-down`, { children });
     },
-    onSuccess: () => {
+    onSuccess: (_, _vars) => {
       void invalidatePriorityQueries(queryClient, priorityId);
+      const childCount = rows.filter((r) => r.title.trim()).length;
+      toast({ title: `Created ${childCount} sub-priorit${childCount === 1 ? "y" : "ies"}` });
       onOpenChange(false);
       setRows([emptyRow()]);
     },
+    onError: (err) =>
+      toast({
+        title: "Could not create sub-priorities",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      }),
   });
 
   const updateRow = (idx: number, field: keyof BreakDownRow, value: string) => {

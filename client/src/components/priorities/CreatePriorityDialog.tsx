@@ -11,6 +11,7 @@ import {
 import { apiRequest } from "@/lib/queryClient";
 import { invalidatePriorityQueries } from "@/lib/priority-query-invalidation";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 import {
   PRIORITY_SCOPES,
   canPriorityRoleCreateScope,
@@ -51,6 +52,7 @@ export function CreatePriorityDialog({
     department_key: defaultDepartment || "",
   });
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   // Re-prime defaults whenever the dialog opens — the user might have moved
   // tab between two opens (e.g. created a dept priority, then a company one).
@@ -77,8 +79,15 @@ export function CreatePriorityDialog({
     },
     onSuccess: () => {
       void invalidatePriorityQueries(queryClient);
+      toast({ title: "Priority created" });
       onOpenChange(false);
     },
+    onError: (err) =>
+      toast({
+        title: "Could not create priority",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      }),
   });
 
   return (
