@@ -382,6 +382,18 @@ export default function PriorityDetailPage() {
     onError: (err) => toast({ title: "Could not restore", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
+  const reviewMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", `/api/priorities/${priorityId}/review`);
+    },
+    onSuccess: () => {
+      invalidateDetail();
+      void invalidatePriorityQueries(queryClient);
+      toast({ title: "Marked reviewed" });
+    },
+    onError: (err) => toast({ title: "Could not mark reviewed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
+  });
+
   if (isLoading) return <PageSkeleton lines={5} />;
   if (isError) return <PageShell><PageError title="Unable to load priority" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
 
@@ -601,6 +613,18 @@ export default function PriorityDetailPage() {
                   onClick={() => setBreakDownDialogOpen(true)}
                 >
                   <GitBranch className="w-3 h-3 mr-1" /> Break Down
+                </Button>
+              )}
+              {canEditPriority && (priority as any).reviewCadenceDays && (
+                <Button
+                  size="sm"
+                  variant={(priority as any).dueForReview ? "default" : "outline"}
+                  className="text-xs h-7"
+                  onClick={() => reviewMutation.mutate()}
+                  disabled={reviewMutation.isPending}
+                  data-testid="button-mark-reviewed"
+                >
+                  {reviewMutation.isPending ? "Saving…" : ((priority as any).dueForReview ? "Mark reviewed" : "Re-review now")}
                 </Button>
               )}
               {canUsePriorityAdminActions && !(priority as any).deletedAt && (

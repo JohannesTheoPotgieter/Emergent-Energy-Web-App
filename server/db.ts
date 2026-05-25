@@ -1509,6 +1509,10 @@ async function ensureSqliteSchema() {
     // Soft-delete column (migration 0069). Idempotent for existing dbs.
     try { await db.run(sql.raw(`ALTER TABLE mytool_company_priorities ADD COLUMN deleted_at TEXT`)); } catch {}
     await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS idx_priorities_deleted_at ON mytool_company_priorities(deleted_at)`));
+    // Review cadence columns (migration 0072).
+    try { await db.run(sql.raw(`ALTER TABLE mytool_company_priorities ADD COLUMN review_cadence_days INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE mytool_company_priorities ADD COLUMN last_reviewed_at TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE mytool_company_priorities ADD COLUMN last_reviewed_by_user_id INTEGER`)); } catch {}
 
     // Priority templates (migration 0070).
     await db.run(sql.raw(`

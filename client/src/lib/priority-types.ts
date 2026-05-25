@@ -87,6 +87,12 @@ export interface PriorityRow {
    * else gets 404 on the detail and exclusion from the list.
    */
   deletedAt?: string | null;
+  /** Review cadence (days). NULL = no cadence. See migration 0072. */
+  reviewCadenceDays?: number | null;
+  lastReviewedAt?: string | null;
+  lastReviewedByUserId?: number | null;
+  /** Derived: true when (lastReviewedAt ?? createdAt) + cadence < now. */
+  dueForReview?: boolean;
   createdAt: string;
   updatedAt: string;
 }
