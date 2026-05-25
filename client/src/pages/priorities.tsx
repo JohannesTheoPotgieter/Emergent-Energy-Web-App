@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSearch } from "wouter";
-import { Download, Flag, Plus, Target, Users } from "lucide-react";
+import { useSearch, useLocation } from "wouter";
+import { Download, Flag, Plus, Search, Target, Users, X } from "lucide-react";
 import { PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/use-auth";
@@ -116,6 +117,10 @@ export default function PrioritiesPage() {
   // to include_archived=true so soft-deleted priorities surface for the
   // admin to restore.
   const [showArchived, setShowArchived] = useState(false);
+  // Free-text search across title + description (server-side, see
+  // GET /api/priorities/search). Debounced 250ms.
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [bulkSelected, setBulkSelected] = useState<Set<number>>(new Set());
   // Admins can pick which department to view on the Department tab. Dept
   // heads are pinned to their own department and never see the dropdown.
@@ -181,6 +186,24 @@ export default function PrioritiesPage() {
     queryKey: ["/api/priorities", "company", showClosed, showArchived],
     queryFn: () => fetchPriorities(listQueryParams("scope=company")),
     enabled: activeTab === "company",
+  });
+
+  // Debounce the search input so we don't fire a request per keystroke.
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(searchInput.trim()), 250);
+    return () => clearTimeout(handle);
+  }, [searchInput]);
+
+  const searchQuery = useQuery<{ results: PriorityRow[]; totalMatches: number; returned: number }>({
+    queryKey: ["/api/priorities/search", debouncedSearch, showClosed, showArchived],
+    queryFn: async () => {
+      const qs = new URLSearchParams({ q: debouncedSearch, limit: "50" });
+      if (showClosed) qs.set("include_closed", "true");
+      if (showArchived && isAdmin) qs.set("include_archived", "true");
+      const res = await apiRequest("GET", `/api/priorities/search?${qs.toString()}`);
+      return res.json();
+    },
+    enabled: debouncedSearch.length >= 2,
   });
 
   const { toast } = useToast();
@@ -495,6 +518,27 @@ export default function PrioritiesPage() {
           </TabsList>
 
           <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-2 top-2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+              <Input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Search priorities..."
+                aria-label="Search priorities"
+                data-testid="input-search-priorities"
+                className="h-8 pl-7 pr-7 w-[220px] text-xs"
+              />
+              {searchInput && (
+                <button
+                  type="button"
+                  onClick={() => setSearchInput("")}
+                  className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
+                  aria-label="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
             {isAdmin && activeTab === "department" && (
               <Select value={selectedDeptKey} onValueChange={setSelectedDeptKey}>
                 <SelectTrigger className="w-[180px] h-8 text-xs" data-testid="select-dept-filter">
@@ -563,6 +607,38 @@ export default function PrioritiesPage() {
             )}
           </div>
         </div>
+
+        {debouncedSearch.length >= 2 && (
+          <div className="mb-6 border border-emerald-200 bg-emerald-50/40 rounded-lg p-4" data-testid="search-results-panel">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-foreground">
+                Search results for "{debouncedSearch}"
+                {searchQuery.data && (
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    {searchQuery.data.totalMatches} match{searchQuery.data.totalMatches === 1 ? "" : "es"}
+                    {searchQuery.data.returned < searchQuery.data.totalMatches && ` · showing first ${searchQuery.data.returned}`}
+                  </span>
+                )}
+              </h3>
+              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setSearchInput("")}>
+                Clear search
+              </Button>
+            </div>
+            <PriorityListSection
+              priorities={searchQuery.data?.results ?? []}
+              isLoading={searchQuery.isLoading}
+              isError={searchQuery.isError}
+              error={searchQuery.error as Error}
+              refetch={searchQuery.refetch}
+              showEscalate={canEscalatePriorityRow}
+              onEscalate={(id) => {
+                const p = (searchQuery.data?.results ?? []).find((x) => x.id === id);
+                if (p) setEscalateTarget({ id: p.id, title: p.title, scope: p.scope });
+              }}
+              emptyMessage={searchQuery.isFetching ? "Searching..." : `No priorities match "${debouncedSearch}"`}
+            />
+          </div>
+        )}
 
         <TabsContent value="my">
           <div className="space-y-6">

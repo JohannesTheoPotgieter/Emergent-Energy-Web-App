@@ -1274,6 +1274,71 @@ router.get(
 );
 
 // ==================== GET /api/priorities/:id ====================
+// ==================== GET /api/priorities/search ====================
+//
+// MUST be registered before /api/priorities/:id, otherwise Express
+// parses "search" as a priority id and returns "Invalid priority id"
+// (the same trap that bit the progress-source-options route).
+//
+// Lightweight free-text search across title + description, filtered
+// to what the caller is allowed to see, ranked by title-startswith >
+// title-contains > description-contains > recency.
+router.get(
+  "/api/priorities/search",
+  requireAuth,
+  requirePermission("company_priorities", "view"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const user = getEffectiveUser(req)!;
+    const userDept = getDepartmentForRole(user.role);
+    const q = String(req.query.q ?? "").trim().toLowerCase();
+    if (q.length < 2) throw badRequest("Search query must be at least 2 characters");
+    const scope = typeof req.query.scope === "string" && PRIORITY_SCOPES.includes(req.query.scope as PriorityScope)
+      ? (req.query.scope as PriorityScope) : null;
+    const includeClosed = req.query.include_closed === "true";
+    const includeArchived = req.query.include_archived === "true" && isPriorityAdminRole(user.role);
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? "20"), 10) || 20, 1), 100);
+
+    let rows: any[] = await db.select().from(mytoolCompanyPriorities);
+    rows = rows.filter((p: any) => {
+      if (!includeArchived && normalizeTimestamp(p.deletedAt ?? p.deleted_at) != null) return false;
+      if (!includeClosed && isPriorityTerminalStatus(p.status)) return false;
+      if (scope && p.scope !== scope) return false;
+      if (!isPriorityAdminRole(user.role)) {
+        if (isDepartmentHeadRole(user.role)) {
+          if (p.scope === "company") return false;
+          if (p.scope === "department" && p.departmentKey && p.departmentKey !== userDept) return false;
+          if (p.scope === "role" && p.departmentKey && p.departmentKey !== userDept) return false;
+        } else {
+          if (p.scope === "company") return false;
+          if (p.scope === "department") return false;
+          if (p.scope === "role" && p.ownerUserId !== user.id && p.assignedUserId !== user.id) return false;
+        }
+      }
+      const title = String(p.title ?? "").toLowerCase();
+      const desc = String(p.description ?? "").toLowerCase();
+      return title.includes(q) || desc.includes(q);
+    });
+
+    rows.sort((a: any, b: any) => {
+      const aTitle = String(a.title ?? "").toLowerCase();
+      const bTitle = String(b.title ?? "").toLowerCase();
+      const aTitleStart = aTitle.startsWith(q) ? 0 : 1;
+      const bTitleStart = bTitle.startsWith(q) ? 0 : 1;
+      if (aTitleStart !== bTitleStart) return aTitleStart - bTitleStart;
+      const aHasTitle = aTitle.includes(q) ? 0 : 1;
+      const bHasTitle = bTitle.includes(q) ? 0 : 1;
+      if (aHasTitle !== bHasTitle) return aHasTitle - bHasTitle;
+      return (b.updatedAt?.getTime?.() ?? 0) - (a.updatedAt?.getTime?.() ?? 0);
+    });
+
+    const top = rows.slice(0, limit);
+    const allMetrics = await getAllPriorityDerivedMetrics();
+    const metricsMap = new Map(allMetrics.map((m: any) => [m.priority_id, m]));
+    const enriched = await Promise.all(top.map((p: any) => enrichPriority(p, metricsMap.get(p.id))));
+    res.json({ q, totalMatches: rows.length, returned: enriched.length, results: enriched });
+  }),
+);
+
 // Drill-down is now a rolled-up view: `linkedProjects` includes every project
 // linked to this priority OR any descendant, deduped. A `rolledUp` object
 // carries the aggregated financial / progress / blocker totals across the
@@ -1929,6 +1994,23 @@ router.post(
   }),
 );
 
+// ==================== GET /api/priorities/search ====================
+//
+// Lightweight free-text search across title + description. Server-side
+// filtering of an in-memory result set (priorities is a small table —
+// even at the company scale we're talking <10k rows) so we don't need
+// pg-trgm or a separate search index. Respects ownership / scope
+// visibility via the same filter the list endpoint uses, and excludes
+// archived rows unless include_archived=true (admin only).
+//
+// Query params:
+//   q              — required, ≥2 chars. Matches title OR description
+//                    case-insensitively, substring.
+//   scope          — optional, limit to company|department|role.
+//   include_closed — optional, default false. Set to surface
+//                    closed/complete priorities in the result.
+//   include_archived — optional, admin-only.
+//   limit          — optional, default 20, max 100.
 // ==================== BULK ENDPOINTS ====================
 //
 // Single round-trip versions of "loop client-side over each id" patterns

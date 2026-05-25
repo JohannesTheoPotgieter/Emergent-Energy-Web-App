@@ -182,6 +182,27 @@ describe("priorities sprint 2 — per-user shared-task promotion semantics", () 
   });
 });
 
+describe("priorities — route registration order", () => {
+  it("/api/priorities/search is registered before /api/priorities/:id", () => {
+    const source = read("server/departments/priority-strategic-routes.ts");
+    const searchIndex = source.indexOf('"/api/priorities/search"');
+    const idIndex = source.indexOf('"/api/priorities/:id"');
+    // Regression for: Express was matching "search" as :id parameter and
+    // returning "Invalid priority id" instead of running the search
+    // handler. Same trap that bit progress-source-options earlier.
+    expect(searchIndex).toBeGreaterThan(0);
+    expect(idIndex).toBeGreaterThan(0);
+    expect(searchIndex).toBeLessThan(idIndex);
+  });
+  it("/api/priorities/progress-source-options is registered before /api/priorities/:id", () => {
+    const source = read("server/departments/priority-strategic-routes.ts");
+    const opt = source.indexOf('"/api/priorities/progress-source-options"');
+    const id = source.indexOf('"/api/priorities/:id"');
+    expect(opt).toBeGreaterThan(0);
+    expect(opt).toBeLessThan(id);
+  });
+});
+
 describe("priorities — break-down child count on detail", () => {
   it("GET /api/priorities/:id passes a childCountMap to enrichPriority", () => {
     const source = read("server/departments/priority-strategic-routes.ts");
