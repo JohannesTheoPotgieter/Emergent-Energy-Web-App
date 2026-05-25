@@ -1510,6 +1510,31 @@ async function ensureSqliteSchema() {
     try { await db.run(sql.raw(`ALTER TABLE mytool_company_priorities ADD COLUMN deleted_at TEXT`)); } catch {}
     await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS idx_priorities_deleted_at ON mytool_company_priorities(deleted_at)`));
 
+    // Priority templates (migration 0070).
+    await db.run(sql.raw(`
+      CREATE TABLE IF NOT EXISTS priority_templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        title_template TEXT NOT NULL,
+        body_template TEXT,
+        scope_default TEXT NOT NULL DEFAULT 'role',
+        severity_default TEXT NOT NULL DEFAULT 'normal',
+        horizon_default TEXT NOT NULL DEFAULT 'week',
+        department_key TEXT,
+        target_outcome TEXT,
+        definition_of_done TEXT,
+        next_action TEXT,
+        owner_role TEXT,
+        created_by_user_id INTEGER,
+        deleted_at TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS idx_priority_templates_dept ON priority_templates(department_key)`));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS idx_priority_templates_live ON priority_templates(deleted_at)`));
+
     await db.run(sql.raw(`
       CREATE TABLE IF NOT EXISTS priority_activity (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

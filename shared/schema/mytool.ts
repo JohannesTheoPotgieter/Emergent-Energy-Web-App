@@ -245,6 +245,37 @@ export const priorityWatches = pgTable("priority_watches", {
 
 export type PriorityWatch = typeof priorityWatches.$inferSelect;
 
+// ── Priority Templates ────────────────────────────────────────────────
+// Reusable priority shapes — admins/dept heads define them once,
+// any authorised user can instantiate them into a real priority in
+// one click. Soft-deleted via deletedAt so older priorities created
+// from a template still reference a recognisable name. See migration
+// 0070 + server/departments/priority-strategic-routes.ts CRUD +
+// instantiate endpoints.
+export const priorityTemplates = pgTable("priority_templates", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  titleTemplate: text("title_template").notNull(),
+  bodyTemplate: text("body_template"),
+  scopeDefault: text("scope_default").notNull().default("role"),
+  severityDefault: text("severity_default").notNull().default("normal"),
+  horizonDefault: text("horizon_default").notNull().default("week"),
+  departmentKey: text("department_key"),
+  targetOutcome: text("target_outcome"),
+  definitionOfDone: text("definition_of_done"),
+  nextAction: text("next_action"),
+  ownerRole: text("owner_role"),
+  createdByUserId: integer("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  deletedAt: timestamp("deleted_at", { mode: "string" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertPriorityTemplateSchema = createInsertSchema(priorityTemplates).omit({ id: true, createdAt: true, updatedAt: true, deletedAt: true } as any);
+export type InsertPriorityTemplate = z.infer<typeof insertPriorityTemplateSchema>;
+export type PriorityTemplate = typeof priorityTemplates.$inferSelect;
+
 // Priority ↔ Opportunity junction — Tier 4 · PR 2.
 // Lets a Priority attach to a *pre-contract* deal (opportunity) as well as
 // to a signed project. Needed so the strategic view can see pipeline risk

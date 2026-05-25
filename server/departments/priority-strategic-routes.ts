@@ -23,6 +23,7 @@ import {
   engineeringTickets,
   raidItems,
   notifications,
+  priorityTemplates,
 } from "@shared/schema";
 import { ROLE_DEPARTMENT_MAP } from "@shared/schema/users";
 import { eq, and, or, sql, desc, asc, inArray, isNull, isNotNull } from "drizzle-orm";
@@ -2251,6 +2252,235 @@ router.post(
 
     outcomes.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
     res.json({ processed: okIds.length, total: ids.length, results: outcomes });
+  }),
+);
+
+// ==================== PRIORITY TEMPLATES ====================
+//
+// Reusable priority shapes. Admin or dept-head defines a template;
+// any user the template targets can instantiate it with one POST.
+// Templates are soft-deleted (deleted_at) so existing priorities
+// referencing them stay coherent.
+
+const templateUpsertSchema = z.object({
+  name: z.string().min(1).max(120),
+  description: z.string().max(2000).nullable().optional(),
+  title_template: z.string().min(1).max(200),
+  body_template: z.string().max(5000).nullable().optional(),
+  scope_default: z.enum(["company", "department", "role"]).default("role"),
+  severity_default: z.enum(["critical", "important", "normal"]).default("normal"),
+  horizon_default: z.enum(["day", "week", "month", "quarter", "year"]).default("week"),
+  department_key: z.string().max(120).nullable().optional(),
+  target_outcome: z.string().max(2000).nullable().optional(),
+  definition_of_done: z.string().max(2000).nullable().optional(),
+  next_action: z.string().max(2000).nullable().optional(),
+  owner_role: z.string().max(120).nullable().optional(),
+});
+
+// GET — anyone authenticated. Dept heads see their own dept's
+// templates + any template with no department pinned. Regular users
+// see only role-scope templates (the only scope they can instantiate).
+router.get(
+  "/api/priority-templates",
+  requireAuth,
+  requirePermission("company_priorities", "view"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const user = getEffectiveUser(req)!;
+    const userDept = getDepartmentForRole(user.role);
+    const rows = await db
+      .select()
+      .from(priorityTemplates)
+      .where(isNull(priorityTemplates.deletedAt));
+    const visible = rows.filter((t: any) => {
+      if (isPriorityAdminRole(user.role)) return true;
+      if (isDepartmentHeadRole(user.role)) {
+        return !t.departmentKey || t.departmentKey === userDept;
+      }
+      // Regular users: role-scope templates only, no dept lock or their dept.
+      if (t.scopeDefault !== "role") return false;
+      return !t.departmentKey || t.departmentKey === userDept;
+    });
+    res.json(visible);
+  }),
+);
+
+// POST — admin or dept head (dept head limited to their own dept).
+router.post(
+  "/api/priority-templates",
+  requireAuth,
+  requirePriorityCreator,
+  validateBody(templateUpsertSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const user = getEffectiveUser(req)!;
+    const userDept = getDepartmentForRole(user.role);
+    const body = req.body as z.infer<typeof templateUpsertSchema>;
+
+    if (!isPriorityAdminRole(user.role)) {
+      // Dept head: scope must be role|department and dept must be theirs
+      if (body.scope_default === "company") {
+        throw badRequest("Only priority admins can create company-scope templates");
+      }
+      if (body.department_key && body.department_key !== userDept) {
+        throw badRequest("You can only create templates for your own department");
+      }
+      if (!body.department_key) body.department_key = userDept ?? null;
+    }
+
+    const [row] = await db.insert(priorityTemplates).values({
+      name: body.name,
+      description: body.description ?? null,
+      titleTemplate: body.title_template,
+      bodyTemplate: body.body_template ?? null,
+      scopeDefault: body.scope_default,
+      severityDefault: body.severity_default,
+      horizonDefault: body.horizon_default,
+      departmentKey: body.department_key ?? null,
+      targetOutcome: body.target_outcome ?? null,
+      definitionOfDone: body.definition_of_done ?? null,
+      nextAction: body.next_action ?? null,
+      ownerRole: body.owner_role ?? null,
+      createdByUserId: user.id,
+    }).returning();
+    res.status(201).json(row);
+  }),
+);
+
+// PUT — same gate as POST. Patches the template in place.
+router.put(
+  "/api/priority-templates/:id",
+  requireAuth,
+  requirePriorityCreator,
+  validateBody(templateUpsertSchema.partial()),
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = parseIdParam(req.params.id);
+    if (id === null) throw badRequest("Invalid template id");
+    const user = getEffectiveUser(req)!;
+    const userDept = getDepartmentForRole(user.role);
+    const body = req.body as Partial<z.infer<typeof templateUpsertSchema>>;
+
+    const [existing] = await db.select().from(priorityTemplates)
+      .where(eq(priorityTemplates.id, id));
+    if (!existing || existing.deletedAt) throw notFound("Template");
+    if (!isPriorityAdminRole(user.role)) {
+      if (existing.departmentKey && existing.departmentKey !== userDept) {
+        throw forbidden("Not your department's template");
+      }
+    }
+
+    const updates: Record<string, any> = { updatedAt: new Date() };
+    if (body.name !== undefined) updates.name = body.name;
+    if (body.description !== undefined) updates.description = body.description;
+    if (body.title_template !== undefined) updates.titleTemplate = body.title_template;
+    if (body.body_template !== undefined) updates.bodyTemplate = body.body_template;
+    if (body.scope_default !== undefined) updates.scopeDefault = body.scope_default;
+    if (body.severity_default !== undefined) updates.severityDefault = body.severity_default;
+    if (body.horizon_default !== undefined) updates.horizonDefault = body.horizon_default;
+    if (body.department_key !== undefined) updates.departmentKey = body.department_key;
+    if (body.target_outcome !== undefined) updates.targetOutcome = body.target_outcome;
+    if (body.definition_of_done !== undefined) updates.definitionOfDone = body.definition_of_done;
+    if (body.next_action !== undefined) updates.nextAction = body.next_action;
+    if (body.owner_role !== undefined) updates.ownerRole = body.owner_role;
+
+    const [row] = await db.update(priorityTemplates)
+      .set(updates)
+      .where(eq(priorityTemplates.id, id))
+      .returning();
+    res.json(row);
+  }),
+);
+
+// DELETE — soft-delete. Same gate.
+router.delete(
+  "/api/priority-templates/:id",
+  requireAuth,
+  requirePriorityCreator,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = parseIdParam(req.params.id);
+    if (id === null) throw badRequest("Invalid template id");
+    const user = getEffectiveUser(req)!;
+    const userDept = getDepartmentForRole(user.role);
+    const [existing] = await db.select().from(priorityTemplates)
+      .where(eq(priorityTemplates.id, id));
+    if (!existing || existing.deletedAt) throw notFound("Template");
+    if (!isPriorityAdminRole(user.role) && existing.departmentKey && existing.departmentKey !== userDept) {
+      throw forbidden("Not your department's template");
+    }
+    await db.update(priorityTemplates)
+      .set({ deletedAt: new Date().toISOString(), updatedAt: new Date() })
+      .where(eq(priorityTemplates.id, id));
+    res.status(204).send();
+  }),
+);
+
+// POST /api/priority-templates/:id/instantiate
+// Creates a real priority from this template's defaults. Caller can
+// override title via body.title_override (e.g. add date suffix for
+// weekly standup templates). Server forces caller as owner/assignee
+// for role-scope instantiation per the existing create rules.
+const instantiateSchema = z.object({
+  title_override: z.string().min(1).max(200).optional(),
+  due_date: z.string().max(50).optional(),
+});
+router.post(
+  "/api/priority-templates/:id/instantiate",
+  requireAuth,
+  requirePermission("company_priorities", "view"),
+  validateBody(instantiateSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = parseIdParam(req.params.id);
+    if (id === null) throw badRequest("Invalid template id");
+    const user = getEffectiveUser(req)!;
+    const userDept = getDepartmentForRole(user.role);
+    const body = req.body as z.infer<typeof instantiateSchema>;
+
+    const [tpl] = await db.select().from(priorityTemplates)
+      .where(eq(priorityTemplates.id, id));
+    if (!tpl || tpl.deletedAt) throw notFound("Template");
+
+    const scope = tpl.scopeDefault as PriorityScope;
+    // Same authorisation rules as POST /api/priorities
+    if (!isPriorityAdminRole(user.role) && !isDepartmentHeadRole(user.role)) {
+      if (scope !== "role") {
+        throw forbidden("You can only instantiate role-scope templates");
+      }
+    }
+    if (!isPriorityAdminRole(user.role) && isDepartmentHeadRole(user.role)) {
+      if (scope === "company") throw forbidden("Only admins can instantiate company-scope templates");
+    }
+
+    const now = new Date();
+    const ownerUserId = isPriorityAdminRole(user.role) || isDepartmentHeadRole(user.role) ? null : user.id;
+    const assignedUserId = ownerUserId;
+    const departmentKey = tpl.departmentKey ?? userDept ?? null;
+
+    const [created] = await db.insert(mytoolCompanyPriorities).values({
+      title: body.title_override ?? tpl.titleTemplate,
+      description: tpl.bodyTemplate ?? null,
+      severity: (tpl.severityDefault as any),
+      horizon: (tpl.horizonDefault as any),
+      scope,
+      departmentKey,
+      ownerUserId,
+      assignedUserId,
+      ownerRole: tpl.ownerRole ?? null,
+      targetOutcome: tpl.targetOutcome ?? null,
+      definitionOfDone: tpl.definitionOfDone ?? null,
+      nextAction: tpl.nextAction ?? null,
+      dueDate: body.due_date ?? null,
+      createdAt: now,
+      updatedAt: now,
+    }).returning();
+
+    await recordActivity({
+      priorityId: created.id,
+      actorUserId: user.id,
+      action: "created",
+      details: { source: "template", templateId: tpl.id, templateName: tpl.name },
+    });
+
+    const metrics = await getPriorityDerivedMetrics(created.id);
+    const enriched = await enrichPriority(created, metrics);
+    res.status(201).json(enriched);
   }),
 );
 
