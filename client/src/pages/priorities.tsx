@@ -121,6 +121,11 @@ export default function PrioritiesPage() {
   // GET /api/priorities/search). Debounced 250ms.
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  // Currently-selected saved view (empty string = "Default — no view").
+  // Switching applies the view's filters; saving the current state
+  // writes a new view to the server scoped to the caller.
+  const [selectedViewId, setSelectedViewId] = useState<string>("");
+  const [saveViewName, setSaveViewName] = useState("");
   const [bulkSelected, setBulkSelected] = useState<Set<number>>(new Set());
   // Admins can pick which department to view on the Department tab. Dept
   // heads are pinned to their own department and never see the dropdown.
@@ -193,6 +198,82 @@ export default function PrioritiesPage() {
     const handle = setTimeout(() => setDebouncedSearch(searchInput.trim()), 250);
     return () => clearTimeout(handle);
   }, [searchInput]);
+
+  type SavedView = {
+    id: number; name: string; activeTab: string;
+    scope: string | null; departmentKey: string | null;
+    levelFilter: string | null; healthFilter: string | null;
+    searchQuery: string | null;
+    showClosed: boolean; showArchived: boolean; sortOrder: number;
+  };
+  const savedViewsQuery = useQuery<SavedView[]>({
+    queryKey: ["/api/priority-saved-views"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/priority-saved-views");
+      return res.json();
+    },
+  });
+
+  const applyView = (id: string) => {
+    setSelectedViewId(id);
+    if (!id) return;
+    const v = (savedViewsQuery.data ?? []).find((x) => String(x.id) === id);
+    if (!v) return;
+    if (v.activeTab === "my" || v.activeTab === "department" || v.activeTab === "company") {
+      setActiveTab(v.activeTab);
+    }
+    if (v.departmentKey) setSelectedDeptKey(v.departmentKey);
+    setLevelFilter(v.levelFilter ?? "all");
+    setHealthFilter(v.healthFilter ?? "all");
+    setSearchInput(v.searchQuery ?? "");
+    setShowClosed(!!v.showClosed);
+    setShowArchived(!!v.showArchived);
+  };
+
+  const saveViewMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const payload = {
+        name,
+        active_tab: activeTab,
+        scope: activeTab === "my" ? "role" : activeTab,
+        department_key: activeTab === "department" ? effectiveDeptForQuery || null : null,
+        level_filter: levelFilter === "all" ? null : levelFilter,
+        health_filter: healthFilter === "all" ? null : healthFilter,
+        search_query: searchInput.trim() || null,
+        show_closed: showClosed,
+        show_archived: showArchived,
+      };
+      const res = await apiRequest("POST", "/api/priority-saved-views", payload);
+      return res.json();
+    },
+    onSuccess: (created: SavedView) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/priority-saved-views"] });
+      setSelectedViewId(String(created.id));
+      setSaveViewName("");
+      toast({ title: `Saved view: ${created.name}` });
+    },
+    onError: (err) => toast({
+      title: "Could not save view",
+      description: err instanceof Error ? err.message : "Unknown error",
+      variant: "destructive",
+    }),
+  });
+
+  const deleteViewMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/priority-saved-views/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/priority-saved-views"] });
+      setSelectedViewId("");
+      toast({ title: "View deleted" });
+    },
+    onError: (err) => toast({
+      title: "Could not delete view",
+      description: err instanceof Error ? err.message : "Unknown error",
+      variant: "destructive",
+    }),
+  });
 
   const searchQuery = useQuery<{ results: PriorityRow[]; totalMatches: number; returned: number }>({
     queryKey: ["/api/priorities/search", debouncedSearch, showClosed, showArchived],
@@ -518,6 +599,19 @@ export default function PrioritiesPage() {
           </TabsList>
 
           <div className="flex items-center gap-2">
+            {(savedViewsQuery.data?.length ?? 0) > 0 && (
+              <Select value={selectedViewId} onValueChange={applyView}>
+                <SelectTrigger className="w-[160px] h-8 text-xs" data-testid="select-saved-view">
+                  <SelectValue placeholder="Saved views" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">— Default —</SelectItem>
+                  {(savedViewsQuery.data ?? []).map((v) => (
+                    <SelectItem key={v.id} value={String(v.id)}>{v.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <div className="relative">
               <Search className="absolute left-2 top-2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
               <Input
@@ -605,6 +699,45 @@ export default function PrioritiesPage() {
                 Clear
               </Button>
             )}
+            <div className="flex items-center gap-1 ml-auto">
+              <Input
+                value={saveViewName}
+                onChange={(e) => setSaveViewName(e.target.value)}
+                placeholder="Save current as view…"
+                className="h-8 text-xs w-[180px]"
+                aria-label="Save current view as name"
+                data-testid="input-save-view-name"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs"
+                disabled={!saveViewName.trim() || saveViewMutation.isPending}
+                onClick={() => saveViewMutation.mutate(saveViewName.trim())}
+                data-testid="button-save-view"
+              >
+                {saveViewMutation.isPending ? "Saving…" : "Save view"}
+              </Button>
+              {selectedViewId && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 text-xs text-muted-foreground hover:text-red-600"
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: "Delete this saved view?",
+                      description: "Filters in the view will be lost. The priorities themselves are not affected.",
+                      confirmLabel: "Delete view",
+                      destructive: true,
+                    });
+                    if (ok) deleteViewMutation.mutate(Number(selectedViewId));
+                  }}
+                  disabled={deleteViewMutation.isPending}
+                >
+                  Delete view
+                </Button>
+              )}
+            </div>
           </div>
         </div>
 

@@ -276,6 +276,34 @@ export const insertPriorityTemplateSchema = createInsertSchema(priorityTemplates
 export type InsertPriorityTemplate = z.infer<typeof insertPriorityTemplateSchema>;
 export type PriorityTemplate = typeof priorityTemplates.$inferSelect;
 
+// ── Priority Saved Views ──────────────────────────────────────────────
+// Per-user named filter combinations. The Priorities page can persist
+// a current set of filters as a view, then the user picks views from
+// a dropdown instead of re-applying filters each time. Unique on
+// (user_id, name) so renames stay tidy. See migration 0071.
+export const prioritySavedViews = pgTable("priority_saved_views", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  activeTab: text("active_tab").notNull().default("my"),
+  scope: text("scope"),
+  departmentKey: text("department_key"),
+  levelFilter: text("level_filter"),
+  healthFilter: text("health_filter"),
+  searchQuery: text("search_query"),
+  showClosed: boolean("show_closed").notNull().default(false),
+  showArchived: boolean("show_archived").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  unique: unique("priority_saved_views_user_name_unique").on(table.userId, table.name),
+}));
+
+export const insertPrioritySavedViewSchema = createInsertSchema(prioritySavedViews).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertPrioritySavedView = z.infer<typeof insertPrioritySavedViewSchema>;
+export type PrioritySavedView = typeof prioritySavedViews.$inferSelect;
+
 // Priority ↔ Opportunity junction — Tier 4 · PR 2.
 // Lets a Priority attach to a *pre-contract* deal (opportunity) as well as
 // to a signed project. Needed so the strategic view can see pipeline risk

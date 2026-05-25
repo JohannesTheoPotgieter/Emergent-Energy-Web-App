@@ -1535,6 +1535,28 @@ async function ensureSqliteSchema() {
     await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS idx_priority_templates_dept ON priority_templates(department_key)`));
     await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS idx_priority_templates_live ON priority_templates(deleted_at)`));
 
+    // Priority saved views (migration 0071).
+    await db.run(sql.raw(`
+      CREATE TABLE IF NOT EXISTS priority_saved_views (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        active_tab TEXT NOT NULL DEFAULT 'my',
+        scope TEXT,
+        department_key TEXT,
+        level_filter TEXT,
+        health_filter TEXT,
+        search_query TEXT,
+        show_closed INTEGER NOT NULL DEFAULT 0,
+        show_archived INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (user_id, name)
+      )
+    `));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS idx_priority_saved_views_user ON priority_saved_views(user_id, sort_order)`));
+
     await db.run(sql.raw(`
       CREATE TABLE IF NOT EXISTS priority_activity (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

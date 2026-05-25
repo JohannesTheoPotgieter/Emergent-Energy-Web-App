@@ -24,6 +24,7 @@ import {
   raidItems,
   notifications,
   priorityTemplates,
+  prioritySavedViews,
 } from "@shared/schema";
 import { ROLE_DEPARTMENT_MAP } from "@shared/schema/users";
 import { eq, and, or, sql, desc, asc, inArray, isNull, isNotNull } from "drizzle-orm";
@@ -2481,6 +2482,120 @@ router.post(
     const metrics = await getPriorityDerivedMetrics(created.id);
     const enriched = await enrichPriority(created, metrics);
     res.status(201).json(enriched);
+  }),
+);
+
+// ==================== PRIORITY SAVED VIEWS ====================
+//
+// Per-user named filter combinations. Scoped to the caller — no
+// sharing. Soft-delete not required (small table, just hard-delete on
+// remove).
+
+const savedViewUpsertSchema = z.object({
+  name: z.string().min(1).max(80),
+  active_tab: z.enum(["my", "department", "company"]).default("my"),
+  scope: z.enum(["company", "department", "role"]).nullable().optional(),
+  department_key: z.string().max(120).nullable().optional(),
+  level_filter: z.string().max(40).nullable().optional(),
+  health_filter: z.string().max(40).nullable().optional(),
+  search_query: z.string().max(200).nullable().optional(),
+  show_closed: z.boolean().default(false),
+  show_archived: z.boolean().default(false),
+  sort_order: z.number().int().nullable().optional(),
+});
+
+router.get(
+  "/api/priority-saved-views",
+  requireAuth,
+  requirePermission("company_priorities", "view"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const user = getEffectiveUser(req)!;
+    const rows = await db
+      .select()
+      .from(prioritySavedViews)
+      .where(eq(prioritySavedViews.userId, user.id))
+      .orderBy(asc(prioritySavedViews.sortOrder), asc(prioritySavedViews.id));
+    res.json(rows);
+  }),
+);
+
+router.post(
+  "/api/priority-saved-views",
+  requireAuth,
+  requirePermission("company_priorities", "view"),
+  validateBody(savedViewUpsertSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const user = getEffectiveUser(req)!;
+    const body = req.body as z.infer<typeof savedViewUpsertSchema>;
+    try {
+      const [row] = await db.insert(prioritySavedViews).values({
+        userId: user.id,
+        name: body.name,
+        activeTab: body.active_tab,
+        scope: body.scope ?? null,
+        departmentKey: body.department_key ?? null,
+        levelFilter: body.level_filter ?? null,
+        healthFilter: body.health_filter ?? null,
+        searchQuery: body.search_query ?? null,
+        showClosed: !!body.show_closed,
+        showArchived: !!body.show_archived,
+        sortOrder: body.sort_order ?? 0,
+      }).returning();
+      res.status(201).json(row);
+    } catch (err: any) {
+      if (/unique/i.test(err?.message ?? "") || /UNIQUE constraint/i.test(err?.message ?? "")) {
+        throw new ApiError(409, "DUPLICATE_NAME", "You already have a saved view with that name");
+      }
+      throw err;
+    }
+  }),
+);
+
+router.put(
+  "/api/priority-saved-views/:id",
+  requireAuth,
+  requirePermission("company_priorities", "view"),
+  validateBody(savedViewUpsertSchema.partial()),
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = parseIdParam(req.params.id);
+    if (id === null) throw badRequest("Invalid view id");
+    const user = getEffectiveUser(req)!;
+    const [existing] = await db.select().from(prioritySavedViews)
+      .where(and(eq(prioritySavedViews.id, id), eq(prioritySavedViews.userId, user.id)));
+    if (!existing) throw notFound("Saved view");
+    const body = req.body as Partial<z.infer<typeof savedViewUpsertSchema>>;
+    const updates: Record<string, any> = { updatedAt: new Date() };
+    if (body.name !== undefined) updates.name = body.name;
+    if (body.active_tab !== undefined) updates.activeTab = body.active_tab;
+    if (body.scope !== undefined) updates.scope = body.scope;
+    if (body.department_key !== undefined) updates.departmentKey = body.department_key;
+    if (body.level_filter !== undefined) updates.levelFilter = body.level_filter;
+    if (body.health_filter !== undefined) updates.healthFilter = body.health_filter;
+    if (body.search_query !== undefined) updates.searchQuery = body.search_query;
+    if (body.show_closed !== undefined) updates.showClosed = !!body.show_closed;
+    if (body.show_archived !== undefined) updates.showArchived = !!body.show_archived;
+    if (body.sort_order !== undefined) updates.sortOrder = body.sort_order;
+    const [row] = await db.update(prioritySavedViews)
+      .set(updates)
+      .where(eq(prioritySavedViews.id, id))
+      .returning();
+    res.json(row);
+  }),
+);
+
+router.delete(
+  "/api/priority-saved-views/:id",
+  requireAuth,
+  requirePermission("company_priorities", "view"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = parseIdParam(req.params.id);
+    if (id === null) throw badRequest("Invalid view id");
+    const user = getEffectiveUser(req)!;
+    const [existing] = await db.select().from(prioritySavedViews)
+      .where(and(eq(prioritySavedViews.id, id), eq(prioritySavedViews.userId, user.id)));
+    if (!existing) throw notFound("Saved view");
+    await db.delete(prioritySavedViews).where(eq(prioritySavedViews.id, id));
+    res.status(204).send();
   }),
 );
 
