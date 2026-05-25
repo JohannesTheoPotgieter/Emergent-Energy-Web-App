@@ -37,6 +37,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { invalidatePriorityQueries } from "@/lib/priority-query-invalidation";
 import {
   canPriorityRoleEditPriority,
+  canPriorityRoleEscalatePriority,
   canPriorityRoleUseAdminAction,
   departmentLabel,
   isDepartmentHeadRole,
@@ -358,6 +359,15 @@ export default function PriorityDetailPage() {
       assignedUserId: (priority as any).assignedUserId ?? null,
     },
   );
+  const canEscalateThisPriority = canPriorityRoleEscalatePriority(
+    { role: user?.role, userId: user?.id, departmentKey: userDepartment },
+    {
+      scope: priority.scope,
+      departmentKey: (priority as any).departmentKey ?? null,
+      ownerUserId: priority.owner?.id ?? (priority as any).ownerUserId ?? null,
+      assignedUserId: (priority as any).assignedUserId ?? null,
+    },
+  );
   const editScopeOptions: readonly PriorityScope[] = canUsePriorityAdminActions
     ? ["company", "department", "role"]
     : canUseAdvancedPriorityFields
@@ -531,9 +541,9 @@ export default function PriorityDetailPage() {
               <GitBranch className="w-3 h-3" /> {priority.childCount} sub-priorit{priority.childCount === 1 ? "y" : "ies"}
             </span>
           )}
-          {canUsePriorityAdminActions && (
+          {(canEscalateThisPriority || canUsePriorityAdminActions) && (
             <div className="flex items-center gap-2 ml-auto">
-              {(priority.scope === "role" || priority.scope === "department") && (
+              {canEscalateThisPriority && (priority.scope === "role" || priority.scope === "department") && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -544,7 +554,7 @@ export default function PriorityDetailPage() {
                   {escalateMutation.isPending ? "Escalating..." : "Escalate"}
                 </Button>
               )}
-              {(priority.scope === "company" || priority.scope === "department") && (
+              {canUsePriorityAdminActions && (priority.scope === "company" || priority.scope === "department") && (
                 <Button
                   size="sm"
                   variant="outline"

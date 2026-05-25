@@ -2,7 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { z } from "zod";
 import { requireAuth, requirePriorityAdmin, requirePriorityCreator } from "./shared-middleware";
 import { requirePermission } from "../permission-middleware";
-import { canPriorityRoleEditPriority, isDepartmentHeadRole, isPriorityAdminRole, isPriorityParentAllowed, isPriorityTerminalStatus } from "@shared/config/priorities";
+import { canPriorityRoleEditPriority, canPriorityRoleEscalatePriority, isDepartmentHeadRole, isPriorityAdminRole, isPriorityParentAllowed, isPriorityTerminalStatus } from "@shared/config/priorities";
 import { getEffectiveUser } from "../auth-context";
 import { db, getDbMode } from "../db";
 import {
@@ -24,13 +24,13 @@ import {
   raidItems,
 } from "@shared/schema";
 import { ROLE_DEPARTMENT_MAP } from "@shared/schema/users";
-import { eq, and, sql, desc, asc, inArray, isNull } from "drizzle-orm";
+import { eq, and, or, sql, desc, asc, inArray, isNull, isNotNull } from "drizzle-orm";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { validateBody } from "../middleware/validateBody";
 import { ApiError, badRequest, forbidden, notFound } from "../lib/api-error";
 import { PRIORITY_HEALTH_VALUES, type PriorityHealth, computeEffectivePriorityHealth } from "@shared/kpi-definitions";
 import { PRIORITY_SCOPES, ESCALATION_REASONS, computeEscalatePatch, collectDescendantIds, collectAncestorIds, matchesPriorityListFilter, type PriorityScope, type EscalationReason } from "@shared/config/priorities";
-import { recordActivity, computeUpdateActivities } from "./priority-activity-log";
+import { recordActivity, computeUpdateActivities, type PriorityActivityAction } from "./priority-activity-log";
 import { computePriorityProgress } from "../lib/priorities/progress-source";
 import { chooseProgressPercent, toDisplayProgressPercent } from "../lib/priorities/progress-percent";
 import { attachProjectScope, getProjectScope } from "../middleware/project-scope-middleware";
@@ -837,13 +837,25 @@ router.get("/api/priorities/my-work", requireAuth, requirePermission("company_pr
     if (wi && !taskMap.has(wi.id)) taskMap.set(wi.id, wi);
   }
 
-  // 3) Suppress work items already linked to a priority (any priority,
-  //    not just the caller's). The user only wants to see a task once.
+  // 3) Suppress work items the CALLER has already promoted into their own
+  //    priority list. Per-user scoping: if another user promoted the same
+  //    shared task, the caller still sees it in their tasks pane until
+  //    they promote it themselves. This matches the per-user idempotency
+  //    in POST /api/priorities/from-task/:workItemId.
   const linkedIds = new Set<number>();
-  const allWithLinks = await db
+  const ownLinks = await db
     .select({ linkedTaskId: mytoolCompanyPriorities.linkedTaskId })
-    .from(mytoolCompanyPriorities);
-  for (const row of allWithLinks) {
+    .from(mytoolCompanyPriorities)
+    .where(
+      and(
+        or(
+          eq(mytoolCompanyPriorities.ownerUserId, userId),
+          eq(mytoolCompanyPriorities.assignedUserId, userId),
+        ),
+        isNotNull(mytoolCompanyPriorities.linkedTaskId),
+      ),
+    );
+  for (const row of ownLinks) {
     if (typeof row.linkedTaskId === "number") linkedIds.add(row.linkedTaskId);
   }
 
@@ -1028,12 +1040,20 @@ router.post("/api/priorities/from-task/:workItemId", requireAuth, asyncHandler(a
     throw forbidden("You can only promote tasks you own or are assigned to.");
   }
 
-  // Idempotency — if a priority already exists for this linkedTaskId,
-  // return it untouched.
+  // Idempotency — per-user. A shared task can be promoted independently
+  // by each owner/assignee into THEIR OWN role priority. Idempotency
+  // therefore scopes on (linkedTaskId, ownerUserId): if the caller has
+  // already promoted this task, return that row; another user's promoted
+  // copy must not be returned to (or shared with) the caller.
   const [existing] = await db
     .select()
     .from(mytoolCompanyPriorities)
-    .where(eq(mytoolCompanyPriorities.linkedTaskId, workItemId))
+    .where(
+      and(
+        eq(mytoolCompanyPriorities.linkedTaskId, workItemId),
+        eq(mytoolCompanyPriorities.ownerUserId, userId),
+      ),
+    )
     .limit(1);
   if (existing) {
     const metrics = await getPriorityDerivedMetrics(existing.id);
@@ -1065,7 +1085,7 @@ router.post("/api/priorities/from-task/:workItemId", requireAuth, asyncHandler(a
       priorityId: created.id,
       actorUserId: userId,
       action: "created",
-      details: { source: "promoted_from_task", workItemId, taskTitle: task.title },
+      details: { source: "promoted_from_task", workItemId, taskTitle: task.title, ownerUserId: userId },
     });
   } catch (err) {
     console.warn("[Priorities] from-task: failed to record activity:", err);
@@ -1463,35 +1483,88 @@ router.put(
     if (progress_source_type !== undefined) updates.progressSourceType = progress_source_type;
     if (progress_source_ref !== undefined) updates.progressSourceRef = progress_source_ref;
 
-    const [updated] = await db.update(mytoolCompanyPriorities)
-      .set(updates)
-      .where(eq(mytoolCompanyPriorities.id, priorityId))
-      .returning();
+    // Atomicity: priority row update + project-link replacement must commit
+    // or roll back together. Without this, a failure halfway through the
+    // link replacement leaves the row updated but with partial links.
+    // Activity log writes are deferred until AFTER commit so we never
+    // emit "project_linked" events for a transaction that rolled back.
+    const pendingActivities: Array<{
+      action: PriorityActivityAction;
+      fromValue?: string | number | null;
+      toValue?: string | number | null;
+    }> = [];
 
-    // Record one activity event per meaningful field change.
-    const activities = computeUpdateActivities({
-      before: {
-        status: existing[0].status,
-        severity: existing[0].severity,
-        manualHealth: existing[0].manualHealth,
-        manualProgress: existing[0].manualProgress,
-        dueDate: existing[0].dueDate,
-        assignedUserId: existing[0].assignedUserId,
-        ownerUserId: existing[0].ownerUserId,
-        accountableExecId: existing[0].accountableExecId,
-      },
-      after: {
-        status: updated.status,
-        severity: updated.severity,
-        manualHealth: updated.manualHealth,
-        manualProgress: updated.manualProgress,
-        dueDate: updated.dueDate,
-        assignedUserId: updated.assignedUserId,
-        ownerUserId: updated.ownerUserId,
-        accountableExecId: updated.accountableExecId,
-      },
+    const updated = await db.transaction(async (tx: typeof db) => {
+      const [row] = await tx.update(mytoolCompanyPriorities)
+        .set(updates)
+        .where(eq(mytoolCompanyPriorities.id, priorityId))
+        .returning();
+
+      // Field-change events — computed pure, then queued for post-commit.
+      const activities = computeUpdateActivities({
+        before: {
+          status: existing[0].status,
+          severity: existing[0].severity,
+          manualHealth: existing[0].manualHealth,
+          manualProgress: existing[0].manualProgress,
+          dueDate: existing[0].dueDate,
+          assignedUserId: existing[0].assignedUserId,
+          ownerUserId: existing[0].ownerUserId,
+          accountableExecId: existing[0].accountableExecId,
+        },
+        after: {
+          status: row.status,
+          severity: row.severity,
+          manualHealth: row.manualHealth,
+          manualProgress: row.manualProgress,
+          dueDate: row.dueDate,
+          assignedUserId: row.assignedUserId,
+          ownerUserId: row.ownerUserId,
+          accountableExecId: row.accountableExecId,
+        },
+      });
+      for (const ev of activities) {
+        pendingActivities.push({ action: ev.action, fromValue: ev.fromValue, toValue: ev.toValue });
+      }
+
+      if (project_ids !== undefined) {
+        const currentLinks = await tx.select().from(priorityProjects)
+          .where(eq(priorityProjects.priorityId, priorityId));
+        const currentProjectIds = new Set(currentLinks.map((l: typeof currentLinks[number]) => l.projectId));
+        const newProjectIds = new Set(project_ids as number[]);
+
+        const toDelete = currentLinks.filter((l: typeof currentLinks[number]) => !newProjectIds.has(l.projectId));
+        if (toDelete.length > 0) {
+          await tx.delete(priorityProjects).where(
+            inArray(priorityProjects.id, toDelete.map((l: typeof currentLinks[number]) => l.id)),
+          );
+          for (const link of toDelete) {
+            pendingActivities.push({ action: "project_unlinked", toValue: String(link.projectId) });
+          }
+        }
+
+        const toInsert = (project_ids as number[]).filter(pid => !currentProjectIds.has(pid));
+        if (toInsert.length > 0) {
+          await tx.insert(priorityProjects).values(
+            toInsert.map(pid => ({
+              priorityId,
+              projectId: pid,
+              linkedBy: user.id,
+            }))
+          );
+          for (const pid of toInsert) {
+            pendingActivities.push({ action: "project_linked", toValue: String(pid) });
+          }
+        }
+      }
+
+      return row;
     });
-    for (const ev of activities) {
+
+    // Fire activities post-commit so a rolled-back transaction never leaves
+    // orphan audit entries. recordActivity already swallows its own errors
+    // (see priority-activity-log.ts), so audit failure cannot fail the response.
+    for (const ev of pendingActivities) {
       await recordActivity({
         priorityId,
         actorUserId: user.id,
@@ -1499,43 +1572,6 @@ router.put(
         fromValue: ev.fromValue,
         toValue: ev.toValue,
       });
-    }
-
-    if (project_ids !== undefined) {
-      const currentLinks = await db.select().from(priorityProjects)
-        .where(eq(priorityProjects.priorityId, priorityId));
-      const currentProjectIds = new Set(currentLinks.map((l: typeof currentLinks[number]) => l.projectId));
-      const newProjectIds = new Set(project_ids as number[]);
-
-      const toDelete = currentLinks.filter((l: typeof currentLinks[number]) => !newProjectIds.has(l.projectId));
-      for (const link of toDelete) {
-        await db.delete(priorityProjects).where(eq(priorityProjects.id, link.id));
-        await recordActivity({
-          priorityId,
-          actorUserId: user.id,
-          action: "project_unlinked",
-          toValue: String(link.projectId),
-        });
-      }
-
-      const toInsert = (project_ids as number[]).filter(pid => !currentProjectIds.has(pid));
-      if (toInsert.length > 0) {
-        await db.insert(priorityProjects).values(
-          toInsert.map(pid => ({
-            priorityId,
-            projectId: pid,
-            linkedBy: user.id,
-          }))
-        );
-        for (const pid of toInsert) {
-          await recordActivity({
-            priorityId,
-            actorUserId: user.id,
-            action: "project_linked",
-            toValue: String(pid),
-          });
-        }
-      }
     }
 
     const metrics = await getPriorityDerivedMetrics(priorityId);
@@ -2073,7 +2109,12 @@ router.get("/api/priorities/:id/updates", requireAuth, asyncHandler(async (req: 
 router.post(
   "/api/priorities/:id/escalate",
   requireAuth,
-  requirePriorityAdmin,
+  // Keep the entity-permission read gate so CI route-coverage tooling
+  // still recognises this route as guarded. The actual escalation
+  // authority is enforced by `canPriorityRoleEscalatePriority()` below,
+  // which is ownership-aware: a role-priority's owner or assignee may
+  // self-escalate to department; only admins/dept heads can lift higher.
+  requirePermission("company_priorities", "view"),
   validateBody(escalatePrioritySchema),
   asyncHandler(async (req: Request, res: Response) => {
     const priorityId = parseIdParam(req.params.id);
@@ -2083,10 +2124,34 @@ router.post(
     const [priority] = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
     if (!priority) throw notFound("Priority");
 
-    const patch = computeEscalatePatch(
+    const user = getEffectiveUser(req);
+    if (!user?.id || !user?.role) throw forbidden("Authentication required");
+    const userDept = getDepartmentForRole(user.role);
+    const canEscalate = canPriorityRoleEscalatePriority(
+      { role: user.role, userId: user.id, departmentKey: userDept ?? null },
       {
         scope: (priority.scope ?? "company") as PriorityScope,
         departmentKey: priority.departmentKey ?? null,
+        ownerUserId: priority.ownerUserId ?? null,
+        assignedUserId: priority.assignedUserId ?? null,
+      },
+    );
+    if (!canEscalate) {
+      throw forbidden("You do not have permission to escalate this priority");
+    }
+
+    // Defensive: a role-scope priority created before departmentKey
+    // back-fill may have no department pinned. Once a non-admin owner
+    // escalates it to department scope, the row needs a concrete
+    // department or it lands as an orphan. Use the caller's department
+    // as the fallback.
+    const sourceDepartmentKey = priority.departmentKey
+      ?? (priority.scope === "role" ? (userDept ?? null) : null);
+
+    const patch = computeEscalatePatch(
+      {
+        scope: (priority.scope ?? "company") as PriorityScope,
+        departmentKey: sourceDepartmentKey,
       },
       (reason as EscalationReason | undefined) ?? "manual",
     );
