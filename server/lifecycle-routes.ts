@@ -500,7 +500,7 @@ async function propagatePhaseSideEffects(opts: {
       await db
         .update(projectStageInstances)
         .set({
-          stageStatus: 'PROGRESSED',
+          stageStatus: 'progressed',
           readinessPct: 100,
           completedAt: new Date(),
           updatedAt: new Date(),
@@ -515,7 +515,7 @@ async function propagatePhaseSideEffects(opts: {
     if (!isCompleted) {
       await db
         .update(projectStageInstances)
-        .set({ stageStatus: 'IN_PROGRESS', startedAt: new Date(), updatedAt: new Date() })
+        .set({ stageStatus: 'in_progress', startedAt: new Date(), updatedAt: new Date() })
         .where(
           and(
             eq(projectStageInstances.projectId, id),
@@ -527,7 +527,7 @@ async function propagatePhaseSideEffects(opts: {
       .update(projectExecutionState)
       .set({
         currentStageCode: isCompleted ? 'S10_POST_HANDOVER_REVIEW' : mappedStage,
-        gateStatus: isCompleted ? 'PROGRESSED' : 'IN_PROGRESS',
+        gateStatus: isCompleted ? 'progressed' : 'in_progress',
         gateReadinessPct: isCompleted ? 100 : 0,
         updatedAt: new Date(),
       })

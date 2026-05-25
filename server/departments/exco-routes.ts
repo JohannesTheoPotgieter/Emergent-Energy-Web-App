@@ -172,7 +172,7 @@ router.post("/api/mytool/tasks", requireAuth, requireAdmin, async (req, res) => 
     if (validationErrors.length > 0) {
       return res.status(400).json({
         error: "Validation failed",
-        fields: Object.fromEntries(validationErrors.map((err) => [err.field, err.message])),
+        fields: Object.fromEntries(validationErrors.map((validationIssue) => [validationIssue.field, validationIssue.message])),
       });
     }
     const bucket = req.body.bucket || 'personal';
@@ -219,7 +219,7 @@ router.patch("/api/mytool/tasks/:id", requireAuth, requireAdmin, async (req, res
     if (validationErrors.length > 0) {
       return res.status(400).json({
         error: "Validation failed",
-        fields: Object.fromEntries(validationErrors.map((err) => [err.field, err.message])),
+        fields: Object.fromEntries(validationErrors.map((validationIssue) => [validationIssue.field, validationIssue.message])),
       });
     }
     const existingTask = await storage.getMytoolTask(taskId);

@@ -1,17 +1,9 @@
 /**
  * Pure decision helper for the stage advance-to bulk-skip route.
  *
- * Plan v3 § 2.6 / D.6 #2: the legacy refusal at
- * stage-lifecycle-routes.ts:212 hard-coded
- * `ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"]`, blocking Programme and
- * Construction Managers even though they're the operational owners
- * of stage progression. Per AGENT_GUARDRAILS.md § 0A this is a soft
- * workflow rule — the right person + reason should pass.
- *
- * COO/CEO keep their existing reason-optional path (default). Other
- * authorised roles (per `stage_gate.override_roles` in the registry,
- * minus the default set) can advance via the override path with a
- * reason captured in audit.
+ * Protected EPC control: bulk stage advance is a bypass. It requires
+ * COO_ADMIN and a written reason, even when broader stage_gate edit or
+ * override roles exist in the registry.
  */
 
 export type StageAdvanceDecision =
@@ -58,15 +50,7 @@ export function evaluateStageAdvanceDecision(
     return rejectForbidden(defaultRoles, overrideRoles);
   }
 
-  if (defaultRoles.has(userRole)) {
-    return {
-      kind: "advance",
-      overrideApplied: false,
-      reason: reasonProvided ? trimmedReason : null,
-    };
-  }
-
-  if (!overrideRoles.has(userRole)) {
+  if (userRole !== "COO_ADMIN") {
     return rejectForbidden(defaultRoles, overrideRoles);
   }
 
@@ -75,7 +59,7 @@ export function evaluateStageAdvanceDecision(
       kind: "reject",
       status: 400,
       body: {
-        error: "Stage advance requires a reason from your role.",
+          error: "Stage advance bypass requires COO approval and a written reason.",
         hint:
           "Provide a non-empty `reason` in the request body explaining " +
           "why this stage skip is necessary. The reason is recorded in " +
@@ -93,16 +77,14 @@ export function evaluateStageAdvanceDecision(
 }
 
 function rejectForbidden(
-  defaultRoles: ReadonlySet<string>,
-  overrideRoles: ReadonlySet<string>,
+  _defaultRoles: ReadonlySet<string>,
+  _overrideRoles: ReadonlySet<string>,
 ): StageAdvanceDecision {
-  const allAuthorised = new Set<string>([...defaultRoles, ...overrideRoles]);
-  const label = [...allAuthorised].sort().join(", ");
   return {
     kind: "reject",
     status: 403,
     body: {
-      error: `Stage advance is restricted. Authorised roles: ${label}.`,
+      error: "Stage advance bypass is restricted to COO_ADMIN.",
     },
   };
 }

@@ -1,7 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ProjectStageInstance } from "@shared/schema";
-import { STAGE_SEQUENCE } from "@shared/utils/stage-state-machine";
+import { STAGE_SEQUENCE, normalizeStageStatus } from "@shared/utils/stage-state-machine";
 import { PHASE_BY_CODE } from "@shared/phases";
 import { CheckCircle2, Circle, AlertCircle, Loader2, ShieldCheck, XCircle } from "lucide-react";
 
@@ -30,13 +30,13 @@ const STAGE_SHORT_LABELS: Record<string, string> = {
 };
 
 const STATUS_ICON: Record<string, React.ReactNode> = {
-  NOT_STARTED: <Circle className="h-5 w-5 text-gray-300" />,
-  IN_PROGRESS: <Loader2 className="h-5 w-5 text-blue-500" />,
-  READY_FOR_REVIEW: <AlertCircle className="h-5 w-5 text-amber-500" />,
-  APPROVED: <CheckCircle2 className="h-5 w-5 text-green-500" />,
-  PROGRESSED: <CheckCircle2 className="h-5 w-5 text-emerald-600" />,
-  EXCEPTION_APPROVED: <ShieldCheck className="h-5 w-5 text-orange-500" />,
-  BLOCKED: <XCircle className="h-5 w-5 text-red-500" />,
+  not_started: <Circle className="h-5 w-5 text-gray-300" />,
+  in_progress: <Loader2 className="h-5 w-5 text-blue-500" />,
+  ready_for_review: <AlertCircle className="h-5 w-5 text-amber-500" />,
+  approved: <CheckCircle2 className="h-5 w-5 text-green-500" />,
+  progressed: <CheckCircle2 className="h-5 w-5 text-emerald-600" />,
+  exception_approved: <ShieldCheck className="h-5 w-5 text-orange-500" />,
+  blocked: <XCircle className="h-5 w-5 text-red-500" />,
 };
 
 export function StageTimeline({ stages, currentStageCode, onStageClick }: StageTimelineProps) {
@@ -52,12 +52,13 @@ export function StageTimeline({ stages, currentStageCode, onStageClick }: StageT
         {sorted.map((stage, i) => {
           const isCurrent = stage.stageCode === currentStageCode;
           const label = STAGE_SHORT_LABELS[stage.stageCode] || PHASE_BY_CODE[stage.stageCode]?.label || stage.stageCode;
-          const icon = STATUS_ICON[stage.stageStatus] || <Circle className="h-5 w-5 text-gray-300" />;
+          const statusKey = normalizeStageStatus(stage.stageStatus);
+          const icon = STATUS_ICON[statusKey] || <Circle className="h-5 w-5 text-gray-300" />;
 
           return (
             <div key={stage.stageCode} className="flex items-center">
               {i > 0 && (
-                <div className={`h-px w-4 ${stage.stageStatus === 'NOT_STARTED' ? 'bg-gray-200' : 'bg-blue-300'}`} />
+                <div className={`h-px w-4 ${statusKey === 'not_started' ? 'bg-gray-200' : 'bg-blue-300'}`} />
               )}
               <Tooltip>
                 <TooltipTrigger asChild>

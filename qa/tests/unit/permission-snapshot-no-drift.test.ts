@@ -4,8 +4,8 @@
 // canonical-registry refactor and asserts byte-equality against
 // qa/fixtures/permission-snapshot-pre-rework.json.
 //
-// A single bit of drift fails CI, which is the user-facing promise:
-// "no user loses access on day one of the rework".
+// A single bit of unplanned drift fails CI. Planned permission changes must
+// update the fixture in the same patch so the decision is reviewable.
 
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
