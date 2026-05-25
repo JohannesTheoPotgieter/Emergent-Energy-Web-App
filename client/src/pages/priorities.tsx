@@ -251,35 +251,64 @@ export default function PrioritiesPage() {
     onError: (err) => toast({ title: "Could not reopen", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
+  // Bulk endpoints (server/departments/priority-strategic-routes.ts ::
+  // /api/priorities/bulk/{close,escalate,assign}). Each runs in a single
+  // transaction server-side and returns per-id outcomes so we can show
+  // a "4 closed, 1 skipped (already terminal)" toast instead of just
+  // success/error.
+  type BulkResponse = {
+    processed: number;
+    total: number;
+    results: Array<{ id: number; ok: boolean; error?: string }>;
+  };
+  const summarizeBulk = (r: BulkResponse, verb: string) => {
+    if (r.processed === r.total) {
+      return { title: `${verb} ${r.processed}` };
+    }
+    return {
+      title: `${verb} ${r.processed} of ${r.total}`,
+      description: r.results.filter((x) => !x.ok).map((x) => `#${x.id}: ${x.error}`).join(", "),
+    };
+  };
+
   const bulkCloseMutation = useMutation({
-    mutationFn: async (ids: number[]) => {
-      for (const id of ids) await apiRequest("PUT", `/api/priorities/${id}`, { status: "closed" });
+    mutationFn: async (ids: number[]): Promise<BulkResponse> => {
+      const res = await apiRequest("POST", "/api/priorities/bulk/close", { ids });
+      return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (r) => {
+      toast(summarizeBulk(r, "Closed"));
       clearBulkSelection();
       invalidateAll();
     },
+    onError: (err) => toast({ title: "Bulk close failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
   const bulkEscalateMutation = useMutation({
-    mutationFn: async (ids: number[]) => {
-      for (const id of ids) await apiRequest("POST", `/api/priorities/${id}/escalate`, { reason: "manual" });
+    mutationFn: async (ids: number[]): Promise<BulkResponse> => {
+      const res = await apiRequest("POST", "/api/priorities/bulk/escalate", { ids, reason: "manual" });
+      return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (r) => {
+      toast(summarizeBulk(r, "Escalated"));
       clearBulkSelection();
       invalidateAll();
     },
+    onError: (err) => toast({ title: "Bulk escalate failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
   const bulkReassignMutation = useMutation({
-    mutationFn: async ({ ids, userId }: { ids: number[]; userId: number }) => {
-      for (const id of ids) await apiRequest("PUT", `/api/priorities/${id}`, { assigned_user_id: userId });
+    mutationFn: async ({ ids, userId }: { ids: number[]; userId: number }): Promise<BulkResponse> => {
+      const res = await apiRequest("POST", "/api/priorities/bulk/assign", { ids, assigned_user_id: userId });
+      return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (r) => {
+      toast(summarizeBulk(r, "Reassigned"));
       clearBulkSelection();
       setBulkReassignOpen(false);
       invalidateAll();
     },
+    onError: (err) => toast({ title: "Bulk reassign failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
   const applyFilters = (data: PriorityRow[]) =>

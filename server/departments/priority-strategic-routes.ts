@@ -295,6 +295,23 @@ const updatePrioritySchema = basePrioritySchema
   })
   .superRefine(refineProgressSource);
 
+// Bulk action payloads. ids capped at 100 per call to keep one request
+// bounded and prevent a runaway client from locking the priorities
+// table for too long.
+const bulkIdsSchema = z.object({
+  ids: z.array(z.number().int().positive()).min(1).max(100),
+});
+const bulkCloseSchema = bulkIdsSchema.extend({
+  status: z.enum(["closed", "complete"]).default("closed"),
+});
+const bulkEscalateSchema = bulkIdsSchema.extend({
+  reason: z.enum(["overdue", "critical", "blocked", "manual"]).default("manual"),
+  note: z.string().max(1000).optional(),
+});
+const bulkAssignSchema = bulkIdsSchema.extend({
+  assigned_user_id: z.number().int().positive().nullable(),
+});
+
 const escalatePrioritySchema = z.object({
   reason: reasonEnum.optional(),
   note: z.string().max(1000).optional(),
@@ -1845,6 +1862,234 @@ router.post(
     const metrics = await getPriorityDerivedMetrics(priorityId);
     const enriched = await enrichPriority(updated, metrics);
     res.json(enriched);
+  }),
+);
+
+// ==================== BULK ENDPOINTS ====================
+//
+// Single round-trip versions of "loop client-side over each id" patterns
+// the priorities page used to do. Each endpoint:
+//   - validates the payload via Zod (max 100 ids per call)
+//   - loads every referenced priority once and authorises per-id
+//   - runs all writes inside runInTransaction so partial failure rolls
+//     back the whole batch
+//   - returns 200 with a per-id outcome map so the client can show
+//     per-row toasts ("4 closed, 1 skipped because …")
+//
+// Tradeoff vs returning 207-multi-status: keeping a single 200 makes
+// the client mutation trivially success/error; per-id errors are
+// included in the body. If anything in the batch hits an exception
+// outside the per-id loop (e.g. DB unreachable), we fail the whole
+// transaction and bubble up as a normal 500.
+type BulkOutcome = { id: number; ok: boolean; error?: string };
+
+router.post(
+  "/api/priorities/bulk/close",
+  requireAuth,
+  requirePermission("company_priorities", "view"),
+  validateBody(bulkCloseSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const user = getEffectiveUser(req)!;
+    const { ids, status } = req.body as z.infer<typeof bulkCloseSchema>;
+    const userDept = getDepartmentForRole(user.role);
+    const now = new Date();
+
+    const rows = await db.select().from(mytoolCompanyPriorities)
+      .where(inArray(mytoolCompanyPriorities.id, ids));
+    const byId = new Map<number, any>(rows.map((r: any) => [r.id, r]));
+
+    const outcomes: BulkOutcome[] = [];
+    const okIds: number[] = [];
+
+    for (const id of ids) {
+      const row = byId.get(id);
+      if (!row) { outcomes.push({ id, ok: false, error: "not found" }); continue; }
+      if (normalizeTimestamp(row.deletedAt) != null) {
+        outcomes.push({ id, ok: false, error: "archived" }); continue;
+      }
+      const allowed = canPriorityRoleEditPriority(
+        { role: user.role, userId: user.id, departmentKey: userDept ?? null },
+        {
+          scope: (row.scope ?? "company") as PriorityScope,
+          departmentKey: row.departmentKey ?? null,
+          ownerUserId: row.ownerUserId ?? null,
+          assignedUserId: row.assignedUserId ?? null,
+        },
+      );
+      if (!allowed) { outcomes.push({ id, ok: false, error: "forbidden" }); continue; }
+      if (isPriorityTerminalStatus(row.status)) {
+        outcomes.push({ id, ok: false, error: "already terminal" }); continue;
+      }
+      okIds.push(id);
+    }
+
+    if (okIds.length > 0) {
+      await runInTransaction(async (tx) => {
+        await tx.update(mytoolCompanyPriorities)
+          .set({ status, updatedAt: now })
+          .where(inArray(mytoolCompanyPriorities.id, okIds));
+      });
+      for (const id of okIds) {
+        outcomes.push({ id, ok: true });
+        const row = byId.get(id);
+        await recordActivity({
+          priorityId: id,
+          actorUserId: user.id,
+          action: "status_changed",
+          fromValue: row?.status ?? null,
+          toValue: status,
+          details: { source: "bulk" },
+        });
+      }
+    }
+
+    outcomes.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+    res.json({ processed: okIds.length, total: ids.length, results: outcomes });
+  }),
+);
+
+router.post(
+  "/api/priorities/bulk/escalate",
+  requireAuth,
+  requirePermission("company_priorities", "view"),
+  validateBody(bulkEscalateSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const user = getEffectiveUser(req)!;
+    const { ids, reason, note } = req.body as z.infer<typeof bulkEscalateSchema>;
+    const userDept = getDepartmentForRole(user.role);
+    const now = new Date();
+
+    const rows = await db.select().from(mytoolCompanyPriorities)
+      .where(inArray(mytoolCompanyPriorities.id, ids));
+    const byId = new Map<number, any>(rows.map((r: any) => [r.id, r]));
+
+    const outcomes: BulkOutcome[] = [];
+    const pending: Array<{ id: number; row: any; patch: ReturnType<typeof computeEscalatePatch> }> = [];
+
+    for (const id of ids) {
+      const row = byId.get(id);
+      if (!row) { outcomes.push({ id, ok: false, error: "not found" }); continue; }
+      if (normalizeTimestamp(row.deletedAt) != null) {
+        outcomes.push({ id, ok: false, error: "archived" }); continue;
+      }
+      const allowed = canPriorityRoleEscalatePriority(
+        { role: user.role, userId: user.id, departmentKey: userDept ?? null },
+        {
+          scope: (row.scope ?? "company") as PriorityScope,
+          departmentKey: row.departmentKey ?? null,
+          ownerUserId: row.ownerUserId ?? null,
+          assignedUserId: row.assignedUserId ?? null,
+        },
+      );
+      if (!allowed) { outcomes.push({ id, ok: false, error: "forbidden" }); continue; }
+      const sourceDept = row.departmentKey ?? (row.scope === "role" ? (userDept ?? null) : null);
+      const patch = computeEscalatePatch(
+        { scope: (row.scope ?? "company") as PriorityScope, departmentKey: sourceDept },
+        reason as EscalationReason,
+      );
+      if (!patch) {
+        outcomes.push({ id, ok: false, error: "already at company scope" }); continue;
+      }
+      pending.push({ id, row, patch });
+    }
+
+    if (pending.length > 0) {
+      await runInTransaction(async (tx) => {
+        for (const { id, patch } of pending) {
+          await tx.update(mytoolCompanyPriorities)
+            .set({
+              scope: patch!.scope,
+              departmentKey: patch!.departmentKey,
+              escalated: true,
+              escalatedAt: now,
+              escalationReason: patch!.escalationReason,
+              updatedAt: now,
+            })
+            .where(eq(mytoolCompanyPriorities.id, id));
+        }
+      });
+      for (const { id, row, patch } of pending) {
+        outcomes.push({ id, ok: true });
+        await recordActivity({
+          priorityId: id,
+          actorUserId: user.id,
+          action: "escalated",
+          fromValue: row.scope,
+          toValue: patch!.scope,
+          details: { reason: patch!.escalationReason, source: "bulk", ...(note ? { note } : {}) },
+        });
+      }
+    }
+
+    outcomes.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+    res.json({ processed: pending.length, total: ids.length, results: outcomes });
+  }),
+);
+
+router.post(
+  "/api/priorities/bulk/assign",
+  requireAuth,
+  requirePermission("company_priorities", "view"),
+  validateBody(bulkAssignSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const user = getEffectiveUser(req)!;
+    const { ids, assigned_user_id } = req.body as z.infer<typeof bulkAssignSchema>;
+    const userDept = getDepartmentForRole(user.role);
+    const now = new Date();
+
+    if (assigned_user_id != null) {
+      const assignee = await getUserById(assigned_user_id);
+      if (!assignee) throw badRequest("assigned_user_id not found");
+    }
+
+    const rows = await db.select().from(mytoolCompanyPriorities)
+      .where(inArray(mytoolCompanyPriorities.id, ids));
+    const byId = new Map<number, any>(rows.map((r: any) => [r.id, r]));
+
+    const outcomes: BulkOutcome[] = [];
+    const okIds: number[] = [];
+
+    for (const id of ids) {
+      const row = byId.get(id);
+      if (!row) { outcomes.push({ id, ok: false, error: "not found" }); continue; }
+      if (normalizeTimestamp(row.deletedAt) != null) {
+        outcomes.push({ id, ok: false, error: "archived" }); continue;
+      }
+      const allowed = canPriorityRoleEditPriority(
+        { role: user.role, userId: user.id, departmentKey: userDept ?? null },
+        {
+          scope: (row.scope ?? "company") as PriorityScope,
+          departmentKey: row.departmentKey ?? null,
+          ownerUserId: row.ownerUserId ?? null,
+          assignedUserId: row.assignedUserId ?? null,
+        },
+      );
+      if (!allowed) { outcomes.push({ id, ok: false, error: "forbidden" }); continue; }
+      okIds.push(id);
+    }
+
+    if (okIds.length > 0) {
+      await runInTransaction(async (tx) => {
+        await tx.update(mytoolCompanyPriorities)
+          .set({ assignedUserId: assigned_user_id, updatedAt: now })
+          .where(inArray(mytoolCompanyPriorities.id, okIds));
+      });
+      for (const id of okIds) {
+        outcomes.push({ id, ok: true });
+        const row = byId.get(id);
+        await recordActivity({
+          priorityId: id,
+          actorUserId: user.id,
+          action: assigned_user_id == null ? "unassigned" : (row?.assignedUserId ? "reassigned" : "assigned"),
+          fromValue: row?.assignedUserId != null ? String(row.assignedUserId) : null,
+          toValue: assigned_user_id != null ? String(assigned_user_id) : null,
+          details: { source: "bulk" },
+        });
+      }
+    }
+
+    outcomes.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+    res.json({ processed: okIds.length, total: ids.length, results: outcomes });
   }),
 );
 
