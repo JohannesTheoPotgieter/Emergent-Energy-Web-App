@@ -533,6 +533,13 @@
       "when": 1779950000000,
       "tag": "0075_finance_audit_v3_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1780000000000,
+      "tag": "0074_finance_dispute_writeoff_columns",
+      "breakpoints": true
     }
   ]
 }

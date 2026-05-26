@@ -14,8 +14,16 @@ import { workItems } from "./tasks";
 // Internal type/category enums (counterparty_type, pattern_type) stay
 // UPPER because they're domain abbreviations, not workflow states.
 export const counterpartyTypeEnum = pgEnum('counterparty_type', ['SUPPLIER', 'INSTALLER', 'OTHER']);
-export const revenueLineStatusEnum = pgEnum('revenue_line_status', ['planned', 'invoiced', 'paid', 'in_bank', 'realised']);
-export const costLineStatusEnum = pgEnum('cost_line_status', ['planned', 'invoiced', 'approved', 'paid']);
+// TF-7 (audit V3) — added 'disputed' so the cashflow / AR aging surfaces
+// can exclude lines under dispute from "outstanding / overdue" totals
+// without losing the invoice itself.
+// TF-8 (audit V3) — added 'written_off' so bad-debt write-offs flow
+// through a governance-gated path (requirePermission("financials",
+// "approve")) instead of operators creating manual negative lines.
+export const revenueLineStatusEnum = pgEnum('revenue_line_status', ['planned', 'invoiced', 'paid', 'in_bank', 'realised', 'disputed', 'written_off']);
+// TF-7 (audit V3) — cost-side dispute too (vendor invoices that the
+// project disputes pending resolution).
+export const costLineStatusEnum = pgEnum('cost_line_status', ['planned', 'invoiced', 'approved', 'paid', 'disputed']);
 export const patternTypeEnum = pgEnum('pattern_type', ['PREFIX', 'REGEX', 'TOKEN_SHAPE']);
 export const patternMatchOutcomeEnum = pgEnum('pattern_match_outcome', ['auto_applied', 'user_confirmed', 'user_overridden', 'unresolved']);
 export const invoiceCaptureStatusEnum = pgEnum('invoice_capture_status', ['captured', 'submitted', 'verified', 'approved', 'rejected']);
@@ -544,6 +552,22 @@ export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   paidDateConfirmed: boolean("paid_date_confirmed"),
   inBankDate: date("in_bank_date"),
   status: revenueLineStatusEnum("status").notNull().default('planned'),
+  // TF-7 (audit V3) — Disputed-invoice workflow. When a customer disputes
+  // a milestone, set status='disputed' and populate these columns. The
+  // line stays visible everywhere but is excluded from "outstanding /
+  // overdue" rollups so the AR aging report doesn't keep nagging.
+  disputeOpenedAt: timestamp("dispute_opened_at"),
+  disputeResolvedAt: timestamp("dispute_resolved_at"),
+  disputeReason: text("dispute_reason"),
+  disputeOpenedByUserId: integer("dispute_opened_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  // TF-8 (audit V3) — Bad-debt write-off workflow. Setting status to
+  // 'written_off' goes through `requirePermission("financials",
+  // "approve")` at the route layer; these columns record the authorising
+  // CFO, the reason, and the timestamp. The line stays in the table for
+  // audit; aggregate KPIs exclude it.
+  writeOffAuthorisedByUserId: integer("write_off_authorised_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  writeOffAuthorisedAt: timestamp("write_off_authorised_at"),
+  writeOffReason: text("write_off_reason"),
   sourceSheet: text("source_sheet"),
   sourceRow: integer("source_row"),
   importRunId: integer("import_run_id").notNull().references(() => smartImportRuns.id),
@@ -658,6 +682,13 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   cosRealised: boolean("cos_realised"),
   cashflowConfirmed: boolean("cashflow_confirmed"),
   status: costLineStatusEnum("cost_line_status").notNull().default('planned'),
+  // TF-7 (audit V3) — Cost-side dispute. Same shape as the revenue-line
+  // dispute columns above; used when a project disputes a vendor invoice
+  // pending resolution. Excludes the line from "outstanding AP" rollups.
+  disputeOpenedAt: timestamp("dispute_opened_at"),
+  disputeResolvedAt: timestamp("dispute_resolved_at"),
+  disputeReason: text("dispute_reason"),
+  disputeOpenedByUserId: integer("dispute_opened_by_user_id").references(() => users.id, { onDelete: "set null" }),
   sourceSheet: text("source_sheet"),
   sourceRow: integer("source_row"),
   importRunId: integer("import_run_id").notNull().references(() => smartImportRuns.id),
