@@ -101,28 +101,6 @@ jobs:
             turbo-compile-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-
       - run: npx turbo run build test --cache-dir=.turbo
         if: hashFiles('**/*.test.ts') != ''
-      # Diagnostic: if turbo's test step failed, also run the bare suite
-      # and dump the failures to GITHUB_STEP_SUMMARY (visible without
-      # auth in the run page annotations).
-      # Remove once green.
-      - if: failure()
-        run: |
-          set +e
-          # Re-run npm run test capturing output (the turbo step buffers).
-          npm run test > /tmp/test-out.log 2>&1
-          test_exit=$?
-          echo "npm run test exit: $test_exit"
-          mkdir -p /tmp/ci-diagnostics
-          cp /tmp/test-out.log /tmp/ci-diagnostics/test-out.log
-          # Strip ANSI colour codes for readability.
-          sed -i 's/\x1b\[[0-9;]*m//g' /tmp/ci-diagnostics/test-out.log
-          tail -300 /tmp/ci-diagnostics/test-out.log > _ci_test_tail.log
-          # Stage + commit + push the tail file so it appears on the PR.
-          git config user.email "ci-diagnostics@example.invalid"
-          git config user.name  "ci-diagnostics"
-          git add _ci_test_tail.log
-          git commit -m "ci diagnostic: capture failing test output" || true
-          git push origin HEAD:claude/elegant-edison-4qmsa || true
       # Non-cacheable integration steps (need a live server + DB)
       - run: npm run test:api
       - run: npm run release:gate
