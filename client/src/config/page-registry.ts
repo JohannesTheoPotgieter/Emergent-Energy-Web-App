@@ -151,6 +151,10 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // Subcontractor Dashboard, Invoice Patterns, Admin QB.
   { id: "financeQuickBooksThroughput", path: "/finance/quickbooks", label: "QB Throughput", iconKey: "Plug", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: false, routeComponentKey: "FinanceQuickBooksThroughputPage" },
   { id: "priorities", path: "/priorities", label: "Priorities", iconKey: "Flag", navGroup: "PRIORITIES", permissionEntity: "company_priorities", accessPolicy: "ungated", showInSidebar: true, routeComponentKey: "PrioritiesPage" },
+  // Lineage view MUST be listed BEFORE priorityDetail because wouter's
+  // <Switch> matches in source order — the :id wildcard would otherwise
+  // swallow /priorities/lineage and render the detail page with id="lineage".
+  { id: "priorityLineage", path: "/priorities/lineage", label: "Priority Lineage", permissionEntity: "company_priorities", accessPolicy: "ungated", routeComponentKey: "PriorityLineagePage" },
   { id: "priorityDetail", path: "/priorities/:id", label: "Priority Detail", permissionEntity: "company_priorities", accessPolicy: "ungated", routeComponentKey: "PriorityDetailPage" },
   { id: "companyPriorities", path: "/company-priorities", label: "Company Priorities", type: "alias", permissionEntity: "company_priorities", accessPolicy: "ungated", redirectTo: "/priorities" },
   { id: "adminMyTool", path: "/admin/my-tool-settings", label: "My Work Settings", permissionEntity: "admin", routeComponentKey: "MyWorkAdminSettingsPage" },

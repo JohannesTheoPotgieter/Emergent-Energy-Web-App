@@ -118,7 +118,55 @@ The cache strategy is layered so a remote-cache outage never blocks CI:
 | `npm run lint`       | ESLint flat config (cached by turbo)                  |
 | `npm run test`       | Vitest unit tests (cached by turbo)                   |
 | `npm run test:api`   | API tests via `script/run-with-app.ts` (uncacheable)  |
+| `npm run test:smoke` | Playwright smoke (all routes × all roles)             |
 | `npm run db:push`    | Apply enums + schema to `$DATABASE_URL`               |
 
 Targeted single-test runs are recommended during iteration —
 `npm run qa:full-proof` is for release only.
+
+## Local Playwright (smoke tests)
+
+The smoke suite drives a real browser through every route as every test
+user. `script/run-with-app.ts` boots the Express server, waits for
+`/api/health`, runs Playwright, then shuts the server down — so most
+days you just run:
+
+```bash
+npm run test:smoke:install   # one-time: pull the chromium browser binary
+npm run test:smoke           # boots app + runs the suite
+```
+
+`test:smoke:install` runs `playwright install chromium` (and its
+required system deps when invoked under root on a Debian/Ubuntu image).
+Re-run after upgrading `@playwright/test`.
+
+### Pointing the suite at an already-running server
+
+If you already have `npm run dev` running and just want to iterate on a
+single spec, skip the auto-spawn wrapper:
+
+```bash
+# Assumes the server is reachable at http://localhost:5000
+npx playwright test -c qa/playwright.config.ts qa/tests/e2e/smoke.spec.ts
+```
+
+Open the HTML trace for a failed run:
+
+```bash
+npx playwright show-report qa/artifacts/e2e/report
+```
+
+### Test users
+
+The suite logs in as four fixture users (see
+`qa/tests/e2e/smoke.spec.ts` `TEST_USERS`):
+
+| Role key       | Username  | Password | App role               |
+| -------------- | --------- | -------- | ---------------------- |
+| `admin`        | johannes  | 2023     | COO_ADMIN              |
+| `pm`           | eon       | 2035     | PROJECT_MANAGER_SITE   |
+| `engineer`     | paul      | 2029     | ENGINEER               |
+| `qualityManager` | dean    | 2025     | QUALITY_MANAGER        |
+
+These exist in the seed data. If your `DATABASE_URL` is fresh, run
+`npm run db:setup` first to seed users + reference data.

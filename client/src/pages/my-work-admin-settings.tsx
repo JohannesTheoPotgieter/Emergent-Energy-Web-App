@@ -130,7 +130,14 @@ export default function MyWorkAdminSettingsPage() {
   });
 
   const { data: priorities = [], isLoading: prioritiesLoading } = useQuery<CompanyPriority[]>({
-    queryKey: ["/api/mytool/company-priorities"],
+    queryKey: ["/api/priorities", { scope: "company" }],
+    queryFn: async () => {
+      const res = await fetch("/api/priorities?scope=company", {
+        headers: { Authorization: `Bearer ${localStorage.getItem("auth_token") || ""}` },
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
   });
 
   useEffect(() => {
@@ -152,13 +159,22 @@ export default function MyWorkAdminSettingsPage() {
     },
   });
 
+  const toCanonicalBody = (form: PriorityFormData) => ({
+    title: form.title,
+    description: form.description || null,
+    severity: form.severity,
+    horizon: form.horizon,
+    owner_role: form.ownerRole || null,
+    scope: "company" as const,
+  });
+
   const createPriorityMutation = useMutation({
     mutationFn: async (body: PriorityFormData) => {
-      await apiRequest("POST", "/api/mytool/company-priorities", body);
+      await apiRequest("POST", "/api/priorities", toCanonicalBody(body));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
       queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities/my-work"] });
       setShowAddForm(false);
       setAddForm({ ...emptyPriorityForm });
       toast({ title: "Priority created", description: "New company priority has been added." });
@@ -169,12 +185,12 @@ export default function MyWorkAdminSettingsPage() {
   });
 
   const updatePriorityMutation = useMutation({
-    mutationFn: async ({ id, ...body }: PriorityFormData & { id: number }) => {
-      await apiRequest("PATCH", `/api/mytool/company-priorities/${id}`, body);
+    mutationFn: async ({ id, ...form }: PriorityFormData & { id: number }) => {
+      await apiRequest("PUT", `/api/priorities/${id}`, toCanonicalBody(form));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
       queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities/my-work"] });
       setEditingId(null);
       toast({ title: "Priority updated", description: "Company priority has been updated." });
     },
@@ -185,26 +201,26 @@ export default function MyWorkAdminSettingsPage() {
 
   const closePriorityMutation = useMutation({
     mutationFn: async (id: number) => {
-      await apiRequest("PATCH", `/api/mytool/company-priorities/${id}`, { status: "closed" });
+      await apiRequest("PUT", `/api/priorities/${id}`, { status: "closed" });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
       queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities/my-work"] });
       toast({ title: "Priority closed", description: "Priority has been marked as closed." });
     },
   });
 
   const deletePriorityMutation = useMutation({
     mutationFn: async (id: number) => {
-      await apiRequest("DELETE", `/api/mytool/company-priorities/${id}`);
+      await apiRequest("DELETE", `/api/priorities/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
       queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
-      toast({ title: "Priority deleted", description: "Company priority has been removed." });
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities/my-work"] });
+      toast({ title: "Priority archived", description: "Company priority has been archived." });
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to delete priority.", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to archive priority.", variant: "destructive" });
     },
   });
 

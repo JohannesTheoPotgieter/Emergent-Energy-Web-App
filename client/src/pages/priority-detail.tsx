@@ -221,10 +221,22 @@ export default function PriorityDetailPage() {
     enabled: hasAnyProjects,
   });
 
+  // Direct children — used everywhere outside the Chain tab.
   const { data: children = [] } = useQuery<ProjectLikeChild[]>({
     queryKey: [`/api/priorities/${priorityId}/children`],
     queryFn: () => subResourceFetcher(`/api/priorities/${priorityId}/children`, [] as ProjectLikeChild[]),
     enabled: priorityId > 0,
+  });
+
+  // Full recursive subtree (every descendant, breadth-first) — used
+  // by the Chain tab to render the multi-level hierarchy. Separate
+  // query so the rest of the page keeps the lighter direct-children
+  // payload; tree query only fires when the Chain tab is active.
+  const [chainActive, setChainActive] = useState(false);
+  const { data: descendants = [] } = useQuery<ProjectLikeChild[]>({
+    queryKey: [`/api/priorities/${priorityId}/children`, { recursive: true }],
+    queryFn: () => subResourceFetcher(`/api/priorities/${priorityId}/children?recursive=true`, [] as ProjectLikeChild[]),
+    enabled: priorityId > 0 && chainActive,
   });
 
   const { data: activity = [] } = useQuery<PriorityActivityRow[]>({
@@ -545,7 +557,7 @@ export default function PriorityDetailPage() {
             </div>
           }
           actions={
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Button
                 size="sm"
                 variant="ghost"
@@ -789,8 +801,11 @@ export default function PriorityDetailPage() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue={displayProjectCount > 0 ? "projects" : "details"}>
-        <TabsList className="bg-muted/60">
+      <Tabs
+        defaultValue={displayProjectCount > 0 ? "projects" : "details"}
+        onValueChange={(v) => setChainActive(v === "chain")}
+      >
+        <TabsList className="bg-muted/60 w-full md:w-auto overflow-x-auto justify-start">
           {displayProjectCount > 0 ? (
             <>
               <TabsTrigger value="projects" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><FolderOpen className="w-3.5 h-3.5" />Projects</TabsTrigger>
@@ -1242,58 +1257,94 @@ export default function PriorityDetailPage() {
               </div>
             </div>
 
-            {/* Children grouped by department */}
-            {children.length > 0 && (
-              <div className="pl-11 space-y-3">
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Sub-priorities ({children.length})</p>
-                {(() => {
-                  const grouped: Record<string, ProjectLikeChild[]> = {};
-                  children.forEach((c) => {
-                    const key = c.departmentKey || "other";
-                    if (!grouped[key]) grouped[key] = [];
-                    grouped[key].push(c);
-                  });
-                  return Object.entries(grouped).map(([dept, deptChildren]) => (
-                    <div key={dept} className="space-y-1">
-                      {Object.keys(grouped).length > 1 && (
-                        <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
-                          {departmentLabel(dept)}
-                        </p>
-                      )}
-                      {deptChildren.map((child) => {
-                        const childDays = daysRemaining(child.dueDate);
-                        return (
-                          <div key={child.id} className="flex items-center gap-3 px-3 py-2 rounded border hover:bg-muted/50 text-sm">
-                            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${HEALTH_DOT[child.effectiveHealth] || HEALTH_DOT.healthy}`} />
-                            <div className="flex-1 min-w-0">
-                              <Link href={`/priorities/${child.id}`}>
-                                <span className="font-medium text-primary hover:underline cursor-pointer truncate block">{child.title}</span>
-                              </Link>
-                              {child.childCount > 0 && (
-                                <span className="text-xs text-muted-foreground">{child.childCount} sub-item{child.childCount !== 1 ? "s" : ""}</span>
-                              )}
-                            </div>
-                            {child.owner?.name && (
-                              <span className="text-xs text-muted-foreground shrink-0">{child.owner.name}</span>
-                            )}
-                            <span className="text-xs text-muted-foreground shrink-0">{child.effectiveProgress ?? 0}%</span>
-                            {child.dueDate && (
-                              <span className={`text-xs shrink-0 ${childDays != null && childDays <= 7 ? "text-red-600" : childDays != null && childDays <= 14 ? "text-amber-600" : "text-muted-foreground"}`}>
-                                {childDays != null && childDays < 0 ? `${Math.abs(childDays)}d overdue` : childDays != null ? `${childDays}d` : child.dueDate}
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ));
-                })()}
-              </div>
-            )}
+            {/* Recursive sub-priority tree.
+                Uses the descendants payload (recursive=true) which
+                returns every descendant breadth-first. We bucket by
+                parentId on the client and render a depth-indented
+                tree so the operator sees the entire chain, not just
+                the first level. Falls back to the immediate children
+                payload while the recursive query is still loading. */}
+            {(() => {
+              const tree = descendants.length > 0 ? descendants : children;
+              if (tree.length === 0) {
+                if (!priority.parentId) {
+                  return (
+                    <p className="text-sm text-muted-foreground py-4 text-center">
+                      This priority has no parent or child priorities.
+                    </p>
+                  );
+                }
+                return null;
+              }
 
-            {children.length === 0 && !priority.parentId && (
-              <p className="text-sm text-muted-foreground py-4 text-center">This priority has no parent or child priorities.</p>
-            )}
+              const byParent = new Map<number, ProjectLikeChild[]>();
+              for (const node of tree) {
+                const pid = node.parentId ?? priorityId;
+                if (!byParent.has(pid)) byParent.set(pid, []);
+                byParent.get(pid)!.push(node);
+              }
+              for (const list of byParent.values()) {
+                list.sort((a, b) => {
+                  const deptA = a.departmentKey || "";
+                  const deptB = b.departmentKey || "";
+                  if (deptA !== deptB) return deptA.localeCompare(deptB);
+                  return (a.sortOrder || 0) - (b.sortOrder || 0);
+                });
+              }
+
+              const renderNode = (node: ProjectLikeChild, depth: number) => {
+                const childDays = daysRemaining(node.dueDate);
+                const directKids = byParent.get(node.id) || [];
+                return (
+                  <div key={node.id}>
+                    <div
+                      className="flex items-center gap-3 px-3 py-2 rounded border hover:bg-muted/50 text-sm"
+                      style={{ marginLeft: depth * 20 }}
+                      data-testid={`chain-node-${node.id}`}
+                    >
+                      <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${HEALTH_DOT[node.effectiveHealth] || HEALTH_DOT.healthy}`} />
+                      <div className="flex-1 min-w-0">
+                        <Link href={`/priorities/${node.id}`}>
+                          <span className="font-medium text-primary hover:underline cursor-pointer truncate block">{node.title}</span>
+                        </Link>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          {node.departmentKey && <span>{departmentLabel(node.departmentKey)}</span>}
+                          {directKids.length > 0 && (
+                            <span>{directKids.length} sub-item{directKids.length !== 1 ? "s" : ""}</span>
+                          )}
+                        </div>
+                      </div>
+                      {node.owner?.name && (
+                        <span className="text-xs text-muted-foreground shrink-0">{node.owner.name}</span>
+                      )}
+                      <span className="text-xs text-muted-foreground shrink-0">{node.effectiveProgress ?? 0}%</span>
+                      {node.dueDate && (
+                        <span className={`text-xs shrink-0 ${childDays != null && childDays <= 7 ? "text-red-600" : childDays != null && childDays <= 14 ? "text-amber-600" : "text-muted-foreground"}`}>
+                          {childDays != null && childDays < 0 ? `${Math.abs(childDays)}d overdue` : childDays != null ? `${childDays}d` : node.dueDate}
+                        </span>
+                      )}
+                    </div>
+                    {directKids.length > 0 && (
+                      <div className="mt-1 space-y-1">
+                        {directKids.map((c) => renderNode(c, depth + 1))}
+                      </div>
+                    )}
+                  </div>
+                );
+              };
+
+              const roots = byParent.get(priorityId) || [];
+              return (
+                <div className="pl-11 space-y-3">
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
+                    Sub-priorities ({tree.length} total)
+                  </p>
+                  <div className="space-y-1">
+                    {roots.map((r) => renderNode(r, 0))}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </TabsContent>
 
