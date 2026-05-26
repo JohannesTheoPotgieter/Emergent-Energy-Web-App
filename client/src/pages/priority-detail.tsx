@@ -1284,27 +1284,58 @@ export default function PriorityDetailPage() {
           </div>
           {activity.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4 text-center">No activity recorded yet for this priority.</p>
-          ) : (
-            <ol className="relative border-l border-border pl-4 space-y-3">
-              {activity.map((a) => (
-                <li key={a.id} className="relative">
-                  <span className="absolute -left-[22px] top-1 w-4 h-4 rounded-full bg-background border border-border flex items-center justify-center">
-                    <ActivityIcon action={a.action} />
-                  </span>
-                  <div className="text-xs">
-                    <span className="font-medium text-foreground">{a.actorName || (a.source === "project" ? "Project update" : "Someone")}</span>
-                    <span className="text-muted-foreground"> {formatActivitySentence(a)}</span>
-                    {a.source === "project" && (
-                      <Badge variant="secondary" className="ml-2 text-[9px] bg-blue-50 text-blue-700">project</Badge>
-                    )}
+          ) : (() => {
+            // Group activity into Today / Yesterday / This week / Earlier
+            // buckets so the user can scan recency before reading detail.
+            const now = new Date();
+            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+            const yesterdayStart = todayStart - 86_400_000;
+            const weekStart = todayStart - 7 * 86_400_000;
+            const buckets: Record<string, typeof activity> = {
+              "Today": [],
+              "Yesterday": [],
+              "This week": [],
+              "Earlier": [],
+            };
+            for (const a of activity) {
+              const t = a.createdAt ? new Date(a.createdAt).getTime() : NaN;
+              if (!Number.isFinite(t)) { buckets["Earlier"].push(a); continue; }
+              if (t >= todayStart) buckets["Today"].push(a);
+              else if (t >= yesterdayStart) buckets["Yesterday"].push(a);
+              else if (t >= weekStart) buckets["This week"].push(a);
+              else buckets["Earlier"].push(a);
+            }
+            const orderedBuckets = ["Today", "Yesterday", "This week", "Earlier"]
+              .filter((label) => buckets[label].length > 0);
+            return (
+              <div className="space-y-6">
+                {orderedBuckets.map((label) => (
+                  <div key={label}>
+                    <h4 className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-2">{label}</h4>
+                    <ol className="relative border-l border-border pl-4 space-y-3">
+                      {buckets[label].map((a) => (
+                        <li key={a.id} className="relative">
+                          <span className="absolute -left-[22px] top-1 w-4 h-4 rounded-full bg-background border border-border flex items-center justify-center">
+                            <ActivityIcon action={a.action} />
+                          </span>
+                          <div className="text-xs">
+                            <span className="font-medium text-foreground">{a.actorName || (a.source === "project" ? "Project update" : "Someone")}</span>
+                            <span className="text-muted-foreground"> {formatActivitySentence(a)}</span>
+                            {a.source === "project" && (
+                              <Badge variant="secondary" className="ml-2 text-[9px] bg-blue-50 text-blue-700">project</Badge>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-muted-foreground tabular-nums">
+                            {formatDateTime(a.createdAt)}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
                   </div>
-                  <span className="text-[10px] text-muted-foreground tabular-nums">
-                    {formatDateTime(a.createdAt)}
-                  </span>
-                </li>
-              ))}
-            </ol>
-          )}
+                ))}
+              </div>
+            );
+          })()}
         </TabsContent>
       </Tabs>
 
