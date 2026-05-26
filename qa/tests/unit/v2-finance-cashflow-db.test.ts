@@ -39,7 +39,7 @@ d("v2 finance cashflow — DB-backed behavioral guard (Task #124)", () => {
 
     const [r] = await dbModule.db
       .insert(importsSchema.smartImportRuns)
-      .values({ sourceFileName: MARKER })
+      .values({ sourceFileName: MARKER, projectName: MARKER })
       .returning({ id: importsSchema.smartImportRuns.id });
     importRunId = r.id;
 

@@ -35,8 +35,10 @@ d("Excel-vs-App race conditions (DB-backed)", () => {
   let helpers: typeof import("../../../server/lib/manual-overrides");
   let financeSchema: typeof import("../../../shared/schema/finance");
   let projectsSchema: typeof import("../../../shared/schema/projects");
+  let importsSchema: typeof import("../../../shared/schema/imports");
 
   let projectId: number;
+  let importRunId: number;
   let costRowId: number;
   const MARKER = `__excel_vs_app_race_${Date.now()}_${Math.random().toString(36).slice(2, 8)}__`;
 
@@ -46,12 +48,21 @@ d("Excel-vs-App race conditions (DB-backed)", () => {
     helpers = await import("../../../server/lib/manual-overrides");
     financeSchema = await import("../../../shared/schema/finance");
     projectsSchema = await import("../../../shared/schema/projects");
+    importsSchema = await import("../../../shared/schema/imports");
 
     const [p] = await dbModule.db
       .insert(projectsSchema.projectInfo)
       .values({ projectName: MARKER })
       .returning({ id: projectsSchema.projectInfo.id });
     projectId = p.id;
+
+    // smart_import_runs is the parent FK for normalized_cost_lines —
+    // required because import_run_id is NOT NULL in the schema.
+    const [r] = await dbModule.db
+      .insert(importsSchema.smartImportRuns)
+      .values({ sourceFileName: MARKER, projectName: MARKER })
+      .returning({ id: importsSchema.smartImportRuns.id });
+    importRunId = r.id;
 
     const [row] = await dbModule.db
       .insert(financeSchema.normalizedCostLines)
@@ -60,6 +71,7 @@ d("Excel-vs-App race conditions (DB-backed)", () => {
         projectName: MARKER,
         description: "Race test cost line",
         amountExVat: "1500.00",
+        importRunId,
         importSnapshot: { amountExVat: "1500.00" },
       } as any)
       .returning({ id: financeSchema.normalizedCostLines.id });
@@ -71,6 +83,11 @@ d("Excel-vs-App race conditions (DB-backed)", () => {
       await dbModule.db
         .delete(financeSchema.normalizedCostLines)
         .where(eq(financeSchema.normalizedCostLines.id, costRowId));
+    }
+    if (importRunId) {
+      await dbModule.db
+        .delete(importsSchema.smartImportRuns)
+        .where(eq(importsSchema.smartImportRuns.id, importRunId));
     }
     if (projectId) {
       await dbModule.db
