@@ -1037,7 +1037,11 @@ export async function getProjectDevelopmentWorkspaceRollup(): Promise<WorkspaceR
           // text BEFORE COALESCE because the empty-string default '' would
           // otherwise be coerced into the enum type and trigger
           // "invalid input value for enum raid_status: ''" (22P02).
-          open: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${raidItems.status}, ''))) NOT IN ('completed','complete','closed','resolved','done'))`,
+          // The ::text cast forces Postgres to treat the enum as text
+          // throughout the expression. NOT using ::text here is what
+          // produces the enum_in error in the CI quality-gate. SQLite
+          // dev doesn't have enums so this only surfaces on Postgres.
+          open: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(CAST(${raidItems.status} AS TEXT), ''))) NOT IN ('completed','complete','closed','resolved','done'))`,
         })
         .from(raidItems)
         .groupBy(raidItems.projectId),
