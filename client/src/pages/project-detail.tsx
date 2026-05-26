@@ -381,6 +381,29 @@ export default function ProjectDetailPage() {
       try { localStorage.setItem("last_visited_project", JSON.stringify({ name: projectName, timestamp: Date.now() })); } catch {}
     }
   }, [projectName]);
+
+  // Wave-5 audit (2026-05-26) — deprecate the legacy by-name URL.
+  // Per Six Rule #1 the projectId is the spine; routing on
+  // project_name is fragile (rename races, case-insensitive lookups,
+  // collisions). When the user lands on /project/:projectName and we
+  // can resolve a stable project_info_id, replace the URL in history
+  // so the next reload uses the canonical /project/id/:projectId.
+  // Preserves the query string (?dept=, ?sub=, ?highlightId= etc.).
+  useEffect(() => {
+    if (isNameRoute && projectInfoId && !programDataLoading) {
+      const querySuffix = searchString ? `?${searchString}` : "";
+      const canonical = `/project/id/${projectInfoId}${querySuffix}`;
+      // Use history.replaceState so the user doesn't see a flash and
+      // the back button still works correctly.
+      try {
+        window.history.replaceState(null, "", canonical);
+      } catch {
+        // Fallback: use wouter's setLocation if direct history access
+        // fails (e.g. some test environments).
+        setLocation(canonical);
+      }
+    }
+  }, [isNameRoute, projectInfoId, programDataLoading, searchString, setLocation]);
   const userRole = user?.role || localStorage.getItem("company_role") || "";
 
   const { data: rolePermsData, isLoading: rolePermsLoading } = useQuery({
