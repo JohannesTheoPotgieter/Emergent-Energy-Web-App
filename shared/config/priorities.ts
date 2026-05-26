@@ -81,6 +81,14 @@ export interface PriorityMutabilityRow {
   departmentKey: string | null | undefined;
   ownerUserId: number | null | undefined;
   assignedUserId: number | null | undefined;
+  /**
+   * Accountable executive sponsor. Used by canPriorityRoleReadPriority
+   * to grant cross-dept visibility — an exec sponsoring a priority in
+   * another department needs to read it even if they aren't owner or
+   * assignee. Not used by the edit/escalate predicates (those are
+   * stricter — sponsoring doesn't grant write authority).
+   */
+  accountableExecId?: number | null | undefined;
 }
 
 export function canPriorityRoleEditPriority(
@@ -134,11 +142,17 @@ export function canPriorityRoleReadPriority(
   // Company scope is visible to everyone in the company.
   if (scope === "company") return true;
 
-  // Direct ownership / assignment always grants read, regardless of
-  // scope or department. A priority can legitimately be assigned to
-  // someone outside the originating department (cross-team work,
-  // SME consult, etc.) and that person needs to see their own work.
-  if (priority.ownerUserId === user.userId || priority.assignedUserId === user.userId) {
+  // Direct ownership / assignment / exec sponsorship always grants read,
+  // regardless of scope or department. A priority can legitimately be
+  // assigned to someone outside the originating department (cross-team
+  // work, SME consult, etc.) and that person needs to see their own
+  // work. Same for an exec sponsor (accountableExecId) — they need
+  // visibility on every priority they're accountable for, even across
+  // departments. Write authority still respects scope+dept (this is the
+  // READ predicate only).
+  if (priority.ownerUserId === user.userId
+      || priority.assignedUserId === user.userId
+      || priority.accountableExecId === user.userId) {
     return true;
   }
 

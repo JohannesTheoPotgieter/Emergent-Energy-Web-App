@@ -107,6 +107,11 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // Kept as a redirect so any bookmarked link still lands in the right place.
   { id: "quickbooksHomeRedirect", path: "/quickbooks", label: "QuickBooks (moved)", type: "alias", permissionEntity: "financials", redirectTo: "/finance/quickbooks" },
   { id: "adminDocumentTypes", path: "/admin/document-types", label: "Document types (legacy)", iconKey: "FileText", navGroup: "SYSTEM", permissionEntity: "admin_roles", showInSidebar: false, routeComponentKey: "AdminDocumentTypesPage" },
+  // Visible to anyone with company_priorities:view since the template
+  // LIST endpoint already filters by dept visibility (regular users
+  // only see role-scope templates they could instantiate). The Create
+  // / Edit / Delete buttons are hidden client-side via `canManage` and
+  // the server CRUD is gated by `requirePriorityCreator`.
   { id: "adminPriorityTemplates", path: "/admin/priority-templates", label: "Priority templates", iconKey: "Sparkles", navGroup: "SYSTEM", permissionEntity: "company_priorities", routeComponentKey: "AdminPriorityTemplatesPage" },
   { id: "adminDocumentManagement", path: "/admin/document-management", label: "Document management", iconKey: "FolderTree", navGroup: "SYSTEM", permissionEntity: "documents_admin", routeComponentKey: "AdminDocumentManagementPage" },
   { id: "adminEmailLinkerDev", path: "/admin/email-linker-dev", label: "Email auto-linker (dev)", iconKey: "Mail", navGroup: "SYSTEM", permissionEntity: "admin_roles", routeComponentKey: "AdminEmailLinkerDevPage" },

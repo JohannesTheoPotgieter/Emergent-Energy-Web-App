@@ -256,8 +256,8 @@ export type PriorityWatch = typeof priorityWatches.$inferSelect;
 // any authorised user can instantiate them into a real priority in
 // one click. Soft-deleted via deletedAt so older priorities created
 // from a template still reference a recognisable name. See migration
-// 0070 + server/departments/priority-strategic-routes.ts CRUD +
-// instantiate endpoints.
+// 0069_priorities_phase3 + server/departments/priority-strategic-routes.ts
+// CRUD + instantiate endpoints.
 export const priorityTemplates = pgTable("priority_templates", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),

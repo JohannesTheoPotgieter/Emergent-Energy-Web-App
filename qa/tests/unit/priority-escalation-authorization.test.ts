@@ -131,6 +131,82 @@ describe("canPriorityRoleEscalatePriority", () => {
   });
 });
 
+describe("canPriorityRoleReadPriority — accountableExecId shortcut", () => {
+  const exec: PriorityAccessUser = { role: "CCO", userId: 88, departmentKey: "LEADERSHIP" };
+  // CCO is in PRIORITY_ADMIN_ROLES so they'd pass via the admin branch
+  // anyway. Use ENGINEER to verify the dedicated exec shortcut bites.
+  const engineerActingAsExec: PriorityAccessUser = { role: "ENGINEER", userId: 88, departmentKey: "ENGINEERING" };
+  const otherEng: PriorityAccessUser = { role: "ENGINEER", userId: 99, departmentKey: "ENGINEERING" };
+
+  it("accountable exec on a different dept's priority can still read it", () => {
+    const finPri: PriorityMutabilityRow = {
+      scope: "department", departmentKey: "FINANCE",
+      ownerUserId: 200, assignedUserId: null, accountableExecId: 88,
+    };
+    expect(canPriorityRoleReadPriority(engineerActingAsExec, finPri)).toBe(true);
+  });
+
+  it("admins still pass (covered by the admin branch)", () => {
+    const finPri: PriorityMutabilityRow = {
+      scope: "department", departmentKey: "FINANCE",
+      ownerUserId: 200, assignedUserId: null, accountableExecId: 88,
+    };
+    expect(canPriorityRoleReadPriority(exec, finPri)).toBe(true);
+  });
+
+  it("a regular user who is NOT the exec sponsor stays blocked", () => {
+    const finPri: PriorityMutabilityRow = {
+      scope: "department", departmentKey: "FINANCE",
+      ownerUserId: 200, assignedUserId: null, accountableExecId: 88,
+    };
+    expect(canPriorityRoleReadPriority(otherEng, finPri)).toBe(false);
+  });
+});
+
+describe("priorities — template instantiate override authorisation", () => {
+  it("instantiate handler refuses dept-key override from regular users + gates dept heads to their own dept", () => {
+    const source = read("server/departments/priority-strategic-routes.ts");
+    // Anchor on the router.post (skips the comment header above the
+    // instantiateSchema definition) so we get the handler body.
+    const handlerStart = source.indexOf('router.post(\n  "/api/priority-templates/:id/instantiate"');
+    expect(handlerStart, "instantiate handler not found").toBeGreaterThan(0);
+    const block = source.slice(handlerStart, handlerStart + 4500);
+    // Per-role gating: admins set effectiveDepartmentKey freely;
+    // dept-heads are constrained to userDept; regular users silently
+    // drop the override.
+    expect(block).toContain("effectiveDepartmentKey");
+    expect(block).toContain("Dept heads can only instantiate templates into their own department");
+    expect(block).toMatch(/effectiveOwnerRole = tpl\.ownerRole/);
+    expect(block).toContain("runInTransaction");
+    // TOCTOU re-check inside the transaction.
+    expect(block).toMatch(/stillLive\.deletedAt/);
+  });
+});
+
+describe("priorities — loadPriorityForRead defense-in-depth", () => {
+  it("loadPriorityForRead re-verifies admin role for allowArchived (not just trusts the caller)", () => {
+    const source = read("server/departments/priority-strategic-routes.ts");
+    const helperBlock = source.slice(
+      source.indexOf("async function loadPriorityForRead"),
+      source.indexOf("async function loadPriorityForRead") + 1500,
+    );
+    expect(helperBlock).toMatch(/allowArchived\s*=\s*options\.allowArchived\s*===\s*true\s*&&\s*isPriorityAdminRole/);
+    expect(helperBlock).toContain("accountableExecId");
+  });
+});
+
+describe("priorities — fanout filters watchers by current visibility", () => {
+  it("fanoutPriorityNotifications passes accountableExecId to canPriorityRoleReadPriority", () => {
+    const source = read("server/departments/priority-strategic-routes.ts");
+    const fanoutBlock = source.slice(
+      source.indexOf("async function fanoutPriorityNotifications"),
+      source.indexOf("async function fanoutPriorityNotifications") + 3000,
+    );
+    expect(fanoutBlock).toContain("accountableExecId");
+    expect(fanoutBlock).toContain("canPriorityRoleReadPriority");
+  });
+});
+
 describe("priorities sprint 2 — route-level ownership-aware escalation", () => {
   it("escalate route loads priority then runs canPriorityRoleEscalatePriority instead of requirePriorityAdmin", () => {
     const source = read("server/departments/priority-strategic-routes.ts");
