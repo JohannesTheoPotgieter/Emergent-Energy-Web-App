@@ -195,7 +195,7 @@ export function registerPoRoutes(app: Express) {
       const rows = await db.execute(sql`
         SELECT po.id, po.po_ref, po.po_number, po.project_name, po.project_id,
                po.supplier_name, po.total, po.status, po.created_at,
-               po.project_manager,
+               po.project_manager, po.comments, po.line_items, po.created_by,
                u.name as submitted_by_name,
                (
                  SELECT json_agg(json_build_object(
@@ -204,7 +204,8 @@ export function registerPoRoutes(app: Express) {
                    'reviewerRole', pra.reviewer_role,
                    'decision', pra.decision,
                    'decidedAt', pra.decided_at,
-                   'reviewerName', ru.name
+                   'reviewerName', ru.name,
+                   'notes', pra.notes
                  ))
                  FROM po_review_assignments pra
                  LEFT JOIN users ru ON pra.reviewer_user_id = ru.id
@@ -257,11 +258,51 @@ export function registerPoRoutes(app: Express) {
         projectName, projectId, counterpartyId,
         supplierName, supplierVat, supplierAddress, supplierContact,
         lineItems, paymentTerms, deliveryDate, deliveryAddress, siteContact,
-        comments, projectManager, idempotencyKey
+        comments, projectManager, idempotencyKey,
+        acknowledgeMissingTerms,
       } = req.body;
 
       if (!projectName || !supplierName || !lineItems?.length) {
         return res.status(400).json({ error: "projectName, supplierName, and at least one line item required" });
+      }
+
+      // Soft supplier-terms gate (audit scope: "Supplier terms must exist
+      // before PO issue"). When the request binds to a canonical
+      // counterparty, refuse to generate a PO unless the counterparty has
+      // payment terms recorded OR the caller explicitly acknowledges the
+      // missing terms via `acknowledgeMissingTerms: true` AND provides a
+      // PO-level paymentTerms string. Override path per § 0A: the caller
+      // (with procurement.edit) supplies the acknowledgement reason.
+      if (counterpartyId) {
+        const cpLookup = await db.execute(sql`
+          SELECT id, name_canonical, payment_terms, is_active
+          FROM counterparties
+          WHERE id = ${Number(counterpartyId)}
+          LIMIT 1
+        `);
+        const cp = rowsFromResult(cpLookup)[0];
+        if (!cp) {
+          return res.status(400).json({
+            error: "counterparty_not_found",
+            message: `Counterparty ${counterpartyId} does not exist.`,
+          });
+        }
+        if (cp.is_active === false) {
+          return res.status(400).json({
+            error: "counterparty_inactive",
+            message: `Counterparty '${cp.name_canonical}' is inactive. Reactivate the counterparty record before issuing a PO.`,
+          });
+        }
+        const cpHasTerms = typeof cp.payment_terms === "string" && cp.payment_terms.trim().length > 0;
+        const poHasTerms = typeof paymentTerms === "string" && paymentTerms.trim().length > 0;
+        if (!cpHasTerms && !poHasTerms && !acknowledgeMissingTerms) {
+          return res.status(400).json({
+            error: "supplier_terms_missing",
+            message: `Supplier '${cp.name_canonical}' has no payment terms on file. Either set payment terms on the counterparty, pass paymentTerms on this PO, or resubmit with acknowledgeMissingTerms: true.`,
+            counterpartyId: Number(cp.id),
+            counterpartyName: cp.name_canonical,
+          });
+        }
       }
 
       // Idempotency guard: if key provided, check for existing PO before consuming a sequence number
@@ -332,12 +373,14 @@ export function registerPoRoutes(app: Express) {
 
       const insertResult = await db.execute(sql`
         INSERT INTO purchase_orders (
-          po_ref, po_number, project_name, project_id, supplier_name, supplier_vat,
+          po_ref, po_number, project_name, project_id, counterparty_id,
+          supplier_name, supplier_vat,
           supplier_address, supplier_contact, line_items, subtotal, vat_amount,
           total, payment_terms, delivery_date, delivery_address, site_contact,
           comments, project_manager, status, created_by, pdf_data, idempotency_key
         ) VALUES (
           ${poRef}, ${poNumber}, ${projectName}, ${projectId || null},
+          ${counterpartyId ? Number(counterpartyId) : null},
           ${supplierName}, ${supplierVat || null},
           ${supplierAddress || null},
           ${supplierContact || null},
@@ -442,6 +485,23 @@ export function registerPoRoutes(app: Express) {
         });
       }
 
+      // Protected business rule: no self-approval at any PO value. The
+      // assigned approver may not be the user who created the PO, nor the
+      // user submitting it.
+      const poCreatorId = po.created_by != null ? Number(po.created_by) : null;
+      if (poCreatorId !== null && Number(approver.id) === poCreatorId) {
+        return res.status(400).json({
+          error: "self_approval_forbidden",
+          message: "The assigned approver cannot be the same person who created this PO. Pick a different eligible approver.",
+        });
+      }
+      if (Number(approver.id) === Number(user.id)) {
+        return res.status(400).json({
+          error: "self_approval_forbidden",
+          message: "You cannot submit a PO and assign yourself as the approver. Pick a different eligible approver.",
+        });
+      }
+
       // Create approval
       const approval = await createPoApproval({
         projectId,
@@ -519,6 +579,22 @@ export function registerPoRoutes(app: Express) {
       const validDecisions = ["approved", "requires_info", "blocked"];
       if (!validDecisions.includes(decision)) {
         return res.status(400).json({ error: `Invalid decision. Must be: ${validDecisions.join(", ")}` });
+      }
+
+      // Protected business rule: no self-approval at any PO value. Load
+      // the PO so we can compare the caller against the creator regardless
+      // of whether the caller is the formal assignee or using the CFO /
+      // CEO_ADMIN universal override.
+      const poRecord = rowsFromResult(
+        await db.execute(sql`SELECT created_by FROM purchase_orders WHERE id = ${poIdNum}`),
+      )[0];
+      if (!poRecord) return res.status(404).json({ error: "PO not found" });
+      const poCreatorId = poRecord.created_by != null ? Number(poRecord.created_by) : null;
+      if (poCreatorId !== null && poCreatorId === user.id) {
+        return res.status(403).json({
+          error: "self_approval_forbidden",
+          message: "You cannot approve a PO you created. Delegate to another eligible approver.",
+        });
       }
 
       // B2: find the ACTIVE assignment (pending, not yet delegated). The
@@ -700,6 +776,19 @@ export function registerPoRoutes(app: Express) {
         return res.status(400).json({
           error: "target_is_current_assignee",
           message: "Delegation target is already the current assignee.",
+        });
+      }
+
+      // Protected business rule: no self-approval at any PO value. Block
+      // delegating approval to the PO creator.
+      const poForDelegate = rowsFromResult(
+        await db.execute(sql`SELECT created_by FROM purchase_orders WHERE id = ${poIdNum}`),
+      )[0];
+      const poCreatorId = poForDelegate?.created_by != null ? Number(poForDelegate.created_by) : null;
+      if (poCreatorId !== null && Number(target.id) === poCreatorId) {
+        return res.status(400).json({
+          error: "self_approval_forbidden",
+          message: "You cannot delegate PO approval to the user who created the PO.",
         });
       }
 
