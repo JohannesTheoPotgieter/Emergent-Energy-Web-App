@@ -397,7 +397,17 @@ function ClientLinkedProjectRow({
             {project.latestUpdateText || "No canonical latest update captured yet."}
           </p>
           <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-            <span>Revenue: <span className="font-medium text-foreground">{formatCurrency(project.totalRevenue)}</span></span>
+            <span
+              title="§ 3.3 POC recognised revenue. The figure that reconciles to Excel col U and the Finance > GP page."
+            >
+              Revenue (POC): <span className="font-medium text-foreground">{formatCurrency(project.recognisedRevenue ?? project.totalRevenue)}</span>
+            </span>
+            <span
+              className="text-muted-foreground/70"
+              title="Sum of contract milestones from the Revenue Tracking sheet. Not § 3.3 revenue — kept as a reference."
+            >
+              Contract: <span className="font-medium text-foreground/80">{formatCurrency(project.totalRevenue)}</span>
+            </span>
             <span>Cost: <span className="font-medium text-foreground">{formatCurrency(project.totalCost)}</span></span>
             <span>Pending approvals: <span className="font-medium text-foreground">{project.pendingApprovals}</span></span>
             <span>Overdue work: <span className="font-medium text-foreground">{project.overdueWorkItems}</span></span>

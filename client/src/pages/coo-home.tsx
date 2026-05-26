@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { getQueryFn } from "@/lib/queryClient";
+import { formatZarCompact } from "@/lib/currency";
 import { useGatesPipeline, useGatesHandovers } from "@/hooks/use-gates";
 import { ApprovalQueueCard } from "@/components/managed-documents";
 import { PortfolioReadinessTile } from "@/components/documents/PortfolioReadinessTile";
@@ -187,13 +188,7 @@ export default function CooHome() {
   );
 }
 
-function formatZAR(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—";
-  const abs = Math.abs(n);
-  if (abs >= 1_000_000) return `R ${(n / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `R ${(n / 1_000).toFixed(0)}k`;
-  return `R ${Math.round(n)}`;
-}
+const formatZAR = (n: number | null | undefined): string => formatZarCompact(n);
 
 function FinanceKpiStrip({ kpis, loading }: { kpis: ExecDashboardPayload["kpis"] | undefined; loading: boolean }) {
   if (loading) {

@@ -20,7 +20,7 @@ export function registerCashflow2026Routes(app: Express) {
 
   // ==================== CASHFLOW 2026 WEEKLY VIEW ====================
 
-  app.get("/api/cashflow-2026", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "view"), async (req: Request, res: Response) => {
     try {
       const projectFilter = req.query.project ? String(req.query.project) : null;
 
@@ -178,7 +178,7 @@ export function registerCashflow2026Routes(app: Express) {
 
   // ==================== CASHFLOW 2026 DETAIL ====================
 
-  app.get("/api/cashflow-2026/detail", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow", "view"), async (req: Request, res: Response) => {
     try {
       const weekStart = String(req.query.week || "");
       if (!weekStart || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
@@ -398,7 +398,7 @@ export function registerCashflow2026Routes(app: Express) {
     }
   });
 
-  app.get("/api/cashflow-2026/balance-history", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/cashflow-2026/balance-history", requireAuth, requirePermission("cashflow", "view"), async (req: Request, res: Response) => {
     try {
       const weekStart = req.query.week ? String(req.query.week) : null;
       if (weekStart) {
