@@ -108,9 +108,17 @@ export function PriorityListSection({
       )}
 
       {normal.length === 0 && escalated.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <Flag className="w-8 h-8 mx-auto mb-2 opacity-50" />
-          <p className="text-sm font-medium text-foreground mb-1">{emptyMessage}</p>
+        // Friendlier empty state: layered icon stack + hint about what
+        // a priority looks like so the user has a mental model before
+        // they click Create.
+        <div className="text-center py-16 px-4">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-50 border border-emerald-200 mb-4">
+            <Flag className="w-7 h-7 text-emerald-600" />
+          </div>
+          <p className="text-base font-medium text-foreground mb-1">{emptyMessage}</p>
+          <p className="text-xs text-muted-foreground max-w-sm mx-auto mb-4">
+            A priority is a single, named thing the team needs to make progress on this week / month / quarter — owner, due date, definition-of-done.
+          </p>
           {emptyAction}
         </div>
       ) : normal.length > 0 ? (

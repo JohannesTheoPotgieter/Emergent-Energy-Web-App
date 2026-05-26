@@ -97,7 +97,7 @@ export function PriorityCard({
           </div>
         )}
 
-        {(priority.escalated || priority.linkedTaskId || priority.dueForReview) && (
+        {(priority.escalated || priority.linkedTaskId || priority.dueForReview || priority.reviewCadenceDays) && (
           <div className="flex items-center gap-1 mb-2 flex-wrap">
             {priority.escalated && (
               <Badge variant="destructive" className="text-[10px]">
@@ -113,6 +113,20 @@ export function PriorityCard({
               >
                 <AlertTriangle className="w-3 h-3 mr-0.5" />
                 Due for review
+              </Badge>
+            )}
+            {priority.reviewCadenceDays && !priority.dueForReview && (
+              // Quiet "this priority is on a review cadence" hint — only
+              // visible when not overdue (otherwise the amber badge
+              // above takes precedence).
+              <Badge
+                variant="outline"
+                className="text-[10px] bg-slate-50 text-slate-600 border-slate-200"
+                title={`On a ${priority.reviewCadenceDays}-day review cadence${priority.lastReviewedAt ? ` — last reviewed ${new Date(priority.lastReviewedAt).toLocaleDateString()}` : ""}`}
+                data-testid="badge-cadence-active"
+              >
+                <RefreshCw className="w-3 h-3 mr-0.5" />
+                Every {priority.reviewCadenceDays}d
               </Badge>
             )}
             {priority.linkedTaskId && (

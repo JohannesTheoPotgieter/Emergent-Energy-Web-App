@@ -7,6 +7,7 @@ import { PageLayout } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ToastAction } from "@/components/ui/toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -348,26 +349,23 @@ export default function PriorityDetailPage() {
     },
     onSuccess: () => {
       invalidateDetail();
-      toast({ title: "Priority closed" });
+      toast({
+        title: "Priority closed",
+        action: (
+          <ToastAction
+            altText="Undo close"
+            onClick={async () => {
+              await apiRequest("POST", `/api/priorities/${priorityId}/reopen`);
+              invalidateDetail();
+              void invalidatePriorityQueries(queryClient);
+            }}
+          >
+            Undo
+          </ToastAction>
+        ),
+      });
     },
     onError: (err) => toast({ title: "Could not close priority", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
-  });
-
-  const archiveMutation = useMutation({
-    mutationFn: async () => {
-      await apiRequest("DELETE", `/api/priorities/${priorityId}`);
-    },
-    onSuccess: () => {
-      void invalidatePriorityQueries(queryClient);
-      toast({ title: "Priority archived", description: "It's removed from default views. Restore from the archived filter." });
-    },
-    onError: (err) => {
-      const detail = err instanceof Error ? err.message : "Unknown error";
-      const friendly = /HAS_ACTIVE_CHILDREN/i.test(detail)
-        ? "Close or archive the sub-priorities first."
-        : detail;
-      toast({ title: "Could not archive", description: friendly, variant: "destructive" });
-    },
   });
 
   const restoreMutation = useMutation({
@@ -380,6 +378,34 @@ export default function PriorityDetailPage() {
       toast({ title: "Priority restored" });
     },
     onError: (err) => toast({ title: "Could not restore", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
+  });
+
+  const archiveMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", `/api/priorities/${priorityId}`);
+    },
+    onSuccess: () => {
+      void invalidatePriorityQueries(queryClient);
+      // Undo affordance — clicking "Undo" within the toast lifetime fires
+      // the restore endpoint so the user can recover from an accidental
+      // archive without hunting for the archived filter.
+      toast({
+        title: "Priority archived",
+        description: "Hidden from default views. Restore from the archived filter.",
+        action: (
+          <ToastAction altText="Undo archive" onClick={() => restoreMutation.mutate()}>
+            Undo
+          </ToastAction>
+        ),
+      });
+    },
+    onError: (err) => {
+      const detail = err instanceof Error ? err.message : "Unknown error";
+      const friendly = /HAS_ACTIVE_CHILDREN/i.test(detail)
+        ? "Close or archive the sub-priorities first."
+        : detail;
+      toast({ title: "Could not archive", description: friendly, variant: "destructive" });
+    },
   });
 
   const reviewMutation = useMutation({
@@ -595,7 +621,27 @@ export default function PriorityDetailPage() {
             </span>
           )}
           {(canEscalateThisPriority || canUsePriorityAdminActions) && (
+            // Action hierarchy:
+            //   - Primary (filled, emerald): the call-to-action the user
+            //     is here to do — Mark reviewed when overdue, Escalate
+            //     when blocked, otherwise nothing prominent.
+            //   - Secondary (outline): structural actions — Escalate
+            //     (non-urgent), Break Down.
+            //   - Tertiary (ghost, muted): lifecycle plumbing —
+            //     Archive / Restore. Less visual weight so the
+            //     primary CTA isn't drowned out by 7 grey buttons.
             <div className="flex items-center gap-2 ml-auto">
+              {canEditPriority && (priority as any).reviewCadenceDays && (priority as any).dueForReview && (
+                <Button
+                  size="sm"
+                  className="text-xs h-7 bg-amber-500 hover:bg-amber-600 text-white"
+                  onClick={() => reviewMutation.mutate()}
+                  disabled={reviewMutation.isPending}
+                  data-testid="button-mark-reviewed"
+                >
+                  {reviewMutation.isPending ? "Saving…" : "Mark reviewed"}
+                </Button>
+              )}
               {canEscalateThisPriority && (priority.scope === "role" || priority.scope === "department") && (
                 <Button
                   size="sm"
@@ -617,22 +663,22 @@ export default function PriorityDetailPage() {
                   <GitBranch className="w-3 h-3 mr-1" /> Break Down
                 </Button>
               )}
-              {canEditPriority && (priority as any).reviewCadenceDays && (
+              {canEditPriority && (priority as any).reviewCadenceDays && !(priority as any).dueForReview && (
                 <Button
                   size="sm"
-                  variant={(priority as any).dueForReview ? "default" : "outline"}
-                  className="text-xs h-7"
+                  variant="ghost"
+                  className="text-xs h-7 text-muted-foreground"
                   onClick={() => reviewMutation.mutate()}
                   disabled={reviewMutation.isPending}
                   data-testid="button-mark-reviewed"
                 >
-                  {reviewMutation.isPending ? "Saving…" : ((priority as any).dueForReview ? "Mark reviewed" : "Re-review now")}
+                  {reviewMutation.isPending ? "Saving…" : "Re-review now"}
                 </Button>
               )}
               {canUsePriorityAdminActions && !(priority as any).deletedAt && (
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant="ghost"
                   className="text-xs h-7 text-muted-foreground hover:text-red-600"
                   onClick={async () => {
                     const ok = await confirm({
