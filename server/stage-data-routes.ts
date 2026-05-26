@@ -8,6 +8,7 @@ import { requirePermission } from "./permission-middleware";
 import { db } from "./db";
 import { and, eq } from "drizzle-orm";
 import { projectStageData, projectCharters } from "@shared/schema";
+import { logAuditFromReq } from "./audit-logger";
 import { parseIntParam } from "./lib/req-params";
 
 function getUser(req: Request): { id: number; role: string } {
@@ -100,6 +101,15 @@ export function registerStageDataRoutes(app: Express): void {
             .select()
             .from(projectStageData)
             .where(eq(projectStageData.id, existing.id));
+          // Wave-3 audit (§ 3A.1) — stage-data mutations now emit audit
+          // events. The merged-keys list lets reviewers see WHICH stage
+          // fields changed without leaking the full payload.
+          logAuditFromReq(req, {
+            entityType: "stage_data",
+            entityId: String(existing.id),
+            action: "update",
+            changesJson: { projectId, stageCode, mergedKeys: Object.keys(data ?? {}) },
+          });
           res.json({ stageData: updated, data: updated.data });
         } else {
           const [created] = await db
@@ -111,6 +121,12 @@ export function registerStageDataRoutes(app: Express): void {
               updatedByUserId: user.id,
             })
             .returning();
+          logAuditFromReq(req, {
+            entityType: "stage_data",
+            entityId: String(created.id),
+            action: "create",
+            changesJson: { projectId, stageCode, keys: Object.keys(data ?? {}) },
+          });
           res.status(201).json({ stageData: created, data: created.data });
         }
       } catch (error: unknown) {
@@ -186,6 +202,12 @@ export function registerStageDataRoutes(app: Express): void {
             .select()
             .from(projectCharters)
             .where(eq(projectCharters.id, existing.id));
+          logAuditFromReq(req, {
+            entityType: "project_charter",
+            entityId: String(existing.id),
+            action: "update",
+            changesJson: { projectId, updatedKeys: Object.keys(charterData ?? {}) },
+          });
           res.json({ charter: updated });
         } else {
           const [created] = await db
@@ -197,6 +219,12 @@ export function registerStageDataRoutes(app: Express): void {
               updatedByUserId: user.id,
             })
             .returning();
+          logAuditFromReq(req, {
+            entityType: "project_charter",
+            entityId: String(created.id),
+            action: "create",
+            changesJson: { projectId, keys: Object.keys(charterData ?? {}) },
+          });
           res.status(201).json({ charter: created });
         }
       } catch (error: unknown) {
@@ -242,6 +270,15 @@ export function registerStageDataRoutes(app: Express): void {
           .select()
           .from(projectCharters)
           .where(eq(projectCharters.id, existing.id));
+
+        // Wave-3 audit — § 3A.1: charter status moves draft→complete→
+        // reviewed→accepted, a stage-gate transition that must be auditable.
+        logAuditFromReq(req, {
+          entityType: "project_charter",
+          entityId: String(existing.id),
+          action: "status_change",
+          changesJson: { projectId, fromStatus: existing.status, toStatus: status },
+        });
 
         res.json({ charter: updated });
       } catch (error: unknown) {

@@ -294,6 +294,16 @@ export function registerHandoverRoutes(app: Express) {
         );
       }
 
+      // Wave-3 audit (2026-05-26) — § 3A.1 / Six Rule #6: handover gate
+      // checklist mutations must emit audit events. Prior to this the
+      // checked-items state could be updated without any audit trail.
+      logAuditFromReq(req, {
+        entityType: "handover_gate",
+        entityId: `${projectId}:${gateId}`,
+        action: existingRows.length > 0 ? "update_checklist" : "init_checklist",
+        changesJson: { gateId, checkedCount: checkedItems.length },
+      });
+
       res.json({ success: true });
     } catch (err: any) {
       console.error("[handover] POST update-checklist error:", err);

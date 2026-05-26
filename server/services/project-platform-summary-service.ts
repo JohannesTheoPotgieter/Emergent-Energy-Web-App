@@ -636,6 +636,11 @@ export async function getProjectListSummaries(
   // 3. Live finance aggregation from normalized_cost_lines.
   const liveFinanceByProject = new Map<number, { plannedRevenue: number; realisedRevenue: number; plannedCost: number; realisedCost: number }>();
   try {
+    // Wave-3 audit (2026-05-26) — § 3.1 hard rule: snapshot reads use
+    // `effective_to IS NULL` ONLY. The previous `(IS NULL OR > NOW())`
+    // pattern would have included rows with a future-dated supersession
+    // (rare, but enough of an exception that any future scheduled-change
+    // pattern would have silently double-counted these aggregates).
     const liveFinRows: any = getDbMode() === "sqlite"
       ? await db.execute(sql.raw(`
           SELECT
@@ -646,7 +651,7 @@ export async function getProjectListSummaries(
             COALESCE(SUM(CASE WHEN COALESCE(cos_realised, 0) != 0 THEN CAST(NULLIF(amount_ex_vat, '') AS REAL) ELSE 0 END), 0) AS realised_cost
           FROM normalized_cost_lines
           WHERE project_id IN (${ids.map((id) => Number(id)).join(",")})
-            AND (effective_to IS NULL OR effective_to > CURRENT_TIMESTAMP)
+            AND effective_to IS NULL
             AND deleted_at IS NULL
           GROUP BY project_id
         `))
@@ -659,7 +664,7 @@ export async function getProjectListSummaries(
             COALESCE(SUM(CASE WHEN cos_realised THEN NULLIF(amount_ex_vat, '')::numeric ELSE 0 END), 0)::float8 AS realised_cost
           FROM normalized_cost_lines
           WHERE project_id = ANY(${`{${ids.join(",")}}`}::int[])
-            AND (effective_to IS NULL OR effective_to > NOW())
+            AND effective_to IS NULL
             AND deleted_at IS NULL
           GROUP BY project_id
         `);
