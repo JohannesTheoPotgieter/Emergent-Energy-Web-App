@@ -51,6 +51,25 @@ export async function startRuntimeServices(options: {
     log("Skipped COS period-lock scheduler in SQLite mode (Postgres-first feature).", "Startup:Runtime");
   }
 
+  // TF-4 (audit V3): derived_project_kpis cache writer. Before this
+  // scheduler landed, the table had no writer in the repo and three
+  // production surfaces (priority dashboard, project header, strategic
+  // chain view) were reading stale-or-zero data. The scheduler runs a
+  // portfolio rebuild every 15 minutes; finance writes can also call
+  // `recomputeDerivedKpisForProject(projectId)` directly for event-
+  // driven freshness on a single row.
+  if (!isSqlite) {
+    try {
+      const { scheduleDerivedProjectKpiRefresh } = await import("./derived-project-kpis-scheduler");
+      scheduleDerivedProjectKpiRefresh();
+      started.push("derived-project-kpis-scheduler");
+    } catch (err) {
+      log(`[Derived Project KPIs Scheduler] Failed to start: ${err}`, "Startup:Runtime");
+    }
+  } else {
+    log("Skipped derived-project-kpis scheduler in SQLite mode (Postgres-first feature).", "Startup:Runtime");
+  }
+
   // C1: seed the integration registry so the health dashboard has tiles
   // from day 1 even before the first run has been logged. Idempotent.
   if (!isSqlite) {

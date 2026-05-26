@@ -712,6 +712,14 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   // so the imported value is preserved verbatim for audit.
   savingOverrun: decimal("saving_overrun", { precision: 15, scale: 2 }),
   // Tracker cols AB/AC, AE — header/sidebar values that apply to the line.
+  // TF-5 (audit V3, owner-confirmed 2026-05-26): `amount_ex_vat` already
+  // holds the ZAR-equivalent figure. `usdExchangeRate` and `pricePerWatt`
+  // are stored as METADATA ONLY — surfaced by the tracker replica view
+  // for context; NOT multiplied into any finance aggregate. If the
+  // tracker convention ever changes ("raw USD in amount_ex_vat"), every
+  // aggregator under server/repositories/finance-* and
+  // server/services/canonical-dashboard-kpi-service.ts MUST be updated
+  // to apply the rate. Do not silently flip the meaning.
   usdExchangeRate: decimal("usd_exchange_rate", { precision: 10, scale: 4 }),
   pricePerWatt: decimal("price_per_watt", { precision: 12, scale: 6 }),
   // Per-cell font/fill colour. See cellFormat note on normalizedRevenueLines.
