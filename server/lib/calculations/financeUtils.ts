@@ -30,6 +30,37 @@ export const STATIC_COS_BUDGET_FY26: Record<string, number> = {
   '2026-08': 73983803.91,
 };
 
+// DF-14 (audit V2): FY rollover guard. The constant above is pinned to FY26
+// (Sep 2025 – Aug 2026). When the current SAST month moves outside that
+// range, every caller that falls back to this constant will silently read 0.
+// Surface the drift early so it can't sneak past FY-end.
+let _staticCosBudgetWarned = false;
+function _warnIfStaticCosBudgetExpired(): void {
+  if (_staticCosBudgetWarned) return;
+  const keys = Object.keys(STATIC_COS_BUDGET_FY26).sort();
+  const minKey = keys[0];
+  const maxKey = keys[keys.length - 1];
+  const SAST_OFFSET_MS = 120 * 60 * 1000;
+  const currentMonthKey = new Date(Date.now() + SAST_OFFSET_MS).toISOString().slice(0, 7);
+  if (currentMonthKey < minKey || currentMonthKey > maxKey) {
+    _staticCosBudgetWarned = true;
+    console.warn(
+      `[finance] STATIC_COS_BUDGET_FY26 is outside the current FY window. ` +
+      `Current SAST month: ${currentMonthKey}; constant covers ${minKey}..${maxKey}. ` +
+      `Callers falling back to this constant will read 0 until the constant is refreshed.`,
+    );
+  }
+}
+
+/**
+ * Look up a static COS budget value for the given month key. Wraps the
+ * constant so we can surface FY-rollover drift on first read.
+ */
+export function getStaticCosBudgetForMonth(monthKey: string): number {
+  _warnIfStaticCosBudgetExpired();
+  return STATIC_COS_BUDGET_FY26[monthKey] ?? 0;
+}
+
 // ─── Month-key extraction ───
 // Extracts "YYYY-MM" from a date string. Returns null if the date is invalid.
 export function extractMonthKey(dateStr: string | null | undefined): string | null {

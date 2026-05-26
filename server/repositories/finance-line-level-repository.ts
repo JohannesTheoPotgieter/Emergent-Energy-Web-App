@@ -624,6 +624,14 @@ export function deriveFinanceLinesFromRows(
       warning = "category_revenue_allocation_missing";
     } else if (categoryTotalActualTotal === 0) {
       warning = "category_total_actual_zero";
+    } else if (categoryTotalActualTotal < 0) {
+      // DF-6 (audit V2): a negative category total (credits > costs) would
+      // invert the sign of the § 3.3 per-line formula and yield revenue that
+      // is wrong in sign and magnitude. Flag and short-circuit to 0 instead
+      // of silently producing -250000 on a 100000 cost line because the
+      // category net is -20000. Rare but plausible at end-of-project after
+      // refunds.
+      warning = "category_total_actual_negative";
     } else {
       perLineRevenue = (actualTotal / categoryTotalActualTotal) * categoryRevenueAllocation;
     }

@@ -243,6 +243,54 @@ describe("deriveFinanceLinesFromRows — edge cases", () => {
     expect(lines.every((l) => l.perLineRevenue > 0)).toBe(true);
   });
 
+  it("DF-6: returns perLineRevenue=0 with warning when category total is negative (credits > costs)", () => {
+    // Audit V2 DF-6: a negative category total (e.g. R-20,000 after a
+    // R-120,000 credit cancels a R100,000 cost) would invert the sign of
+    // the § 3.3 per-line formula and yield -R250,000 of recognised
+    // revenue on the surviving R100,000 cost line. That's clearly wrong;
+    // we want 0 + a derivation warning, not reversed-sign revenue.
+    const creditActuals: FinanceLineActualsRowInput[] = [
+      {
+        id: 10,
+        costLineId: 1, // ties to parent id 1 (Panels)
+        projectId: PROJECT_A,
+        actualTotal: "100000",
+        poNumber: "PO-A",
+        invoiceNumber: "INV-A",
+        invoiceDate: "2026-04-15",
+        financePaymentDate: null,
+        description: "Net positive cost",
+        qty: "1",
+        rate: "100000",
+      },
+      {
+        id: 11,
+        costLineId: 2, // ties to parent id 2 (Panels)
+        projectId: PROJECT_A,
+        actualTotal: "-120000",
+        poNumber: "PO-B",
+        invoiceNumber: "CR-2026-05-001",
+        invoiceDate: "2026-05-01",
+        financePaymentDate: null,
+        description: "Credit note (refund)",
+        qty: "1",
+        rate: "-120000",
+      },
+    ];
+    const lines = deriveFinanceLinesFromRows(creditActuals, parents, allocations);
+    // Both Panels lines should detect the negative category total and
+    // short-circuit to 0 instead of producing nonsense.
+    const panelsLines = lines.filter((l) =>
+      [1, 2].includes(l.parentLineId),
+    );
+    expect(panelsLines.length).toBeGreaterThan(0);
+    for (const l of panelsLines) {
+      expect(l.derivationWarning).toBe("category_total_actual_negative");
+      expect(l.perLineRevenue).toBe(0);
+      expect(l.perLineGp).toBe(-l.actualTotal); // GP = 0 - cost, no inversion
+    }
+  });
+
   it("perLineRevenue = 0 when parent has no FK AND no categoryKey", () => {
     // True orphan: parent can't be linked to any allocation by either path.
     const orphanedParents = parents.map((p) => ({

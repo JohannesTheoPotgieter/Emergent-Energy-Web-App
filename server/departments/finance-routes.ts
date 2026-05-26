@@ -32,6 +32,7 @@ import { effectiveAllocatedAmountExVat } from '@shared/config/qb-allocations';
 import { requirePermission } from '../permission-middleware';
 import { requireTrackerPermission } from '../lib/finance-route-access';
 import { isProjectAccessibleByName, resolveProjectScope } from '../services/project-access-service';
+import { sastCurrentMonthKey } from '../lib/finance/timezone-helpers';
 import { z } from 'zod';
 import { validateBody } from '../middleware/validateBody';
 // Finance Tier 2: canonical error envelope. Replaces 78 raw
@@ -2833,9 +2834,12 @@ router.get(
       const itemsByMonth = new Map<string, any[]>();
 
       const nowDate = new Date();
-      // UTC anchor — must match `cosCurrentMonthKey` in /api/cos-tracker so the
-      // same line classifies the same way in aggregate and per-project views.
-      const currentMonthKey = `${nowDate.getUTCFullYear()}-${String(nowDate.getUTCMonth() + 1).padStart(2, '0')}`;
+      // DF-3 (audit V2): currentMonthKey is the SAST month, so a line dated
+      // "today SAST" classifies identically here and in /api/cos-tracker /
+      // /api/gp-tracker / /api/revenue-tracker / lifecycle-routes. Before
+      // this fix the UTC anchor here disagreed with the SAST anchor in
+      // finance-line-level-repository for the first 2h of every SAST day.
+      const currentMonthKey = sastCurrentMonthKey();
 
       for (const exp of projectExpenses) {
         if (exp.rowType !== 'item') continue;
@@ -5343,9 +5347,12 @@ router.get(
       }, 0);
 
       const nowDate = new Date();
-      // UTC anchor — must match `cosCurrentMonthKey` in /api/cos-tracker so the
-      // same line classifies the same way in aggregate and per-project views.
-      const currentMonthKey = `${nowDate.getUTCFullYear()}-${String(nowDate.getUTCMonth() + 1).padStart(2, '0')}`;
+      // DF-3 (audit V2): currentMonthKey is the SAST month, so a line dated
+      // "today SAST" classifies identically here and in /api/cos-tracker /
+      // /api/gp-tracker / /api/revenue-tracker / lifecycle-routes. Before
+      // this fix the UTC anchor here disagreed with the SAST anchor in
+      // finance-line-level-repository for the first 2h of every SAST day.
+      const currentMonthKey = sastCurrentMonthKey();
 
       const revByMonth = new Map<string, number>();
       const realisedRevByMonth = new Map<string, number>();
@@ -5501,9 +5508,12 @@ router.get(
       // directly.
 
       const nowDate = new Date();
-      // UTC anchor — must match `cosCurrentMonthKey` in /api/cos-tracker so the
-      // same line classifies the same way in aggregate and per-project views.
-      const currentMonthKey = `${nowDate.getUTCFullYear()}-${String(nowDate.getUTCMonth() + 1).padStart(2, '0')}`;
+      // DF-3 (audit V2): currentMonthKey is the SAST month, so a line dated
+      // "today SAST" classifies identically here and in /api/cos-tracker /
+      // /api/gp-tracker / /api/revenue-tracker / lifecycle-routes. Before
+      // this fix the UTC anchor here disagreed with the SAST anchor in
+      // finance-line-level-repository for the first 2h of every SAST day.
+      const currentMonthKey = sastCurrentMonthKey();
 
       const cosByMonth = new Map<string, number>();
       const realisedCosByMonth = new Map<string, number>();
@@ -5670,9 +5680,12 @@ router.get(
       }, 0);
 
       const nowDate = new Date();
-      // UTC anchor — must match `cosCurrentMonthKey` in /api/cos-tracker so the
-      // same line classifies the same way in aggregate and per-project views.
-      const currentMonthKey = `${nowDate.getUTCFullYear()}-${String(nowDate.getUTCMonth() + 1).padStart(2, '0')}`;
+      // DF-3 (audit V2): currentMonthKey is the SAST month, so a line dated
+      // "today SAST" classifies identically here and in /api/cos-tracker /
+      // /api/gp-tracker / /api/revenue-tracker / lifecycle-routes. Before
+      // this fix the UTC anchor here disagreed with the SAST anchor in
+      // finance-line-level-repository for the first 2h of every SAST day.
+      const currentMonthKey = sastCurrentMonthKey();
 
       const cosByMonth = new Map<string, number>();
       const realisedCosByMonth = new Map<string, number>();
@@ -5923,9 +5936,8 @@ async function revenueTrackerHandler(req: Request, res: Response) {
     }
 
     const nowDate = new Date();
-    // UTC anchor — must match `cosCurrentMonthKey` in /api/cos-tracker so the
-    // same line classifies the same way in aggregate and per-project views.
-    const currentMonthKey = `${nowDate.getUTCFullYear()}-${String(nowDate.getUTCMonth() + 1).padStart(2, '0')}`;
+    // DF-3 (audit V2): SAST currentMonthKey — see timezone-helpers.ts.
+    const currentMonthKey = sastCurrentMonthKey();
 
     const revByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
     const realisedByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
@@ -6206,9 +6218,12 @@ router.get(
       }
 
       const nowDate = new Date();
-      // UTC anchor — must match `cosCurrentMonthKey` in /api/cos-tracker so the
-      // same line classifies the same way in aggregate and per-project views.
-      const currentMonthKey = `${nowDate.getUTCFullYear()}-${String(nowDate.getUTCMonth() + 1).padStart(2, '0')}`;
+      // DF-3 (audit V2): currentMonthKey is the SAST month, so a line dated
+      // "today SAST" classifies identically here and in /api/cos-tracker /
+      // /api/gp-tracker / /api/revenue-tracker / lifecycle-routes. Before
+      // this fix the UTC anchor here disagreed with the SAST anchor in
+      // finance-line-level-repository for the first 2h of every SAST day.
+      const currentMonthKey = sastCurrentMonthKey();
 
       const items: any[] = [];
       // Finance PR 3: § 3.3.2 — recognition via canonical bucketing helper.
