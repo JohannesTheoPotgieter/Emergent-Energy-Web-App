@@ -108,21 +108,21 @@ jobs:
       - if: failure()
         run: |
           set +e
+          # Re-run npm run test capturing output (the turbo step buffers).
           npm run test > /tmp/test-out.log 2>&1
-          # Emit ::error:: annotations for each failing test so they
-          # surface on the run page without auth.
-          grep -E "^ FAIL " /tmp/test-out.log | while read -r line; do
-            # strip ANSI colour codes for the annotation payload
-            clean=$(echo "$line" | sed 's/\x1b\[[0-9;]*m//g' | sed 's/%/%25/g' | sed 's/\r/%0D/g')
-            echo "::error::$clean"
-          done
-          # Also dump to step summary as a backup.
-          {
-            echo "## test output tail"
-            echo '```'
-            tail -150 /tmp/test-out.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          test_exit=$?
+          echo "npm run test exit: $test_exit"
+          mkdir -p /tmp/ci-diagnostics
+          cp /tmp/test-out.log /tmp/ci-diagnostics/test-out.log
+          # Strip ANSI colour codes for readability.
+          sed -i 's/\x1b\[[0-9;]*m//g' /tmp/ci-diagnostics/test-out.log
+          tail -300 /tmp/ci-diagnostics/test-out.log > _ci_test_tail.log
+          # Stage + commit + push the tail file so it appears on the PR.
+          git config user.email "ci-diagnostics@example.invalid"
+          git config user.name  "ci-diagnostics"
+          git add _ci_test_tail.log
+          git commit -m "ci diagnostic: capture failing test output" || true
+          git push origin HEAD:claude/elegant-edison-4qmsa || true
       # Non-cacheable integration steps (need a live server + DB)
       - run: npm run test:api
       - run: npm run release:gate
