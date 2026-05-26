@@ -91,8 +91,23 @@ function buildKpis(params: {
 }): SharedKpiContract[] {
   return [
     {
+      // § 3.3 — POC recognised revenue, summed from cost-line actuals.
+      // This is the figure that ties out with the Excel `Expenditure
+      // Breakdown` col U formula and the line-level GP page.
+      id: "finance_recognised_revenue",
+      name: "Revenue (POC)",
+      value: toNumber(params.finance?.recognisedRevenue),
+      unit: "currency",
+      sourceTable: "normalized_cost_lines (per-line POC)",
+      sourceService: "finance-line-level-repository",
+    },
+    {
+      // Contract value billed — sum of milestone amounts on
+      // normalized_revenue_lines. Distinct from recognised revenue
+      // (above) per § 3.3.3 "Inflow ≠ revenue". Kept as a separate KPI
+      // so dashboards can show both side-by-side.
       id: "finance_total_revenue",
-      name: "Total Revenue",
+      name: "Contract value (billed)",
       value: toNumber(params.finance?.totalRevenue),
       unit: "currency",
       sourceTable: "normalized_revenue_lines",

@@ -37,6 +37,8 @@ function daysRemaining(dateStr: string | null): number | null {
   return Math.ceil((due - today) / 86_400_000);
 }
 
+export type PriorityListDensity = "cards" | "compact" | "dense";
+
 export interface PriorityCardProps {
   priority: PriorityRow;
   showEscalate?: boolean;
@@ -50,6 +52,7 @@ export interface PriorityCardProps {
   selectable?: boolean;
   selected?: boolean;
   onToggleSelect?: () => void;
+  density?: PriorityListDensity;
 }
 
 export function PriorityCard({
@@ -65,6 +68,7 @@ export function PriorityCard({
   selectable,
   selected,
   onToggleSelect,
+  density = "cards",
 }: PriorityCardProps) {
   const days = daysRemaining(priority.dueDate);
   const healthColor = HEALTH_COLORS[priority.effectiveHealth] || HEALTH_COLORS.healthy;
@@ -81,9 +85,60 @@ export function PriorityCard({
     showDeptActions ||
     showReopen;
 
+  // Dense mode: render a compact single-line row instead of a card.
+  // Drops the progress bar, the secondary chip row, and the action
+  // buttons in favour of horizontal scanning density. Used when the
+  // operator needs to see 20+ priorities at once on a wide screen.
+  if (density === "dense") {
+    return (
+      <Link href={`/priorities/${priority.id}`}>
+        <div
+          className={`group flex items-center gap-2 px-2 py-1.5 border-l-4 ${healthColor} border-y border-r border-border rounded-r hover:bg-muted/40 cursor-pointer ${selected ? "bg-primary/5 ring-1 ring-primary" : ""}`}
+          data-testid={`priority-row-dense-${priority.id}`}
+        >
+          {selectable && (
+            <input
+              type="checkbox"
+              checked={!!selected}
+              onChange={(e) => { e.stopPropagation(); e.preventDefault(); onToggleSelect?.(); }}
+              onClick={(e) => e.stopPropagation()}
+              className="rounded cursor-pointer shrink-0"
+              aria-label={`Select ${priority.title}`}
+            />
+          )}
+          <span className={`w-2 h-2 rounded-full ${dotColor} shrink-0`} title={healthTooltip} />
+          {priority.escalated && (
+            <AlertTriangle className="w-3 h-3 text-red-500 shrink-0" />
+          )}
+          <span className="text-xs font-medium text-foreground truncate flex-1 group-hover:text-primary group-hover:underline">
+            {priority.title}
+          </span>
+          <Badge variant="secondary" className={`text-[10px] shrink-0 ${sev.className}`}>
+            {sev.label}
+          </Badge>
+          {priority.dueDate && (
+            <span className={`text-[11px] shrink-0 ${days != null && days <= 0 ? "text-red-600 font-medium" : days != null && days <= 7 ? "text-amber-600" : "text-muted-foreground"}`}>
+              {days != null && days < 0 ? `${Math.abs(days)}d over` : days != null ? `${days}d` : ""}
+            </span>
+          )}
+          {priority.assignedUser && (
+            <span className="text-[11px] text-muted-foreground truncate max-w-[100px] shrink-0">
+              {priority.assignedUser.name}
+            </span>
+          )}
+          <span className="text-[11px] text-muted-foreground tabular-nums shrink-0 w-10 text-right">
+            {priority.effectiveProgress}%
+          </span>
+        </div>
+      </Link>
+    );
+  }
+
+  const isCompact = density === "compact";
+
   return (
     <Card className={`border-l-4 ${healthColor} hover:shadow-md transition-shadow relative ${selected ? "ring-2 ring-primary" : ""}`}>
-      <CardContent className="p-4">
+      <CardContent className={isCompact ? "p-2.5" : "p-4"}>
         {selectable && (
           <div className="absolute top-2 right-2 z-10">
             <input
@@ -97,7 +152,7 @@ export function PriorityCard({
           </div>
         )}
 
-        {(priority.escalated || priority.linkedTaskId || priority.dueForReview || priority.reviewCadenceDays) && (
+        {!isCompact && (priority.escalated || priority.linkedTaskId || priority.dueForReview || priority.reviewCadenceDays) && (
           <div className="flex items-center gap-1 mb-2 flex-wrap">
             {priority.escalated && (
               <Badge variant="destructive" className="text-[10px]">
@@ -193,18 +248,18 @@ export function PriorityCard({
           )}
         </div>
 
-        <div className="mb-2">
+        <div className={isCompact ? "mb-1" : "mb-2"}>
           <div className="flex items-center justify-between text-xs mb-1">
             <span className="text-muted-foreground">
               {priority.effectiveProgress}%{" "}
-              {priority.progressSource?.label
+              {!isCompact && (priority.progressSource?.label
                 ? `(${priority.progressSource.label})`
                 : !priority.hasProjects
                   ? "(manual)"
-                  : ""}
+                  : "")}
             </span>
           </div>
-          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+          <div className={`${isCompact ? "h-1" : "h-1.5"} bg-muted rounded-full overflow-hidden`}>
             <div
               className={`h-full rounded-full transition-all ${
                 priority.effectiveHealth === "critical" ? "bg-red-500"
@@ -216,6 +271,7 @@ export function PriorityCard({
           </div>
         </div>
 
+        {!isCompact && (
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <div>
             {priority.parentTitle && (
@@ -257,8 +313,9 @@ export function PriorityCard({
             )}
           </div>
         </div>
+        )}
 
-        {showActionRow && (
+        {showActionRow && !isCompact && (
           <div className="mt-2 pt-2 border-t flex items-center gap-2 flex-wrap">
             {showMarkComplete && (
               <Button

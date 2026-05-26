@@ -248,11 +248,21 @@ export function registerPaymentRequestRoutes(app: Express) {
       }
 
       // Verify it's in_review
-      const current = await db.execute(sql`SELECT status, project_id FROM payment_requests WHERE id = ${id}`);
+      const current = await db.execute(sql`SELECT status, project_id, submitted_by_user_id FROM payment_requests WHERE id = ${id}`);
       const pr = rowsFromResult(current)[0];
       if (!pr) return res.status(404).json({ error: "Payment request not found" });
       if (pr.status !== "in_review") {
         return res.status(400).json({ error: `Payment request must be 'in_review' to review. Current: ${pr.status}` });
+      }
+
+      // Protected business rule: no self-approval at any value. The
+      // reviewer may not be the user who submitted the payment request.
+      const submitterId = pr.submitted_by_user_id != null ? Number(pr.submitted_by_user_id) : null;
+      if (user?.id && submitterId !== null && submitterId === user.id) {
+        return res.status(403).json({
+          error: "self_approval_forbidden",
+          message: "You cannot review a payment request you submitted. Another reviewer must take the decision.",
+        });
       }
 
       await db.execute(sql`

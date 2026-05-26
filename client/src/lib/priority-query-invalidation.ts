@@ -3,14 +3,12 @@ import type { QueryClient, QueryKey } from "@tanstack/react-query";
 export const PRIORITY_QUERY_KEYS = {
   all: ["/api/priorities"] as QueryKey,
   myWork: ["/api/priorities/my-work"] as QueryKey,
-  legacyCompany: ["/api/mytool/company-priorities"] as QueryKey,
 };
 
 export function buildPriorityInvalidationKeys(priorityId?: number | null): QueryKey[] {
   const keys: QueryKey[] = [
     PRIORITY_QUERY_KEYS.all,
     PRIORITY_QUERY_KEYS.myWork,
-    PRIORITY_QUERY_KEYS.legacyCompany,
   ];
 
   if (priorityId != null) {

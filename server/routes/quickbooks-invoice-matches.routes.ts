@@ -74,6 +74,7 @@ import {
   loadRevenueLineContext,
   acceptProposal,
   declineProposal,
+  getProposalAgeSummary,
   listPendingProposalsForLink,
   ProposalApplyError,
   type AppRowContext,
@@ -2707,6 +2708,26 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
       } catch (err) {
         logApiError("qb.invoice_match.auto_suggest_pending", err);
         return sendError(res, serverError("Failed to load pending suggestions."));
+      }
+    },
+  );
+
+  // -------- GET /cascade-proposals/summary ---------------------------------
+  // F-4 — Surfaces "pending cascade proposal" load and oldest-age so the
+  // admin-quickbooks page can flag QB ↔ app drift before month-end recon
+  // turns into a manual chase. Proposals stay one-way (operator must accept);
+  // this endpoint only adds visibility, never auto-applies.
+  app.get(
+    "/api/quickbooks/cascade-proposals/summary",
+    requireAuth,
+    requirePermission("financials", "view"),
+    async (_req: Request, res: Response) => {
+      try {
+        const summary = await getProposalAgeSummary();
+        return res.json(summary);
+      } catch (err) {
+        logApiError("qb.cascade_proposals.summary", err);
+        return sendError(res, serverError("Failed to load cascade-proposal summary."));
       }
     },
   );

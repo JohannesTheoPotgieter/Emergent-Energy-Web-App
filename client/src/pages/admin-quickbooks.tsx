@@ -170,6 +170,26 @@ export default function AdminQuickBooksPage() {
     enabled: isConnected,
   });
 
+  // F-4 — Pending QB cascade proposal counts + oldest age, surfaced as a
+  // banner so stale paid-date / mapping proposals don't sit invisible and
+  // silently drift the COS Tracker out of sync with QB.
+  const { data: proposalSummary } = useQuery<{
+    pending: number;
+    agedOver7Days: number;
+    agedOver14Days: number;
+    agedOver30Days: number;
+    oldestAgeDays: number | null;
+    oldestCreatedAt: string | null;
+  }>({
+    queryKey: ["/api/quickbooks/cascade-proposals/summary"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/quickbooks/cascade-proposals/summary");
+      return res.json();
+    },
+    enabled: isConnected,
+    staleTime: 60_000,
+  });
+
   const disconnectMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/quickbooks/disconnect");
@@ -337,6 +357,69 @@ export default function AdminQuickBooksPage() {
                     reconciliation view looks wrong.
                   </p>
                 )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* F-4 — Pending QB cascade proposal banner. Surfaces unresolved
+          paid-date / mapping proposals before they silently drift the COS
+          Tracker out of sync with QB. Only renders when there's load. */}
+      {isConnected && proposalSummary && proposalSummary.pending > 0 && (
+        <Card
+          className={
+            proposalSummary.agedOver14Days > 0
+              ? "border-rose-200 bg-rose-50/40"
+              : proposalSummary.agedOver7Days > 0
+                ? "border-amber-200 bg-amber-50/40"
+                : "border-sky-200 bg-sky-50/40"
+          }
+          data-testid="qb-proposal-summary"
+        >
+          <CardContent className="p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle
+                className={
+                  proposalSummary.agedOver14Days > 0
+                    ? "h-5 w-5 text-rose-500 shrink-0 mt-0.5"
+                    : proposalSummary.agedOver7Days > 0
+                      ? "h-5 w-5 text-amber-500 shrink-0 mt-0.5"
+                      : "h-5 w-5 text-sky-500 shrink-0 mt-0.5"
+                }
+              />
+              <div className="flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-medium">QuickBooks cascade proposals waiting review</span>
+                  <Badge variant="outline" className="text-[10px]">
+                    {proposalSummary.pending} pending
+                  </Badge>
+                  {proposalSummary.agedOver7Days > 0 && (
+                    <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
+                      {proposalSummary.agedOver7Days} &gt; 7d
+                    </Badge>
+                  )}
+                  {proposalSummary.agedOver14Days > 0 && (
+                    <Badge variant="outline" className="text-[10px] bg-rose-50 text-rose-700 border-rose-200">
+                      {proposalSummary.agedOver14Days} &gt; 14d
+                    </Badge>
+                  )}
+                  {proposalSummary.agedOver30Days > 0 && (
+                    <Badge variant="outline" className="text-[10px] bg-rose-100 text-rose-800 border-rose-300">
+                      {proposalSummary.agedOver30Days} &gt; 30d
+                    </Badge>
+                  )}
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  These are field-level differences QuickBooks reported (e.g. bill paid, vendor mapping, amount
+                  drift) that need an operator to accept or decline. The COS Tracker stays out of sync until each
+                  is resolved.
+                  {proposalSummary.oldestAgeDays !== null && proposalSummary.oldestAgeDays > 0 && (
+                    <>
+                      {" "}Oldest pending: <span className="font-medium">{proposalSummary.oldestAgeDays} day{proposalSummary.oldestAgeDays === 1 ? "" : "s"}</span>.
+                    </>
+                  )}
+                </p>
               </div>
             </div>
           </CardContent>

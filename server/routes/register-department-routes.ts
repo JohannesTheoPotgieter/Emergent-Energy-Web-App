@@ -133,12 +133,16 @@ export async function registerDepartmentRoutes(app: Express) {
     console.error("[Routes] Failed to register dashboard-refresh-routes:", err);
   }
 
-  // C4: Handover Packs
+  // C4: Handover Packs / SSEG / checklist items.
+  // Distinct from legacy `server/handover-routes.ts` (which serves
+  // pd-pm-handover + lessons + handover-gates under `/api/pd-pm-handover/*`
+  // and `/api/projects/:id/handover-gates/*`). Imported by name so the
+  // two registrars don't collide.
   try {
-    const { registerHandoverRoutes } = await import("../departments/handover-routes");
-    registerHandoverRoutes(app);
+    const { registerHandoverPacksRoutes } = await import("../departments/handover-routes");
+    registerHandoverPacksRoutes(app);
   } catch (err) {
-    console.error("[Routes] Failed to register handover-routes:", err);
+    console.error("[Routes] Failed to register handover-packs-routes:", err);
   }
 
   // SSEG Submissions (Project Delivery)

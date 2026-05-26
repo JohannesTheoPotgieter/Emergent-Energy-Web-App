@@ -830,16 +830,16 @@ export interface CreateLinkInput {
 }
 
 /**
- * Raised by `createOrUpdateLink` when the requested link would violate the
- * 1:1 invariant enforced by the partial unique indexes on
- * `quickbooks_invoice_links`. The HTTP layer maps this to a 409 Conflict
- * with the full set of conflicting rows so the caller can decide whether
- * to unlink the existing link first.
- */
-/**
  * Raised when the QuickBooks realm is not available (connector offline or
  * not yet linked). Callers should surface this as 503 so operators know to
  * re-connect before retrying the write.
+ *
+ * Note: the previous 1:1 link-conflict invariant (single QB doc → single app
+ * line) was retired by Task #142. Allocations now permit one QB doc to map
+ * across N app lines via `quickbooks_cost_allocations`; uniqueness is enforced
+ * by the 5-tuple constraint on that table, not by a partial index here.
+ * See QuickBooksLinkConflictError for the legacy 409 shape still raised when
+ * sum-of-allocations exceeds the QB document ex-VAT total.
  */
 export class QuickBooksUnavailableError extends Error {
   readonly code = "quickbooks_unavailable";

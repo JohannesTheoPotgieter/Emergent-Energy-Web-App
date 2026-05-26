@@ -549,8 +549,8 @@ function severityBorder(s: string) {
 
 function CompanyPrioritiesSection() {
   const { data: priorities = [], isLoading } = useQuery<CompanyPriority[]>({
-    queryKey: ["/api/mytool/company-priorities"],
-    queryFn: () => engFetch("/api/mytool/company-priorities"),
+    queryKey: ["/api/priorities", { scope: "company" }],
+    queryFn: () => engFetch("/api/priorities?scope=company"),
   });
 
   const active = priorities.filter((p: CompanyPriority) => p.status !== "completed" && p.status !== "cancelled");

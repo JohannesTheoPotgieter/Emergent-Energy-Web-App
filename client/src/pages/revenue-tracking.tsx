@@ -22,6 +22,8 @@ import { styleForCell } from "@/lib/tracker-cell-format";
 import { Loader2 } from "lucide-react";
 import { useFinanceQuery } from "@/lib/finance-trust";
 import { DataTrustBadge } from "@/components/ui/data-trust-badge";
+import { formatZar } from "@/lib/currency";
+import { ExportDropdown } from "@/components/ui/export-dropdown";
 
 interface RevenueTrackingResponse {
   projectId: number;
@@ -51,11 +53,8 @@ interface RevenueTrackingResponse {
   }>;
 }
 
-const ZAR = new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", minimumFractionDigits: 2 });
 function money(v: string | null): string {
-  if (!v) return "—";
-  const n = Number(v);
-  return isFinite(n) ? ZAR.format(n) : v;
+  return formatZar(v, { cents: true });
 }
 function pct(v: string | null): string {
   if (!v) return "—";
@@ -124,8 +123,23 @@ export function RevenueTrackingContent({ projectId }: { projectId: number }) {
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <CardTitle className="text-base">Contract Milestones</CardTitle>
+          <ExportDropdown
+            data={data.milestones}
+            columns={[
+              { key: "milestoneNo", header: "No." },
+              { key: "milestoneName", header: "Milestone" },
+              { key: "milestonePercent", header: "%" },
+              { key: "amountExVat", header: "Value (ex VAT)" },
+              { key: "expectedPaymentDate", header: "Planned Payment Date" },
+              { key: "invoiceNumber", header: "Invoice Number" },
+              { key: "invoiceDate", header: "Invoice Raised Date" },
+              { key: "paidDate", header: "Payment Received Date" },
+              { key: "milestoneNotes", header: "Notes" },
+            ]}
+            filename={`revenue-tracking-project-${projectId}`}
+          />
         </CardHeader>
         <CardContent>
           <Table>

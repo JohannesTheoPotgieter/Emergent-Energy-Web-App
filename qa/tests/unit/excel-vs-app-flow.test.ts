@@ -30,9 +30,11 @@ d("Excel-vs-App flow — end-to-end (DB-backed)", () => {
   let helpers: typeof import("../../../server/lib/manual-overrides");
   let financeSchema: typeof import("../../../shared/schema/finance");
   let projectsSchema: typeof import("../../../shared/schema/projects");
+  let importsSchema: typeof import("../../../shared/schema/imports");
   let trackerReplicaRepository: typeof import("../../../server/repositories/tracker-replica-repository").trackerReplicaRepository;
 
   let projectId: number;
+  let importRunId: number;
   let costRowId: number;
   const MARKER = `__excel_vs_app_flow_${Date.now()}_${Math.random().toString(36).slice(2, 8)}__`;
 
@@ -42,6 +44,7 @@ d("Excel-vs-App flow — end-to-end (DB-backed)", () => {
     helpers = await import("../../../server/lib/manual-overrides");
     financeSchema = await import("../../../shared/schema/finance");
     projectsSchema = await import("../../../shared/schema/projects");
+    importsSchema = await import("../../../shared/schema/imports");
     trackerReplicaRepository = (await import("../../../server/repositories/tracker-replica-repository")).trackerReplicaRepository;
 
     const [p] = await dbModule.db
@@ -49,6 +52,14 @@ d("Excel-vs-App flow — end-to-end (DB-backed)", () => {
       .values({ projectName: MARKER })
       .returning({ id: projectsSchema.projectInfo.id });
     projectId = p.id;
+
+    // smart_import_runs is the parent FK for normalized_cost_lines —
+    // required because import_run_id is NOT NULL in the schema.
+    const [r] = await dbModule.db
+      .insert(importsSchema.smartImportRuns)
+      .values({ sourceFileName: MARKER, projectName: MARKER })
+      .returning({ id: importsSchema.smartImportRuns.id });
+    importRunId = r.id;
 
     const importSnapshot = {
       amountExVat: "1500.00",
@@ -65,6 +76,7 @@ d("Excel-vs-App flow — end-to-end (DB-backed)", () => {
         amountExVat: "1500.00",
         invoiceNumber: "INV-100",
         status: "approved",
+        importRunId,
         importSnapshot,
       } as any)
       .returning({ id: financeSchema.normalizedCostLines.id });
@@ -76,6 +88,11 @@ d("Excel-vs-App flow — end-to-end (DB-backed)", () => {
       await dbModule.db
         .delete(financeSchema.normalizedCostLines)
         .where(eq(financeSchema.normalizedCostLines.id, costRowId));
+    }
+    if (importRunId) {
+      await dbModule.db
+        .delete(importsSchema.smartImportRuns)
+        .where(eq(importsSchema.smartImportRuns.id, importRunId));
     }
     if (projectId) {
       await dbModule.db
@@ -180,6 +197,7 @@ d("Excel-vs-App flow — end-to-end (DB-backed)", () => {
         projectName: MARKER,
         description: "Legacy row, no snapshot",
         amountExVat: "999.00",
+        importRunId,
         // importSnapshot deliberately omitted
       } as any)
       .returning({ id: financeSchema.normalizedCostLines.id });
