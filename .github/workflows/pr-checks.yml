@@ -102,11 +102,23 @@ jobs:
       - run: npx turbo run build test --cache-dir=.turbo
         if: hashFiles('**/*.test.ts') != ''
       # Diagnostic: if turbo's test step failed, also run the bare suite
-      # so the failing test surfaces in this job's tail (the WebFetch
-      # snippet on the run page only shows the last ~50 lines).
+      # and dump the failures to GITHUB_STEP_SUMMARY (visible without
+      # auth in the run page annotations).
       # Remove once green.
       - if: failure()
-        run: npm run test 2>&1 | tail -120 || true
+        run: |
+          set +e
+          npm run test > /tmp/test-out.log 2>&1
+          {
+            echo "## quality-gate test output (tail)"
+            echo '```'
+            tail -200 /tmp/test-out.log
+            echo '```'
+            echo "## FAIL grep"
+            echo '```'
+            grep -B 1 -A 6 -E "FAIL |❯ |AssertionError|Error: " /tmp/test-out.log | head -120
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       # Non-cacheable integration steps (need a live server + DB)
       - run: npm run test:api
       - run: npm run release:gate
