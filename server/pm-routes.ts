@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { projectInfo, projectExecutionState } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { getCanonicalFinanceByProjectIds, getCanonicalTaskSummaryByProjectIds } from "./services/canonical-dashboard-kpi-service";
+import { filterActiveProjectIds } from "./lib/finance/project-filters";
 import { getProjectListSummaries } from "./services/project-platform-summary-service";
 import { jwtAuth, requireAuth } from "./auth-context";
 
@@ -88,6 +89,11 @@ export function registerPmRoutes(app: Express) {
       const targetUserId = resolveTargetPmUserId(req);
       const { projects } = await getPmProjectNames(targetUserId);
       const projectIds = projects.map(p => p.id);
+      // DF-1 (audit V2): finance roll-up is scoped to active + hold only.
+      // Task and summary aggregates still see the full project set so the
+      // PM can review closed-project history; only the FY revenue / COS
+      // tile stops being inflated by projects that closed last year.
+      const financeProjectIds = await filterActiveProjectIds(projectIds);
 
       if (projectIds.length === 0) {
         return res.json({
@@ -107,7 +113,7 @@ export function registerPmRoutes(app: Express) {
       // so a PM project with no derived_project_kpis row no longer shows
       // RAG="—" and 0% on this dashboard either.
       const [financialsByProject, tasksByProject, summaryByProject] = await Promise.all([
-        getCanonicalFinanceByProjectIds(projectIds),
+        getCanonicalFinanceByProjectIds(financeProjectIds),
         getCanonicalTaskSummaryByProjectIds(projectIds),
         getProjectListSummaries({ projectIds }),
       ]);

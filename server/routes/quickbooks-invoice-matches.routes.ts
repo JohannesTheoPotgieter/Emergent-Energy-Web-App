@@ -1132,12 +1132,40 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
                 qbCounterpartyId: chosen.qbCounterpartyId,
                 qbCounterpartyName: chosen.qbCounterpartyName,
               };
-              proposals = await detectAndPersistProposals({
-                link: createdLink,
-                app: appCtx,
-                qb: qbSnapshot,
-                createdBy: userId,
-              });
+              // DF-7 (audit V2): cascade detection runs AFTER the link is
+              // persisted (the link itself committed inside
+              // confirmCostLineLink / confirmRevenueLineLink). If detection
+              // throws, the link survives without its follow-up proposals
+              // — operator sees a link but no paid-date / mapping
+              // suggestions. The proposal table's unique_pending_idx makes
+              // detection idempotent, so the safe move is to catch + log
+              // and proceed; the next QB sync (or a manual re-detection)
+              // will fill the missing proposals.
+              try {
+                proposals = await detectAndPersistProposals({
+                  link: createdLink,
+                  app: appCtx,
+                  qb: qbSnapshot,
+                  createdBy: userId,
+                });
+              } catch (detectErr) {
+                logApiError(
+                  `qb.invoice_match.approve.cascade_detect_failed (link=${createdLinkId} suggestion=${suggestionId})`,
+                  detectErr,
+                );
+                // Audit the partial-failure so the operator can search for
+                // links that need re-detection.
+                logAuditFromReq(req, {
+                  entityType: "quickbooks_invoice_link",
+                  entityId: String(createdLinkId),
+                  action: "qb.invoice_match.cascade_detect_failed",
+                  source: "UI",
+                  changesJson: {
+                    reason: detectErr instanceof Error ? detectErr.message : String(detectErr),
+                    note: "Link persisted but proposals not generated. Re-detect via next sync or manual button.",
+                  },
+                });
+              }
             }
           }
 

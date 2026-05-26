@@ -790,7 +790,7 @@ export async function getProposalAgeSummary(): Promise<QbProposalAgeSummary> {
         isNull(qbLinkProposedCascades.deletedAt),
       ),
     );
-  return summariseProposalAges(rows.map((r) => r.createdAt));
+  return summariseProposalAges(rows.map((r: { createdAt: Date | null }) => r.createdAt));
 }
 
 export async function getProposalById(id: number): Promise<QbLinkProposedCascade | null> {

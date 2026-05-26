@@ -166,7 +166,13 @@ export function nthBusinessDayOfMonth(year: number, month1Based: number, n: numb
 // ── Holiday loader ──
 
 let holidayCache: { expiresAt: number; set: Set<string> } | null = null;
-const HOLIDAY_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+// DF-15 (audit V2): reduced from 1h to 5min. The 3rd-business-day lock
+// calculation depends on the holiday set; a stale cache after a holiday
+// is added intra-day could shift the lock day by 1. 5 minutes is short
+// enough that adding a holiday becomes immediately effective in any
+// practical workflow, and long enough to avoid DB thrashing on the hot
+// realisation path.
+const HOLIDAY_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /**
  * Load South African public holidays from the calendar_holiday table.

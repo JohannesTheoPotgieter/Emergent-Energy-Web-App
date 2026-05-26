@@ -505,6 +505,13 @@
       "when": 1779805097461,
       "tag": "0071_handover_signoff_and_cr_approver",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1779900000000,
+      "tag": "0072_finance_additive_columns_audit_v2",
+      "breakpoints": true
     }
   ]
 }
