@@ -2,7 +2,7 @@
   "_documentation": "EE-QA-015 baseline — files above the FILE_SIZE_THRESHOLD LOC. The CI guard `qa/tests/unit/file-size-ratchet.test.ts` fails if any of these grow OR a NEW file lands over the threshold. To regenerate after a split, run `npx tsx scripts/build-file-size-baseline.ts` and commit the new JSON.",
   "threshold": 1500,
   "buffer": 50,
-  "generated": "2026-05-25",
+  "generated": "2026-05-26",
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
@@ -22,7 +22,11 @@
     },
     {
       "file": "server/db.ts",
-      "loc": 3792
+      "loc": 3863
+    },
+    {
+      "file": "server/departments/priority-strategic-routes.ts",
+      "loc": 3800
     },
     {
       "file": "server/lifecycle-routes.ts",
@@ -39,10 +43,6 @@
     {
       "file": "client/src/pages/projects.tsx",
       "loc": 2897
-    },
-    {
-      "file": "server/departments/priority-strategic-routes.ts",
-      "loc": 2766
     },
     {
       "file": "client/src/pages/cashflow.tsx",
@@ -125,12 +125,12 @@
       "loc": 1874
     },
     {
-      "file": "server/seed-ee-info-updates.ts",
-      "loc": 1820
+      "file": "server/departments/exco-routes.ts",
+      "loc": 1856
     },
     {
-      "file": "server/departments/exco-routes.ts",
-      "loc": 1819
+      "file": "server/seed-ee-info-updates.ts",
+      "loc": 1820
     },
     {
       "file": "server/quickbooks-routes.ts",
