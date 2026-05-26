@@ -308,8 +308,11 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "gatesHandovers", path: "/gates/handovers", label: "Handover Queue", iconKey: "Handshake", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: false, routeComponentKey: "GatesHandoversPage" },
   { id: "gatesQueries", path: "/gates/queries", label: "Open Queries", iconKey: "MessageSquare", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: false, routeComponentKey: "GatesQueriesPage" },
   { id: "gatesCommitments", path: "/gates/commitments", label: "Client Commitments", iconKey: "Handshake", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: false, routeComponentKey: "GatesCommitmentsPage" },
-  // Milestone Tracker — standalone page for Construction Manager
-  { id: "milestoneTracker", path: "/milestone-tracker", label: "Milestone Tracker", iconKey: "Milestone", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "MilestoneTrackerPage" },
+  // Revenue Milestone Tracker — standalone page for Construction Manager.
+  // The page surfaces billing-side milestones (invoiced / in bank), not
+  // site delivery progress. Label and description updated to avoid
+  // confusion with delivery milestones.
+  { id: "milestoneTracker", path: "/milestone-tracker", label: "Revenue Milestones", iconKey: "Milestone", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "MilestoneTrackerPage" },
   { id: "commissioningOverview", path: "/commissioning-dashboard", label: "Commissioning", iconKey: "Shield", navGroup: "QUALITY", permissionEntity: "commissioning", showInSidebar: false, routeComponentKey: "CommissioningDashboardPage" },
   { id: "commissioningDashboard", path: "/commissioning-dashboard/:projectId", label: "Commissioning Dashboard", permissionEntity: "commissioning", showInSidebar: false, routeComponentKey: "CommissioningDashboardPage" },
 ];

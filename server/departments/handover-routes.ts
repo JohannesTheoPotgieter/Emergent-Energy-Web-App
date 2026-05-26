@@ -158,6 +158,14 @@ router.patch("/api/handover/sseg/:id", requireAuth, async (req: Request, res: Re
   }
 });
 
-export function registerHandoverRoutes(app: Express) {
+export function registerHandoverPacksRoutes(app: Express) {
   app.use(router);
 }
+
+// Legacy alias — the registrar previously imported this file under
+// the same name as `server/handover-routes.ts`. The two files cover
+// disjoint URL prefixes (packs / sseg / checklist-items here; pd-pm
+// handover + lessons + handover-gates in the legacy file), but sharing
+// the name made wiring confusing. Keep the alias so any forgotten
+// import site keeps compiling; new imports should use the explicit name.
+export const registerHandoverRoutes = registerHandoverPacksRoutes;
