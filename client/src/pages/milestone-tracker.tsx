@@ -267,7 +267,13 @@ function ProjectCard({
           <div className={`w-2 h-2 rounded-full ${ragDotClass(project.ragStatus)} shrink-0`} />
           <span
             className="text-sm font-semibold hover:underline truncate"
-            onClick={(e) => { e.stopPropagation(); navigate(`/project/${encodeURIComponent(project.projectNameRaw)}`); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              const path = project.projectId
+                ? `/project/id/${project.projectId}`
+                : `/project/${encodeURIComponent(project.projectNameRaw)}`;
+              navigate(path);
+            }}
           >
             {project.projectName}
           </span>
@@ -610,8 +616,8 @@ export default function MilestoneTrackerPage() {
     <PageShell>
       <SectionHeader
         icon={<Milestone className="h-5 w-5" />}
-        title="Milestone Tracker"
-        description="Construction through Client Handover — revenue milestones mapped from each project's inflows."
+        title="Revenue Milestone Tracker"
+        description="Construction through Client Handover — revenue (billing) milestones mapped from each project's inflows. Statuses (Planned / Invoiced / Overdue / In Bank) refer to invoicing and cash receipt, not site delivery progress."
       />
 
       {/* KPI Row */}

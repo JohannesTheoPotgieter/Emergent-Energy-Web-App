@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout";
 import { PageHeader } from "@/components/ui/page-header";
 import {
-  CreditCard, Clock, CheckCircle2, AlertTriangle, Loader2,
+  CreditCard, Clock, CheckCircle2, AlertTriangle, Loader2, Paperclip, FileWarning,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
@@ -193,8 +193,17 @@ function RequestRow({
         {/* Invoice # */}
         <TableCell>
           <div className="font-medium font-mono text-sm">{pr.invoice_number ?? "—"}</div>
-          {pr.po_ref && (
+          {pr.po_ref ? (
             <div className="text-xs text-muted-foreground">PO: {pr.po_ref}</div>
+          ) : (
+            <Badge variant="outline" className="mt-0.5 bg-amber-50 text-amber-700 border-amber-200 text-[9px] px-1.5 py-0 gap-1">
+              <FileWarning className="h-2.5 w-2.5" />No PO
+            </Badge>
+          )}
+          {!pr.invoice_number && (
+            <Badge variant="outline" className="mt-0.5 ml-1 bg-amber-50 text-amber-700 border-amber-200 text-[9px] px-1.5 py-0 gap-1">
+              <FileWarning className="h-2.5 w-2.5" />No invoice
+            </Badge>
           )}
         </TableCell>
 
@@ -286,6 +295,20 @@ function RequestRow({
                 data-testid={`btn-resubmit-${pr.id}`}
               >
                 Resubmit
+              </Button>
+            )}
+            {pr.status === "loaded_for_payment" && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                onClick={() => statusMut.mutate("proof_attached")}
+                disabled={anyPending}
+                title="Mark this payment as having proof of payment attached. Upload the proof document via the project Procurement tab; this button records that the proof exists."
+                data-testid={`btn-attach-proof-${pr.id}`}
+              >
+                {anyPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Paperclip className="h-3 w-3 mr-1" />}
+                Attach proof
               </Button>
             )}
             {pr.status === "proof_attached" && (
