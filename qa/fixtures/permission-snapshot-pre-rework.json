@@ -544,6 +544,14 @@
       "override": false,
       "delete": false
     },
+    "pd_delivery_milestones": {
+      "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "pd_dependencies": {
       "view": false,
       "create": false,
@@ -1483,6 +1491,14 @@
       "delete": false
     },
     "pd_dashboard": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "pd_delivery_milestones": {
       "view": true,
       "create": false,
       "edit": false,
@@ -2436,6 +2452,14 @@
       "override": true,
       "delete": true
     },
+    "pd_delivery_milestones": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": true,
+      "delete": true
+    },
     "pd_dependencies": {
       "view": true,
       "create": true,
@@ -3376,6 +3400,14 @@
     },
     "pd_dashboard": {
       "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "pd_delivery_milestones": {
+      "view": true,
       "create": false,
       "edit": false,
       "approve": false,
@@ -4328,6 +4360,14 @@
       "override": false,
       "delete": false
     },
+    "pd_delivery_milestones": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "pd_dependencies": {
       "view": true,
       "create": true,
@@ -5267,6 +5307,14 @@
       "delete": true
     },
     "pd_dashboard": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": true,
+      "delete": true
+    },
+    "pd_delivery_milestones": {
       "view": true,
       "create": true,
       "edit": true,
@@ -6220,6 +6268,14 @@
       "override": false,
       "delete": false
     },
+    "pd_delivery_milestones": {
+      "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "pd_dependencies": {
       "view": false,
       "create": false,
@@ -7162,6 +7218,14 @@
       "view": false,
       "create": false,
       "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "pd_delivery_milestones": {
+      "view": true,
+      "create": true,
+      "edit": true,
       "approve": false,
       "override": false,
       "delete": false
@@ -8112,6 +8176,14 @@
       "override": false,
       "delete": false
     },
+    "pd_delivery_milestones": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "pd_dependencies": {
       "view": true,
       "create": false,
@@ -9051,6 +9123,14 @@
       "delete": false
     },
     "pd_dashboard": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "pd_delivery_milestones": {
       "view": true,
       "create": false,
       "edit": false,
@@ -10004,6 +10084,14 @@
       "override": false,
       "delete": false
     },
+    "pd_delivery_milestones": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "pd_dependencies": {
       "view": true,
       "create": false,
@@ -10950,6 +11038,14 @@
       "override": false,
       "delete": false
     },
+    "pd_delivery_milestones": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": false,
+      "delete": false
+    },
     "pd_dependencies": {
       "view": true,
       "create": true,
@@ -11889,6 +11985,14 @@
       "delete": false
     },
     "pd_dashboard": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "pd_delivery_milestones": {
       "view": true,
       "create": false,
       "edit": false,
@@ -12842,6 +12946,14 @@
       "override": false,
       "delete": false
     },
+    "pd_delivery_milestones": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "pd_dependencies": {
       "view": true,
       "create": true,
@@ -13788,6 +13900,14 @@
       "override": false,
       "delete": false
     },
+    "pd_delivery_milestones": {
+      "view": true,
+      "create": false,
+      "edit": true,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "pd_dependencies": {
       "view": false,
       "create": false,
@@ -14728,6 +14848,14 @@
     },
     "pd_dashboard": {
       "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "pd_delivery_milestones": {
+      "view": true,
       "create": false,
       "edit": false,
       "approve": false,

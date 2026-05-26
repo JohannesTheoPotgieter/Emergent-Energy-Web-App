@@ -304,11 +304,17 @@ export default function FinancePage() {
           icon={<BarChart3 className="w-4 h-4" />}
           sub="Planned GP as % of planned revenue"
         />
+        {/* Wave-4 audit (2026-05-26) — relabel: this tile mixes revenue
+            recognition date with cash-paid date per § 3.4 (cash-flow,
+            not POC). The "Actual Margin" label was misleading. The
+            true POC actual margin would come from
+            finance-line-level-repository's per-line sum; a future tile
+            should expose that separately. */}
         <KpiCard
-          label="Actual Margin"
+          label="Cash-Flow Margin"
           value={`${kpis.actualMarginPctFy ?? '—'}%`}
           icon={<BarChart3 className="w-4 h-4" />}
-          sub="Actual received minus actual paid"
+          sub="Cash received minus cash paid (FYTD) — not POC margin"
         />
         <KpiCard
           label="Margin Variance"

@@ -6,7 +6,7 @@
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
-      "loc": 9578
+      "loc": 9593
     },
     {
       "file": "client/src/pages/smart-import.tsx",
@@ -34,7 +34,7 @@
     },
     {
       "file": "client/src/components/tabs/UnifiedPlanTab.tsx",
-      "loc": 3055
+      "loc": 3074
     },
     {
       "file": "server/quality-routes.ts",
@@ -50,7 +50,7 @@
     },
     {
       "file": "server/routes/quickbooks-invoice-matches.routes.ts",
-      "loc": 2736
+      "loc": 2764
     },
     {
       "file": "server/services/quickbooks-reconciliation-service.ts",
@@ -173,12 +173,12 @@
       "loc": 1706
     },
     {
-      "file": "client/src/pages/qm-dashboard.tsx",
-      "loc": 1641
+      "file": "shared/schema/projects.ts",
+      "loc": 1698
     },
     {
-      "file": "shared/schema/projects.ts",
-      "loc": 1638
+      "file": "client/src/pages/qm-dashboard.tsx",
+      "loc": 1641
     },
     {
       "file": "client/src/pages/engineering/EngineeringTaskDrawer.tsx",
@@ -209,12 +209,12 @@
       "loc": 1565
     },
     {
-      "file": "server/services/gate-auto-evaluator-service.ts",
-      "loc": 1538
+      "file": "shared/permissions/registry.ts",
+      "loc": 1551
     },
     {
-      "file": "shared/permissions/registry.ts",
-      "loc": 1528
+      "file": "server/services/gate-auto-evaluator-service.ts",
+      "loc": 1538
     },
     {
       "file": "server/role-management.ts",
