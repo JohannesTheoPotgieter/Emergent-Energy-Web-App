@@ -134,6 +134,33 @@ export function CreatePriorityDialog({
 
   const createMutation = useMutation({
     mutationFn: async () => {
+      if (selectedTemplateId) {
+        // Route through the instantiate endpoint so the activity log
+        // records source="template" + templateId + templateName, and
+        // the server runs the dept-visibility gate on the template.
+        // Field overrides let the user customise the pre-filled form.
+        const payload: Record<string, unknown> = {
+          title_override: form.title,
+          description_override: form.description || null,
+          severity_override: form.severity,
+          horizon_override: form.horizon,
+          department_key_override: form.department_key || null,
+          target_outcome_override: form.target_outcome || null,
+          definition_of_done_override: form.definition_of_done || null,
+          next_action_override: form.next_action || null,
+          owner_role_override: undefined,
+          due_date: form.due_date || undefined,
+          review_cadence_days: form.review_cadence_days
+            ? parseInt(form.review_cadence_days, 10)
+            : null,
+        };
+        await apiRequest(
+          "POST",
+          `/api/priority-templates/${selectedTemplateId}/instantiate`,
+          payload,
+        );
+        return;
+      }
       await apiRequest(
         "POST",
         "/api/priorities",
@@ -142,7 +169,7 @@ export function CreatePriorityDialog({
     },
     onSuccess: () => {
       void invalidatePriorityQueries(queryClient);
-      toast({ title: "Priority created" });
+      toast({ title: selectedTemplateId ? "Priority created from template" : "Priority created" });
       onOpenChange(false);
     },
     onError: (err) =>

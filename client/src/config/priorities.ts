@@ -12,6 +12,7 @@ export {
   PRIORITY_TERMINAL_STATUSES,
   canPriorityRoleEditPriority,
   canPriorityRoleEscalatePriority,
+  canPriorityRoleReadPriority,
   canPriorityRoleCreateScope,
   canPriorityRoleUseAdminAction,
   departmentLabel,

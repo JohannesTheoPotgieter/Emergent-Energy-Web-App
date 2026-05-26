@@ -147,7 +147,7 @@ export const mytoolCompanyPriorities = pgTable("mytool_company_priorities", {
   // SQLite TEXT timestamps. Keeping it as a string round-trips
   // correctly across both drivers.
   deletedAt: timestamp("deleted_at", { mode: "string" }),
-  // Review cadence (migration 0072). NULL = no cadence; integer days
+  // Review cadence (migration 0069_priorities_phase3). NULL = no cadence; integer days
   // (typical: 7/14/30) means the priority is "due for review" when
   // (last_reviewed_at ?? created_at) + cadence < now.
   reviewCadenceDays: integer("review_cadence_days"),
@@ -286,7 +286,7 @@ export type PriorityTemplate = typeof priorityTemplates.$inferSelect;
 // Per-user named filter combinations. The Priorities page can persist
 // a current set of filters as a view, then the user picks views from
 // a dropdown instead of re-applying filters each time. Unique on
-// (user_id, name) so renames stay tidy. See migration 0071.
+// (user_id, name) so renames stay tidy. See migration 0069_priorities_phase3.
 export const prioritySavedViews = pgTable("priority_saved_views", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
