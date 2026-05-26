@@ -202,12 +202,15 @@ export function CreatePriorityDialog({
                 </span>
               )}
             </div>
-            <Select value={selectedTemplateId} onValueChange={applyTemplate}>
+            <Select
+              value={selectedTemplateId || "__blank__"}
+              onValueChange={(v) => applyTemplate(v === "__blank__" ? "" : v)}
+            >
               <SelectTrigger className="h-8 text-xs" data-testid="select-priority-template">
                 <SelectValue placeholder="Blank — fill in below" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Blank — fill in below</SelectItem>
+                <SelectItem value="__blank__">Blank — fill in below</SelectItem>
                 {(templatesQuery.data ?? []).map((t) => (
                   <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
                 ))}

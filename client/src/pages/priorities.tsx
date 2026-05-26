@@ -714,12 +714,15 @@ export default function PrioritiesPage() {
           </TabsList>
 
           <div className="flex items-center gap-2">
-            <Select value={selectedViewId} onValueChange={applyView}>
+            <Select
+              value={selectedViewId || "__default__"}
+              onValueChange={(v) => applyView(v === "__default__" ? "" : v)}
+            >
               <SelectTrigger className="w-[160px] h-8 text-xs" data-testid="select-saved-view">
                 <SelectValue placeholder={(savedViewsQuery.data?.length ?? 0) > 0 ? "Saved views" : "No saved views"} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">— Default —</SelectItem>
+                <SelectItem value="__default__">— Default —</SelectItem>
                 {(savedViewsQuery.data ?? []).map((v) => (
                   <SelectItem key={v.id} value={String(v.id)}>{v.name}</SelectItem>
                 ))}
