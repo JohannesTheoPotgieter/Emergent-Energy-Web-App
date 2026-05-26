@@ -417,7 +417,7 @@ export function registerCosControlRoutes(app: Express) {
       const mergedDQ = await getMergedExpensesAndInflows(legacyExpDQ, legacyInfDQ);
       const expenses = mergedDQ.expenses;
       const inflows = mergedDQ.inflows;
-      const projects = await db.select().from(projectInfo);
+      const projects = await storage.getAllProjects();
 
       const expenseInputs = expenses
         .filter((e: any) => e.rowType === 'item' || !e.rowType)
@@ -501,7 +501,7 @@ export function registerCosControlRoutes(app: Express) {
 
   app.get("/api/planning-board/pm-capacity", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const projects = await db.select().from(projectInfo);
+      const projects = await storage.getAllProjects();
 
       const pms = new Map<string, { pm: string; projects: { projectName: string; start: string | null; end: string | null; phase: string | null }[] }>();
 
@@ -556,7 +556,7 @@ export function registerCosControlRoutes(app: Express) {
 
   app.get("/api/planning-board/projects", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const projects = await db.select().from(projectInfo);
+      const projects = await storage.getAllProjects();
       const legacyExpPB = await getCanonicalAllCurrentCostLines();
       const legacyInfPB = await storage.getAllProgramInflows();
       const mergedPB = await getMergedExpensesAndInflows(legacyExpPB, legacyInfPB);
@@ -1355,7 +1355,7 @@ export function registerCosControlRoutes(app: Express) {
   app.get("/api/planning-board/scenario-projects", requireAuth, requireAdmin, async (req, res) => {
     try {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
-      const projects = await db.select().from(projectInfo);
+      const projects = await storage.getAllProjects();
 
       let overrideMap: any = {};
       if (scenarioId) {
@@ -1398,7 +1398,7 @@ export function registerCosControlRoutes(app: Express) {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
       const resourceType = (req.query.resourceType as string) || 'PM';
 
-      const projects = await db.select().from(projectInfo);
+      const projects = await storage.getAllProjects();
 
       let overrideMap: any = {};
       if (scenarioId) {
