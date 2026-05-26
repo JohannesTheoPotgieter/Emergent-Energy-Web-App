@@ -109,14 +109,18 @@ jobs:
         run: |
           set +e
           npm run test > /tmp/test-out.log 2>&1
+          # Emit ::error:: annotations for each failing test so they
+          # surface on the run page without auth.
+          grep -E "^ FAIL " /tmp/test-out.log | while read -r line; do
+            # strip ANSI colour codes for the annotation payload
+            clean=$(echo "$line" | sed 's/\x1b\[[0-9;]*m//g' | sed 's/%/%25/g' | sed 's/\r/%0D/g')
+            echo "::error::$clean"
+          done
+          # Also dump to step summary as a backup.
           {
-            echo "## quality-gate test output (tail)"
+            echo "## test output tail"
             echo '```'
-            tail -200 /tmp/test-out.log
-            echo '```'
-            echo "## FAIL grep"
-            echo '```'
-            grep -B 1 -A 6 -E "FAIL |❯ |AssertionError|Error: " /tmp/test-out.log | head -120
+            tail -150 /tmp/test-out.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       # Non-cacheable integration steps (need a live server + DB)
