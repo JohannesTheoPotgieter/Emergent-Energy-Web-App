@@ -317,6 +317,11 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // site delivery progress. Label and description updated to avoid
   // confusion with delivery milestones.
   { id: "milestoneTracker", path: "/milestone-tracker", label: "Revenue Milestones", iconKey: "Milestone", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "MilestoneTrackerPage" },
+  // Wave-4 audit (2026-05-26) — site delivery milestones split out of
+  // the billing tracker. Permission `pd_delivery_milestones` is in the
+  // registry; this page lists all active projects with their delivery
+  // milestones grouped per project.
+  { id: "deliveryMilestones", path: "/delivery-milestones", label: "Delivery Milestones", iconKey: "Milestone", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "pd_delivery_milestones", showInSidebar: true, routeComponentKey: "DeliveryMilestonesPage" },
   { id: "commissioningOverview", path: "/commissioning-dashboard", label: "Commissioning", iconKey: "Shield", navGroup: "QUALITY", permissionEntity: "commissioning", showInSidebar: false, routeComponentKey: "CommissioningDashboardPage" },
   { id: "commissioningDashboard", path: "/commissioning-dashboard/:projectId", label: "Commissioning Dashboard", permissionEntity: "commissioning", showInSidebar: false, routeComponentKey: "CommissioningDashboardPage" },
 ];

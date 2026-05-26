@@ -131,6 +131,7 @@ const AdminWorkflowConfigPage = lazyWithRetry(() => import("@/pages/admin-workfl
 const CommissioningDashboardPage = lazyWithRetry(() => import("@/pages/commissioning-dashboard"));
 
 const MilestoneTrackerPage = lazyWithRetry(() => import("@/pages/milestone-tracker"));
+const DeliveryMilestonesPage = lazyWithRetry(() => import("@/pages/delivery-milestones"));
 
 const GatesPipelinePage = lazyWithRetry(() => import("@/pages/gates/gates-pipeline"));
 const GatesBlockedPage = lazyWithRetry(() => import("@/pages/gates/gates-blocked"));
@@ -270,6 +271,7 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   AdminWorkItemLinkagePage,
   AdminWorkflowConfigPage,
   MilestoneTrackerPage,
+  DeliveryMilestonesPage,
   GatesPipelinePage,
   GatesBlockedPage,
   GatesReadyPage,

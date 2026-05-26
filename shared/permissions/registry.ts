@@ -467,6 +467,13 @@ export const ENTITY_REGISTRY: EntityRegistryEntry[] = [
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
+  // Wave-2 audit asked: should PROJECT_MANAGER_SITE get edit on the
+  // five financial PD entities (pd_finance, pd_expenditure, pd_revenue,
+  // pd_cos_tracker, pd_cashflow)? Wave-4 owner decision (2026-05-26):
+  // VIEW only. Finance edits stay with CFO / PROGRAM_FINANCE_MANAGER /
+  // ACCOUNTANT. Site PMs read totals to plan delivery; they don't book
+  // costs/revenue. If a one-off override is needed, COO/CEO can act
+  // and the audit log captures the actor.
   {
     entity: 'pd_finance',
     title: "Project Finance",
@@ -1256,6 +1263,22 @@ export const ENTITY_REGISTRY: EntityRegistryEntry[] = [
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'QUALITY_MANAGER'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  // Wave-4 audit (2026-05-26) — split delivery milestones out of the
+  // billing-side "Revenue Milestones" tracker. Site PMs and construction
+  // managers own delivery progress, so they can edit; ENG_MGR + QM are
+  // included so they can record their own gates (commissioning, QA).
+  {
+    entity: 'pd_delivery_milestones',
+    title: "Project Delivery Milestones",
+    description: "Project detail > Delivery milestone tracker (site events)",
+    category: 'PROJECT_DETAIL',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER', 'SSEG_MANAGER'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'ENGINEERING_MANAGER', 'QUALITY_MANAGER', 'PROJECT_MANAGER_SITE'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },

@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { apiRequest, invalidateProjectQueries } from "@/lib/queryClient";
@@ -755,7 +756,18 @@ function saveSavedViews(views: SavedView[]): string | null {
 }
 
 export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: UnifiedPlanTabProps) {
-  const { isAdmin } = useAuth();
+  // Wave-4 audit (2026-05-26) — replace the hard-coded `isAdmin` gate
+  // with a permission-registry read. ENG_MGR + PM_SITE + CONSTR_MGR now
+  // have pd_plan:edit (wave-2 PR #947 added ENG_MGR), so the toolbar
+  // buttons need to be enabled for them too. The DB grant is the
+  // source of truth; `isAdmin` was a stale fallback. Keep the variable
+  // name so the rest of the file doesn't churn — it now reads from the
+  // permission system rather than role membership.
+  const { allowed: canEditPlan } = usePermission("pd_plan", "edit");
+  const { allowed: canDeletePlan } = usePermission("pd_plan", "delete");
+  const { isAdmin: isAdminRaw } = useAuth();
+  const isAdmin = canEditPlan || isAdminRaw;
+  const canDelete = canDeletePlan || isAdminRaw;
   const qc = useQueryClient();
   const { toast } = useToast();
 
@@ -1897,9 +1909,16 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
               <TooltipTrigger asChild>
                 <button
                   className="flex h-8 w-8 items-center justify-center border-r text-xs text-red-600 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
-                  aria-label="Delete selected tasks"
-                  title="Delete selected tasks"
-                  disabled={!isAdmin || selectedIds.size === 0}
+                  aria-label={!canDelete ? "Delete (no permission)" : selectedIds.size === 0 ? "Delete (select tasks first)" : "Delete selected tasks"}
+                  title={
+                    !canDelete
+                      ? "Your role does not include pd_plan:delete."
+                      : selectedIds.size === 0
+                        ? "Select tasks before deleting."
+                        : "Delete selected tasks"
+                  }
+                  aria-disabled={!canDelete || selectedIds.size === 0}
+                  disabled={!canDelete || selectedIds.size === 0}
                   onClick={() => deleteMutation.mutate(Array.from(selectedIds))}
                   data-testid="toolbar-delete"
                 >
