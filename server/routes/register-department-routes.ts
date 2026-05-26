@@ -200,4 +200,12 @@ export async function registerDepartmentRoutes(app: Express) {
   } catch (err) {
     console.error("[Routes] Failed to register finance-analysis.routes:", err);
   }
+
+  // TF-9 (audit V3) — Finance audit-prep exports (invoices, milestones, period locks).
+  try {
+    const { registerFinanceAuditExportRoutes } = await import("./finance-audit-export.routes");
+    registerFinanceAuditExportRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register finance-audit-export.routes:", err);
+  }
 }
