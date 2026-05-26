@@ -446,6 +446,7 @@ export default function PriorityDetailPage() {
       assigned_user_id: (priority as any).assignedUserId != null ? String((priority as any).assignedUserId) : "",
       parent_id: (priority as any).parentId != null ? String((priority as any).parentId) : "",
       review_cadence_days: (priority as any).reviewCadenceDays != null ? String((priority as any).reviewCadenceDays) : "",
+      owner_role: (priority as any).ownerRole ?? "",
     });
     setProgressSource({
       type: ((priority.progressSourceType as any) || "manual") as ProgressSourceValue["type"],

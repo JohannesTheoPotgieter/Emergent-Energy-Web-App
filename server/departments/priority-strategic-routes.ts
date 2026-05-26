@@ -133,6 +133,7 @@ async function fanoutPriorityNotifications(opts: {
       departmentKey: opts.priority.departmentKey ?? null,
       ownerUserId: opts.priority.ownerUserId ?? null,
       assignedUserId: opts.priority.assignedUserId ?? null,
+      accountableExecId: opts.priority.accountableExecId ?? null,
     };
     const recipients: number[] = [];
     for (const u of candidateRows) {
@@ -282,12 +283,16 @@ function parseIdParam(param: string | string[] | undefined): number | null {
  * approvals, updates, project-ids) MUST call this before returning data.
  */
 async function loadPriorityForRead(req: Request, priorityId: number, options: { allowArchived?: boolean } = {}): Promise<any> {
+  const user = getEffectiveUser(req);
+  if (!user?.id || !user?.role) throw forbidden("Authentication required");
+  // Defence in depth: even if a future caller forgets to gate
+  // `allowArchived` on admin role, the helper itself refuses to surface
+  // archived rows to non-admins.
+  const allowArchived = options.allowArchived === true && isPriorityAdminRole(user.role);
   const [priority] = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
   if (!priority) throw notFound("Priority");
   const isArchived = normalizeTimestamp(priority.deletedAt) != null;
-  if (isArchived && !options.allowArchived) throw notFound("Priority");
-  const user = getEffectiveUser(req);
-  if (!user?.id || !user?.role) throw forbidden("Authentication required");
+  if (isArchived && !allowArchived) throw notFound("Priority");
   const userDept = getDepartmentForRole(user.role);
   const canRead = canPriorityRoleReadPriority(
     { role: user.role, userId: user.id, departmentKey: userDept ?? null },
@@ -296,6 +301,7 @@ async function loadPriorityForRead(req: Request, priorityId: number, options: { 
       departmentKey: priority.departmentKey ?? null,
       ownerUserId: priority.ownerUserId ?? null,
       assignedUserId: priority.assignedUserId ?? null,
+      accountableExecId: priority.accountableExecId ?? null,
     },
   );
   if (!canRead) throw notFound("Priority");
@@ -2519,15 +2525,18 @@ router.delete(
 // then submit through /instantiate (which preserves the
 // source=template provenance in the activity log + applies the
 // dept-visibility gate).
+// Override caps mirror the base schema (basePrioritySchema) so a user
+// can't be silently truncated by going through /instantiate vs the
+// direct POST /api/priorities path.
 const instantiateSchema = z.object({
   title_override: z.string().min(1).max(200).optional(),
   description_override: z.string().max(5000).nullable().optional(),
   severity_override: severityEnum.optional(),
   horizon_override: z.enum(["today", "week", "month", "quarter"]).optional(),
   department_key_override: z.string().max(120).nullable().optional(),
-  target_outcome_override: z.string().max(2000).nullable().optional(),
-  definition_of_done_override: z.string().max(2000).nullable().optional(),
-  next_action_override: z.string().max(2000).nullable().optional(),
+  target_outcome_override: z.string().max(5000).nullable().optional(),
+  definition_of_done_override: z.string().max(5000).nullable().optional(),
+  next_action_override: z.string().max(5000).nullable().optional(),
   owner_role_override: z.string().max(120).nullable().optional(),
   due_date: z.string().max(50).optional(),
   review_cadence_days: z.number().int().min(1).max(365).nullable().optional(),
@@ -2572,26 +2581,67 @@ router.post(
     const now = new Date();
     const ownerUserId = isPriorityAdminRole(user.role) || isDepartmentHeadRole(user.role) ? null : user.id;
     const assignedUserId = ownerUserId;
-    const departmentKey = tpl.departmentKey ?? userDept ?? null;
+    const baseDepartmentKey = tpl.departmentKey ?? userDept ?? null;
 
-    const [created] = await db.insert(mytoolCompanyPriorities).values({
-      title: body.title_override ?? tpl.titleTemplate,
-      description: body.description_override !== undefined ? body.description_override : (tpl.bodyTemplate ?? null),
-      severity: (body.severity_override ?? tpl.severityDefault) as any,
-      horizon: (body.horizon_override ?? tpl.horizonDefault) as any,
-      scope,
-      departmentKey: body.department_key_override !== undefined ? body.department_key_override : departmentKey,
-      ownerUserId,
-      assignedUserId,
-      ownerRole: body.owner_role_override !== undefined ? body.owner_role_override : (tpl.ownerRole ?? null),
-      targetOutcome: body.target_outcome_override !== undefined ? body.target_outcome_override : (tpl.targetOutcome ?? null),
-      definitionOfDone: body.definition_of_done_override !== undefined ? body.definition_of_done_override : (tpl.definitionOfDone ?? null),
-      nextAction: body.next_action_override !== undefined ? body.next_action_override : (tpl.nextAction ?? null),
-      dueDate: body.due_date ?? null,
-      reviewCadenceDays: body.review_cadence_days ?? null,
-      createdAt: now,
-      updatedAt: now,
-    }).returning();
+    // Authorisation for the *_override fields. The handler already
+    // locks `scope` to the template's scope, but department / owner_role
+    // overrides could be abused by a regular caller to label-spoof their
+    // priority into a department they don't belong to. Mirror the same
+    // rules as POST /api/priorities:
+    //   - Priority admins: any override allowed
+    //   - Department heads: department_key_override must equal their own dept
+    //   - Regular users: department_key_override and owner_role_override
+    //     are silently ignored (we don't 400 — keeps the dialog forgiving)
+    let effectiveDepartmentKey = baseDepartmentKey;
+    let effectiveOwnerRole = body.owner_role_override !== undefined ? body.owner_role_override : (tpl.ownerRole ?? null);
+    if (body.department_key_override !== undefined) {
+      if (isPriorityAdminRole(user.role)) {
+        effectiveDepartmentKey = body.department_key_override;
+      } else if (isDepartmentHeadRole(user.role)) {
+        if (body.department_key_override && body.department_key_override !== userDept) {
+          throw forbidden("Dept heads can only instantiate templates into their own department");
+        }
+        effectiveDepartmentKey = body.department_key_override ?? userDept ?? null;
+      }
+      // Regular users: silently drop the override, keep baseDepartmentKey.
+    }
+    if (!isPriorityAdminRole(user.role) && !isDepartmentHeadRole(user.role)) {
+      // Regular users cannot pick the owner_role either — fall back to template default.
+      effectiveOwnerRole = tpl.ownerRole ?? null;
+    }
+
+    // TOCTOU guard — re-check the template hasn't been soft-deleted
+    // between our visibility check and the insert (a concurrent admin
+    // DELETE would otherwise leave us with an activity log row pointing
+    // at a deleted template). Runs in a transaction so the re-check
+    // and the insert are atomic.
+    const created = await runInTransaction(async (tx) => {
+      const [stillLive] = await tx.select({ id: priorityTemplates.id, deletedAt: priorityTemplates.deletedAt })
+        .from(priorityTemplates)
+        .where(eq(priorityTemplates.id, id));
+      if (!stillLive || normalizeTimestamp(stillLive.deletedAt) != null) {
+        throw notFound("Template");
+      }
+      const [row] = await tx.insert(mytoolCompanyPriorities).values({
+        title: body.title_override ?? tpl.titleTemplate,
+        description: body.description_override !== undefined ? body.description_override : (tpl.bodyTemplate ?? null),
+        severity: (body.severity_override ?? tpl.severityDefault) as any,
+        horizon: (body.horizon_override ?? tpl.horizonDefault) as any,
+        scope,
+        departmentKey: effectiveDepartmentKey,
+        ownerUserId,
+        assignedUserId,
+        ownerRole: effectiveOwnerRole,
+        targetOutcome: body.target_outcome_override !== undefined ? body.target_outcome_override : (tpl.targetOutcome ?? null),
+        definitionOfDone: body.definition_of_done_override !== undefined ? body.definition_of_done_override : (tpl.definitionOfDone ?? null),
+        nextAction: body.next_action_override !== undefined ? body.next_action_override : (tpl.nextAction ?? null),
+        dueDate: body.due_date ?? null,
+        reviewCadenceDays: body.review_cadence_days ?? null,
+        createdAt: now,
+        updatedAt: now,
+      }).returning();
+      return row;
+    });
 
     await recordActivity({
       priorityId: created.id,
@@ -3842,7 +3892,7 @@ router.delete("/api/priorities/:id/comments/:commentId", requireAuth, requirePer
 
   if (!comment) throw notFound("Comment");
 
-  const isAdmin = isPriorityAdminRole(user.role as any);
+  const isAdmin = isPriorityAdminRole(user.role);
   if (comment.authorUserId !== user.id && !isAdmin) {
     throw forbidden("You can only delete your own comments");
   }
