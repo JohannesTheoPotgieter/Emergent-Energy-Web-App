@@ -775,9 +775,9 @@ function CompanyPrioritiesManager() {
   const headers = () => ({ Authorization: `Bearer ${token()}`, "Content-Type": "application/json" });
 
   const { data: priorities = [], isLoading } = useQuery<any[]>({
-    queryKey: ["/api/mytool/company-priorities"],
+    queryKey: ["/api/priorities", { scope: "company" }],
     queryFn: async () => {
-      const res = await fetch("/api/mytool/company-priorities", { headers: { Authorization: `Bearer ${token()}` } });
+      const res = await fetch("/api/priorities?scope=company", { headers: { Authorization: `Bearer ${token()}` } });
       if (!res.ok) return [];
       return res.json();
     },
@@ -794,16 +794,31 @@ function CompanyPrioritiesManager() {
   const savePriorityMutation = useMutation({
     mutationFn: async () => {
       if (!title.trim()) throw new Error("Title is required");
-      const body = { title: title.trim(), description: description.trim() || null, department: department.trim() || null, severity, status, dueDate: dueDate || null };
-      const url = editId ? `/api/mytool/company-priorities/${editId}` : "/api/mytool/company-priorities";
-      const method = editId ? "PATCH" : "POST";
+      // Map legacy "high"/"low" labels to the canonical severity enum
+      // (critical | important | normal). The canonical endpoint rejects
+      // anything outside that set.
+      const canonicalSeverity = severity === "high" ? "important" : severity === "low" ? "normal" : severity;
+      const body: Record<string, unknown> = {
+        title: title.trim(),
+        description: description.trim() || null,
+        department: department.trim() || null,
+        severity: canonicalSeverity,
+        due_date: dueDate || null,
+      };
+      // The canonical POST infers scope from the caller. For edits we
+      // also pass status so the legacy "active/closed" toggle keeps
+      // working. Status is only on the update schema.
+      if (editId) body.status = status;
+      else body.scope = "company";
+      const url = editId ? `/api/priorities/${editId}` : "/api/priorities";
+      const method = editId ? "PUT" : "POST";
       const res = await fetch(url, { method, headers: headers(), body: JSON.stringify(body) });
       if (!res.ok) throw new Error("Save failed");
       return { isEdit: !!editId };
     },
     onSuccess: ({ isEdit }) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
       queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities/my-work"] });
       resetForm();
       toast({ title: isEdit ? "Priority updated" : "Priority created" });
     },
@@ -813,15 +828,15 @@ function CompanyPrioritiesManager() {
 
   const deletePriorityMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/mytool/company-priorities/${id}`, { method: "DELETE", headers: headers() });
+      const res = await fetch(`/api/priorities/${id}`, { method: "DELETE", headers: headers() });
       if (!res.ok) throw new Error("Delete failed");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
       queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
-      toast({ title: "Priority deleted" });
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities/my-work"] });
+      toast({ title: "Priority archived" });
     },
-    onError: () => toast({ title: "Delete failed", variant: "destructive" }),
+    onError: () => toast({ title: "Archive failed", variant: "destructive" }),
   });
   const deletePriority = (id: number) => deletePriorityMutation.mutate(id);
 

@@ -169,8 +169,8 @@ export default function MyWorkMeetingsPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/meetings/webhook-status"] });
       if (vars.type === "task") invalidateAllTaskCaches(queryClient);
       if (vars.type === "priority") {
-        queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
         queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/priorities/my-work"] });
       }
       setConvertDialog(null);
       setConvertForm({});
