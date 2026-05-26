@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   canPriorityRoleEscalatePriority,
+  canPriorityRoleReadPriority,
   type PriorityAccessUser,
   type PriorityMutabilityRow,
 } from "@shared/config/priorities";
@@ -179,6 +180,97 @@ describe("priorities sprint 2 — per-user shared-task promotion semantics", () 
     expect(myWorkBlock).toContain("mytoolCompanyPriorities.ownerUserId, userId");
     expect(myWorkBlock).toContain("mytoolCompanyPriorities.assignedUserId, userId");
     expect(myWorkBlock).toContain("isNotNull");
+  });
+});
+
+describe("canPriorityRoleReadPriority — IDOR-fix visibility predicate", () => {
+  const admin: PriorityAccessUser = { role: "COO_ADMIN", userId: 1, departmentKey: "LEADERSHIP" };
+  const eng: PriorityAccessUser = { role: "ENGINEER", userId: 42, departmentKey: "ENGINEERING" };
+  const fin: PriorityAccessUser = { role: "ACCOUNTANT", userId: 7, departmentKey: "FINANCE" };
+  const deptHead: PriorityAccessUser = { role: "ENGINEERING_MANAGER", userId: 5, departmentKey: "ENGINEERING" };
+
+  it("admins see every priority", () => {
+    const finRolePri: PriorityMutabilityRow = { scope: "role", departmentKey: "FINANCE", ownerUserId: 99, assignedUserId: null };
+    expect(canPriorityRoleReadPriority(admin, finRolePri)).toBe(true);
+  });
+
+  it("everyone sees company-scope priorities", () => {
+    const co: PriorityMutabilityRow = { scope: "company", departmentKey: null, ownerUserId: null, assignedUserId: null };
+    expect(canPriorityRoleReadPriority(eng, co)).toBe(true);
+    expect(canPriorityRoleReadPriority(fin, co)).toBe(true);
+  });
+
+  it("regular users do NOT see other-dept department-scope priorities", () => {
+    const otherDept: PriorityMutabilityRow = { scope: "department", departmentKey: "FINANCE", ownerUserId: 99, assignedUserId: null };
+    expect(canPriorityRoleReadPriority(eng, otherDept)).toBe(false);
+  });
+
+  it("regular users see THEIR OWN dept's department-scope priorities", () => {
+    const ownDept: PriorityMutabilityRow = { scope: "department", departmentKey: "ENGINEERING", ownerUserId: 99, assignedUserId: null };
+    expect(canPriorityRoleReadPriority(eng, ownDept)).toBe(true);
+  });
+
+  it("assignee in a DIFFERENT dept can still read the priority they're assigned to", () => {
+    const finPri: PriorityMutabilityRow = { scope: "department", departmentKey: "FINANCE", ownerUserId: 99, assignedUserId: 42 };
+    expect(canPriorityRoleReadPriority(eng, finPri)).toBe(true);
+  });
+
+  it("owner in a DIFFERENT dept can still read the priority they own", () => {
+    const finPri: PriorityMutabilityRow = { scope: "department", departmentKey: "FINANCE", ownerUserId: 42, assignedUserId: null };
+    expect(canPriorityRoleReadPriority(eng, finPri)).toBe(true);
+  });
+
+  it("regular users do NOT see other people's role-scope priorities", () => {
+    const someoneElses: PriorityMutabilityRow = { scope: "role", departmentKey: "FINANCE", ownerUserId: 99, assignedUserId: 100 };
+    expect(canPriorityRoleReadPriority(eng, someoneElses)).toBe(false);
+  });
+
+  it("department heads see their dept's role-scope priorities even if not owner/assignee", () => {
+    const teamRolePri: PriorityMutabilityRow = { scope: "role", departmentKey: "ENGINEERING", ownerUserId: 200, assignedUserId: null };
+    expect(canPriorityRoleReadPriority(deptHead, teamRolePri)).toBe(true);
+  });
+
+  it("rejects unauthenticated callers", () => {
+    expect(canPriorityRoleReadPriority({ role: null, userId: null, departmentKey: null }, {
+      scope: "company", departmentKey: null, ownerUserId: null, assignedUserId: null,
+    })).toBe(false);
+  });
+});
+
+describe("priorities — IDOR gates on detail + nested reads", () => {
+  it("GET /api/priorities/:id uses loadPriorityForRead", () => {
+    const source = read("server/departments/priority-strategic-routes.ts");
+    const detailBlock = routeBlock(
+      source,
+      '"/api/priorities/:id"',
+      "// ==================== PUT /api/priorities/:id ====================",
+    );
+    expect(detailBlock).toContain("loadPriorityForRead");
+  });
+  it("every nested GET (comments, activity, children, tasks, approvals, updates, project-ids, watched) calls loadPriorityForRead", () => {
+    const source = read("server/departments/priority-strategic-routes.ts");
+    for (const route of ["/api/priorities/:id/tasks", "/api/priorities/:id/approvals", "/api/priorities/:id/updates", "/api/priorities/:id/children", "/api/priorities/:id/project-ids", "/api/priorities/:id/activity", "/api/priorities/:id/comments", "/api/priorities/:id/watched"]) {
+      const quoted = `"${route}"`;
+      // Find the FIRST router.get(...) registration of this route, skipping
+      // any comment header that mentions the path.
+      const registration = source.indexOf(`router.get(\"${route}\"`);
+      expect(registration, `${route} registration missing`).toBeGreaterThan(0);
+      const block = source.slice(registration, registration + 700);
+      expect(block, `${route} missing loadPriorityForRead`).toMatch(/loadPriorityForRead\s*\(/);
+      expect(block.includes(quoted), `${route} block does not contain the quoted path`).toBe(true);
+    }
+  });
+});
+
+describe("priorities — archive/restore use canonical requirePriorityAdmin", () => {
+  it("DELETE /api/priorities/:id and POST /:id/restore both use requirePriorityAdmin, not requireCooOnly", () => {
+    const source = read("server/departments/priority-strategic-routes.ts");
+    const deleteBlock = source.slice(source.indexOf('router.delete(\n  "/api/priorities/:id"'), source.indexOf('// POST /api/priorities/:id/restore'));
+    expect(deleteBlock).not.toContain("requireCooOnly");
+    expect(deleteBlock).toContain("requirePriorityAdmin");
+    const restoreBlock = source.slice(source.indexOf('"/api/priorities/:id/restore"'), source.indexOf('"/api/priorities/:id/restore"') + 500);
+    expect(restoreBlock).not.toContain("requireCooOnly");
+    expect(restoreBlock).toContain("requirePriorityAdmin");
   });
 });
 

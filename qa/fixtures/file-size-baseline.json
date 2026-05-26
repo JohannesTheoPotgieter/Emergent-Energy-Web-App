@@ -17,16 +17,16 @@
       "loc": 4099
     },
     {
+      "file": "server/departments/priority-strategic-routes.ts",
+      "loc": 3907
+    },
+    {
       "file": "server/smart-import-routes.ts",
       "loc": 3881
     },
     {
       "file": "server/db.ts",
       "loc": 3863
-    },
-    {
-      "file": "server/departments/priority-strategic-routes.ts",
-      "loc": 3800
     },
     {
       "file": "server/lifecycle-routes.ts",

@@ -13,6 +13,7 @@ const DocumentsPage = lazyWithRetry(() => import("@/pages/documents"));
 const AdminDocumentTypesPage = lazyWithRetry(() => import("@/pages/admin-document-types"));
 const AdminDocumentManagementPage = lazyWithRetry(() => import("@/pages/admin-document-management"));
 const AdminEmailLinkerDevPage = lazyWithRetry(() => import("@/pages/admin-email-linker-dev"));
+const AdminPriorityTemplatesPage = lazyWithRetry(() => import("@/pages/admin-priority-templates"));
 const HandoverLivePage = lazyWithRetry(() => import("@/pages/handover-live"));
 const ProjectLifecyclePage = lazyWithRetry(() => import("@/pages/project-lifecycle"));
 const ProjectsSummary = lazyWithRetry(() => import("@/pages/projects"));
@@ -284,6 +285,7 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   AdminDocumentTypesPage,
   AdminDocumentManagementPage,
   AdminEmailLinkerDevPage,
+  AdminPriorityTemplatesPage,
   HandoverLivePage,
   PendingApprovalsPage,
   NcrLegacyRedirect,
