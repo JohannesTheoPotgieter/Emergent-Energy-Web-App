@@ -103,7 +103,7 @@ CREATE INDEX IF NOT EXISTS idx_normalized_revenue_lines_project_effective
 ```
 Plus a `(paid_date, effective_to)` on `normalized_revenue_lines` for AR-aging hot path.
 
-**Status:** **Migration authored in this PR** (`migrations/0073_finance_audit_v3_indexes.sql`); NOT applied — needs `db:migrate` approval.
+**Status:** **Migration authored in this PR** (`migrations/0075_finance_audit_v3_indexes.sql`); NOT applied — needs `db:migrate` approval.
 
 ---
 
@@ -540,7 +540,7 @@ The schema agent flagged this as CRITICAL; verification downgrades to LOW.
 
 | # | Finding | What changed | Files | Risk |
 |---|---------|-------------|-------|------|
-| 1 | TF-3 | Additive index migration `(project_id, effective_to)` on `normalized_cost_lines` and `normalized_revenue_lines`; `(paid_date, effective_to)` on `normalized_revenue_lines`. NOT applied — needs `db:migrate` approval. | `migrations/0073_finance_audit_v3_indexes.sql` (new), `migrations/meta/_journal.json` | None until applied; pure performance improvement |
+| 1 | TF-3 | Additive index migration `(project_id, effective_to)` on `normalized_cost_lines` and `normalized_revenue_lines`; `(paid_date, effective_to)` on `normalized_revenue_lines`. NOT applied — needs `db:migrate` approval. | `migrations/0075_finance_audit_v3_indexes.sql` (new), `migrations/meta/_journal.json` | None until applied; pure performance improvement |
 | 2 | TF-11 | Extended RBAC snapshot test to cover ~50 additional finance endpoints across `quickbooks-invoice-matches.routes.ts`, `quickbooks-routes.ts`, `finance-lines.routes.ts`, `finance-trust-routes.ts`. | `qa/tests/unit/finance-rbac-pr943-snapshot.test.ts` | None — test only |
 | 3 | TF-13 | Switched `costLineSchema` and `revenueLineSchema` from default-permissive to `.strict()`; over-posted fields now rejected at the route boundary. | `server/routes/finance-legacy-extracted-routes.ts` | Low — caller-side over-posting was never expected; legitimate clients send only declared fields |
 | 4 | TF-16 (partial) | Migrated 3 of 9 remaining pages to canonical `formatZar`: `priority-detail.tsx`, `project-lifecycle.tsx`, `portfolio-detail.tsx`. | client/src/pages/{priority-detail,project-lifecycle,portfolio-detail}.tsx | Low — same numeric output for valid numbers; "—" placeholder for null |
