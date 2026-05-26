@@ -3,6 +3,7 @@ import { normalizedCostLines, normalizedRevenueLines, workItems } from "@shared/
 import { db, getDbMode } from "../db";
 import { getCosRealisedAmountForNclRow } from "../lib/calculations/financeUtils";
 import { getAssignedEvidenceByCostLineIds } from "../lib/finance/qb-allocation-read";
+import { FinanceLineLevelRepository } from "../repositories/finance-line-level-repository";
 
 function toNumber(value: unknown): number {
   if (value === null || value === undefined || value === "") return 0;
@@ -12,7 +13,28 @@ function toNumber(value: unknown): number {
 
 export interface CanonicalProjectFinanceRow {
   projectId: number;
+  /**
+   * Sum of milestone amounts on `normalized_revenue_lines` (a.k.a. contracted
+   * billing value). NOT § 3.3 recognised revenue — that lives on
+   * `recognisedRevenue` below. Kept for backward compat with consumers that
+   * historically read `totalRevenue` as the headline figure.
+   *
+   * @deprecated for "Revenue" tile usage. Use `recognisedRevenue` for the
+   * § 3.3 POC figure or rename UI labels to "Contract value billed" before
+   * reading.
+   */
   totalRevenue: number;
+  /**
+   * § 3.3 recognised revenue — per-line POC sum sourced from
+   * `FinanceLineLevelRepository.getPortfolioFinanceLines`. This is the
+   * Excel `Expenditure Breakdown` col U formula:
+   *   perLineRevenue = (line.actualTotal / category.totalActualTotal)
+   *                    × category.revenueAllocation
+   * Aggregated per project (no cross-project pooling per § 3.3.1). Use this
+   * for any "Revenue" KPI tile, dashboard, or report (§ 3.3.3 "must not be
+   * conflated").
+   */
+  recognisedRevenue: number;
   receivedRevenue: number;
   outstandingRevenue: number;
   totalCost: number;
@@ -53,6 +75,7 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
     byProject.set(id, {
       projectId: id,
       totalRevenue: 0,
+      recognisedRevenue: 0,
       receivedRevenue: 0,
       outstandingRevenue: 0,
       totalCost: 0,
@@ -95,6 +118,11 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
         row as any,
         assignedByCostLineId.get(row.id) ?? null,
       );
+    }
+
+    await populateRecognisedRevenue(byProject, projectIds);
+    for (const current of byProject.values()) {
+      current.recognisedRevenue = Number(current.recognisedRevenue.toFixed(2));
     }
 
     return byProject;
@@ -151,14 +179,47 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
     );
   }
 
+  await populateRecognisedRevenue(byProject, projectIds);
+
   for (const current of byProject.values()) {
     current.totalCost = Number(current.totalCost.toFixed(2));
     current.paidCost = Number(current.paidCost.toFixed(2));
     current.outstandingCost = Number(current.outstandingCost.toFixed(2));
     current.realisedCost = Number(current.realisedCost.toFixed(2));
+    current.recognisedRevenue = Number(current.recognisedRevenue.toFixed(2));
   }
 
   return byProject;
+}
+
+/**
+ * § 3.3 POC recognised revenue, summed per project from the canonical
+ * line-level repository. This is the ONLY correct source for "revenue
+ * recognised" KPIs — the milestone-billing sum stored on `totalRevenue`
+ * is contract value, not revenue (per § 3.3.3, must not be conflated).
+ *
+ * Batched: one repository call covers every project in the input set;
+ * categories are scoped per project inside the repository (§ 3.3.1).
+ */
+async function populateRecognisedRevenue(
+  byProject: Map<number, CanonicalProjectFinanceRow>,
+  projectIds: number[],
+): Promise<void> {
+  if (projectIds.length === 0) return;
+  try {
+    const repo = new FinanceLineLevelRepository();
+    const lines = await repo.getPortfolioFinanceLines(projectIds);
+    for (const line of lines) {
+      const current = byProject.get(line.projectId);
+      if (!current) continue;
+      current.recognisedRevenue += Number.isFinite(line.perLineRevenue) ? line.perLineRevenue : 0;
+    }
+  } catch (err) {
+    // Recognised revenue is additive — leave the field as 0 on failure rather
+    // than fail the entire KPI read. The legacy totalRevenue field remains
+    // populated so dashboards still render their backward-compatible figure.
+    console.warn("[canonical-dashboard-kpi] failed to populate recognisedRevenue:", err);
+  }
 }
 
 // Classification: CANONICAL_READ

@@ -545,8 +545,11 @@ function DetailRow({
                         <th className="text-left px-3 py-2 font-medium text-muted-foreground">
                           Invoice #
                         </th>
-                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">
-                          Date
+                        <th
+                          className="text-left px-3 py-2 font-medium text-muted-foreground"
+                          title="Payment receipt date (actual if received, otherwise forecast). Drives cash inflow per § 3.4 — NOT the invoice raised date."
+                        >
+                          Payment date
                         </th>
                         <th className="text-right px-3 py-2 font-medium text-muted-foreground">
                           Amount
@@ -789,8 +792,11 @@ function DetailRow({
                         >
                           Supplier invoice #
                         </th>
-                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">
-                          Date
+                        <th
+                          className="text-left px-3 py-2 font-medium text-muted-foreground"
+                          title="Actual payment date (when paid) or forecast payment date. Drives cash outflow per § 3.4 — NOT the invoice raised date."
+                        >
+                          Payment date
                         </th>
                         <th className="text-center px-3 py-2 font-medium text-muted-foreground">
                           Status
