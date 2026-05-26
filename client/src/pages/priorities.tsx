@@ -599,19 +599,22 @@ export default function PrioritiesPage() {
           </TabsList>
 
           <div className="flex items-center gap-2">
-            {(savedViewsQuery.data?.length ?? 0) > 0 && (
-              <Select value={selectedViewId} onValueChange={applyView}>
-                <SelectTrigger className="w-[160px] h-8 text-xs" data-testid="select-saved-view">
-                  <SelectValue placeholder="Saved views" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">— Default —</SelectItem>
-                  {(savedViewsQuery.data ?? []).map((v) => (
-                    <SelectItem key={v.id} value={String(v.id)}>{v.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
+            <Select value={selectedViewId} onValueChange={applyView}>
+              <SelectTrigger className="w-[160px] h-8 text-xs" data-testid="select-saved-view">
+                <SelectValue placeholder={(savedViewsQuery.data?.length ?? 0) > 0 ? "Saved views" : "No saved views"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">— Default —</SelectItem>
+                {(savedViewsQuery.data ?? []).map((v) => (
+                  <SelectItem key={v.id} value={String(v.id)}>{v.name}</SelectItem>
+                ))}
+                {(savedViewsQuery.data?.length ?? 0) === 0 && (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground italic">
+                    Use "Save current as view…" below to add one
+                  </div>
+                )}
+              </SelectContent>
+            </Select>
             <div className="relative">
               <Search className="absolute left-2 top-2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
               <Input

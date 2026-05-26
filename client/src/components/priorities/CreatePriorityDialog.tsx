@@ -148,7 +148,7 @@ export function CreatePriorityDialog({
           target_outcome_override: form.target_outcome || null,
           definition_of_done_override: form.definition_of_done || null,
           next_action_override: form.next_action || null,
-          owner_role_override: undefined,
+          owner_role_override: form.owner_role || null,
           due_date: form.due_date || undefined,
           review_cadence_days: form.review_cadence_days
             ? parseInt(form.review_cadence_days, 10)
@@ -188,10 +188,20 @@ export function CreatePriorityDialog({
         </DialogHeader>
         {(templatesQuery.data?.length ?? 0) > 0 && (
           <div className="mb-3 border border-emerald-200 bg-emerald-50/40 rounded-md p-3">
-            <Label className="text-xs flex items-center gap-1 mb-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-              Start from a template (optional)
-            </Label>
+            <div className="flex items-center justify-between mb-1.5">
+              <Label className="text-xs flex items-center gap-1">
+                <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                Start from a template (optional)
+              </Label>
+              {selectedTemplateId && (
+                <span
+                  className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300"
+                  data-testid="badge-template-active"
+                >
+                  Based on: {(templatesQuery.data ?? []).find((t) => String(t.id) === selectedTemplateId)?.name ?? "template"}
+                </span>
+              )}
+            </div>
             <Select value={selectedTemplateId} onValueChange={applyTemplate}>
               <SelectTrigger className="h-8 text-xs" data-testid="select-priority-template">
                 <SelectValue placeholder="Blank — fill in below" />

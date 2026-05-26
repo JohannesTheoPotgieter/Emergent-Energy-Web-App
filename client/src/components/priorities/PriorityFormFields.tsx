@@ -56,6 +56,13 @@ export interface PriorityFormState {
    * review_cadence_days < now. See migration 0069_priorities_phase3.
    */
   review_cadence_days: string;
+  /**
+   * Suggested owner role — free text hint copied from a template when
+   * the user instantiates one. Not surfaced as a form input today; the
+   * field exists so the template picker can round-trip it through to
+   * the instantiate payload.
+   */
+  owner_role: string;
 }
 
 export const emptyPriorityForm: PriorityFormState = {
@@ -78,6 +85,7 @@ export const emptyPriorityForm: PriorityFormState = {
   parent_id: "",
   project_ids: [],
   review_cadence_days: "",
+  owner_role: "",
 };
 
 interface Props {
@@ -376,6 +384,7 @@ export function PriorityFormFields({
             onChange={(e) => patch({ review_cadence_days: e.target.value })}
             data-testid="input-priority-review-cadence"
           />
+          <p className="text-[10px] text-muted-foreground mt-1">1–365 days. Blank = no cadence.</p>
         </div>
         <div>
           <Label className="text-xs">Manual health</Label>
@@ -515,6 +524,7 @@ export function buildPriorityPayload(
     assigned_user_id: form.assigned_user_id ? parseInt(form.assigned_user_id, 10) : null,
     parent_id: form.parent_id ? parseInt(form.parent_id, 10) : null,
     review_cadence_days: form.review_cadence_days ? parseInt(form.review_cadence_days, 10) : null,
+    owner_role: form.owner_role || null,
   };
   if (opts.includeStatus) payload.status = form.status;
   if (opts.includeProjectIds && form.project_ids.length > 0) {
