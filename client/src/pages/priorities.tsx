@@ -602,7 +602,7 @@ export default function PrioritiesPage() {
 
   return (
     <PageShell>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <div>
           <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
             <Flag className="w-5 h-5" />
@@ -614,7 +614,7 @@ export default function PrioritiesPage() {
             {showClosed && closedData.length > 0 && ` · ${closedData.length} closed`}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {(isAdmin || isDeptHead) && (
             <Link href="/priorities/lineage">
               <Button size="sm" variant="outline" aria-label="Open cross-department lineage view">
@@ -644,7 +644,7 @@ export default function PrioritiesPage() {
         // pattern: dark high-contrast surface, primary actions on the
         // right, dismiss on the left.
         <div
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 shadow-lg flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900 text-white text-sm animate-in slide-in-from-bottom-4 fade-in duration-200"
+          className="fixed bottom-4 inset-x-2 sm:inset-x-auto sm:bottom-6 sm:left-1/2 sm:-translate-x-1/2 z-50 shadow-lg flex flex-wrap items-center justify-center gap-2 px-4 py-2 rounded-full bg-slate-900 text-white text-sm animate-in slide-in-from-bottom-4 fade-in duration-200"
           role="region"
           aria-label="Bulk actions"
           data-testid="bulk-action-bar"
@@ -707,8 +707,8 @@ export default function PrioritiesPage() {
           setHealthFilter("all");
         }}
       >
-        <div className="flex items-center justify-between mb-4">
-          <TabsList>
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">
+          <TabsList className="w-full lg:w-auto justify-start overflow-x-auto">
             <TabsTrigger value="my" className="text-xs" data-testid="tab-priorities-my">
               <Target className="w-3.5 h-3.5 mr-1" />
               My Priorities
@@ -740,7 +740,7 @@ export default function PrioritiesPage() {
             </TabsTrigger>
           </TabsList>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Select value={selectedViewId} onValueChange={applyView}>
               <SelectTrigger className="w-[160px] h-8 text-xs" data-testid="select-saved-view">
                 <SelectValue placeholder={(savedViewsQuery.data?.length ?? 0) > 0 ? "Saved views" : "No saved views"} />
@@ -757,7 +757,7 @@ export default function PrioritiesPage() {
                 )}
               </SelectContent>
             </Select>
-            <div className="relative">
+            <div className="relative flex-1 lg:flex-none">
               <Search className="absolute left-2 top-2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
               <Input
                 value={searchInput}
@@ -766,7 +766,7 @@ export default function PrioritiesPage() {
                 placeholder="Search priorities..."
                 aria-label="Search priorities"
                 data-testid="input-search-priorities"
-                className="h-8 pl-7 pr-7 w-[220px] text-xs"
+                className="h-8 pl-7 pr-7 w-full lg:w-[220px] text-xs"
               />
               {searchInput && (
                 <button

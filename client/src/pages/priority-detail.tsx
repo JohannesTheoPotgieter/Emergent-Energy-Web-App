@@ -557,7 +557,7 @@ export default function PriorityDetailPage() {
             </div>
           }
           actions={
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Button
                 size="sm"
                 variant="ghost"
@@ -805,7 +805,7 @@ export default function PriorityDetailPage() {
         defaultValue={displayProjectCount > 0 ? "projects" : "details"}
         onValueChange={(v) => setChainActive(v === "chain")}
       >
-        <TabsList className="bg-muted/60">
+        <TabsList className="bg-muted/60 w-full md:w-auto overflow-x-auto justify-start">
           {displayProjectCount > 0 ? (
             <>
               <TabsTrigger value="projects" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><FolderOpen className="w-3.5 h-3.5" />Projects</TabsTrigger>
