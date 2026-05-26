@@ -62,7 +62,14 @@ function makeEmptyPhaseHistorySummary(): PhaseHistorySummary {
 }
 
 interface ProjectLifecycleWorkspaceMetrics {
+  /**
+   * @deprecated For display use `recognisedRevenue` (§ 3.3 POC). This field
+   * sums milestone billing amounts (contract value). Kept for backward
+   * compatibility with consumers that haven't migrated to recognisedRevenue.
+   */
   totalRevenue: number;
+  /** § 3.3 per-line POC recognised revenue (the canonical "Revenue" figure). */
+  recognisedRevenue: number;
   totalCost: number;
   activeWorkItems: number;
   overdueWorkItems: number;
@@ -89,7 +96,10 @@ interface ProjectLifecycleWorkspaceClientLinkedProject {
   latestUpdateText: string | null;
   latestUpdateAt: string | null;
   latestUpdateBy: string | null;
+  /** @deprecated Use recognisedRevenue for display. Contract value sum. */
   totalRevenue: number;
+  /** § 3.3 POC recognised revenue (canonical "Revenue" figure). */
+  recognisedRevenue: number;
   totalCost: number;
   pendingApprovals: number;
   inReviewDeliverables: number;
@@ -385,6 +395,7 @@ export function buildProjectLifecycleWorkspaceFromSources(params: {
       escalationLevel: row.escalationLevel || null,
       metrics: {
         totalRevenue: getKpiValue(sharedSummary, "finance_total_revenue"),
+        recognisedRevenue: getKpiValue(sharedSummary, "finance_recognised_revenue"),
         totalCost: getKpiValue(sharedSummary, "finance_total_cost"),
         activeWorkItems: getKpiValue(sharedSummary, "tasks_active"),
         overdueWorkItems: getKpiValue(sharedSummary, "tasks_overdue"),
@@ -516,6 +527,7 @@ export function buildProjectLifecycleWorkspaceFromSources(params: {
         latestUpdateAt: project.latestUpdate.updatedAt,
         latestUpdateBy: project.latestUpdate.updatedBy,
         totalRevenue: project.metrics.totalRevenue,
+        recognisedRevenue: project.metrics.recognisedRevenue,
         totalCost: project.metrics.totalCost,
         pendingApprovals: project.workflow.approvals.pending,
         inReviewDeliverables: project.workflow.deliverables.inReview,

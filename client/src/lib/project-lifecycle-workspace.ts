@@ -53,7 +53,10 @@ export interface ProjectLifecycleWorkspaceProject {
   ragStatus: string | null;
   escalationLevel: string | null;
   metrics: {
+    /** @deprecated For display use recognisedRevenue. Contract value sum. */
     totalRevenue: number;
+    /** § 3.3 POC recognised revenue. Canonical "Revenue" figure. */
+    recognisedRevenue: number;
     totalCost: number;
     activeWorkItems: number;
     overdueWorkItems: number;
@@ -92,7 +95,10 @@ export interface ProjectLifecycleWorkspaceClient {
     latestUpdateText: string | null;
     latestUpdateAt: string | null;
     latestUpdateBy: string | null;
+    /** @deprecated Contract value sum. Use recognisedRevenue for "Revenue". */
     totalRevenue: number;
+    /** § 3.3 POC recognised revenue. */
+    recognisedRevenue: number;
     totalCost: number;
     pendingApprovals: number;
     inReviewDeliverables: number;

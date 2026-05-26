@@ -1411,6 +1411,10 @@ export const purchaseOrders = pgTable("purchase_orders", {
   poNumber: integer("po_number").notNull(),
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
+  // Canonical supplier identity. Nullable for backward compatibility with
+  // historical POs created before the FK was introduced; new flows MUST
+  // populate it and validate the counterparty has payment terms set.
+  counterpartyId: integer("counterparty_id").references(() => counterparties.id, { onDelete: "set null" }),
   supplierName: text("supplier_name").notNull(),
   supplierVat: text("supplier_vat"),
   supplierAddress: text("supplier_address"),

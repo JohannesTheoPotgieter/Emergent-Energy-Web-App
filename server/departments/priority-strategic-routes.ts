@@ -3352,11 +3352,41 @@ router.get("/api/priorities/:id/children", requireAuth, requirePermission("compa
   if (priorityId === null) throw badRequest("Invalid priority id");
   await loadPriorityForRead(req, priorityId);
 
-  const children = await db.select().from(mytoolCompanyPriorities)
-    .where(and(
-      eq(mytoolCompanyPriorities.parentId, priorityId),
-      activePriorityStatusCondition(),
-    ));
+  // ?recursive=true: return every descendant in the subtree (excluding
+  // the root itself). Used by the Chain tab to render the full
+  // hierarchy. Walked iteratively level-by-level with `inArray` to
+  // keep both postgres + sqlite paths happy without a recursive CTE.
+  // Depth is capped at 10 levels as a safety guard against accidental
+  // cycles (the schema doesn't enforce acyclicity).
+  const recursive = req.query.recursive === "true";
+  let children: any[];
+  if (recursive) {
+    const collected: any[] = [];
+    const seen = new Set<number>([priorityId]);
+    let frontier: number[] = [priorityId];
+    for (let depth = 0; depth < 10 && frontier.length > 0; depth++) {
+      const level = await db.select().from(mytoolCompanyPriorities)
+        .where(and(
+          inArray(mytoolCompanyPriorities.parentId, frontier),
+          activePriorityStatusCondition(),
+        ));
+      const nextFrontier: number[] = [];
+      for (const row of level) {
+        if (seen.has(row.id)) continue;
+        seen.add(row.id);
+        collected.push(row);
+        nextFrontier.push(row.id);
+      }
+      frontier = nextFrontier;
+    }
+    children = collected;
+  } else {
+    children = await db.select().from(mytoolCompanyPriorities)
+      .where(and(
+        eq(mytoolCompanyPriorities.parentId, priorityId),
+        activePriorityStatusCondition(),
+      ));
+  }
 
   if (children.length === 0) return res.json([]);
 

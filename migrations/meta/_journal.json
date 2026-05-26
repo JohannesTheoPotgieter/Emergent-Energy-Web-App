@@ -477,6 +477,20 @@
       "when": 1779728243017,
       "tag": "0069_priorities_phase3",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1779800000000,
+      "tag": "0070_paid_date_not_future_check",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1779800334056,
+      "tag": "0069_purchase_orders_counterparty_fk",
+      "breakpoints": true
     }
   ]
 }

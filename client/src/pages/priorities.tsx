@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearch, useLocation, Link } from "wouter";
-import { Download, Filter, Flag, Plus, Search, Target, Users, X } from "lucide-react";
+import { Download, Filter, Flag, GitBranch, LayoutGrid, List, Plus, Rows3, Search, Target, Users, X } from "lucide-react";
 import { PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -26,6 +26,16 @@ import { ROLE_DEPARTMENT_MAP } from "@shared/schema/users";
 const ALL_DEPTS_KEY = "__ALL__";
 import type { PriorityRow } from "@/lib/priority-types";
 import { PriorityListSection } from "@/components/priorities/PriorityListSection";
+import { DepartmentDashboard } from "@/components/priorities/DepartmentDashboard";
+import type { PriorityListDensity } from "@/components/priorities/PriorityCard";
+
+const DENSITY_STORAGE_KEY = "priorities:density";
+const DENSITY_VALUES: PriorityListDensity[] = ["cards", "compact", "dense"];
+function readStoredDensity(): PriorityListDensity {
+  if (typeof window === "undefined") return "cards";
+  const raw = window.localStorage.getItem(DENSITY_STORAGE_KEY);
+  return (DENSITY_VALUES as string[]).includes(raw ?? "") ? (raw as PriorityListDensity) : "cards";
+}
 import { CreatePriorityDialog } from "@/components/priorities/CreatePriorityDialog";
 import { AssignPriorityDialog, BulkReassignDialog } from "@/components/priorities/AssignDialogs";
 import { useConfirmDialog } from "@/components/priorities/ConfirmActionDialog";
@@ -115,6 +125,15 @@ export default function PrioritiesPage() {
   const [levelFilter, setLevelFilter] = useState(initialFilters.level);
   const [healthFilter, setHealthFilter] = useState(initialFilters.health);
   const [showClosed, setShowClosed] = useState(false);
+  // Density toggle — persisted in localStorage so the operator's
+  // preference survives across visits and tabs. The three modes (cards,
+  // compact, dense) trade card detail for vertical density: cards is
+  // the canonical 2-col grid, compact is a 3-col grid with metadata
+  // trimmed, dense is a single-column one-line strip for scan speed.
+  const [density, setDensity] = useState<PriorityListDensity>(() => readStoredDensity());
+  useEffect(() => {
+    try { window.localStorage.setItem(DENSITY_STORAGE_KEY, density); } catch { /* noop */ }
+  }, [density]);
   // Admin-only "Archived" view. Toggling this switches the list query
   // to include_archived=true so soft-deleted priorities surface for the
   // admin to restore.
@@ -583,7 +602,7 @@ export default function PrioritiesPage() {
 
   return (
     <PageShell>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <div>
           <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
             <Flag className="w-5 h-5" />
@@ -595,7 +614,15 @@ export default function PrioritiesPage() {
             {showClosed && closedData.length > 0 && ` · ${closedData.length} closed`}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {(isAdmin || isDeptHead) && (
+            <Link href="/priorities/lineage">
+              <Button size="sm" variant="outline" aria-label="Open cross-department lineage view">
+                <GitBranch className="w-4 h-4 mr-1" />
+                Lineage
+              </Button>
+            </Link>
+          )}
           {(isAdmin || isDeptHead) && (
             <Button size="sm" variant="outline" onClick={exportPack} aria-label="Export priorities pack as PDF">
               <Download className="w-4 h-4 mr-1" />
@@ -617,7 +644,7 @@ export default function PrioritiesPage() {
         // pattern: dark high-contrast surface, primary actions on the
         // right, dismiss on the left.
         <div
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 shadow-lg flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900 text-white text-sm animate-in slide-in-from-bottom-4 fade-in duration-200"
+          className="fixed bottom-4 inset-x-2 sm:inset-x-auto sm:bottom-6 sm:left-1/2 sm:-translate-x-1/2 z-50 shadow-lg flex flex-wrap items-center justify-center gap-2 px-4 py-2 rounded-full bg-slate-900 text-white text-sm animate-in slide-in-from-bottom-4 fade-in duration-200"
           role="region"
           aria-label="Bulk actions"
           data-testid="bulk-action-bar"
@@ -680,8 +707,8 @@ export default function PrioritiesPage() {
           setHealthFilter("all");
         }}
       >
-        <div className="flex items-center justify-between mb-4">
-          <TabsList>
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">
+          <TabsList className="w-full lg:w-auto justify-start overflow-x-auto">
             <TabsTrigger value="my" className="text-xs" data-testid="tab-priorities-my">
               <Target className="w-3.5 h-3.5 mr-1" />
               My Priorities
@@ -718,6 +745,7 @@ export default function PrioritiesPage() {
               value={selectedViewId || "__default__"}
               onValueChange={(v) => applyView(v === "__default__" ? "" : v)}
             >
+
               <SelectTrigger className="w-[160px] h-8 text-xs" data-testid="select-saved-view">
                 <SelectValue placeholder={(savedViewsQuery.data?.length ?? 0) > 0 ? "Saved views" : "No saved views"} />
               </SelectTrigger>
@@ -733,7 +761,7 @@ export default function PrioritiesPage() {
                 )}
               </SelectContent>
             </Select>
-            <div className="relative">
+            <div className="relative flex-1 lg:flex-none">
               <Search className="absolute left-2 top-2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
               <Input
                 value={searchInput}
@@ -742,7 +770,7 @@ export default function PrioritiesPage() {
                 placeholder="Search priorities..."
                 aria-label="Search priorities"
                 data-testid="input-search-priorities"
-                className="h-8 pl-7 pr-7 w-[220px] text-xs"
+                className="h-8 pl-7 pr-7 w-full lg:w-[220px] text-xs"
               />
               {searchInput && (
                 <button
@@ -918,6 +946,30 @@ export default function PrioritiesPage() {
                 </div>
               </PopoverContent>
             </Popover>
+            {/* Density toggle — three-state segmented control. Persists in
+                localStorage so the choice survives navigation and reloads.
+                Hidden on small screens (toggle is meaningless under 2-col
+                grid) but still keyboard-reachable via the popover above. */}
+            <div className="hidden md:inline-flex items-center rounded-md border border-input bg-background overflow-hidden" role="group" aria-label="List density">
+              {([
+                { value: "cards", label: "Cards", Icon: LayoutGrid },
+                { value: "compact", label: "Compact", Icon: List },
+                { value: "dense", label: "Dense", Icon: Rows3 },
+              ] as const).map(({ value, label, Icon }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setDensity(value)}
+                  className={`h-8 px-2 text-xs flex items-center gap-1 ${density === value ? "bg-emerald-600 text-white" : "text-muted-foreground hover:bg-muted"}`}
+                  aria-pressed={density === value}
+                  title={`${label} density`}
+                  data-testid={`density-${value}`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span className="hidden lg:inline">{label}</span>
+                </button>
+              ))}
+            </div>
             <div className="flex items-center gap-1 ml-auto">
               <Input
                 value={saveViewName}
@@ -1006,6 +1058,7 @@ export default function PrioritiesPage() {
               selectable={canUseBulkActions}
               selectedIds={bulkSelected}
               onToggleSelect={toggleBulkSelect}
+              density={density}
               emptyMessage="Nothing on your priority list yet"
               emptyAction={
                 canCreateInActiveTab ? (
@@ -1038,6 +1091,17 @@ export default function PrioritiesPage() {
 
         {(isDeptHead || isAdmin) && (
           <TabsContent value="department">
+            {/* Department dashboard: when an admin is on "All departments"
+                we render per-dept summary cards above the flat list so
+                they can spot at a glance which department is in the
+                worst shape and drill in by clicking. Hidden when a
+                single department is selected (the list IS the view). */}
+            {isAdmin && selectedDeptKey === ALL_DEPTS_KEY && filteredDept.length > 0 && (
+              <DepartmentDashboard
+                priorities={filteredDept}
+                onSelectDepartment={(key) => setSelectedDeptKey(key)}
+              />
+            )}
             <PriorityListSection
               priorities={filteredDept}
               isLoading={deptQuery.isLoading}
@@ -1056,6 +1120,7 @@ export default function PrioritiesPage() {
               selectable={canUseBulkActions}
               selectedIds={bulkSelected}
               onToggleSelect={toggleBulkSelect}
+              density={density}
               emptyMessage={
                 isAdmin && selectedDeptKey === ALL_DEPTS_KEY
                   ? "No department priorities yet"
@@ -1084,6 +1149,7 @@ export default function PrioritiesPage() {
             selectable={isAdmin}
             selectedIds={bulkSelected}
             onToggleSelect={toggleBulkSelect}
+            density={density}
             emptyMessage="No company priorities yet"
             emptyAction={
               isAdmin ? (

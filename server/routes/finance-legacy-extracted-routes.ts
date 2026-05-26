@@ -48,7 +48,7 @@ import { getCanonicalAllCurrentCostLines, getCanonicalProjectCostLinesByName, ge
 
 export function registerFinanceLegacyExtractedRoutes(app: Express): void {
 
-  app.get("/api/program/cos", requireAuth, async (req, res) => {
+  app.get("/api/program/cos", requireAuth, requirePermission("cos", "view"), async (req, res) => {
     try {
       const { projectName, startDate, endDate, atRiskDays = '30' } = req.query;
       const atRiskDaysNum = parseInt(atRiskDays as string, 10) || 30;
@@ -201,7 +201,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
   });
 
 
-  app.get("/api/financial-headline", requireAuth, async (_req, res) => {
+  app.get("/api/financial-headline", requireAuth, requirePermission("financials", "view"), async (_req, res) => {
     try {
       const today = new Date();
       const fyStartMonth = 9;
@@ -348,7 +348,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
     fileFilter: allowedFileFilter,
   });
 
-  app.post("/api/financial-close/upload", requireAuth, requireAdmin, docUpload.single("file"), (req, res) => {
+  app.post("/api/financial-close/upload", requireAuth, requireAdmin, requirePermission("financials", "edit"), docUpload.single("file"), (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
     }
@@ -357,7 +357,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
     res.json({ url: fileUrl, filename: req.file.originalname });
   });
 
-  app.get("/api/financial-close/files/:filename", requireAuth, (req, res) => {
+  app.get("/api/financial-close/files/:filename", requireAuth, requirePermission("financials", "view"), (req, res) => {
     const filename = req.params.filename as string;
     const resolvedPath = path.resolve(docUploadDir, path.basename(filename));
     if (!resolvedPath.startsWith(path.resolve(docUploadDir))) {
@@ -375,7 +375,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
 
   // ==================== REALISATION KPIs (Weekly / Monthly / Yearly) ====================
 
-  app.get("/api/realisation-kpis", requireAuth, async (req, res) => {
+  app.get("/api/realisation-kpis", requireAuth, requirePermission("cos", "view"), async (req, res) => {
     try {
       const legacyExpenses = await getCanonicalAllCurrentCostLines();
       const { expenses: allExpenses } = await getMergedExpensesAndInflows(
@@ -593,7 +593,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
   // REMOVED: /api/program-expenses and /api/program-expenses/:projectName
   // Canonical routes now in server/departments/finance-routes.ts (registered first via registerDepartmentRoutes).
 
-  app.get("/api/program-inflows", requireAuth, async (req, res) => {
+  app.get("/api/program-inflows", requireAuth, requirePermission("financials", "view"), async (req, res) => {
     try {
       const { projectName, startDate, endDate, applyOverrides } = req.query;
       let inflows;
@@ -736,7 +736,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/revenue-tracking/overrides/:projectName", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/revenue-tracking/overrides/:projectName", requireAuth, requireAdmin, requirePermission('financials', 'override'), async (req, res) => {
     try {
       const projectName = req.params.projectName;
       if (!projectName || typeof projectName !== 'string') {
@@ -756,7 +756,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
   // and to prevent confusion about which handler serves each request.
 
   // Expenditure Overrides API
-  app.get("/api/expenditure/overrides", requireAuth, async (req, res) => {
+  app.get("/api/expenditure/overrides", requireAuth, requirePermission("financials", "view"), async (req, res) => {
     try {
       const { projectName } = req.query;
       if (!projectName || typeof projectName !== 'string') {
@@ -844,7 +844,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/expenditure/overrides/:projectName", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/expenditure/overrides/:projectName", requireAuth, requireAdmin, requirePermission('financials', 'override'), async (req, res) => {
     try {
       const projectName = req.params.projectName;
       if (!projectName || typeof projectName !== 'string') {
@@ -1075,7 +1075,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
 
   // ==================== EXPENDITURE BREAKDOWN COMPOSITE API ====================
 
-  app.patch("/api/expenditure/font-color-toggle", requireAuth, async (req, res) => {
+  app.patch("/api/expenditure/font-color-toggle", requireAuth, requirePermission("cos", "override"), async (req, res) => {
     try {
       const { projectName, rowNumber, field, color } = req.body;
       if (!projectName || rowNumber == null || !field || !color) {
@@ -1126,7 +1126,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
 
   // ==================== COS STATUS OVERRIDE API ====================
 
-  app.post("/api/cos-status-override", requireAuth, async (req, res) => {
+  app.post("/api/cos-status-override", requireAuth, requirePermission("cos", "override"), async (req, res) => {
     try {
       const { expenseId, projectName, rowNumber, originalStatus, overrideStatus, reason } = req.body;
       if (!expenseId || !projectName || !overrideStatus || !reason) {
@@ -1146,7 +1146,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/cos-status-override/:expenseId", requireAuth, async (req, res) => {
+  app.delete("/api/cos-status-override/:expenseId", requireAuth, requirePermission("cos", "override"), async (req, res) => {
     try {
       const expenseId = parseIntParam(req.params.expenseId);
 
@@ -1165,6 +1165,21 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
   // Allows finance users to create, edit, and soft-delete individual
   // cost and revenue line items via the UI (without requiring an import).
 
+  // § 3.7 HARD: actuals fields receive ACTUAL dates only. A paidDate in the
+  // future is by definition not an actual — it is a planned / forecast date
+  // and belongs in `forecastPaymentDate`. Reject at the route boundary so the
+  // manual-edit path matches the Smart Import normalizer rule.
+  const pastOrTodayIsoDate = (fieldName: string) =>
+    z.string().refine(
+      (v) => {
+        if (!v) return true;
+        const d = String(v).slice(0, 10);
+        const today = new Date().toISOString().slice(0, 10);
+        return d <= today;
+      },
+      { message: `${fieldName} cannot be in the future. Use forecastPaymentDate for planned payments.` },
+    );
+
   const costLineSchema = z.object({
     projectId: z.number().int(),
     projectName: z.string().min(1),
@@ -1173,7 +1188,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
     amountExVat: z.union([z.string(), z.number()]),
     invoiceNumber: z.string().optional(),
     invoiceDate: z.string().optional(),
-    paidDate: z.string().optional(),
+    paidDate: pastOrTodayIsoDate("paidDate").optional(),
     poNumber: z.string().optional(),
     category: z.string().optional(),
     notes: z.string().optional(),
@@ -1187,7 +1202,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
     amountExVat: z.union([z.string(), z.number()]),
     invoiceNumber: z.string().optional(),
     invoiceDate: z.string().optional(),
-    paidDate: z.string().optional(),
+    paidDate: pastOrTodayIsoDate("paidDate").optional(),
     expectedPaymentDate: z.string().optional(),
     notes: z.string().optional(),
   });

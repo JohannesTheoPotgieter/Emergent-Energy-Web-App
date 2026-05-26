@@ -155,6 +155,15 @@ function cleanName(name: string): string {
 
 const PHASE_LIST = [...PHASE_LABELS];
 
+// Canonical project detail URL. Prefer the id-route per Six Rule #1
+// ("the project is the spine"); fall back to the legacy name-route only
+// when no project_info_id is available.
+function projectDetailPath(p: { project_info_id?: number | null; project_name: string }): string {
+  return p.project_info_id != null && Number.isFinite(p.project_info_id)
+    ? `/project/id/${p.project_info_id}`
+    : `/project/${encodeURIComponent(p.project_name)}`;
+}
+
 function formatDate(val: string | null): string {
   if (!val) return "—";
   try {
@@ -1265,7 +1274,7 @@ function MobileProjectCard({ project, setLocation }: { project: ProjectSummary; 
           <div className="min-w-0 flex-1 space-y-1">
             <button
               className="text-left font-semibold text-blue-700 hover:text-blue-900 hover:underline text-sm leading-tight min-w-0 truncate w-full"
-              onClick={() => setLocation(`/project/${encodeURIComponent(project.project_name)}`)}
+              onClick={() => setLocation(projectDetailPath(project))}
               data-testid={`mobile-link-project-${project.project_name}`}
             >
               {cleanName(project.project_name)}
@@ -1804,7 +1813,7 @@ export default function ProjectsSummary() {
           <button
             data-testid={`link-project-${p.project_name}`}
             className="text-left font-semibold text-blue-700 hover:text-blue-900 hover:underline truncate max-w-[180px] block text-[10px]"
-            onClick={() => setLocation(`/project/${encodeURIComponent(p.project_name)}`)}
+            onClick={() => setLocation(projectDetailPath(p))}
             title={cleanName(p.project_name)}
           >
             {cleanName(p.project_name)}
@@ -1815,7 +1824,7 @@ export default function ProjectsSummary() {
           <button
             type="button"
             className="inline-flex items-center text-[9px] text-blue-700 hover:text-blue-900 hover:underline gap-0.5"
-            onClick={() => setLocation(`/project/${encodeURIComponent(p.project_name)}`)}
+            onClick={() => setLocation(projectDetailPath(p))}
             data-testid={`button-open-details-${p.project_name}`}
           >
             <ExternalLink className="w-2.5 h-2.5" />
@@ -2272,7 +2281,7 @@ export default function ProjectsSummary() {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setLocation(`/project/${encodeURIComponent(p.project_name)}`); }}>
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setLocation(projectDetailPath(p)); }}>
                     Open project detail
                   </DropdownMenuItem>
                   <DropdownMenuItem disabled={!p.project_info_id} onClick={(e) => { e.stopPropagation(); setEditProject(p); }}>
@@ -2839,7 +2848,7 @@ export default function ProjectsSummary() {
                   onClick={(e) => {
                     const target = e.target as HTMLElement;
                     if (target.closest('button, a, input, select, textarea, [role="button"], [data-interactive="true"]')) return;
-                    setLocation(`/project/${encodeURIComponent(project.project_name)}`);
+                    setLocation(projectDetailPath(project));
                   }}
                 >
                   {filteredColumns.map((col) => (

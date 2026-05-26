@@ -7,7 +7,7 @@
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { requireAuth } from "../departments/shared-middleware";
-import { requireRole } from "../middleware/requireRole";
+import { requirePermission } from "../permission-middleware";
 import { getEffectiveUser } from "../auth-context";
 import { badRequest, sendError, unauthorized } from "../lib/api-error";
 import { withTrust } from "../lib/finance-trust/envelope";
@@ -39,23 +39,10 @@ import {
   type OverdueMode,
 } from "@shared/lib/financeAnalysis";
 
-const FINANCE_ANALYSIS_ROLES = [
-  "COO_ADMIN",
-  "CEO_ADMIN",
-  "CFO",
-  "PROGRAM_FINANCE_MANAGER",
-  "ACCOUNTANT",
-  "PROGRAM_MANAGER",
-];
-
-// Narrower set for write operations — operational roles (ACCOUNTANT, PROGRAM_MANAGER)
-// should not be able to change the COS tolerance band configuration.
-const TOLERANCE_WRITE_ROLES = [
-  "COO_ADMIN",
-  "CEO_ADMIN",
-  "CFO",
-  "PROGRAM_FINANCE_MANAGER",
-];
+// RBAC: gates align with the entity registry in shared/permissions/registry.ts.
+// Reads use the `cashflow`/`cos`/`financials` view permission; the tolerance-
+// band PUT uses `cos:override` (registry: COO, CEO, CFO, PFM — matches the
+// old hardcoded TOLERANCE_WRITE_ROLES list exactly).
 
 const DEFAULT_TOLERANCE_BAND_PCT = 10;
 
@@ -71,7 +58,7 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
   app.get(
     "/api/finance/analysis/cashflow/aging",
     requireAuth,
-    requireRole(FINANCE_ANALYSIS_ROLES),
+    requirePermission("cashflow", "view"),
     async (req: Request, res: Response) => {
       try {
         const mode = overdueModeQuery.parse(req.query.mode ?? "expected_date");
@@ -122,7 +109,7 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
   app.get(
     "/api/finance/analysis/cashflow/overdue",
     requireAuth,
-    requireRole(FINANCE_ANALYSIS_ROLES),
+    requirePermission("cashflow", "view"),
     async (req: Request, res: Response) => {
       try {
         const mode = overdueModeQuery.parse(req.query.mode ?? "expected_date");
@@ -199,7 +186,7 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
   app.get(
     "/api/finance/analysis/cashflow/dso-dpo",
     requireAuth,
-    requireRole(FINANCE_ANALYSIS_ROLES),
+    requirePermission("cashflow", "view"),
     async (req: Request, res: Response) => {
       try {
         const weeks = z.coerce.number().int().min(4).max(52).default(12).parse(req.query.weeks ?? 12);
@@ -222,7 +209,7 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
   app.get(
     "/api/finance/analysis/cashflow/at-risk",
     requireAuth,
-    requireRole(FINANCE_ANALYSIS_ROLES),
+    requirePermission("cashflow", "view"),
     async (req: Request, res: Response) => {
       try {
         const mode = overdueModeQuery.parse(req.query.mode ?? "expected_date");
@@ -274,7 +261,7 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
   app.get(
     "/api/finance/analysis/cashflow/concentration",
     requireAuth,
-    requireRole(FINANCE_ANALYSIS_ROLES),
+    requirePermission("cashflow", "view"),
     async (req: Request, res: Response) => {
       try {
         const topN = z.coerce.number().int().min(1).max(20).default(5).parse(req.query.top ?? 5);
@@ -311,7 +298,7 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
   app.get(
     "/api/finance/analysis/cashflow/forecast-actual",
     requireAuth,
-    requireRole(FINANCE_ANALYSIS_ROLES),
+    requirePermission("cashflow", "view"),
     async (req: Request, res: Response) => {
       try {
         const today = new Date();
@@ -347,7 +334,7 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
   app.get(
     "/api/finance/analysis/cos/earned-vs-invoiced",
     requireAuth,
-    requireRole(FINANCE_ANALYSIS_ROLES),
+    requirePermission("cos", "view"),
     async (_req: Request, res: Response) => {
       try {
         const [rows, tolerances] = await Promise.all([
@@ -390,7 +377,7 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
   app.get(
     "/api/finance/analysis/cos/counterparty-trend",
     requireAuth,
-    requireRole(FINANCE_ANALYSIS_ROLES),
+    requirePermission("cos", "view"),
     async (req: Request, res: Response) => {
       try {
         const months = z.coerce.number().int().min(1).max(24).default(6).parse(req.query.months ?? 6);
@@ -417,7 +404,7 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
   app.get(
     "/api/finance/analysis/tolerance",
     requireAuth,
-    requireRole(FINANCE_ANALYSIS_ROLES),
+    requirePermission("cos", "view"),
     async (_req: Request, res: Response) => {
       try {
         const map = await loadCosToleranceBandsByProject();
@@ -442,7 +429,7 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
   app.put(
     "/api/finance/analysis/tolerance/:projectId",
     requireAuth,
-    requireRole(TOLERANCE_WRITE_ROLES),
+    requirePermission("cos", "override"),
     async (req: Request, res: Response) => {
       try {
         const projectId = positiveInt.parse(req.params.projectId);

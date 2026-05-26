@@ -92,6 +92,7 @@ const DepartmentScoresPage = lazyWithRetry(() => import("@/pages/department-scor
 const EngTemplateAdminPage = lazyWithRetry(() => import("@/pages/eng-template-admin"));
 const PrioritiesPage = lazyWithRetry(() => import("@/pages/priorities"));
 const PriorityDetailPage = lazyWithRetry(() => import("@/pages/priority-detail"));
+const PriorityLineagePage = lazyWithRetry(() => import("@/pages/priority-lineage"));
 const PmMonthlyReportPage = lazyWithRetry(() => import("@/pages/pm-monthly-report"));
 const PmMonthlyReportHistoryPage = lazyWithRetry(() => import("@/pages/pm-monthly-report-history"));
 const PmMonthlyReportComparePage = lazyWithRetry(() => import("@/pages/pm-monthly-report-compare"));
@@ -235,6 +236,7 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   EngTemplateAdminPage,
   PrioritiesPage,
   PriorityDetailPage,
+  PriorityLineagePage,
   PmMonthlyReportPage,
   PmMonthlyReportHistoryPage,
   PmMonthlyReportComparePage,

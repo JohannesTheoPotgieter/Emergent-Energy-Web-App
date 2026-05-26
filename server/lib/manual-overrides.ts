@@ -27,7 +27,8 @@
  *   - docs/excel-vs-app-workstream-b-impl.md § Commit 2
  */
 import { and, eq, isNull } from "drizzle-orm";
-import { db } from "../db";
+import { db, getDbMode } from "../db";
+import { runInTransaction } from "./drizzle-helpers";
 import { normalizedCostLines, normalizedRevenueLines } from "@shared/schema/finance";
 import { workItems } from "@shared/schema/tasks";
 import {
@@ -93,27 +94,37 @@ async function fetchRowDispatch(
   tx: typeof db,
   table: OverrideTableName,
   rowId: number,
+  options: { forUpdate?: boolean } = {},
 ): Promise<RowWithOverrides | null> {
   // Snapshot + soft-delete guard on both read and write. A stale rowId
   // referring to a since-replaced historical row would otherwise return
   // (and the writer below would mutate) the wrong record.
+  // forUpdate locks the row for the surrounding transaction so two
+  // concurrent applyManualOverride callers can't both compute their
+  // next-map from the same stale snapshot and overwrite each other.
+  // SQLite ignores .for("update") (no row-level locks); the wrapping
+  // transaction is the only protection there. Production Postgres uses
+  // the lock + the transaction together.
   if (table === "normalized_cost_lines") {
-    const [row] = await tx.select().from(normalizedCostLines).where(and(
+    const q = tx.select().from(normalizedCostLines).where(and(
       eq(normalizedCostLines.id, rowId),
       isNull(normalizedCostLines.effectiveTo),
       isNull(normalizedCostLines.deletedAt),
     )).limit(1);
+    const [row] = options.forUpdate && getDbMode() === "postgres" ? await q.for("update") : await q;
     return (row ?? null) as RowWithOverrides | null;
   }
   if (table === "normalized_revenue_lines") {
-    const [row] = await tx.select().from(normalizedRevenueLines).where(and(
+    const q = tx.select().from(normalizedRevenueLines).where(and(
       eq(normalizedRevenueLines.id, rowId),
       isNull(normalizedRevenueLines.effectiveTo),
       isNull(normalizedRevenueLines.deletedAt),
     )).limit(1);
+    const [row] = options.forUpdate && getDbMode() === "postgres" ? await q.for("update") : await q;
     return (row ?? null) as RowWithOverrides | null;
   }
-  const [row] = await tx.select().from(workItems).where(eq(workItems.id, rowId)).limit(1);
+  const q = tx.select().from(workItems).where(eq(workItems.id, rowId)).limit(1);
+  const [row] = options.forUpdate && getDbMode() === "postgres" ? await q.for("update") : await q;
   return (row ?? null) as RowWithOverrides | null;
 }
 
@@ -201,8 +212,9 @@ async function fetchRow(
   tx: typeof db,
   table: OverrideTableName,
   rowId: number,
+  options: { forUpdate?: boolean } = {},
 ): Promise<RowWithOverrides | null> {
-  return fetchRowDispatch(tx, table, rowId);
+  return fetchRowDispatch(tx, table, rowId, options);
 }
 
 // ---------------------------------------------------------------------------
@@ -233,7 +245,30 @@ export async function applyManualOverride(
   input: ApplyManualOverrideInput,
   tx: typeof db = db,
 ): Promise<void> {
-  const row = await fetchRow(tx, input.table, input.rowId);
+  // Concurrency: two operators racing to set DIFFERENT fields on the
+  // same row would otherwise lose-write each other's entry because each
+  // reads the OLD manual_overrides map, merges its own field, and
+  // writes the resulting map. Last write wins, sibling fields gone.
+  // Fix: when the caller didn't pass a tx, wrap the read+write in a
+  // single transaction with SELECT FOR UPDATE on the row so the second
+  // caller blocks until the first commits and then reads the just-
+  // updated map. Caller-supplied tx case keeps existing semantics —
+  // the caller is assumed to be already holding the lock.
+  const isOuterCall = tx === db;
+  if (isOuterCall) {
+    return runInTransaction(async (innerTx) => {
+      await applyManualOverrideInner(input, innerTx, true);
+    });
+  }
+  await applyManualOverrideInner(input, tx, false);
+}
+
+async function applyManualOverrideInner(
+  input: ApplyManualOverrideInput,
+  tx: typeof db,
+  withLock: boolean,
+): Promise<void> {
+  const row = await fetchRow(tx, input.table, input.rowId, { forUpdate: withLock });
   if (!row) {
     throw new Error(
       `[manual-overrides] row ${input.rowId} not found in ${input.table}`,
