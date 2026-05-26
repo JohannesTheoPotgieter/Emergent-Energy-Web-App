@@ -106,17 +106,24 @@ export function PriorityListSection({
   );
 
   // Layout: cards uses a 2-column grid with comfortable spacing,
-  // compact uses a 3-column grid with tighter cards, dense is a single
-  // stacked list of one-line strips for max scan speed.
+  // dense is a single stacked list of one-line strips for max scan
+  // speed on larger queues.
   const gridClass =
     density === "dense"
       ? "flex flex-col gap-1"
-      : density === "compact"
-        ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2"
-        : "grid grid-cols-1 md:grid-cols-2 gap-3";
+      : "grid grid-cols-1 md:grid-cols-2 gap-3";
 
   return (
     <div>
+      {/* Quiet affordance that multi-select exists. Only shown when
+          (a) the list is selectable for this user, (b) the list has
+          rows, and (c) nothing is currently selected. Once the user
+          selects something the floating bulk-action bar is enough. */}
+      {selectable && priorities.length > 0 && (!selectedIds || selectedIds.size === 0) && (
+        <p className="text-[11px] text-muted-foreground mb-2" data-testid="bulk-hint">
+          Tip: tick the checkboxes on cards to act on multiple priorities at once.
+        </p>
+      )}
       {escalated.length > 0 && (
         <div className="mb-4">
           <h3 className="text-xs font-semibold text-red-600 uppercase flex items-center gap-1 mb-2">

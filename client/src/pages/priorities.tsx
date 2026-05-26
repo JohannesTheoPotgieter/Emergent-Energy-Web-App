@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearch, useLocation, Link } from "wouter";
-import { Download, Filter, Flag, GitBranch, LayoutGrid, List, Plus, Rows3, Search, Target, Users, X } from "lucide-react";
+import { Download, Filter, Flag, GitBranch, LayoutGrid, Plus, Rows3, Search, Target, Users, X } from "lucide-react";
 import { PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -30,10 +30,12 @@ import { DepartmentDashboard } from "@/components/priorities/DepartmentDashboard
 import type { PriorityListDensity } from "@/components/priorities/PriorityCard";
 
 const DENSITY_STORAGE_KEY = "priorities:density";
-const DENSITY_VALUES: PriorityListDensity[] = ["cards", "compact", "dense"];
+const DENSITY_VALUES: PriorityListDensity[] = ["cards", "dense"];
 function readStoredDensity(): PriorityListDensity {
   if (typeof window === "undefined") return "cards";
   const raw = window.localStorage.getItem(DENSITY_STORAGE_KEY);
+  // Legacy "compact" reads as cards — we dropped the middle mode.
+  if (raw === "compact") return "cards";
   return (DENSITY_VALUES as string[]).includes(raw ?? "") ? (raw as PriorityListDensity) : "cards";
 }
 import { CreatePriorityDialog } from "@/components/priorities/CreatePriorityDialog";
@@ -620,11 +622,17 @@ export default function PrioritiesPage() {
             <Flag className="w-5 h-5" />
             Priorities
           </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {activeCount} active priorit{activeCount === 1 ? "y" : "ies"}
-            {activeTab === "my" && openTaskCount > 0 && ` · ${openTaskCount} task${openTaskCount !== 1 ? "s" : ""}`}
-            {showClosed && closedData.length > 0 && ` · ${closedData.length} closed`}
-          </p>
+          {/* Header now only carries auxiliary counts that the tab pills
+              don't already show (task count on My, closed count when
+              showClosed is on). Tab pills carry the active-priority
+              count to avoid the same number rendered twice within two
+              rows. */}
+          {((activeTab === "my" && openTaskCount > 0) || (showClosed && closedData.length > 0)) && (
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {activeTab === "my" && openTaskCount > 0 && `${openTaskCount} task${openTaskCount !== 1 ? "s" : ""}`}
+              {showClosed && closedData.length > 0 && `${activeTab === "my" && openTaskCount > 0 ? " · " : ""}${closedData.length} closed`}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {(isAdmin || isDeptHead) && (
@@ -985,15 +993,15 @@ export default function PrioritiesPage() {
                 </div>
               </PopoverContent>
             </Popover>
-            {/* Density toggle — three-state segmented control. Persists in
-                localStorage so the choice survives navigation and reloads.
-                Hidden on small screens (toggle is meaningless under 2-col
-                grid) but still keyboard-reachable via the popover above. */}
+            {/* Density toggle — two states. Cards (default, full
+                detail per row) vs Rows (one-line strip for scan speed
+                on big queues). Choice persists in localStorage.
+                Hidden on small screens because the responsive grid is
+                already constrained to a single column there. */}
             <div className="hidden md:inline-flex items-center rounded-md border border-input bg-background overflow-hidden" role="group" aria-label="List density">
               {([
                 { value: "cards", label: "Cards", Icon: LayoutGrid },
-                { value: "compact", label: "Compact", Icon: List },
-                { value: "dense", label: "Dense", Icon: Rows3 },
+                { value: "dense", label: "Rows", Icon: Rows3 },
               ] as const).map(({ value, label, Icon }) => (
                 <button
                   key={value}
@@ -1001,7 +1009,7 @@ export default function PrioritiesPage() {
                   onClick={() => setDensity(value)}
                   className={`h-8 px-2 text-xs flex items-center gap-1 ${density === value ? "bg-emerald-600 text-white" : "text-muted-foreground hover:bg-muted"}`}
                   aria-pressed={density === value}
-                  title={`${label} density`}
+                  title={`${label} view`}
                   data-testid={`density-${value}`}
                 >
                   <Icon className="w-3.5 h-3.5" />
@@ -1142,6 +1150,30 @@ export default function PrioritiesPage() {
                 priorities={filteredDept}
                 onSelectDepartment={(key) => setSelectedDeptKey(key)}
               />
+            )}
+            {/* Visible confirmation that a department filter is now
+                active (avoids the "I clicked the card and nothing
+                happened" perception when the list silently scrolls /
+                re-renders below). One click clears it. */}
+            {isAdmin && selectedDeptKey !== ALL_DEPTS_KEY && (
+              <div
+                className="flex items-center gap-2 mb-3 px-3 py-2 rounded-md bg-emerald-50 border border-emerald-200 text-xs"
+                data-testid="dept-active-filter-chip"
+              >
+                <span className="text-emerald-700">
+                  Filtered to <span className="font-semibold">{DEPARTMENT_OPTIONS.find((d) => d.value === selectedDeptKey)?.label || selectedDeptKey}</span>
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs ml-auto"
+                  onClick={() => setSelectedDeptKey(ALL_DEPTS_KEY)}
+                  aria-label="Clear department filter"
+                >
+                  <X className="w-3 h-3 mr-1" />
+                  Show all departments
+                </Button>
+              </div>
             )}
             <PriorityListSection
               priorities={filteredDept}
