@@ -506,6 +506,19 @@ Today: an invoice dated 2026-06-01 with paid date 2026-05-15 (invoice AFTER paym
 | 6 | DF-20 | Unit tests for `getCosRealisationWarnings` covering each warning code. | `qa/tests/unit/cos-realisation-warnings.test.ts` (new) | None — test only |
 | 7 | DF-34 | `prevM` renamed to `prevM1Indexed` in `previousMonthFirst` for readability. Behaviour unchanged. | `server/lib/finance/period-lock.ts` | None — cosmetic |
 | 8 | DF-2 docs | Updated `audit/FINANCE_AUDIT_2026-05-26.md` to flag the missing `derived_project_kpis` writer alongside the existing F-1 Phase 2 hand-off. | this file + the V1 doc | None |
+| **Phase B / C / D — second pass on the user instruction "implement all"** | | | | |
+| 9 | DF-22 | Unit tests for `bucketCostLinesForRecognition` (10 tests). | `qa/tests/unit/recognition-bucketing-unit.test.ts` (new) | None |
+| 10 | DF-23 | Unit tests for `isRevenueSettled` / `evaluateRevenueArStatus` (31 tests). | `qa/tests/unit/revenue-settlement-logic.test.ts` (new) | None |
+| 11 | DF-26 | Reconciliation contract tests pinning project-sum / portfolio-sum / GP identity / per-project category scoping (8 tests). | `qa/tests/unit/finance-reconciliation-contracts.test.ts` (new) | None |
+| 12 | DF-27 | Extracted `summariseProposalAges` as a pure aggregator + tests (10 tests). | `server/services/quickbooks-cascade-proposals-service.ts`, `qa/tests/unit/quickbooks-cascade-age-summary.test.ts` (new) | None — refactor + tests |
+| 13 | DF-29 | Extracted `pastOrTodayIsoDate` to shared validator + tests (8 tests). | `server/lib/finance/validators.ts` (new), `server/routes/finance-legacy-extracted-routes.ts`, `qa/tests/unit/finance-validators.test.ts` (new) | None |
+| 14 | DF-1 | New `filterActiveProjectIds` helper. Wired into PM dashboard so the FY finance roll-up excludes closed / internal / tbc projects (task / progress aggregates still see the full set). | `server/lib/finance/project-filters.ts` (new), `server/pm-routes.ts` | Medium — PM dashboard FY tile drops for closed projects (intended) |
+| 15 | DF-5 | VAT NULL handling: when QB returns inc-VAT without tax, return `qbAmountExVat: null` instead of inflating with `incVat`. Downstream consumers already handle `taxUncertain: true`. | `server/lib/finance/qb-allocation.ts` | Low — affects only rows where QB omits tax; the value was already flagged as uncertain |
+| 16 | DF-7 | Wrapped `detectAndPersistProposals` in try/catch on the single-link approve path. If proposal detection fails after link creation, audit event records the failure and the route still returns success. Proposals are idempotent via `unique_pending_idx` so a retry produces the same effect. | `server/routes/quickbooks-invoice-matches.routes.ts` | Low — improves error handling, no change to happy path |
+| 17 | DF-15 | Holiday cache TTL reduced from 1 hour to 5 minutes. | `server/lib/finance/period-lock.ts` | None — operational tuning |
+| 18 | DF-17/18/19 | Additive schema migration: `qb_partial_paid_ex_vat`, `currency_code` (default ZAR), `vat_rate_pct`, `vat_changed_at` columns on cost / revenue / actuals tables. **Migration on disk, NOT applied** — needs `npm run db:migrate` approval. | `migrations/0071_finance_additive_columns_audit_v2.sql` (new), `migrations/meta/_journal.json` | None until applied; behavior change requires writer + UI work in follow-up PRs |
+| 19 | DF-12 | Bridge sync lag summary added to `/api/finance/trust/sync-health` response. Surfaces unresolved bridge-failure count + oldest age. | `server/lib/finance-trust/sync-health.ts` | None — additive field on existing endpoint |
+| 20 | DF-25 (partial) | Internal / TBC project status semantics codified in `DEFAULT_FINANCE_PROJECT_STATUSES = ['active', 'hold']`. Both are now excluded from the default finance roll-up via `filterActiveProjectIds`. | `server/lib/finance/project-filters.ts` | Documented; depends on DF-1 adoption |
 
 ---
 

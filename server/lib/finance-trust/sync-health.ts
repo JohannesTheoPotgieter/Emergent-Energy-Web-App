@@ -30,12 +30,28 @@ export interface FinanceSyncHealthIntegration {
   warning: string | null;
 }
 
+/**
+ * DF-12 (audit V2) — bridge sync lag. The bridge writes finance state
+ * from `normalized_*` to the promoted `core.finance_*` schema in a fire-
+ * and-forget pattern (server/bridge/bridge-writer.ts). Failures are
+ * persisted to `internal.bridge_sync_failures` for retry pickup. The
+ * lag indicator surfaces how many unresolved failures exist and the
+ * oldest age so KPI surfaces can warn when the promoted schema is
+ * silently behind the canonical one.
+ */
+export interface BridgeSyncLagSummary {
+  unresolvedCount: number;
+  oldestUnresolvedAgeMs: number | null;
+  oldestUnresolvedAt: string | null;
+}
+
 export interface FinanceSyncHealthReport {
   generatedAt: string;
   overallHealth: "healthy" | "stale" | "failing" | "unknown";
   anyStale: boolean;
   anyFailing: boolean;
   integrations: FinanceSyncHealthIntegration[];
+  bridgeSyncLag: BridgeSyncLagSummary;
 }
 
 function worstHealth(
@@ -84,13 +100,51 @@ export async function getFinanceSyncHealth(): Promise<FinanceSyncHealthReport> {
     "healthy",
   );
 
+  // DF-12 (audit V2): bridge sync lag indicator. Best-effort — if the
+  // table doesn't exist (older environments) we return zero.
+  const bridgeSyncLag = await readBridgeSyncLag();
+
   return {
     generatedAt: new Date().toISOString(),
     overallHealth,
     anyStale: integrations.some((i) => i.health === "stale"),
     anyFailing: integrations.some((i) => i.health === "failing"),
     integrations,
+    bridgeSyncLag,
   };
+}
+
+/**
+ * Read the bridge-sync-failures table for the unresolved-count + oldest-
+ * age summary. Best-effort: any DB error returns a zero summary so the
+ * sync-health endpoint stays available.
+ */
+async function readBridgeSyncLag(): Promise<BridgeSyncLagSummary> {
+  try {
+    const result = await db.execute(sql`
+      SELECT
+        COUNT(*)::int AS unresolved_count,
+        MIN(created_at) AS oldest_at
+      FROM internal.bridge_sync_failures
+      WHERE resolved_at IS NULL
+    `);
+    const row = (result.rows[0] ?? {}) as Record<string, unknown>;
+    const count = Number(row.unresolved_count ?? 0);
+    const oldestRaw = row.oldest_at;
+    const oldest = oldestRaw ? new Date(String(oldestRaw)) : null;
+    const now = Date.now();
+    return {
+      unresolvedCount: Number.isFinite(count) ? count : 0,
+      oldestUnresolvedAgeMs: oldest ? Math.max(0, now - oldest.getTime()) : null,
+      oldestUnresolvedAt: oldest ? oldest.toISOString() : null,
+    };
+  } catch {
+    return {
+      unresolvedCount: 0,
+      oldestUnresolvedAgeMs: null,
+      oldestUnresolvedAt: null,
+    };
+  }
 }
 
 /**
