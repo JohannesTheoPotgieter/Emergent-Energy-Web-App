@@ -20,6 +20,13 @@ export const handoverPacks = pgTable("handover_packs", {
   clientSubmissionDate: date("client_submission_date"),
   clientAcceptanceDate: date("client_acceptance_date"),
   matriarchAcceptanceDate: date("matriarch_acceptance_date"),
+  // Six Rule #6 — "handovers are signed, not assumed". The deeper Project
+  // Delivery audit (2026-05-26) flagged that submission/acceptance dates
+  // had no actor context, so we couldn't tell WHO signed off. Additive
+  // user-id columns capture the actor on every transition.
+  clientSubmittedByUserId: integer("client_submitted_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  clientAcceptedByUserId: integer("client_accepted_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  matriarchAcceptedByUserId: integer("matriarch_accepted_by_user_id").references(() => users.id, { onDelete: "set null" }),
   notes: text("notes"),
   status: text("status").default("draft"),          // 'draft', 'in_progress', 'submitted', 'accepted', 'rejected'
   createdAt: timestamp("created_at").defaultNow(),
@@ -66,6 +73,14 @@ export const ssegItems = pgTable("sseg_items", {
   // Commissioning gate flags (Prompt 7)
   techsitterConfirmed: boolean("techsitter_confirmed").default(false),
   meteringConfirmed: boolean("metering_confirmed").default(false),
+  // Six Rule #6 — Compliance Handover (S9B) signs off via these gate
+  // flags; prior to the deeper Project Delivery audit (2026-05-26) the
+  // booleans had no actor or timestamp context, so the audit trail
+  // couldn't show WHO confirmed each item.
+  techsitterConfirmedByUserId: integer("techsitter_confirmed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  techsitterConfirmedAt: timestamp("techsitter_confirmed_at"),
+  meteringConfirmedByUserId: integer("metering_confirmed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  meteringConfirmedAt: timestamp("metering_confirmed_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   deletedAt: timestamp("deleted_at"),
@@ -94,6 +109,51 @@ export const lessonsLearnt = pgTable("lessons_learnt", {
 export const insertLessonsLearntSchema = createInsertSchema(lessonsLearnt).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertLessonsLearnt = z.infer<typeof insertLessonsLearntSchema>;
 export type LessonsLearnt = typeof lessonsLearnt.$inferSelect;
+
+// ===================== POST-HANDOVER REVIEW (S10) =====================
+//
+// Six Rule #6 + playbook stage S10_POST_HANDOVER_REVIEW require an
+// explicit PM sign-off three months after handover. Before the deeper
+// Project Delivery audit (2026-05-26) S10 had no dedicated table — the
+// stage transitioned solely on work-item completion, with no record of
+// who reviewed, what they concluded, or whether lessons were captured.
+//
+// One row per project (single review per project lifecycle today). If a
+// future operating model needs multiple reviews, the `reviewNumber`
+// column carries the sequence. `status` lets the review be drafted,
+// then closed by the reviewing PM.
+
+export const postHandoverReviews = pgTable("post_handover_reviews", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  reviewNumber: integer("review_number").notNull().default(1),
+  // 'draft' | 'in_progress' | 'complete' — set by the PM as they fill in.
+  status: text("status").notNull().default("draft"),
+  // Targeted review date (typically project handover + 3 months).
+  scheduledDate: date("scheduled_date"),
+  actualReviewDate: date("actual_review_date"),
+  reviewSummary: text("review_summary"),
+  performanceNotes: text("performance_notes"),
+  clientFeedback: text("client_feedback"),
+  // Lessons captured during the review — stored as JSON list of strings
+  // / objects so they can later be exported to the lessons_learnt table.
+  lessonsCaptured: jsonb("lessons_captured").default([]),
+  // PM sign-off (the receiving party who owns S08–S10 per the playbook).
+  pmSignOffUserId: integer("pm_sign_off_user_id").references(() => users.id, { onDelete: "set null" }),
+  pmSignOffAt: timestamp("pm_sign_off_at"),
+  // COO co-sign for closure (optional). When set, the review counts as
+  // formally closed for portfolio-level reporting.
+  cooSignOffUserId: integer("coo_sign_off_user_id").references(() => users.id, { onDelete: "set null" }),
+  cooSignOffAt: timestamp("coo_sign_off_at"),
+  createdByUserId: integer("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+});
+
+export const insertPostHandoverReviewSchema = createInsertSchema(postHandoverReviews).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertPostHandoverReview = z.infer<typeof insertPostHandoverReviewSchema>;
+export type PostHandoverReview = typeof postHandoverReviews.$inferSelect;
 
 // ===================== HANDOVER STAKEHOLDERS =====================
 

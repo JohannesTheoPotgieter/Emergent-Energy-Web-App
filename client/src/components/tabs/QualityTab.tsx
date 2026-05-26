@@ -237,9 +237,17 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
   const [evidenceUploadState, setEvidenceUploadState] = useState<Record<number, { state: "uploading" | "uploaded" | "failed" | "too_large"; message: string }>>({});
   const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
-  const isQmOrAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '') || (user?.role || '').toUpperCase() === 'QUALITY_MANAGER';
-  const canEdit = isQmOrAdmin;
+  // Database-driven RBAC per AGENT_GUARDRAILS § 5 / § 8.2. The previous
+  // hard-coded role list (`['admin','COO_ADMIN','CEO_ADMIN']` + QUALITY_MANAGER
+  // match) drifted out of sync with the canonical pd_quality registry
+  // entry and meant new roles (e.g. SSEG_MANAGER) would never get edit
+  // access regardless of the DB grant.
+  const { allowed: canEdit } = usePermission('pd_quality', 'edit');
+  const { allowed: canApprove } = usePermission('pd_quality', 'approve');
   const { allowed: canDeleteQc } = usePermission('pd_quality', 'delete');
+  // Retained as a narrower alias for the few branches that historically
+  // required QM/Admin specifically (e.g. forced re-pass after a fail).
+  const isQmOrAdmin = canApprove;
 
   useEffect(() => {
     if (!initialStatusFilter) return;
@@ -910,17 +918,41 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
 
   const handleBulkSendForApproval = async () => {
     if (!bulkApprover || selectedItems.size === 0) return;
+
+    // Deep audit pass 2 — Reject the entire bulk send if any selected
+    // item has a known reason it would fail (missing required evidence,
+    // already pending, already approved, status not set). Previously the
+    // bulk send fired off N requests and silently swallowed the per-item
+    // server errors; user couldn't tell which items had evidence gaps.
+    // Now we surface the blocked items up-front so the user fixes them
+    // before submitting the batch.
+    if (blockedApprovalSelections.length > 0) {
+      const reasons = Array.from(
+        new Set(blockedApprovalSelections.map((b) => b.reason)),
+      ).slice(0, 4);
+      toast({
+        title: "Cannot submit — fix blocked items first",
+        description:
+          `${blockedApprovalSelections.length} selected item(s) cannot be submitted for review: ` +
+          reasons.join("; ") +
+          ". Deselect the blocked items or fix the underlying gap, then try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const ids = Array.from(selectedItems);
     setBulkSubmitting(true);
-    let failCount = 0;
+    const failures: Array<{ id: number; reason: string }> = [];
     let successCount = 0;
     for (const id of ids) {
       try {
         // Bypass mutation hook to avoid per-item toasts/invalidations
         await sendForApprovalRaw(id, bulkApprover);
         successCount++;
-      } catch {
-        failCount++;
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : "Unknown error";
+        failures.push({ id, reason });
       }
     }
     setBulkSubmitting(false);
@@ -929,11 +961,14 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
     setSelectedItems(new Set());
     invalidateAll();
       invalidateProjectV2Queries(queryClient, projectInfoId ?? null);
-    if (failCount > 0) {
+    if (failures.length > 0) {
+      const sample = failures.slice(0, 3).map((f) => `#${f.id}: ${f.reason}`).join(" · ");
       toast({
-        title: failCount === ids.length ? "Send for approval failed" : "Partial submission",
-        description: `${successCount} submitted, ${failCount} failed. Items with missing evidence cannot be submitted.`,
-        variant: failCount === ids.length ? "destructive" : "default",
+        title: failures.length === ids.length ? "Send for approval failed" : "Partial submission",
+        description:
+          `${successCount} submitted, ${failures.length} failed. ` + sample +
+          (failures.length > 3 ? ` (+${failures.length - 3} more)` : ""),
+        variant: failures.length === ids.length ? "destructive" : "default",
       });
     } else {
       toast({
