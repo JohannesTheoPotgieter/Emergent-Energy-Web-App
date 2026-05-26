@@ -442,6 +442,23 @@ export function registerPoRoutes(app: Express) {
         });
       }
 
+      // Protected business rule: no self-approval at any PO value. The
+      // assigned approver may not be the user who created the PO, nor the
+      // user submitting it.
+      const poCreatorId = po.created_by != null ? Number(po.created_by) : null;
+      if (poCreatorId !== null && Number(approver.id) === poCreatorId) {
+        return res.status(400).json({
+          error: "self_approval_forbidden",
+          message: "The assigned approver cannot be the same person who created this PO. Pick a different eligible approver.",
+        });
+      }
+      if (Number(approver.id) === Number(user.id)) {
+        return res.status(400).json({
+          error: "self_approval_forbidden",
+          message: "You cannot submit a PO and assign yourself as the approver. Pick a different eligible approver.",
+        });
+      }
+
       // Create approval
       const approval = await createPoApproval({
         projectId,
@@ -519,6 +536,22 @@ export function registerPoRoutes(app: Express) {
       const validDecisions = ["approved", "requires_info", "blocked"];
       if (!validDecisions.includes(decision)) {
         return res.status(400).json({ error: `Invalid decision. Must be: ${validDecisions.join(", ")}` });
+      }
+
+      // Protected business rule: no self-approval at any PO value. Load
+      // the PO so we can compare the caller against the creator regardless
+      // of whether the caller is the formal assignee or using the CFO /
+      // CEO_ADMIN universal override.
+      const poRecord = rowsFromResult(
+        await db.execute(sql`SELECT created_by FROM purchase_orders WHERE id = ${poIdNum}`),
+      )[0];
+      if (!poRecord) return res.status(404).json({ error: "PO not found" });
+      const poCreatorId = poRecord.created_by != null ? Number(poRecord.created_by) : null;
+      if (poCreatorId !== null && poCreatorId === user.id) {
+        return res.status(403).json({
+          error: "self_approval_forbidden",
+          message: "You cannot approve a PO you created. Delegate to another eligible approver.",
+        });
       }
 
       // B2: find the ACTIVE assignment (pending, not yet delegated). The
@@ -700,6 +733,19 @@ export function registerPoRoutes(app: Express) {
         return res.status(400).json({
           error: "target_is_current_assignee",
           message: "Delegation target is already the current assignee.",
+        });
+      }
+
+      // Protected business rule: no self-approval at any PO value. Block
+      // delegating approval to the PO creator.
+      const poForDelegate = rowsFromResult(
+        await db.execute(sql`SELECT created_by FROM purchase_orders WHERE id = ${poIdNum}`),
+      )[0];
+      const poCreatorId = poForDelegate?.created_by != null ? Number(poForDelegate.created_by) : null;
+      if (poCreatorId !== null && Number(target.id) === poCreatorId) {
+        return res.status(400).json({
+          error: "self_approval_forbidden",
+          message: "You cannot delegate PO approval to the user who created the PO.",
         });
       }
 
