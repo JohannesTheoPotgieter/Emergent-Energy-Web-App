@@ -26,6 +26,7 @@ import { ROLE_DEPARTMENT_MAP } from "@shared/schema/users";
 const ALL_DEPTS_KEY = "__ALL__";
 import type { PriorityRow } from "@/lib/priority-types";
 import { PriorityListSection } from "@/components/priorities/PriorityListSection";
+import { DepartmentDashboard } from "@/components/priorities/DepartmentDashboard";
 import type { PriorityListDensity } from "@/components/priorities/PriorityCard";
 
 const DENSITY_STORAGE_KEY = "priorities:density";
@@ -1078,6 +1079,17 @@ export default function PrioritiesPage() {
 
         {(isDeptHead || isAdmin) && (
           <TabsContent value="department">
+            {/* Department dashboard: when an admin is on "All departments"
+                we render per-dept summary cards above the flat list so
+                they can spot at a glance which department is in the
+                worst shape and drill in by clicking. Hidden when a
+                single department is selected (the list IS the view). */}
+            {isAdmin && selectedDeptKey === ALL_DEPTS_KEY && filteredDept.length > 0 && (
+              <DepartmentDashboard
+                priorities={filteredDept}
+                onSelectDepartment={(key) => setSelectedDeptKey(key)}
+              />
+            )}
             <PriorityListSection
               priorities={filteredDept}
               isLoading={deptQuery.isLoading}
