@@ -241,9 +241,12 @@ export async function upsertEvidenceItem(params: {
     uploadedByUserId, uploadedByName,
   } = params;
 
-  // Parameterised INSERT. JSONB column accepts a stringified payload
-  // cast inside the query; NULL handling done with ?? operator before
-  // binding so the SQL stays readable.
+  // Wave-6 audit (2026-05-26) — true upsert via ON CONFLICT. The
+  // natural key (project_id, completion_type, source_type, source_ref,
+  // COALESCE(requirement_key, ''), evidence_type) has a partial
+  // unique index (migration 0075) so duplicate calls now refresh the
+  // row instead of inserting a second copy. `created_at` is preserved;
+  // `updated_at` records the latest refresh.
   return db.execute(sql`
     INSERT INTO evidence_collected_items (
       project_id, completion_type, source_type, source_ref,
@@ -256,6 +259,17 @@ export async function upsertEvidenceItem(params: {
       ${uploadedByUserId ?? null}, ${uploadedByName ?? null},
       NOW(), NOW()
     )
+    ON CONFLICT (
+      project_id, completion_type, source_type, source_ref,
+      COALESCE(requirement_key, ''), evidence_type
+    ) WHERE deleted_at IS NULL
+    DO UPDATE SET
+      title = EXCLUDED.title,
+      value_ref = EXCLUDED.value_ref,
+      value_json = EXCLUDED.value_json,
+      uploaded_by_user_id = EXCLUDED.uploaded_by_user_id,
+      uploaded_by_name = EXCLUDED.uploaded_by_name,
+      updated_at = NOW()
     RETURNING *
   `);
 }

@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,7 @@ function sortProjects(projects: ExecutionDashboardProject[], key: SortKey, dir: 
 
 export default function ProgramPage() {
   const { kpis, filteredProjects, actionRows, openProject, fyLabel } = useExecutionData();
+  const [, setLocation] = useLocation();
   const [sortKey, setSortKey] = useState<SortKey>("behindPlan");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -246,7 +248,7 @@ export default function ProgramPage() {
                       </td>
                       <td className="py-2 px-3 text-muted-foreground text-xs tabular-nums hidden lg:table-cell">{formatDate(r.dueDate)}</td>
                       <td className="py-2 px-1">
-                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => window.location.href = r.link}>
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setLocation(r.link)}>
                           <ArrowRight className="w-4 h-4" />
                         </Button>
                       </td>
