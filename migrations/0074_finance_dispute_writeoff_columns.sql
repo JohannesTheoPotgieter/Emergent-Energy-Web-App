@@ -14,50 +14,44 @@
 --      write_off_reason to normalized_revenue_lines (write-off is a
 --      revenue-side concept — bad debt = customer who doesn't pay).
 --
--- The new statuses are opt-in: existing lines remain unchanged. The
--- new columns are nullable. The migration is safe to apply on existing
--- data without backfill.
+-- The SQL below is the drizzle-kit-generated form (so the
+-- schema-drift CI guard is happy); the trailing partial indexes are
+-- additive and human-authored — they don't appear in the drizzle
+-- snapshot because drizzle has no first-class API for partial indexes
+-- with WHERE clauses on snapshot columns.
 --
 -- NOT applied automatically — needs `npm run db:migrate` approval per
 -- § 6 of docs/AGENT_GUARDRAILS.md.
 -- =========================================================================
 
--- 1. Add new revenue-line statuses
-ALTER TYPE revenue_line_status ADD VALUE IF NOT EXISTS 'disputed';
-ALTER TYPE revenue_line_status ADD VALUE IF NOT EXISTS 'written_off';
+ALTER TYPE "public"."cost_line_status" ADD VALUE 'disputed';--> statement-breakpoint
+ALTER TYPE "public"."revenue_line_status" ADD VALUE 'disputed';--> statement-breakpoint
+ALTER TYPE "public"."revenue_line_status" ADD VALUE 'written_off';--> statement-breakpoint
+ALTER TABLE "normalized_cost_lines" ADD COLUMN "dispute_opened_at" timestamp;--> statement-breakpoint
+ALTER TABLE "normalized_cost_lines" ADD COLUMN "dispute_resolved_at" timestamp;--> statement-breakpoint
+ALTER TABLE "normalized_cost_lines" ADD COLUMN "dispute_reason" text;--> statement-breakpoint
+ALTER TABLE "normalized_cost_lines" ADD COLUMN "dispute_opened_by_user_id" integer;--> statement-breakpoint
+ALTER TABLE "normalized_revenue_lines" ADD COLUMN "dispute_opened_at" timestamp;--> statement-breakpoint
+ALTER TABLE "normalized_revenue_lines" ADD COLUMN "dispute_resolved_at" timestamp;--> statement-breakpoint
+ALTER TABLE "normalized_revenue_lines" ADD COLUMN "dispute_reason" text;--> statement-breakpoint
+ALTER TABLE "normalized_revenue_lines" ADD COLUMN "dispute_opened_by_user_id" integer;--> statement-breakpoint
+ALTER TABLE "normalized_revenue_lines" ADD COLUMN "write_off_authorised_by_user_id" integer;--> statement-breakpoint
+ALTER TABLE "normalized_revenue_lines" ADD COLUMN "write_off_authorised_at" timestamp;--> statement-breakpoint
+ALTER TABLE "normalized_revenue_lines" ADD COLUMN "write_off_reason" text;--> statement-breakpoint
+ALTER TABLE "normalized_cost_lines" ADD CONSTRAINT "normalized_cost_lines_dispute_opened_by_user_id_users_id_fk" FOREIGN KEY ("dispute_opened_by_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "normalized_revenue_lines" ADD CONSTRAINT "normalized_revenue_lines_dispute_opened_by_user_id_users_id_fk" FOREIGN KEY ("dispute_opened_by_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "normalized_revenue_lines" ADD CONSTRAINT "normalized_revenue_lines_write_off_authorised_by_user_id_users_id_fk" FOREIGN KEY ("write_off_authorised_by_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 
--- 2. Add new cost-line status
-ALTER TYPE cost_line_status ADD VALUE IF NOT EXISTS 'disputed';
-
--- 3. Dispute metadata on revenue lines
-ALTER TABLE normalized_revenue_lines
-  ADD COLUMN IF NOT EXISTS dispute_opened_at TIMESTAMP,
-  ADD COLUMN IF NOT EXISTS dispute_resolved_at TIMESTAMP,
-  ADD COLUMN IF NOT EXISTS dispute_reason TEXT,
-  ADD COLUMN IF NOT EXISTS dispute_opened_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
-
--- Dispute metadata on cost lines (vendor-invoice disputes)
-ALTER TABLE normalized_cost_lines
-  ADD COLUMN IF NOT EXISTS dispute_opened_at TIMESTAMP,
-  ADD COLUMN IF NOT EXISTS dispute_resolved_at TIMESTAMP,
-  ADD COLUMN IF NOT EXISTS dispute_reason TEXT,
-  ADD COLUMN IF NOT EXISTS dispute_opened_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
-
--- 4. Write-off metadata on revenue lines (bad-debt path)
-ALTER TABLE normalized_revenue_lines
-  ADD COLUMN IF NOT EXISTS write_off_authorised_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-  ADD COLUMN IF NOT EXISTS write_off_authorised_at TIMESTAMP,
-  ADD COLUMN IF NOT EXISTS write_off_reason TEXT;
-
--- Filter indexes — speeds up "give me overdue AR excluding disputes"
--- and "give me write-offs in FY26" queries.
+-- Partial indexes — speed up "give me overdue AR excluding disputes"
+-- and "give me write-offs in FY26" queries. Authored manually because
+-- drizzle-kit doesn't surface partial indexes with WHERE clauses.
 CREATE INDEX IF NOT EXISTS idx_normalized_revenue_lines_dispute_open
   ON normalized_revenue_lines (project_id, dispute_resolved_at)
-  WHERE dispute_opened_at IS NOT NULL AND dispute_resolved_at IS NULL AND effective_to IS NULL;
+  WHERE dispute_opened_at IS NOT NULL AND dispute_resolved_at IS NULL AND effective_to IS NULL;--> statement-breakpoint
 
 CREATE INDEX IF NOT EXISTS idx_normalized_cost_lines_dispute_open
   ON normalized_cost_lines (project_id, dispute_resolved_at)
-  WHERE dispute_opened_at IS NOT NULL AND dispute_resolved_at IS NULL AND effective_to IS NULL;
+  WHERE dispute_opened_at IS NOT NULL AND dispute_resolved_at IS NULL AND effective_to IS NULL;--> statement-breakpoint
 
 CREATE INDEX IF NOT EXISTS idx_normalized_revenue_lines_write_off
   ON normalized_revenue_lines (project_id, write_off_authorised_at)
