@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { departmentLabel } from "@shared/config/priorities";
+import { priorityHealthLabel } from "@shared/kpi-definitions";
 import type { PriorityRow } from "@/lib/priority-types";
 
 const HEALTH_COLORS: Record<string, string> = {
@@ -75,9 +76,10 @@ export function PriorityCard({
   const dotColor = HEALTH_DOT_COLORS[priority.effectiveHealth] || HEALTH_DOT_COLORS.healthy;
   const sev = SEVERITY_BADGE[priority.severity] || SEVERITY_BADGE.normal;
   const isDone = priority.status === "complete" || priority.status === "closed";
+  const healthLabel = priorityHealthLabel(priority.effectiveHealth);
   const healthTooltip = priority.healthReasons && priority.healthReasons.length > 0
-    ? `Health: ${priority.effectiveHealth} — ${priority.healthReasons.join("; ")}`
-    : `Health: ${priority.effectiveHealth}`;
+    ? `${healthLabel} — ${priority.healthReasons.join("; ")}`
+    : healthLabel;
 
   const showActionRow =
     showMarkComplete ||
@@ -255,7 +257,7 @@ export function PriorityCard({
               {!isCompact && (priority.progressSource?.label
                 ? `(${priority.progressSource.label})`
                 : !priority.hasProjects
-                  ? "(manual)"
+                  ? "(set by hand)"
                   : "")}
             </span>
           </div>
@@ -354,19 +356,26 @@ export function PriorityCard({
                 Reopen
               </Button>
             )}
-            {showEscalate && priority.scope !== "company" && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-xs h-7 text-orange-700 border-orange-200 hover:bg-orange-50"
-                onClick={onEscalate}
-                disabled={isDone}
-                aria-label={showDeptActions ? "Escalate priority to company scope" : "Escalate priority"}
-              >
-                <ArrowUp className="w-3 h-3 mr-1" />
-                {showDeptActions ? "Escalate to Company" : "Escalate"}
-              </Button>
-            )}
+            {showEscalate && priority.scope !== "company" && (() => {
+              // Be explicit about WHERE the escalation lands. role →
+              // department, department → company. Same button text
+              // for "Escalate" hid this from new users; now the
+              // destination is in the label so a click never surprises.
+              const target = priority.scope === "department" ? "Company" : "Department";
+              return (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs h-7 text-orange-700 border-orange-200 hover:bg-orange-50"
+                  onClick={onEscalate}
+                  disabled={isDone}
+                  aria-label={`Escalate priority to ${target.toLowerCase()} scope`}
+                >
+                  <ArrowUp className="w-3 h-3 mr-1" />
+                  Escalate to {target}
+                </Button>
+              );
+            })()}
           </div>
         )}
       </CardContent>

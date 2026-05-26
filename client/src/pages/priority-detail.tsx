@@ -36,6 +36,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { invalidatePriorityQueries } from "@/lib/priority-query-invalidation";
+import { priorityHealthLabel } from "@shared/kpi-definitions";
 import {
   canPriorityRoleEditPriority,
   canPriorityRoleEscalatePriority,
@@ -810,7 +811,7 @@ export default function PriorityDetailPage() {
             <>
               <TabsTrigger value="projects" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><FolderOpen className="w-3.5 h-3.5" />Projects</TabsTrigger>
               <TabsTrigger value="financials" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><DollarSign className="w-3.5 h-3.5" />Financials</TabsTrigger>
-              <TabsTrigger value="chain" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><GitBranch className="w-3.5 h-3.5" />Chain</TabsTrigger>
+              <TabsTrigger value="chain" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><GitBranch className="w-3.5 h-3.5" />Sub-priorities</TabsTrigger>
               <TabsTrigger value="tasks" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><ListTodo className="w-3.5 h-3.5" />Tasks & Approvals</TabsTrigger>
               <TabsTrigger value="updates" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><MessageSquare className="w-3.5 h-3.5" />Updates</TabsTrigger>
               <TabsTrigger value="activity" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><History className="w-3.5 h-3.5" />Activity</TabsTrigger>
@@ -822,7 +823,7 @@ export default function PriorityDetailPage() {
           ) : (
             <>
               <TabsTrigger value="details" className="data-[state=active]:bg-card data-[state=active]:shadow-sm">Details</TabsTrigger>
-              <TabsTrigger value="chain" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><GitBranch className="w-3.5 h-3.5" />Chain</TabsTrigger>
+              <TabsTrigger value="chain" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><GitBranch className="w-3.5 h-3.5" />Sub-priorities</TabsTrigger>
               <TabsTrigger value="updates" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><MessageSquare className="w-3.5 h-3.5" />Updates</TabsTrigger>
               <TabsTrigger value="activity" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><History className="w-3.5 h-3.5" />Activity</TabsTrigger>
               <TabsTrigger value="comments" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5">
@@ -982,7 +983,7 @@ export default function PriorityDetailPage() {
                   <span className="text-xs text-muted-foreground">Health</span>
                   <p className="font-medium flex items-center gap-1">
                     <span className={`w-2 h-2 rounded-full ${HEALTH_DOT[priority.effectiveHealth] || HEALTH_DOT.healthy}`} />
-                    {priority.effectiveHealth}
+                    {priorityHealthLabel(priority.effectiveHealth)}
                   </p>
                 </div>
               </div>

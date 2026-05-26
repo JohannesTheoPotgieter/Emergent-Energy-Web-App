@@ -721,7 +721,12 @@ export default function PrioritiesPage() {
       >
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">
           <TabsList className="w-full lg:w-auto justify-start overflow-x-auto">
-            <TabsTrigger value="my" className="text-xs" data-testid="tab-priorities-my">
+            <TabsTrigger
+              value="my"
+              className="text-xs"
+              data-testid="tab-priorities-my"
+              title="Priorities you own or are assigned to, plus your personal tasks"
+            >
               <Target className="w-3.5 h-3.5 mr-1" />
               My Priorities
               {/* Filter-aware tab count: when filters are hiding rows we

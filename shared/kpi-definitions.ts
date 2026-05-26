@@ -46,6 +46,25 @@ export type PriorityHealth = "healthy" | "at_risk" | "critical";
 export const PRIORITY_HEALTH_VALUES: readonly PriorityHealth[] = ["healthy", "at_risk", "critical"] as const;
 
 /**
+ * Display labels for priority health, using verbs so the UI never shows
+ * the same word ("Critical") for both severity and health. Severity =
+ * strategic weight chosen at creation (Critical / High / Normal).
+ * Health = live state computed from project RAG + due date + blockers
+ * (On track / Slipping / Off track). Underlying enum values stay
+ * unchanged — this map is for rendering only.
+ */
+export const PRIORITY_HEALTH_LABELS: Record<PriorityHealth, string> = {
+  healthy: "On track",
+  at_risk: "Slipping",
+  critical: "Off track",
+};
+
+export function priorityHealthLabel(h: string | null | undefined): string {
+  if (!h) return "On track";
+  return PRIORITY_HEALTH_LABELS[h as PriorityHealth] ?? h;
+}
+
+/**
  * Maps a project RAG status (case-insensitive) to a priority health value.
  * "red" → "critical", "amber"/"orange" → "at_risk", else → "healthy".
  */
