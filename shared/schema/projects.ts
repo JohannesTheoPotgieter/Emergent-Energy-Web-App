@@ -1244,6 +1244,66 @@ export const insertChangeRequestSchema = createInsertSchema(changeRequests).omit
 export type InsertChangeRequest = z.infer<typeof insertChangeRequestSchema>;
 export type ChangeRequest = typeof changeRequests.$inferSelect;
 
+// ===================== PROJECT DELIVERY MILESTONES =====================
+//
+// Wave-4 audit (2026-05-26) — split per audit scope #3: the existing
+// "Milestone Tracker" page (now Revenue Milestones) tracks billing
+// events, not site delivery progress. Delivery milestones are distinct
+// EPC events like Site Handover, Mobilisation, 25% Civils, Structures
+// Complete, DC Wiring, AC Connection, First Energization, COD.
+//
+// Each row is anchored to a project + (optionally) a phase. The status
+// derives from `actualDate`: present = complete; planned date in past +
+// no actual = overdue; etc. The audit scope's required fields (owner,
+// blocker, evidence link, planned vs actual dates) are all captured.
+
+export const projectDeliveryMilestones = pgTable("project_delivery_milestones", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  // Stable identifier within the project — used for ordering and joins.
+  // 'SITE_HANDOVER', 'MOBILISATION', 'CIVILS_25', 'STRUCTURES_COMPLETE',
+  // 'DC_WIRING', 'AC_CONNECTION', 'FIRST_ENERGIZATION', 'COD', or custom.
+  milestoneCode: text("milestone_code").notNull(),
+  milestoneName: text("milestone_name").notNull(),
+  // Optional link to the canonical lifecycle phase that owns this
+  // milestone (e.g. S06_CONSTRUCTION for civils/structures, S07 for AC).
+  phaseCode: text("phase_code"),
+  // Display ordering within the project. Smaller = earlier.
+  sortOrder: integer("sort_order").notNull().default(0),
+  plannedDate: date("planned_date"),
+  actualDate: date("actual_date"),
+  // Derived presentation status — set by the route handler when actual
+  // date changes. UI doesn't depend on it being accurate (uses raw
+  // dates), but it accelerates list rendering and filtering.
+  status: text("status").notNull().default("planned"), // 'planned' | 'in_progress' | 'complete' | 'overdue' | 'blocked'
+  ownerUserId: integer("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  // Free-text blocker. Soft per § 4A.
+  blocker: text("blocker"),
+  blockerSetAt: timestamp("blocker_set_at"),
+  blockerClearedAt: timestamp("blocker_cleared_at"),
+  // Evidence URL (typically SharePoint deep link) demonstrating completion.
+  // Soft-required when status moves to 'complete' — the route surfaces a
+  // warning if missing but does not block (override pattern § 0A).
+  evidenceLink: text("evidence_link"),
+  notes: text("notes"),
+  createdByUserId: integer("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  completedByUserId: integer("completed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+}, (table) => ({
+  projectIdx: index("idx_project_delivery_milestones_project").on(table.projectId),
+  projectCodeUnique: uniqueIndex("uq_project_delivery_milestones_project_code")
+    .on(table.projectId, table.milestoneCode)
+    .where(sql`deleted_at IS NULL`),
+}));
+
+export const insertProjectDeliveryMilestoneSchema = createInsertSchema(projectDeliveryMilestones).omit({
+  id: true, createdAt: true, updatedAt: true, deletedAt: true,
+} as any);
+export type InsertProjectDeliveryMilestone = z.infer<typeof insertProjectDeliveryMilestoneSchema>;
+export type ProjectDeliveryMilestone = typeof projectDeliveryMilestones.$inferSelect;
+
 // ===================== RAID ITEMS =====================
 
 export const raidTypeEnum = pgEnum('raid_type', ['risk', 'assumption', 'issue', 'decision']);

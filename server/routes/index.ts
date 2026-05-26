@@ -31,6 +31,7 @@ import { registerExcelVsAppRoutes } from './excel-vs-app.routes';
 import { registerReconciliationRoutes } from './reconciliation.routes';
 import { registerQualityTasksRoutes } from './quality-tasks.routes';
 import { registerStandupSessionsRoutes } from './standup-sessions.routes';
+import { registerDeliveryMilestonesRoutes } from './delivery-milestones.routes';
 
 export async function registerRoutes(httpServer: Server, app: Express) {
   registerTemplateGovernanceRoutes(app);
@@ -56,5 +57,6 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerReconciliationRoutes(app);
   registerQualityTasksRoutes(app);
   registerStandupSessionsRoutes(app);
+  registerDeliveryMilestonesRoutes(app);
   return registerLegacyRoutes(httpServer, app);
 }
