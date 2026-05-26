@@ -72,7 +72,7 @@ import { ExportDropdown } from '@/components/ui/export-dropdown';
 import { FinanceShell } from '@/components/layout/FinanceShell';
 import { FinancialYearScopeControl } from '@/components/finance/FinancialYearScopeControl';
 import { PageError, PageSkeleton } from '@/components/ui/page-states';
-import { formatZar, formatZarCompact } from '@/lib/currency';
+import { formatZar, formatZarAriaLabel, formatZarCompact } from '@/lib/currency';
 import { usePermission } from '@/hooks/use-permissions';
 import { useFinancialYearScope, type FinancialYearScope } from '@/hooks/use-financial-year-scope';
 import { DateOverridePopover } from '@/components/cashflow/DateOverridePopover';
@@ -190,6 +190,20 @@ interface OpexEntry {
 // non-numeric → "—" (never "R 0"). Chart axes use formatZarCompact directly.
 const formatRand = (val: number | null | undefined): string => formatZar(val);
 
+/**
+ * TF-6 — paired visual + screen-reader rendering. Visual stays as the
+ * canonical formatZar form; aria-label uses the spoken
+ * "one million two hundred thousand rand" form so blind users hear a
+ * number not a digit string.
+ */
+function Rand({ value, className }: { value: number | null | undefined; className?: string }) {
+  return (
+    <span className={className} aria-label={formatZarAriaLabel(value)}>
+      {formatRand(value)}
+    </span>
+  );
+}
+
 function formatWeek(dateStr: string): string {
   try {
     return format(parseISO(dateStr), 'dd MMM');
@@ -265,6 +279,7 @@ function isCurrentWeek(weekStart: string, weekEnd: string): boolean {
 function KpiCard({
   title,
   value,
+  valueAriaLabel,
   icon,
   color,
   testId,
@@ -272,6 +287,7 @@ function KpiCard({
 }: {
   title: string;
   value: string;
+  valueAriaLabel?: string;
   icon: React.ReactNode;
   color: 'green' | 'red' | 'blue' | 'purple' | 'slate';
   testId: string;
@@ -322,6 +338,7 @@ function KpiCard({
         <p
           className={`text-base font-bold font-mono ${c.text} truncate leading-tight`}
           data-testid={`${testId}-value`}
+          {...(valueAriaLabel ? { 'aria-label': valueAriaLabel } : {})}
         >
           {value}
         </p>
@@ -508,11 +525,11 @@ function DetailRow({
             <div className="flex items-center gap-3 text-xs">
               <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 font-medium border border-emerald-200">
                 <ArrowUpRight className="h-3 w-3" />
-                {filteredInflows.length} inflows · {formatRand(inflowTotal)}
+                {filteredInflows.length} inflows · <Rand value={inflowTotal} />
               </span>
               <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-red-50 text-red-700 font-medium border border-red-200">
                 <ArrowDownRight className="h-3 w-3" />
-                {filteredOutflows.length} outflows · {formatRand(outflowTotal)}
+                {filteredOutflows.length} outflows · <Rand value={outflowTotal} />
               </span>
             </div>
           </div>
@@ -607,7 +624,7 @@ function DetailRow({
                               />
                             </td>
                             <td className="px-3 py-2 text-right font-mono font-medium text-emerald-700">
-                              {formatRand(inf.milestoneAmount)}
+                              <Rand value={inf.milestoneAmount} />
                             </td>
                             <td className="px-3 py-2 text-right font-mono text-muted-foreground">
                               {inf.daysToReceipt ?? '—'}
@@ -896,7 +913,7 @@ function DetailRow({
                               </span>
                             </td>
                             <td className="px-3 py-2 text-right font-mono font-medium text-red-700">
-                              {formatRand(out.expenseActualTotal)}
+                              <Rand value={out.expenseActualTotal} />
                             </td>
                             <td
                               className="px-3 py-2"
@@ -1223,6 +1240,7 @@ function OpexBudgetModal({
               <span
                 className="flex-1 text-right font-mono font-bold text-foreground pr-3"
                 data-testid="text-opex-total"
+                aria-label={formatZarAriaLabel(totalBudget)}
               >
                 {formatRand(totalBudget)}
               </span>
@@ -1794,9 +1812,7 @@ export default function CashflowPage() {
             <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" aria-hidden="true" />
             <div className="flex-1">
               <div className="font-medium">
-                Overdue receivables: {formatRand(
-                  overdueArSummary.rows.reduce((s, r) => s + (Number(r.amount) || 0), 0),
-                )} across {overdueArSummary.count} invoice{overdueArSummary.count === 1 ? '' : 's'}
+                Overdue receivables: <Rand value={overdueArSummary.rows.reduce((s, r) => s + (Number(r.amount) || 0), 0)} /> across {overdueArSummary.count} invoice{overdueArSummary.count === 1 ? '' : 's'}
               </div>
               <div className="text-[11px] text-amber-700/80 mt-0.5">
                 Click to open the Cashflow Analysis overdue list.
@@ -2016,6 +2032,7 @@ export default function CashflowPage() {
                     <KpiCard
                       title="Total Inflows YTD"
                       value={formatRand(kpis.totalInflows)}
+                      valueAriaLabel={formatZarAriaLabel(kpis.totalInflows)}
                       icon={<TrendingUp className="h-5 w-5" />}
                       color="green"
                       testId="kpi-total-inflows"
@@ -2024,6 +2041,7 @@ export default function CashflowPage() {
                     <KpiCard
                       title="Total Outflows YTD"
                       value={formatRand(kpis.totalOutflows)}
+                      valueAriaLabel={formatZarAriaLabel(kpis.totalOutflows)}
                       icon={<TrendingDown className="h-5 w-5" />}
                       color="red"
                       testId="kpi-total-outflows"
@@ -2032,6 +2050,7 @@ export default function CashflowPage() {
                     <KpiCard
                       title="Current Week Opening Balance"
                       value={formatRand(kpis.currentWeekOpeningBalance)}
+                      valueAriaLabel={formatZarAriaLabel(kpis.currentWeekOpeningBalance)}
                       icon={<DollarSign className="h-5 w-5" />}
                       color={kpis.currentWeekOpeningBalance >= 0 ? 'slate' : 'red'}
                       testId="kpi-current-balance"
@@ -2039,6 +2058,7 @@ export default function CashflowPage() {
                     <KpiCard
                       title="Forecasted End of Financial Year Position"
                       value={formatRand(kpis.forecastedEndOfFYPosition)}
+                      valueAriaLabel={formatZarAriaLabel(kpis.forecastedEndOfFYPosition)}
                       icon={
                         kpis.forecastedEndOfFYPosition >= 0 ? (
                           <ArrowUpRight className="h-5 w-5" />
@@ -2330,15 +2350,14 @@ export default function CashflowPage() {
                                               onClick={(e) => e.stopPropagation()}
                                               data-testid={`text-opening-balance-${week.weekStart}`}
                                             >
-                                              <span
+                                              <Rand
+                                                value={week.openingBalance}
                                                 className={
                                                   (week.openingBalance || 0) < 0
                                                     ? 'text-destructive font-semibold'
                                                     : ''
                                                 }
-                                              >
-                                                {formatRand(week.openingBalance)}
-                                              </span>
+                                              />
                                               {canEditCashflow && (
                                                 <Pencil className="h-2.5 w-2.5 text-muted-foreground/60" />
                                               )}
@@ -2400,7 +2419,7 @@ export default function CashflowPage() {
                                       className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-[11px] sm:text-[13px] text-emerald-600"
                                       data-testid={`text-inflows-${week.weekStart}`}
                                     >
-                                      {formatRand(week.projectInflows)}
+                                      <Rand value={week.projectInflows} />
                                     </td>
                                     <td
                                       className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-[11px] sm:text-[13px]"
@@ -2425,7 +2444,7 @@ export default function CashflowPage() {
                                                   onClick={(e) => e.stopPropagation()}
                                                   data-testid={`text-opex-value-${week.weekStart}`}
                                                 >
-                                                  <span>{formatRand(week.opexOutflows)}</span>
+                                                  <Rand value={week.opexOutflows} />
                                                   {canEditCashflow && (
                                                     <Pencil className="h-2.5 w-2.5 text-muted-foreground/60" />
                                                   )}
@@ -2472,6 +2491,7 @@ export default function CashflowPage() {
                                             <span
                                               className="text-red-500"
                                               data-testid={`text-proj-outflows-${week.weekStart}`}
+                                              aria-label={formatZarAriaLabel(week.projectOutflows)}
                                             >
                                               {formatRand(week.projectOutflows)}
                                             </span>
@@ -2523,6 +2543,7 @@ export default function CashflowPage() {
                                           : 'text-destructive'
                                       }`}
                                       data-testid={`text-closing-balance-${week.weekStart}`}
+                                      aria-label={formatZarAriaLabel(week.closingBalance)}
                                     >
                                       {formatRand(week.closingBalance)}
                                     </td>

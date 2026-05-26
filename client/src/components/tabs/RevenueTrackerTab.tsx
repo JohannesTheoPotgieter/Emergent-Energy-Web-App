@@ -4,6 +4,7 @@ import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { formatZarAriaLabel } from "@/lib/currency";
 import {
   Bar,
   XAxis,
@@ -156,15 +157,15 @@ function RevenueDetailDrawer({ month, onClose, defaultFilter = "all" }: { month:
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100/50 border border-emerald-200/60 px-4 py-3">
               <p className="text-xs font-medium text-emerald-600 uppercase tracking-wider">Realised</p>
-              <p className="font-mono font-black text-emerald-800 text-lg mt-0.5" data-testid="text-revenue-drawer-realised">{formatRand(filteredRealised)}</p>
+              <p className="font-mono font-black text-emerald-800 text-lg mt-0.5" data-testid="text-revenue-drawer-realised" aria-label={formatZarAriaLabel(filteredRealised)}>{formatRand(filteredRealised)}</p>
             </div>
             <div className="rounded-xl bg-gradient-to-br from-amber-50 to-amber-100/50 border border-amber-200/60 px-4 py-3">
               <p className="text-xs font-medium text-amber-600 uppercase tracking-wider">Unrealised</p>
-              <p className="font-mono font-bold text-amber-700 text-lg mt-0.5" data-testid="text-revenue-drawer-unrealised">{formatRand(filteredUnrealised)}</p>
+              <p className="font-mono font-bold text-amber-700 text-lg mt-0.5" data-testid="text-revenue-drawer-unrealised" aria-label={formatZarAriaLabel(filteredUnrealised)}>{formatRand(filteredUnrealised)}</p>
             </div>
             <div className="rounded-xl bg-gradient-to-br from-slate-50 to-slate-100/50 border border-slate-200/60 px-4 py-3">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total</p>
-              <p className="font-mono font-bold text-slate-900 text-lg mt-0.5">{formatRand(filteredRealised + filteredUnrealised)}</p>
+              <p className="font-mono font-bold text-slate-900 text-lg mt-0.5" aria-label={formatZarAriaLabel(filteredRealised + filteredUnrealised)}>{formatRand(filteredRealised + filteredUnrealised)}</p>
             </div>
           </div>
         </div>
@@ -239,10 +240,10 @@ function RevenueDetailDrawer({ month, onClose, defaultFilter = "all" }: { month:
                         {item.isRealised ? 'Realised' : item.noRevenueLinked ? 'No Revenue' : 'Unrealised'}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 text-right font-mono text-slate-500 text-[11px]">
+                    <td className="px-4 py-2.5 text-right font-mono text-slate-500 text-[11px]" aria-label={formatZarAriaLabel(item.costAmount)}>
                       {formatRandFull(item.costAmount)}
                     </td>
-                    <td className={`px-4 py-2.5 text-right font-mono font-semibold ${item.isRealised ? 'text-emerald-700' : 'text-amber-600'}`}>
+                    <td className={`px-4 py-2.5 text-right font-mono font-semibold ${item.isRealised ? 'text-emerald-700' : 'text-amber-600'}`} aria-label={formatZarAriaLabel(item.revenueAmount)}>
                       {formatRandFull(item.revenueAmount)}
                     </td>
                   </tr>
@@ -251,8 +252,8 @@ function RevenueDetailDrawer({ month, onClose, defaultFilter = "all" }: { month:
               <tfoot>
                 <tr className="border-t-2 border-slate-200 bg-slate-50">
                   <td className="px-4 py-3 font-bold text-sm text-slate-900" colSpan={6}>Total</td>
-                  <td className="px-4 py-3 text-right font-mono font-bold text-sm text-slate-500">{formatRandFull(filtered.reduce((s, i) => s + i.costAmount, 0))}</td>
-                  <td className="px-4 py-3 text-right font-mono font-bold text-sm text-slate-900">{formatRandFull(filtered.reduce((s, i) => s + i.revenueAmount, 0))}</td>
+                  <td className="px-4 py-3 text-right font-mono font-bold text-sm text-slate-500" aria-label={formatZarAriaLabel(filtered.reduce((s, i) => s + i.costAmount, 0))}>{formatRandFull(filtered.reduce((s, i) => s + i.costAmount, 0))}</td>
+                  <td className="px-4 py-3 text-right font-mono font-bold text-sm text-slate-900" aria-label={formatZarAriaLabel(filtered.reduce((s, i) => s + i.revenueAmount, 0))}>{formatRandFull(filtered.reduce((s, i) => s + i.revenueAmount, 0))}</td>
                 </tr>
               </tfoot>
             </table>

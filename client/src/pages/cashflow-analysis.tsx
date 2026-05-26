@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FinanceShell } from "@/components/layout/FinanceShell";
 import { PageError } from "@/components/ui/page-states";
+import { Money } from "@/components/ui/money";
 import { formatZar as formatZarShared } from "@/lib/currency";
 import { Loader2, AlertTriangle, TrendingUp, TrendingDown, Wallet, Users, FlaskConical, RotateCcw, CheckCircle2 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
@@ -255,14 +256,14 @@ export default function CashflowAnalysisPage() {
         <KpiCard
           icon={<Wallet className="w-4 h-4 text-emerald-600" />}
           title="Outstanding AR"
-          value={formatZar(aging.data?.arTotal ?? 0)}
+          value={<Money value={aging.data?.arTotal ?? 0} />}
           subtitle={`${aging.data ? Object.values(aging.data.ar).reduce((s, b) => s + b.count, 0) : 0} invoices`}
           loading={aging.isLoading}
         />
         <KpiCard
           icon={<TrendingDown className="w-4 h-4 text-rose-600" />}
           title="Outstanding AP"
-          value={formatZar(aging.data?.apTotal ?? 0)}
+          value={<Money value={aging.data?.apTotal ?? 0} />}
           subtitle={`${aging.data ? Object.values(aging.data.ap).reduce((s, b) => s + b.count, 0) : 0} bills`}
           loading={aging.isLoading}
         />
@@ -333,7 +334,7 @@ export default function CashflowAnalysisPage() {
                     <TableCell><Badge variant={row.kind === "ar" ? "default" : "secondary"}>{row.kind.toUpperCase()}</Badge></TableCell>
                     <TableCell>{row.projectName}</TableCell>
                     <TableCell>{row.party}</TableCell>
-                    <TableCell className="text-right font-mono">{formatZar(row.amount)}</TableCell>
+                    <TableCell className="text-right font-mono"><Money value={row.amount} /></TableCell>
                     <TableCell>{row.invoiceNumber ?? "—"}</TableCell>
                     <TableCell>{row.dueDate ?? "—"}</TableCell>
                     <TableCell className="text-right">
@@ -444,7 +445,7 @@ export default function CashflowAnalysisPage() {
                     <TableCell>{r.projectName}</TableCell>
                     <TableCell>{r.invoiceNumber ?? "—"}</TableCell>
                     <TableCell>{r.dueDate ?? "—"}</TableCell>
-                    <TableCell className="text-right font-mono">{formatZar(r.amount)}</TableCell>
+                    <TableCell className="text-right font-mono"><Money value={r.amount} /></TableCell>
                     <TableCell className="text-right"><Badge variant="destructive">{r.daysOverdue}d</Badge></TableCell>
                     <TableCell className="text-right font-mono">{Math.round(r.riskScore).toLocaleString("en-ZA")}</TableCell>
                     {sandboxOn && (
@@ -504,7 +505,7 @@ export default function CashflowAnalysisPage() {
 
 const SERIES_COLORS = ["#16A34A", "#DC2626", "#2563EB", "#D97706", "#7C3AED"];
 
-function KpiCard(props: { icon: React.ReactNode; title: string; value: string; subtitle: string; loading: boolean }) {
+function KpiCard(props: { icon: React.ReactNode; title: string; value: React.ReactNode; subtitle: string; loading: boolean }) {
   return (
     <Card>
       <CardContent className="pt-4">
@@ -537,7 +538,7 @@ function AgingBuckets(props: { title: string; data: Record<string, AgingBucket>;
               <TableRow key={b.key}>
                 <TableCell>{b.label}</TableCell>
                 <TableCell className="text-right">{cell.count}</TableCell>
-                <TableCell className="text-right font-mono">{formatZar(cell.amount)}</TableCell>
+                <TableCell className="text-right font-mono"><Money value={cell.amount} /></TableCell>
                 <TableCell className="text-right">{total > 0 ? formatPct(cell.amount / total) : "—"}</TableCell>
               </TableRow>
             );
@@ -564,7 +565,7 @@ function ConcentrationBlock(props: { label: string; share: number; rows: Array<{
           props.rows.map((r) => (
             <div key={r.key} className="flex items-center justify-between text-sm">
               <span className="truncate">{r.key}</span>
-              <span className="font-mono">{formatZar(r.amount)}</span>
+              <Money className="font-mono" value={r.amount} />
             </div>
           ))
         )}
