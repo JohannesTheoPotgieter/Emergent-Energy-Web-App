@@ -41,10 +41,12 @@ import { requireAuth, getEffectiveUser } from "../auth-context";
 import { requirePermission } from "../permission-middleware";
 import { validateBody } from "../middleware/validateBody";
 import { logAuditFromReq } from "../audit-logger";
+import { resolveProjectScope, isProjectAccessible } from "../services/project-access-service";
 import {
   ApiError,
   badRequest,
   conflict,
+  forbidden,
   notFound,
   sendError,
   serverError,
@@ -979,6 +981,31 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
         const projectId = isCost
           ? await financeExpenseRepository.getCostLineProjectId(appEntityId)
           : await financeInflowsRepository.getRevenueLineProjectId(appEntityId);
+
+        // TF-1 (audit V3, owner-confirmed): project-bounded edit check.
+        // `financials:edit` was previously a global gate — any user with
+        // the permission could approve a QB match on any project. After
+        // this check the user must also have access to the specific
+        // project the underlying cost/revenue line belongs to. Full-
+        // oversight roles (COO, CEO, CFO, CCO, PM, CM, PFM, Accountant)
+        // pass automatically; scoped roles are bounded to their assigned
+        // projects.
+        if (projectId !== null) {
+          const effectiveUser = getEffectiveUser(req);
+          const userScope = await resolveProjectScope(
+            effectiveUser?.id ?? 0,
+            effectiveUser?.role ?? "",
+            effectiveUser?.name ?? "",
+          );
+          if (!isProjectAccessible(userScope, projectId)) {
+            return sendError(
+              res,
+              forbidden(
+                "You don't have access to the project this QuickBooks match belongs to.",
+              ),
+            );
+          }
+        }
 
         // Build the QB summary expected by confirm*Link helpers.
         // Task #142 — when the caller supplies `lineAllocations`, route via

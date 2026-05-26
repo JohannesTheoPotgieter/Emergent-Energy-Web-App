@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, useLocation, Link } from "wouter";
+import { formatZarCompact } from "@/lib/currency";
 import { displayPmName, isValidPmName } from "@/lib/pm-validation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -457,11 +458,8 @@ export default function PortfolioDetailPage() {
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
-  const formatCurrency = (v: number) => {
-    if (Math.abs(v) >= 1e6) return `R ${(v / 1e6).toFixed(2)}M`;
-    if (Math.abs(v) >= 1e3) return `R ${(v / 1e3).toFixed(0)}K`;
-    return `R ${v.toFixed(0)}`;
-  };
+  // TF-16 (audit V3): canonical compact ZAR.
+  const formatCurrency = (v: number | null | undefined): string => formatZarCompact(v);
 
   const portfolioProjectNames = useMemo(() => {
     const names = new Set((portfolio?.projects || []).map((p: any) => p.projectName));

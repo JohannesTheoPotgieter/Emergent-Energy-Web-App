@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import { PageShell } from "@/components/layout/page-shell";
 import { PageHeader } from "@/components/ui/page-header";
+import { formatZarCompact } from "@/lib/currency";
 import { PageLayout } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -84,11 +85,10 @@ const RAG_BADGE: Record<string, string> = {
   red: "bg-red-100 text-red-700",
 };
 
-function formatCurrency(value: number): string {
-  if (Math.abs(value) >= 1_000_000) return `R ${(value / 1_000_000).toFixed(1)}M`;
-  if (Math.abs(value) >= 1_000) return `R ${(value / 1_000).toFixed(0)}K`;
-  return `R ${value.toFixed(0)}`;
-}
+// TF-16 (audit V3): canonical compact ZAR — same M / K abbreviation, but
+// goes through the integrity-rule formatter so null/undefined values render
+// as "—" instead of "R 0" and ascii-space normalisation works on copy-paste.
+const formatCurrency = (value: number | null | undefined): string => formatZarCompact(value);
 
 /** Short, human-friendly date — handles ISO `YYYY-MM-DD` and full Date strings. */
 function formatDateShort(value: string | null | undefined): string {

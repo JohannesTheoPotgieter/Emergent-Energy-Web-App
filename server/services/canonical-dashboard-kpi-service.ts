@@ -95,11 +95,19 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
       const current = byProject.get(row.projectId);
       if (!current) continue;
       const amount = toNumber(row.amountExVat);
-      current.totalRevenue += amount;
-      if (row.paidDate || row.inBankDate) {
-        current.receivedRevenue += amount;
-      } else {
-        current.outstandingRevenue += amount;
+      // TF-7 / TF-8 (audit V3): exclude disputed and written-off lines
+      // from the "outstanding" rollup. They still show up in the line
+      // detail and audit log, but the aging surface and overdue banner
+      // stop nagging while the dispute is being worked / after a
+      // write-off is authorised.
+      const isExcluded = row.status === "disputed" || row.status === "written_off";
+      if (!isExcluded) {
+        current.totalRevenue += amount;
+        if (row.paidDate || row.inBankDate) {
+          current.receivedRevenue += amount;
+        } else {
+          current.outstandingRevenue += amount;
+        }
       }
     }
 
@@ -108,16 +116,22 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
       const current = byProject.get(row.projectId);
       if (!current) continue;
       const amount = toNumber(row.amountExVat);
-      current.totalCost += amount;
-      if (row.paidDate) {
-        current.paidCost += amount;
-      } else {
-        current.outstandingCost += amount;
+      // TF-7 (audit V3): same dispute exclusion on the cost side. A
+      // disputed vendor invoice stays in the detail view but doesn't
+      // inflate "outstanding AP" until the dispute resolves.
+      const isExcluded = row.status === "disputed";
+      if (!isExcluded) {
+        current.totalCost += amount;
+        if (row.paidDate) {
+          current.paidCost += amount;
+        } else {
+          current.outstandingCost += amount;
+        }
+        current.realisedCost += getCosRealisedAmountForNclRow(
+          row as any,
+          assignedByCostLineId.get(row.id) ?? null,
+        );
       }
-      current.realisedCost += getCosRealisedAmountForNclRow(
-        row as any,
-        assignedByCostLineId.get(row.id) ?? null,
-      );
     }
 
     await populateRecognisedRevenue(byProject, projectIds);
@@ -128,6 +142,9 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
     return byProject;
   }
 
+  // TF-7 / TF-8 (audit V3): exclude disputed and written-off lines from
+  // the outstanding rollup. The line stays visible elsewhere; just not
+  // here in the dashboard KPI aggregate.
   const revenueRows = await db.execute(sql`
     SELECT
       project_id,
@@ -138,6 +155,7 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
     WHERE project_id = ANY(${sql`ARRAY[${sql.join(projectIds.map((id) => sql`${id}`), sql`,`)}]::int[]`})
       AND effective_to IS NULL
       AND deleted_at IS NULL
+      AND status NOT IN ('disputed', 'written_off')
     GROUP BY project_id
   `);
 
@@ -166,6 +184,8 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
   for (const row of rawCostRows as any[]) {
     const current = byProject.get(row.projectId);
     if (!current) continue;
+    // TF-7 (audit V3): exclude disputed cost lines from the AP rollup.
+    if (row.status === "disputed") continue;
     const amount = toNumber(row.amountExVat);
     current.totalCost += amount;
     if (row.paidDate) {

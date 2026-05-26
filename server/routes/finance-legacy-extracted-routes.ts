@@ -1185,7 +1185,11 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
     poNumber: z.string().optional(),
     category: z.string().optional(),
     notes: z.string().optional(),
-  });
+  // TF-13 (audit V3): reject unknown fields. Closes a mass-assignment
+  // surface where a caller could smuggle `effectiveFrom`, `createdBy`,
+  // `source` etc. into the request body and override the audit-bearing
+  // metadata the route sets itself.
+  }).strict();
 
   const revenueLineSchema = z.object({
     projectId: z.number().int(),
@@ -1198,7 +1202,8 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
     paidDate: pastOrTodayIsoDate("paidDate").optional(),
     expectedPaymentDate: z.string().optional(),
     notes: z.string().optional(),
-  });
+  // TF-13 (audit V3): same as costLineSchema above.
+  }).strict();
 
   // Create a cost line
   app.post("/api/finance/cost-lines", requireAuth, requirePermission("financials", "create"), async (req: Request, res: Response) => {
@@ -1312,4 +1317,146 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
 
   // REMOVED: /api/finance/revenue and /api/finance/cos duplicates.
   // Canonical routes now in finance-routes.ts
+
+  // ── TF-7 (audit V3) ─ Disputed-invoice workflow ──────────────────────
+  // Open / resolve disputes on cost and revenue lines. Disputed lines
+  // stay visible in the line detail but are excluded from "outstanding"
+  // rollups (AR aging, overdue lists) so the cashflow surface doesn't
+  // keep nagging while the dispute is being worked.
+
+  const openDisputeBody = z.object({
+    reason: z.string().min(1, "reason is required"),
+  }).strict();
+
+  const resolveRevenueDisputeBody = z.object({
+    outcome: z.enum(["accepted", "rejected", "renegotiated"]),
+    newStatus: z.enum(["invoiced", "paid", "in_bank", "realised", "written_off"]),
+    resolutionNote: z.string().min(1, "resolutionNote is required"),
+  }).strict();
+
+  const resolveCostDisputeBody = z.object({
+    outcome: z.enum(["accepted", "rejected", "renegotiated"]),
+    newStatus: z.enum(["invoiced", "approved", "paid"]),
+    resolutionNote: z.string().min(1, "resolutionNote is required"),
+  }).strict();
+
+  app.post("/api/finance/revenue-lines/:id/dispute/open", requireAuth, requirePermission("financials", "edit"), async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Invalid id" });
+      const parsed = openDisputeBody.parse(req.body);
+      const { openDisputeOnRevenueLine } = await import("../services/finance-line-lifecycle-service");
+      await openDisputeOnRevenueLine({
+        lineId: id,
+        reason: parsed.reason,
+        openedByUserId: (req.user as { id?: number } | undefined)?.id ?? null,
+      });
+      logAuditFromReq(req, { entityType: "revenue_line", action: "dispute_opened", entityId: String(id), source: "UI", changesJson: { reason: parsed.reason } });
+      res.json({ ok: true });
+    } catch (error: any) {
+      if (error?.name === "ZodError") return res.status(400).json({ error: "Validation error", details: error.issues });
+      if (error?.code === "bad_request" || error?.code === "not_found") return res.status(error.code === "not_found" ? 404 : 400).json({ error: error.message });
+      console.error("[Finance] Failed to open revenue-line dispute:", error);
+      res.status(500).json({ error: "Failed to open dispute" });
+    }
+  });
+
+  app.post("/api/finance/revenue-lines/:id/dispute/resolve", requireAuth, requirePermission("financials", "edit"), async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Invalid id" });
+      const parsed = resolveRevenueDisputeBody.parse(req.body);
+      const { resolveDisputeOnRevenueLine } = await import("../services/finance-line-lifecycle-service");
+      await resolveDisputeOnRevenueLine({
+        lineId: id,
+        outcome: parsed.outcome,
+        newStatus: parsed.newStatus,
+        resolutionNote: parsed.resolutionNote,
+        resolvedByUserId: (req.user as { id?: number } | undefined)?.id ?? null,
+      });
+      logAuditFromReq(req, { entityType: "revenue_line", action: "dispute_resolved", entityId: String(id), source: "UI", changesJson: parsed });
+      res.json({ ok: true });
+    } catch (error: any) {
+      if (error?.name === "ZodError") return res.status(400).json({ error: "Validation error", details: error.issues });
+      if (error?.code === "bad_request" || error?.code === "not_found") return res.status(error.code === "not_found" ? 404 : 400).json({ error: error.message });
+      console.error("[Finance] Failed to resolve revenue-line dispute:", error);
+      res.status(500).json({ error: "Failed to resolve dispute" });
+    }
+  });
+
+  app.post("/api/finance/cost-lines/:id/dispute/open", requireAuth, requirePermission("financials", "edit"), async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Invalid id" });
+      const parsed = openDisputeBody.parse(req.body);
+      const { openDisputeOnCostLine } = await import("../services/finance-line-lifecycle-service");
+      await openDisputeOnCostLine({
+        lineId: id,
+        reason: parsed.reason,
+        openedByUserId: (req.user as { id?: number } | undefined)?.id ?? null,
+      });
+      logAuditFromReq(req, { entityType: "cost_line", action: "dispute_opened", entityId: String(id), source: "UI", changesJson: { reason: parsed.reason } });
+      res.json({ ok: true });
+    } catch (error: any) {
+      if (error?.name === "ZodError") return res.status(400).json({ error: "Validation error", details: error.issues });
+      if (error?.code === "bad_request" || error?.code === "not_found") return res.status(error.code === "not_found" ? 404 : 400).json({ error: error.message });
+      console.error("[Finance] Failed to open cost-line dispute:", error);
+      res.status(500).json({ error: "Failed to open dispute" });
+    }
+  });
+
+  app.post("/api/finance/cost-lines/:id/dispute/resolve", requireAuth, requirePermission("financials", "edit"), async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Invalid id" });
+      const parsed = resolveCostDisputeBody.parse(req.body);
+      const { resolveDisputeOnCostLine } = await import("../services/finance-line-lifecycle-service");
+      await resolveDisputeOnCostLine({
+        lineId: id,
+        outcome: parsed.outcome,
+        newStatus: parsed.newStatus,
+        resolutionNote: parsed.resolutionNote,
+        resolvedByUserId: (req.user as { id?: number } | undefined)?.id ?? null,
+      });
+      logAuditFromReq(req, { entityType: "cost_line", action: "dispute_resolved", entityId: String(id), source: "UI", changesJson: parsed });
+      res.json({ ok: true });
+    } catch (error: any) {
+      if (error?.name === "ZodError") return res.status(400).json({ error: "Validation error", details: error.issues });
+      if (error?.code === "bad_request" || error?.code === "not_found") return res.status(error.code === "not_found" ? 404 : 400).json({ error: error.message });
+      console.error("[Finance] Failed to resolve cost-line dispute:", error);
+      res.status(500).json({ error: "Failed to resolve dispute" });
+    }
+  });
+
+  // ── TF-8 (audit V3) ─ Bad-debt write-off workflow ────────────────────
+  // Strictly gated on `financials:approve` (the highest finance write
+  // gate). The line stays in the table for audit; aggregate KPIs
+  // exclude it. No client-facing UI in this PR — operators hit the
+  // endpoint via curl / Postman until the UI ships.
+
+  const writeOffBody = z.object({
+    reason: z.string().min(1, "reason is required"),
+  }).strict();
+
+  app.post("/api/finance/revenue-lines/:id/write-off", requireAuth, requirePermission("financials", "approve"), async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Invalid id" });
+      const parsed = writeOffBody.parse(req.body);
+      const userId = (req.user as { id?: number } | undefined)?.id ?? null;
+      const { writeOffRevenueLine } = await import("../services/finance-line-lifecycle-service");
+      await writeOffRevenueLine({
+        lineId: id,
+        reason: parsed.reason,
+        authorisedByUserId: userId,
+      });
+      logAuditFromReq(req, { entityType: "revenue_line", action: "write_off_authorised", entityId: String(id), source: "UI", changesJson: { reason: parsed.reason } });
+      res.json({ ok: true });
+    } catch (error: any) {
+      if (error?.name === "ZodError") return res.status(400).json({ error: "Validation error", details: error.issues });
+      if (error?.code === "bad_request" || error?.code === "not_found") return res.status(error.code === "not_found" ? 404 : 400).json({ error: error.message });
+      console.error("[Finance] Failed to write off revenue line:", error);
+      res.status(500).json({ error: "Failed to write off revenue line" });
+    }
+  });
 }

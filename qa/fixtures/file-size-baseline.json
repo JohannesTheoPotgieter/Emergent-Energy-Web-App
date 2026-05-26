@@ -50,7 +50,7 @@
     },
     {
       "file": "server/routes/quickbooks-invoice-matches.routes.ts",
-      "loc": 2764
+      "loc": 2791
     },
     {
       "file": "server/services/quickbooks-reconciliation-service.ts",
@@ -157,7 +157,7 @@
       "loc": 1729
     },
     {
-      "file": "client/src/pages/project-lifecycle.tsx",
+      "file": "server/services/stage-lifecycle-service.ts",
       "loc": 1727
     },
     {
@@ -165,16 +165,20 @@
       "loc": 1726
     },
     {
+      "file": "client/src/pages/project-lifecycle.tsx",
+      "loc": 1724
+    },
+    {
       "file": "server/eng-stage-routes.ts",
       "loc": 1715
     },
     {
-      "file": "server/services/stage-lifecycle-service.ts",
-      "loc": 1706
-    },
-    {
       "file": "shared/schema/projects.ts",
       "loc": 1698
+    },
+    {
+      "file": "shared/schema/finance.ts",
+      "loc": 1662
     },
     {
       "file": "client/src/pages/qm-dashboard.tsx",
@@ -187,10 +191,6 @@
     {
       "file": "client/src/pages/EngineeringTasksPage.tsx",
       "loc": 1619
-    },
-    {
-      "file": "shared/schema/finance.ts",
-      "loc": 1612
     },
     {
       "file": "client/src/pages/priority-detail.tsx",

@@ -1298,6 +1298,29 @@ async function applyFieldOverwrite(
       );
   }
 
+  // TF-2 (audit V3, owner-confirmed): per-field audit event. Before this
+  // fix, the only audit_events row was the proposal acceptance — a
+  // forensic auditor querying audit_events for cost_line id 12345 saw
+  // nothing about why paid_date flipped from null to 2026-05-15. The
+  // mutation is captured here at the underlying-row level so the trail
+  // is complete on both the integration domain (proposal accepted) and
+  // the finance domain (field X changed from A to B on entity Y).
+  const fieldName = proposal.fieldName ?? proposal.proposalType;
+  await recordAudit({
+    userId: (proposal.resolvedBy ?? proposal.createdBy ?? undefined) as number | undefined,
+    entityType: isCost ? "cost_line" : "revenue_line",
+    entityId: String(link.appEntityId),
+    action: `field_override_${proposal.proposalType}`,
+    changesJson: {
+      field: fieldName,
+      oldValue: proposal.appValue,
+      newValue: proposal.qbValue,
+      cascadeProposalId: proposal.id,
+      qbLinkId: link.id,
+      qbRealmId: link.qbRealmId,
+    },
+  });
+
   // Variance audit row so Smart Import doesn't re-flag this divergence.
   if (importRunId !== null) {
     await tx.insert(importQbVariances).values({
