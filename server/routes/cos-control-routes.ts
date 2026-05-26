@@ -7,6 +7,7 @@ import { projectInfo } from "@shared/schema";
 import { logAuditFromReq } from "../audit-logger";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
+import { requirePermission } from "../permission-middleware";
 import { classifyExpenseState } from "../lib/calculations/stateClassifier";
 import { scoreExpenseConfidence, scoreInflowConfidence, getAssumptionDriver } from "../lib/calculations/confidence";
 import { aggregateCOS, aggregateCOSByProject } from "../lib/calculations/cosAggregator";
@@ -57,7 +58,7 @@ export function registerCosControlRoutes(app: Express) {
   // COS CONTROL TOWER APIs
   // =========================================================================
 
-  app.get("/api/cos-control/summary", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/cos-control/summary", requireAuth, requirePermission("cos_control", "view"), async (req, res) => {
     try {
       const legacyExp = await getCanonicalAllCurrentCostLines();
       const { expenses } = await getMergedExpensesAndInflows(legacyExp, []);
@@ -96,7 +97,7 @@ export function registerCosControlRoutes(app: Express) {
     }
   });
 
-  app.get("/api/cos-control/by-project", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/cos-control/by-project", requireAuth, requirePermission("cos_control", "view"), async (req, res) => {
     try {
       const legacyExp = await getCanonicalAllCurrentCostLines();
       const { expenses } = await getMergedExpensesAndInflows(legacyExp, []);
@@ -131,7 +132,7 @@ export function registerCosControlRoutes(app: Express) {
     }
   });
 
-  app.get("/api/cos-control/lines", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/cos-control/lines", requireAuth, requirePermission("cos_control", "view"), async (req, res) => {
     try {
       const { project, state, supplier, search } = req.query;
       const legacyExp = await getCanonicalAllCurrentCostLines();
@@ -182,7 +183,7 @@ export function registerCosControlRoutes(app: Express) {
     }
   });
 
-  app.get("/api/cos-control/invoices", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/cos-control/invoices", requireAuth, requirePermission("cos_control", "view"), async (req, res) => {
     try {
       const legacyExp = await getCanonicalAllCurrentCostLines();
       const { expenses } = await getMergedExpensesAndInflows(legacyExp, []);
@@ -221,7 +222,7 @@ export function registerCosControlRoutes(app: Express) {
     }
   });
 
-  app.get("/api/cos-control/pos", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/cos-control/pos", requireAuth, requirePermission("cos_control", "view"), async (req, res) => {
     try {
       const legacyExp = await getCanonicalAllCurrentCostLines();
       const { expenses } = await getMergedExpensesAndInflows(legacyExp, []);
@@ -264,7 +265,7 @@ export function registerCosControlRoutes(app: Express) {
   // CASHFLOW FORECAST APIs
   // =========================================================================
 
-  app.get("/api/cashflow-forecast/weekly", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/cashflow-forecast/weekly", requireAuth, requirePermission("cashflow_forecast", "view"), async (req, res) => {
     try {
 
       const weeks = parseInt(String(req.query.weeks || '52'));
@@ -332,7 +333,7 @@ export function registerCosControlRoutes(app: Express) {
     }
   });
 
-  app.get("/api/cashflow-forecast/week-detail", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/cashflow-forecast/week-detail", requireAuth, requirePermission("cashflow_forecast", "view"), async (req, res) => {
     try {
 
       const weekStart = String(req.query.weekStart);
@@ -608,7 +609,7 @@ export function registerCosControlRoutes(app: Express) {
 
   // ============ SCENARIO ENGINE API ============
 
-  app.get("/api/scenarios", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/scenarios", requireAuth, requirePermission("cos_control", "view"), async (req, res) => {
     try {
       const all = await (storage as any).getAllScenarios();
       res.json({ scenarios: all });
@@ -617,7 +618,7 @@ export function registerCosControlRoutes(app: Express) {
     }
   });
 
-  app.post("/api/scenarios", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/scenarios", requireAuth, requirePermission("cos_control", "edit"), async (req, res) => {
     try {
       const { name, description } = req.body;
       if (!name) return res.status(400).json({ error: "Name is required" });
@@ -630,7 +631,7 @@ export function registerCosControlRoutes(app: Express) {
     }
   });
 
-  app.post("/api/scenarios/:id/duplicate", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/scenarios/:id/duplicate", requireAuth, requirePermission("cos_control", "edit"), async (req, res) => {
     try {
       const id = paramInt(req, "id") ?? 0;
       const { name } = req.body;
@@ -643,7 +644,7 @@ export function registerCosControlRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/scenarios/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/scenarios/:id", requireAuth, requirePermission("cos_control", "edit"), async (req, res) => {
     try {
       const id = paramInt(req, "id") ?? 0;
       await (storage as any).deleteScenario(id);
@@ -654,7 +655,7 @@ export function registerCosControlRoutes(app: Express) {
     }
   });
 
-  app.post("/api/scenarios/:id/reset", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/scenarios/:id/reset", requireAuth, requirePermission("cos_control", "edit"), async (req, res) => {
     try {
       const id = paramInt(req, "id") ?? 0;
       await (storage as any).clearDateOverrides(id);
@@ -667,7 +668,7 @@ export function registerCosControlRoutes(app: Express) {
 
   // ============ SCENARIO-AWARE COS CONTROL API ============
 
-  app.get("/api/cos-control/scenario-monthly", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/cos-control/scenario-monthly", requireAuth, requirePermission("cos_control", "view"), async (req, res) => {
     try {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
       const legacyExpSM = await getCanonicalAllCurrentCostLines();
@@ -732,7 +733,7 @@ export function registerCosControlRoutes(app: Express) {
     }
   });
 
-  app.get("/api/cos-control/tracker", requireAuth, async (req, res) => {
+  app.get("/api/cos-control/tracker", requireAuth, requirePermission("cos_control", "view"), async (req, res) => {
     try {
       const [legacyExp, legacyInf] = await Promise.all([
         getCanonicalAllCurrentCostLines(),
@@ -809,7 +810,7 @@ export function registerCosControlRoutes(app: Express) {
     }
   });
 
-  app.get("/api/cashflow-tracker", requireAuth, async (req, res) => {
+  app.get("/api/cashflow-tracker", requireAuth, requirePermission("cashflow", "view"), async (req, res) => {
     try {
       const [legacyExpCF, legacyInflowsCF, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
         getCanonicalAllCurrentCostLines(),
@@ -911,7 +912,7 @@ export function registerCosControlRoutes(app: Express) {
     }
   });
 
-  app.get("/api/cos-control/scenario-invoices", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/cos-control/scenario-invoices", requireAuth, requirePermission("cos_control", "view"), async (req, res) => {
     try {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
       const search = (req.query.search as string || '').toLowerCase();
@@ -1001,7 +1002,7 @@ export function registerCosControlRoutes(app: Express) {
     }
   });
 
-  app.get("/api/cos-control/scenario-lines", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/cos-control/scenario-lines", requireAuth, requirePermission("cos_control", "view"), async (req, res) => {
     try {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
       const search = (req.query.search as string || '').toLowerCase();
@@ -1077,7 +1078,7 @@ export function registerCosControlRoutes(app: Express) {
     }
   });
 
-  app.get("/api/cos-control/scenario-impact", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/cos-control/scenario-impact", requireAuth, requirePermission("cos_control", "view"), async (req, res) => {
     try {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
       if (!scenarioId) return res.json({ shifts: [], cashflowDelta: [] });
@@ -1120,7 +1121,7 @@ export function registerCosControlRoutes(app: Express) {
 
   // ============ SCENARIO-AWARE CASHFLOW FORECAST API ============
 
-  app.get("/api/cashflow-forecast/scenario-weekly", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/cashflow-forecast/scenario-weekly", requireAuth, requirePermission("cashflow_forecast", "view"), async (req, res) => {
     try {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
       const projectFilter = req.query.project as string || '';
@@ -1231,7 +1232,7 @@ export function registerCosControlRoutes(app: Express) {
     }
   });
 
-  app.get("/api/cashflow-forecast/scenario-week-detail", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/cashflow-forecast/scenario-week-detail", requireAuth, requirePermission("cashflow_forecast", "view"), async (req, res) => {
     try {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
       const weekStart = req.query.weekStart as string;
