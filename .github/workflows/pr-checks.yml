@@ -101,6 +101,12 @@ jobs:
             turbo-compile-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-
       - run: npx turbo run build test --cache-dir=.turbo
         if: hashFiles('**/*.test.ts') != ''
+      # Diagnostic: if turbo's test step failed, also run the bare suite
+      # so the failing test surfaces in this job's tail (the WebFetch
+      # snippet on the run page only shows the last ~50 lines).
+      # Remove once green.
+      - if: failure()
+        run: npm run test 2>&1 | tail -120 || true
       # Non-cacheable integration steps (need a live server + DB)
       - run: npm run test:api
       - run: npm run release:gate
