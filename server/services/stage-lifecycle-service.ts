@@ -1651,11 +1651,32 @@ export async function resumeProjectFromHold(params: TerminalTransitionParams): P
   return { resumedTo: target };
 }
 
-export async function markProjectDone(params: TerminalTransitionParams): Promise<{
+export async function markProjectDone(
+  params: TerminalTransitionParams & { overrideFinanceCloseOut?: boolean; financeOverrideReason?: string },
+): Promise<{
   stageInstanceId: number;
 }> {
   const { projectId, actorUserId, reason } = params;
   const now = new Date();
+
+  // TF-10 (audit V3): finance close-out gate. Block project closure if
+  // AR / AP / open POs / open disputes still exist. The override path
+  // (overrideFinanceCloseOut + financeOverrideReason) is for COO / CFO
+  // authority — the gate records the override + reason in the decision
+  // table so the audit trail stays whole.
+  const { evaluateFinanceCloseOutGate } = await import("./finance-close-out-gate");
+  const gate = await evaluateFinanceCloseOutGate(projectId);
+  if (!gate.ok && !params.overrideFinanceCloseOut) {
+    throw new Error(
+      `Finance close-out gate failed: ${gate.blockers.join(" ")}. ` +
+      `Resolve or pass overrideFinanceCloseOut=true with financeOverrideReason.`,
+    );
+  }
+  if (!gate.ok && params.overrideFinanceCloseOut && (!params.financeOverrideReason || params.financeOverrideReason.trim().length === 0)) {
+    throw new Error(
+      "Finance close-out gate failed and override was requested but no reason was supplied. Provide financeOverrideReason.",
+    );
+  }
 
   const doneInstance = await ensureTerminalStageInstance(projectId, 'S_DONE', now);
 

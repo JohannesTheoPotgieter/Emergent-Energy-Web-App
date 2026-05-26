@@ -25,18 +25,26 @@ function readFile(rel: string): string {
 }
 
 function assertGate(source: string, method: string, path: string, gate: string): void {
-  // Match an app.<method>("<path>", ...gate...) call. The arguments between
-  // the path and the gate are variable (requireAuth, requireAdmin, body
-  // validators) so we use a lazy match.
+  // Find an `app.<method>(...)` call that mentions both the path literal and
+  // the gate token within a window of ~1500 chars. Both single-line and
+  // multi-line styles are valid in this codebase, and route handlers
+  // sometimes have multiple middleware lines (requireAuth, validateBody,
+  // requireAdmin, etc.) between the path and the gate. We search the call
+  // site as a whole rather than relying on tight punctuation matching.
   const safePath = path.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/:[a-zA-Z]+/g, "[^\"']+");
-  const re = new RegExp(
-    `app\\.${method}\\(["']${safePath}["'][^)]*?${gate.replace(/[.+?^${}()|[\]\\]/g, "\\$&")}`,
-    "s",
-  );
-  expect(
-    source.match(re),
+  const pathPattern = new RegExp(`app\\.${method}\\(\\s*["']${safePath}["']`, "g");
+  let m: RegExpExecArray | null;
+  while ((m = pathPattern.exec(source)) !== null) {
+    // Inspect the next 1500 chars after this match. If the gate token is
+    // present before the next `app.` call, this site has the expected gate.
+    const tail = source.slice(m.index, m.index + 1500);
+    const nextAppCall = tail.indexOf("app.", method.length + 8);
+    const window = nextAppCall >= 0 ? tail.slice(0, nextAppCall) : tail;
+    if (window.includes(gate)) return;
+  }
+  throw new Error(
     `Expected app.${method}("${path}", ..., ${gate}) — gate is missing or downgraded`,
-  ).not.toBeNull();
+  );
 }
 
 describe("PR #943 RBAC migration — finance route gates pinned", () => {
@@ -111,5 +119,62 @@ describe("PR #943 RBAC migration — finance route gates pinned", () => {
     expect(src).toMatch(/requirePermission\("cashflow",\s*"view"\)/);
     expect(src).toMatch(/requirePermission\("cos",\s*"view"\)/);
     expect(src).toMatch(/requirePermission\("cos",\s*"override"\)/);
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // TF-11 (audit V3): extend coverage to the QB / finance-lines / finance-trust
+  // route files. Without these assertions, a future commit could silently
+  // remove a `requirePermission(...)` on (for example) /api/quickbooks/invoice-
+  // matches/manual-link — re-opening the "any user with financials:edit can
+  // force a QB match" gap V1 closed.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  it("quickbooks-invoice-matches.routes.ts: view endpoints gated on financials:view", () => {
+    const src = readFile("server/routes/quickbooks-invoice-matches.routes.ts");
+    assertGate(src, "post", "/api/quickbooks/invoice-matches/find", 'requirePermission("financials", "view")');
+    assertGate(src, "get", "/api/quickbooks/invoice-matches/app-lines/search", 'requirePermission("financials", "view")');
+    assertGate(src, "get", "/api/quickbooks/invoice-matches/payment-status/:linkId", 'requirePermission("financials", "view")');
+    assertGate(src, "get", "/api/quickbooks/invoice-matches/links/:linkId/proposals", 'requirePermission("financials", "view")');
+    assertGate(src, "get", "/api/quickbooks/cascade-proposals/summary", 'requirePermission("financials", "view")');
+  });
+
+  it("quickbooks-invoice-matches.routes.ts: edit endpoints gated on financials:edit", () => {
+    const src = readFile("server/routes/quickbooks-invoice-matches.routes.ts");
+    assertGate(src, "post", "/api/quickbooks/invoice-matches/:suggestionId/approve", 'requirePermission("financials", "edit")');
+    assertGate(src, "post", "/api/quickbooks/invoice-matches/:suggestionId/approve-multi", 'requirePermission("financials", "edit")');
+    assertGate(src, "post", "/api/quickbooks/invoice-matches/:suggestionId/reject", 'requirePermission("financials", "edit")');
+    assertGate(src, "post", "/api/quickbooks/invoice-matches/bulk-approve", 'requirePermission("financials", "edit")');
+    assertGate(src, "post", "/api/quickbooks/invoice-matches/bulk-reject", 'requirePermission("financials", "edit")');
+    assertGate(src, "post", "/api/quickbooks/invoice-matches/proposals/:id/accept", 'requirePermission("financials", "edit")');
+    assertGate(src, "post", "/api/quickbooks/invoice-matches/proposals/:id/decline", 'requirePermission("financials", "edit")');
+    assertGate(src, "post", "/api/quickbooks/invoice-matches/auto-suggest/run", 'requirePermission("financials", "edit")');
+  });
+
+  it("quickbooks-invoice-matches.routes.ts: manual-link gated on financials:override", () => {
+    const src = readFile("server/routes/quickbooks-invoice-matches.routes.ts");
+    // Manual link is the override path — should require the strictest gate.
+    assertGate(src, "post", "/api/quickbooks/invoice-matches/manual-link", 'requirePermission("financials", "override")');
+  });
+
+  it("finance-lines.routes.ts: all endpoints gated on financials:view", () => {
+    const src = readFile("server/routes/finance-lines.routes.ts");
+    assertGate(src, "get", "/api/finance/lines/:projectId", 'requirePermission("financials", "view")');
+    assertGate(src, "get", "/api/finance/lines", 'requirePermission("financials", "view")');
+    assertGate(src, "get", "/api/finance/category-allocation-health", 'requirePermission("financials", "view")');
+    assertGate(src, "get", "/api/finance/recon-check/:projectId", 'requirePermission("financials", "view")');
+    assertGate(src, "get", "/api/finance/recon-grid", 'requirePermission("financials", "view")');
+  });
+
+  it("finance-trust-routes.ts: operational endpoints gated on financials:view, admin views on requireAdmin", () => {
+    const src = readFile("server/routes/finance-trust-routes.ts");
+    // Operational triage — visible to anyone with finance read access.
+    assertGate(src, "get", "/api/finance/trust/exceptions/summary", 'requirePermission("financials", "view")');
+    assertGate(src, "get", "/api/finance/trust/exceptions/queue", 'requirePermission("financials", "view")');
+    assertGate(src, "get", "/api/finance/trust/sync-health", 'requirePermission("financials", "view")');
+    // Admin-only audit views — raw schema drift / revalidation queue.
+    // These intentionally require requireAdmin per the file header comment;
+    // the gate must NOT be downgraded to financials:view.
+    assertGate(src, "get", "/api/finance/trust/integrity-audit", "requireAdmin");
+    assertGate(src, "get", "/api/finance/trust/revalidation-status", "requireAdmin");
   });
 });

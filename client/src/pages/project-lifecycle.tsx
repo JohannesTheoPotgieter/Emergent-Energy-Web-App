@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { formatZar } from "@/lib/currency";
 import { displayPmName, isValidPmName } from "@/lib/pm-validation";
 import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
 import {
@@ -276,13 +277,9 @@ function ClientOverviewRow({ client }: { client: ProjectLifecycleWorkspaceClient
   );
 }
 
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-ZA", {
-    style: "currency",
-    currency: "ZAR",
-    maximumFractionDigits: 0,
-  }).format(value || 0);
-}
+// TF-16 (audit V3): canonical precise ZAR formatter — same en-ZA "R 1 234 567"
+// shape, but null / undefined / NaN values render as "—" (integrity rule).
+const formatCurrency = (value: number | null | undefined): string => formatZar(value);
 
 function normalizeClientName(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
