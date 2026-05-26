@@ -23,6 +23,7 @@ import { useFinanceQuery } from '@/lib/finance-trust';
 import { DataTrustBadge } from '@/components/ui/data-trust-badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { DataSourceBadge } from '@/components/finance/DataSourceBadge';
+import { ExportDropdown } from '@/components/ui/export-dropdown';
 import {
   Bar,
   XAxis,
@@ -1873,6 +1874,24 @@ export default function CosTracker() {
           actions={
             <>
               <FinancialYearScopeControl scope={fyScope} />
+              <ExportDropdown
+                data={months}
+                columns={[
+                  { key: 'monthLabel', header: 'Month' },
+                  { key: 'budget', header: 'COS Budget' },
+                  { key: 'cosPlanned', header: 'COS Planned (FY baseline)' },
+                  { key: 'realisedCOS', header: 'COS Realised' },
+                  { key: 'committedCOS', header: 'COS Committed' },
+                  { key: 'plannedCOS', header: 'COS Planned (lines)' },
+                  { key: 'qbOnlyActual', header: 'QB Only Actual' },
+                  { key: 'appOnlyPending', header: 'App Only Pending' },
+                  { key: 'totalCOS', header: 'Total COS' },
+                  { key: 'variance', header: 'Variance vs Budget' },
+                  { key: 'ytdRealised', header: 'YTD Realised' },
+                  { key: 'ytdBudget', header: 'YTD Budget' },
+                ]}
+                filename={`cos-tracker-${fyScope.label.replace(/\s+/g, '-').toLowerCase()}`}
+              />
               <TooltipProvider delayDuration={200}>
                 <UiTooltip>
                   <TooltipTrigger asChild>
