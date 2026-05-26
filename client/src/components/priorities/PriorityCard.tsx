@@ -97,12 +97,22 @@ export function PriorityCard({
           </div>
         )}
 
-        {(priority.escalated || priority.linkedTaskId) && (
+        {(priority.escalated || priority.linkedTaskId || priority.dueForReview) && (
           <div className="flex items-center gap-1 mb-2 flex-wrap">
             {priority.escalated && (
               <Badge variant="destructive" className="text-[10px]">
                 <AlertTriangle className="w-3 h-3 mr-0.5" />
                 Escalated{priority.escalationReason ? ` — ${priority.escalationReason}` : ""}
+              </Badge>
+            )}
+            {priority.dueForReview && (
+              <Badge
+                variant="outline"
+                className="text-[10px] bg-amber-50 text-amber-800 border-amber-300"
+                title={`Cadence: every ${priority.reviewCadenceDays} day${priority.reviewCadenceDays === 1 ? "" : "s"}`}
+              >
+                <AlertTriangle className="w-3 h-3 mr-0.5" />
+                Due for review
               </Badge>
             )}
             {priority.linkedTaskId && (

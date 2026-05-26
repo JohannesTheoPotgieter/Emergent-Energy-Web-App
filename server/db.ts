@@ -1506,6 +1506,60 @@ async function ensureSqliteSchema() {
     `));
     await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS idx_mytool_company_priorities_status ON mytool_company_priorities(status)`));
     await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS idx_mytool_company_priorities_owner ON mytool_company_priorities(owner_user_id, assigned_user_id)`));
+    // Soft-delete column (migration 0069). Idempotent for existing dbs.
+    try { await db.run(sql.raw(`ALTER TABLE mytool_company_priorities ADD COLUMN deleted_at TEXT`)); } catch {}
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS idx_priorities_deleted_at ON mytool_company_priorities(deleted_at)`));
+    // Review cadence columns (migration 0072).
+    try { await db.run(sql.raw(`ALTER TABLE mytool_company_priorities ADD COLUMN review_cadence_days INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE mytool_company_priorities ADD COLUMN last_reviewed_at TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE mytool_company_priorities ADD COLUMN last_reviewed_by_user_id INTEGER`)); } catch {}
+
+    // Priority templates (migration 0070).
+    await db.run(sql.raw(`
+      CREATE TABLE IF NOT EXISTS priority_templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        title_template TEXT NOT NULL,
+        body_template TEXT,
+        scope_default TEXT NOT NULL DEFAULT 'role',
+        severity_default TEXT NOT NULL DEFAULT 'normal',
+        horizon_default TEXT NOT NULL DEFAULT 'week',
+        department_key TEXT,
+        target_outcome TEXT,
+        definition_of_done TEXT,
+        next_action TEXT,
+        owner_role TEXT,
+        created_by_user_id INTEGER,
+        deleted_at TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS idx_priority_templates_dept ON priority_templates(department_key)`));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS idx_priority_templates_live ON priority_templates(deleted_at)`));
+
+    // Priority saved views (migration 0071).
+    await db.run(sql.raw(`
+      CREATE TABLE IF NOT EXISTS priority_saved_views (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        active_tab TEXT NOT NULL DEFAULT 'my',
+        scope TEXT,
+        department_key TEXT,
+        level_filter TEXT,
+        health_filter TEXT,
+        search_query TEXT,
+        show_closed INTEGER NOT NULL DEFAULT 0,
+        show_archived INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (user_id, name)
+      )
+    `));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS idx_priority_saved_views_user ON priority_saved_views(user_id, sort_order)`));
 
     await db.run(sql.raw(`
       CREATE TABLE IF NOT EXISTS priority_activity (
@@ -2387,6 +2441,23 @@ async function ensureSqliteSchema() {
     try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN row_hash TEXT`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN import_snapshot TEXT`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN manual_overrides TEXT`)); } catch {}
+
+    // work_item_status_history — append-only audit trail for work-item
+    // status transitions. Created lazily here so the SQLite dev/test
+    // fallback can exercise code paths that INSERT into it (e.g.
+    // POST /api/priorities/tasks, status-change flows).
+    await db.run(sql.raw(`
+      CREATE TABLE IF NOT EXISTS work_item_status_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        work_item_id INTEGER NOT NULL,
+        old_status TEXT,
+        new_status TEXT NOT NULL,
+        changed_by INTEGER,
+        changed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        reason TEXT
+      )
+    `));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS idx_wish_work_item ON work_item_status_history(work_item_id)`));
 
     await db.run(sql.raw(`
       CREATE TABLE IF NOT EXISTS work_item_pm (

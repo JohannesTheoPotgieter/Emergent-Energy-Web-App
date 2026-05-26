@@ -9,7 +9,12 @@ export interface PriorityListSectionProps {
   isError: boolean;
   error: Error | null;
   refetch: () => void;
-  showEscalate?: boolean;
+  /**
+   * Either a list-wide boolean (legacy) or a per-row predicate. The predicate
+   * lets owners/assignees see Escalate on role-scope priorities they own
+   * without also exposing the action on every row.
+   */
+  showEscalate?: boolean | ((priority: PriorityRow) => boolean);
   onEscalate?: (id: number) => void;
   showMarkComplete?: boolean;
   onMarkComplete?: (id: number) => void;
@@ -74,7 +79,7 @@ export function PriorityListSection({
     <PriorityCard
       key={p.id}
       priority={p}
-      showEscalate={showEscalate}
+      showEscalate={typeof showEscalate === "function" ? showEscalate(p) : showEscalate}
       onEscalate={() => onEscalate?.(p.id)}
       showMarkComplete={showMarkComplete}
       onMarkComplete={() => onMarkComplete?.(p.id)}

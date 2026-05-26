@@ -81,6 +81,18 @@ export interface PriorityRow {
    */
   linkedTaskId: number | null;
   linkedTaskType: string | null;
+  /**
+   * Soft-delete timestamp. NULL = live; non-null = archived. Admins
+   * with `?include_archived=true` may receive archived rows; everyone
+   * else gets 404 on the detail and exclusion from the list.
+   */
+  deletedAt?: string | null;
+  /** Review cadence (days). NULL = no cadence. See migration 0072. */
+  reviewCadenceDays?: number | null;
+  lastReviewedAt?: string | null;
+  lastReviewedByUserId?: number | null;
+  /** Derived: true when (lastReviewedAt ?? createdAt) + cadence < now. */
+  dueForReview?: boolean;
   createdAt: string;
   updatedAt: string;
 }

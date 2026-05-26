@@ -2,7 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { z } from "zod";
 import { requireAuth, requirePriorityAdmin, requirePriorityCreator } from "./shared-middleware";
 import { requirePermission } from "../permission-middleware";
-import { canPriorityRoleEditPriority, isDepartmentHeadRole, isPriorityAdminRole, isPriorityParentAllowed, isPriorityTerminalStatus } from "@shared/config/priorities";
+import { canPriorityRoleEditPriority, canPriorityRoleEscalatePriority, isDepartmentHeadRole, isPriorityAdminRole, isPriorityParentAllowed, isPriorityTerminalStatus } from "@shared/config/priorities";
 import { getEffectiveUser } from "../auth-context";
 import { db, getDbMode } from "../db";
 import {
@@ -22,15 +22,19 @@ import {
   opportunities,
   engineeringTickets,
   raidItems,
+  notifications,
+  priorityTemplates,
+  prioritySavedViews,
 } from "@shared/schema";
 import { ROLE_DEPARTMENT_MAP } from "@shared/schema/users";
-import { eq, and, sql, desc, asc, inArray, isNull } from "drizzle-orm";
+import { eq, and, or, sql, desc, asc, inArray, isNull, isNotNull } from "drizzle-orm";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { validateBody } from "../middleware/validateBody";
 import { ApiError, badRequest, forbidden, notFound } from "../lib/api-error";
 import { PRIORITY_HEALTH_VALUES, type PriorityHealth, computeEffectivePriorityHealth } from "@shared/kpi-definitions";
 import { PRIORITY_SCOPES, ESCALATION_REASONS, computeEscalatePatch, collectDescendantIds, collectAncestorIds, matchesPriorityListFilter, type PriorityScope, type EscalationReason } from "@shared/config/priorities";
-import { recordActivity, computeUpdateActivities } from "./priority-activity-log";
+import { recordActivity, computeUpdateActivities, type PriorityActivityAction } from "./priority-activity-log";
+import { runInTransaction } from "../lib/drizzle-helpers";
 import { computePriorityProgress } from "../lib/priorities/progress-source";
 import { chooseProgressPercent, toDisplayProgressPercent } from "../lib/priorities/progress-percent";
 import { attachProjectScope, getProjectScope } from "../middleware/project-scope-middleware";
@@ -58,8 +62,86 @@ function activePriorityStatusSql(columnName = "status") {
   return sql.raw(`${columnName} NOT IN ('closed', 'complete')`);
 }
 
+/**
+ * Default predicate hiding soft-deleted priorities. Applied to every
+ * list/detail read unless the caller opted in via include_archived=true
+ * AND has admin role. See migration 0069.
+ */
+function notDeletedCondition() {
+  return isNull(mytoolCompanyPriorities.deletedAt);
+}
+
+function notDeletedSql(columnName = "deleted_at") {
+  return sql.raw(`${columnName} IS NULL`);
+}
+
 function getDepartmentForRole(role: string | null | undefined): string | undefined {
   return role ? (ROLE_DEPARTMENT_MAP as Record<string, string>)[role] : undefined;
+}
+
+/**
+ * Notify every watcher (plus owner / assignee / accountable exec) about
+ * a priority event. Best-effort: a failed insert never breaks the
+ * triggering mutation. De-dupes recipients, skips the actor (don't
+ * notify yourself), drops the linked_task_id slot of `notifications`
+ * to point at the priority id so the existing notifications panel can
+ * deep-link straight to /priority/:id.
+ *
+ * Wired into: single + bulk escalate, close, reopen, archive, restore.
+ * Not wired into edit/comment/watch — those would be spammy.
+ */
+async function fanoutPriorityNotifications(opts: {
+  priorityId: number;
+  priority: { ownerUserId?: number | null; assignedUserId?: number | null; accountableExecId?: number | null; title?: string | null };
+  actorUserId: number | null | undefined;
+  eventType: string;
+  title: string;
+  body?: string;
+}): Promise<void> {
+  try {
+    const watchers = await db
+      .select({ userId: priorityWatches.userId })
+      .from(priorityWatches)
+      .where(eq(priorityWatches.priorityId, opts.priorityId));
+    const recipients = new Set<number>();
+    for (const w of watchers) if (typeof w.userId === "number") recipients.add(w.userId);
+    if (opts.priority.ownerUserId) recipients.add(opts.priority.ownerUserId);
+    if (opts.priority.assignedUserId) recipients.add(opts.priority.assignedUserId);
+    if (opts.priority.accountableExecId) recipients.add(opts.priority.accountableExecId);
+    if (opts.actorUserId) recipients.delete(opts.actorUserId);
+    if (recipients.size === 0) return;
+    await db.insert(notifications).values(
+      Array.from(recipients).map((userId) => ({
+        recipientUserId: userId,
+        eventType: opts.eventType,
+        title: opts.title,
+        body: opts.body ?? null,
+        linkedTaskId: opts.priorityId,
+        changeDetails: JSON.stringify({ priorityId: opts.priorityId, priorityTitle: opts.priority.title ?? null }),
+      })),
+    );
+  } catch (err: any) {
+    console.warn("[Priorities] watch fan-out failed:", err?.message || err);
+  }
+}
+
+/**
+ * Drizzle's better-sqlite3 driver returns a TEXT timestamp column as a
+ * `new Date(text)` object even when the text is an ISO string the JS
+ * Date constructor accepts. When the value is NULL, it returns a JS
+ * `new Date(null)` which evaluates to "Invalid Date" but is still
+ * `typeof object` — so a `?? null` fallback won't catch it. Normalize
+ * any timestamp-shaped field through this helper before serialising.
+ */
+function normalizeTimestamp(value: any): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) {
+    const t = value.getTime();
+    return Number.isFinite(t) ? value.toISOString() : null;
+  }
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return new Date(value).toISOString();
+  return null;
 }
 
 function nullableNumber(value: number | null | undefined): number | null {
@@ -189,6 +271,7 @@ const basePrioritySchema = z.object({
   parent_id: z.number().int().positive().nullable().optional(),
   department_key: z.string().max(120).nullable().optional(),
   assigned_user_id: z.number().int().positive().nullable().optional(),
+  review_cadence_days: z.number().int().min(1).max(365).nullable().optional(),
   progress_source_type: z.enum(["manual", "project_phase", "project_percent", "milestone_revenue", "tasks_rollup"]).nullable().optional(),
   progress_source_ref: z.object({
     projectId: z.number().int().positive().optional(),
@@ -198,14 +281,86 @@ const basePrioritySchema = z.object({
   }).nullable().optional(),
 });
 
-const createPrioritySchema = basePrioritySchema;
+/**
+ * Semantic refinement for progress_source_type ↔ progress_source_ref.
+ * Run as a `.superRefine` step on top of both create and update schemas,
+ * since z.partial() can't be called on the output of superRefine.
+ * Without this, a payload like
+ *   { progress_source_type: "milestone_revenue", progress_source_ref: { workItemIds: [...] } }
+ * saves cleanly and the compute function silently returns 0% forever
+ * (see server/lib/priorities/progress-source.ts).
+ */
+function refineProgressSource(
+  data: { progress_source_type?: string | null; progress_source_ref?: any },
+  ctx: z.RefinementCtx,
+) {
+  const type = data.progress_source_type;
+  const ref = data.progress_source_ref;
+  if (!type || type === "manual") return;
+  if (!ref) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["progress_source_ref"],
+      message: `progress_source_ref is required when progress_source_type='${type}'`,
+    });
+    return;
+  }
+  if ((type === "project_phase" || type === "project_percent") && !ref.projectId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["progress_source_ref", "projectId"],
+      message: `projectId is required when progress_source_type='${type}'`,
+    });
+  }
+  if (type === "project_phase" && !ref.phaseCode) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["progress_source_ref", "phaseCode"],
+      message: "phaseCode is required when progress_source_type='project_phase'",
+    });
+  }
+  if (type === "milestone_revenue" && !ref.milestoneId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["progress_source_ref", "milestoneId"],
+      message: "milestoneId is required when progress_source_type='milestone_revenue'",
+    });
+  }
+  if (type === "tasks_rollup" && (!ref.workItemIds || ref.workItemIds.length === 0)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["progress_source_ref", "workItemIds"],
+      message: "workItemIds (non-empty array) is required when progress_source_type='tasks_rollup'",
+    });
+  }
+}
+
+const createPrioritySchema = basePrioritySchema.superRefine(refineProgressSource);
 
 const updatePrioritySchema = basePrioritySchema
   .partial()
   .extend({
     status: statusEnum.optional(),
     priority_rank: z.number().int().nullable().optional(),
-  });
+  })
+  .superRefine(refineProgressSource);
+
+// Bulk action payloads. ids capped at 100 per call to keep one request
+// bounded and prevent a runaway client from locking the priorities
+// table for too long.
+const bulkIdsSchema = z.object({
+  ids: z.array(z.number().int().positive()).min(1).max(100),
+});
+const bulkCloseSchema = bulkIdsSchema.extend({
+  status: z.enum(["closed", "complete"]).default("closed"),
+});
+const bulkEscalateSchema = bulkIdsSchema.extend({
+  reason: z.enum(["overdue", "critical", "blocked", "manual"]).default("manual"),
+  note: z.string().max(1000).optional(),
+});
+const bulkAssignSchema = bulkIdsSchema.extend({
+  assigned_user_id: z.number().int().positive().nullable(),
+});
 
 const escalatePrioritySchema = z.object({
   reason: reasonEnum.optional(),
@@ -287,6 +442,11 @@ interface PriorityWithMetrics {
   hasProjects: boolean;
   childCount: number;
   parentTitle: string | null;
+  deletedAt: string | null;
+  reviewCadenceDays: number | null;
+  lastReviewedAt: string | null;
+  lastReviewedByUserId: number | null;
+  dueForReview: boolean;
 }
 
 interface DerivedMetricsRow {
@@ -469,6 +629,9 @@ async function enrichPriority(
     ownerUserId: priority.ownerUserId ?? priority.owner_user_id,
     priorityRank: priority.priorityRank ?? priority.priority_rank,
     horizon: priority.horizon,
+    nextAction: priority.nextAction ?? priority.next_action ?? null,
+    definitionOfDone: priority.definitionOfDone ?? priority.definition_of_done ?? null,
+    support: priority.support ?? null,
     // Cascade fields
     scope: (priority.scope ?? 'company') as PriorityScope,
     parentId: priority.parentId ?? priority.parent_id ?? null,
@@ -477,6 +640,10 @@ async function enrichPriority(
     escalated: priority.escalated ?? false,
     escalatedAt: priority.escalatedAt ?? priority.escalated_at ?? null,
     escalationReason: priority.escalationReason ?? priority.escalation_reason ?? null,
+    deletedAt: normalizeTimestamp(priority.deletedAt ?? priority.deleted_at),
+    reviewCadenceDays: priority.reviewCadenceDays ?? priority.review_cadence_days ?? null,
+    lastReviewedAt: normalizeTimestamp(priority.lastReviewedAt ?? priority.last_reviewed_at),
+    lastReviewedByUserId: priority.lastReviewedByUserId ?? priority.last_reviewed_by_user_id ?? null,
     createdAt: priority.createdAt ?? priority.created_at,
     updatedAt: priority.updatedAt ?? priority.updated_at,
   };
@@ -571,6 +738,20 @@ async function enrichPriority(
     hasProjects,
     childCount: childCountMap?.get(p.id) ?? 0,
     parentTitle: p.parentId ? (parentMap?.get(p.parentId) ?? null) : null,
+    // Derived "due for review" flag — true when a cadence is set AND
+    // the time since last review (or creation, if never reviewed) has
+    // exceeded the cadence in days. Computed at read time so we don't
+    // need a cron.
+    dueForReview: (() => {
+      const cadence = (p as any).reviewCadenceDays;
+      if (!cadence || cadence <= 0) return false;
+      const lastIso = normalizeTimestamp((priority as any).lastReviewedAt ?? (priority as any).last_reviewed_at)
+        ?? normalizeTimestamp(priority.createdAt ?? priority.created_at);
+      if (!lastIso) return false;
+      const lastMs = new Date(lastIso).getTime();
+      if (!Number.isFinite(lastMs)) return false;
+      return Date.now() - lastMs > cadence * 24 * 60 * 60 * 1000;
+    })(),
   };
 }
 
@@ -584,6 +765,10 @@ async function enrichPriority(
 //                        &include_team_roles=true  (dept tab: include team's role priorities)
 router.get("/api/priorities", requireAuth, asyncHandler(async (req: Request, res: Response) => {
   const includeCancelled = req.query.include_cancelled === "true";
+  // Archived (soft-deleted) priorities are hidden by default. Only
+  // priority admins may opt in via include_archived=true.
+  const callerRole = getEffectiveUser(req)?.role;
+  const includeArchived = req.query.include_archived === "true" && isPriorityAdminRole(callerRole);
   const rawScope = typeof req.query.scope === "string" ? req.query.scope : undefined;
   const scopeFilter: PriorityScope | null =
     rawScope && PRIORITY_SCOPES.includes(rawScope as PriorityScope)
@@ -603,6 +788,12 @@ router.get("/api/priorities", requireAuth, asyncHandler(async (req: Request, res
     console.error("[Priorities] DB query failed:", dbErr.message);
     const raw: any = await db.execute(sql`SELECT * FROM mytool_company_priorities ORDER BY id`);
     allPriorities = raw.rows || raw || [];
+  }
+
+  // Hide soft-deleted (archived) priorities unless explicitly requested.
+  // (normalizeTimestamp handles better-sqlite3's Invalid-Date object.)
+  if (!includeArchived) {
+    allPriorities = allPriorities.filter((p: any) => normalizeTimestamp(p.deletedAt ?? p.deleted_at) == null);
   }
 
   // Filter out cancelled unless requested
@@ -780,6 +971,10 @@ router.get("/api/priorities/my-work", requireAuth, requirePermission("company_pr
     priorities = raw.rows || raw || [];
   }
   priorities = priorities.filter((p: any) => {
+    // Archived priorities never appear in My Work, even for admins. The
+    // admin's archive view lives behind include_archived=true on the
+    // list endpoint, not the user's daily feed.
+    if (normalizeTimestamp(p.deletedAt ?? p.deleted_at) != null) return false;
     const owner = p.ownerUserId ?? p.owner_user_id ?? null;
     const assigned = p.assignedUserId ?? p.assigned_user_id ?? null;
     if (owner !== userId && assigned !== userId) return false;
@@ -837,13 +1032,25 @@ router.get("/api/priorities/my-work", requireAuth, requirePermission("company_pr
     if (wi && !taskMap.has(wi.id)) taskMap.set(wi.id, wi);
   }
 
-  // 3) Suppress work items already linked to a priority (any priority,
-  //    not just the caller's). The user only wants to see a task once.
+  // 3) Suppress work items the CALLER has already promoted into their own
+  //    priority list. Per-user scoping: if another user promoted the same
+  //    shared task, the caller still sees it in their tasks pane until
+  //    they promote it themselves. This matches the per-user idempotency
+  //    in POST /api/priorities/from-task/:workItemId.
   const linkedIds = new Set<number>();
-  const allWithLinks = await db
+  const ownLinks = await db
     .select({ linkedTaskId: mytoolCompanyPriorities.linkedTaskId })
-    .from(mytoolCompanyPriorities);
-  for (const row of allWithLinks) {
+    .from(mytoolCompanyPriorities)
+    .where(
+      and(
+        or(
+          eq(mytoolCompanyPriorities.ownerUserId, userId),
+          eq(mytoolCompanyPriorities.assignedUserId, userId),
+        ),
+        isNotNull(mytoolCompanyPriorities.linkedTaskId),
+      ),
+    );
+  for (const row of ownLinks) {
     if (typeof row.linkedTaskId === "number") linkedIds.add(row.linkedTaskId);
   }
 
@@ -1028,12 +1235,20 @@ router.post("/api/priorities/from-task/:workItemId", requireAuth, asyncHandler(a
     throw forbidden("You can only promote tasks you own or are assigned to.");
   }
 
-  // Idempotency — if a priority already exists for this linkedTaskId,
-  // return it untouched.
+  // Idempotency — per-user. A shared task can be promoted independently
+  // by each owner/assignee into THEIR OWN role priority. Idempotency
+  // therefore scopes on (linkedTaskId, ownerUserId): if the caller has
+  // already promoted this task, return that row; another user's promoted
+  // copy must not be returned to (or shared with) the caller.
   const [existing] = await db
     .select()
     .from(mytoolCompanyPriorities)
-    .where(eq(mytoolCompanyPriorities.linkedTaskId, workItemId))
+    .where(
+      and(
+        eq(mytoolCompanyPriorities.linkedTaskId, workItemId),
+        eq(mytoolCompanyPriorities.ownerUserId, userId),
+      ),
+    )
     .limit(1);
   if (existing) {
     const metrics = await getPriorityDerivedMetrics(existing.id);
@@ -1065,7 +1280,7 @@ router.post("/api/priorities/from-task/:workItemId", requireAuth, asyncHandler(a
       priorityId: created.id,
       actorUserId: userId,
       action: "created",
-      details: { source: "promoted_from_task", workItemId, taskTitle: task.title },
+      details: { source: "promoted_from_task", workItemId, taskTitle: task.title, ownerUserId: userId },
     });
   } catch (err) {
     console.warn("[Priorities] from-task: failed to record activity:", err);
@@ -1084,6 +1299,71 @@ router.get(
 );
 
 // ==================== GET /api/priorities/:id ====================
+// ==================== GET /api/priorities/search ====================
+//
+// MUST be registered before /api/priorities/:id, otherwise Express
+// parses "search" as a priority id and returns "Invalid priority id"
+// (the same trap that bit the progress-source-options route).
+//
+// Lightweight free-text search across title + description, filtered
+// to what the caller is allowed to see, ranked by title-startswith >
+// title-contains > description-contains > recency.
+router.get(
+  "/api/priorities/search",
+  requireAuth,
+  requirePermission("company_priorities", "view"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const user = getEffectiveUser(req)!;
+    const userDept = getDepartmentForRole(user.role);
+    const q = String(req.query.q ?? "").trim().toLowerCase();
+    if (q.length < 2) throw badRequest("Search query must be at least 2 characters");
+    const scope = typeof req.query.scope === "string" && PRIORITY_SCOPES.includes(req.query.scope as PriorityScope)
+      ? (req.query.scope as PriorityScope) : null;
+    const includeClosed = req.query.include_closed === "true";
+    const includeArchived = req.query.include_archived === "true" && isPriorityAdminRole(user.role);
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? "20"), 10) || 20, 1), 100);
+
+    let rows: any[] = await db.select().from(mytoolCompanyPriorities);
+    rows = rows.filter((p: any) => {
+      if (!includeArchived && normalizeTimestamp(p.deletedAt ?? p.deleted_at) != null) return false;
+      if (!includeClosed && isPriorityTerminalStatus(p.status)) return false;
+      if (scope && p.scope !== scope) return false;
+      if (!isPriorityAdminRole(user.role)) {
+        if (isDepartmentHeadRole(user.role)) {
+          if (p.scope === "company") return false;
+          if (p.scope === "department" && p.departmentKey && p.departmentKey !== userDept) return false;
+          if (p.scope === "role" && p.departmentKey && p.departmentKey !== userDept) return false;
+        } else {
+          if (p.scope === "company") return false;
+          if (p.scope === "department") return false;
+          if (p.scope === "role" && p.ownerUserId !== user.id && p.assignedUserId !== user.id) return false;
+        }
+      }
+      const title = String(p.title ?? "").toLowerCase();
+      const desc = String(p.description ?? "").toLowerCase();
+      return title.includes(q) || desc.includes(q);
+    });
+
+    rows.sort((a: any, b: any) => {
+      const aTitle = String(a.title ?? "").toLowerCase();
+      const bTitle = String(b.title ?? "").toLowerCase();
+      const aTitleStart = aTitle.startsWith(q) ? 0 : 1;
+      const bTitleStart = bTitle.startsWith(q) ? 0 : 1;
+      if (aTitleStart !== bTitleStart) return aTitleStart - bTitleStart;
+      const aHasTitle = aTitle.includes(q) ? 0 : 1;
+      const bHasTitle = bTitle.includes(q) ? 0 : 1;
+      if (aHasTitle !== bHasTitle) return aHasTitle - bHasTitle;
+      return (b.updatedAt?.getTime?.() ?? 0) - (a.updatedAt?.getTime?.() ?? 0);
+    });
+
+    const top = rows.slice(0, limit);
+    const allMetrics = await getAllPriorityDerivedMetrics();
+    const metricsMap = new Map(allMetrics.map((m: any) => [m.priority_id, m]));
+    const enriched = await Promise.all(top.map((p: any) => enrichPriority(p, metricsMap.get(p.id))));
+    res.json({ q, totalMatches: rows.length, returned: enriched.length, results: enriched });
+  }),
+);
+
 // Drill-down is now a rolled-up view: `linkedProjects` includes every project
 // linked to this priority OR any descendant, deduped. A `rolledUp` object
 // carries the aggregated financial / progress / blocker totals across the
@@ -1095,9 +1375,26 @@ router.get("/api/priorities/:id", requireAuth, asyncHandler(async (req: Request,
   if (priorityId === null) throw badRequest("Invalid priority id");
   const [priority] = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
   if (!priority) throw notFound("Priority");
+  // Archived priorities are 404 to non-admins. Admins can fetch via
+  // ?include_archived=true so the restore UI can read the row.
+  // (normalizeTimestamp handles better-sqlite3's "Invalid Date" oddity.)
+  if (normalizeTimestamp(priority.deletedAt) != null) {
+    const callerRole = getEffectiveUser(req)?.role;
+    const wantArchived = req.query.include_archived === "true" && isPriorityAdminRole(callerRole);
+    if (!wantArchived) throw notFound("Priority");
+  }
 
     const metrics = await getPriorityDerivedMetrics(priorityId);
-    const enriched = await enrichPriority(priority, metrics);
+    // Direct child count for the header badge ("3 sub-priorities") on the
+    // detail page. The list endpoint computes this in a single grouped
+    // query; here it's a one-row lookup against the same predicate (active
+    // children only — closed/complete children don't drive the badge).
+    const directChildren = await db
+      .select({ id: mytoolCompanyPriorities.id })
+      .from(mytoolCompanyPriorities)
+      .where(and(eq(mytoolCompanyPriorities.parentId, priorityId), activePriorityStatusCondition()));
+    const childCountMap = new Map<number, number>([[priorityId, directChildren.length]]);
+    const enriched = await enrichPriority(priority, metrics, undefined, undefined, childCountMap);
 
     const { descendantPriorityIds, directProjectIds, rolledUpProjectIds } = await resolveRolledUpScope(priorityId);
 
@@ -1325,6 +1622,7 @@ router.post(
       parentId: effectiveParentId,
       departmentKey: effectiveDepartmentKey,
       assignedUserId: effectiveAssignedUserId,
+      reviewCadenceDays: (body as any).review_cadence_days ?? null,
       createdAt: now,
       updatedAt: now,
     }).returning();
@@ -1458,40 +1756,95 @@ router.put(
     if (parent_id !== undefined) updates.parentId = parent_id;
     if (department_key !== undefined) updates.departmentKey = department_key;
     if (assigned_user_id !== undefined) updates.assignedUserId = assigned_user_id;
+    const review_cadence_days = (body as any).review_cadence_days;
+    if (review_cadence_days !== undefined) updates.reviewCadenceDays = review_cadence_days;
     const progress_source_type = (body as any).progress_source_type;
     const progress_source_ref = (body as any).progress_source_ref;
     if (progress_source_type !== undefined) updates.progressSourceType = progress_source_type;
     if (progress_source_ref !== undefined) updates.progressSourceRef = progress_source_ref;
 
-    const [updated] = await db.update(mytoolCompanyPriorities)
-      .set(updates)
-      .where(eq(mytoolCompanyPriorities.id, priorityId))
-      .returning();
+    // Atomicity: priority row update + project-link replacement must commit
+    // or roll back together. Without this, a failure halfway through the
+    // link replacement leaves the row updated but with partial links.
+    // Activity log writes are deferred until AFTER commit so we never
+    // emit "project_linked" events for a transaction that rolled back.
+    const pendingActivities: Array<{
+      action: PriorityActivityAction;
+      fromValue?: string | number | null;
+      toValue?: string | number | null;
+    }> = [];
 
-    // Record one activity event per meaningful field change.
-    const activities = computeUpdateActivities({
-      before: {
-        status: existing[0].status,
-        severity: existing[0].severity,
-        manualHealth: existing[0].manualHealth,
-        manualProgress: existing[0].manualProgress,
-        dueDate: existing[0].dueDate,
-        assignedUserId: existing[0].assignedUserId,
-        ownerUserId: existing[0].ownerUserId,
-        accountableExecId: existing[0].accountableExecId,
-      },
-      after: {
-        status: updated.status,
-        severity: updated.severity,
-        manualHealth: updated.manualHealth,
-        manualProgress: updated.manualProgress,
-        dueDate: updated.dueDate,
-        assignedUserId: updated.assignedUserId,
-        ownerUserId: updated.ownerUserId,
-        accountableExecId: updated.accountableExecId,
-      },
+    const updated = await runInTransaction(async (tx) => {
+      const [row] = await tx.update(mytoolCompanyPriorities)
+        .set(updates)
+        .where(eq(mytoolCompanyPriorities.id, priorityId))
+        .returning();
+
+      // Field-change events — computed pure, then queued for post-commit.
+      const activities = computeUpdateActivities({
+        before: {
+          status: existing[0].status,
+          severity: existing[0].severity,
+          manualHealth: existing[0].manualHealth,
+          manualProgress: existing[0].manualProgress,
+          dueDate: existing[0].dueDate,
+          assignedUserId: existing[0].assignedUserId,
+          ownerUserId: existing[0].ownerUserId,
+          accountableExecId: existing[0].accountableExecId,
+        },
+        after: {
+          status: row.status,
+          severity: row.severity,
+          manualHealth: row.manualHealth,
+          manualProgress: row.manualProgress,
+          dueDate: row.dueDate,
+          assignedUserId: row.assignedUserId,
+          ownerUserId: row.ownerUserId,
+          accountableExecId: row.accountableExecId,
+        },
+      });
+      for (const ev of activities) {
+        pendingActivities.push({ action: ev.action, fromValue: ev.fromValue, toValue: ev.toValue });
+      }
+
+      if (project_ids !== undefined) {
+        const currentLinks = await tx.select().from(priorityProjects)
+          .where(eq(priorityProjects.priorityId, priorityId));
+        const currentProjectIds = new Set(currentLinks.map((l: typeof currentLinks[number]) => l.projectId));
+        const newProjectIds = new Set(project_ids as number[]);
+
+        const toDelete = currentLinks.filter((l: typeof currentLinks[number]) => !newProjectIds.has(l.projectId));
+        if (toDelete.length > 0) {
+          await tx.delete(priorityProjects).where(
+            inArray(priorityProjects.id, toDelete.map((l: typeof currentLinks[number]) => l.id)),
+          );
+          for (const link of toDelete) {
+            pendingActivities.push({ action: "project_unlinked", toValue: String(link.projectId) });
+          }
+        }
+
+        const toInsert = (project_ids as number[]).filter(pid => !currentProjectIds.has(pid));
+        if (toInsert.length > 0) {
+          await tx.insert(priorityProjects).values(
+            toInsert.map(pid => ({
+              priorityId,
+              projectId: pid,
+              linkedBy: user.id,
+            }))
+          );
+          for (const pid of toInsert) {
+            pendingActivities.push({ action: "project_linked", toValue: String(pid) });
+          }
+        }
+      }
+
+      return row;
     });
-    for (const ev of activities) {
+
+    // Fire activities post-commit so a rolled-back transaction never leaves
+    // orphan audit entries. recordActivity already swallows its own errors
+    // (see priority-activity-log.ts), so audit failure cannot fail the response.
+    for (const ev of pendingActivities) {
       await recordActivity({
         priorityId,
         actorUserId: user.id,
@@ -1499,43 +1852,6 @@ router.put(
         fromValue: ev.fromValue,
         toValue: ev.toValue,
       });
-    }
-
-    if (project_ids !== undefined) {
-      const currentLinks = await db.select().from(priorityProjects)
-        .where(eq(priorityProjects.priorityId, priorityId));
-      const currentProjectIds = new Set(currentLinks.map((l: typeof currentLinks[number]) => l.projectId));
-      const newProjectIds = new Set(project_ids as number[]);
-
-      const toDelete = currentLinks.filter((l: typeof currentLinks[number]) => !newProjectIds.has(l.projectId));
-      for (const link of toDelete) {
-        await db.delete(priorityProjects).where(eq(priorityProjects.id, link.id));
-        await recordActivity({
-          priorityId,
-          actorUserId: user.id,
-          action: "project_unlinked",
-          toValue: String(link.projectId),
-        });
-      }
-
-      const toInsert = (project_ids as number[]).filter(pid => !currentProjectIds.has(pid));
-      if (toInsert.length > 0) {
-        await db.insert(priorityProjects).values(
-          toInsert.map(pid => ({
-            priorityId,
-            projectId: pid,
-            linkedBy: user.id,
-          }))
-        );
-        for (const pid of toInsert) {
-          await recordActivity({
-            priorityId,
-            actorUserId: user.id,
-            action: "project_linked",
-            toValue: String(pid),
-          });
-        }
-      }
     }
 
     const metrics = await getPriorityDerivedMetrics(priorityId);
@@ -1602,6 +1918,13 @@ async function getPriorityProgressSourceOptions(req: Request, res: Response) {
 }
 
 // ==================== DELETE /api/priorities/:id ====================
+// DELETE = archive (soft-delete). Was previously aliased to "set
+// status=closed", but that's semantically different — a closed priority
+// is still visible on the include-closed view and still relevant for
+// audit. Archive removes the row from every default surface but keeps
+// it restorable. Children stay live with their parent still recorded;
+// archiving a parent with active children is rejected (409) so the
+// caller has to deal with descendants intentionally.
 router.delete(
   "/api/priorities/:id",
   requireAuth,
@@ -1611,20 +1934,693 @@ router.delete(
     if (priorityId === null) throw badRequest("Invalid priority id");
     const existing = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
     if (existing.length === 0) throw notFound("Priority");
+    if (normalizeTimestamp(existing[0].deletedAt) != null) throw badRequest("Priority is already archived");
 
-    // Soft delete: set status to 'closed'
+    const liveChildren = await db
+      .select({ id: mytoolCompanyPriorities.id })
+      .from(mytoolCompanyPriorities)
+      .where(
+        and(
+          eq(mytoolCompanyPriorities.parentId, priorityId),
+          isNull(mytoolCompanyPriorities.deletedAt),
+          activePriorityStatusCondition(),
+        ),
+      );
+    if (liveChildren.length > 0) {
+      throw new ApiError(409, "HAS_ACTIVE_CHILDREN",
+        "Cannot archive a priority with active sub-priorities. Close or archive each child first.",
+        { childCount: liveChildren.length, childIds: liveChildren.map((c: { id: number }) => c.id) });
+    }
+
+    const now = new Date();
     await db.update(mytoolCompanyPriorities)
-      .set({ status: "closed", updatedAt: new Date() })
+      .set({ deletedAt: now.toISOString(), updatedAt: now })
       .where(eq(mytoolCompanyPriorities.id, priorityId));
 
     await recordActivity({
       priorityId,
       actorUserId: getEffectiveUser(req)?.id,
-      action: "closed",
-      fromValue: existing[0].status,
-      toValue: "closed",
+      action: "updated",
+      fromValue: null,
+      toValue: "archived",
+      details: { field: "deletedAt", archived: true },
     });
 
+    await fanoutPriorityNotifications({
+      priorityId,
+      priority: existing[0],
+      actorUserId: getEffectiveUser(req)?.id,
+      eventType: "priority_archived",
+      title: `Archived: ${existing[0].title}`,
+      body: "Hidden from default views. Admins can restore it from the archived filter.",
+    });
+
+    res.status(204).send();
+  }),
+);
+
+// POST /api/priorities/:id/restore — undo an archive. Admin-only.
+// Idempotent: restoring an already-live priority is a no-op 200.
+router.post(
+  "/api/priorities/:id/restore",
+  requireAuth,
+  requireCooOnly,
+  asyncHandler(async (req: Request, res: Response) => {
+    const priorityId = parseIdParam(req.params.id);
+    if (priorityId === null) throw badRequest("Invalid priority id");
+    const existing = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
+    if (existing.length === 0) throw notFound("Priority");
+
+    if (normalizeTimestamp(existing[0].deletedAt) != null) {
+      const now = new Date();
+      await db.update(mytoolCompanyPriorities)
+        .set({ deletedAt: null, updatedAt: now })
+        .where(eq(mytoolCompanyPriorities.id, priorityId));
+
+      await recordActivity({
+        priorityId,
+        actorUserId: getEffectiveUser(req)?.id,
+        action: "updated",
+        fromValue: "archived",
+        toValue: null,
+        details: { field: "deletedAt", restored: true },
+      });
+      await fanoutPriorityNotifications({
+        priorityId,
+        priority: existing[0],
+        actorUserId: getEffectiveUser(req)?.id,
+        eventType: "priority_restored",
+        title: `Restored: ${existing[0].title}`,
+        body: "Back in default views.",
+      });
+    }
+
+    const [updated] = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
+    const metrics = await getPriorityDerivedMetrics(priorityId);
+    const enriched = await enrichPriority(updated, metrics);
+    res.json(enriched);
+  }),
+);
+
+// ==================== GET /api/priorities/search ====================
+//
+// Lightweight free-text search across title + description. Server-side
+// filtering of an in-memory result set (priorities is a small table —
+// even at the company scale we're talking <10k rows) so we don't need
+// pg-trgm or a separate search index. Respects ownership / scope
+// visibility via the same filter the list endpoint uses, and excludes
+// archived rows unless include_archived=true (admin only).
+//
+// Query params:
+//   q              — required, ≥2 chars. Matches title OR description
+//                    case-insensitively, substring.
+//   scope          — optional, limit to company|department|role.
+//   include_closed — optional, default false. Set to surface
+//                    closed/complete priorities in the result.
+//   include_archived — optional, admin-only.
+//   limit          — optional, default 20, max 100.
+// ==================== BULK ENDPOINTS ====================
+//
+// Single round-trip versions of "loop client-side over each id" patterns
+// the priorities page used to do. Each endpoint:
+//   - validates the payload via Zod (max 100 ids per call)
+//   - loads every referenced priority once and authorises per-id
+//   - runs all writes inside runInTransaction so partial failure rolls
+//     back the whole batch
+//   - returns 200 with a per-id outcome map so the client can show
+//     per-row toasts ("4 closed, 1 skipped because …")
+//
+// Tradeoff vs returning 207-multi-status: keeping a single 200 makes
+// the client mutation trivially success/error; per-id errors are
+// included in the body. If anything in the batch hits an exception
+// outside the per-id loop (e.g. DB unreachable), we fail the whole
+// transaction and bubble up as a normal 500.
+type BulkOutcome = { id: number; ok: boolean; error?: string };
+
+router.post(
+  "/api/priorities/bulk/close",
+  requireAuth,
+  requirePermission("company_priorities", "view"),
+  validateBody(bulkCloseSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const user = getEffectiveUser(req)!;
+    const { ids, status } = req.body as z.infer<typeof bulkCloseSchema>;
+    const userDept = getDepartmentForRole(user.role);
+    const now = new Date();
+
+    const rows = await db.select().from(mytoolCompanyPriorities)
+      .where(inArray(mytoolCompanyPriorities.id, ids));
+    const byId = new Map<number, any>(rows.map((r: any) => [r.id, r]));
+
+    const outcomes: BulkOutcome[] = [];
+    const okIds: number[] = [];
+
+    for (const id of ids) {
+      const row = byId.get(id);
+      if (!row) { outcomes.push({ id, ok: false, error: "not found" }); continue; }
+      if (normalizeTimestamp(row.deletedAt) != null) {
+        outcomes.push({ id, ok: false, error: "archived" }); continue;
+      }
+      const allowed = canPriorityRoleEditPriority(
+        { role: user.role, userId: user.id, departmentKey: userDept ?? null },
+        {
+          scope: (row.scope ?? "company") as PriorityScope,
+          departmentKey: row.departmentKey ?? null,
+          ownerUserId: row.ownerUserId ?? null,
+          assignedUserId: row.assignedUserId ?? null,
+        },
+      );
+      if (!allowed) { outcomes.push({ id, ok: false, error: "forbidden" }); continue; }
+      if (isPriorityTerminalStatus(row.status)) {
+        outcomes.push({ id, ok: false, error: "already terminal" }); continue;
+      }
+      okIds.push(id);
+    }
+
+    if (okIds.length > 0) {
+      await runInTransaction(async (tx) => {
+        await tx.update(mytoolCompanyPriorities)
+          .set({ status, updatedAt: now })
+          .where(inArray(mytoolCompanyPriorities.id, okIds));
+      });
+      for (const id of okIds) {
+        outcomes.push({ id, ok: true });
+        const row = byId.get(id);
+        await recordActivity({
+          priorityId: id,
+          actorUserId: user.id,
+          action: "status_changed",
+          fromValue: row?.status ?? null,
+          toValue: status,
+          details: { source: "bulk" },
+        });
+        await fanoutPriorityNotifications({
+          priorityId: id,
+          priority: row,
+          actorUserId: user.id,
+          eventType: status === "complete" ? "priority_completed" : "priority_closed",
+          title: `${status === "complete" ? "Completed" : "Closed"}: ${row.title}`,
+        });
+      }
+    }
+
+    outcomes.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+    res.json({ processed: okIds.length, total: ids.length, results: outcomes });
+  }),
+);
+
+router.post(
+  "/api/priorities/bulk/escalate",
+  requireAuth,
+  requirePermission("company_priorities", "view"),
+  validateBody(bulkEscalateSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const user = getEffectiveUser(req)!;
+    const { ids, reason, note } = req.body as z.infer<typeof bulkEscalateSchema>;
+    const userDept = getDepartmentForRole(user.role);
+    const now = new Date();
+
+    const rows = await db.select().from(mytoolCompanyPriorities)
+      .where(inArray(mytoolCompanyPriorities.id, ids));
+    const byId = new Map<number, any>(rows.map((r: any) => [r.id, r]));
+
+    const outcomes: BulkOutcome[] = [];
+    const pending: Array<{ id: number; row: any; patch: ReturnType<typeof computeEscalatePatch> }> = [];
+
+    for (const id of ids) {
+      const row = byId.get(id);
+      if (!row) { outcomes.push({ id, ok: false, error: "not found" }); continue; }
+      if (normalizeTimestamp(row.deletedAt) != null) {
+        outcomes.push({ id, ok: false, error: "archived" }); continue;
+      }
+      const allowed = canPriorityRoleEscalatePriority(
+        { role: user.role, userId: user.id, departmentKey: userDept ?? null },
+        {
+          scope: (row.scope ?? "company") as PriorityScope,
+          departmentKey: row.departmentKey ?? null,
+          ownerUserId: row.ownerUserId ?? null,
+          assignedUserId: row.assignedUserId ?? null,
+        },
+      );
+      if (!allowed) { outcomes.push({ id, ok: false, error: "forbidden" }); continue; }
+      const sourceDept = row.departmentKey ?? (row.scope === "role" ? (userDept ?? null) : null);
+      const patch = computeEscalatePatch(
+        { scope: (row.scope ?? "company") as PriorityScope, departmentKey: sourceDept },
+        reason as EscalationReason,
+      );
+      if (!patch) {
+        outcomes.push({ id, ok: false, error: "already at company scope" }); continue;
+      }
+      pending.push({ id, row, patch });
+    }
+
+    if (pending.length > 0) {
+      await runInTransaction(async (tx) => {
+        for (const { id, patch } of pending) {
+          await tx.update(mytoolCompanyPriorities)
+            .set({
+              scope: patch!.scope,
+              departmentKey: patch!.departmentKey,
+              escalated: true,
+              escalatedAt: now,
+              escalationReason: patch!.escalationReason,
+              updatedAt: now,
+            })
+            .where(eq(mytoolCompanyPriorities.id, id));
+        }
+      });
+      for (const { id, row, patch } of pending) {
+        outcomes.push({ id, ok: true });
+        await recordActivity({
+          priorityId: id,
+          actorUserId: user.id,
+          action: "escalated",
+          fromValue: row.scope,
+          toValue: patch!.scope,
+          details: { reason: patch!.escalationReason, source: "bulk", ...(note ? { note } : {}) },
+        });
+        await fanoutPriorityNotifications({
+          priorityId: id,
+          priority: row,
+          actorUserId: user.id,
+          eventType: "priority_escalated",
+          title: `Escalated: ${row.title}`,
+          body: `Moved from ${row.scope} to ${patch!.scope}${note ? ` — ${note}` : ""}`,
+        });
+      }
+    }
+
+    outcomes.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+    res.json({ processed: pending.length, total: ids.length, results: outcomes });
+  }),
+);
+
+router.post(
+  "/api/priorities/bulk/assign",
+  requireAuth,
+  requirePermission("company_priorities", "view"),
+  validateBody(bulkAssignSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const user = getEffectiveUser(req)!;
+    const { ids, assigned_user_id } = req.body as z.infer<typeof bulkAssignSchema>;
+    const userDept = getDepartmentForRole(user.role);
+    const now = new Date();
+
+    if (assigned_user_id != null) {
+      const assignee = await getUserById(assigned_user_id);
+      if (!assignee) throw badRequest("assigned_user_id not found");
+    }
+
+    const rows = await db.select().from(mytoolCompanyPriorities)
+      .where(inArray(mytoolCompanyPriorities.id, ids));
+    const byId = new Map<number, any>(rows.map((r: any) => [r.id, r]));
+
+    const outcomes: BulkOutcome[] = [];
+    const okIds: number[] = [];
+
+    for (const id of ids) {
+      const row = byId.get(id);
+      if (!row) { outcomes.push({ id, ok: false, error: "not found" }); continue; }
+      if (normalizeTimestamp(row.deletedAt) != null) {
+        outcomes.push({ id, ok: false, error: "archived" }); continue;
+      }
+      const allowed = canPriorityRoleEditPriority(
+        { role: user.role, userId: user.id, departmentKey: userDept ?? null },
+        {
+          scope: (row.scope ?? "company") as PriorityScope,
+          departmentKey: row.departmentKey ?? null,
+          ownerUserId: row.ownerUserId ?? null,
+          assignedUserId: row.assignedUserId ?? null,
+        },
+      );
+      if (!allowed) { outcomes.push({ id, ok: false, error: "forbidden" }); continue; }
+      okIds.push(id);
+    }
+
+    if (okIds.length > 0) {
+      await runInTransaction(async (tx) => {
+        await tx.update(mytoolCompanyPriorities)
+          .set({ assignedUserId: assigned_user_id, updatedAt: now })
+          .where(inArray(mytoolCompanyPriorities.id, okIds));
+      });
+      for (const id of okIds) {
+        outcomes.push({ id, ok: true });
+        const row = byId.get(id);
+        await recordActivity({
+          priorityId: id,
+          actorUserId: user.id,
+          action: assigned_user_id == null ? "unassigned" : (row?.assignedUserId ? "reassigned" : "assigned"),
+          fromValue: row?.assignedUserId != null ? String(row.assignedUserId) : null,
+          toValue: assigned_user_id != null ? String(assigned_user_id) : null,
+          details: { source: "bulk" },
+        });
+      }
+    }
+
+    outcomes.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+    res.json({ processed: okIds.length, total: ids.length, results: outcomes });
+  }),
+);
+
+// ==================== PRIORITY TEMPLATES ====================
+//
+// Reusable priority shapes. Admin or dept-head defines a template;
+// any user the template targets can instantiate it with one POST.
+// Templates are soft-deleted (deleted_at) so existing priorities
+// referencing them stay coherent.
+
+const templateUpsertSchema = z.object({
+  name: z.string().min(1).max(120),
+  description: z.string().max(2000).nullable().optional(),
+  title_template: z.string().min(1).max(200),
+  body_template: z.string().max(5000).nullable().optional(),
+  scope_default: z.enum(["company", "department", "role"]).default("role"),
+  severity_default: z.enum(["critical", "important", "normal"]).default("normal"),
+  horizon_default: z.enum(["day", "week", "month", "quarter", "year"]).default("week"),
+  department_key: z.string().max(120).nullable().optional(),
+  target_outcome: z.string().max(2000).nullable().optional(),
+  definition_of_done: z.string().max(2000).nullable().optional(),
+  next_action: z.string().max(2000).nullable().optional(),
+  owner_role: z.string().max(120).nullable().optional(),
+});
+
+// GET — anyone authenticated. Dept heads see their own dept's
+// templates + any template with no department pinned. Regular users
+// see only role-scope templates (the only scope they can instantiate).
+router.get(
+  "/api/priority-templates",
+  requireAuth,
+  requirePermission("company_priorities", "view"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const user = getEffectiveUser(req)!;
+    const userDept = getDepartmentForRole(user.role);
+    const rows = await db
+      .select()
+      .from(priorityTemplates)
+      .where(isNull(priorityTemplates.deletedAt));
+    const visible = rows.filter((t: any) => {
+      if (isPriorityAdminRole(user.role)) return true;
+      if (isDepartmentHeadRole(user.role)) {
+        return !t.departmentKey || t.departmentKey === userDept;
+      }
+      // Regular users: role-scope templates only, no dept lock or their dept.
+      if (t.scopeDefault !== "role") return false;
+      return !t.departmentKey || t.departmentKey === userDept;
+    });
+    res.json(visible);
+  }),
+);
+
+// POST — admin or dept head (dept head limited to their own dept).
+router.post(
+  "/api/priority-templates",
+  requireAuth,
+  requirePriorityCreator,
+  validateBody(templateUpsertSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const user = getEffectiveUser(req)!;
+    const userDept = getDepartmentForRole(user.role);
+    const body = req.body as z.infer<typeof templateUpsertSchema>;
+
+    if (!isPriorityAdminRole(user.role)) {
+      // Dept head: scope must be role|department and dept must be theirs
+      if (body.scope_default === "company") {
+        throw badRequest("Only priority admins can create company-scope templates");
+      }
+      if (body.department_key && body.department_key !== userDept) {
+        throw badRequest("You can only create templates for your own department");
+      }
+      if (!body.department_key) body.department_key = userDept ?? null;
+    }
+
+    const [row] = await db.insert(priorityTemplates).values({
+      name: body.name,
+      description: body.description ?? null,
+      titleTemplate: body.title_template,
+      bodyTemplate: body.body_template ?? null,
+      scopeDefault: body.scope_default,
+      severityDefault: body.severity_default,
+      horizonDefault: body.horizon_default,
+      departmentKey: body.department_key ?? null,
+      targetOutcome: body.target_outcome ?? null,
+      definitionOfDone: body.definition_of_done ?? null,
+      nextAction: body.next_action ?? null,
+      ownerRole: body.owner_role ?? null,
+      createdByUserId: user.id,
+    }).returning();
+    res.status(201).json(row);
+  }),
+);
+
+// PUT — same gate as POST. Patches the template in place.
+router.put(
+  "/api/priority-templates/:id",
+  requireAuth,
+  requirePriorityCreator,
+  validateBody(templateUpsertSchema.partial()),
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = parseIdParam(req.params.id);
+    if (id === null) throw badRequest("Invalid template id");
+    const user = getEffectiveUser(req)!;
+    const userDept = getDepartmentForRole(user.role);
+    const body = req.body as Partial<z.infer<typeof templateUpsertSchema>>;
+
+    const [existing] = await db.select().from(priorityTemplates)
+      .where(eq(priorityTemplates.id, id));
+    if (!existing || existing.deletedAt) throw notFound("Template");
+    if (!isPriorityAdminRole(user.role)) {
+      if (existing.departmentKey && existing.departmentKey !== userDept) {
+        throw forbidden("Not your department's template");
+      }
+    }
+
+    const updates: Record<string, any> = { updatedAt: new Date() };
+    if (body.name !== undefined) updates.name = body.name;
+    if (body.description !== undefined) updates.description = body.description;
+    if (body.title_template !== undefined) updates.titleTemplate = body.title_template;
+    if (body.body_template !== undefined) updates.bodyTemplate = body.body_template;
+    if (body.scope_default !== undefined) updates.scopeDefault = body.scope_default;
+    if (body.severity_default !== undefined) updates.severityDefault = body.severity_default;
+    if (body.horizon_default !== undefined) updates.horizonDefault = body.horizon_default;
+    if (body.department_key !== undefined) updates.departmentKey = body.department_key;
+    if (body.target_outcome !== undefined) updates.targetOutcome = body.target_outcome;
+    if (body.definition_of_done !== undefined) updates.definitionOfDone = body.definition_of_done;
+    if (body.next_action !== undefined) updates.nextAction = body.next_action;
+    if (body.owner_role !== undefined) updates.ownerRole = body.owner_role;
+
+    const [row] = await db.update(priorityTemplates)
+      .set(updates)
+      .where(eq(priorityTemplates.id, id))
+      .returning();
+    res.json(row);
+  }),
+);
+
+// DELETE — soft-delete. Same gate.
+router.delete(
+  "/api/priority-templates/:id",
+  requireAuth,
+  requirePriorityCreator,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = parseIdParam(req.params.id);
+    if (id === null) throw badRequest("Invalid template id");
+    const user = getEffectiveUser(req)!;
+    const userDept = getDepartmentForRole(user.role);
+    const [existing] = await db.select().from(priorityTemplates)
+      .where(eq(priorityTemplates.id, id));
+    if (!existing || existing.deletedAt) throw notFound("Template");
+    if (!isPriorityAdminRole(user.role) && existing.departmentKey && existing.departmentKey !== userDept) {
+      throw forbidden("Not your department's template");
+    }
+    await db.update(priorityTemplates)
+      .set({ deletedAt: new Date().toISOString(), updatedAt: new Date() })
+      .where(eq(priorityTemplates.id, id));
+    res.status(204).send();
+  }),
+);
+
+// POST /api/priority-templates/:id/instantiate
+// Creates a real priority from this template's defaults. Caller can
+// override title via body.title_override (e.g. add date suffix for
+// weekly standup templates). Server forces caller as owner/assignee
+// for role-scope instantiation per the existing create rules.
+const instantiateSchema = z.object({
+  title_override: z.string().min(1).max(200).optional(),
+  due_date: z.string().max(50).optional(),
+});
+router.post(
+  "/api/priority-templates/:id/instantiate",
+  requireAuth,
+  requirePermission("company_priorities", "view"),
+  validateBody(instantiateSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = parseIdParam(req.params.id);
+    if (id === null) throw badRequest("Invalid template id");
+    const user = getEffectiveUser(req)!;
+    const userDept = getDepartmentForRole(user.role);
+    const body = req.body as z.infer<typeof instantiateSchema>;
+
+    const [tpl] = await db.select().from(priorityTemplates)
+      .where(eq(priorityTemplates.id, id));
+    if (!tpl || tpl.deletedAt) throw notFound("Template");
+
+    const scope = tpl.scopeDefault as PriorityScope;
+    // Same authorisation rules as POST /api/priorities
+    if (!isPriorityAdminRole(user.role) && !isDepartmentHeadRole(user.role)) {
+      if (scope !== "role") {
+        throw forbidden("You can only instantiate role-scope templates");
+      }
+    }
+    if (!isPriorityAdminRole(user.role) && isDepartmentHeadRole(user.role)) {
+      if (scope === "company") throw forbidden("Only admins can instantiate company-scope templates");
+    }
+
+    const now = new Date();
+    const ownerUserId = isPriorityAdminRole(user.role) || isDepartmentHeadRole(user.role) ? null : user.id;
+    const assignedUserId = ownerUserId;
+    const departmentKey = tpl.departmentKey ?? userDept ?? null;
+
+    const [created] = await db.insert(mytoolCompanyPriorities).values({
+      title: body.title_override ?? tpl.titleTemplate,
+      description: tpl.bodyTemplate ?? null,
+      severity: (tpl.severityDefault as any),
+      horizon: (tpl.horizonDefault as any),
+      scope,
+      departmentKey,
+      ownerUserId,
+      assignedUserId,
+      ownerRole: tpl.ownerRole ?? null,
+      targetOutcome: tpl.targetOutcome ?? null,
+      definitionOfDone: tpl.definitionOfDone ?? null,
+      nextAction: tpl.nextAction ?? null,
+      dueDate: body.due_date ?? null,
+      createdAt: now,
+      updatedAt: now,
+    }).returning();
+
+    await recordActivity({
+      priorityId: created.id,
+      actorUserId: user.id,
+      action: "created",
+      details: { source: "template", templateId: tpl.id, templateName: tpl.name },
+    });
+
+    const metrics = await getPriorityDerivedMetrics(created.id);
+    const enriched = await enrichPriority(created, metrics);
+    res.status(201).json(enriched);
+  }),
+);
+
+// ==================== PRIORITY SAVED VIEWS ====================
+//
+// Per-user named filter combinations. Scoped to the caller — no
+// sharing. Soft-delete not required (small table, just hard-delete on
+// remove).
+
+const savedViewUpsertSchema = z.object({
+  name: z.string().min(1).max(80),
+  active_tab: z.enum(["my", "department", "company"]).default("my"),
+  scope: z.enum(["company", "department", "role"]).nullable().optional(),
+  department_key: z.string().max(120).nullable().optional(),
+  level_filter: z.string().max(40).nullable().optional(),
+  health_filter: z.string().max(40).nullable().optional(),
+  search_query: z.string().max(200).nullable().optional(),
+  show_closed: z.boolean().default(false),
+  show_archived: z.boolean().default(false),
+  sort_order: z.number().int().nullable().optional(),
+});
+
+router.get(
+  "/api/priority-saved-views",
+  requireAuth,
+  requirePermission("company_priorities", "view"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const user = getEffectiveUser(req)!;
+    const rows = await db
+      .select()
+      .from(prioritySavedViews)
+      .where(eq(prioritySavedViews.userId, user.id))
+      .orderBy(asc(prioritySavedViews.sortOrder), asc(prioritySavedViews.id));
+    res.json(rows);
+  }),
+);
+
+router.post(
+  "/api/priority-saved-views",
+  requireAuth,
+  requirePermission("company_priorities", "view"),
+  validateBody(savedViewUpsertSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const user = getEffectiveUser(req)!;
+    const body = req.body as z.infer<typeof savedViewUpsertSchema>;
+    try {
+      const [row] = await db.insert(prioritySavedViews).values({
+        userId: user.id,
+        name: body.name,
+        activeTab: body.active_tab,
+        scope: body.scope ?? null,
+        departmentKey: body.department_key ?? null,
+        levelFilter: body.level_filter ?? null,
+        healthFilter: body.health_filter ?? null,
+        searchQuery: body.search_query ?? null,
+        showClosed: !!body.show_closed,
+        showArchived: !!body.show_archived,
+        sortOrder: body.sort_order ?? 0,
+      }).returning();
+      res.status(201).json(row);
+    } catch (err: any) {
+      if (/unique/i.test(err?.message ?? "") || /UNIQUE constraint/i.test(err?.message ?? "")) {
+        throw new ApiError(409, "DUPLICATE_NAME", "You already have a saved view with that name");
+      }
+      throw err;
+    }
+  }),
+);
+
+router.put(
+  "/api/priority-saved-views/:id",
+  requireAuth,
+  requirePermission("company_priorities", "view"),
+  validateBody(savedViewUpsertSchema.partial()),
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = parseIdParam(req.params.id);
+    if (id === null) throw badRequest("Invalid view id");
+    const user = getEffectiveUser(req)!;
+    const [existing] = await db.select().from(prioritySavedViews)
+      .where(and(eq(prioritySavedViews.id, id), eq(prioritySavedViews.userId, user.id)));
+    if (!existing) throw notFound("Saved view");
+    const body = req.body as Partial<z.infer<typeof savedViewUpsertSchema>>;
+    const updates: Record<string, any> = { updatedAt: new Date() };
+    if (body.name !== undefined) updates.name = body.name;
+    if (body.active_tab !== undefined) updates.activeTab = body.active_tab;
+    if (body.scope !== undefined) updates.scope = body.scope;
+    if (body.department_key !== undefined) updates.departmentKey = body.department_key;
+    if (body.level_filter !== undefined) updates.levelFilter = body.level_filter;
+    if (body.health_filter !== undefined) updates.healthFilter = body.health_filter;
+    if (body.search_query !== undefined) updates.searchQuery = body.search_query;
+    if (body.show_closed !== undefined) updates.showClosed = !!body.show_closed;
+    if (body.show_archived !== undefined) updates.showArchived = !!body.show_archived;
+    if (body.sort_order !== undefined) updates.sortOrder = body.sort_order;
+    const [row] = await db.update(prioritySavedViews)
+      .set(updates)
+      .where(eq(prioritySavedViews.id, id))
+      .returning();
+    res.json(row);
+  }),
+);
+
+router.delete(
+  "/api/priority-saved-views/:id",
+  requireAuth,
+  requirePermission("company_priorities", "view"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = parseIdParam(req.params.id);
+    if (id === null) throw badRequest("Invalid view id");
+    const user = getEffectiveUser(req)!;
+    const [existing] = await db.select().from(prioritySavedViews)
+      .where(and(eq(prioritySavedViews.id, id), eq(prioritySavedViews.userId, user.id)));
+    if (!existing) throw notFound("Saved view");
+    await db.delete(prioritySavedViews).where(eq(prioritySavedViews.id, id));
     res.status(204).send();
   }),
 );
@@ -2073,7 +3069,12 @@ router.get("/api/priorities/:id/updates", requireAuth, asyncHandler(async (req: 
 router.post(
   "/api/priorities/:id/escalate",
   requireAuth,
-  requirePriorityAdmin,
+  // Keep the entity-permission read gate so CI route-coverage tooling
+  // still recognises this route as guarded. The actual escalation
+  // authority is enforced by `canPriorityRoleEscalatePriority()` below,
+  // which is ownership-aware: a role-priority's owner or assignee may
+  // self-escalate to department; only admins/dept heads can lift higher.
+  requirePermission("company_priorities", "view"),
   validateBody(escalatePrioritySchema),
   asyncHandler(async (req: Request, res: Response) => {
     const priorityId = parseIdParam(req.params.id);
@@ -2083,10 +3084,34 @@ router.post(
     const [priority] = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
     if (!priority) throw notFound("Priority");
 
-    const patch = computeEscalatePatch(
+    const user = getEffectiveUser(req);
+    if (!user?.id || !user?.role) throw forbidden("Authentication required");
+    const userDept = getDepartmentForRole(user.role);
+    const canEscalate = canPriorityRoleEscalatePriority(
+      { role: user.role, userId: user.id, departmentKey: userDept ?? null },
       {
         scope: (priority.scope ?? "company") as PriorityScope,
         departmentKey: priority.departmentKey ?? null,
+        ownerUserId: priority.ownerUserId ?? null,
+        assignedUserId: priority.assignedUserId ?? null,
+      },
+    );
+    if (!canEscalate) {
+      throw forbidden("You do not have permission to escalate this priority");
+    }
+
+    // Defensive: a role-scope priority created before departmentKey
+    // back-fill may have no department pinned. Once a non-admin owner
+    // escalates it to department scope, the row needs a concrete
+    // department or it lands as an orphan. Use the caller's department
+    // as the fallback.
+    const sourceDepartmentKey = priority.departmentKey
+      ?? (priority.scope === "role" ? (userDept ?? null) : null);
+
+    const patch = computeEscalatePatch(
+      {
+        scope: (priority.scope ?? "company") as PriorityScope,
+        departmentKey: sourceDepartmentKey,
       },
       (reason as EscalationReason | undefined) ?? "manual",
     );
@@ -2098,7 +3123,7 @@ router.post(
 
     // Atomic: a single UPDATE is inherently atomic. Wrapping in a transaction
     // so later additions (audit-log insert, etc.) inherit the atomicity.
-    const [updated] = await db.transaction(async (tx: typeof db) => {
+    const [updated] = await runInTransaction(async (tx) => {
       return tx.update(mytoolCompanyPriorities)
         .set({
           scope: patch.scope,
@@ -2119,6 +3144,15 @@ router.post(
       fromValue: priority.scope,
       toValue: patch.scope,
       details: { reason: patch.escalationReason, ...(note ? { note } : {}) },
+    });
+
+    await fanoutPriorityNotifications({
+      priorityId,
+      priority,
+      actorUserId: getEffectiveUser(req)?.id,
+      eventType: "priority_escalated",
+      title: `Escalated: ${priority.title}`,
+      body: `Moved from ${priority.scope} to ${patch.scope}${note ? ` — ${note}` : ""}`,
     });
 
     // Tier 4 · PR 5 — outbound signal. Emit a RAID "issue" on every directly
@@ -2539,6 +3573,59 @@ router.get("/api/reports/priorities-pack", requireAuth, requirePriorityCreator, 
 }));
 
 // ==================== POST /api/priorities/:id/reopen ====================
+// POST /api/priorities/:id/review — mark this priority as reviewed
+// "right now". Resets the dueForReview countdown for review_cadence_days.
+// Allowed for: priority admins, dept heads in the priority's dept,
+// owner or assignee.
+router.post(
+  "/api/priorities/:id/review",
+  requireAuth,
+  requirePermission("company_priorities", "view"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const priorityId = parseIdParam(req.params.id);
+    if (priorityId === null) throw badRequest("Invalid priority id");
+    const [priority] = await db.select().from(mytoolCompanyPriorities)
+      .where(eq(mytoolCompanyPriorities.id, priorityId));
+    if (!priority || normalizeTimestamp(priority.deletedAt) != null) throw notFound("Priority");
+
+    const user = getEffectiveUser(req)!;
+    const userDept = getDepartmentForRole(user.role);
+    const canReview = canPriorityRoleEditPriority(
+      { role: user.role, userId: user.id, departmentKey: userDept ?? null },
+      {
+        scope: (priority.scope ?? "company") as PriorityScope,
+        departmentKey: priority.departmentKey ?? null,
+        ownerUserId: priority.ownerUserId ?? null,
+        assignedUserId: priority.assignedUserId ?? null,
+      },
+    );
+    if (!canReview) throw forbidden("You cannot mark this priority as reviewed");
+
+    const now = new Date();
+    const [updated] = await db.update(mytoolCompanyPriorities)
+      .set({
+        lastReviewedAt: now.toISOString(),
+        lastReviewedByUserId: user.id,
+        updatedAt: now,
+      })
+      .where(eq(mytoolCompanyPriorities.id, priorityId))
+      .returning();
+
+    await recordActivity({
+      priorityId,
+      actorUserId: user.id,
+      action: "updated",
+      fromValue: null,
+      toValue: "reviewed",
+      details: { field: "lastReviewedAt", at: now.toISOString() },
+    });
+
+    const metrics = await getPriorityDerivedMetrics(priorityId);
+    const enriched = await enrichPriority(updated, metrics);
+    res.json(enriched);
+  }),
+);
+
 router.post("/api/priorities/:id/reopen", requireAuth, requirePermission("company_priorities", "view"), requirePriorityAdmin, asyncHandler(async (req: Request, res: Response) => {
   const priorityId = parseIdParam(req.params.id);
   if (priorityId === null) throw badRequest("Invalid priority id");
@@ -2555,13 +3642,25 @@ router.post("/api/priorities/:id/reopen", requireAuth, requirePermission("compan
     .where(eq(mytoolCompanyPriorities.id, priorityId))
     .returning();
 
+  // Use the dedicated "reopened" action so the activity timeline shows
+  // the semantic event, not a generic "updated" entry. The
+  // PriorityActivityAction union already includes "reopened".
   await recordActivity({
     priorityId,
     actorUserId: getEffectiveUser(req)?.id,
-    action: "updated",
+    action: "reopened",
     fromValue: priority.status,
     toValue: "active",
-    details: { field: "status", reopened: true },
+    details: { field: "status" },
+  });
+
+  await fanoutPriorityNotifications({
+    priorityId,
+    priority,
+    actorUserId: getEffectiveUser(req)?.id,
+    eventType: "priority_reopened",
+    title: `Reopened: ${priority.title}`,
+    body: `Status moved from ${priority.status} back to active.`,
   });
 
   const metrics = await getPriorityDerivedMetrics(priorityId);
