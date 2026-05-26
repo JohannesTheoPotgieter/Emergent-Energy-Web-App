@@ -12,6 +12,7 @@ import { jwtAuth, requireAuth } from "./auth-context";
 import { requirePermission } from "./permission-middleware";
 import { db } from "./db";
 import { and, eq } from "drizzle-orm";
+import { logAuditFromReq } from "./audit-logger";
 import {
   projectAccess,
   projectStageFinancialCloseTracks,
@@ -122,6 +123,15 @@ export function registerStageCollaborationRoutes(app: Express): void {
           }).where(eq(projectAccess.id, existing.id));
 
           const [updated] = await db.select().from(projectAccess).where(eq(projectAccess.id, existing.id));
+          // Wave-3 audit (§ 3A.1) — project access grants change the
+          // canEdit / canApprove blast radius for a user. Every mutation
+          // must be auditable.
+          logAuditFromReq(req, {
+            entityType: "project_access",
+            entityId: String(existing.id),
+            action: "upsert",
+            changesJson: { projectId, userId, accessLevel, canEdit, canApprove },
+          });
           return res.json({ grant: updated });
         }
 
@@ -137,6 +147,13 @@ export function registerStageCollaborationRoutes(app: Express): void {
           expiresAt: expiresAt ? new Date(expiresAt) : null,
           notes: notes || null,
         }).returning();
+
+        logAuditFromReq(req, {
+          entityType: "project_access",
+          entityId: String(grant.id),
+          action: "grant",
+          changesJson: { projectId, userId, accessLevel, canEdit, canApprove },
+        });
 
         res.status(201).json({ grant });
       } catch (error: unknown) {
@@ -175,6 +192,16 @@ export function registerStageCollaborationRoutes(app: Express): void {
         const [updated] = await db.select().from(projectAccess).where(eq(projectAccess.id, id));
         if (!updated) return res.status(404).json({ error: "Access grant not found" });
 
+        logAuditFromReq(req, {
+          entityType: "project_access",
+          entityId: String(id),
+          action: "update",
+          changesJson: {
+            projectId: updated.projectId,
+            userId: updated.userId,
+            updatedKeys: Object.keys(req.body ?? {}),
+          },
+        });
         res.json({ grant: updated });
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
@@ -198,6 +225,16 @@ export function registerStageCollaborationRoutes(app: Express): void {
         if (!existing) return res.status(404).json({ error: "Access grant not found" });
 
         await db.update(projectAccess).set({ deletedAt: new Date(), deletedBy: getUser(req).id }).where(eq(projectAccess.id, id)).returning();
+        logAuditFromReq(req, {
+          entityType: "project_access",
+          entityId: String(id),
+          action: "revoke",
+          changesJson: {
+            projectId: existing.projectId,
+            userId: existing.userId,
+            accessLevel: existing.accessLevel,
+          },
+        });
         res.json({ success: true });
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
@@ -262,6 +299,12 @@ export function registerStageCollaborationRoutes(app: Express): void {
           notes: notes || null,
         }).returning();
 
+        logAuditFromReq(req, {
+          entityType: "financial_close_track",
+          entityId: String(track.id),
+          action: "create",
+          changesJson: { projectId, trackCode, trackLabel, isRequired },
+        });
         res.status(201).json({ track });
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
@@ -295,6 +338,19 @@ export function registerStageCollaborationRoutes(app: Express): void {
         const [updated] = await db.select().from(projectStageFinancialCloseTracks).where(eq(projectStageFinancialCloseTracks.id, id));
         if (!updated) return res.status(404).json({ error: "Track not found" });
 
+        // Wave-3 audit — financial close track signatures are a stage
+        // gate input (S03 Financial Close). Every change must be audited.
+        logAuditFromReq(req, {
+          entityType: "financial_close_track",
+          entityId: String(id),
+          action: "update",
+          changesJson: {
+            projectId: updated.projectId,
+            trackCode: updated.trackCode,
+            signed: updated.signed,
+            updatedKeys: Object.keys(req.body ?? {}),
+          },
+        });
         res.json({ track: updated });
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
@@ -352,6 +408,18 @@ export function registerStageCollaborationRoutes(app: Express): void {
 
         if (toCreate.length > 0) {
           await db.insert(projectStageFinancialCloseTracks).values(toCreate);
+          // Wave-3 audit — initialise creates default tracks; record so
+          // the bootstrap is visible in the audit trail.
+          logAuditFromReq(req, {
+            entityType: "financial_close_track",
+            entityId: String(projectId),
+            action: "initialize",
+            changesJson: {
+              projectId,
+              stageInstanceId,
+              createdTrackCodes: toCreate.map((t) => t.trackCode),
+            },
+          });
         }
 
         const tracks = await db

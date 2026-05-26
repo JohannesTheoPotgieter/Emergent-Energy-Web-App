@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
+import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -693,6 +694,7 @@ function ExpandedProcurementDetail({
   supplierOptions: { value: string; label: string }[];
 }) {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [actualCost, setActualCost] = useState(item.actual_cost?.toString() || "");
   const [poId, setPoId] = useState(item.po_id || "");
   const [invoiceRef, setInvoiceRef] = useState(item.invoice_ref || "");
@@ -710,11 +712,33 @@ function ExpandedProcurementDetail({
         credentials: "include",
         body: JSON.stringify(updates),
       });
-      if (!res.ok) throw new Error("Failed to update");
+      if (!res.ok) {
+        let body: { error?: string; message?: string } = {};
+        try { body = await res.json(); } catch { /* non-JSON error */ }
+        throw new Error(body.message || body.error || `Failed to update (${res.status})`);
+      }
       return res.json();
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["procurement", projectId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["procurement", projectId] });
+      toast({ title: "Procurement updated" });
+    },
+    // Wave-3 audit (2026-05-26) — save failures used to be silent;
+    // the dialog stayed open with the user's edits but no feedback
+    // that the server rejected the change. Surface the server message
+    // so the new server-side guards (e.g. po_link_required) are visible.
+    onError: (err: Error) => {
+      toast({
+        title: "Save failed",
+        description: err.message || "The procurement update was not saved.",
+        variant: "destructive",
+      });
+    },
   });
+
+  // (Wave-3) the equivalent gate is computed inline at the transition
+  // button render site below — see the `hasPoLink` / `blockedReason`
+  // calculation inside `transitions.map(...)`.
 
   const transitions = VALID_TRANSITIONS[item.status] || [];
 
@@ -827,19 +851,31 @@ function ExpandedProcurementDetail({
       {transitions.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-slate-200">
           <span className="text-[10px] font-medium text-muted-foreground uppercase">Transition to:</span>
-          {transitions.map((t) => (
-            <Button
-              key={t}
-              size="sm"
-              variant="outline"
-              className={`h-7 text-[11px] ${STATUS_COLORS[t] || ""}`}
-              disabled={patchMutation.isPending}
-              onClick={() => patchMutation.mutate({ status: t })}
-              data-testid={`btn-transition-${t}-${item.id}`}
-            >
-              {t.replace(/_/g, " ")}
-            </Button>
-          ))}
+          {transitions.map((t) => {
+            // Wave-3 audit — mirror the server's po_link_required gate
+            // here so the user can't blindly click "ordered" with no PO.
+            const hasPoLink = Boolean(poId || item.po_id);
+            const isOrderTransition = t === "ordered";
+            const blockedReason =
+              isOrderTransition && !hasPoLink
+                ? "Link an approved PO above (po_id) before marking this item as ordered."
+                : null;
+            return (
+              <Button
+                key={t}
+                size="sm"
+                variant="outline"
+                className={`h-7 text-[11px] ${STATUS_COLORS[t] || ""}`}
+                disabled={patchMutation.isPending || !!blockedReason}
+                title={blockedReason ?? undefined}
+                aria-disabled={!!blockedReason}
+                onClick={() => patchMutation.mutate({ status: t })}
+                data-testid={`btn-transition-${t}-${item.id}`}
+              >
+                {t.replace(/_/g, " ")}
+              </Button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -1901,6 +1937,7 @@ function CaptureInvoiceDialog({
   invoices: any[];
 }) {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [form, setForm] = useState({
     invoiceNumber: "",
     invoiceDate: "",
@@ -1966,7 +2003,11 @@ function CaptureInvoiceDialog({
         credentials: "include",
         body: formData,
       });
-      if (!res.ok) throw new Error("Failed to capture invoice");
+      if (!res.ok) {
+        let body: { error?: string; message?: string } = {};
+        try { body = await res.json(); } catch { /* non-JSON */ }
+        throw new Error(body.message || body.error || `Failed to capture invoice (${res.status})`);
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -1975,6 +2016,17 @@ function CaptureInvoiceDialog({
       onOpenChange(false);
       setForm({ invoiceNumber: "", invoiceDate: "", amount: "", vatAmount: "", supplierId: "", linkedPoId: "", linkedProcurementItemId: "", notes: "", budgetLine: "", linkedDeliverableId: "", linkedMilestone: "", exceptionReason: "" });
       setFile(null);
+      toast({ title: "Invoice captured" });
+    },
+    // Wave-3 audit — invoice capture failures used to leave the dialog
+    // open with no feedback. Surface the server message so the user
+    // knows whether to retry, fix a field, or contact admin.
+    onError: (err: Error) => {
+      toast({
+        title: "Invoice capture failed",
+        description: err.message || "The invoice was not captured.",
+        variant: "destructive",
+      });
     },
   });
 
