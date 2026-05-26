@@ -47,7 +47,13 @@ export function isThisMonth(dateStr: string | null | undefined): boolean {
 }
 
 export function getFYRange(date: Date = new Date()): { start: string; end: string } {
-  const year = date.getMonth() >= 8 ? date.getFullYear() : date.getFullYear() - 1; // Sep=8
+  // DF-13 (audit V2): EE's FY rolls on Sep 1 SAST. Anchor on the SAST clock
+  // regardless of process TZ. Before this fix, on a UTC server the Aug 31
+  // 22:30 SAST → Sep 1 00:30 SAST window read Sep prematurely (UTC was
+  // already Sep) and the FY rolled an hour early.
+  const SAST_OFFSET_MS = 120 * 60 * 1000;
+  const sast = new Date(date.getTime() + SAST_OFFSET_MS);
+  const year = sast.getUTCMonth() >= 8 ? sast.getUTCFullYear() : sast.getUTCFullYear() - 1; // Sep=8
   return {
     start: `${year}-09-01`,
     end: `${year + 1}-08-31`

@@ -38,8 +38,14 @@ function twoDigitYear(y: number): string {
  */
 export function getFyWindow(input?: { fy?: number | null; date?: Date }): FyWindow {
   const ref = input?.date ?? new Date();
-  // Sep–Aug window. Month is 0-indexed, so >= 8 means Sep–Dec → next FY.
-  const currentFY = ref.getMonth() >= 8 ? ref.getFullYear() + 1 : ref.getFullYear();
+  // DF-13 (audit V2): anchor on SAST. On a UTC server the boundary at
+  // 22:00 UTC of Aug 31 (= 00:00 SAST of Sep 1) used to flip the FY an
+  // hour early. Apply the SAST offset before reading the month.
+  const SAST_OFFSET_MS = 120 * 60 * 1000;
+  const sast = new Date(ref.getTime() + SAST_OFFSET_MS);
+  // Sep–Aug window. Month is 0-indexed (UTC of the shifted clock = SAST), so
+  // >= 8 means Sep–Dec → next FY.
+  const currentFY = sast.getUTCMonth() >= 8 ? sast.getUTCFullYear() + 1 : sast.getUTCFullYear();
   // Accept only positive integer FY; everything else (null/NaN/0/negative
   // /fractional) falls back to currentFY, matching the legacy `||` fallback.
   const fyCandidate = input?.fy;
