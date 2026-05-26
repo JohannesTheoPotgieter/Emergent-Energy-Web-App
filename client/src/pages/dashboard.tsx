@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { formatZar } from "@/lib/currency";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -132,8 +133,7 @@ function ChartSkeleton() {
 }
 
 
-const money = (n: number | null | undefined) =>
-  `R ${(Number(n || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+const money = (n: number | null | undefined) => formatZar(n);
 const pct = (n: number | null | undefined) => (n == null ? "-" : `${Number(n).toFixed(1)}%`);
 
 function queueMeta(key: string) {

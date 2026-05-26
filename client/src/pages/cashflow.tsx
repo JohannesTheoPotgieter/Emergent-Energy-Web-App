@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef, Fragment } from 'react';
+import { Link } from 'wouter';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { extractTrustHeaders, type FinanceTrustMeta } from '@/lib/finance-trust';
 import { DataTrustBadge } from '@/components/ui/data-trust-badge';
@@ -62,10 +63,12 @@ import {
   Pencil,
   Search,
   AlertCircle,
+  AlertTriangle,
   Link2,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { PageShell, SectionHeader } from '@/components/layout/page-shell';
+import { ExportDropdown } from '@/components/ui/export-dropdown';
 import { FinanceShell } from '@/components/layout/FinanceShell';
 import { FinancialYearScopeControl } from '@/components/finance/FinancialYearScopeControl';
 import { PageError, PageSkeleton } from '@/components/ui/page-states';
@@ -614,7 +617,17 @@ function DetailRow({
                               data-testid={`qb-cell-inflow-${weekStart}-${i}`}
                             >
                               {inf.qbStatus === 'confirmed' ? (
-                                inf.qbPaymentStatus === 'paid' ? (
+                                // U-4 — "Settled" only when QB shows paid AND
+                                // the payment receipt date is today or earlier.
+                                // A future-dated paymentReceivedDate (e.g. QB
+                                // pre-flagged a scheduled receipt) renders as
+                                // "Matched — expected" instead so the row's
+                                // badge never claims cash is in the bank
+                                // before the receipt date.
+                                inf.qbPaymentStatus === 'paid' &&
+                                (!inf.paymentReceivedDate ||
+                                  inf.paymentReceivedDate.slice(0, 10) <=
+                                    new Date().toISOString().slice(0, 10)) ? (
                                   <span
                                     className="inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200"
                                     title={
@@ -820,6 +833,19 @@ function DetailRow({
                           Risk: 'bg-red-50 text-red-700 border-red-300',
                           Planned: 'bg-muted text-muted-foreground border-border',
                         };
+                        // U-5 — inline tooltips so an occasional reader of
+                        // the Cashflow page doesn't need to ask Finance what
+                        // each status means. Definitions track § 3.4.
+                        const statusTooltips: Record<string, string> = {
+                          'Out of Bank':
+                            'Payment date BLACK + QB balance settled. Cash has left the bank.',
+                          Outstanding:
+                            'Supplier invoice captured (BLACK invoice date), payment not yet released. Real obligation, not yet cash.',
+                          Risk:
+                            'Forecast / expected outflow with weak confidence — no invoice yet, or invoice-date RED. Treat as a planning estimate.',
+                          Planned:
+                            'Budgeted future outflow with no invoice yet. Drives forecast cashflow only.',
+                        };
                         const staleDays =
                           out.lastImportedAt && isStaleImport(out.lastImportedAt)
                             ? Math.round(
@@ -864,6 +890,7 @@ function DetailRow({
                             <td className="px-3 py-2 text-center">
                               <span
                                 className={`inline-block text-[9px] font-medium px-1.5 py-0.5 rounded-full border ${statusColors[out.paymentStatus] || 'bg-muted'}`}
+                                title={statusTooltips[out.paymentStatus] || out.paymentStatus}
                               >
                                 {out.paymentStatus}
                               </span>
@@ -876,7 +903,13 @@ function DetailRow({
                               data-testid={`qb-cell-outflow-${weekStart}-${i}`}
                             >
                               {out.qbStatus === 'confirmed' ? (
-                                out.qbPaymentStatus === 'paid' ? (
+                                // U-4 — symmetric to inflow rule above.
+                                // "Settled" only when QB shows paid AND the
+                                // expense payment date is today or earlier.
+                                out.qbPaymentStatus === 'paid' &&
+                                (!out.expensePaymentDate ||
+                                  out.expensePaymentDate.slice(0, 10) <=
+                                    new Date().toISOString().slice(0, 10)) ? (
                                   <span
                                     className="inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200"
                                     title={
@@ -1491,6 +1524,26 @@ export default function CashflowPage() {
     enabled: !!availPayHistoryWeek,
   });
 
+  // U-8 — Overdue receivables cross-link. Surfaces the AR aging headline
+  // on the main Cashflow page so a CFO doesn't have to navigate to Cashflow
+  // Analysis to find unpaid invoices. Falls through silently when there's
+  // nothing overdue.
+  const { data: overdueArSummary } = useQuery<{
+    rows: Array<{ amount: number; daysOverdue: number }>;
+    count: number;
+  }>({
+    queryKey: ['/api/finance/analysis/cashflow/overdue', 'ar'],
+    queryFn: async () => {
+      const res = await fetch(
+        '/api/finance/analysis/cashflow/overdue?side=ar&mode=expected_date',
+        { credentials: 'include' },
+      );
+      if (!res.ok) throw new Error('Failed to fetch overdue AR');
+      return res.json();
+    },
+    staleTime: 5 * 60_000,
+  });
+
   const availPayMutation = useMutation({
     mutationFn: async (body: {
       weekStartDate: string;
@@ -1620,6 +1673,21 @@ export default function CashflowPage() {
           actions={
             <div className="flex items-center gap-2">
               <FinancialYearScopeControl scope={fyScope} />
+              <ExportDropdown
+                data={cashflowData}
+                columns={[
+                  { key: 'weekStart', header: 'Week start' },
+                  { key: 'weekEnd', header: 'Week end' },
+                  { key: 'openingBalance', header: 'Opening balance' },
+                  { key: 'projectInflows', header: 'Project inflows' },
+                  { key: 'projectOutflows', header: 'Project outflows' },
+                  { key: 'opexOutflows', header: 'OPEX outflows' },
+                  { key: 'closingBalance', header: 'Closing balance' },
+                  { key: 'availablePayment', header: 'Available payment' },
+                  { key: 'balanceDelta', header: 'Balance delta (override)' },
+                ]}
+                filename={`cashflow-weekly-${fyScope.label.replace(/\s+/g, '-').toLowerCase()}`}
+              />
               <Button
                 variant={showDetail ? 'default' : 'outline'}
                 size="sm"
@@ -1712,6 +1780,31 @@ export default function CashflowPage() {
             Forecast dates may use planned-payment fallback where no canonical payment date exists. Use forecast values as planning data until reconciled.
           </p>
         </details>
+
+        {/* U-8 — Overdue AR cross-link. Surfaces the count + total of past-due
+            customer invoices so cashflow review on this page can dip into the
+            collections list without navigating to Cashflow Analysis first.
+            Renders only when there is overdue AR. */}
+        {overdueArSummary && overdueArSummary.count > 0 && (
+          <Link
+            to="/cashflow/analysis"
+            data-testid="cashflow-overdue-ar-link"
+            className="mt-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-900 hover:bg-amber-50 transition-colors"
+          >
+            <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" aria-hidden="true" />
+            <div className="flex-1">
+              <div className="font-medium">
+                Overdue receivables: {formatRand(
+                  overdueArSummary.rows.reduce((s, r) => s + (Number(r.amount) || 0), 0),
+                )} across {overdueArSummary.count} invoice{overdueArSummary.count === 1 ? '' : 's'}
+              </div>
+              <div className="text-[11px] text-amber-700/80 mt-0.5">
+                Click to open the Cashflow Analysis overdue list.
+              </div>
+            </div>
+          </Link>
+        )}
+
         <FinanceTrustStrip
           source={cashflowTrust?.canonicalTable ?? 'canonical'}
           lastImportDate={cashflowSummary?.lastImportDate ?? 'Unknown'}
