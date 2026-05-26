@@ -1185,7 +1185,11 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
     poNumber: z.string().optional(),
     category: z.string().optional(),
     notes: z.string().optional(),
-  });
+  // TF-13 (audit V3): reject unknown fields. Closes a mass-assignment
+  // surface where a caller could smuggle `effectiveFrom`, `createdBy`,
+  // `source` etc. into the request body and override the audit-bearing
+  // metadata the route sets itself.
+  }).strict();
 
   const revenueLineSchema = z.object({
     projectId: z.number().int(),
@@ -1198,7 +1202,8 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
     paidDate: pastOrTodayIsoDate("paidDate").optional(),
     expectedPaymentDate: z.string().optional(),
     notes: z.string().optional(),
-  });
+  // TF-13 (audit V3): same as costLineSchema above.
+  }).strict();
 
   // Create a cost line
   app.post("/api/finance/cost-lines", requireAuth, requirePermission("financials", "create"), async (req: Request, res: Response) => {

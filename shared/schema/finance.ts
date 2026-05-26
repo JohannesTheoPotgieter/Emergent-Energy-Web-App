@@ -55,8 +55,15 @@ export const rowSourceEnum = pgEnum("row_source", ["imported", "manual", "import
 // ============================================================================
 
 /**
+ * @internal
  * @deprecated PE-shape compatibility view over normalized_cost_lines.
- * Use NormalizedCostLine for new code.
+ *
+ * TF-26 (audit V3): the underlying `program_expense` table was physically
+ * dropped. This interface remains only as a compatibility shape for the
+ * legacy adapters (`server/lib/data-merge.ts:mapCostToExpenseInput` and
+ * friends). New code must use `NormalizedCostLine`. Do NOT import this
+ * type for new features — it will be removed once the last legacy adapter
+ * is retired.
  */
 export interface ProgramExpense {
   id: number;
@@ -113,8 +120,8 @@ export interface ProgramExpense {
 }
 
 /**
- * @deprecated PE-shape insert payload.
- * Use InsertNormalizedCostLine for new code.
+ * @internal
+ * @deprecated PE-shape insert payload (TF-26 — see ProgramExpense above).
  */
 export type InsertProgramExpense = Partial<Omit<ProgramExpense, "id" | "createdAt" | "effectiveFrom" | "effectiveTo">> & {
   projectName: string;
@@ -122,8 +129,12 @@ export type InsertProgramExpense = Partial<Omit<ProgramExpense, "id" | "createdA
 };
 
 /**
+ * @internal
  * @deprecated PI-shape compatibility view over normalized_revenue_lines.
- * Use NormalizedRevenueLine for new code.
+ *
+ * TF-26 (audit V3): same status as ProgramExpense above — compatibility
+ * shape only, for the legacy adapters. New code must use
+ * `NormalizedRevenueLine`.
  */
 export interface ProgramInflows {
   id: number;
@@ -161,8 +172,8 @@ export interface ProgramInflows {
 }
 
 /**
- * @deprecated PI-shape insert payload.
- * Use InsertNormalizedRevenueLine for new code.
+ * @internal
+ * @deprecated PI-shape insert payload (TF-26 — see ProgramInflows above).
  */
 export type InsertProgramInflows = Partial<Omit<ProgramInflows, "id" | "createdAt" | "effectiveFrom" | "effectiveTo">> & {
   projectName: string;
