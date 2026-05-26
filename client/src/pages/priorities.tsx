@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSearch, useLocation } from "wouter";
+import { useSearch, useLocation, Link } from "wouter";
 import { Download, Filter, Flag, Plus, Search, Target, Users, X } from "lucide-react";
 import { PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
@@ -466,6 +466,34 @@ export default function PrioritiesPage() {
     return s !== "complete" && s !== "completed" && s !== "cancelled" && s !== "done";
   }).length, [myTasks]);
 
+  // Tab-level summary stats — surfaces "where is the heat" without
+  // the user having to scroll the cards. All values derived from the
+  // already-loaded query data; no extra network. The strip shows
+  // for the active tab only.
+  const tabSummary = useMemo(() => {
+    const open = activeData.filter((p) => !isPriorityTerminalStatus(p.status));
+    const escalated = open.filter((p) => p.escalated);
+    const critical = open.filter((p) => p.severity === "critical");
+    const atRisk = open.filter((p) => p.effectiveHealth === "at_risk" || p.effectiveHealth === "critical");
+    const dueForReview = open.filter((p) => p.dueForReview);
+    const now = Date.now();
+    const weekFromNow = now + 7 * 24 * 60 * 60 * 1000;
+    const dueThisWeek = open.filter((p) => {
+      if (!p.dueDate) return false;
+      const t = new Date(p.dueDate).getTime();
+      return Number.isFinite(t) && t > now && t <= weekFromNow;
+    });
+    return {
+      open: open.length,
+      critical: critical.length,
+      atRisk: atRisk.length,
+      escalated: escalated.length,
+      dueForReview: dueForReview.length,
+      dueThisWeek: dueThisWeek.length,
+      closed: closedData.length,
+    };
+  }, [activeData, closedData]);
+
   const bulkSize = bulkSelected.size;
   const runBulkClose = async () => {
     const ok = await confirm({
@@ -660,6 +688,7 @@ export default function PrioritiesPage() {
               <Input
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Escape") setSearchInput(""); }}
                 placeholder="Search priorities..."
                 aria-label="Search priorities"
                 data-testid="input-search-priorities"
@@ -674,6 +703,68 @@ export default function PrioritiesPage() {
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
+              )}
+              {/* Search results dropdown — attached to the input, doesn't
+                  push the tabs down. Esc clears. Click result navigates.
+                  Compact rows: title + scope chip + dept hint. */}
+              {debouncedSearch.length >= 2 && (
+                <div
+                  className="absolute z-30 top-full left-0 mt-1 w-[480px] max-h-[60vh] overflow-y-auto rounded-md border border-border bg-background shadow-lg"
+                  data-testid="search-results-panel"
+                >
+                  <div className="px-3 py-2 border-b text-xs text-muted-foreground flex items-center justify-between">
+                    <span>
+                      {searchQuery.isFetching ? "Searching…" : (
+                        searchQuery.data
+                          ? `${searchQuery.data.totalMatches} match${searchQuery.data.totalMatches === 1 ? "" : "es"} for "${debouncedSearch}"`
+                          : "—"
+                      )}
+                    </span>
+                    <button
+                      type="button"
+                      className="hover:text-foreground"
+                      onClick={() => setSearchInput("")}
+                      aria-label="Close search results"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <div className="py-1">
+                    {(searchQuery.data?.results ?? []).length === 0 && !searchQuery.isFetching && (
+                      <p className="px-3 py-4 text-xs text-muted-foreground text-center">No priorities match "{debouncedSearch}"</p>
+                    )}
+                    {(searchQuery.data?.results ?? []).map((p) => (
+                      <Link
+                        key={p.id}
+                        href={`/priorities/${p.id}`}
+                        onClick={() => setSearchInput("")}
+                      >
+                        <div className="flex items-center gap-2 px-3 py-2 hover:bg-muted/60 text-xs cursor-pointer">
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${
+                            p.effectiveHealth === "critical" ? "bg-red-500"
+                              : p.effectiveHealth === "at_risk" ? "bg-amber-500"
+                              : "bg-emerald-500"
+                          }`} aria-hidden="true" />
+                          <span className="font-medium truncate flex-1">{p.title}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 shrink-0">
+                            {p.scope}
+                          </span>
+                          {p.departmentKey && (
+                            <span className="text-[10px] text-muted-foreground shrink-0">{p.departmentKey}</span>
+                          )}
+                          {p.escalated && (
+                            <span className="text-[10px] text-red-600 font-medium shrink-0">!</span>
+                          )}
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                  {searchQuery.data && searchQuery.data.returned < searchQuery.data.totalMatches && (
+                    <div className="px-3 py-2 text-[10px] text-muted-foreground text-center border-t">
+                      Showing first {searchQuery.data.returned} of {searchQuery.data.totalMatches}. Refine your search to see more.
+                    </div>
+                  )}
+                </div>
               )}
             </div>
             {isAdmin && activeTab === "department" && (
@@ -819,35 +910,31 @@ export default function PrioritiesPage() {
           </div>
         </div>
 
-        {debouncedSearch.length >= 2 && (
-          <div className="mb-6 border border-emerald-200 bg-emerald-50/40 rounded-lg p-4" data-testid="search-results-panel">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-foreground">
-                Search results for "{debouncedSearch}"
-                {searchQuery.data && (
-                  <span className="ml-2 text-xs font-normal text-muted-foreground">
-                    {searchQuery.data.totalMatches} match{searchQuery.data.totalMatches === 1 ? "" : "es"}
-                    {searchQuery.data.returned < searchQuery.data.totalMatches && ` · showing first ${searchQuery.data.returned}`}
-                  </span>
-                )}
-              </h3>
-              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setSearchInput("")}>
-                Clear search
-              </Button>
-            </div>
-            <PriorityListSection
-              priorities={searchQuery.data?.results ?? []}
-              isLoading={searchQuery.isLoading}
-              isError={searchQuery.isError}
-              error={searchQuery.error as Error}
-              refetch={searchQuery.refetch}
-              showEscalate={canEscalatePriorityRow}
-              onEscalate={(id) => {
-                const p = (searchQuery.data?.results ?? []).find((x) => x.id === id);
-                if (p) setEscalateTarget({ id: p.id, title: p.title, scope: p.scope });
-              }}
-              emptyMessage={searchQuery.isFetching ? "Searching..." : `No priorities match "${debouncedSearch}"`}
-            />
+        {/* Search results moved to a compact dropdown attached to the
+            search input itself (above). No longer a takeover panel. */}
+
+        {/* Summary stat strip — derived from active-tab data, no extra network. */}
+        {tabSummary.open > 0 && (
+          <div className="flex items-center gap-4 flex-wrap text-xs mb-4 px-3 py-2 rounded-md bg-slate-50 border border-slate-200" data-testid="tab-summary-strip">
+            <span className="font-medium text-foreground">{tabSummary.open} active</span>
+            {tabSummary.critical > 0 && (
+              <span className="text-red-700">{tabSummary.critical} critical</span>
+            )}
+            {tabSummary.atRisk > 0 && (
+              <span className="text-amber-700">{tabSummary.atRisk} at risk</span>
+            )}
+            {tabSummary.escalated > 0 && (
+              <span className="text-orange-700">{tabSummary.escalated} escalated</span>
+            )}
+            {tabSummary.dueForReview > 0 && (
+              <span className="text-amber-700">{tabSummary.dueForReview} due for review</span>
+            )}
+            {tabSummary.dueThisWeek > 0 && (
+              <span className="text-foreground">{tabSummary.dueThisWeek} due this week</span>
+            )}
+            {tabSummary.closed > 0 && showClosed && (
+              <span className="text-muted-foreground ml-auto">{tabSummary.closed} closed</span>
+            )}
           </div>
         )}
 
