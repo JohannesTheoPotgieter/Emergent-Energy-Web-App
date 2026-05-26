@@ -30,7 +30,7 @@
     },
     {
       "file": "server/lifecycle-routes.ts",
-      "loc": 3533
+      "loc": 3556
     },
     {
       "file": "client/src/components/tabs/UnifiedPlanTab.tsx",
@@ -85,24 +85,24 @@
       "loc": 2204
     },
     {
+      "file": "client/src/components/tabs/ProjectProcurementTab.tsx",
+      "loc": 2180
+    },
+    {
       "file": "server/departments/project-routes.ts",
       "loc": 2165
+    },
+    {
+      "file": "client/src/components/tabs/QualityTab.tsx",
+      "loc": 2161
     },
     {
       "file": "server/departments/opportunities-routes.ts",
       "loc": 2160
     },
     {
-      "file": "client/src/components/tabs/QualityTab.tsx",
-      "loc": 2134
-    },
-    {
       "file": "server/lib/import/normalizer.ts",
       "loc": 2129
-    },
-    {
-      "file": "client/src/components/tabs/ProjectProcurementTab.tsx",
-      "loc": 2128
     },
     {
       "file": "client/src/pages/finance-quickbooks-throughput.tsx",
@@ -178,7 +178,7 @@
     },
     {
       "file": "shared/schema/projects.ts",
-      "loc": 1624
+      "loc": 1638
     },
     {
       "file": "client/src/pages/engineering/EngineeringTaskDrawer.tsx",
@@ -197,16 +197,16 @@
       "loc": 1605
     },
     {
+      "file": "server/handover-routes.ts",
+      "loc": 1574
+    },
+    {
       "file": "client/src/pages/subcontractor-dashboard.tsx",
       "loc": 1568
     },
     {
       "file": "client/src/components/tabs/ProjectPlanTab.tsx",
       "loc": 1565
-    },
-    {
-      "file": "server/handover-routes.ts",
-      "loc": 1564
     },
     {
       "file": "server/services/gate-auto-evaluator-service.ts",
