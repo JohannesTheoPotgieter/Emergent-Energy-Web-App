@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearch, useLocation } from "wouter";
-import { Download, Flag, Plus, Search, Target, Users, X } from "lucide-react";
+import { Download, Filter, Flag, Plus, Search, Target, Users, X } from "lucide-react";
 import { PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/use-auth";
@@ -177,6 +178,9 @@ export default function PrioritiesPage() {
     enabled: activeTab === "my",
   });
 
+  // Enabled regardless of active tab so the tab pills can show counts
+  // ("Department 47", "Company 8") even when the user is on a different
+  // tab. Cheap: priorities table is small.
   const deptQuery = useQuery<PriorityRow[]>({
     queryKey: ["/api/priorities", "department", effectiveDeptForQuery, showClosed, showArchived],
     queryFn: () => fetchPriorities(
@@ -184,13 +188,12 @@ export default function PrioritiesPage() {
         `scope=department${effectiveDeptForQuery ? `&department=${effectiveDeptForQuery}` : ""}&include_team_roles=true`,
       ),
     ),
-    enabled: activeTab === "department" && (isDeptHead || isAdmin),
+    enabled: isDeptHead || isAdmin,
   });
 
   const companyQuery = useQuery<PriorityRow[]>({
     queryKey: ["/api/priorities", "company", showClosed, showArchived],
     queryFn: () => fetchPriorities(listQueryParams("scope=company")),
-    enabled: activeTab === "company",
   });
 
   // Debounce the search input so we don't fire a request per keystroke.
@@ -534,36 +537,58 @@ export default function PrioritiesPage() {
       </div>
 
       {bulkSize > 0 && canUseBulkActions && (
-        <div className="sticky top-0 z-20 bg-primary/10 border border-primary rounded-md px-3 py-2 mb-3 flex items-center gap-2 text-sm">
-          <span className="font-medium">{bulkSize} selected</span>
+        // Floating pill anchored bottom-center — follows the user as
+        // they scroll through cards. Style mirrors the Linear/Gmail
+        // pattern: dark high-contrast surface, primary actions on the
+        // right, dismiss on the left.
+        <div
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 shadow-lg flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900 text-white text-sm animate-in slide-in-from-bottom-4 fade-in duration-200"
+          role="region"
+          aria-label="Bulk actions"
+          data-testid="bulk-action-bar"
+        >
+          <span className="font-medium tabular-nums">{bulkSize} selected</span>
+          <span className="w-px h-5 bg-slate-700 mx-1" aria-hidden="true" />
           {isAdmin && (
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="text-xs h-7"
+              className="text-xs h-7 text-white hover:bg-slate-800"
               onClick={runBulkClose}
               disabled={bulkCloseMutation.isPending}
             >
-              Close
+              {bulkCloseMutation.isPending ? "Closing…" : "Close"}
             </Button>
           )}
           {isAdmin && (
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="text-xs h-7 text-orange-700 border-orange-200 hover:bg-orange-50"
+              className="text-xs h-7 text-amber-300 hover:bg-slate-800 hover:text-amber-200"
               onClick={runBulkEscalate}
               disabled={bulkEscalateMutation.isPending}
             >
-              Escalate
+              {bulkEscalateMutation.isPending ? "Escalating…" : "Escalate"}
             </Button>
           )}
           {isDeptHead && (
-            <Button variant="outline" size="sm" className="text-xs h-7" onClick={() => setBulkReassignOpen(true)}>
-              Reassign...
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs h-7 text-white hover:bg-slate-800"
+              onClick={() => setBulkReassignOpen(true)}
+            >
+              Reassign…
             </Button>
           )}
-          <Button variant="ghost" size="sm" className="text-xs h-7 ml-auto" onClick={clearBulkSelection}>
+          <span className="w-px h-5 bg-slate-700 mx-1" aria-hidden="true" />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs h-7 text-slate-300 hover:bg-slate-800 hover:text-white"
+            onClick={clearBulkSelection}
+            aria-label="Clear selection"
+          >
             Clear
           </Button>
         </div>
@@ -585,16 +610,31 @@ export default function PrioritiesPage() {
             <TabsTrigger value="my" className="text-xs" data-testid="tab-priorities-my">
               <Target className="w-3.5 h-3.5 mr-1" />
               My Priorities
+              {(myPriorities.length + (myWorkFeedQuery.data?.counts?.tasks ?? 0)) > 0 && (
+                <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
+                  {myPriorities.length + (myWorkFeedQuery.data?.counts?.tasks ?? 0)}
+                </span>
+              )}
             </TabsTrigger>
             {(isDeptHead || isAdmin) && (
               <TabsTrigger value="department" className="text-xs" data-testid="tab-priorities-department">
                 <Users className="w-3.5 h-3.5 mr-1" />
                 {SCOPE_LABELS.department}
+                {(deptQuery.data?.length ?? 0) > 0 && (
+                  <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
+                    {deptQuery.data?.length}
+                  </span>
+                )}
               </TabsTrigger>
             )}
             <TabsTrigger value="company" className="text-xs" data-testid="tab-priorities-company">
               <Flag className="w-3.5 h-3.5 mr-1" />
               {SCOPE_LABELS.company}
+              {(companyQuery.data?.length ?? 0) > 0 && (
+                <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
+                  {companyQuery.data?.length}
+                </span>
+              )}
             </TabsTrigger>
           </TabsList>
 
@@ -649,59 +689,94 @@ export default function PrioritiesPage() {
                 </SelectContent>
               </Select>
             )}
-            <Select value={levelFilter} onValueChange={setLevelFilter}>
-              <SelectTrigger className="w-[120px] h-8 text-xs">
-                <SelectValue placeholder="Level" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All levels</SelectItem>
-                <SelectItem value="critical">Critical</SelectItem>
-                <SelectItem value="important">High</SelectItem>
-                <SelectItem value="normal">Normal</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={healthFilter} onValueChange={setHealthFilter}>
-              <SelectTrigger className="w-[120px] h-8 text-xs">
-                <SelectValue placeholder="Health" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All health</SelectItem>
-                <SelectItem value="critical">Critical</SelectItem>
-                <SelectItem value="at_risk">At risk</SelectItem>
-                <SelectItem value="healthy">Healthy</SelectItem>
-              </SelectContent>
-            </Select>
-            {isAdmin && (
-              <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={showArchived}
-                  onChange={(e) => setShowArchived(e.target.checked)}
-                  className="rounded"
-                  data-testid="toggle-show-archived"
-                />
-                Show archived
-              </label>
-            )}
-            <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={showClosed}
-                onChange={(e) => setShowClosed(e.target.checked)}
-                className="rounded"
-              />
-              Show closed
-            </label>
-            {(levelFilter !== "all" || healthFilter !== "all") && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-xs h-8"
-                onClick={() => { setLevelFilter("all"); setHealthFilter("all"); }}
-              >
-                Clear
-              </Button>
-            )}
+            {/* Filters popover — collapses level, health, show closed, show archived behind a single trigger with a chip count. Frees up the filter row for the things users actually use every visit (search, saved views, dept). */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 text-xs" data-testid="filters-trigger">
+                  <Filter className="w-3.5 h-3.5 mr-1" />
+                  Filters
+                  {(() => {
+                    const activeCount = [
+                      levelFilter !== "all",
+                      healthFilter !== "all",
+                      showClosed,
+                      showArchived && isAdmin,
+                    ].filter(Boolean).length;
+                    return activeCount > 0 ? (
+                      <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-medium">
+                        {activeCount}
+                      </span>
+                    ) : null;
+                  })()}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-72 p-3">
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-medium block mb-1">Level</label>
+                    <Select value={levelFilter} onValueChange={setLevelFilter}>
+                      <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All levels</SelectItem>
+                        <SelectItem value="critical">Critical</SelectItem>
+                        <SelectItem value="important">High</SelectItem>
+                        <SelectItem value="normal">Normal</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium block mb-1">Health</label>
+                    <Select value={healthFilter} onValueChange={setHealthFilter}>
+                      <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All health</SelectItem>
+                        <SelectItem value="critical">Critical</SelectItem>
+                        <SelectItem value="at_risk">At risk</SelectItem>
+                        <SelectItem value="healthy">Healthy</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2 pt-2 border-t">
+                    <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={showClosed}
+                        onChange={(e) => setShowClosed(e.target.checked)}
+                        className="rounded"
+                      />
+                      Show closed
+                    </label>
+                    {isAdmin && (
+                      <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={showArchived}
+                          onChange={(e) => setShowArchived(e.target.checked)}
+                          className="rounded"
+                          data-testid="toggle-show-archived"
+                        />
+                        Show archived
+                      </label>
+                    )}
+                  </div>
+                  {(levelFilter !== "all" || healthFilter !== "all" || showClosed || showArchived) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs h-7 w-full"
+                      onClick={() => {
+                        setLevelFilter("all");
+                        setHealthFilter("all");
+                        setShowClosed(false);
+                        setShowArchived(false);
+                      }}
+                    >
+                      Reset all filters
+                    </Button>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
             <div className="flex items-center gap-1 ml-auto">
               <Input
                 value={saveViewName}
