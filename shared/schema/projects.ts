@@ -1222,6 +1222,20 @@ export const changeRequests = pgTable("change_requests", {
   marginImpact: decimal("margin_impact", { precision: 15, scale: 2 }),
   evidenceLink: text("evidence_link"),
   finalDecision: text("final_decision"),       // 'approved', 'rejected', 'deferred'
+  // Deeper Project Delivery audit (2026-05-26) — VO transitions to
+  // under_review / approved / rejected previously moved status with no
+  // record of WHO decided. These columns close that gap; the route
+  // populates them on every transition and writes the matching audit
+  // event. `submittedByUserId` is set when the CR leaves draft; the
+  // reviewer/approver fields differ so the trail covers all stages.
+  submittedByUserId: integer("submitted_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  submittedAt: timestamp("submitted_at"),
+  reviewerUserId: integer("reviewer_user_id").references(() => users.id, { onDelete: "set null" }),
+  reviewStartedAt: timestamp("review_started_at"),
+  approverUserId: integer("approver_user_id").references(() => users.id, { onDelete: "set null" }),
+  approvedAt: timestamp("approved_at"),
+  rejectionReason: text("rejection_reason"),
+  rejectedAt: timestamp("rejected_at"),
   deletedAt: timestamp("deleted_at"),
   deletedBy: integer("deleted_by"),
   deleteReason: text("delete_reason"),

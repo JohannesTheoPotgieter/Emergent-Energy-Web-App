@@ -207,6 +207,46 @@ export function registerChangeControlRoutes(app: Express): void {
         }
         updates.status = status;
 
+        // Deep audit pass 2 — capture the actor on every CR transition so
+        // the audit trail records WHO submitted, reviewed, approved, or
+        // rejected. Prior to this, status moved with no actor context.
+        const now = new Date();
+        const actingUser = getEffectiveUser(req);
+        if (status === 'submitted') {
+          updates.submittedByUserId = actingUser?.id ?? null;
+          updates.submittedAt = now;
+        }
+        if (status === 'under_review') {
+          updates.reviewerUserId = actingUser?.id ?? null;
+          updates.reviewStartedAt = now;
+        }
+        if (status === 'approved') {
+          updates.approverUserId = actingUser?.id ?? null;
+          updates.approvedAt = now;
+          // The approver is always populated by us — guard against
+          // self-approval: the same person cannot approve a CR they
+          // requested. Mirrors the PO/payment-request self-approval rule.
+          if (old.requestedByUserId && actingUser?.id === old.requestedByUserId) {
+            return res.status(403).json({
+              error: "self_approval_forbidden",
+              message:
+                "You cannot approve a change request you submitted. Another approver must take the decision.",
+            });
+          }
+        }
+        if (status === 'rejected') {
+          updates.approverUserId = actingUser?.id ?? null;
+          updates.rejectedAt = now;
+          const reason = typeof req.body?.rejectionReason === "string" ? req.body.rejectionReason.trim() : "";
+          if (!reason) {
+            return res.status(400).json({
+              error: "rejection_reason_required",
+              message: "A non-empty rejectionReason is required when rejecting a change request.",
+            });
+          }
+          updates.rejectionReason = reason;
+        }
+
         if (status === 'submitted') {
           try {
             const user = getEffectiveUser(req);
@@ -288,13 +328,31 @@ export function registerChangeControlRoutes(app: Express): void {
       const existing = await db.select().from(changeRequests).where(eq(changeRequests.id, id));
       if (existing.length === 0) return res.status(404).json({ error: "Not found" });
 
+      // Deep audit pass 2 — block deleting in-flight CRs. Once a change
+      // request leaves draft it has audit + approval state that must not
+      // disappear via a careless delete. Override per § 0A: an admin
+      // (handled at the permission-middleware layer for the entity) can
+      // still soft-delete by supplying `overrideReason` together with
+      // `deleteReason`. The audit log captures both.
+      const status = String(existing[0].status);
+      const overrideReason = typeof req.body?.overrideReason === "string" ? req.body.overrideReason.trim() : "";
+      if (status !== 'draft' && !overrideReason) {
+        return res.status(409).json({
+          error: "cr_not_in_draft",
+          message:
+            `Change request is in '${status}' — only drafts can be deleted without an overrideReason. ` +
+            `Resubmit the request with overrideReason to record the deletion.`,
+          status,
+        });
+      }
+
       // Soft-delete: mark change request as deleted instead of removing the row
       const user = getEffectiveUser(req);
       const deleteReason = req.body?.deleteReason || null;
       const [deleted] = await db.update(changeRequests).set({
         deletedAt: new Date(),
         deletedBy: user?.id ?? null,
-        deleteReason,
+        deleteReason: overrideReason ? `${deleteReason ?? ""} [override: ${overrideReason}]`.trim() : deleteReason,
       }).where(eq(changeRequests.id, id)).returning();
 
       logAuditFromReq(req, {

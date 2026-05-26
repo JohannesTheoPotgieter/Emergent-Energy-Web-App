@@ -22,6 +22,8 @@ import {
   projectPhaseHistory,
   phaseTemplate,
   cashflowPoints,
+  COMPANY_ROLES,
+  type CompanyRole,
 } from '@shared/schema';
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from './lib/project-info-sync';
 import { getAllPMWorkItemsAsProjectPlan, getAllWorkItemsForProgress } from './work-items-adapter';
@@ -58,22 +60,19 @@ import { setFinanceTrustHeaders } from './lib/finance-trust/envelope';
 import { notFound } from './lib/api-error';
 import { resolveFinanceYearScope } from './lib/finance-year-scope';
 
-const EXEC_ROLES = [
-  'COO_ADMIN',
-  'CEO_ADMIN',
-  'CCO',
-  'CFO',
-  'PROGRAM_MANAGER',
-  'ENGINEERING_MANAGER',
-];
-const STAGE_GATE_OVERRIDE_ROLES = [
-  'COO_ADMIN',
-  'CEO_ADMIN',
-  'CCO',
-  'CFO',
-  'PROGRAM_MANAGER',
-  'ENGINEERING_MANAGER',
-];
+// Deep audit pass 2 — role constants typed as readonly string[] but
+// constrained via the `satisfies` clause to the canonical CompanyRole
+// union. The satisfies clause catches typos at type-check time (if
+// any literal here drifts out of COMPANY_ROLES the file fails to
+// compile) while keeping the array compatible with `.includes(string)`
+// at call sites. Per AGENT_GUARDRAILS § 5 / § 8.2.
+const EXEC_ROLES: readonly string[] = (
+  ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'ENGINEERING_MANAGER'] satisfies readonly CompanyRole[]
+);
+
+const STAGE_GATE_OVERRIDE_ROLES: readonly string[] = (
+  ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'ENGINEERING_MANAGER'] satisfies readonly CompanyRole[]
+);
 const CANONICAL_LIFECYCLE_LABELS = CANONICAL_PHASES.map((p) => p.label);
 const CANONICAL_LIFECYCLE_LABELS_LC = new Map(
   CANONICAL_LIFECYCLE_LABELS.map((p) => [p.toLowerCase(), p]),
@@ -646,7 +645,11 @@ export function registerLifecycleRoutes(app: Express) {
     }
   })();
 
-  const RAG_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'CCO'];
+  // Roles allowed to flip RAG status — typed via `satisfies` so the
+  // canonical list catches typos at compile time (§ 5 / § 8.2).
+  const RAG_ROLES: readonly string[] = (
+    ['COO_ADMIN', 'CEO_ADMIN', 'CCO'] satisfies readonly CompanyRole[]
+  );
 
   app.post(
     '/api/lifecycle-board/projects/:id/rag',
@@ -2265,12 +2268,21 @@ export function registerLifecycleRoutes(app: Express) {
     requirePermission('projects', 'edit'),
     async (req: Request, res: Response) => {
       try {
-        const { engineeringProjectName, targetProjectId } = req.body;
+        const { engineeringProjectName, targetProjectId, overrideReason } = req.body;
         if (!engineeringProjectName || !targetProjectId) {
           return res
             .status(400)
             .json({ error: 'engineeringProjectName and targetProjectId are required' });
         }
+
+        // Deep audit pass 2 — relinking engineering work items is a
+        // soft-rule mutation per § 3A.1. Capture an optional
+        // `overrideReason` in the audit log so the workflow choice is
+        // recorded alongside the actor + timestamp.
+        const reasonForLink =
+          typeof overrideReason === 'string' && overrideReason.trim().length > 0
+            ? overrideReason.trim()
+            : null;
 
         const [target] = await db
           .select()
@@ -2299,6 +2311,7 @@ export function registerLifecycleRoutes(app: Express) {
             description: 'Engineering tasks linked',
             engineeringProjectName,
             linkedCount: updated.length,
+            overrideReason: reasonForLink,
           },
         });
         res.json({ linked: updated.length, targetProject: target.projectName });
@@ -3233,6 +3246,15 @@ export function registerLifecycleRoutes(app: Express) {
         const user = (req as any).user as any;
         const restoredBy = user?.email || user?.name || 'unknown';
 
+        // Deep audit pass 2 — restore is a soft-rule mutation that
+        // reverses an archive. Capture an optional `overrideReason` so
+        // the audit trail explains why this archived project is being
+        // brought back. Soft per § 3A.1 — recorded, not blocked.
+        const overrideReason =
+          typeof req.body?.overrideReason === 'string' && req.body.overrideReason.trim().length > 0
+            ? req.body.overrideReason.trim()
+            : null;
+
         const restoreFields = { archivedStatus: 'ACTIVE', updatedAt: new Date() };
         const [updated] = await db
           .update(projectInfo)
@@ -3249,6 +3271,7 @@ export function registerLifecycleRoutes(app: Express) {
           changesJson: {
             description: `Project restored from ${project.archivedStatus} by ${restoredBy}`,
             previousStatus: project.archivedStatus,
+            overrideReason,
           },
         });
 
