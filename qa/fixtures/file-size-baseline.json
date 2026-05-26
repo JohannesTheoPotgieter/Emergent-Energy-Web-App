@@ -205,6 +205,10 @@
       "loc": 1564
     },
     {
+      "file": "client/src/pages/priority-detail.tsx",
+      "loc": 1554
+    },
+    {
       "file": "server/services/gate-auto-evaluator-service.ts",
       "loc": 1538
     },
