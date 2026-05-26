@@ -18,7 +18,7 @@
     },
     {
       "file": "server/departments/priority-strategic-routes.ts",
-      "loc": 3957
+      "loc": 3987
     },
     {
       "file": "server/smart-import-routes.ts",
@@ -30,7 +30,7 @@
     },
     {
       "file": "server/lifecycle-routes.ts",
-      "loc": 3519
+      "loc": 3533
     },
     {
       "file": "client/src/components/tabs/UnifiedPlanTab.tsx",
@@ -42,15 +42,15 @@
     },
     {
       "file": "client/src/pages/projects.tsx",
-      "loc": 2897
+      "loc": 2906
     },
     {
       "file": "client/src/pages/cashflow.tsx",
-      "loc": 2745
+      "loc": 2844
     },
     {
       "file": "server/routes/quickbooks-invoice-matches.routes.ts",
-      "loc": 2715
+      "loc": 2736
     },
     {
       "file": "server/services/quickbooks-reconciliation-service.ts",
@@ -73,12 +73,12 @@
       "loc": 2262
     },
     {
-      "file": "client/src/components/tabs/ExpenditureEditableTab.tsx",
-      "loc": 2242
+      "file": "client/src/pages/cos.tsx",
+      "loc": 2253
     },
     {
-      "file": "client/src/pages/cos.tsx",
-      "loc": 2234
+      "file": "client/src/components/tabs/ExpenditureEditableTab.tsx",
+      "loc": 2242
     },
     {
       "file": "client/src/components/quickbooks/QbMatchingWorkbench.tsx",
@@ -93,16 +93,16 @@
       "loc": 2160
     },
     {
+      "file": "client/src/components/tabs/QualityTab.tsx",
+      "loc": 2134
+    },
+    {
       "file": "server/lib/import/normalizer.ts",
       "loc": 2129
     },
     {
       "file": "client/src/components/tabs/ProjectProcurementTab.tsx",
       "loc": 2128
-    },
-    {
-      "file": "client/src/components/tabs/QualityTab.tsx",
-      "loc": 2126
     },
     {
       "file": "client/src/pages/finance-quickbooks-throughput.tsx",
@@ -157,6 +157,10 @@
       "loc": 1729
     },
     {
+      "file": "client/src/pages/project-lifecycle.tsx",
+      "loc": 1727
+    },
+    {
       "file": "client/src/pages/standups.tsx",
       "loc": 1726
     },
@@ -165,12 +169,16 @@
       "loc": 1715
     },
     {
-      "file": "client/src/pages/project-lifecycle.tsx",
-      "loc": 1702
+      "file": "server/services/stage-lifecycle-service.ts",
+      "loc": 1706
     },
     {
       "file": "client/src/pages/qm-dashboard.tsx",
       "loc": 1641
+    },
+    {
+      "file": "shared/schema/projects.ts",
+      "loc": 1624
     },
     {
       "file": "client/src/pages/engineering/EngineeringTaskDrawer.tsx",
@@ -181,16 +189,12 @@
       "loc": 1619
     },
     {
-      "file": "server/services/stage-lifecycle-service.ts",
-      "loc": 1611
-    },
-    {
       "file": "shared/schema/finance.ts",
-      "loc": 1608
+      "loc": 1612
     },
     {
-      "file": "shared/schema/projects.ts",
-      "loc": 1577
+      "file": "client/src/pages/priority-detail.tsx",
+      "loc": 1605
     },
     {
       "file": "client/src/pages/subcontractor-dashboard.tsx",
@@ -205,16 +209,12 @@
       "loc": 1564
     },
     {
-      "file": "client/src/pages/priority-detail.tsx",
-      "loc": 1554
-    },
-    {
       "file": "server/services/gate-auto-evaluator-service.ts",
       "loc": 1538
     },
     {
       "file": "shared/permissions/registry.ts",
-      "loc": 1524
+      "loc": 1528
     },
     {
       "file": "server/role-management.ts",

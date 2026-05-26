@@ -381,6 +381,53 @@ export const insertProjectPhaseHistorySchema = createInsertSchema(projectPhaseHi
 export type InsertProjectPhaseHistory = z.infer<typeof insertProjectPhaseHistorySchema>;
 export type ProjectPhaseHistory = typeof projectPhaseHistory.$inferSelect;
 
+// ===================== PROJECT HOLD / BLOCKED METADATA =====================
+//
+// Per AGENT_GUARDRAILS.md § 4A and the C&I Solar Delivery Playbook v2.0,
+// when a project moves to Hold or Blocked status six fields must be
+// captured: reason, owner, review date, dependency, decision owner,
+// evidence link. Prior to this table the rule lived only in docs — the
+// status enum could flip without the metadata being recorded.
+//
+// One row per hold/blocked occurrence; resolved_at is set when the
+// project resumes (or transitions to a different terminal state). Soft
+// rule per § 3A.4: when one of the six is missing, the caller supplies
+// `overrideReason` + the audit log captures the actor + role at time of
+// override. The override path matches the existing § 0A pattern.
+
+export const projectHoldMetadata = pgTable("project_hold_metadata", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  // The status that was set when these fields were captured. Constrained
+  // to the two values that trigger the six-field requirement.
+  status: text("status").notNull(), // 'hold' | 'blocked'
+  reason: text("reason"),
+  ownerUserId: integer("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  reviewDate: text("review_date"), // YYYY-MM-DD; date string for SQLite-dev compatibility
+  dependency: text("dependency"),
+  decisionOwnerUserId: integer("decision_owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  evidenceLink: text("evidence_link"),
+  // Populated when one of the six fields above is missing AND the caller
+  // is authorised to override per § 0A. Records WHY the override was used.
+  overrideReason: text("override_reason"),
+  createdByUserId: integer("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdByRole: text("created_by_role"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  // Set when the hold/blocked status is cleared (project resumed or moved
+  // to a different terminal). Open rows are the current hold; resolved
+  // rows form the historical audit trail.
+  resolvedAt: timestamp("resolved_at"),
+  resolvedByUserId: integer("resolved_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  resolutionNote: text("resolution_note"),
+}, (table) => ({
+  projectIdx: index("idx_project_hold_metadata_project").on(table.projectId),
+  openIdx: index("idx_project_hold_metadata_open").on(table.projectId, table.resolvedAt),
+}));
+
+export const insertProjectHoldMetadataSchema = createInsertSchema(projectHoldMetadata).omit({ id: true, createdAt: true } as any);
+export type InsertProjectHoldMetadata = z.infer<typeof insertProjectHoldMetadataSchema>;
+export type ProjectHoldMetadata = typeof projectHoldMetadata.$inferSelect;
+
 // ===================== PROJECT RAG AUDIT =====================
 
 export const projectRagAudit = pgTable("project_rag_audit", {
@@ -1175,6 +1222,20 @@ export const changeRequests = pgTable("change_requests", {
   marginImpact: decimal("margin_impact", { precision: 15, scale: 2 }),
   evidenceLink: text("evidence_link"),
   finalDecision: text("final_decision"),       // 'approved', 'rejected', 'deferred'
+  // Deeper Project Delivery audit (2026-05-26) — VO transitions to
+  // under_review / approved / rejected previously moved status with no
+  // record of WHO decided. These columns close that gap; the route
+  // populates them on every transition and writes the matching audit
+  // event. `submittedByUserId` is set when the CR leaves draft; the
+  // reviewer/approver fields differ so the trail covers all stages.
+  submittedByUserId: integer("submitted_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  submittedAt: timestamp("submitted_at"),
+  reviewerUserId: integer("reviewer_user_id").references(() => users.id, { onDelete: "set null" }),
+  reviewStartedAt: timestamp("review_started_at"),
+  approverUserId: integer("approver_user_id").references(() => users.id, { onDelete: "set null" }),
+  approvedAt: timestamp("approved_at"),
+  rejectionReason: text("rejection_reason"),
+  rejectedAt: timestamp("rejected_at"),
   deletedAt: timestamp("deleted_at"),
   deletedBy: integer("deleted_by"),
   deleteReason: text("delete_reason"),

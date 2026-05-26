@@ -177,6 +177,62 @@ export async function markOmHandoverComplete(params: {
 }
 
 /**
+ * Record formal acceptance of an O&M handover. Distinct from mark-complete:
+ * acceptance captures WHO accepted the handover (the receiving party — PM
+ * confirming the O&M pack is good, before construction signs off). Per
+ * Six Rule #6 ("handovers are signed, not assumed"), `acceptedByUserId`
+ * and `acceptedAt` must be populated whenever the receiving party signs.
+ *
+ * Prior to this helper the column existed on the schema but no server
+ * code wrote to it, so the field was always null in production. The
+ * deeper Project Delivery audit (2026-05-26) flagged the gap.
+ */
+export async function acceptOmHandover(params: {
+  id: number;
+  userId: number;
+  userRole: string | null;
+  notes?: string | null;
+}): Promise<OmHandover | null> {
+  const [existing] = await db
+    .select()
+    .from(omHandovers)
+    .where(and(eq(omHandovers.id, params.id), isNull(omHandovers.deletedAt)))
+    .limit(1);
+  if (!existing) return null;
+
+  const now = new Date();
+  return db.transaction(async (tx: typeof db) => {
+    const [updated] = await tx
+      .update(omHandovers)
+      .set({
+        acceptedByUserId: params.userId,
+        acceptedAt: now,
+        notes: params.notes ?? existing.notes,
+        updatedAt: now,
+      })
+      .where(eq(omHandovers.id, params.id))
+      .returning();
+    await tx.insert(omHandoverHistory).values({
+      omHandoverId: params.id,
+      fromStatus: existing.status,
+      toStatus: existing.status,
+      changedByUserId: params.userId,
+      changedByRole: params.userRole,
+      detailsJson: { event: "accepted", acceptedAt: now.toISOString() },
+    });
+    await recordAudit({
+      actorRole: params.userRole ?? undefined,
+      userId: params.userId,
+      entityType: "om_handover",
+      entityId: String(params.id),
+      action: "ACCEPT",
+      changesJson: { acceptedAt: now.toISOString() },
+    });
+    return updated as OmHandover;
+  });
+}
+
+/**
  * "Close to handover" dashboard query.
  *
  * Returns three buckets:

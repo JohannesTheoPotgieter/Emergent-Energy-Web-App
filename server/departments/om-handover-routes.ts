@@ -23,6 +23,7 @@ import { Router, type Express, type Request, type Response, type NextFunction } 
 import { requireAuth } from "./shared-middleware";
 import { logAuditFromReq } from "../audit-logger";
 import {
+  acceptOmHandover,
   computeOmHandoverReadiness,
   getOmHandoverByProjectId,
   getOmHandoverDashboard,
@@ -192,6 +193,57 @@ router.post(
     } catch (err) {
       console.error("[OmHandover] Failed to mark complete:", err);
       res.status(500).json({ error: "Failed to mark O&M handover complete" });
+    }
+  },
+);
+
+// ===================== ACCEPT =====================
+//
+// Receiving-party acceptance per Six Rule #6 ("handovers are signed,
+// not assumed"). Distinct from mark-complete: this records the receiving
+// PM/operator confirming the O&M pack is good, populating
+// acceptedByUserId + acceptedAt. The mark-complete endpoint then records
+// the construction-side sign-off.
+//
+// Any authenticated user can accept; the schema enforces the identity
+// of who accepted via the JWT-resolved user. The audit log captures
+// the actor + role + timestamp.
+
+router.post(
+  "/api/om-handovers/:id/accept",
+  requireAuth,
+  async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+      const user = (req as any).user;
+      if (!user?.id) return res.status(401).json({ error: "Not authenticated" });
+
+      const notes = typeof req.body?.notes === "string" ? req.body.notes : null;
+
+      const updated = await acceptOmHandover({
+        id,
+        userId: Number(user.id),
+        userRole: user?.role ?? null,
+        notes,
+      });
+      if (!updated) return res.status(404).json({ error: "om_handover_not_found" });
+
+      logAuditFromReq(req, {
+        entityType: "om_handover",
+        entityId: String(id),
+        action: "om_handover.accepted",
+        changesJson: {
+          acceptedByUserId: updated.acceptedByUserId,
+          acceptedAt: updated.acceptedAt,
+        },
+      });
+
+      res.json({ handover: updated, readiness: computeOmHandoverReadiness(updated as any) });
+    } catch (err) {
+      console.error("[OmHandover] Failed to accept:", err);
+      res.status(500).json({ error: "Failed to accept O&M handover" });
     }
   },
 );

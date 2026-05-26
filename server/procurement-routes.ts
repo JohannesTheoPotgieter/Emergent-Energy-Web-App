@@ -237,6 +237,27 @@ export function registerProcurementRoutes(app: Express): void {
         if (!allowed.includes(req.body.status)) {
           return res.status(400).json({ error: `Cannot transition from ${old.status} to ${req.body.status}` });
         }
+
+        // Deep audit pass 2 — Procurement was allowed to move
+        // requested|quoted → approved → ordered without a linked PO.
+        // Block the `ordered` transition unless the item references an
+        // approved PO. Override per § 0A: caller supplies `overrideReason`
+        // and the audit log captures it. Approved-without-PO is still
+        // allowed because the workflow is to create the PO during the
+        // approve→order step, not during approval itself.
+        if (req.body.status === 'ordered') {
+          const incomingPoId = (req.body as any).linkedPoId ?? old.linkedPoId ?? null;
+          const overrideReason = typeof req.body?.overrideReason === "string" ? req.body.overrideReason.trim() : "";
+          if (!incomingPoId && !overrideReason) {
+            return res.status(400).json({
+              error: "po_link_required",
+              message:
+                "A procurement item must reference an approved PO (linkedPoId) before transitioning to 'ordered'. " +
+                "Resubmit with `overrideReason` if there is a documented reason no PO exists yet.",
+              currentStatus: old.status,
+            });
+          }
+        }
         updates.status = req.body.status;
 
         if (req.body.status === 'approved' && !old.approvalId) {

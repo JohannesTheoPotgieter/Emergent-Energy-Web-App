@@ -300,12 +300,51 @@ export function registerStageLifecycleRoutes(app: Express): void {
         if (!ADMIN_ROLES.includes(user.role)) {
           return res.status(403).json({ error: "Only admin roles can place a project on hold" });
         }
-        const { reason } = req.body || {};
+        const {
+          reason,
+          ownerUserId,
+          reviewDate,
+          dependency,
+          decisionOwnerUserId,
+          evidenceLink,
+          overrideReason,
+        } = req.body || {};
+
+        // § 4A six-field rule. Capture the metadata; the service computes
+        // which fields were missing so the response can surface them to
+        // the UI. When fields are missing the caller must provide an
+        // overrideReason per the § 0A override pattern; otherwise the
+        // service still records the row but flags the gaps.
         const result = await placeProjectOnHold({
           projectId,
           actorUserId: user.id,
           reason,
+          metadata: {
+            ownerUserId: typeof ownerUserId === "number" ? ownerUserId : null,
+            reviewDate: typeof reviewDate === "string" ? reviewDate : null,
+            dependency: typeof dependency === "string" ? dependency : null,
+            decisionOwnerUserId: typeof decisionOwnerUserId === "number" ? decisionOwnerUserId : null,
+            evidenceLink: typeof evidenceLink === "string" ? evidenceLink : null,
+            overrideReason: typeof overrideReason === "string" ? overrideReason : null,
+            actorRole: user.role ?? null,
+          },
         });
+
+        // Soft enforcement: when one or more of the six fields is missing
+        // AND no overrideReason was supplied, return the gaps so the UI
+        // can prompt. The hold is still recorded (override principle —
+        // the app records and surfaces, it does not block).
+        if (result.missingFields.length > 0 && !overrideReason) {
+          return res.status(200).json({
+            ...result,
+            warning: "hold_metadata_incomplete",
+            warningMessage:
+              `Hold recorded, but the following six-field metadata is missing: ` +
+              result.missingFields.join(", ") +
+              `. Re-submit with overrideReason to confirm the override.`,
+          });
+        }
+
         res.json(result);
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
