@@ -1,5 +1,24 @@
+// ============================================================
+// EVIDENCE EVALUATION SERVICE
+//
+// Wave-5 audit (2026-05-26) — rewritten to use parameterised
+// `sql\`\`` templates instead of string-interpolated `sql.raw()`. The
+// previous implementation built every query via manual `.replace(/'/g,
+// "''")` escaping, which is a § 5 violation ("Raw SQL: avoid unless
+// unavoidable. When unavoidable, use `sql` tagged template + parameters
+// — never string interpolation"). Even with single-quote escaping the
+// pattern is fragile: any future addition of a field that allows other
+// SQL syntax characters reopens the injection surface. The Drizzle
+// tagged template engine binds every value as a parameter.
+//
+// EVIDENCE_OVERRIDE_ROLES is now typed via `satisfies readonly
+// CompanyRole[]` so typos against the canonical role list fail at
+// type-check time.
+// ============================================================
+
 import { sql } from "drizzle-orm";
 import { db } from "../db";
+import type { CompanyRole } from "@shared/schema";
 
 export type EvidenceRequirement = {
   requirementKey: string;
@@ -36,7 +55,12 @@ const DEFAULT_THRESHOLD_BY_COMPLETION: Record<string, number> = {
   payment_confirmed: 100,
 };
 
-const EVIDENCE_OVERRIDE_ROLES = ["PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN"];
+// Roles allowed to override an evidence-missing block. Typed against
+// the canonical CompanyRole union so any drift from shared/schema/users
+// fails type-check immediately.
+const EVIDENCE_OVERRIDE_ROLES: readonly string[] = (
+  ["PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN"] satisfies readonly CompanyRole[]
+);
 
 export function isEvidenceOverrideAuthorized(role?: string): boolean {
   return !!role && EVIDENCE_OVERRIDE_ROLES.includes(role);
@@ -107,6 +131,15 @@ export function computeEvidenceEvaluation(
   };
 }
 
+function rowsFromResult(result: unknown): Record<string, unknown>[] {
+  if (Array.isArray(result)) return result;
+  if (result && typeof result === "object" && "rows" in result) {
+    const rows = (result as { rows?: unknown[] }).rows;
+    return Array.isArray(rows) ? (rows as Record<string, unknown>[]) : [];
+  }
+  return [];
+}
+
 export async function evaluateEvidence(params: {
   projectId: number;
   completionType: string;
@@ -116,54 +149,75 @@ export async function evaluateEvidence(params: {
   evaluatorUserId?: number;
   evaluatorName?: string;
 }) {
-  const { projectId, completionType, sourceType, sourceRef, additionalEvidence = [], evaluatorUserId, evaluatorName } = params;
+  const {
+    projectId, completionType, sourceType, sourceRef,
+    additionalEvidence = [], evaluatorUserId, evaluatorName,
+  } = params;
 
-  const reqRows: any[] = await db.execute(sql.raw(`
+  // Parameterised — every value bound via the tagged template.
+  const reqResult = await db.execute(sql`
     SELECT requirement_key, label, evidence_type, is_required, weight, min_count, threshold_percent
     FROM evidence_requirement_definitions
     WHERE active = true
-      AND completion_type = '${completionType.replace(/'/g, "''")}'
-      AND source_type = '${sourceType.replace(/'/g, "''")}'
-      AND (source_ref IS NULL OR source_ref = '${sourceRef.replace(/'/g, "''")}')
+      AND completion_type = ${completionType}
+      AND source_type = ${sourceType}
+      AND (source_ref IS NULL OR source_ref = ${sourceRef})
       AND (project_id IS NULL OR project_id = ${projectId})
     ORDER BY id
-  `)).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
+  `);
+  const reqRows = rowsFromResult(reqResult);
 
   const requirements: EvidenceRequirement[] = reqRows.map((r) => ({
-    requirementKey: r.requirement_key,
-    label: r.label,
-    evidenceType: r.evidence_type,
+    requirementKey: String(r.requirement_key),
+    label: String(r.label),
+    evidenceType: String(r.evidence_type),
     isRequired: !!r.is_required,
-    weight: Number(r.weight || 1),
-    minCount: Number(r.min_count || 1),
+    weight: Number(r.weight ?? 1),
+    minCount: Number(r.min_count ?? 1),
   }));
 
-  const thresholdFromDb = reqRows.map((r) => Number(r.threshold_percent)).find((n) => Number.isFinite(n) && n > 0);
+  const thresholdFromDb = reqRows
+    .map((r) => Number(r.threshold_percent))
+    .find((n) => Number.isFinite(n) && n > 0);
   const threshold = thresholdFromDb || getDefaultThreshold(completionType);
 
-  const collectedRows: any[] = await db.execute(sql.raw(`
+  const collectedResult = await db.execute(sql`
     SELECT requirement_key, evidence_type
     FROM evidence_collected_items
     WHERE project_id = ${projectId}
-      AND completion_type = '${completionType.replace(/'/g, "''")}'
-      AND source_type = '${sourceType.replace(/'/g, "''")}'
-      AND source_ref = '${sourceRef.replace(/'/g, "''")}'
+      AND completion_type = ${completionType}
+      AND source_type = ${sourceType}
+      AND source_ref = ${sourceRef}
       AND deleted_at IS NULL
-  `)).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
+  `);
+  const collectedRows = rowsFromResult(collectedResult);
 
   const collected: EvidenceInput[] = [
-    ...collectedRows.map((r) => ({ requirementKey: r.requirement_key, evidenceType: r.evidence_type })),
+    ...collectedRows.map((r) => ({
+      requirementKey: r.requirement_key != null ? String(r.requirement_key) : null,
+      evidenceType: String(r.evidence_type),
+    })),
     ...additionalEvidence,
   ];
 
   const result = computeEvidenceEvaluation(requirements, collected, threshold);
 
-  await db.execute(sql.raw(`
-    INSERT INTO evidence_evaluations
-      (project_id, completion_type, source_type, source_ref, threshold_percent, score_percent, total_required, total_present, missing_items_json, pass, evaluated_by_user_id, evaluated_by_name)
-    VALUES
-      (${projectId}, '${completionType.replace(/'/g, "''")}', '${sourceType.replace(/'/g, "''")}', '${sourceRef.replace(/'/g, "''")}', ${result.threshold}, ${result.score}, ${result.totalRequired}, ${result.totalPresent}, '${JSON.stringify(result.missingItems).replace(/'/g, "''")}'::jsonb, ${result.pass}, ${evaluatorUserId || "NULL"}, ${evaluatorName ? `'${evaluatorName.replace(/'/g, "''")}'` : "NULL"})
-  `));
+  // Persist the evaluation. Every value bound; the JSONB missing-items
+  // list is bound as a string and cast in-query.
+  await db.execute(sql`
+    INSERT INTO evidence_evaluations (
+      project_id, completion_type, source_type, source_ref,
+      threshold_percent, score_percent, total_required, total_present,
+      missing_items_json, pass, evaluated_by_user_id, evaluated_by_name,
+      created_at
+    ) VALUES (
+      ${projectId}, ${completionType}, ${sourceType}, ${sourceRef},
+      ${result.threshold}, ${result.score}, ${result.totalRequired}, ${result.totalPresent},
+      ${JSON.stringify(result.missingItems)}::jsonb, ${result.pass},
+      ${evaluatorUserId ?? null}, ${evaluatorName ?? null},
+      NOW()
+    )
+  `);
 
   return result;
 }
@@ -181,13 +235,27 @@ export async function upsertEvidenceItem(params: {
   uploadedByUserId?: number;
   uploadedByName?: string | null;
 }) {
-  const { projectId, completionType, sourceType, sourceRef, requirementKey, evidenceType, title, valueRef, valueJson, uploadedByUserId, uploadedByName } = params;
+  const {
+    projectId, completionType, sourceType, sourceRef,
+    requirementKey, evidenceType, title, valueRef, valueJson,
+    uploadedByUserId, uploadedByName,
+  } = params;
 
-  return db.execute(sql.raw(`
-    INSERT INTO evidence_collected_items
-      (project_id, completion_type, source_type, source_ref, requirement_key, evidence_type, title, value_ref, value_json, uploaded_by_user_id, uploaded_by_name)
-    VALUES
-      (${projectId}, '${completionType.replace(/'/g, "''")}', '${sourceType.replace(/'/g, "''")}', '${sourceRef.replace(/'/g, "''")}', ${requirementKey ? `'${requirementKey.replace(/'/g, "''")}'` : "NULL"}, '${evidenceType.replace(/'/g, "''")}', ${title ? `'${title.replace(/'/g, "''")}'` : "NULL"}, ${valueRef ? `'${valueRef.replace(/'/g, "''")}'` : "NULL"}, ${valueJson ? `'${JSON.stringify(valueJson).replace(/'/g, "''")}'::jsonb` : "NULL"}, ${uploadedByUserId || "NULL"}, ${uploadedByName ? `'${uploadedByName.replace(/'/g, "''")}'` : "NULL"})
+  // Parameterised INSERT. JSONB column accepts a stringified payload
+  // cast inside the query; NULL handling done with ?? operator before
+  // binding so the SQL stays readable.
+  return db.execute(sql`
+    INSERT INTO evidence_collected_items (
+      project_id, completion_type, source_type, source_ref,
+      requirement_key, evidence_type, title, value_ref, value_json,
+      uploaded_by_user_id, uploaded_by_name, created_at, updated_at
+    ) VALUES (
+      ${projectId}, ${completionType}, ${sourceType}, ${sourceRef},
+      ${requirementKey ?? null}, ${evidenceType}, ${title ?? null}, ${valueRef ?? null},
+      ${valueJson ? sql`${JSON.stringify(valueJson)}::jsonb` : sql`NULL`},
+      ${uploadedByUserId ?? null}, ${uploadedByName ?? null},
+      NOW(), NOW()
+    )
     RETURNING *
-  `));
+  `);
 }
