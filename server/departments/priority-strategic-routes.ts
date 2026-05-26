@@ -2,7 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { z } from "zod";
 import { requireAuth, requirePriorityAdmin, requirePriorityCreator } from "./shared-middleware";
 import { requirePermission } from "../permission-middleware";
-import { canPriorityRoleEditPriority, canPriorityRoleEscalatePriority, isDepartmentHeadRole, isPriorityAdminRole, isPriorityParentAllowed, isPriorityTerminalStatus } from "@shared/config/priorities";
+import { canPriorityRoleEditPriority, canPriorityRoleEscalatePriority, canPriorityRoleReadPriority, isDepartmentHeadRole, isPriorityAdminRole, isPriorityParentAllowed, isPriorityTerminalStatus } from "@shared/config/priorities";
 import { getEffectiveUser } from "../auth-context";
 import { db, getDbMode } from "../db";
 import {
@@ -92,7 +92,14 @@ function getDepartmentForRole(role: string | null | undefined): string | undefin
  */
 async function fanoutPriorityNotifications(opts: {
   priorityId: number;
-  priority: { ownerUserId?: number | null; assignedUserId?: number | null; accountableExecId?: number | null; title?: string | null };
+  priority: {
+    ownerUserId?: number | null;
+    assignedUserId?: number | null;
+    accountableExecId?: number | null;
+    title?: string | null;
+    scope?: string | null;
+    departmentKey?: string | null;
+  };
   actorUserId: number | null | undefined;
   eventType: string;
   title: string;
@@ -103,15 +110,44 @@ async function fanoutPriorityNotifications(opts: {
       .select({ userId: priorityWatches.userId })
       .from(priorityWatches)
       .where(eq(priorityWatches.priorityId, opts.priorityId));
-    const recipients = new Set<number>();
-    for (const w of watchers) if (typeof w.userId === "number") recipients.add(w.userId);
-    if (opts.priority.ownerUserId) recipients.add(opts.priority.ownerUserId);
-    if (opts.priority.assignedUserId) recipients.add(opts.priority.assignedUserId);
-    if (opts.priority.accountableExecId) recipients.add(opts.priority.accountableExecId);
-    if (opts.actorUserId) recipients.delete(opts.actorUserId);
-    if (recipients.size === 0) return;
+    const candidateIds = new Set<number>();
+    for (const w of watchers) if (typeof w.userId === "number") candidateIds.add(w.userId);
+    if (opts.priority.ownerUserId) candidateIds.add(opts.priority.ownerUserId);
+    if (opts.priority.assignedUserId) candidateIds.add(opts.priority.assignedUserId);
+    if (opts.priority.accountableExecId) candidateIds.add(opts.priority.accountableExecId);
+    if (opts.actorUserId) candidateIds.delete(opts.actorUserId);
+    if (candidateIds.size === 0) return;
+
+    // Re-filter recipients by CURRENT visibility — a watcher who
+    // subscribed when the priority was role-scope must not receive
+    // notifications after it's escalated to a department they have no
+    // access to. Without this filter the watcher leaks the title and
+    // (for escalate events) the free-form note via the notification
+    // body.
+    const candidateRows = await db
+      .select({ id: users.id, role: users.role })
+      .from(users)
+      .where(inArray(users.id, Array.from(candidateIds)));
+    const priorityForCheck = {
+      scope: (opts.priority.scope ?? "company") as PriorityScope,
+      departmentKey: opts.priority.departmentKey ?? null,
+      ownerUserId: opts.priority.ownerUserId ?? null,
+      assignedUserId: opts.priority.assignedUserId ?? null,
+    };
+    const recipients: number[] = [];
+    for (const u of candidateRows) {
+      const dept = getDepartmentForRole(u.role);
+      if (canPriorityRoleReadPriority(
+        { role: u.role, userId: u.id, departmentKey: dept ?? null },
+        priorityForCheck,
+      )) {
+        recipients.push(u.id);
+      }
+    }
+    if (recipients.length === 0) return;
+
     await db.insert(notifications).values(
-      Array.from(recipients).map((userId) => ({
+      recipients.map((userId) => ({
         recipientUserId: userId,
         eventType: opts.eventType,
         title: opts.title,
@@ -230,6 +266,40 @@ function parseIdParam(param: string | string[] | undefined): number | null {
   if (!value) return null;
   const parsed = Number.parseInt(value, 10);
   return Number.isNaN(parsed) ? null : parsed;
+}
+
+/**
+ * Load a priority by id and verify the caller can READ it via
+ * canPriorityRoleReadPriority. Returns the loaded row.
+ *
+ * - 404 (not found) for missing or archived priorities (admins can opt in
+ *   to archived via include_archived=true on the detail endpoint; nested
+ *   reads always 404 archived rows).
+ * - 404 (not 403) when the caller has no read access — we do NOT leak the
+ *   existence of priorities they shouldn't see.
+ *
+ * Every nested read endpoint (comments, activity, children, tasks,
+ * approvals, updates, project-ids) MUST call this before returning data.
+ */
+async function loadPriorityForRead(req: Request, priorityId: number, options: { allowArchived?: boolean } = {}): Promise<any> {
+  const [priority] = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
+  if (!priority) throw notFound("Priority");
+  const isArchived = normalizeTimestamp(priority.deletedAt) != null;
+  if (isArchived && !options.allowArchived) throw notFound("Priority");
+  const user = getEffectiveUser(req);
+  if (!user?.id || !user?.role) throw forbidden("Authentication required");
+  const userDept = getDepartmentForRole(user.role);
+  const canRead = canPriorityRoleReadPriority(
+    { role: user.role, userId: user.id, departmentKey: userDept ?? null },
+    {
+      scope: (priority.scope ?? "company") as PriorityScope,
+      departmentKey: priority.departmentKey ?? null,
+      ownerUserId: priority.ownerUserId ?? null,
+      assignedUserId: priority.assignedUserId ?? null,
+    },
+  );
+  if (!canRead) throw notFound("Priority");
+  return priority;
 }
 
 function requireCooOnly(req: Request, _res: Response, next: NextFunction) {
@@ -1370,19 +1440,15 @@ router.get(
 // same set so the UI can present the "everything open against this priority"
 // single pane of glass. The direct-only numbers remain on the envelope for
 // callers that still want them.
-router.get("/api/priorities/:id", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+router.get("/api/priorities/:id", requireAuth, requirePermission("company_priorities", "view"), asyncHandler(async (req: Request, res: Response) => {
   const priorityId = parseIdParam(req.params.id);
   if (priorityId === null) throw badRequest("Invalid priority id");
-  const [priority] = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
-  if (!priority) throw notFound("Priority");
-  // Archived priorities are 404 to non-admins. Admins can fetch via
-  // ?include_archived=true so the restore UI can read the row.
-  // (normalizeTimestamp handles better-sqlite3's "Invalid Date" oddity.)
-  if (normalizeTimestamp(priority.deletedAt) != null) {
-    const callerRole = getEffectiveUser(req)?.role;
-    const wantArchived = req.query.include_archived === "true" && isPriorityAdminRole(callerRole);
-    if (!wantArchived) throw notFound("Priority");
-  }
+  const callerRole = getEffectiveUser(req)?.role;
+  const wantArchived = req.query.include_archived === "true" && isPriorityAdminRole(callerRole);
+  // loadPriorityForRead enforces visibility per canPriorityRoleReadPriority
+  // (404 to non-readers; doesn't leak existence). Archived rows 404 too
+  // unless the caller is an admin opting in via include_archived=true.
+  const priority = await loadPriorityForRead(req, priorityId, { allowArchived: wantArchived });
 
     const metrics = await getPriorityDerivedMetrics(priorityId);
     // Direct child count for the header badge ("3 sub-priorities") on the
@@ -1928,7 +1994,8 @@ async function getPriorityProgressSourceOptions(req: Request, res: Response) {
 router.delete(
   "/api/priorities/:id",
   requireAuth,
-  requireCooOnly,
+  requirePermission("company_priorities", "view"),
+  requirePriorityAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const priorityId = parseIdParam(req.params.id);
     if (priorityId === null) throw badRequest("Invalid priority id");
@@ -1984,7 +2051,8 @@ router.delete(
 router.post(
   "/api/priorities/:id/restore",
   requireAuth,
-  requireCooOnly,
+  requirePermission("company_priorities", "view"),
+  requirePriorityAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const priorityId = parseIdParam(req.params.id);
     if (priorityId === null) throw badRequest("Invalid priority id");
@@ -2296,7 +2364,9 @@ const templateUpsertSchema = z.object({
   body_template: z.string().max(5000).nullable().optional(),
   scope_default: z.enum(["company", "department", "role"]).default("role"),
   severity_default: z.enum(["critical", "important", "normal"]).default("normal"),
-  horizon_default: z.enum(["day", "week", "month", "quarter", "year"]).default("week"),
+  // Must match shared/schema/mytool.ts :: mytoolPriorityHorizonEnum.
+  // Mismatch would crash at instantiate when Postgres tries to cast.
+  horizon_default: z.enum(["today", "week", "month", "quarter"]).default("week"),
   department_key: z.string().max(120).nullable().optional(),
   target_outcome: z.string().max(2000).nullable().optional(),
   definition_of_done: z.string().max(2000).nullable().optional(),
@@ -2444,9 +2514,23 @@ router.delete(
 // override title via body.title_override (e.g. add date suffix for
 // weekly standup templates). Server forces caller as owner/assignee
 // for role-scope instantiation per the existing create rules.
+// instantiateSchema accepts the same shape as POST /api/priorities so
+// the dialog can pre-fill from a template, let the user customise,
+// then submit through /instantiate (which preserves the
+// source=template provenance in the activity log + applies the
+// dept-visibility gate).
 const instantiateSchema = z.object({
   title_override: z.string().min(1).max(200).optional(),
+  description_override: z.string().max(5000).nullable().optional(),
+  severity_override: severityEnum.optional(),
+  horizon_override: z.enum(["today", "week", "month", "quarter"]).optional(),
+  department_key_override: z.string().max(120).nullable().optional(),
+  target_outcome_override: z.string().max(2000).nullable().optional(),
+  definition_of_done_override: z.string().max(2000).nullable().optional(),
+  next_action_override: z.string().max(2000).nullable().optional(),
+  owner_role_override: z.string().max(120).nullable().optional(),
   due_date: z.string().max(50).optional(),
+  review_cadence_days: z.number().int().min(1).max(365).nullable().optional(),
 });
 router.post(
   "/api/priority-templates/:id/instantiate",
@@ -2463,6 +2547,16 @@ router.post(
     const [tpl] = await db.select().from(priorityTemplates)
       .where(eq(priorityTemplates.id, id));
     if (!tpl || tpl.deletedAt) throw notFound("Template");
+
+    // Apply the same visibility predicate as GET /api/priority-templates
+    // so a user can't enumerate template IDs to read confidential
+    // template content from another department (titleTemplate /
+    // bodyTemplate / targetOutcome / definitionOfDone / nextAction
+    // would otherwise be returned in the created priority).
+    const tplVisible = isPriorityAdminRole(user.role)
+      || (isDepartmentHeadRole(user.role) && (!tpl.departmentKey || tpl.departmentKey === userDept))
+      || (tpl.scopeDefault === "role" && (!tpl.departmentKey || tpl.departmentKey === userDept));
+    if (!tplVisible) throw notFound("Template");
 
     const scope = tpl.scopeDefault as PriorityScope;
     // Same authorisation rules as POST /api/priorities
@@ -2482,18 +2576,19 @@ router.post(
 
     const [created] = await db.insert(mytoolCompanyPriorities).values({
       title: body.title_override ?? tpl.titleTemplate,
-      description: tpl.bodyTemplate ?? null,
-      severity: (tpl.severityDefault as any),
-      horizon: (tpl.horizonDefault as any),
+      description: body.description_override !== undefined ? body.description_override : (tpl.bodyTemplate ?? null),
+      severity: (body.severity_override ?? tpl.severityDefault) as any,
+      horizon: (body.horizon_override ?? tpl.horizonDefault) as any,
       scope,
-      departmentKey,
+      departmentKey: body.department_key_override !== undefined ? body.department_key_override : departmentKey,
       ownerUserId,
       assignedUserId,
-      ownerRole: tpl.ownerRole ?? null,
-      targetOutcome: tpl.targetOutcome ?? null,
-      definitionOfDone: tpl.definitionOfDone ?? null,
-      nextAction: tpl.nextAction ?? null,
+      ownerRole: body.owner_role_override !== undefined ? body.owner_role_override : (tpl.ownerRole ?? null),
+      targetOutcome: body.target_outcome_override !== undefined ? body.target_outcome_override : (tpl.targetOutcome ?? null),
+      definitionOfDone: body.definition_of_done_override !== undefined ? body.definition_of_done_override : (tpl.definitionOfDone ?? null),
+      nextAction: body.next_action_override !== undefined ? body.next_action_override : (tpl.nextAction ?? null),
       dueDate: body.due_date ?? null,
+      reviewCadenceDays: body.review_cadence_days ?? null,
       createdAt: now,
       updatedAt: now,
     }).returning();
@@ -2898,9 +2993,10 @@ router.get(
 // Rolled-up: returns open tasks across every project linked to this priority
 // OR any descendant. Matches the status filter used by priority_derived_metrics
 // .open_task_count so the card counter and drill-down list stay in sync.
-router.get("/api/priorities/:id/tasks", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+router.get("/api/priorities/:id/tasks", requireAuth, requirePermission("company_priorities", "view"), asyncHandler(async (req: Request, res: Response) => {
   const priorityId = parseIdParam(req.params.id);
   if (priorityId === null) throw badRequest("Invalid priority id");
+  await loadPriorityForRead(req, priorityId);
 
   const { rolledUpProjectIds: projectIds } = await resolveRolledUpScope(priorityId);
   if (projectIds.length === 0) return res.json([]);
@@ -2971,9 +3067,10 @@ router.get("/api/priorities/:id/tasks", requireAuth, asyncHandler(async (req: Re
 // ==================== GET /api/priorities/:id/approvals ====================
 // Rolled-up: includes pending approvals across every project linked to this
 // priority OR any descendant priority.
-router.get("/api/priorities/:id/approvals", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+router.get("/api/priorities/:id/approvals", requireAuth, requirePermission("company_priorities", "view"), asyncHandler(async (req: Request, res: Response) => {
   const priorityId = parseIdParam(req.params.id);
   if (priorityId === null) throw badRequest("Invalid priority id");
+  await loadPriorityForRead(req, priorityId);
 
   const { rolledUpProjectIds: projectIds } = await resolveRolledUpScope(priorityId);
   if (projectIds.length === 0) return res.json([]);
@@ -3012,9 +3109,10 @@ router.get("/api/priorities/:id/approvals", requireAuth, asyncHandler(async (req
 // ==================== GET /api/priorities/:id/updates ====================
 // Rolled-up: RAG / phase updates across every project linked to this priority
 // OR any descendant priority.
-router.get("/api/priorities/:id/updates", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+router.get("/api/priorities/:id/updates", requireAuth, requirePermission("company_priorities", "view"), asyncHandler(async (req: Request, res: Response) => {
   const priorityId = parseIdParam(req.params.id);
   if (priorityId === null) throw badRequest("Invalid priority id");
+  await loadPriorityForRead(req, priorityId);
 
   const { rolledUpProjectIds: projectIds } = await resolveRolledUpScope(priorityId);
   if (projectIds.length === 0) return res.json([]);
@@ -3199,9 +3297,10 @@ router.post(
 );
 
 // ==================== GET /api/priorities/:id/children ====================
-router.get("/api/priorities/:id/children", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+router.get("/api/priorities/:id/children", requireAuth, requirePermission("company_priorities", "view"), asyncHandler(async (req: Request, res: Response) => {
   const priorityId = parseIdParam(req.params.id);
   if (priorityId === null) throw badRequest("Invalid priority id");
+  await loadPriorityForRead(req, priorityId);
 
   const children = await db.select().from(mytoolCompanyPriorities)
     .where(and(
@@ -3326,9 +3425,10 @@ router.post(
 // HSE / PD) to filter their project lists by a chosen priority. Returns the
 // rolled-up project ID set — direct links plus every descendant priority's
 // links, deduped. Tier 4 · PR 6.
-router.get("/api/priorities/:id/project-ids", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+router.get("/api/priorities/:id/project-ids", requireAuth, requirePermission("company_priorities", "view"), asyncHandler(async (req: Request, res: Response) => {
   const priorityId = parseIdParam(req.params.id);
   if (priorityId === null) throw badRequest("Invalid priority id");
+  await loadPriorityForRead(req, priorityId);
 
   const { directProjectIds, rolledUpProjectIds, descendantPriorityIds } = await resolveRolledUpScope(priorityId);
 
@@ -3347,9 +3447,10 @@ router.get("/api/priorities/:id/project-ids", requireAuth, asyncHandler(async (r
 // also merges inherited events from linked projects (RAG transitions,
 // phase changes) so the timeline reflects the full cross-departmental
 // history, not just priority-level mutations.
-router.get("/api/priorities/:id/activity", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+router.get("/api/priorities/:id/activity", requireAuth, requirePermission("company_priorities", "view"), asyncHandler(async (req: Request, res: Response) => {
   const priorityId = parseIdParam(req.params.id);
   if (priorityId === null) throw badRequest("Invalid priority id");
+  await loadPriorityForRead(req, priorityId);
 
   const limit = Math.min(parseInt((req.query.limit as string) || "100", 10) || 100, 500);
   const includeProjectEvents = req.query.include_project_events === "true";
@@ -3672,6 +3773,7 @@ router.post("/api/priorities/:id/reopen", requireAuth, requirePermission("compan
 router.get("/api/priorities/:id/comments", requireAuth, requirePermission("company_priorities", "view"), asyncHandler(async (req: Request, res: Response) => {
   const priorityId = parseIdParam(req.params.id);
   if (priorityId === null) throw badRequest("Invalid priority id");
+  await loadPriorityForRead(req, priorityId);
 
   const rows = await db
     .select({
@@ -3699,6 +3801,7 @@ router.post("/api/priorities/:id/comments", requireAuth, requirePermission("comp
   if (!user?.id) throw badRequest("No effective user");
   const priorityId = parseIdParam(req.params.id);
   if (priorityId === null) throw badRequest("Invalid priority id");
+  await loadPriorityForRead(req, priorityId);
 
   const schema = z.object({ body: z.string().min(1).max(5000) });
   const { body } = schema.parse(req.body);
@@ -3730,6 +3833,7 @@ router.delete("/api/priorities/:id/comments/:commentId", requireAuth, requirePer
   const priorityId = parseIdParam(req.params.id);
   const commentId = parseIdParam(req.params.commentId);
   if (priorityId === null || commentId === null) throw badRequest("Invalid id");
+  await loadPriorityForRead(req, priorityId);
 
   const [comment] = await db
     .select({ id: priorityComments.id, authorUserId: priorityComments.authorUserId })
@@ -3754,6 +3858,7 @@ router.get("/api/priorities/:id/watched", requireAuth, requirePermission("compan
   if (!user?.id) throw badRequest("No effective user");
   const priorityId = parseIdParam(req.params.id);
   if (priorityId === null) throw badRequest("Invalid priority id");
+  await loadPriorityForRead(req, priorityId);
 
   const [watch] = await db
     .select({ userId: priorityWatches.userId })
@@ -3769,6 +3874,7 @@ router.post("/api/priorities/:id/watch", requireAuth, requirePermission("company
   if (!user?.id) throw badRequest("No effective user");
   const priorityId = parseIdParam(req.params.id);
   if (priorityId === null) throw badRequest("Invalid priority id");
+  await loadPriorityForRead(req, priorityId);
 
   const [priority] = await db.select({ id: mytoolCompanyPriorities.id }).from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
   if (!priority) throw notFound("Priority");
@@ -3787,6 +3893,7 @@ router.delete("/api/priorities/:id/watch", requireAuth, requirePermission("compa
   if (!user?.id) throw badRequest("No effective user");
   const priorityId = parseIdParam(req.params.id);
   if (priorityId === null) throw badRequest("Invalid priority id");
+  await loadPriorityForRead(req, priorityId);
 
   await db.delete(priorityWatches)
     .where(and(eq(priorityWatches.priorityId, priorityId), eq(priorityWatches.userId, user.id)));

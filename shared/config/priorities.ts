@@ -103,6 +103,60 @@ export function canPriorityRoleEditPriority(
 }
 
 /**
+ * Visibility predicate — can this user READ this priority?
+ *
+ * Used to gate the detail endpoint and every nested read (comments,
+ * activity, children, tasks, approvals, updates, project-ids). Without
+ * this, any authenticated user could fetch any priority by guessing IDs
+ * and read its title, description, financial rollups, owner chain etc.
+ *
+ *   - Priority admins: see everything (company + every dept + every role).
+ *   - Department heads: see company-scope (read-only) + their own dept's
+ *     department + role priorities.
+ *   - Regular users: see company-scope (read-only — the whole company
+ *     reads top-of-funnel priorities so they know what matters) + their
+ *     own dept's department priorities (read-only) + role priorities they
+ *     own or are assigned to.
+ *
+ * Note: this is intentionally MORE permissive than the edit/escalate
+ * predicates. A regular user CAN view their department's priorities
+ * (they need to know what their team is working on) but cannot edit them.
+ */
+export function canPriorityRoleReadPriority(
+  user: PriorityAccessUser,
+  priority: PriorityMutabilityRow,
+): boolean {
+  if (!user.role || !user.userId) return false;
+  if (isPriorityAdminRole(user.role)) return true;
+
+  const scope = (priority.scope || "company") as PriorityScope;
+
+  // Company scope is visible to everyone in the company.
+  if (scope === "company") return true;
+
+  // Direct ownership / assignment always grants read, regardless of
+  // scope or department. A priority can legitimately be assigned to
+  // someone outside the originating department (cross-team work,
+  // SME consult, etc.) and that person needs to see their own work.
+  if (priority.ownerUserId === user.userId || priority.assignedUserId === user.userId) {
+    return true;
+  }
+
+  if (isDepartmentHeadRole(user.role)) {
+    if (!user.departmentKey) return false;
+    return !priority.departmentKey || priority.departmentKey === user.departmentKey;
+  }
+
+  // Regular users: own-dept department priorities (read-only).
+  // Role-scope priorities not owned/assigned to them are private.
+  if (scope === "department") {
+    if (!user.departmentKey) return false;
+    return !priority.departmentKey || priority.departmentKey === user.departmentKey;
+  }
+  return false;
+}
+
+/**
  * Ownership-aware escalation authorisation. The escalation chain is
  * role → department → company, and each step should be initiable by the
  * person closest to the work — not gated to admins-only.

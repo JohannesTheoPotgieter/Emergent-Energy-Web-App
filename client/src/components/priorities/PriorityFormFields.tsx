@@ -50,6 +50,12 @@ export interface PriorityFormState {
   assigned_user_id: string;
   parent_id: string;
   project_ids: number[];
+  /**
+   * Review cadence in days. Empty string = no cadence. The server
+   * surfaces dueForReview when (lastReviewedAt ?? createdAt) +
+   * review_cadence_days < now. See migration 0069_priorities_phase3.
+   */
+  review_cadence_days: string;
 }
 
 export const emptyPriorityForm: PriorityFormState = {
@@ -71,6 +77,7 @@ export const emptyPriorityForm: PriorityFormState = {
   assigned_user_id: "",
   parent_id: "",
   project_ids: [],
+  review_cadence_days: "",
 };
 
 interface Props {
@@ -348,7 +355,7 @@ export function PriorityFormFields({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <div>
           <Label className="text-xs">Due Date</Label>
           <Input
@@ -356,6 +363,18 @@ export function PriorityFormFields({
             value={form.due_date}
             onChange={(e) => patch({ due_date: e.target.value })}
             data-testid="input-priority-due-date"
+          />
+        </div>
+        <div>
+          <Label className="text-xs">Review cadence (days)</Label>
+          <Input
+            type="number"
+            min={1}
+            max={365}
+            placeholder="e.g. 7 = weekly"
+            value={form.review_cadence_days}
+            onChange={(e) => patch({ review_cadence_days: e.target.value })}
+            data-testid="input-priority-review-cadence"
           />
         </div>
         <div>
@@ -495,6 +514,7 @@ export function buildPriorityPayload(
     accountable_exec_id: form.accountable_exec_id ? parseInt(form.accountable_exec_id, 10) : null,
     assigned_user_id: form.assigned_user_id ? parseInt(form.assigned_user_id, 10) : null,
     parent_id: form.parent_id ? parseInt(form.parent_id, 10) : null,
+    review_cadence_days: form.review_cadence_days ? parseInt(form.review_cadence_days, 10) : null,
   };
   if (opts.includeStatus) payload.status = form.status;
   if (opts.includeProjectIds && form.project_ids.length > 0) {

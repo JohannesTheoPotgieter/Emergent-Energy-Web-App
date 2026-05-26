@@ -107,6 +107,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // Kept as a redirect so any bookmarked link still lands in the right place.
   { id: "quickbooksHomeRedirect", path: "/quickbooks", label: "QuickBooks (moved)", type: "alias", permissionEntity: "financials", redirectTo: "/finance/quickbooks" },
   { id: "adminDocumentTypes", path: "/admin/document-types", label: "Document types (legacy)", iconKey: "FileText", navGroup: "SYSTEM", permissionEntity: "admin_roles", showInSidebar: false, routeComponentKey: "AdminDocumentTypesPage" },
+  { id: "adminPriorityTemplates", path: "/admin/priority-templates", label: "Priority templates", iconKey: "Sparkles", navGroup: "SYSTEM", permissionEntity: "company_priorities", routeComponentKey: "AdminPriorityTemplatesPage" },
   { id: "adminDocumentManagement", path: "/admin/document-management", label: "Document management", iconKey: "FolderTree", navGroup: "SYSTEM", permissionEntity: "documents_admin", routeComponentKey: "AdminDocumentManagementPage" },
   { id: "adminEmailLinkerDev", path: "/admin/email-linker-dev", label: "Email auto-linker (dev)", iconKey: "Mail", navGroup: "SYSTEM", permissionEntity: "admin_roles", routeComponentKey: "AdminEmailLinkerDevPage" },
   { id: "pendingApprovals", path: "/pending-approvals", label: "Pending Approvals", iconKey: "Inbox", navGroup: "SYSTEM", permissionEntity: "admin_roles", showInSidebar: false, routeComponentKey: "PendingApprovalsPage" },

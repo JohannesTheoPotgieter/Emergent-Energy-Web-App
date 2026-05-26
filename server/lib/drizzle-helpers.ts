@@ -39,10 +39,21 @@ export function toStringArray(values: unknown[]): string[] {
  * so integration tests can exercise it. Callers MUST treat this as a
  * best-effort guarantee in non-Postgres environments.
  */
+let sqliteTransactionDowngradeWarned = false;
+
 export async function runInTransaction<T>(
   work: (tx: typeof db) => Promise<T>,
 ): Promise<T> {
   if (getDbMode() === "sqlite") {
+    if (!sqliteTransactionDowngradeWarned) {
+      sqliteTransactionDowngradeWarned = true;
+      console.warn(
+        "[runInTransaction] SQLite mode — writes run WITHOUT transactional " +
+        "atomicity. This is dev/test only (NODE_ENV !== 'production' is " +
+        "enforced at db.ts). Production Postgres still gets full " +
+        "rollback-on-failure semantics.",
+      );
+    }
     // better-sqlite3 rejects async transaction bodies, so run the writes
     // directly. NODE_ENV !== "production" guards us at db.ts:296.
     return work(db);
