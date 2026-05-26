@@ -48,8 +48,22 @@
 - **F-9 (LOW).** `quickbooks-reconciliation-service.ts:1007–1010` carries an obsolete comment about 1:1 uniqueness post-Task #142.
 
 ### What was fixed in this audit
+- ✅ **F-1 (Phase 1):** `recognisedRevenue` field added to `CanonicalProjectFinanceRow` and populated via `FinanceLineLevelRepository.getPortfolioFinanceLines()` (the canonical § 3.3 POC source). New `finance_recognised_revenue` KPI ("Revenue (POC)") exposed in `buildKpis`. Legacy `finance_total_revenue` KPI relabelled in-place to "Contract value (billed)" so the label matches the source. Parity test added at `qa/tests/unit/dashboard-revenue-poc-parity.test.ts`.
+- ✅ **F-2 (Stage 1):** RBAC migrated to `requirePermission(entity, action)` across the legacy routes. Specifically:
+    - `finance-legacy-extracted-routes.ts`: `/api/program/cos`, `/api/financial-headline`, `/api/financial-close/files/:f`, `/api/realisation-kpis`, `/api/program-inflows`, `/api/expenditure/overrides` now gated; `/api/expenditure/font-color-toggle`, `/api/cos-status-override` (POST + DELETE) now `cos:override` (no longer floppy `requireAuth`); DELETE overrides now require `financials:override`.
+    - `cos-control-routes.ts`: 21 endpoints migrated from `requireAdmin` (or `requireAuth` only) to `cos_control:view/edit`, `cashflow_forecast:view`, `cos:view`, `cashflow:view` as appropriate. Genuinely admin-only endpoints (backfill, data-quality scan, planning-board admin) retain `requireAdmin` because they have no matching entity in the registry.
+    - `register-cashflow-2026-routes.ts`: `/api/cashflow-2026`, `/detail`, `/balance-history` now `cashflow:view`.
+- ✅ **F-3:** Hardcoded `FINANCE_ANALYSIS_ROLES` and `TOLERANCE_WRITE_ROLES` arrays deleted from `finance-analysis.routes.ts`. Replaced with `requirePermission(entity, action)` per endpoint, aligned to the registry. Tolerance PUT uses `cos:override` which maps to the same role list (COO, CEO, CFO, PFM) — net zero behaviour change for current roles.
+- ✅ **F-4:** QB cascade proposal age surface added. New `GET /api/quickbooks/cascade-proposals/summary` endpoint (gated by `financials:view`) returns counts + oldest-age. New banner on `client/src/pages/admin-quickbooks.tsx` colour-graded sky/amber/rose by oldest age (> 0d / > 7d / > 14d).
+- ✅ **F-5:** Route-boundary Zod validation rejects future `paidDate` on `costLineSchema` and `revenueLineSchema` (`finance-legacy-extracted-routes.ts:1182–1196`). DB CHECK constraint deferred — needs `db:migrate` approval.
 - ✅ **F-6:** Ambiguous "Date" headers in cashflow inflows + outflows tables relabelled to "Payment date" with tooltip per § 3.4 (`client/src/pages/cashflow.tsx:549, 793`).
 - ✅ **F-7:** `revenue-tracking.tsx` now uses canonical `formatZar` (`client/src/pages/revenue-tracking.tsx:25, 54`).
+- ✅ **F-9:** Stale "1:1 invariant" JSDoc comment replaced with current Task #142 allocation-model description on `QuickBooksUnavailableError`.
+
+### Deferred (out of scope for this audit session)
+- **F-1 Phase 2** — Migrate UI tile consumers (`priority-detail.tsx`, `project-lifecycle.tsx`, `GpTrackerTab.tsx`, `RevenueTrackerTab.tsx`, `WeeklyReviewWizard.tsx`) to read the new `recognisedRevenue` field instead of `totalRevenue`. The priority surface specifically reads from the `priority_derived_metrics` PostgreSQL view (`migrations/0003_priority_derived_metrics_view.sql`) which aggregates from `derived_project_kpis.total_planned_revenue` — a separate materializer chain that needs its own additive column (`total_recognised_revenue`) + view migration + materializer update before the priority page can be re-pointed. This is a 2–3 PR sequence with owner sign-off on the schema additions.
+- **F-5 DB CHECK constraint** — Adding `CHECK (paid_date IS NULL OR paid_date <= CURRENT_DATE)` on `normalized_cost_lines`, `normalized_revenue_lines`, `normalized_cost_line_actuals.finance_payment_date` requires (a) a data audit to confirm no existing future-dated rows would reject the migration, and (b) `npm run db:migrate` user approval per § 6 of the guardrails.
+- **F-8** — Refactor direct `db.select()` in `cos-control-routes.ts:419, 503, 558` and `invoice-pattern-routes.ts:51–94` into repository methods. Read-only / admin-only contexts so no data-integrity risk; can be bundled with the next finance-route housekeeping PR.
 
 ### What could not be verified in this sandbox
 - `npm run check` failed with `error TS2688: Cannot find type definition file for 'node'` (missing `@types/node` install). Could not produce a clean type-check pass in this environment.
