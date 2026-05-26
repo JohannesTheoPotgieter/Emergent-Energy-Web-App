@@ -33,7 +33,14 @@ export function deriveQbVatAmounts(input: { totalAmt?: unknown; totalTax?: unkno
     return { qbAmountIncVat: null, qbTaxAmount: null, qbAmountExVat: null, taxUncertain: true };
   }
   if (tax === null) {
-    return { qbAmountIncVat: incVat, qbTaxAmount: null, qbAmountExVat: incVat, taxUncertain: true };
+    // DF-5 (audit V2): when QB returns inc-VAT without tax, REFUSE to guess
+    // ex-VAT. Returning incVat as ex-VAT inflated the cost by ~15% (ZA VAT
+    // standard rate) — only the `taxUncertain` badge surfaced the doubt,
+    // but the wrong number still propagated through every aggregate.
+    // Returning null + taxUncertain=true is honest: downstream callers
+    // already special-case taxUncertain (see computeQbDocumentStatus →
+    // TAX_UNCERTAIN status, UI badges).
+    return { qbAmountIncVat: incVat, qbTaxAmount: null, qbAmountExVat: null, taxUncertain: true };
   }
   return {
     qbAmountIncVat: incVat,

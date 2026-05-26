@@ -101,10 +101,15 @@ export function toIsoDateSast(date: Date): string {
 export function previousMonthFirst(date: Date): string {
   const sast = new Date(date.getTime() + SAST_OFFSET_MINUTES * 60_000);
   const y = sast.getUTCFullYear();
-  const m = sast.getUTCMonth();
-  const prevY = m === 0 ? y - 1 : y;
-  const prevM = m === 0 ? 12 : m;
-  return `${prevY}-${String(prevM).padStart(2, "0")}-01`;
+  const m0 = sast.getUTCMonth(); // 0-indexed (Jan=0)
+  const prevY = m0 === 0 ? y - 1 : y;
+  // DF-34 (audit V2): rename for clarity. This is the 1-indexed previous
+  // month (Jan→12 of previous year; Feb→1; …; Dec→11). The string output
+  // format wants month numbers 01-12, not 0-indexed. Verified by reading:
+  // when m0=1 (February), prevM1Indexed=1 → output "01" (January) ✓.
+  // When m0=0 (January), prevM1Indexed=12 → output "12" of previous year ✓.
+  const prevM1Indexed = m0 === 0 ? 12 : m0;
+  return `${prevY}-${String(prevM1Indexed).padStart(2, "0")}-01`;
 }
 
 // ── Business day arithmetic ──
@@ -161,7 +166,13 @@ export function nthBusinessDayOfMonth(year: number, month1Based: number, n: numb
 // ── Holiday loader ──
 
 let holidayCache: { expiresAt: number; set: Set<string> } | null = null;
-const HOLIDAY_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+// DF-15 (audit V2): reduced from 1h to 5min. The 3rd-business-day lock
+// calculation depends on the holiday set; a stale cache after a holiday
+// is added intra-day could shift the lock day by 1. 5 minutes is short
+// enough that adding a holiday becomes immediately effective in any
+// practical workflow, and long enough to avoid DB thrashing on the hot
+// realisation path.
+const HOLIDAY_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /**
  * Load South African public holidays from the calendar_holiday table.
