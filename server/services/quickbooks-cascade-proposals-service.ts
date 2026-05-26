@@ -739,6 +739,47 @@ export interface QbProposalAgeSummary {
   oldestCreatedAt: string | null;
 }
 
+/**
+ * DF-27 — Pure aggregator extracted from `getProposalAgeSummary` so the
+ * bucket-counting logic can be unit-tested in isolation (without the DB).
+ * Takes the createdAt timestamps + an "as-of" instant; returns the same
+ * summary shape.
+ */
+export function summariseProposalAges(
+  createdAts: Array<Date | string | number | null | undefined>,
+  asOfMs: number = Date.now(),
+): QbProposalAgeSummary {
+  let agedOver7 = 0;
+  let agedOver14 = 0;
+  let agedOver30 = 0;
+  let oldestMs: number | null = null;
+  let validRowCount = 0;
+  for (const c of createdAts) {
+    const createdMs = c instanceof Date
+      ? c.getTime()
+      : typeof c === "number"
+        ? c
+        : c
+          ? new Date(c).getTime()
+          : NaN;
+    if (!Number.isFinite(createdMs)) continue;
+    validRowCount += 1;
+    const ageDays = (asOfMs - createdMs) / (1000 * 60 * 60 * 24);
+    if (ageDays > 30) agedOver30 += 1;
+    if (ageDays > 14) agedOver14 += 1;
+    if (ageDays > 7) agedOver7 += 1;
+    if (oldestMs === null || createdMs < oldestMs) oldestMs = createdMs;
+  }
+  return {
+    pending: validRowCount,
+    agedOver7Days: agedOver7,
+    agedOver14Days: agedOver14,
+    agedOver30Days: agedOver30,
+    oldestAgeDays: oldestMs !== null ? Math.floor((asOfMs - oldestMs) / (1000 * 60 * 60 * 24)) : null,
+    oldestCreatedAt: oldestMs !== null ? new Date(oldestMs).toISOString() : null,
+  };
+}
+
 export async function getProposalAgeSummary(): Promise<QbProposalAgeSummary> {
   const rows = await db
     .select({ createdAt: qbLinkProposedCascades.createdAt })
@@ -749,31 +790,7 @@ export async function getProposalAgeSummary(): Promise<QbProposalAgeSummary> {
         isNull(qbLinkProposedCascades.deletedAt),
       ),
     );
-
-  const now = Date.now();
-  let agedOver7 = 0;
-  let agedOver14 = 0;
-  let agedOver30 = 0;
-  let oldestMs: number | null = null;
-  for (const r of rows) {
-    const createdMs = r.createdAt ? new Date(r.createdAt as any).getTime() : NaN;
-    if (!Number.isFinite(createdMs)) continue;
-    const ageMs = now - createdMs;
-    const ageDays = ageMs / (1000 * 60 * 60 * 24);
-    if (ageDays > 30) agedOver30 += 1;
-    if (ageDays > 14) agedOver14 += 1;
-    if (ageDays > 7) agedOver7 += 1;
-    if (oldestMs === null || createdMs < oldestMs) oldestMs = createdMs;
-  }
-
-  return {
-    pending: rows.length,
-    agedOver7Days: agedOver7,
-    agedOver14Days: agedOver14,
-    agedOver30Days: agedOver30,
-    oldestAgeDays: oldestMs !== null ? Math.floor((now - oldestMs) / (1000 * 60 * 60 * 24)) : null,
-    oldestCreatedAt: oldestMs !== null ? new Date(oldestMs).toISOString() : null,
-  };
+  return summariseProposalAges(rows.map((r) => r.createdAt));
 }
 
 export async function getProposalById(id: number): Promise<QbLinkProposedCascade | null> {

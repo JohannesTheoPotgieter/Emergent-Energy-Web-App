@@ -45,6 +45,7 @@ import { safeNum, getFYRange } from "../lib/home-helpers";
 import { isEffectivelyRealisedLocal, isCashflowConfirmedCheck } from "../lib/finance-helpers";
 import { paramStr, parseIntParam } from "../lib/req-params";
 import { getCanonicalAllCurrentCostLines, getCanonicalProjectCostLinesByName, getCanonicalCostLinesByNames } from "../services/project-cost-line-read-service";
+import { pastOrTodayIsoDate } from "../lib/finance/validators";
 
 export function registerFinanceLegacyExtractedRoutes(app: Express): void {
 
@@ -1168,17 +1169,9 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
   // § 3.7 HARD: actuals fields receive ACTUAL dates only. A paidDate in the
   // future is by definition not an actual — it is a planned / forecast date
   // and belongs in `forecastPaymentDate`. Reject at the route boundary so the
-  // manual-edit path matches the Smart Import normalizer rule.
-  const pastOrTodayIsoDate = (fieldName: string) =>
-    z.string().refine(
-      (v) => {
-        if (!v) return true;
-        const d = String(v).slice(0, 10);
-        const today = new Date().toISOString().slice(0, 10);
-        return d <= today;
-      },
-      { message: `${fieldName} cannot be in the future. Use forecastPaymentDate for planned payments.` },
-    );
+  // manual-edit path matches the Smart Import normalizer rule. The
+  // refinement is shared with the unit test (DF-29) via the lib helper.
+  // pastOrTodayIsoDate is imported above.
 
   const costLineSchema = z.object({
     projectId: z.number().int(),
