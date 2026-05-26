@@ -102,6 +102,39 @@ export function canPriorityRoleEditPriority(
     && (priority.ownerUserId === user.userId || priority.assignedUserId === user.userId);
 }
 
+/**
+ * Ownership-aware escalation authorisation. The escalation chain is
+ * role → department → company, and each step should be initiable by the
+ * person closest to the work — not gated to admins-only.
+ *
+ *   - Company scope: terminal. No further escalation possible.
+ *   - Priority admins: may escalate any non-company priority.
+ *   - Department heads: may escalate role- or department-scoped priorities
+ *     that belong to (or are not yet pinned to) their own department.
+ *   - Regular users: may escalate ONLY role-scoped priorities they own or
+ *     are assigned to. This unblocks the role→department first hop that
+ *     the UI promises but the previous `requirePriorityAdmin` gate denied.
+ */
+export function canPriorityRoleEscalatePriority(
+  user: PriorityAccessUser,
+  priority: PriorityMutabilityRow,
+): boolean {
+  if (!user.role || !user.userId) return false;
+  const scope = (priority.scope || "company") as PriorityScope;
+
+  if (scope === "company") return false;
+
+  if (isPriorityAdminRole(user.role)) return true;
+
+  if (isDepartmentHeadRole(user.role)) {
+    if (!user.departmentKey) return false;
+    return !priority.departmentKey || priority.departmentKey === user.departmentKey;
+  }
+
+  return scope === "role"
+    && (priority.ownerUserId === user.userId || priority.assignedUserId === user.userId);
+}
+
 export interface PriorityParentCandidate {
   id: number;
   scope: PriorityScope | string | null | undefined;

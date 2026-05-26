@@ -37,6 +37,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { invalidatePriorityQueries } from "@/lib/priority-query-invalidation";
 import {
   canPriorityRoleEditPriority,
+  canPriorityRoleEscalatePriority,
   canPriorityRoleUseAdminAction,
   departmentLabel,
   isDepartmentHeadRole,
@@ -278,7 +279,11 @@ export default function PriorityDetailPage() {
 
   const watchMutation = useMutation({
     mutationFn: () => apiRequest(watching ? "DELETE" : "POST", `/api/priorities/${priorityId}/watch`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/watched`] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/watched`] });
+      toast({ title: watching ? "Unwatched" : "Watching priority" });
+    },
+    onError: (err) => toast({ title: "Could not update watch", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
   const addCommentMutation = useMutation({
@@ -303,7 +308,9 @@ export default function PriorityDetailPage() {
     },
     onSuccess: () => {
       invalidateDetail();
+      toast({ title: "Project unlinked" });
     },
+    onError: (err) => toast({ title: "Could not unlink project", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
   const updatePriorityMutation = useMutation({
@@ -329,8 +336,10 @@ export default function PriorityDetailPage() {
     },
     onSuccess: () => {
       invalidateDetail();
+      toast({ title: "Priority updated" });
       setEditDialogOpen(false);
     },
+    onError: (err) => toast({ title: "Could not save changes", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
   const closePriorityMutation = useMutation({
@@ -339,7 +348,50 @@ export default function PriorityDetailPage() {
     },
     onSuccess: () => {
       invalidateDetail();
+      toast({ title: "Priority closed" });
     },
+    onError: (err) => toast({ title: "Could not close priority", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
+  });
+
+  const archiveMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", `/api/priorities/${priorityId}`);
+    },
+    onSuccess: () => {
+      void invalidatePriorityQueries(queryClient);
+      toast({ title: "Priority archived", description: "It's removed from default views. Restore from the archived filter." });
+    },
+    onError: (err) => {
+      const detail = err instanceof Error ? err.message : "Unknown error";
+      const friendly = /HAS_ACTIVE_CHILDREN/i.test(detail)
+        ? "Close or archive the sub-priorities first."
+        : detail;
+      toast({ title: "Could not archive", description: friendly, variant: "destructive" });
+    },
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", `/api/priorities/${priorityId}/restore`);
+    },
+    onSuccess: () => {
+      void invalidatePriorityQueries(queryClient);
+      invalidateDetail();
+      toast({ title: "Priority restored" });
+    },
+    onError: (err) => toast({ title: "Could not restore", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
+  });
+
+  const reviewMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", `/api/priorities/${priorityId}/review`);
+    },
+    onSuccess: () => {
+      invalidateDetail();
+      void invalidatePriorityQueries(queryClient);
+      toast({ title: "Marked reviewed" });
+    },
+    onError: (err) => toast({ title: "Could not mark reviewed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
   if (isLoading) return <PageSkeleton lines={5} />;
@@ -350,6 +402,15 @@ export default function PriorityDetailPage() {
   }
 
   const canEditPriority = canPriorityRoleEditPriority(
+    { role: user?.role, userId: user?.id, departmentKey: userDepartment },
+    {
+      scope: priority.scope,
+      departmentKey: (priority as any).departmentKey ?? null,
+      ownerUserId: priority.owner?.id ?? (priority as any).ownerUserId ?? null,
+      assignedUserId: (priority as any).assignedUserId ?? null,
+    },
+  );
+  const canEscalateThisPriority = canPriorityRoleEscalatePriority(
     { role: user?.role, userId: user?.id, departmentKey: userDepartment },
     {
       scope: priority.scope,
@@ -531,9 +592,9 @@ export default function PriorityDetailPage() {
               <GitBranch className="w-3 h-3" /> {priority.childCount} sub-priorit{priority.childCount === 1 ? "y" : "ies"}
             </span>
           )}
-          {canUsePriorityAdminActions && (
+          {(canEscalateThisPriority || canUsePriorityAdminActions) && (
             <div className="flex items-center gap-2 ml-auto">
-              {(priority.scope === "role" || priority.scope === "department") && (
+              {canEscalateThisPriority && (priority.scope === "role" || priority.scope === "department") && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -544,7 +605,7 @@ export default function PriorityDetailPage() {
                   {escalateMutation.isPending ? "Escalating..." : "Escalate"}
                 </Button>
               )}
-              {(priority.scope === "company" || priority.scope === "department") && (
+              {canUsePriorityAdminActions && (priority.scope === "company" || priority.scope === "department") && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -552,6 +613,49 @@ export default function PriorityDetailPage() {
                   onClick={() => setBreakDownDialogOpen(true)}
                 >
                   <GitBranch className="w-3 h-3 mr-1" /> Break Down
+                </Button>
+              )}
+              {canEditPriority && (priority as any).reviewCadenceDays && (
+                <Button
+                  size="sm"
+                  variant={(priority as any).dueForReview ? "default" : "outline"}
+                  className="text-xs h-7"
+                  onClick={() => reviewMutation.mutate()}
+                  disabled={reviewMutation.isPending}
+                  data-testid="button-mark-reviewed"
+                >
+                  {reviewMutation.isPending ? "Saving…" : ((priority as any).dueForReview ? "Mark reviewed" : "Re-review now")}
+                </Button>
+              )}
+              {canUsePriorityAdminActions && !(priority as any).deletedAt && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs h-7 text-muted-foreground hover:text-red-600"
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: "Archive this priority?",
+                      description:
+                        "It will be hidden from default views but kept for audit. Admins can restore it from the archived filter. Active sub-priorities must be closed first.",
+                      confirmLabel: "Archive",
+                      destructive: true,
+                    });
+                    if (ok) archiveMutation.mutate();
+                  }}
+                  disabled={archiveMutation.isPending}
+                >
+                  {archiveMutation.isPending ? "Archiving..." : "Archive"}
+                </Button>
+              )}
+              {canUsePriorityAdminActions && (priority as any).deletedAt && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs h-7"
+                  onClick={() => restoreMutation.mutate()}
+                  disabled={restoreMutation.isPending}
+                >
+                  {restoreMutation.isPending ? "Restoring..." : "Restore"}
                 </Button>
               )}
             </div>
@@ -747,9 +851,10 @@ export default function PriorityDetailPage() {
                                 });
                                 if (ok) unlinkMutation.mutate(p.id);
                               }}
-                              className="text-muted-foreground hover:text-red-600"
-                              title="Unlink project"
+                              className="text-muted-foreground hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed"
+                              title={unlinkMutation.isPending && unlinkMutation.variables === p.id ? "Unlinking…" : "Unlink project"}
                               aria-label={`Unlink ${p.name}`}
+                              disabled={unlinkMutation.isPending}
                             >
                               <X className="w-3.5 h-3.5" aria-hidden="true" />
                             </button>
@@ -1090,7 +1195,15 @@ export default function PriorityDetailPage() {
                               type="button"
                               className="text-muted-foreground hover:text-red-600 transition-colors"
                               title="Delete comment"
-                              onClick={() => deleteCommentMutation.mutate(c.id)}
+                              onClick={async () => {
+                                const ok = await confirm({
+                                  title: "Delete this comment?",
+                                  description: "The comment will be removed from the activity timeline. This cannot be undone.",
+                                  confirmLabel: "Delete",
+                                  destructive: true,
+                                });
+                                if (ok) deleteCommentMutation.mutate(c.id);
+                              }}
                               disabled={deleteCommentMutation.isPending}
                               aria-label="Delete comment"
                             >

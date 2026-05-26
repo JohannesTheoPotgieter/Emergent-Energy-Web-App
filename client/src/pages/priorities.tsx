@@ -1,15 +1,17 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSearch } from "wouter";
-import { Download, Flag, Plus, Target, Users } from "lucide-react";
+import { useSearch, useLocation } from "wouter";
+import { Download, Flag, Plus, Search, Target, Users, X } from "lucide-react";
 import { PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import {
   canPriorityRoleCreateScope,
+  canPriorityRoleEscalatePriority,
   canPriorityRoleUseAdminAction,
   isPriorityAdminRole,
   isDepartmentHeadRole,
@@ -71,6 +73,16 @@ export default function PrioritiesPage() {
   const isDeptHead = isDepartmentHeadRole(user?.role);
   const canUsePriorityAdminActions = canPriorityRoleUseAdminAction(user?.role);
   const userDepartment = user?.role ? ROLE_DEPARTMENT_MAP[user.role] : undefined;
+  const canEscalatePriorityRow = (p: PriorityRow) =>
+    canPriorityRoleEscalatePriority(
+      { role: user?.role, userId: user?.id, departmentKey: userDepartment ?? null },
+      {
+        scope: p.scope ?? "company",
+        departmentKey: p.departmentKey ?? null,
+        ownerUserId: p.owner?.id ?? null,
+        assignedUserId: p.assignedUserId ?? null,
+      },
+    );
 
   const tabParam = params.get("tab");
   // Three-tier escalation (2026-05-12 COO spec):
@@ -101,6 +113,19 @@ export default function PrioritiesPage() {
   const [levelFilter, setLevelFilter] = useState(initialFilters.level);
   const [healthFilter, setHealthFilter] = useState(initialFilters.health);
   const [showClosed, setShowClosed] = useState(false);
+  // Admin-only "Archived" view. Toggling this switches the list query
+  // to include_archived=true so soft-deleted priorities surface for the
+  // admin to restore.
+  const [showArchived, setShowArchived] = useState(false);
+  // Free-text search across title + description (server-side, see
+  // GET /api/priorities/search). Debounced 250ms.
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  // Currently-selected saved view (empty string = "Default — no view").
+  // Switching applies the view's filters; saving the current state
+  // writes a new view to the server scoped to the caller.
+  const [selectedViewId, setSelectedViewId] = useState<string>("");
+  const [saveViewName, setSaveViewName] = useState("");
   const [bulkSelected, setBulkSelected] = useState<Set<number>>(new Set());
   // Admins can pick which department to view on the Department tab. Dept
   // heads are pinned to their own department and never see the dropdown.
@@ -122,8 +147,12 @@ export default function PrioritiesPage() {
   };
   const clearBulkSelection = () => setBulkSelected(new Set());
 
-  const listQueryParams = (base: string) =>
-    showClosed ? `${base}&include_cancelled=true` : base;
+  const listQueryParams = (base: string) => {
+    let q = base;
+    if (showClosed) q = `${q}&include_cancelled=true`;
+    if (showArchived && isAdmin) q = `${q}&include_archived=true`;
+    return q;
+  };
 
   // My Priorities — unified feed of priorities AND work_items owned by /
   // assigned to the current user. Backend de-duplicates: work items already
@@ -149,7 +178,7 @@ export default function PrioritiesPage() {
   });
 
   const deptQuery = useQuery<PriorityRow[]>({
-    queryKey: ["/api/priorities", "department", effectiveDeptForQuery, showClosed],
+    queryKey: ["/api/priorities", "department", effectiveDeptForQuery, showClosed, showArchived],
     queryFn: () => fetchPriorities(
       listQueryParams(
         `scope=department${effectiveDeptForQuery ? `&department=${effectiveDeptForQuery}` : ""}&include_team_roles=true`,
@@ -159,9 +188,103 @@ export default function PrioritiesPage() {
   });
 
   const companyQuery = useQuery<PriorityRow[]>({
-    queryKey: ["/api/priorities", "company", showClosed],
+    queryKey: ["/api/priorities", "company", showClosed, showArchived],
     queryFn: () => fetchPriorities(listQueryParams("scope=company")),
     enabled: activeTab === "company",
+  });
+
+  // Debounce the search input so we don't fire a request per keystroke.
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(searchInput.trim()), 250);
+    return () => clearTimeout(handle);
+  }, [searchInput]);
+
+  type SavedView = {
+    id: number; name: string; activeTab: string;
+    scope: string | null; departmentKey: string | null;
+    levelFilter: string | null; healthFilter: string | null;
+    searchQuery: string | null;
+    showClosed: boolean; showArchived: boolean; sortOrder: number;
+  };
+  const savedViewsQuery = useQuery<SavedView[]>({
+    queryKey: ["/api/priority-saved-views"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/priority-saved-views");
+      return res.json();
+    },
+  });
+
+  const applyView = (id: string) => {
+    setSelectedViewId(id);
+    if (!id) return;
+    const v = (savedViewsQuery.data ?? []).find((x) => String(x.id) === id);
+    if (!v) return;
+    if (v.activeTab === "my" || v.activeTab === "department" || v.activeTab === "company") {
+      setActiveTab(v.activeTab);
+    }
+    if (v.departmentKey) setSelectedDeptKey(v.departmentKey);
+    setLevelFilter(v.levelFilter ?? "all");
+    setHealthFilter(v.healthFilter ?? "all");
+    setSearchInput(v.searchQuery ?? "");
+    setShowClosed(!!v.showClosed);
+    setShowArchived(!!v.showArchived);
+  };
+
+  const saveViewMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const payload = {
+        name,
+        active_tab: activeTab,
+        scope: activeTab === "my" ? "role" : activeTab,
+        department_key: activeTab === "department" ? effectiveDeptForQuery || null : null,
+        level_filter: levelFilter === "all" ? null : levelFilter,
+        health_filter: healthFilter === "all" ? null : healthFilter,
+        search_query: searchInput.trim() || null,
+        show_closed: showClosed,
+        show_archived: showArchived,
+      };
+      const res = await apiRequest("POST", "/api/priority-saved-views", payload);
+      return res.json();
+    },
+    onSuccess: (created: SavedView) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/priority-saved-views"] });
+      setSelectedViewId(String(created.id));
+      setSaveViewName("");
+      toast({ title: `Saved view: ${created.name}` });
+    },
+    onError: (err) => toast({
+      title: "Could not save view",
+      description: err instanceof Error ? err.message : "Unknown error",
+      variant: "destructive",
+    }),
+  });
+
+  const deleteViewMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/priority-saved-views/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/priority-saved-views"] });
+      setSelectedViewId("");
+      toast({ title: "View deleted" });
+    },
+    onError: (err) => toast({
+      title: "Could not delete view",
+      description: err instanceof Error ? err.message : "Unknown error",
+      variant: "destructive",
+    }),
+  });
+
+  const searchQuery = useQuery<{ results: PriorityRow[]; totalMatches: number; returned: number }>({
+    queryKey: ["/api/priorities/search", debouncedSearch, showClosed, showArchived],
+    queryFn: async () => {
+      const qs = new URLSearchParams({ q: debouncedSearch, limit: "50" });
+      if (showClosed) qs.set("include_closed", "true");
+      if (showArchived && isAdmin) qs.set("include_archived", "true");
+      const res = await apiRequest("GET", `/api/priorities/search?${qs.toString()}`);
+      return res.json();
+    },
+    enabled: debouncedSearch.length >= 2,
   });
 
   const { toast } = useToast();
@@ -232,35 +355,64 @@ export default function PrioritiesPage() {
     onError: (err) => toast({ title: "Could not reopen", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
+  // Bulk endpoints (server/departments/priority-strategic-routes.ts ::
+  // /api/priorities/bulk/{close,escalate,assign}). Each runs in a single
+  // transaction server-side and returns per-id outcomes so we can show
+  // a "4 closed, 1 skipped (already terminal)" toast instead of just
+  // success/error.
+  type BulkResponse = {
+    processed: number;
+    total: number;
+    results: Array<{ id: number; ok: boolean; error?: string }>;
+  };
+  const summarizeBulk = (r: BulkResponse, verb: string) => {
+    if (r.processed === r.total) {
+      return { title: `${verb} ${r.processed}` };
+    }
+    return {
+      title: `${verb} ${r.processed} of ${r.total}`,
+      description: r.results.filter((x) => !x.ok).map((x) => `#${x.id}: ${x.error}`).join(", "),
+    };
+  };
+
   const bulkCloseMutation = useMutation({
-    mutationFn: async (ids: number[]) => {
-      for (const id of ids) await apiRequest("PUT", `/api/priorities/${id}`, { status: "closed" });
+    mutationFn: async (ids: number[]): Promise<BulkResponse> => {
+      const res = await apiRequest("POST", "/api/priorities/bulk/close", { ids });
+      return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (r) => {
+      toast(summarizeBulk(r, "Closed"));
       clearBulkSelection();
       invalidateAll();
     },
+    onError: (err) => toast({ title: "Bulk close failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
   const bulkEscalateMutation = useMutation({
-    mutationFn: async (ids: number[]) => {
-      for (const id of ids) await apiRequest("POST", `/api/priorities/${id}/escalate`, { reason: "manual" });
+    mutationFn: async (ids: number[]): Promise<BulkResponse> => {
+      const res = await apiRequest("POST", "/api/priorities/bulk/escalate", { ids, reason: "manual" });
+      return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (r) => {
+      toast(summarizeBulk(r, "Escalated"));
       clearBulkSelection();
       invalidateAll();
     },
+    onError: (err) => toast({ title: "Bulk escalate failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
   const bulkReassignMutation = useMutation({
-    mutationFn: async ({ ids, userId }: { ids: number[]; userId: number }) => {
-      for (const id of ids) await apiRequest("PUT", `/api/priorities/${id}`, { assigned_user_id: userId });
+    mutationFn: async ({ ids, userId }: { ids: number[]; userId: number }): Promise<BulkResponse> => {
+      const res = await apiRequest("POST", "/api/priorities/bulk/assign", { ids, assigned_user_id: userId });
+      return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (r) => {
+      toast(summarizeBulk(r, "Reassigned"));
       clearBulkSelection();
       setBulkReassignOpen(false);
       invalidateAll();
     },
+    onError: (err) => toast({ title: "Bulk reassign failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
   const applyFilters = (data: PriorityRow[]) =>
@@ -338,7 +490,17 @@ export default function PrioritiesPage() {
     } else if (activeTab === "company") {
       qs.set("scope", "company");
     }
-    window.open(`/api/reports/priorities-pack?${qs.toString()}`, "_blank");
+    // `window.open` returns null on popup-block; surface that instead of
+    // failing silently. A 0-width returned-window also indicates the
+    // browser refused (some hardened configs).
+    const popup = window.open(`/api/reports/priorities-pack?${qs.toString()}`, "_blank");
+    if (!popup || popup.closed) {
+      toast({
+        title: "Couldn't open the export",
+        description: "Your browser blocked the pop-up. Allow pop-ups for this site and try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -437,6 +599,40 @@ export default function PrioritiesPage() {
           </TabsList>
 
           <div className="flex items-center gap-2">
+            {(savedViewsQuery.data?.length ?? 0) > 0 && (
+              <Select value={selectedViewId} onValueChange={applyView}>
+                <SelectTrigger className="w-[160px] h-8 text-xs" data-testid="select-saved-view">
+                  <SelectValue placeholder="Saved views" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">— Default —</SelectItem>
+                  {(savedViewsQuery.data ?? []).map((v) => (
+                    <SelectItem key={v.id} value={String(v.id)}>{v.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <div className="relative">
+              <Search className="absolute left-2 top-2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+              <Input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Search priorities..."
+                aria-label="Search priorities"
+                data-testid="input-search-priorities"
+                className="h-8 pl-7 pr-7 w-[220px] text-xs"
+              />
+              {searchInput && (
+                <button
+                  type="button"
+                  onClick={() => setSearchInput("")}
+                  className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
+                  aria-label="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
             {isAdmin && activeTab === "department" && (
               <Select value={selectedDeptKey} onValueChange={setSelectedDeptKey}>
                 <SelectTrigger className="w-[180px] h-8 text-xs" data-testid="select-dept-filter">
@@ -472,6 +668,18 @@ export default function PrioritiesPage() {
                 <SelectItem value="healthy">Healthy</SelectItem>
               </SelectContent>
             </Select>
+            {isAdmin && (
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showArchived}
+                  onChange={(e) => setShowArchived(e.target.checked)}
+                  className="rounded"
+                  data-testid="toggle-show-archived"
+                />
+                Show archived
+              </label>
+            )}
             <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -491,8 +699,79 @@ export default function PrioritiesPage() {
                 Clear
               </Button>
             )}
+            <div className="flex items-center gap-1 ml-auto">
+              <Input
+                value={saveViewName}
+                onChange={(e) => setSaveViewName(e.target.value)}
+                placeholder="Save current as view…"
+                className="h-8 text-xs w-[180px]"
+                aria-label="Save current view as name"
+                data-testid="input-save-view-name"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs"
+                disabled={!saveViewName.trim() || saveViewMutation.isPending}
+                onClick={() => saveViewMutation.mutate(saveViewName.trim())}
+                data-testid="button-save-view"
+              >
+                {saveViewMutation.isPending ? "Saving…" : "Save view"}
+              </Button>
+              {selectedViewId && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 text-xs text-muted-foreground hover:text-red-600"
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: "Delete this saved view?",
+                      description: "Filters in the view will be lost. The priorities themselves are not affected.",
+                      confirmLabel: "Delete view",
+                      destructive: true,
+                    });
+                    if (ok) deleteViewMutation.mutate(Number(selectedViewId));
+                  }}
+                  disabled={deleteViewMutation.isPending}
+                >
+                  Delete view
+                </Button>
+              )}
+            </div>
           </div>
         </div>
+
+        {debouncedSearch.length >= 2 && (
+          <div className="mb-6 border border-emerald-200 bg-emerald-50/40 rounded-lg p-4" data-testid="search-results-panel">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-foreground">
+                Search results for "{debouncedSearch}"
+                {searchQuery.data && (
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    {searchQuery.data.totalMatches} match{searchQuery.data.totalMatches === 1 ? "" : "es"}
+                    {searchQuery.data.returned < searchQuery.data.totalMatches && ` · showing first ${searchQuery.data.returned}`}
+                  </span>
+                )}
+              </h3>
+              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setSearchInput("")}>
+                Clear search
+              </Button>
+            </div>
+            <PriorityListSection
+              priorities={searchQuery.data?.results ?? []}
+              isLoading={searchQuery.isLoading}
+              isError={searchQuery.isError}
+              error={searchQuery.error as Error}
+              refetch={searchQuery.refetch}
+              showEscalate={canEscalatePriorityRow}
+              onEscalate={(id) => {
+                const p = (searchQuery.data?.results ?? []).find((x) => x.id === id);
+                if (p) setEscalateTarget({ id: p.id, title: p.title, scope: p.scope });
+              }}
+              emptyMessage={searchQuery.isFetching ? "Searching..." : `No priorities match "${debouncedSearch}"`}
+            />
+          </div>
+        )}
 
         <TabsContent value="my">
           <div className="space-y-6">
@@ -502,7 +781,7 @@ export default function PrioritiesPage() {
               isError={myWorkFeedQuery.isError}
               error={myWorkFeedQuery.error as Error}
               refetch={myWorkFeedQuery.refetch}
-              showEscalate={canUsePriorityAdminActions}
+              showEscalate={canEscalatePriorityRow}
               onEscalate={(id) => {
                 const p = myPriorities.find((x) => x.id === id);
                 if (p) setEscalateTarget({ id: p.id, title: p.title, scope: p.scope });
@@ -514,9 +793,11 @@ export default function PrioritiesPage() {
               onToggleSelect={toggleBulkSelect}
               emptyMessage="Nothing on your priority list yet"
               emptyAction={
-                <Button size="sm" className="mt-3" onClick={() => setCreateDialogOpen(true)}>
-                  <Plus className="w-4 h-4 mr-1" /> Create My Priority
-                </Button>
+                canCreateInActiveTab ? (
+                  <Button size="sm" className="mt-3" onClick={() => setCreateDialogOpen(true)}>
+                    <Plus className="w-4 h-4 mr-1" /> Create My Priority
+                  </Button>
+                ) : undefined
               }
             />
 
@@ -548,7 +829,7 @@ export default function PrioritiesPage() {
               isError={deptQuery.isError}
               error={deptQuery.error as Error}
               refetch={deptQuery.refetch}
-              showEscalate={canUsePriorityAdminActions}
+              showEscalate={canEscalatePriorityRow}
               onEscalate={(id) => {
                 const p = filteredDept.find((x) => x.id === id);
                 if (p) setEscalateTarget({ id: p.id, title: p.title, scope: p.scope });
@@ -566,9 +847,11 @@ export default function PrioritiesPage() {
                   : `No priorities for ${DEPARTMENT_OPTIONS.find((d) => d.value === effectiveDeptForQuery)?.label || "this department"}`
               }
               emptyAction={
-                <Button size="sm" className="mt-3" onClick={() => setCreateDialogOpen(true)}>
-                  <Plus className="w-4 h-4 mr-1" /> Create Department Priority
-                </Button>
+                canCreateInActiveTab ? (
+                  <Button size="sm" className="mt-3" onClick={() => setCreateDialogOpen(true)}>
+                    <Plus className="w-4 h-4 mr-1" /> Create Department Priority
+                  </Button>
+                ) : undefined
               }
             />
           </TabsContent>

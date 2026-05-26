@@ -139,6 +139,20 @@ export const mytoolCompanyPriorities = pgTable("mytool_company_priorities", {
   escalated: boolean("escalated").notNull().default(false),
   escalatedAt: timestamp("escalated_at"),
   escalationReason: text("escalation_reason"),
+  // Soft-delete (archive) flag. NULL = live, non-null = archived.
+  // All list/detail reads filter `deleted_at IS NULL` by default;
+  // admins opt in via `include_archived=true`. See migration 0069.
+  // mode: "string" — better-sqlite3 stores this as TEXT (ISO string),
+  // and Drizzle's default Date parsing returns "Invalid Date" for
+  // SQLite TEXT timestamps. Keeping it as a string round-trips
+  // correctly across both drivers.
+  deletedAt: timestamp("deleted_at", { mode: "string" }),
+  // Review cadence (migration 0072). NULL = no cadence; integer days
+  // (typical: 7/14/30) means the priority is "due for review" when
+  // (last_reviewed_at ?? created_at) + cadence < now.
+  reviewCadenceDays: integer("review_cadence_days"),
+  lastReviewedAt: timestamp("last_reviewed_at", { mode: "string" }),
+  lastReviewedByUserId: integer("last_reviewed_by_user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -236,6 +250,65 @@ export const priorityWatches = pgTable("priority_watches", {
 }));
 
 export type PriorityWatch = typeof priorityWatches.$inferSelect;
+
+// ── Priority Templates ────────────────────────────────────────────────
+// Reusable priority shapes — admins/dept heads define them once,
+// any authorised user can instantiate them into a real priority in
+// one click. Soft-deleted via deletedAt so older priorities created
+// from a template still reference a recognisable name. See migration
+// 0070 + server/departments/priority-strategic-routes.ts CRUD +
+// instantiate endpoints.
+export const priorityTemplates = pgTable("priority_templates", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  titleTemplate: text("title_template").notNull(),
+  bodyTemplate: text("body_template"),
+  scopeDefault: text("scope_default").notNull().default("role"),
+  severityDefault: text("severity_default").notNull().default("normal"),
+  horizonDefault: text("horizon_default").notNull().default("week"),
+  departmentKey: text("department_key"),
+  targetOutcome: text("target_outcome"),
+  definitionOfDone: text("definition_of_done"),
+  nextAction: text("next_action"),
+  ownerRole: text("owner_role"),
+  createdByUserId: integer("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  deletedAt: timestamp("deleted_at", { mode: "string" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertPriorityTemplateSchema = createInsertSchema(priorityTemplates).omit({ id: true, createdAt: true, updatedAt: true, deletedAt: true } as any);
+export type InsertPriorityTemplate = z.infer<typeof insertPriorityTemplateSchema>;
+export type PriorityTemplate = typeof priorityTemplates.$inferSelect;
+
+// ── Priority Saved Views ──────────────────────────────────────────────
+// Per-user named filter combinations. The Priorities page can persist
+// a current set of filters as a view, then the user picks views from
+// a dropdown instead of re-applying filters each time. Unique on
+// (user_id, name) so renames stay tidy. See migration 0071.
+export const prioritySavedViews = pgTable("priority_saved_views", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  activeTab: text("active_tab").notNull().default("my"),
+  scope: text("scope"),
+  departmentKey: text("department_key"),
+  levelFilter: text("level_filter"),
+  healthFilter: text("health_filter"),
+  searchQuery: text("search_query"),
+  showClosed: boolean("show_closed").notNull().default(false),
+  showArchived: boolean("show_archived").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  unique: unique("priority_saved_views_user_name_unique").on(table.userId, table.name),
+}));
+
+export const insertPrioritySavedViewSchema = createInsertSchema(prioritySavedViews).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertPrioritySavedView = z.infer<typeof insertPrioritySavedViewSchema>;
+export type PrioritySavedView = typeof prioritySavedViews.$inferSelect;
 
 // Priority ↔ Opportunity junction — Tier 4 · PR 2.
 // Lets a Priority attach to a *pre-contract* deal (opportunity) as well as
