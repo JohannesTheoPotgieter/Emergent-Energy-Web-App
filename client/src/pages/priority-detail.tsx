@@ -343,6 +343,22 @@ export default function PriorityDetailPage() {
     onError: (err) => toast({ title: "Could not save changes", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
   });
 
+  // Inline edit — fires from the Status select on the Details tab.
+  // Reuses the same PUT route; gives a snappy single-field update path
+  // so the user doesn't have to open the full Edit dialog for the most
+  // common change.
+  const statusInlineMutation = useMutation({
+    mutationFn: async (status: string) => {
+      await apiRequest("PUT", `/api/priorities/${priorityId}`, { status });
+    },
+    onSuccess: () => {
+      invalidateDetail();
+      void invalidatePriorityQueries(queryClient);
+      toast({ title: "Status updated" });
+    },
+    onError: (err) => toast({ title: "Could not update status", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" }),
+  });
+
   const closePriorityMutation = useMutation({
     mutationFn: async () => {
       await apiRequest("PUT", `/api/priorities/${priorityId}`, { status: "closed" });
@@ -804,6 +820,89 @@ export default function PriorityDetailPage() {
 
         {/* Details tab (standalone) */}
         <TabsContent value="details" className="mt-4">
+          {/* Insights strip — computed observations from data already
+              loaded. Surfaces forensic context: how long since
+              escalation, how many critical sub-priorities, when last
+              reviewed, etc. Each insight is a sentence — non-actionable,
+              just signal. */}
+          {(() => {
+            const insights: { tone: "neutral" | "warning" | "alert"; text: string }[] = [];
+            const now = Date.now();
+            const dayMs = 86_400_000;
+            if (priority.escalated && (priority as any).escalatedAt) {
+              const days = Math.floor((now - new Date((priority as any).escalatedAt).getTime()) / dayMs);
+              if (Number.isFinite(days) && days >= 0) {
+                insights.push({
+                  tone: days > 7 ? "alert" : "warning",
+                  text: `Escalated ${days === 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`}${priority.escalationReason ? ` (${priority.escalationReason})` : ""}.`,
+                });
+              }
+            }
+            if ((priority as any).reviewCadenceDays && (priority as any).lastReviewedAt) {
+              const days = Math.floor((now - new Date((priority as any).lastReviewedAt).getTime()) / dayMs);
+              if (Number.isFinite(days) && days >= 0) {
+                insights.push({
+                  tone: (priority as any).dueForReview ? "warning" : "neutral",
+                  text: `Last reviewed ${days === 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`}. Cadence: every ${(priority as any).reviewCadenceDays} days.`,
+                });
+              }
+            } else if ((priority as any).reviewCadenceDays) {
+              insights.push({
+                tone: "neutral",
+                text: `On a ${(priority as any).reviewCadenceDays}-day review cadence — not yet marked reviewed.`,
+              });
+            }
+            if (priority.childCount > 0) {
+              insights.push({
+                tone: "neutral",
+                text: `Broken down into ${priority.childCount} sub-priorit${priority.childCount === 1 ? "y" : "ies"}. See Chain tab for the hierarchy.`,
+              });
+            }
+            if ((priority.atRiskProjectCount ?? 0) > 0 && (priority.projectCount ?? 0) > 0) {
+              insights.push({
+                tone: "warning",
+                text: `${priority.atRiskProjectCount} of ${priority.projectCount} linked project${priority.projectCount === 1 ? "" : "s"} ${priority.atRiskProjectCount === 1 ? "is" : "are"} at risk.`,
+              });
+            }
+            if ((priority.blockerCount ?? 0) > 0) {
+              insights.push({
+                tone: "alert",
+                text: `${priority.blockerCount} open blocker${priority.blockerCount === 1 ? "" : "s"} across linked projects.`,
+              });
+            }
+            if (priority.dueDate) {
+              const due = new Date(priority.dueDate).getTime();
+              const days = Math.ceil((due - now) / dayMs);
+              if (Number.isFinite(days)) {
+                if (days < 0) {
+                  insights.push({ tone: "alert", text: `Due date passed ${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} ago.` });
+                } else if (days <= 7) {
+                  insights.push({ tone: "warning", text: `Due in ${days} day${days === 1 ? "" : "s"}.` });
+                }
+              }
+            }
+            if (insights.length === 0) return null;
+            return (
+              <Card className="mb-4 bg-slate-50/60 border-slate-200">
+                <CardContent className="p-3 space-y-1.5">
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Insights</h3>
+                  {insights.map((ins, i) => (
+                    <p
+                      key={i}
+                      className={`text-xs ${
+                        ins.tone === "alert" ? "text-red-700"
+                          : ins.tone === "warning" ? "text-amber-700"
+                          : "text-foreground"
+                      }`}
+                      data-testid={`insight-${ins.tone}`}
+                    >
+                      • {ins.text}
+                    </p>
+                  ))}
+                </CardContent>
+              </Card>
+            );
+          })()}
           <Card>
             <CardContent className="p-4 space-y-4">
               {priority.description && (
@@ -821,7 +920,36 @@ export default function PriorityDetailPage() {
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <span className="text-xs text-muted-foreground">Status</span>
-                  <p className="font-medium">{priority.status}</p>
+                  {/* Inline edit — click to change status. Same mutation
+                      as PUT-on-edit but scoped to status only. Falls back
+                      to a static <p> when the user can't edit. */}
+                  {canEditPriority ? (
+                    <Select
+                      value={priority.status || "active"}
+                      onValueChange={(v) => {
+                        if (v === priority.status) return;
+                        statusInlineMutation.mutate(v);
+                      }}
+                      disabled={statusInlineMutation.isPending}
+                    >
+                      <SelectTrigger
+                        className="h-7 mt-0.5 w-[140px] text-sm font-medium border-dashed"
+                        data-testid="select-status-inline"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="in_progress">In progress</SelectItem>
+                        <SelectItem value="monitoring">Monitoring</SelectItem>
+                        <SelectItem value="not_started">Not started</SelectItem>
+                        <SelectItem value="complete">Complete</SelectItem>
+                        <SelectItem value="closed">Closed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <p className="font-medium">{priority.status}</p>
+                  )}
                 </div>
                 <div>
                   <span className="text-xs text-muted-foreground">Health</span>
