@@ -720,6 +720,62 @@ export async function listPendingProposalsForProject(
     );
 }
 
+/**
+ * Aggregate counts for the QB Cascade Proposals inbox. Surfaces "pending" load
+ * and how long the oldest unresolved proposal has been waiting — used by the
+ * admin-quickbooks page to flag proposal-age drift between QB and the app.
+ *
+ * Per § 3.4 / F-4 in audit/FINANCE_AUDIT_2026-05-26.md: proposals are not
+ * auto-applied (correct, per § 0A), but operators need a visible escalation
+ * signal so a stale pending paid_date proposal doesn't quietly leave the COS
+ * Tracker showing "Committed" while QB has the bill at balance = 0.
+ */
+export interface QbProposalAgeSummary {
+  pending: number;
+  agedOver7Days: number;
+  agedOver14Days: number;
+  agedOver30Days: number;
+  oldestAgeDays: number | null;
+  oldestCreatedAt: string | null;
+}
+
+export async function getProposalAgeSummary(): Promise<QbProposalAgeSummary> {
+  const rows = await db
+    .select({ createdAt: qbLinkProposedCascades.createdAt })
+    .from(qbLinkProposedCascades)
+    .where(
+      and(
+        eq(qbLinkProposedCascades.status, "pending"),
+        isNull(qbLinkProposedCascades.deletedAt),
+      ),
+    );
+
+  const now = Date.now();
+  let agedOver7 = 0;
+  let agedOver14 = 0;
+  let agedOver30 = 0;
+  let oldestMs: number | null = null;
+  for (const r of rows) {
+    const createdMs = r.createdAt ? new Date(r.createdAt as any).getTime() : NaN;
+    if (!Number.isFinite(createdMs)) continue;
+    const ageMs = now - createdMs;
+    const ageDays = ageMs / (1000 * 60 * 60 * 24);
+    if (ageDays > 30) agedOver30 += 1;
+    if (ageDays > 14) agedOver14 += 1;
+    if (ageDays > 7) agedOver7 += 1;
+    if (oldestMs === null || createdMs < oldestMs) oldestMs = createdMs;
+  }
+
+  return {
+    pending: rows.length,
+    agedOver7Days: agedOver7,
+    agedOver14Days: agedOver14,
+    agedOver30Days: agedOver30,
+    oldestAgeDays: oldestMs !== null ? Math.floor((now - oldestMs) / (1000 * 60 * 60 * 24)) : null,
+    oldestCreatedAt: oldestMs !== null ? new Date(oldestMs).toISOString() : null,
+  };
+}
+
 export async function getProposalById(id: number): Promise<QbLinkProposedCascade | null> {
   const [row] = await db
     .select()
