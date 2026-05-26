@@ -4,6 +4,7 @@ import { useSearch, useLocation, Link } from "wouter";
 import { Download, Filter, Flag, Plus, Search, Target, Users, X } from "lucide-react";
 import { PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -202,6 +203,9 @@ export default function PrioritiesPage() {
     return () => clearTimeout(handle);
   }, [searchInput]);
 
+  // (Keyboard shortcuts effect lives lower, after canCreateInActiveTab.)
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+
   type SavedView = {
     id: number; name: string; activeTab: string;
     scope: string | null; departmentKey: string | null;
@@ -294,6 +298,49 @@ export default function PrioritiesPage() {
   const activeCreateScope = activeTab === "my" ? "role" : activeTab;
   const canCreateInActiveTab = canPriorityRoleCreateScope(user?.role, activeCreateScope);
   const canUseBulkActions = isAdmin || isDeptHead;
+
+  // Keyboard shortcuts — match Linear/Notion conventions:
+  //   /  focus the search input
+  //   n  open the create dialog (if the user can create in the active tab)
+  //   1/2/3 switch tabs (2 only when dept tab visible)
+  //   ?  open the shortcut help dialog
+  // Inputs gate handled via tagName / isContentEditable so typing into
+  // a text field doesn't trigger the create dialog.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (target) {
+        const tag = target.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+        if (target.isContentEditable) return;
+      }
+      if (e.key === "/") {
+        e.preventDefault();
+        const input = document.querySelector<HTMLInputElement>('[data-testid="input-search-priorities"]');
+        input?.focus();
+      } else if (e.key.toLowerCase() === "n") {
+        if (canCreateInActiveTab) {
+          e.preventDefault();
+          setCreateDialogOpen(true);
+        }
+      } else if (e.key === "1") {
+        e.preventDefault();
+        setActiveTab("my");
+      } else if (e.key === "2" && (isDeptHead || isAdmin)) {
+        e.preventDefault();
+        setActiveTab("department");
+      } else if (e.key === "3") {
+        e.preventDefault();
+        setActiveTab("company");
+      } else if (e.key === "?") {
+        e.preventDefault();
+        setShortcutHelpOpen(true);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [canCreateInActiveTab, isDeptHead, isAdmin]);
   const invalidateAll = (priorityId?: number | null) => {
     void invalidatePriorityQueries(queryClient, priorityId);
   };
@@ -1087,6 +1134,33 @@ export default function PrioritiesPage() {
         }}
         isPending={escalateMutation.isPending}
       />
+
+      <Dialog open={shortcutHelpOpen} onOpenChange={setShortcutHelpOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Keyboard shortcuts</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            {[
+              ["/", "Focus the search bar"],
+              ["n", "New priority"],
+              ["1", "My priorities"],
+              ["2", "Department priorities"],
+              ["3", "Company priorities"],
+              ["Esc", "Clear search / close dialog"],
+              ["?", "Show this help"],
+            ].map(([k, desc]) => (
+              <div key={k} className="flex items-center justify-between">
+                <span className="text-muted-foreground">{desc}</span>
+                <kbd className="px-2 py-1 text-[11px] font-mono rounded border bg-muted text-foreground">{k}</kbd>
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-3 pt-3 border-t">
+            Shortcuts are ignored while typing into a text field.
+          </p>
+        </DialogContent>
+      </Dialog>
 
       {confirmDialog}
     </PageShell>
