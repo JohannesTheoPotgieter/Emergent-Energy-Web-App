@@ -862,15 +862,27 @@ export default function PriorityDetailPage() {
                 });
               }
             } else if ((priority as any).reviewCadenceDays) {
+              // No lastReviewedAt yet. Anchor the messaging on when the
+              // cadence was added so the operator can't read "8 days
+              // overdue" out of a NULL — they either see "added 2 days
+              // ago" (still in grace) or "added 30 days ago, never
+              // reviewed" (concrete problem).
+              const cadenceAddedRef = (priority as any).updatedAt ?? priority.createdAt;
+              const cadenceDays = cadenceAddedRef
+                ? Math.floor((now - new Date(cadenceAddedRef).getTime()) / dayMs)
+                : null;
               insights.push({
                 tone: "neutral",
-                text: `On a ${(priority as any).reviewCadenceDays}-day review cadence — not yet marked reviewed.`,
+                text:
+                  cadenceDays != null && cadenceDays > (priority as any).reviewCadenceDays
+                    ? `Never reviewed — cadence added ${cadenceDays} days ago (every ${(priority as any).reviewCadenceDays} days).`
+                    : `On a ${(priority as any).reviewCadenceDays}-day review cadence — not yet marked reviewed.`,
               });
             }
             if (priority.childCount > 0) {
               insights.push({
                 tone: "neutral",
-                text: `Broken down into ${priority.childCount} sub-priorit${priority.childCount === 1 ? "y" : "ies"}. See Chain tab for the hierarchy.`,
+                text: `Broken down into ${priority.childCount} direct sub-priorit${priority.childCount === 1 ? "y" : "ies"}. See Sub-priorities tab for the full tree.`,
               });
             }
             if ((priority.atRiskProjectCount ?? 0) > 0 && (priority.projectCount ?? 0) > 0) {
@@ -958,8 +970,8 @@ export default function PriorityDetailPage() {
                         <SelectItem value="in_progress">In progress</SelectItem>
                         <SelectItem value="monitoring">Monitoring</SelectItem>
                         <SelectItem value="not_started">Not started</SelectItem>
-                        <SelectItem value="complete">Complete</SelectItem>
-                        <SelectItem value="closed">Closed</SelectItem>
+                        <SelectItem value="complete">Complete — work finished successfully</SelectItem>
+                        <SelectItem value="closed">Closed — no longer tracking (deferred or replaced)</SelectItem>
                       </SelectContent>
                     </Select>
                   ) : (

@@ -134,6 +134,18 @@ export default function PrioritiesPage() {
   useEffect(() => {
     try { window.localStorage.setItem(DENSITY_STORAGE_KEY, density); } catch { /* noop */ }
   }, [density]);
+
+  // Filter-aware empty state: when the live filter set hides every row,
+  // the list section needs to say "Filters are hiding everything"
+  // instead of "Nothing exists" so operators don't read empty as ground
+  // truth. `clearAllFilters` is also wired into the empty-state's Clear
+  // button so the recovery is one click, not a hunt through the
+  // Filters popover.
+  const filtersActive = levelFilter !== "all" || healthFilter !== "all";
+  const clearAllFilters = () => {
+    setLevelFilter("all");
+    setHealthFilter("all");
+  };
   // Admin-only "Archived" view. Toggling this switches the list query
   // to include_archived=true so soft-deleted priorities surface for the
   // admin to restore.
@@ -712,31 +724,53 @@ export default function PrioritiesPage() {
             <TabsTrigger value="my" className="text-xs" data-testid="tab-priorities-my">
               <Target className="w-3.5 h-3.5 mr-1" />
               My Priorities
-              {(myPriorities.length + (myWorkFeedQuery.data?.counts?.tasks ?? 0)) > 0 && (
-                <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
-                  {myPriorities.length + (myWorkFeedQuery.data?.counts?.tasks ?? 0)}
-                </span>
-              )}
+              {/* Filter-aware tab count: when filters are hiding rows we
+                  show "X of Y" so the operator can see the gap between
+                  what's hidden and what exists. Total (Y) stays the
+                  scope's raw priority count + raw task count. */}
+              {(() => {
+                const total = myPriorities.length + (myWorkFeedQuery.data?.counts?.tasks ?? 0);
+                if (total === 0) return null;
+                const visible = filteredMy.length + filteredMyTasks.length;
+                const showSplit = filtersActive && visible !== total;
+                return (
+                  <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
+                    {showSplit ? `${visible} of ${total}` : total}
+                  </span>
+                );
+              })()}
             </TabsTrigger>
             {(isDeptHead || isAdmin) && (
               <TabsTrigger value="department" className="text-xs" data-testid="tab-priorities-department">
                 <Users className="w-3.5 h-3.5 mr-1" />
                 {SCOPE_LABELS.department}
-                {(deptQuery.data?.length ?? 0) > 0 && (
-                  <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
-                    {deptQuery.data?.length}
-                  </span>
-                )}
+                {(() => {
+                  const total = deptQuery.data?.length ?? 0;
+                  if (total === 0) return null;
+                  const visible = filteredDept.length;
+                  const showSplit = filtersActive && visible !== total;
+                  return (
+                    <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
+                      {showSplit ? `${visible} of ${total}` : total}
+                    </span>
+                  );
+                })()}
               </TabsTrigger>
             )}
             <TabsTrigger value="company" className="text-xs" data-testid="tab-priorities-company">
               <Flag className="w-3.5 h-3.5 mr-1" />
               {SCOPE_LABELS.company}
-              {(companyQuery.data?.length ?? 0) > 0 && (
-                <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
-                  {companyQuery.data?.length}
-                </span>
-              )}
+              {(() => {
+                const total = companyQuery.data?.length ?? 0;
+                if (total === 0) return null;
+                const visible = filteredCompany.length;
+                const showSplit = filtersActive && visible !== total;
+                return (
+                  <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
+                    {showSplit ? `${visible} of ${total}` : total}
+                  </span>
+                );
+              })()}
             </TabsTrigger>
           </TabsList>
 
@@ -1059,6 +1093,8 @@ export default function PrioritiesPage() {
               selectedIds={bulkSelected}
               onToggleSelect={toggleBulkSelect}
               density={density}
+              filtersActive={filtersActive}
+              onClearFilters={clearAllFilters}
               emptyMessage="Nothing on your priority list yet"
               emptyAction={
                 canCreateInActiveTab ? (
@@ -1121,6 +1157,8 @@ export default function PrioritiesPage() {
               selectedIds={bulkSelected}
               onToggleSelect={toggleBulkSelect}
               density={density}
+              filtersActive={filtersActive}
+              onClearFilters={clearAllFilters}
               emptyMessage={
                 isAdmin && selectedDeptKey === ALL_DEPTS_KEY
                   ? "No department priorities yet"
@@ -1150,6 +1188,8 @@ export default function PrioritiesPage() {
             selectedIds={bulkSelected}
             onToggleSelect={toggleBulkSelect}
             density={density}
+            filtersActive={filtersActive}
+            onClearFilters={clearAllFilters}
             emptyMessage="No company priorities yet"
             emptyAction={
               isAdmin ? (

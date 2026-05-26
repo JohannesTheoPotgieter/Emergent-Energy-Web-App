@@ -290,13 +290,13 @@ export function PriorityCard({
           </div>
           <div className="flex items-center gap-2">
             {priority.childCount > 0 && (
-              <span>
-                {priority.childCount} sub-priorit{priority.childCount === 1 ? "y" : "ies"}
+              <span title="Direct children only — open the priority and use the Sub-priorities tab for the full tree">
+                {priority.childCount} direct sub-priorit{priority.childCount === 1 ? "y" : "ies"}
               </span>
             )}
             {priority.hasProjects && (
-              <span>
-                {priority.projectCount} project{priority.projectCount !== 1 ? "s" : ""}
+              <span title="Directly linked projects. The detail page shows projects rolled up from sub-priorities as well.">
+                {priority.projectCount} direct project{priority.projectCount !== 1 ? "s" : ""}
                 {priority.atRiskProjectCount > 0 && (
                   <span className="text-red-600 ml-1">· {priority.atRiskProjectCount} at risk</span>
                 )}
