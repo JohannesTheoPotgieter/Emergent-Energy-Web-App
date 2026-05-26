@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearch, useLocation, Link } from "wouter";
-import { Download, Filter, Flag, LayoutGrid, List, Plus, Rows3, Search, Target, Users, X } from "lucide-react";
+import { Download, Filter, Flag, GitBranch, LayoutGrid, List, Plus, Rows3, Search, Target, Users, X } from "lucide-react";
 import { PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -615,6 +615,14 @@ export default function PrioritiesPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {(isAdmin || isDeptHead) && (
+            <Link href="/priorities/lineage">
+              <Button size="sm" variant="outline" aria-label="Open cross-department lineage view">
+                <GitBranch className="w-4 h-4 mr-1" />
+                Lineage
+              </Button>
+            </Link>
+          )}
           {(isAdmin || isDeptHead) && (
             <Button size="sm" variant="outline" onClick={exportPack} aria-label="Export priorities pack as PDF">
               <Download className="w-4 h-4 mr-1" />
