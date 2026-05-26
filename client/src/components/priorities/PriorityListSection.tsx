@@ -1,7 +1,7 @@
 import { AlertCircle, AlertTriangle, Flag, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { PriorityRow } from "@/lib/priority-types";
-import { PriorityCard } from "./PriorityCard";
+import { PriorityCard, type PriorityListDensity } from "./PriorityCard";
 
 export interface PriorityListSectionProps {
   priorities: PriorityRow[];
@@ -27,6 +27,7 @@ export interface PriorityListSectionProps {
   onToggleSelect?: (id: number) => void;
   emptyMessage: string;
   emptyAction?: React.ReactNode;
+  density?: PriorityListDensity;
 }
 
 export function PriorityListSection({
@@ -48,6 +49,7 @@ export function PriorityListSection({
   onToggleSelect,
   emptyMessage,
   emptyAction,
+  density = "cards",
 }: PriorityListSectionProps) {
   if (isLoading) {
     return (
@@ -79,6 +81,7 @@ export function PriorityListSection({
     <PriorityCard
       key={p.id}
       priority={p}
+      density={density}
       showEscalate={typeof showEscalate === "function" ? showEscalate(p) : showEscalate}
       onEscalate={() => onEscalate?.(p.id)}
       showMarkComplete={showMarkComplete}
@@ -93,6 +96,16 @@ export function PriorityListSection({
     />
   );
 
+  // Layout: cards uses a 2-column grid with comfortable spacing,
+  // compact uses a 3-column grid with tighter cards, dense is a single
+  // stacked list of one-line strips for max scan speed.
+  const gridClass =
+    density === "dense"
+      ? "flex flex-col gap-1"
+      : density === "compact"
+        ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2"
+        : "grid grid-cols-1 md:grid-cols-2 gap-3";
+
   return (
     <div>
       {escalated.length > 0 && (
@@ -101,7 +114,7 @@ export function PriorityListSection({
             <AlertTriangle className="w-3.5 h-3.5" />
             Escalations ({escalated.length})
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className={gridClass}>
             {escalated.map(renderCard)}
           </div>
         </div>
@@ -122,7 +135,7 @@ export function PriorityListSection({
           {emptyAction}
         </div>
       ) : normal.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className={gridClass}>
           {normal.map(renderCard)}
         </div>
       ) : null}

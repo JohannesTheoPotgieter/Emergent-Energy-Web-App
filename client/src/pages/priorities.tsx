@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearch, useLocation, Link } from "wouter";
-import { Download, Filter, Flag, Plus, Search, Target, Users, X } from "lucide-react";
+import { Download, Filter, Flag, LayoutGrid, List, Plus, Rows3, Search, Target, Users, X } from "lucide-react";
 import { PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -26,6 +26,15 @@ import { ROLE_DEPARTMENT_MAP } from "@shared/schema/users";
 const ALL_DEPTS_KEY = "__ALL__";
 import type { PriorityRow } from "@/lib/priority-types";
 import { PriorityListSection } from "@/components/priorities/PriorityListSection";
+import type { PriorityListDensity } from "@/components/priorities/PriorityCard";
+
+const DENSITY_STORAGE_KEY = "priorities:density";
+const DENSITY_VALUES: PriorityListDensity[] = ["cards", "compact", "dense"];
+function readStoredDensity(): PriorityListDensity {
+  if (typeof window === "undefined") return "cards";
+  const raw = window.localStorage.getItem(DENSITY_STORAGE_KEY);
+  return (DENSITY_VALUES as string[]).includes(raw ?? "") ? (raw as PriorityListDensity) : "cards";
+}
 import { CreatePriorityDialog } from "@/components/priorities/CreatePriorityDialog";
 import { AssignPriorityDialog, BulkReassignDialog } from "@/components/priorities/AssignDialogs";
 import { useConfirmDialog } from "@/components/priorities/ConfirmActionDialog";
@@ -115,6 +124,15 @@ export default function PrioritiesPage() {
   const [levelFilter, setLevelFilter] = useState(initialFilters.level);
   const [healthFilter, setHealthFilter] = useState(initialFilters.health);
   const [showClosed, setShowClosed] = useState(false);
+  // Density toggle — persisted in localStorage so the operator's
+  // preference survives across visits and tabs. The three modes (cards,
+  // compact, dense) trade card detail for vertical density: cards is
+  // the canonical 2-col grid, compact is a 3-col grid with metadata
+  // trimmed, dense is a single-column one-line strip for scan speed.
+  const [density, setDensity] = useState<PriorityListDensity>(() => readStoredDensity());
+  useEffect(() => {
+    try { window.localStorage.setItem(DENSITY_STORAGE_KEY, density); } catch { /* noop */ }
+  }, [density]);
   // Admin-only "Archived" view. Toggling this switches the list query
   // to include_archived=true so soft-deleted priorities surface for the
   // admin to restore.
@@ -915,6 +933,30 @@ export default function PrioritiesPage() {
                 </div>
               </PopoverContent>
             </Popover>
+            {/* Density toggle — three-state segmented control. Persists in
+                localStorage so the choice survives navigation and reloads.
+                Hidden on small screens (toggle is meaningless under 2-col
+                grid) but still keyboard-reachable via the popover above. */}
+            <div className="hidden md:inline-flex items-center rounded-md border border-input bg-background overflow-hidden" role="group" aria-label="List density">
+              {([
+                { value: "cards", label: "Cards", Icon: LayoutGrid },
+                { value: "compact", label: "Compact", Icon: List },
+                { value: "dense", label: "Dense", Icon: Rows3 },
+              ] as const).map(({ value, label, Icon }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setDensity(value)}
+                  className={`h-8 px-2 text-xs flex items-center gap-1 ${density === value ? "bg-emerald-600 text-white" : "text-muted-foreground hover:bg-muted"}`}
+                  aria-pressed={density === value}
+                  title={`${label} density`}
+                  data-testid={`density-${value}`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span className="hidden lg:inline">{label}</span>
+                </button>
+              ))}
+            </div>
             <div className="flex items-center gap-1 ml-auto">
               <Input
                 value={saveViewName}
@@ -1003,6 +1045,7 @@ export default function PrioritiesPage() {
               selectable={canUseBulkActions}
               selectedIds={bulkSelected}
               onToggleSelect={toggleBulkSelect}
+              density={density}
               emptyMessage="Nothing on your priority list yet"
               emptyAction={
                 canCreateInActiveTab ? (
@@ -1053,6 +1096,7 @@ export default function PrioritiesPage() {
               selectable={canUseBulkActions}
               selectedIds={bulkSelected}
               onToggleSelect={toggleBulkSelect}
+              density={density}
               emptyMessage={
                 isAdmin && selectedDeptKey === ALL_DEPTS_KEY
                   ? "No department priorities yet"
@@ -1081,6 +1125,7 @@ export default function PrioritiesPage() {
             selectable={isAdmin}
             selectedIds={bulkSelected}
             onToggleSelect={toggleBulkSelect}
+            density={density}
             emptyMessage="No company priorities yet"
             emptyAction={
               isAdmin ? (
