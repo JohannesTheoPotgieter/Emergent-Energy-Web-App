@@ -17,7 +17,7 @@
  */
 import { inArray } from "drizzle-orm";
 import { db } from "../../db";
-import { projectInfo } from "@shared/schema/projects";
+import { projectInfo } from "@shared/schema";
 
 /**
  * Statuses that contribute to "current" finance aggregates by default.
