@@ -14,6 +14,7 @@ import {
   stageGateEvidenceSnapshots,
   projectExecutionState,
   projectInfo,
+  projectHoldMetadata,
   STAGE_CODES,
   TERMINAL_STAGE_CODES,
   SEQUENTIAL_STAGE_CODES,
@@ -1359,6 +1360,54 @@ interface TerminalTransitionParams {
   reason?: string;
 }
 
+/**
+ * Six-field metadata captured against every Hold/Blocked transition per
+ * AGENT_GUARDRAILS.md § 4A. The fields are individually optional at the
+ * service layer; callers are responsible for surfacing the "all six are
+ * required" rule and passing `overrideReason` when one is intentionally
+ * missing (override path per § 0A). The audit log captures actor + role,
+ * so the override authority and reason survive in `project_hold_metadata`.
+ */
+export interface PlaceProjectOnHoldMetadata {
+  ownerUserId?: number | null;
+  reviewDate?: string | null;
+  dependency?: string | null;
+  decisionOwnerUserId?: number | null;
+  evidenceLink?: string | null;
+  overrideReason?: string | null;
+  actorRole?: string | null;
+}
+
+export const HOLD_METADATA_FIELDS = [
+  "reason",
+  "ownerUserId",
+  "reviewDate",
+  "dependency",
+  "decisionOwnerUserId",
+  "evidenceLink",
+] as const;
+export type HoldMetadataField = (typeof HOLD_METADATA_FIELDS)[number];
+
+/**
+ * Pure helper — given the inputs to `placeProjectOnHold`, return the
+ * list of six-field metadata gaps. Exported so the route layer and the
+ * client can compute the same set without duplicating the rule.
+ */
+export function computeMissingHoldFields(input: {
+  reason?: string | null;
+  metadata?: PlaceProjectOnHoldMetadata;
+}): HoldMetadataField[] {
+  const md = input.metadata ?? {};
+  const missing: HoldMetadataField[] = [];
+  if (!input.reason || !input.reason.trim()) missing.push('reason');
+  if (md.ownerUserId == null) missing.push('ownerUserId');
+  if (!md.reviewDate) missing.push('reviewDate');
+  if (!md.dependency || !md.dependency.trim()) missing.push('dependency');
+  if (md.decisionOwnerUserId == null) missing.push('decisionOwnerUserId');
+  if (!md.evidenceLink || !md.evidenceLink.trim()) missing.push('evidenceLink');
+  return missing;
+}
+
 async function ensureTerminalStageInstance(
   projectId: number,
   stageCode: 'S_HOLD' | 'S_DONE',
@@ -1400,11 +1449,15 @@ async function ensureTerminalStageInstance(
   return created;
 }
 
-export async function placeProjectOnHold(params: TerminalTransitionParams): Promise<{
+export async function placeProjectOnHold(
+  params: TerminalTransitionParams & { metadata?: PlaceProjectOnHoldMetadata },
+): Promise<{
   previousPhase: StageCode | null;
   stageInstanceId: number;
+  holdMetadataId: number;
+  missingFields: HoldMetadataField[];
 }> {
-  const { projectId, actorUserId, reason } = params;
+  const { projectId, actorUserId, reason, metadata } = params;
   const now = new Date();
 
   // Read current sequential stage so we can preserve it for resume.
@@ -1462,9 +1515,39 @@ export async function placeProjectOnHold(params: TerminalTransitionParams): Prom
     rationale: reason ?? 'Placed on hold via terminal-branch transition',
   });
 
+  // Six-field hold metadata per § 4A. Any previous open metadata row for
+  // this project is resolved first so the "currently on hold" view only
+  // ever shows one open row at a time.
+  await db
+    .update(projectHoldMetadata)
+    .set({ resolvedAt: now, resolvedByUserId: actorUserId, resolutionNote: 'Superseded by new hold' })
+    .where(and(eq(projectHoldMetadata.projectId, projectId), isNull(projectHoldMetadata.resolvedAt)));
+
+  const md = metadata ?? {};
+  const missingFields = computeMissingHoldFields({ reason, metadata: md });
+
+  const [metadataRow] = await db
+    .insert(projectHoldMetadata)
+    .values({
+      projectId,
+      status: 'hold',
+      reason: reason ?? null,
+      ownerUserId: md.ownerUserId ?? null,
+      reviewDate: md.reviewDate ?? null,
+      dependency: md.dependency ?? null,
+      decisionOwnerUserId: md.decisionOwnerUserId ?? null,
+      evidenceLink: md.evidenceLink ?? null,
+      overrideReason: missingFields.length > 0 ? (md.overrideReason ?? null) : null,
+      createdByUserId: actorUserId,
+      createdByRole: md.actorRole ?? null,
+    })
+    .returning();
+
   return {
     previousPhase: (previousToPersist ?? null) as StageCode | null,
     stageInstanceId: holdInstance.id,
+    holdMetadataId: metadataRow.id,
+    missingFields,
   };
 }
 
@@ -1552,6 +1635,18 @@ export async function resumeProjectFromHold(params: TerminalTransitionParams): P
     decidedDate: now,
     rationale: reason ?? 'Resumed from terminal Hold branch',
   });
+
+  // Close out the open project_hold_metadata row for this project (if
+  // any) so the historical record shows when the hold ended and who
+  // resolved it. § 4A six-field rule.
+  await db
+    .update(projectHoldMetadata)
+    .set({
+      resolvedAt: now,
+      resolvedByUserId: actorUserId,
+      resolutionNote: reason ?? 'Resumed from hold',
+    })
+    .where(and(eq(projectHoldMetadata.projectId, projectId), isNull(projectHoldMetadata.resolvedAt)));
 
   return { resumedTo: target };
 }

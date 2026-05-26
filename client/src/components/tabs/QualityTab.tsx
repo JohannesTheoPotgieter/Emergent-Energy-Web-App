@@ -237,9 +237,17 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
   const [evidenceUploadState, setEvidenceUploadState] = useState<Record<number, { state: "uploading" | "uploaded" | "failed" | "too_large"; message: string }>>({});
   const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
-  const isQmOrAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '') || (user?.role || '').toUpperCase() === 'QUALITY_MANAGER';
-  const canEdit = isQmOrAdmin;
+  // Database-driven RBAC per AGENT_GUARDRAILS § 5 / § 8.2. The previous
+  // hard-coded role list (`['admin','COO_ADMIN','CEO_ADMIN']` + QUALITY_MANAGER
+  // match) drifted out of sync with the canonical pd_quality registry
+  // entry and meant new roles (e.g. SSEG_MANAGER) would never get edit
+  // access regardless of the DB grant.
+  const { allowed: canEdit } = usePermission('pd_quality', 'edit');
+  const { allowed: canApprove } = usePermission('pd_quality', 'approve');
   const { allowed: canDeleteQc } = usePermission('pd_quality', 'delete');
+  // Retained as a narrower alias for the few branches that historically
+  // required QM/Admin specifically (e.g. forced re-pass after a fail).
+  const isQmOrAdmin = canApprove;
 
   useEffect(() => {
     if (!initialStatusFilter) return;

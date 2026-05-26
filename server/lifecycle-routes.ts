@@ -865,7 +865,13 @@ export function registerLifecycleRoutes(app: Express) {
     },
   );
 
-  app.get('/api/lifecycle-board/projects', requireAuth, async (_req: Request, res: Response) => {
+  // Deep audit 2026-05-26 — the previous gate was authentication-only,
+  // which let any signed-in user list every project including project
+  // names, RAG status, finance baselines and cost lines. Gate behind
+  // `lifecycle:view` so the role/permission registry decides who can
+  // see the cross-project view (matches the sister `:id/rag-history`
+  // and execution-board admin routes).
+  app.get('/api/lifecycle-board/projects', requireAuth, requirePermission('lifecycle', 'view'), async (_req: Request, res: Response) => {
     try {
       const allProjects = await db
         .select({
@@ -1317,6 +1323,9 @@ export function registerLifecycleRoutes(app: Express) {
   app.get(
     '/api/lifecycle-board/execution-dashboard',
     requireAuth,
+    // Deep audit 2026-05-26 — was previously gated by authentication
+    // only despite returning portfolio-wide finance aggregates.
+    requirePermission('execution_board', 'view'),
     async (req: Request, res: Response) => {
       try {
         const fy = resolveDashboardFinanceScope(req.query);
@@ -2137,6 +2146,11 @@ export function registerLifecycleRoutes(app: Express) {
   app.get(
     '/api/lifecycle-board/overdue-payments',
     requireAuth,
+    // Deep audit 2026-05-26 — was previously gated by authentication
+    // only despite returning cost/revenue line drill-downs with supplier
+    // and counterparty names. Gate behind `execution_board:view` since
+    // it's the same data set as the parent dashboard.
+    requirePermission('execution_board', 'view'),
     async (req: Request, res: Response) => {
       try {
         const fy = resolveDashboardFinanceScope(req.query);
