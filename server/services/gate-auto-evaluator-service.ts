@@ -471,7 +471,10 @@ export const EVALUATOR_BINDINGS: EvaluatorBinding[] = [
     phaseCode: "S02_DESIGN_COST_PROPOSAL",
     itemCode: "bom_priced",
     evaluate: (ctx) => {
-      const planned = ctx.costLines.filter((l) => (l as any).status === "planned" || l.status === "planned");
+      // Wave-6 audit (2026-05-26): the previous `(l as any).status === "planned" || l.status === "planned"`
+      // was a defensive double-check that did nothing — `l.status` is on the
+      // canonical normalizedCostLines.$inferSelect type. Cast removed.
+      const planned = ctx.costLines.filter((l) => l.status === "planned");
       if (planned.length === 0) return NOT_DETECTED();
       return detected("complete", `${planned.length} planned cost lines on BOM`, {
         evidenceRef: `cost_lines:project:${ctx.projectId}`,
@@ -643,7 +646,10 @@ export const EVALUATOR_BINDINGS: EvaluatorBinding[] = [
     itemCode: "financial_baseline_confirmed",
     evaluate: (ctx) => {
       const planned = asNumber(ctx.revenueSummary?.plannedRevenue);
-      const plannedExp = asNumber((ctx.revenueSummary as any)?.plannedExpenditure);
+      // Wave-6 audit (2026-05-26): plannedExpenditure exists on
+      // projectRevenueSummary.$inferSelect (verified in shared/schema/projects.ts);
+      // the prior `as any` cast was unnecessary.
+      const plannedExp = asNumber(ctx.revenueSummary?.plannedExpenditure);
       if (planned <= 0 || plannedExp <= 0) return NOT_DETECTED();
       return detected(
         "complete",
@@ -1151,15 +1157,18 @@ export const EVALUATOR_BINDINGS: EvaluatorBinding[] = [
     phaseCode: "S09_CLIENT_HANDOVER",
     itemCode: "three_month_review_scheduled",
     evaluate: (ctx) => {
-      const w = ctx.workItems.find((w) => {
-        if (!/3.month|three.month|post.handover|review/i.test(w.title ?? "")) return false;
-        const start = (w as any).startDate;
+      // Wave-6 audit (2026-05-26): workItems.startDate is on the
+      // canonical typeof workItems.$inferSelect type — no need to
+      // cast through any.
+      const w = ctx.workItems.find((wi) => {
+        if (!/3.month|three.month|post.handover|review/i.test(wi.title ?? "")) return false;
+        const start = wi.startDate;
         if (!start) return false;
         const days = (new Date(start).getTime() - Date.now()) / 86400_000;
         return days >= 30 && days <= 180;
       });
       if (!w) return NOT_DETECTED();
-      return detected("complete", `Review scheduled for ${fmtDate((w as any).startDate)}`, {
+      return detected("complete", `Review scheduled for ${fmtDate(w.startDate)}`, {
         evidenceRef: `work_item:${w.id}`,
         evidenceUrl: `/work-items/${w.id}`,
       });

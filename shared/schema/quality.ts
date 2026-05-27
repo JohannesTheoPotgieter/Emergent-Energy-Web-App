@@ -309,6 +309,10 @@ export const evidenceCollectedItems = pgTable("evidence_collected_items", {
   uploadedByUserId: integer("uploaded_by_user_id").references(() => users.id, { onDelete: "set null" }),
   uploadedByName: text("uploaded_by_name"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  // Wave-6 audit (2026-05-26) — additive `updated_at` so the new ON
+  // CONFLICT upsert can record when a row was last refreshed without
+  // losing the original create timestamp.
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
   deletedAt: timestamp("deleted_at"),
 });
 export type EvidenceCollectedItem = typeof evidenceCollectedItems.$inferSelect;
