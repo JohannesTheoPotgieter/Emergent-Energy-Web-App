@@ -44,6 +44,9 @@ const ExecutionBoardPage = lazyWithRetry(() => import("@/pages/execution-board")
 // PR-B redesign (2026-05-27) — /now replaces /execution-board as the
 // canonical landing surface. Legacy route kept for one cycle.
 const NowPage = lazyWithRetry(() => import("@/pages/now"));
+// PR-C redesign (2026-05-27) — /my-queue consolidates POs + payment
+// requests + change requests + stage exceptions into one screen.
+const MyQueuePage = lazyWithRetry(() => import("@/pages/my-queue"));
 const SmartImportPage = lazyWithRetry(() => import("@/pages/smart-import"));
 const SharePointIntakePage = lazyWithRetry(() => import("@/pages/SharePointIntakePage"));
 const InvoicePatternsPage = lazyWithRetry(() => import("@/pages/invoice-patterns"));
@@ -192,6 +195,7 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   LifecycleBoardPage,
   ExecutionBoardPage,
   NowPage,
+  MyQueuePage,
   MyWorkMeetingsPage,
   MyWorkSettingsPage,
   RoleSettingsPage,

@@ -32,6 +32,7 @@ import { registerReconciliationRoutes } from './reconciliation.routes';
 import { registerQualityTasksRoutes } from './quality-tasks.routes';
 import { registerStandupSessionsRoutes } from './standup-sessions.routes';
 import { registerDeliveryMilestonesRoutes } from './delivery-milestones.routes';
+import { registerMyQueueRoutes } from './my-queue.routes';
 
 export async function registerRoutes(httpServer: Server, app: Express) {
   registerTemplateGovernanceRoutes(app);
@@ -58,5 +59,6 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerQualityTasksRoutes(app);
   registerStandupSessionsRoutes(app);
   registerDeliveryMilestonesRoutes(app);
+  registerMyQueueRoutes(app);
   return registerLegacyRoutes(httpServer, app);
 }
