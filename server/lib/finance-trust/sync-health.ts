@@ -16,6 +16,7 @@ import {
   getQuickBooksConnectionStatus,
   QB_STALE_AFTER_MS,
 } from "../../services/quickbooks-service";
+import { bridgeQueueDepth } from "../../bridge/bridge-writer";
 
 export interface FinanceSyncHealthIntegration {
   name: string;
@@ -45,6 +46,17 @@ export interface BridgeSyncLagSummary {
   oldestUnresolvedAt: string | null;
 }
 
+/**
+ * TF-12 (audit V3) — in-flight bridge-writer queue depth. Surfaced
+ * here so operators can spot a queue building up before it OOMs the
+ * process. Counts the live `withRetry()` invocations.
+ */
+export interface BridgeQueueDepthSummary {
+  inflight: number;
+  peak: number;
+  warnThreshold: number;
+}
+
 export interface FinanceSyncHealthReport {
   generatedAt: string;
   overallHealth: "healthy" | "stale" | "failing" | "unknown";
@@ -52,6 +64,7 @@ export interface FinanceSyncHealthReport {
   anyFailing: boolean;
   integrations: FinanceSyncHealthIntegration[];
   bridgeSyncLag: BridgeSyncLagSummary;
+  bridgeQueueDepth: BridgeQueueDepthSummary;
 }
 
 function worstHealth(
@@ -104,6 +117,10 @@ export async function getFinanceSyncHealth(): Promise<FinanceSyncHealthReport> {
   // table doesn't exist (older environments) we return zero.
   const bridgeSyncLag = await readBridgeSyncLag();
 
+  // TF-12 (audit V3): live bridge queue depth — read direct from the
+  // in-memory counter on bridge-writer.
+  const bridgeQueueDepthSummary = bridgeQueueDepth();
+
   return {
     generatedAt: new Date().toISOString(),
     overallHealth,
@@ -111,6 +128,7 @@ export async function getFinanceSyncHealth(): Promise<FinanceSyncHealthReport> {
     anyFailing: integrations.some((i) => i.health === "failing"),
     integrations,
     bridgeSyncLag,
+    bridgeQueueDepth: bridgeQueueDepthSummary,
   };
 }
 

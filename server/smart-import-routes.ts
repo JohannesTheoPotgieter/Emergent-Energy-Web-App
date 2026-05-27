@@ -3146,13 +3146,35 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       }
     }
 
+    // TF-14 (audit V3) — capture the inserted line IDs so a forensic
+    // query "which lines did import run X write?" reduces to a single
+    // audit_events lookup. Capped at 200 per side to keep the audit
+    // row size reasonable; full linkage is still available via
+    // normalized_*.import_run_id for unbounded queries.
+    const INSERTED_ID_LIMIT = 200;
+    // Cast — v2Result is mutated inside a transaction callback so TS
+    // narrows it to `null` here even though it gets populated at
+    // runtime. The same cast pattern is used downstream at line 3221.
+    const v2 = v2Result as IncrementalCommitResult | null;
+    const revenueInsertedIds = v2?.sections.REVENUE?.insertedIds ?? [];
+    const costInsertedIds = v2?.sections.EXPENDITURE?.insertedIds ?? [];
     logAuditFromReq(req, {
       entityType: "smart_import",
       entityId: String(runId),
       action: "commit",
       projectName: run.projectName,
       source: "IMPORT",
-      changesJson: { counts, preservedOverrides: skippedOverrideFields.length, preservedManualEdits: preservedManualEditsCount },
+      changesJson: {
+        counts,
+        preservedOverrides: skippedOverrideFields.length,
+        preservedManualEdits: preservedManualEditsCount,
+        // Per-line linkage (TF-14)
+        importRunId: runId,
+        revenueLineIdsSample: revenueInsertedIds.slice(0, INSERTED_ID_LIMIT),
+        revenueLineIdsTruncated: revenueInsertedIds.length > INSERTED_ID_LIMIT,
+        costLineIdsSample: costInsertedIds.slice(0, INSERTED_ID_LIMIT),
+        costLineIdsTruncated: costInsertedIds.length > INSERTED_ID_LIMIT,
+      },
     });
 
     // Build complete import summary
