@@ -23,6 +23,7 @@ import { PageHero } from '@/components/finance/PageHero';
 import { KpiTile } from '@/components/finance/KpiTile';
 import { Money } from '@/components/ui/money';
 import { DirectionDelta } from '@/components/finance/DirectionDelta';
+import { DrillReconciliationFooter } from '@/components/finance/DrillReconciliationFooter';
 import { FINANCE_QUERY_VOLATILE } from '@/lib/finance-stale-policy';
 import { useFinanceQuery } from '@/lib/finance-trust';
 import { DataTrustBadge } from '@/components/ui/data-trust-badge';
@@ -1607,6 +1608,15 @@ export default function CosTracker() {
             })}
           </tbody>
         </table>
+        {/* Visual redesign — reconciliation footer pins the COS heatmap's YTD
+            realised against the hero figure so the drilldown agrees with the
+            headline (TF-19). */}
+        <DrillReconciliationFooter
+          sourceLabel="Hero · YTD COS realised"
+          sourceValue={ytdRealised}
+          drilldownLabel={`Sum across ${months.length} months · realised COS`}
+          drilldownValue={months.reduce((s, m) => s + (m.realisedCOS ?? 0), 0)}
+        />
       </div>
     );
   };
