@@ -7,8 +7,8 @@
  * for the row where `name = 'quickbooks'`.
  */
 
-import { and, desc, eq, isNull } from 'drizzle-orm';
-import { integrations, integrationRunEvents } from '@shared/schema';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { integrations, integrationRunEvents, quickbooksInvoiceLinks } from '@shared/schema';
 import { db } from '../db';
 import {
   deriveIntegrationHealth,
@@ -343,13 +343,53 @@ export async function getValidAccessToken(): Promise<{ accessToken: string; real
 
 export async function disconnectQuickBooks(): Promise<void> {
   const startedAt = new Date();
+  // TF-23 (audit V3) — before clearing the QB tokens, mark every
+  // invoice link that pointed at the disconnected realm as orphaned.
+  // Reads filter `isNull(deletedAt)` so the orphaned links naturally
+  // drop out of the reconciliation surface; the `notes` field carries
+  // the reason so an operator can see why the link disappeared.
+  const previous = await loadQuickBooksMetadata();
+  const previousRealmId = previous.realmId ?? null;
+  if (previousRealmId) {
+    await orphanLinksForRealm(previousRealmId);
+  }
   await saveQuickBooksMetadata({});
   await recordQbRun({
     runType: 'oauth:disconnect',
     startedAt,
     ok: true,
-    metadata: { reason: 'manual_disconnect' },
+    metadata: {
+      reason: 'manual_disconnect',
+      orphanedRealmId: previousRealmId,
+    },
   });
+}
+
+/**
+ * TF-23 — mark all active invoice links for a realm as orphaned.
+ *
+ * Implementation note: there's no dedicated `realm_status` column on
+ * quickbooks_invoice_links. We re-use the existing `deleted_at` field
+ * (which all reads already filter via `isNull(deletedAt)`) and stamp
+ * the `notes` column with a marker so finance can see why the link
+ * disappeared without checking the audit log.
+ */
+async function orphanLinksForRealm(realmId: string): Promise<number> {
+  const marker = `[ORPHANED] QB realm ${realmId} disconnected at ${new Date().toISOString()}`;
+  const result = await db
+    .update(quickbooksInvoiceLinks)
+    .set({
+      deletedAt: new Date(),
+      notes: sql`COALESCE(${quickbooksInvoiceLinks.notes} || E'\n', '') || ${marker}`,
+    })
+    .where(
+      and(
+        eq(quickbooksInvoiceLinks.qbRealmId, realmId),
+        isNull(quickbooksInvoiceLinks.deletedAt),
+      ),
+    )
+    .returning({ id: quickbooksInvoiceLinks.id });
+  return result.length;
 }
 
 // ===================== API HELPERS =====================

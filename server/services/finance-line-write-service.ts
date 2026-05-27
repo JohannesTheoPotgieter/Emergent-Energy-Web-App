@@ -34,6 +34,7 @@ import {
   bridgeCatchFor,
 } from "../bridge/bridge-writer";
 import { softCloseByProjectName, softCloseByProjectId } from "../lib/temporal-helpers";
+import { assertProjectNotOnHold } from "./project-hold-gate";
 
 type DbOrTx = typeof db;
 
@@ -53,6 +54,15 @@ export async function createCostLine(
   values: Record<string, any>,
   txOrDb: DbOrTx = db,
 ): Promise<any> {
+  // TF-22 (audit V3) — block writes on held projects unless the caller
+  // explicitly overrode via the values.__overrideHold envelope (set by
+  // owner-role routes).
+  if (typeof values.projectId === "number") {
+    await assertProjectNotOnHold(values.projectId, {
+      override: values.__overrideHold === true,
+      overrideReason: values.__overrideHoldReason,
+    });
+  }
   // Idempotency guard: if a key is provided, check for existing row first
   if (values.idempotencyKey) {
     const existing = await (txOrDb as any)
@@ -98,16 +108,35 @@ export async function updateCostLineFields(
   fields: Record<string, any>,
   txOrDb: DbOrTx = db,
 ): Promise<any> {
+  // TF-22 — look up the project for this cost line and refuse writes on hold.
+  // We don't fail open on a missing row: if the line doesn't exist the UPDATE
+  // will return nothing anyway, so the gate is only relevant when the row
+  // exists.
+  const [existing] = await (txOrDb as any)
+    .select({ projectId: normalizedCostLines.projectId })
+    .from(normalizedCostLines)
+    .where(eq(normalizedCostLines.id, id))
+    .limit(1);
+  if (existing?.projectId) {
+    await assertProjectNotOnHold(existing.projectId, {
+      override: fields.__overrideHold === true,
+      overrideReason: fields.__overrideHoldReason,
+    });
+  }
+  // Strip the override envelope before forwarding the values to the DB.
+  const { __overrideHold, __overrideHoldReason, ...persistable } = fields;
+  void __overrideHold;
+  void __overrideHoldReason;
   const [updated] = await (txOrDb as any)
     .update(normalizedCostLines)
-    .set(fields)
+    .set(persistable)
     .where(and(
       eq(normalizedCostLines.id, id),
       isNull(normalizedCostLines.effectiveTo),
     ))
     .returning();
   if (updated) {
-    syncCostLineFieldUpdate(id, fields).catch(bridgeCatch);
+    syncCostLineFieldUpdate(id, persistable).catch(bridgeCatch);
   }
   return updated;
 }
@@ -139,7 +168,17 @@ export async function createRevenueLine(
   values: Record<string, any>,
   txOrDb: DbOrTx = db,
 ): Promise<any> {
-  const [created] = await (txOrDb as any).insert(normalizedRevenueLines).values(values).returning();
+  // TF-22 — refuse revenue inserts on a held project.
+  if (typeof values.projectId === "number") {
+    await assertProjectNotOnHold(values.projectId, {
+      override: values.__overrideHold === true,
+      overrideReason: values.__overrideHoldReason,
+    });
+  }
+  const { __overrideHold, __overrideHoldReason, ...persistable } = values;
+  void __overrideHold;
+  void __overrideHoldReason;
+  const [created] = await (txOrDb as any).insert(normalizedRevenueLines).values(persistable).returning();
   syncRevenueLine(created).catch(bridgeCatchFor("revenue_line", created.id));
   return created;
 }
@@ -168,16 +207,31 @@ export async function updateRevenueLineFields(
   fields: Record<string, any>,
   txOrDb: DbOrTx = db,
 ): Promise<any> {
+  // TF-22 — look up the project and refuse if held.
+  const [existing] = await (txOrDb as any)
+    .select({ projectId: normalizedRevenueLines.projectId })
+    .from(normalizedRevenueLines)
+    .where(eq(normalizedRevenueLines.id, id))
+    .limit(1);
+  if (existing?.projectId) {
+    await assertProjectNotOnHold(existing.projectId, {
+      override: fields.__overrideHold === true,
+      overrideReason: fields.__overrideHoldReason,
+    });
+  }
+  const { __overrideHold, __overrideHoldReason, ...persistable } = fields;
+  void __overrideHold;
+  void __overrideHoldReason;
   const [updated] = await (txOrDb as any)
     .update(normalizedRevenueLines)
-    .set(fields)
+    .set(persistable)
     .where(and(
       eq(normalizedRevenueLines.id, id),
       isNull(normalizedRevenueLines.effectiveTo),
     ))
     .returning();
   if (updated) {
-    syncRevenueLineFieldUpdate(id, fields).catch(bridgeCatch);
+    syncRevenueLineFieldUpdate(id, persistable).catch(bridgeCatch);
   }
   return updated;
 }

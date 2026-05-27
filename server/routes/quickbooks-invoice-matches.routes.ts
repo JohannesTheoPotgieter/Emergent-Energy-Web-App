@@ -40,6 +40,7 @@ import { db } from "../db";
 import { requireAuth, getEffectiveUser } from "../auth-context";
 import { requirePermission } from "../permission-middleware";
 import { validateBody } from "../middleware/validateBody";
+import { rateLimitPerUser } from "../middleware/rateLimitPerUser";
 import { logAuditFromReq } from "../audit-logger";
 import { resolveProjectScope, isProjectAccessible } from "../services/project-access-service";
 import {
@@ -726,10 +727,15 @@ function invoicesToCandidates(
 
 export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
   // -------- POST /find ----------------------------------------------------
+  // TF-15 (audit V3) — per-user rate limit on the bulk-find endpoint.
+  // Each find call walks unmatched cost + revenue lines and queries QB
+  // for candidate matches; a hammered loop would burn the cascade
+  // compute budget and DOS the upstream QB API.
   app.post(
     "/api/quickbooks/invoice-matches/find",
     requireAuth,
     requirePermission("financials", "view"),
+    rateLimitPerUser({ bucket: "qb-find-matches", maxRequests: 10, windowSeconds: 60 }),
     validateBody(findBodySchema),
     async (req: Request, res: Response) => {
       try {
@@ -1389,6 +1395,9 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
     "/api/quickbooks/invoice-matches/:suggestionId/approve-multi",
     requireAuth,
     requirePermission("financials", "edit"),
+    // TF-15 — approve-multi runs a transaction across N candidate blocks;
+    // rate-limited to keep one operator from monopolising the DB.
+    rateLimitPerUser({ bucket: "qb-approve-multi", maxRequests: 10, windowSeconds: 60 }),
     validateBody(approveMultiBodySchema),
     async (req: Request, res: Response) => {
       try {
@@ -1970,6 +1979,8 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
     "/api/quickbooks/invoice-matches/bulk-approve",
     requireAuth,
     requirePermission("financials", "edit"),
+    // TF-15 — bulk-approve fans out across many rows.
+    rateLimitPerUser({ bucket: "qb-bulk-approve", maxRequests: 5, windowSeconds: 60 }),
     validateBody(bulkApproveBodySchema),
     async (req: Request, res: Response) => {
       try {

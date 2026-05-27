@@ -20,11 +20,17 @@ describe("finance analysis hardening", () => {
   it("keeps finance analysis endpoints role-gated and tolerance writes restricted", () => {
     const source = read("server/routes/finance-analysis.routes.ts");
     const cosPageSource = read("client/src/pages/cos-analysis.tsx");
-    expect(source).toContain('const FINANCE_ANALYSIS_ROLES = [');
-    expect(source).toContain('const TOLERANCE_WRITE_ROLES = [');
-    expect(source).toContain('"ACCOUNTANT",');
-    expect(source).toContain('"PROGRAM_MANAGER",');
-    expect(source).toContain('requireRole(TOLERANCE_WRITE_ROLES)');
+    // Server side: every endpoint runs through the entity-registry
+    // `requirePermission` gate (cashflow:view, cos:view, cos:override).
+    // The tolerance PUT specifically uses cos:override which the registry
+    // pins to COO / CEO / CFO / PROGRAM_FINANCE_MANAGER — same set as the
+    // legacy hardcoded TOLERANCE_WRITE_ROLES list.
+    expect(source).toContain('requirePermission("cashflow", "view")');
+    expect(source).toContain('requirePermission("cos", "view")');
+    expect(source).toContain('requirePermission("cos", "override")');
+    // Client side: page-level guard mirrors the registry's cos:override
+    // role set so the UI doesn't expose the tolerance edit button to
+    // unauthorised users.
     expect(cosPageSource).toContain('const { user } = useAuth();');
     expect(cosPageSource).toContain('const canEditTolerance = ["COO_ADMIN", "CEO_ADMIN", "CFO", "PROGRAM_FINANCE_MANAGER"].includes(');
     expect(cosPageSource).toContain('if (!canEditTolerance) throw new Error("You are not allowed to update tolerance bands.");');

@@ -49,6 +49,7 @@ const QB_LOCK_OVERRIDE_ROLES: ReadonlySet<string> = new Set(
   findEntityRegistry("financials")?.override_roles ?? [],
 );
 import { requirePermission } from "./permission-middleware";
+import { rateLimitPerUser } from "./middleware/rateLimitPerUser";
 import { logAuditFromReq } from "./audit-logger";
 import {
   disconnectQuickBooks,
@@ -339,10 +340,14 @@ export function registerQuickBooksRoutes(app: Express): void {
   // so it must require an editor permission. Viewers get 403. Hardened in
   // Task #30 (was previously gated as `financial_integration:view`, which let
   // any viewer trigger writes against the integration).
+  // TF-15 (audit V3) — sync-now triggers the full QB pull. Heavy
+  // operation; rate-limit to one run per 5 minutes per user to keep
+  // operators from accidentally double-firing it.
   app.post(
     "/api/quickbooks/sync-now",
     requireAuth,
     requirePermission("financials", "edit"),
+    rateLimitPerUser({ bucket: "qb-sync-now", maxRequests: 1, windowSeconds: 300 }),
     async (req, res) => {
       const startedAt = new Date();
       const errors: string[] = [];
