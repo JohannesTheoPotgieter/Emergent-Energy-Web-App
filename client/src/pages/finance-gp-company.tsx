@@ -14,6 +14,9 @@ import { FinancialYearScopeControl } from "@/components/finance/FinancialYearSco
 import { useFinancialYearScope } from "@/hooks/use-financial-year-scope";
 import { fetchQueryFn } from "@/lib/queryClient";
 import { formatZar, formatZarCompact } from "@/lib/currency";
+import { PageHero } from "@/components/finance/PageHero";
+import { Money } from "@/components/ui/money";
+import { DirectionDelta } from "@/components/finance/DirectionDelta";
 import {
   Bar,
   XAxis,
@@ -767,6 +770,35 @@ export default function FinanceGpCompanyPage() {
           }
           description="GP = Revenue − COS using exact same pipeline numbers as the COS and Revenue pages."
           actions={<FinancialYearScopeControl scope={fyScope} />}
+        />
+
+        {/* Visual redesign — PageHero. YTD Realised GP is the single answer.
+            Margin %, planned, and budget context move into the trust column. */}
+        <PageHero
+          eyebrow="Finance · Gross Profit"
+          label={`YTD GP realised${fyScope.label ? ` · ${fyScope.label}` : ''}`}
+          value={<Money value={ytdRealisedGP} />}
+          tone={ytdRealisedGP >= ytdPlannedGP ? 'positive' : 'critical'}
+          supporting={
+            ytdPlannedGP !== 0 ? (
+              <>
+                vs. plan <Money value={ytdPlannedGP} /> ·{' '}
+                <DirectionDelta value={ytdRealisedGP - ytdPlannedGP} positiveIs="good" asMoney />
+              </>
+            ) : (
+              <>No plan GP baseline yet.</>
+            )
+          }
+          trust={[
+            { label: 'Budget GP YTD', value: <Money value={ytdBudgetGP} /> },
+            ...(dataUpdatedAt
+              ? [{
+                  label: 'Updated',
+                  value: new Date(dataUpdatedAt).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' }),
+                }]
+              : []),
+          ]}
+          data-testid="gp-page-hero"
         />
 
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-muted-foreground -mt-1">

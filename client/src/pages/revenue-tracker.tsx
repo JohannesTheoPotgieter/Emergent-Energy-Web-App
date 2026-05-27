@@ -20,6 +20,9 @@ import {
 } from '@/components/ui/tooltip';
 import { fetchQueryFn, apiRequest, invalidateDashboardQueries } from '@/lib/queryClient';
 import { formatZar, formatZarCompact } from '@/lib/currency';
+import { PageHero } from '@/components/finance/PageHero';
+import { Money } from '@/components/ui/money';
+import { DirectionDelta } from '@/components/finance/DirectionDelta';
 import { DataSourceBadge } from '@/components/finance/DataSourceBadge';
 import { usePermission } from '@/hooks/use-permissions';
 import {
@@ -1556,6 +1559,31 @@ export default function RevenueTrackerPage() {
               </TooltipProvider>
             </>
           }
+        />
+        {/* Visual redesign — PageHero. The headline answer: how much revenue have
+            we realised YTD vs. plan, and how far ahead / behind are we. The badge
+            strip below becomes supporting context. */}
+        <PageHero
+          eyebrow="Finance · Revenue"
+          label={`YTD revenue realised${fyScope.label ? ` · ${fyScope.label}` : ''}`}
+          value={<Money value={ytdRealised} />}
+          tone={ytdPlanned > 0 && ytdRealised >= ytdPlanned ? 'positive' : 'default'}
+          supporting={
+            ytdPlanned > 0 ? (
+              <>
+                vs. plan <Money value={ytdPlanned} /> ·{' '}
+                <DirectionDelta value={ytdRealised - ytdPlanned} positiveIs="good" asMoney /> ·{' '}
+                {realisationRate}% realisation
+              </>
+            ) : (
+              <>No plan baseline yet.</>
+            )
+          }
+          trust={[
+            { label: 'QB revenue YTD', value: <Money value={ytdQbRev} /> },
+            { label: 'In pipeline', value: <Money value={ytdCommitted} /> },
+          ]}
+          data-testid="revenue-page-hero"
         />
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-muted-foreground -mt-1">
           <Badge
