@@ -18,6 +18,7 @@ import { PageHero } from "@/components/finance/PageHero";
 import { KpiTile } from "@/components/finance/KpiTile";
 import { Money } from "@/components/ui/money";
 import { DirectionDelta } from "@/components/finance/DirectionDelta";
+import { DrillReconciliationFooter } from "@/components/finance/DrillReconciliationFooter";
 import {
   Bar,
   XAxis,
@@ -681,6 +682,14 @@ export default function FinanceGpCompanyPage() {
           })}
         </tbody>
       </table>
+      {/* Visual redesign — reconciliation footer ties the per-month GP grid back
+          to the hero YTD realised GP (TF-19). */}
+      <DrillReconciliationFooter
+        sourceLabel="Hero · YTD GP realised"
+        sourceValue={ytdRealisedGP}
+        drilldownLabel={`Sum across ${months.length} months · realised GP`}
+        drilldownValue={months.reduce((s, m) => s + (m.realisedGP ?? 0), 0)}
+      />
     </div>
   );
 

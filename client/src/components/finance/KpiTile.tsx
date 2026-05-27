@@ -65,6 +65,19 @@ export interface KpiTileDelta {
   positiveIs?: "good" | "bad" | "neutral";
 }
 
+/**
+ * Optional sparkline slot rendered on the right of the delta footer.
+ * Caller supplies any JSX — typically a recharts ResponsiveContainer
+ * with a LineChart sized to ~36 × 96 px. Keeping this as a freeform
+ * ReactNode (instead of accepting a data array + colour) avoids pulling
+ * recharts into the KpiTile component itself.
+ */
+export interface KpiTileSparkline {
+  content: React.ReactNode;
+  /** Tailwind width class — default w-28. Pages with denser layouts may pick a smaller width. */
+  widthClass?: string;
+}
+
 export interface KpiTileProps {
   label: React.ReactNode;
   value: React.ReactNode;
@@ -84,6 +97,8 @@ export interface KpiTileProps {
   sourceBadge?: React.ReactNode;
   /** Optional MoM-style delta footer (vs. last mo / vs. plan). */
   delta?: KpiTileDelta;
+  /** Optional sparkline beside the delta footer — caller-supplied JSX. */
+  sparkline?: KpiTileSparkline;
   /** Optional click handler — makes the tile a button. */
   onClick?: () => void;
   /** Optional href — makes the tile an anchor (when onClick is absent). */
@@ -109,6 +124,7 @@ export function KpiTile({
   icon,
   sourceBadge,
   delta,
+  sparkline,
   onClick,
   href,
   className,
@@ -158,23 +174,34 @@ export function KpiTile({
           />
         </div>
       )}
-      {delta && (
-        <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-500">
-          <span>{delta.label}</span>
-          {delta.priorValue !== undefined && (
-            <span className="font-mono font-semibold text-slate-700">{delta.priorValue}</span>
-          )}
-          {delta.pct !== undefined && Number.isFinite(delta.pct) && (
-            <span
-              className={cn(
-                "inline-flex items-center gap-0.5 font-medium",
-                deltaTone(delta.positiveIs ?? "good", delta.pct),
+      {(delta || sparkline) && (
+        <div className="mt-2 flex items-center justify-between gap-2">
+          {delta ? (
+            <div className="flex items-center gap-2 text-[11px] text-slate-500 min-w-0 flex-1">
+              <span className="shrink-0">{delta.label}</span>
+              {delta.priorValue !== undefined && (
+                <span className="font-mono font-semibold text-slate-700 truncate">{delta.priorValue}</span>
               )}
-              aria-label={delta.pct > 0 ? "increase" : delta.pct < 0 ? "decrease" : "no change"}
-            >
-              <span aria-hidden="true">{delta.pct > 0 ? "▲" : delta.pct < 0 ? "▼" : "·"}</span>
-              {Math.abs(delta.pct).toFixed(1)}%
-            </span>
+              {delta.pct !== undefined && Number.isFinite(delta.pct) && (
+                <span
+                  className={cn(
+                    "shrink-0 inline-flex items-center gap-0.5 font-medium",
+                    deltaTone(delta.positiveIs ?? "good", delta.pct),
+                  )}
+                  aria-label={delta.pct > 0 ? "increase" : delta.pct < 0 ? "decrease" : "no change"}
+                >
+                  <span aria-hidden="true">{delta.pct > 0 ? "▲" : delta.pct < 0 ? "▼" : "·"}</span>
+                  {Math.abs(delta.pct).toFixed(1)}%
+                </span>
+              )}
+            </div>
+          ) : (
+            <span className="flex-1" />
+          )}
+          {sparkline && (
+            <div className={cn("h-9 shrink-0", sparkline.widthClass ?? "w-28")} data-testid="kpi-tile-sparkline">
+              {sparkline.content}
+            </div>
           )}
         </div>
       )}

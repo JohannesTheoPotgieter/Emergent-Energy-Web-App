@@ -68,6 +68,12 @@ describe("Finance visual redesign — KpiTile", () => {
   it("delta arrows carry an aria-label so direction is announced", () => {
     expect(src).toMatch(/aria-label=\{delta\.pct > 0\s*\?\s*"increase"/);
   });
+
+  it("supports an optional sparkline slot (wave 4d)", () => {
+    expect(src).toContain("sparkline?:");
+    expect(src).toContain("KpiTileSparkline");
+    expect(src).toContain('data-testid="kpi-tile-sparkline"');
+  });
 });
 
 describe("Finance visual redesign — DirectionDelta", () => {

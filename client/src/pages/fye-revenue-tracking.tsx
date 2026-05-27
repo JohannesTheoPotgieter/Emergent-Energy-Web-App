@@ -24,6 +24,7 @@ import {
 import { fetchQueryFn, apiRequest } from "@/lib/queryClient";
 import { formatZar, formatZarCompact, formatCount } from "@/lib/currency";
 import { PageHero } from "@/components/finance/PageHero";
+import { KpiTile } from "@/components/finance/KpiTile";
 import { Money } from "@/components/ui/money";
 import { DirectionDelta } from "@/components/finance/DirectionDelta";
 import { usePermission } from "@/hooks/use-permissions";
@@ -1141,27 +1142,31 @@ export default function FyeRevenueTrackingPage() {
           )}
           {fyTotals && (
             <>
-              <Card className="border-border shadow-sm">
-                <CardContent className="p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700 mb-1">FY Budget Rev</p>
-                  <p className="text-sm font-bold font-mono text-emerald-700">{fmtR(fyTotals.budgetRev)}</p>
-                </CardContent>
-              </Card>
-              <Card className="border-border shadow-sm">
-                <CardContent className="p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-foreground mb-1">FY Actual Rev</p>
-                  <p className="text-sm font-bold font-mono">{fmtR(fyTotals.actualRev)}</p>
-                </CardContent>
-              </Card>
-              <Card className="border-border shadow-sm">
-                <CardContent className="p-4">
-                  <p className={`text-[11px] font-semibold uppercase tracking-wider mb-1 ${fyTotals.actualGp >= 0 ? "text-emerald-700" : "text-destructive"}`}>FY Actual GP</p>
-                  <p className={`text-sm font-bold font-mono ${fyTotals.actualGp >= 0 ? "text-emerald-700" : "text-destructive"}`}>{fmtR(fyTotals.actualGp)}</p>
-                  {fyTotals.actualRev > 0 && (
-                    <p className={`text-[10px] ${gpColor(fyTotals.actualGp / fyTotals.actualRev)}`}>{fmtPct(fyTotals.actualGp / fyTotals.actualRev)}</p>
-                  )}
-                </CardContent>
-              </Card>
+              {/* Visual redesign — variant FY-totals cards migrated to canonical
+                  <KpiTile>. Same numbers + same margin sub-line on the GP tile. */}
+              <KpiTile
+                label="FY Budget Rev"
+                value={fmtR(fyTotals.budgetRev)}
+                tone="positive"
+                data-testid="kpi-fye-budget-rev"
+              />
+              <KpiTile
+                label="FY Actual Rev"
+                value={fmtR(fyTotals.actualRev)}
+                tone={fyTotals.actualRev >= fyTotals.budgetRev ? "positive" : "default"}
+                data-testid="kpi-fye-actual-rev"
+              />
+              <KpiTile
+                label="FY Actual GP"
+                value={fmtR(fyTotals.actualGp)}
+                tone={fyTotals.actualGp >= 0 ? "positive" : "critical"}
+                supporting={
+                  fyTotals.actualRev > 0
+                    ? `Margin ${fmtPct(fyTotals.actualGp / fyTotals.actualRev)}`
+                    : undefined
+                }
+                data-testid="kpi-fye-actual-gp"
+              />
             </>
           )}
         </div>
