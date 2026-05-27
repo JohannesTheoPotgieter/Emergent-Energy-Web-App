@@ -63,10 +63,10 @@ import {
   type MilestoneTaskLink, type InsertMilestoneTaskLink,
   keyDateMappings,
   type KeyDateMapping, type InsertKeyDateMapping,
-  mytoolTimeblocks, mytoolCompanyPriorities,
+  mytoolTimeblocks,
   errorLogs, supportTickets,
   type MytoolTimeblock, type InsertMytoolTimeblock,
-  type MytoolDailyReview, type InsertMytoolDailyReview, type MytoolCompanyPriority, type InsertMytoolCompanyPriority,
+  type MytoolDailyReview, type InsertMytoolDailyReview,
   type MytoolUserPreferences, type InsertMytoolUserPreferences,
   type MytoolEmailLink, type InsertMytoolEmailLink,
   type MytoolDodTemplate, type InsertMytoolDodTemplate,
@@ -340,12 +340,6 @@ export interface IStorage {
   // My Tool - Daily Reviews
   getMytoolDailyReview(ownerUserId: number, date: string): Promise<MytoolDailyReview | undefined>;
   upsertMytoolDailyReview(data: InsertMytoolDailyReview): Promise<MytoolDailyReview>;
-
-  // My Tool - Company Priorities
-  getMytoolCompanyPriorities(horizon?: string): Promise<MytoolCompanyPriority[]>;
-  createMytoolCompanyPriority(data: InsertMytoolCompanyPriority): Promise<MytoolCompanyPriority>;
-  updateMytoolCompanyPriority(id: number, data: Partial<InsertMytoolCompanyPriority>): Promise<MytoolCompanyPriority>;
-  deleteMytoolCompanyPriority(id: number): Promise<void>;
 
   // My Tool - Email Links
   getEmailLinksByTask(taskId: number): Promise<MytoolEmailLink[]>;
@@ -1435,76 +1429,6 @@ export class DatabaseStorage implements IStorage {
 
   async upsertMytoolDailyReview(data: InsertMytoolDailyReview): Promise<MytoolDailyReview> {
     return this.mytoolStateRepository.upsertMytoolDailyReview(data);
-  }
-
-  // My Tool - Company Priorities
-  async getMytoolCompanyPriorities(horizon?: string): Promise<MytoolCompanyPriority[]> {
-    if (horizon) {
-      return this.dbInstance.select().from(mytoolCompanyPriorities)
-        .where(eq(mytoolCompanyPriorities.horizon, horizon as any));
-    }
-    return this.dbInstance.select().from(mytoolCompanyPriorities);
-  }
-
-  async createMytoolCompanyPriority(data: InsertMytoolCompanyPriority): Promise<MytoolCompanyPriority> {
-    const now = new Date();
-    let d = data as any;
-    if (d.priorityRank != null) {
-      const conditions = [gte(mytoolCompanyPriorities.priorityRank, d.priorityRank)];
-      if (d.department) {
-        conditions.push(eq(mytoolCompanyPriorities.department, d.department) as any);
-      }
-      await this.dbInstance.update(mytoolCompanyPriorities)
-        .set({ priorityRank: sql`${mytoolCompanyPriorities.priorityRank} + 1`, updatedAt: now })
-        .where(and(...conditions));
-    } else {
-      const existing = await this.dbInstance.select().from(mytoolCompanyPriorities)
-        .where(d.department ? eq(mytoolCompanyPriorities.department, d.department) : sql`true`);
-      const maxRank = existing.reduce((max: number, p: any) => Math.max(max, p.priorityRank ?? 0), 0);
-      d = { ...d, priorityRank: maxRank + 1 };
-    }
-    const [created] = await this.dbInstance.insert(mytoolCompanyPriorities).values({ ...d, createdAt: now, updatedAt: now }).returning();
-    return created;
-  }
-
-  async updateMytoolCompanyPriority(id: number, data: Partial<InsertMytoolCompanyPriority>): Promise<MytoolCompanyPriority> {
-    const du = data as any;
-    if (du.priorityRank != null) {
-      const current = await this.dbInstance.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, id));
-      if (current.length > 0) {
-        const oldRank = current[0].priorityRank;
-        const dept = du.department ?? current[0].department;
-        const newRank = du.priorityRank;
-        if (oldRank !== newRank) {
-          const deptCondition = dept ? eq(mytoolCompanyPriorities.department, dept) : sql`true`;
-          if (oldRank == null || newRank < oldRank) {
-            await this.dbInstance.update(mytoolCompanyPriorities)
-              .set({ priorityRank: sql`${mytoolCompanyPriorities.priorityRank} + 1`, updatedAt: new Date() })
-              .where(and(
-                gte(mytoolCompanyPriorities.priorityRank, newRank),
-                oldRank != null ? lte(mytoolCompanyPriorities.priorityRank, oldRank - 1) : sql`true`,
-                deptCondition as any,
-                not(eq(mytoolCompanyPriorities.id, id))
-              ));
-          } else {
-            await this.dbInstance.update(mytoolCompanyPriorities)
-              .set({ priorityRank: sql`${mytoolCompanyPriorities.priorityRank} - 1`, updatedAt: new Date() })
-              .where(and(
-                gte(mytoolCompanyPriorities.priorityRank, oldRank + 1),
-                lte(mytoolCompanyPriorities.priorityRank, newRank),
-                deptCondition as any,
-                not(eq(mytoolCompanyPriorities.id, id))
-              ));
-          }
-        }
-      }
-    }
-    const [updated] = await this.dbInstance.update(mytoolCompanyPriorities).set({ ...data, updatedAt: new Date() }).where(eq(mytoolCompanyPriorities.id, id)).returning();
-    return updated;
-  }
-
-  async deleteMytoolCompanyPriority(id: number): Promise<void> {
-    await this.dbInstance.delete(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, id));
   }
 
   // My Tool - Email Links
