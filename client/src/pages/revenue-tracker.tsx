@@ -21,8 +21,10 @@ import {
 import { fetchQueryFn, apiRequest, invalidateDashboardQueries } from '@/lib/queryClient';
 import { formatZar, formatZarCompact } from '@/lib/currency';
 import { PageHero } from '@/components/finance/PageHero';
+import { KpiTile } from '@/components/finance/KpiTile';
 import { Money } from '@/components/ui/money';
 import { DirectionDelta } from '@/components/finance/DirectionDelta';
+import { DrillReconciliationFooter } from '@/components/finance/DrillReconciliationFooter';
 import { DataSourceBadge } from '@/components/finance/DataSourceBadge';
 import { usePermission } from '@/hooks/use-permissions';
 import {
@@ -1181,71 +1183,55 @@ export default function RevenueTrackerPage() {
     },
   };
 
+  // Visual redesign — migrated to <KpiTile> with the new sparkline slot
+  // so the per-tile trend chart survives the rebuild. Same icon + label +
+  // MoM delta semantics; rendered through the canonical component.
   const renderFyKpiCard = (key: FyCardKey) => {
     const meta = FY_CARD_META[key];
     const Icon = meta.icon;
     const fyValue = fyTotals[key];
     const lastValue = (lastMonth?.[meta.monthField] as number | undefined) ?? 0;
     const prevValue = (prevMonth?.[meta.monthField] as number | undefined) ?? 0;
-    const delta = lastValue - prevValue;
-    const deltaPct = prevValue !== 0 ? (delta / Math.abs(prevValue)) * 100 : 0;
-    const deltaPositive = delta >= 0;
+    const deltaAbs = lastValue - prevValue;
+    const deltaPct = prevValue !== 0 ? (deltaAbs / Math.abs(prevValue)) * 100 : 0;
     const cardSpark = months.map((m) => ({
       x: m.monthKey,
       y: (m[meta.monthField] as number | undefined) ?? 0,
     }));
     return (
-      <Card key={key} className="border-border shadow-sm">
-        <CardContent className="p-3 sm:p-4">
-          <div className="flex items-center gap-2 mb-1.5">
-            <div className={`h-7 w-7 rounded-lg flex items-center justify-center ${meta.iconBg}`}>
-              <Icon className="h-3.5 w-3.5" />
-            </div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              {meta.label}
-            </p>
-          </div>
-          <p
-            className={`text-lg sm:text-xl font-bold font-mono tracking-tight ${meta.accent}`}
-            data-testid={`text-fy-${key}-value`}
-          >
-            {formatRand(fyValue)}
-          </p>
-          <div className="flex items-center justify-between mt-1.5">
-            <div className="flex flex-col">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                Last mo.
-              </span>
-              <span className="font-mono font-semibold text-xs">{formatRand(lastValue)}</span>
-              {prevMonth && (
-                <span
-                  className={`inline-flex items-center gap-0.5 text-[10px] font-medium ${deltaPositive ? 'text-emerald-700' : 'text-destructive'}`}
-                >
-                  {deltaPositive ? (
-                    <ArrowUpRight className="h-2.5 w-2.5" />
-                  ) : (
-                    <ArrowDownRight className="h-2.5 w-2.5" />
-                  )}
-                  {Math.abs(deltaPct).toFixed(1)}%
-                </span>
-              )}
-            </div>
-            <div className="h-10 w-28 sm:w-36">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={cardSpark} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
-                  <Line
-                    type="monotone"
-                    dataKey="y"
-                    stroke={meta.sparkColor}
-                    strokeWidth={1.5}
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <KpiTile
+        key={key}
+        data-testid={`text-fy-${key}-value`}
+        label={meta.label}
+        icon={<Icon className="h-4 w-4" />}
+        value={formatRand(fyValue)}
+        delta={
+          prevMonth
+            ? {
+                label: "Last mo.",
+                priorValue: formatRand(lastValue),
+                pct: deltaPct,
+                positiveIs: "good",
+              }
+            : undefined
+        }
+        sparkline={{
+          content: (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={cardSpark} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+                <Line
+                  type="monotone"
+                  dataKey="y"
+                  stroke={meta.sparkColor}
+                  strokeWidth={1.5}
+                  dot={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          ),
+          widthClass: "w-28 sm:w-36",
+        }}
+      />
     );
   };
 
@@ -1509,6 +1495,14 @@ export default function RevenueTrackerPage() {
           })}
         </tbody>
       </table>
+      {/* Visual redesign — reconciliation footer ties the per-month sum back
+          to the hero YTD realised revenue (TF-19). */}
+      <DrillReconciliationFooter
+        sourceLabel="Hero · YTD revenue realised"
+        sourceValue={ytdRealised}
+        drilldownLabel={`Sum across ${months.length} months · realised`}
+        drilldownValue={months.reduce((s, m) => s + (m.realisedRevenue ?? 0), 0)}
+      />
     </div>
   );
 
