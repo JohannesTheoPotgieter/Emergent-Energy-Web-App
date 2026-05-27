@@ -35,10 +35,28 @@ export default function OverviewPage() {
     (p) => p.cpSigned && p.signedStatus === "SIGNED",
   ).length;
 
+  // Wave-7 UX audit (2026-05-26): the dashboard had 10 KPI tiles
+  // above the fold — exceeded the ≤6 target by ~2x. Split into:
+  //   • Operational health (5) — always visible, the "is delivery on
+  //     track right now?" answer.
+  //   • Cash & receivables (5) — collapsed by default, expand for FY
+  //     finance detail. Surfaces the total overdue in the header so
+  //     even when collapsed the user sees if there's anything red.
+  // Persist the open state in localStorage so the COO's preference
+  // sticks across reloads.
+  const [cashOpen, setCashOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem("exec-dash-cash-open") === "1"; } catch { return false; }
+  });
+  const setCashOpenPersist = (next: boolean) => {
+    setCashOpen(next);
+    try { localStorage.setItem("exec-dash-cash-open", next ? "1" : "0"); } catch { /* ignore */ }
+  };
+  const totalOverdue = (kpis.overdueInflowFy ?? 0) + (kpis.overdueOutflowFy ?? 0);
+
   return (
     <div className="space-y-6">
-      {/* 7 KPI tiles — 2 cols sm, 4 cols lg */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Operational health — 5 KPI tiles always visible */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
 
         {/* 1 — Behind Schedule count */}
         <KpiTile
@@ -97,62 +115,90 @@ export default function OverviewPage() {
           onClick={() => setCosSheetOpen(true)}
         />
 
-        {/* 6 — Inflows This Week */}
-        <KpiTile
-          label="Revenue Inflows This Week"
-          value={formatZarCompact(dashboard?.kpis.projectInflowsThisWeek ?? 0)}
-          title={formatZar(dashboard?.kpis.projectInflowsThisWeek ?? 0)}
-          sub="Revenue payments received Mon–Sun this week · all active projects"
-          icon={<Banknote className="w-5 h-5" />}
-          cta="View by project"
-          onClick={() => setInflowSheetOpen(true)}
-        />
+      </div>
 
-        {/* 7 — Outflows This Week */}
-        <KpiTile
-          label="Expenditure Outflows This Week"
-          value={formatZarCompact(dashboard?.kpis.projectOutflowsThisWeek ?? 0)}
-          title={formatZar(dashboard?.kpis.projectOutflowsThisWeek ?? 0)}
-          sub="Expenditure payments made Mon–Sun this week · all active projects"
-          icon={<TrendingDown className="w-5 h-5" />}
-          cta="View by project"
-          onClick={() => setOutflowSheetOpen(true)}
-        />
+      {/* Cash & receivables — collapsed by default. Header shows
+          totalOverdue so the COO sees if anything is red without
+          expanding. */}
+      <div className="border border-border rounded-md">
+        <button
+          type="button"
+          className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium hover:bg-muted/50"
+          onClick={() => setCashOpenPersist(!cashOpen)}
+          aria-expanded={cashOpen}
+        >
+          <span className="flex items-center gap-2">
+            <Banknote className="w-4 h-4 text-muted-foreground" />
+            Cash &amp; Receivables (FY)
+            {totalOverdue > 0 && (
+              <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 text-[10px] ml-2">
+                {formatZarCompact(totalOverdue)} overdue
+              </Badge>
+            )}
+          </span>
+          <span className="text-xs text-muted-foreground">{cashOpen ? "Hide" : "Show"}</span>
+        </button>
+        {cashOpen && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 p-4 border-t">
 
-        {/* 8 — Portfolio GP% */}
-        <KpiTile
-          label="Portfolio Gross Margin"
-          value={kpis.grossMarginPctFy != null ? `${kpis.grossMarginPctFy}%` : "—"}
-          valueClass={kpis.grossMarginPctFy == null ? "text-muted-foreground" : kpis.grossMarginPctFy >= 20 ? "text-emerald-600" : kpis.grossMarginPctFy >= 10 ? "text-amber-600" : "text-red-600"}
-          sub={`GP ${formatZarCompact(kpis.grossProfitFy)} on ${formatZarCompact(kpis.plannedRevenueFy)} planned revenue · FY`}
-          icon={<TrendingUp className="w-5 h-5" />}
-          cta="View finance breakdown"
-          onClick={() => setLocation("/execution-dashboard/finance")}
-        />
+            {/* 6 — Inflows This Week */}
+            <KpiTile
+              label="Revenue Inflows This Week"
+              value={formatZarCompact(dashboard?.kpis.projectInflowsThisWeek ?? 0)}
+              title={formatZar(dashboard?.kpis.projectInflowsThisWeek ?? 0)}
+              sub="Revenue payments received Mon–Sun this week · all active projects"
+              icon={<Banknote className="w-5 h-5" />}
+              cta="View by project"
+              onClick={() => setInflowSheetOpen(true)}
+            />
 
-        {/* 9 — Overdue Receivables */}
-        <KpiTile
-          label="Overdue Receivables"
-          value={formatZarCompact(kpis.overdueInflowFy ?? 0)}
-          title={formatZar(kpis.overdueInflowFy ?? 0)}
-          valueClass={(kpis.overdueInflowFy ?? 0) === 0 ? "text-emerald-600" : "text-red-600"}
-          sub="Revenue milestones past planned date without confirmed payment · FY"
-          icon={<AlertOctagon className="w-5 h-5" />}
-          cta="View by project"
-          onClick={() => setOverdueArSheetOpen(true)}
-        />
+            {/* 7 — Outflows This Week */}
+            <KpiTile
+              label="Expenditure Outflows This Week"
+              value={formatZarCompact(dashboard?.kpis.projectOutflowsThisWeek ?? 0)}
+              title={formatZar(dashboard?.kpis.projectOutflowsThisWeek ?? 0)}
+              sub="Expenditure payments made Mon–Sun this week · all active projects"
+              icon={<TrendingDown className="w-5 h-5" />}
+              cta="View by project"
+              onClick={() => setOutflowSheetOpen(true)}
+            />
 
-        {/* 10 — Overdue Payables */}
-        <KpiTile
-          label="Overdue Payables"
-          value={formatZarCompact(kpis.overdueOutflowFy ?? 0)}
-          title={formatZar(kpis.overdueOutflowFy ?? 0)}
-          valueClass={(kpis.overdueOutflowFy ?? 0) === 0 ? "text-emerald-600" : "text-red-600"}
-          sub="Supplier invoices past planned payment date without confirmed payment · FY"
-          icon={<AlertOctagon className="w-5 h-5" />}
-          cta="View by project"
-          onClick={() => setOverdueApSheetOpen(true)}
-        />
+            {/* 8 — Portfolio GP% */}
+            <KpiTile
+              label="Portfolio Gross Margin"
+              value={kpis.grossMarginPctFy != null ? `${kpis.grossMarginPctFy}%` : "—"}
+              valueClass={kpis.grossMarginPctFy == null ? "text-muted-foreground" : kpis.grossMarginPctFy >= 20 ? "text-emerald-600" : kpis.grossMarginPctFy >= 10 ? "text-amber-600" : "text-red-600"}
+              sub={`GP ${formatZarCompact(kpis.grossProfitFy)} on ${formatZarCompact(kpis.plannedRevenueFy)} planned revenue · FY`}
+              icon={<TrendingUp className="w-5 h-5" />}
+              cta="View finance breakdown"
+              onClick={() => setLocation("/execution-dashboard/finance")}
+            />
+
+            {/* 9 — Overdue Receivables */}
+            <KpiTile
+              label="Overdue Receivables"
+              value={formatZarCompact(kpis.overdueInflowFy ?? 0)}
+              title={formatZar(kpis.overdueInflowFy ?? 0)}
+              valueClass={(kpis.overdueInflowFy ?? 0) === 0 ? "text-emerald-600" : "text-red-600"}
+              sub="Revenue milestones past planned date without confirmed payment · FY"
+              icon={<AlertOctagon className="w-5 h-5" />}
+              cta="View by project"
+              onClick={() => setOverdueArSheetOpen(true)}
+            />
+
+            {/* 10 — Overdue Payables */}
+            <KpiTile
+              label="Overdue Payables"
+              value={formatZarCompact(kpis.overdueOutflowFy ?? 0)}
+              title={formatZar(kpis.overdueOutflowFy ?? 0)}
+              valueClass={(kpis.overdueOutflowFy ?? 0) === 0 ? "text-emerald-600" : "text-red-600"}
+              sub="Supplier invoices past planned payment date without confirmed payment · FY"
+              icon={<AlertOctagon className="w-5 h-5" />}
+              cta="View by project"
+              onClick={() => setOverdueApSheetOpen(true)}
+            />
+          </div>
+        )}
       </div>
 
       {/* Rev Outstanding This Month drill-down */}

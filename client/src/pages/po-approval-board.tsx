@@ -107,6 +107,16 @@ export default function POApprovalBoardPage() {
     queryClient.invalidateQueries({ queryKey: ["/api/po/board/my-reviews"] });
   };
 
+  // Wave-7 UX audit (2026-05-26): expose per-filter counts so users
+  // see urgency before clicking. Truth principle: surface what's there.
+  const filterCounts = useMemo<Record<FilterKey, number>>(() => ({
+    "my-reviews": myReviews.length,
+    "all-active": allPos.filter((p) => ACTIVE_STATUSES.has(p.status)).length,
+    "requires-info": allPos.filter((p) => p.status === "requires_info").length,
+    "approved": allPos.filter((p) => p.status === "approved").length,
+    "blocked-cancelled": allPos.filter((p) => p.status === "blocked" || p.status === "cancelled").length,
+  }), [allPos, myReviews]);
+
   const displayPos = useMemo(() => {
     switch (activeFilter) {
       case "my-reviews": return myReviews;
@@ -121,7 +131,30 @@ export default function POApprovalBoardPage() {
   if (isError) return <PageError title="Unable to load PO Board" message={error instanceof Error ? error.message : "Something went wrong"} onRetry={handleRefresh} />;
 
   return <PageLayout header={<PageHeader title="PO Approval Board" subtitle={`${allPos.length} purchase orders`} />}>
-    <div className="flex items-center gap-1 flex-wrap">{FILTERS.map((f) => <Button key={f.key} size="sm" variant={activeFilter === f.key ? "default" : "outline"} onClick={() => setActiveFilter(f.key)} className="text-xs h-8">{f.label}</Button>)}</div>
+    <div className="flex items-center gap-1 flex-wrap">{FILTERS.map((f) => {
+      const count = filterCounts[f.key] ?? 0;
+      const isActive = activeFilter === f.key;
+      // Highlight My Reviews + Requires Info in destructive style when
+      // they have work — these are the rows the user must act on.
+      const isActionRequired = (f.key === "my-reviews" || f.key === "requires-info") && count > 0;
+      return (
+        <Button
+          key={f.key}
+          size="sm"
+          variant={isActive ? "default" : "outline"}
+          onClick={() => setActiveFilter(f.key)}
+          className={`text-xs h-8 ${!isActive && isActionRequired ? "border-amber-300 text-amber-800" : ""}`}
+        >
+          {f.label}
+          <Badge
+            variant="secondary"
+            className={`ml-1.5 text-[10px] h-4 px-1.5 ${isActive ? "bg-primary-foreground/20 text-primary-foreground" : ""}`}
+          >
+            {count}
+          </Badge>
+        </Button>
+      );
+    })}</div>
     <Card>
       {displayPos.length === 0 ? <CardContent className="p-8 text-center text-sm text-muted-foreground">No purchase orders match this filter.</CardContent> :
       <Table><TableHeader><TableRow><TableHead>PO reference</TableHead><TableHead>Project</TableHead><TableHead>Supplier</TableHead><TableHead className="text-right">Total</TableHead><TableHead>Requested by</TableHead><TableHead>Assigned approver</TableHead><TableHead>Status</TableHead><TableHead>Age</TableHead><TableHead>Reviewer decision history</TableHead><TableHead>Actions</TableHead></TableRow></TableHeader><TableBody>

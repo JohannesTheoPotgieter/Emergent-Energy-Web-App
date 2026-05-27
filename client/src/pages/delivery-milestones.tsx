@@ -264,17 +264,38 @@ export default function DeliveryMilestonesPage() {
           className="h-8 text-xs w-60"
         />
         <div className="flex items-center gap-1">
-          {(["all", "overdue", "blocked", "in_progress", "planned", "complete"] as const).map((s) => (
-            <Button
-              key={s}
-              size="sm"
-              variant={statusFilter === s ? "default" : "outline"}
-              className="h-7 text-[11px]"
-              onClick={() => setStatusFilter(s)}
-            >
-              {s === "all" ? "All" : STATUS_CONFIG[s].label}
-            </Button>
-          ))}
+          {(["all", "overdue", "blocked", "in_progress", "planned", "complete"] as const).map((s) => {
+            // Wave-7 UX audit (2026-05-26): count badge per filter +
+            // highlight Overdue/Blocked in destructive when there's
+            // work to do. Truth: surface what needs attention up front.
+            const count =
+              s === "all"
+                ? filtered.reduce((acc, p) => acc + (milestonesByProject.get(p.id) || []).length, 0)
+                : filtered.reduce(
+                    (acc, p) =>
+                      acc + (milestonesByProject.get(p.id) || []).filter((m) => m.status === s).length,
+                    0,
+                  );
+            const isActionState = (s === "overdue" || s === "blocked") && count > 0;
+            const isActive = statusFilter === s;
+            return (
+              <Button
+                key={s}
+                size="sm"
+                variant={isActive ? "default" : "outline"}
+                className={`h-7 text-[11px] ${!isActive && isActionState ? "border-red-300 text-red-700" : ""}`}
+                onClick={() => setStatusFilter(s)}
+              >
+                {s === "all" ? "All" : STATUS_CONFIG[s].label}
+                <Badge
+                  variant="secondary"
+                  className={`ml-1.5 text-[9px] h-4 px-1 ${isActive ? "bg-primary-foreground/20 text-primary-foreground" : ""}`}
+                >
+                  {count}
+                </Badge>
+              </Button>
+            );
+          })}
         </div>
         <div className="ml-auto text-[11px] text-muted-foreground inline-flex items-center gap-1">
           <Calendar className="h-3 w-3" />
