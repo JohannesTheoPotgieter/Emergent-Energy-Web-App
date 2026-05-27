@@ -56,6 +56,18 @@ describe("Finance visual redesign — KpiTile", () => {
     expect(src).toContain("progress?:");
     expect(src).toContain("pct");
   });
+
+  it("supports optional icon / sourceBadge / description / delta slots (wave 4c)", () => {
+    expect(src).toContain("icon?:");
+    expect(src).toContain("sourceBadge?:");
+    expect(src).toContain("description?:");
+    expect(src).toContain("delta?:");
+    expect(src).toContain("KpiTileDelta");
+  });
+
+  it("delta arrows carry an aria-label so direction is announced", () => {
+    expect(src).toMatch(/aria-label=\{delta\.pct > 0\s*\?\s*"increase"/);
+  });
 });
 
 describe("Finance visual redesign — DirectionDelta", () => {
