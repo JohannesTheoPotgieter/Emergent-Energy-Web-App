@@ -19,6 +19,9 @@ import {
 } from '@/components/ui/tooltip';
 import { apiRequest, fetchQueryFn, invalidateDashboardQueries } from '@/lib/queryClient';
 import { formatZar, formatZarAriaLabel, formatZarCompact } from '@/lib/currency';
+import { PageHero } from '@/components/finance/PageHero';
+import { Money } from '@/components/ui/money';
+import { DirectionDelta } from '@/components/finance/DirectionDelta';
 import { FINANCE_QUERY_VOLATILE } from '@/lib/finance-stale-policy';
 import { useFinanceQuery } from '@/lib/finance-trust';
 import { DataTrustBadge } from '@/components/ui/data-trust-badge';
@@ -1949,6 +1952,35 @@ export default function CosTracker() {
               </TooltipProvider>
             </>
           }
+        />
+        {/* Visual redesign — PageHero. Single-answer card: YTD realised COS vs.
+            planned. Replaces the inferred "headline" that previously emerged from
+            the badge strip below. Badges become supporting detail. */}
+        <PageHero
+          eyebrow="Finance · Cost of Sales"
+          label={`YTD COS realised${fyScope.label ? ` · ${fyScope.label}` : ''}`}
+          value={<Money value={ytdRealised} />}
+          tone={ytdRealised <= ytdPlanned ? 'default' : 'critical'}
+          supporting={
+            ytdPlanned > 0 ? (
+              <>
+                vs. plan <Money value={ytdPlanned} /> ·{' '}
+                <DirectionDelta
+                  value={ytdRealised - ytdPlanned}
+                  positiveIs="bad"
+                  asMoney
+                />{' '}
+                · {realisationRate}% realisation
+              </>
+            ) : (
+              <>No plan baseline yet.</>
+            )
+          }
+          trust={[
+            { label: 'QB actual YTD', value: <Money value={ytdQbCos} /> },
+            { label: 'Source', value: 'canonical layer' },
+          ]}
+          data-testid="cos-page-hero"
         />
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-muted-foreground -mt-1">
           <Badge
