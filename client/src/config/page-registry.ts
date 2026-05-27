@@ -192,6 +192,11 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // "My Reviews" scatter pattern. Visible to anyone with execution-
   // board access; rows are filtered server-side to the caller.
   { id: "myQueue", path: "/my-queue", label: "My Queue", iconKey: "Inbox", navGroup: "MY_WORK", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "MyQueuePage" },
+  // PR-D redesign (2026-05-27) — /portfolio is the 6-column lens-aware
+  // replacement for /projects (50+ columns) and the two milestone
+  // trackers. The legacy /projects stays for one cycle so anyone
+  // who needs the wide-column drill-down still has it.
+  { id: "portfolio", path: "/portfolio", label: "Portfolio", iconKey: "LayoutGrid", navGroup: "PROJECTS", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "PortfolioPage" },
   { id: "executionBoard", path: "/execution-board", label: "Execution Board (legacy)", iconKey: "LayoutDashboard", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "ExecutionBoardPage", aliases: ["/execution-dashboard"], matchSubRoutes: true },
   { id: "executionBoardProgram", path: "/execution-board/program", label: "Program View", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "ExecutionBoardPage" },
   { id: "executionBoardConstruction", path: "/execution-board/construction", label: "Construction View", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "ExecutionBoardPage" },

@@ -47,6 +47,9 @@ const NowPage = lazyWithRetry(() => import("@/pages/now"));
 // PR-C redesign (2026-05-27) — /my-queue consolidates POs + payment
 // requests + change requests + stage exceptions into one screen.
 const MyQueuePage = lazyWithRetry(() => import("@/pages/my-queue"));
+// PR-D redesign (2026-05-27) — /portfolio is the 6-column lens-aware
+// replacement for the 50-column /projects table. Legacy stays.
+const PortfolioPage = lazyWithRetry(() => import("@/pages/portfolio"));
 const SmartImportPage = lazyWithRetry(() => import("@/pages/smart-import"));
 const SharePointIntakePage = lazyWithRetry(() => import("@/pages/SharePointIntakePage"));
 const InvoicePatternsPage = lazyWithRetry(() => import("@/pages/invoice-patterns"));
@@ -196,6 +199,7 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   ExecutionBoardPage,
   NowPage,
   MyQueuePage,
+  PortfolioPage,
   MyWorkMeetingsPage,
   MyWorkSettingsPage,
   RoleSettingsPage,
