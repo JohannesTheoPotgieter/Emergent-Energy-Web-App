@@ -266,8 +266,8 @@ export function PriorityFormFields({
                 <SelectItem value="active">Active</SelectItem>
                 <SelectItem value="monitoring">Monitoring</SelectItem>
                 <SelectItem value="in_progress">In progress</SelectItem>
-                <SelectItem value="complete">Complete</SelectItem>
-                <SelectItem value="closed">Closed</SelectItem>
+                <SelectItem value="complete">Complete — work finished successfully</SelectItem>
+                <SelectItem value="closed">Closed — no longer tracking (deferred or replaced)</SelectItem>
               </SelectContent>
             </Select>
           </div>
