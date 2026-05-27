@@ -20,6 +20,7 @@ import {
 import { apiRequest, fetchQueryFn, invalidateDashboardQueries } from '@/lib/queryClient';
 import { formatZar, formatZarAriaLabel, formatZarCompact } from '@/lib/currency';
 import { PageHero } from '@/components/finance/PageHero';
+import { KpiTile } from '@/components/finance/KpiTile';
 import { Money } from '@/components/ui/money';
 import { DirectionDelta } from '@/components/finance/DirectionDelta';
 import { FINANCE_QUERY_VOLATILE } from '@/lib/finance-stale-policy';
@@ -1662,65 +1663,42 @@ export default function CosTracker() {
     },
   };
 
+  // Visual redesign — extended <KpiTile> takes over from the bespoke
+  // Card+CardContent layout above. Same icon + source-badge + last-month
+  // delta context, rendered through the canonical component so the
+  // tile shape stays consistent across COS / Revenue / GP / FYE.
   const renderFyKpiCard = (key: FyCardKey) => {
     const meta = FY_CARD_META[key];
     const Icon = meta.icon;
     const fyValue = fyTotals[key];
     const lastValue = lastMonth ? meta.getValue(lastMonth) : 0;
     const prevValue = prevMonth ? meta.getValue(prevMonth) : 0;
-    const delta = lastValue - prevValue;
-    const deltaPct = prevValue !== 0 ? (delta / Math.abs(prevValue)) * 100 : 0;
-    const deltaPositive = delta >= 0;
+    const deltaAbs = lastValue - prevValue;
+    const deltaPct = prevValue !== 0 ? (deltaAbs / Math.abs(prevValue)) * 100 : 0;
     const fmt = meta.format ?? formatRand;
+    // FY budget overage is "bad"; COS realised more than plan is "bad";
+    // for variance % the colour is inverted (over-budget is rose).
+    const positiveIs: "good" | "bad" = key === "budget" ? "neutral" as never : "bad";
     return (
-      <Card key={key} className="border-border shadow-sm">
-        <CardContent className="p-3 sm:p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${meta.iconBg}`}>
-              <Icon className="h-4 w-4" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground leading-tight">
-                {meta.label}
-              </p>
-              {meta.description && (
-                <p className="text-[10px] text-muted-foreground/80 leading-tight">
-                  {meta.description}
-                </p>
-              )}
-            </div>
-            <Badge
-              variant="outline"
-              className="ml-auto text-[9px] font-medium px-1.5 py-0 border-border bg-card text-muted-foreground"
-              data-testid={`badge-source-${key}`}
-            >
-              {meta.source}
-            </Badge>
-          </div>
-          <p
-            className={`text-2xl sm:text-3xl font-bold font-mono tracking-tight ${meta.accent}`}
-            data-testid={`text-fy-${key}-value`}
-          >
-            {fmt(fyValue)}
-          </p>
-          <div className="flex items-center gap-2 mt-2 text-[11px]">
-            <span className="text-muted-foreground">Last mo.</span>
-            <span className="font-mono font-semibold">{fmt(lastValue)}</span>
-            {prevMonth && (
-              <span
-                className={`inline-flex items-center gap-0.5 font-medium ${deltaPositive ? 'text-emerald-700' : 'text-destructive'}`}
-              >
-                {deltaPositive ? (
-                  <ArrowUpRight className="h-3 w-3" />
-                ) : (
-                  <ArrowDownRight className="h-3 w-3" />
-                )}
-                {Math.abs(deltaPct).toFixed(1)}%
-              </span>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+      <KpiTile
+        key={key}
+        data-testid={`text-fy-${key}-value`}
+        label={meta.label}
+        description={meta.description}
+        sourceBadge={meta.source}
+        icon={<Icon className="h-4 w-4" />}
+        value={fmt(fyValue)}
+        delta={
+          prevMonth
+            ? {
+                label: "Last mo.",
+                priorValue: fmt(lastValue),
+                pct: deltaPct,
+                positiveIs,
+              }
+            : undefined
+        }
+      />
     );
   };
 
