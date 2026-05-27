@@ -23,6 +23,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { fetchQueryFn, apiRequest } from "@/lib/queryClient";
 import { formatZar, formatZarCompact, formatCount } from "@/lib/currency";
+import { PageHero } from "@/components/finance/PageHero";
+import { Money } from "@/components/ui/money";
+import { DirectionDelta } from "@/components/finance/DirectionDelta";
 import { usePermission } from "@/hooks/use-permissions";
 import {
   TrendingUp,
@@ -1083,6 +1086,47 @@ export default function FyeRevenueTrackingPage() {
             actions={<FinancialYearScopeControl scope={fyScope} />}
           />
         </div>
+
+        {/* Visual redesign — PageHero. Single answer: FY actual revenue vs. budget.
+            Margin context moves into the trust column. */}
+        {fyTotals && (
+          <PageHero
+            eyebrow={`Finance · FYE ${fyeLabel}`}
+            label="FY revenue actual / forecast"
+            value={<Money value={fyTotals.actualRev} />}
+            tone={fyTotals.actualRev >= fyTotals.budgetRev ? 'positive' : 'critical'}
+            supporting={
+              fyTotals.budgetRev > 0 ? (
+                <>
+                  vs. budget <Money value={fyTotals.budgetRev} /> ·{' '}
+                  <DirectionDelta
+                    value={fyTotals.actualRev - fyTotals.budgetRev}
+                    positiveIs="good"
+                    asMoney
+                  />
+                </>
+              ) : (
+                <>No FY budget set yet.</>
+              )
+            }
+            trust={[
+              { label: 'FY actual COS', value: <Money value={fyTotals.actualCos} /> },
+              {
+                label: 'FY actual GP',
+                value: <Money value={fyTotals.actualGp} />,
+                tone: fyTotals.actualGp >= 0 ? 'positive' : 'critical',
+              },
+              ...(fyTotals.actualRev > 0
+                ? [{
+                    label: 'GP margin',
+                    value: `${((fyTotals.actualGp / fyTotals.actualRev) * 100).toFixed(1)}%`,
+                  }]
+                : []),
+            ]}
+            className="mb-1"
+            data-testid="fye-page-hero"
+          />
+        )}
 
         {/* KPI Strip */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3" data-testid="kpi-strip-fye">

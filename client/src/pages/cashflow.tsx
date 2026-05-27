@@ -4,6 +4,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { extractTrustHeaders, type FinanceTrustMeta } from '@/lib/finance-trust';
 import { DataTrustBadge } from '@/components/ui/data-trust-badge';
 import { FinanceTrustStrip, isStaleImport } from '@/components/finance/FinanceTrustStrip';
+import { PageHero } from '@/components/finance/PageHero';
+import { Money } from '@/components/ui/money';
 import {
   Tooltip as UiTooltip,
   TooltipContent,
@@ -2093,6 +2095,47 @@ export default function CashflowPage() {
                 />
               ) : (
                 <>
+                  {/* Visual redesign — PageHero is the single-answer card. The 4 KpiCards
+                      below this carry the supporting metrics (inflows / outflows / current /
+                      net). The FY-end forecast moved up to the hero because it's the question
+                      every CFO actually asks. */}
+                  <PageHero
+                    eyebrow="Finance · Cashflow"
+                    label="Forecast end-of-FY bank position"
+                    value={<Money value={kpis.forecastedEndOfFYPosition} />}
+                    tone={kpis.forecastedEndOfFYPosition >= 0 ? 'positive' : 'critical'}
+                    supporting={
+                      <>
+                        Lowest week ahead based on {cashflowData.length} weeks of forecast.
+                        Inflows YTD <Money value={kpis.totalInflows} /> · Outflows YTD{' '}
+                        <Money value={kpis.totalOutflows} />.
+                      </>
+                    }
+                    trust={[
+                      {
+                        label: 'Updated',
+                        value: cashflowUpdatedAt
+                          ? new Date(cashflowUpdatedAt).toLocaleTimeString('en-ZA', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : '—',
+                      },
+                      {
+                        label: 'Source',
+                        value: cashflowTrust?.canonicalTable ?? 'canonical',
+                      },
+                      ...(cashflowTrust?.nullCount && cashflowTrust.nullCount > 0
+                        ? [{
+                            label: 'Missing',
+                            value: `${cashflowTrust.nullCount} fields`,
+                            tone: 'warning' as const,
+                          }]
+                        : []),
+                    ]}
+                    className="mb-3"
+                    data-testid="cashflow-page-hero"
+                  />
                   <div
                     className="grid grid-cols-2 lg:grid-cols-4 gap-2"
                     data-testid="kpi-summary-row"
