@@ -51,6 +51,7 @@ import { ProjectDocumentRegisterPanel } from "@/components/project-documents/Pro
 import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { useAuth } from "@/hooks/use-auth";
 import { ProjectCommandHeader } from "@/components/ProjectCommandHeader";
+import { ProjectWorkspaceBetaBanner } from "@/components/ProjectWorkspaceBetaBanner";
 import { RevenueTrackingContent } from "@/pages/revenue-tracking";
 import { ExpenditureBreakdownContent } from "@/pages/expenditure-breakdown";
 import { ProgramPlanContent } from "@/pages/program-plan";
@@ -1149,6 +1150,11 @@ export default function ProjectDetailPage() {
       <div data-testid="cockpit-mode-executive" className="hidden" />
       <div data-testid="cockpit-mode-execution" className="hidden" />
       <div data-testid="executive-summary-cards" className="hidden" />
+      {/* PR-E redesign (2026-05-27) — opt-in banner pointing to the new
+          4-tab workspace. The legacy detail page stays the default;
+          users self-select into the beta. Banner is dismissable so we
+          don't pester anyone who's tried it and prefers the legacy view. */}
+      {projectInfoId && <ProjectWorkspaceBetaBanner projectId={projectInfoId} />}
       <ProjectCommandHeader
         projectName={projectName}
         displayName={displayName}
