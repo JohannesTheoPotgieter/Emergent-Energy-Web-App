@@ -30,7 +30,7 @@ import {
 import { useExecutionData } from './use-execution-data';
 import { apiRequest } from '@/lib/queryClient';
 import { KpiCard } from '@/components/ui/kpi-card';
-import { formatZar } from '@/lib/currency';
+import { formatZar, formatZarAriaLabel } from '@/lib/currency';
 import { DataTrustBadge } from '@/components/ui/data-trust-badge';
 import { FinancialYearScopeControl } from '@/components/finance/FinancialYearScopeControl';
 import { getMarginColour } from '@/lib/margin-colour';
@@ -251,12 +251,14 @@ export default function FinancePage() {
           label={`Budget Revenue (${fyLabel})`}
           value={formatCurrencyCompact(kpis.plannedRevenueFy)}
           title={formatZar(kpis.plannedRevenueFy)}
+          valueAriaLabel={formatZarAriaLabel(kpis.plannedRevenueFy)}
           icon={<TrendingUp className="w-4 h-4" />}
         />
         <KpiCard
           label={`Actual Revenue (${fyLabel})`}
           value={formatCurrencyCompact(kpis.receivedInflowFy)}
           title={formatZar(kpis.receivedInflowFy)}
+          valueAriaLabel={formatZarAriaLabel(kpis.receivedInflowFy)}
           icon={<TrendingUp className="w-4 h-4" />}
           sub={`${kpis.plannedRevenueFy > 0 ? Math.round((kpis.receivedInflowFy / kpis.plannedRevenueFy) * 100) : 0}% collected`}
         />
@@ -264,6 +266,7 @@ export default function FinancePage() {
           label="Revenue Outstanding"
           value={formatCurrencyCompact(kpis.openInflowFy)}
           title={formatZar(kpis.openInflowFy)}
+          valueAriaLabel={formatZarAriaLabel(kpis.openInflowFy)}
           icon={<DollarSign className="w-4 h-4" />}
           tone="warning"
         />
@@ -271,12 +274,14 @@ export default function FinancePage() {
           label={`Budget Expenditure (${fyLabel})`}
           value={formatCurrencyCompact(kpis.plannedExpenditureFy)}
           title={formatZar(kpis.plannedExpenditureFy)}
+          valueAriaLabel={formatZarAriaLabel(kpis.plannedExpenditureFy)}
           icon={<TrendingDown className="w-4 h-4" />}
         />
         <KpiCard
           label={`Actual Expenditure (${fyLabel})`}
           value={formatCurrencyCompact(kpis.paidExpenditureFy)}
           title={formatZar(kpis.paidExpenditureFy)}
+          valueAriaLabel={formatZarAriaLabel(kpis.paidExpenditureFy)}
           icon={<TrendingDown className="w-4 h-4" />}
           sub={`${kpis.plannedExpenditureFy > 0 ? Math.round((kpis.paidExpenditureFy / kpis.plannedExpenditureFy) * 100) : 0}% spent`}
         />
@@ -284,6 +289,7 @@ export default function FinancePage() {
           label="Expense Outstanding"
           value={formatCurrencyCompact(kpis.openExpenditureFy)}
           title={formatZar(kpis.openExpenditureFy)}
+          valueAriaLabel={formatZarAriaLabel(kpis.openExpenditureFy)}
           icon={<DollarSign className="w-4 h-4" />}
           tone="warning"
         />
@@ -295,6 +301,7 @@ export default function FinancePage() {
           label="Gross Profit (Planned)"
           value={formatCurrencyCompact(kpis.grossProfitFy)}
           title={formatZar(kpis.grossProfitFy)}
+          valueAriaLabel={formatZarAriaLabel(kpis.grossProfitFy)}
           icon={<BarChart3 className="w-4 h-4" />}
           sub="Planned revenue minus planned expenditure"
         />
@@ -350,6 +357,7 @@ export default function FinancePage() {
               label="Total Overdue"
               value={formatCurrencyCompact(kpis.overdueInflowFy + kpis.overdueOutflowFy)}
               title={formatZar(kpis.overdueInflowFy + kpis.overdueOutflowFy)}
+              valueAriaLabel={formatZarAriaLabel(kpis.overdueInflowFy + kpis.overdueOutflowFy)}
               icon={<Clock className="w-4 h-4" />}
               tone="danger"
               sub="Click to drill down to item level"
@@ -360,6 +368,7 @@ export default function FinancePage() {
               label="Overdue Inflow (AR)"
               value={formatCurrencyCompact(kpis.overdueInflowFy)}
               title={formatZar(kpis.overdueInflowFy)}
+              valueAriaLabel={formatZarAriaLabel(kpis.overdueInflowFy)}
               icon={<ArrowDownRight className="w-4 h-4" />}
               tone="warning"
               sub="Revenue past expected payment date"
@@ -370,6 +379,7 @@ export default function FinancePage() {
               label="Overdue Outflow (AP)"
               value={formatCurrencyCompact(kpis.overdueOutflowFy)}
               title={formatZar(kpis.overdueOutflowFy)}
+              valueAriaLabel={formatZarAriaLabel(kpis.overdueOutflowFy)}
               icon={<ArrowUpRight className="w-4 h-4" />}
               tone="warning"
               sub="Expenditure past approved/invoice date"

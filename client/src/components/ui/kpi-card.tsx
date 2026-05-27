@@ -42,6 +42,15 @@ export interface KpiCardProps {
   valueClass?: string;
   /** Tooltip — use to expose the exact figure behind a compact currency value. */
   title?: string;
+  /**
+   * Screen-reader label for the value — TF-6 (audit V3). When value is a
+   * pre-formatted money string ("R 1 234 567"), the visual contains
+   * non-breaking spaces that most screen readers spell out digit-by-digit.
+   * Pass `formatZarAriaLabel(rawNumber)` here so the spoken form is
+   * "one million two hundred thirty-four thousand five hundred sixty-seven rand".
+   * Falls back to silent value rendering when absent.
+   */
+  valueAriaLabel?: string;
   onClick?: () => void;
   className?: string;
   "data-testid"?: string;
@@ -55,6 +64,7 @@ export function KpiCard({
   tone = "default",
   valueClass,
   title,
+  valueAriaLabel,
   onClick,
   className,
   "data-testid": testId,
@@ -99,7 +109,10 @@ export function KpiCard({
               <p className="text-[11px] uppercase tracking-wide font-medium text-muted-foreground truncate">
                 {label}
               </p>
-              <p className={cn("text-2xl font-bold tabular-nums leading-tight mt-0.5", valueClass || TONE_VALUE[tone])}>
+              <p
+                className={cn("text-2xl font-bold tabular-nums leading-tight mt-0.5", valueClass || TONE_VALUE[tone])}
+                {...(valueAriaLabel ? { "aria-label": valueAriaLabel } : {})}
+              >
                 {value}
               </p>
               {sub && <p className="text-xs text-muted-foreground mt-1 leading-snug">{sub}</p>}

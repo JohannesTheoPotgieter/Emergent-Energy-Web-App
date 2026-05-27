@@ -18,7 +18,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { apiRequest, fetchQueryFn, invalidateDashboardQueries } from '@/lib/queryClient';
-import { formatZar, formatZarCompact } from '@/lib/currency';
+import { formatZar, formatZarAriaLabel, formatZarCompact } from '@/lib/currency';
 import { useFinanceQuery } from '@/lib/finance-trust';
 import { DataTrustBadge } from '@/components/ui/data-trust-badge';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -176,6 +176,19 @@ type DrawerStateFilter =
 // non-numeric → "—" (never "R 0"). Chart axes use formatZarCompact directly.
 function formatRand(val: number | null | undefined): string {
   return formatZar(val);
+}
+
+/**
+ * TF-6 — paired visual + screen-reader rendering. Wraps formatRand
+ * output in a span carrying an `aria-label` so screen readers announce
+ * "one million two hundred thousand rand" instead of "R one two three…".
+ */
+function Rand({ value, className }: { value: number | null | undefined; className?: string }) {
+  return (
+    <span className={className} aria-label={formatZarAriaLabel(value)}>
+      {formatRand(value)}
+    </span>
+  );
 }
 
 type EditableField = 'budget';
@@ -609,6 +622,7 @@ function MonthDetailDrawer({
                       <span
                         className="font-semibold font-mono text-emerald-700"
                         data-testid="text-drawer-headline-total"
+                        aria-label={formatZarAriaLabel(totalContribution)}
                       >
                         {formatRand(totalContribution)}
                       </span>
@@ -629,14 +643,12 @@ function MonthDetailDrawer({
                     <div className="h-4 w-px bg-border" />
                     <div className="flex items-center gap-1.5">
                       <span className="text-muted-foreground">App total:</span>
-                      <span className="font-semibold font-mono">{formatRand(totalAppAmount)}</span>
+                      <Rand className="font-semibold font-mono" value={totalAppAmount} />
                     </div>
                     <div className="h-4 w-px bg-border" />
                     <div className="flex items-center gap-1.5">
                       <span className="text-muted-foreground">QB total:</span>
-                      <span className="font-semibold font-mono text-foreground">
-                        {formatRand(totalQbAmount)}
-                      </span>
+                      <Rand className="font-semibold font-mono text-foreground" value={totalQbAmount} />
                     </div>
                   </>
                 )}
@@ -813,14 +825,14 @@ function MonthDetailDrawer({
                           {item.appAmount == null ? (
                             <span className="text-muted-foreground">—</span>
                           ) : (
-                            formatRand(item.appAmount)
+                            <Rand value={item.appAmount} />
                           )}
                         </td>
                         <td className="px-3 py-2 text-right font-mono text-foreground">
                           {item.qbAmount == null ? (
                             <span className="text-muted-foreground">—</span>
                           ) : (
-                            formatRand(item.qbAmount)
+                            <Rand value={item.qbAmount} />
                           )}
                         </td>
                         <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
@@ -901,15 +913,15 @@ function MonthDetailDrawer({
                       </div>
                       <div>
                         <span className="text-muted-foreground">App:</span>{' '}
-                        <span className="font-mono font-medium">
-                          {item.appAmount == null ? '—' : formatRand(item.appAmount)}
-                        </span>
+                        {item.appAmount == null
+                          ? <span className="font-mono font-medium">—</span>
+                          : <Rand className="font-mono font-medium" value={item.appAmount} />}
                       </div>
                       <div>
                         <span className="text-muted-foreground">QB:</span>{' '}
-                        <span className="font-mono font-medium text-foreground">
-                          {item.qbAmount == null ? '—' : formatRand(item.qbAmount)}
-                        </span>
+                        {item.qbAmount == null
+                          ? <span className="font-mono font-medium text-foreground">—</span>
+                          : <Rand className="font-mono font-medium text-foreground" value={item.qbAmount} />}
                       </div>
                     </div>
                   </div>
@@ -1470,6 +1482,7 @@ export default function CosTracker() {
                                 className={`w-full text-right font-mono cursor-pointer hover:bg-emerald-50 rounded-lg px-1.5 sm:px-3 py-1 sm:py-1.5 transition-colors ${row.colorClass}`}
                                 onClick={() => startEdit(row.key as EditableField, m.monthKey, val)}
                                 data-testid={`cell-${row.key}-${m.monthKey}`}
+                                aria-label={formatZarAriaLabel(val)}
                               >
                                 {formatRand(val)}
                               </button>
@@ -1573,6 +1586,7 @@ export default function CosTracker() {
                                   : undefined
                               }
                               data-testid={`cell-detail-${row.key}-${pName}-${m.monthKey}`}
+                              aria-label={val !== 0 ? formatZarAriaLabel(val) : undefined}
                             >
                               {val !== 0 ? formatRand(val) : ''}
                             </td>
@@ -1938,14 +1952,14 @@ export default function CosTracker() {
             className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card"
           >
             <CheckCircle2 className="h-3 w-3 text-foreground" />
-            YTD Realised {formatRand(ytdRealised)}
+            YTD Realised <Rand value={ytdRealised} />
           </Badge>
           <Badge
             variant="outline"
             className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card"
           >
             <ListChecks className="h-3 w-3 text-emerald-700" />
-            YTD Planned {formatRand(ytdPlanned)}
+            YTD Planned <Rand value={ytdPlanned} />
           </Badge>
           <Badge
             variant="outline"
@@ -1959,7 +1973,7 @@ export default function CosTracker() {
             className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card"
           >
             <DollarSign className="h-3 w-3" />
-            QB Actual {formatRand(ytdQbCos)}
+            QB Actual <Rand value={ytdQbCos} />
           </Badge>
           <Badge
             variant="outline"

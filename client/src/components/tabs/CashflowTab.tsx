@@ -26,6 +26,7 @@ import {
 import { format, parseISO } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { DateOverridePopover } from "@/components/cashflow/DateOverridePopover";
+import { formatZarAriaLabel } from "@/lib/currency";
 
 interface CashflowWeek {
   weekStart: string;
@@ -120,6 +121,20 @@ function formatRand(val: number | null | undefined): string {
   if (abs >= 1_000_000) return `${sign}R ${(abs / 1_000_000).toFixed(2)}M`;
   if (abs >= 1_000) return `${sign}R ${(abs / 1_000).toFixed(1)}K`;
   return `${sign}R ${abs.toFixed(0)}`;
+}
+
+/**
+ * TF-6 \u2014 paired visual + screen-reader rendering for compact money on
+ * the cashflow tab. Visual stays as the abbreviated form ("R 1.2M");
+ * aria-label uses the full spoken form via `formatZarAriaLabel` so a
+ * screen reader announces "one million two hundred thousand rand".
+ */
+function RandValue({ value, className }: { value: number | null | undefined; className?: string }) {
+  return (
+    <span className={className} aria-label={formatZarAriaLabel(value)}>
+      {formatRand(value)}
+    </span>
+  );
 }
 
 function formatWeek(dateStr: string): string {
@@ -314,7 +329,7 @@ function WeekDetailPanel({
                         testId={`proj-date-inflow-${weekStart}-${i}`}
                       />
                     </td>
-                    <td className="px-2 py-1 text-right font-mono text-emerald-700">{formatRand(inf.milestoneAmount)}</td>
+                    <td className="px-2 py-1 text-right font-mono text-emerald-700"><RandValue value={inf.milestoneAmount} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -384,7 +399,7 @@ function WeekDetailPanel({
                         testId={`proj-date-outflow-${weekStart}-${i}`}
                       />
                     </td>
-                    <td className="px-2 py-1 text-right font-mono text-red-700">{formatRand(out.expenseActualTotal)}</td>
+                    <td className="px-2 py-1 text-right font-mono text-red-700"><RandValue value={out.expenseActualTotal} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -503,24 +518,28 @@ export function CashflowTab({ projectName, projectNames, title, canOverrideFinan
         <KpiMini
           label="Total Inflows"
           value={formatRand(kpis.totalInflows)}
+          valueAriaLabel={formatZarAriaLabel(kpis.totalInflows)}
           icon={<TrendingUp className="h-4 w-4" />}
           color="green"
         />
         <KpiMini
           label="Total Outflows"
           value={formatRand(kpis.totalOutflows)}
+          valueAriaLabel={formatZarAriaLabel(kpis.totalOutflows)}
           icon={<TrendingDown className="h-4 w-4" />}
           color="red"
         />
         <KpiMini
           label="Current Week Balance"
           value={formatRand(kpis.currentWeekOpeningBalance)}
+          valueAriaLabel={formatZarAriaLabel(kpis.currentWeekOpeningBalance)}
           icon={<DollarSign className="h-4 w-4" />}
           color={kpis.currentWeekOpeningBalance >= 0 ? "blue" : "red"}
         />
         <KpiMini
           label="FY End Forecast"
           value={formatRand(kpis.forecastedEndOfFYPosition)}
+          valueAriaLabel={formatZarAriaLabel(kpis.forecastedEndOfFYPosition)}
           icon={kpis.forecastedEndOfFYPosition >= 0 ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownRight className="h-4 w-4" />}
           color={kpis.forecastedEndOfFYPosition >= 0 ? "green" : "red"}
         />
@@ -646,24 +665,24 @@ export function CashflowTab({ projectName, projectNames, title, canOverrideFinan
                           </div>
                         </td>
                         <td className="px-4 py-2.5 text-right font-mono text-[13px] text-blue-600">
-                          {formatRand(week.openingBalance)}
+                          <RandValue value={week.openingBalance} />
                         </td>
                         <td className="px-4 py-2.5 text-right font-mono text-[13px] text-emerald-600">
-                          {formatRand(week.projectInflows)}
+                          <RandValue value={week.projectInflows} />
                         </td>
                         <td className="px-4 py-2.5 text-right font-mono text-[13px]">
-                          <span className="text-red-500">{formatRand(week.projectOutflows)}</span>
+                          <RandValue value={week.projectOutflows} className="text-red-500" />
                           {(week.pastDueUnpaid || 0) > 0 && (
                             <div className="text-[10px] font-semibold text-red-700 bg-red-100 rounded px-1 py-0.5 mt-0.5 inline-block" title="Past-due outflows not yet confirmed out of bank">
-                              {formatRand(week.pastDueUnpaid)} overdue
+                              <RandValue value={week.pastDueUnpaid} /> overdue
                             </div>
                           )}
                         </td>
                         <td className={`px-4 py-2.5 text-right font-mono text-[13px] font-bold ${(week.closingBalance || 0) >= 0 ? "text-emerald-700" : "text-red-700"}`}>
-                          {formatRand(week.closingBalance)}
+                          <RandValue value={week.closingBalance} />
                         </td>
                         <td className={`px-4 py-2.5 text-right font-mono text-[13px] font-semibold ${netFlow >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                          {formatRand(netFlow)}
+                          <RandValue value={netFlow} />
                         </td>
                       </tr>
                       {isExpanded && (
@@ -692,11 +711,13 @@ export function CashflowTab({ projectName, projectNames, title, canOverrideFinan
 function KpiMini({
   label,
   value,
+  valueAriaLabel,
   icon,
   color,
 }: {
   label: string;
   value: string;
+  valueAriaLabel?: string;
   icon: React.ReactNode;
   color: "green" | "red" | "blue";
 }) {
@@ -711,7 +732,12 @@ function KpiMini({
       <div className={`rounded-lg ${c.iconBg} p-2 ${c.iconColor}`}>{icon}</div>
       <div className="min-w-0">
         <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide truncate">{label}</p>
-        <p className={`text-base font-bold font-mono ${c.text} truncate`}>{value}</p>
+        <p
+          className={`text-base font-bold font-mono ${c.text} truncate`}
+          {...(valueAriaLabel ? { "aria-label": valueAriaLabel } : {})}
+        >
+          {value}
+        </p>
       </div>
     </div>
   );
