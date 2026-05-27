@@ -50,6 +50,10 @@ const MyQueuePage = lazyWithRetry(() => import("@/pages/my-queue"));
 // PR-D redesign (2026-05-27) — /portfolio is the 6-column lens-aware
 // replacement for the 50-column /projects table. Legacy stays.
 const PortfolioPage = lazyWithRetry(() => import("@/pages/portfolio"));
+// PR-E redesign (2026-05-27) — /project/v2/:projectId collapses 9
+// departments × 27 sub-tabs into 4 tabs (Plan/Money/Quality/Handover).
+// Legacy /project/id/:id stays the default for two cycles.
+const ProjectWorkspacePage = lazyWithRetry(() => import("@/pages/project-workspace"));
 const SmartImportPage = lazyWithRetry(() => import("@/pages/smart-import"));
 const SharePointIntakePage = lazyWithRetry(() => import("@/pages/SharePointIntakePage"));
 const InvoicePatternsPage = lazyWithRetry(() => import("@/pages/invoice-patterns"));
@@ -200,6 +204,7 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   NowPage,
   MyQueuePage,
   PortfolioPage,
+  ProjectWorkspacePage,
   MyWorkMeetingsPage,
   MyWorkSettingsPage,
   RoleSettingsPage,
