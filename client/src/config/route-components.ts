@@ -41,6 +41,9 @@ const EngineeringAuditPage = lazyWithRetry(() => import("@/pages/engineering-aud
 const RoleSettingsPage = lazyWithRetry(() => import("@/pages/role-settings"));
 const LifecycleBoardPage = lazyWithRetry(() => import("@/pages/lifecycle-board"));
 const ExecutionBoardPage = lazyWithRetry(() => import("@/pages/execution-board"));
+// PR-B redesign (2026-05-27) — /now replaces /execution-board as the
+// canonical landing surface. Legacy route kept for one cycle.
+const NowPage = lazyWithRetry(() => import("@/pages/now"));
 const SmartImportPage = lazyWithRetry(() => import("@/pages/smart-import"));
 const SharePointIntakePage = lazyWithRetry(() => import("@/pages/SharePointIntakePage"));
 const InvoicePatternsPage = lazyWithRetry(() => import("@/pages/invoice-patterns"));
@@ -188,6 +191,7 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   EngineeringAuditPage,
   LifecycleBoardPage,
   ExecutionBoardPage,
+  NowPage,
   MyWorkMeetingsPage,
   MyWorkSettingsPage,
   RoleSettingsPage,
