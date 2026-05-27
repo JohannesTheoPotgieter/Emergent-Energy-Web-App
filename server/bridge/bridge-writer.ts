@@ -72,27 +72,33 @@ async function withRetry(
   entityId: number | string,
   operation: () => Promise<BridgeResult>,
 ): Promise<BridgeResult> {
-  const first = await operation();
-  if (first.success) {
-    _bridgeSuccessCount++;
-    return first;
-  }
+  // TF-12 — count the in-flight bridge write while it runs.
+  bridgeQueueEnter();
+  try {
+    const first = await operation();
+    if (first.success) {
+      _bridgeSuccessCount++;
+      return first;
+    }
 
-  // Only retry transient errors
-  if (!first.error || !isTransientError(new Error(first.error))) {
-    await logBridgeError(domain, entityId, new Error(first.error));
-    return first;
-  }
+    // Only retry transient errors
+    if (!first.error || !isTransientError(new Error(first.error))) {
+      await logBridgeError(domain, entityId, new Error(first.error));
+      return first;
+    }
 
-  // Wait 200ms then retry once
-  await new Promise(r => setTimeout(r, 200));
-  const second = await operation();
-  if (second.success) {
-    _bridgeSuccessCount++;
-  } else {
-    await logBridgeError(domain, entityId, new Error(second.error));
+    // Wait 200ms then retry once
+    await new Promise(r => setTimeout(r, 200));
+    const second = await operation();
+    if (second.success) {
+      _bridgeSuccessCount++;
+    } else {
+      await logBridgeError(domain, entityId, new Error(second.error));
+    }
+    return { ...second, retried: true };
+  } finally {
+    bridgeQueueExit();
   }
-  return { ...second, retried: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -880,6 +886,57 @@ let _bridgeFailureCount = 0;
 let _bridgeSuccessCount = 0;
 const _recentFailures: Array<{ domain: string; error: string; ts: number }> = [];
 const MAX_RECENT_FAILURES = 50;
+
+// ---------------------------------------------------------------------------
+// TF-12 (audit V3) — bridge in-flight queue depth tracking.
+//
+// Bridge writes are fired as bare Promises with .catch(bridgeCatch). Under a
+// heavy import load the number of in-flight Promises can grow unbounded —
+// each one holds a row payload in memory until it resolves. We don't reject
+// new work (that would break the import) but we DO surface the live queue
+// depth + peak so an operator can see a hot spot, and we log a warning when
+// the queue crosses configured thresholds.
+//
+// `MAX_QUEUE_DEPTH_WARN` triggers a one-shot warning per crossing; the
+// counter resets when the queue drains back below the threshold.
+// ---------------------------------------------------------------------------
+let _bridgeInflight = 0;
+let _bridgeInflightPeak = 0;
+const MAX_QUEUE_DEPTH_WARN = 10_000;
+let _warnedAtCurrentPeak = false;
+
+export function bridgeQueueDepth(): { inflight: number; peak: number; warnThreshold: number } {
+  return {
+    inflight: _bridgeInflight,
+    peak: _bridgeInflightPeak,
+    warnThreshold: MAX_QUEUE_DEPTH_WARN,
+  };
+}
+
+export function bridgeQueueEnter(): void {
+  _bridgeInflight++;
+  if (_bridgeInflight > _bridgeInflightPeak) {
+    _bridgeInflightPeak = _bridgeInflight;
+  }
+  if (_bridgeInflight >= MAX_QUEUE_DEPTH_WARN && !_warnedAtCurrentPeak) {
+    _warnedAtCurrentPeak = true;
+    console.warn(JSON.stringify({
+      level: "warn",
+      component: "bridge-writer",
+      event: "bridge_queue_depth_exceeded",
+      inflight: _bridgeInflight,
+      threshold: MAX_QUEUE_DEPTH_WARN,
+      ts: new Date().toISOString(),
+    }));
+  }
+}
+
+export function bridgeQueueExit(): void {
+  if (_bridgeInflight > 0) _bridgeInflight--;
+  if (_bridgeInflight < MAX_QUEUE_DEPTH_WARN / 2 && _warnedAtCurrentPeak) {
+    _warnedAtCurrentPeak = false;
+  }
+}
 
 /**
  * Drop-in replacement for `.catch(() => {})` on bridge calls.

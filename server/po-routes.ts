@@ -7,6 +7,7 @@ import { requirePermission } from "./permission-middleware";
 import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
 import { createPoApproval } from "./services/approval-service";
+import { cascadePoCancellationToCostLines } from "./services/po-cancellation-cascade";
 import PDFDocument from "pdfkit";
 import { parseIntParam } from "./lib/req-params";
 
@@ -950,14 +951,37 @@ export function registerPoRoutes(app: Express) {
         `);
       }
 
+      // TF-24 (audit V3) — cascade cancellation to dependent cost lines.
+      // Already-paid lines are preserved (history); planned / invoiced
+      // lines have their po_number cleared and a cancellation stamp
+      // appended to the description.
+      let cascadeSummary: { severed: number; preserved: number } | null = null;
+      if (status === "cancelled") {
+        try {
+          const result = await cascadePoCancellationToCostLines(poIdNum, req.body?.reason);
+          cascadeSummary = {
+            severed: result.severedCostLineIds.length,
+            preserved: result.preservedCostLineIds.length,
+          };
+        } catch (cascadeErr) {
+          // The cancellation itself succeeded — surface the cascade
+          // failure but don't roll back the PO state change.
+          console.error("[PO] Cancellation cascade failed for PO", poIdNum, cascadeErr);
+        }
+      }
+
       logAuditFromReq(req, {
         entityType: "purchase_order",
         entityId: String(poIdNum),
         action: "update_status",
-        changesJson: { from: currentStatus, to: status },
+        changesJson: {
+          from: currentStatus,
+          to: status,
+          ...(cascadeSummary ? { cascade: cascadeSummary } : {}),
+        },
       });
 
-      res.json({ success: true });
+      res.json({ success: true, ...(cascadeSummary ? { cascade: cascadeSummary } : {}) });
     } catch (err: unknown) {
       const errMessage = err instanceof Error ? err.message : String(err);
       console.error("[PO] Status update error:", errMessage);

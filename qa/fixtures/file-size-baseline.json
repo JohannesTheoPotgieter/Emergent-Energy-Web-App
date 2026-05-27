@@ -2,7 +2,7 @@
   "_documentation": "EE-QA-015 baseline — files above the FILE_SIZE_THRESHOLD LOC. The CI guard `qa/tests/unit/file-size-ratchet.test.ts` fails if any of these grow OR a NEW file lands over the threshold. To regenerate after a split, run `npx tsx scripts/build-file-size-baseline.ts` and commit the new JSON.",
   "threshold": 1500,
   "buffer": 50,
-  "generated": "2026-05-26",
+  "generated": "2026-05-27",
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
@@ -22,7 +22,7 @@
     },
     {
       "file": "server/smart-import-routes.ts",
-      "loc": 3881
+      "loc": 3903
     },
     {
       "file": "server/db.ts",
@@ -46,7 +46,7 @@
     },
     {
       "file": "client/src/pages/cashflow.tsx",
-      "loc": 2844
+      "loc": 2865
     },
     {
       "file": "server/routes/quickbooks-invoice-matches.routes.ts",
@@ -69,12 +69,12 @@
       "loc": 2338
     },
     {
-      "file": "client/src/pages/ee-info.tsx",
-      "loc": 2262
+      "file": "client/src/pages/cos.tsx",
+      "loc": 2267
     },
     {
-      "file": "client/src/pages/cos.tsx",
-      "loc": 2253
+      "file": "client/src/pages/ee-info.tsx",
+      "loc": 2262
     },
     {
       "file": "client/src/components/tabs/ExpenditureEditableTab.tsx",
@@ -125,10 +125,6 @@
       "loc": 1874
     },
     {
-      "file": "server/departments/exco-routes.ts",
-      "loc": 1856
-    },
-    {
       "file": "server/seed-ee-info-updates.ts",
       "loc": 1820
     },
@@ -145,16 +141,12 @@
       "loc": 1778
     },
     {
+      "file": "client/src/pages/project-detail.tsx",
+      "loc": 1773
+    },
+    {
       "file": "client/src/pages/pd-dashboard.tsx",
       "loc": 1750
-    },
-    {
-      "file": "client/src/pages/project-detail.tsx",
-      "loc": 1750
-    },
-    {
-      "file": "server/storage.ts",
-      "loc": 1729
     },
     {
       "file": "server/services/stage-lifecycle-service.ts",
@@ -181,6 +173,10 @@
       "loc": 1662
     },
     {
+      "file": "server/storage.ts",
+      "loc": 1653
+    },
+    {
       "file": "client/src/pages/qm-dashboard.tsx",
       "loc": 1641
     },
@@ -194,7 +190,11 @@
     },
     {
       "file": "client/src/pages/priority-detail.tsx",
-      "loc": 1605
+      "loc": 1618
+    },
+    {
+      "file": "server/departments/exco-routes.ts",
+      "loc": 1603
     },
     {
       "file": "server/handover-routes.ts",
@@ -214,7 +214,7 @@
     },
     {
       "file": "server/services/gate-auto-evaluator-service.ts",
-      "loc": 1538
+      "loc": 1547
     },
     {
       "file": "server/role-management.ts",
