@@ -77,12 +77,14 @@ interface ExpenditureBreakdownResponse {
   header: { usdExchangeRate: string | null; pricePerWatt: string | null };
 }
 
-const ZAR = new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", minimumFractionDigits: 2 });
+// TF-16 (audit V3) — migrated to canonical formatZar. Canonical helper
+// returns "R 1 234,56" instead of "ZAR 1,234.56" (the en-ZA Intl output)
+// — matches every other finance surface, no per-page divergence.
+import { formatZar } from "@/lib/currency";
+import { Money } from "@/components/ui/money";
 const NUM = new Intl.NumberFormat("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 6 });
 function money(v: string | null): string {
-  if (!v) return "—";
-  const n = Number(v);
-  return isFinite(n) ? ZAR.format(n) : v;
+  return formatZar(v, { cents: true });
 }
 function num(v: string | null): string {
   if (!v) return "—";

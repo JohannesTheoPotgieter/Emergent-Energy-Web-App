@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
+import { formatZar as formatZarCanonical } from "@/lib/currency";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -40,7 +41,8 @@ const DELEGATE_ADMIN_ROLES = new Set(["COO_ADMIN", "CFO", "CEO_ADMIN"]);
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const fmtDate = (v?: string | null) => !v ? "—" : `${new Date(v).getUTCDate()} ${MONTHS[new Date(v).getUTCMonth()]} ${new Date(v).getUTCFullYear()}`;
-const fmtZAR = (v?: string | number | null) => Number(v || 0).toLocaleString("en-ZA", { style: "currency", currency: "ZAR", minimumFractionDigits: 0, maximumFractionDigits: 2 });
+// TF-16 (audit V3) — migrated to canonical formatZar.
+const fmtZAR = (v?: string | number | null) => formatZarCanonical(v, { cents: true });
 const ageDays = (createdAt: string) => Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 86400000));
 
 function StatusBadge({ status }: { status: string }) {

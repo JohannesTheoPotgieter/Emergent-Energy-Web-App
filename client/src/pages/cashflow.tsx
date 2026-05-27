@@ -73,6 +73,7 @@ import { FinanceShell } from '@/components/layout/FinanceShell';
 import { FinancialYearScopeControl } from '@/components/finance/FinancialYearScopeControl';
 import { PageError, PageSkeleton } from '@/components/ui/page-states';
 import { formatZar, formatZarAriaLabel, formatZarCompact } from '@/lib/currency';
+import { FINANCE_QUERY_STABLE } from '@/lib/finance-stale-policy';
 import { usePermission } from '@/hooks/use-permissions';
 import { useFinancialYearScope, type FinancialYearScope } from '@/hooks/use-financial-year-scope';
 import { DateOverridePopover } from '@/components/cashflow/DateOverridePopover';
@@ -393,6 +394,37 @@ function DetailRow({
       }
       return res.json();
     },
+    // TF-17 (audit V3) — optimistic update on the open detail cache so
+    // the override badge appears instantly. Full week-bucket placement
+    // catches up on the invalidate-driven refetch. If the server
+    // rejects, onError restores the snapshot.
+    onMutate: async (data) => {
+      const detailKeys = queryClient
+        .getQueriesData<{ outflows?: DetailOutflow[] }>({ queryKey: [`${CASHFLOW_API_BASE}/detail`] })
+        .map(([key]) => key);
+      const snapshots = detailKeys.map((key) => [key, queryClient.getQueryData(key)] as const);
+      for (const key of detailKeys) {
+        queryClient.setQueryData<{ outflows?: DetailOutflow[]; inflows?: unknown }>(key, (prev) => {
+          if (!prev?.outflows) return prev;
+          return {
+            ...prev,
+            outflows: prev.outflows.map((o) =>
+              o.expenseId === data.expenseId
+                ? {
+                  ...o,
+                  hasAdminOverride: data.dateOverride !== null,
+                  adminDateOverride: data.dateOverride,
+                  adminDateOverrideReason: data.reason ?? null,
+                  adminDateOverrideAt: new Date().toISOString(),
+                  expensePaymentDate: data.dateOverride ?? o.expensePaymentDate,
+                }
+                : o,
+            ),
+          };
+        });
+      }
+      return { snapshots };
+    },
     onSuccess: () => {
       // Date overrides change which month a cost line buckets into.
       // Cashflow buckets on payment date; COS Tracker on invoice date;
@@ -412,7 +444,11 @@ function DetailRow({
       } });
       toast({ title: 'Expense date override saved' });
     },
-    onError: (err: Error) => {
+    onError: (err: Error, _data, context) => {
+      // TF-17 — roll back the optimistic patch when the server rejects.
+      if (context?.snapshots) {
+        for (const [key, value] of context.snapshots) queryClient.setQueryData(key, value);
+      }
       toast({ title: 'Failed to save override', description: err.message, variant: 'destructive' });
     },
   });
@@ -438,6 +474,33 @@ function DetailRow({
       }
       return res.json();
     },
+    onMutate: async (data) => {
+      const detailKeys = queryClient
+        .getQueriesData<{ inflows?: DetailInflow[] }>({ queryKey: [`${CASHFLOW_API_BASE}/detail`] })
+        .map(([key]) => key);
+      const snapshots = detailKeys.map((key) => [key, queryClient.getQueryData(key)] as const);
+      for (const key of detailKeys) {
+        queryClient.setQueryData<{ inflows?: DetailInflow[]; outflows?: unknown }>(key, (prev) => {
+          if (!prev?.inflows) return prev;
+          return {
+            ...prev,
+            inflows: prev.inflows.map((i) =>
+              i.inflowId === data.inflowId
+                ? {
+                  ...i,
+                  hasAdminOverride: data.dateOverride !== null,
+                  adminDateOverride: data.dateOverride,
+                  adminDateOverrideReason: data.reason ?? null,
+                  adminDateOverrideAt: new Date().toISOString(),
+                  paymentReceivedDate: data.dateOverride ?? i.paymentReceivedDate,
+                }
+                : i,
+            ),
+          };
+        });
+      }
+      return { snapshots };
+    },
     onSuccess: () => {
       // See expense-override mutation above — same fan-out reasoning.
       queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
@@ -454,7 +517,10 @@ function DetailRow({
       } });
       toast({ title: 'Inflow date override saved' });
     },
-    onError: (err: Error) => {
+    onError: (err: Error, _data, context) => {
+      if (context?.snapshots) {
+        for (const [key, value] of context.snapshots) queryClient.setQueryData(key, value);
+      }
       toast({ title: 'Failed to save override', description: err.message, variant: 'destructive' });
     },
   });
@@ -1559,7 +1625,9 @@ export default function CashflowPage() {
       if (!res.ok) throw new Error('Failed to fetch overdue AR');
       return res.json();
     },
-    staleTime: 5 * 60_000,
+    // TF-18 — use the canonical FINANCE_QUERY_STABLE policy (5min stale
+    // + refetch on focus) instead of a bare 5min staleTime.
+    ...FINANCE_QUERY_STABLE,
   });
 
   const availPayMutation = useMutation({

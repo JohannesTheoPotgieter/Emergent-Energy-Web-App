@@ -41,16 +41,16 @@
       "loc": 2948
     },
     {
+      "file": "client/src/pages/cashflow.tsx",
+      "loc": 2933
+    },
+    {
       "file": "client/src/pages/projects.tsx",
       "loc": 2906
     },
     {
-      "file": "client/src/pages/cashflow.tsx",
-      "loc": 2865
-    },
-    {
       "file": "server/routes/quickbooks-invoice-matches.routes.ts",
-      "loc": 2791
+      "loc": 2802
     },
     {
       "file": "server/services/quickbooks-reconciliation-service.ts",
@@ -70,7 +70,7 @@
     },
     {
       "file": "client/src/pages/cos.tsx",
-      "loc": 2267
+      "loc": 2271
     },
     {
       "file": "client/src/pages/ee-info.tsx",
@@ -130,7 +130,7 @@
     },
     {
       "file": "server/quickbooks-routes.ts",
-      "loc": 1803
+      "loc": 1808
     },
     {
       "file": "client/src/pages/collaboration.tsx",
@@ -170,7 +170,7 @@
     },
     {
       "file": "shared/schema/finance.ts",
-      "loc": 1662
+      "loc": 1677
     },
     {
       "file": "server/storage.ts",
@@ -197,12 +197,12 @@
       "loc": 1603
     },
     {
-      "file": "server/handover-routes.ts",
+      "file": "client/src/pages/subcontractor-dashboard.tsx",
       "loc": 1574
     },
     {
-      "file": "client/src/pages/subcontractor-dashboard.tsx",
-      "loc": 1568
+      "file": "server/handover-routes.ts",
+      "loc": 1574
     },
     {
       "file": "client/src/components/tabs/ProjectPlanTab.tsx",
