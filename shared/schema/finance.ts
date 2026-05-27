@@ -1659,3 +1659,18 @@ export const cosPeriodLocks = pgTable("cos_period_locks", {
 export const insertCosPeriodLockSchema = createInsertSchema(cosPeriodLocks).omit({ id: true, lockedAt: true } as any);
 export type InsertCosPeriodLock = z.infer<typeof insertCosPeriodLockSchema>;
 export type CosPeriodLock = typeof cosPeriodLocks.$inferSelect;
+
+// =========================================================================
+// TF-28 (audit V3) — VAT period tracking.
+//
+// DEFERRED. South African VAT is bi-monthly (Feb / Apr / Jun / Aug / Oct
+// / Dec closes for Category A). The full implementation needs:
+//   1. A `vat_period_locks` table mirroring `cos_period_locks`.
+//   2. A `vat_period` column on normalized_cost_lines + revenue_lines.
+//   3. A VAT 201 export route + post-filing edit lock.
+//
+// Owner sign-off is required on the workflow shape (esp. how to handle
+// the back-fill of historical lines). The schema declaration is
+// commented out below to keep db:check green; uncomment and run
+// `npm run db:generate -- --name=vat_period_locks` when ready.
+// =========================================================================

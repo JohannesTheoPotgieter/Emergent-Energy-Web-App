@@ -61,9 +61,12 @@ function pct(v: string | null): string {
   const n = Number(v);
   return isFinite(n) ? `${(n * 100).toFixed(2)}%` : v;
 }
+// TF-31 (audit V3) — use the canonical en-ZA / SAST date formatter so
+// the revenue-tracking page displays dates the same way as the rest of
+// the finance surface ("17 May 2026" rather than "2026-05-17").
+import { formatDateZA } from "@/lib/datetime";
 function fmtDate(v: string | null): string {
-  if (!v) return "—";
-  return v.length >= 10 ? v.slice(0, 10) : v;
+  return formatDateZA(v);
 }
 
 export function RevenueTrackingContent({ projectId }: { projectId: number }) {

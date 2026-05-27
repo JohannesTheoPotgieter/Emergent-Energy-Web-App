@@ -44,3 +44,36 @@ export function formatRelativeWithAbsoluteZA(
 }
 
 export const TIMEZONE_LABEL = TZ_LABEL;
+
+/**
+ * TF-31 (audit V3) — date-only en-ZA formatter for finance pages.
+ *
+ * Returns e.g. "17 May 2026". Accepts a raw `YYYY-MM-DD` string (no
+ * timezone shift — treated as a calendar date) or a full ISO timestamp
+ * (formatted in SAST). Returns the canonical "—" placeholder for
+ * absent / non-parseable input.
+ */
+export function formatDateZA(value: string | number | Date | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "—";
+  // Bare YYYY-MM-DD strings shouldn't be parsed by `new Date()` (which
+  // applies a UTC offset and can shift the day on display). Render them
+  // by parts so the display is timezone-stable.
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [y, m, d] = value.split("-");
+    const date = new Date(Date.UTC(Number(y), Number(m) - 1, Number(d)));
+    return date.toLocaleDateString(LOCALE, {
+      timeZone: "UTC",
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  }
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString(LOCALE, {
+    timeZone: TIME_ZONE,
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}

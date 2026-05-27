@@ -36,9 +36,15 @@ function getAuthHeaders(): Record<string, string> {
     return headers;
 }
 
+// TF-16 (audit V3) — migrated to canonical formatZar. The legacy
+// helper returned "R0" for null/NaN; the canonical helper returns "—"
+// instead so "no data" is visually distinct from a genuine R 0. The
+// Money component pairs the visual with a screen-reader-friendly
+// aria-label.
+import { formatZar } from "@/lib/currency";
+import { Money } from "@/components/ui/money";
 function formatCurrency(val: number | null | undefined): string {
-  if (val == null || isNaN(val)) return "R0";
-  return `R${val.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  return formatZar(val);
 }
 
 function formatDate(val: string | null): string {

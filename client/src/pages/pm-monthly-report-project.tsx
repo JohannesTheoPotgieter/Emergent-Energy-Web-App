@@ -8,6 +8,7 @@ import { ArrowLeft } from "lucide-react";
 import RAGBadge from "@/components/reports/RAGBadge";
 import { PageHeader } from "@/components/ui/page-header";
 import { QueryLoading, QueryError } from "@/components/ui/query-states";
+import { Money } from "@/components/ui/money";
 import { PageLayout, DetailLayout } from "@/components/layout";
 
 function getAuthHeaders(): Record<string, string> {
@@ -19,9 +20,9 @@ function getAuthHeaders(): Record<string, string> {
   return headers;
 }
 
-function money(v: number): string {
-  return `R ${(v || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+// TF-16 (audit V3) — migrated to the canonical <Money> component
+// (which wraps formatZar + adds a screen-reader-friendly aria-label).
+// Callers now render <Money value={v} cents /> instead of money(v).
 
 const TAB_MAP: Record<string, string> = {
   revenue: "financial",
@@ -187,9 +188,9 @@ export default function PmMonthlyReportProject() {
             <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Phase</p><p className="font-medium">{ps.phase || "—"}</p></CardContent></Card>
             <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">RAG</p><RAGBadge status={ps.ragStatus} /></CardContent></Card>
             <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Health</p><p className="font-medium tabular-nums">{ps.healthScore?.toFixed(1) || "—"}</p></CardContent></Card>
-            <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Revenue</p><p className="font-mono text-sm">{money(fin.revenue?.totalInvoiced || 0)}</p></CardContent></Card>
-            <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Cost</p><p className="font-mono text-sm">{money(fin.cost?.actualCost || 0)}</p></CardContent></Card>
-            <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">GP</p><p className="font-mono text-sm">{money(fin.grossProfit?.grossProfit || 0)}</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Revenue</p><Money className="font-mono text-sm" value={fin.revenue?.totalInvoiced || 0} cents /></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Cost</p><Money className="font-mono text-sm" value={fin.cost?.actualCost || 0} cents /></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">GP</p><Money className="font-mono text-sm" value={fin.grossProfit?.grossProfit || 0} cents /></CardContent></Card>
             <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Overdue Tasks</p><p className="font-medium text-red-700 tabular-nums">{tasks?.overdue || 0}</p></CardContent></Card>
             <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Open RAID</p><p className="font-medium tabular-nums">{raids.length}</p></CardContent></Card>
           </div>

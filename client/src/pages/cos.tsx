@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/tooltip';
 import { apiRequest, fetchQueryFn, invalidateDashboardQueries } from '@/lib/queryClient';
 import { formatZar, formatZarAriaLabel, formatZarCompact } from '@/lib/currency';
+import { FINANCE_QUERY_VOLATILE } from '@/lib/finance-stale-policy';
 import { useFinanceQuery } from '@/lib/finance-trust';
 import { DataTrustBadge } from '@/components/ui/data-trust-badge';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -969,7 +970,10 @@ export default function CosTracker() {
   } = useQuery<MonthData[]>({
     queryKey: cosTrackerQueryKey,
     queryFn: fetchQueryFn(`/api/cos-tracker?${fyScope.apiQueryString}`),
-    staleTime: 30_000,
+    // TF-18 — operator surface; FINANCE_QUERY_VOLATILE (30s + refetch on
+    // focus). Same effective behaviour as the previous bare 30s
+    // staleTime, plus refetch-on-focus so a stale tab updates on return.
+    ...FINANCE_QUERY_VOLATILE,
   });
 
   const { data: projectsSummary = [] } = useQuery<
