@@ -188,6 +188,10 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // stays as the legacy 5-tab dashboard for one transition cycle.
   // role-landing eligibility moved here so executives land on /now.
   { id: "now", path: "/now", label: "Now", iconKey: "Flame", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "NowPage", roleLandingEligibility: ["CEO_ADMIN", "COO_ADMIN", "PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"] },
+  // PR-C redesign (2026-05-27) — /my-queue replaces the per-board
+  // "My Reviews" scatter pattern. Visible to anyone with execution-
+  // board access; rows are filtered server-side to the caller.
+  { id: "myQueue", path: "/my-queue", label: "My Queue", iconKey: "Inbox", navGroup: "MY_WORK", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "MyQueuePage" },
   { id: "executionBoard", path: "/execution-board", label: "Execution Board (legacy)", iconKey: "LayoutDashboard", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "ExecutionBoardPage", aliases: ["/execution-dashboard"], matchSubRoutes: true },
   { id: "executionBoardProgram", path: "/execution-board/program", label: "Program View", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "ExecutionBoardPage" },
   { id: "executionBoardConstruction", path: "/execution-board/construction", label: "Construction View", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "ExecutionBoardPage" },

@@ -69,20 +69,28 @@ function NowPageInner() {
   // Top 3 fires.
   const fires = useMemo(() => computeFireList(filteredProjects).slice(0, 3), [filteredProjects]);
 
-  // "My queue" lookups. PR-C will replace these with a single
-  // /api/my-queue endpoint; for now we lean on the existing
-  // per-domain queries so PR-B stays scoped.
-  const { data: myPos = [] } = useQuery<unknown[]>({
-    queryKey: ['/api/po/board/my-reviews'],
+  // PR-C wired in /api/my-queue — single fetch covers POs +
+  // payment requests + change requests + stage exceptions.
+  const { data: myQueue } = useQuery<{
+    pos: { count: number };
+    paymentRequests: { count: number };
+    changeRequests: { count: number };
+    stageExceptions: { count: number };
+  }>({
+    queryKey: ['/api/my-queue'],
     queryFn: async () => {
-      const res = await apiRequest('GET', '/api/po/board/my-reviews');
-      if (!res.ok) return [];
+      const res = await apiRequest('GET', '/api/my-queue');
+      if (!res.ok) throw new Error('my-queue failed');
       return res.json();
     },
-    staleTime: 60_000,
+    staleTime: 30_000,
   });
 
-  const myPoCount = Array.isArray(myPos) ? myPos.length : 0;
+  const myPoCount = myQueue?.pos.count ?? 0;
+  const myPaymentCount = myQueue?.paymentRequests.count ?? 0;
+  const myCrCount = myQueue?.changeRequests.count ?? 0;
+  const myStageCount = myQueue?.stageExceptions.count ?? 0;
+  const myQueueTotal = myPoCount + myPaymentCount + myCrCount + myStageCount;
 
   // Money this week — direct from `kpis`, no aggregation.
   const inflowThisWeek = dashboard?.kpis.projectInflowsThisWeek ?? 0;
@@ -106,7 +114,7 @@ function NowPageInner() {
   if (isError) return <NowError onRetry={refetch} />;
 
   const fireCount = fires.length;
-  const actionWaiting = myPoCount; // PR-C extends this to CRs / gates / etc.
+  const actionWaiting = myQueueTotal;
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto py-6 px-4">
@@ -260,24 +268,31 @@ function NowPageInner() {
         </Card>
       </section>
 
-      {/* SECTION 3 — What needs me. PR-B starts with POs; PR-C extends. */}
+      {/* SECTION 3 — What needs me. PR-C wired /api/my-queue so this
+          mirrors the dedicated /my-queue page. The whole section is a
+          link to /my-queue; the inner rows are scannable shortcuts. */}
       <section>
-        <h2 className={`${TYPOGRAPHY.SECTION} mb-2 flex items-center gap-2`}>
-          <Inbox className={`h-4 w-4 ${statusClasses('neutral', 'text')}`} />
-          What needs me
-        </h2>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className={`${TYPOGRAPHY.SECTION} flex items-center gap-2`}>
+            <Inbox className={`h-4 w-4 ${statusClasses(myQueueTotal > 0 ? 'warning' : 'neutral', 'text')}`} />
+            What needs me
+          </h2>
+          {myQueueTotal > 0 && (
+            <Button variant="ghost" size="sm" asChild className="text-xs">
+              <a href="/my-queue" className="inline-flex items-center gap-1">
+                Open my queue <ArrowRight className="h-3 w-3" />
+              </a>
+            </Button>
+          )}
+        </div>
         <Card>
           <ul className="divide-y">
-            <NeedsMeRow
-              count={myPoCount}
-              label="purchase orders awaiting your approval"
-              href="/po-approval-board"
-            />
+            <NeedsMeRow count={myPoCount} label="purchase orders awaiting your approval" href="/my-queue#pos" />
+            <NeedsMeRow count={myPaymentCount} label="payment requests in review" href="/my-queue#payments" />
+            <NeedsMeRow count={myCrCount} label="change requests awaiting decision" href="/my-queue#crs" />
+            <NeedsMeRow count={myStageCount} label="stage-gate exceptions assigned to you" href="/my-queue#stage" />
           </ul>
         </Card>
-        <p className="text-[11px] text-muted-foreground mt-1.5">
-          PR-C extends this list to change requests, payment requests, and stage-gate decisions.
-        </p>
       </section>
 
       {/* Footer — link to the legacy 5-tab dashboard so existing bookmarks still work. */}
