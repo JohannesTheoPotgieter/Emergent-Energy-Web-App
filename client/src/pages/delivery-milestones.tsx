@@ -21,6 +21,7 @@ import {
   Milestone, CheckCircle2, Clock, AlertTriangle,
   CircleDot, Ban, FileText, Calendar,
 } from "lucide-react";
+import { statusClasses, statusLevel } from "@/lib/design-tokens";
 
 interface DeliveryMilestone {
   id: number;
@@ -45,21 +46,35 @@ interface ProjectInfo {
   archivedStatus: string | null;
 }
 
-const STATUS_CONFIG: Record<DeliveryMilestone["status"], { label: string; cls: string; icon: typeof CheckCircle2 }> = {
-  planned:     { label: "Planned",     cls: "bg-slate-100 text-slate-700",   icon: CircleDot },
-  in_progress: { label: "In progress", cls: "bg-blue-100 text-blue-700",     icon: Clock },
-  complete:    { label: "Complete",    cls: "bg-emerald-100 text-emerald-700", icon: CheckCircle2 },
-  overdue:     { label: "Overdue",     cls: "bg-red-100 text-red-700",       icon: AlertTriangle },
-  blocked:     { label: "Blocked",     cls: "bg-amber-100 text-amber-700",   icon: Ban },
+// PR-A redesign (2026-05-27): colour classes routed through the
+// canonical statusClasses helper. Removes the `bg-blue-100`
+// in_progress treatment (out-of-palette). in_progress + planned now
+// both map to `warning` (amber) since both are "not done yet"
+// states the user might need to chase. Blocked stays critical (red)
+// — was previously mapped to warning (amber) by mistake, which
+// understated the urgency.
+const STATUS_LABELS: Record<DeliveryMilestone["status"], string> = {
+  planned:     "Planned",
+  in_progress: "In progress",
+  complete:    "Complete",
+  overdue:     "Overdue",
+  blocked:     "Blocked",
+};
+const STATUS_ICONS: Record<DeliveryMilestone["status"], typeof CheckCircle2> = {
+  planned:     CircleDot,
+  in_progress: Clock,
+  complete:    CheckCircle2,
+  overdue:     AlertTriangle,
+  blocked:     Ban,
 };
 
 function StatusBadge({ status }: { status: DeliveryMilestone["status"] }) {
-  const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.planned;
-  const Icon = cfg.icon;
+  const Icon = STATUS_ICONS[status] || CircleDot;
+  const cls = statusClasses(statusLevel(status), "soft");
   return (
-    <Badge variant="outline" className={`${cfg.cls} text-[10px] gap-1`}>
+    <Badge variant="outline" className={`${cls} text-[10px] gap-1`}>
       <Icon className="h-3 w-3" />
-      {cfg.label}
+      {STATUS_LABELS[status] || status}
     </Badge>
   );
 }
@@ -140,8 +155,8 @@ function ProjectMilestoneCard({
         </div>
         <div className="flex items-center gap-2 text-[11px]">
           <span className="text-muted-foreground">{complete}/{total} complete · {pct}%</span>
-          {overdue > 0 && <Badge className="bg-red-100 text-red-700 text-[10px]">{overdue} overdue</Badge>}
-          {blocked > 0 && <Badge className="bg-amber-100 text-amber-700 text-[10px]">{blocked} blocked</Badge>}
+          {overdue > 0 && <Badge className={`${statusClasses("critical", "soft")} text-[10px]`}>{overdue} overdue</Badge>}
+          {blocked > 0 && <Badge className={`${statusClasses("critical", "soft")} text-[10px]`}>{blocked} blocked</Badge>}
         </div>
       </div>
 
@@ -272,7 +287,7 @@ export default function DeliveryMilestonesPage() {
               className="h-7 text-[11px]"
               onClick={() => setStatusFilter(s)}
             >
-              {s === "all" ? "All" : STATUS_CONFIG[s].label}
+              {s === "all" ? "All" : STATUS_LABELS[s]}
             </Button>
           ))}
         </div>
