@@ -5,6 +5,8 @@ import { extractTrustHeaders, type FinanceTrustMeta } from '@/lib/finance-trust'
 import { DataTrustBadge } from '@/components/ui/data-trust-badge';
 import { FinanceTrustStrip, isStaleImport } from '@/components/finance/FinanceTrustStrip';
 import { PageHero } from '@/components/finance/PageHero';
+import { KpiTile } from '@/components/finance/KpiTile';
+import { DrillReconciliationFooter } from '@/components/finance/DrillReconciliationFooter';
 import { Money } from '@/components/ui/money';
 import {
   Tooltip as UiTooltip,
@@ -2136,49 +2138,65 @@ export default function CashflowPage() {
                     className="mb-3"
                     data-testid="cashflow-page-hero"
                   />
+                  {/* Visual redesign — KPI strip migrated to <KpiTile>. The
+                      legacy <KpiCard> (with icon + tone backgrounds) is replaced
+                      by a minimal label + value + supporting tile. The
+                      forecasted FY position moved up to the PageHero above so
+                      it no longer appears as a tile. */}
                   <div
                     className="grid grid-cols-2 lg:grid-cols-4 gap-2"
                     data-testid="kpi-summary-row"
                   >
-                    <KpiCard
-                      title="Total Inflows YTD"
-                      value={formatRand(kpis.totalInflows)}
+                    <KpiTile
+                      label="Total inflows YTD"
+                      value={<Money value={kpis.totalInflows} />}
                       valueAriaLabel={formatZarAriaLabel(kpis.totalInflows)}
-                      icon={<TrendingUp className="h-5 w-5" />}
-                      color="green"
-                      testId="kpi-total-inflows"
-                      nullCount={cashflowTrust?.nullCount ?? null}
-                    />
-                    <KpiCard
-                      title="Total Outflows YTD"
-                      value={formatRand(kpis.totalOutflows)}
-                      valueAriaLabel={formatZarAriaLabel(kpis.totalOutflows)}
-                      icon={<TrendingDown className="h-5 w-5" />}
-                      color="red"
-                      testId="kpi-total-outflows"
-                      nullCount={cashflowTrust?.nullCount ?? null}
-                    />
-                    <KpiCard
-                      title="Current Week Opening Balance"
-                      value={formatRand(kpis.currentWeekOpeningBalance)}
-                      valueAriaLabel={formatZarAriaLabel(kpis.currentWeekOpeningBalance)}
-                      icon={<DollarSign className="h-5 w-5" />}
-                      color={kpis.currentWeekOpeningBalance >= 0 ? 'slate' : 'red'}
-                      testId="kpi-current-balance"
-                    />
-                    <KpiCard
-                      title="Forecasted End of Financial Year Position"
-                      value={formatRand(kpis.forecastedEndOfFYPosition)}
-                      valueAriaLabel={formatZarAriaLabel(kpis.forecastedEndOfFYPosition)}
-                      icon={
-                        kpis.forecastedEndOfFYPosition >= 0 ? (
-                          <ArrowUpRight className="h-5 w-5" />
-                        ) : (
-                          <ArrowDownRight className="h-5 w-5" />
-                        )
+                      supporting={
+                        cashflowTrust?.nullCount && cashflowTrust.nullCount > 0
+                          ? `${cashflowTrust.nullCount} missing`
+                          : 'paid + in-bank'
                       }
-                      color={kpis.forecastedEndOfFYPosition >= 0 ? 'green' : 'red'}
-                      testId="kpi-net-position"
+                      tone="positive"
+                      data-testid="kpi-total-inflows"
+                    />
+                    <KpiTile
+                      label="Total outflows YTD"
+                      value={<Money value={kpis.totalOutflows} />}
+                      valueAriaLabel={formatZarAriaLabel(kpis.totalOutflows)}
+                      supporting={
+                        cashflowTrust?.nullCount && cashflowTrust.nullCount > 0
+                          ? `${cashflowTrust.nullCount} missing`
+                          : 'paid + scheduled'
+                      }
+                      tone="critical"
+                      data-testid="kpi-total-outflows"
+                    />
+                    <KpiTile
+                      label="Current week opening"
+                      value={<Money value={kpis.currentWeekOpeningBalance} />}
+                      valueAriaLabel={formatZarAriaLabel(kpis.currentWeekOpeningBalance)}
+                      supporting="bank position now"
+                      tone={kpis.currentWeekOpeningBalance >= 0 ? 'positive' : 'critical'}
+                      data-testid="kpi-current-balance"
+                    />
+                    <KpiTile
+                      label="Net this FY"
+                      value={
+                        <Money
+                          value={kpis.totalInflows - kpis.totalOutflows}
+                          showSign
+                        />
+                      }
+                      valueAriaLabel={formatZarAriaLabel(kpis.totalInflows - kpis.totalOutflows)}
+                      supporting={
+                        kpis.totalInflows - kpis.totalOutflows >= 0
+                          ? 'cash positive YTD'
+                          : 'cash negative YTD'
+                      }
+                      tone={
+                        kpis.totalInflows - kpis.totalOutflows >= 0 ? 'positive' : 'critical'
+                      }
+                      data-testid="kpi-net-position"
                     />
                   </div>
 
@@ -2749,6 +2767,20 @@ export default function CashflowPage() {
                           </tbody>
                         </table>
                       </div>
+                      {/* Visual redesign — TF-19 reconciliation footer. Pins the
+                          sum of all week closing-balance / inflows / outflows
+                          against the headline forecast in the PageHero. Shows
+                          "Reconciles" badge when within tolerance. */}
+                      <DrillReconciliationFooter
+                        sourceLabel="Hero · forecast FY position"
+                        sourceValue={kpis.forecastedEndOfFYPosition}
+                        drilldownLabel={`Sum of ${cashflowData.length} weeks · closing balance`}
+                        drilldownValue={
+                          cashflowData.length > 0
+                            ? cashflowData[cashflowData.length - 1].closingBalance ?? 0
+                            : 0
+                        }
+                      />
                     </CardContent>
                   </Card>
                 </>
