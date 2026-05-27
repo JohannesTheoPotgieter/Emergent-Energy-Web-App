@@ -37,12 +37,12 @@
       "loc": 3074
     },
     {
-      "file": "server/quality-routes.ts",
-      "loc": 2948
+      "file": "client/src/pages/cashflow.tsx",
+      "loc": 3008
     },
     {
-      "file": "client/src/pages/cashflow.tsx",
-      "loc": 2933
+      "file": "server/quality-routes.ts",
+      "loc": 2948
     },
     {
       "file": "client/src/pages/projects.tsx",
@@ -70,7 +70,7 @@
     },
     {
       "file": "client/src/pages/cos.tsx",
-      "loc": 2271
+      "loc": 2303
     },
     {
       "file": "client/src/pages/ee-info.tsx",
@@ -117,12 +117,12 @@
       "loc": 2082
     },
     {
-      "file": "client/src/components/TaskDetailDrawer.tsx",
-      "loc": 1901
+      "file": "client/src/pages/revenue-tracker.tsx",
+      "loc": 1902
     },
     {
-      "file": "client/src/pages/revenue-tracker.tsx",
-      "loc": 1874
+      "file": "client/src/components/TaskDetailDrawer.tsx",
+      "loc": 1901
     },
     {
       "file": "server/seed-ee-info-updates.ts",
