@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
-  CartesianGrid, Cell,
+  CartesianGrid,
 } from "recharts";
 import {
   TrendingUp, TrendingDown, DollarSign, BarChart3,
