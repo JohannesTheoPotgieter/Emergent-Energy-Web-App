@@ -23,9 +23,11 @@ function getAuthHeaders(): Record<string, string> {
   return headers;
 }
 
-function formatCurrency(value: number) {
-  return `R ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-}
+// TF-16 (audit V3) — migrated to canonical formatZar so the
+// programme-reports page renders the same en-ZA money strings as
+// every other finance surface.
+import { formatZar as formatCurrency } from "@/lib/currency";
+import { Money } from "@/components/ui/money";
 
 function getMonthOptions() {
   const options: { value: string; label: string }[] = [];

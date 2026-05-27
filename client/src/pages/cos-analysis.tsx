@@ -314,8 +314,18 @@ export default function CosAnalysisPage() {
                           <Money value={row.invoiced} />
                         )}
                       </TableCell>
+                      {/* TF-33 (audit V3) — variance badge pairs the colour
+                          with a directional arrow so colour-blind users still
+                          read positive vs. negative variance at a glance. */}
                       <TableCell className={`text-right font-mono ${row.variance > 0 ? "text-rose-600" : row.variance < 0 ? "text-amber-600" : ""}`}>
-                        <Money value={row.variance} />
+                        <span className="inline-flex items-center justify-end gap-1">
+                          {row.variance > 0 ? (
+                            <span aria-label="over-billed" className="text-rose-600">▲</span>
+                          ) : row.variance < 0 ? (
+                            <span aria-label="under-billed" className="text-amber-600">▼</span>
+                          ) : null}
+                          <Money value={row.variance} />
+                        </span>
                       </TableCell>
                       <TableCell className="text-right">{formatPct(row.variancePct)}</TableCell>
                       <TableCell>

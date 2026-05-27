@@ -16,11 +16,13 @@ import {
   ChevronDown, ChevronUp,
 } from "lucide-react";
 
-const fmt = new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR" });
-const formatZAR = (v: number | string | null | undefined) => {
-  if (v == null || v === "") return "—";
-  return fmt.format(Number(v));
-};
+// TF-16 (audit V3) — migrated to the canonical formatZar helper.
+// formatZAR is kept as a thin alias so the in-file call sites stay
+// readable; the canonical implementation handles null/non-numeric
+// inputs uniformly (returns "—" not "ZAR —").
+import { formatZar as formatZarCanonical } from "@/lib/currency";
+import { Money } from "@/components/ui/money";
+const formatZAR = (v: number | string | null | undefined) => formatZarCanonical(v, { cents: true });
 
 const engFetch = (url: string, opts?: RequestInit) =>
   fetch(url, { credentials: "include", ...opts });
@@ -441,7 +443,7 @@ export default function FinancialLinkingPage() {
                                 </div>
                               </TableCell>
                               <TableCell className="text-xs" data-testid={`text-milestone-amount-${m.rowNumber}`}>
-                                {formatZAR(m.milestoneAmount)}
+                                <Money value={m.milestoneAmount} cents />
                               </TableCell>
                               <TableCell className="text-xs" data-testid={`text-milestone-date-${m.rowNumber}`}>
                                 {m.plannedPaymentDate || "—"}
@@ -573,10 +575,10 @@ export default function FinancialLinkingPage() {
                                   {e.expenseLineItem || "—"}
                                 </TableCell>
                                 <TableCell className="text-xs" data-testid={`text-expense-budget-${e.id}`}>
-                                  {formatZAR(e.budgetTotal)}
+                                  <Money value={e.budgetTotal} cents />
                                 </TableCell>
                                 <TableCell className="text-xs" data-testid={`text-expense-actual-${e.id}`}>
-                                  {formatZAR(e.expenseActualTotal)}
+                                  <Money value={e.expenseActualTotal} cents />
                                 </TableCell>
                                 <TableCell className="text-xs" data-testid={`text-expense-date-${e.id}`}>
                                   {e.expensePaymentDate || e.forecastPaymentDate || "—"}
