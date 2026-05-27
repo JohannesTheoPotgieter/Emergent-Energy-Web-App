@@ -88,3 +88,41 @@ export function formatCount(value: unknown, placeholder = "—"): string {
   if (n === null) return placeholder;
   return ascii(n.toLocaleString("en-ZA", { maximumFractionDigits: 0 }));
 }
+
+/**
+ * Screen-reader-friendly ZAR. TF-6 (audit V3) — `formatZar` returns
+ * "R 1 234 567" with non-breaking spaces; most screen readers spell that
+ * out digit-by-digit ("R one two three four..."). This helper returns the
+ * spoken form: "1,234,567 rand" — en-US comma separators so assistive
+ * tech parses the value as a number, plus the word "rand" so the unit is
+ * announced explicitly.
+ *
+ * Pair with `formatZar` on the same element:
+ *
+ *   <span aria-label={formatZarAriaLabel(x)}>{formatZar(x)}</span>
+ *
+ * For absent / non-numeric values the placeholder text is returned
+ * unchanged ("no value" by default); avoid speaking the em-dash literally.
+ */
+export interface FormatZarAriaLabelOptions {
+  /** Include cents in the spoken form. Default false (whole rand). */
+  cents?: boolean;
+  /** Spoken text when the value is absent / non-numeric. Default "no value". */
+  placeholder?: string;
+}
+
+export function formatZarAriaLabel(
+  value: unknown,
+  options: FormatZarAriaLabelOptions = {},
+): string {
+  const { cents = false, placeholder = "no value" } = options;
+  const n = asFiniteNumber(value);
+  if (n === null) return placeholder;
+  const sign = n < 0 ? "negative " : "";
+  const abs = Math.abs(n);
+  const formatted = abs.toLocaleString("en-US", {
+    minimumFractionDigits: cents ? 2 : 0,
+    maximumFractionDigits: cents ? 2 : 0,
+  });
+  return `${sign}${formatted} rand`;
+}

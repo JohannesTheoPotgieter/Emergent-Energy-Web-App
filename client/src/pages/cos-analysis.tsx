@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { FinanceShell } from "@/components/layout/FinanceShell";
 import { PageError } from "@/components/ui/page-states";
 import { formatZar as formatZarShared } from "@/lib/currency";
+import { Money } from "@/components/ui/money";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { Loader2, AlertTriangle, CheckCircle2, MinusCircle, Pencil, FlaskConical, RotateCcw } from "lucide-react";
@@ -232,8 +233,8 @@ export default function CosAnalysisPage() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
-        <KpiCard title="Total earned (to date)" value={formatZar(summary.earned)} loading={earned.isLoading} />
-        <KpiCard title="Total invoiced" value={formatZar(summary.invoiced)} loading={earned.isLoading} />
+        <KpiCard title="Total earned (to date)" value={<Money value={summary.earned} />} loading={earned.isLoading} />
+        <KpiCard title="Total invoiced" value={<Money value={summary.invoiced} />} loading={earned.isLoading} />
         <KpiCard
           title="Projects over-billed"
           value={String(summary.over)}
@@ -280,7 +281,7 @@ export default function CosAnalysisPage() {
                   .map((row) => (
                     <TableRow key={row.projectId} data-testid={`cos-row-${row.projectId}`}>
                       <TableCell className="font-medium">{row.projectName}</TableCell>
-                      <TableCell className="text-right font-mono">{formatZar(row.plannedExpenditure)}</TableCell>
+                      <TableCell className="text-right font-mono"><Money value={row.plannedExpenditure} /></TableCell>
                       <TableCell className="text-right">
                         {sandboxOn ? (
                           <Input
@@ -297,7 +298,7 @@ export default function CosAnalysisPage() {
                           formatPct(row.pctComplete)
                         )}
                       </TableCell>
-                      <TableCell className="text-right font-mono">{formatZar(row.earned)}</TableCell>
+                      <TableCell className="text-right font-mono"><Money value={row.earned} /></TableCell>
                       <TableCell className="text-right font-mono">
                         {sandboxOn ? (
                           <Input
@@ -310,11 +311,11 @@ export default function CosAnalysisPage() {
                             data-testid={`sandbox-invoiced-${row.projectId}`}
                           />
                         ) : (
-                          formatZar(row.invoiced)
+                          <Money value={row.invoiced} />
                         )}
                       </TableCell>
                       <TableCell className={`text-right font-mono ${row.variance > 0 ? "text-rose-600" : row.variance < 0 ? "text-amber-600" : ""}`}>
-                        {formatZar(row.variance)}
+                        <Money value={row.variance} />
                       </TableCell>
                       <TableCell className="text-right">{formatPct(row.variancePct)}</TableCell>
                       <TableCell>
@@ -407,7 +408,7 @@ export default function CosAnalysisPage() {
 
 const SERIES_COLORS = ["#16A34A", "#DC2626", "#2563EB", "#D97706", "#7C3AED"];
 
-function KpiCard(props: { title: string; value: string; loading: boolean; accent?: "danger" | "warning" }) {
+function KpiCard(props: { title: string; value: React.ReactNode; loading: boolean; accent?: "danger" | "warning" }) {
   const accentClass = props.accent === "danger" ? "text-rose-600" : props.accent === "warning" ? "text-amber-600" : "";
   return (
     <Card>
