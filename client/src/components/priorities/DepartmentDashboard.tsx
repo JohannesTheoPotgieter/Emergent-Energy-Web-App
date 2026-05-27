@@ -113,7 +113,7 @@ export function DepartmentDashboard({ priorities, onSelectDepartment }: Departme
                       <div className="font-semibold text-foreground tabular-nums">{s.total}</div>
                     </div>
                     <div>
-                      <div className="text-[10px] text-red-600 uppercase">Critical</div>
+                      <div className="text-[10px] text-red-600 uppercase" title="Health = Off track">Off track</div>
                       <div className={`font-semibold tabular-nums ${s.critical > 0 ? "text-red-600" : "text-muted-foreground"}`}>{s.critical}</div>
                     </div>
                     <div>

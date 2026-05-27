@@ -37,6 +37,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { invalidatePriorityQueries } from "@/lib/priority-query-invalidation";
+import { priorityHealthLabel } from "@shared/kpi-definitions";
 import {
   canPriorityRoleEditPriority,
   canPriorityRoleEscalatePriority,
@@ -810,7 +811,7 @@ export default function PriorityDetailPage() {
             <>
               <TabsTrigger value="projects" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><FolderOpen className="w-3.5 h-3.5" />Projects</TabsTrigger>
               <TabsTrigger value="financials" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><DollarSign className="w-3.5 h-3.5" />Financials</TabsTrigger>
-              <TabsTrigger value="chain" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><GitBranch className="w-3.5 h-3.5" />Chain</TabsTrigger>
+              <TabsTrigger value="chain" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><GitBranch className="w-3.5 h-3.5" />Sub-priorities</TabsTrigger>
               <TabsTrigger value="tasks" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><ListTodo className="w-3.5 h-3.5" />Tasks & Approvals</TabsTrigger>
               <TabsTrigger value="updates" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><MessageSquare className="w-3.5 h-3.5" />Updates</TabsTrigger>
               <TabsTrigger value="activity" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><History className="w-3.5 h-3.5" />Activity</TabsTrigger>
@@ -822,7 +823,7 @@ export default function PriorityDetailPage() {
           ) : (
             <>
               <TabsTrigger value="details" className="data-[state=active]:bg-card data-[state=active]:shadow-sm">Details</TabsTrigger>
-              <TabsTrigger value="chain" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><GitBranch className="w-3.5 h-3.5" />Chain</TabsTrigger>
+              <TabsTrigger value="chain" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><GitBranch className="w-3.5 h-3.5" />Sub-priorities</TabsTrigger>
               <TabsTrigger value="updates" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><MessageSquare className="w-3.5 h-3.5" />Updates</TabsTrigger>
               <TabsTrigger value="activity" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><History className="w-3.5 h-3.5" />Activity</TabsTrigger>
               <TabsTrigger value="comments" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5">
@@ -862,15 +863,27 @@ export default function PriorityDetailPage() {
                 });
               }
             } else if ((priority as any).reviewCadenceDays) {
+              // No lastReviewedAt yet. Anchor the messaging on when the
+              // cadence was added so the operator can't read "8 days
+              // overdue" out of a NULL — they either see "added 2 days
+              // ago" (still in grace) or "added 30 days ago, never
+              // reviewed" (concrete problem).
+              const cadenceAddedRef = (priority as any).updatedAt ?? priority.createdAt;
+              const cadenceDays = cadenceAddedRef
+                ? Math.floor((now - new Date(cadenceAddedRef).getTime()) / dayMs)
+                : null;
               insights.push({
                 tone: "neutral",
-                text: `On a ${(priority as any).reviewCadenceDays}-day review cadence — not yet marked reviewed.`,
+                text:
+                  cadenceDays != null && cadenceDays > (priority as any).reviewCadenceDays
+                    ? `Never reviewed — cadence added ${cadenceDays} days ago (every ${(priority as any).reviewCadenceDays} days).`
+                    : `On a ${(priority as any).reviewCadenceDays}-day review cadence — not yet marked reviewed.`,
               });
             }
             if (priority.childCount > 0) {
               insights.push({
                 tone: "neutral",
-                text: `Broken down into ${priority.childCount} sub-priorit${priority.childCount === 1 ? "y" : "ies"}. See Chain tab for the hierarchy.`,
+                text: `Broken down into ${priority.childCount} direct sub-priorit${priority.childCount === 1 ? "y" : "ies"}. See Sub-priorities tab for the full tree.`,
               });
             }
             if ((priority.atRiskProjectCount ?? 0) > 0 && (priority.projectCount ?? 0) > 0) {
@@ -958,8 +971,8 @@ export default function PriorityDetailPage() {
                         <SelectItem value="in_progress">In progress</SelectItem>
                         <SelectItem value="monitoring">Monitoring</SelectItem>
                         <SelectItem value="not_started">Not started</SelectItem>
-                        <SelectItem value="complete">Complete</SelectItem>
-                        <SelectItem value="closed">Closed</SelectItem>
+                        <SelectItem value="complete">Complete — work finished successfully</SelectItem>
+                        <SelectItem value="closed">Closed — no longer tracking (deferred or replaced)</SelectItem>
                       </SelectContent>
                     </Select>
                   ) : (
@@ -970,7 +983,7 @@ export default function PriorityDetailPage() {
                   <span className="text-xs text-muted-foreground">Health</span>
                   <p className="font-medium flex items-center gap-1">
                     <span className={`w-2 h-2 rounded-full ${HEALTH_DOT[priority.effectiveHealth] || HEALTH_DOT.healthy}`} />
-                    {priority.effectiveHealth}
+                    {priorityHealthLabel(priority.effectiveHealth)}
                   </p>
                 </div>
               </div>

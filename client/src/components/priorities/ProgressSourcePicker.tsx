@@ -56,11 +56,11 @@ interface Props {
 }
 
 const TYPE_LABEL: Record<ProgressSourceType, string> = {
-  manual: "Manual %",
-  project_phase: "Project phase reached",
-  project_percent: "Project overall % complete",
-  milestone_revenue: "Revenue milestone",
-  tasks_rollup: "Tasks roll-up",
+  manual: "Set by hand",
+  project_phase: "From a project's phase",
+  project_percent: "From a project's overall %",
+  milestone_revenue: "From a revenue milestone",
+  tasks_rollup: "From tasks under this priority",
 };
 
 export function ProgressSourcePicker({ value, onChange, linkedProjects }: Props) {

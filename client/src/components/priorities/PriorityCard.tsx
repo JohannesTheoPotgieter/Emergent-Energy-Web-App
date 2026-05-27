@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { departmentLabel } from "@shared/config/priorities";
+import { priorityHealthLabel } from "@shared/kpi-definitions";
 import type { PriorityRow } from "@/lib/priority-types";
 
 const HEALTH_COLORS: Record<string, string> = {
@@ -37,7 +38,10 @@ function daysRemaining(dateStr: string | null): number | null {
   return Math.ceil((due - today) / 86_400_000);
 }
 
-export type PriorityListDensity = "cards" | "compact" | "dense";
+// "compact" was dropped — it was barely distinguishable from "cards"
+// and added a third choice that just slowed down the decision. Cards
+// (full detail) and Rows (one-line) cover the genuine usage modes.
+export type PriorityListDensity = "cards" | "dense";
 
 export interface PriorityCardProps {
   priority: PriorityRow;
@@ -75,9 +79,10 @@ export function PriorityCard({
   const dotColor = HEALTH_DOT_COLORS[priority.effectiveHealth] || HEALTH_DOT_COLORS.healthy;
   const sev = SEVERITY_BADGE[priority.severity] || SEVERITY_BADGE.normal;
   const isDone = priority.status === "complete" || priority.status === "closed";
+  const healthLabel = priorityHealthLabel(priority.effectiveHealth);
   const healthTooltip = priority.healthReasons && priority.healthReasons.length > 0
-    ? `Health: ${priority.effectiveHealth} — ${priority.healthReasons.join("; ")}`
-    : `Health: ${priority.effectiveHealth}`;
+    ? `${healthLabel} — ${priority.healthReasons.join("; ")}`
+    : healthLabel;
 
   const showActionRow =
     showMarkComplete ||
@@ -134,11 +139,9 @@ export function PriorityCard({
     );
   }
 
-  const isCompact = density === "compact";
-
   return (
     <Card className={`border-l-4 ${healthColor} hover:shadow-md transition-shadow relative ${selected ? "ring-2 ring-primary" : ""}`}>
-      <CardContent className={isCompact ? "p-2.5" : "p-4"}>
+      <CardContent className="p-4">
         {selectable && (
           <div className="absolute top-2 right-2 z-10">
             <input
@@ -152,7 +155,7 @@ export function PriorityCard({
           </div>
         )}
 
-        {!isCompact && (priority.escalated || priority.linkedTaskId || priority.dueForReview || priority.reviewCadenceDays) && (
+        {(priority.escalated || priority.linkedTaskId || priority.dueForReview || priority.reviewCadenceDays) && (
           <div className="flex items-center gap-1 mb-2 flex-wrap">
             {priority.escalated && (
               <Badge variant="destructive" className="text-[10px]">
@@ -248,18 +251,18 @@ export function PriorityCard({
           )}
         </div>
 
-        <div className={isCompact ? "mb-1" : "mb-2"}>
+        <div className="mb-2">
           <div className="flex items-center justify-between text-xs mb-1">
             <span className="text-muted-foreground">
               {priority.effectiveProgress}%{" "}
-              {!isCompact && (priority.progressSource?.label
+              {priority.progressSource?.label
                 ? `(${priority.progressSource.label})`
                 : !priority.hasProjects
-                  ? "(manual)"
-                  : "")}
+                  ? "(set by hand)"
+                  : ""}
             </span>
           </div>
-          <div className={`${isCompact ? "h-1" : "h-1.5"} bg-muted rounded-full overflow-hidden`}>
+          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full transition-all ${
                 priority.effectiveHealth === "critical" ? "bg-red-500"
@@ -271,7 +274,6 @@ export function PriorityCard({
           </div>
         </div>
 
-        {!isCompact && (
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <div>
             {priority.parentTitle && (
@@ -290,13 +292,13 @@ export function PriorityCard({
           </div>
           <div className="flex items-center gap-2">
             {priority.childCount > 0 && (
-              <span>
-                {priority.childCount} sub-priorit{priority.childCount === 1 ? "y" : "ies"}
+              <span title="Direct children only — open the priority and use the Sub-priorities tab for the full tree">
+                {priority.childCount} direct sub-priorit{priority.childCount === 1 ? "y" : "ies"}
               </span>
             )}
             {priority.hasProjects && (
-              <span>
-                {priority.projectCount} project{priority.projectCount !== 1 ? "s" : ""}
+              <span title="Directly linked projects. The detail page shows projects rolled up from sub-priorities as well.">
+                {priority.projectCount} direct project{priority.projectCount !== 1 ? "s" : ""}
                 {priority.atRiskProjectCount > 0 && (
                   <span className="text-red-600 ml-1">· {priority.atRiskProjectCount} at risk</span>
                 )}
@@ -313,9 +315,8 @@ export function PriorityCard({
             )}
           </div>
         </div>
-        )}
 
-        {showActionRow && !isCompact && (
+        {showActionRow && (
           <div className="mt-2 pt-2 border-t flex items-center gap-2 flex-wrap">
             {showMarkComplete && (
               <Button
@@ -354,19 +355,26 @@ export function PriorityCard({
                 Reopen
               </Button>
             )}
-            {showEscalate && priority.scope !== "company" && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-xs h-7 text-orange-700 border-orange-200 hover:bg-orange-50"
-                onClick={onEscalate}
-                disabled={isDone}
-                aria-label={showDeptActions ? "Escalate priority to company scope" : "Escalate priority"}
-              >
-                <ArrowUp className="w-3 h-3 mr-1" />
-                {showDeptActions ? "Escalate to Company" : "Escalate"}
-              </Button>
-            )}
+            {showEscalate && priority.scope !== "company" && (() => {
+              // Be explicit about WHERE the escalation lands. role →
+              // department, department → company. Same button text
+              // for "Escalate" hid this from new users; now the
+              // destination is in the label so a click never surprises.
+              const target = priority.scope === "department" ? "Company" : "Department";
+              return (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs h-7 text-orange-700 border-orange-200 hover:bg-orange-50"
+                  onClick={onEscalate}
+                  disabled={isDone}
+                  aria-label={`Escalate priority to ${target.toLowerCase()} scope`}
+                >
+                  <ArrowUp className="w-3 h-3 mr-1" />
+                  Escalate to {target}
+                </Button>
+              );
+            })()}
           </div>
         )}
       </CardContent>
