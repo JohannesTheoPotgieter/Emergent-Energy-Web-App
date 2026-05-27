@@ -1,15 +1,12 @@
 // Error breakdown: TS7006 implicit-any: 24, TS2345 query/param types: 14, other: 2
 // Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
 // add explicit ': any' to .map/.filter callback params on db result rows.
-import { Router, type Express, type Request, type Response } from "express";
-import { requireAuth, requireAdmin, requirePriorityAdmin } from './shared-middleware';
+import { Router, type Express, type Request } from "express";
+import { requireAuth, requireAdmin } from './shared-middleware';
 import { storage } from "../storage";
 import { db } from "../db";
-import { requirePermission } from "../permission-middleware";
 import { eq, and, or, sql, isNull } from "drizzle-orm";
-import { DEFAULT_QUERY_LIMIT } from "../lib/safe-query";
-import { z } from "zod";
-import { projectInfo, priorityLinks, priorityProjects, mytoolCompanyPriorities, workItems } from "@shared/schema";
+import { projectInfo, workItems } from "@shared/schema";
 import path from "path";
 import fs from "fs";
 import multer from "multer";
@@ -19,33 +16,6 @@ import { validateTaskCreate, validateTaskUpdate } from "../lib/task-validation";
 import { mytoolTaskIdempotencyStore } from "../lib/mytool-task-idempotency";
 
 const router = Router();
-
-const companyPriorityWriteSchema = z.object({
-  title: z.string().min(1).optional(),
-  description: z.string().nullable().optional(),
-  department: z.string().nullable().optional(),
-  horizon: z.enum(["today", "week", "month", "quarter"]).optional(),
-  ownerRole: z.string().nullable().optional(),
-  linkedProjectName: z.string().nullable().optional(),
-  linkedProjectId: z.number().int().nullable().optional(),
-  severity: z.enum(["normal", "important", "critical"]).optional(),
-  status: z.enum(["active", "monitoring", "closed", "not_started", "in_progress", "complete"]).optional(),
-  priorityRank: z.number().int().nullable().optional(),
-  assignedTo: z.string().nullable().optional(),
-  nextAction: z.string().nullable().optional(),
-  support: z.array(z.string()).nullable().optional(),
-  definitionOfDone: z.string().nullable().optional(),
-  dueDate: z.string().nullable().optional(),
-  linkedTaskId: z.number().int().nullable().optional(),
-  linkedTaskType: z.string().nullable().optional(),
-  accountableExecId: z.number().int().nullable().optional(),
-  ownerUserId: z.number().int().nullable().optional(),
-  targetStartDate: z.string().nullable().optional(),
-  targetOutcome: z.string().nullable().optional(),
-  sortOrder: z.number().int().nullable().optional(),
-  manualHealth: z.enum(["healthy", "at_risk", "critical"]).nullable().optional(),
-  manualProgress: z.number().int().min(0).max(100).nullable().optional(),
-}).strict();
 
 const CANONICAL_TO_MYTOOL_STATUS: Record<string, string> = {
   todo: "planned", TODO: "planned",
@@ -369,245 +339,22 @@ router.put("/api/mytool/daily-review", requireAuth, requireAdmin, async (req, re
 
 // ==================== MY TOOL - COMPANY PRIORITIES ====================
 //
-// DEPRECATED — these /api/mytool/company-priorities endpoints predate
-// /api/priorities. Keep them alive for the four pages that still call
-// them (project-lifecycle, engineering-dashboard, my-work-meetings,
-// my-work-admin-settings) but add a Sunset header + console.warn so
-// we can monitor usage and plan removal. Migrate one caller per
-// follow-up sprint, then drop these endpoints.
+// Removed 2026-05-27. These /api/mytool/company-priorities and
+// /api/mytool/priority-links endpoints predated /api/priorities; PR #946
+// migrated the last four client callers (project-lifecycle,
+// engineering-dashboard, my-work-meetings, my-work-admin-settings) to
+// the canonical endpoints. Server logs showed zero hits before removal.
 //
-// Canonical replacements (see server/departments/priority-strategic-routes.ts):
-//   GET    /api/mytool/company-priorities         →  GET    /api/priorities?scope=company
-//   POST   /api/mytool/company-priorities         →  POST   /api/priorities
-//   PATCH  /api/mytool/company-priorities/:id     →  PUT    /api/priorities/:id
-//   DELETE /api/mytool/company-priorities/:id     →  DELETE /api/priorities/:id  (archives)
-//   GET    /api/mytool/company-priorities/:id/links → priority_links is deprecated;
-//                                                    new code uses priority_projects via
-//                                                    POST/DELETE /api/priorities/:id/projects
-function logLegacyCompanyPriorityCall(req: Request) {
-  console.warn(`[DEPRECATED] ${req.method} ${req.path} hit. Migrate to /api/priorities. Caller=${req.headers["user-agent"] || "unknown"}`);
-}
-function attachLegacyDeprecationHeaders(res: Response) {
-  // RFC 8594 Sunset header + a custom hint pointing at the replacement.
-  res.setHeader("Sunset", new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
-  res.setHeader("Deprecation", "true");
-  res.setHeader("Link", '</api/priorities>; rel="successor-version"');
-}
+// Canonical equivalents on server/departments/priority-strategic-routes.ts:
+//   GET    /api/priorities?scope=company
+//   POST   /api/priorities
+//   PUT    /api/priorities/:id
+//   DELETE /api/priorities/:id  (archives)
+// Per-priority project linking now uses POST/DELETE /api/priorities/:id/projects.
+// The priority_links table itself stays — it's still referenced by
+// server/lifecycle-routes.ts (rename-cascade) and server/db.ts (dev DDL).
 
-router.get("/api/mytool/company-priorities", requireAuth, async (req, res) => {
-  logLegacyCompanyPriorityCall(req);
-  attachLegacyDeprecationHeaders(res);
-  try {
-    const { horizon } = req.query;
-    const priorities = await storage.getMytoolCompanyPriorities(horizon as string | undefined);
-    const nullRanked = priorities.filter(p => p.priorityRank == null);
-    if (nullRanked.length > 0) {
-      const deptMaxRanks: Record<string, number> = {};
-      priorities.forEach(p => {
-        const dept = p.department || "_none_";
-        if (p.priorityRank != null) {
-          deptMaxRanks[dept] = Math.max(deptMaxRanks[dept] || 0, p.priorityRank);
-        }
-      });
-      for (const p of nullRanked) {
-        const dept = p.department || "_none_";
-        const nextRank = (deptMaxRanks[dept] || 0) + 1;
-        deptMaxRanks[dept] = nextRank;
-        await storage.updateMytoolCompanyPriority(p.id, { priorityRank: nextRank });
-        p.priorityRank = nextRank;
-      }
-    }
-    const { priorityLinks: plTable } = await import("@shared/schema");
-    const allLinks = await db.select().from(plTable);
-    const linksByPriority: Record<number, any[]> = {};
-    allLinks.forEach((l: any) => {
-      if (!linksByPriority[l.priorityId]) linksByPriority[l.priorityId] = [];
-      linksByPriority[l.priorityId].push(l);
-    });
 
-    // Enrich with derived metrics from the strategic view for consistency
-    let allMetrics: any[] = [];
-    try {
-      const metricsRows = await db.execute(sql`SELECT * FROM priority_derived_metrics`);
-      allMetrics = (metricsRows.rows || metricsRows) as any[];
-    } catch (_) {
-      // View may not exist yet
-    }
-    const metricsMap = new Map(allMetrics.map((m: any) => [m.priority_id, m]));
-
-    const enriched = priorities.map(p => {
-      const metrics = metricsMap.get(p.id);
-      const projectCount = Number(metrics?.project_count || 0);
-      const hasProjects = projectCount > 0;
-      return {
-        ...p,
-        links: linksByPriority[p.id] || [],
-        effectiveHealth: hasProjects
-          ? (metrics?.derived_health || "healthy")
-          : (p.manualHealth || "healthy"),
-        effectiveProgress: hasProjects
-          ? Math.round(Number(metrics?.avg_progress || 0))
-          : (p.manualProgress || 0),
-        projectCount,
-        hasProjects,
-      };
-    });
-    res.json(enriched);
-  } catch (err: any) {
-    throw err;
-  }
-});
-
-router.post("/api/mytool/company-priorities", requireAuth, requirePriorityAdmin, async (req, res) => {
-  logLegacyCompanyPriorityCall(req);
-  attachLegacyDeprecationHeaders(res);
-  try {
-    const parsed = companyPriorityWriteSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
-    }
-    if (!parsed.data.title?.trim()) {
-      return res.status(400).json({ error: "title_required", message: "title is required" });
-    }
-    const priority = await storage.createMytoolCompanyPriority(parsed.data as any);
-    res.json(priority);
-  } catch (err: any) {
-    throw err;
-  }
-});
-
-router.patch("/api/mytool/company-priorities/:id", requireAuth, requirePriorityAdmin, async (req, res) => {
-  logLegacyCompanyPriorityCall(req);
-  attachLegacyDeprecationHeaders(res);
-  try {
-    const parsed = companyPriorityWriteSchema.partial().safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
-    }
-    const priority = await storage.updateMytoolCompanyPriority(parseIntParam(req.params.id), parsed.data as any);
-    res.json(priority);
-  } catch (err: any) {
-    throw err;
-  }
-});
-
-router.delete("/api/mytool/company-priorities/:id", requireAuth, requirePriorityAdmin, async (req, res) => {
-  logLegacyCompanyPriorityCall(req);
-  attachLegacyDeprecationHeaders(res);
-  try {
-    await storage.updateMytoolCompanyPriority(parseIntParam(req.params.id), { status: "closed" } as any);
-    res.json({ success: true, mode: "soft_close" });
-  } catch (err: any) {
-    throw err;
-  }
-});
-
-// ==================== PRIORITY LINKS (many-to-many) ====================
-
-router.get("/api/mytool/company-priorities/:id/links", requireAuth, async (req, res) => {
-  logLegacyCompanyPriorityCall(req);
-  attachLegacyDeprecationHeaders(res);
-  try {
-    const priorityId = parseIntParam(req.params.id);
-    const links = await db.select().from(priorityLinks).where(eq(priorityLinks.priorityId, priorityId));
-    const projects = await db.select({
-      id: priorityProjects.id,
-      priorityId: priorityProjects.priorityId,
-      projectId: priorityProjects.projectId,
-      projectName: projectInfo.projectName,
-    })
-    .from(priorityProjects)
-    .innerJoin(projectInfo, eq(priorityProjects.projectId, projectInfo.id))
-    .where(eq(priorityProjects.priorityId, priorityId));
-
-    const existingProjectIds = new Set(links.map((l: any) => l.projectId).filter(Boolean));
-    const synthetic = projects
-      .filter((p: any) => !existingProjectIds.has(p.projectId))
-      .map((p: any) => ({
-        id: -p.id,
-        priorityId: p.priorityId,
-        linkType: "project",
-        projectName: p.projectName,
-        projectId: p.projectId,
-        taskId: null,
-        taskType: null,
-        createdAt: new Date(),
-      }));
-
-    res.json([...links, ...synthetic]);
-  } catch (err: any) {
-    throw err;
-  }
-});
-
-router.get("/api/mytool/priority-links", requireAuth, async (_req, res) => {
-  try {
-    const { priorityLinks: plTable } = await import("@shared/schema");
-    const links = await db.select().from(plTable);
-    res.json(links);
-  } catch (err: any) {
-    throw err;
-  }
-});
-
-router.post("/api/mytool/company-priorities/:id/links", requireAuth, requirePriorityAdmin, async (req, res) => {
-  logLegacyCompanyPriorityCall(req);
-  attachLegacyDeprecationHeaders(res);
-  try {
-    const priorityId = parseIntParam(req.params.id);
-    const { linkType, projectName, taskId, taskType } = req.body;
-    if (!linkType) return res.status(400).json({ error: "linkType is required" });
-    let resolvedProjectId: number | null = req.body.projectId ? parseInt(req.body.projectId) : null;
-    let resolvedProjectName: string | null = projectName || null;
-    if (!resolvedProjectId && resolvedProjectName) {
-      const [project] = await db.select({ id: projectInfo.id }).from(projectInfo).where(eq(projectInfo.projectName, resolvedProjectName)).limit(1);
-      if (project) resolvedProjectId = project.id;
-    }
-    if (!resolvedProjectName && resolvedProjectId) {
-      const [project] = await db.select({ name: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, resolvedProjectId)).limit(1);
-      resolvedProjectName = project?.name || null;
-    }
-
-    const [link] = await db.insert(priorityLinks).values({
-      priorityId,
-      linkType,
-      projectName: resolvedProjectName,
-      projectId: resolvedProjectId,
-      taskId: taskId ? parseInt(taskId) : null,
-      taskType: taskType || null,
-    }).returning();
-
-    // Keep strategic and legacy models in sync.
-    if (resolvedProjectId) {
-      await db.insert(priorityProjects).values({
-        priorityId,
-        projectId: resolvedProjectId,
-        linkedBy: (req.user as any)?.id || null,
-      }).onConflictDoNothing();
-    }
-
-    res.json(link);
-  } catch (err: any) {
-    throw err;
-  }
-});
-
-router.delete("/api/mytool/priority-links/:linkId", requireAuth, requirePriorityAdmin, async (req, res) => {
-  try {
-    const linkId = parseIntParam(req.params.linkId);
-    const [existing] = await db.select().from(priorityLinks).where(eq(priorityLinks.id, linkId)).limit(1);
-    await db.delete(priorityLinks).where(eq(priorityLinks.id, linkId));
-    if (existing?.projectId) {
-      await db.delete(priorityProjects).where(and(
-        eq(priorityProjects.priorityId, existing.priorityId),
-        eq(priorityProjects.projectId, existing.projectId),
-      ));
-    }
-    res.json({ success: true });
-  } catch (err: any) {
-    throw err;
-  }
-});
 
 router.get("/api/mytool/escalated-priorities", requireAuth, requireAdmin, async (req, res) => {
   try {
