@@ -183,7 +183,12 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "standups", path: "/standups", label: "Standups", type: "alias", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "standups", showInSidebar: false, redirectTo: "/engineering/standup" },
   { id: "engineeringAudit", path: "/engineering/audit", label: "Engineering Audit Log", iconKey: "Activity", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "EngineeringAuditPage" },
   { id: "lifecycle", path: "/lifecycle-board", label: "Lifecycle Board", iconKey: "Layers", navGroup: "PORTFOLIO", permissionEntity: "lifecycle", showInSidebar: false, routeComponentKey: "LifecycleBoardPage" },
-  { id: "executionBoard", path: "/execution-board", label: "Execution Board", iconKey: "LayoutDashboard", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "ExecutionBoardPage", aliases: ["/execution-dashboard"], roleLandingEligibility: ["CEO_ADMIN", "COO_ADMIN", "PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"], matchSubRoutes: true },
+  // PR-B redesign (2026-05-27) — /now is the canonical landing surface
+  // that answers "what needs attention right now?". /execution-board
+  // stays as the legacy 5-tab dashboard for one transition cycle.
+  // role-landing eligibility moved here so executives land on /now.
+  { id: "now", path: "/now", label: "Now", iconKey: "Flame", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "NowPage", roleLandingEligibility: ["CEO_ADMIN", "COO_ADMIN", "PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"] },
+  { id: "executionBoard", path: "/execution-board", label: "Execution Board (legacy)", iconKey: "LayoutDashboard", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "ExecutionBoardPage", aliases: ["/execution-dashboard"], matchSubRoutes: true },
   { id: "executionBoardProgram", path: "/execution-board/program", label: "Program View", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "ExecutionBoardPage" },
   { id: "executionBoardConstruction", path: "/execution-board/construction", label: "Construction View", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "ExecutionBoardPage" },
   { id: "executionBoardFinance", path: "/execution-board/finance", label: "Program Finance", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "ExecutionBoardPage" },
