@@ -17,6 +17,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { statusBadgeClasses } from "@/lib/design-tokens";
 
 interface PaymentRequest {
   id: number;
@@ -60,19 +61,27 @@ function fmtZAR(val: string | number | null | undefined): string {
 
 // ── Status configuration ────────────────────────────────────────────────────
 
-const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
-  new:                { label: "New",              cls: "bg-slate-100 text-slate-600 border-slate-200" },
-  in_review:          { label: "In Review",        cls: "bg-amber-100 text-amber-700 border-amber-200" },
-  loaded_for_payment: { label: "Loaded",           cls: "bg-sky-100 text-sky-700 border-sky-200" },
-  proof_attached:     { label: "Proof Attached",   cls: "bg-violet-100 text-violet-700 border-violet-200" },
-  complete:           { label: "Complete",         cls: "bg-emerald-100 text-emerald-700 border-emerald-200" },
-  requires_info:      { label: "Requires Info",    cls: "bg-orange-100 text-orange-700 border-orange-200" },
-  blocked:            { label: "Blocked",          cls: "bg-rose-100 text-rose-700 border-rose-200" },
+// PR-A redesign (2026-05-27): only the label survives here — the
+// colour classes are routed through statusBadgeClasses so we can
+// retire the sky/violet/orange/rose off-palette colours. Five of
+// the seven statuses were outside the 4-token palette.
+const STATUS_LABELS: Record<string, string> = {
+  new:                "New",
+  in_review:          "In Review",
+  loaded_for_payment: "Loaded",
+  proof_attached:     "Proof Attached",
+  complete:           "Complete",
+  requires_info:      "Requires Info",
+  blocked:            "Blocked",
 };
 
 function StatusBadge({ status }: { status: string }) {
-  const cfg = STATUS_CONFIG[status] ?? { label: status, cls: "bg-slate-100 text-slate-700 border-slate-200" };
-  return <Badge variant="outline" className={`${cfg.cls} text-xs whitespace-nowrap`}>{cfg.label}</Badge>;
+  const label = STATUS_LABELS[status] ?? status;
+  return (
+    <Badge variant="outline" className={`${statusBadgeClasses(status)} text-xs whitespace-nowrap`}>
+      {label}
+    </Badge>
+  );
 }
 
 // ── Filter tabs ─────────────────────────────────────────────────────────────

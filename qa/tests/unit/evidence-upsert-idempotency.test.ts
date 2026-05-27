@@ -27,7 +27,9 @@ const SERVICE = fs.readFileSync(
 const MIGRATION = fs.readFileSync(
   path.join(
     __dirname,
-    "../../../migrations/0075_evidence_collected_items_updated_at.sql",
+    // Renumbered from 0075 → 0077 during the wave-6 rebase after main
+    // shipped its own 0075 + 0076 finance-audit migrations.
+    "../../../migrations/0077_evidence_collected_items_updated_at.sql",
   ),
   "utf8",
 );

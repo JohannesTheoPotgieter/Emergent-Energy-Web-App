@@ -23,6 +23,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { statusBadgeClasses } from "@/lib/design-tokens";
 
 interface POReviewer { id: number; reviewerUserId: number; reviewerRole: string; decision: string; decidedAt: string | null; reviewerName: string; notes?: string | null; }
 interface PurchaseOrder { id: number; po_ref: string; project_name: string; project_id: number | null; supplier_name: string; total: string; status: string; created_at: string; submitted_at: string | null; project_manager: string | null; submitted_by_name: string | null; created_by: number | null; reviewers: POReviewer[] | null; line_items?: Array<{ description?: string; qty?: number | string; pricePerUnit?: number | string; unit?: string; partNumber?: string }>; comments?: string | null; pdf_data?: string | null; }
@@ -46,8 +47,13 @@ const fmtZAR = (v?: string | number | null) => formatZarCanonical(v, { cents: tr
 const ageDays = (createdAt: string) => Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 86400000));
 
 function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = { draft: "bg-slate-100", submitted: "bg-sky-100", in_review: "bg-amber-100", requires_info: "bg-orange-100", blocked: "bg-rose-100", approved: "bg-emerald-100", cancelled: "bg-slate-100" };
-  return <Badge variant="outline" className={`${map[status] || "bg-slate-100"} text-xs`}>{status.replace("_", " ")}</Badge>;
+  // PR-A redesign (2026-05-27): inline colour map replaced with the
+  // canonical statusBadgeClasses helper. The map below was using sky/
+  // orange/rose — outside the 4-token palette. The helper routes
+  // submitted → warning (amber), requires_info → warning, blocked →
+  // critical (red), cancelled → neutral (slate). Same semantics,
+  // consistent palette.
+  return <Badge variant="outline" className={`${statusBadgeClasses(status)} text-xs`}>{status.replace("_", " ")}</Badge>;
 }
 
 function ReviewerHistory({ reviewers }: { reviewers: POReviewer[] | null }) {
