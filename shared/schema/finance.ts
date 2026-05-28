@@ -1663,14 +1663,45 @@ export type CosPeriodLock = typeof cosPeriodLocks.$inferSelect;
 // =========================================================================
 // TF-28 (audit V3) — VAT period tracking.
 //
-// DEFERRED. South African VAT is bi-monthly (Feb / Apr / Jun / Aug / Oct
-// / Dec closes for Category A). The full implementation needs:
-//   1. A `vat_period_locks` table mirroring `cos_period_locks`.
-//   2. A `vat_period` column on normalized_cost_lines + revenue_lines.
-//   3. A VAT 201 export route + post-filing edit lock.
+// South African VAT is bi-monthly: Category-A vendors file VAT 201 at
+// the end of Feb / Apr / Jun / Aug / Oct / Dec. Before this table the
+// app had no record of when a period was filed; finance would assemble
+// VAT 201 manually from Excel and any post-filing edit silently
+// diverged from the SARS submission.
 //
-// Owner sign-off is required on the workflow shape (esp. how to handle
-// the back-fill of historical lines). The schema declaration is
-// commented out below to keep db:check green; uncomment and run
-// `npm run db:generate -- --name=vat_period_locks` when ready.
+// Same shape as cos_period_locks — `period_month` is the first-of-month
+// of the bi-monthly close period (e.g. 2026-04-01 for the Mar-Apr 2026
+// VAT period). Reads filter `isNull(unlockedAt)` for active locks.
+//
+// `vat_201_submission_ref` carries the SARS reference once submitted.
+// Output / input VAT totals are captured at lock time so a post-filing
+// reconciliation can compare current totals against the submitted ones.
 // =========================================================================
+
+export const vatPeriodLocks = pgTable("vat_period_locks", {
+  id: serial("id").primaryKey(),
+  /** First-of-month of the bi-monthly close period. */
+  periodMonth: date("period_month").notNull(),
+  /** SARS VAT 201 submission reference, populated post-filing. */
+  vat201SubmissionRef: text("vat_201_submission_ref"),
+  lockedAt: timestamp("locked_at").notNull().defaultNow(),
+  lockedByUserId: integer("locked_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  /** Total VAT output (revenue VAT) at lock time — captured for SARS reconciliation. */
+  outputVatTotal: decimal("output_vat_total", { precision: 15, scale: 2 }),
+  /** Total VAT input (cost VAT) at lock time. */
+  inputVatTotal: decimal("input_vat_total", { precision: 15, scale: 2 }),
+  /** Unlock fields — soft-delete pattern matching cos_period_locks. */
+  unlockedAt: timestamp("unlocked_at"),
+  unlockedByUserId: integer("unlocked_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  unlockReason: text("unlock_reason"),
+  notes: text("notes"),
+}, (table) => ({
+  periodIdx: index("idx_vat_period_locks_period").on(table.periodMonth),
+  activeLockIdx: index("idx_vat_period_locks_active")
+    .on(table.periodMonth)
+    .where(sql`${table.unlockedAt} IS NULL`),
+}));
+
+export const insertVatPeriodLockSchema = createInsertSchema(vatPeriodLocks).omit({ id: true, lockedAt: true } as any);
+export type InsertVatPeriodLock = z.infer<typeof insertVatPeriodLockSchema>;
+export type VatPeriodLock = typeof vatPeriodLocks.$inferSelect;

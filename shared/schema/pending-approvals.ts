@@ -13,6 +13,19 @@ export const PENDING_APPROVAL_KINDS = [
   "sharepoint_project_shell_create",
   "cos_period_lock_create",
   "ee_info_update_seed",
+  // TF-20 (audit V3) — finance editors changing realisation-bearing fields
+  // (paid_date, invoice_date, po_number, amount_ex_vat) above the threshold
+  // queue an approval task instead of writing directly. The CFO / Program
+  // Finance Manager approves or rejects; the cost / revenue line is updated
+  // via the standard write service on approve.
+  "cost_line_material_edit",
+  "revenue_line_material_edit",
+  // TF-21 (audit V3) — when a payment_request transitions to "complete"
+  // (the procurement domain side), this kind queues a cascade-style
+  // proposal to set the matching cost_line's paid_date so the cashflow
+  // and finance domains agree. Reviewer confirms the match before the
+  // cost_line is updated.
+  "payment_request_cost_line_paid_sync",
 ] as const;
 export type PendingApprovalKind = (typeof PENDING_APPROVAL_KINDS)[number];
 
