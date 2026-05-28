@@ -21,9 +21,16 @@ describe("navigation safety cleanup", () => {
     expect(byPath.get("/admin-settings")).toBe("/admin/settings");
   });
 
-  it("does not force CEO/COO into executive dashboards as role landing", () => {
-    expect(ROLE_LANDING_PAGE.CEO_ADMIN).toBe("/execution-board");
-    expect(ROLE_LANDING_PAGE.COO_ADMIN).toBe("/execution-board");
+  it("routes CEO/COO to the canonical landing page (PR-B redesign: /now)", () => {
+    // The original assertion locked the landing page to /execution-board
+    // before PR-B. The redesign series (#962-#966) moved the COO/CEO
+    // landing to /now — a single-screen "what needs attention?" surface
+    // that replaces the 5-tab dashboard. /execution-board remains
+    // reachable for one transition cycle but is no longer the landing.
+    // The spirit of the original test — "don't dump executives into a
+    // dense dashboard" — is preserved: /now is the simplification.
+    expect(ROLE_LANDING_PAGE.CEO_ADMIN).toBe("/now");
+    expect(ROLE_LANDING_PAGE.COO_ADMIN).toBe("/now");
   });
 
   it("hides Admin top section for non-admin roles", () => {
