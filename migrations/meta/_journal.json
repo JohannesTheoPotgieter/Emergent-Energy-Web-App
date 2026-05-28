@@ -547,6 +547,13 @@
       "when": 1779823918538,
       "tag": "0077_evidence_collected_items_updated_at",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1779946152724,
+      "tag": "0078_tf28_vat_period_locks",
+      "breakpoints": true
     }
   ]
 }

@@ -2,7 +2,7 @@
   "_documentation": "EE-QA-015 baseline — files above the FILE_SIZE_THRESHOLD LOC. The CI guard `qa/tests/unit/file-size-ratchet.test.ts` fails if any of these grow OR a NEW file lands over the threshold. To regenerate after a split, run `npx tsx scripts/build-file-size-baseline.ts` and commit the new JSON.",
   "threshold": 1500,
   "buffer": 50,
-  "generated": "2026-05-27",
+  "generated": "2026-05-28",
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
@@ -70,7 +70,7 @@
     },
     {
       "file": "client/src/pages/cos.tsx",
-      "loc": 2303
+      "loc": 2291
     },
     {
       "file": "client/src/pages/ee-info.tsx",
@@ -117,12 +117,12 @@
       "loc": 2082
     },
     {
-      "file": "client/src/pages/revenue-tracker.tsx",
-      "loc": 1902
-    },
-    {
       "file": "client/src/components/TaskDetailDrawer.tsx",
       "loc": 1901
+    },
+    {
+      "file": "client/src/pages/revenue-tracker.tsx",
+      "loc": 1896
     },
     {
       "file": "server/seed-ee-info-updates.ts",
@@ -137,12 +137,12 @@
       "loc": 1788
     },
     {
-      "file": "server/routes/planning-tasks-routes.ts",
-      "loc": 1778
+      "file": "client/src/pages/project-detail.tsx",
+      "loc": 1779
     },
     {
-      "file": "client/src/pages/project-detail.tsx",
-      "loc": 1773
+      "file": "server/routes/planning-tasks-routes.ts",
+      "loc": 1778
     },
     {
       "file": "client/src/pages/pd-dashboard.tsx",
@@ -165,12 +165,12 @@
       "loc": 1715
     },
     {
-      "file": "shared/schema/projects.ts",
-      "loc": 1698
+      "file": "shared/schema/finance.ts",
+      "loc": 1708
     },
     {
-      "file": "shared/schema/finance.ts",
-      "loc": 1677
+      "file": "shared/schema/projects.ts",
+      "loc": 1698
     },
     {
       "file": "server/storage.ts",
@@ -207,6 +207,10 @@
     {
       "file": "client/src/components/tabs/ProjectPlanTab.tsx",
       "loc": 1565
+    },
+    {
+      "file": "server/routes/finance-legacy-extracted-routes.ts",
+      "loc": 1551
     },
     {
       "file": "shared/permissions/registry.ts",

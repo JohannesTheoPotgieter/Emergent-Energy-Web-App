@@ -30,6 +30,8 @@ import { logAuditFromReq } from "../audit-logger";
 import { classifyExpenseState } from "../lib/calculations/stateClassifier";
 import { z } from "zod";
 import { createCostLine, updateCostLineFields, createRevenueLine, updateRevenueLineFields } from "../services/finance-line-write-service";
+import { applyMaterialEditGate } from "../services/finance-material-edit-gate";
+import { getEffectiveUser } from "../auth-context";
 import { invalidateProjectFinanceReads } from "../services/dashboard-metrics";
 import { mapCostToExpenseInput } from "../lib/data-merge";
 import { getMergedExpensesAndInflows } from "../lib/cashflow-helpers";
@@ -1227,15 +1229,59 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
     }
   });
 
-  // Update a cost line
+  // Update a cost line. TF-20 (audit V3) — material edits (paid_date,
+  // invoice_date, amount_ex_vat, po_number) above the threshold queue a
+  // pending_approvals row instead of writing directly; the gate is
+  // implemented in services/finance-material-edit-gate.ts.
   app.patch("/api/finance/cost-lines/:id", requireAuth, requirePermission("financials", "edit"), async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Invalid id" });
       const parsed = costLineSchema.partial().parse(req.body);
+
+      const actor = getEffectiveUser(req);
+      const gate = await applyMaterialEditGate({
+        domain: "cost_line",
+        lineId: id,
+        patch: parsed,
+        actorUserId: actor?.id ?? null,
+        actorRole: actor?.role ?? null,
+      });
+
+      if (gate.decision === "queued_for_approval") {
+        logAuditFromReq(req, {
+          entityType: "cost_line",
+          action: "update_queued_for_approval",
+          entityId: String(id),
+          changesJson: {
+            patch: parsed,
+            materialFields: gate.materialFieldsChanged,
+            amountDeltaZar: gate.amountDeltaZar,
+            pendingApprovalId: gate.pendingApprovalId,
+          },
+          source: "UI",
+        });
+        return res.status(202).json({
+          status: "pending_approval",
+          pendingApprovalId: gate.pendingApprovalId,
+          materialFields: gate.materialFieldsChanged,
+        });
+      }
+
       const updated = await updateCostLineFields(id, { ...parsed, updatedAt: new Date() });
       if (!updated) return res.status(404).json({ error: "Cost line not found" });
-      logAuditFromReq(req, { entityType: "cost_line", action: "update", entityId: String(id), changesJson: parsed, source: "UI" });
+      logAuditFromReq(req, {
+        entityType: "cost_line",
+        action: "update",
+        entityId: String(id),
+        changesJson: {
+          ...parsed,
+          ...(gate.decision === "below_threshold"
+            ? { materialEditBelowThreshold: gate.materialFieldsChanged }
+            : {}),
+        },
+        source: "UI",
+      });
       res.json(updated);
       invalidateProjectFinanceReads((updated as any).projectId);
     } catch (error: any) {
@@ -1281,15 +1327,57 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
     }
   });
 
-  // Update a revenue line
+  // Update a revenue line. TF-20 (audit V3) — material edits above the
+  // threshold queue a pending_approvals row instead of writing directly.
   app.patch("/api/finance/revenue-lines/:id", requireAuth, requirePermission("financials", "edit"), async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Invalid id" });
       const parsed = revenueLineSchema.partial().parse(req.body);
+
+      const actor = getEffectiveUser(req);
+      const gate = await applyMaterialEditGate({
+        domain: "revenue_line",
+        lineId: id,
+        patch: parsed,
+        actorUserId: actor?.id ?? null,
+        actorRole: actor?.role ?? null,
+      });
+
+      if (gate.decision === "queued_for_approval") {
+        logAuditFromReq(req, {
+          entityType: "revenue_line",
+          action: "update_queued_for_approval",
+          entityId: String(id),
+          changesJson: {
+            patch: parsed,
+            materialFields: gate.materialFieldsChanged,
+            amountDeltaZar: gate.amountDeltaZar,
+            pendingApprovalId: gate.pendingApprovalId,
+          },
+          source: "UI",
+        });
+        return res.status(202).json({
+          status: "pending_approval",
+          pendingApprovalId: gate.pendingApprovalId,
+          materialFields: gate.materialFieldsChanged,
+        });
+      }
+
       const updated = await updateRevenueLineFields(id, { ...parsed, updatedAt: new Date() });
       if (!updated) return res.status(404).json({ error: "Revenue line not found" });
-      logAuditFromReq(req, { entityType: "revenue_line", action: "update", entityId: String(id), changesJson: parsed, source: "UI" });
+      logAuditFromReq(req, {
+        entityType: "revenue_line",
+        action: "update",
+        entityId: String(id),
+        changesJson: {
+          ...parsed,
+          ...(gate.decision === "below_threshold"
+            ? { materialEditBelowThreshold: gate.materialFieldsChanged }
+            : {}),
+        },
+        source: "UI",
+      });
       res.json(updated);
       invalidateProjectFinanceReads((updated as any).projectId);
     } catch (error: any) {

@@ -1,6 +1,6 @@
 {
-  "id": "f2cf336a-c7b6-4d0d-a728-e6051da2201c",
-  "prevId": "605b7eb7-498a-4aa2-b9da-bd886da3f3ee",
+  "id": "889c79a3-7428-4118-8796-a097c6e60f1b",
+  "prevId": "41070c08-2f97-4a11-b693-85d6da9ef937",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4489,6 +4489,234 @@
             "id"
           ],
           "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.project_delivery_milestones": {
+      "name": "project_delivery_milestones",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "milestone_code": {
+          "name": "milestone_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "milestone_name": {
+          "name": "milestone_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "phase_code": {
+          "name": "phase_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "planned_date": {
+          "name": "planned_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actual_date": {
+          "name": "actual_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'planned'"
+        },
+        "owner_user_id": {
+          "name": "owner_user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "blocker": {
+          "name": "blocker",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "blocker_set_at": {
+          "name": "blocker_set_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "blocker_cleared_at": {
+          "name": "blocker_cleared_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "evidence_link": {
+          "name": "evidence_link",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completed_by_user_id": {
+          "name": "completed_by_user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_project_delivery_milestones_project": {
+          "name": "idx_project_delivery_milestones_project",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uq_project_delivery_milestones_project_code": {
+          "name": "uq_project_delivery_milestones_project_code",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "milestone_code",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "deleted_at IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "project_delivery_milestones_project_id_project_info_id_fk": {
+          "name": "project_delivery_milestones_project_id_project_info_id_fk",
+          "tableFrom": "project_delivery_milestones",
+          "tableTo": "project_info",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "project_delivery_milestones_owner_user_id_users_id_fk": {
+          "name": "project_delivery_milestones_owner_user_id_users_id_fk",
+          "tableFrom": "project_delivery_milestones",
+          "tableTo": "users",
+          "columnsFrom": [
+            "owner_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "project_delivery_milestones_created_by_user_id_users_id_fk": {
+          "name": "project_delivery_milestones_created_by_user_id_users_id_fk",
+          "tableFrom": "project_delivery_milestones",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "project_delivery_milestones_completed_by_user_id_users_id_fk": {
+          "name": "project_delivery_milestones_completed_by_user_id_users_id_fk",
+          "tableFrom": "project_delivery_milestones",
+          "tableTo": "users",
+          "columnsFrom": [
+            "completed_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -15496,6 +15724,145 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.vat_period_locks": {
+      "name": "vat_period_locks",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "period_month": {
+          "name": "period_month",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vat_201_submission_ref": {
+          "name": "vat_201_submission_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "locked_at": {
+          "name": "locked_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "locked_by_user_id": {
+          "name": "locked_by_user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "output_vat_total": {
+          "name": "output_vat_total",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "input_vat_total": {
+          "name": "input_vat_total",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "unlocked_at": {
+          "name": "unlocked_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "unlocked_by_user_id": {
+          "name": "unlocked_by_user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "unlock_reason": {
+          "name": "unlock_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_vat_period_locks_period": {
+          "name": "idx_vat_period_locks_period",
+          "columns": [
+            {
+              "expression": "period_month",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_vat_period_locks_active": {
+          "name": "idx_vat_period_locks_active",
+          "columns": [
+            {
+              "expression": "period_month",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"vat_period_locks\".\"unlocked_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "vat_period_locks_locked_by_user_id_users_id_fk": {
+          "name": "vat_period_locks_locked_by_user_id_users_id_fk",
+          "tableFrom": "vat_period_locks",
+          "tableTo": "users",
+          "columnsFrom": [
+            "locked_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "vat_period_locks_unlocked_by_user_id_users_id_fk": {
+          "name": "vat_period_locks_unlocked_by_user_id_users_id_fk",
+          "tableFrom": "vat_period_locks",
+          "tableTo": "users",
+          "columnsFrom": [
+            "unlocked_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.weekly_reviews": {
       "name": "weekly_reviews",
       "schema": "",
@@ -20591,6 +20958,13 @@
         },
         "created_at": {
           "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": true,
