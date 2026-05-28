@@ -10,6 +10,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { FinanceShell } from "@/components/layout/FinanceShell";
 import { PageError } from "@/components/ui/page-states";
 import { Money } from "@/components/ui/money";
+import { PageHero } from "@/components/finance/PageHero";
+import { KpiTile } from "@/components/finance/KpiTile";
 import { formatZar as formatZarShared } from "@/lib/currency";
 import { Loader2, AlertTriangle, TrendingUp, TrendingDown, Wallet, Users, FlaskConical, RotateCcw, CheckCircle2 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
@@ -187,31 +189,49 @@ export default function CashflowAnalysisPage() {
 
   return (
     <FinanceShell>
-      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight" data-testid="page-title">Cashflow Analysis</h2>
-          <p className="text-sm text-muted-foreground">AR/AP aging, overdue, DSO/DPO, and concentration risk.</p>
-          <p className="text-xs text-muted-foreground mt-1" data-testid="analysis-metadata">
-            Source: {forecast.data?.trust?.sourceLayer ?? "canonical"} · Basis: payment dates · Last updated: {forecast.data?.trust?.asOf ?? forecast.data?.today ?? "—"}
-          </p>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Overdue mode:</span>
-            <Tabs value={mode} onValueChange={(v) => setMode(v as OverdueMode)}>
-              <TabsList>
-                <TabsTrigger value="expected_date" data-testid="tab-mode-expected">Expected date</TabsTrigger>
-                <TabsTrigger value="payment_terms" data-testid="tab-mode-terms">Payment terms</TabsTrigger>
-              </TabsList>
-            </Tabs>
+      {/* Visual redesign — PageHero + KpiTile (wave 4e). Replaces the
+          ad-hoc h2 + sentence + local KpiCard cluster with the canonical
+          single-answer layout used across the rest of the finance surface. */}
+      <PageHero
+        eyebrow="Finance · Cashflow analysis"
+        label="Outstanding AR · we are owed"
+        value={<Money value={aging.data?.arTotal ?? 0} />}
+        tone="positive"
+        supporting={
+          aging.data
+            ? `${Object.values(aging.data.ar).reduce((s, b) => s + b.count, 0)} invoices · oldest bucket ${aging.data.buckets[aging.data.buckets.length - 1]?.label ?? "—"}`
+            : "Loading…"
+        }
+        trust={[
+          { label: 'Source', value: forecast.data?.trust?.sourceLayer ?? 'canonical' },
+          { label: 'Basis', value: 'payment dates' },
+          { label: 'Updated', value: forecast.data?.trust?.asOf ?? forecast.data?.today ?? '—' },
+        ]}
+        actions={
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Overdue mode:</span>
+              <Tabs value={mode} onValueChange={(v) => setMode(v as OverdueMode)}>
+                <TabsList>
+                  <TabsTrigger value="expected_date" data-testid="tab-mode-expected">Expected date</TabsTrigger>
+                  <TabsTrigger value="payment_terms" data-testid="tab-mode-terms">Payment terms</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
+            <div className="flex items-center gap-2 border-l pl-3">
+              <FlaskConical className="w-4 h-4 text-amber-600" />
+              <span className="text-xs">Sandbox</span>
+              <Switch checked={sandboxOn} onCheckedChange={setSandboxOn} data-testid="sandbox-toggle" />
+            </div>
           </div>
-          <div className="flex items-center gap-2 border-l pl-3">
-            <FlaskConical className="w-4 h-4 text-amber-600" />
-            <span className="text-xs">Sandbox</span>
-            <Switch checked={sandboxOn} onCheckedChange={setSandboxOn} data-testid="sandbox-toggle" />
-          </div>
-        </div>
-      </div>
+        }
+        className="mb-4"
+        data-testid="cashflow-analysis-page-hero"
+      />
+      <h2 className="sr-only" data-testid="page-title">Cashflow Analysis</h2>
+      <p className="sr-only" data-testid="analysis-metadata">
+        Source: {forecast.data?.trust?.sourceLayer ?? "canonical"} · Basis: payment dates · Last updated: {forecast.data?.trust?.asOf ?? forecast.data?.today ?? "—"}
+      </p>
 
       <div className="mb-4 rounded-md border border-slate-200 bg-slate-50/70 p-3" data-testid="cashflow-analysis-trust-note">
         <p className="text-sm text-slate-800">Cashflow actuals use payment received / paid dates.</p>
@@ -251,28 +271,34 @@ export default function CashflowAnalysisPage() {
         </div>
       )}
 
-      {/* Headline cards */}
+      {/* Headline KPI strip — outstanding AR (already the hero) + AP + Overdue. */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-        <KpiCard
-          icon={<Wallet className="w-4 h-4 text-emerald-600" />}
-          title="Outstanding AR"
+        <KpiTile
+          icon={<Wallet className="w-4 h-4" />}
+          label="Outstanding AR"
           value={<Money value={aging.data?.arTotal ?? 0} />}
-          subtitle={`${aging.data ? Object.values(aging.data.ar).reduce((s, b) => s + b.count, 0) : 0} invoices`}
-          loading={aging.isLoading}
+          supporting={`${aging.data ? Object.values(aging.data.ar).reduce((s, b) => s + b.count, 0) : 0} invoices`}
+          tone="positive"
+          data-testid="kpi-tile-outstanding-ar"
         />
-        <KpiCard
-          icon={<TrendingDown className="w-4 h-4 text-rose-600" />}
-          title="Outstanding AP"
+        <KpiTile
+          icon={<TrendingDown className="w-4 h-4" />}
+          label="Outstanding AP"
           value={<Money value={aging.data?.apTotal ?? 0} />}
-          subtitle={`${aging.data ? Object.values(aging.data.ap).reduce((s, b) => s + b.count, 0) : 0} bills`}
-          loading={aging.isLoading}
+          supporting={`${aging.data ? Object.values(aging.data.ap).reduce((s, b) => s + b.count, 0) : 0} bills`}
+          data-testid="kpi-tile-outstanding-ap"
         />
-        <KpiCard
-          icon={<AlertTriangle className="w-4 h-4 text-amber-600" />}
-          title="Overdue items"
+        <KpiTile
+          icon={<AlertTriangle className="w-4 h-4" />}
+          label="Overdue items"
           value={String(overdue.data?.count ?? 0)}
-          subtitle={overdue.data ? `${overdue.data.rows.filter((r) => r.kind === "ar").length} AR / ${overdue.data.rows.filter((r) => r.kind === "ap").length} AP` : "—"}
-          loading={overdue.isLoading}
+          supporting={
+            overdue.data
+              ? `${overdue.data.rows.filter((r) => r.kind === 'ar').length} AR / ${overdue.data.rows.filter((r) => r.kind === 'ap').length} AP`
+              : '—'
+          }
+          tone={overdue.data && overdue.data.count > 0 ? 'warning' : 'default'}
+          data-testid="kpi-tile-overdue-items"
         />
       </div>
 
@@ -505,17 +531,8 @@ export default function CashflowAnalysisPage() {
 
 const SERIES_COLORS = ["#16A34A", "#DC2626", "#2563EB", "#D97706", "#7C3AED"];
 
-function KpiCard(props: { icon: React.ReactNode; title: string; value: React.ReactNode; subtitle: string; loading: boolean }) {
-  return (
-    <Card>
-      <CardContent className="pt-4">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">{props.icon}{props.title}</div>
-        <div className="text-xl font-bold font-mono">{props.loading ? <Loader2 className="w-4 h-4 animate-spin" /> : props.value}</div>
-        <div className="text-xs text-muted-foreground mt-1">{props.subtitle}</div>
-      </CardContent>
-    </Card>
-  );
-}
+// Visual redesign (wave 4e) — the local <KpiCard> helper was dropped in
+// favour of the canonical <KpiTile> from @/components/finance/KpiTile.
 
 function AgingBuckets(props: { title: string; data: Record<string, AgingBucket>; buckets: Array<{ key: string; label: string }> }) {
   const total = props.buckets.reduce((s, b) => s + (props.data[b.key]?.amount ?? 0), 0);
