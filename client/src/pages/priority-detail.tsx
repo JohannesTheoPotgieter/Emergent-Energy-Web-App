@@ -190,9 +190,22 @@ export default function PriorityDetailPage() {
     try {
       const res = await apiRequest("GET", url);
       return (await res.json()) as T;
-    } catch {
+    } catch (err) {
+      // Log so QA / DevTools can see what's actually happening when
+      // a sub-resource silently shows an empty state. Without this
+      // line, a 500 on /children looks identical to "no children".
+      console.error(`[priority-detail] sub-resource fetch failed: ${url}`, err);
       return fallback;
     }
+  };
+
+  // Non-swallowing variant used by the Sub-priorities tab so the
+  // tab can render a distinct "failed to load" state instead of
+  // silently showing "no parent or child priorities" when the
+  // endpoint actually errored.
+  const subResourceFetcherStrict = async <T,>(url: string): Promise<T> => {
+    const res = await apiRequest("GET", url);
+    return (await res.json()) as T;
   };
 
   const { data: tasks = [] } = useQuery<MergedTaskOrApproval[]>({
@@ -222,23 +235,28 @@ export default function PriorityDetailPage() {
     enabled: hasAnyProjects,
   });
 
-  // Direct children — used everywhere outside the Chain tab.
-  const { data: children = [] } = useQuery<ProjectLikeChild[]>({
+  // Direct children — used everywhere outside the Sub-priorities tab.
+  // Uses the strict (non-swallowing) fetcher so the tab can react to
+  // errors with a real "failed to load" state instead of the silent
+  // "no children" state that used to mask 500s.
+  const childrenQuery = useQuery<ProjectLikeChild[]>({
     queryKey: [`/api/priorities/${priorityId}/children`],
-    queryFn: () => subResourceFetcher(`/api/priorities/${priorityId}/children`, [] as ProjectLikeChild[]),
+    queryFn: () => subResourceFetcherStrict<ProjectLikeChild[]>(`/api/priorities/${priorityId}/children`),
     enabled: priorityId > 0,
   });
+  const children = childrenQuery.data ?? [];
 
   // Full recursive subtree (every descendant, breadth-first) — used
-  // by the Chain tab to render the multi-level hierarchy. Separate
-  // query so the rest of the page keeps the lighter direct-children
-  // payload; tree query only fires when the Chain tab is active.
+  // by the Sub-priorities tab to render the multi-level hierarchy.
+  // Separate query so the rest of the page keeps the lighter direct-
+  // children payload; tree query only fires when the tab is active.
   const [chainActive, setChainActive] = useState(false);
-  const { data: descendants = [] } = useQuery<ProjectLikeChild[]>({
+  const descendantsQuery = useQuery<ProjectLikeChild[]>({
     queryKey: [`/api/priorities/${priorityId}/children`, { recursive: true }],
-    queryFn: () => subResourceFetcher(`/api/priorities/${priorityId}/children?recursive=true`, [] as ProjectLikeChild[]),
+    queryFn: () => subResourceFetcherStrict<ProjectLikeChild[]>(`/api/priorities/${priorityId}/children?recursive=true`),
     enabled: priorityId > 0 && chainActive,
   });
+  const descendants = descendantsQuery.data ?? [];
 
   const { data: activity = [] } = useQuery<PriorityActivityRow[]>({
     queryKey: [`/api/priorities/${priorityId}/activity`, showProjectEvents],
@@ -1276,13 +1294,55 @@ export default function PriorityDetailPage() {
                 parentId on the client and render a depth-indented
                 tree so the operator sees the entire chain, not just
                 the first level. Falls back to the immediate children
-                payload while the recursive query is still loading. */}
+                payload while the recursive query is still loading.
+                Distinct loading / error / empty states so a 500
+                doesn't masquerade as "no children". */}
             {(() => {
+              // Loading: the relevant query is in-flight and we have
+              // no prior data to fall back on. Don't render the empty
+              // state — that would be a lie.
+              const loading = (chainActive && descendantsQuery.isLoading && descendants.length === 0)
+                || (childrenQuery.isLoading && children.length === 0);
+              if (loading) {
+                return (
+                  <div className="pl-11 space-y-2" data-testid="chain-loading">
+                    <div className="h-8 bg-muted/40 animate-pulse rounded" />
+                    <div className="h-8 bg-muted/30 animate-pulse rounded" />
+                    <div className="h-8 bg-muted/20 animate-pulse rounded" />
+                  </div>
+                );
+              }
+              // Error: at least one query errored AND we have no data.
+              // Show the actual message + a Retry so QA/operators can
+              // distinguish "endpoint broke" from "no children exist".
+              const errored = (chainActive && descendantsQuery.isError && descendants.length === 0)
+                || (childrenQuery.isError && children.length === 0);
+              if (errored) {
+                const err = descendantsQuery.error ?? childrenQuery.error;
+                return (
+                  <div className="pl-11 py-4" data-testid="chain-error">
+                    <p className="text-sm text-red-600 font-medium mb-1">Failed to load sub-priorities</p>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      {err instanceof Error ? err.message : "Unknown error"}
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        void childrenQuery.refetch();
+                        if (chainActive) void descendantsQuery.refetch();
+                      }}
+                    >
+                      Retry
+                    </Button>
+                  </div>
+                );
+              }
               const tree = descendants.length > 0 ? descendants : children;
               if (tree.length === 0) {
                 if (!priority.parentId) {
                   return (
-                    <p className="text-sm text-muted-foreground py-4 text-center">
+                    <p className="text-sm text-muted-foreground py-4 text-center" data-testid="chain-truly-empty">
                       This priority has no parent or child priorities.
                     </p>
                   );
