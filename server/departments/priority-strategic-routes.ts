@@ -3399,24 +3399,32 @@ router.get("/api/priorities/:id/children", requireAuth, requirePermission("compa
   )) as number[];
   const userMap = await getUsersByIds(userIds);
 
-  // Get grandchild counts
+  // Get grandchild counts.
+  // The previous raw-SQL version interpolated the array as
+  // `ANY(($1, $2, $3))` which Postgres parses as a ROW, not an
+  // array — every multi-child priority returned 500. Use drizzle's
+  // `inArray` helper instead so both the postgres path and the
+  // SQLite dev fallback build the right `IN (...)` expression and
+  // bind parameters as a single array.
   const childIds = children.map((c: typeof children[number]) => c.id);
-  const grandChildResult: any = getDbMode() === "sqlite"
-    ? await db.execute(sql`
-      SELECT parent_id, COUNT(*) AS child_count
-      FROM mytool_company_priorities
-      WHERE parent_id IN (${sql.join(childIds.map((id: number) => sql`${id}`), sql`, `)}) AND ${activePriorityStatusSql()}
-      GROUP BY parent_id
-    `)
-    : await db.execute(sql`
-      SELECT parent_id, COUNT(*)::int AS child_count
-      FROM mytool_company_priorities
-      WHERE parent_id = ANY(${childIds}) AND ${activePriorityStatusSql()}
-      GROUP BY parent_id
-    `);
+  // `COUNT(*)` (no `::int` cast) so the same query works on both
+  // Postgres (where it returns BIGINT-as-string) and the SQLite dev
+  // fallback (where the cast syntax is invalid). The Number() in the
+  // map-population loop below normalises either form.
+  const grandChildRows = await db
+    .select({
+      parentId: mytoolCompanyPriorities.parentId,
+      childCount: sql<number>`COUNT(*)`.as("child_count"),
+    })
+    .from(mytoolCompanyPriorities)
+    .where(and(
+      inArray(mytoolCompanyPriorities.parentId, childIds),
+      activePriorityStatusCondition(),
+    ))
+    .groupBy(mytoolCompanyPriorities.parentId);
   const grandChildCountMap = new Map<number, number>();
-  for (const row of (grandChildResult.rows || grandChildResult || [])) {
-    grandChildCountMap.set(Number(row.parent_id), Number(row.child_count || 0));
+  for (const row of grandChildRows) {
+    grandChildCountMap.set(Number(row.parentId), Number(row.childCount || 0));
   }
 
   const enriched = await Promise.all(
