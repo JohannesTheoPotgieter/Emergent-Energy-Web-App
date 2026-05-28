@@ -10,6 +10,8 @@ import { FinanceShell } from "@/components/layout/FinanceShell";
 import { PageError } from "@/components/ui/page-states";
 import { formatZar as formatZarShared } from "@/lib/currency";
 import { Money } from "@/components/ui/money";
+import { PageHero } from "@/components/finance/PageHero";
+import { KpiTile } from "@/components/finance/KpiTile";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { Loader2, AlertTriangle, CheckCircle2, MinusCircle, Pencil, FlaskConical, RotateCcw } from "lucide-react";
@@ -198,22 +200,38 @@ export default function CosAnalysisPage() {
 
   return (
     <FinanceShell>
-      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight" data-testid="page-title">COS Analysis</h2>
-          <p className="text-sm text-muted-foreground">
-            Compares COS invoices against project plan progress. Per-project tolerance band determines the "in line" zone.
-          </p>
-          <p className="text-xs text-muted-foreground mt-1" data-testid="analysis-metadata">
-            Source: {earned.data?.trust?.sourceLayer ?? "canonical"} · Basis: captured COS invoices vs project progress · Last updated: {earned.data?.trust?.asOf ?? "—"}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 border-l pl-3">
-          <FlaskConical className="w-4 h-4 text-amber-600" />
-          <span className="text-xs">Sandbox</span>
-          <Switch checked={sandboxOn} onCheckedChange={setSandboxOn} data-testid="sandbox-toggle" />
-        </div>
-      </div>
+      {/* Visual redesign — PageHero (wave 4e). Single answer: how much
+          have we earned (POC × planned) vs. how much have we billed. */}
+      <PageHero
+        eyebrow="Finance · COS analysis"
+        label="Total earned to date"
+        value={<Money value={summary.earned} />}
+        tone={summary.earned >= summary.invoiced ? 'default' : 'warning'}
+        supporting={
+          <>
+            vs. invoiced <Money value={summary.invoiced} /> · {summary.over} over-billed ·{' '}
+            {summary.under} under-billed
+          </>
+        }
+        trust={[
+          { label: 'Source', value: earned.data?.trust?.sourceLayer ?? 'canonical' },
+          { label: 'Basis', value: 'COS invoices vs progress' },
+          { label: 'Updated', value: earned.data?.trust?.asOf ?? '—' },
+        ]}
+        actions={
+          <div className="flex items-center gap-2 border-l pl-3">
+            <FlaskConical className="w-4 h-4 text-amber-600" />
+            <span className="text-xs">Sandbox</span>
+            <Switch checked={sandboxOn} onCheckedChange={setSandboxOn} data-testid="sandbox-toggle" />
+          </div>
+        }
+        className="mb-4"
+        data-testid="cos-analysis-page-hero"
+      />
+      <h2 className="sr-only" data-testid="page-title">COS Analysis</h2>
+      <p className="sr-only" data-testid="analysis-metadata">
+        Source: {earned.data?.trust?.sourceLayer ?? "canonical"} · Basis: captured COS invoices vs project progress · Last updated: {earned.data?.trust?.asOf ?? "—"}
+      </p>
 
       {sandboxOn && (
         <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950 dark:border-amber-700 p-3" data-testid="sandbox-banner">
@@ -233,19 +251,27 @@ export default function CosAnalysisPage() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
-        <KpiCard title="Total earned (to date)" value={<Money value={summary.earned} />} loading={earned.isLoading} />
-        <KpiCard title="Total invoiced" value={<Money value={summary.invoiced} />} loading={earned.isLoading} />
-        <KpiCard
-          title="Projects over-billed"
-          value={String(summary.over)}
-          loading={earned.isLoading}
-          accent={summary.over > 0 ? "danger" : undefined}
+        <KpiTile
+          label="Total earned (to date)"
+          value={<Money value={summary.earned} />}
+          data-testid="kpi-tile-cos-earned"
         />
-        <KpiCard
-          title="Projects under-billed"
+        <KpiTile
+          label="Total invoiced"
+          value={<Money value={summary.invoiced} />}
+          data-testid="kpi-tile-cos-invoiced"
+        />
+        <KpiTile
+          label="Projects over-billed"
+          value={String(summary.over)}
+          tone={summary.over > 0 ? 'critical' : 'default'}
+          data-testid="kpi-tile-cos-over"
+        />
+        <KpiTile
+          label="Projects under-billed"
           value={String(summary.under)}
-          loading={earned.isLoading}
-          accent={summary.under > 0 ? "warning" : undefined}
+          tone={summary.under > 0 ? 'warning' : 'default'}
+          data-testid="kpi-tile-cos-under"
         />
       </div>
 
@@ -418,16 +444,5 @@ export default function CosAnalysisPage() {
 
 const SERIES_COLORS = ["#16A34A", "#DC2626", "#2563EB", "#D97706", "#7C3AED"];
 
-function KpiCard(props: { title: string; value: React.ReactNode; loading: boolean; accent?: "danger" | "warning" }) {
-  const accentClass = props.accent === "danger" ? "text-rose-600" : props.accent === "warning" ? "text-amber-600" : "";
-  return (
-    <Card>
-      <CardContent className="pt-4">
-        <div className="text-xs text-muted-foreground mb-1">{props.title}</div>
-        <div className={`text-xl font-bold font-mono ${accentClass}`}>
-          {props.loading ? <Loader2 className="w-4 h-4 animate-spin" /> : props.value}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+// Visual redesign (wave 4e) — the local <KpiCard> helper was dropped
+// in favour of the canonical <KpiTile> from @/components/finance/KpiTile.
