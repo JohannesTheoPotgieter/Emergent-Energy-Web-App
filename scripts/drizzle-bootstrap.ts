@@ -95,6 +95,16 @@ const MODERN_MIGRATION_PROBES: Record<
     columnExists(c, "quickbooks_documents", "qb_balance"),
   "0068_project_document_links": (c) =>
     tableExists(c, "project_document_links"),
+  // 0079 backfills the three migration sets that previously had no probe
+  // (0067_sp_settings_error_columns, 0069_priorities_phase3,
+  // 0076_finance_dispute_writeoff_columns). All three artifact families
+  // must be present for the migration to count as applied — any one
+  // missing means a drifted dev DB that needs the repair.
+  "0079_dev_drift_repair": async (c) => {
+    if (!(await columnExists(c, "sp_settings", "last_success_at"))) return false;
+    if (!(await tableExists(c, "priority_saved_views"))) return false;
+    return columnExists(c, "normalized_revenue_lines", "dispute_opened_at");
+  },
 };
 
 async function tableExists(client: Client, table: string): Promise<boolean> {
