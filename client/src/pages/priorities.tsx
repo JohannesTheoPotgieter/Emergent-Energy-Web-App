@@ -945,10 +945,14 @@ export default function PrioritiesPage() {
                     <Select value={healthFilter} onValueChange={setHealthFilter}>
                       <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                       <SelectContent>
+                        {/* Verb labels to match the rest of the UI per the
+                            Truth/Clear/Simple pass — health is "is this on
+                            track?" not "how important is it?". Severity
+                            keeps the noun labels (Critical/High/Normal). */}
                         <SelectItem value="all">All health</SelectItem>
-                        <SelectItem value="critical">Critical</SelectItem>
-                        <SelectItem value="at_risk">At risk</SelectItem>
-                        <SelectItem value="healthy">Healthy</SelectItem>
+                        <SelectItem value="critical">Off track</SelectItem>
+                        <SelectItem value="at_risk">Slipping</SelectItem>
+                        <SelectItem value="healthy">On track</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
