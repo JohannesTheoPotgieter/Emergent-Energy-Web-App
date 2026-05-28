@@ -27,12 +27,34 @@ interface LineageNode extends PriorityRow {
 }
 
 async function fetchAll(): Promise<PriorityRow[]> {
+  // The shared `matchesPriorityListFilter` (shared/config/priorities.ts:389)
+  // defaults to `row.scope === "company"` when no `scope` query param is
+  // passed. That means a bare `/api/priorities` call returns only
+  // company-scope rows — department- and role-scope priorities (which are
+  // exactly the descendants a lineage view needs) get silently dropped
+  // and every root would render as "No descendants — standalone priority".
+  // Fix: request each scope explicitly in parallel and merge the results.
   const token = localStorage.getItem("auth_token") || "";
-  const res = await fetch("/api/priorities?include_cancelled=true", {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) return [];
-  return res.json();
+  const headers = { Authorization: `Bearer ${token}` };
+  const results = await Promise.all(
+    (["company", "department", "role"] as const).map(async (scope) => {
+      const res = await fetch(`/api/priorities?scope=${scope}&include_cancelled=true`, { headers });
+      if (!res.ok) return [] as PriorityRow[];
+      return (await res.json()) as PriorityRow[];
+    }),
+  );
+  // De-dupe defensively in case a future server change ever returns the
+  // same row under more than one scope.
+  const seen = new Set<number>();
+  const merged: PriorityRow[] = [];
+  for (const list of results) {
+    for (const row of list) {
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      merged.push(row);
+    }
+  }
+  return merged;
 }
 
 export default function PriorityLineagePage() {

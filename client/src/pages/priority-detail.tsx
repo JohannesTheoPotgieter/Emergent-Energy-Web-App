@@ -689,17 +689,26 @@ export default function PriorityDetailPage() {
                   {reviewMutation.isPending ? "Saving…" : "Mark reviewed"}
                 </Button>
               )}
-              {canEscalateThisPriority && (priority.scope === "role" || priority.scope === "department") && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="text-xs h-7"
-                  onClick={() => setEscalateDialogOpen(true)}
-                  disabled={escalateMutation.isPending}
-                >
-                  {escalateMutation.isPending ? "Escalating..." : "Escalate"}
-                </Button>
-              )}
+              {canEscalateThisPriority && (priority.scope === "role" || priority.scope === "department") && (() => {
+                // Name the destination so the button doesn't have two
+                // meanings depending on context. role → Department,
+                // department → Company. Matches the card button text
+                // shipped in PR #953 (C5) — the detail page surface
+                // was missed at the time.
+                const target = priority.scope === "department" ? "Company" : "Department";
+                return (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-xs h-7"
+                    onClick={() => setEscalateDialogOpen(true)}
+                    disabled={escalateMutation.isPending}
+                    aria-label={`Escalate priority to ${target.toLowerCase()} scope`}
+                  >
+                    {escalateMutation.isPending ? "Escalating..." : `Escalate to ${target}`}
+                  </Button>
+                );
+              })()}
               {canUsePriorityAdminActions && (priority.scope === "company" || priority.scope === "department") && (
                 <Button
                   size="sm"
