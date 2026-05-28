@@ -337,20 +337,63 @@ export function registerPaymentBatchRoutes(app: Express) {
         WHERE id = ${id}
       `);
 
-      // Update all payment requests in this batch to 'complete'
-      await db.execute(sql`
+      // Update all payment requests in this batch to 'complete'. Capture
+      // the ids so we can propose the TF-21 paid-date cascade on the
+      // matching normalized_cost_lines below.
+      const idsResult = await db.execute(sql`
         UPDATE payment_requests SET status = 'complete', updated_at = NOW()
         WHERE id IN (SELECT payment_request_id FROM payment_batch_items WHERE payment_batch_id = ${id})
+        RETURNING id
       `);
+      const completedPaymentRequestIds = rowsFromResult(idsResult)
+        .map((r) => Number((r as { id?: unknown }).id))
+        .filter((n) => Number.isFinite(n));
+
+      // TF-21 (audit V3) — propose paid-date cascade on the matching
+      // cost lines. Best-effort: a failure here is logged but doesn't
+      // roll back the batch confirmation (which has already updated the
+      // payment_requests to 'complete').
+      let cascadeSummary: {
+        proposed: number;
+        skipped: number;
+        highConfidence: number;
+      } | null = null;
+      try {
+        const { proposePaymentRequestCascade } = await import(
+          "./services/payment-request-cost-line-cascade"
+        );
+        const results = await proposePaymentRequestCascade(
+          completedPaymentRequestIds,
+          { proposedByUserId: user.id },
+        );
+        cascadeSummary = {
+          proposed: results.filter((r) => r.pendingApprovalId).length,
+          skipped: results.filter((r) => !r.pendingApprovalId).length,
+          highConfidence: results.filter((r) => r.confidence === "high").length,
+        };
+      } catch (cascadeErr) {
+        console.error(
+          "[PaymentBatch] TF-21 cascade proposal failed:",
+          cascadeErr instanceof Error ? cascadeErr.message : String(cascadeErr),
+        );
+      }
 
       logAuditFromReq(req, {
         entityType: "payment_batch",
         entityId: String(id),
         action: "confirm",
-        changesJson: { bankReference, confirmedByUserId: user.id },
+        changesJson: {
+          bankReference,
+          confirmedByUserId: user.id,
+          completedPaymentRequestIds,
+          ...(cascadeSummary ? { tf21Cascade: cascadeSummary } : {}),
+        },
       });
 
-      res.json({ success: true });
+      res.json({
+        success: true,
+        ...(cascadeSummary ? { tf21Cascade: cascadeSummary } : {}),
+      });
     } catch (err: unknown) {
       console.error("[PaymentBatch] Confirm error:", err instanceof Error ? err.message : String(err));
       res.status(500).json({ error: "Failed to confirm batch" });

@@ -165,12 +165,12 @@
       "loc": 1715
     },
     {
-      "file": "shared/schema/projects.ts",
-      "loc": 1698
+      "file": "shared/schema/finance.ts",
+      "loc": 1708
     },
     {
-      "file": "shared/schema/finance.ts",
-      "loc": 1677
+      "file": "shared/schema/projects.ts",
+      "loc": 1698
     },
     {
       "file": "server/storage.ts",
@@ -207,6 +207,10 @@
     {
       "file": "client/src/components/tabs/ProjectPlanTab.tsx",
       "loc": 1565
+    },
+    {
+      "file": "server/routes/finance-legacy-extracted-routes.ts",
+      "loc": 1551
     },
     {
       "file": "shared/permissions/registry.ts",
