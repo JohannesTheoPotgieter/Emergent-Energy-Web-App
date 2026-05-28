@@ -153,16 +153,23 @@ function ReadinessChecklist({
   onChange: (updated: Record<string, boolean>) => void;
   disabled: boolean;
 }) {
-  const [open, setOpen] = useState(true);
+  // UX-pass-1 rebuild (2026-05-27) — default collapsed (header-only)
+  // so the checklist no longer competes with tab content for attention.
+  // Always renders as a sticky banner at the top of the page so the
+  // user can see progress no matter which tab they're filling in.
+  const [open, setOpen] = useState(false);
   const checked = Object.values(checklist).filter(Boolean).length;
   const total = READINESS_ITEMS.length;
   const pct = total > 0 ? Math.round((checked / total) * 100) : 0;
 
   return (
-    <Card className={pct === 100 ? "border-emerald-200" : "border-amber-200"}>
-      <CardHeader className="cursor-pointer" onClick={() => setOpen(!open)}>
-        <CardTitle className="flex items-center justify-between text-base">
-          <span>Pre-Handover Readiness Checklist ({checked}/{total})</span>
+    <Card className={`sticky top-2 z-20 shadow-sm ${pct === 100 ? "border-emerald-200" : "border-amber-200"}`}>
+      <CardHeader className="cursor-pointer py-3" onClick={() => setOpen(!open)}>
+        <CardTitle className="flex items-center justify-between text-sm">
+          <span className="flex items-center gap-2">
+            <span>Pre-Handover Readiness</span>
+            <span className="text-muted-foreground font-normal text-xs">({checked}/{total} · submit at 100%)</span>
+          </span>
           <div className="flex items-center gap-2">
             <Badge variant="outline" className={pct === 100 ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-amber-300 bg-amber-50 text-amber-700"}>
               {pct}%
