@@ -1110,20 +1110,15 @@ export default function FyeRevenueTrackingPage() {
                 <>No FY budget set yet.</>
               )
             }
-            trust={[
-              { label: 'FY actual COS', value: <Money value={fyTotals.actualCos} /> },
-              {
-                label: 'FY actual GP',
-                value: <Money value={fyTotals.actualGp} />,
-                tone: fyTotals.actualGp >= 0 ? 'positive' : 'critical',
-              },
-              ...(fyTotals.actualRev > 0
+            trust={
+              fyTotals.actualRev > 0
                 ? [{
                     label: 'GP margin',
                     value: `${((fyTotals.actualGp / fyTotals.actualRev) * 100).toFixed(1)}%`,
+                    tone: fyTotals.actualGp >= 0 ? 'positive' as const : 'critical' as const,
                   }]
-                : []),
-            ]}
+                : undefined
+            }
             className="mb-1"
             data-testid="fye-page-hero"
           />

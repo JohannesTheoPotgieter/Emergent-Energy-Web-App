@@ -1811,46 +1811,14 @@ export default function CashflowPage() {
             </div>
           }
         />
-        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground -mt-2">
-          <Badge
-            variant="outline"
-            className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card"
-          >
-            <Wallet className="h-3 w-3" />
-            {scopeLabel}
-          </Badge>
-          <Badge
-            variant="outline"
-            className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card"
-          >
-            <Eye className="h-3 w-3" />
-            {overrideWeeks} override {overrideWeeks === 1 ? 'week' : 'weeks'}
-          </Badge>
-          <Badge
-            variant="outline"
-            className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card"
-          >
-            <ArrowDownRight className="h-3 w-3" />
-            {varianceWeeks} variance {varianceWeeks === 1 ? 'week' : 'weeks'}
-          </Badge>
-          <Badge
-            variant="outline"
-            className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card"
-          >
-            <Loader2
-              className={`h-3 w-3 ${isCashflowFetching ? 'animate-spin text-emerald-600' : ''}`}
-            />
-            {cashflowUpdatedAt
-              ? `Refreshed ${new Date(cashflowUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-              : 'Live'}
-          </Badge>
-          {/* Visual redesign — TF-32 stale-data indicator. Goes amber once the
-              cashflow data crosses the FINANCE_QUERY_STABLE threshold (5 min).
-              Component is silent until ageMs >= staleAfterMs / 2. */}
-          <StaleIndicator
-            updatedAt={cashflowUpdatedAt}
-            staleAfterMs={5 * 60_000}
-          />
+        {/* Visual redesign — simplification pass. Dropped: scope label
+            (redundant with the FY scope control above), override / variance
+            week counters (these are summary stats that live in the table
+            itself), and the "Refreshed HH:MM" badge (StaleIndicator
+            replaces it). Kept: Read-only badge (functional gate) +
+            StaleIndicator (goes amber at 5 min). */}
+        <div className="flex items-center gap-2 text-xs text-muted-foreground -mt-2">
+          <StaleIndicator updatedAt={cashflowUpdatedAt} staleAfterMs={5 * 60_000} />
           {!canEditCashflow && (
             <Badge
               variant="outline"
@@ -2121,28 +2089,15 @@ export default function CashflowPage() {
                         <Money value={kpis.totalOutflows} />.
                       </>
                     }
-                    trust={[
-                      {
-                        label: 'Updated',
-                        value: cashflowUpdatedAt
-                          ? new Date(cashflowUpdatedAt).toLocaleTimeString('en-ZA', {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })
-                          : '—',
-                      },
-                      {
-                        label: 'Source',
-                        value: cashflowTrust?.canonicalTable ?? 'canonical',
-                      },
-                      ...(cashflowTrust?.nullCount && cashflowTrust.nullCount > 0
+                    trust={
+                      cashflowTrust?.nullCount && cashflowTrust.nullCount > 0
                         ? [{
                             label: 'Missing',
                             value: `${cashflowTrust.nullCount} fields`,
                             tone: 'warning' as const,
                           }]
-                        : []),
-                    ]}
+                        : undefined
+                    }
                     className="mb-3"
                     data-testid="cashflow-page-hero"
                   />
