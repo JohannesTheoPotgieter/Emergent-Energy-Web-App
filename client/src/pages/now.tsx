@@ -39,15 +39,7 @@ import {
   ragLevel,
   TYPOGRAPHY,
 } from '@/lib/design-tokens';
-import {
-  Flame,
-  ArrowRight,
-  AlertOctagon,
-  TrendingUp,
-  TrendingDown,
-  Activity,
-  Inbox,
-} from 'lucide-react';
+import { Flame, ArrowRight } from 'lucide-react';
 
 // "On fire" derivation lives in a separate module so it's testable
 // without React.
@@ -191,31 +183,19 @@ function NowPageInner() {
       <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
           <CardContent className="py-4">
-            <h3 className={`${TYPOGRAPHY.SECTION} mb-2 flex items-center gap-2`}>
-              <Activity className={`h-4 w-4 ${statusClasses('neutral', 'text')}`} />
-              Money this week
-            </h3>
+            <h3 className={`${TYPOGRAPHY.SECTION} mb-2`}>Money this week</h3>
             <dl className="space-y-1.5 text-sm">
               <div className="flex items-center justify-between">
-                <dt className="text-muted-foreground inline-flex items-center gap-1.5">
-                  <TrendingUp className={`h-3.5 w-3.5 ${statusClasses('healthy', 'text')}`} />
-                  In this week
-                </dt>
+                <dt className="text-muted-foreground">In this week</dt>
                 <dd className="font-medium tabular-nums">{formatZarCompact(inflowThisWeek)}</dd>
               </div>
               <div className="flex items-center justify-between">
-                <dt className="text-muted-foreground inline-flex items-center gap-1.5">
-                  <TrendingDown className={`h-3.5 w-3.5 ${statusClasses('neutral', 'text')}`} />
-                  Out this week
-                </dt>
+                <dt className="text-muted-foreground">Out this week</dt>
                 <dd className="font-medium tabular-nums">{formatZarCompact(outflowThisWeek)}</dd>
               </div>
               {overdueAR > 0 && (
                 <div className="flex items-center justify-between">
-                  <dt className="text-muted-foreground inline-flex items-center gap-1.5">
-                    <AlertOctagon className={`h-3.5 w-3.5 ${statusClasses('critical', 'text')}`} />
-                    Overdue receivables
-                  </dt>
+                  <dt className="text-muted-foreground">Overdue receivables</dt>
                   <dd className={`font-medium tabular-nums ${statusClasses('critical', 'text')}`}>
                     {formatZarCompact(overdueAR)}
                   </dd>
@@ -223,10 +203,7 @@ function NowPageInner() {
               )}
               {overdueAP > 0 && (
                 <div className="flex items-center justify-between">
-                  <dt className="text-muted-foreground inline-flex items-center gap-1.5">
-                    <AlertOctagon className={`h-3.5 w-3.5 ${statusClasses('critical', 'text')}`} />
-                    Overdue payables
-                  </dt>
+                  <dt className="text-muted-foreground">Overdue payables</dt>
                   <dd className={`font-medium tabular-nums ${statusClasses('critical', 'text')}`}>
                     {formatZarCompact(overdueAP)}
                   </dd>
@@ -238,10 +215,7 @@ function NowPageInner() {
 
         <Card>
           <CardContent className="py-4">
-            <h3 className={`${TYPOGRAPHY.SECTION} mb-2 flex items-center gap-2`}>
-              <Activity className={`h-4 w-4 ${statusClasses('neutral', 'text')}`} />
-              Schedule this week
-            </h3>
+            <h3 className={`${TYPOGRAPHY.SECTION} mb-2`}>Schedule this week</h3>
             <dl className="space-y-1.5 text-sm">
               <div className="flex items-center justify-between">
                 <dt className="text-muted-foreground">On schedule</dt>
@@ -268,15 +242,12 @@ function NowPageInner() {
         </Card>
       </section>
 
-      {/* SECTION 3 — What needs me. PR-C wired /api/my-queue so this
-          mirrors the dedicated /my-queue page. The whole section is a
-          link to /my-queue; the inner rows are scannable shortcuts. */}
+      {/* SECTION 3 — What needs me. Show only buckets with items;
+          if everything is zero render a single "Nothing waiting" line
+          instead of four "Nothing waiting on you for X" rows. */}
       <section>
         <div className="flex items-center justify-between mb-2">
-          <h2 className={`${TYPOGRAPHY.SECTION} flex items-center gap-2`}>
-            <Inbox className={`h-4 w-4 ${statusClasses(myQueueTotal > 0 ? 'warning' : 'neutral', 'text')}`} />
-            What needs me
-          </h2>
+          <h2 className={TYPOGRAPHY.SECTION}>What needs me</h2>
           {myQueueTotal > 0 && (
             <Button variant="ghost" size="sm" asChild className="text-xs">
               <a href="/my-queue" className="inline-flex items-center gap-1">
@@ -286,12 +257,26 @@ function NowPageInner() {
           )}
         </div>
         <Card>
-          <ul className="divide-y">
-            <NeedsMeRow count={myPoCount} label="purchase orders awaiting your approval" href="/my-queue#pos" />
-            <NeedsMeRow count={myPaymentCount} label="payment requests in review" href="/my-queue#payments" />
-            <NeedsMeRow count={myCrCount} label="change requests awaiting decision" href="/my-queue#crs" />
-            <NeedsMeRow count={myStageCount} label="stage-gate exceptions assigned to you" href="/my-queue#stage" />
-          </ul>
+          {myQueueTotal === 0 ? (
+            <div className="px-4 py-3 text-sm text-muted-foreground">
+              Nothing is waiting on you right now.
+            </div>
+          ) : (
+            <ul className="divide-y">
+              {myPoCount > 0 && (
+                <NeedsMeRow count={myPoCount} label="purchase orders awaiting your approval" href="/my-queue#pos" />
+              )}
+              {myPaymentCount > 0 && (
+                <NeedsMeRow count={myPaymentCount} label="payment requests in review" href="/my-queue#payments" />
+              )}
+              {myCrCount > 0 && (
+                <NeedsMeRow count={myCrCount} label="change requests awaiting decision" href="/my-queue#crs" />
+              )}
+              {myStageCount > 0 && (
+                <NeedsMeRow count={myStageCount} label="stage-gate exceptions assigned to you" href="/my-queue#stage" />
+              )}
+            </ul>
+          )}
         </Card>
       </section>
 
@@ -316,13 +301,6 @@ function NeedsMeRow({
   label: string;
   href: string;
 }) {
-  if (count === 0) {
-    return (
-      <li className="px-4 py-3 text-sm text-muted-foreground flex items-center justify-between">
-        <span>Nothing waiting on you for {labelCategory(label)}.</span>
-      </li>
-    );
-  }
   return (
     <li className="px-4 py-3 flex items-center justify-between hover:bg-muted/30">
       <div className="text-sm">
@@ -336,12 +314,6 @@ function NeedsMeRow({
       </Button>
     </li>
   );
-}
-
-function labelCategory(label: string): string {
-  if (label.includes('purchase order')) return 'POs';
-  if (label.includes('change request')) return 'CRs';
-  return 'this';
 }
 
 function NowSkeleton() {

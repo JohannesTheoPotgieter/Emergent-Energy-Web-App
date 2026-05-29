@@ -40,10 +40,7 @@ import { useProjectsSummary } from '@/hooks/use-projects-summary';
 import { useAuth } from '@/hooks/use-auth';
 import { usePermission } from '@/hooks/use-permissions';
 import { TYPOGRAPHY, statusClasses, ragLevel } from '@/lib/design-tokens';
-import { formatZarCompact } from '@/lib/currency';
-import {
-  ArrowRight, Search, Filter, Eye,
-} from 'lucide-react';
+import { Search } from 'lucide-react';
 import type { ProjectSummary } from '@/lib/api';
 import {
   computePortfolioRow,
@@ -133,30 +130,17 @@ export default function PortfolioPage() {
         <p className="text-sm text-muted-foreground">
           {isLoading
             ? 'Loading projects…'
-            : `${kpi.active} active · ${kpi.behind} behind plan · ${formatNumber(kpi.totalKwp, 0)} kWp total`}
+            : `${kpi.active} active · ${kpi.behind} behind plan · ${formatNumber(kpi.totalKwp, 0)} kWp${
+                kpi.avgCompletion != null ? ` · avg ${kpi.avgCompletion.toFixed(0)}% complete` : ''
+              }`}
         </p>
       </header>
 
-      {/* KPI strip — three numbers, plain text, no tiles. */}
-      <section className="grid grid-cols-3 gap-4">
-        <PortfolioKpi label="Total kWp" value={formatNumber(kpi.totalKwp, 0)} />
-        <PortfolioKpi
-          label="Avg completion"
-          value={kpi.avgCompletion == null ? '—' : `${kpi.avgCompletion.toFixed(0)}%`}
-        />
-        <PortfolioKpi
-          label="Behind plan"
-          value={String(kpi.behind)}
-          level={kpi.behind > 0 ? 'warning' : 'neutral'}
-        />
-      </section>
-
-      {/* Toolbar — single dropdown for state, single for lens, search,
-          column chooser deferred (default 6 columns is already lean). */}
-      <section className="flex items-center gap-2 flex-wrap">
-        <div className="inline-flex items-center gap-1">
-          <Eye className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-xs text-muted-foreground">Lens</span>
+      {/* Toolbar — lens / state / search. No icons, no inline KPI strip;
+          the page subtitle already carries the headline numbers. */}
+      <section className="flex items-center gap-3 flex-wrap">
+        <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          Lens
           <Select value={lens} onValueChange={(v) => setLens(v as PortfolioLens)}>
             <SelectTrigger className="h-8 w-36 text-xs">
               <SelectValue />
@@ -169,11 +153,10 @@ export default function PortfolioPage() {
               ))}
             </SelectContent>
           </Select>
-        </div>
+        </label>
 
-        <div className="inline-flex items-center gap-1">
-          <Filter className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-xs text-muted-foreground">State</span>
+        <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          State
           <Select value={state} onValueChange={(v) => setState(v as PortfolioStateFilter)}>
             <SelectTrigger className="h-8 w-40 text-xs">
               <SelectValue />
@@ -186,7 +169,7 @@ export default function PortfolioPage() {
               ))}
             </SelectContent>
           </Select>
-        </div>
+        </label>
 
         <div className="relative ml-auto">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -255,7 +238,6 @@ export default function PortfolioPage() {
                         {row.lensSummary.text && (
                           <span className="text-muted-foreground truncate">{row.lensSummary.text}</span>
                         )}
-                        <ArrowRight className="h-3.5 w-3.5 text-muted-foreground ml-auto shrink-0" />
                       </div>
                     </TableCell>
                   </TableRow>
@@ -275,37 +257,11 @@ export default function PortfolioPage() {
 
 // ===================== Sub-components =====================
 
-function PortfolioKpi({
-  label,
-  value,
-  level = 'neutral',
-}: {
-  label: string;
-  value: string;
-  level?: 'healthy' | 'warning' | 'critical' | 'neutral';
-}) {
-  return (
-    <Card>
-      <CardContent className="py-3 px-4">
-        <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
-        <div className={`mt-0.5 text-xl font-semibold tabular-nums ${statusClasses(level, 'text')}`}>
-          {value}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 function PortfolioSkeleton() {
   return (
     <div className="space-y-5 max-w-6xl mx-auto py-6 px-4">
       <Skeleton className="h-8 w-48" />
       <Skeleton className="h-4 w-72" />
-      <div className="grid grid-cols-3 gap-4">
-        <Skeleton className="h-20" />
-        <Skeleton className="h-20" />
-        <Skeleton className="h-20" />
-      </div>
       <Skeleton className="h-9 w-full" />
       <Skeleton className="h-64" />
     </div>
@@ -324,7 +280,3 @@ function formatNumber(n: number, frac = 0): string {
   if (!Number.isFinite(n)) return '—';
   return n.toLocaleString('en-ZA', { minimumFractionDigits: frac, maximumFractionDigits: frac });
 }
-
-// Avoid an unused-import warning when formatZarCompact isn't used by
-// the current lens (still useful indirectly via portfolio-lens.ts).
-void formatZarCompact;
