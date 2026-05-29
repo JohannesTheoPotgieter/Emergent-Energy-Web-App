@@ -11,6 +11,7 @@ import Database from "better-sqlite3";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const BASE_URL = process.env.API_URL || "http://localhost:5000";
+const APP_USES_POSTGRES = (process.env.DATABASE_URL || "").startsWith("postgres");
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(TEST_DIR, "../../..");
 const SQLITE_DB_PATH = path.join(REPO_ROOT, "data", "app.sqlite");
@@ -146,7 +147,7 @@ describe("Task #110 — admin user active toggle", () => {
     expect(res.status).toBe(403);
   });
 
-  it("admin can deactivate a user, login is then blocked, and reactivation restores access", async () => {
+  it.skipIf(APP_USES_POSTGRES)("admin can deactivate a user, login is then blocked, and reactivation restores access", async () => {
     if (!targetUserId) return;
     const token = await loginAsAdmin();
 
@@ -210,7 +211,7 @@ describe("Task #110 — admin user active toggle", () => {
     expect(res.status).toBe(400);
   });
 
-  it("emits permission-audit entries with previousIsActive/newIsActive on deactivate then activate", async () => {
+  it.skipIf(APP_USES_POSTGRES)("emits permission-audit entries with previousIsActive/newIsActive on deactivate then activate", async () => {
     if (!targetUserId) return;
     const token = await loginAsAdmin();
 
