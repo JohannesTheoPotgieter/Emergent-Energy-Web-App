@@ -172,6 +172,31 @@ describe("SharePoint Graph access helpers", () => {
     expect(JSON.stringify(result)).not.toContain(getSharePointTokenMock);
   });
 
+  it("accepts an app-only token whose Sites.Read.All arrives as a role claim", async () => {
+    // App-only (client-credentials) tokens carry Graph Application permissions
+    // in the `roles` claim, not the delegated `scp` claim. The health check
+    // must treat that as valid SharePoint access (option-3 token source).
+    getSharePointTokenMock.mockResolvedValue(graphJwt({ roles: ["Sites.Read.All"] }));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(mockGraphResponse({ displayName: "Emergent" }))
+      .mockResolvedValueOnce(mockGraphResponse({ name: "Documents" }))
+      .mockResolvedValueOnce(mockGraphResponse({ id: "folder-1", name: "Active Trackers", folder: {} }))
+      .mockResolvedValueOnce(mockGraphResponse({ value: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await testConnection("site-1", "drive-1", undefined, "Active Trackers");
+
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics?.token).toMatchObject({
+      exists: true,
+      tokenType: "app-only",
+      scopes: [],
+      roles: ["Sites.Read.All"],
+      hasRequiredSharePointAccess: true,
+    });
+  });
+
   it("classifies the current drive denial symptom with endpoint, status, and Graph error details", async () => {
     const driveDeniedBody = {
       error: {
