@@ -95,14 +95,14 @@ const ROW_DEFS: {
   { key: "realisedCOS", label: "Realised COS", dataKey: "realisedCOS", colorClass: "text-foreground font-bold", group: "monthly", clickable: true },
   { key: "committedCOS", label: "Committed COS", dataKey: "committedCOS", colorClass: "text-amber-600 font-semibold", group: "monthly", clickable: true },
   { key: "unrealisedCOS", label: "Unrealised COS", dataKey: "unrealisedCOS", colorClass: "text-red-600 font-semibold", group: "monthly", clickable: true },
-  { key: "budget", label: "Costed", dataKey: "budget", colorClass: "text-purple-600", group: "monthly" },
+  { key: "budget", label: "Costed", dataKey: "budget", colorClass: "text-slate-600", group: "monthly" },
   { key: "variance", label: "Variance", dataKey: "variance", colorClass: "", group: "monthly", colorCoded: true },
   { key: "variancePct", label: "Variance %", dataKey: "variancePct", colorClass: "", group: "monthly", colorCoded: true },
   { key: "ytdCOS", label: "YTD COS", dataKey: "ytdCOS", colorClass: "text-foreground font-bold", group: "ytd" },
   { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", colorClass: "text-foreground font-bold", group: "ytd" },
   { key: "ytdCommitted", label: "YTD Committed", dataKey: "ytdCommitted", colorClass: "text-amber-600", group: "ytd" },
   { key: "ytdUnrealised", label: "YTD Unrealised", dataKey: "ytdUnrealised", colorClass: "text-red-600", group: "ytd" },
-  { key: "ytdBudget", label: "YTD Costed", dataKey: "ytdBudget", colorClass: "text-purple-600", group: "ytd" },
+  { key: "ytdBudget", label: "YTD Costed", dataKey: "ytdBudget", colorClass: "text-slate-600", group: "ytd" },
   { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", colorClass: "", group: "ytd", colorCoded: true },
   { key: "ytdVariancePct", label: "YTD Variance %", dataKey: "ytdVariancePct", colorClass: "", group: "ytd", colorCoded: true },
 ];
@@ -133,8 +133,8 @@ function MonthDetailDrawer({ month, onClose, defaultFilter = "all" }: { month: P
 
   const statusBadge = (status: string) => {
     switch (status) {
-      case 'Realised': return 'bg-green-50 text-green-700 border-green-200';
-      case 'Invoiced': return 'bg-blue-50 text-blue-700 border-blue-200';
+      case 'Realised': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      case 'Invoiced': return 'bg-amber-50 text-amber-700 border-amber-200';
       case 'Committed': return 'bg-amber-50 text-amber-700 border-amber-200';
       default: return 'bg-slate-50 text-slate-600 border-slate-200';
     }
@@ -223,12 +223,12 @@ function MonthDetailDrawer({ month, onClose, defaultFilter = "all" }: { month: P
                     <td className="px-4 py-2.5 text-muted-foreground max-w-[120px] truncate">{item.supplier || "—"}</td>
                     <td className="px-4 py-2.5">
                       {item.invoiceNumber ? (
-                        <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">{item.invoiceNumber}</span>
+                        <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">{item.invoiceNumber}</span>
                       ) : <span className="text-slate-400">—</span>}
                     </td>
                     <td className="px-4 py-2.5">
                       {item.poNumber ? (
-                        <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-50 text-green-700 border border-green-200">{item.poNumber}</span>
+                        <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">{item.poNumber}</span>
                       ) : <span className="text-slate-400">—</span>}
                     </td>
                     <td className="px-4 py-2.5 text-center">
@@ -291,10 +291,10 @@ export function MonthlyRealisationTab({ projectName, projectId }: MonthlyRealisa
     const pct = variancePct != null ? Math.abs(variancePct) : null;
     const isPositive = val > 0;
     if (pct !== null) {
-      if (pct >= 0.25) return isPositive ? "text-red-700 font-bold bg-red-50" : "text-green-700 font-bold bg-green-50";
-      if (pct >= 0.15) return isPositive ? "text-amber-600 font-semibold bg-amber-50" : "text-green-600 font-semibold bg-green-50";
+      if (pct >= 0.25) return isPositive ? "text-red-700 font-bold bg-red-50" : "text-emerald-700 font-bold bg-emerald-50";
+      if (pct >= 0.15) return isPositive ? "text-amber-600 font-semibold bg-amber-50" : "text-emerald-600 font-semibold bg-emerald-50";
     }
-    return isPositive ? "text-red-600" : "text-green-600";
+    return isPositive ? "text-red-600" : "text-emerald-600";
   }, []);
 
   const formatCell = useCallback((row: (typeof ROW_DEFS)[number], val: number) => {
@@ -329,23 +329,23 @@ export function MonthlyRealisationTab({ projectName, projectId }: MonthlyRealisa
     { id: "ytd-cos", label: "YTD COS (Planned)", value: formatRand(lastMonth?.ytdCOS ?? 0), icon: DollarSign, iconBg: "bg-muted", iconColor: "text-muted-foreground", valueColor: "text-foreground", borderColor: "" },
     { id: "ytd-realised", label: "YTD COS Realised", value: formatRand(lastMonth?.ytdRealised ?? 0), icon: TrendingDown, iconBg: "bg-muted", iconColor: "text-foreground", valueColor: "text-foreground font-black", borderColor: "border-border" },
     { id: "ytd-unrealised", label: "YTD Unrealised", value: formatRand(lastMonth?.ytdUnrealised ?? 0), icon: Activity, iconBg: "bg-red-100", iconColor: "text-red-600", valueColor: "text-red-600", borderColor: "border-red-200" },
-    { id: "ytd-costed", label: "YTD Costed", value: formatRand(lastMonth?.ytdBudget ?? 0), icon: Target, iconBg: "bg-purple-100", iconColor: "text-purple-600", valueColor: "text-purple-700", borderColor: "" },
+    { id: "ytd-costed", label: "YTD Costed", value: formatRand(lastMonth?.ytdBudget ?? 0), icon: Target, iconBg: "bg-slate-100", iconColor: "text-slate-600", valueColor: "text-slate-700", borderColor: "" },
     {
       id: "ytd-variance", label: "YTD Variance", value: formatRand(lastMonth?.ytdVariance ?? 0),
       icon: TrendingDown,
-      iconBg: (lastMonth?.ytdVariance ?? 0) <= 0 ? "bg-green-100" : "bg-red-100",
-      iconColor: (lastMonth?.ytdVariance ?? 0) <= 0 ? "text-green-600" : "text-red-600",
-      valueColor: (lastMonth?.ytdVariance ?? 0) <= 0 ? "text-green-600" : "text-red-600",
-      borderColor: (lastMonth?.ytdVariance ?? 0) <= 0 ? "border-green-200" : "border-red-200",
+      iconBg: (lastMonth?.ytdVariance ?? 0) <= 0 ? "bg-emerald-100" : "bg-red-100",
+      iconColor: (lastMonth?.ytdVariance ?? 0) <= 0 ? "text-emerald-600" : "text-red-600",
+      valueColor: (lastMonth?.ytdVariance ?? 0) <= 0 ? "text-emerald-600" : "text-red-600",
+      borderColor: (lastMonth?.ytdVariance ?? 0) <= 0 ? "border-emerald-200" : "border-red-200",
     },
     {
       id: "ytd-variance-pct", label: "Realised %",
       value: (lastMonth?.ytdCOS ?? 0) > 0 ? `${((lastMonth?.ytdRealised ?? 0) / (lastMonth?.ytdCOS ?? 1) * 100).toFixed(1)}%` : "0.0%",
       icon: Target,
-      iconBg: ((lastMonth?.ytdRealised ?? 0) / Math.max(lastMonth?.ytdCOS ?? 1, 1)) >= 0.5 ? "bg-green-100" : "bg-amber-100",
-      iconColor: ((lastMonth?.ytdRealised ?? 0) / Math.max(lastMonth?.ytdCOS ?? 1, 1)) >= 0.5 ? "text-green-600" : "text-amber-600",
-      valueColor: ((lastMonth?.ytdRealised ?? 0) / Math.max(lastMonth?.ytdCOS ?? 1, 1)) >= 0.5 ? "text-green-600" : "text-amber-700",
-      borderColor: ((lastMonth?.ytdRealised ?? 0) / Math.max(lastMonth?.ytdCOS ?? 1, 1)) >= 0.5 ? "border-green-200" : "border-amber-200",
+      iconBg: ((lastMonth?.ytdRealised ?? 0) / Math.max(lastMonth?.ytdCOS ?? 1, 1)) >= 0.5 ? "bg-emerald-100" : "bg-amber-100",
+      iconColor: ((lastMonth?.ytdRealised ?? 0) / Math.max(lastMonth?.ytdCOS ?? 1, 1)) >= 0.5 ? "text-emerald-600" : "text-amber-600",
+      valueColor: ((lastMonth?.ytdRealised ?? 0) / Math.max(lastMonth?.ytdCOS ?? 1, 1)) >= 0.5 ? "text-emerald-600" : "text-amber-700",
+      borderColor: ((lastMonth?.ytdRealised ?? 0) / Math.max(lastMonth?.ytdCOS ?? 1, 1)) >= 0.5 ? "border-emerald-200" : "border-amber-200",
     },
   ];
 
@@ -457,7 +457,7 @@ export function MonthlyRealisationTab({ projectName, projectId }: MonthlyRealisa
                           return (
                             <td
                               key={m.monthKey}
-                              className={`px-4 py-2.5 text-right font-mono text-sm ${colorClass} ${isClickable && val !== 0 ? "cursor-pointer hover:bg-blue-50/80 hover:underline decoration-blue-300 underline-offset-2 transition-colors rounded" : ""}`}
+                              className={`px-4 py-2.5 text-right font-mono text-sm ${colorClass} ${isClickable && val !== 0 ? "cursor-pointer hover:bg-muted hover:underline underline-offset-2 transition-colors rounded" : ""}`}
                               onClick={isClickable && val !== 0 ? () => setDrawerMonth({
                                 month: m,
                                 defaultFilter: row.key === 'realisedCOS' ? 'realised' : row.key === 'committedCOS' ? 'committed' : row.key === 'unrealisedCOS' ? 'unrealised' : 'all'

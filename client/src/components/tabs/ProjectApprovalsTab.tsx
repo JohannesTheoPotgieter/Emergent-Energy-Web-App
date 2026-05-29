@@ -44,8 +44,8 @@ type FilterType = "all" | "engineering" | "quality" | "deliverable" | "general";
 const TYPE_CONFIG: Record<string, { icon: any; color: string; label: string }> = {
   engineering: { icon: Wrench, color: "text-amber-600 bg-amber-50 border-amber-200", label: "Engineering Gate" },
   quality: { icon: ShieldCheck, color: "text-emerald-600 bg-emerald-50 border-emerald-200", label: "Quality Review" },
-  deliverable: { icon: FileCheck, color: "text-blue-600 bg-blue-50 border-blue-200", label: "Deliverable" },
-  general: { icon: Clock, color: "text-violet-600 bg-violet-50 border-violet-200", label: "General Approval" },
+  deliverable: { icon: FileCheck, color: "text-slate-700 bg-slate-100 border-slate-200", label: "Deliverable" },
+  general: { icon: Clock, color: "text-slate-700 bg-slate-100 border-slate-200", label: "General Approval" },
 };
 
 export function ProjectApprovalsTab({

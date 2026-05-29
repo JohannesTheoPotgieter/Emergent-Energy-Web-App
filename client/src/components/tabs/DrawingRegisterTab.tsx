@@ -25,8 +25,8 @@ const DISCIPLINES = ["electrical", "structural", "mechanical", "civil", "archite
 // Status changes are made through the Engineering Stages tab or API, not this tab.
 
 function statusColor(s: string) {
-  if (s === "ifc" || s === "as_built") return "bg-green-50 text-green-700";
-  if (s === "approved") return "bg-blue-50 text-blue-700";
+  if (s === "ifc" || s === "as_built") return "bg-emerald-50 text-emerald-700";
+  if (s === "approved") return "bg-emerald-50 text-emerald-700";
   if (s === "for_review" || s === "for_approval") return "bg-amber-50 text-amber-700";
   if (s === "superseded") return "bg-muted text-muted-foreground line-through";
   return "bg-muted text-muted-foreground";

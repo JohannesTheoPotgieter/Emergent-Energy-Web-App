@@ -30,15 +30,17 @@ import {
   X,
 } from "lucide-react";
 
+// PR-G polish — phase TEXT already tells the user which phase; the
+// badge does not need 8 distinct hues. Collapse to a single neutral chip.
 const PHASE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  P0_FIRST_ASSESSMENT: { bg: "bg-muted", text: "text-foreground", border: "border-border" },
-  P1_COST_PROPOSAL_DESIGN: { bg: "bg-violet-100", text: "text-violet-700", border: "border-violet-300" },
-  P2_PD_PM_HANDOVER: { bg: "bg-indigo-100", text: "text-indigo-700", border: "border-indigo-300" },
-  P3_DETAILED_DESIGN_PROC_RELEASE: { bg: "bg-blue-100", text: "text-blue-700", border: "border-blue-300" },
-  P4_CONSTRUCTION_INSTALLATION: { bg: "bg-amber-100", text: "text-amber-700", border: "border-amber-300" },
-  P5_COMMISSIONING_TESTING: { bg: "bg-orange-100", text: "text-orange-700", border: "border-orange-300" },
-  P6_HANDOVER_CLIENT_MATRIARCH: { bg: "bg-teal-100", text: "text-teal-700", border: "border-teal-300" },
-  P7_CLOSEOUT_POSTMORTEM: { bg: "bg-emerald-100", text: "text-emerald-700", border: "border-emerald-300" },
+  P0_FIRST_ASSESSMENT: { bg: "bg-slate-100", text: "text-slate-700", border: "border-slate-200" },
+  P1_COST_PROPOSAL_DESIGN: { bg: "bg-slate-100", text: "text-slate-700", border: "border-slate-200" },
+  P2_PD_PM_HANDOVER: { bg: "bg-slate-100", text: "text-slate-700", border: "border-slate-200" },
+  P3_DETAILED_DESIGN_PROC_RELEASE: { bg: "bg-slate-100", text: "text-slate-700", border: "border-slate-200" },
+  P4_CONSTRUCTION_INSTALLATION: { bg: "bg-slate-100", text: "text-slate-700", border: "border-slate-200" },
+  P5_COMMISSIONING_TESTING: { bg: "bg-slate-100", text: "text-slate-700", border: "border-slate-200" },
+  P6_HANDOVER_CLIENT_MATRIARCH: { bg: "bg-slate-100", text: "text-slate-700", border: "border-slate-200" },
+  P7_CLOSEOUT_POSTMORTEM: { bg: "bg-slate-100", text: "text-slate-700", border: "border-slate-200" },
 };
 
 function getPhaseLabel(phase: string | null): string {
@@ -53,17 +55,19 @@ function engFetch(url: string, options?: RequestInit) {
   if (companyRole) headers["x-company-role"] = companyRole;
   return fetch(url, { ...options, headers: { ...headers, ...options?.headers }, credentials: "include" });
 }
+// PR-G polish — collapse 9 status hues to the 4-level palette. The
+// status LABEL already says "IN PROGRESS" / "HOLD" / "COMPLETE" etc.
 const STATUS_DOT: Record<string, string> = {
-  "TO DO": "text-gray-400", "IN PROGRESS": "text-blue-500", "HOLD": "text-red-500",
-  "NEEDS APPROVAL": "text-amber-500", "COMPLETE": "text-green-500",
-  "QC APPROVED": "text-emerald-500", "PROVIDE FEEDBACK": "text-purple-500",
-  "OPERATIONAL APPROVAL": "text-indigo-500", "PROJECTS ASSISTANCE": "text-cyan-500",
+  "TO DO": "text-slate-400", "IN PROGRESS": "text-amber-500", "HOLD": "text-red-500",
+  "NEEDS APPROVAL": "text-amber-500", "COMPLETE": "text-emerald-500",
+  "QC APPROVED": "text-emerald-500", "PROVIDE FEEDBACK": "text-amber-500",
+  "OPERATIONAL APPROVAL": "text-amber-500", "PROJECTS ASSISTANCE": "text-amber-500",
 };
 const STATUS_BADGE: Record<string, string> = {
-  "TO DO": "bg-muted text-foreground", "IN PROGRESS": "bg-blue-100 text-blue-700",
+  "TO DO": "bg-muted text-foreground", "IN PROGRESS": "bg-amber-100 text-amber-700",
   "HOLD": "bg-red-100 text-red-700", "NEEDS APPROVAL": "bg-amber-100 text-amber-700",
-  "COMPLETE": "bg-green-100 text-green-700", "QC APPROVED": "bg-emerald-100 text-emerald-700",
-  "PROVIDE FEEDBACK": "bg-purple-100 text-purple-700",
+  "COMPLETE": "bg-emerald-100 text-emerald-700", "QC APPROVED": "bg-emerald-100 text-emerald-700",
+  "PROVIDE FEEDBACK": "bg-amber-100 text-amber-700",
 };
 
 const ALL_STATUSES = ["TO DO", "IN PROGRESS", "HOLD", "NEEDS APPROVAL", "COMPLETE", "QC APPROVED", "PROVIDE FEEDBACK", "OPERATIONAL APPROVAL", "PROJECTS ASSISTANCE"];
@@ -390,9 +394,9 @@ export function ProjectEngineeringTasksTab({
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total</p>
               <p className="text-xl font-bold mt-1">{allTasks.length}</p>
             </Card>
-            <Card className={`p-3 cursor-pointer transition-all ${statusFilter === "open" ? "ring-2 ring-blue-500" : "hover:bg-muted/30"}`} onClick={() => setStatusFilter("open")}>
+            <Card className={`p-3 cursor-pointer transition-all ${statusFilter === "open" ? "ring-2 ring-primary" : "hover:bg-muted/30"}`} onClick={() => setStatusFilter("open")}>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Open</p>
-              <p className="text-xl font-bold mt-1 text-blue-600">{openTasks.length}</p>
+              <p className="text-xl font-bold mt-1 text-amber-600">{openTasks.length}</p>
             </Card>
             <Card className={`p-3 cursor-pointer transition-all ${statusFilter === "completed" ? "ring-2 ring-emerald-500" : "hover:bg-muted/30"}`} onClick={() => setStatusFilter("completed")}>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Completed</p>

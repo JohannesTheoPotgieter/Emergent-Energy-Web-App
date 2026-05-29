@@ -30,12 +30,12 @@ const STAGE_SHORT_LABELS: Record<string, string> = {
 };
 
 const STATUS_ICON: Record<string, React.ReactNode> = {
-  not_started: <Circle className="h-5 w-5 text-gray-300" />,
-  in_progress: <Loader2 className="h-5 w-5 text-blue-500" />,
+  not_started: <Circle className="h-5 w-5 text-slate-300" />,
+  in_progress: <Loader2 className="h-5 w-5 text-amber-500" />,
   ready_for_review: <AlertCircle className="h-5 w-5 text-amber-500" />,
-  approved: <CheckCircle2 className="h-5 w-5 text-green-500" />,
+  approved: <CheckCircle2 className="h-5 w-5 text-emerald-500" />,
   progressed: <CheckCircle2 className="h-5 w-5 text-emerald-600" />,
-  exception_approved: <ShieldCheck className="h-5 w-5 text-orange-500" />,
+  exception_approved: <ShieldCheck className="h-5 w-5 text-amber-500" />,
   blocked: <XCircle className="h-5 w-5 text-red-500" />,
 };
 
@@ -53,12 +53,12 @@ export function StageTimeline({ stages, currentStageCode, onStageClick }: StageT
           const isCurrent = stage.stageCode === currentStageCode;
           const label = STAGE_SHORT_LABELS[stage.stageCode] || PHASE_BY_CODE[stage.stageCode]?.label || stage.stageCode;
           const statusKey = normalizeStageStatus(stage.stageStatus);
-          const icon = STATUS_ICON[statusKey] || <Circle className="h-5 w-5 text-gray-300" />;
+          const icon = STATUS_ICON[statusKey] || <Circle className="h-5 w-5 text-slate-300" />;
 
           return (
             <div key={stage.stageCode} className="flex items-center">
               {i > 0 && (
-                <div className={`h-px w-4 ${statusKey === 'not_started' ? 'bg-gray-200' : 'bg-blue-300'}`} />
+                <div className={`h-px w-4 ${statusKey === 'not_started' ? 'bg-slate-200' : 'bg-slate-400'}`} />
               )}
               <Tooltip>
                 <TooltipTrigger asChild>

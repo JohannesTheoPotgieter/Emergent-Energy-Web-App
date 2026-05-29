@@ -25,17 +25,17 @@ interface CalendarViewProps {
 
 const PRIORITY_DOT: Record<string, string> = {
   Urgent: "bg-red-500",
-  High: "bg-orange-500",
-  Normal: "bg-gray-400",
-  Low: "bg-blue-400",
+  High: "bg-amber-500",
+  Normal: "bg-slate-400",
+  Low: "bg-slate-300",
 };
 
 const STATUS_COLOR: Record<string, string> = {
   "Not Started": "text-muted-foreground",
-  "In Progress": "text-blue-600",
+  "In Progress": "text-amber-600",
   Blocked: "text-red-600",
-  Done: "text-green-600",
-  Complete: "text-green-600",
+  Done: "text-emerald-600",
+  Complete: "text-emerald-600",
 };
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -139,7 +139,7 @@ export default function CalendarView({ projectName, onTaskClick }: CalendarViewP
                 data-testid={`calendar-day-${dateKey}`}
               >
                 <div className={`text-xs font-medium mb-0.5 ${
-                  !inCurrentMonth ? "text-muted-foreground/50" : today ? "text-blue-600 font-bold" : "text-foreground"
+                  !inCurrentMonth ? "text-muted-foreground/50" : today ? "text-primary font-bold" : "text-foreground"
                 }`}>
                   {format(day, "d")}
                 </div>
@@ -175,7 +175,7 @@ export default function CalendarView({ projectName, onTaskClick }: CalendarViewP
                       <Popover>
                         <PopoverTrigger asChild>
                           <button
-                            className="w-full text-left text-[10px] text-blue-600 hover:text-blue-800 px-1 py-0.5"
+                            className="w-full text-left text-[10px] text-primary hover:underline px-1 py-0.5"
                             data-testid={`calendar-more-${dateKey}`}
                           >
                             +{dayTasks.length - 2} more
@@ -197,8 +197,8 @@ export default function CalendarView({ projectName, onTaskClick }: CalendarViewP
                                 <div className="flex items-center gap-2 mt-1">
                                   <Badge className={`text-[9px] px-1 py-0 ${
                                     task.priority === "Urgent" ? "bg-red-100 text-red-800" :
-                                    task.priority === "High" ? "bg-orange-100 text-orange-800" :
-                                    task.priority === "Low" ? "bg-blue-100 text-blue-800" :
+                                    task.priority === "High" ? "bg-amber-100 text-amber-800" :
+                                    task.priority === "Low" ? "bg-slate-100 text-slate-700" :
                                     "bg-muted text-foreground"
                                   }`}>
                                     <Flag className="h-2 w-2 mr-0.5" />

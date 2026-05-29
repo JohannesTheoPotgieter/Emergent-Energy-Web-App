@@ -110,13 +110,13 @@ const ROW_DEFS: {
   colorCoded?: boolean;
   isPct?: boolean;
 }[] = [
-  { key: "totalRevenue", label: "Revenue", dataKey: "totalRevenue", colorClass: "text-blue-700 font-bold", group: "monthly", clickable: true },
+  { key: "totalRevenue", label: "Revenue", dataKey: "totalRevenue", colorClass: "text-slate-900 font-bold", group: "monthly", clickable: true },
   { key: "totalCOS", label: "COS", dataKey: "totalCOS", colorClass: "text-red-600 font-bold", group: "monthly", clickable: true },
   { key: "totalGP", label: "Gross Profit", dataKey: "totalGP", colorClass: "text-foreground font-black", group: "monthly", colorCoded: true, clickable: true },
   { key: "realisedGP", label: "Realised GP", dataKey: "realisedGP", colorClass: "text-emerald-700 font-bold", group: "monthly", clickable: true },
   { key: "unrealisedGP", label: "Unrealised GP", dataKey: "unrealisedGP", colorClass: "text-amber-600 font-semibold", group: "monthly", clickable: true },
   { key: "gpPct", label: "GP %", dataKey: "gpPct", colorClass: "", group: "monthly", colorCoded: true, isPct: true },
-  { key: "ytdRevenue", label: "YTD Revenue", dataKey: "ytdRevenue", colorClass: "text-blue-700 font-bold", group: "ytd" },
+  { key: "ytdRevenue", label: "YTD Revenue", dataKey: "ytdRevenue", colorClass: "text-slate-900 font-bold", group: "ytd" },
   { key: "ytdCOS", label: "YTD COS", dataKey: "ytdCOS", colorClass: "text-red-600 font-bold", group: "ytd" },
   { key: "ytdGP", label: "YTD Gross Profit", dataKey: "ytdGP", colorClass: "text-foreground font-black", group: "ytd", colorCoded: true },
   { key: "ytdRealisedGP", label: "YTD Realised GP", dataKey: "ytdRealisedGP", colorClass: "text-emerald-700 font-bold", group: "ytd" },
@@ -167,9 +167,9 @@ function GpDetailDrawer({ month, onClose, defaultFilter = "all" }: { month: GpMo
 
         <div className="px-6 py-4 border-b bg-gradient-to-b from-emerald-50/30 to-white">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="rounded-xl bg-gradient-to-br from-blue-50 to-blue-100/50 border border-blue-200/60 px-4 py-3">
-              <p className="text-xs font-medium text-blue-600 uppercase tracking-wider">Revenue</p>
-              <p className="font-mono font-black text-blue-800 text-lg mt-0.5">{formatRand(filteredRevenue)}</p>
+            <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
+              <p className="text-xs font-medium text-slate-600 uppercase tracking-wider">Revenue</p>
+              <p className="font-mono font-black text-slate-900 text-lg mt-0.5">{formatRand(filteredRevenue)}</p>
             </div>
             <div className="rounded-xl bg-gradient-to-br from-red-50 to-red-100/50 border border-red-200/60 px-4 py-3">
               <p className="text-xs font-medium text-red-600 uppercase tracking-wider">COS</p>
@@ -241,7 +241,7 @@ function GpDetailDrawer({ month, onClose, defaultFilter = "all" }: { month: GpMo
                           {item.isRealised ? 'Realised' : 'Unrealised'}
                         </span>
                       </td>
-                      <td className="px-4 py-2.5 text-right font-mono text-blue-600 text-[11px]">
+                      <td className="px-4 py-2.5 text-right font-mono text-slate-700 text-[11px]">
                         {formatRandFull(item.revenueAmount)}
                       </td>
                       <td className="px-4 py-2.5 text-right font-mono text-red-600 text-[11px]">
@@ -257,7 +257,7 @@ function GpDetailDrawer({ month, onClose, defaultFilter = "all" }: { month: GpMo
               <tfoot>
                 <tr className="border-t-2 border-slate-200 bg-slate-50">
                   <td className="px-4 py-3 font-bold text-sm text-slate-900" colSpan={4}>Total</td>
-                  <td className="px-4 py-3 text-right font-mono font-bold text-sm text-blue-700">{formatRandFull(filteredRevenue)}</td>
+                  <td className="px-4 py-3 text-right font-mono font-bold text-sm text-slate-900">{formatRandFull(filteredRevenue)}</td>
                   <td className="px-4 py-3 text-right font-mono font-bold text-sm text-red-600">{formatRandFull(filteredCOS)}</td>
                   <td className={`px-4 py-3 text-right font-mono font-bold text-sm ${filteredGP >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{formatRandFull(filteredGP)}</td>
                 </tr>
@@ -368,10 +368,10 @@ export function GpTrackerTab({ projectName, projectId }: GpTrackerTabProps) {
       label: "Total Revenue",
       value: formatRand(totalMilestoneRevenue),
       icon: DollarSign,
-      iconBg: "bg-blue-50",
-      iconColor: "text-blue-600",
-      valueColor: "text-blue-700 font-black",
-      borderColor: "border-blue-200",
+      iconBg: "bg-slate-100",
+      iconColor: "text-slate-600",
+      valueColor: "text-slate-900 font-black",
+      borderColor: "border-slate-200",
     },
     {
       id: "total-cos",
@@ -549,7 +549,7 @@ export function GpTrackerTab({ projectName, projectId }: GpTrackerTabProps) {
                         {months.map((m) => {
                           const val = m[row.dataKey] as number;
                           const colorCodedClass = row.colorCoded
-                            ? val < 0 ? "text-red-600 font-semibold" : val > 0 ? "text-green-600 font-semibold" : "text-slate-500"
+                            ? val < 0 ? "text-red-600 font-semibold" : val > 0 ? "text-emerald-600 font-semibold" : "text-slate-500"
                             : row.colorClass;
                           const displayVal = row.isPct ? `${val.toFixed(1)}%` : formatRand(val);
                           return (
