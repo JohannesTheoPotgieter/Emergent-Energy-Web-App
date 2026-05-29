@@ -27,6 +27,7 @@ import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { requirePermission } from "../permission-middleware";
 import { logAuditFromReq } from "../audit-logger";
+import { ApiError, sendError } from "../lib/api-error";
 import { classifyExpenseState } from "../lib/calculations/stateClassifier";
 import { z } from "zod";
 import { createCostLine, updateCostLineFields, createRevenueLine, updateRevenueLineFields } from "../services/finance-line-write-service";
@@ -1443,7 +1444,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       res.json({ ok: true });
     } catch (error: any) {
       if (error?.name === "ZodError") return res.status(400).json({ error: "Validation error", details: error.issues });
-      if (error?.code === "bad_request" || error?.code === "not_found") return res.status(error.code === "not_found" ? 404 : 400).json({ error: error.message });
+      if (error?.code === "bad_request" || error?.code === "not_found") return sendError(res, new ApiError(error.code === "not_found" ? 404 : 400, error.code === "not_found" ? "NOT_FOUND" : "BAD_REQUEST", typeof error.message === "string" ? error.message : "Request failed"));
       console.error("[Finance] Failed to open revenue-line dispute:", error);
       res.status(500).json({ error: "Failed to open dispute" });
     }
@@ -1466,7 +1467,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       res.json({ ok: true });
     } catch (error: any) {
       if (error?.name === "ZodError") return res.status(400).json({ error: "Validation error", details: error.issues });
-      if (error?.code === "bad_request" || error?.code === "not_found") return res.status(error.code === "not_found" ? 404 : 400).json({ error: error.message });
+      if (error?.code === "bad_request" || error?.code === "not_found") return sendError(res, new ApiError(error.code === "not_found" ? 404 : 400, error.code === "not_found" ? "NOT_FOUND" : "BAD_REQUEST", typeof error.message === "string" ? error.message : "Request failed"));
       console.error("[Finance] Failed to resolve revenue-line dispute:", error);
       res.status(500).json({ error: "Failed to resolve dispute" });
     }
@@ -1487,7 +1488,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       res.json({ ok: true });
     } catch (error: any) {
       if (error?.name === "ZodError") return res.status(400).json({ error: "Validation error", details: error.issues });
-      if (error?.code === "bad_request" || error?.code === "not_found") return res.status(error.code === "not_found" ? 404 : 400).json({ error: error.message });
+      if (error?.code === "bad_request" || error?.code === "not_found") return sendError(res, new ApiError(error.code === "not_found" ? 404 : 400, error.code === "not_found" ? "NOT_FOUND" : "BAD_REQUEST", typeof error.message === "string" ? error.message : "Request failed"));
       console.error("[Finance] Failed to open cost-line dispute:", error);
       res.status(500).json({ error: "Failed to open dispute" });
     }
@@ -1510,7 +1511,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       res.json({ ok: true });
     } catch (error: any) {
       if (error?.name === "ZodError") return res.status(400).json({ error: "Validation error", details: error.issues });
-      if (error?.code === "bad_request" || error?.code === "not_found") return res.status(error.code === "not_found" ? 404 : 400).json({ error: error.message });
+      if (error?.code === "bad_request" || error?.code === "not_found") return sendError(res, new ApiError(error.code === "not_found" ? 404 : 400, error.code === "not_found" ? "NOT_FOUND" : "BAD_REQUEST", typeof error.message === "string" ? error.message : "Request failed"));
       console.error("[Finance] Failed to resolve cost-line dispute:", error);
       res.status(500).json({ error: "Failed to resolve dispute" });
     }
@@ -1542,7 +1543,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       res.json({ ok: true });
     } catch (error: any) {
       if (error?.name === "ZodError") return res.status(400).json({ error: "Validation error", details: error.issues });
-      if (error?.code === "bad_request" || error?.code === "not_found") return res.status(error.code === "not_found" ? 404 : 400).json({ error: error.message });
+      if (error?.code === "bad_request" || error?.code === "not_found") return sendError(res, new ApiError(error.code === "not_found" ? 404 : 400, error.code === "not_found" ? "NOT_FOUND" : "BAD_REQUEST", typeof error.message === "string" ? error.message : "Request failed"));
       console.error("[Finance] Failed to write off revenue line:", error);
       res.status(500).json({ error: "Failed to write off revenue line" });
     }

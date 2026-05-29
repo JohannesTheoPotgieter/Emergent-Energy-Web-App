@@ -43,8 +43,13 @@ describe("TF-9 — finance audit-prep export routes contract", () => {
 
   it("guards all snapshot reads with effectiveTo IS NULL", () => {
     // Snapshot tables: normalized_revenue_lines, normalized_cost_lines.
-    // Each export reading those tables must keep the effectiveTo guard.
-    const guards = source.match(/isNull\((normalizedRevenueLines|normalizedCostLines)\.effectiveTo\)/g) ?? [];
+    // The reads now live in the repository layer (CLAUDE.md repository-layer
+    // rule); grep the route AND its repository so the effectiveTo guard is
+    // verified wherever the queries sit after any future refactor.
+    const repoSource = read("server/repositories/finance-audit-export-repository.ts");
+    const guards = (source + repoSource).match(
+      /isNull\((normalizedRevenueLines|normalizedCostLines)\.effectiveTo\)/g,
+    ) ?? [];
     expect(guards.length).toBeGreaterThanOrEqual(3);
   });
 
