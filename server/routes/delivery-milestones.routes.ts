@@ -17,15 +17,18 @@
 // ============================================================
 
 import type { Express, Request, Response } from "express";
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
-import { db } from "../db";
-import { projectDeliveryMilestones, projectInfo } from "@shared/schema";
 import { jwtAuth, requireAuth, getEffectiveUser } from "../auth-context";
 import { requirePermission } from "../permission-middleware";
 import { logAuditFromReq } from "../audit-logger";
 import { actorFromReq, createProjectEvent } from "../services/project-event-service";
 import { parseIntParam } from "../lib/req-params";
+import {
+  DeliveryMilestonesRepository,
+  type MilestoneUpdate,
+} from "../repositories/delivery-milestones-repository";
 import { z } from "zod";
+
+const deliveryMilestonesRepository = new DeliveryMilestonesRepository();
 
 const createSchema = z.object({
   milestoneCode: z.string().min(1).max(64),
@@ -78,19 +81,7 @@ export function registerDeliveryMilestonesRoutes(app: Express) {
         const projectId = parseIntParam(req.params.projectId);
         if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
 
-        const rows = await db
-          .select()
-          .from(projectDeliveryMilestones)
-          .where(
-            and(
-              eq(projectDeliveryMilestones.projectId, projectId),
-              isNull(projectDeliveryMilestones.deletedAt),
-            ),
-          )
-          .orderBy(
-            asc(projectDeliveryMilestones.sortOrder),
-            asc(projectDeliveryMilestones.id),
-          );
+        const rows = await deliveryMilestonesRepository.listByProject(projectId);
 
         res.json({ milestones: rows });
       } catch (err: unknown) {
@@ -119,8 +110,8 @@ export function registerDeliveryMilestonesRoutes(app: Express) {
         const data = parsed.data;
         const user = getEffectiveUser(req);
 
-        const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
-        if (!project) return res.status(404).json({ error: "Project not found" });
+        const projectFound = await deliveryMilestonesRepository.projectExists(projectId);
+        if (!projectFound) return res.status(404).json({ error: "Project not found" });
 
         const status = deriveStatus({
           plannedDate: data.plannedDate ?? null,
@@ -128,22 +119,19 @@ export function registerDeliveryMilestonesRoutes(app: Express) {
           blocker: null,
         });
 
-        const [created] = await db
-          .insert(projectDeliveryMilestones)
-          .values({
-            projectId,
-            milestoneCode: data.milestoneCode,
-            milestoneName: data.milestoneName,
-            phaseCode: data.phaseCode ?? null,
-            sortOrder: data.sortOrder ?? 0,
-            plannedDate: data.plannedDate ?? null,
-            actualDate: null,
-            status,
-            ownerUserId: data.ownerUserId ?? null,
-            notes: data.notes ?? null,
-            createdByUserId: user?.id ?? null,
-          })
-          .returning();
+        const created = await deliveryMilestonesRepository.create({
+          projectId,
+          milestoneCode: data.milestoneCode,
+          milestoneName: data.milestoneName,
+          phaseCode: data.phaseCode ?? null,
+          sortOrder: data.sortOrder ?? 0,
+          plannedDate: data.plannedDate ?? null,
+          actualDate: null,
+          status,
+          ownerUserId: data.ownerUserId ?? null,
+          notes: data.notes ?? null,
+          createdByUserId: user?.id ?? null,
+        });
 
         logAuditFromReq(req, {
           entityType: "delivery_milestone",
@@ -204,10 +192,7 @@ export function registerDeliveryMilestonesRoutes(app: Express) {
         const data = parsed.data;
         const user = getEffectiveUser(req);
 
-        const [existing] = await db
-          .select()
-          .from(projectDeliveryMilestones)
-          .where(eq(projectDeliveryMilestones.id, id));
+        const existing = await deliveryMilestonesRepository.findById(id);
         if (!existing) return res.status(404).json({ error: "Milestone not found" });
         if (existing.deletedAt) return res.status(410).json({ error: "Milestone deleted" });
 
@@ -241,7 +226,7 @@ export function registerDeliveryMilestonesRoutes(app: Express) {
           explicit: data.status,
         });
 
-        const updates: Record<string, any> = { updatedAt: now, status };
+        const updates: MilestoneUpdate = { updatedAt: now, status };
         if (data.milestoneName !== undefined) updates.milestoneName = data.milestoneName;
         if (data.phaseCode !== undefined) updates.phaseCode = data.phaseCode;
         if (data.sortOrder !== undefined) updates.sortOrder = data.sortOrder;
@@ -255,11 +240,7 @@ export function registerDeliveryMilestonesRoutes(app: Express) {
         updates.blockerClearedAt = blockerClearedAt;
         if (nowCompleting) updates.completedByUserId = user?.id ?? null;
 
-        const [updated] = await db
-          .update(projectDeliveryMilestones)
-          .set(updates)
-          .where(eq(projectDeliveryMilestones.id, id))
-          .returning();
+        const updated = await deliveryMilestonesRepository.update(id, updates);
 
         logAuditFromReq(req, {
           entityType: "delivery_milestone",
@@ -316,10 +297,7 @@ export function registerDeliveryMilestonesRoutes(app: Express) {
         const id = parseIntParam(req.params.id);
         if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
-        const [existing] = await db
-          .select()
-          .from(projectDeliveryMilestones)
-          .where(eq(projectDeliveryMilestones.id, id));
+        const existing = await deliveryMilestonesRepository.findById(id);
         if (!existing || existing.deletedAt) return res.status(404).json({ error: "Milestone not found" });
 
         // Refuse to delete a completed milestone unless overrideReason
@@ -336,10 +314,7 @@ export function registerDeliveryMilestonesRoutes(app: Express) {
           });
         }
 
-        await db
-          .update(projectDeliveryMilestones)
-          .set({ deletedAt: new Date(), updatedAt: new Date() })
-          .where(eq(projectDeliveryMilestones.id, id));
+        await deliveryMilestonesRepository.softDelete(id);
 
         logAuditFromReq(req, {
           entityType: "delivery_milestone",

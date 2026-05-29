@@ -29,13 +29,10 @@
  */
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import { and, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   cosPeriodLocks,
-  normalizedCostLines,
-  normalizedRevenueLines,
-  projectInfo,
   purchaseOrders,
   users,
 } from "@shared/schema";
@@ -45,6 +42,9 @@ import { getEffectiveUser } from "../auth-context";
 import { badRequest, sendError } from "../lib/api-error";
 import { getFyWindow } from "../lib/fy-window";
 import { logAuditFromReq } from "../audit-logger";
+import { FinanceAuditExportRepository } from "../repositories/finance-audit-export-repository";
+
+const financeAuditExportRepository = new FinanceAuditExportRepository();
 
 const fyQuery = z.coerce.number().int().min(2020).max(2100).optional();
 
@@ -102,56 +102,16 @@ export function registerFinanceAuditExportRoutes(app: Express): void {
         const fyWindow = getFyWindow({ fy: parsed.data ?? null });
 
         // AR — revenue lines invoiced in the FY.
-        const arRows = await db
-          .select({
-            projectId: normalizedRevenueLines.projectId,
-            projectName: projectInfo.projectName,
-            invoiceNumber: normalizedRevenueLines.invoiceNumber,
-            invoiceDate: normalizedRevenueLines.invoiceDate,
-            paidDate: normalizedRevenueLines.paidDate,
-            milestoneName: normalizedRevenueLines.milestoneName,
-            description: normalizedRevenueLines.description,
-            amountExVat: normalizedRevenueLines.amountExVat,
-            vat: normalizedRevenueLines.vat,
-            status: normalizedRevenueLines.status,
-            sourceSheet: normalizedRevenueLines.sourceSheet,
-          })
-          .from(normalizedRevenueLines)
-          .leftJoin(projectInfo, eq(normalizedRevenueLines.projectId, projectInfo.id))
-          .where(
-            and(
-              isNull(normalizedRevenueLines.effectiveTo),
-              isNull(normalizedRevenueLines.deletedAt),
-              gte(normalizedRevenueLines.invoiceDate, fyWindow.fyStartIso),
-              lte(normalizedRevenueLines.invoiceDate, fyWindow.fyEndIso),
-            ),
-          );
+        const arRows = await financeAuditExportRepository.getInvoiceArLines(
+          fyWindow.fyStartIso,
+          fyWindow.fyEndIso,
+        );
 
         // AP — cost lines invoiced in the FY, with PO linkage.
-        const apRows = await db
-          .select({
-            projectId: normalizedCostLines.projectId,
-            projectName: projectInfo.projectName,
-            invoiceNumber: normalizedCostLines.invoiceNumber,
-            invoiceDate: normalizedCostLines.invoiceDate,
-            paidDate: normalizedCostLines.paidDate,
-            counterpartyName: normalizedCostLines.counterpartyName,
-            description: normalizedCostLines.description,
-            amountExVat: normalizedCostLines.amountExVat,
-            poNumber: normalizedCostLines.poNumber,
-            status: normalizedCostLines.status,
-            sourceSheet: normalizedCostLines.sourceSheet,
-          })
-          .from(normalizedCostLines)
-          .leftJoin(projectInfo, eq(normalizedCostLines.projectId, projectInfo.id))
-          .where(
-            and(
-              isNull(normalizedCostLines.effectiveTo),
-              isNull(normalizedCostLines.deletedAt),
-              gte(normalizedCostLines.invoiceDate, fyWindow.fyStartIso),
-              lte(normalizedCostLines.invoiceDate, fyWindow.fyEndIso),
-            ),
-          );
+        const apRows = await financeAuditExportRepository.getInvoiceApLines(
+          fyWindow.fyStartIso,
+          fyWindow.fyEndIso,
+        );
 
         const headerComment = `# Emergent Energy — Invoices by project for ${fyWindow.fyLabel}`;
         const generatedAt = `# Generated ${new Date().toISOString()} by user_id=${getEffectiveUser(req)?.id ?? "unknown"}`;
@@ -263,38 +223,10 @@ export function registerFinanceAuditExportRoutes(app: Express): void {
         }
         const fyWindow = getFyWindow({ fy: parsed.data ?? null });
 
-        const rows = await db
-          .select({
-            projectId: normalizedRevenueLines.projectId,
-            projectName: projectInfo.projectName,
-            milestoneNo: normalizedRevenueLines.milestoneNo,
-            milestoneName: normalizedRevenueLines.milestoneName,
-            milestonePercent: normalizedRevenueLines.milestonePercent,
-            description: normalizedRevenueLines.description,
-            invoiceNumber: normalizedRevenueLines.invoiceNumber,
-            invoiceDate: normalizedRevenueLines.invoiceDate,
-            expectedPaymentDate: normalizedRevenueLines.expectedPaymentDate,
-            paidDate: normalizedRevenueLines.paidDate,
-            inBankDate: normalizedRevenueLines.inBankDate,
-            amountExVat: normalizedRevenueLines.amountExVat,
-            vat: normalizedRevenueLines.vat,
-            status: normalizedRevenueLines.status,
-            writeOffAuthorisedAt: normalizedRevenueLines.writeOffAuthorisedAt,
-            writeOffReason: normalizedRevenueLines.writeOffReason,
-            disputeOpenedAt: normalizedRevenueLines.disputeOpenedAt,
-            disputeReason: normalizedRevenueLines.disputeReason,
-          })
-          .from(normalizedRevenueLines)
-          .leftJoin(projectInfo, eq(normalizedRevenueLines.projectId, projectInfo.id))
-          .where(
-            and(
-              isNull(normalizedRevenueLines.effectiveTo),
-              isNull(normalizedRevenueLines.deletedAt),
-              // Include lines whose invoice OR realisation date falls in the FY.
-              sql`(${normalizedRevenueLines.invoiceDate} BETWEEN ${fyWindow.fyStartIso} AND ${fyWindow.fyEndIso}
-                  OR ${normalizedRevenueLines.paidDate} BETWEEN ${fyWindow.fyStartIso} AND ${fyWindow.fyEndIso})`,
-            ),
-          );
+        const rows = await financeAuditExportRepository.getRevenueMilestoneLines(
+          fyWindow.fyStartIso,
+          fyWindow.fyEndIso,
+        );
 
         const headerComment = `# Emergent Energy — Revenue milestones for ${fyWindow.fyLabel}`;
         const generatedAt = `# Generated ${new Date().toISOString()} by user_id=${getEffectiveUser(req)?.id ?? "unknown"}`;
