@@ -91,6 +91,13 @@ export async function loadCurrentPlanRows(projectId: number) {
       isMilestone: workItems.isMilestone,
       parentTaskNo: workItems.outlineNumber,
       subProjectName: workItems.subProjectName,
+      // Faithful-mirror compare fields (2026-05-29) — must be loaded so the
+      // matcher compares the file value against the stored value (not undefined).
+      lead: workItems.lead,
+      resource1: workItems.resource1,
+      resource2: workItems.resource2,
+      trackerComments: workItems.trackerComments,
+      workDays: workItems.workDays,
       importRunId: workItems.importRunId,
       externalRef: workItems.externalRef,
     })
@@ -126,6 +133,9 @@ export async function loadCurrentRevenueRows(projectId: number) {
       inBankDate: normalizedRevenueLines.inBankDate,
       status: normalizedRevenueLines.status,
       subProjectName: normalizedRevenueLines.subProjectName,
+      // Faithful-mirror compare field (2026-05-29) — must be loaded so the
+      // matcher compares the file value against the stored value (not undefined).
+      milestoneNotes: normalizedRevenueLines.milestoneNotes,
       importRunId: normalizedRevenueLines.importRunId,
     })
     .from(normalizedRevenueLines)
@@ -162,6 +172,13 @@ export async function loadCurrentCostRows(projectId: number) {
       status: normalizedCostLines.status,
       subProjectName: normalizedCostLines.subProjectName,
       revenueRecognitionAmount: normalizedCostLines.revenueRecognitionAmount,
+      // Faithful-mirror compare fields (2026-05-29) — must be loaded so the
+      // matcher compares the file value against the stored value (not undefined).
+      comments: normalizedCostLines.comments,
+      checkFlag: normalizedCostLines.checkFlag,
+      savingOverrun: normalizedCostLines.savingOverrun,
+      usdExchangeRate: normalizedCostLines.usdExchangeRate,
+      pricePerWatt: normalizedCostLines.pricePerWatt,
       importRunId: normalizedCostLines.importRunId,
     })
     .from(normalizedCostLines)

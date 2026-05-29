@@ -167,11 +167,11 @@ describe("Revenue row matcher uses milestoneNo for confidence", () => {
     expect(matcherCode).toMatch(/matchConfidence.*HIGH/);
   });
 
-  it("milestonePercent is NOT in REVENUE_COMPARE_FIELDS after 2026-05-07 narrowing per § 9.3", () => {
-    // Dropped per shared/excel-vs-app/contract.ts narrowing: status /
-    // %complete / milestonePercent etc. are not dates / amounts / colour
-    // signals so they are not part of the locked compare scope.
-    expect(matcherCode).not.toContain('"milestonePercent"');
+  it("milestonePercent IS in REVENUE_COMPARE_FIELDS after 2026-05-29 faithful-mirror reversal", () => {
+    // Re-added per shared/excel-vs-app/contract.ts faithful-mirror reversal
+    // (COO instruction): the import must re-apply the workbook's milestone
+    // % on re-import so the contract table stays identical to the file.
+    expect(matcherCode).toContain('"milestonePercent"');
   });
 });
 

@@ -45,20 +45,49 @@ export type DiffSection = "PLAN" | "REVENUE" | "EXPENDITURE";
 // the snapshot test in `qa/tests/unit/excel-vs-app-contract.test.ts`
 // will fail until you accept the new fixture.
 
-// 2026-05-07 — narrowing per COO instruction:
+// 2026-05-29 — faithful-mirror reversal (COO instruction, this session):
+//   "Should be a full faithful mirror on the Revenue tracker sheet, Plan
+//    sheet and Expenditure breakdown sheet — we use the import for
+//    reporting so it must be identical to the file."
+//
+// This widens the field set the import re-applies on every re-import so
+// the app's data stays identical to the workbook. It reverses the
+// 2026-05-07 narrowing below (kept for history). The trigger was a
+// confirmed bug: a revenue invoice number added to a milestone AFTER its
+// row first imported was silently dropped, because `invoiceNumber` was
+// not in the tracked/compared set — so the re-import classified the row
+// UNCHANGED and skipped it. Same class of drop hit milestone %, PO
+// numbers, and the Plan display fields.
+//
+// Two controls, deliberately separated (see also row-matcher.ts):
+//   - TRACKED_FIELDS (this file) = the 3-way-merge / drift set. These
+//     participate in conflict detection on the diff page and are
+//     edit-protected (a manual app edit is preserved / surfaces a
+//     conflict rather than being clobbered by the file).
+//   - *_COMPARE_FIELDS (row-matcher.ts) = the change-detection set that
+//     decides CHANGED vs UNCHANGED. It is a SUPERSET of the tracked set:
+//     it also carries file-owned, non-edited fields (e.g. costCategory,
+//     counterpartyName, Plan title/owner/resources) that must refresh
+//     from the file but do not need conflict resolution. Invariant:
+//     every TRACKED field is also a COMPARE field, so a tracked-field
+//     change can never be missed by classification.
+//
+// What stays OUT of the tracked set on purpose: DERIVED fields (status,
+// cosRealised, cashflowConfirmed are recomputed from their inputs),
+// row-identity fields (milestoneNo / milestoneName, expenditure
+// description+invoice — a change there is a new/renamed row, handled by
+// the matcher), and app-owned override columns (admin/cos overrides,
+// noRevenueLinked, task links) which the merge already protects.
+//
+// 2026-05-07 — narrowing per COO instruction (SUPERSEDED 2026-05-29):
 //   "On the Excel-vs-App comparison only things to compare are dates,
 //    amounts, deleted entries vs added entries, date colour (confirms
 //    payment or realisation)."
-//
-// What was dropped and why:
-//   - Status / owner / %complete / description / milestone / outline /
-//     lead / resource* / trackerComments / workDays / milestoneNotes
-//     / invoiceNumber / poNumber / costCategory / counterpartyName /
-//     comments / checkFlag / savingOverrun / usdExchangeRate /
-//     pricePerWatt / noRevenueLinked / milestonePercent — these
-//     are text / identifier / status / derived metadata, not dates
-//     or amounts. The COO explicitly does not want drift on them
-//     surfaced on the diff page.
+//   At the time, text / identifier / status / derived metadata
+//   (invoiceNumber, poNumber, milestonePercent, costCategory, notes,
+//   etc.) were dropped to keep the diff page quiet. The reporting-trust
+//   requirement above outranks the quiet-diff goal, so the data fields
+//   are back in.
 //
 // What date-colour comparison maps to:
 //   - In the Tracker, a date cell is RED when the date is unconfirmed
@@ -92,11 +121,17 @@ export const PLAN_TRACKED_FIELDS = [
 ] as const;
 
 /** Revenue-section tracked fields (normalized_revenue_lines) —
- *  DATES + AMOUNTS + DATE-COLOUR (= *Confirmed flags). */
+ *  AMOUNTS + DATES + DATE-COLOUR (= *Confirmed flags) + FAITHFUL-MIRROR
+ *  DATA (invoice number, milestone %, milestone notes — 2026-05-29). */
 export const REVENUE_TRACKED_FIELDS = [
   // Amounts.
   "amountExVat",
   "vat",
+  // Faithful-mirror data fields (2026-05-29): identifiers / structured
+  // values the reporting layer relies on. Previously dropped on re-import.
+  "invoiceNumber",
+  "milestonePercent",
+  "milestoneNotes",
   // Dates.
   "invoiceDate",
   "expectedPaymentDate",
@@ -108,7 +143,11 @@ export const REVENUE_TRACKED_FIELDS = [
 ] as const;
 
 /** Expenditure-section tracked fields (normalized_cost_lines) —
- *  DATES + AMOUNTS + DATE-COLOUR (= *Confirmed flags). */
+ *  AMOUNTS + DATES + DATE-COLOUR (= *Confirmed flags) + FAITHFUL-MIRROR
+ *  DATA (PO number, comments, check flag, FX rate, etc. — 2026-05-29).
+ *  Note: invoiceNumber + description are part of the expenditure row
+ *  identity (see row-hasher.ts), so a change there is a new/renamed row,
+ *  not a tracked-field drift — they are intentionally absent here. */
 export const EXPENDITURE_TRACKED_FIELDS = [
   // Amounts (incl. budget components and qty/rate that resolve to
   // monetary line totals).
@@ -120,6 +159,14 @@ export const EXPENDITURE_TRACKED_FIELDS = [
   "actualQty",
   "actualRate",
   "revenueRecognitionAmount",
+  // Faithful-mirror data fields (2026-05-29): identifiers / structured
+  // values the reporting layer relies on. Previously dropped on re-import.
+  "poNumber",
+  "comments",
+  "checkFlag",
+  "savingOverrun",
+  "usdExchangeRate",
+  "pricePerWatt",
   // Dates.
   "invoiceDate",
   "approvedDate",

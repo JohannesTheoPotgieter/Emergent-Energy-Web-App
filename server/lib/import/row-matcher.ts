@@ -282,12 +282,20 @@ export function compareFields(
 // Fields to compare per section (excluding identity and metadata fields)
 // ---------------------------------------------------------------------------
 
-// 2026-05-07 — narrowed to align with the diff contract
-// (`shared/excel-vs-app/contract.ts`). The conflict engine and
-// the executor merge engine now operate on the same set of fields,
-// so the planner cannot surface a conflict the executor wouldn't
-// also produce, and vice-versa. See contract.ts for the rationale
-// (dates, amounts, date-colour-confirmed flags only).
+// 2026-05-29 — faithful-mirror widening (COO instruction, see
+// `shared/excel-vs-app/contract.ts` header). COMPARE decides CHANGED vs
+// UNCHANGED; it is a SUPERSET of the contract's TRACKED set. It must
+// contain every TRACKED field (so a tracked-field change is never
+// missed and classified UNCHANGED — that was the invoice-number-drop
+// bug) PLUS file-owned data fields that should refresh from the file but
+// don't need conflict resolution (identifiers, Plan title/owner/
+// progress/resources, expenditure category/supplier). Identity fields
+// are excluded (a change there is a new/renamed row, handled by the
+// matcher). Compared values are field-type-normalised (numeric tolerance
+// / date canonicalisation) by `normalizeForCompare`, so encoding
+// differences don't register as changes — e.g. pctComplete is normalised
+// to 0..1 by parseStatus on both the file and the stored side, so it
+// compares cleanly.
 
 export const PLAN_COMPARE_FIELDS = [
   // Plan section uses normalizer field names (not work_items column
@@ -298,11 +306,19 @@ export const PLAN_COMPARE_FIELDS = [
   // through these inputs, so changes to either trigger a diff.
   "startDate", "endDate", "durationDays",
   "actualStartDate", "actualEndDate", "actualDurationDays",
+  // Faithful-mirror data fields (2026-05-29). The Plan writer already
+  // refreshes ALL of these from the file on any CHANGED row; listing
+  // them here just lets a change in one of them trigger CHANGED so the
+  // refresh runs (e.g. a progress-only update to % complete).
+  "taskName", "owner", "comment", "pctComplete", "expectedPctComplete",
+  "lead", "resource1", "resource2", "trackerComments", "workDays",
 ];
 
 export const REVENUE_COMPARE_FIELDS = [
   // Amounts.
   "amountExVat", "vat",
+  // Faithful-mirror data fields (2026-05-29) — also TRACKED (edit-protected).
+  "invoiceNumber", "milestonePercent", "milestoneNotes",
   // Dates.
   "invoiceDate", "expectedPaymentDate", "paidDate", "inBankDate",
   // Date-colour signal: black = confirmed/realised, red = unconfirmed.
@@ -313,6 +329,13 @@ export const EXPENDITURE_COMPARE_FIELDS = [
   // Amounts.
   "amountExVat", "budgetQty", "budgetRate", "budgetTotal", "budgetCos",
   "actualQty", "actualRate", "revenueRecognitionAmount",
+  // Faithful-mirror data fields (2026-05-29). poNumber / comments /
+  // checkFlag / savingOverrun / usdExchangeRate / pricePerWatt are also
+  // TRACKED (edit-protected). costCategory / counterpartyName are
+  // compare-only: the writer takes them straight from the file, so they
+  // refresh without conflict resolution (file is source of truth).
+  "poNumber", "comments", "checkFlag", "savingOverrun",
+  "usdExchangeRate", "pricePerWatt", "costCategory", "counterpartyName",
   // Dates.
   "invoiceDate", "approvedDate", "paidDate", "forecastPaymentDate",
   // Date-colour signal: black = confirmed/realised, red = unconfirmed.
