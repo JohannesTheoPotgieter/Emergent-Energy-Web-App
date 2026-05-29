@@ -39,19 +39,19 @@ const SECTION_CONFIG: Array<{
 ];
 
 const STATUS_COLORS: Record<string, string> = {
-  DRAFT: "bg-gray-100 text-gray-700",
-  IN_REVIEW: "bg-blue-100 text-blue-700",
-  APPROVED: "bg-green-100 text-green-700",
+  DRAFT: "bg-slate-100 text-slate-700",
+  IN_REVIEW: "bg-amber-100 text-amber-700",
+  APPROVED: "bg-emerald-100 text-emerald-700",
   REJECTED: "bg-red-100 text-red-700",
   DEFERRED: "bg-amber-100 text-amber-700",
-  NOT_STARTED: "bg-gray-100 text-gray-600",
+  NOT_STARTED: "bg-slate-100 text-slate-600",
 };
 
 const OUTCOME_COLORS: Record<string, string> = {
-  GO: "bg-green-600 text-white",
+  GO: "bg-emerald-600 text-white",
   CONDITIONAL_GO: "bg-amber-500 text-white",
   NO_GO: "bg-red-600 text-white",
-  DEFERRED: "bg-gray-500 text-white",
+  DEFERRED: "bg-slate-500 text-white",
 };
 
 function getAuthHeaders(): Record<string, string> {
@@ -347,7 +347,7 @@ export default function FinancialReviewTab({ projectId, projectName }: Financial
                         {f.actionRequired ? (
                           <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />
                         ) : (
-                          <CheckCircle className="h-3.5 w-3.5 text-green-500 shrink-0 mt-0.5" />
+                          <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
                         )}
                         <div>
                           <span className={f.actionRequired ? "text-red-700 font-medium" : ""}>
@@ -487,9 +487,9 @@ function MetricCard({ label, value, highlight }: { label: string; value: string;
 
 function SectionStatusBadge({ status }: { status: string }) {
   const config: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-    not_started: { label: "Not Started", color: "bg-gray-100 text-gray-600", icon: Clock },
-    in_progress: { label: "In Progress", color: "bg-blue-100 text-blue-700", icon: Loader2 },
-    complete: { label: "Complete", color: "bg-green-100 text-green-700", icon: CheckCircle },
+    not_started: { label: "Not Started", color: "bg-slate-100 text-slate-600", icon: Clock },
+    in_progress: { label: "In Progress", color: "bg-amber-100 text-amber-700", icon: Loader2 },
+    complete: { label: "Complete", color: "bg-emerald-100 text-emerald-700", icon: CheckCircle },
     not_applicable: { label: "N/A", color: "bg-gray-100 text-gray-500", icon: Clock },
   };
   const c = config[status] || config.not_started;

@@ -51,10 +51,10 @@ const EVENT_FILTERS = [
 ];
 
 function eventIcon(type: string) {
-  if (type.startsWith("approval.")) return <ClipboardCheck className="h-4 w-4 text-blue-600" />;
-  if (type.startsWith("procurement.") || type.startsWith("invoice.")) return <Package className="h-4 w-4 text-violet-600" />;
+  if (type.startsWith("approval.")) return <ClipboardCheck className="h-4 w-4 text-slate-600" />;
+  if (type.startsWith("procurement.") || type.startsWith("invoice.")) return <Package className="h-4 w-4 text-slate-600" />;
   if (type.startsWith("project.gate") || type.includes("override")) return <ShieldAlert className="h-4 w-4 text-amber-600" />;
-  if (type.startsWith("change.") || type.startsWith("raid.")) return <FileText className="h-4 w-4 text-orange-600" />;
+  if (type.startsWith("change.") || type.startsWith("raid.")) return <FileText className="h-4 w-4 text-amber-600" />;
   return <CalendarClock className="h-4 w-4 text-emerald-600" />;
 }
 

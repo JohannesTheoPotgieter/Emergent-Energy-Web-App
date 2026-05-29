@@ -123,17 +123,19 @@ function matchTypeLabel(t: ReconciliationMatchType): string {
 }
 
 function matchTypeBadgeClass(t: ReconciliationMatchType): string {
+  // PR-G polish — collapse 5 match-type hues to the 4-level palette
+  // (the match-type LABEL already tells the user which match it is).
   switch (t) {
     case "linked":
       return "bg-emerald-100 text-emerald-700";
     case "auto_exact":
-      return "bg-green-50 text-green-700";
+      return "bg-emerald-50 text-emerald-700";
     case "auto_fuzzy":
       return "bg-amber-50 text-amber-700";
     case "app_only":
-      return "bg-sky-50 text-sky-700";
+      return "bg-slate-100 text-slate-700";
     case "qb_only":
-      return "bg-purple-50 text-purple-700";
+      return "bg-slate-100 text-slate-700";
   }
 }
 
@@ -519,9 +521,9 @@ export function QuickBooksReconciliationTab({ projectId, projectName }: Props) {
       )}
 
       {mode === "cost" && pendingLinkCostLineId !== null && (
-        <Card className="border-sky-200 bg-sky-50/40">
+        <Card className="border-slate-200 bg-slate-50/40">
           <CardContent className="p-3 text-xs flex items-center gap-2">
-            <Link2 className="h-4 w-4 text-sky-600" />
+            <Link2 className="h-4 w-4 text-slate-600" />
             <span>
               Select a QB-only supplier bill below to link to cost line{" "}
               <span className="font-mono font-semibold">#{pendingLinkCostLineId}</span>.
@@ -676,7 +678,7 @@ export function QuickBooksReconciliationTab({ projectId, projectName }: Props) {
                   {appOnly.map((row) => (
                     <tr
                       key={row.costLine!.id}
-                      className={`border-t ${pendingLinkCostLineId === row.costLine!.id ? "bg-sky-50/60" : ""}`}
+                      className={`border-t ${pendingLinkCostLineId === row.costLine!.id ? "bg-slate-100/60" : ""}`}
                     >
                       <td className="px-2 py-1.5 font-medium">
                         {row.costLine?.invoiceNumber ?? "—"}
@@ -898,9 +900,9 @@ function RevenueReconView({
       </div>
 
       {pendingRevId !== null && (
-        <Card className="border-sky-200 bg-sky-50/40">
+        <Card className="border-slate-200 bg-slate-50/40">
           <CardContent className="p-3 text-xs flex items-center gap-2">
-            <Link2 className="h-4 w-4 text-sky-600" />
+            <Link2 className="h-4 w-4 text-slate-600" />
             <span>
               Select a QB invoice below to link to revenue line{" "}
               <span className="font-mono font-semibold">#{pendingRevId}</span>.
@@ -1033,7 +1035,7 @@ function RevenueReconView({
                   {appOnly.map((row) => (
                     <tr
                       key={row.revenueLine!.id}
-                      className={`border-t ${pendingRevId === row.revenueLine!.id ? "bg-sky-50/60" : ""}`}
+                      className={`border-t ${pendingRevId === row.revenueLine!.id ? "bg-slate-100/60" : ""}`}
                     >
                       <td className="px-2 py-1.5 font-medium">
                         {row.revenueLine?.invoiceNumber ?? "—"}
@@ -1159,10 +1161,10 @@ function SummaryCard({
 }) {
   const toneClass = {
     emerald: "text-emerald-700",
-    green: "text-green-700",
+    green: "text-emerald-700",
     amber: "text-amber-700",
-    sky: "text-sky-700",
-    purple: "text-purple-700",
+    sky: "text-slate-700",
+    purple: "text-slate-700",
     red: "text-red-700",
   }[tone];
   return (

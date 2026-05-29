@@ -63,7 +63,7 @@ export function BudgetBaselineStrip({ projectId, actualRevenue, actualCos }: Pro
         <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
           Baseline v{locked.version}
         </span>
-        <Badge variant="default" className="text-[9px] h-4 bg-green-100 text-green-700">Locked</Badge>
+        <Badge variant="default" className="text-[9px] h-4 bg-emerald-50 text-emerald-700 border-emerald-200">Locked</Badge>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 text-xs">
         <div>

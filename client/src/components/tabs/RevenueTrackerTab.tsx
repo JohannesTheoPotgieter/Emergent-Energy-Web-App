@@ -102,13 +102,13 @@ const ROW_DEFS: {
   { key: "totalRevenue", label: "Revenue", dataKey: "totalRevenue", colorClass: "text-foreground font-bold", group: "monthly", clickable: true },
   { key: "realisedRevenue", label: "Realised Revenue", dataKey: "realisedRevenue", colorClass: "text-emerald-700 font-bold", group: "monthly", clickable: true, hint: "Only recognised when payment receipt date is confirmed" },
   { key: "unrealisedRevenue", label: "Unrealised Revenue", dataKey: "unrealisedRevenue", colorClass: "text-amber-600 font-semibold", group: "monthly", clickable: true },
-  { key: "budget", label: "Budget", dataKey: "budget", colorClass: "text-purple-600", group: "monthly", editable: true },
+  { key: "budget", label: "Budget", dataKey: "budget", colorClass: "text-slate-600", group: "monthly", editable: true },
   { key: "variance", label: "Variance", dataKey: "variance", colorClass: "", group: "monthly", colorCoded: true },
   { key: "variancePct", label: "Variance %", dataKey: "variancePct", colorClass: "", group: "monthly", colorCoded: true },
   { key: "ytdRevenue", label: "YTD Revenue", dataKey: "ytdRevenue", colorClass: "text-foreground font-bold", group: "ytd" },
   { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", colorClass: "text-emerald-700 font-bold", group: "ytd" },
   { key: "ytdUnrealised", label: "YTD Unrealised", dataKey: "ytdUnrealised", colorClass: "text-amber-600", group: "ytd" },
-  { key: "ytdBudget", label: "YTD Budget", dataKey: "ytdBudget", colorClass: "text-purple-600", group: "ytd" },
+  { key: "ytdBudget", label: "YTD Budget", dataKey: "ytdBudget", colorClass: "text-slate-600", group: "ytd" },
   { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", colorClass: "", group: "ytd", colorCoded: true },
   { key: "ytdVariancePct", label: "YTD Variance %", dataKey: "ytdVariancePct", colorClass: "", group: "ytd", colorCoded: true },
 ];
@@ -226,7 +226,7 @@ function RevenueDetailDrawer({ month, onClose, defaultFilter = "all" }: { month:
                     </td>
                     <td className="px-4 py-2.5">
                       {item.poNumber ? (
-                        <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-50 text-green-700 border border-green-200">{item.poNumber}</span>
+                        <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">{item.poNumber}</span>
                       ) : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-4 py-2.5 text-center">
@@ -404,9 +404,9 @@ export function RevenueTrackerTab({ projectName, projectId }: RevenueTrackerTabP
       label: "Total Budget",
       value: formatRand(totalMilestoneRevenue),
       icon: Target,
-      iconBg: "bg-blue-50",
-      iconColor: "text-blue-600",
-      valueColor: "text-blue-700",
+      iconBg: "bg-slate-100",
+      iconColor: "text-slate-600",
+      valueColor: "text-slate-700",
       borderColor: "border-slate-200",
     },
     {
@@ -551,7 +551,7 @@ export function RevenueTrackerTab({ projectName, projectId }: RevenueTrackerTabP
                                 {isEditingCell ? (
                                   <Input
                                     type="number"
-                                    className="h-8 w-full text-right font-mono text-sm border-purple-300 focus:ring-purple-400"
+                                    className="h-8 w-full text-right font-mono text-sm border-slate-300 focus:ring-slate-400"
                                     value={editing.value}
                                     onChange={(e) => setEditing({ ...editing, value: e.target.value })}
                                     onBlur={commitEdit}
@@ -562,7 +562,7 @@ export function RevenueTrackerTab({ projectName, projectId }: RevenueTrackerTabP
                                 ) : (
                                   <button
                                     type="button"
-                                    className={`w-full text-right font-mono cursor-pointer hover:bg-purple-50 rounded-lg px-3 py-1.5 transition-colors ${row.colorClass}`}
+                                    className={`w-full text-right font-mono cursor-pointer hover:bg-muted rounded-lg px-3 py-1.5 transition-colors ${row.colorClass}`}
                                     onClick={() => startEdit(row.key, m.monthKey, val)}
                                     data-testid={`cell-revenue-${row.key}-${m.monthKey}`}
                                   >
@@ -574,7 +574,7 @@ export function RevenueTrackerTab({ projectName, projectId }: RevenueTrackerTabP
                           }
 
                           const colorCodedClass = row.colorCoded
-                            ? val < 0 ? "text-red-600 font-semibold" : val > 0 ? "text-green-600 font-semibold" : "text-slate-500"
+                            ? val < 0 ? "text-red-600 font-semibold" : val > 0 ? "text-emerald-600 font-semibold" : "text-slate-500"
                             : row.colorClass;
                           const isVariancePct = row.key === "variancePct" || row.key === "ytdVariancePct";
                           const displayVal = isVariancePct ? `${(val * 100).toFixed(1)}%` : formatRand(val);
