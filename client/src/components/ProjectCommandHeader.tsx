@@ -28,15 +28,18 @@ function getPhaseLabel(phase: string | null): string {
   return PROJECT_PHASE_LABELS[phase as ProjectPhase] || phase;
 }
 
+// PR-G polish — collapse 8 phase accent hues to a single neutral
+// slate border; the phase TEXT in the badge already tells the user
+// which phase the project is in.
 const PHASE_ACCENT: Record<string, string> = {
   P0_FIRST_ASSESSMENT: "border-slate-400",
-  P1_COST_PROPOSAL_DESIGN: "border-violet-400",
-  P2_PD_PM_HANDOVER: "border-indigo-400",
-  P3_DETAILED_DESIGN_PROC_RELEASE: "border-blue-400",
-  P4_CONSTRUCTION_INSTALLATION: "border-amber-400",
-  P5_COMMISSIONING_TESTING: "border-orange-400",
-  P6_HANDOVER_CLIENT_MATRIARCH: "border-teal-400",
-  P7_CLOSEOUT_POSTMORTEM: "border-emerald-400",
+  P1_COST_PROPOSAL_DESIGN: "border-slate-400",
+  P2_PD_PM_HANDOVER: "border-slate-400",
+  P3_DETAILED_DESIGN_PROC_RELEASE: "border-slate-400",
+  P4_CONSTRUCTION_INSTALLATION: "border-slate-400",
+  P5_COMMISSIONING_TESTING: "border-slate-400",
+  P6_HANDOVER_CLIENT_MATRIARCH: "border-slate-400",
+  P7_CLOSEOUT_POSTMORTEM: "border-slate-400",
 };
 
 interface CommandHeaderProps {
@@ -301,7 +304,7 @@ function AlertStrip({
 
   return (
     <div
-      className={`border-t border-[var(--cmd-border)] px-4 py-1.5 ${hasAlerts ? "bg-amber-50/50" : "bg-green-50/50"}`}
+      className={`border-t border-[var(--cmd-border)] px-4 py-1.5 ${hasAlerts ? "bg-amber-50/50" : "bg-emerald-50/40"}`}
       data-testid="alert-strip"
     >
       <div className="flex items-center gap-2 flex-wrap">
@@ -341,7 +344,7 @@ function AlertStrip({
           </>
         ) : anyLoaded ? (
           <span
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-100 text-green-700 border border-green-200 cursor-default"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200 cursor-default"
             data-testid="alert-badge-all-clear"
           >
             <CheckCircle2 className="h-3 w-3" />

@@ -19,25 +19,27 @@ interface BoardViewProps {
   onTaskClick: (taskId: number) => void;
 }
 
+// PR-G polish — collapse 4 status hues to the 4-level palette (the
+// COLUMN HEADING already says "In Progress" / "Blocked" / "Done").
 const COLUMNS = [
-  { status: "Not Started", color: "bg-gray-500", headerBg: "bg-muted border-border", dotColor: "bg-gray-400" },
-  { status: "In Progress", color: "bg-blue-500", headerBg: "bg-blue-50 border-blue-300", dotColor: "bg-blue-400" },
+  { status: "Not Started", color: "bg-slate-500", headerBg: "bg-muted border-border", dotColor: "bg-slate-400" },
+  { status: "In Progress", color: "bg-amber-500", headerBg: "bg-amber-50 border-amber-200", dotColor: "bg-amber-400" },
   { status: "Blocked", color: "bg-red-500", headerBg: "bg-red-50 border-red-300", dotColor: "bg-red-400" },
-  { status: "Done", color: "bg-green-500", headerBg: "bg-green-50 border-green-300", dotColor: "bg-green-400" },
+  { status: "Done", color: "bg-emerald-500", headerBg: "bg-emerald-50 border-emerald-200", dotColor: "bg-emerald-400" },
 ] as const;
 
 const PRIORITY_BORDER: Record<string, string> = {
   Urgent: "border-l-red-500",
-  High: "border-l-orange-500",
-  Normal: "border-l-gray-400",
-  Low: "border-l-blue-400",
+  High: "border-l-amber-500",
+  Normal: "border-l-slate-400",
+  Low: "border-l-slate-300",
 };
 
 const PRIORITY_VARIANT: Record<string, string> = {
   Urgent: "bg-red-100 text-red-800",
-  High: "bg-orange-100 text-orange-800",
+  High: "bg-amber-100 text-amber-800",
   Normal: "bg-muted text-foreground",
-  Low: "bg-blue-100 text-blue-800",
+  Low: "bg-slate-100 text-slate-700",
 };
 
 export default function BoardView({ projectName, onTaskClick }: BoardViewProps) {
@@ -248,12 +250,12 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
                           {task.priority}
                         </Badge>
                         {task.isBaseline && (
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-purple-300 text-purple-700">
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-slate-300 text-slate-700">
                             BASELINE
                           </Badge>
                         )}
                         {user && task.creatorId && task.creatorId === user.id && task.ownerUserId !== user.id && !(task.assigneeUserIds || []).includes(user.id) && (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded text-[9px] font-medium border bg-teal-50 border-teal-200 text-teal-700" data-testid={`badge-tracking-${task.id}`}>
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded text-[9px] font-medium border bg-slate-100 border-slate-200 text-slate-700" data-testid={`badge-tracking-${task.id}`}>
                             <Eye className="h-2.5 w-2.5" />Tracking
                           </span>
                         )}
