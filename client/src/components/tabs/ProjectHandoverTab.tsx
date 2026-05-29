@@ -31,11 +31,10 @@ const PACK_TYPES = [
 ];
 
 function statusColor(s: string) {
-  if (s === "accepted" || s === "complete") return "bg-green-50 text-green-700";
-  if (s === "submitted") return "bg-blue-50 text-blue-700";
-  if (s === "in_progress" || s === "draft") return "bg-amber-50 text-amber-700";
+  if (s === "accepted" || s === "complete") return "bg-emerald-50 text-emerald-700";
+  if (s === "submitted" || s === "in_progress" || s === "draft") return "bg-amber-50 text-amber-700";
   if (s === "rejected") return "bg-red-50 text-red-700";
-  return "bg-muted text-muted-foreground";
+  return "bg-slate-100 text-slate-700";
 }
 
 export function ProjectHandoverTab({ projectId, projectName, initialFilter = "all" }: Props) {

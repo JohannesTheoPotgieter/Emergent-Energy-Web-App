@@ -48,26 +48,30 @@ function formatDate(d: string | null | undefined): string {
   }
 }
 
+// PR-F polish — collapse 6 color families (red/blue/amber/purple/orange/
+// yellow/green/gray) to the canonical 4-level palette. The type/priority
+// LABEL already tells the user which RAID type and priority this is;
+// the badge color now only signals tier (critical/warning/healthy/neutral).
 const TYPE_CONFIG: Record<string, { label: string; color: string; icon: typeof ShieldAlert; bg: string; border: string }> = {
   risk: { label: "Risk", color: "text-red-700", icon: ShieldAlert, bg: "bg-red-50", border: "border-red-200" },
-  assumption: { label: "Assumption", color: "text-blue-700", icon: HelpCircle, bg: "bg-blue-50", border: "border-blue-200" },
+  assumption: { label: "Assumption", color: "text-slate-700", icon: HelpCircle, bg: "bg-slate-100", border: "border-slate-200" },
   issue: { label: "Issue", color: "text-amber-700", icon: AlertTriangle, bg: "bg-amber-50", border: "border-amber-200" },
-  decision: { label: "Decision", color: "text-purple-700", icon: Gavel, bg: "bg-purple-50", border: "border-purple-200" },
+  decision: { label: "Decision", color: "text-slate-700", icon: Gavel, bg: "bg-slate-100", border: "border-slate-200" },
 };
 
 const PRIORITY_CONFIG: Record<string, { label: string; color: string; bg: string; border: string }> = {
   critical: { label: "Critical", color: "text-red-700", bg: "bg-red-50", border: "border-red-200" },
-  high: { label: "High", color: "text-orange-700", bg: "bg-orange-50", border: "border-orange-200" },
-  medium: { label: "Medium", color: "text-yellow-700", bg: "bg-yellow-50", border: "border-yellow-200" },
-  low: { label: "Low", color: "text-gray-600", bg: "bg-gray-50", border: "border-gray-200" },
+  high: { label: "High", color: "text-amber-700", bg: "bg-amber-50", border: "border-amber-200" },
+  medium: { label: "Medium", color: "text-amber-700", bg: "bg-amber-50", border: "border-amber-200" },
+  low: { label: "Low", color: "text-slate-600", bg: "bg-slate-100", border: "border-slate-200" },
 };
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  open: { label: "Open", color: "text-blue-700", bg: "bg-blue-50" },
+  open: { label: "Open", color: "text-amber-700", bg: "bg-amber-50" },
   mitigating: { label: "Mitigating", color: "text-amber-700", bg: "bg-amber-50" },
-  resolved: { label: "Resolved", color: "text-green-700", bg: "bg-green-50" },
-  closed: { label: "Closed", color: "text-gray-600", bg: "bg-gray-100" },
-  accepted: { label: "Accepted", color: "text-purple-700", bg: "bg-purple-50" },
+  resolved: { label: "Resolved", color: "text-emerald-700", bg: "bg-emerald-50" },
+  closed: { label: "Closed", color: "text-slate-600", bg: "bg-slate-100" },
+  accepted: { label: "Accepted", color: "text-emerald-700", bg: "bg-emerald-50" },
 };
 
 const TYPE_TABS = [
@@ -203,10 +207,10 @@ export function ProjectRaidTab({ projectId, projectName }: ProjectRaidTabProps) 
         <SummaryCard label="Total" count={totalCount} color="text-slate-800" testId="raid-summary-total" />
         <SummaryCard label="Risks" count={riskCount} color="text-red-600" testId="raid-summary-risks" />
         <SummaryCard label="Issues" count={issueCount} color="text-amber-600" testId="raid-summary-issues" />
-        <SummaryCard label="Assumptions" count={assumptionCount} color="text-blue-600" testId="raid-summary-assumptions" />
-        <SummaryCard label="Decisions" count={decisionCount} color="text-purple-600" testId="raid-summary-decisions" />
-        <SummaryCard label="Open" count={openCount} color="text-emerald-600" testId="raid-summary-open" />
-        <SummaryCard label="Closed" count={closedCount} color="text-gray-500" testId="raid-summary-closed" />
+        <SummaryCard label="Assumptions" count={assumptionCount} color="text-slate-700" testId="raid-summary-assumptions" />
+        <SummaryCard label="Decisions" count={decisionCount} color="text-slate-700" testId="raid-summary-decisions" />
+        <SummaryCard label="Open" count={openCount} color="text-amber-600" testId="raid-summary-open" />
+        <SummaryCard label="Closed" count={closedCount} color="text-slate-500" testId="raid-summary-closed" />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

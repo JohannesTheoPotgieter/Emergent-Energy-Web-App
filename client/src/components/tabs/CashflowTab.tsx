@@ -164,8 +164,8 @@ function qbBadgeClass(status?: string, uncertain?: boolean): string {
   if (!status || status === "Unknown") return "bg-slate-100 text-slate-700 border-slate-200";
   if (uncertain) return "bg-amber-100 text-amber-800 border-amber-300";
   if (status === "Received" || status === "Paid") return "bg-emerald-100 text-emerald-800 border-emerald-300";
-  if (status === "Partially received" || status === "Partially paid") return "bg-blue-100 text-blue-800 border-blue-300";
-  return "bg-rose-100 text-rose-800 border-rose-300";
+  if (status === "Partially received" || status === "Partially paid") return "bg-amber-100 text-amber-800 border-amber-300";
+  return "bg-red-100 text-red-800 border-red-300";
 }
 
 function formatMatchType(matchType?: string): string {
@@ -638,7 +638,7 @@ export function CashflowTab({ projectName, projectNames, title, canOverrideFinan
                       <tr
                         className={`border-b border-border transition-colors cursor-pointer ${
                           current
-                            ? "bg-blue-50/70 border-l-[3px] border-l-blue-500"
+                            ? "bg-slate-50 border-l-[3px] border-l-slate-400"
                             : isEven
                             ? "bg-card"
                             : "bg-muted/30"
@@ -647,7 +647,7 @@ export function CashflowTab({ projectName, projectNames, title, canOverrideFinan
                       >
                         <td
                           className={`px-4 py-2.5 font-medium text-foreground sticky left-0 z-10 ${
-                            current ? "bg-blue-50/70" : isEven ? "bg-card" : "bg-muted/30"
+                            current ? "bg-slate-50" : isEven ? "bg-card" : "bg-muted/30"
                           }`}
                         >
                           <div className="flex items-center gap-1.5">
@@ -658,13 +658,13 @@ export function CashflowTab({ projectName, projectNames, title, canOverrideFinan
                             )}
                             <span className="text-[13px]">{formatWeek(week.weekStart)}</span>
                             {current && (
-                              <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-700">
+                              <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-700">
                                 NOW
                               </span>
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-2.5 text-right font-mono text-[13px] text-blue-600">
+                        <td className="px-4 py-2.5 text-right font-mono text-[13px] text-slate-600">
                           <RandValue value={week.openingBalance} />
                         </td>
                         <td className="px-4 py-2.5 text-right font-mono text-[13px] text-emerald-600">
@@ -721,10 +721,12 @@ function KpiMini({
   icon: React.ReactNode;
   color: "green" | "red" | "blue";
 }) {
+  // PR-F polish — the "blue" slot is used for a neutral balance figure;
+  // collapse it to slate so the page only carries the 4 canonical hues.
   const colorMap = {
     green: { bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700", iconBg: "bg-emerald-100", iconColor: "text-emerald-600" },
     red: { bg: "bg-red-50", border: "border-red-200", text: "text-red-700", iconBg: "bg-red-100", iconColor: "text-red-600" },
-    blue: { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-700", iconBg: "bg-blue-100", iconColor: "text-blue-600" },
+    blue: { bg: "bg-slate-50", border: "border-slate-200", text: "text-slate-700", iconBg: "bg-slate-100", iconColor: "text-slate-600" },
   };
   const c = colorMap[color];
   return (

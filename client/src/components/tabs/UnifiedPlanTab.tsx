@@ -524,9 +524,9 @@ function InlinePredecessorEditor({
               const row = wiToRowMap.get(d.predecessorId);
               const predTask = allTasks.find(t => (t.workItemId || Math.abs(t.id)) === d.predecessorId);
               return (
-                <div key={d.id} className="flex items-center justify-between gap-1 px-1.5 py-1 rounded bg-blue-50 border border-blue-200 text-[10px]">
-                  <span className="truncate text-blue-800">
-                    <span className="font-bold">#{row}</span> {predTask?.title || "Unknown"} <span className="text-blue-500">({d.depType || "FS"})</span>
+                <div key={d.id} className="flex items-center justify-between gap-1 px-1.5 py-1 rounded bg-slate-50 border border-slate-200 text-[10px]">
+                  <span className="truncate text-slate-700">
+                    <span className="font-bold">#{row}</span> {predTask?.title || "Unknown"} <span className="text-slate-500">({d.depType || "FS"})</span>
                   </span>
                   <button
                     onClick={(e) => { e.stopPropagation(); onRemove(d.id); }}
@@ -1699,18 +1699,18 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
           <span className="text-sm font-bold tabular-nums text-emerald-700" data-testid="kpi-done">{kpis.done}</span>
         </div>
         {kpis.totalProjectDays !== null && kpis.elapsedDays !== null && (
-          <div className="flex min-h-8 items-center gap-1.5 rounded-md border border-violet-200 bg-violet-50 px-3 py-1.5">
-            <Calendar className="h-3.5 w-3.5 text-violet-500" />
+          <div className="flex min-h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5">
+            <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
             <span className="text-xs text-muted-foreground">Day</span>
-            <span className="text-sm font-bold tabular-nums text-violet-700" data-testid="kpi-elapsed-days">{kpis.elapsedDays}</span>
+            <span className="text-sm font-bold tabular-nums" data-testid="kpi-elapsed-days">{kpis.elapsedDays}</span>
             <span className="text-xs text-muted-foreground">of</span>
-            <span className="text-sm font-bold tabular-nums text-violet-700" data-testid="kpi-total-days">{kpis.totalProjectDays}</span>
+            <span className="text-sm font-bold tabular-nums" data-testid="kpi-total-days">{kpis.totalProjectDays}</span>
           </div>
         )}
-        <div className="flex min-h-8 items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5">
-          <Target className="h-3.5 w-3.5 text-blue-600" />
+        <div className="flex min-h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5">
+          <Target className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="text-xs text-muted-foreground">Actual %</span>
-          <span className="text-sm font-bold tabular-nums text-blue-700" data-testid="kpi-actual">{kpis.avgPct}%</span>
+          <span className="text-sm font-bold tabular-nums" data-testid="kpi-actual">{kpis.avgPct}%</span>
           {kpis.avgExpectedPct !== null && (
             <Badge
               variant="outline"
@@ -2056,7 +2056,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       </div>
 
       {showKeyDates && keyDates.length > 0 && (
-        <div className="flex gap-2 flex-wrap p-2 rounded-md bg-blue-50/50 border border-blue-100" data-testid="key-dates-strip">
+        <div className="flex gap-2 flex-wrap p-2 rounded-md bg-slate-50 border border-slate-200" data-testid="key-dates-strip">
           {keyDates.map((kd) => (
             <div
               key={kd.id}
@@ -2093,7 +2093,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       )}
 
       {unlinkedOperationalCount > 0 && (
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-blue-50 border border-blue-200 text-xs text-blue-700" data-testid="unlinked-ops-banner">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-50 border border-amber-200 text-xs text-amber-800" data-testid="unlinked-ops-banner">
           <Info className="h-3.5 w-3.5 flex-shrink-0" />
           <span data-testid="text-unlinked-count">
             {unlinkedOperationalCount} operational task{unlinkedOperationalCount !== 1 ? "s" : ""} not linked to the project plan
@@ -2102,7 +2102,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
             <Button
               size="sm"
               variant="outline"
-              className="h-6 ml-2 text-[11px] border-blue-300 text-blue-700 hover:bg-blue-100"
+              className="h-6 ml-2 text-[11px] border-amber-300 text-amber-800 hover:bg-amber-100"
               onClick={() => setLinkUnlinkedDialogOpen(true)}
               data-testid="button-open-unlinked-panel"
             >
