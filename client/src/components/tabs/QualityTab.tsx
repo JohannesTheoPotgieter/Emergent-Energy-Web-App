@@ -33,11 +33,14 @@ function qFetch(url: string, options?: RequestInit) {
   return fetch(url, { ...options, headers: { ...headers, ...options?.headers }, credentials: "include" });
 }
 
+// PR-F polish — the phase NAME already tells the user which lifecycle
+// phase a quality block belongs to. Drop the 4-family color soup and
+// use a single neutral chip; the page is no longer a Christmas tree.
 const PHASE_COLORS: Record<string, { bg: string; text: string; border: string; progress: string; lightBg: string; gradient: string }> = {
-  "planning_design": { bg: "bg-blue-50", text: "text-blue-600", border: "border-blue-200", progress: "bg-blue-500", lightBg: "bg-blue-50", gradient: "from-blue-500 to-blue-600" },
-  "construction": { bg: "bg-orange-50", text: "text-orange-600", border: "border-orange-200", progress: "bg-orange-500", lightBg: "bg-orange-50", gradient: "from-orange-500 to-orange-600" },
-  "commissioning": { bg: "bg-purple-50", text: "text-purple-600", border: "border-purple-200", progress: "bg-purple-500", lightBg: "bg-purple-50", gradient: "from-purple-500 to-purple-600" },
-  "handover": { bg: "bg-green-50", text: "text-green-600", border: "border-green-200", progress: "bg-green-500", lightBg: "bg-green-50", gradient: "from-green-500 to-green-600" },
+  "planning_design": { bg: "bg-slate-50", text: "text-slate-600", border: "border-slate-200", progress: "bg-slate-500", lightBg: "bg-slate-50", gradient: "from-slate-500 to-slate-600" },
+  "construction": { bg: "bg-slate-50", text: "text-slate-600", border: "border-slate-200", progress: "bg-slate-500", lightBg: "bg-slate-50", gradient: "from-slate-500 to-slate-600" },
+  "commissioning": { bg: "bg-slate-50", text: "text-slate-600", border: "border-slate-200", progress: "bg-slate-500", lightBg: "bg-slate-50", gradient: "from-slate-500 to-slate-600" },
+  "handover": { bg: "bg-slate-50", text: "text-slate-600", border: "border-slate-200", progress: "bg-slate-500", lightBg: "bg-slate-50", gradient: "from-slate-500 to-slate-600" },
 };
 
 function getPhaseColor(phaseKey: string) {
@@ -47,8 +50,8 @@ function getPhaseColor(phaseKey: string) {
 function getRiskSeverityColor(severity: string) {
   switch (severity?.toLowerCase()) {
     case "high": return "text-red-500 bg-red-50 border-red-500/20";
-    case "medium": return "text-orange-500 bg-orange-50 border-orange-500/20";
-    case "low": return "text-yellow-500 bg-yellow-500/10 border-yellow-500/20";
+    case "medium": return "text-amber-500 bg-amber-50 border-amber-500/20";
+    case "low": return "text-amber-500 bg-amber-50 border-amber-500/20";
     default: return "text-muted-foreground bg-muted/50 border-border";
   }
 }
@@ -133,7 +136,7 @@ const CHIP_DRILLDOWN_CONFIG: Record<string, {
     label: "Create from Quality items",
     description: "Select applicable QC items not yet sent for review and submit them in bulk",
     icon: Send,
-    color: "border-blue-300 bg-blue-50 text-blue-800",
+    color: "border-slate-300 bg-slate-50 text-slate-800",
     filter: "actionable_for_approval",
   },
 };
@@ -1057,9 +1060,9 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
   return (
     <div className="space-y-5" data-testid="quality-tab">
       {!canEdit && (
-        <div className="rounded-lg border border-blue-200 bg-blue-50/60 px-4 py-3 flex items-center gap-3" data-testid="quality-readonly-banner">
-          <Lock className="w-4 h-4 text-blue-500 shrink-0" />
-          <span className="text-sm text-blue-700">View-only mode - editing requires Quality Manager access</span>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 flex items-center gap-3" data-testid="quality-readonly-banner">
+          <Lock className="w-4 h-4 text-slate-500 shrink-0" />
+          <span className="text-sm text-slate-700">View-only mode — editing requires Quality Manager access</span>
         </div>
       )}
 
@@ -1163,10 +1166,10 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
                         <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">{item.daysOverdue}d overdue</Badge>
                       )}
                       {item.evidenceMissing && (
-                        <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200">Evidence required</Badge>
+                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Evidence required</Badge>
                       )}
                       {item.approvalState === "pending_review" && (
-                        <Badge variant="outline" className="bg-violet-50 text-violet-700 border-violet-200">Pending review</Badge>
+                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Pending review</Badge>
                       )}
                     </div>
                     {item.approvalComment && (
@@ -1332,9 +1335,9 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
           </div>
 
           {selectedItems.size > 0 && canEdit && (
-            <div className="rounded-lg border border-blue-200 bg-blue-50/80 px-4 py-3 flex items-center gap-3 flex-wrap" data-testid="bulk-actions-bar">
-              <SquareCheck className="w-4 h-4 text-blue-600" />
-              <span className="text-sm font-medium text-blue-700">{selectedItems.size} item{selectedItems.size !== 1 ? "s" : ""} selected</span>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 flex items-center gap-3 flex-wrap" data-testid="bulk-actions-bar">
+              <SquareCheck className="w-4 h-4 text-slate-600" />
+              <span className="text-sm font-medium text-slate-700">{selectedItems.size} item{selectedItems.size !== 1 ? "s" : ""} selected</span>
               <div className="flex items-center gap-1.5 ml-auto flex-wrap">
                 <Button
                   size="sm"
@@ -1640,7 +1643,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
                                           </Badge>
                                         )}
                                         {governance.evidenceMissing && (
-                                          <Badge variant="outline" className="text-[9px] gap-0.5 px-1.5 py-0 h-4 bg-sky-50 text-sky-700 border-sky-200">
+                                          <Badge variant="outline" className="text-[9px] gap-0.5 px-1.5 py-0 h-4 bg-amber-50 text-amber-700 border-amber-200">
                                             <Paperclip className="w-2.5 h-2.5" /> Evidence required
                                           </Badge>
                                         )}
@@ -1777,7 +1780,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
                                     {canEdit && !instance.approved && (
                                       <div>
                                         {governance.evidenceMissing && (
-                                          <div className="flex items-center gap-2 text-xs text-sky-700 bg-sky-50 border border-sky-200 rounded-lg p-2.5 mb-2" data-testid={`evidence-warning-${instance.id}`}>
+                                          <div className="flex items-center gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5 mb-2" data-testid={`evidence-warning-${instance.id}`}>
                                             <Paperclip className="w-3.5 h-3.5 shrink-0" />
                                             <span>Evidence is required before this item can be submitted for review.</span>
                                           </div>

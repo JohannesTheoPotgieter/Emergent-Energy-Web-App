@@ -32,15 +32,13 @@
 
 import { useMemo } from "react";
 import { useRoute, useLocation, useSearch } from "wouter";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
   Tabs, TabsContent, TabsList, TabsTrigger,
 } from "@/components/ui/tabs";
 import { useProjectsSummary } from "@/hooks/use-projects-summary";
-import { useAuth } from "@/hooks/use-auth";
-import { findProjectById, findProjectByName } from "@/lib/project-route-identity";
+import { findProjectById } from "@/lib/project-route-identity";
 import { TYPOGRAPHY, statusClasses, ragLevel } from "@/lib/design-tokens";
 import {
   PROJECT_WORKSPACE_TABS,
@@ -73,7 +71,7 @@ const ProjectRaidTab = lazy(() =>
   import("@/components/tabs/ProjectRaidTab").then((m) => ({ default: m.ProjectRaidTab })),
 );
 
-import { ArrowRight, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 // ===================== Page =====================
 
@@ -89,9 +87,6 @@ export default function ProjectWorkspacePage() {
     if (projectId == null) return null;
     return findProjectById(projectsSummary as any[] | undefined, projectId) ?? null;
   }, [projectsSummary, projectId]);
-
-  const { user } = useAuth();
-  void user;
 
   const requestedTab = (searchParams.get("tab") as ProjectWorkspaceTab) || "plan";
   const activeTab: ProjectWorkspaceTab = PROJECT_WORKSPACE_TABS.includes(requestedTab)
@@ -224,24 +219,6 @@ export default function ProjectWorkspacePage() {
           </TabsContent>
         </Tabs>
 
-        {/* What this view doesn't show — link out so users know. */}
-        <div className="mt-8 text-[11px] text-muted-foreground text-center space-y-1">
-          <p>
-            Workspace (beta) collapses the previous 9 departments × 27 sub-tabs into 4.{" "}
-            For procurement, engineering tasks, drawings, documents, history and Excel-replica
-            views, open the legacy detail page.
-          </p>
-          <Button
-            asChild
-            variant="ghost"
-            size="sm"
-            className="text-xs text-muted-foreground"
-          >
-            <a href={`/project/id/${projectId}`}>
-              Open legacy detail →
-            </a>
-          </Button>
-        </div>
       </div>
     </div>
   );
@@ -269,15 +246,12 @@ function ProjectHeaderStrip({
         <h1 className="text-base font-semibold truncate flex-1 min-w-0">
           {name}
         </h1>
-        {phase && (
-          <Badge variant="outline" className={`${statusClasses("neutral", "outline")} text-[10px]`}>
-            {phase}
-          </Badge>
-        )}
-        <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-          <span className={`inline-block w-2 h-2 rounded-full ${ragClass}`} aria-label={`RAG ${rag || "unknown"}`} />
-          <span>{rag || "—"}</span>
-        </div>
+        {phase && <span className="text-[11px] text-muted-foreground">{phase}</span>}
+        <span
+          className={`inline-block w-2 h-2 rounded-full ${ragClass}`}
+          aria-label={`RAG ${rag || "unknown"}`}
+          title={rag || "RAG unknown"}
+        />
         {lastUpdated && (
           <span className="text-[11px] text-muted-foreground">
             updated {formatAgo(lastUpdated)}
@@ -298,24 +272,18 @@ function Section({
   title: string;
   children: React.ReactNode;
 }) {
+  const legacy = PROJECT_WORKSPACE_SECTIONS.find((s) => s.title === title)?.legacyLocation;
   return (
     <section className="space-y-2">
-      <h2 className={`${TYPOGRAPHY.SECTION} text-foreground/90 mt-2 mb-2 flex items-center gap-2`}>
-        <span>{title}</span>
-        <span className="text-[11px] text-muted-foreground font-normal">
-          {sectionMeta(title)}
-        </span>
+      <h2
+        className={`${TYPOGRAPHY.SECTION} text-foreground/90 mt-2 mb-2`}
+        title={legacy ? `Was: ${legacy}` : undefined}
+      >
+        {title}
       </h2>
       <Card className="overflow-hidden">{children}</Card>
     </section>
   );
-}
-
-function sectionMeta(title: string): string {
-  // Surface the section ↔ legacy mapping so a user can find the same
-  // content if they don't trust the new layout yet.
-  const map = PROJECT_WORKSPACE_SECTIONS.find((s) => s.title === title);
-  return map?.legacyLocation ? `was: ${map.legacyLocation}` : "";
 }
 
 function SectionFallback() {
@@ -345,7 +313,3 @@ function formatAgo(iso: string): string {
   const days = Math.floor(hrs / 24);
   return `${days}d ago`;
 }
-
-// Touch ArrowRight import so tree-shake doesn't strip it; the icon
-// might be needed by future "open section in legacy view" links.
-void ArrowRight;
