@@ -103,17 +103,9 @@ import {
 } from "@/components/project/ProjectWorkflowSections";
 import { ProjectEngineeringTasksTab } from "@/components/tabs/ProjectEngineeringTasksTab";
 
-const PHASE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  P0_FIRST_ASSESSMENT: { bg: "bg-muted", text: "text-foreground", border: "border-border" },
-  P1_COST_PROPOSAL_DESIGN: { bg: "bg-violet-100", text: "text-violet-700", border: "border-violet-300" },
-  P2_PD_PM_HANDOVER: { bg: "bg-indigo-100", text: "text-indigo-700", border: "border-indigo-300" },
-  P3_DETAILED_DESIGN_PROC_RELEASE: { bg: "bg-blue-100", text: "text-blue-700", border: "border-blue-300" },
-  P4_CONSTRUCTION_INSTALLATION: { bg: "bg-amber-100", text: "text-amber-700", border: "border-amber-300" },
-  P5_COMMISSIONING_TESTING: { bg: "bg-orange-100", text: "text-orange-700", border: "border-orange-300" },
-  P6_HANDOVER_CLIENT_MATRIARCH: { bg: "bg-teal-100", text: "text-teal-700", border: "border-teal-300" },
-  P7_CLOSEOUT_POSTMORTEM: { bg: "bg-emerald-100", text: "text-emerald-700", border: "border-emerald-300" },
-};
-
+// PR-F polish (2026-05-29) — the phase TEXT already tells the user which
+// phase the project is in; the badge does not need 8 distinct color
+// families competing on the page. Collapse to a single neutral chip.
 function getPhaseLabel(phase: string | null): string {
   if (!phase) return "Unknown";
   return PROJECT_PHASE_LABELS[phase as ProjectPhase] || phase;
@@ -121,10 +113,9 @@ function getPhaseLabel(phase: string | null): string {
 
 
 function PhaseBadge({ phase }: { phase: string | null }) {
-  const colors = phase ? PHASE_COLORS[phase] || PHASE_COLORS.P0_FIRST_ASSESSMENT : PHASE_COLORS.P0_FIRST_ASSESSMENT;
   return (
     <span
-      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border ${colors.bg} ${colors.text} ${colors.border}`}
+      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border bg-slate-100 text-slate-700 border-slate-200"
       data-testid="badge-project-phase"
       title={getPhaseLabel(phase)}
     >
@@ -149,10 +140,17 @@ function ProjectPriorityBadges({ projectId }: { projectId: number | null }) {
 
   if (!priorities || priorities.length === 0) return null;
 
-  const healthColors: Record<string, string> = {
-    critical: "bg-red-100 text-red-700 border-red-200",
-    at_risk: "bg-amber-100 text-amber-700 border-amber-200",
-    healthy: "bg-blue-100 text-blue-700 border-blue-200",
+  // PR-F polish — collapse the 3-family color soup (blue-healthy was
+  // not even in the design system) to the canonical 4-level palette.
+  const healthClasses = (h: string): string => {
+    if (h === "critical") return "bg-red-50 text-red-700 border-red-200";
+    if (h === "at_risk") return "bg-amber-50 text-amber-700 border-amber-200";
+    return "bg-slate-100 text-slate-700 border-slate-200";
+  };
+  const healthDot = (h: string): string => {
+    if (h === "critical") return "bg-red-500";
+    if (h === "at_risk") return "bg-amber-500";
+    return "bg-emerald-500";
   };
 
   return (
@@ -160,8 +158,8 @@ function ProjectPriorityBadges({ projectId }: { projectId: number | null }) {
       <span className="text-xs text-muted-foreground">Priorities:</span>
       {priorities.map((p: any) => (
         <Link key={p.id} href={`/priorities/${p.id}`} className="no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-full" aria-label={`Open priority ${p.title}`} title={`Open priority ${p.title}`}>
-          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border cursor-pointer hover:shadow-sm transition-shadow ${healthColors[p.effectiveHealth] || healthColors.healthy}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${p.effectiveHealth === "critical" ? "bg-red-500" : p.effectiveHealth === "at_risk" ? "bg-amber-500" : "bg-blue-500"}`} />
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border cursor-pointer hover:shadow-sm transition-shadow ${healthClasses(p.effectiveHealth)}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${healthDot(p.effectiveHealth)}`} />
             {p.title}
           </span>
         </Link>
@@ -226,7 +224,7 @@ function LinkedEntityCards({ projectInfoId }: { projectInfoId: number }) {
           <DollarSign className="h-3 w-3 text-muted-foreground" />
           <span className="font-medium">Baseline v{latestBaseline.version}</span>
           {latestBaseline.changeLocked ? (
-            <Badge variant="default" className="text-[9px] h-4 bg-green-100 text-green-700">Locked</Badge>
+            <Badge variant="default" className="text-[9px] h-4 bg-emerald-50 text-emerald-700 border-emerald-200">Locked</Badge>
           ) : (
             <Badge variant="secondary" className="text-[9px] h-4">Draft</Badge>
           )}
@@ -333,16 +331,25 @@ function TrustMarker({
   const freshness = dataFreshnessLabel(updatedAt);
   const lineageStatus = lineage ? summarizeImportLineage(lineage) : null;
   const isStale = stale ?? (lineageStatus?.tone === "warning" || freshness.stale);
+  // PR-F polish — previously up to 5 badges per row (source / status /
+  // freshness / drift / load-error). Compress: label + source as plain
+  // text, then ONE status badge (priority order: error > drift > stale
+  // > fresh). The full detail still surfaces on hover via title=.
+  const statusBadge =
+    loadError ? { variant: "destructive" as const, label: "Unable to load" }
+    : drift ? { variant: "secondary" as const, label: `Drift: ${drift}` }
+    : isStale ? { variant: "secondary" as const, label: lineageStatus?.label ?? freshness.label }
+    : { variant: "outline" as const, label: lineageStatus?.label ?? freshness.label };
+  const detail = lineageStatus ? lineageStatus.detail : `Updated ${formatUpdatedAt(updatedAt)}`;
   return (
-    <div className="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] bg-card" data-testid={`trust-marker-${label.toLowerCase().replace(/\s+/g, '-')}`}>
+    <div
+      className="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] bg-card"
+      data-testid={`trust-marker-${label.toLowerCase().replace(/\s+/g, '-')}`}
+      title={`${label} · ${source} · ${detail}`}
+    >
       <span className="font-semibold">{label}</span>
-      <Badge variant="outline" className="h-4 text-[9px]">{source}</Badge>
-      <span className={isStale ? "text-amber-700" : "text-muted-foreground"}>
-        {lineageStatus ? lineageStatus.detail : `Updated ${formatUpdatedAt(updatedAt)}`}
-      </span>
-      <Badge variant={isStale ? "secondary" : "outline"} className="h-4 text-[9px]">{lineageStatus?.label ?? freshness.label}</Badge>
-      {drift ? <Badge variant="secondary" className="h-4 text-[9px]">Drift: {drift}</Badge> : null}
-      {loadError ? <Badge variant="destructive" className="h-4 text-[9px]">Unable to load</Badge> : null}
+      <span className="text-muted-foreground">{source}</span>
+      <Badge variant={statusBadge.variant} className="h-4 text-[9px]">{statusBadge.label}</Badge>
     </div>
   );
 }
@@ -1279,7 +1286,7 @@ export default function ProjectDetailPage() {
         const hasContractMismatch = projectContractValue > 0 && revenueMilestoneTotal > 0
           && Math.abs(projectContractValue - revenueMilestoneTotal) / projectContractValue > 0.01;
         return hasContractMismatch ? (
-          <div className="flex items-center gap-2 rounded-md border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs text-orange-800" data-testid="contract-value-mismatch">
+          <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-800" data-testid="contract-value-mismatch">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
             <span>
               Contract value mismatch: Project info shows <strong>{formatZar(projectContractValue)}</strong> but

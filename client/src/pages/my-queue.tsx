@@ -29,14 +29,7 @@ import {
   statusClasses,
   TYPOGRAPHY,
 } from '@/lib/design-tokens';
-import {
-  ArrowRight,
-  ClipboardCheck,
-  CreditCard,
-  GitBranch,
-  ShieldAlert,
-  Inbox,
-} from 'lucide-react';
+import { ArrowRight, Inbox } from 'lucide-react';
 
 // ===================== Types =====================
 
@@ -85,20 +78,15 @@ function ageBadge(iso: string | null): { label: string; level: 'critical' | 'war
 
 interface BucketProps {
   title: string;
-  emptyMessage: string;
-  icon: typeof ClipboardCheck;
   bucket: QueueBucket | undefined;
   isLoading: boolean;
 }
 
-function BucketSection({ title, emptyMessage, icon: Icon, bucket, isLoading }: BucketProps) {
+function BucketSection({ title, bucket, isLoading }: BucketProps) {
   if (isLoading) {
     return (
       <section>
-        <h2 className={`${TYPOGRAPHY.SECTION} mb-2 flex items-center gap-2`}>
-          <Icon className={`h-4 w-4 ${statusClasses('neutral', 'text')}`} />
-          {title}
-        </h2>
+        <h2 className={`${TYPOGRAPHY.SECTION} mb-2`}>{title}</h2>
         <Card>
           <div className="divide-y">
             <Skeleton className="h-12 mx-4 my-3" />
@@ -114,10 +102,7 @@ function BucketSection({ title, emptyMessage, icon: Icon, bucket, isLoading }: B
   if (bucket.error) {
     return (
       <section>
-        <h2 className={`${TYPOGRAPHY.SECTION} mb-2 flex items-center gap-2`}>
-          <Icon className={`h-4 w-4 ${statusClasses('critical', 'text')}`} />
-          {title}
-        </h2>
+        <h2 className={`${TYPOGRAPHY.SECTION} mb-2`}>{title}</h2>
         <Card>
           <div className={`px-4 py-3 text-sm ${statusClasses('critical', 'text')}`}>
             Couldn't load — {bucket.error}. This does NOT mean the queue is empty.
@@ -127,20 +112,18 @@ function BucketSection({ title, emptyMessage, icon: Icon, bucket, isLoading }: B
     );
   }
 
+  // Hide empty buckets entirely — the bottom "You're caught up" card
+  // covers the all-empty case in a single line.
+  if (bucket.count === 0) return null;
+
   return (
     <section>
-      <h2 className={`${TYPOGRAPHY.SECTION} mb-2 flex items-center gap-2`}>
-        <Icon className={`h-4 w-4 ${statusClasses(bucket.count > 0 ? 'warning' : 'neutral', 'text')}`} />
-        {title}
-        {bucket.count > 0 && (
-          <Badge variant="outline" className={`${statusClasses('warning', 'outline')} text-[10px]`}>
-            {bucket.count}
-          </Badge>
-        )}
-      </h2>
+      <h2 className={`${TYPOGRAPHY.SECTION} mb-2`}>{title}</h2>
       <Card>
         {bucket.items.length === 0 ? (
-          <div className="px-4 py-4 text-sm text-muted-foreground">{emptyMessage}</div>
+          <div className="px-4 py-4 text-sm text-muted-foreground">
+            {bucket.count} item{bucket.count === 1 ? '' : 's'} — open the queue to see them.
+          </div>
         ) : (
           <ul className="divide-y">
             {bucket.items.map((item) => {
@@ -227,37 +210,10 @@ export default function MyQueuePage() {
         </p>
       </header>
 
-      <BucketSection
-        title="Approve"
-        emptyMessage="Nothing waiting on you for POs."
-        icon={ClipboardCheck}
-        bucket={data?.pos}
-        isLoading={isLoading}
-      />
-
-      <BucketSection
-        title="Review payments"
-        emptyMessage="No payment requests are in review right now."
-        icon={CreditCard}
-        bucket={data?.paymentRequests}
-        isLoading={isLoading}
-      />
-
-      <BucketSection
-        title="Change requests"
-        emptyMessage="Nothing waiting on you for change requests."
-        icon={GitBranch}
-        bucket={data?.changeRequests}
-        isLoading={isLoading}
-      />
-
-      <BucketSection
-        title="Stage-gate exceptions"
-        emptyMessage="No stage-gate exceptions are assigned to you."
-        icon={ShieldAlert}
-        bucket={data?.stageExceptions}
-        isLoading={isLoading}
-      />
+      <BucketSection title="Approve" bucket={data?.pos} isLoading={isLoading} />
+      <BucketSection title="Review payments" bucket={data?.paymentRequests} isLoading={isLoading} />
+      <BucketSection title="Change requests" bucket={data?.changeRequests} isLoading={isLoading} />
+      <BucketSection title="Stage-gate exceptions" bucket={data?.stageExceptions} isLoading={isLoading} />
 
       {/* Empty-state footer when no buckets and no loading happening. */}
       {!isLoading && !isError && totalCount === 0 && (

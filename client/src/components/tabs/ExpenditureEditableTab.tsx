@@ -278,7 +278,7 @@ const getRowStatusBadge = (exp: EnrichedExpense) => {
     return <Badge data-testid={`badge-status-${exp.id}`} className="text-[9px] font-medium px-1.5 py-0 border whitespace-nowrap bg-amber-50 text-amber-700 border-amber-300" variant="outline">Invoiced</Badge>;
   }
   if (exp.expensePoNumber && exp.expensePoNumber.trim()) {
-    return <Badge data-testid={`badge-status-${exp.id}`} className="text-[9px] font-medium px-1.5 py-0 border whitespace-nowrap bg-blue-50 text-blue-600 border-blue-200" variant="outline">Committed</Badge>;
+    return <Badge data-testid={`badge-status-${exp.id}`} className="text-[9px] font-medium px-1.5 py-0 border whitespace-nowrap bg-slate-100 text-slate-700 border-slate-200" variant="outline">Committed</Badge>;
   }
   return <Badge data-testid={`badge-status-${exp.id}`} className="text-[9px] font-medium px-1.5 py-0 border whitespace-nowrap bg-muted text-muted-foreground border-border" variant="outline">Planned</Badge>;
 };
@@ -1535,12 +1535,12 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
         </div>
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 sm:p-4 hover:shadow-md transition-shadow">
           <div className="flex items-start gap-3">
-            <div className={`rounded-xl p-2 shrink-0 ${kpis.totalActual > kpis.totalBudget && kpis.totalBudget > 0 ? "bg-red-50" : "bg-blue-50"}`}>
-              <BarChart3 className={`h-4 w-4 ${kpis.totalActual > kpis.totalBudget && kpis.totalBudget > 0 ? "text-red-600" : "text-blue-600"}`} />
+            <div className={`rounded-xl p-2 shrink-0 ${kpis.totalActual > kpis.totalBudget && kpis.totalBudget > 0 ? "bg-red-50" : "bg-slate-100"}`}>
+              <BarChart3 className={`h-4 w-4 ${kpis.totalActual > kpis.totalBudget && kpis.totalBudget > 0 ? "text-red-600" : "text-slate-600"}`} />
             </div>
             <div className="min-w-0">
               <span className="text-[10px] uppercase tracking-wider font-medium text-slate-500">Total Actual</span>
-              <div className={`text-base sm:text-lg font-bold font-mono mt-0.5 ${kpis.totalActual > kpis.totalBudget && kpis.totalBudget > 0 ? "text-red-600" : "text-blue-700"}`} data-testid="text-kpi-actual">
+              <div className={`text-base sm:text-lg font-bold font-mono mt-0.5 ${kpis.totalActual > kpis.totalBudget && kpis.totalBudget > 0 ? "text-red-600" : "text-slate-900"}`} data-testid="text-kpi-actual">
                 {formatCurrency(kpis.totalActual)}
               </div>
               <div className="text-[10px] text-slate-400 mt-0.5">{kpis.totalItems} lines</div>
@@ -1803,7 +1803,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
       </div>
 
       {hasEdits && (
-        <div className="sticky bottom-0 z-30 mx-0 px-4 py-3 bg-card  border-t-2 border-blue-200 shadow-[0_-4px_12px_rgba(0,0,0,0.1)] rounded-b-lg" data-testid="save-cancel-bar">
+        <div className="sticky bottom-0 z-30 mx-0 px-4 py-3 bg-card border-t-2 border-primary/30 shadow-[0_-4px_12px_rgba(0,0,0,0.1)] rounded-b-lg" data-testid="save-cancel-bar">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
             <div className="flex items-center gap-2 text-sm text-amber-700 shrink-0">
               <Save className="h-4 w-4" />
@@ -1836,7 +1836,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
               </Button>
               <PermissionGate entity="financials" action="edit">
                 <Button onClick={handleSave} disabled={saveMutation.isPending || overrideComment.length < 3} size="sm"
-                  className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+                  className="h-8 text-xs"
                   data-testid="button-save-edits">
                   <Save className="h-3.5 w-3.5 mr-1" /> {saveMutation.isPending ? "Saving..." : isAdmin ? "Save Changes" : "Submit for Approval"}
                 </Button>

@@ -712,7 +712,7 @@ export function RevenueTrackingTab({ projectName, highlightId, projectId }: Reve
 
     if (status === "inBank") return (
       <Badge
-        className={`bg-green-100 text-green-800 hover:bg-green-200 text-xs transition-colors ${cursorClass}`}
+        className={`bg-emerald-100 text-emerald-800 hover:bg-emerald-200 text-xs transition-colors ${cursorClass}`}
         onClick={handleStatusClick}
         title="Click to undo — mark as outstanding"
         data-testid="badge-inbank"
@@ -722,7 +722,7 @@ export function RevenueTrackingTab({ projectName, highlightId, projectId }: Reve
     );
     if (status === "invoiced") return (
       <Badge
-        className={`bg-blue-100 text-blue-800 hover:bg-blue-200 text-xs transition-colors ${cursorClass}`}
+        className={`bg-amber-100 text-amber-800 hover:bg-amber-200 text-xs transition-colors ${cursorClass}`}
         onClick={handleStatusClick}
         title="Click to mark as In Bank"
         data-testid="badge-invoiced"
@@ -1006,9 +1006,9 @@ export function RevenueTrackingTab({ projectName, highlightId, projectId }: Reve
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
-          { key: "totalContract", label: "Total Contract", value: summary.totalContract, sub: `${summary.milestoneCount} milestones`, icon: DollarSign, colors: "from-emerald-50 border-emerald-200 text-emerald-600 text-emerald-700" },
-          { key: "invoiced", label: "Invoiced", value: summary.invoiced, sub: `${summary.totalContract > 0 ? ((summary.invoiced / summary.totalContract) * 100).toFixed(0) : 0}% of total`, icon: FileText, colors: "from-blue-50 border-blue-200 text-blue-600 text-blue-700" },
-          { key: "inBank", label: "In Bank", value: summary.inBank, sub: `${summary.totalContract > 0 ? ((summary.inBank / summary.totalContract) * 100).toFixed(0) : 0}% confirmed`, icon: BanknoteIcon, colors: "from-green-50 border-green-200 text-green-600 text-green-700" },
+          { key: "totalContract", label: "Total Contract", value: summary.totalContract, sub: `${summary.milestoneCount} milestones`, icon: DollarSign, colors: "from-slate-50 border-slate-200 text-slate-600 text-slate-700" },
+          { key: "invoiced", label: "Invoiced", value: summary.invoiced, sub: `${summary.totalContract > 0 ? ((summary.invoiced / summary.totalContract) * 100).toFixed(0) : 0}% of total`, icon: FileText, colors: "from-amber-50 border-amber-200 text-amber-600 text-amber-700" },
+          { key: "inBank", label: "In Bank", value: summary.inBank, sub: `${summary.totalContract > 0 ? ((summary.inBank / summary.totalContract) * 100).toFixed(0) : 0}% confirmed`, icon: BanknoteIcon, colors: "from-emerald-50 border-emerald-200 text-emerald-600 text-emerald-700" },
           { key: "pending", label: "Pending", value: summary.pending, sub: `${summary.totalContract > 0 ? ((summary.pending / summary.totalContract) * 100).toFixed(0) : 0}% remaining`, icon: Clock, colors: "from-amber-50 border-amber-200 text-amber-600 text-amber-700" },
           { key: "issues", label: "Issues", value: summary.issueCount, sub: "flags", icon: AlertTriangle, colors: "from-red-50 border-red-200 text-red-600 text-red-700", isCount: true },
         ].map(card => {
