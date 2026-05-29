@@ -66,8 +66,8 @@ describe("backfill-import-snapshot — buildSnapshot", () => {
     const fileRow = {
       amountExVat: "50000.00",
       vat: "7500.00",
-      milestonePercent: 25, // not tracked — should be ignored
-      invoiceNumber: "INV-001", // not tracked
+      milestonePercent: 25, // now tracked (2026-05-29 faithful mirror)
+      invoiceNumber: "INV-001", // now tracked
       invoiceDate: "2026-04-15",
       paidDate: "2026-05-01",
     };
@@ -76,17 +76,20 @@ describe("backfill-import-snapshot — buildSnapshot", () => {
     expect(snap.amountExVat).toBe("50000.00");
     expect(snap.invoiceDate).toBe("2026-04-15");
     expect(snap.expectedPaymentDate).toBeNull(); // tracked but not in input
-    expect("milestonePercent" in snap).toBe(false);
-    expect("invoiceNumber" in snap).toBe(false);
+    // Faithful-mirror data fields now captured in the snapshot.
+    expect(snap.milestonePercent).toBe(25);
+    expect(snap.invoiceNumber).toBe("INV-001");
+    expect(snap.milestoneNotes).toBeNull(); // tracked but not in input
   });
 
   it("EXPENDITURE: full-row snapshot matches the tracked-field set", () => {
     const fileRow = {
       amountExVat: "1500.00",
       budgetTotal: "2000.00",
-      invoiceNumber: "INV-100", // not tracked
-      poNumber: "PO-50", // not tracked
-      counterpartyName: "Supplier Co.", // not tracked
+      invoiceNumber: "INV-100", // identity field — not tracked
+      poNumber: "PO-50", // now tracked (2026-05-29 faithful mirror)
+      counterpartyName: "Supplier Co.", // compare-only — not tracked
+      usdExchangeRate: "18.5", // now tracked
       cosRealised: true,
     };
     const snap = buildSnapshot(fileRow, EXPENDITURE_TRACKED_FIELDS);
@@ -95,7 +98,13 @@ describe("backfill-import-snapshot — buildSnapshot", () => {
     expect(snap.cosRealised).toBe(true);
     expect(snap.forecastPaymentDate).toBeNull();
     expect(snap.actualQty).toBeNull();
-    expect("usdExchangeRate" in snap).toBe(false); // dropped per 2026-05-07 narrowing
+    // Faithful-mirror data fields now captured in the snapshot.
+    expect(snap.poNumber).toBe("PO-50");
+    expect(snap.usdExchangeRate).toBe("18.5");
+    expect(snap.comments).toBeNull(); // tracked but not in input
+    // Identity / compare-only fields stay OUT of the tracked snapshot.
+    expect("invoiceNumber" in snap).toBe(false);
+    expect("counterpartyName" in snap).toBe(false);
   });
 
   it("undefined values normalise to null", () => {

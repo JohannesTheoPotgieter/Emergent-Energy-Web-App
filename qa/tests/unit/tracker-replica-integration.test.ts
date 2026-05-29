@@ -147,35 +147,46 @@ describe("valuesEqual semantics align with conflict-policy", () => {
 });
 
 // 2026-05-07 narrowing per § 9.3 of the playbook (and
-// shared/excel-vs-app/contract.ts): the Excel-vs-App compare scope is
-// locked to dates, amounts, row add/delete, and date-colour signals.
-// PR2A canonical fields (status / owner / %complete / lead /
-// resource* / trackerComments / workDays / milestoneNotes / comments
-// / checkFlag / savingOverrun / usdExchangeRate / pricePerWatt /
-// milestonePercent) are NOT tracked. These guard tests fail fast if
-// a future change re-expands the compare scope without updating
-// shared/excel-vs-app/contract.ts.
-describe("Compare lists are narrowed per § 9.3 (2026-05-07) — PR2A fields are NOT tracked", () => {
-  it("PLAN compare list excludes lead, resource1, resource2, trackerComments, workDays", () => {
-    expect(PLAN_COMPARE_FIELDS).not.toContain("lead");
-    expect(PLAN_COMPARE_FIELDS).not.toContain("resource1");
-    expect(PLAN_COMPARE_FIELDS).not.toContain("resource2");
-    expect(PLAN_COMPARE_FIELDS).not.toContain("trackerComments");
-    expect(PLAN_COMPARE_FIELDS).not.toContain("workDays");
+// shared/excel-vs-app/contract.ts): as of the 2026-05-29 faithful-mirror
+// reversal (COO instruction), the compare scope is WIDENED so the import
+// re-applies the workbook's data fields (identifiers, %, notes, PO
+// numbers, Plan title/owner/resources) on every re-import — fixing the
+// silent invoice-number drop. These guard tests now pin the inclusion so
+// a future re-narrowing can't silently re-drop them without an explicit
+// contract change. Identity fields (milestoneNo / description) and
+// landmine fields (Plan pctComplete — clamp-on-store) stay out.
+describe("Compare lists are widened for faithful mirror (2026-05-29)", () => {
+  it("PLAN compare list includes title, owner, resources, comments, workDays", () => {
+    expect(PLAN_COMPARE_FIELDS).toContain("taskName");
+    expect(PLAN_COMPARE_FIELDS).toContain("owner");
+    expect(PLAN_COMPARE_FIELDS).toContain("lead");
+    expect(PLAN_COMPARE_FIELDS).toContain("resource1");
+    expect(PLAN_COMPARE_FIELDS).toContain("resource2");
+    expect(PLAN_COMPARE_FIELDS).toContain("trackerComments");
+    expect(PLAN_COMPARE_FIELDS).toContain("workDays");
+    // Progress fields mirror too — parseStatus normalises both sides to
+    // 0..1, so they compare cleanly (no clamp-scale false positives).
+    expect(PLAN_COMPARE_FIELDS).toContain("pctComplete");
+    expect(PLAN_COMPARE_FIELDS).toContain("expectedPctComplete");
   });
-  it("REVENUE compare list excludes milestoneNotes (text/identifier, not date/amount)", () => {
-    expect(REVENUE_COMPARE_FIELDS).not.toContain("milestoneNotes");
+  it("REVENUE compare list includes invoiceNumber, milestonePercent, milestoneNotes", () => {
+    expect(REVENUE_COMPARE_FIELDS).toContain("invoiceNumber");
+    expect(REVENUE_COMPARE_FIELDS).toContain("milestonePercent");
+    expect(REVENUE_COMPARE_FIELDS).toContain("milestoneNotes");
   });
-  it("EXPENDITURE compare list excludes comments, checkFlag, savingOverrun, usdExchangeRate, pricePerWatt", () => {
-    // actualQty / actualRate ARE tracked (numeric line totals → amounts).
+  it("EXPENDITURE compare list includes poNumber, comments, checkFlag, FX, price/W, category, supplier", () => {
     expect(EXPENDITURE_COMPARE_FIELDS).toContain("actualQty");
     expect(EXPENDITURE_COMPARE_FIELDS).toContain("actualRate");
-    // The text / metadata fields are not.
-    expect(EXPENDITURE_COMPARE_FIELDS).not.toContain("comments");
-    expect(EXPENDITURE_COMPARE_FIELDS).not.toContain("checkFlag");
-    expect(EXPENDITURE_COMPARE_FIELDS).not.toContain("savingOverrun");
-    expect(EXPENDITURE_COMPARE_FIELDS).not.toContain("usdExchangeRate");
-    expect(EXPENDITURE_COMPARE_FIELDS).not.toContain("pricePerWatt");
+    expect(EXPENDITURE_COMPARE_FIELDS).toContain("poNumber");
+    expect(EXPENDITURE_COMPARE_FIELDS).toContain("comments");
+    expect(EXPENDITURE_COMPARE_FIELDS).toContain("checkFlag");
+    expect(EXPENDITURE_COMPARE_FIELDS).toContain("savingOverrun");
+    expect(EXPENDITURE_COMPARE_FIELDS).toContain("usdExchangeRate");
+    expect(EXPENDITURE_COMPARE_FIELDS).toContain("pricePerWatt");
+    expect(EXPENDITURE_COMPARE_FIELDS).toContain("costCategory");
+    expect(EXPENDITURE_COMPARE_FIELDS).toContain("counterpartyName");
+    // Identity field — a change here is a new/renamed row, not a drift.
+    expect(EXPENDITURE_COMPARE_FIELDS).not.toContain("description");
   });
 });
 
