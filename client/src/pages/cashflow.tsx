@@ -7,6 +7,7 @@ import { FinanceTrustStrip, isStaleImport } from '@/components/finance/FinanceTr
 import { PageHero } from '@/components/finance/PageHero';
 import { KpiTile } from '@/components/finance/KpiTile';
 import { DrillReconciliationFooter } from '@/components/finance/DrillReconciliationFooter';
+import { StaleIndicator } from '@/components/finance/StaleIndicator';
 import { Money } from '@/components/ui/money';
 import {
   Tooltip as UiTooltip,
@@ -1843,6 +1844,13 @@ export default function CashflowPage() {
               ? `Refreshed ${new Date(cashflowUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
               : 'Live'}
           </Badge>
+          {/* Visual redesign — TF-32 stale-data indicator. Goes amber once the
+              cashflow data crosses the FINANCE_QUERY_STABLE threshold (5 min).
+              Component is silent until ageMs >= staleAfterMs / 2. */}
+          <StaleIndicator
+            updatedAt={cashflowUpdatedAt}
+            staleAfterMs={5 * 60_000}
+          />
           {!canEditCashflow && (
             <Badge
               variant="outline"

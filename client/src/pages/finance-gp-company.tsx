@@ -19,6 +19,7 @@ import { KpiTile } from "@/components/finance/KpiTile";
 import { Money } from "@/components/ui/money";
 import { DirectionDelta } from "@/components/finance/DirectionDelta";
 import { DrillReconciliationFooter } from "@/components/finance/DrillReconciliationFooter";
+import { StaleIndicator } from "@/components/finance/StaleIndicator";
 import {
   Bar,
   XAxis,
@@ -821,6 +822,11 @@ export default function FinanceGpCompanyPage() {
               ? `Refreshed ${new Date(dataUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
               : "Live"}
           </Badge>
+          {/* TF-32 stale-data indicator. */}
+          <StaleIndicator
+            updatedAt={dataUpdatedAt}
+            staleAfterMs={5 * 60_000}
+          />
         </div>
 
         <div className="lg:flex lg:gap-5 lg:items-start -mt-1">
