@@ -24,11 +24,12 @@ import {
 } from "@shared/excel-vs-app/contract";
 
 describe("Excel-vs-App contract — tracked field lists", () => {
-  // Narrowed 2026-05-07 — see contract.ts header comment for the
-  // full rationale. Diff page now only surfaces dates, amounts, row
-  // add/delete (handled at row level by the planner) and the date-
-  // colour signal (encoded into the *Confirmed flags by the
-  // normaliser).
+  // Widened 2026-05-29 (faithful-mirror reversal) — see contract.ts
+  // header comment. The tracked set now also carries the file-owned data
+  // identifiers (invoice number, PO number, milestone %, notes, etc.) so
+  // the import re-applies them on every re-import and the app data stays
+  // identical to the workbook. Dates / amounts / date-colour flags
+  // remain; derived and row-identity fields stay out.
 
   it("PLAN list pins the canonical fields (dates only)", () => {
     expect([...PLAN_TRACKED_FIELDS]).toEqual([
@@ -41,10 +42,13 @@ describe("Excel-vs-App contract — tracked field lists", () => {
     ]);
   });
 
-  it("REVENUE list pins the canonical fields (dates + amounts + colour)", () => {
+  it("REVENUE list pins the canonical fields (amounts + mirror data + dates + colour)", () => {
     expect([...REVENUE_TRACKED_FIELDS]).toEqual([
       "amountExVat",
       "vat",
+      "invoiceNumber",
+      "milestonePercent",
+      "milestoneNotes",
       "invoiceDate",
       "expectedPaymentDate",
       "paidDate",
@@ -54,7 +58,7 @@ describe("Excel-vs-App contract — tracked field lists", () => {
     ]);
   });
 
-  it("EXPENDITURE list pins the canonical fields (dates + amounts + colour)", () => {
+  it("EXPENDITURE list pins the canonical fields (amounts + mirror data + dates + colour)", () => {
     expect([...EXPENDITURE_TRACKED_FIELDS]).toEqual([
       "amountExVat",
       "budgetQty",
@@ -64,6 +68,12 @@ describe("Excel-vs-App contract — tracked field lists", () => {
       "actualQty",
       "actualRate",
       "revenueRecognitionAmount",
+      "poNumber",
+      "comments",
+      "checkFlag",
+      "savingOverrun",
+      "usdExchangeRate",
+      "pricePerWatt",
       "invoiceDate",
       "approvedDate",
       "paidDate",
@@ -73,6 +83,24 @@ describe("Excel-vs-App contract — tracked field lists", () => {
       "cosRealised",
       "cashflowConfirmed",
     ]);
+  });
+
+  it("TRACKED ⊆ COMPARE invariant — every tracked field is change-detected", async () => {
+    // Pins the fix for the invoice-number-drop bug: a tracked/merged
+    // field that is NOT in the matcher's compare set classifies the row
+    // UNCHANGED and the tracked change is silently dropped. REVENUE and
+    // EXPENDITURE use the same field vocabulary on both sides, so a
+    // direct subset check holds. (PLAN bridges normalizer↔column names
+    // via planFileRowForMerge, so it is asserted separately.)
+    const { REVENUE_COMPARE_FIELDS, EXPENDITURE_COMPARE_FIELDS } = await import(
+      "../../../server/lib/import/row-matcher"
+    );
+    for (const f of REVENUE_TRACKED_FIELDS) {
+      expect(REVENUE_COMPARE_FIELDS).toContain(f);
+    }
+    for (const f of EXPENDITURE_TRACKED_FIELDS) {
+      expect(EXPENDITURE_COMPARE_FIELDS).toContain(f);
+    }
   });
 
   it("TRACKED_FIELDS_BY_SECTION exposes the same lists by section key", () => {
