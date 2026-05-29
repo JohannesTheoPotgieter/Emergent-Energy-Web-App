@@ -103,6 +103,10 @@ jobs:
         if: hashFiles('**/*.test.ts') != ''
       # Non-cacheable integration steps (need a live server + DB)
       - run: npm run test:api
+      # release:gate runs 2 Playwright admin-roles specs when SKIP_SMOKE_TESTS=true
+      # (it swaps the full smoke suite for these two). Install the browser + OS
+      # deps so they don't error on a missing chromium executable.
+      - run: npx playwright install --with-deps chromium
       - run: npm run release:gate
         env:
           SKIP_SMOKE_TESTS: "true"
