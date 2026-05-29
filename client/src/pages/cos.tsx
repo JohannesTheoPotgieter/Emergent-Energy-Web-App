@@ -1680,7 +1680,6 @@ export default function CosTracker() {
   // tile shape stays consistent across COS / Revenue / GP / FYE.
   const renderFyKpiCard = (key: FyCardKey) => {
     const meta = FY_CARD_META[key];
-    const Icon = meta.icon;
     const fyValue = fyTotals[key];
     const lastValue = lastMonth ? meta.getValue(lastMonth) : 0;
     const prevValue = prevMonth ? meta.getValue(prevMonth) : 0;
@@ -1695,9 +1694,6 @@ export default function CosTracker() {
         key={key}
         data-testid={`text-fy-${key}-value`}
         label={meta.label}
-        description={meta.description}
-        sourceBadge={meta.source}
-        icon={<Icon className="h-4 w-4" />}
         value={fmt(fyValue)}
         delta={
           prevMonth
@@ -1967,54 +1963,16 @@ export default function CosTracker() {
           }
           trust={[
             { label: 'QB actual YTD', value: <Money value={ytdQbCos} /> },
-            { label: 'Source', value: 'canonical layer' },
           ]}
           data-testid="cos-page-hero"
         />
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-muted-foreground -mt-1">
-          <Badge
-            variant="outline"
-            className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card"
-          >
-            <CheckCircle2 className="h-3 w-3 text-foreground" />
-            YTD Realised <Rand value={ytdRealised} />
-          </Badge>
-          <Badge
-            variant="outline"
-            className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card"
-          >
-            <ListChecks className="h-3 w-3 text-emerald-700" />
-            YTD Planned <Rand value={ytdPlanned} />
-          </Badge>
-          <Badge
-            variant="outline"
-            className="gap-1 px-2 py-0.5 text-[11px] font-medium border-emerald-200 bg-emerald-50 text-emerald-800"
-          >
-            <TrendingUp className="h-3 w-3" />
-            {realisationRate}% realised
-          </Badge>
-          <Badge
-            variant="outline"
-            className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card"
-          >
-            <DollarSign className="h-3 w-3" />
-            QB Actual <Rand value={ytdQbCos} />
-          </Badge>
-          <Badge
-            variant="outline"
-            className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card"
-          >
-            <Loader2 className={`h-3 w-3 ${isFetching ? 'animate-spin text-emerald-600' : ''}`} />
-            {dataUpdatedAt
-              ? `Refreshed ${new Date(dataUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-              : 'Live'}
-          </Badge>
-          {/* TF-32 stale-data indicator. Goes amber at half-threshold,
-              warning past the full stale window. */}
-          <StaleIndicator
-            updatedAt={dataUpdatedAt}
-            staleAfterMs={30_000}
-          />
+        {/* Visual redesign — simplification pass. The PageHero above now
+            carries YTD Realised + YTD Planned + QB Actual in its trust
+            column, so the legacy 5-badge strip (YTD Realised / YTD Planned
+            / realisation % / QB Actual / Refreshed) was redundant noise.
+            Stripped down to a single small "Updated N min ago" indicator. */}
+        <div className="flex items-center gap-2 text-xs text-muted-foreground -mt-1">
+          <StaleIndicator updatedAt={dataUpdatedAt} staleAfterMs={30_000} />
         </div>
 
         <div className="lg:flex lg:gap-5 lg:items-start -mt-1">

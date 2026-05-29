@@ -543,7 +543,6 @@ export default function FinanceGpCompanyPage() {
   // component instead of a bespoke Card layout.
   const renderFyKpiCard = (key: FyCardKey) => {
     const meta = FY_CARD_META[key];
-    const Icon = meta.icon;
     const fmt = meta.format ?? formatRand;
     const deltaAbs = meta.lastValue - meta.prevValue;
     const deltaPct = meta.prevValue !== 0 ? (deltaAbs / Math.abs(meta.prevValue)) * 100 : 0;
@@ -552,9 +551,6 @@ export default function FinanceGpCompanyPage() {
         key={key}
         data-testid={`text-fy-${key}-value`}
         label={meta.label}
-        description={meta.description}
-        sourceBadge={meta.source}
-        icon={<Icon className="h-4 w-4" />}
         value={fmt(meta.fyValue)}
         delta={
           meta.prevValue !== 0
@@ -793,40 +789,15 @@ export default function FinanceGpCompanyPage() {
           }
           trust={[
             { label: 'Budget GP YTD', value: <Money value={ytdBudgetGP} /> },
-            ...(dataUpdatedAt
-              ? [{
-                  label: 'Updated',
-                  value: new Date(dataUpdatedAt).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' }),
-                }]
-              : []),
           ]}
           data-testid="gp-page-hero"
         />
 
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-muted-foreground -mt-1">
-          <Badge variant="outline" className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card">
-            <CheckCircle2 className="h-3 w-3 text-foreground" />
-            YTD Realised GP {formatRand(ytdRealisedGP)}
-          </Badge>
-          <Badge variant="outline" className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card">
-            <ListChecks className="h-3 w-3 text-emerald-700" />
-            YTD Planned GP {formatRand(ytdPlannedGP)}
-          </Badge>
-          <Badge variant="outline" className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card">
-            <Wallet className="h-3 w-3 text-emerald-700" />
-            YTD Budget GP {formatRand(ytdBudgetGP)}
-          </Badge>
-          <Badge variant="outline" className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card">
-            <Loader2 className={`h-3 w-3 ${isFetching ? "animate-spin text-emerald-600" : ""}`} />
-            {dataUpdatedAt
-              ? `Refreshed ${new Date(dataUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-              : "Live"}
-          </Badge>
-          {/* TF-32 stale-data indicator. */}
-          <StaleIndicator
-            updatedAt={dataUpdatedAt}
-            staleAfterMs={5 * 60_000}
-          />
+        {/* Visual redesign — simplification pass. PageHero already shows
+            Budget GP YTD in its trust column; the legacy 4-badge strip
+            (Realised / Planned / Budget / Refreshed) was redundant. */}
+        <div className="flex items-center gap-2 text-xs text-muted-foreground -mt-1">
+          <StaleIndicator updatedAt={dataUpdatedAt} staleAfterMs={5 * 60_000} />
         </div>
 
         <div className="lg:flex lg:gap-5 lg:items-start -mt-1">
