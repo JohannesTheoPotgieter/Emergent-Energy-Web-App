@@ -32,10 +32,34 @@ function globalOverride(): "force-mock" | "force-real" | null {
   return null;
 }
 
-function hasMsGraphCreds(): boolean {
-  // Replit Connectors infra is the auth layer for MS Graph in this app;
-  // a missing hostname means nothing can fetch a token.
+/**
+ * App-only (client-credentials) Graph creds for SharePoint. When a
+ * tenant-owned Azure app reg is configured via SHAREPOINT_TENANT_ID /
+ * SHAREPOINT_CLIENT_ID / SHAREPOINT_CLIENT_SECRET, the app acquires its own
+ * Microsoft Graph token (scopes consented on an app the tenant controls)
+ * instead of depending on the Replit connector's consented scopes. This is
+ * the preferred SharePoint auth path — see server/sharepoint-token.ts and
+ * docs/microsoft-integrations.md. Presence of all three is an explicit
+ * opt-in; deployments without them keep the connector behaviour unchanged.
+ */
+export function hasMsGraphAppOnlyCreds(): boolean {
+  return !!(
+    process.env.SHAREPOINT_TENANT_ID?.trim() &&
+    process.env.SHAREPOINT_CLIENT_ID?.trim() &&
+    process.env.SHAREPOINT_CLIENT_SECRET?.trim()
+  );
+}
+
+function hasMsGraphConnector(): boolean {
+  // Replit Connectors infra is the historical auth layer for MS Graph;
+  // a missing hostname means nothing can fetch a connector token.
   return !!(process.env.REPLIT_CONNECTORS_HOSTNAME && process.env.REPLIT_CONNECTORS_HOSTNAME.trim());
+}
+
+function hasMsGraphCreds(): boolean {
+  // MS Graph is "live" when EITHER a tenant-owned app-only app reg is
+  // configured (preferred) OR the Replit connector is available.
+  return hasMsGraphAppOnlyCreds() || hasMsGraphConnector();
 }
 
 function hasQuickBooksCreds(): boolean {

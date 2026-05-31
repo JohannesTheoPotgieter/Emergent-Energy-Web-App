@@ -2,7 +2,7 @@ import { storage } from "./storage";
 import type { SpFile, InsertSpFile, InsertChangeLedger, InsertImportRun } from "@shared/schema";
 import { getSharePointToken, clearSharePointTokenCache } from "./sharepoint-token";
 import { ApiError } from "./lib/api-error";
-import { isConnectorMocked } from "./lib/connector-mode";
+import { isConnectorMocked, hasMsGraphAppOnlyCreds } from "./lib/connector-mode";
 
 /** @deprecated Use getSharePointToken() from sharepoint-token.ts directly. Re-exported for backward compatibility. */
 export const getAccessToken = getSharePointToken;
@@ -775,5 +775,7 @@ export async function detectChanges(
 }
 
 export function isSharePointConfigured(): boolean {
-  return !!process.env.REPLIT_CONNECTORS_HOSTNAME;
+  // Configured when EITHER a tenant-owned app-only app reg is set (preferred)
+  // OR the Replit connector is available.
+  return hasMsGraphAppOnlyCreds() || !!process.env.REPLIT_CONNECTORS_HOSTNAME;
 }
