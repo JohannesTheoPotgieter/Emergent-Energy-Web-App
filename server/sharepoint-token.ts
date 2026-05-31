@@ -1,21 +1,104 @@
 /**
- * Shared SharePoint / Outlook-connector access-token utility.
- * Caches the token for its lifetime (minus 60 s buffer) so that
- * sharepoint.ts and sharepoint-list.ts don't independently fetch tokens.
+ * Shared SharePoint access-token utility. Caches the resolved token for its
+ * lifetime (minus a 60 s buffer) so sharepoint.ts and sharepoint-list.ts
+ * don't independently fetch tokens.
  *
- * Connector resolution order:
- *   1. `sharepoint` — used if a dedicated SharePoint connector is set up
- *      on Replit (preferred: scopes Sites.Read.All / Files.ReadWrite.All
- *      cleanly separated from mail scopes).
- *   2. `outlook`    — historical default. The Outlook connector must have
- *      Sites / Files scopes granted at consent time; otherwise Graph
- *      returns 401/403 on every `/drives/...` call.
+ * Two token sources, in priority order:
+ *
+ *   1. App-only (client-credentials) — PREFERRED. When SHAREPOINT_TENANT_ID
+ *      / SHAREPOINT_CLIENT_ID / SHAREPOINT_CLIENT_SECRET are all set, the app
+ *      acquires its own Microsoft Graph token via MSAL client credentials
+ *      (scope https://graph.microsoft.com/.default). The required Graph
+ *      *Application* permissions (Sites.Read.All / Files.Read.All — plus the
+ *      *.ReadWrite.All variants if app-only writes are ever wired) are
+ *      admin-consented on an Azure app the tenant owns, so SharePoint access
+ *      no longer depends on the Replit connector's consented scopes. This is
+ *      the fix for the "missing_scope" Test Connection failure.
+ *
+ *   2. Replit connector (delegated) — historical default / fallback, used
+ *      when the app-only vars are absent. Tries the dedicated `sharepoint`
+ *      connector first, then `outlook` (which must have Sites/Files scopes
+ *      granted at consent time, or Graph returns 401/403 on `/drives/...`).
+ *
+ * Outlook/Teams (server/outlook.ts) use their own connector token and are
+ * unaffected. Document *writes* use a per-user delegated SSO token
+ * (server/ms-account-service.ts) and are also unaffected.
  */
+
+import { ConfidentialClientApplication } from "@azure/msal-node";
 
 let cachedToken: string | null = null;
 let cachedExpiresAt: number = 0;
 
 const CONNECTOR_CANDIDATES = ["sharepoint", "outlook"] as const;
+const GRAPH_DEFAULT_SCOPE = "https://graph.microsoft.com/.default";
+
+type ResolvedToken = { accessToken: string; expiresAt: string | undefined };
+
+// ──────────────────────────────────────────────────────────────────────────
+// 1. App-only (client-credentials) token — tenant-owned Azure app
+// ──────────────────────────────────────────────────────────────────────────
+
+interface SharePointAppConfig {
+  tenantId: string;
+  clientId: string;
+  clientSecret: string;
+}
+
+function getSharePointAppConfig(): SharePointAppConfig | null {
+  const tenantId = process.env.SHAREPOINT_TENANT_ID?.trim();
+  const clientId = process.env.SHAREPOINT_CLIENT_ID?.trim();
+  const clientSecret = process.env.SHAREPOINT_CLIENT_SECRET?.trim();
+  if (!tenantId || !clientId || !clientSecret) return null;
+  return { tenantId, clientId, clientSecret };
+}
+
+/**
+ * Which token source getSharePointToken() will use given the current env.
+ * Exposed for tests and diagnostics — does not perform any network call.
+ */
+export function getSharePointTokenStrategy(): "app-only" | "connector" {
+  return getSharePointAppConfig() ? "app-only" : "connector";
+}
+
+// MSAL client is cached and only rebuilt if the configured app changes.
+let appClient: ConfidentialClientApplication | null = null;
+let appClientKey: string | null = null;
+
+function getAppClient(config: SharePointAppConfig): ConfidentialClientApplication {
+  const key = `${config.tenantId}:${config.clientId}`;
+  if (!appClient || appClientKey !== key) {
+    appClient = new ConfidentialClientApplication({
+      auth: {
+        clientId: config.clientId,
+        authority: `https://login.microsoftonline.com/${config.tenantId}`,
+        clientSecret: config.clientSecret,
+      },
+    });
+    appClientKey = key;
+  }
+  return appClient;
+}
+
+async function acquireAppOnlyToken(config: SharePointAppConfig): Promise<ResolvedToken> {
+  const result = await getAppClient(config).acquireTokenByClientCredential({
+    scopes: [GRAPH_DEFAULT_SCOPE],
+  });
+  if (!result?.accessToken) {
+    throw new Error(
+      "SharePoint app-only token request returned no access token - verify " +
+        "SHAREPOINT_CLIENT_ID / SHAREPOINT_CLIENT_SECRET / SHAREPOINT_TENANT_ID.",
+    );
+  }
+  return {
+    accessToken: result.accessToken,
+    expiresAt: result.expiresOn ? result.expiresOn.toISOString() : undefined,
+  };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 2. Replit connector (delegated) token — historical fallback
+// ──────────────────────────────────────────────────────────────────────────
 
 interface ReplitConnection {
   settings?: {
@@ -29,7 +112,7 @@ async function fetchConnectorToken(
   hostname: string,
   xReplitToken: string,
   connectorName: string,
-): Promise<{ accessToken: string; expiresAt: string | undefined } | null> {
+): Promise<ResolvedToken | null> {
   const res = await fetch(
     `https://${hostname}/api/v2/connection?include_secrets=true&connector_names=${connectorName}`,
     {
@@ -49,15 +132,7 @@ async function fetchConnectorToken(
   return { accessToken, expiresAt: conn?.settings?.expires_at };
 }
 
-/**
- * Returns a valid access token from the Replit SharePoint or Outlook
- * connector, re-using a cached value when it is still valid.
- */
-export async function getSharePointToken(): Promise<string> {
-  if (cachedToken && Date.now() < cachedExpiresAt) {
-    return cachedToken;
-  }
-
+async function acquireConnectorToken(): Promise<ResolvedToken> {
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
   const xReplitToken = process.env.REPL_IDENTITY
     ? "repl " + process.env.REPL_IDENTITY
@@ -69,7 +144,7 @@ export async function getSharePointToken(): Promise<string> {
     throw new Error("SharePoint not available - connector not configured.");
   }
 
-  let resolved: { accessToken: string; expiresAt: string | undefined } | null = null;
+  let resolved: ResolvedToken | null = null;
   for (const candidate of CONNECTOR_CANDIDATES) {
     resolved = await fetchConnectorToken(hostname, xReplitToken, candidate);
     if (resolved) break;
@@ -77,10 +152,32 @@ export async function getSharePointToken(): Promise<string> {
 
   if (!resolved) {
     throw new Error(
-      "SharePoint not connected - configure the 'sharepoint' Replit connector (preferred) " +
-        "or grant the 'outlook' connector Sites.Read.All + Files.ReadWrite.All scopes.",
+      "SharePoint not connected - configure the 'sharepoint' Replit connector (preferred), " +
+        "grant the 'outlook' connector Sites.Read.All + Files.ReadWrite.All scopes, " +
+        "or set SHAREPOINT_TENANT_ID / SHAREPOINT_CLIENT_ID / SHAREPOINT_CLIENT_SECRET for app-only access.",
     );
   }
+  return resolved;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Public
+// ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * Returns a valid Microsoft Graph access token for SharePoint, preferring a
+ * tenant-owned app-only token and falling back to the Replit connector.
+ * Re-uses a cached value while it is still valid.
+ */
+export async function getSharePointToken(): Promise<string> {
+  if (cachedToken && Date.now() < cachedExpiresAt) {
+    return cachedToken;
+  }
+
+  const appConfig = getSharePointAppConfig();
+  const resolved = appConfig
+    ? await acquireAppOnlyToken(appConfig)
+    : await acquireConnectorToken();
 
   // Cache for the token's lifetime minus a 60-second buffer.
   if (resolved.expiresAt) {
