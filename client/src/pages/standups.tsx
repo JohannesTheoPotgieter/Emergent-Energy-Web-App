@@ -704,7 +704,12 @@ function ParticipantSpotlight({ participant, scheduleId, onSubmitted }: {
 // ── Meeting View (Carousel) ──────────────────────────────────────────────────
 
 function MeetingView({ scheduleId }: { scheduleId: number }) {
-  const [currentIdx, setCurrentIdx] = useState(0);
+  // Track the current speaker by stable userId, not by array position. The
+  // roster refetches every 30s; if someone joins/leaves mid-standup a plain
+  // index would silently point at a different person (skip/repeat). Deriving
+  // the index from the current userId keeps the spotlight on the same person
+  // across roster changes.
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
   const [timerRunning, setTimerRunning] = useState(false);
   const [timerKey, setTimerKey] = useState(0); // forces timer reset on navigate
   const queryClient = useQueryClient();
@@ -716,22 +721,40 @@ function MeetingView({ scheduleId }: { scheduleId: number }) {
   });
 
   const participants = meeting?.participants || [];
-  const current = participants[currentIdx];
+
+  // Resolve the current index from the tracked userId. Falls back to the
+  // first participant when nobody is selected yet or the tracked person has
+  // left the roster.
+  const resolvedIdx = (() => {
+    if (currentUserId == null) return 0;
+    const idx = participants.findIndex((p) => p.userId === currentUserId);
+    return idx >= 0 ? idx : 0;
+  })();
+  const current = participants[resolvedIdx];
+
+  // Keep the tracked userId in sync once participants load / change.
+  useEffect(() => {
+    if (participants.length === 0) return;
+    if (currentUserId == null || !participants.some((p) => p.userId === currentUserId)) {
+      setCurrentUserId(participants[resolvedIdx]?.userId ?? participants[0].userId);
+    }
+  }, [participants, currentUserId, resolvedIdx]);
 
   const goTo = useCallback((idx: number) => {
     const clamped = Math.max(0, Math.min(idx, participants.length - 1));
-    setCurrentIdx(clamped);
+    const target = participants[clamped];
+    if (target) setCurrentUserId(target.userId);
     setTimerRunning(false);
     setTimerKey((k) => k + 1); // reset timer
-  }, [participants.length]);
+  }, [participants]);
 
   const goNext = useCallback(() => {
-    if (currentIdx < participants.length - 1) goTo(currentIdx + 1);
-  }, [currentIdx, participants.length, goTo]);
+    if (resolvedIdx < participants.length - 1) goTo(resolvedIdx + 1);
+  }, [resolvedIdx, participants.length, goTo]);
 
   const goPrev = useCallback(() => {
-    if (currentIdx > 0) goTo(currentIdx - 1);
-  }, [currentIdx, goTo]);
+    if (resolvedIdx > 0) goTo(resolvedIdx - 1);
+  }, [resolvedIdx, goTo]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -800,19 +823,19 @@ function MeetingView({ scheduleId }: { scheduleId: number }) {
           variant="outline"
           size="sm"
           className="h-8 w-8 p-0"
-          disabled={currentIdx === 0}
+          disabled={resolvedIdx === 0}
           onClick={goPrev}
         >
           <ChevronLeft className="h-4 w-4" />
         </Button>
         <span className="text-xs font-semibold text-muted-foreground flex-1 text-center">
-          {currentIdx + 1} of {participants.length}
+          {resolvedIdx + 1} of {participants.length}
         </span>
         <Button
           variant="outline"
           size="sm"
           className="h-8 w-8 p-0"
-          disabled={currentIdx === participants.length - 1}
+          disabled={resolvedIdx === participants.length - 1}
           onClick={goNext}
         >
           <ChevronRight className="h-4 w-4" />
@@ -835,7 +858,7 @@ function MeetingView({ scheduleId }: { scheduleId: number }) {
             key={p.userId}
             onClick={() => goTo(idx)}
             className={`w-3 h-3 rounded-full transition-all border-2 ${
-              idx === currentIdx
+              idx === resolvedIdx
                 ? "border-primary bg-primary scale-110"
                 : p.hasSubmitted
                   ? "border-emerald-400 bg-emerald-400"
