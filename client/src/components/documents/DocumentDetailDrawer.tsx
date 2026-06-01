@@ -12,21 +12,21 @@ import {
   useCheckout,
   useDiscardCheckout,
   useCreateComment,
+  type BrowseTarget,
 } from "./use-documents";
 import { CheckinDialog } from "./CheckinDialog";
-import type { DocumentRootScope, GraphItem } from "./types";
+import type { GraphItem } from "./types";
 
 interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  scope: DocumentRootScope;
-  rootId: number;
+  target: BrowseTarget;
   itemId: string | null;
   onRename: (item: GraphItem) => void;
 }
 
-export function DocumentDetailDrawer({ open, onOpenChange, scope, rootId, itemId, onRename }: Props) {
-  const detail = useDocumentDetail(scope, rootId, itemId);
+export function DocumentDetailDrawer({ open, onOpenChange, target, itemId, onRename }: Props) {
+  const detail = useDocumentDetail(target, itemId);
   const documentId = detail.data?.managedDocument?.id ?? null;
   const revisions = useDocumentRevisions(documentId);
   const comments = useDocumentComments(documentId);

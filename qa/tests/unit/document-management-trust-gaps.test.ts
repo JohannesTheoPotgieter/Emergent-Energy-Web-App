@@ -127,19 +127,24 @@ describe("fix 1: approver candidate endpoint and UI filtering", () => {
 // Fix 3 — Upload from Active Clients view
 // =========================================================================
 
-describe("fix 3: upload button in Active Clients view", () => {
-  it("ActiveClientsView calls useDocumentRoots to resolve projectRootId", () => {
-    expect(documentsPage).toMatch(/useDocumentRoots\(\)/);
-    expect(documentsPage).toMatch(/projectRootId/);
+describe("fix 3: upload button in Active Clients view (folder-keyed)", () => {
+  // Stage 2 of the project_sharepoint_roots → project_folders migration cut
+  // this upload over from a project-root + Graph-itemId target to the
+  // canonical folder-keyed endpoint, which enforces folder membership
+  // server-side (stronger than the old arbitrary-parentItemId path).
+  it("ActiveClientsView tracks the target provisioned folder id for upload", () => {
+    expect(documentsPage).toMatch(/uploadFolderId/);
   });
 
   it("renders an upload button per provisioned folder", () => {
     expect(documentsPage).toMatch(/btn-active-clients-upload-/);
   });
 
-  it("mounts UploadDialog with the folder itemId as parentItemId", () => {
-    expect(documentsPage).toMatch(/uploadFolderItemId/);
-    expect(documentsPage).toMatch(/parentItemId=\{uploadFolderItemId\}/);
+  it("mounts UploadDialog with a folder-keyed target, not a project root", () => {
+    expect(documentsPage).toContain(
+      'target={{ kind: "folder", projectId, folderId: uploadFolderId }}',
+    );
+    expect(documentsPage).not.toMatch(/projectRootId/);
   });
 });
 

@@ -3,7 +3,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   CheckCircle2,
-  ChevronRight,
   ExternalLink,
   FileCheck,
   FileText,
@@ -21,16 +20,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiRequest } from "@/lib/queryClient";
 import { useApiMutation } from "@/hooks/use-api-mutation";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { useProjectFolders, usePublicFolderTaxonomy } from "@/hooks/use-document-management-admin";
 import type { ProjectDocumentDomain } from "@shared/project-document-register";
-
-interface ProjectRootSummary {
-  id: number;
-  projectId: number;
-  name: string;
-  projectCode: string | null;
-  rootPath: string;
-  hasDrive: boolean;
-}
 
 interface GraphItem {
   id: string;
@@ -138,6 +132,7 @@ export function ProjectDocumentRegisterPanel({
 }: ProjectDocumentRegisterPanelProps) {
   const queryClient = useQueryClient();
   const [parentItemId, setParentItemId] = useState<string | null>(null);
+  const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
   const [selectedFile, setSelectedFile] = useState<GraphItem | null>(null);
   const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
   const [form, setForm] = useState({
@@ -155,33 +150,45 @@ export function ProjectDocumentRegisterPanel({
       ),
   });
 
-  const rootsQuery = useQuery({
-    queryKey: ["documents", "roots"],
-    queryFn: () => fetchJson<{ project: ProjectRootSummary[] }>("/api/documents/roots"),
-  });
+  // Folder-first browsing: pick a provisioned project_folders folder, then
+  // browse within it via the canonical folder-keyed endpoints (the cutover
+  // off the deprecated project_sharepoint_roots table).
+  const foldersQuery = useProjectFolders(projectId);
+  const taxonomy = usePublicFolderTaxonomy();
 
-  const projectRoot = useMemo(
-    () => rootsQuery.data?.project.find((root) => root.projectId === projectId) ?? null,
-    [rootsQuery.data, projectId],
-  );
+  const folderOptions = useMemo(() => {
+    const labels = new Map<string, string>();
+    for (const t of taxonomy.data?.taxonomy ?? []) labels.set(t.internalKey, t.displayName);
+    return (foldersQuery.data?.folders ?? [])
+      .filter((f) => f.taxonomyKey !== "_project_root_" && !!f.itemId)
+      .sort((a, b) => a.taxonomyKey.localeCompare(b.taxonomyKey))
+      .map((f) => ({ id: f.id, label: labels.get(f.taxonomyKey) ?? f.taxonomyKey }));
+  }, [foldersQuery.data, taxonomy.data]);
 
   const childrenQuery = useQuery({
-    queryKey: ["project-document-register", projectId, "children", parentItemId ?? "__root__"],
-    enabled: !!projectRoot,
+    queryKey: [
+      "project-document-register",
+      projectId,
+      "folder",
+      selectedFolderId,
+      "children",
+      parentItemId ?? "__root__",
+    ],
+    enabled: selectedFolderId != null,
     queryFn: () => {
       const qs = parentItemId ? `?parentItemId=${encodeURIComponent(parentItemId)}` : "";
       return fetchJson<{ items: GraphItem[] }>(
-        `/api/documents/project/${projectRoot?.id}/children${qs}`,
+        `/api/projects/${projectId}/folders/${selectedFolderId}/children${qs}`,
       );
     },
   });
 
   const linkMutation = useApiMutation({
     mutationFn: async () => {
-      if (!projectRoot || !selectedFile) throw new Error("Select a SharePoint file first.");
+      if (selectedFolderId == null || !selectedFile) throw new Error("Select a SharePoint file first.");
       const res = await apiRequest("POST", `/api/projects/${projectId}/document-register/link`, {
         domain,
-        rootId: projectRoot.id,
+        folderId: selectedFolderId,
         itemId: selectedFile.id,
         documentType: form.documentType.trim(),
         discipline: form.discipline.trim() || null,
@@ -432,20 +439,44 @@ export function ProjectDocumentRegisterPanel({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {!projectRoot ? (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              Project SharePoint root is not configured.
+          {foldersQuery.isLoading ? (
+            <div className="p-3 text-sm text-muted-foreground">Loading project folders…</div>
+          ) : folderOptions.length === 0 ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              No provisioned folders for this project yet.
             </div>
           ) : (
             <>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-                <Button size="sm" variant="outline" className="h-7" onClick={() => setParentItemId(null)}>
-                  Root
-                </Button>
-                <ChevronRight className="h-3 w-3" />
-                <span className="font-mono truncate">{projectRoot.rootPath}</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Select
+                  value={selectedFolderId != null ? String(selectedFolderId) : ""}
+                  onValueChange={(v) => {
+                    setSelectedFolderId(Number(v));
+                    setParentItemId(null);
+                    setSelectedFile(null);
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-[16rem]" data-testid={`project-${domain}-folder-select`}>
+                    <SelectValue placeholder="Choose a folder" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {folderOptions.map((f) => (
+                      <SelectItem key={f.id} value={String(f.id)}>{f.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedFolderId != null && (
+                  <Button size="sm" variant="outline" className="h-7" onClick={() => setParentItemId(null)}>
+                    Folder root
+                  </Button>
+                )}
               </div>
 
+              {selectedFolderId == null ? (
+                <div className="rounded-md border p-3 text-sm text-muted-foreground">
+                  Pick a folder above to browse its files.
+                </div>
+              ) : (
               <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_18rem]">
                 <div className="rounded-md border divide-y max-h-80 overflow-auto">
                   {childrenQuery.isLoading ? (
@@ -544,6 +575,7 @@ export function ProjectDocumentRegisterPanel({
                   </Button>
                 </div>
               </div>
+              )}
             </>
           )}
         </CardContent>
