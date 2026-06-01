@@ -71,13 +71,14 @@ describe("Stage 2 — project document register folder-keyed", () => {
   });
 });
 
-describe("Stage 2 — register link endpoint accepts folderId (additive)", () => {
-  it("resolves driveId from project_folders when folderId is provided", () => {
+describe("Stage 3 — register link endpoint requires folderId (rootId path removed)", () => {
+  it("resolves driveId from project_folders via a required folderId", () => {
     expect(registerRoutes).toContain("listFoldersForProject");
-    expect(registerRoutes).toMatch(/folderId: z\.number\(\)\.int\(\)\.positive\(\)\.optional\(\)/);
+    expect(registerRoutes).toMatch(/folderId: z\.number\(\)\.int\(\)\.positive\(\)/);
   });
 
-  it("keeps the legacy rootId path until Stage 3", () => {
-    expect(registerRoutes).toContain("getProjectRootById");
+  it("dropped the legacy rootId / project_sharepoint_roots path", () => {
+    expect(registerRoutes).not.toContain("getProjectRootById");
+    expect(registerRoutes).not.toContain("project-sharepoint-roots-repository");
   });
 });

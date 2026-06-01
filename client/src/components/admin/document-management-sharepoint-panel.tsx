@@ -93,7 +93,6 @@ function DocumentSurfaceCard({
   testId,
   icon,
   ready,
-  projectRootCount,
 }: {
   title: string;
   description: string;
@@ -101,7 +100,6 @@ function DocumentSurfaceCard({
   testId: string;
   icon: "engineering" | "quality";
   ready: boolean;
-  projectRootCount: number;
 }) {
   const Icon = icon === "quality" ? ShieldCheck : FolderTree;
   return (
@@ -121,7 +119,6 @@ function DocumentSurfaceCard({
           </div>
           <p className="mt-1 text-xs text-muted-foreground">{description}</p>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span>{projectRootCount} project root{projectRootCount === 1 ? "" : "s"}</span>
             <Button asChild size="sm" variant="ghost" className="h-7 px-2">
               <Link href={href}>
                 <ExternalLink className="h-3.5 w-3.5" />
@@ -205,10 +202,11 @@ export function DocumentManagementSharePointPanel() {
 
   const configured = Boolean(activeProjectsRoot?.driveId);
   const verified = Boolean(testResult?.ok);
-  const projectRootCount = documentRoots.data?.project.length ?? 0;
   const companyRootCount = documentRoots.data?.company.length ?? 0;
   const browserRootsLoaded = Boolean(documentRoots.data) && !documentRoots.error;
-  const documentSurfacesReady = configured && projectRootCount > 0;
+  // Project document surfaces are folder-keyed (provisioned per project); the
+  // shared Active Projects root being configured is the readiness signal here.
+  const documentSurfacesReady = configured;
   const dirty =
     form.displayName !== savedForm.displayName ||
     form.rootPath !== savedForm.rootPath ||
@@ -324,7 +322,6 @@ export function DocumentManagementSharePointPanel() {
             testId="integration-engineering-documents-card"
             icon="engineering"
             ready={documentSurfacesReady}
-            projectRootCount={projectRootCount}
           />
           <DocumentSurfaceCard
             title="Quality Document Management"
@@ -333,24 +330,14 @@ export function DocumentManagementSharePointPanel() {
             testId="integration-quality-documents-card"
             icon="quality"
             ready={documentSurfacesReady}
-            projectRootCount={projectRootCount}
           />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <StatusLine
             ok={configured}
             label="Active Projects root"
             helper={configured ? "Drive ID is saved." : "Paste the Drive ID and folder item ID below."}
-          />
-          <StatusLine
-            ok={projectRootCount > 0}
-            label="Project folders"
-            helper={
-              projectRootCount > 0
-                ? `${projectRootCount} project root${projectRootCount === 1 ? "" : "s"} available.`
-                : "Provision at least one project from Document Management Admin."
-            }
           />
           <StatusLine
             ok={browserRootsLoaded}
