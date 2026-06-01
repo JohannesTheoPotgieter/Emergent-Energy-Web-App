@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo, useEffect } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect, Suspense } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { HoldReasonDialog } from "@/components/HoldReasonDialog";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -106,7 +106,7 @@ import {
 } from "@/hooks/useEngineeringTaskFilters";
 import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
 import { engFetch } from "@/lib/eng-fetch";
-import { invalidateAllTaskCaches, engineeringTicketKeys } from "@/lib/task-cache";
+import { invalidateEngineeringTicketCaches, engineeringTicketKeys } from "@/lib/task-cache";
 import { canonicalizeTaskStatus } from "@/lib/task-status-compat";
 import {
   TASK_PRIORITY_VALUES,
@@ -174,12 +174,16 @@ export { EngineeringWorkloadStrip } from "./engineering/engineering-workload-str
 
 
 
-// TaskDetailDrawer + PostUpdateForm extracted to
-// ./engineering/EngineeringTaskDrawer (UI/UX audit module split). Imported
-// for internal use + re-exported so the public surface (and ./engineering
-// barrels) is unchanged.
-import { TaskDetailDrawer } from "./engineering/EngineeringTaskDrawer";
-export { PostUpdateForm, TaskDetailDrawer } from "./engineering/EngineeringTaskDrawer";
+// TaskDetailDrawer is heavy (~89 KB) and only renders when a task is opened,
+// so it is lazy-loaded as its own chunk rather than bundled into this page.
+// The previous static re-export of PostUpdateForm / TaskDetailDrawer had no
+// external consumers and was removed — it pinned the drawer back into this
+// chunk and defeated the split.
+import { lazyWithRetry } from "@/lib/lazy-with-retry";
+
+const TaskDetailDrawer = lazyWithRetry(() =>
+  import("./engineering/EngineeringTaskDrawer").then((m) => ({ default: m.TaskDetailDrawer })),
+);
 
 
 /**
@@ -442,7 +446,7 @@ export default function EngineeringTasksPage() {
       });
     },
     onSuccess: () => {
-      invalidateAllTaskCaches(queryClient);
+      invalidateEngineeringTicketCaches(queryClient);
       setCreateOpen(false);
       setNewTask({
         projectId: null,
@@ -467,7 +471,7 @@ export default function EngineeringTasksPage() {
     mutationFn: ({ taskId, status, holdReason, blockedType }: { taskId: number; status: string; holdReason?: string; blockedType?: string }) =>
       engFetch(`/api/eng/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ status, ...(holdReason ? { holdReason } : {}), ...(blockedType ? { blockedType } : {}) }) }),
     onSuccess: () => {
-      invalidateAllTaskCaches(queryClient);
+      invalidateEngineeringTicketCaches(queryClient);
       toast({ title: "Status updated" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -477,7 +481,7 @@ export default function EngineeringTasksPage() {
     mutationFn: ({ taskId, priority }: { taskId: number; priority: string }) =>
       engFetch(`/api/eng/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ priority }) }),
     onSuccess: () => {
-      invalidateAllTaskCaches(queryClient);
+      invalidateEngineeringTicketCaches(queryClient);
       toast({ title: "Priority updated" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -544,7 +548,7 @@ export default function EngineeringTasksPage() {
   const bulkStatusMutation = useMutation({
     mutationFn: ({ taskIds, status }: { taskIds: number[]; status: string }) => runBulkPatch(taskIds, { status }),
     onSuccess: ({ ok, failed }) => {
-      invalidateAllTaskCaches(queryClient);
+      invalidateEngineeringTicketCaches(queryClient);
       if (failed === 0) {
         toast({ title: `${ok} task${ok === 1 ? "" : "s"} updated` });
       } else {
@@ -562,7 +566,7 @@ export default function EngineeringTasksPage() {
   const bulkPriorityMutation = useMutation({
     mutationFn: ({ taskIds, priority }: { taskIds: number[]; priority: string }) => runBulkPatch(taskIds, { priority }),
     onSuccess: ({ ok, failed }) => {
-      invalidateAllTaskCaches(queryClient);
+      invalidateEngineeringTicketCaches(queryClient);
       if (failed === 0) {
         toast({ title: `${ok} task${ok === 1 ? "" : "s"} updated` });
       } else {
@@ -592,7 +596,7 @@ export default function EngineeringTasksPage() {
     mutationFn: ({ taskId, dueDate }: { taskId: number; dueDate: string }) =>
       engFetch(`/api/eng/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ dueDate }) }),
     onSuccess: () => {
-      invalidateAllTaskCaches(queryClient);
+      invalidateEngineeringTicketCaches(queryClient);
       toast({ title: "Due date updated" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -602,13 +606,13 @@ export default function EngineeringTasksPage() {
     updateDueDateMutation.mutate({ taskId, dueDate });
   }, [updateDueDateMutation]);
 
-  const uniqueAssignees = Array.from(
+  const uniqueAssignees = useMemo(() => Array.from(
     new Set(
       tasks.flatMap((task) =>
         ((task.assignees || []).length > 0 ? (task.assignees || []) : (task.resolvedAssignees || []).map((user) => user.name)).filter(Boolean),
       ),
     ),
-  ).sort();
+  ).sort(), [tasks]);
   const uniqueProjects = useMemo(() => Array.from(new Set(tasks.map(t => t.projectName).filter(Boolean))).sort() as string[], [tasks]);
 
   const basePool = myTasksOnly ? myTasks : tasks;
@@ -773,10 +777,10 @@ export default function EngineeringTasksPage() {
   const boardStatuses = getVisibleStatusesForView("board");
   const filterStatuses = getVisibleStatusesForView("list");
 
-  const tasksByStatus = TASK_STATUSES.reduce((acc, status) => {
+  const tasksByStatus = useMemo(() => TASK_STATUSES.reduce((acc, status) => {
     acc[status] = filtered.filter((t) => canonicalizeTaskStatus(t.status) === status);
     return acc;
-  }, {} as Record<string, Task[]>);
+  }, {} as Record<string, Task[]>), [filtered]);
 
   // Column grouping (#13)
   const boardGroupKeys = useMemo(() => {
@@ -1517,15 +1521,17 @@ export default function EngineeringTasksPage() {
       )}
 
       {selectedTask && (
-        <TaskDetailDrawer
-          task={selectedTask}
-          onClose={() => setSelectedTask(null)}
-          onUpdate={() => {
-            invalidateAllTaskCaches(queryClient);
-            const updatedTask = tasks.find(t => t.id === selectedTask.id);
-            if (updatedTask) setSelectedTask(updatedTask);
-          }}
-        />
+        <Suspense fallback={null}>
+          <TaskDetailDrawer
+            task={selectedTask}
+            onClose={() => setSelectedTask(null)}
+            onUpdate={() => {
+              invalidateEngineeringTicketCaches(queryClient);
+              const updatedTask = tasks.find(t => t.id === selectedTask.id);
+              if (updatedTask) setSelectedTask(updatedTask);
+            }}
+          />
+        </Suspense>
       )}
 
       <HoldReasonDialog

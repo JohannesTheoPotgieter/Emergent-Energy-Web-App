@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,7 +25,7 @@ function fmtDate(v?: string | null): string {
 
 type SortConfig = { key: string; direction: "asc" | "desc" };
 
-function sortRows(rows: any[], sort: SortConfig): any[] {
+function sortRows<T extends Record<string, unknown>>(rows: T[], sort: SortConfig): T[] {
   const list = [...rows];
   list.sort((a, b) => {
     const av = a[sort.key];
@@ -36,7 +36,7 @@ function sortRows(rows: any[], sort: SortConfig): any[] {
   return list;
 }
 
-function DrillTable({ title, rows, columns }: { title: string; rows: any[]; columns: { key: string; label: string; render?: (v: any, row: any) => any }[] }) {
+function DrillTable({ title, rows, columns }: { title: string; rows: Array<Record<string, unknown>>; columns: { key: string; label: string; render?: (v: unknown, row: Record<string, unknown>) => ReactNode }[] }) {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortConfig>({ key: columns[0].key, direction: "asc" });
 
@@ -122,7 +122,9 @@ export default function EngineeringMonthlyReportProject() {
       if (!res.ok) return { rows: [] };
       return res.json();
     },
-    enabled: !!reportId,
+    // Only fetch the tab the user is actually looking at. Opening a project
+    // used to fire all four drilldown calls at once.
+    enabled: !!reportId && activeTab === "tasks",
   });
 
   const { data: delRows } = useQuery({
@@ -133,7 +135,7 @@ export default function EngineeringMonthlyReportProject() {
       if (!res.ok) return { rows: [] };
       return res.json();
     },
-    enabled: !!reportId,
+    enabled: !!reportId && activeTab === "deliverables",
   });
 
   const { data: stageRows } = useQuery({
@@ -144,7 +146,7 @@ export default function EngineeringMonthlyReportProject() {
       if (!res.ok) return { rows: [] };
       return res.json();
     },
-    enabled: !!reportId,
+    enabled: !!reportId && activeTab === "stages",
   });
 
   const { data: approvalRows } = useQuery({
@@ -155,7 +157,7 @@ export default function EngineeringMonthlyReportProject() {
       if (!res.ok) return { rows: [] };
       return res.json();
     },
-    enabled: !!reportId,
+    enabled: !!reportId && activeTab === "approvals",
   });
 
   const exportTab = async () => {
@@ -250,7 +252,7 @@ export default function EngineeringMonthlyReportProject() {
                     columns={[
                       { key: "taskName", label: "Task" },
                       { key: "owner", label: "Owner" },
-                      { key: "status", label: "Status", render: (v) => <Badge variant="outline" className="text-[10px]">{v || "—"}</Badge> },
+                      { key: "status", label: "Status", render: (v) => <Badge variant="outline" className="text-[10px]">{(v as ReactNode) || "—"}</Badge> },
                       { key: "endDate", label: "Due date" },
                       { key: "agingDays", label: "Aging" },
                       { key: "sourceSheet", label: "Source sheet" },
@@ -269,10 +271,10 @@ export default function EngineeringMonthlyReportProject() {
                     columns={[
                       { key: "title", label: "Deliverable" },
                       { key: "type", label: "Type" },
-                      { key: "status", label: "Approval state", render: (v) => <Badge variant="outline" className="text-[10px]">{v}</Badge> },
+                      { key: "status", label: "Approval state", render: (v) => <Badge variant="outline" className="text-[10px]">{v as ReactNode}</Badge> },
                       { key: "currentVersion", label: "Version" },
                       { key: "createdAt", label: "Created" },
-                      { key: "updatedAt", label: "Updated", render: (v) => fmtDate(v) },
+                      { key: "updatedAt", label: "Updated", render: (v) => fmtDate(v as string | null) },
                     ]}
                   />
                 ),
@@ -286,9 +288,9 @@ export default function EngineeringMonthlyReportProject() {
                     rows={rowsStages}
                     columns={[
                       { key: "stageTemplateId", label: "Stage template" },
-                      { key: "status", label: "Status", render: (v) => <Badge variant="outline" className="text-[10px]">{v}</Badge> },
-                      { key: "startedAt", label: "Started", render: (v) => fmtDate(v) },
-                      { key: "completedAt", label: "Completed", render: (v) => fmtDate(v) },
+                      { key: "status", label: "Status", render: (v) => <Badge variant="outline" className="text-[10px]">{v as ReactNode}</Badge> },
+                      { key: "startedAt", label: "Started", render: (v) => fmtDate(v as string | null) },
+                      { key: "completedAt", label: "Completed", render: (v) => fmtDate(v as string | null) },
                       { key: "overrideReason", label: "Blocker / reason" },
                     ]}
                   />
@@ -303,9 +305,9 @@ export default function EngineeringMonthlyReportProject() {
                     rows={rowsApprovals}
                     columns={[
                       { key: "approverRole", label: "Type" },
-                      { key: "status", label: "Status", render: (v) => <Badge variant="outline" className="text-[10px]">{v}</Badge> },
+                      { key: "status", label: "Status", render: (v) => <Badge variant="outline" className="text-[10px]">{v as ReactNode}</Badge> },
                       { key: "approverUserId", label: "Approver" },
-                      { key: "updatedAt", label: "Date", render: (v) => fmtDate(v) },
+                      { key: "updatedAt", label: "Date", render: (v) => fmtDate(v as string | null) },
                       { key: "comments", label: "Comments" },
                     ]}
                   />

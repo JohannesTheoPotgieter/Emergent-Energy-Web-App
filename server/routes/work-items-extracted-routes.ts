@@ -10,13 +10,17 @@
  *   DELETE /api/work-items/:id/viewers/:userId
  */
 
-import type { Express } from "express";
-import { paramStr, parseIntParam } from "../lib/req-params";
+import type { Express, Request } from "express";
+import { parseIntParam } from "../lib/req-params";
 import { db } from "../db";
-import { sql } from "drizzle-orm";
+import { and, inArray, isNull } from "drizzle-orm";
+import { workItems } from "@shared/schema";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { logAuditFromReq } from "../audit-logger";
+import { WorkManagementRepository } from "../repositories/work-management-repository";
+
+const workManagementRepository = new WorkManagementRepository();
 
 export function registerWorkItemsExtractedRoutes(app: Express): void {
 
@@ -28,13 +32,18 @@ export function registerWorkItemsExtractedRoutes(app: Express): void {
       if (!Array.isArray(ids) || ids.length === 0) {
         return res.status(400).json({ error: "ids[] required" });
       }
-      const userId = (req as any).user?.id || (req as any).jwtPayload?.userId || null;
-      const now = new Date().toISOString();
-      for (const id of ids) {
-        await db.execute(sql`UPDATE work_items SET deleted_at = ${now} WHERE id = ${id} AND deleted_at IS NULL`);
-      }
-      logAuditFromReq(req, { entityType: "work_item", action: "soft_delete", changesJson: { description: `${ids.length} work item(s) soft-deleted`, ids, deletedBy: userId } });
-      res.json({ message: `Deleted ${ids.length} work item(s)`, undoAvailable: true, ids });
+      const cleanIds = ids.map((n: unknown) => Number(n)).filter((n: number) => Number.isInteger(n) && n > 0);
+      if (cleanIds.length === 0) return res.status(400).json({ error: "ids[] must contain valid numeric ids" });
+      // req.user is set by requireAuth; jwtPayload is set on JWT-only flows and
+      // is not part of the canonical Express.Request augmentation yet, so the
+      // narrow cast stays only on that fallback path.
+      const userId = req.user?.id ?? (req as Request & { jwtPayload?: { userId?: number } }).jwtPayload?.userId ?? null;
+      // Single batched soft-delete instead of one DB round-trip per id.
+      await db.update(workItems)
+        .set({ deletedAt: new Date() })
+        .where(and(inArray(workItems.id, cleanIds), isNull(workItems.deletedAt)));
+      logAuditFromReq(req, { entityType: "work_item", action: "soft_delete", changesJson: { description: `${cleanIds.length} work item(s) soft-deleted`, ids: cleanIds, deletedBy: userId } });
+      res.json({ message: `Deleted ${cleanIds.length} work item(s)`, undoAvailable: true, ids: cleanIds });
     } catch (error: any) {
       console.error("[WorkItemsDelete] Error:", error);
       res.status(500).json({ error: "Failed to delete work items" });
@@ -48,11 +57,12 @@ export function registerWorkItemsExtractedRoutes(app: Express): void {
       if (!Array.isArray(ids) || ids.length === 0) {
         return res.status(400).json({ error: "ids[] required" });
       }
-      for (const id of ids) {
-        await db.execute(sql`UPDATE work_items SET deleted_at = NULL WHERE id = ${id}`);
-      }
-      logAuditFromReq(req, { entityType: "work_item", action: "restore", changesJson: { description: `${ids.length} work item(s) restored`, ids } });
-      res.json({ message: `Restored ${ids.length} work item(s)` });
+      const cleanIds = ids.map((n: unknown) => Number(n)).filter((n: number) => Number.isInteger(n) && n > 0);
+      if (cleanIds.length === 0) return res.status(400).json({ error: "ids[] must contain valid numeric ids" });
+      // Single batched restore instead of one DB round-trip per id.
+      await db.update(workItems).set({ deletedAt: null }).where(inArray(workItems.id, cleanIds));
+      logAuditFromReq(req, { entityType: "work_item", action: "restore", changesJson: { description: `${cleanIds.length} work item(s) restored`, ids: cleanIds } });
+      res.json({ message: `Restored ${cleanIds.length} work item(s)` });
     } catch (error: any) {
       console.error("[WorkItemsRestore] Error:", error);
       res.status(500).json({ error: "Failed to restore work items" });
@@ -62,16 +72,7 @@ export function registerWorkItemsExtractedRoutes(app: Express): void {
 
   app.get("/api/work-items/deleted", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const rows = await db.execute(sql`
-        SELECT wi.id, wi.title, wi.status, wi.deleted_at, wi.project_id,
-               pi.project_name
-        FROM work_items wi
-        LEFT JOIN project_info pi ON wi.project_id = pi.id
-        WHERE wi.deleted_at IS NOT NULL
-        ORDER BY wi.deleted_at DESC
-        LIMIT 200
-      `);
-      const results = Array.isArray(rows) ? rows : (rows.rows || []);
+      const results = await workManagementRepository.listDeletedWorkItems(200);
       res.json(results);
     } catch (error: any) {
       console.error("[WorkItemsDeleted] Error:", error);
@@ -85,14 +86,7 @@ export function registerWorkItemsExtractedRoutes(app: Express): void {
     try {
       const workItemId = parseIntParam(req.params.id);
       if (isNaN(workItemId)) return res.status(400).json({ error: "Invalid work item id" });
-      const rows = await db.execute(sql`
-        SELECT wia.id, wia.work_item_id, wia.user_id, wia.role, wia.created_at,
-               u.name as user_name, u.username, u.role as user_role
-        FROM work_item_assignments wia
-        LEFT JOIN users u ON wia.user_id = u.id
-        WHERE wia.work_item_id = ${workItemId} AND wia.role = 'VIEWER'
-      `);
-      const results = Array.isArray(rows) ? rows : (rows.rows || []);
+      const results = await workManagementRepository.listWorkItemViewers(workItemId);
       res.json(results);
     } catch (error: any) {
       console.error("[WorkItemViewers] Error:", error);
@@ -107,18 +101,12 @@ export function registerWorkItemsExtractedRoutes(app: Express): void {
       if (isNaN(workItemId)) return res.status(400).json({ error: "Invalid work item id" });
       if (!viewerUserId || typeof viewerUserId !== "number") return res.status(400).json({ error: "userId is required" });
 
-      const existing = await db.execute(sql`
-        SELECT id FROM work_item_assignments WHERE work_item_id = ${workItemId} AND user_id = ${viewerUserId} AND role = 'VIEWER'
-      `).then((r: any) => Array.isArray(r) ? r : (r.rows || []));
-
-      if (existing.length > 0) {
+      const existingId = await workManagementRepository.findViewerAssignmentId(workItemId, viewerUserId);
+      if (existingId != null) {
         return res.json({ message: "User is already a viewer", alreadyExists: true });
       }
 
-      await db.execute(sql`
-        INSERT INTO work_item_assignments (work_item_id, user_id, role, created_at)
-        VALUES (${workItemId}, ${viewerUserId}, 'VIEWER', NOW())
-      `);
+      await workManagementRepository.addWorkItemViewer(workItemId, viewerUserId);
 
       logAuditFromReq(req, {
         entityType: "work_item_assignment",
@@ -140,10 +128,7 @@ export function registerWorkItemsExtractedRoutes(app: Express): void {
       const viewerUserId = parseIntParam(req.params.userId);
       if (isNaN(workItemId) || isNaN(viewerUserId)) return res.status(400).json({ error: "Invalid parameters" });
 
-      await db.execute(sql`
-        DELETE FROM work_item_assignments
-        WHERE work_item_id = ${workItemId} AND user_id = ${viewerUserId} AND role = 'VIEWER'
-      `);
+      await workManagementRepository.removeWorkItemViewer(workItemId, viewerUserId);
 
       logAuditFromReq(req, {
         entityType: "work_item_assignment",
