@@ -28,11 +28,7 @@ import {
   listActiveCompanyRoots,
   getCompanyRootById,
 } from "../repositories/company-sharepoint-roots-repository";
-import {
-  getProjectRootById,
-  getProjectRootByProjectId,
-  listProjectsWithRoots,
-} from "../repositories/project-sharepoint-roots-repository";
+import { resolveProjectDocAnchor } from "../lib/document-acl";
 import {
   getManagedDocumentById,
   getManagedDocumentByDriveItem,
@@ -71,18 +67,15 @@ async function resolveRoot(
   rootId: number,
 ): Promise<ResolvedRoot> {
   if (scope === "project") {
-    const r = await getProjectRootById(rootId);
-    if (!r) throw notFound("Project root");
-    if (!r.driveId) throw new ApiError(409, "ROOT_NOT_CONFIGURED", "Project SharePoint root is not fully configured yet.");
-    return {
-      scope,
-      driveId: r.driveId,
-      rootItemId: r.rootItemId,
-      displayName: r.rootPath,
-      projectId: r.projectId,
-      companyRootId: null,
-      rootPath: r.rootPath,
-    };
+    // Project browsing moved to the folder-keyed endpoints
+    // (/api/projects/:projectId/folders/:folderId/*) in Stage 2. The retired
+    // root-keyed project surface (project_sharepoint_roots) is gone; only the
+    // company-scope root-keyed browser stays live on these endpoints.
+    throw new ApiError(
+      410,
+      "PROJECT_ROOT_RETIRED",
+      "Project document browsing moved to folder-keyed endpoints.",
+    );
   }
   const r = await getCompanyRootById(rootId);
   if (!r) throw notFound("Company root");
@@ -144,20 +137,26 @@ function assertAcl(
  * had access to a folder could still touch a document via its id.
  */
 async function assertDocumentAcl(
-  tracked: { id: number; rootScope: DocumentRootScope; projectId: number | null; companyRootId: number | null; driveId: string; path: string },
+  tracked: { id: number; rootScope: DocumentRootScope; projectId: number | null; companyRootId: number | null; parentFolderId: number | null; driveId: string; path: string },
   role: string | null | undefined,
   action: DocumentAction,
 ): Promise<void> {
-  // Derive the drive-relative path of the root item so we can strip it
-  // from `tracked.path` and get a folder first-segment the ACL can match.
-  let rootDrivePath = "";
+  // Project scope: anchor on the canonical project_folders surface
+  // (parentFolderId / path-prefix → top-level taxonomy display name). No
+  // dependency on the deprecated project_sharepoint_roots table.
   if (tracked.rootScope === "project" && tracked.projectId != null) {
-    const projectRoot = await getProjectRootByProjectId(tracked.projectId);
-    if (projectRoot?.rootItemId) {
-      const rootItem = await sp.getItem(tracked.driveId, projectRoot.rootItemId);
-      rootDrivePath = rootItem?.path ?? "";
-    }
-  } else if (tracked.rootScope === "company" && tracked.companyRootId != null) {
+    const anchor = await resolveProjectDocAnchor({
+      projectId: tracked.projectId,
+      parentFolderId: tracked.parentFolderId,
+      path: tracked.path,
+    });
+    assertAcl("project", anchor, role, action);
+    return;
+  }
+  // Company scope (company_sharepoint_roots is NOT deprecated): strip the
+  // company root's drive path so the first segment selects the ACL.
+  let rootDrivePath = "";
+  if (tracked.rootScope === "company" && tracked.companyRootId != null) {
     const companyRoot = await getCompanyRootById(tracked.companyRootId);
     if (companyRoot?.rootItemId) {
       const rootItem = await sp.getItem(tracked.driveId, companyRoot.rootItemId);
@@ -210,10 +209,10 @@ export function registerDocumentManagementRoutes(app: Express): void {
   // GET /api/documents/roots
   app.get("/api/documents/roots", requireAuth, async (_req: Request, res: Response) => {
     try {
-      const [companyRoots, projectsWithRoots] = await Promise.all([
-        listActiveCompanyRoots(),
-        listProjectsWithRoots(),
-      ]);
+      // Company-scope browser roots only. Project document surfaces are
+      // folder-keyed (project_folders) since Stage 2 — there is no project
+      // "root" list here anymore.
+      const companyRoots = await listActiveCompanyRoots();
       res.json({
         company: companyRoots.map((r) => ({
           id: r.id,
@@ -221,14 +220,6 @@ export function registerDocumentManagementRoutes(app: Express): void {
           displayName: r.displayName,
           rootPath: r.rootPath,
           hasDrive: !!r.driveId,
-        })),
-        project: projectsWithRoots.map((p) => ({
-          id: p.root.id,
-          projectId: p.projectId,
-          name: p.projectName,
-          projectCode: p.projectCode ?? null,
-          rootPath: p.root.rootPath,
-          hasDrive: !!p.root.driveId,
         })),
       });
     } catch (err) {
