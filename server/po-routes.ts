@@ -856,13 +856,13 @@ export function registerPoRoutes(app: Express) {
               AND COALESCE(is_active, 1) = 1
             ORDER BY role, name
           `))
-        : await db.execute(sql`
+        : await db.execute(sql.raw(`
             SELECT id, name, email, role
             FROM users
-            WHERE role = ANY(${PO_APPROVAL_ELIGIBLE_ROLES}::text[])
+            WHERE role IN (${roleList})
               AND is_active = true
             ORDER BY role, name
-          `);
+          `));
       const approvers = rowsFromResult(result).map((u) => ({
         id: Number(u.id),
         name: String(u.name || ""),
