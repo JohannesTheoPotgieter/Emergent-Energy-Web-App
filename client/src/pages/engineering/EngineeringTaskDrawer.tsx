@@ -130,8 +130,8 @@ export function PostUpdateForm({ taskId, currentStatus, hasProject, onDone }: { 
       setHoldReason("");
       toast({ title: "Update posted" });
       onDone();
-    } catch (e: any) {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } catch (e) {
+      toast({ title: "Error", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
     } finally {
       setSubmitting(false);
     }
@@ -974,8 +974,8 @@ export function TaskDetailDrawer({
                                   queryClient.invalidateQueries({ queryKey: ["task-deliverables", task.id] });
                                   queryClient.invalidateQueries({ queryKey: ["task-comments", task.id] });
                                   queryClient.invalidateQueries({ queryKey: ["task-activity", task.id] });
-                                } catch (err: any) {
-                                  toast({ title: "Error", description: err.message, variant: "destructive" });
+                                } catch (err) {
+                                  toast({ title: "Error", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
                                 }
                               }}
                               data-testid={`btn-acknowledge-${del.id}`}

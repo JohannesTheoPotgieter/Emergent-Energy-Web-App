@@ -180,6 +180,11 @@ export async function findEngineeringWorkItemId(id: number): Promise<number | nu
  *
  * Returns false when the task does not exist — the route layer turns that
  * into a 404, which is also the right answer for "not yours".
+ *
+ * Indexing: the lookup is a point query on `work_items.id` (primary key) and
+ * the join filter `(work_item_id, user_id)` is covered by the unique index
+ * `uq_work_item_user_role`. No additional index is required — verified
+ * 2026-06-01 during the engineering audit.
  */
 export async function userCanAccessEngineeringTask(taskId: number, userId: number): Promise<boolean> {
   const [row] = await db
