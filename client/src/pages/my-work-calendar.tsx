@@ -2,6 +2,8 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
@@ -641,6 +643,22 @@ export default function MyWorkCalendarPage() {
     });
   }, [scheduleMutation]);
 
+  // Keyboard-accessible equivalent of drag-to-schedule: pick a date + start
+  // hour from the card's popover. Drag-and-drop is mouse-only, so this is the
+  // only path for keyboard / screen-reader users to schedule their day.
+  const handleScheduleAt = useCallback((task: CalendarTask, dateKey: string, hour: number) => {
+    if (typeof task.id !== "number") return;
+    const startMins = hour * 60;
+    scheduleMutation.mutate({
+      taskType: task.taskType,
+      taskId: task.id as number,
+      scheduledDate: dateKey,
+      scheduledStartTime: minutesToTime(startMins),
+      scheduledEndTime: minutesToTime(startMins + 60),
+      approvalSubType: task.approvalSubType || null,
+    });
+  }, [scheduleMutation]);
+
   const syncMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/ms-sync/trigger", {
@@ -894,6 +912,7 @@ export default function MyWorkCalendarPage() {
                             task={task}
                             onDragStart={handleDragStart}
                             onOpen={handleOpenTaskContext}
+                            onSchedule={handleScheduleAt}
                           />
                         ))
                       )}
@@ -915,10 +934,12 @@ function DraggableTaskCard({
   task,
   onDragStart,
   onOpen,
+  onSchedule,
 }: {
   task: CalendarTask;
   onDragStart: (task: CalendarTask) => void;
   onOpen: (task: CalendarTask) => void;
+  onSchedule?: (task: CalendarTask, dateKey: string, hour: number) => void;
 }) {
   const colors = TASK_TYPE_COLORS[task.taskType] || TASK_TYPE_COLORS.mytool;
   const borderColor = colors.border.replace("border-", "border-").replace("-300", "-200");
@@ -927,6 +948,11 @@ function DraggableTaskCard({
   const textColor = colors.text;
   const subTextColor = colors.subText;
   const canSchedule = !NON_SCHEDULABLE_TYPES.has(task.taskType);
+  const canKeyboardSchedule = canSchedule && typeof task.id === "number" && !!onSchedule;
+
+  const [schedOpen, setSchedOpen] = useState(false);
+  const [schedDate, setSchedDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
+  const [schedHour, setSchedHour] = useState(9);
 
   return (
     <div
@@ -937,7 +963,16 @@ function DraggableTaskCard({
         onDragStart(task);
       } : undefined}
       onClick={() => onOpen(task)}
-      className={`rounded border ${borderColor} ${bgColor} ${hoverColor} px-2 py-1.5 text-xs ${canSchedule ? "cursor-grab active:cursor-grabbing" : "cursor-default opacity-80"} transition-colors group`}
+      onKeyDown={(e) => {
+        // Keyboard-open, but ignore keys that bubble up from the nested
+        // schedule popover / its controls (they handle their own keys).
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(task); }
+      }}
+      role="button"
+      tabIndex={0}
+      aria-label={`Open ${task.title}`}
+      className={`rounded border ${borderColor} ${bgColor} ${hoverColor} px-2 py-1.5 text-xs ${canSchedule ? "cursor-grab active:cursor-grabbing" : "cursor-default opacity-80"} transition-colors group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
       data-testid={`unscheduled-task-${task.taskType}-${task.id}`}
     >
       <div className="flex items-center gap-1">
@@ -966,6 +1001,58 @@ function DraggableTaskCard({
       {(task.dueDate || task.plannedForDate) && (
         <div className={`${subTextColor} text-[10px] ml-5`}>
           Due: {task.dueDate || task.plannedForDate}
+        </div>
+      )}
+      {canKeyboardSchedule && (
+        <div className="ml-5 mt-1" onClick={(e) => e.stopPropagation()}>
+          <Popover open={schedOpen} onOpenChange={setSchedOpen}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground opacity-70 hover:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={`Schedule ${task.title}`}
+                data-testid={`schedule-task-${task.taskType}-${task.id}`}
+              >
+                <Clock className="h-2.5 w-2.5" /> Schedule…
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-56 p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
+              <div className="space-y-1">
+                <label htmlFor={`sched-date-${task.taskType}-${task.id}`} className="text-[11px] font-medium text-muted-foreground">Date</label>
+                <Input
+                  id={`sched-date-${task.taskType}-${task.id}`}
+                  type="date"
+                  value={schedDate}
+                  onChange={(e) => setSchedDate(e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <label htmlFor={`sched-hour-${task.taskType}-${task.id}`} className="text-[11px] font-medium text-muted-foreground">Start time</label>
+                <select
+                  id={`sched-hour-${task.taskType}-${task.id}`}
+                  value={schedHour}
+                  onChange={(e) => setSchedHour(Number(e.target.value))}
+                  className="h-8 w-full rounded border bg-background px-2 text-xs"
+                >
+                  {HOURS.map((h) => (
+                    <option key={h} value={h}>{hourLabel(h)}</option>
+                  ))}
+                </select>
+              </div>
+              <Button
+                size="sm"
+                className="w-full h-8 text-xs"
+                onClick={() => {
+                  if (schedDate) onSchedule!(task, schedDate, schedHour);
+                  setSchedOpen(false);
+                }}
+                data-testid={`schedule-confirm-${task.taskType}-${task.id}`}
+              >
+                Schedule
+              </Button>
+            </PopoverContent>
+          </Popover>
         </div>
       )}
     </div>
@@ -1029,6 +1116,24 @@ function TimeGridView({
                 {format(day, viewMode === "week" ? "EEE d" : "EEEE, MMM d")}
               </div>
 
+              {/* All-day events get their own band so they're never faked into
+                  a 07:00 block (and so they can't be missed). */}
+              {dayOutlookEvents.some((ev) => ev.isAllDay) && (
+                <div className="border-b bg-blue-50/40 px-1 py-1 space-y-0.5" data-testid={`allday-band-${key}`}>
+                  {dayOutlookEvents.filter((ev) => ev.isAllDay).map((ev, i) => (
+                    <button
+                      key={`allday-${ev.id || i}`}
+                      type="button"
+                      onClick={() => { if (ev.webLink) window.open(ev.webLink, "_blank", "noopener,noreferrer"); }}
+                      className="w-full text-left rounded bg-blue-100 border border-blue-200 px-1.5 py-0.5 text-[10px] text-blue-900 hover:bg-blue-200 truncate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      title={`${ev.subject || "No Subject"}\nAll day\n${getLocationStr(ev)}`}
+                    >
+                      <span className="font-medium">All day</span> · {ev.subject || "No Subject"}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <div className="relative">
                 {HOURS.map((hour) => {
                   const isTarget = dropTarget?.dayKey === key && dropTarget?.hour === hour;
@@ -1060,15 +1165,16 @@ function TimeGridView({
                     return null;
                   }
 
-                  if (ev.isAllDay) {
-                    startMins = 7 * 60;
-                    endMins = 7 * 60 + 30;
-                  }
+                  // All-day events render in the band above, not the grid.
+                  if (ev.isAllDay) return null;
 
-                  const topOffset = ((startMins - 7 * 60) / 60) * slotHeight;
+                  const gridHeight = HOURS.length * slotHeight;
+                  const rawTop = ((startMins - 7 * 60) / 60) * slotHeight;
                   const height = Math.max(((endMins - startMins) / 60) * slotHeight, 20);
-
-                  if (topOffset < 0) return null;
+                  // Clamp out-of-hours events into view instead of dropping
+                  // those before 07:00 or letting post-19:00 ones overflow the
+                  // day. The chip still shows its true time in the label/title.
+                  const topOffset = Math.max(0, Math.min(rawTop, gridHeight - height));
 
                   let timeLabel = "";
                   try {
@@ -1116,10 +1222,12 @@ function TimeGridView({
                     ? timeToMinutes(task.scheduledEndTime)
                     : startMins + 60;
 
-                  const topOffset = ((startMins - 7 * 60) / 60) * slotHeight;
+                  const gridHeight = HOURS.length * slotHeight;
+                  const rawTop = ((startMins - 7 * 60) / 60) * slotHeight;
                   const height = Math.max(((endMins - startMins) / 60) * slotHeight, 20);
-
-                  if (topOffset < 0) return null;
+                  // Clamp into view so a task scheduled before 07:00 or after
+                  // 19:00 stays visible rather than vanishing/overflowing.
+                  const topOffset = Math.max(0, Math.min(rawTop, gridHeight - height));
 
                   const tc = TASK_TYPE_COLORS[task.taskType] || TASK_TYPE_COLORS.mytool;
                   const bg = tc.bg;
@@ -1138,7 +1246,14 @@ function TimeGridView({
                         onDragStartScheduled(task);
                       }}
                       onClick={() => onOpenTask(task)}
-                      className={`absolute left-0.5 right-0.5 rounded ${bg} border ${border} px-1.5 py-0.5 text-[10px] cursor-grab active:cursor-grabbing ${hoverBg} transition-colors overflow-hidden z-20 group`}
+                      onKeyDown={(e) => {
+                        if (e.target !== e.currentTarget) return;
+                        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenTask(task); }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${task.title}, ${formatTimeDisplay(task.scheduledStartTime)}`}
+                      className={`absolute left-0.5 right-0.5 rounded ${bg} border ${border} px-1.5 py-0.5 text-[10px] cursor-grab active:cursor-grabbing ${hoverBg} transition-colors overflow-hidden z-20 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
                       style={{ top: topOffset, height, minHeight: 20 }}
                       title={`${task.title}\n${formatTimeDisplay(task.scheduledStartTime)} – ${task.scheduledEndTime ? formatTimeDisplay(task.scheduledEndTime) : ""}`}
                       data-testid={`calendar-task-${task.taskType}-${task.id}`}
@@ -1155,12 +1270,15 @@ function TimeGridView({
                           <ExternalLink className="h-2.5 w-2.5 shrink-0 opacity-40 group-hover:opacity-100" />
                         )}
                         <button
+                          type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             onUnschedule(task);
                           }}
-                          className="opacity-0 group-hover:opacity-100 shrink-0 p-0.5 rounded hover:bg-black/10 transition-opacity"
+                          onKeyDown={(e) => e.stopPropagation()}
+                          className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 p-0.5 rounded hover:bg-black/10 transition-opacity"
                           title="Remove from calendar"
+                          aria-label={`Remove ${task.title} from calendar`}
                           data-testid={`unschedule-task-${task.taskType}-${task.id}`}
                         >
                           <X className="h-2.5 w-2.5" />
