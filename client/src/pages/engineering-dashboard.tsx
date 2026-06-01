@@ -647,11 +647,24 @@ function CompanyPrioritiesSection() {
   );
 }
 
+interface AuditFeedEntry {
+  id?: number | string;
+  actionType?: string;
+  actorName?: string | null;
+  fieldName?: string | null;
+  newValue?: string | null;
+  taskTitle?: string | null;
+  createdAt?: string | null;
+}
+
 function ActivityFeed() {
-  const { data: auditData } = useQuery<{ entries: any[] }>({
+  const { data: auditData } = useQuery<{ entries: AuditFeedEntry[] }>({
     queryKey: ["eng-activity-feed"],
     queryFn: () => engFetch("/api/eng/audit-log?limit=15"),
     refetchInterval: 60000,
+    // Avoid extra refetches between polls and pause polling when backgrounded.
+    staleTime: 55_000,
+    refetchIntervalInBackground: false,
   });
 
   const entries = auditData?.entries || [];
@@ -669,7 +682,7 @@ function ActivityFeed() {
       </div>
       <CardContent className="p-0">
         <div className="max-h-[280px] overflow-y-auto divide-y">
-          {entries.map((entry: any, i: number) => (
+          {entries.map((entry: AuditFeedEntry, i: number) => (
             <div key={entry.id || i} className="px-4 py-2.5 flex items-start gap-2.5 hover:bg-muted/30 transition-colors text-xs">
               <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[8px] font-bold text-white shrink-0 mt-0.5 ${
                 entry.actionType?.includes("status") ? "bg-blue-500" :

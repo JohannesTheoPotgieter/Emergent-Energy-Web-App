@@ -67,7 +67,7 @@ import { engFetch } from "@/lib/eng-fetch";
 import { TaskDependenciesPanel } from "./panels/TaskDependenciesPanel";
 import { DocumentControlBadge } from "@/components/engineering/DocumentControlBadge";
 import { PHASE_COLORS } from "@/lib/phase-colors";
-import { invalidateAllTaskCaches } from "@/lib/task-cache";
+import { invalidateEngineeringTicketCaches } from "@/lib/task-cache";
 import { canonicalizeTaskStatus } from "@/lib/task-status-compat";
 import {
   TASK_PRIORITY_LABELS,
@@ -119,7 +119,7 @@ export function PostUpdateForm({ taskId, currentStatus, hasProject, onDone }: { 
           body: JSON.stringify(patch),
         });
       }
-      invalidateAllTaskCaches(queryClient);
+      invalidateEngineeringTicketCaches(queryClient);
       queryClient.invalidateQueries({ queryKey: ["task-comments", taskId] });
       queryClient.invalidateQueries({ queryKey: ["task-activity", taskId] });
       setUpdateText("");
@@ -350,7 +350,7 @@ export function TaskDetailDrawer({
     mutationFn: (updates: Record<string, any>) =>
       engFetch(`/api/eng/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify(updates) }),
     onSuccess: () => {
-      invalidateAllTaskCaches(queryClient);
+      invalidateEngineeringTicketCaches(queryClient);
       queryClient.invalidateQueries({ queryKey: ["task-activity", task.id] });
       onUpdate();
       toast({ title: "Task updated" });
@@ -373,7 +373,7 @@ export function TaskDetailDrawer({
     mutationFn: () =>
       engFetch(`/api/eng/tasks/${task.id}`, { method: "DELETE" }),
     onSuccess: () => {
-      invalidateAllTaskCaches(queryClient);
+      invalidateEngineeringTicketCaches(queryClient);
       onClose();
       onUpdate();
       toast({ title: "Task deleted" });
@@ -386,13 +386,12 @@ export function TaskDetailDrawer({
     if (!file) {
       return { supported: false, status: "failed", error: "No file available for local save." };
     }
-    const pickerSupported = typeof window !== "undefined" && "showSaveFilePicker" in window;
-    if (!pickerSupported) {
+    const picker = typeof window !== "undefined" ? window.showSaveFilePicker : undefined;
+    if (!picker) {
       return { supported: false, status: "failed", error: "showSaveFilePicker is unavailable in this runtime." };
     }
     try {
-      // @ts-ignore
-      const handle = await window.showSaveFilePicker({ suggestedName });
+      const handle = await picker({ suggestedName });
       const writable = await handle.createWritable();
       await writable.write(await file.arrayBuffer());
       await writable.close();
@@ -518,7 +517,7 @@ export function TaskDetailDrawer({
               currentStatus={task.status}
               hasProject={!!task.projectName}
               onDone={() => {
-                invalidateAllTaskCaches(queryClient);
+                invalidateEngineeringTicketCaches(queryClient);
                 onUpdate();
               }}
             />

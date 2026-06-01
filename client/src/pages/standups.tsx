@@ -718,6 +718,11 @@ function MeetingView({ scheduleId }: { scheduleId: number }) {
     queryKey: ["standup-meeting", scheduleId],
     queryFn: () => apiFetch(`/api/standups/meeting/${scheduleId}`),
     refetchInterval: 30000, // refresh every 30s for live updates
+    // Keep data fresh just under the poll cadence so window-focus / remount
+    // don't trigger extra refetches between polls, and stop polling when the
+    // tab is backgrounded (no point refreshing a standup nobody's watching).
+    staleTime: 25_000,
+    refetchIntervalInBackground: false,
   });
 
   const participants = meeting?.participants || [];

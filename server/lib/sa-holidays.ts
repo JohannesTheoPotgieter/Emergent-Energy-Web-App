@@ -78,3 +78,29 @@ export function isHoliday(dateStr: string): boolean {
   }
   return holidayCacheByYear.get(year)!.has(dateStr);
 }
+
+/**
+ * Count working days (Mon–Fri, excluding SA public holidays) inclusive of
+ * both endpoints. Returns null for malformed input, 0 when end < start.
+ *
+ * Canonical implementation — previously copy-pasted into several route files.
+ */
+export function saWorkingDays(startDateStr: string | null, endDateStr: string | null): number | null {
+  if (!startDateStr || !endDateStr || !/^\d{4}-\d{2}-\d{2}/.test(startDateStr) || !/^\d{4}-\d{2}-\d{2}/.test(endDateStr)) return null;
+  const s = parseDateParts(startDateStr);
+  const e = parseDateParts(endDateStr);
+  const start = new Date(Date.UTC(s.year, s.month - 1, s.day));
+  const end = new Date(Date.UTC(e.year, e.month - 1, e.day));
+  if (end < start) return 0;
+  let count = 0;
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    const dow = cursor.getUTCDay();
+    const ds = formatDateKey(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, cursor.getUTCDate());
+    if (dow !== 0 && dow !== 6 && !isHoliday(ds)) {
+      count++;
+    }
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return count;
+}

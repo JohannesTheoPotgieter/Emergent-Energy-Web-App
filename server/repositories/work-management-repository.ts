@@ -425,12 +425,12 @@ export class WorkManagementRepository {
         .where(eq(workItems.id, parentWorkItemId));
       const parentIndent = parentItem[0]?.indentLevel ?? 0;
       const now = new Date();
-      for (const wiId of workItemIds) {
-        await tx
-          .update(workItems)
-          .set({ parentId: parentWorkItemId, indentLevel: parentIndent + 1, updatedAt: now })
-          .where(eq(workItems.id, wiId));
-      }
+      // All children get the same parent + indent, so a single batched
+      // update replaces the previous one-query-per-child loop.
+      await tx
+        .update(workItems)
+        .set({ parentId: parentWorkItemId, indentLevel: parentIndent + 1, updatedAt: now })
+        .where(inArray(workItems.id, workItemIds));
       await tx
         .update(workItems)
         .set({ isMilestone: true, updatedAt: now })

@@ -13,7 +13,8 @@
 import type { Express } from "express";
 import { paramStr, parseIntParam } from "../lib/req-params";
 import { db } from "../db";
-import { sql } from "drizzle-orm";
+import { and, inArray, isNull, sql } from "drizzle-orm";
+import { workItems } from "@shared/schema";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { logAuditFromReq } from "../audit-logger";
@@ -28,13 +29,15 @@ export function registerWorkItemsExtractedRoutes(app: Express): void {
       if (!Array.isArray(ids) || ids.length === 0) {
         return res.status(400).json({ error: "ids[] required" });
       }
+      const cleanIds = ids.map((n: unknown) => Number(n)).filter((n: number) => Number.isInteger(n) && n > 0);
+      if (cleanIds.length === 0) return res.status(400).json({ error: "ids[] must contain valid numeric ids" });
       const userId = (req as any).user?.id || (req as any).jwtPayload?.userId || null;
-      const now = new Date().toISOString();
-      for (const id of ids) {
-        await db.execute(sql`UPDATE work_items SET deleted_at = ${now} WHERE id = ${id} AND deleted_at IS NULL`);
-      }
-      logAuditFromReq(req, { entityType: "work_item", action: "soft_delete", changesJson: { description: `${ids.length} work item(s) soft-deleted`, ids, deletedBy: userId } });
-      res.json({ message: `Deleted ${ids.length} work item(s)`, undoAvailable: true, ids });
+      // Single batched soft-delete instead of one DB round-trip per id.
+      await db.update(workItems)
+        .set({ deletedAt: new Date() })
+        .where(and(inArray(workItems.id, cleanIds), isNull(workItems.deletedAt)));
+      logAuditFromReq(req, { entityType: "work_item", action: "soft_delete", changesJson: { description: `${cleanIds.length} work item(s) soft-deleted`, ids: cleanIds, deletedBy: userId } });
+      res.json({ message: `Deleted ${cleanIds.length} work item(s)`, undoAvailable: true, ids: cleanIds });
     } catch (error: any) {
       console.error("[WorkItemsDelete] Error:", error);
       res.status(500).json({ error: "Failed to delete work items" });
@@ -48,11 +51,12 @@ export function registerWorkItemsExtractedRoutes(app: Express): void {
       if (!Array.isArray(ids) || ids.length === 0) {
         return res.status(400).json({ error: "ids[] required" });
       }
-      for (const id of ids) {
-        await db.execute(sql`UPDATE work_items SET deleted_at = NULL WHERE id = ${id}`);
-      }
-      logAuditFromReq(req, { entityType: "work_item", action: "restore", changesJson: { description: `${ids.length} work item(s) restored`, ids } });
-      res.json({ message: `Restored ${ids.length} work item(s)` });
+      const cleanIds = ids.map((n: unknown) => Number(n)).filter((n: number) => Number.isInteger(n) && n > 0);
+      if (cleanIds.length === 0) return res.status(400).json({ error: "ids[] must contain valid numeric ids" });
+      // Single batched restore instead of one DB round-trip per id.
+      await db.update(workItems).set({ deletedAt: null }).where(inArray(workItems.id, cleanIds));
+      logAuditFromReq(req, { entityType: "work_item", action: "restore", changesJson: { description: `${cleanIds.length} work item(s) restored`, ids: cleanIds } });
+      res.json({ message: `Restored ${cleanIds.length} work item(s)` });
     } catch (error: any) {
       console.error("[WorkItemsRestore] Error:", error);
       res.status(500).json({ error: "Failed to restore work items" });

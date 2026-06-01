@@ -169,6 +169,13 @@ export default function EngineeringMonthlyReport() {
   const tasksPerProject = reportData.tasks?.perProject || [];
   const deliverableRegister = reportData.deliverables?.register || [];
 
+  // Deliverables stuck in approval > 7 days. Computed once — the table body
+  // and the empty-state check both used to re-run this filter inline.
+  const bottleneckDeliverables = useMemo(
+    () => deliverableRegister.filter((d: any) => d.status === "NEEDS APPROVAL" && d.updatedAt && (reportNowMs - new Date(d.updatedAt).getTime()) > SEVEN_DAYS_MS),
+    [deliverableRegister, reportNowMs, SEVEN_DAYS_MS],
+  );
+
   const pendingApprovals = approvals.filter((a: any) => String(a.status).toLowerCase() === "pending").length;
   const overdueApprovals = approvals.filter((a: any) => String(a.status).toLowerCase() === "pending" && a.date && (reportNowMs - new Date(a.date).getTime()) > SEVEN_DAYS_MS).length;
   const blockedGates = stageGates.filter((s: any) => String(s.status).toLowerCase() === "blocked").length;
@@ -311,12 +318,12 @@ export default function EngineeringMonthlyReport() {
                   <table className="w-full text-xs">
                     <thead className="bg-muted sticky top-0"><tr><th className="text-left px-3 py-2">Project</th><th className="text-left px-3 py-2">Deliverable</th><th className="text-left px-3 py-2">Type</th><th className="text-left px-3 py-2">Status</th><th className="text-left px-3 py-2">Last Update</th></tr></thead>
                     <tbody>
-                      {deliverableRegister.filter((d: any) => d.status === "NEEDS APPROVAL" && d.updatedAt && (reportNowMs - new Date(d.updatedAt).getTime()) > SEVEN_DAYS_MS).slice(0, 12).map((d: any, i: number) => (
+                      {bottleneckDeliverables.slice(0, 12).map((d: any, i: number) => (
                         <tr key={i} className="border-b hover:bg-muted/30 cursor-pointer" onClick={() => setDrill({ title: "Pending approval deliverables", context: { tab: "deliverables", status: "NEEDS APPROVAL", projectId: d.projectId } })}>
                           <td className="px-3 py-1.5">{d.projectName}</td><td className="px-3 py-1.5">{d.title}</td><td className="px-3 py-1.5">{d.type}</td><td className="px-3 py-1.5"><Badge variant="outline" className="text-[10px]">{d.status}</Badge></td><td className="px-3 py-1.5">{humanDate(d.updatedAt)}</td>
                         </tr>
                       ))}
-                      {deliverableRegister.filter((d: any) => d.status === "NEEDS APPROVAL" && d.updatedAt && (reportNowMs - new Date(d.updatedAt).getTime()) > SEVEN_DAYS_MS).length === 0 && (
+                      {bottleneckDeliverables.length === 0 && (
                         <tr><td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">No bottlenecks found</td></tr>
                       )}
                     </tbody>
@@ -342,7 +349,7 @@ export default function EngineeringMonthlyReport() {
 function EngTasksTab({ data, reportId, month, setDrill }: { data: any; reportId?: number; month: string; setDrill: (v: any) => void }) {
   const [, navigate] = useLocation();
   const perProject = data.perProject || [];
-  const slowProjects = [...perProject].sort((a: any, b: any) => (b.overdue || 0) - (a.overdue || 0)).slice(0, 5);
+  const slowProjects = useMemo(() => [...perProject].sort((a: any, b: any) => (b.overdue || 0) - (a.overdue || 0)).slice(0, 5), [perProject]);
 
   return (
     <div className="space-y-4">

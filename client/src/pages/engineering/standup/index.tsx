@@ -8,7 +8,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { PageSkeleton, PageError } from "@/components/ui/page-states";
 import { useToast } from "@/hooks/use-toast";
-import { invalidateAllTaskCaches, invalidateEngineeringTicketCaches } from "@/lib/task-cache";
+import { invalidateEngineeringTicketCaches } from "@/lib/task-cache";
 import { standupLaneToCanonicalStatus, toStandupLaneStatus } from "@/lib/task-status-compat";
 import {
   Users, Play, Pause, Square, CheckCircle2, Timer, Rocket, Keyboard, ShieldCheck,
@@ -406,10 +406,12 @@ export default function EngineeringStandupPage() {
       });
     },
     onSuccess: () => {
-      // Edit may touch fields beyond status (assignee, dates, notes),
-      // so use the broader task-cache sweep to also refresh My Work
-      // / Mytool views that key off the same row.
-      invalidateAllTaskCaches(queryClient);
+      // Edit may touch fields beyond status (assignee, dates, notes).
+      // Refresh the engineering surfaces plus the Mytool/personal view that
+      // keys off the same row — without the app-wide sweep that also
+      // invalidated unrelated boards (procurement, raid, change-control…).
+      invalidateEngineeringTicketCaches(queryClient);
+      queryClient.invalidateQueries({ queryKey: ["/api/mytool/tasks"] });
       toast({ title: "Task updated" });
     },
     onError: (err: Error) => {

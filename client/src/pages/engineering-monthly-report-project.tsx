@@ -122,7 +122,9 @@ export default function EngineeringMonthlyReportProject() {
       if (!res.ok) return { rows: [] };
       return res.json();
     },
-    enabled: !!reportId,
+    // Only fetch the tab the user is actually looking at. Opening a project
+    // used to fire all four drilldown calls at once.
+    enabled: !!reportId && activeTab === "tasks",
   });
 
   const { data: delRows } = useQuery({
@@ -133,7 +135,7 @@ export default function EngineeringMonthlyReportProject() {
       if (!res.ok) return { rows: [] };
       return res.json();
     },
-    enabled: !!reportId,
+    enabled: !!reportId && activeTab === "deliverables",
   });
 
   const { data: stageRows } = useQuery({
@@ -144,7 +146,7 @@ export default function EngineeringMonthlyReportProject() {
       if (!res.ok) return { rows: [] };
       return res.json();
     },
-    enabled: !!reportId,
+    enabled: !!reportId && activeTab === "stages",
   });
 
   const { data: approvalRows } = useQuery({
@@ -155,7 +157,7 @@ export default function EngineeringMonthlyReportProject() {
       if (!res.ok) return { rows: [] };
       return res.json();
     },
-    enabled: !!reportId,
+    enabled: !!reportId && activeTab === "approvals",
   });
 
   const exportTab = async () => {

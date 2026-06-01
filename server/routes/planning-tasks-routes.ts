@@ -53,102 +53,31 @@ async function applyWorkItemUpdate(
   // the manual_overrides write per row.
   const matchedRows = await db.select({ id: workItems.id }).from(workItems).where(whereClause);
   if (matchedRows.length === 0) return { matchedCount: 0 };
-  for (const row of matchedRows) {
-    for (const [field, value] of tracked) {
-      await applyManualOverride({
-        table: "work_items",
-        rowId: row.id,
-        fieldName: field,
-        value: value as any,
-        editedBy: userId,
-      });
-    }
-  }
+  // Each (row, field) override is an independent write — run them in parallel
+  // instead of one sequential round-trip at a time, so a multi-row plan edit
+  // doesn't take seconds to save.
+  await Promise.all(
+    matchedRows.flatMap((row: { id: number }) =>
+      tracked.map(([field, value]) =>
+        applyManualOverride({
+          table: "work_items",
+          rowId: row.id,
+          fieldName: field,
+          value: value as any,
+          editedBy: userId,
+        }),
+      ),
+    ),
+  );
   if (Object.keys(untracked).length > 0) {
     await db.update(workItems).set(untracked as any).where(whereClause);
   }
   return { matchedCount: matchedRows.length };
 }
 
-// SA working days helpers (duplicated from routes.ts for self-containment)
-function formatDateKey(y: number, m: number, d: number): string {
-  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-}
-
-function parseDateParts(dateStr: string): { year: number; month: number; day: number } {
-  const s = dateStr.substring(0, 10);
-  return { year: parseInt(s.substring(0, 4)), month: parseInt(s.substring(5, 7)), day: parseInt(s.substring(8, 10)) };
-}
-
-function getSAPublicHolidays(year: number): Set<string> {
-  const holidays = new Set<string>();
-  const add = (m: number, d: number) => {
-    holidays.add(formatDateKey(year, m, d));
-    const dt = new Date(Date.UTC(year, m - 1, d));
-    if (dt.getUTCDay() === 0) {
-      const next = new Date(dt);
-      next.setUTCDate(next.getUTCDate() + 1);
-      holidays.add(formatDateKey(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate()));
-    }
-  };
-  add(1, 1); add(3, 21); add(4, 27); add(5, 1); add(6, 16);
-  add(8, 9); add(9, 24); add(12, 16); add(12, 25); add(12, 26);
-  const easter = computeEaster(year);
-  const goodFriday = new Date(Date.UTC(easter.year, easter.month - 1, easter.day));
-  goodFriday.setUTCDate(goodFriday.getUTCDate() - 2);
-  holidays.add(formatDateKey(goodFriday.getUTCFullYear(), goodFriday.getUTCMonth() + 1, goodFriday.getUTCDate()));
-  const familyDay = new Date(Date.UTC(easter.year, easter.month - 1, easter.day));
-  familyDay.setUTCDate(familyDay.getUTCDate() + 1);
-  holidays.add(formatDateKey(familyDay.getUTCFullYear(), familyDay.getUTCMonth() + 1, familyDay.getUTCDate()));
-  return holidays;
-}
-
-function computeEaster(year: number): { year: number; month: number; day: number } {
-  const a = year % 19;
-  const b = Math.floor(year / 100);
-  const c = year % 100;
-  const d = Math.floor(b / 4);
-  const e = b % 4;
-  const f = Math.floor((b + 8) / 25);
-  const g = Math.floor((b - f + 1) / 3);
-  const h = (19 * a + b - d - g + 15) % 30;
-  const i = Math.floor(c / 4);
-  const k = c % 4;
-  const l = (32 + 2 * e + 2 * i - h - k) % 7;
-  const m = Math.floor((a + 11 * h + 22 * l) / 451);
-  const month = Math.floor((h + l - 7 * m + 114) / 31);
-  const day = ((h + l - 7 * m + 114) % 31) + 1;
-  return { year, month, day };
-}
-
-const holidayCacheByYear = new Map<number, Set<string>>();
-function isHoliday(dateStr: string): boolean {
-  const year = parseInt(dateStr.substring(0, 4));
-  if (!holidayCacheByYear.has(year)) {
-    holidayCacheByYear.set(year, getSAPublicHolidays(year));
-  }
-  return holidayCacheByYear.get(year)!.has(dateStr);
-}
-
-function saWorkingDays(startDateStr: string | null, endDateStr: string | null): number | null {
-  if (!startDateStr || !endDateStr || !/^\d{4}-\d{2}-\d{2}/.test(startDateStr) || !/^\d{4}-\d{2}-\d{2}/.test(endDateStr)) return null;
-  const s = parseDateParts(startDateStr);
-  const e = parseDateParts(endDateStr);
-  const start = new Date(Date.UTC(s.year, s.month - 1, s.day));
-  const end = new Date(Date.UTC(e.year, e.month - 1, e.day));
-  if (end < start) return 0;
-  let count = 0;
-  const cursor = new Date(start);
-  while (cursor <= end) {
-    const dow = cursor.getUTCDay();
-    const ds = formatDateKey(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, cursor.getUTCDate());
-    if (dow !== 0 && dow !== 6 && !isHoliday(ds)) {
-      count++;
-    }
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-  return count;
-}
+// NOTE: SA working-day / holiday helpers used to be duplicated here but were
+// never called in this file (dead code). The canonical implementation lives
+// in server/lib/sa-holidays.ts (saWorkingDays / isHoliday / parseDateParts).
 
 async function notifyWorkItemWatchers(params: {
   workItemId: number;
@@ -1415,18 +1344,21 @@ export function registerPlanningTasksRoutes(app: Express) {
       const results: Array<{ id: number; success: boolean; error?: string }> = [];
 
       if (operation === "delete") {
-        for (const id of taskIds) {
-          try {
-            await db.update(workItems).set({ deletedAt: new Date() }).where(eq(workItems.id, id));
-            results.push({ id, success: true });
-          } catch (e: any) {
-            results.push({ id, success: false, error: e.message });
-          }
+        // Single batched soft-delete instead of one round-trip per id.
+        try {
+          await db.update(workItems).set({ deletedAt: new Date() }).where(inArray(workItems.id, taskIds));
+          for (const id of taskIds) results.push({ id, success: true });
+        } catch (e: any) {
+          for (const id of taskIds) results.push({ id, success: false, error: e.message });
         }
       } else if (operation === "indent") {
+        // Pre-fetch the selected rows once. Sibling lookups stay per-iteration
+        // because indent mutates parent/order as it goes.
+        const selectedRows = await db.select().from(workItems).where(inArray(workItems.id, taskIds));
+        const taskById = new Map<number, typeof workItems.$inferSelect>(selectedRows.map((t: typeof workItems.$inferSelect): [number, typeof workItems.$inferSelect] => [t.id, t]));
         for (const id of taskIds) {
           try {
-            const [task] = await db.select().from(workItems).where(eq(workItems.id, id));
+            const task = taskById.get(id);
             if (task) {
               const siblings = await db.select().from(workItems).where(
                 and(
@@ -1450,9 +1382,11 @@ export function registerPlanningTasksRoutes(app: Express) {
           }
         }
       } else if (operation === "outdent") {
+        const selectedRows = await db.select().from(workItems).where(inArray(workItems.id, taskIds));
+        const taskById = new Map<number, typeof workItems.$inferSelect>(selectedRows.map((t: typeof workItems.$inferSelect): [number, typeof workItems.$inferSelect] => [t.id, t]));
         for (const id of taskIds) {
           try {
-            const [task] = await db.select().from(workItems).where(eq(workItems.id, id));
+            const task = taskById.get(id);
             if (task && task.parentId) {
               const [parent] = await db.select().from(workItems).where(eq(workItems.id, task.parentId));
               await db.update(workItems).set({
@@ -1468,9 +1402,11 @@ export function registerPlanningTasksRoutes(app: Express) {
           }
         }
       } else if (operation === "moveUp" || operation === "moveDown") {
+        const selectedRows = await db.select().from(workItems).where(inArray(workItems.id, taskIds));
+        const taskById = new Map<number, typeof workItems.$inferSelect>(selectedRows.map((t: typeof workItems.$inferSelect): [number, typeof workItems.$inferSelect] => [t.id, t]));
         for (const id of taskIds) {
           try {
-            const [task] = await db.select().from(workItems).where(eq(workItems.id, id));
+            const task = taskById.get(id);
             if (task) {
               const siblings = await db.select().from(workItems).where(
                 and(

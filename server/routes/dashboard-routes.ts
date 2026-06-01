@@ -21,67 +21,9 @@ import {
   type ProgramDashboardFilters,
 } from "../repositories/program-dashboard-repository";
 
-// SA working days helpers
-function formatDateKey(y: number, m: number, d: number): string {
-  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-}
-function parseDateParts(dateStr: string): { year: number; month: number; day: number } {
-  const s = dateStr.substring(0, 10);
-  return { year: parseInt(s.substring(0, 4)), month: parseInt(s.substring(5, 7)), day: parseInt(s.substring(8, 10)) };
-}
-function computeEaster(year: number): { year: number; month: number; day: number } {
-  const a = year % 19; const b = Math.floor(year / 100); const c = year % 100;
-  const d = Math.floor(b / 4); const e = b % 4; const f = Math.floor((b + 8) / 25);
-  const g = Math.floor((b - f + 1) / 3); const h = (19 * a + b - d - g + 15) % 30;
-  const i = Math.floor(c / 4); const k = c % 4;
-  const l = (32 + 2 * e + 2 * i - h - k) % 7;
-  const m = Math.floor((a + 11 * h + 22 * l) / 451);
-  const month = Math.floor((h + l - 7 * m + 114) / 31);
-  const day = ((h + l - 7 * m + 114) % 31) + 1;
-  return { year, month, day };
-}
-function getSAPublicHolidays(year: number): Set<string> {
-  const holidays = new Set<string>();
-  const add = (m: number, d: number) => {
-    holidays.add(formatDateKey(year, m, d));
-    const dt = new Date(Date.UTC(year, m - 1, d));
-    if (dt.getUTCDay() === 0) {
-      const next = new Date(dt); next.setUTCDate(next.getUTCDate() + 1);
-      holidays.add(formatDateKey(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate()));
-    }
-  };
-  add(1, 1); add(3, 21); add(4, 27); add(5, 1); add(6, 16);
-  add(8, 9); add(9, 24); add(12, 16); add(12, 25); add(12, 26);
-  const easter = computeEaster(year);
-  const gf = new Date(Date.UTC(easter.year, easter.month - 1, easter.day));
-  gf.setUTCDate(gf.getUTCDate() - 2);
-  holidays.add(formatDateKey(gf.getUTCFullYear(), gf.getUTCMonth() + 1, gf.getUTCDate()));
-  const fd = new Date(Date.UTC(easter.year, easter.month - 1, easter.day));
-  fd.setUTCDate(fd.getUTCDate() + 1);
-  holidays.add(formatDateKey(fd.getUTCFullYear(), fd.getUTCMonth() + 1, fd.getUTCDate()));
-  return holidays;
-}
-const holidayCacheByYear = new Map<number, Set<string>>();
-function isHoliday(dateStr: string): boolean {
-  const year = parseInt(dateStr.substring(0, 4));
-  if (!holidayCacheByYear.has(year)) holidayCacheByYear.set(year, getSAPublicHolidays(year));
-  return holidayCacheByYear.get(year)!.has(dateStr);
-}
-function saWorkingDays(startDateStr: string | null, endDateStr: string | null): number | null {
-  if (!startDateStr || !endDateStr || !/^\d{4}-\d{2}-\d{2}/.test(startDateStr) || !/^\d{4}-\d{2}-\d{2}/.test(endDateStr)) return null;
-  const s = parseDateParts(startDateStr); const e = parseDateParts(endDateStr);
-  const start = new Date(Date.UTC(s.year, s.month - 1, s.day));
-  const end = new Date(Date.UTC(e.year, e.month - 1, e.day));
-  if (end < start) return 0;
-  let count = 0; const cursor = new Date(start);
-  while (cursor <= end) {
-    const dow = cursor.getUTCDay();
-    const ds = formatDateKey(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, cursor.getUTCDate());
-    if (dow !== 0 && dow !== 6 && !isHoliday(ds)) count++;
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-  return count;
-}
+// SA working-day calculation now lives in the shared server/lib/sa-holidays
+// module (was duplicated verbatim across several route files).
+import { saWorkingDays } from "../lib/sa-holidays";
 
 export function registerDashboardRoutes(app: Express) {
   void computeMarginPct;
