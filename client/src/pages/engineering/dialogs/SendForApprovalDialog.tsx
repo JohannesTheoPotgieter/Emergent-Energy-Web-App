@@ -6,7 +6,7 @@
  */
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -62,6 +62,16 @@ export function SendForApprovalDialog({
     onClose();
   }
 
+  function openFilePicker() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.onchange = (e) => {
+      const picked = (e.target as HTMLInputElement).files?.[0];
+      if (picked) setFile(picked);
+    };
+    input.click();
+  }
+
   const overrideMissingProject = !!(projectSuggestion && projectFinal && projectSuggestion !== projectFinal && !projectOverrideReason.trim());
   const overrideMissingRoute = !!(routeSuggestion && routeFinal && routeSuggestion !== routeFinal && !routeOverrideReason.trim());
 
@@ -114,20 +124,25 @@ export function SendForApprovalDialog({
           <DialogTitle className="flex items-center gap-2 text-base">
             <Send className="h-4 w-4 text-amber-600" /> Submit for QC Review
           </DialogTitle>
+          <DialogDescription>
+            Route this task for QC review. Attach a deliverable and confirm the project and approval route.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 pt-2">
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">Attachment (optional)</Label>
             <div
-              className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer hover:border-amber-400 hover:bg-amber-50/30 ${file ? "border-amber-400 bg-amber-50/20" : "border-muted"}`}
-              onClick={() => {
-                const input = document.createElement("input");
-                input.type = "file";
-                input.onchange = (e) => {
-                  const picked = (e.target as HTMLInputElement).files?.[0];
-                  if (picked) setFile(picked);
-                };
-                input.click();
+              role="button"
+              tabIndex={0}
+              aria-label={file ? `Selected file ${file.name}. Activate to choose a different file.` : "Choose a deliverable file, or drop one here"}
+              className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer hover:border-amber-400 hover:bg-amber-50/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${file ? "border-amber-400 bg-amber-50/20" : "border-muted"}`}
+              onClick={openFilePicker}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openFilePicker(); } }}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const picked = e.dataTransfer.files?.[0];
+                if (picked) setFile(picked);
               }}
               data-testid="dropzone-approval-file"
             >

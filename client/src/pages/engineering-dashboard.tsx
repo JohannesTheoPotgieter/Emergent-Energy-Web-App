@@ -295,6 +295,7 @@ const KPI_BORDER: Record<KpiTone, string> = {
 };
 
 function KpiStrip({ summary }: { summary: StandupData["summary"] }) {
+  const [, setLocation] = useLocation();
   const stats: {
     label: string;
     value: number;
@@ -317,11 +318,15 @@ function KpiStrip({ summary }: { summary: StandupData["summary"] }) {
       {stats.map(s => (
         <Card
           key={s.label}
-          className={`overflow-hidden shadow-sm transition-all hover:shadow-md cursor-pointer ${KPI_BORDER[s.tone]}`}
-          onClick={() => s.href ? (window.location.href = s.href) : document.querySelector(`[data-testid="${s.scrollTo}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" })}
+          role="button"
+          tabIndex={0}
+          aria-label={`${s.label}: ${s.value}`}
+          className={`overflow-hidden shadow-sm transition-all hover:shadow-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${KPI_BORDER[s.tone]}`}
+          onClick={() => s.href ? setLocation(s.href) : document.querySelector(`[data-testid="${s.scrollTo}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" })}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); s.href ? setLocation(s.href) : document.querySelector(`[data-testid="${s.scrollTo}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }); } }}
         >
           <CardContent className="p-3 flex items-center gap-2.5">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${KPI_TILE[s.tone]} ${s.tone === "danger" ? "animate-pulse" : ""}`}>
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${KPI_TILE[s.tone]} ${s.tone === "danger" ? "motion-safe:animate-pulse" : ""}`}>
               {s.icon}
             </div>
             <div className="min-w-0">
@@ -398,6 +403,7 @@ function ProjectHealthGrid({ projects }: { projects: ProjectHealth[] }) {
 }
 
 function WorkloadTable({ workload }: { workload: WorkloadEntry[] }) {
+  const [, setLocation] = useLocation();
   if (workload.length === 0) return <p className="text-xs text-muted-foreground p-4">No workload data</p>;
 
   const maxActive = Math.max(...workload.map(w => w.active), 1);
@@ -418,8 +424,12 @@ function WorkloadTable({ workload }: { workload: WorkloadEntry[] }) {
           {workload.map(w => (
             <tr
               key={w.name}
-              className="border-b last:border-b-0 hover:bg-blue-50 transition-colors cursor-pointer"
-              onClick={() => window.location.href = `/engineering/tasks?assignee=${encodeURIComponent(w.name)}`}
+              className="border-b last:border-b-0 hover:bg-blue-50 transition-colors cursor-pointer focus-within:bg-blue-50"
+              onClick={() => setLocation(`/engineering/tasks?assignee=${encodeURIComponent(w.name)}`)}
+              onKeyDown={(e) => { if (e.key === "Enter") setLocation(`/engineering/tasks?assignee=${encodeURIComponent(w.name)}`); }}
+              tabIndex={0}
+              role="button"
+              aria-label={`View ${w.name}'s tasks`}
               title={`View ${w.name}'s tasks`}
               data-testid={`workload-row-${w.name}`}
             >
@@ -548,7 +558,7 @@ function severityBorder(s: string) {
 }
 
 function CompanyPrioritiesSection() {
-  const { data: priorities = [], isLoading } = useQuery<CompanyPriority[]>({
+  const { data: priorities = [], isLoading, isError, refetch } = useQuery<CompanyPriority[]>({
     queryKey: ["/api/priorities", { scope: "company" }],
     queryFn: () => engFetch("/api/priorities?scope=company"),
   });
@@ -573,6 +583,21 @@ function CompanyPrioritiesSection() {
           <div className="flex items-center justify-center py-4">
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
           </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card>
+        <div className="px-4 py-3 border-b flex items-center gap-2">
+          <Flag className="h-4 w-4 text-red-500" />
+          <span className="font-semibold text-sm">Company Priorities</span>
+        </div>
+        <CardContent className="p-4 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span>Couldn&apos;t load company priorities.</span>
+          <button type="button" className="rounded border px-2 py-0.5 font-medium hover:bg-muted" onClick={() => refetch()} data-testid="company-priorities-retry">Retry</button>
         </CardContent>
       </Card>
     );
@@ -658,7 +683,7 @@ interface AuditFeedEntry {
 }
 
 function ActivityFeed() {
-  const { data: auditData } = useQuery<{ entries: AuditFeedEntry[] }>({
+  const { data: auditData, isError, refetch } = useQuery<{ entries: AuditFeedEntry[] }>({
     queryKey: ["eng-activity-feed"],
     queryFn: () => engFetch("/api/eng/audit-log?limit=15"),
     refetchInterval: 60000,
@@ -668,6 +693,25 @@ function ActivityFeed() {
   });
 
   const entries = auditData?.entries || [];
+
+  // A failed fetch must not look identical to "no activity" — surface it with a
+  // retry so a broken audit-log API is distinguishable from a quiet day.
+  if (isError) {
+    return (
+      <Card className="shadow-sm" data-testid="section-activity-feed">
+        <div className="px-4 py-3 border-b flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-indigo-50 flex items-center justify-center">
+            <Activity className="h-4 w-4 text-indigo-600" />
+          </div>
+          <span className="font-semibold text-sm">Recent Activity</span>
+        </div>
+        <CardContent className="p-4 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span>Couldn&apos;t load recent activity.</span>
+          <button type="button" className="rounded border px-2 py-0.5 font-medium hover:bg-muted" onClick={() => refetch()} data-testid="activity-feed-retry">Retry</button>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (entries.length === 0) return null;
 

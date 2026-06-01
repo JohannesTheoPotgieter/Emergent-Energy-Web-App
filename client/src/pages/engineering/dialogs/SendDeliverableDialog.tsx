@@ -12,7 +12,7 @@
  */
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -87,6 +87,16 @@ export function SendDeliverableDialog({
     onClose();
   }
 
+  function openFilePicker() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.onchange = (e) => {
+      const picked = (e.target as HTMLInputElement).files?.[0];
+      if (picked) setFile(picked);
+    };
+    input.click();
+  }
+
   const overrideMissingRecipient = !!(recipientSuggestion && recipient && recipientSuggestion !== recipient && !recipientOverrideReason.trim());
   const overrideMissingLinked = !!(linkedProjectSuggestion && linkedProjectFinal && linkedProjectSuggestion !== linkedProjectFinal && !linkedProjectOverrideReason.trim());
 
@@ -140,6 +150,9 @@ export function SendDeliverableDialog({
           <DialogTitle className="flex items-center gap-2 text-base">
             <Send className="h-4 w-4 text-blue-600" /> Send Document
           </DialogTitle>
+          <DialogDescription>
+            Transfer a deliverable file to a teammate. Recipient and file are required.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 pt-2">
           <div className="space-y-1.5">
@@ -159,15 +172,17 @@ export function SendDeliverableDialog({
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">File <span className="text-red-500">*</span></Label>
             <div
-              className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer hover:border-blue-400 hover:bg-blue-50/30 ${file ? "border-blue-400 bg-blue-50/20" : "border-muted"}`}
-              onClick={() => {
-                const input = document.createElement("input");
-                input.type = "file";
-                input.onchange = (e) => {
-                  const picked = (e.target as HTMLInputElement).files?.[0];
-                  if (picked) setFile(picked);
-                };
-                input.click();
+              role="button"
+              tabIndex={0}
+              aria-label={file ? `Selected file ${file.name}. Activate to choose a different file.` : "Choose a deliverable file, or drop one here"}
+              className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer hover:border-blue-400 hover:bg-blue-50/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${file ? "border-blue-400 bg-blue-50/20" : "border-muted"}`}
+              onClick={openFilePicker}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openFilePicker(); } }}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const picked = e.dataTransfer.files?.[0];
+                if (picked) setFile(picked);
               }}
               data-testid="dropzone-deliverable-file"
             >

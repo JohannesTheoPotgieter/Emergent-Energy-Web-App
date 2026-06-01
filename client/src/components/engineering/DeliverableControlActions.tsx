@@ -10,6 +10,7 @@
  */
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ShieldCheck, Loader2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -61,6 +62,9 @@ export function DeliverableControlActions({
   const qc = useQueryClient();
   const { toast } = useToast();
   const [pendingTo, setPendingTo] = useState<ControlState | null>(null);
+  // Issuing for construction releases a document for site use — confirm before
+  // it fires so a stray click can't put an unreleased drawing on site.
+  const [confirmAction, setConfirmAction] = useState<ControlAction | null>(null);
 
   const current = deriveControlState(deliverable);
   const candidates = CONTROL_ACTIONS[current] ?? [];
@@ -125,6 +129,7 @@ export function DeliverableControlActions({
         const testId = testIdPrefix
           ? `${testIdPrefix}-${action.to}`
           : `deliverable-${deliverable.id}-${action.to}`;
+        const needsConfirm = action.to === "issued_for_construction";
         return (
           <Button
             key={action.to}
@@ -132,7 +137,7 @@ export function DeliverableControlActions({
             variant={variant}
             className="h-6 text-[10px] gap-1"
             disabled={loading}
-            onClick={() => run(action)}
+            onClick={() => (needsConfirm ? setConfirmAction(action) : run(action))}
             data-testid={testId}
           >
             {loading ? (
@@ -144,6 +149,18 @@ export function DeliverableControlActions({
           </Button>
         );
       })}
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(open) => { if (!open) setConfirmAction(null); }}
+        title="Issue this document for construction?"
+        description="This releases the document for site use. Anyone on the project can treat it as the construction-issue revision."
+        confirmLabel="Issue for construction"
+        onConfirm={() => {
+          const action = confirmAction;
+          setConfirmAction(null);
+          if (action) run(action);
+        }}
+      />
     </div>
   );
 }
