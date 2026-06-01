@@ -441,15 +441,17 @@ export class WorkManagementRepository {
 
   async setSortOrders(items: Array<{ id: number; sortOrder: number }>): Promise<void> {
     if (items.length === 0) return;
-    await this.dbInstance.transaction(async (tx: typeof db) => {
-      const now = new Date();
-      for (const item of items) {
-        await tx
-          .update(workItems)
-          .set({ sortOrder: item.sortOrder, updatedAt: now })
-          .where(eq(workItems.id, item.id));
-      }
-    });
+    // Single CASE-based UPDATE instead of one round-trip per row. One statement
+    // is inherently atomic (no transaction needed) and portable to SQLite.
+    const ids = items.map((i) => i.id);
+    const cases = items.map((i) => sql`WHEN ${i.id} THEN ${i.sortOrder}`);
+    await this.dbInstance
+      .update(workItems)
+      .set({
+        sortOrder: sql<number>`CASE ${workItems.id} ${sql.join(cases, sql` `)} ELSE ${workItems.sortOrder} END`,
+        updatedAt: new Date(),
+      })
+      .where(inArray(workItems.id, ids));
   }
 
   async listPmWbsTree(projectId: number): Promise<Array<{
@@ -477,15 +479,18 @@ export class WorkManagementRepository {
 
   async applyWbsRenumber(updates: Array<{ id: number; wbsCode: string; indentLevel: number }>): Promise<void> {
     if (updates.length === 0) return;
-    await this.dbInstance.transaction(async (tx: typeof db) => {
-      const now = new Date();
-      for (const u of updates) {
-        await tx
-          .update(workItems)
-          .set({ wbsCode: u.wbsCode, indentLevel: u.indentLevel, updatedAt: now })
-          .where(eq(workItems.id, u.id));
-      }
-    });
+    // Single CASE-based UPDATE (wbs + indent) instead of one round-trip per row.
+    const ids = updates.map((u) => u.id);
+    const wbsCases = updates.map((u) => sql`WHEN ${u.id} THEN ${u.wbsCode}`);
+    const indentCases = updates.map((u) => sql`WHEN ${u.id} THEN ${u.indentLevel}`);
+    await this.dbInstance
+      .update(workItems)
+      .set({
+        wbsCode: sql<string>`CASE ${workItems.id} ${sql.join(wbsCases, sql` `)} ELSE ${workItems.wbsCode} END`,
+        indentLevel: sql<number>`CASE ${workItems.id} ${sql.join(indentCases, sql` `)} ELSE ${workItems.indentLevel} END`,
+        updatedAt: new Date(),
+      })
+      .where(inArray(workItems.id, ids));
   }
 
   /**

@@ -1034,12 +1034,8 @@ export function registerEngineeringRoutes(app: Express) {
       }
 
       if (data.assignees?.length > 0) {
-        const { resolveNameToUserId } = await import("./user-resolver");
-        const resolvedIds: number[] = [];
-        for (const name of data.assignees) {
-          const uid = await resolveNameToUserId(name);
-          if (uid) resolvedIds.push(uid);
-        }
+        const { resolveNamesToUserIds } = await import("./user-resolver");
+        const resolvedIds = (await resolveNamesToUserIds(data.assignees)).filter((id): id is number => id != null);
         data.assigneeUserIds = resolvedIds.length > 0 ? resolvedIds : null;
         if (!data.ownerUserId && resolvedIds.length > 0) {
           data.ownerUserId = resolvedIds[0];
@@ -2134,8 +2130,9 @@ export function registerEngineeringRoutes(app: Express) {
   app.get("/api/eng/tasks/:id/subtasks", requireAuth, requirePermission("eng_tasks", "view"), requireEngTaskOwnership, async (req, res) => {
     try {
       const parentId = parseIntParam(req.params.id);
-      const allItems = await listEngineeringWorkItems({});
-      const subtasks = allItems.filter((item) => item.parentTaskId === parentId);
+      // Indexed parent lookup instead of loading every ENG work item and
+      // filtering in JS. (The subtasks UI reads id/status/title only.)
+      const subtasks = await listEngineeringWorkItems({ parentId });
       res.json(subtasks);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
@@ -4046,11 +4043,12 @@ export function registerEngineeringRoutes(app: Express) {
         createdAt: taskDeliverables.createdAt,
         taskTitle: workItems.title,
         projectName: projectInfo.projectName,
-        senderName: sql<string>`(SELECT name FROM users WHERE id = ${taskDeliverables.sentByUserId})`,
+        senderName: users.name,
       })
         .from(taskDeliverables)
         .innerJoin(workItems, eq(taskDeliverables.workItemId, workItems.id))
         .leftJoin(projectInfo, eq(workItems.projectId, projectInfo.id))
+        .leftJoin(users, eq(users.id, taskDeliverables.sentByUserId))
         .where(and(
           eq(taskDeliverables.acknowledged, false),
           isAdmin
