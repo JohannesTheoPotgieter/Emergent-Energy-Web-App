@@ -9,7 +9,6 @@ import type {
   DocumentRevision,
   GraphItem,
   ManagedDocument,
-  ProjectRootSummary,
   DocumentLock,
 } from "./types";
 
@@ -55,9 +54,8 @@ export function useDocumentRoots() {
   return useQuery({
     queryKey: ["documents", "roots"],
     queryFn: () =>
-      fetchJson<{ company: CompanyRootSummary[]; project: ProjectRootSummary[] }>(
-        "/api/documents/roots",
-      ),
+      // Company-scope roots only; project surfaces are folder-keyed (Stage 2+).
+      fetchJson<{ company: CompanyRootSummary[] }>("/api/documents/roots"),
   });
 }
 

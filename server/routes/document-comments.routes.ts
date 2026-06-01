@@ -21,7 +21,7 @@ import {
 import type { DocumentRootScope } from "@shared/schema/documents";
 import { getManagedDocumentById } from "../repositories/managed-documents-repository";
 import { getCompanyRootById } from "../repositories/company-sharepoint-roots-repository";
-import { getProjectRootByProjectId } from "../repositories/project-sharepoint-roots-repository";
+import { resolveProjectDocAnchor } from "../lib/document-acl";
 import { getItem as spGetItem } from "../services/sharepoint-document-service";
 import { resolveFolderAcl, canPerform, type DocumentAction } from "../config/document-folder-rbac";
 import {
@@ -71,29 +71,36 @@ function firstSegmentFromPath(path: string): string {
 }
 
 async function assertDocumentAcl(
-  tracked: { rootScope: DocumentRootScope; projectId: number | null; companyRootId: number | null; driveId: string; path: string },
+  tracked: { rootScope: DocumentRootScope; projectId: number | null; companyRootId: number | null; parentFolderId: number | null; driveId: string; path: string },
   role: string | null | undefined,
   action: DocumentAction,
 ): Promise<void> {
-  let rootDrivePath = "";
+  let segment: string;
   if (tracked.rootScope === "project" && tracked.projectId != null) {
-    const projectRoot = await getProjectRootByProjectId(tracked.projectId);
-    if (projectRoot?.rootItemId) {
-      const rootItem = await spGetItem(tracked.driveId, projectRoot.rootItemId);
-      rootDrivePath = rootItem?.path ?? "";
+    // Canonical project_folders anchor (no project_sharepoint_roots).
+    segment = await resolveProjectDocAnchor({
+      projectId: tracked.projectId,
+      parentFolderId: tracked.parentFolderId,
+      path: tracked.path,
+    });
+  } else {
+    // Company scope (company_sharepoint_roots is NOT deprecated): strip the
+    // company root's drive path, then take the first segment.
+    let rootDrivePath = "";
+    if (tracked.rootScope === "company" && tracked.companyRootId != null) {
+      const companyRoot = await getCompanyRootById(tracked.companyRootId);
+      if (companyRoot?.rootItemId) {
+        const rootItem = await spGetItem(tracked.driveId, companyRoot.rootItemId);
+        rootDrivePath = rootItem?.path ?? "";
+      }
     }
-  } else if (tracked.rootScope === "company" && tracked.companyRootId != null) {
-    const companyRoot = await getCompanyRootById(tracked.companyRootId);
-    if (companyRoot?.rootItemId) {
-      const rootItem = await spGetItem(tracked.driveId, companyRoot.rootItemId);
-      rootDrivePath = rootItem?.path ?? "";
-    }
+    const norm = rootDrivePath.replace(/^\/+|\/+$/g, "");
+    const relative = norm && tracked.path.startsWith(norm)
+      ? tracked.path.slice(norm.length).replace(/^\/+/, "")
+      : tracked.path;
+    segment = firstSegmentFromPath(relative);
   }
-  const norm = rootDrivePath.replace(/^\/+|\/+$/g, "");
-  const relative = norm && tracked.path.startsWith(norm)
-    ? tracked.path.slice(norm.length).replace(/^\/+/, "")
-    : tracked.path;
-  const acl = resolveFolderAcl(tracked.rootScope, firstSegmentFromPath(relative));
+  const acl = resolveFolderAcl(tracked.rootScope, segment);
   if (!canPerform(action, role ?? null, acl)) {
     throw forbidden("You don't have permission for that folder.");
   }

@@ -5,8 +5,6 @@ import { graphWithResilience } from "./microsoft/tokenManager";
 import { isConnectorMocked } from "./lib/connector-mode";
 import { getSharePointToken } from "./sharepoint-token";
 import { getSsoTokenForUser } from "./ms-account-service";
-import { getProjectRootByProjectId } from "./repositories/project-sharepoint-roots-repository";
-import { listChildren as listDocumentChildren } from "./services/sharepoint-document-service";
 
 export function registerMicrosoftIntegrationEnhancementRoutes(app: Express) {
   app.get("/api/microsoft/presence/:id", requireAuth, async (req, res) => {
@@ -23,29 +21,6 @@ export function registerMicrosoftIntegrationEnhancementRoutes(app: Express) {
       res.json(data);
     } catch {
       res.json({ availability: "Unknown", activity: "Unknown", fetchedAt: Date.now() });
-    }
-  });
-
-  app.get("/api/projects/:id/sharepoint-documents", requireAuth, async (req, res) => {
-    const rawId = req.params.id as string;
-    const projectId = Number.parseInt(rawId, 10);
-    if (!Number.isFinite(projectId) || projectId <= 0) {
-      return res.json({ items: [] });
-    }
-    try {
-      const root = await getProjectRootByProjectId(projectId);
-      if (!root?.driveId) return res.json({ items: [] });
-      const items = await listDocumentChildren(root.driveId, root.rootItemId ?? null);
-      res.json({
-        items: items.map((d) => ({
-          id: d.id,
-          name: d.name,
-          webUrl: d.webUrl,
-          lastModifiedDateTime: d.lastModifiedDateTime,
-        })),
-      });
-    } catch {
-      res.json({ items: [] });
     }
   });
 
