@@ -11,12 +11,44 @@ import type {
   ManagedDocument,
   ProjectRootSummary,
   DocumentLock,
-  DocumentRootScope,
 } from "./types";
 
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await apiRequest("GET", url);
   return res.json() as Promise<T>;
+}
+
+/**
+ * A browse target identifies which live-file surface a /documents operation
+ * runs against:
+ *  - "company": a company-wide SharePoint root (company_sharepoint_roots),
+ *    served by the /api/documents/company/:rootId/* endpoints.
+ *  - "folder": a provisioned project folder (project_folders), served by the
+ *    canonical /api/projects/:projectId/folders/:folderId/* endpoints.
+ *
+ * Project browsing is folder-keyed: there is no single "project root" — each
+ * provisioned folder is its own browse anchor. This is the client cutover off
+ * the deprecated project_sharepoint_roots table.
+ */
+export type BrowseTarget =
+  | { kind: "company"; rootId: number }
+  | { kind: "folder"; projectId: number; folderId: number };
+
+function targetBase(t: BrowseTarget): string {
+  return t.kind === "company"
+    ? `/api/documents/company/${t.rootId}`
+    : `/api/projects/${t.projectId}/folders/${t.folderId}`;
+}
+
+function targetKey(t: BrowseTarget): Array<string | number> {
+  return t.kind === "company"
+    ? ["documents", "company", t.rootId]
+    : ["documents", "folder", t.projectId, t.folderId];
+}
+
+/** Authenticated download URL for an item under a browse target. */
+export function documentDownloadUrl(target: BrowseTarget, itemId: string): string {
+  return `${targetBase(target)}/item/${encodeURIComponent(itemId)}/download`;
 }
 
 export function useDocumentRoots() {
@@ -30,36 +62,43 @@ export function useDocumentRoots() {
 }
 
 export function useDocumentChildren(
-  scope: DocumentRootScope | null,
-  rootId: number | null,
+  target: BrowseTarget | null,
   parentItemId: string | null,
 ) {
   return useQuery({
-    queryKey: ["documents", scope, rootId, "children", parentItemId ?? "__root__"],
-    enabled: !!scope && !!rootId,
+    queryKey: [
+      ...(target ? targetKey(target) : ["documents", "idle"]),
+      "children",
+      parentItemId ?? "__root__",
+    ],
+    enabled: !!target,
     queryFn: () => {
+      if (!target) throw new Error("browse target required");
       const qs = parentItemId ? `?parentItemId=${encodeURIComponent(parentItemId)}` : "";
-      return fetchJson<{ items: GraphItem[] }>(
-        `/api/documents/${scope}/${rootId}/children${qs}`,
-      );
+      return fetchJson<{ items: GraphItem[] }>(`${targetBase(target)}/children${qs}`);
     },
   });
 }
 
 export function useDocumentDetail(
-  scope: DocumentRootScope | null,
-  rootId: number | null,
+  target: BrowseTarget | null,
   itemId: string | null,
 ) {
   return useQuery({
-    queryKey: ["documents", scope, rootId, "item", itemId],
-    enabled: !!scope && !!rootId && !!itemId,
-    queryFn: () =>
-      fetchJson<{
+    queryKey: [
+      ...(target ? targetKey(target) : ["documents", "idle"]),
+      "item",
+      itemId,
+    ],
+    enabled: !!target && !!itemId,
+    queryFn: () => {
+      if (!target || !itemId) throw new Error("browse target and itemId required");
+      return fetchJson<{
         item: GraphItem;
         managedDocument: ManagedDocument | null;
         lock: DocumentLock | null;
-      }>(`/api/documents/${scope}/${rootId}/item/${encodeURIComponent(itemId ?? "")}`),
+      }>(`${targetBase(target)}/item/${encodeURIComponent(itemId)}`);
+    },
   });
 }
 
@@ -86,8 +125,7 @@ export function useDocumentComments(documentId: number | null) {
 }
 
 interface UploadInput {
-  scope: DocumentRootScope;
-  rootId: number;
+  target: BrowseTarget;
   parentItemId: string | null;
   file: File;
 }
@@ -109,10 +147,12 @@ export function useUploadDocument() {
         .find((c) => c.startsWith("csrf-token="))
         ?.split("=")[1];
       if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
-      const res = await fetch(
-        `/api/documents/${input.scope}/${input.rootId}/upload`,
-        { method: "POST", body: form, credentials: "include", headers },
-      );
+      const res = await fetch(`${targetBase(input.target)}/upload`, {
+        method: "POST",
+        body: form,
+        credentials: "include",
+        headers,
+      });
       if (!res.ok) {
         let body: unknown = {};
         try {
@@ -125,7 +165,7 @@ export function useUploadDocument() {
       return res.json();
     },
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ["documents", vars.scope, vars.rootId, "children"] });
+      qc.invalidateQueries({ queryKey: [...targetKey(vars.target), "children"] });
     },
   });
 }
@@ -134,19 +174,21 @@ export function useCreateFolder() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: {
-      scope: DocumentRootScope;
-      rootId: number;
+      target: BrowseTarget;
       parentItemId: string | null;
       name: string;
     }) => {
-      const res = await apiRequest("POST", `/api/documents/${input.scope}/${input.rootId}/folder`, {
+      // Company roots create subfolders via /folder; project folders via
+      // /subfolder (the canonical folder-keyed verb).
+      const suffix = input.target.kind === "company" ? "folder" : "subfolder";
+      const res = await apiRequest("POST", `${targetBase(input.target)}/${suffix}`, {
         parentItemId: input.parentItemId,
         name: input.name,
       });
       return res.json();
     },
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ["documents", vars.scope, vars.rootId, "children"] });
+      qc.invalidateQueries({ queryKey: [...targetKey(vars.target), "children"] });
     },
   });
 }
@@ -155,21 +197,20 @@ export function useRenameItem() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: {
-      scope: DocumentRootScope;
-      rootId: number;
+      target: BrowseTarget;
       itemId: string;
       name: string;
     }) => {
       const res = await apiRequest(
         "PATCH",
-        `/api/documents/${input.scope}/${input.rootId}/item/${encodeURIComponent(input.itemId)}`,
+        `${targetBase(input.target)}/item/${encodeURIComponent(input.itemId)}`,
         { name: input.name },
       );
       return res.json();
     },
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ["documents", vars.scope, vars.rootId, "children"] });
-      qc.invalidateQueries({ queryKey: ["documents", vars.scope, vars.rootId, "item", vars.itemId] });
+      qc.invalidateQueries({ queryKey: [...targetKey(vars.target), "children"] });
+      qc.invalidateQueries({ queryKey: [...targetKey(vars.target), "item", vars.itemId] });
     },
   });
 }

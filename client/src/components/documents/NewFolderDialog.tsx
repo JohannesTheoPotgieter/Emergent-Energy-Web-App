@@ -3,19 +3,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useCreateFolder } from "./use-documents";
+import { useCreateFolder, type BrowseTarget } from "./use-documents";
 import { SharePointErrorAlert } from "./SharePointErrorAlert";
-import type { DocumentRootScope } from "./types";
 
 interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  scope: DocumentRootScope;
-  rootId: number;
+  target: BrowseTarget;
   parentItemId: string | null;
 }
 
-export function NewFolderDialog({ open, onOpenChange, scope, rootId, parentItemId }: Props) {
+export function NewFolderDialog({ open, onOpenChange, target, parentItemId }: Props) {
   const [name, setName] = useState("");
   const [error, setError] = useState<unknown>(null);
   const createFolder = useCreateFolder();
@@ -23,7 +21,7 @@ export function NewFolderDialog({ open, onOpenChange, scope, rootId, parentItemI
   async function submit() {
     setError(null);
     try {
-      await createFolder.mutateAsync({ scope, rootId, parentItemId, name: name.trim() });
+      await createFolder.mutateAsync({ target, parentItemId, name: name.trim() });
       onOpenChange(false);
       setName("");
     } catch (err) {

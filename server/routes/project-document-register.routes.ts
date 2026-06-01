@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireAuth, getEffectiveUser } from "../auth-context";
 import { badRequest, conflict, forbidden, notFound, serverError, ApiError } from "../lib/api-error";
 import { getProjectRootById } from "../repositories/project-sharepoint-roots-repository";
+import { listFoldersForProject } from "../repositories/project-folders-repository";
 import { upsertManagedDocumentFromGraph } from "../repositories/managed-documents-repository";
 import {
   getProjectDocumentLink,
@@ -28,7 +29,10 @@ const domainSchema = z.enum(PROJECT_DOCUMENT_DOMAINS);
 
 const linkBodySchema = z.object({
   domain: domainSchema,
-  rootId: z.number().int().positive(),
+  // Canonical: folderId (project_folders). Legacy: rootId
+  // (project_sharepoint_roots) — kept until Stage 3 of the migration.
+  rootId: z.number().int().positive().optional(),
+  folderId: z.number().int().positive().optional(),
   itemId: z.string().min(1).max(256),
   documentType: z.string().trim().min(1).max(120),
   discipline: z.string().trim().max(120).nullable().optional(),
@@ -38,6 +42,14 @@ const linkBodySchema = z.object({
   requiresPrengSignoff: z.boolean().optional(),
   closeOutEvidenceRequired: z.boolean().optional(),
   notes: z.string().trim().max(2000).nullable().optional(),
+}).superRefine((val, ctx) => {
+  if (val.folderId == null && val.rootId == null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "folderId (canonical) or rootId (legacy) is required",
+      path: ["folderId"],
+    });
+  }
 });
 
 const updateBodySchema = z.object({
@@ -224,16 +236,33 @@ export function registerProjectDocumentRegisterRoutes(app: Express): void {
       const user = requireRegisterUser(req);
       ensurePermission(user.role, body.data.domain, "link");
 
-      const root = await getProjectRootById(body.data.rootId);
-      if (!root) throw notFound("Project SharePoint root");
-      if (root.projectId !== projectId.data) {
-        throw badRequest("SharePoint root does not belong to this project");
-      }
-      if (!root.driveId) {
-        throw conflict("Project SharePoint root does not have a driveId configured.");
+      // Resolve the SharePoint drive. Prefer the canonical project_folders
+      // surface (folderId); fall back to the deprecated project root (rootId)
+      // until Stage 3 of the migration removes it.
+      let driveId: string;
+      if (body.data.folderId != null) {
+        const folders = await listFoldersForProject(projectId.data);
+        const folder = folders.find((f) => f.id === body.data.folderId);
+        if (!folder) throw notFound("Project folder");
+        if (!folder.driveId) {
+          throw conflict("Project folder is not provisioned to SharePoint yet.");
+        }
+        driveId = folder.driveId;
+      } else {
+        const rootId = body.data.rootId;
+        if (rootId == null) throw badRequest("folderId or rootId is required");
+        const root = await getProjectRootById(rootId);
+        if (!root) throw notFound("Project SharePoint root");
+        if (root.projectId !== projectId.data) {
+          throw badRequest("SharePoint root does not belong to this project");
+        }
+        if (!root.driveId) {
+          throw conflict("Project SharePoint root does not have a driveId configured.");
+        }
+        driveId = root.driveId;
       }
 
-      const item = await sp.getItem(root.driveId, body.data.itemId);
+      const item = await sp.getItem(driveId, body.data.itemId);
       if (!item) throw notFound("SharePoint item");
       if (item.isFolder) throw badRequest("Select a SharePoint file, not a folder.");
 
@@ -241,7 +270,7 @@ export function registerProjectDocumentRegisterRoutes(app: Express): void {
         rootScope: "project",
         projectId: projectId.data,
         companyRootId: null,
-        driveId: root.driveId,
+        driveId,
         driveItemId: item.id,
         name: item.name,
         path: item.path,
@@ -259,7 +288,7 @@ export function registerProjectDocumentRegisterRoutes(app: Express): void {
         ownerUserId: body.data.ownerUserId ?? null,
         dueDate: body.data.dueDate ?? null,
         preparedByUserId: user.id,
-        sharepointDriveId: root.driveId,
+        sharepointDriveId: driveId,
         sharepointItemId: item.id,
         sharepointWebUrl: item.webUrl ?? null,
         sharepointFolderPath: folderPathFromItemPath(item.path, item.name),

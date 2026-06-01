@@ -2,19 +2,17 @@ import { useState, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useUploadDocument } from "./use-documents";
+import { useUploadDocument, type BrowseTarget } from "./use-documents";
 import { SharePointErrorAlert } from "./SharePointErrorAlert";
-import type { DocumentRootScope } from "./types";
 
 interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  scope: DocumentRootScope;
-  rootId: number;
+  target: BrowseTarget;
   parentItemId: string | null;
 }
 
-export function UploadDialog({ open, onOpenChange, scope, rootId, parentItemId }: Props) {
+export function UploadDialog({ open, onOpenChange, target, parentItemId }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<unknown>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -24,7 +22,7 @@ export function UploadDialog({ open, onOpenChange, scope, rootId, parentItemId }
     if (!file) return;
     setError(null);
     try {
-      await uploader.mutateAsync({ scope, rootId, parentItemId, file });
+      await uploader.mutateAsync({ target, parentItemId, file });
       onOpenChange(false);
       setFile(null);
       if (fileRef.current) fileRef.current.value = "";
