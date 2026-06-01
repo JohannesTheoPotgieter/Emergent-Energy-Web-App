@@ -150,6 +150,11 @@ const requireAdminOrQm = requireRoleCanonical([
  * bypasses the UI gets back `{ error: "qm_challenge_required" }`.
  */
 function requireQmChallengePassed(req: Request, res: Response, next: NextFunction) {
+  // R10: if no access code is configured, the challenge feature is OFF.
+  // Without this guard a QM could never satisfy the gate (the verify endpoint
+  // 503s when QM_ACCESS_CODE is unset), permanently locking QMs out of every
+  // quality mutation. Feature-off ⇒ pass through.
+  if (!process.env.QM_ACCESS_CODE) return next();
   const role = normalizeRoleForPermissions(getEffectiveUser(req)?.role || "");
   if (role && (ADMIN_ROLES as readonly string[]).includes(role)) return next();
   if (role !== "QUALITY_MANAGER") return next();

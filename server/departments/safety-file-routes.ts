@@ -24,6 +24,7 @@ import { db } from "../db";
 import { parseBody } from "../lib/input-validation";
 import { eq, and, isNull } from "drizzle-orm";
 import { safetyFileItems, SAFETY_FILE_COMPLIANCE_STATUSES } from "@shared/schema/hse";
+import { projectInfo } from "@shared/schema/projects";
 import {
   getSafetyFileCompleteness,
   getOverdueSafetyFileItems,
@@ -179,6 +180,15 @@ router.post(
 
       const [parsed, validationError] = parseBody(bridgeLegacyBody(req.body), createSafetyFileItemSchema);
       if (validationError) return res.status(400).json(validationError);
+
+      // Validate the project exists and isn't soft-deleted — a clean 404
+      // instead of an FK-violation 500 (mirrors NCR create).
+      const [project] = await db
+        .select({ id: projectInfo.id })
+        .from(projectInfo)
+        .where(and(eq(projectInfo.id, projectId), isNull(projectInfo.deletedAt)))
+        .limit(1);
+      if (!project) return res.status(404).json({ error: "project_not_found" });
 
       const createdByUserId = getEffectiveUser(req)?.id ?? null;
       const [row] = await db
