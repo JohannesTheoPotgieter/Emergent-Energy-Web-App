@@ -1,5 +1,16 @@
 import { Response } from "express";
 
+/**
+ * Safe extractor for an error's message. Use this in catch blocks that need to
+ * log or surface `err.message` — TypeScript narrows `catch` params to
+ * `unknown`, and reaching into `.message` on `unknown` would be a type error.
+ */
+export function errMsg(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  try { return String(err); } catch { return "Unknown error"; }
+}
+
 export class ApiError extends Error {
   constructor(
     public statusCode: number,
