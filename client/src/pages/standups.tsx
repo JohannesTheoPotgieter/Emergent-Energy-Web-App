@@ -19,6 +19,7 @@ import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useAuth } from "@/hooks/use-auth";
 import { normalizeRoleForPermissions } from "@shared/schema";
 import { getInitials } from "@/lib/task-formatters";
+import { engFetch } from "@/lib/eng-fetch";
 
 const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"];
 import {
@@ -32,17 +33,10 @@ import { AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip,
 
 // ── API helpers ──────────────────────────────────────────────────────────────
 
-async function apiFetch(url: string, options?: RequestInit) {
-  const token = localStorage.getItem("auth_token");
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(url, { ...options, headers, credentials: "include" });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Request failed" }));
-    throw new Error(err.error || "Request failed");
-  }
-  return res.json();
-}
+// Standups route through the shared engineering fetch wrapper (auth header,
+// x-company-role, 401→login handling, ApiError parsing) instead of a private
+// duplicate of the same auth/error logic.
+const apiFetch = engFetch;
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

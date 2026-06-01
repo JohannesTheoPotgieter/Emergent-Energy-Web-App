@@ -463,40 +463,45 @@ export default function EngineeringStandupPage() {
   }
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      // Don't trigger while typing in inputs/textareas.
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
+  // The handler reads live state (phase) and calls callbacks that close over
+  // more (activeIndex, queue, …). Keeping the latest handler in a ref lets the
+  // listener bind exactly once instead of re-subscribing on every state change,
+  // and removes the stale-closure risk without an exhaustive-deps override.
+  const onKeyRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  onKeyRef.current = (e: KeyboardEvent) => {
+    // Don't trigger while typing in inputs/textareas.
+    const tag = (e.target as HTMLElement | null)?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
 
-      if (e.key === "?") {
-        setShowShortcuts((v) => !v);
-        return;
-      }
-
-      if (phase !== "running") return;
-
-      if (e.key === "n" || e.key === "N") {
-        e.preventDefault();
-        nextSpeaker();
-      } else if (e.key === "s" || e.key === "S") {
-        e.preventDefault();
-        skipSpeaker();
-      } else if (e.key === " ") {
-        e.preventDefault();
-        setIsPaused((p) => !p);
-      } else if (e.key === "e" || e.key === "E") {
-        e.preventDefault();
-        endStandup();
-      } else if (e.key === "Escape") {
-        setShowShortcuts(false);
-      }
+    if (e.key === "?") {
+      setShowShortcuts((v) => !v);
+      return;
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, activeIndex, queue, completedIndices, skippedIndices, speakerTasks]);
+
+    if (phase !== "running") return;
+
+    if (e.key === "n" || e.key === "N") {
+      e.preventDefault();
+      nextSpeaker();
+    } else if (e.key === "s" || e.key === "S") {
+      e.preventDefault();
+      skipSpeaker();
+    } else if (e.key === " ") {
+      e.preventDefault();
+      setIsPaused((p) => !p);
+    } else if (e.key === "e" || e.key === "E") {
+      e.preventDefault();
+      endStandup();
+    } else if (e.key === "Escape") {
+      setShowShortcuts(false);
+    }
+  };
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => onKeyRef.current(e);
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   // ── Blocker count for queue ───────────────────────────────────────────
   const holdMovements = taskMovements.filter(m => m.toStatus === "HOLD");

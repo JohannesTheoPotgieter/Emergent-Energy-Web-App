@@ -16,7 +16,7 @@ import { jwtAuth, requireAuth } from "../auth-context";
 import { db, getDbMode } from "../db";
 import { sql } from "drizzle-orm";
 import { doNextState, type DoNextItem, type DoNextKind } from "@shared/schema/home";
-import { normalizeRoleForPermissions } from "@shared/schema/users";
+import { normalizeRoleForPermissions, type CompanyRole } from "@shared/schema/users";
 
 // ---------- Ranking weights per item kind ----------
 const KIND_WEIGHT: Record<DoNextKind, number> = {
@@ -35,13 +35,15 @@ const KIND_WEIGHT: Record<DoNextKind, number> = {
 
 // Roles authorised to see "unassigned" approvals (i.e. anything not yet routed
 // to a specific approver). Keeping this tight prevents data overexposure.
-const APPROVAL_TRIAGE_ROLES = new Set([
+// Typed as CompanyRole so a rename in the canonical role list fails the build
+// here instead of silently dropping a role from the triage set.
+const APPROVAL_TRIAGE_ROLES = new Set<CompanyRole>([
   "COO_ADMIN", "CEO_ADMIN", "CFO", "CCO",
   "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER",
 ]);
 
 // Roles that should see each kind. Anything not listed defaults to "all".
-const KIND_VISIBILITY: Partial<Record<DoNextKind, string[]>> = {
+const KIND_VISIBILITY: Partial<Record<DoNextKind, CompanyRole[]>> = {
   qb_sync_failed: ["COO_ADMIN", "CEO_ADMIN", "CFO", "PROGRAM_FINANCE_MANAGER", "ACCOUNTANT"],
   import_drift: ["COO_ADMIN", "CEO_ADMIN", "CFO", "PROGRAM_FINANCE_MANAGER", "ACCOUNTANT", "PROGRAM_MANAGER"],
   blocked_priority: ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER"],
@@ -52,7 +54,7 @@ const KIND_VISIBILITY: Partial<Record<DoNextKind, string[]>> = {
 
 function isVisibleForRole(kind: DoNextKind, role: string): boolean {
   const allow = KIND_VISIBILITY[kind];
-  return !allow || allow.includes(role);
+  return !allow || allow.includes(role as CompanyRole);
 }
 
 function ageHours(since: string | null | undefined): number {
@@ -85,7 +87,7 @@ async function buildApprovalItems(req: Request, role: string): Promise<DoNextIte
   // Default: only show approvals routed TO this user. Triage roles also get
   // visibility into pending-but-unassigned approvals so they can route them.
   // This prevents data overexposure of approval titles/projects to non-triage users.
-  const includeUnassigned = APPROVAL_TRIAGE_ROLES.has(role);
+  const includeUnassigned = APPROVAL_TRIAGE_ROLES.has(role as CompanyRole);
   try {
     const rows: any[] = await db.execute(sql`
       SELECT a.id,
@@ -260,12 +262,12 @@ async function buildBlockedPriorityItems(_req: Request, role: string): Promise<D
 async function buildEscalatedPriorityItems(req: Request, role: string): Promise<DoNextItem[]> {
   const userId = Number((req as any).user?.id);
   if (!userId) return [];
-  const ESCALATION_ROLES = new Set([
+  const ESCALATION_ROLES = new Set<CompanyRole>([
     "COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER",
     "ENGINEERING_MANAGER", "QUALITY_MANAGER", "HSE_MANAGER", "SSEG_MANAGER",
     "CONSTRUCTION_MANAGER", "PROGRAM_FINANCE_MANAGER",
   ]);
-  if (!ESCALATION_ROLES.has(role)) return [];
+  if (!ESCALATION_ROLES.has(role as CompanyRole)) return [];
   try {
     const sevenDaysAgoIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const query = getDbMode() === "sqlite"
