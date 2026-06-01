@@ -21,12 +21,13 @@
  *     a `deletedAt` column.
  */
 
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   projectInfo,
   projectExecutionState,
   workItems,
+  workItemAssignments,
   deliverables,
   users,
 } from "@shared/schema";
@@ -166,6 +167,41 @@ export async function findEngineeringWorkItemId(id: number): Promise<number | nu
     .where(and(eq(workItems.id, id), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)))
     .limit(1);
   return row?.id ?? null;
+}
+
+/**
+ * Ownership check for `scope: 'own'` engineering roles.
+ *
+ * Returns true when `userId` is the task owner OR carries any assignment
+ * row (OWNER / ASSIGNEE / REVIEWER / VIEWER) on the work item. Callers that
+ * have already established the role is not a manager/admin use this to gate
+ * per-row access on /api/eng/tasks/:id* so a scoped engineer cannot reach
+ * another engineer's task by iterating IDs.
+ *
+ * Returns false when the task does not exist — the route layer turns that
+ * into a 404, which is also the right answer for "not yours".
+ */
+export async function userCanAccessEngineeringTask(taskId: number, userId: number): Promise<boolean> {
+  const [row] = await db
+    .select({ id: workItems.id })
+    .from(workItems)
+    .leftJoin(
+      workItemAssignments,
+      and(
+        eq(workItemAssignments.workItemId, workItems.id),
+        eq(workItemAssignments.userId, userId),
+      ),
+    )
+    .where(and(
+      eq(workItems.id, taskId),
+      isNull(workItems.deletedAt),
+      or(
+        eq(workItems.ownerUserId, userId),
+        eq(workItemAssignments.userId, userId),
+      ),
+    ))
+    .limit(1);
+  return Boolean(row);
 }
 
 // ---------------------------------------------------------------------------

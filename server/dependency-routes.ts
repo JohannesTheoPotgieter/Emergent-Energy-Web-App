@@ -6,12 +6,16 @@ import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { jwtAuth, requireAuth } from "./auth-context";
 import { parseIntParam } from "./lib/req-params";
+import { sendError } from "./lib/api-error";
 
 async function detectCircular(predecessorId: number, successorId: number): Promise<boolean> {
+  // Only live edges participate in the graph — soft-deleted dependencies
+  // (deletedAt set) were removed by the user and must not trigger a false
+  // "circular" rejection.
   const allDeps = await db.select({
     predecessorId: workItemDependencies.predecessorId,
     successorId: workItemDependencies.successorId,
-  }).from(workItemDependencies);
+  }).from(workItemDependencies).where(isNull(workItemDependencies.deletedAt));
 
   const adj = new Map<number, number[]>();
   for (const dep of allDeps) {
@@ -49,8 +53,7 @@ export function registerDependencyRoutes(app: Express): void {
       res.json(items);
     } catch (err: unknown) {
       console.error("[WorkItems] GET error:", err);
-      const message = err instanceof Error ? err.message : String(err);
-      res.status(500).json({ error: message });
+      sendError(res, err);
     }
   });
 
@@ -120,8 +123,7 @@ export function registerDependencyRoutes(app: Express): void {
       res.json({ dependencies: result });
     } catch (err: unknown) {
       console.error("[Dependencies] GET task deps error:", err);
-      const message = err instanceof Error ? err.message : String(err);
-      res.status(500).json({ error: message });
+      sendError(res, err);
     }
   });
 
@@ -167,8 +169,7 @@ export function registerDependencyRoutes(app: Express): void {
       res.json({ dependencies: deps });
     } catch (err: unknown) {
       console.error("[Dependencies] GET error:", err);
-      const message = err instanceof Error ? err.message : String(err);
-      res.status(500).json({ error: message });
+      sendError(res, err);
     }
   });
 
@@ -209,8 +210,7 @@ export function registerDependencyRoutes(app: Express): void {
       res.json({ dependencies: deps });
     } catch (err: unknown) {
       console.error("[Dependencies] GET by project name error:", err);
-      const message = err instanceof Error ? err.message : String(err);
-      res.status(500).json({ error: message });
+      sendError(res, err);
     }
   });
 
@@ -263,8 +263,7 @@ export function registerDependencyRoutes(app: Express): void {
       res.status(201).json(created);
     } catch (err: unknown) {
       console.error("[Dependencies] POST error:", err);
-      const message = err instanceof Error ? err.message : String(err);
-      res.status(500).json({ error: message });
+      sendError(res, err);
     }
   });
 
@@ -307,8 +306,7 @@ export function registerDependencyRoutes(app: Express): void {
       res.json(updated);
     } catch (err: unknown) {
       console.error("[Dependencies] PATCH error:", err);
-      const message = err instanceof Error ? err.message : String(err);
-      res.status(500).json({ error: message });
+      sendError(res, err);
     }
   });
 
@@ -332,8 +330,7 @@ export function registerDependencyRoutes(app: Express): void {
       res.json({ success: true });
     } catch (err: unknown) {
       console.error("[Dependencies] DELETE error:", err);
-      const message = err instanceof Error ? err.message : String(err);
-      res.status(500).json({ error: message });
+      sendError(res, err);
     }
   });
 }

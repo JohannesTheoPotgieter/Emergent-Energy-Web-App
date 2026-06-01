@@ -105,6 +105,12 @@ const MODERN_MIGRATION_PROBES: Record<
     if (!(await tableExists(c, "priority_saved_views"))) return false;
     return columnExists(c, "normalized_revenue_lines", "dispute_opened_at");
   },
+  // 0080 adds a composite unique constraint on deliverable_versions
+  // (deliverable_id, version_number). Probe the constraint directly — the
+  // table already exists, so a column/table probe would false-positive and
+  // skip the migration.
+  "0080_deliverable_versions_unique": (c) =>
+    constraintExists(c, "deliverable_versions_deliverable_version_unique"),
 };
 
 async function tableExists(client: Client, table: string): Promise<boolean> {
@@ -129,6 +135,19 @@ async function columnExists(
        WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2
      ) AS exists;`,
     [table, column],
+  );
+  return res.rows[0]?.exists === true;
+}
+
+async function constraintExists(
+  client: Client,
+  constraint: string,
+): Promise<boolean> {
+  const res = await client.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM pg_constraint WHERE conname = $1
+     ) AS exists;`,
+    [constraint],
   );
   return res.rows[0]?.exists === true;
 }
