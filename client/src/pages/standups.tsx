@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -502,26 +502,25 @@ function TaskCard({ task, todayStr }: { task: TaskItem; todayStr: string }) {
 function TaskPriorityPanel({ tasks }: { tasks: MeetingParticipant["tasks"] }) {
   const todayStr = new Date().toISOString().split("T")[0];
 
-  // Collect all tasks that are linked to company priorities
-  const allTasks = [
-    ...tasks.byPriority.urgent,
-    ...tasks.byPriority.high,
-    ...tasks.byPriority.med,
-    ...tasks.byPriority.low,
-  ];
-  const priorityLinked = allTasks.filter((t) => t.linkedPriority);
-
-  // Group priority-linked tasks by priority
-  const byCompanyPriority = new Map<number, { priority: LinkedPriority; tasks: TaskItem[] }>();
-  for (const t of priorityLinked) {
-    const lp = t.linkedPriority!;
-    const existing = byCompanyPriority.get(lp.id);
-    if (existing) {
-      existing.tasks.push(t);
-    } else {
-      byCompanyPriority.set(lp.id, { priority: lp, tasks: [t] });
+  // Group company-priority-linked tasks by priority. Memoized so it only
+  // recomputes when the participant's task set changes, not on every render.
+  const byCompanyPriority = useMemo(() => {
+    const allTasks = [
+      ...tasks.byPriority.urgent,
+      ...tasks.byPriority.high,
+      ...tasks.byPriority.med,
+      ...tasks.byPriority.low,
+    ];
+    const grouped = new Map<number, { priority: LinkedPriority; tasks: TaskItem[] }>();
+    for (const t of allTasks) {
+      if (!t.linkedPriority) continue;
+      const lp = t.linkedPriority;
+      const existing = grouped.get(lp.id);
+      if (existing) existing.tasks.push(t);
+      else grouped.set(lp.id, { priority: lp, tasks: [t] });
     }
-  }
+    return grouped;
+  }, [tasks]);
 
   const groups = [
     { key: "urgent" as const, label: "Urgent", items: tasks.byPriority.urgent, color: "border-l-red-500" },
@@ -1580,12 +1579,11 @@ export default function StandupsPage() {
   }, [schedules, selectedScheduleId]);
 
   const handleRefresh = () => {
-    queryClient.invalidateQueries({ queryKey: ["standups-today"] });
-    queryClient.invalidateQueries({ queryKey: ["standup-schedules"] });
-    queryClient.invalidateQueries({ queryKey: ["standup-meeting"] });
-    queryClient.invalidateQueries({ queryKey: ["standup-analytics"] });
-    queryClient.invalidateQueries({ queryKey: ["standup-trends"] });
-    queryClient.invalidateQueries({ queryKey: ["standup-per-person"] });
+    // Invalidate every standup-scoped query in a single cache pass instead of
+    // six separate calls (and stays correct as new standup queries are added).
+    queryClient.invalidateQueries({
+      predicate: (q) => typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).startsWith("standup"),
+    });
   };
 
   const displaySchedules = allSchedules || schedules || [];

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo, useEffect } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect, Suspense } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { HoldReasonDialog } from "@/components/HoldReasonDialog";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -174,12 +174,16 @@ export { EngineeringWorkloadStrip } from "./engineering/engineering-workload-str
 
 
 
-// TaskDetailDrawer + PostUpdateForm extracted to
-// ./engineering/EngineeringTaskDrawer (UI/UX audit module split). Imported
-// for internal use + re-exported so the public surface (and ./engineering
-// barrels) is unchanged.
-import { TaskDetailDrawer } from "./engineering/EngineeringTaskDrawer";
-export { PostUpdateForm, TaskDetailDrawer } from "./engineering/EngineeringTaskDrawer";
+// TaskDetailDrawer is heavy (~89 KB) and only renders when a task is opened,
+// so it is lazy-loaded as its own chunk rather than bundled into this page.
+// The previous static re-export of PostUpdateForm / TaskDetailDrawer had no
+// external consumers and was removed — it pinned the drawer back into this
+// chunk and defeated the split.
+import { lazyWithRetry } from "@/lib/lazy-with-retry";
+
+const TaskDetailDrawer = lazyWithRetry(() =>
+  import("./engineering/EngineeringTaskDrawer").then((m) => ({ default: m.TaskDetailDrawer })),
+);
 
 
 /**
@@ -1517,15 +1521,17 @@ export default function EngineeringTasksPage() {
       )}
 
       {selectedTask && (
-        <TaskDetailDrawer
-          task={selectedTask}
-          onClose={() => setSelectedTask(null)}
-          onUpdate={() => {
-            invalidateEngineeringTicketCaches(queryClient);
-            const updatedTask = tasks.find(t => t.id === selectedTask.id);
-            if (updatedTask) setSelectedTask(updatedTask);
-          }}
-        />
+        <Suspense fallback={null}>
+          <TaskDetailDrawer
+            task={selectedTask}
+            onClose={() => setSelectedTask(null)}
+            onUpdate={() => {
+              invalidateEngineeringTicketCaches(queryClient);
+              const updatedTask = tasks.find(t => t.id === selectedTask.id);
+              if (updatedTask) setSelectedTask(updatedTask);
+            }}
+          />
+        </Suspense>
       )}
 
       <HoldReasonDialog

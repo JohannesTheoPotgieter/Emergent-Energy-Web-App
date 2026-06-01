@@ -54,17 +54,16 @@ export class WorkManagementRepository {
     return this._dbInstance || db;
   }
 
-  async getAllOperationalTasks(): Promise<any[]> {
-    const items = await this.dbInstance.select().from(workItems).where(isNull(workItems.deletedAt));
-    return items as any[];
+  async getAllOperationalTasks(): Promise<WorkItem[]> {
+    return this.dbInstance.select().from(workItems).where(isNull(workItems.deletedAt));
   }
-  async getOperationalTasksByProject(projectName: string): Promise<any[]> {
+  async getOperationalTasksByProject(projectName: string): Promise<WorkItem[]> {
     return this.dbInstance.select().from(workItems).where(and(
       isNull(workItems.deletedAt),
       sql`EXISTS (SELECT 1 FROM project_info pi WHERE pi.id = ${workItems.projectId} AND pi.project_name = ${projectName})`
-    )).orderBy(workItems.sortOrder) as any;
+    )).orderBy(workItems.sortOrder);
   }
-  async getOperationalTask(id: number): Promise<any | undefined> {
+  async getOperationalTask(id: number): Promise<WorkItem | undefined> {
     const results = await this.dbInstance.select().from(workItems).where(eq(workItems.id, id));
     return results[0];
   }
@@ -74,7 +73,7 @@ export class WorkManagementRepository {
       ? [...new Set(data.assigneeUserIds.map((id: any) => Number(id)).filter((id: number) => Number.isInteger(id) && id > 0))]
       : [];
 
-    const [created] = await this.dbInstance.transaction(async (tx: any) => {
+    const [created] = await this.dbInstance.transaction(async (tx: typeof db) => {
       const [task] = await tx.insert(workItems).values({
         projectId: data.projectId,
         title: data.title || data.taskName || 'Untitled',

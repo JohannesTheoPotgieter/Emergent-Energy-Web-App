@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
 import { projectInfo, projectExecutionState, workItems, workItemAssignments, notifications } from "@shared/schema";
+import type { CompanyRole } from "@shared/schema/users";
 import { logAuditFromReq } from "../audit-logger";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
@@ -854,11 +855,14 @@ export function registerPlanningTasksRoutes(app: Express) {
 
   // ==================== PLAN TASK EDITING (with COO notifications) ====================
 
+  // Roles with blanket plan-edit rights. Typed against CompanyRole so a rename
+  // in the canonical role list fails the build instead of silently denying.
+  const PLAN_ADMIN_EDIT_ROLES: CompanyRole[] = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"];
   const canEditProjectTasks = async (req: Request, projectName: string): Promise<boolean> => {
     const user = req.user as any;
     if (!user) return false;
     const role = user.role || "";
-    if (["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"].includes(role)) return true;
+    if ((PLAN_ADMIN_EDIT_ROLES as string[]).includes(role)) return true;
     const info = await storage.getProjectInfo(projectName);
     if (!info) return false;
     if (info.pm === user.name || info.pd === user.name) return true;
