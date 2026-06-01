@@ -77,7 +77,7 @@ function Delta({ current, previous }: { current: number; previous: number }) {
   );
 }
 
-function ExceptionTable({ title, rows, columns, emptyLabel = "No exceptions" }: { title: string; rows: any[]; columns: { key: string; label: string; className?: string }[]; emptyLabel?: string }) {
+function ExceptionTable({ title, rows, columns, emptyLabel = "No exceptions" }: { title: string; rows: Array<Record<string, unknown>>; columns: { key: string; label: string; className?: string }[]; emptyLabel?: string }) {
   return (
     <Card>
       <CardHeader className="pb-2"><CardTitle className="text-sm">{title}</CardTitle></CardHeader>

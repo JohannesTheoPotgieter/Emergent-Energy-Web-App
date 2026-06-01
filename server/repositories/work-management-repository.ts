@@ -1,8 +1,10 @@
 import { db } from "../db";
-import { and, asc, desc, eq, inArray, isNull, not, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, not, or, sql } from "drizzle-orm";
 import {
   workItems,
   workItemAssignments,
+  users,
+  projectInfo,
   taskComments,
   taskChecklists,
   taskChecklistItems,
@@ -530,5 +532,89 @@ export class WorkManagementRepository {
         eq(workItems.workstream, "PM"),
         isNull(workItems.deletedAt),
       ));
+  }
+
+  // ── Work-item admin: deleted register + viewer assignments ──
+  // Response keys are deliberately snake_case to preserve the existing API
+  // contract these endpoints have always returned.
+
+  async listDeletedWorkItems(limit = 200): Promise<Array<{
+    id: number;
+    title: string;
+    status: string;
+    deleted_at: Date | null;
+    project_id: number | null;
+    project_name: string | null;
+  }>> {
+    return this.dbInstance
+      .select({
+        id: workItems.id,
+        title: workItems.title,
+        status: workItems.status,
+        deleted_at: workItems.deletedAt,
+        project_id: workItems.projectId,
+        project_name: projectInfo.projectName,
+      })
+      .from(workItems)
+      .leftJoin(projectInfo, eq(workItems.projectId, projectInfo.id))
+      .where(isNotNull(workItems.deletedAt))
+      .orderBy(desc(workItems.deletedAt))
+      .limit(limit);
+  }
+
+  async listWorkItemViewers(workItemId: number): Promise<Array<{
+    id: number;
+    work_item_id: number;
+    user_id: number;
+    role: string;
+    created_at: Date;
+    user_name: string | null;
+    username: string | null;
+    user_role: string | null;
+  }>> {
+    return this.dbInstance
+      .select({
+        id: workItemAssignments.id,
+        work_item_id: workItemAssignments.workItemId,
+        user_id: workItemAssignments.userId,
+        role: workItemAssignments.role,
+        created_at: workItemAssignments.createdAt,
+        user_name: users.name,
+        username: users.username,
+        user_role: users.role,
+      })
+      .from(workItemAssignments)
+      .leftJoin(users, eq(workItemAssignments.userId, users.id))
+      .where(and(eq(workItemAssignments.workItemId, workItemId), eq(workItemAssignments.role, "VIEWER")));
+  }
+
+  async findViewerAssignmentId(workItemId: number, userId: number): Promise<number | null> {
+    const [row] = await this.dbInstance
+      .select({ id: workItemAssignments.id })
+      .from(workItemAssignments)
+      .where(and(
+        eq(workItemAssignments.workItemId, workItemId),
+        eq(workItemAssignments.userId, userId),
+        eq(workItemAssignments.role, "VIEWER"),
+      ))
+      .limit(1);
+    return row?.id ?? null;
+  }
+
+  async addWorkItemViewer(workItemId: number, userId: number): Promise<void> {
+    await this.dbInstance.insert(workItemAssignments).values({
+      workItemId,
+      userId,
+      role: "VIEWER",
+      createdAt: new Date(),
+    });
+  }
+
+  async removeWorkItemViewer(workItemId: number, userId: number): Promise<void> {
+    await this.dbInstance.delete(workItemAssignments).where(and(
+      eq(workItemAssignments.workItemId, workItemId),
+      eq(workItemAssignments.userId, userId),
+      eq(workItemAssignments.role, "VIEWER"),
+    ));
   }
 }
