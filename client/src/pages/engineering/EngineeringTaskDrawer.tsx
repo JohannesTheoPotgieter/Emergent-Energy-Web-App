@@ -67,6 +67,8 @@ import { engFetch } from "@/lib/eng-fetch";
 import { TaskDependenciesPanel } from "./panels/TaskDependenciesPanel";
 import { SendDeliverableDialog, type LocalSyncedSaveResult } from "./dialogs/SendDeliverableDialog";
 import { SendForApprovalDialog } from "./dialogs/SendForApprovalDialog";
+import { CommentInputWithMentions } from "./dialogs/CommentInputWithMentions";
+import { SubtaskQuickAdd } from "./dialogs/SubtaskQuickAdd";
 import { DocumentControlBadge } from "@/components/engineering/DocumentControlBadge";
 import { PHASE_COLORS } from "@/lib/phase-colors";
 import { invalidateEngineeringTicketCaches } from "@/lib/task-cache";
@@ -208,7 +210,7 @@ export function TaskDetailDrawer({
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [commentText, setCommentText] = useState("");
+  // Comment text + mentions popover state lives inside CommentInputWithMentions.
   const [activeTab, setActiveTab] = useState<"updates" | "activity" | "subtasks" | "dependencies">("updates");
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
@@ -227,9 +229,7 @@ export function TaskDetailDrawer({
   // X6: replace window.confirm with the shared ConfirmDialog so the
   // high-severity completion guard matches every other confirm in the app.
   const [drawerCompletionConfirm, setDrawerCompletionConfirm] = useState(false);
-  const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
-  const [showMentions, setShowMentions] = useState(false);
-  const [mentionQuery, setMentionQuery] = useState("");
+  // Subtask quick-add title state lives inside SubtaskQuickAdd.
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [mappedPathDraft, setMappedPathDraft] = useState("");
   const [fallbackDraft, setFallbackDraft] = useState<"download" | "clipboard">("download");
@@ -334,7 +334,7 @@ export function TaskDetailDrawer({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["task-comments", task.id] });
       queryClient.invalidateQueries({ queryKey: ["task-activity", task.id] });
-      setCommentText("");
+      // Input clears its own text after submit (state lives inside the child).
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -1090,72 +1090,11 @@ export function TaskDetailDrawer({
 
             {activeTab === "updates" && (
               <div className="space-y-3">
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Input
-                      value={commentText}
-                      onChange={(e) => {
-                        setCommentText(e.target.value);
-                        const val = e.target.value;
-                        const atIdx = val.lastIndexOf("@");
-                        if (atIdx >= 0 && atIdx === val.length - 1) {
-                          setMentionQuery("");
-                          setShowMentions(true);
-                        } else if (atIdx >= 0 && !val.substring(atIdx).includes(" ")) {
-                          setMentionQuery(val.substring(atIdx + 1).toLowerCase());
-                          setShowMentions(true);
-                        } else {
-                          setShowMentions(false);
-                        }
-                      }}
-                      placeholder="Add a comment... use @ to mention"
-                      className="text-sm"
-                      onKeyDown={(e) => {
-                        if (e.key === "Escape" && showMentions) { setShowMentions(false); e.stopPropagation(); return; }
-                        if (e.key === "Enter" && !e.shiftKey && commentText.trim() && !showMentions) {
-                          addCommentMutation.mutate(commentText.trim());
-                        }
-                      }}
-                      data-testid="input-comment"
-                    />
-                    {showMentions && (
-                      <div className="absolute bottom-full left-0 w-full mb-1 bg-white border rounded-md shadow-lg z-50 max-h-[150px] overflow-y-auto">
-                        {teamMembers
-                          .filter(m => !mentionQuery || m.fullName.toLowerCase().includes(mentionQuery))
-                          .slice(0, 6)
-                          .map(m => (
-                            <button
-                              key={m.id}
-                              className="w-full text-left px-3 py-1.5 text-xs hover:bg-blue-50 flex items-center gap-2"
-                              onClick={() => {
-                                const atIdx = commentText.lastIndexOf("@");
-                                setCommentText(commentText.substring(0, atIdx) + `@${m.fullName} `);
-                                setShowMentions(false);
-                              }}
-                            >
-                              <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white ${getAvatarColor(m.fullName)}`}>
-                                {getInitials(m.fullName)}
-                              </div>
-                              <span className="font-medium">{m.fullName}</span>
-                              <span className="text-muted-foreground ml-auto">{m.role}</span>
-                            </button>
-                          ))}
-                        {teamMembers.filter(m => !mentionQuery || m.fullName.toLowerCase().includes(mentionQuery)).length === 0 && (
-                          <p className="text-xs text-muted-foreground p-2 text-center">No matches</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <Button
-                    size="icon"
-                    className="h-9 w-9 shrink-0"
-                    disabled={!commentText.trim() || addCommentMutation.isPending}
-                    onClick={() => commentText.trim() && addCommentMutation.mutate(commentText.trim())}
-                    data-testid="btn-send-comment"
-                  >
-                    <Send className="h-4 w-4" />
-                  </Button>
-                </div>
+                <CommentInputWithMentions
+                  teamMembers={teamMembers}
+                  submitting={addCommentMutation.isPending}
+                  onSubmit={(body) => addCommentMutation.mutate(body)}
+                />
                 {comments.length === 0 ? (
                   <p className="text-xs text-muted-foreground text-center py-4">No updates yet - post the first one above!</p>
                 ) : (
@@ -1206,35 +1145,7 @@ export function TaskDetailDrawer({
 
             {activeTab === "subtasks" && (
               <div className="space-y-2">
-                <form
-                  className="flex gap-2"
-                  data-testid="subtask-create-form"
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    const title = newSubtaskTitle.trim();
-                    if (!title) return;
-                    try {
-                      await engFetch(`/api/eng/tasks/${task.id}/subtasks`, {
-                        method: "POST",
-                        body: JSON.stringify({ title }),
-                      });
-                      setNewSubtaskTitle("");
-                      queryClient.invalidateQueries({ queryKey: ["task-subtasks", task.id] });
-                      queryClient.invalidateQueries({ queryKey: ["task-activity", task.id] });
-                    } catch {}
-                  }}
-                >
-                  <Input
-                    value={newSubtaskTitle}
-                    onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                    placeholder="Add a subtask..."
-                    className="h-8 text-xs"
-                    data-testid="subtask-title-input"
-                  />
-                  <Button type="submit" size="sm" className="h-8 px-3" disabled={!newSubtaskTitle.trim()} data-testid="subtask-add-btn">
-                    <Plus className="h-3.5 w-3.5" />
-                  </Button>
-                </form>
+                <SubtaskQuickAdd taskId={task.id} />
                 {subtasks.length === 0 ? (
                   <p className="text-xs text-muted-foreground text-center py-4">No subtasks yet</p>
                 ) : (
