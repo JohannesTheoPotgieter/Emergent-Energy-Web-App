@@ -3,19 +3,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useRenameItem } from "./use-documents";
+import { useRenameItem, type BrowseTarget } from "./use-documents";
 import { SharePointErrorAlert } from "./SharePointErrorAlert";
-import type { DocumentRootScope, GraphItem } from "./types";
+import type { GraphItem } from "./types";
 
 interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  scope: DocumentRootScope;
-  rootId: number;
+  target: BrowseTarget;
   item: GraphItem | null;
 }
 
-export function RenameDialog({ open, onOpenChange, scope, rootId, item }: Props) {
+export function RenameDialog({ open, onOpenChange, target, item }: Props) {
   const [name, setName] = useState("");
   const [error, setError] = useState<unknown>(null);
   const rename = useRenameItem();
@@ -28,7 +27,7 @@ export function RenameDialog({ open, onOpenChange, scope, rootId, item }: Props)
     if (!item) return;
     setError(null);
     try {
-      await rename.mutateAsync({ scope, rootId, itemId: item.id, name: name.trim() });
+      await rename.mutateAsync({ target, itemId: item.id, name: name.trim() });
       onOpenChange(false);
     } catch (err) {
       setError(err);

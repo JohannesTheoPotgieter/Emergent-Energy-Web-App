@@ -23,6 +23,7 @@ import { registerDocumentManagementRoutes } from './document-management.routes';
 import { registerDocumentCommentsRoutes } from './document-comments.routes';
 import { registerDocumentManagementAdminRoutes } from './document-management-admin.routes';
 import { registerDocumentProvisioningRoutes } from './document-provisioning.routes';
+import { registerDocumentFilesRoutes } from './document-files.routes';
 import { registerManagedDocumentApprovalRoutes } from './managed-document-approvals.routes';
 import { registerDocumentReadinessRoutes } from './document-readiness.routes';
 import { registerProjectDocumentRegisterRoutes } from './project-document-register.routes';
@@ -50,6 +51,7 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerDocumentCommentsRoutes(app);
   registerDocumentManagementAdminRoutes(app);
   registerDocumentProvisioningRoutes(app);
+  registerDocumentFilesRoutes(app);
   registerManagedDocumentApprovalRoutes(app);
   registerDocumentReadinessRoutes(app);
   registerProjectDocumentRegisterRoutes(app);
