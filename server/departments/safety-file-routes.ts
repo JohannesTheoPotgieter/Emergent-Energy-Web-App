@@ -209,10 +209,14 @@ router.post(
 
 // ===================== UPDATE =====================
 
+// Access model B (owner decision): descriptive edits are OPEN to any
+// authenticated user (matches B7's documented "anyone can edit descriptive
+// fields" rule). The Zod whitelist below blocks mass-assignment, and the
+// compliance_status SIGN-OFF is gated by the approve check inside the handler.
+// create / view / delete remain role-restricted (see the other routes).
 router.patch(
   "/api/safety-file-items/:id",
   requireAuth,
-  requirePermission("hse_compliance", "edit"),
   async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
