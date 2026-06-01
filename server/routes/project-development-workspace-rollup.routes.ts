@@ -210,8 +210,8 @@ export function registerProjectDevelopmentWorkspaceRollupRoutes(app: Express) {
           },
         });
 
-        const openPdTickets = rollup.reduce((acc, r) => acc + r.pdTickets.open, 0);
-        const overduePdTickets = rollup.reduce((acc, r) => acc + r.pdTickets.overdue, 0);
+        const openPdTickets = rollup.reduce((acc, r) => acc + Number(r.pdTickets.open), 0);
+        const overduePdTickets = rollup.reduce((acc, r) => acc + Number(r.pdTickets.overdue), 0);
         // Vocabulary phase 1 (task #56): mirror each `engineeringTickets`-keyed
         // row block as `engineeringTickets` so new clients can read the
         // friendlier name. Old clients continue to read `engineeringTickets`. Both
@@ -226,22 +226,24 @@ export function registerProjectDevelopmentWorkspaceRollupRoutes(app: Express) {
           asOf,
           filters: { statusFilter, phaseFilter, ownerFilter, departmentFilter },
           totals: {
-            opportunities: oppTotalRow[0]?.n ?? 0,
-            linkedProjects: linkedProjectsRow[0]?.n ?? 0,
-            linkedWorkItems: linkedWorkItemsRow[0]?.n ?? 0,
+            // Postgres returns COUNT(*)/bigint as a string; coerce so the
+            // payload contract is numeric on both Postgres and SQLite.
+            opportunities: Number(oppTotalRow[0]?.n ?? 0),
+            linkedProjects: Number(linkedProjectsRow[0]?.n ?? 0),
+            linkedWorkItems: Number(linkedWorkItemsRow[0]?.n ?? 0),
             projects: rollup.length,
-            spineGap: spineGapCount,
-            cascadeAnomalies: cascadeAnomalyCount,
+            spineGap: Number(spineGapCount),
+            cascadeAnomalies: Number(cascadeAnomalyCount),
             openPdTickets,
             overduePdTickets,
             // Phase-1 vocabulary aliases — see comment above. Same numbers,
             // friendlier key. Old keys remain.
             openEngineeringTickets: openPdTickets,
             overdueEngineeringTickets: overduePdTickets,
-            openWorkItems: rollup.reduce((acc, r) => acc + r.workItems.open, 0),
-            blockedWorkItems: rollup.reduce((acc, r) => acc + r.workItems.blocked, 0),
-            overdueWorkItems: rollup.reduce((acc, r) => acc + r.workItems.overdue, 0),
-            openRaid: rollup.reduce((acc, r) => acc + r.raid.open, 0),
+            openWorkItems: rollup.reduce((acc, r) => acc + Number(r.workItems.open), 0),
+            blockedWorkItems: rollup.reduce((acc, r) => acc + Number(r.workItems.blocked), 0),
+            overdueWorkItems: rollup.reduce((acc, r) => acc + Number(r.workItems.overdue), 0),
+            openRaid: rollup.reduce((acc, r) => acc + Number(r.raid.open), 0),
             ticketsDueThisWeek: ticketsDueThisWeekRows.length,
             tasksDueThisWeek: tasksDueThisWeekRows.length,
             projectsWithoutTickets: projectsWithoutTicketsRows.length,
