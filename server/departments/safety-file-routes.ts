@@ -22,9 +22,10 @@ import { requireAuth } from "./shared-middleware";
 import { requirePermission, evaluatePermissionForRequest } from "../permission-middleware";
 import { db } from "../db";
 import { parseBody } from "../lib/input-validation";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, inArray } from "drizzle-orm";
 import { safetyFileItems, SAFETY_FILE_COMPLIANCE_STATUSES } from "@shared/schema/hse";
 import { projectInfo } from "@shared/schema/projects";
+import { getQualityHseScope, scopeAllowsProject, scopedProjectIdsArray } from "../services/quality-hse-scope";
 import {
   getSafetyFileCompleteness,
   getOverdueSafetyFileItems,
@@ -141,6 +142,9 @@ router.get(
     try {
       const projectId = Number(req.params.projectId);
       if (Number.isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
+      // R1: scoped roles only see Safety Files for their projects.
+      const scope = await getQualityHseScope(req);
+      if (!scopeAllowsProject(scope, projectId)) return res.status(404).json({ error: "project_not_found" });
       const completeness = await getSafetyFileCompleteness(projectId);
       res.json(completeness);
     } catch (err) {
@@ -159,7 +163,11 @@ router.get(
       const limitRaw = Number(req.query.limit);
       const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 1000) : 500;
       const items = await getOverdueSafetyFileItems({ limit });
-      res.json({ count: items.length, items });
+      // R1: filter overdue list down to the caller's project scope.
+      const scope = await getQualityHseScope(req);
+      const scopedIds = scopedProjectIdsArray(scope);
+      const filtered = scopedIds === null ? items : items.filter((it: any) => scopedIds.includes(it.projectId));
+      res.json({ count: filtered.length, items: filtered });
     } catch (err) {
       console.error("[SafetyFile] Failed to load overdue items:", err);
       res.status(500).json({ error: "Failed to load overdue safety file items" });
@@ -189,6 +197,10 @@ router.post(
         .where(and(eq(projectInfo.id, projectId), isNull(projectInfo.deletedAt)))
         .limit(1);
       if (!project) return res.status(404).json({ error: "project_not_found" });
+
+      // R1: scoped roles only create items for their assigned projects.
+      const scope = await getQualityHseScope(req);
+      if (!scopeAllowsProject(scope, projectId)) return res.status(403).json({ error: "project_not_accessible" });
 
       const createdByUserId = getEffectiveUser(req)?.id ?? null;
       const [row] = await db
@@ -235,6 +247,12 @@ router.patch(
       const [parsed, validationError] = parseBody(bridgeLegacyBody(req.body), updateSafetyFileItemSchema);
       if (validationError) return res.status(400).json(validationError);
       req.body = parsed;
+
+      // R1: scoped roles only patch items for their assigned projects.
+      const [target] = await db.select({ projectId: safetyFileItems.projectId }).from(safetyFileItems).where(and(eq(safetyFileItems.id, id), isNull(safetyFileItems.deletedAt))).limit(1);
+      if (!target) return res.status(404).json({ error: "safety_file_item_not_found" });
+      const scope = await getQualityHseScope(req);
+      if (!scopeAllowsProject(scope, target.projectId)) return res.status(404).json({ error: "safety_file_item_not_found" });
 
       const allowed = await approveGateForSafetyFileStatus(req, res, id);
       if (!allowed) return;

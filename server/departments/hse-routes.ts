@@ -22,9 +22,10 @@ import { requirePermission, evaluatePermissionForRequest } from "../permission-m
 import { getEffectiveUser } from "../auth-context";
 import { db } from "../db";
 import { parseBody } from "../lib/input-validation";
-import { eq, desc, and, isNull } from "drizzle-orm";
+import { eq, desc, and, isNull, inArray } from "drizzle-orm";
 import { DEFAULT_QUERY_LIMIT } from "../lib/safe-query";
 import { hseIncidents, correctiveActions } from "@shared/schema/hse";
+import { getQualityHseScope, scopeAllowsProject, scopedProjectIdsArray } from "../services/quality-hse-scope";
 
 const router = Router();
 
@@ -211,8 +212,14 @@ router.get(
   async (req: Request, res: Response) => {
     try {
       const projectId = req.query.projectId ? Number(req.query.projectId) : undefined;
+      const scope = await getQualityHseScope(req);
+      const scopedIds = scopedProjectIdsArray(scope);
+      if (scopedIds !== null && scopedIds.length === 0) return res.json([]);
+      if (projectId && !scopeAllowsProject(scope, projectId)) return res.json([]);
+
       const conditions = [isNull(hseIncidents.deletedAt)];
       if (projectId) conditions.push(eq(hseIncidents.projectId, projectId));
+      if (scopedIds !== null) conditions.push(inArray(hseIncidents.projectId, scopedIds));
 
       const rows = await db
         .select()
@@ -237,6 +244,11 @@ router.post(
     try {
       const [parsed, validationError] = parseBody(req.body, createHseIncidentSchema);
       if (validationError) return res.status(400).json(validationError);
+      // R1: scoped roles can only log incidents on their assigned projects.
+      const scope = await getQualityHseScope(req);
+      if (!scopeAllowsProject(scope, parsed.projectId)) {
+        return res.status(403).json({ error: "project_not_accessible" });
+      }
       // Stamp the reporter from the session — never trust a client-supplied
       // reportedByUserId (reporter-spoofing). status defaults to "open".
       const reportedByUserId = getEffectiveUser(req)?.id ?? null;
@@ -267,6 +279,12 @@ router.patch(
       const [parsed, validationError] = parseBody(req.body, updateHseIncidentSchema);
       if (validationError) return res.status(400).json(validationError);
       req.body = parsed;
+
+      // R1: scoped roles can only patch incidents on their assigned projects.
+      const [target] = await db.select({ projectId: hseIncidents.projectId }).from(hseIncidents).where(and(eq(hseIncidents.id, id), isNull(hseIncidents.deletedAt))).limit(1);
+      if (!target) return res.status(404).json({ error: "hse_incident_not_found" });
+      const scope = await getQualityHseScope(req);
+      if (!scopeAllowsProject(scope, target.projectId)) return res.status(404).json({ error: "hse_incident_not_found" });
 
       const allowed = await approveGateForIncidentStatus(req, res, id);
       if (!allowed) return;
@@ -317,9 +335,15 @@ router.get(
     try {
       const projectId = req.query.projectId ? Number(req.query.projectId) : undefined;
       const sourceType = req.query.sourceType as string | undefined;
+      const scope = await getQualityHseScope(req);
+      const scopedIds = scopedProjectIdsArray(scope);
+      if (scopedIds !== null && scopedIds.length === 0) return res.json([]);
+      if (projectId && !scopeAllowsProject(scope, projectId)) return res.json([]);
+
       const conditions = [isNull(correctiveActions.deletedAt)];
       if (projectId) conditions.push(eq(correctiveActions.projectId, projectId));
       if (sourceType) conditions.push(eq(correctiveActions.sourceType, sourceType));
+      if (scopedIds !== null) conditions.push(inArray(correctiveActions.projectId, scopedIds));
 
       const rows = await db
         .select()
@@ -344,6 +368,13 @@ router.post(
     try {
       const [parsed, validationError] = parseBody(req.body, createCorrectiveActionSchema);
       if (validationError) return res.status(400).json(validationError);
+      // R1: if projectId provided, ensure caller's scope sees it.
+      if (parsed.projectId != null) {
+        const scope = await getQualityHseScope(req);
+        if (!scopeAllowsProject(scope, parsed.projectId)) {
+          return res.status(403).json({ error: "project_not_accessible" });
+        }
+      }
       const [row] = await db.insert(correctiveActions).values(parsed).returning();
       res.status(201).json(row);
     } catch (err) {
@@ -365,6 +396,16 @@ router.patch(
       const [parsed, validationError] = parseBody(req.body, updateCorrectiveActionSchema);
       if (validationError) return res.status(400).json(validationError);
       req.body = parsed;
+
+      // R1: scoped roles only patch CAs on projects they're assigned to. CAs
+      // can have a null projectId (cross-project work) — those stay visible
+      // to oversight only, which means scoped users see "not found".
+      const [target] = await db.select({ projectId: correctiveActions.projectId }).from(correctiveActions).where(and(eq(correctiveActions.id, id), isNull(correctiveActions.deletedAt))).limit(1);
+      if (!target) return res.status(404).json({ error: "corrective_action_not_found" });
+      const scope = await getQualityHseScope(req);
+      if (scope.kind === "scoped" && (target.projectId == null || !scopeAllowsProject(scope, target.projectId))) {
+        return res.status(404).json({ error: "corrective_action_not_found" });
+      }
 
       const allowed = await approveGateForCorrectiveActionStatus(req, res, id);
       if (!allowed) return;

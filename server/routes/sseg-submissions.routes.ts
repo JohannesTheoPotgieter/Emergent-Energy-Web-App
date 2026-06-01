@@ -12,6 +12,7 @@ import { Router, type Express, type Request, type Response } from "express";
 import { requireAuth } from "../departments/shared-middleware";
 import { requirePermission, evaluatePermissionForRequest } from "../permission-middleware";
 import { ssegSubmissionsRepository } from "../repositories/sseg-submissions-repository";
+import { getQualityHseScope, scopeAllowsProject, scopedProjectIdsArray } from "../services/quality-hse-scope";
 
 const router = Router();
 
@@ -22,6 +23,10 @@ router.get(
   async (req: Request, res: Response) => {
     try {
       const projectId = req.query.projectId ? Number(req.query.projectId) : undefined;
+      const scope = await getQualityHseScope(req);
+      if (projectId && !scopeAllowsProject(scope, projectId)) {
+        return res.json({ rows: [], kpis: {}, capabilities: { canCreate: false, canEdit: false } });
+      }
       const [rows, kpis, canCreateResult, canEditResult] = await Promise.all([
         ssegSubmissionsRepository.list({ projectId }),
         ssegSubmissionsRepository.kpis(),
@@ -29,8 +34,14 @@ router.get(
         evaluatePermissionForRequest(req, "hse_sseg", "edit"),
       ]);
 
+      // R1: trim cross-project SSEG submissions for scoped users.
+      const scopedIds = scopedProjectIdsArray(scope);
+      const filteredRows = scopedIds === null
+        ? rows
+        : (rows as Array<{ projectId?: number | null }>).filter((r) => r.projectId != null && scopedIds.includes(r.projectId));
+
       res.json({
-        rows,
+        rows: filteredRows,
         kpis,
         capabilities: {
           canCreate: canCreateResult.allowed,

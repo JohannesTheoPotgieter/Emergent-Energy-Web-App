@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, inArray } from "drizzle-orm";
 import { db } from "./db";
 import {
   ncrReports,
@@ -17,6 +17,11 @@ import { recordAudit } from "./api/v2/services/audit-service";
 import { requireAuthoriserFor } from "./middleware/requireAuthoriserFor";
 import { validateBody } from "./middleware/validateBody";
 import { DEFAULT_QUERY_LIMIT } from "./lib/safe-query";
+import {
+  getQualityHseScope,
+  scopeAllowsProject,
+  scopedProjectIdsArray,
+} from "./services/quality-hse-scope";
 
 /**
  * NCR state machine. Forward-only chain (`open → investigating →
@@ -120,10 +125,23 @@ export function registerQualityNcrRoutes(app: Express) {
       }
       const { status, severity, projectId, limit, offset } = parsed.data;
 
+      // R1/R10: scoped roles (Site PM, PD, Engineer, Key Accounts Manager)
+      // only see NCRs on projects they're assigned to. Oversight roles
+      // (QM, HSE, COO, etc.) are unaffected.
+      const scope = await getQualityHseScope(req);
+      const scopedIds = scopedProjectIdsArray(scope);
+      if (scopedIds !== null && scopedIds.length === 0) {
+        return res.json({ items: [], count: 0 });
+      }
+      if (projectId && !scopeAllowsProject(scope, projectId)) {
+        return res.json({ items: [], count: 0 });
+      }
+
       const filters: any[] = [];
       if (status) filters.push(eq(ncrReports.status, status as any));
       if (severity) filters.push(eq(ncrReports.severity, severity as any));
       if (projectId) filters.push(eq(ncrReports.projectId, projectId));
+      if (scopedIds !== null) filters.push(inArray(ncrReports.projectId, scopedIds));
       const where = filters.length > 0 ? and(...filters) : undefined;
 
       const rows = await db
@@ -162,6 +180,12 @@ export function registerQualityNcrRoutes(app: Express) {
           .where(and(eq(projectInfo.id, project_id), isNull(projectInfo.deletedAt)))
           .limit(1);
         if (!project) return res.status(404).json({ error: "project_not_found" });
+
+        // R1: scoped roles can only raise NCRs on projects they're assigned to.
+        const scope = await getQualityHseScope(req);
+        if (!scopeAllowsProject(scope, project_id)) {
+          return res.status(403).json({ error: "project_not_accessible" });
+        }
 
         // Capture the project's current phase at NCR-raise time — never mutated.
         const [exec] = await db
@@ -205,6 +229,10 @@ export function registerQualityNcrRoutes(app: Express) {
       if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
       const [ncr] = await db.select().from(ncrReports).where(eq(ncrReports.id, id)).limit(1);
       if (!ncr) return res.status(404).json({ error: "not_found" });
+      // R7: scoped roles can only read NCRs on their assigned projects.
+      // 404 (not 403) — don't leak existence to a user with no access.
+      const scope = await getQualityHseScope(req);
+      if (!scopeAllowsProject(scope, ncr.projectId)) return res.status(404).json({ error: "not_found" });
       const comments = await db
         .select({
           c: ncrComments,
@@ -237,6 +265,9 @@ export function registerQualityNcrRoutes(app: Express) {
         if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
         const [current] = await db.select().from(ncrReports).where(eq(ncrReports.id, id)).limit(1);
         if (!current) return res.status(404).json({ error: "not_found" });
+        // R7: scoped roles can only update NCRs on their assigned projects.
+        const scope = await getQualityHseScope(req);
+        if (!scopeAllowsProject(scope, current.projectId)) return res.status(404).json({ error: "not_found" });
         const body = req.body as z.infer<typeof updateNcrSchema>;
         const next = body.status ?? current.status;
         if (next !== current.status && !canTransition(current.status, next)) {
@@ -286,6 +317,10 @@ export function registerQualityNcrRoutes(app: Express) {
         if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
         const [current] = await db.select().from(ncrReports).where(eq(ncrReports.id, id)).limit(1);
         if (!current) return res.status(404).json({ error: "not_found" });
+        // R7: scope check (waive is COO/CEO via requireAuthoriserFor — but those
+        // are oversight roles so this is a 404 that should never fire; defence in depth).
+        const scope = await getQualityHseScope(req);
+        if (!scopeAllowsProject(scope, current.projectId)) return res.status(404).json({ error: "not_found" });
         if (TERMINAL.has(current.status)) {
           return res.status(400).json({ error: "already_terminal", message: `NCR is already ${current.status}` });
         }
@@ -354,6 +389,11 @@ export function registerQualityNcrRoutes(app: Express) {
         const id = Number(req.params.id);
         if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
         if (!user) return res.status(401).json({ error: "auth_required" });
+        // R7: only comment on NCRs your scope sees.
+        const [target] = await db.select({ projectId: ncrReports.projectId }).from(ncrReports).where(eq(ncrReports.id, id)).limit(1);
+        if (!target) return res.status(404).json({ error: "not_found" });
+        const scope = await getQualityHseScope(req);
+        if (!scopeAllowsProject(scope, target.projectId)) return res.status(404).json({ error: "not_found" });
         const { comment } = req.body as z.infer<typeof ncrCommentSchema>;
         await db.insert(ncrComments).values({ ncrId: id, userId: user.id, comment });
         res.status(201).json({ ok: true });

@@ -31,6 +31,7 @@ import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import { getAssignmentsForEntity, getAssignmentsForEntities, setEntityAssignment } from "./services/assignment-service";
+import { getQualityHseScope, scopeAllowsProject, scopeAllowsProjectName, scopedProjectIdsArray, scopedProjectNamesArray } from "./services/quality-hse-scope";
 import {
   computeQualityRiskSummary,
   evaluateQualityGovernanceItem,
@@ -184,8 +185,9 @@ async function resolveProjectIdByName(projectName: string): Promise<number | nul
 }
 
 /**
- * Assert that `itemInstanceId` belongs to the project named in the URL.
- * Sends a 403 and returns false on mismatch; returns true on match.
+ * Assert that `itemInstanceId` belongs to the project named in the URL AND
+ * that the caller's quality/HSE scope includes that project. Sends a 403/404
+ * and returns false on any mismatch; returns true when both checks pass.
  */
 async function assertItemBelongsToProject(
   req: Request,
@@ -208,6 +210,29 @@ async function assertItemBelongsToProject(
       error: "project_scope_mismatch",
       message: "Item does not belong to the project named in the URL.",
     });
+    return false;
+  }
+  // R1: scoped roles only act on quality items for assigned projects.
+  const scope = await getQualityHseScope(req);
+  if (!scopeAllowsProject(scope, urlProjectId)) {
+    res.status(404).json({ error: "item_not_found" });
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Convenience: assert the caller's scope includes the URL :projectName. Used
+ * by per-project endpoints that don't go through a specific item id.
+ */
+async function assertProjectAccessByName(
+  req: Request,
+  res: Response,
+  urlProjectName: string,
+): Promise<boolean> {
+  const scope = await getQualityHseScope(req);
+  if (!scopeAllowsProjectName(scope, urlProjectName)) {
+    res.status(404).json({ error: "project_not_found" });
     return false;
   }
   return true;
@@ -816,6 +841,8 @@ export function registerQualityRoutes(app: Express) {
   app.get("/api/quality/project/:projectName/checklist", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const requestedProjectName = decodeURIComponent(String(req.params.projectName));
+      // R1: scoped roles only see their assigned projects' checklists.
+      if (!(await assertProjectAccessByName(req, res, requestedProjectName))) return;
       // F16: filter soft-deleted projects out of the lookup so we don't
       // accidentally surface (or create against) a project that's been
       // removed from the company workspace.
@@ -940,6 +967,8 @@ export function registerQualityRoutes(app: Express) {
     async (req, res) => {
       try {
         const requestedProjectName = decodeURIComponent(String(req.params.projectName));
+        // R1: scoped roles only create checklists for their assigned projects.
+        if (!(await assertProjectAccessByName(req, res, requestedProjectName))) return;
         const [project] = await db
           .select({ id: projectInfo.id, projectName: projectInfo.projectName })
           .from(projectInfo)
@@ -1855,6 +1884,7 @@ export function registerQualityRoutes(app: Express) {
   app.get("/api/quality/project/:projectName/warnings", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
+      if (!(await assertProjectAccessByName(req, res, projectName))) return;
       const warnings = await db.select().from(qcWarning)
         .where(eq(qcWarning.projectName, projectName))
         .orderBy(desc(qcWarning.createdAt));
@@ -1867,6 +1897,9 @@ export function registerQualityRoutes(app: Express) {
   app.get("/api/quality/warnings", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const statusFilter = req.query.status as string;
+      // R1: trim the cross-project warnings list to the caller's scope.
+      const scope = await getQualityHseScope(req);
+      const scopedNames = scopedProjectNamesArray(scope);
       let storedWarnings: any[];
       if (statusFilter) {
         storedWarnings = await db.select().from(qcWarning)
@@ -1874,6 +1907,10 @@ export function registerQualityRoutes(app: Express) {
           .orderBy(desc(qcWarning.createdAt));
       } else {
         storedWarnings = await db.select().from(qcWarning).orderBy(desc(qcWarning.createdAt));
+      }
+      if (scopedNames !== null) {
+        const allowed = new Set(scopedNames.map((n) => normalizeProjectName(n)));
+        storedWarnings = storedWarnings.filter((w: any) => allowed.has(normalizeProjectName(w.projectName)));
       }
 
       const warnings = storedWarnings.filter((w: any) => w.warningType !== "task_complete_unapproved");
@@ -1957,6 +1994,7 @@ export function registerQualityRoutes(app: Express) {
   app.get("/api/quality/project/:projectName/plan-links", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
+      if (!(await assertProjectAccessByName(req, res, projectName))) return;
       const links = await db.select().from(qcPlanLink).where(eq(qcPlanLink.projectName, projectName));
       res.json(links);
     } catch (err) {
@@ -1994,6 +2032,8 @@ export function registerQualityRoutes(app: Express) {
   app.delete("/api/quality/plan-link/:linkId", requireAuth, requirePermission("quality", "delete"), async (req, res) => {
     try {
       const [deletedLink] = await db.select().from(qcPlanLink).where(eq(qcPlanLink.id, parseIntParam(req.params.linkId)));
+      // R1: scoped roles only delete links for their assigned projects.
+      if (deletedLink && !(await assertProjectAccessByName(req, res, deletedLink.projectName))) return;
       await db.delete(qcPlanLink).where(eq(qcPlanLink.id, parseIntParam(req.params.linkId)));
       if (deletedLink) recalculateWarnings(deletedLink.projectName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(req.params.linkId), action: "delete", projectName: deletedLink?.projectName, changesJson: { description: "Plan link deleted" } });
@@ -2008,6 +2048,7 @@ export function registerQualityRoutes(app: Express) {
   app.get("/api/quality/project/:projectName/summary", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
+      if (!(await assertProjectAccessByName(req, res, projectName))) return;
       const [projectRow] = await db.select().from(projectInfo)
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
         .where(eq(projectInfo.projectName, projectName));
@@ -2160,6 +2201,7 @@ export function registerQualityRoutes(app: Express) {
   app.get("/api/quality/project/:projectName/workspace", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
+      if (!(await assertProjectAccessByName(req, res, projectName))) return;
       const userId = getUser(req).id;
       const context = await loadProjectQualityGovernanceContext(projectName, userId);
 
@@ -2242,6 +2284,11 @@ export function registerQualityRoutes(app: Express) {
     try {
       const projectFilter = req.query.project as string | undefined;
       const phaseFilter = req.query.phase as string | undefined;
+      // R1: scoped roles see only items on their assigned projects.
+      const scope = await getQualityHseScope(req);
+      const scopedNames = scopedProjectNamesArray(scope);
+      if (scopedNames !== null && scopedNames.length === 0) return res.json([]);
+      if (projectFilter && !scopeAllowsProjectName(scope, projectFilter)) return res.json([]);
       const statusFilter = req.query.status as string | undefined;
 
       const allInstances = await db.select().from(qcItemInstance);
@@ -2342,6 +2389,10 @@ export function registerQualityRoutes(app: Express) {
       if (phaseFilter) {
         items = items.filter((i: any) => i.phaseName === phaseFilter);
       }
+      if (scopedNames !== null) {
+        const allowed = new Set(scopedNames.map((n) => normalizeProjectName(n)));
+        items = items.filter((i: any) => allowed.has(normalizeProjectName(i.projectName)));
+      }
 
       res.json(items);
     } catch (err) {
@@ -2353,6 +2404,11 @@ export function registerQualityRoutes(app: Express) {
 
   app.get("/api/quality/checklists", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
+      // R1: scoped roles only see their assigned projects' checklists.
+      const scope = await getQualityHseScope(req);
+      const scopedIdsForChecklists = scopedProjectIdsArray(scope);
+      const scopedNamesForChecklists = scopedProjectNamesArray(scope);
+      if (scopedIdsForChecklists !== null && scopedIdsForChecklists.length === 0) return res.json([]);
       const allChecklistsRaw = await db.select().from(qcChecklist);
       const allChecklists = allChecklistsRaw.filter((c: typeof allChecklistsRaw[number]) => c.projectId != null || c.projectName != null);
       const allProjectRows = await db.select().from(projectInfo)
@@ -2577,7 +2633,18 @@ export function registerQualityRoutes(app: Express) {
         };
       });
 
-      res.json(result);
+      // R1: filter the response set to projects the caller's scope sees.
+      const finalResult = scopedNamesForChecklists === null
+        ? result
+        : (() => {
+            const allowed = new Set(scopedNamesForChecklists.map((n) => normalizeProjectName(n)));
+            const allowedIds = new Set(scopedIdsForChecklists ?? []);
+            return result.filter((r: any) =>
+              (r.projectId != null && allowedIds.has(r.projectId)) ||
+              allowed.has(normalizeProjectName(r.projectName ?? "")),
+            );
+          })();
+      res.json(finalResult);
     } catch (err) {
       sendError(res, err);
     }
@@ -2587,9 +2654,33 @@ export function registerQualityRoutes(app: Express) {
 
   app.get("/api/quality/dashboard", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
-      const allChecklistsRaw = await db.select().from(qcChecklist);
+      // R1: pre-filter checklists by the caller's quality/HSE scope. Scoped
+      // users only see aggregates for projects they're assigned to; oversight
+      // roles (QM, HSE, COO, etc.) see the full company-wide rollup.
+      const dashboardScope = await getQualityHseScope(req);
+      const dashboardScopedIds = scopedProjectIdsArray(dashboardScope);
+      const dashboardScopedNames = scopedProjectNamesArray(dashboardScope);
+      if (dashboardScopedIds !== null && dashboardScopedIds.length === 0) {
+        return res.json({
+          totalChecklists: 0, pendingApprovals: 0, openWarnings: 0, totalWarnings: 0,
+          projectsAtRisk: [], overdueActions: 0, resubmissionNeeded: 0, evidenceRequired: 0,
+          blockedHandovers: 0, atRiskProjects: 0, topRiskProjects: [], outstandingPostmortems: [],
+        });
+      }
+      const allChecklistsRawUnfiltered = await db.select().from(qcChecklist);
+      const allowedNamesNorm = dashboardScopedNames === null ? null : new Set(dashboardScopedNames.map((n) => normalizeProjectName(n)));
+      const allowedIds = dashboardScopedIds === null ? null : new Set(dashboardScopedIds);
+      const allChecklistsRaw = allowedIds === null
+        ? allChecklistsRawUnfiltered
+        : allChecklistsRawUnfiltered.filter((c: any) =>
+            (c.projectId != null && allowedIds.has(c.projectId)) ||
+            (c.projectName != null && allowedNamesNorm!.has(normalizeProjectName(c.projectName))),
+          );
       const allChecklists = allChecklistsRaw.filter((c: typeof allChecklistsRaw[number]) => c.projectId != null || c.projectName != null);
-      const allWarnings = await db.select().from(qcWarning).where(sql`${qcWarning.status} != 'resolved'`);
+      const allWarningsRaw = await db.select().from(qcWarning).where(sql`${qcWarning.status} != 'resolved'`);
+      const allWarnings = allowedNamesNorm === null
+        ? allWarningsRaw
+        : allWarningsRaw.filter((w: any) => allowedNamesNorm.has(normalizeProjectName(w.projectName)));
       const allItems = await db.select().from(qcItemInstance);
       const allRiskAnswers = await db.select().from(qcRiskAnswer);
       const riskQuestionIds = uniqueNumberList(allRiskAnswers.map((answer: any) => answer.templateRiskQuestionId));
@@ -2654,7 +2745,9 @@ export function registerQualityRoutes(app: Express) {
         evidenceCountMap.set(evidence.itemInstanceId, (evidenceCountMap.get(evidence.itemInstanceId) || 0) + 1);
       }
 
-      const pendingApprovals = allItems.filter((i: any) => i.isApplicable && !i.approved);
+      // R1: limit pendingApprovals to items whose checklist is in scope.
+      const allowedChecklistIds = new Set(allChecklists.map((c: any) => c.id));
+      const pendingApprovals = allItems.filter((i: any) => i.isApplicable && !i.approved && allowedChecklistIds.has(i.checklistId));
       const projectWarningCounts: Record<string, { high: number; total: number; }> = {};
       for (const w of allWarnings) {
         if (!projectWarningCounts[w.projectName]) projectWarningCounts[w.projectName] = { high: 0, total: 0 };
@@ -2760,6 +2853,7 @@ export function registerQualityRoutes(app: Express) {
   app.post("/api/quality/project/:projectName/recalculate-warnings", requireAuth, requirePermission("quality", "edit"), validateBody(recalculateWarningsSchema), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
+      if (!(await assertProjectAccessByName(req, res, projectName))) return;
       const count = await recalculateWarnings(projectName);
       logAuditFromReq(req, { entityType: "qc_warning", entityId: "0", action: "create", projectName, changesJson: { description: "Warnings recalculated", warningsGenerated: count } });
       res.json({ success: true, warningsGenerated: count });
@@ -2773,6 +2867,7 @@ export function registerQualityRoutes(app: Express) {
   app.get("/api/quality/postmortem/:projectName", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
+      if (!(await assertProjectAccessByName(req, res, projectName))) return;
       const [pm] = await db.select().from(qcPostmortem).where(eq(qcPostmortem.projectName, projectName));
       if (!pm) return res.json({ postmortem: null, metricValues: [], summary: null });
 
@@ -2789,6 +2884,7 @@ export function registerQualityRoutes(app: Express) {
   app.post("/api/quality/postmortem/:projectName", requireAuth, requirePermission("quality", "edit"), validateBody(postmortemSchema), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
+      if (!(await assertProjectAccessByName(req, res, projectName))) return;
       const { metricInputs } = req.body;
       const userId = getUser(req).id;
 
@@ -2916,6 +3012,7 @@ export function registerQualityRoutes(app: Express) {
   app.get("/api/quality/plan-warnings/:projectName", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
+      if (!(await assertProjectAccessByName(req, res, projectName))) return;
       const warnings = await db.select().from(qcWarning)
         .where(and(
           eq(qcWarning.projectName, projectName),
