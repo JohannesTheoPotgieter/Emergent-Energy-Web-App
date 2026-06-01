@@ -53,7 +53,7 @@ export function TaskDependenciesPanel({ task, allTasks }: TaskDependenciesPanelP
   const [adding, setAdding] = useState(false);
 
   // Fetch dependencies from the proper table via server API
-  const { data: depsData, isLoading } = useQuery<{ dependencies: Dependency[] }>({
+  const { data: depsData, isLoading, isError, refetch } = useQuery<{ dependencies: Dependency[] }>({
     queryKey: ["task-dependencies", task.id],
     queryFn: () => engFetch(`/api/dependencies/task/${task.id}`),
   });
@@ -132,6 +132,24 @@ export function TaskDependenciesPanel({ task, allTasks }: TaskDependenciesPanelP
     );
   }
 
+  if (isError) {
+    return (
+      <div className="flex items-center justify-between gap-2 rounded border border-red-200 bg-red-50/60 p-2.5 text-xs text-red-700" data-testid="dependencies-error">
+        <span className="flex items-center gap-1.5">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> Couldn&apos;t load dependencies.
+        </span>
+        <button
+          type="button"
+          className="rounded border border-red-300 px-2 py-0.5 font-medium hover:bg-red-100"
+          onClick={() => refetch()}
+          data-testid="dependencies-retry"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3" data-testid="dependencies-panel">
       {blockedBy.length > 0 && (
@@ -145,8 +163,10 @@ export function TaskDependenciesPanel({ task, allTasks }: TaskDependenciesPanelP
                 {getTaskStatusLabel(d.linkedTaskStatus)}
               </Badge>
               <button
+                type="button"
                 className="text-muted-foreground hover:text-red-500"
                 onClick={() => removeDep(d.id)}
+                aria-label={`Remove dependency: ${d.linkedTaskTitle}`}
                 data-testid={`dep-remove-${d.id}`}
               >
                 <X className="h-3 w-3" />
@@ -166,8 +186,10 @@ export function TaskDependenciesPanel({ task, allTasks }: TaskDependenciesPanelP
                 {getTaskStatusLabel(d.linkedTaskStatus)}
               </Badge>
               <button
+                type="button"
                 className="text-muted-foreground hover:text-red-500"
                 onClick={() => removeDep(d.id)}
+                aria-label={`Remove dependency: ${d.linkedTaskTitle}`}
                 data-testid={`dep-remove-${d.id}`}
               >
                 <X className="h-3 w-3" />
@@ -179,12 +201,16 @@ export function TaskDependenciesPanel({ task, allTasks }: TaskDependenciesPanelP
       <div className="space-y-2">
         <div className="flex gap-1">
           <button
+            type="button"
+            aria-pressed={depType === "blocked_by"}
             className={`text-[10px] px-2 py-1 rounded font-medium ${depType === "blocked_by" ? "bg-red-100 text-red-700" : "bg-muted text-muted-foreground"}`}
             onClick={() => setDepType("blocked_by")}
           >
             Blocked by
           </button>
           <button
+            type="button"
+            aria-pressed={depType === "blocks"}
             className={`text-[10px] px-2 py-1 rounded font-medium ${depType === "blocks" ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"}`}
             onClick={() => setDepType("blocks")}
           >

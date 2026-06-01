@@ -65,10 +65,13 @@ export function CommentInputWithMentions({ teamMembers, onSubmit, submitting }: 
           data-testid="input-comment"
         />
         {showMentions && (
-          <div className="absolute bottom-full left-0 w-full mb-1 bg-white border rounded-md shadow-lg z-50 max-h-[150px] overflow-y-auto">
+          <div role="listbox" aria-label="Mention a teammate" className="absolute bottom-full left-0 w-full mb-1 bg-white border rounded-md shadow-lg z-50 max-h-[150px] overflow-y-auto">
             {filteredMembers.slice(0, 6).map(m => (
               <button
                 key={m.id}
+                type="button"
+                role="option"
+                aria-selected={false}
                 className="w-full text-left px-3 py-1.5 text-xs hover:bg-blue-50 flex items-center gap-2"
                 onClick={() => {
                   const atIdx = text.lastIndexOf("@");
@@ -94,6 +97,7 @@ export function CommentInputWithMentions({ teamMembers, onSubmit, submitting }: 
         className="h-9 w-9 shrink-0"
         disabled={!text.trim() || submitting}
         onClick={submit}
+        aria-label="Post comment"
         data-testid="btn-send-comment"
       >
         <Send className="h-4 w-4" />

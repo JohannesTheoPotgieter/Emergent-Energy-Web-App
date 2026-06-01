@@ -75,6 +75,7 @@ export function ProjectHandoverTab({ projectId, projectName, initialFilter = "al
       toast({ title: "Handover pack created" });
       setShowCreate(false);
     },
+    onError: (e: Error) => toast({ title: "Could not create handover pack", description: e.message, variant: "destructive" }),
   });
 
   const filteredPacks = packs.filter((pack) => {

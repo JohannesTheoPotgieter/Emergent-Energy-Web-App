@@ -408,27 +408,67 @@ export function TaskDetailDrawer({
     setEditingField(null);
   };
 
+  // Approval actions previously fired an un-awaited comment + status mutation
+  // and toasted success synchronously, so a failed status PATCH still showed a
+  // success toast (and a second error toast). Sequence them and only confirm
+  // success after the status change actually resolves. The child mutations own
+  // their error toasts, so a failure surfaces honestly with no false success.
+  const [approvalActionPending, setApprovalActionPending] = useState(false);
+  const runApprovalAction = async ({
+    status,
+    commentPrefix,
+    successTitle,
+    successDescription,
+  }: {
+    status: string;
+    commentPrefix: string;
+    successTitle: string;
+    successDescription: string;
+  }) => {
+    if (approvalActionPending) return;
+    setApprovalActionPending(true);
+    try {
+      const comment = approvalComment.trim();
+      if (comment) {
+        await addCommentMutation.mutateAsync(`[${commentPrefix}] ${comment}`);
+      }
+      await updateMutation.mutateAsync({ status });
+      setApprovalComment("");
+      toast({ title: successTitle, description: successDescription });
+    } catch {
+      // addCommentMutation / updateMutation already surfaced the error toast.
+    } finally {
+      setApprovalActionPending(false);
+    }
+  };
+
   const projectDisplay = task.projectName?.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
   const overdue = isOverdue(task.dueDate, task.status);
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end" data-testid="task-detail-drawer">
+    <div
+      className="fixed inset-0 z-50 flex justify-end"
+      data-testid="task-detail-drawer"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="task-drawer-title"
+    >
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
       <ErrorBoundary>
       <div className="relative h-full w-full max-w-full sm:max-w-2xl bg-background border-l shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
         <div className="flex items-center justify-between p-4 border-b">
           <div className="flex items-center gap-2 min-w-0">
-            <Badge className={`text-[10px] shrink-0 ${getTaskStatusBadgeClass(task.status)}`}>{task.status}</Badge>
+            <Badge className={`text-[10px] shrink-0 ${getTaskStatusBadgeClass(task.status)}`}>{getTaskStatusLabel(task.status)}</Badge>
             <span className="text-sm text-muted-foreground truncate">{projectDisplay}</span>
             {task.taskTypeTag === "PROJECT" && <Badge variant="outline" className="text-[9px]">Project</Badge>}
           </div>
           <div className="flex items-center gap-1">
             {canDelete && (
-              <Button variant="ghost" size="icon" onClick={() => setShowDeleteConfirm(true)} className="text-red-500 hover:text-red-600 hover:bg-red-50" data-testid="btn-delete-task">
+              <Button variant="ghost" size="icon" onClick={() => setShowDeleteConfirm(true)} className="text-red-500 hover:text-red-600 hover:bg-red-50" aria-label="Delete task" data-testid="btn-delete-task">
                 <Trash2 className="h-4 w-4" />
               </Button>
             )}
-            <Button variant="ghost" size="icon" onClick={onClose} data-testid="btn-close-drawer">
+            <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close task details" data-testid="btn-close-drawer">
               <X className="h-5 w-5" />
             </Button>
           </div>
@@ -452,7 +492,7 @@ export function TaskDetailDrawer({
         <ScrollArea className="flex-1 min-h-0">
           <div className="p-4 space-y-5">
             <div>
-              <h2 className="text-xl font-bold leading-tight" data-testid="text-drawer-title">{task.title}</h2>
+              <h2 id="task-drawer-title" className="text-xl font-bold leading-tight" data-testid="text-drawer-title">{task.title}</h2>
               <div className="mt-1 flex flex-wrap gap-1.5">
                 <span className="inline-flex items-center rounded border bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
                   Work Item #{task.workItemId || task.id}
@@ -786,15 +826,14 @@ export function TaskDetailDrawer({
                         <div className="flex gap-2 flex-wrap">
                           <Button
                             size="sm"
-                            className="h-7 text-xs bg-green-600 hover:bg-green-700 gap-1"
-                            onClick={() => {
-                              if (approvalComment.trim()) {
-                                addCommentMutation.mutate(`[Approved] ${approvalComment.trim()}`);
-                              }
-                              updateMutation.mutate({ status: "qc_approved" });
-                              setApprovalComment("");
-                              toast({ title: "Task approved", description: "Status set to QC Approved" });
-                            }}
+                            className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 gap-1"
+                            disabled={approvalActionPending}
+                            onClick={() => runApprovalAction({
+                              status: "qc_approved",
+                              commentPrefix: "Approved",
+                              successTitle: "Task approved",
+                              successDescription: "Status set to QC Approved",
+                            })}
                             data-testid="btn-approve-task"
                           >
                             <ThumbsUp className="h-3.5 w-3.5" /> Approve
@@ -803,15 +842,18 @@ export function TaskDetailDrawer({
                             size="sm"
                             variant="outline"
                             className="h-7 text-xs text-purple-600 border-purple-200 hover:bg-purple-50 gap-1"
+                            disabled={approvalActionPending}
                             onClick={() => {
                               if (!approvalComment.trim()) {
                                 toast({ title: "Feedback required", description: "Please add a comment explaining what needs to change", variant: "destructive" });
                                 return;
                               }
-                              addCommentMutation.mutate(`[Feedback] ${approvalComment.trim()}`);
-                              updateMutation.mutate({ status: "provide_feedback" });
-                              setApprovalComment("");
-                              toast({ title: "Feedback sent", description: "Task returned to assignee for changes" });
+                              runApprovalAction({
+                                status: "provide_feedback",
+                                commentPrefix: "Feedback",
+                                successTitle: "Feedback sent",
+                                successDescription: "Task returned to assignee for changes",
+                              });
                             }}
                             data-testid="btn-request-changes"
                           >
@@ -821,15 +863,18 @@ export function TaskDetailDrawer({
                             size="sm"
                             variant="outline"
                             className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50 gap-1"
+                            disabled={approvalActionPending}
                             onClick={() => {
                               if (!approvalComment.trim()) {
                                 toast({ title: "Reason required", description: "Please add a comment explaining the rejection", variant: "destructive" });
                                 return;
                               }
-                              addCommentMutation.mutate(`[Rejected] ${approvalComment.trim()}`);
-                              updateMutation.mutate({ status: "to_do" });
-                              setApprovalComment("");
-                              toast({ title: "Task rejected", description: "Task sent back to the queue" });
+                              runApprovalAction({
+                                status: "to_do",
+                                commentPrefix: "Rejected",
+                                successTitle: "Task rejected",
+                                successDescription: "Task sent back to the queue",
+                              });
                             }}
                             data-testid="btn-reject-task"
                           >
@@ -1041,13 +1086,15 @@ export function TaskDetailDrawer({
                   </div>
                 </div>
               ) : (
-                <div
-                  className="text-sm whitespace-pre-wrap cursor-pointer hover:bg-muted/30 rounded p-2 min-h-[40px]"
+                <button
+                  type="button"
+                  className="w-full text-left text-sm whitespace-pre-wrap cursor-pointer hover:bg-muted/30 rounded p-2 min-h-[40px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   onClick={() => { setEditValues({ description: task.description || "" }); setEditingField("description"); }}
+                  aria-label="Edit description"
                   data-testid="text-drawer-description"
                 >
                   {task.description || <span className="text-muted-foreground italic">Click to add description...</span>}
-                </div>
+                </button>
               )}
             </div>
 
@@ -1068,10 +1115,13 @@ export function TaskDetailDrawer({
 
             <Separator />
 
-            <div className="flex border-b">
+            <div className="flex border-b" role="tablist" aria-label="Task details">
               {(["updates", "activity", "subtasks", "dependencies"] as const).map(tab => (
                 <button
                   key={tab}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === tab}
                   className={`px-3 py-2 text-xs font-medium border-b-2 transition-colors ${activeTab === tab ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
                   onClick={() => setActiveTab(tab)}
                   data-testid={`tab-${tab}`}
@@ -1154,6 +1204,7 @@ export function TaskDetailDrawer({
                       <button
                         className="shrink-0"
                         data-testid={`subtask-toggle-${st.id}`}
+                        aria-label={canonicalizeTaskStatus(st.status) === "complete" ? `Mark subtask "${st.title}" incomplete` : `Mark subtask "${st.title}" complete`}
                         onClick={async () => {
                           const isComplete = canonicalizeTaskStatus(st.status) === "complete";
                           const newStatus = isComplete ? "to_do" : "complete";
@@ -1163,7 +1214,9 @@ export function TaskDetailDrawer({
                               body: JSON.stringify({ status: newStatus }),
                             });
                             queryClient.invalidateQueries({ queryKey: ["task-subtasks", task.id] });
-                          } catch {}
+                          } catch (err) {
+                            toast({ title: "Could not update subtask", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
+                          }
                         }}
                       >
                         {canonicalizeTaskStatus(st.status) === "complete" ? (
@@ -1173,7 +1226,7 @@ export function TaskDetailDrawer({
                         )}
                       </button>
                       <span className={`flex-1 truncate ${canonicalizeTaskStatus(st.status) === "complete" ? "line-through text-muted-foreground" : ""}`}>{st.title}</span>
-                      <Badge className={`text-[9px] ${getTaskStatusBadgeClass(st.status)}`}>{st.status}</Badge>
+                      <Badge className={`text-[9px] ${getTaskStatusBadgeClass(st.status)}`}>{getTaskStatusLabel(st.status)}</Badge>
                     </div>
                   ))
                 )}

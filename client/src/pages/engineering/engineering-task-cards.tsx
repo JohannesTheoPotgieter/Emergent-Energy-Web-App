@@ -335,7 +335,11 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
       <div className="flex items-start gap-1.5 mb-1">
         {onToggleSelect && (
           <button
-            className={`w-4 h-4 mt-0.5 rounded border shrink-0 flex items-center justify-center transition-colors ${selected ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300 opacity-0 group-hover:opacity-100 hover:border-blue-400"}`}
+            type="button"
+            role="checkbox"
+            aria-checked={!!selected}
+            aria-label={`Select task: ${task.title}`}
+            className={`w-4 h-4 mt-0.5 rounded border shrink-0 flex items-center justify-center transition-colors focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300 opacity-0 group-hover:opacity-100 hover:border-blue-400"}`}
             onClick={(e) => { e.stopPropagation(); onToggleSelect(task.id); }}
             data-testid={`select-task-${task.id}`}
           >
@@ -354,9 +358,10 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
             <Popover open={quickEditOpen} onOpenChange={setQuickEditOpen}>
               <PopoverTrigger asChild>
                 <button
-                  className="w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-muted transition-all"
+                  className="w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring hover:bg-muted transition-all"
                   onClick={(e) => { e.stopPropagation(); }}
                   title="Quick edit"
+                  aria-label={`Quick edit task: ${task.title}`}
                   data-testid={`btn-quick-edit-${task.id}`}
                 >
                   <Pencil className="h-3 w-3 text-muted-foreground" />
@@ -501,8 +506,12 @@ export function KanbanColumn({
   if (collapsed) {
     return (
       <div
-        className={`flex flex-col items-center w-10 bg-muted/20 rounded-lg border-t-4 cursor-pointer hover:bg-muted/40 transition-all ${getTaskStatusColumnClass(status)} ${dragOver ? "ring-2 ring-primary/40 bg-primary/5" : ""}`}
+        role="button"
+        tabIndex={0}
+        aria-label={`Expand ${getTaskStatusLabel(status)} column (${tasks.length} tasks)`}
+        className={`flex flex-col items-center w-10 bg-muted/20 rounded-lg border-t-4 cursor-pointer hover:bg-muted/40 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${getTaskStatusColumnClass(status)} ${dragOver ? "ring-2 ring-primary/40 bg-primary/5" : ""}`}
         onClick={onToggleCollapse}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggleCollapse?.(); } }}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={(e) => {
@@ -561,7 +570,7 @@ export function KanbanColumn({
               </span>
             )}
             {onToggleCollapse && (
-              <button onClick={onToggleCollapse} className="w-5 h-5 flex items-center justify-center rounded hover:bg-muted transition-colors" title="Collapse column" data-testid={`collapse-col-${status}`}>
+              <button type="button" onClick={onToggleCollapse} className="w-5 h-5 flex items-center justify-center rounded hover:bg-muted transition-colors" title="Collapse column" aria-label={`Collapse ${getTaskStatusLabel(status)} column`} data-testid={`collapse-col-${status}`}>
                 <EyeOff className="h-3 w-3 text-muted-foreground" />
               </button>
             )}

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
@@ -81,6 +82,7 @@ export default function EngineeringStandupPage() {
 
   // Session state
   const [phase, setPhase] = useState<StandupPhase>("waiting");
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [queue, setQueue] = useState<Participant[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -492,7 +494,7 @@ export default function EngineeringStandupPage() {
       setIsPaused((p) => !p);
     } else if (e.key === "e" || e.key === "E") {
       e.preventDefault();
-      endStandup();
+      setShowEndConfirm(true);
     } else if (e.key === "Escape") {
       setShowShortcuts(false);
     }
@@ -597,13 +599,23 @@ export default function EngineeringStandupPage() {
                 {isPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
                 {isPaused ? "Resume" : "Pause"}
               </Button>
-              <Button variant="destructive" size="sm" onClick={endStandup} className="gap-1" data-testid="btn-standup-end">
+              <Button variant="destructive" size="sm" onClick={() => setShowEndConfirm(true)} className="gap-1" data-testid="btn-standup-end">
                 <Square className="h-3.5 w-3.5" /> End
               </Button>
             </div>
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={showEndConfirm}
+        onOpenChange={setShowEndConfirm}
+        title="End the standup?"
+        description="This ends the live session for everyone and moves to the summary. Timings and recorded moves are kept."
+        confirmLabel="End standup"
+        variant="destructive"
+        onConfirm={() => { setShowEndConfirm(false); endStandup(); }}
+      />
 
       {/* Keyboard shortcut help overlay */}
       {showShortcuts && (
@@ -770,15 +782,18 @@ export default function EngineeringStandupPage() {
                 {MOODS.map(m => (
                   <button
                     key={m.value}
+                    type="button"
                     onClick={() => setMood(m.value)}
-                    className={`text-lg p-1.5 rounded-md border transition-all ${
+                    className={`text-lg p-1.5 rounded-md border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                       moods.get(activeSpeaker.userId) === m.value
                         ? m.color + " scale-110"
                         : "border-transparent opacity-50 hover:opacity-100"
                     }`}
                     title={m.label}
+                    aria-label={`Mood: ${m.label}`}
+                    aria-pressed={moods.get(activeSpeaker.userId) === m.value}
                   >
-                    {m.emoji}
+                    <span aria-hidden="true">{m.emoji}</span>
                   </button>
                 ))}
               </div>

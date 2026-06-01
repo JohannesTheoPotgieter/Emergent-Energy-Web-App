@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { engFetch } from "@/lib/eng-fetch";
+import { useToast } from "@/hooks/use-toast";
 
 export interface SubtaskQuickAddProps {
   taskId: number;
@@ -17,6 +18,7 @@ export interface SubtaskQuickAddProps {
 
 export function SubtaskQuickAdd({ taskId }: SubtaskQuickAddProps) {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [title, setTitle] = useState<string>("");
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
@@ -31,9 +33,10 @@ export function SubtaskQuickAdd({ taskId }: SubtaskQuickAddProps) {
       setTitle("");
       queryClient.invalidateQueries({ queryKey: ["task-subtasks", taskId] });
       queryClient.invalidateQueries({ queryKey: ["task-activity", taskId] });
-    } catch {
-      // Drawer-level error toasts are handled by other mutations; staying
-      // silent here matches the previous in-place behaviour.
+    } catch (err) {
+      // Surface the failure instead of silently dropping it — a subtask that
+      // didn't save with no feedback is a trust bug.
+      toast({ title: "Could not add subtask", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
     }
   }
 
@@ -46,7 +49,7 @@ export function SubtaskQuickAdd({ taskId }: SubtaskQuickAddProps) {
         className="h-8 text-xs"
         data-testid="subtask-title-input"
       />
-      <Button type="submit" size="sm" className="h-8 px-3" disabled={!title.trim()} data-testid="subtask-add-btn">
+      <Button type="submit" size="sm" className="h-8 px-3" disabled={!title.trim()} aria-label="Add subtask" data-testid="subtask-add-btn">
         <Plus className="h-3.5 w-3.5" />
       </Button>
     </form>
