@@ -94,8 +94,19 @@ describe("POST /api/mytool/tasks/:id/dependencies — canonical", () => {
   });
 
   it("checks circular dependencies against workItemDependencies", () => {
-    expect(route).toContain(".from(workItemDependencies)");
-    expect(route).toContain("workItemDependencies.successorId");
+    // The route delegates to the module-level wouldCreateDependencyCycle
+    // helper, which does a transitive DFS over the canonical
+    // workItemDependencies graph (multi-hop A→B→C→A loops, not just the
+    // direct reverse edge). Assert both the call site and the helper's
+    // canonical source.
+    expect(route).toContain("wouldCreateDependencyCycle(predecessorTaskId, successorTaskId)");
+    const src = readFile("server/routes/mytool-routes.ts");
+    const helperStart = src.indexOf("async function wouldCreateDependencyCycle");
+    const helperEnd = src.indexOf("export function registerMytoolRoutes");
+    const helper = src.slice(helperStart, helperEnd);
+    expect(helper).toContain(".from(workItemDependencies)");
+    expect(helper).toContain("workItemDependencies.successorId");
+    expect(helper).toContain("isNull(workItemDependencies.deletedAt)");
   });
 });
 

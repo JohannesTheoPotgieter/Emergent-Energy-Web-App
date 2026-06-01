@@ -104,13 +104,17 @@ describe("H5: Monthly report provisional metrics", () => {
   });
 });
 
-describe("H9: empty engineering.routes.ts", () => {
-  const source = read("server/routes/engineering.routes.ts");
+describe("H9: dead engineering.routes.ts stub removed", () => {
+  // The empty stub router was never imported or registered (real endpoints
+  // live in server/engineering-routes.ts, wired via register-core-routes.ts).
+  // The engineer-function audit deleted it to remove the misleading file.
+  it("no longer exists", () => {
+    const stubPath = path.join(REPO_ROOT, "server/routes/engineering.routes.ts");
+    expect(fs.existsSync(stubPath)).toBe(false);
+  });
 
-  it("is effectively empty (only router boilerplate)", () => {
-    // Verify it has no actual route handlers
-    expect(source).not.toMatch(/router\.(get|post|patch|put|delete)\(/);
-    // But it exports a router (harmless)
-    expect(source).toContain("export default router");
+  it("is not registered anywhere", () => {
+    const registrar = read("server/routes/register-core-routes.ts");
+    expect(registrar).not.toContain("routes/engineering.routes");
   });
 });
