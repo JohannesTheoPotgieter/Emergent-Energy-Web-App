@@ -358,7 +358,7 @@ export default function EngineeringStandupPage() {
 
   const moveTaskMutation = useMutation({
     mutationFn: async ({ taskId, status, holdReason, blockedType }: {
-      taskId: number; status: string; holdReason?: string; blockedType?: string;
+      taskId: number; status: string; holdReason?: string; blockedType?: string; movement?: TaskMovement;
     }) => {
       const body: Record<string, unknown> = { status: standupLaneToCanonicalStatus(status) };
       if (holdReason) body.holdReason = holdReason;
@@ -368,7 +368,14 @@ export default function EngineeringStandupPage() {
         body: JSON.stringify(body),
       });
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      // Record the movement in the standup summary ONLY after the server
+      // confirms the move. Recording it eagerly meant a failed PATCH still
+      // showed up in the end-of-standup summary and the Teams paste — a move
+      // that never actually happened.
+      if (variables.movement) {
+        setTaskMovements(prev => [...prev, variables.movement!]);
+      }
       // Status-only standup move — fan out via the engineering-ticket
       // invalidator so the Engineering Board, Plan tab, Opportunity
       // drawer, Milestone Tracker, Action Launchpad and Execution
@@ -387,7 +394,10 @@ export default function EngineeringStandupPage() {
 
     const fromStatus = task.status;
 
-    setTaskMovements(prev => [...prev, {
+    // The movement is passed through the mutation and only committed to the
+    // summary on success (see onSuccess above), so a rejected move can't
+    // corrupt the recorded standup history.
+    const movement: TaskMovement = {
       taskId,
       taskTitle: task.title,
       userId: activeSpeaker.userId,
@@ -395,9 +405,9 @@ export default function EngineeringStandupPage() {
       fromStatus,
       toStatus: newStatus,
       holdReason,
-    }]);
+    };
 
-    moveTaskMutation.mutate({ taskId, status: newStatus, holdReason, blockedType });
+    moveTaskMutation.mutate({ taskId, status: newStatus, holdReason, blockedType, movement });
   }
 
   const editTaskMutation = useMutation({
@@ -423,10 +433,14 @@ export default function EngineeringStandupPage() {
 
   async function handleEditTask(taskId: number, updates: Partial<EngTask>) {
     if (Object.keys(updates).length === 0) return;
+    // Build the movement record up front but DON'T commit it to the summary
+    // until the edit actually persists — otherwise a failed PATCH leaves a
+    // phantom move in the standup history.
+    let pendingMovement: TaskMovement | null = null;
     if (updates.status && updates.status !== speakerTasks.find(t => t.id === taskId)?.status) {
       const task = speakerTasks.find(t => t.id === taskId);
       if (task && activeSpeaker) {
-        setTaskMovements(prev => [...prev, {
+        pendingMovement = {
           taskId,
           taskTitle: task.title,
           userId: activeSpeaker.userId,
@@ -434,7 +448,7 @@ export default function EngineeringStandupPage() {
           fromStatus: task.status,
           toStatus: updates.status!,
           holdReason: updates.holdReason as string | undefined,
-        }]);
+        };
       }
     }
     const normalizedUpdates = { ...updates } as Partial<EngTask>;
@@ -442,6 +456,11 @@ export default function EngineeringStandupPage() {
       normalizedUpdates.status = standupLaneToCanonicalStatus(normalizedUpdates.status);
     }
     await editTaskMutation.mutateAsync({ taskId, updates: normalizedUpdates as Record<string, unknown> });
+    // mutateAsync rejects on failure (handled by the caller / onError toast),
+    // so we only reach here when the edit succeeded.
+    if (pendingMovement) {
+      setTaskMovements(prev => [...prev, pendingMovement!]);
+    }
   }
 
   // ── Mood selection ────────────────────────────────────────────────────
@@ -715,8 +734,8 @@ export default function EngineeringStandupPage() {
 
       {/* ── RUNNING PHASE ──────────────────────────────────────────────── */}
       {phase === "running" && activeSpeaker && (
-        <div className="flex gap-4">
-          {/* Left rail — queue */}
+        <div className="flex flex-col lg:flex-row gap-4">
+          {/* Left rail — queue (stacks on top below lg so the board is usable on a phone/tablet) */}
           <StandupQueue
             queue={queue}
             activeIndex={activeIndex}
