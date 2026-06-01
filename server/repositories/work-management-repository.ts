@@ -43,6 +43,81 @@ import {
   workItemStatusToPersonal,
 } from "@shared/types/unified-task";
 
+/**
+ * Inputs the legacy create/update entrypoints accept. They're heterogeneous
+ * (`taskName` aliases `title`, `dueDate` aliases `endDate`, etc.) because the
+ * route handlers forward Zod-validated `req.body` straight through, but the
+ * field set is finite — listing it here replaces the previous `data: any`
+ * and gives call-site autocomplete without breaking any existing caller.
+ */
+export interface CreateOperationalTaskInput {
+  projectId?: number | null;
+  title?: string;
+  taskName?: string;
+  description?: string | null;
+  status?: string;
+  priority?: string;
+  startDate?: string | null;
+  dueDate?: string | null;
+  ownerUserId?: number | null;
+  sortOrder?: number | null;
+  holdReason?: string | null;
+  blockedType?: string | null;
+  approvalRequired?: boolean;
+  linkedPlanItemId?: number | null;
+  linkedDeliverableId?: number | null;
+  taskTypeTag?: string | null;
+  blockerReason?: string | null;
+  assigneeUserIds?: ReadonlyArray<number | string>;
+}
+
+export interface UpdateOperationalTaskInput {
+  taskName?: string;
+  dueDate?: string | null;
+  // Additional fields are accepted but written through unchanged; keeping
+  // the signature open lets callers patch any work_items column.
+  [key: string]: unknown;
+}
+
+export interface CreateMytoolTaskInput {
+  ownerUserId: number;
+  title?: string;
+  notes?: string | null;
+  status?: string;
+  priority?: string;
+  projectId?: number | null;
+  plannedForDate?: string | null;
+  scheduledDate?: string | null;
+  dueAt?: string | Date | null;
+  startDate?: string | null;
+  bucket?: string;
+  sourceEmailId?: string | null;
+  sourceEmailSubject?: string | null;
+  nextStep?: string | null;
+  definitionOfDone?: string | null;
+  completionNote?: string | null;
+  pinnedToday?: boolean;
+  pinnedWeek?: boolean;
+  sortOrder?: number;
+  isRecurring?: boolean;
+  recurrenceFrequency?: string | null;
+  recurrenceInterval?: number;
+  recurrenceDaysOfWeek?: string | null;
+  recurrenceEndDate?: string | null;
+  recurrenceParentId?: number | null;
+  taskType?: string;
+  scheduledStartTime?: string | null;
+  scheduledEndTime?: string | null;
+  tag?: string | null;
+  blockedReason?: string | null;
+}
+
+export interface UpdateMytoolTaskInput extends Partial<CreateMytoolTaskInput> {
+  projectName?: string | null;
+}
+
+type PersonalTaskShape = ReturnType<typeof toPersonalTaskShape>;
+
 type DbInstance = typeof db;
 
 export class WorkManagementRepository {
@@ -69,44 +144,45 @@ export class WorkManagementRepository {
     const results = await this.dbInstance.select().from(workItems).where(eq(workItems.id, id));
     return results[0];
   }
-  async createOperationalTask(data: any): Promise<any> {
+  async createOperationalTask(data: CreateOperationalTaskInput): Promise<WorkItem> {
     const now = new Date();
-    const assigneeUserIds = Array.isArray(data.assigneeUserIds)
-      ? [...new Set(data.assigneeUserIds.map((id: any) => Number(id)).filter((id: number) => Number.isInteger(id) && id > 0))]
-      : [];
+    const rawAssignees = Array.isArray(data.assigneeUserIds) ? data.assigneeUserIds : [];
+    const assigneeUserIds: number[] = [...new Set(
+      rawAssignees.map((id) => Number(id)).filter((n: number) => Number.isInteger(n) && n > 0),
+    )];
 
     const [created] = await this.dbInstance.transaction(async (tx: typeof db) => {
       const [task] = await tx.insert(workItems).values({
-        projectId: data.projectId,
+        projectId: data.projectId ?? null,
         title: data.title || data.taskName || 'Untitled',
-        description: data.description,
+        description: data.description ?? null,
         status: data.status || 'Not Started',
         priority: data.priority,
         startDate: data.startDate,
         endDate: data.dueDate,
-        ownerUserId: data.ownerUserId,
-        workstream: 'ENG' as any,
-        source: 'UI' as any,
-        sortOrder: data.sortOrder,
-        holdReason: data.holdReason,
-        blockedType: data.blockedType,
+        ownerUserId: data.ownerUserId ?? null,
+        workstream: 'ENG',
+        source: 'UI',
+        sortOrder: data.sortOrder ?? undefined,
+        holdReason: data.holdReason ?? null,
+        blockedType: data.blockedType ?? null,
         approvalRequired: data.approvalRequired,
-        linkedPlanItemId: data.linkedPlanItemId,
-        linkedDeliverableId: data.linkedDeliverableId,
-        taskTypeTag: data.taskTypeTag,
-        blockerReason: data.blockerReason,
+        linkedPlanItemId: data.linkedPlanItemId ?? null,
+        linkedDeliverableId: data.linkedDeliverableId ?? null,
+        taskTypeTag: data.taskTypeTag ?? null,
+        blockerReason: data.blockerReason ?? null,
         createdAt: now,
         updatedAt: now,
       }).returning();
 
       if (assigneeUserIds.length > 0) {
         await tx.insert(workItemAssignments).values(
-          assigneeUserIds.map((userId: any) => ({
+          assigneeUserIds.map((userId) => ({
             workItemId: task.id,
             userId,
-            role: "ASSIGNEE" as any,
+            role: "ASSIGNEE" as const,
             createdAt: now,
-          })) as any,
+          })),
         );
       }
 
@@ -114,8 +190,8 @@ export class WorkManagementRepository {
     });
     return created;
   }
-  async updateOperationalTask(id: number, data: any): Promise<any> {
-    const mapped: any = { ...data, updatedAt: new Date() };
+  async updateOperationalTask(id: number, data: UpdateOperationalTaskInput): Promise<WorkItem> {
+    const mapped: Record<string, unknown> = { ...data, updatedAt: new Date() };
     if (data.dueDate !== undefined) { mapped.endDate = data.dueDate; delete mapped.dueDate; }
     if (data.taskName !== undefined) { mapped.title = data.taskName; delete mapped.taskName; }
     const [updated] = await this.dbInstance.update(workItems).set(mapped).where(eq(workItems.id, id)).returning();
@@ -167,11 +243,11 @@ export class WorkManagementRepository {
 
   // ── Personal Tasks (unified: reads/writes work_items with workstream='PERSONAL') ──
 
-  private workItemToMytoolShape(row: WorkItem): any {
+  private workItemToMytoolShape(row: WorkItem): PersonalTaskShape {
     return toPersonalTaskShape(fromWorkItem(row));
   }
 
-  async getMytoolTasks(ownerUserId: number): Promise<any[]> {
+  async getMytoolTasks(ownerUserId: number): Promise<PersonalTaskShape[]> {
     const rows = await this.dbInstance.select().from(workItems).where(
       and(
         eq(workItems.workstream, "PERSONAL"),
@@ -179,10 +255,10 @@ export class WorkManagementRepository {
         isNull(workItems.deletedAt),
       )
     ).orderBy(workItems.sortOrder);
-    return rows.map((r: any) => this.workItemToMytoolShape(r));
+    return rows.map((r: WorkItem) => this.workItemToMytoolShape(r));
   }
 
-  async getMytoolTasksByDate(ownerUserId: number, date: string): Promise<any[]> {
+  async getMytoolTasksByDate(ownerUserId: number, date: string): Promise<PersonalTaskShape[]> {
     const rows = await this.dbInstance.select().from(workItems).where(
       and(
         eq(workItems.workstream, "PERSONAL"),
@@ -201,15 +277,15 @@ export class WorkManagementRepository {
         )
       )
     ).orderBy(workItems.sortOrder);
-    return rows.map((r: any) => this.workItemToMytoolShape(r));
+    return rows.map((r: WorkItem) => this.workItemToMytoolShape(r));
   }
 
-  async getMytoolTask(id: number): Promise<any | undefined> {
+  async getMytoolTask(id: number): Promise<PersonalTaskShape | undefined> {
     const [row] = await this.dbInstance.select().from(workItems).where(eq(workItems.id, id));
     return row ? this.workItemToMytoolShape(row) : undefined;
   }
 
-  async createMytoolTask(data: any): Promise<any> {
+  async createMytoolTask(data: CreateMytoolTaskInput): Promise<PersonalTaskShape> {
     const now = new Date();
     const [created] = await this.dbInstance.insert(workItems).values({
       title: data.title,
@@ -247,12 +323,12 @@ export class WorkManagementRepository {
       holdReason: data.blockedReason || null,
       createdAt: now,
       updatedAt: now,
-    } as any).returning();
+    }).returning();
     return this.workItemToMytoolShape(created);
   }
 
-  async updateMytoolTask(id: number, data: any): Promise<any> {
-    const updateFields: Record<string, any> = { updatedAt: new Date() };
+  async updateMytoolTask(id: number, data: UpdateMytoolTaskInput): Promise<PersonalTaskShape> {
+    const updateFields: Record<string, unknown> = { updatedAt: new Date() };
 
     if (data.title !== undefined) updateFields.title = data.title;
     if (data.notes !== undefined) updateFields.description = data.notes;
