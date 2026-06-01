@@ -480,24 +480,52 @@ export default function EngineeringTasksPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  // Optimistic helper for the per-card hot paths (status / priority / due
+  // date). Patches the board cache immediately so a drag or quick-edit lands
+  // instantly, snapshots the previous list for rollback, and reconciles with
+  // the server in onSettled. The board query is the single source the board /
+  // list / projects / timeline / my-tasks views all derive from.
+  const boardKey = engineeringTicketKeys.scope("board");
+  const optimisticTaskPatch = useCallback(async (taskId: number, patch: Partial<Task>) => {
+    await queryClient.cancelQueries({ queryKey: boardKey });
+    const previousTasks = queryClient.getQueryData<Task[]>(boardKey);
+    queryClient.setQueryData<Task[]>(boardKey, (old) =>
+      (old || []).map((t) => (t.id === taskId ? { ...t, ...patch } : t)),
+    );
+    return { previousTasks };
+  }, [queryClient, boardKey]);
+
+  const rollbackTasks = useCallback((ctx?: { previousTasks?: Task[] }) => {
+    if (ctx?.previousTasks) queryClient.setQueryData(boardKey, ctx.previousTasks);
+  }, [queryClient, boardKey]);
+
   const updateStatusMutation = useMutation({
     mutationFn: ({ taskId, status, holdReason, blockedType }: { taskId: number; status: string; holdReason?: string; blockedType?: string }) =>
       engFetch(`/api/eng/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ status, ...(holdReason ? { holdReason } : {}), ...(blockedType ? { blockedType } : {}) }) }),
+    onMutate: ({ taskId, status, holdReason, blockedType }) =>
+      optimisticTaskPatch(taskId, { status, ...(holdReason ? { holdReason } : {}), ...(blockedType ? { blockedType } : {}) } as Partial<Task>),
     onSuccess: () => {
-      invalidateEngineeringTicketCaches(queryClient);
       toast({ title: "Status updated" });
     },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error, _vars, ctx) => {
+      rollbackTasks(ctx);
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    },
+    onSettled: () => invalidateEngineeringTicketCaches(queryClient),
   });
 
   const updatePriorityMutation = useMutation({
     mutationFn: ({ taskId, priority }: { taskId: number; priority: string }) =>
       engFetch(`/api/eng/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ priority }) }),
+    onMutate: ({ taskId, priority }) => optimisticTaskPatch(taskId, { priority } as Partial<Task>),
     onSuccess: () => {
-      invalidateEngineeringTicketCaches(queryClient);
       toast({ title: "Priority updated" });
     },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error, _vars, ctx) => {
+      rollbackTasks(ctx);
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    },
+    onSettled: () => invalidateEngineeringTicketCaches(queryClient),
   });
 
   const requestStatusChange = useCallback((taskId: number, newStatus: string) => {
@@ -608,11 +636,15 @@ export default function EngineeringTasksPage() {
   const updateDueDateMutation = useMutation({
     mutationFn: ({ taskId, dueDate }: { taskId: number; dueDate: string }) =>
       engFetch(`/api/eng/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ dueDate }) }),
+    onMutate: ({ taskId, dueDate }) => optimisticTaskPatch(taskId, { dueDate } as Partial<Task>),
     onSuccess: () => {
-      invalidateEngineeringTicketCaches(queryClient);
       toast({ title: "Due date updated" });
     },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error, _vars, ctx) => {
+      rollbackTasks(ctx);
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    },
+    onSettled: () => invalidateEngineeringTicketCaches(queryClient),
   });
 
   const handleDueDateChange = useCallback((taskId: number, dueDate: string) => {

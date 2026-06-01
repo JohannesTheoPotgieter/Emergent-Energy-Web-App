@@ -307,7 +307,7 @@ export function TaskLanes({ tasks, onMoveTask, onEditTask, isLoading }: TaskLane
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-4 gap-3 flex-1">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 flex-1">
         {STANDUP_LANES.map(lane => (
           <div key={lane.key} className={`rounded-lg border ${lane.border} ${lane.color} p-3`}>
             <div className="text-xs font-medium text-muted-foreground mb-2">{lane.label}</div>
@@ -324,7 +324,7 @@ export function TaskLanes({ tasks, onMoveTask, onEditTask, isLoading }: TaskLane
 
   return (
     <>
-      <div className="grid grid-cols-4 gap-3 flex-1 min-h-0">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 flex-1 min-h-0">
         {STANDUP_LANES.map(lane => {
           const laneTasks = tasks.filter(t => t.status === lane.key);
           return (
