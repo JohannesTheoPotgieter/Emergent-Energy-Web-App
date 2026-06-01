@@ -58,6 +58,7 @@ export function DrawingRegisterTab({ projectId, projectName }: Props) {
       setShowCreate(false);
       setForm({ drawingNumber: "", title: "", discipline: "", status: "draft", sharepointLink: "" });
     },
+    onError: (e: Error) => toast({ title: "Could not register drawing", description: e.message, variant: "destructive" }),
   });
 
   // NOTE: Drawing status transitions are managed through the Engineering
@@ -93,7 +94,7 @@ export function DrawingRegisterTab({ projectId, projectName }: Props) {
               <Badge variant="outline" className="text-[10px] font-mono">Rev {d.currentRevision}</Badge>
               <Badge className={`text-[10px] ${statusColor(d.status)}`}>{d.status.replace(/_/g, " ")}</Badge>
               {d.sharepointLink && (
-                <a href={d.sharepointLink} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">
+                <a href={d.sharepointLink} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground" aria-label={`Open ${d.drawingNumber} in SharePoint (opens in new tab)`}>
                   <ExternalLink className="h-3.5 w-3.5" />
                 </a>
               )}

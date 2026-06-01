@@ -624,8 +624,18 @@ function SortHeader({ col, children, align, sortCol, sortDir, onToggle }: {
   onToggle: (col: string) => void;
 }) {
   return (
-    <th className={`${align === "center" ? "text-center" : "text-left"} p-2 ${col === "title" ? "pl-3" : ""} cursor-pointer select-none hover:text-foreground transition-colors`} onClick={() => onToggle(col)}>
-      <span className="inline-flex items-center gap-1">{children}{sortCol === col && <span className="text-[9px]">{sortDir === "asc" ? "▲" : "▼"}</span>}</span>
+    <th
+      scope="col"
+      aria-sort={sortCol === col ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+      className={`${align === "center" ? "text-center" : "text-left"} p-2 ${col === "title" ? "pl-3" : ""}`}
+    >
+      <button
+        type="button"
+        onClick={() => onToggle(col)}
+        className="inline-flex items-center gap-1 select-none rounded hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {children}{sortCol === col && <span className="text-[9px]" aria-hidden="true">{sortDir === "asc" ? "▲" : "▼"}</span>}
+      </button>
     </th>
   );
 }
@@ -702,8 +712,15 @@ export function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityC
           <table className="w-full text-sm min-w-[900px]">
             <thead>
               <tr className="border-b bg-muted/30 text-[11px] text-muted-foreground">
-                <th className="w-8 p-2 text-center">
-                  <input type="checkbox" checked={selectedIds.size === tasks.length && tasks.length > 0} onChange={toggleAll} className="h-3 w-3" />
+                <th scope="col" className="w-8 p-2 text-center">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.size === tasks.length && tasks.length > 0}
+                    ref={(el) => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < tasks.length; }}
+                    onChange={toggleAll}
+                    aria-label="Select all tasks"
+                    className="h-3 w-3"
+                  />
                 </th>
                 <SortHeader col="title" sortCol={sortCol} sortDir={sortDir} onToggle={toggleSort}>Title</SortHeader>
                 <SortHeader col="project" sortCol={sortCol} sortDir={sortDir} onToggle={toggleSort}>Project</SortHeader>
@@ -727,7 +744,7 @@ export function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityC
                     data-testid={`row-task-${task.id}`}
                   >
                     <td className="w-8 p-2 text-center" onClick={(e) => e.stopPropagation()}>
-                      <input type="checkbox" checked={selectedIds.has(task.id)} onChange={() => toggleSelect(task.id)} className="h-3 w-3" />
+                      <input type="checkbox" checked={selectedIds.has(task.id)} onChange={() => toggleSelect(task.id)} aria-label={`Select task: ${task.title}`} className="h-3 w-3" />
                     </td>
                     <td
                       className="p-2 pl-3 font-medium max-w-[250px] truncate cursor-pointer hover:text-blue-600"
@@ -844,6 +861,10 @@ export function MyTasksView({
 
   const nameLower = myName.toLowerCase();
   const myTasks = useMemo(() => {
+    // An empty name must match NOTHING — otherwise `"".startsWith("")` is true
+    // for every assignee and "My Tasks" silently shows the whole board. This
+    // mirrors the parent orchestrator's `if (!myName) return []` guard.
+    if (!nameLower) return [];
     return tasks.filter(t =>
       (t.assignees || []).some(a => a && a.toLowerCase().startsWith(nameLower))
     );
@@ -1167,6 +1188,7 @@ export function MyTasksView({
                                   className="h-7 w-7 shrink-0"
                                   disabled={!quickNotes[task.id]?.trim() || postingNote[task.id]}
                                   onClick={() => postQuickNote(task.id)}
+                                  aria-label="Post note"
                                   data-testid={`my-task-note-send-${task.id}`}
                                 >
                                   {postingNote[task.id] ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
@@ -1180,6 +1202,7 @@ export function MyTasksView({
                                 className="h-7 w-7"
                                 onClick={() => onCardClick(task)}
                                 title="Open details"
+                                aria-label={`Open details for ${task.title}`}
                                 data-testid={`my-task-open-${task.id}`}
                               >
                                 <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1211,6 +1234,7 @@ export function MyTasksView({
                             size="icon"
                             className="h-7 w-7 shrink-0"
                             onClick={() => onCardClick(task)}
+                            aria-label={`Open details for ${task.title}`}
                             data-testid={`my-task-open-${task.id}`}
                           >
                             <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1261,6 +1285,7 @@ export function MyTasksView({
                             className="h-7 w-7 shrink-0"
                             disabled={!quickNotes[task.id]?.trim() || postingNote[task.id]}
                             onClick={() => postQuickNote(task.id)}
+                            aria-label="Post note"
                             data-testid={`my-task-note-send-${task.id}`}
                           >
                             {postingNote[task.id] ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}

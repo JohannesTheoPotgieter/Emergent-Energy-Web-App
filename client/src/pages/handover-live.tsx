@@ -15,6 +15,7 @@ import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { PageLayout } from "@/components/layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
@@ -122,6 +123,7 @@ export default function HandoverLive() {
   const [stepIdx, setStepIdx] = useState(0);
   const [stepNotes, setStepNotes] = useState<Record<string, string>>({});
   const [acceptanceDecision, setAcceptanceDecision] = useState<"accepted" | "accepted_with_reservations" | "rejected" | null>(null);
+  const [showAcceptConfirm, setShowAcceptConfirm] = useState(false);
   const [acceptanceReason, setAcceptanceReason] = useState("");
   const [charterDraft, setCharterDraft] = useState<Partial<ProjectCharter>>({});
   const [charterDirty, setCharterDirty] = useState(false);
@@ -395,7 +397,7 @@ export default function HandoverLive() {
                   )}
                   <div className="flex justify-end">
                     <Button
-                      onClick={recordAcceptance}
+                      onClick={() => setShowAcceptConfirm(true)}
                       disabled={
                         saving ||
                         !acceptanceDecision ||
@@ -407,6 +409,20 @@ export default function HandoverLive() {
                       Record decision
                     </Button>
                   </div>
+                  <ConfirmDialog
+                    open={showAcceptConfirm}
+                    onOpenChange={setShowAcceptConfirm}
+                    title="Record this handover decision?"
+                    description={
+                      acceptanceDecision === "accepted"
+                        ? "This signs off the handover and advances the project charter to accepted. It's a formal, recorded decision."
+                        : acceptanceDecision === "rejected"
+                        ? "This records the handover as rejected and notifies the PM workspace."
+                        : "This records the handover as accepted with reservations and notifies the PM workspace."
+                    }
+                    confirmLabel="Record decision"
+                    onConfirm={() => { setShowAcceptConfirm(false); recordAcceptance(); }}
+                  />
                 </CardContent>
               </Card>
             )}
