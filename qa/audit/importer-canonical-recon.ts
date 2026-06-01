@@ -185,7 +185,7 @@ type State = "realised" | "committed" | "planned" | "unrealised";
 interface Line {
   project: string; sourceRow: number; category: string;
   cos: number; rev: number; gp: number;
-  invoiceNo: string; invoiceMonth: string | null; colour: string; isBlack: boolean;
+  invoiceNo: string; invoiceMonth: string | null; paymentMonth: string | null; colour: string; isBlack: boolean;
   canonical: State; app: State; inFy: boolean;
 }
 
@@ -237,6 +237,7 @@ function analyse(wb: ExcelJS.Workbook, path: string, lines: Line[], flags: strin
     const payDate = cols.finance_payment_date > 0 ? toIso(ws.getRow(r).getCell(cols.finance_payment_date).value) : null;
     const invDate = rawInvDate ?? lastDayOfMonth(payDate); // EOMONTH(payment) replica, normalizer.ts:1534
     const month = invDate ? invDate.slice(0, 7) : null;
+    const payMonth = payDate ? payDate.slice(0, 7) : null;
 
     // colour read from the INVOICE DATE cell (normalizer.ts:1600)
     const fc = cols.invoice_date > 0 && invDate ? getCellFontColor(ws, r, cols.invoice_date) : { color: null, isBlack: false };
@@ -264,7 +265,7 @@ function analyse(wb: ExcelJS.Workbook, path: string, lines: Line[], flags: strin
 
     lines.push({
       project, sourceRow: r, category: cat, cos, rev, gp: rev - cos,
-      invoiceNo, invoiceMonth: month, colour: fc.color ?? "(none)", isBlack: fc.isBlack,
+      invoiceNo, invoiceMonth: month, paymentMonth: payMonth, colour: fc.color ?? "(none)", isBlack: fc.isBlack,
       canonical: classifyCanonical(hasInv, fc.isBlack, red, month),
       app: classifyApp(hasInv, fc.isBlack, month),
       inFy,
@@ -289,6 +290,44 @@ function bucketTotals(lines: Line[], key: "canonical" | "app", fyOnly: boolean) 
     t[l[key]].cos += l.cos; t[l[key]].rev += l.rev;
   }
   return t;
+}
+
+/**
+ * Per-month REALISED totals under the canonical "truth" rule (invoice present +
+ * BLACK). `which` selects the bucket date: "invoice" = INVOICE RAISED DATE (the
+ * canonical/truth rule); "payment" = FINANCE PAYMENT DATE (to expose timing
+ * drift — Hypothesis 1). Lines with no bucket date are excluded.
+ */
+function realisedByMonth(lines: Line[], which: "invoice" | "payment") {
+  const t = new Map<string, { cos: number; rev: number }>();
+  for (const l of lines) {
+    if (l.canonical !== "realised") continue; // truth realised = invoice + black
+    const m = which === "invoice" ? l.invoiceMonth : l.paymentMonth;
+    if (!m || m < FY_START.slice(0, 7) || m > FY_END.slice(0, 7)) continue;
+    const row = t.get(m) ?? { cos: 0, rev: 0 };
+    row.cos += l.cos; row.rev += l.rev; t.set(m, row);
+  }
+  return t;
+}
+
+function printRealisedByMonth(lines: Line[]) {
+  const byInv = realisedByMonth(lines, "invoice");
+  const byPay = realisedByMonth(lines, "payment");
+  const months = [...new Set([...byInv.keys(), ...byPay.keys()])].sort();
+  console.log("================ REALISED BY MONTH (truth = invoice present + BLACK) ================");
+  console.log("month   | REV @invoice-date | REV @payment-date | Δ          | COS @invoice-date | COS @payment-date | Δ");
+  for (const m of months) {
+    const i = byInv.get(m) ?? { cos: 0, rev: 0 };
+    const p = byPay.get(m) ?? { cos: 0, rev: 0 };
+    console.log(
+      `${m} | ${rands(i.rev).padStart(17)} | ${rands(p.rev).padStart(17)} | ${rands(p.rev - i.rev).padStart(10)} | ` +
+      `${rands(i.cos).padStart(17)} | ${rands(p.cos).padStart(17)} | ${rands(p.cos - i.cos).padStart(10)}`,
+    );
+  }
+  console.log(
+    "\nThe @invoice-date column is the canonical 'truth'. If the app's monthly figures match the\n" +
+    "@payment-date column instead (Sep higher, Feb lower), the engine is bucketing by the wrong date.\n",
+  );
 }
 
 async function main() {
@@ -332,6 +371,8 @@ async function main() {
     const cTot = states.reduce((s, k) => s + can[k].cos, 0);
     console.log(`TOTAL COS    | ${rands(cTot).padStart(13)}  (preserved across both rules — only attribution moves)\n`);
   }
+
+  printRealisedByMonth(lines);
 
   if (flags.length) {
     console.log("---------------- HYGIENE FLAGS ----------------");
