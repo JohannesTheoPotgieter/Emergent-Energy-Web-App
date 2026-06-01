@@ -83,7 +83,7 @@ function computeScore(kind: DoNextKind, severity: DoNextItem["severity"], since?
 
 async function buildApprovalItems(req: Request, role: string): Promise<DoNextItem[]> {
   if (!isVisibleForRole("approval", role)) return [];
-  const userId = Number((req as any).user?.id);
+  const userId = Number(req.user?.id);
   // Default: only show approvals routed TO this user. Triage roles also get
   // visibility into pending-but-unassigned approvals so they can route them.
   // This prevents data overexposure of approval titles/projects to non-triage users.
@@ -171,7 +171,7 @@ async function buildRagItems(_req: Request, role: string): Promise<DoNextItem[]>
 }
 
 async function buildOverdueTaskItems(req: Request, _role: string): Promise<DoNextItem[]> {
-  const userId = Number((req as any).user?.id);
+  const userId = Number(req.user?.id);
   if (!userId) return [];
   try {
     const todayIso = new Date().toISOString().slice(0, 10);
@@ -260,7 +260,7 @@ async function buildBlockedPriorityItems(_req: Request, role: string): Promise<D
 }
 
 async function buildEscalatedPriorityItems(req: Request, role: string): Promise<DoNextItem[]> {
-  const userId = Number((req as any).user?.id);
+  const userId = Number(req.user?.id);
   if (!userId) return [];
   const ESCALATION_ROLES = new Set<CompanyRole>([
     "COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER",
@@ -377,11 +377,11 @@ function applyState(items: DoNextItem[], state: Map<string, SnoozeRow>): DoNextI
 
 export function registerHomeDoNextRoutes(app: Express) {
   app.get("/api/home/do-next", jwtAuth, requireAuth, async (req: Request, res: Response) => {
-    const userId = Number((req as any).user?.id);
+    const userId = Number(req.user?.id);
     // SECURITY: derive role from the authenticated session ONLY. The
     // `x-company-role` header is used elsewhere as a UI role-simulator and
     // would otherwise let any client widen their own visibility here.
-    const sessionRole = (req as any).user?.role || "";
+    const sessionRole = req.user?.role || "";
     const role = normalizeRoleForPermissions(sessionRole) || sessionRole;
 
     if (!userId) {
@@ -416,7 +416,7 @@ export function registerHomeDoNextRoutes(app: Express) {
   });
 
   app.post("/api/home/do-next/:itemKey/snooze", jwtAuth, requireAuth, async (req: Request, res: Response) => {
-    const userId = Number((req as any).user?.id);
+    const userId = Number(req.user?.id);
     const itemKey = String(req.params.itemKey || "").slice(0, 256);
     const hours = Math.max(1, Math.min(24 * 30, Number((req.body as any)?.hours) || 24));
     const reason = ((req.body as any)?.reason || null) as string | null;
@@ -442,7 +442,7 @@ export function registerHomeDoNextRoutes(app: Express) {
   });
 
   app.post("/api/home/do-next/:itemKey/dismiss", jwtAuth, requireAuth, async (req: Request, res: Response) => {
-    const userId = Number((req as any).user?.id);
+    const userId = Number(req.user?.id);
     const itemKey = String(req.params.itemKey || "").slice(0, 256);
     const reason = ((req.body as any)?.reason || null) as string | null;
     if (!userId || !itemKey) return res.status(400).json({ error: "bad_request" });
@@ -464,7 +464,7 @@ export function registerHomeDoNextRoutes(app: Express) {
   });
 
   app.delete("/api/home/do-next/:itemKey", jwtAuth, requireAuth, async (req: Request, res: Response) => {
-    const userId = Number((req as any).user?.id);
+    const userId = Number(req.user?.id);
     const itemKey = String(req.params.itemKey || "").slice(0, 256);
     if (!userId || !itemKey) return res.status(400).json({ error: "bad_request" });
 

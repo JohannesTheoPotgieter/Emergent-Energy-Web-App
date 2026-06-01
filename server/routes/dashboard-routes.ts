@@ -31,7 +31,7 @@ export function registerDashboardRoutes(app: Express) {
 
   app.get("/api/program-dashboard", requireAuth, async (req, res) => {
     try {
-      const dashUser = (req as any).user;
+      const dashUser = req.user;
       const q = req.query as Record<string, string | undefined>;
       const toggle = (name: string) => (q[name] || '').toLowerCase() === 'true';
       const filters: ProgramDashboardFilters = {
@@ -417,7 +417,7 @@ export function registerDashboardRoutes(app: Express) {
 
   app.get("/api/dashboard/my-work", requireAuth, async (req, res) => {
     try {
-      const role = String((req as any).user?.role || "USER").toUpperCase();
+      const role = String(req.user?.role || "USER").toUpperCase();
       const roleView =
         role.includes("FINANCE") || role === "CFO" ? "Finance focus" :
         role.includes("ENGINEER") ? "Engineering focus" :

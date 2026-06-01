@@ -10,7 +10,7 @@
  *   DELETE /api/work-items/:id/viewers/:userId
  */
 
-import type { Express } from "express";
+import type { Express, Request } from "express";
 import { parseIntParam } from "../lib/req-params";
 import { db } from "../db";
 import { and, inArray, isNull } from "drizzle-orm";
@@ -34,7 +34,10 @@ export function registerWorkItemsExtractedRoutes(app: Express): void {
       }
       const cleanIds = ids.map((n: unknown) => Number(n)).filter((n: number) => Number.isInteger(n) && n > 0);
       if (cleanIds.length === 0) return res.status(400).json({ error: "ids[] must contain valid numeric ids" });
-      const userId = (req as any).user?.id || (req as any).jwtPayload?.userId || null;
+      // req.user is set by requireAuth; jwtPayload is set on JWT-only flows and
+      // is not part of the canonical Express.Request augmentation yet, so the
+      // narrow cast stays only on that fallback path.
+      const userId = req.user?.id ?? (req as Request & { jwtPayload?: { userId?: number } }).jwtPayload?.userId ?? null;
       // Single batched soft-delete instead of one DB round-trip per id.
       await db.update(workItems)
         .set({ deletedAt: new Date() })

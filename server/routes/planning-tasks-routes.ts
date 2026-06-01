@@ -722,7 +722,7 @@ export function registerPlanningTasksRoutes(app: Express) {
 
       const result = Array.from(taskMap.values()).sort(sortByTaskCode);
 
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (userId) {
         try {
           const assignmentRows = await db.execute(sql`
@@ -859,7 +859,7 @@ export function registerPlanningTasksRoutes(app: Express) {
   // in the canonical role list fails the build instead of silently denying.
   const PLAN_ADMIN_EDIT_ROLES: CompanyRole[] = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"];
   const canEditProjectTasks = async (req: Request, projectName: string): Promise<boolean> => {
-    const user = req.user as any;
+    const user = req.user;
     if (!user) return false;
     const role = user.role || "";
     if ((PLAN_ADMIN_EDIT_ROLES as string[]).includes(role)) return true;
@@ -876,7 +876,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       if (taskId == null) {
         return res.status(400).json({ error: `Invalid task ID: ${paramStr(req, "taskId")}` });
       }
-      const user = req.user as any;
+      const user = req.user;
       const { projectName, ...updates } = req.body;
       if (!projectName) return res.status(400).json({ error: "projectName is required" });
 
@@ -996,7 +996,7 @@ export function registerPlanningTasksRoutes(app: Express) {
           const mirrorResult = await applyWorkItemUpdate(
             wiMirror,
             and(eq(workItems.legacyTable, "project_plan"), eq(workItems.legacyId, actualTaskId)),
-            (req as any).user?.id ?? null,
+            req.user?.id ?? null,
           );
           if (mirrorResult.matchedCount === 0) {
             return res.status(409).json({
@@ -1034,7 +1034,7 @@ export function registerPlanningTasksRoutes(app: Express) {
                 const result = await applyWorkItemUpdate(
                   { percentComplete: wiPct },
                   and(eq(workItems.legacyTable, "project_plan"), eq(workItems.legacyId, actualTaskId)),
-                  (req as any).user?.id ?? null,
+                  req.user?.id ?? null,
                 );
                 if (result.matchedCount === 0) {
                   const wiByProject = await db.execute(sql`
@@ -1048,7 +1048,7 @@ export function registerPlanningTasksRoutes(app: Express) {
                     await applyWorkItemUpdate(
                       { percentComplete: wiPct },
                       eq(workItems.id, (wiByProject.rows[0] as any).id),
-                      (req as any).user?.id ?? null,
+                      req.user?.id ?? null,
                     );
                   }
                 }
@@ -1158,7 +1158,7 @@ export function registerPlanningTasksRoutes(app: Express) {
           await applyWorkItemUpdate(
             wiUpdateFields,
             eq(workItems.id, wi.id),
-            (req as any).user?.id ?? null,
+            req.user?.id ?? null,
           );
         }
 
@@ -1173,7 +1173,7 @@ export function registerPlanningTasksRoutes(app: Express) {
             await applyWorkItemUpdate(
               wiSyncFields,
               and(eq(workItems.legacyTable, "normalized_plan_tasks"), eq(workItems.legacyId, actualTaskId), isNull(workItems.deletedAt)),
-              (req as any).user?.id ?? null,
+              req.user?.id ?? null,
             );
           }
         } catch (e) {
@@ -1203,7 +1203,7 @@ export function registerPlanningTasksRoutes(app: Express) {
 
         await notifyWorkItemWatchers({
           workItemId: wi.id,
-          actorUserId: (req.user as any)?.id,
+          actorUserId: req.user?.id,
           projectName,
           title: `Task updated: ${taskName}`,
           body: `${taskName} was updated in ${projectName}.`,
@@ -1227,7 +1227,7 @@ export function registerPlanningTasksRoutes(app: Express) {
           await applyWorkItemUpdate(
             wiUpdateFields,
             eq(workItems.id, wi.id),
-            (req as any).user?.id ?? null,
+            req.user?.id ?? null,
           );
 
           // Legacy mirror removed — work_items is now the canonical source.
@@ -1243,7 +1243,8 @@ export function registerPlanningTasksRoutes(app: Express) {
 
   app.post("/api/planning-tasks", requireAuth, async (req: Request, res: Response) => {
     try {
-      const user = req.user as any;
+      const user = req.user;
+      if (!user) return sendError(res, unauthorized("Authentication required"));
       const { projectName, title, startDate, dueDate, status, priority, isMilestone, parentTaskId } = req.body;
       if (!projectName) return sendError(res, badRequest("projectName is required"));
       const validationErrors = validateTaskCreate(req.body);
@@ -1336,7 +1337,7 @@ export function registerPlanningTasksRoutes(app: Express) {
 
   app.post("/api/planning-tasks/bulk", requireAuth, async (req: Request, res: Response) => {
     try {
-      const user = req.user as any;
+      const user = req.user;
       const { projectName, operation, taskIds } = req.body;
       if (!projectName || !operation || !Array.isArray(taskIds) || taskIds.length === 0) {
         return sendError(res, badRequest("projectName, operation, and taskIds[] required"));
@@ -1462,7 +1463,7 @@ export function registerPlanningTasksRoutes(app: Express) {
     try {
       const taskId = paramInt(req, "taskId");
       if (taskId == null) return sendError(res, badRequest("Invalid task ID"));
-      const user = req.user as any;
+      const user = req.user;
       const { projectName } = req.body;
       if (!projectName) return sendError(res, badRequest("projectName is required"));
 
@@ -1530,7 +1531,7 @@ export function registerPlanningTasksRoutes(app: Express) {
 
   app.post("/api/key-date-mappings", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const mapping = await storage.createKeyDateMapping({ ...req.body, createdBy: (req.user as any)?.id });
+      const mapping = await storage.createKeyDateMapping({ ...req.body, createdBy: req.user?.id });
       logAuditFromReq(req, { entityType: "key_date_mapping", entityId: String(mapping.id), action: "create", changesJson: req.body });
       res.json(mapping);
     } catch (err: any) {

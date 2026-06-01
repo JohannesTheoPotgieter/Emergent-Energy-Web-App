@@ -136,7 +136,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
   app.post("/api/reports/engineering/monthly/:id/review", requireAuth, requirePermission("reports", "edit"), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) return res.status(401).json({ error: "User ID required" });
 
       const snapshot = await getSnapshotById(id);
@@ -173,7 +173,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
   app.post("/api/reports/engineering/monthly/:id/publish", requireAuth, requirePermission("reports", "publish" as any), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) return res.status(401).json({ error: "User ID required" });
 
       const snapshot = await getSnapshotById(id);
