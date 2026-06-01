@@ -19,6 +19,7 @@ import { Router, type Express, type Request, type Response } from "express";
 import { z } from "zod";
 import { requireAuth } from "./shared-middleware";
 import { requirePermission, evaluatePermissionForRequest } from "../permission-middleware";
+import { getEffectiveUser } from "../auth-context";
 import { db } from "../db";
 import { parseBody } from "../lib/input-validation";
 import { eq, desc, and, isNull } from "drizzle-orm";
@@ -90,6 +91,16 @@ const updateCorrectiveActionSchema = z
   })
   .strict();
 
+// Create schemas intentionally OMIT status + verification/attribution fields.
+//   - `status` is not accepted: new records start at the column default
+//     ("open"). Advancing status goes through PATCH, which runs the
+//     approve-permission gate. Accepting status here would let a non-approver
+//     (e.g. CONSTRUCTION_MANAGER, who has hse.create but not hse.approve)
+//     create a record already in a closed/verified state, bypassing the gate.
+//   - `reportedByUserId` is stamped server-side from the session, never the
+//     body — otherwise a caller could spoof who reported an incident.
+//   - `verifiedByUserId` / `completionDate` are verification-stage fields and
+//     are not settable at creation.
 const createHseIncidentSchema = z
   .object({
     projectId: z.number().int().positive(),
@@ -101,9 +112,7 @@ const createHseIncidentSchema = z
     location: z.string().max(500).nullable().optional(),
     rootCause: z.string().max(10_000).nullable().optional(),
     immediateActions: z.string().max(10_000).nullable().optional(),
-    status: z.enum(HSE_STATUSES).optional(),
     evidenceLink: z.string().max(2048).nullable().optional(),
-    reportedByUserId: z.number().int().positive().nullable().optional(),
   })
   .strict();
 
@@ -116,10 +125,7 @@ const createCorrectiveActionSchema = z
     description: z.string().max(10_000).nullable().optional(),
     assignedToUserId: z.number().int().positive().nullable().optional(),
     dueDate: z.string().nullable().optional(),
-    status: z.enum(CORRECTIVE_ACTION_STATUSES).optional(),
-    completionDate: z.string().nullable().optional(),
     evidenceLink: z.string().max(2048).nullable().optional(),
-    verifiedByUserId: z.number().int().positive().nullable().optional(),
   })
   .strict();
 
@@ -231,7 +237,10 @@ router.post(
     try {
       const [parsed, validationError] = parseBody(req.body, createHseIncidentSchema);
       if (validationError) return res.status(400).json(validationError);
-      const [row] = await db.insert(hseIncidents).values(parsed).returning();
+      // Stamp the reporter from the session — never trust a client-supplied
+      // reportedByUserId (reporter-spoofing). status defaults to "open".
+      const reportedByUserId = getEffectiveUser(req)?.id ?? null;
+      const [row] = await db.insert(hseIncidents).values({ ...parsed, reportedByUserId }).returning();
       res.status(201).json(row);
     } catch (err) {
       console.error("[HSE] Failed to create incident:", err);
