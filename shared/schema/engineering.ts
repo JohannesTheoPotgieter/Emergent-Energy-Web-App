@@ -54,7 +54,15 @@ export const deliverableVersions = pgTable("deliverable_versions", {
   status: text("status").notNull().default("in_progress"),
   createdByUserId: integer("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  // A deliverable cannot have two rows for the same version number.
+  // Backstops the transactional MAX(versionNumber)+1 computation in
+  // POST /api/deliverables/:id/revise against concurrent revises.
+  deliverableVersionUnique: unique("deliverable_versions_deliverable_version_unique").on(
+    table.deliverableId,
+    table.versionNumber,
+  ),
+}));
 export const insertDeliverableVersionSchema = createInsertSchema(deliverableVersions).omit({ id: true, createdAt: true } as any);
 export type InsertDeliverableVersion = z.infer<typeof insertDeliverableVersionSchema>;
 export type DeliverableVersion = typeof deliverableVersions.$inferSelect;

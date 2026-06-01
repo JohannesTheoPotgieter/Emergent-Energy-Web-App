@@ -1,6 +1,6 @@
 {
   "generatedAt": "2026-04-27T13:30:55.798Z",
-  "count": 605,
+  "count": 604,
   "notes": "Legacy routes that pre-date the Task #101 canonical-evaluator gate. Adding NEW entries to this list is forbidden — the CI guard will fail. Removing entries (by adding requirePermission to that route) is welcome and shrinks the legacy debt.",
   "routes": [
     "server/analytics-routes.ts:GET /api/analytics/budget-waterfall",
@@ -314,7 +314,6 @@
     "server/lifecycle-routes.ts:GET /api/lifecycle-board/projects/merge-preview",
     "server/microsoft-integration-enhancements-routes.ts:GET /api/microsoft/presence/:id",
     "server/microsoft-integration-enhancements-routes.ts:GET /api/projects/:id/meetings",
-    "server/microsoft-integration-enhancements-routes.ts:GET /api/projects/:id/sharepoint-documents",
     "server/middleware/project-scope-middleware.ts:GET /api/v2/projects",
     "server/middleware/project-scope-middleware.ts:GET /api/v2/projects/:projectId",
     "server/ms-sync-routes.ts:DELETE /api/ms-objects/:id/tag-project",

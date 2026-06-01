@@ -3,12 +3,13 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { PageSkeleton, PageError } from "@/components/ui/page-states";
 import { useToast } from "@/hooks/use-toast";
-import { invalidateAllTaskCaches, invalidateEngineeringTicketCaches } from "@/lib/task-cache";
+import { invalidateEngineeringTicketCaches } from "@/lib/task-cache";
 import { standupLaneToCanonicalStatus, toStandupLaneStatus } from "@/lib/task-status-compat";
 import {
   Users, Play, Pause, Square, CheckCircle2, Timer, Rocket, Keyboard, ShieldCheck,
@@ -81,6 +82,7 @@ export default function EngineeringStandupPage() {
 
   // Session state
   const [phase, setPhase] = useState<StandupPhase>("waiting");
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [queue, setQueue] = useState<Participant[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -356,7 +358,7 @@ export default function EngineeringStandupPage() {
 
   const moveTaskMutation = useMutation({
     mutationFn: async ({ taskId, status, holdReason, blockedType }: {
-      taskId: number; status: string; holdReason?: string; blockedType?: string;
+      taskId: number; status: string; holdReason?: string; blockedType?: string; movement?: TaskMovement;
     }) => {
       const body: Record<string, unknown> = { status: standupLaneToCanonicalStatus(status) };
       if (holdReason) body.holdReason = holdReason;
@@ -366,7 +368,14 @@ export default function EngineeringStandupPage() {
         body: JSON.stringify(body),
       });
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      // Record the movement in the standup summary ONLY after the server
+      // confirms the move. Recording it eagerly meant a failed PATCH still
+      // showed up in the end-of-standup summary and the Teams paste — a move
+      // that never actually happened.
+      if (variables.movement) {
+        setTaskMovements(prev => [...prev, variables.movement!]);
+      }
       // Status-only standup move — fan out via the engineering-ticket
       // invalidator so the Engineering Board, Plan tab, Opportunity
       // drawer, Milestone Tracker, Action Launchpad and Execution
@@ -385,7 +394,10 @@ export default function EngineeringStandupPage() {
 
     const fromStatus = task.status;
 
-    setTaskMovements(prev => [...prev, {
+    // The movement is passed through the mutation and only committed to the
+    // summary on success (see onSuccess above), so a rejected move can't
+    // corrupt the recorded standup history.
+    const movement: TaskMovement = {
       taskId,
       taskTitle: task.title,
       userId: activeSpeaker.userId,
@@ -393,9 +405,9 @@ export default function EngineeringStandupPage() {
       fromStatus,
       toStatus: newStatus,
       holdReason,
-    }]);
+    };
 
-    moveTaskMutation.mutate({ taskId, status: newStatus, holdReason, blockedType });
+    moveTaskMutation.mutate({ taskId, status: newStatus, holdReason, blockedType, movement });
   }
 
   const editTaskMutation = useMutation({
@@ -406,10 +418,12 @@ export default function EngineeringStandupPage() {
       });
     },
     onSuccess: () => {
-      // Edit may touch fields beyond status (assignee, dates, notes),
-      // so use the broader task-cache sweep to also refresh My Work
-      // / Mytool views that key off the same row.
-      invalidateAllTaskCaches(queryClient);
+      // Edit may touch fields beyond status (assignee, dates, notes).
+      // Refresh the engineering surfaces plus the Mytool/personal view that
+      // keys off the same row — without the app-wide sweep that also
+      // invalidated unrelated boards (procurement, raid, change-control…).
+      invalidateEngineeringTicketCaches(queryClient);
+      queryClient.invalidateQueries({ queryKey: ["/api/mytool/tasks"] });
       toast({ title: "Task updated" });
     },
     onError: (err: Error) => {
@@ -419,10 +433,14 @@ export default function EngineeringStandupPage() {
 
   async function handleEditTask(taskId: number, updates: Partial<EngTask>) {
     if (Object.keys(updates).length === 0) return;
+    // Build the movement record up front but DON'T commit it to the summary
+    // until the edit actually persists — otherwise a failed PATCH leaves a
+    // phantom move in the standup history.
+    let pendingMovement: TaskMovement | null = null;
     if (updates.status && updates.status !== speakerTasks.find(t => t.id === taskId)?.status) {
       const task = speakerTasks.find(t => t.id === taskId);
       if (task && activeSpeaker) {
-        setTaskMovements(prev => [...prev, {
+        pendingMovement = {
           taskId,
           taskTitle: task.title,
           userId: activeSpeaker.userId,
@@ -430,7 +448,7 @@ export default function EngineeringStandupPage() {
           fromStatus: task.status,
           toStatus: updates.status!,
           holdReason: updates.holdReason as string | undefined,
-        }]);
+        };
       }
     }
     const normalizedUpdates = { ...updates } as Partial<EngTask>;
@@ -438,6 +456,11 @@ export default function EngineeringStandupPage() {
       normalizedUpdates.status = standupLaneToCanonicalStatus(normalizedUpdates.status);
     }
     await editTaskMutation.mutateAsync({ taskId, updates: normalizedUpdates as Record<string, unknown> });
+    // mutateAsync rejects on failure (handled by the caller / onError toast),
+    // so we only reach here when the edit succeeded.
+    if (pendingMovement) {
+      setTaskMovements(prev => [...prev, pendingMovement!]);
+    }
   }
 
   // ── Mood selection ────────────────────────────────────────────────────
@@ -461,40 +484,45 @@ export default function EngineeringStandupPage() {
   }
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      // Don't trigger while typing in inputs/textareas.
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
+  // The handler reads live state (phase) and calls callbacks that close over
+  // more (activeIndex, queue, …). Keeping the latest handler in a ref lets the
+  // listener bind exactly once instead of re-subscribing on every state change,
+  // and removes the stale-closure risk without an exhaustive-deps override.
+  const onKeyRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  onKeyRef.current = (e: KeyboardEvent) => {
+    // Don't trigger while typing in inputs/textareas.
+    const tag = (e.target as HTMLElement | null)?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
 
-      if (e.key === "?") {
-        setShowShortcuts((v) => !v);
-        return;
-      }
-
-      if (phase !== "running") return;
-
-      if (e.key === "n" || e.key === "N") {
-        e.preventDefault();
-        nextSpeaker();
-      } else if (e.key === "s" || e.key === "S") {
-        e.preventDefault();
-        skipSpeaker();
-      } else if (e.key === " ") {
-        e.preventDefault();
-        setIsPaused((p) => !p);
-      } else if (e.key === "e" || e.key === "E") {
-        e.preventDefault();
-        endStandup();
-      } else if (e.key === "Escape") {
-        setShowShortcuts(false);
-      }
+    if (e.key === "?") {
+      setShowShortcuts((v) => !v);
+      return;
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, activeIndex, queue, completedIndices, skippedIndices, speakerTasks]);
+
+    if (phase !== "running") return;
+
+    if (e.key === "n" || e.key === "N") {
+      e.preventDefault();
+      nextSpeaker();
+    } else if (e.key === "s" || e.key === "S") {
+      e.preventDefault();
+      skipSpeaker();
+    } else if (e.key === " ") {
+      e.preventDefault();
+      setIsPaused((p) => !p);
+    } else if (e.key === "e" || e.key === "E") {
+      e.preventDefault();
+      setShowEndConfirm(true);
+    } else if (e.key === "Escape") {
+      setShowShortcuts(false);
+    }
+  };
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => onKeyRef.current(e);
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   // ── Blocker count for queue ───────────────────────────────────────────
   const holdMovements = taskMovements.filter(m => m.toStatus === "HOLD");
@@ -590,13 +618,23 @@ export default function EngineeringStandupPage() {
                 {isPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
                 {isPaused ? "Resume" : "Pause"}
               </Button>
-              <Button variant="destructive" size="sm" onClick={endStandup} className="gap-1" data-testid="btn-standup-end">
+              <Button variant="destructive" size="sm" onClick={() => setShowEndConfirm(true)} className="gap-1" data-testid="btn-standup-end">
                 <Square className="h-3.5 w-3.5" /> End
               </Button>
             </div>
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={showEndConfirm}
+        onOpenChange={setShowEndConfirm}
+        title="End the standup?"
+        description="This ends the live session for everyone and moves to the summary. Timings and recorded moves are kept."
+        confirmLabel="End standup"
+        variant="destructive"
+        onConfirm={() => { setShowEndConfirm(false); endStandup(); }}
+      />
 
       {/* Keyboard shortcut help overlay */}
       {showShortcuts && (
@@ -696,8 +734,8 @@ export default function EngineeringStandupPage() {
 
       {/* ── RUNNING PHASE ──────────────────────────────────────────────── */}
       {phase === "running" && activeSpeaker && (
-        <div className="flex gap-4">
-          {/* Left rail — queue */}
+        <div className="flex flex-col lg:flex-row gap-4">
+          {/* Left rail — queue (stacks on top below lg so the board is usable on a phone/tablet) */}
           <StandupQueue
             queue={queue}
             activeIndex={activeIndex}
@@ -763,15 +801,18 @@ export default function EngineeringStandupPage() {
                 {MOODS.map(m => (
                   <button
                     key={m.value}
+                    type="button"
                     onClick={() => setMood(m.value)}
-                    className={`text-lg p-1.5 rounded-md border transition-all ${
+                    className={`text-lg p-1.5 rounded-md border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                       moods.get(activeSpeaker.userId) === m.value
                         ? m.color + " scale-110"
                         : "border-transparent opacity-50 hover:opacity-100"
                     }`}
                     title={m.label}
+                    aria-label={`Mood: ${m.label}`}
+                    aria-pressed={moods.get(activeSpeaker.userId) === m.value}
                   >
-                    {m.emoji}
+                    <span aria-hidden="true">{m.emoji}</span>
                   </button>
                 ))}
               </div>

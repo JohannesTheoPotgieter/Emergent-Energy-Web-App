@@ -5,7 +5,7 @@
 import type { Express } from "express";
 import { db } from "../db";
 import { monthlyReportSnapshots, users } from "@shared/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { requirePermission } from "../permission-middleware";
 import { generateEngineeringReportData } from "../services/engineering-monthly-report-service";
 import { requireAuth, validateMonth, computeKpiDeltas, computeReportFreshness } from "./monthly-report-shared";
@@ -44,7 +44,12 @@ async function getOrCreateSnapshot(month: string) {
 async function resolveUserNames(userIds: Set<number>): Promise<Map<number, string>> {
   const names = new Map<number, string>();
   if (userIds.size > 0) {
-    const rows = await db.select({ id: users.id, name: users.name }).from(users);
+    // Only fetch the specific users we need — previously this selected the
+    // entire users table, which got slower for everyone as staff grew.
+    const rows = await db
+      .select({ id: users.id, name: users.name })
+      .from(users)
+      .where(inArray(users.id, Array.from(userIds)));
     for (const u of rows) names.set(u.id, u.name);
   }
   return names;
@@ -59,16 +64,14 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
 
       const snapshot = await getOrCreateSnapshot(req.query.month as string);
 
-      let reviewedByName = null;
-      let publishedByName = null;
-      if (snapshot.reviewedBy) {
-        const [u] = await db.select({ name: users.name }).from(users).where(eq(users.id, snapshot.reviewedBy)).limit(1);
-        reviewedByName = u?.name || null;
-      }
-      if (snapshot.publishedBy) {
-        const [u] = await db.select({ name: users.name }).from(users).where(eq(users.id, snapshot.publishedBy)).limit(1);
-        publishedByName = u?.name || null;
-      }
+      // Resolve reviewer + publisher names in a single query instead of two
+      // separate round-trips.
+      const nameIds = new Set<number>();
+      if (snapshot.reviewedBy) nameIds.add(snapshot.reviewedBy);
+      if (snapshot.publishedBy) nameIds.add(snapshot.publishedBy);
+      const nameMap = await resolveUserNames(nameIds);
+      const reviewedByName = snapshot.reviewedBy ? nameMap.get(snapshot.reviewedBy) ?? null : null;
+      const publishedByName = snapshot.publishedBy ? nameMap.get(snapshot.publishedBy) ?? null : null;
 
       const freshness = await computeReportFreshness(snapshot.regeneratedAt ?? snapshot.generatedAt);
 
@@ -133,7 +136,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
   app.post("/api/reports/engineering/monthly/:id/review", requireAuth, requirePermission("reports", "edit"), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) return res.status(401).json({ error: "User ID required" });
 
       const snapshot = await getSnapshotById(id);
@@ -170,7 +173,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
   app.post("/api/reports/engineering/monthly/:id/publish", requireAuth, requirePermission("reports", "publish" as any), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) return res.status(401).json({ error: "User ID required" });
 
       const snapshot = await getSnapshotById(id);

@@ -6,6 +6,7 @@ import Database from "better-sqlite3";
 import { beforeAll, describe, expect, it } from "vitest";
 
 const BASE_URL = process.env.API_URL || "http://localhost:5000";
+const APP_USES_POSTGRES = (process.env.DATABASE_URL || "").startsWith("postgres");
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(TEST_DIR, "../../..");
 const SQLITE_DB_PATH = path.join(REPO_ROOT, "data", "app.sqlite");
@@ -296,7 +297,7 @@ describe("API: Authentication", () => {
     expect([401, 403]).toContain(res.status);
   });
 
-  it("keeps /api/auth/me parity between bearer and session auth", async () => {
+  it.skipIf(APP_USES_POSTGRES)("keeps /api/auth/me parity between bearer and session auth", async () => {
     await expectAuthParity("GET", "/api/auth/me", {
       expectedStatus: 200,
       assertData: (data) => {
@@ -435,7 +436,7 @@ describe("API: Platform foundation", () => {
     });
   });
 
-  it("serves canonical platform project summaries for real project ids", async () => {
+  it.skipIf(APP_USES_POSTGRES)("serves canonical platform project summaries for real project ids", async () => {
     const auth = await loginAsAdmin();
     const projectsRes = await apiRequest<any[]>("GET", "/api/projects-summary", { token: auth.token });
 

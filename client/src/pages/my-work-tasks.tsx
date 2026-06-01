@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -264,6 +265,7 @@ export default function MyWorkTasksPage() {
   const [unifiedDetailOpen, setUnifiedDetailOpen] = useState(false);
   const [expandedTasks, setExpandedTasks] = useState<Set<number>>(new Set());
   const [subtaskDialog, setSubtaskDialog] = useState<{ parentId: number; projectName: string } | null>(null);
+  const [pendingDeleteTask, setPendingDeleteTask] = useState<{ id: number; title: string } | null>(null);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [newSubtaskPriority, setNewSubtaskPriority] = useState("Med");
   const [viewMode, setViewMode] = useState<ViewMode>(mwDefaults?.viewMode || "list");
@@ -1269,7 +1271,7 @@ export default function MyWorkTasksPage() {
           ) : (
             <div className="divide-y divide-border/40">
               {filteredTasks.map(task => (
-                <CompactTaskRow key={task._key} task={task} isExpanded={expandedTasks.has(task.id)} onToggleExpand={() => task._source === "operational" && task.subtaskCount! > 0 && toggleExpand(task.id)} onPrimaryAction={() => handleOpenSource(task)} onOpenDrawer={() => handleOpenDrawer(task)} onStatusChange={handleStatusChange} onDelete={task._source === "personal" ? () => deleteTaskMutation.mutate(task.id) : undefined} onDismiss={task._source === "microsoft" ? () => dismissNotifMutation.mutate(task) : undefined} onAddSubtask={task._source === "operational" ? () => setSubtaskDialog({ parentId: task.id, projectName: task.projectName || "" }) : undefined} allTaskData={allTaskData} onSubtaskAddForChild={(parentId: number, projectName: string) => setSubtaskDialog({ parentId, projectName })} isOverdue={isTaskOverdue(task)} onQuickStatus={(newStatus) => boardStatusMutation.mutate({ task, newStatus })} canReassign={canReassignTask(task)} taskTypeLabel={taskTypeLabel(task)} />
+                <CompactTaskRow key={task._key} task={task} isExpanded={expandedTasks.has(task.id)} onToggleExpand={() => task._source === "operational" && task.subtaskCount! > 0 && toggleExpand(task.id)} onPrimaryAction={() => handleOpenSource(task)} onOpenDrawer={() => handleOpenDrawer(task)} onStatusChange={handleStatusChange} onDelete={task._source === "personal" ? () => setPendingDeleteTask({ id: task.id, title: task.title }) : undefined} onDismiss={task._source === "microsoft" ? () => dismissNotifMutation.mutate(task) : undefined} onAddSubtask={task._source === "operational" ? () => setSubtaskDialog({ parentId: task.id, projectName: task.projectName || "" }) : undefined} allTaskData={allTaskData} onSubtaskAddForChild={(parentId: number, projectName: string) => setSubtaskDialog({ parentId, projectName })} isOverdue={isTaskOverdue(task)} onQuickStatus={(newStatus) => boardStatusMutation.mutate({ task, newStatus })} canReassign={canReassignTask(task)} taskTypeLabel={taskTypeLabel(task)} />
               ))}
             </div>
           )}
@@ -1585,6 +1587,16 @@ export default function MyWorkTasksPage() {
         </DialogContent>
       </Dialog>
 
+      <ConfirmDialog
+        open={!!pendingDeleteTask}
+        onOpenChange={(open) => { if (!open) setPendingDeleteTask(null); }}
+        title="Delete this task?"
+        description={pendingDeleteTask ? `"${pendingDeleteTask.title}" will be permanently deleted. This cannot be undone.` : undefined}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => { if (pendingDeleteTask) deleteTaskMutation.mutate(pendingDeleteTask.id); setPendingDeleteTask(null); }}
+      />
+
       <Dialog open={!!subtaskDialog} onOpenChange={(open) => { if (!open) setSubtaskDialog(null); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader><DialogTitle className="text-base">Add Subtask</DialogTitle></DialogHeader>
@@ -1707,7 +1719,7 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onPrimaryAction, onO
             </>
           )}
           {task._source === "operational" && onAddSubtask && <button onClick={e => { e.stopPropagation(); onAddSubtask(); }} className="p-1 rounded text-muted-foreground/40 hover:text-emerald-500 hover:bg-emerald-50" title="Add subtask" data-testid={`btn-add-subtask-${task._key}`}><Plus className="h-3 w-3" /></button>}
-          {task._source === "personal" && onDelete && <button onClick={e => { e.stopPropagation(); onDelete(); }} className="p-1 rounded text-muted-foreground/40 hover:text-red-500 hover:bg-red-50" data-testid={`btn-delete-${task._key}`}><Trash2 className="h-3 w-3" /></button>}
+          {task._source === "personal" && onDelete && <button onClick={e => { e.stopPropagation(); onDelete(); }} className="p-1 rounded text-muted-foreground/40 hover:text-red-500 hover:bg-red-50" title="Delete task" aria-label={`Delete task: ${task.title}`} data-testid={`btn-delete-${task._key}`}><Trash2 className="h-3 w-3" /></button>}
           {(task._source === "microsoft") && onDismiss && <button onClick={e => { e.stopPropagation(); onDismiss(); }} className="p-1 rounded text-muted-foreground/40 hover:text-red-500 hover:bg-red-50" title="Dismiss" data-testid={`btn-dismiss-${task._key}`}><X className="h-3 w-3" /></button>}
         </div>
       </div>

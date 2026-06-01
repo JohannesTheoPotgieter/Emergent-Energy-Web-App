@@ -18,7 +18,7 @@ app.get("/api/admin/stage-definitions", jwtAuth, requireAuth, requirePermission(
   try {
     const definitions = await db.select().from(schema.stageDefinitions).orderBy(schema.stageDefinitions.stageSequence);
     res.json({ definitions });
-  } catch (err: any) {
+  } catch (err) {
     console.error("Stage definitions error:", err);
     throw err;
   }
@@ -48,7 +48,7 @@ app.post("/api/admin/stage-definitions", jwtAuth, requireAuth, requirePermission
       isActive: !!isActive,
     }).returning();
     res.status(201).json({ definition: created });
-  } catch (err: any) {
+  } catch (err) {
     console.error("Stage definition create error:", err);
     throw err;
   }
@@ -71,7 +71,7 @@ app.put("/api/admin/stage-definitions/:id", jwtAuth, requireAuth, requirePermiss
       .where(eq(schema.stageDefinitions.id, id));
 
     res.json({ success: true });
-  } catch (err: any) {
+  } catch (err) {
     console.error("Stage definition update error:", err);
     throw err;
   }
@@ -94,7 +94,7 @@ app.patch("/api/admin/stage-definitions/:id", jwtAuth, requireAuth, requirePermi
       .where(eq(schema.stageDefinitions.id, id));
 
     res.json({ success: true });
-  } catch (err: any) {
+  } catch (err) {
     console.error("Stage definition patch error:", err);
     throw err;
   }
@@ -110,12 +110,19 @@ app.post("/api/admin/stage-definitions/reorder", jwtAuth, requireAuth, requirePe
       if (!row || !Number.isFinite(Number(row.id)) || !Number.isFinite(Number(row.stageSequence))) {
         return res.status(400).json({ error: "order rows must include numeric id and stageSequence" });
       }
-      await db.update(schema.stageDefinitions)
-        .set({ stageSequence: Number(row.stageSequence), updatedAt: new Date() })
-        .where(eq(schema.stageDefinitions.id, Number(row.id)));
     }
+    // Atomic reorder: all rows move together or none do, so an interrupted
+    // request can never leave the user looking at a half-reordered list.
+    await db.transaction(async (tx: typeof db) => {
+      const now = new Date();
+      for (const row of order) {
+        await tx.update(schema.stageDefinitions)
+          .set({ stageSequence: Number(row.stageSequence), updatedAt: now })
+          .where(eq(schema.stageDefinitions.id, Number(row.id)));
+      }
+    });
     res.json({ success: true });
-  } catch (err: any) {
+  } catch (err) {
     console.error("Stage definition reorder error:", err);
     throw err;
   }
@@ -128,7 +135,7 @@ app.delete("/api/admin/stage-definitions/:id", jwtAuth, requireAuth, requirePerm
       .set({ isActive: false, deletedAt: new Date(), updatedAt: new Date() })
       .where(eq(schema.stageDefinitions.id, id));
     res.json({ success: true });
-  } catch (err: any) {
+  } catch (err) {
     console.error("Stage definition delete error:", err);
     throw err;
   }
@@ -145,7 +152,7 @@ app.get("/api/admin/stage-checklist-templates", jwtAuth, requireAuth, requirePer
     }
     const templates = await (query as any).orderBy(schema.stageChecklistTemplates.sortOrder);
     res.json({ templates });
-  } catch (err: any) {
+  } catch (err) {
     console.error("Checklist templates error:", err);
     throw err;
   }
@@ -161,7 +168,7 @@ app.post("/api/admin/stage-checklist-templates", jwtAuth, requireAuth, requirePe
       sortOrder: sortOrder ?? 0,
     }).returning();
     res.json({ template: result[0] });
-  } catch (err: any) {
+  } catch (err) {
     console.error("Checklist template create error:", err);
     throw err;
   }
@@ -184,7 +191,7 @@ app.put("/api/admin/stage-checklist-templates/:id", jwtAuth, requireAuth, requir
       .where(eq(schema.stageChecklistTemplates.id, id));
 
     res.json({ success: true });
-  } catch (err: any) {
+  } catch (err) {
     console.error("Checklist template update error:", err);
     throw err;
   }
@@ -205,7 +212,7 @@ app.patch("/api/admin/stage-checklist-templates/:id", jwtAuth, requireAuth, requ
       })
       .where(eq(schema.stageChecklistTemplates.id, id));
     res.json({ success: true });
-  } catch (err: any) {
+  } catch (err) {
     console.error("Checklist template patch error:", err);
     throw err;
   }
@@ -218,7 +225,7 @@ app.delete("/api/admin/stage-checklist-templates/:id", jwtAuth, requireAuth, req
       .set({ isActive: false, updatedAt: new Date() })
       .where(eq(schema.stageChecklistTemplates.id, id));
     res.json({ success: true });
-  } catch (err: any) {
+  } catch (err) {
     console.error("Checklist template delete error:", err);
     throw err;
   }
@@ -237,7 +244,7 @@ app.get("/api/admin/exception-thresholds", jwtAuth, requireAuth, requirePermissi
         approverRoles: ["COO_ADMIN", "CEO_ADMIN"],
       },
     });
-  } catch (err: any) {
+  } catch (err) {
     console.error("Exception thresholds error:", err);
     throw err;
   }
@@ -264,7 +271,7 @@ app.get("/api/admin/gate-config", jwtAuth, requireAuth, requirePermission("stage
         ],
       },
     });
-  } catch (err: any) {
+  } catch (err) {
     console.error("Gate config error:", err);
     throw err;
   }

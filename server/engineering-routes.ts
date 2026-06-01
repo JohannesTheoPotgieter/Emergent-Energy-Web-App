@@ -27,7 +27,7 @@ import { applyTemplate } from "./template-routes";
 import { syncProjectSplitTables } from "./lib/project-info-sync";
 import { requireAuthority, requirePermission, evaluateAuthorityForRequest } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
-import { ApiError, sendError, badRequest, notFound, forbidden, serverError } from "./lib/api-error";
+import { ApiError, sendError, badRequest, notFound, forbidden, serverError, errMsg } from "./lib/api-error";
 import { listEngineeringWorkItems, getEngineeringWorkItemById, createEngineeringWorkItem, updateEngineeringWorkItem, deleteEngineeringWorkItem, generateDefaultEngineeringWorkItemsForProject, mapToOpsStatus, toCanonicalStatus, type EngTask } from "./work-items-adapter";
 import { generateWorkItemReconciliationReport } from "./lib/reconciliation/work-item-reconciliation";
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, buildTaskWorkflowContextsForIds, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
@@ -43,6 +43,7 @@ import { requireAdmin } from "./middleware/requireAdmin";
 // Replaces local `requireAdminOrEpm` shim + hardcoded role strings.
 import { requireRole as requireRoleCanonical } from "./middleware/requireRole";
 import { ADMIN_ROLES, normalizeRoleForPermissions } from "@shared/schema";
+import type { CompanyRole } from "@shared/schema/users";
 import { validateBody } from "./middleware/validateBody";
 import { z } from "zod";
 // Engineering PR 3 — repository extraction (Tier 3). Mirrors Quality #900:
@@ -60,7 +61,9 @@ import {
   findDeliverableById,
   findUserName,
   coalesceProjectExecState,
+  userCanAccessEngineeringTask,
 } from "./repositories/engineering-repository";
+import { getEffectiveWorkstreamVisibility } from "./workstream-visibility-middleware";
 import { getAssignmentsForEntity, getAssignmentsForEntities, listAssignableDirectory } from "./services/assignment-service";
 import { buildMyWorkSourceLinks } from "./lib/my-work-source-links";
 import { runCascadesAfterUpdate, validateParentCompletion } from "./services/task-cascade-service";
@@ -223,7 +226,9 @@ async function getFallbackPreferenceForUser(userId: number): Promise<"download" 
 // `ENGINEERING_PROGRAM_MANAGER`, `HEAD_OF_DESIGN`) that are NOT in
 // COMPANY_ROLES and were dead matches. The canonical roles below cover the
 // real EPM-or-admin gate (Engineering Manager replaces the stale EPM role).
-const requireAdminOrEpm = requireRoleCanonical([
+// Typed against CompanyRole so a rename in the canonical role list fails the
+// build instead of silently dropping a role from this admin-or-EPM gate.
+const ADMIN_OR_EPM_ROLES: CompanyRole[] = [
   ...ADMIN_ROLES,
   "CCO",
   "CFO",
@@ -232,12 +237,56 @@ const requireAdminOrEpm = requireRoleCanonical([
   "CONSTRUCTION_MANAGER",
   "ENGINEERING_MANAGER",
   "QUALITY_MANAGER",
-]);
+];
+const requireAdminOrEpm = requireRoleCanonical(ADMIN_OR_EPM_ROLES);
 
 function requireEpmChallenge(req: Request, res: Response, next: NextFunction) {
   if ((ADMIN_ROLES as readonly string[]).includes(getUserRole(req))) return next();
   if ((req.session as any)?.epmChallengePassed) return next();
   res.status(403).json({ error: "epm_challenge_required", message: "EPM access code required", code: "EPM_CHALLENGE_REQUIRED" });
+}
+
+/**
+ * Per-row ownership guard for /api/eng/tasks/:id* (and :taskId).
+ *
+ * `requirePermission("eng_tasks", …)` only answers "may this ROLE touch
+ * engineering tasks at all" — it has no notion of WHICH task. Roles whose
+ * canonical workstream scope is 'own' (e.g. ENGINEER) must additionally be
+ * the owner of, or assigned to, the specific task; otherwise a scoped
+ * engineer could read or mutate another engineer's task by iterating the
+ * integer ID (IDOR).
+ *
+ * Roles with scope 'all' (managers, admins, PMs, etc.) pass through
+ * unchanged. The scope is read from the canonical visibility resolver, so
+ * this guard stays in lockstep with WORKSTREAM_VISIBILITY_DEFAULTS / any DB
+ * override rather than hardcoding a role list here.
+ *
+ * Place AFTER requireAuth + requirePermission in the chain.
+ */
+async function requireEngTaskOwnership(req: Request, res: Response, next: NextFunction) {
+  try {
+    const user = getUser(req);
+    if (!user) return sendError(res, forbidden());
+
+    const role = normalizeRoleForPermissions(user.role) ?? "";
+    const visibility = await getEffectiveWorkstreamVisibility(user.id, role);
+    // Only 'own'-scoped roles get the per-row narrowing; everyone else
+    // (scope 'all') keeps the existing entity-level behaviour.
+    if (visibility.scope !== "own") return next();
+
+    const rawId = req.params.id ?? req.params.taskId;
+    const taskId = parseIntParam(rawId);
+    if (Number.isNaN(taskId)) return sendError(res, badRequest("Invalid task ID"));
+
+    const allowed = await userCanAccessEngineeringTask(taskId, user.id);
+    if (!allowed) {
+      // 404 (not 403) so a scoped engineer can't probe which IDs exist.
+      return sendError(res, notFound("Task"));
+    }
+    return next();
+  } catch (err) {
+    return sendError(res, err);
+  }
 }
 
 /** Insert an in-app notification row with throttle deduplication. Silently no-ops on error. */
@@ -339,8 +388,8 @@ async function enrichEngineeringTasks(tasks: EngTask[], req: Request): Promise<a
           .orderBy(desc(msObjects.receivedOrStartDatetime))
         : Promise.resolve([]),
     ]);
-  } catch (enrichErr: any) {
-    console.warn("[Engineering] Non-fatal enrichment error (deliverables/microsoft):", enrichErr.message);
+  } catch (enrichErr) {
+    console.warn("[Engineering] Non-fatal enrichment error (deliverables/microsoft):", errMsg(enrichErr));
   }
 
   const deliverablesByProject = new Map<number, Array<{
@@ -396,8 +445,8 @@ async function enrichEngineeringTasks(tasks: EngTask[], req: Request): Promise<a
     for (const sl of stageLinks) {
       if (sl.workItemId) stageContextMap.set(sl.workItemId, sl.stageName);
     }
-  } catch (stageErr: any) {
-    console.warn("[Engineering] Non-fatal stage context error:", stageErr.message);
+  } catch (stageErr) {
+    console.warn("[Engineering] Non-fatal stage context error:", errMsg(stageErr));
   }
 
   return tasks.map((t) => {
@@ -729,7 +778,7 @@ export function registerEngineeringRoutes(app: Express) {
       ]);
 
       res.json({ enabled, mappedPath, fallbackPreference });
-    } catch (err: any) {
+    } catch (err) {
       sendError(res, serverError("Failed to load local synced save config"));
     }
   });
@@ -768,7 +817,7 @@ export function registerEngineeringRoutes(app: Express) {
       });
 
       res.json({ ok: true, mappedPath, fallbackPreference });
-    } catch (err: any) {
+    } catch (err) {
       sendError(res, serverError("Failed to save local synced save config"));
     }
   });
@@ -791,7 +840,7 @@ export function registerEngineeringRoutes(app: Express) {
       .leftJoin(users, eq(projectTeamMembers.userId, users.id))
       .where(eq(projectTeamMembers.projectName, paramStr(req.params.projectName)));
       res.json(members);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -803,7 +852,7 @@ export function registerEngineeringRoutes(app: Express) {
       const [member] = await db.insert(projectTeamMembers).values({ projectName, userId, roleOnProject }).returning();
       logAuditFromReq(req, { entityType: "project_team", entityId: String(member.id), action: "create", projectName, changesJson: { description: "Team member added", userId, roleOnProject } });
       res.json(member);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -816,7 +865,7 @@ export function registerEngineeringRoutes(app: Express) {
       await db.delete(projectTeamMembers).where(eq(projectTeamMembers.id, id));
       logAuditFromReq(req, { entityType: "project_team", entityId: paramStr(req.params.id), action: "delete", changesJson: { description: "Team member removed" } });
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -834,7 +883,7 @@ export function registerEngineeringRoutes(app: Express) {
           role: entry.roleTags[0] || "",
         }));
       res.json(allUsers);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -852,7 +901,7 @@ export function registerEngineeringRoutes(app: Express) {
           role: entry.roleTags[0] || "",
         }));
       res.json(allUsers);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -860,7 +909,12 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.post("/api/eng/backfill-assignees", requireAuth, requireAdminOrEpm, async (_req, res) => {
     try {
-      const allUsers = await db.select({ id: users.id, name: users.name }).from(users);
+      // Use the cached user lookup instead of a fresh full-table select on
+      // every backfill run. The ENG work-item scan must remain unbounded —
+      // this endpoint must cover every row, capping would silently leave
+      // some un-backfilled.
+      const { getAllUsers } = await import("./user-resolver");
+      const allUsers = await getAllUsers();
       const engItems = await db.select().from(workItems)
         .where(and(eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
 
@@ -900,7 +954,7 @@ export function registerEngineeringRoutes(app: Express) {
           workItemIds.map((wid) => ({
             workItemId: wid,
             userId,
-            role: "OWNER" as any,
+            role: "OWNER" as const,
           })),
         ).onConflictDoNothing();
         updated += workItemIds.length;
@@ -908,7 +962,7 @@ export function registerEngineeringRoutes(app: Express) {
       }
 
       res.json({ message: `Backfill complete: ${updated} work items updated, ${assignmentsCreated} assignments created` });
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -929,7 +983,7 @@ export function registerEngineeringRoutes(app: Express) {
 
       const enriched = await enrichEngineeringTasks(tasks, req);
       res.json(enriched);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -989,12 +1043,8 @@ export function registerEngineeringRoutes(app: Express) {
       }
 
       if (data.assignees?.length > 0) {
-        const { resolveNameToUserId } = await import("./user-resolver");
-        const resolvedIds: number[] = [];
-        for (const name of data.assignees) {
-          const uid = await resolveNameToUserId(name);
-          if (uid) resolvedIds.push(uid);
-        }
+        const { resolveNamesToUserIds } = await import("./user-resolver");
+        const resolvedIds = (await resolveNamesToUserIds(data.assignees)).filter((id): id is number => id != null);
         data.assigneeUserIds = resolvedIds.length > 0 ? resolvedIds : null;
         if (!data.ownerUserId && resolvedIds.length > 0) {
           data.ownerUserId = resolvedIds[0];
@@ -1039,18 +1089,18 @@ export function registerEngineeringRoutes(app: Express) {
         const mappedItems = await listEngineeringWorkItems({ projectId: task.projectId || undefined });
         const mapped = mappedItems.find((row) => row.workItemId === task.id);
         if (mapped) createdPayload = mapped;
-      } catch (mapErr: any) {
-        console.warn("[Engineering] task create post-map failed; returning fallback payload", { taskId: task.id, error: mapErr?.message || String(mapErr) });
+      } catch (mapErr) {
+        console.warn("[Engineering] task create post-map failed; returning fallback payload", { taskId: task.id, error: errMsg(mapErr) });
       }
 
       res.json(createdPayload);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
   });
 
-  app.patch("/api/eng/tasks/:id", requireAuth, requirePermission("eng_tasks", "edit"), validateBody(engTaskUpdateSchema), async (req, res) => {
+  app.patch("/api/eng/tasks/:id", requireAuth, requirePermission("eng_tasks", "edit"), requireEngTaskOwnership, validateBody(engTaskUpdateSchema), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
       const existing = await findEngineeringWorkItem(id);
@@ -1083,7 +1133,7 @@ export function registerEngineeringRoutes(app: Express) {
         try {
           const context = await buildTaskWorkflowContext(id, existing.status as string);
           assertTaskWorkflowTransition(context, canonicalStatus, "status_update");
-        } catch (err: any) {
+        } catch (err) {
           if (err instanceof TaskWorkflowGuardError) {
             return sendError(res, new ApiError(err.statusCode, "WORKFLOW_ERROR", err.message));
           }
@@ -1162,22 +1212,22 @@ export function registerEngineeringRoutes(app: Express) {
           startDate: updates.startDate,
           dueDate: updates.dueDate,
         });
-      } catch (cascadeErr: any) {
-        console.warn("[Engineering] Non-fatal cascade error:", cascadeErr.message);
+      } catch (cascadeErr) {
+        console.warn("[Engineering] Non-fatal cascade error:", errMsg(cascadeErr));
       }
 
       const mappedItems = await listEngineeringWorkItems({ projectId: updated.projectId || undefined });
       const mapped = mappedItems.find((row) => row.workItemId === updated.id);
       const payload = mapped ? mapped : { id: updated.id, workItemId: updated.id };
       res.json(payload);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
   });
 
   // Permission: submitting for approval requires edit on eng_tasks.
-  app.post("/api/eng/tasks/:id/send-for-approval", requireAuth, requirePermission("eng_tasks", "edit"), approvalUpload.single("file"), validateBody(engTaskSendForApprovalSchema), async (req, res) => {
+  app.post("/api/eng/tasks/:id/send-for-approval", requireAuth, requirePermission("eng_tasks", "edit"), requireEngTaskOwnership, approvalUpload.single("file"), validateBody(engTaskSendForApprovalSchema), async (req, res) => {
     const id = parseIntParam(req.params.id);
     const user = getUser(req);
     const note = req.body.note || "";
@@ -1203,7 +1253,7 @@ export function registerEngineeringRoutes(app: Express) {
       try {
         const context = await buildTaskWorkflowContext(id, existing.status);
         assertTaskWorkflowTransition(context, "NEEDS APPROVAL", "send_for_approval");
-      } catch (err: any) {
+      } catch (err) {
         if (err instanceof TaskWorkflowGuardError) {
           return sendError(res, new ApiError(err.statusCode, "WORKFLOW_ERROR", err.message));
         }
@@ -1413,18 +1463,18 @@ export function registerEngineeringRoutes(app: Express) {
           localSyncedPath: localResult,
         },
       });
-    } catch (err: any) {
+    } catch (err) {
       logAuditFromReq(req, {
         entityType: "approval_send_flow",
         entityId: String(id),
         action: "canonical_save_failed",
-        changesJson: { error: err?.message || "unknown" },
+        changesJson: { error: errMsg(err) },
       });
       logAuditFromReq(req, {
         entityType: "approval_send_flow",
         entityId: String(id),
         action: "send_failed",
-        changesJson: { error: err?.message || "unknown" },
+        changesJson: { error: errMsg(err) },
       });
       console.error("[Eng] Send for approval error:", err);
       sendError(res, err);
@@ -1432,7 +1482,7 @@ export function registerEngineeringRoutes(app: Express) {
   });
 
   // Permission: sending a deliverable requires edit on eng_tasks.
-  app.post("/api/eng/tasks/:id/send-deliverable", requireAuth, requirePermission("eng_tasks", "edit"), approvalUpload.single("file"), validateBody(engTaskSendDeliverableSchema), async (req, res) => {
+  app.post("/api/eng/tasks/:id/send-deliverable", requireAuth, requirePermission("eng_tasks", "edit"), requireEngTaskOwnership, approvalUpload.single("file"), validateBody(engTaskSendDeliverableSchema), async (req, res) => {
     const id = parseIntParam(req.params.id);
     const user = getUser(req);
 
@@ -1660,25 +1710,25 @@ export function registerEngineeringRoutes(app: Express) {
           localSyncedPath: localResult,
         },
       });
-    } catch (err: any) {
+    } catch (err) {
       logAuditFromReq(req, {
         entityType: "deliverable_send_flow",
         entityId: String(id),
         action: "canonical_save_failed",
-        changesJson: { error: err?.message || "unknown" },
+        changesJson: { error: errMsg(err) },
       });
       logAuditFromReq(req, {
         entityType: "deliverable_send_flow",
         entityId: String(id),
         action: "send_failed",
-        changesJson: { error: err?.message || "unknown" },
+        changesJson: { error: errMsg(err) },
       });
       console.error("[Eng] Send deliverable error:", err);
       sendError(res, err);
     }
   });
 
-  app.get("/api/eng/tasks/:id/deliverables", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
+  app.get("/api/eng/tasks/:id/deliverables", requireAuth, requirePermission("eng_tasks", "view"), requireEngTaskOwnership, async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
       const deliverables = await db.select({
@@ -1712,7 +1762,7 @@ export function registerEngineeringRoutes(app: Express) {
         ...d,
         recipientName: recipientMap[d.recipientUserId] || `User #${d.recipientUserId}`,
       })));
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -1755,7 +1805,7 @@ export function registerEngineeringRoutes(app: Express) {
       );
 
       res.json(updated);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -1772,13 +1822,13 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(deliverable.originalName || 'file')}"`);
       res.sendFile(filePath);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
   });
 
-  app.delete("/api/eng/tasks/:id", requireAuth, requirePermission('eng_tasks', 'delete'), async (req, res) => {
+  app.delete("/api/eng/tasks/:id", requireAuth, requirePermission('eng_tasks', 'delete'), requireEngTaskOwnership, async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
       const existing = await findEngineeringWorkItem(id);
@@ -1788,7 +1838,7 @@ export function registerEngineeringRoutes(app: Express) {
       if (!deleted) return sendError(res, notFound("Task"));
 
       res.json({ success: true, message: `Task "${existing.title}" deleted` });
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -1823,7 +1873,7 @@ export function registerEngineeringRoutes(app: Express) {
           if (!context) continue;
           try {
             assertTaskWorkflowTransition(context, canonicalBulkStatus, "bulk_status_update");
-          } catch (err: any) {
+          } catch (err) {
             if (err instanceof TaskWorkflowGuardError) {
               return sendError(res, new ApiError(err.statusCode, "WORKFLOW_ERROR", err.message, { taskId: String(taskId) }));
             }
@@ -1875,13 +1925,13 @@ export function registerEngineeringRoutes(app: Express) {
         : [];
 
       res.json({ updated: updatedTasks.length, tasks: updatedTasks });
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
   });
 
-  app.post("/api/eng/tasks/:id/link", requireAuth, requirePermission("eng_tasks", "edit"), validateBody(engTaskLinkSchema), async (req, res) => {
+  app.post("/api/eng/tasks/:id/link", requireAuth, requirePermission("eng_tasks", "edit"), requireEngTaskOwnership, validateBody(engTaskLinkSchema), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
       const { linkedPlanItemId, linkedDeliverableId, linkedQualityItemInstanceId } = req.body;
@@ -1900,13 +1950,13 @@ export function registerEngineeringRoutes(app: Express) {
 
       const mapped = await getEngineeringWorkItemById(id);
       res.json(mapped || { id: updated.id, workItemId: updated.id });
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
   });
 
-  app.get("/api/eng/tasks/:id/watchers", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
+  app.get("/api/eng/tasks/:id/watchers", requireAuth, requirePermission("eng_tasks", "view"), requireEngTaskOwnership, async (req, res) => {
     try {
       const watchers = await db.select({
         id: taskWatchers.id, userId: taskWatchers.userId,
@@ -1916,13 +1966,13 @@ export function registerEngineeringRoutes(app: Express) {
       .leftJoin(users, eq(taskWatchers.userId, users.id))
       .where(eq(taskWatchers.workItemId, parseIntParam(req.params.id)));
       res.json(watchers);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
   });
 
-  app.post("/api/eng/tasks/:id/watchers", requireAuth, requirePermission("eng_tasks", "edit"), validateBody(engTaskWatcherAddSchema), async (req, res) => {
+  app.post("/api/eng/tasks/:id/watchers", requireAuth, requirePermission("eng_tasks", "edit"), requireEngTaskOwnership, validateBody(engTaskWatcherAddSchema), async (req, res) => {
     try {
       const taskId = parseIntParam(req.params.id);
       const userId = parseInt(req.body.userId);
@@ -1955,13 +2005,13 @@ export function registerEngineeringRoutes(app: Express) {
       });
 
       res.json(watcher);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
   });
 
-  app.delete("/api/eng/tasks/:taskId/watchers/:userId", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
+  app.delete("/api/eng/tasks/:taskId/watchers/:userId", requireAuth, requirePermission("eng_tasks", "edit"), requireEngTaskOwnership, async (req, res) => {
     try {
       const taskId = parseIntParam(req.params.taskId);
       const userId = parseIntParam(req.params.userId);
@@ -1984,7 +2034,7 @@ export function registerEngineeringRoutes(app: Express) {
       });
 
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -1992,20 +2042,20 @@ export function registerEngineeringRoutes(app: Express) {
 
   // ========== TASK DETAIL ENDPOINTS ==========
 
-  app.get("/api/eng/tasks/:id", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
+  app.get("/api/eng/tasks/:id", requireAuth, requirePermission("eng_tasks", "view"), requireEngTaskOwnership, async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
       const task = await getEngineeringWorkItemById(id);
       if (!task) return sendError(res, notFound("Task"));
       const [enriched] = await enrichEngineeringTasks([task], req);
       res.json(enriched);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
   });
 
-  app.get("/api/eng/tasks/:id/comments", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
+  app.get("/api/eng/tasks/:id/comments", requireAuth, requirePermission("eng_tasks", "view"), requireEngTaskOwnership, async (req, res) => {
     try {
       const comments = await db.select({
         id: taskComments.id,
@@ -2020,13 +2070,13 @@ export function registerEngineeringRoutes(app: Express) {
       .where(eq(taskComments.workItemId, parseIntParam(req.params.id)))
       .orderBy(asc(taskComments.createdAt));
       res.json(comments);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
   });
 
-  app.post("/api/eng/tasks/:id/comments", requireAuth, requirePermission("eng_tasks", "edit"), validateBody(engTaskCommentSchema), async (req, res) => {
+  app.post("/api/eng/tasks/:id/comments", requireAuth, requirePermission("eng_tasks", "edit"), requireEngTaskOwnership, validateBody(engTaskCommentSchema), async (req, res) => {
     try {
       const taskId = parseIntParam(req.params.id);
       const { body } = req.body;
@@ -2056,13 +2106,13 @@ export function registerEngineeringRoutes(app: Express) {
       }
 
       res.json(comment);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
   });
 
-  app.get("/api/eng/tasks/:id/activity", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
+  app.get("/api/eng/tasks/:id/activity", requireAuth, requirePermission("eng_tasks", "view"), requireEngTaskOwnership, async (req, res) => {
     try {
       const activity = await db.select({
         id: taskActivityLog.id,
@@ -2080,25 +2130,26 @@ export function registerEngineeringRoutes(app: Express) {
       .where(eq(taskActivityLog.workItemId, parseIntParam(req.params.id)))
       .orderBy(desc(taskActivityLog.createdAt));
       res.json(activity);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
   });
 
-  app.get("/api/eng/tasks/:id/subtasks", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
+  app.get("/api/eng/tasks/:id/subtasks", requireAuth, requirePermission("eng_tasks", "view"), requireEngTaskOwnership, async (req, res) => {
     try {
       const parentId = parseIntParam(req.params.id);
-      const allItems = await listEngineeringWorkItems({});
-      const subtasks = allItems.filter((item) => item.parentTaskId === parentId);
+      // Indexed parent lookup instead of loading every ENG work item and
+      // filtering in JS. (The subtasks UI reads id/status/title only.)
+      const subtasks = await listEngineeringWorkItems({ parentId });
       res.json(subtasks);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
   });
 
-  app.post("/api/eng/tasks/:id/subtasks", requireAuth, requirePermission("eng_tasks", "create"), validateBody(engTaskSubtaskSchema), async (req, res) => {
+  app.post("/api/eng/tasks/:id/subtasks", requireAuth, requirePermission("eng_tasks", "create"), requireEngTaskOwnership, validateBody(engTaskSubtaskSchema), async (req, res) => {
     try {
       const parentId = parseIntParam(req.params.id);
       const parent = await getEngineeringWorkItemById(parentId);
@@ -2140,7 +2191,7 @@ export function registerEngineeringRoutes(app: Express) {
 
       const mapped = await getEngineeringWorkItemById(subtaskWorkItem.id);
       res.json(mapped || { id: subtaskWorkItem.id, title: data.title, status: "to_do" });
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -2165,7 +2216,7 @@ export function registerEngineeringRoutes(app: Express) {
         assignments: assignmentMap.get(deliverable.id) || [],
         primaryAssignment: (assignmentMap.get(deliverable.id) || [])[0] || null,
       })));
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -2198,7 +2249,7 @@ export function registerEngineeringRoutes(app: Express) {
         assignments,
         primaryAssignment: assignments[0] || null,
       });
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -2235,7 +2286,7 @@ export function registerEngineeringRoutes(app: Express) {
 
       logAuditFromReq(req, { entityType: "deliverable", entityId: String(del.id), action: "create", projectName: data.projectName, changesJson: { description: "Deliverable created", title: del.title } });
       res.json(del);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -2293,7 +2344,7 @@ export function registerEngineeringRoutes(app: Express) {
 
       logAuditFromReq(req, { entityType: "deliverable", entityId: String(id), action: "update", projectName: updated.projectName, changesJson: { description: "Deliverable updated", status: updates.status, title: updated.title } });
       res.json(updated);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -2325,7 +2376,7 @@ export function registerEngineeringRoutes(app: Express) {
 
       logAuditFromReq(req, { entityType: "deliverable", entityId: String(id), action: "update", projectName: updated?.projectName, changesJson: { description: "Feedback provided", feedbackText } });
       res.json(updated);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -2339,33 +2390,46 @@ export function registerEngineeringRoutes(app: Express) {
       const existing = await findDeliverableById(id);
       if (!existing) return sendError(res, notFound("Deliverable"));
 
-      const newVersion = existing.currentVersion + 1;
+      // Compute the next version number atomically. Two concurrent revises
+      // must not both read the same currentVersion and produce duplicate
+      // version rows / a lost currentVersion update. We derive the next
+      // number from MAX(versionNumber) inside a transaction; the unique
+      // index on (deliverable_id, version_number) is the final backstop.
+      const { newVersion, version, updated } = await db.transaction(async (tx: any) => {
+        const [maxRow] = await tx
+          .select({ maxVersion: sql<number>`COALESCE(MAX(${deliverableVersions.versionNumber}), 0)` })
+          .from(deliverableVersions)
+          .where(eq(deliverableVersions.deliverableId, id));
+        const next = Number(maxRow?.maxVersion ?? 0) + 1;
 
-      const [version] = await db.insert(deliverableVersions).values({
-        deliverableId: id,
-        versionNumber: newVersion,
-        changeReason: changeReason || null,
-        impactJson: impactJson || null,
-        status: "in_progress",
-        createdByUserId: getUser(req).id,
-      }).returning();
+        const [createdVersion] = await tx.insert(deliverableVersions).values({
+          deliverableId: id,
+          versionNumber: next,
+          changeReason: changeReason || null,
+          impactJson: impactJson || null,
+          status: "in_progress",
+          createdByUserId: getUser(req).id,
+        }).returning();
 
-      const [updated] = await db.update(deliverables)
-        .set({ currentVersion: newVersion, status: "in_progress", updatedAt: new Date() })
-        .where(eq(deliverables.id, id)).returning();
+        const [updatedDeliverable] = await tx.update(deliverables)
+          .set({ currentVersion: next, status: "in_progress", updatedAt: new Date() })
+          .where(eq(deliverables.id, id)).returning();
 
-      await db.insert(deliverableEvents).values({
-        deliverableId: id,
-        eventType: "revised",
-        fromStatus: existing.status,
-        toStatus: "in_progress",
-        feedbackText: changeReason,
-        actorUserId: getUser(req).id,
+        await tx.insert(deliverableEvents).values({
+          deliverableId: id,
+          eventType: "revised",
+          fromStatus: existing.status,
+          toStatus: "in_progress",
+          feedbackText: changeReason,
+          actorUserId: getUser(req).id,
+        });
+
+        return { newVersion: next, version: createdVersion, updated: updatedDeliverable };
       });
 
       logAuditFromReq(req, { entityType: "deliverable", entityId: String(id), action: "update", projectName: updated.projectName, changesJson: { description: "Deliverable revised", newVersion, changeReason } });
       res.json({ deliverable: updated, version });
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -2381,7 +2445,7 @@ export function registerEngineeringRoutes(app: Express) {
       }).returning();
       logAuditFromReq(req, { entityType: "deliverable", entityId: paramStr(req.params.id), action: "update", changesJson: { description: "File attached to deliverable", fileName: file.fileName } });
       res.json(file);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -2397,7 +2461,7 @@ export function registerEngineeringRoutes(app: Express) {
         .returning();
       logAuditFromReq(req, { entityType: "deliverable", entityId: paramStr(req.params.fileId), action: "approve", changesJson: { description: "Deliverable file approved" } });
       res.json(file);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -2414,7 +2478,7 @@ export function registerEngineeringRoutes(app: Express) {
         ))
         .orderBy(desc(spFilePointers.uploadedAt));
       res.json(result);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -2435,7 +2499,7 @@ export function registerEngineeringRoutes(app: Express) {
       }).returning();
       logAuditFromReq(req, { entityType: "file_pointer", entityId: String(pointer.id), action: "create", changesJson: { description: "File pointer created", fileName, entityType } });
       res.json(pointer);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -2448,7 +2512,7 @@ export function registerEngineeringRoutes(app: Express) {
       await db.delete(spFilePointers).where(eq(spFilePointers.id, id));
       logAuditFromReq(req, { entityType: "file_pointer", entityId: paramStr(req.params.id), action: "delete", changesJson: { description: "File pointer deleted" } });
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -2642,8 +2706,8 @@ export function registerEngineeringRoutes(app: Express) {
             });
           }
         }
-      } catch (ifcScanErr: any) {
-        console.warn("[Engineering] IFC warning scan error (non-fatal):", ifcScanErr.message);
+      } catch (ifcScanErr) {
+        console.warn("[Engineering] IFC warning scan error (non-fatal):", errMsg(ifcScanErr));
       }
 
       if (newWarnings.length > 0) {
@@ -2651,7 +2715,7 @@ export function registerEngineeringRoutes(app: Express) {
       }
 
       res.json({ scanned: allTasks.length + allDeliverables.length, warningsCreated: newWarnings.length, warnings: newWarnings });
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -2670,7 +2734,7 @@ export function registerEngineeringRoutes(app: Express) {
         ? await db.select().from(qcWarning).where(and(...conditions)).orderBy(desc(qcWarning.createdAt))
         : await db.select().from(qcWarning).orderBy(desc(qcWarning.createdAt));
       res.json(result);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -2696,7 +2760,7 @@ export function registerEngineeringRoutes(app: Express) {
       }
 
       res.json(updated);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -2713,7 +2777,7 @@ export function registerEngineeringRoutes(app: Express) {
       });
       logAuditFromReq(req, { entityType: "qc_warning", entityId: String(id), action: "update", changesJson: { description: "Warning acknowledged", reason: req.body.reason } });
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -2727,7 +2791,7 @@ export function registerEngineeringRoutes(app: Express) {
       // Engineering PR 2: canonical role names only. `eng_program_manager`
       // lowercase alias was unreachable (not in COMPANY_ROLES). The
       // ENGINEERING_MANAGER replaces the stale EPM role.
-      const managerRoles = [
+      const managerRoles: CompanyRole[] = [
         ...ADMIN_ROLES,
         "CCO",
         "PROGRAM_MANAGER",
@@ -2987,7 +3051,7 @@ export function registerEngineeringRoutes(app: Express) {
           warningEngine: { provisional: true, reason: "Warning scan is backend-only; no UI surfaces warnings to users yet" },
         },
       });
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -3041,7 +3105,7 @@ export function registerEngineeringRoutes(app: Express) {
       }));
 
       res.json({ projects: result });
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -3061,7 +3125,7 @@ export function registerEngineeringRoutes(app: Express) {
         id: users.id, name: users.name, email: users.email, role: users.role,
       }).from(users).orderBy(asc(users.name));
       res.json(allUsers);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -3243,7 +3307,7 @@ export function registerEngineeringRoutes(app: Express) {
       }));
 
       res.json({ entries, total, categoryCounts });
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -3324,7 +3388,7 @@ export function registerEngineeringRoutes(app: Express) {
           actors: allActors,
         },
       });
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -3366,7 +3430,7 @@ export function registerEngineeringRoutes(app: Express) {
         byAction,
         topActors,
       });
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -3389,7 +3453,7 @@ export function registerEngineeringRoutes(app: Express) {
       .leftJoin(projectInfo, eq(projectPhaseHistory.projectId, projectInfo.id))
       .orderBy(desc(projectPhaseHistory.changedAt));
       res.json(history);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -3550,7 +3614,7 @@ export function registerEngineeringRoutes(app: Express) {
         engTasksCreated,
         totalTasksCreated: pmTasksCreated + engTasksCreated,
       });
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] CP Signed Error:", err);
       sendError(res, err);
     }
@@ -3584,7 +3648,7 @@ export function registerEngineeringRoutes(app: Express) {
         ...coalesceProjectExecState(project),
         cpSignedByName: signedByName,
       });
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -3595,7 +3659,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.patch("/api/projects/:projectId/phase", jwtAuth, requireAuth, requirePermission("lifecycle", "edit"), validateBody(phaseChangeSchema), async (req, res) => {
     try {
       const user = getUser(req);
-      if (user.role !== "COO_ADMIN" && user.role !== "CEO_ADMIN") {
+      if (!(ADMIN_ROLES as readonly string[]).includes(user.role)) {
         return sendError(res, forbidden("Only admins can change project phases"));
       }
 
@@ -3661,8 +3725,8 @@ export function registerEngineeringRoutes(app: Express) {
           templateApplied = true;
           tasksCreated = templateResult.tasksCreated || 0;
         }
-      } catch (err: any) {
-        console.warn("[Phase] Template apply error (non-fatal):", err.message);
+      } catch (err) {
+        console.warn("[Phase] Template apply error (non-fatal):", errMsg(err));
       }
 
       if (!templateApplied) {
@@ -3704,12 +3768,12 @@ export function registerEngineeringRoutes(app: Express) {
               requestedByUserId: user.id,
               approverUserId: user.id,
             });
-          } catch (approvalErr: any) {
-            console.warn("[Phase] Gate approval creation failed (non-blocking):", approvalErr.message);
+          } catch (approvalErr) {
+            console.warn("[Phase] Gate approval creation failed (non-blocking):", errMsg(approvalErr));
           }
         }
-      } catch (gateErr: any) {
-        console.warn("[Phase] Stage gate evaluation error (non-blocking):", gateErr.message);
+      } catch (gateErr) {
+        console.warn("[Phase] Stage gate evaluation error (non-blocking):", errMsg(gateErr));
       }
 
       const updated = await findProjectInfoById(projectId);
@@ -3725,8 +3789,8 @@ export function registerEngineeringRoutes(app: Express) {
           missingItems: gateEvaluation.missingItems,
         } : null,
       });
-    } catch (err: any) {
-      console.error("[Phase] Error:", err.message);
+    } catch (err) {
+      console.error("[Phase] Error:", errMsg(err));
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -3755,8 +3819,8 @@ export function registerEngineeringRoutes(app: Express) {
         .orderBy(desc(projectPhaseHistory.changedAt));
 
       res.json({ history, phaseLabels: PROJECT_PHASE_LABELS });
-    } catch (err: any) {
-      console.error("[Phase] History error:", err.message);
+    } catch (err) {
+      console.error("[Phase] History error:", errMsg(err));
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -3781,7 +3845,7 @@ export function registerEngineeringRoutes(app: Express) {
         phase: project.phase ?? null,
         tasks,
       });
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -3805,7 +3869,7 @@ export function registerEngineeringRoutes(app: Express) {
       const tasks = await listEngineeringWorkItems({ projectId });
 
       res.json({ tasksCreated: created.length, tasks });
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
     }
@@ -3815,7 +3879,7 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const report = await generateWorkItemReconciliationReport("ENG");
       res.json(report);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Reconciliation] engineering error:", err);
       sendError(res, err);
     }
@@ -3825,7 +3889,7 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const report = await generateWorkItemReconciliationReport();
       res.json(report);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Reconciliation] projects error:", err);
       sendError(res, err);
     }
@@ -3856,7 +3920,7 @@ export function registerEngineeringRoutes(app: Express) {
           ...engineeringWorkItems.totals,
         },
       });
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Reconciliation] summary error:", err);
       sendError(res, err);
     }
@@ -3881,9 +3945,12 @@ export function registerEngineeringRoutes(app: Express) {
       const userId = currentUser.id;
       const userRole = currentUser.role || "";
       const userName = currentUser.name || "";
-      const isAdmin = ["COO_ADMIN", "CEO_ADMIN"].includes(userRole);
+      const isAdmin = (ADMIN_ROLES as readonly string[]).includes(userRole);
 
-      const APPROVAL_ROLE_MAP: Record<string, string[]> = {
+      // Keys are external approver-role tags (QA_REVIEW, "Engineering Manager",
+      // …) — they are NOT CompanyRole values. Values ARE CompanyRole and are
+      // typed so a canonical-role rename fails the build here.
+      const APPROVAL_ROLE_MAP: Record<string, CompanyRole[]> = {
         QA_REVIEW: ["QUALITY_MANAGER"],
         TECHNICAL_SIGNOFF: ["ENGINEERING_MANAGER", "COO_ADMIN", "CEO_ADMIN"],
         "Engineering Manager": ["ENGINEERING_MANAGER"],
@@ -3988,11 +4055,12 @@ export function registerEngineeringRoutes(app: Express) {
         createdAt: taskDeliverables.createdAt,
         taskTitle: workItems.title,
         projectName: projectInfo.projectName,
-        senderName: sql<string>`(SELECT name FROM users WHERE id = ${taskDeliverables.sentByUserId})`,
+        senderName: users.name,
       })
         .from(taskDeliverables)
         .innerJoin(workItems, eq(taskDeliverables.workItemId, workItems.id))
         .leftJoin(projectInfo, eq(workItems.projectId, projectInfo.id))
+        .leftJoin(users, eq(users.id, taskDeliverables.sentByUserId))
         .where(and(
           eq(taskDeliverables.acknowledged, false),
           isAdmin
@@ -4019,7 +4087,7 @@ export function registerEngineeringRoutes(app: Express) {
         if (a.approverUserId && a.approverUserId === userId) return true;
         if (a.approverRole) {
           const allowed = APPROVAL_ROLE_MAP[a.approverRole];
-          if (allowed && allowed.includes(userRole)) return true;
+          if (allowed && (allowed as readonly string[]).includes(userRole)) return true;
         }
         return false;
       });
@@ -4088,7 +4156,7 @@ export function registerEngineeringRoutes(app: Express) {
         userRole,
         isAdmin,
       });
-    } catch (err: any) {
+    } catch (err) {
       console.error("Home action hub error:", err);
       console.error("[Engineering] Error:", err);
       sendError(res, err);

@@ -14,7 +14,7 @@
     },
     {
       "file": "server/engineering-routes.ts",
-      "loc": 4099
+      "loc": 4167
     },
     {
       "file": "server/departments/priority-strategic-routes.ts",
@@ -62,7 +62,7 @@
     },
     {
       "file": "client/src/pages/my-work-tasks.tsx",
-      "loc": 2368
+      "loc": 2380
     },
     {
       "file": "server/departments/fye-revenue-tracking-routes.ts",
@@ -141,24 +141,28 @@
       "loc": 1786
     },
     {
-      "file": "server/routes/planning-tasks-routes.ts",
-      "loc": 1778
-    },
-    {
       "file": "client/src/pages/pd-dashboard.tsx",
       "loc": 1750
+    },
+    {
+      "file": "client/src/pages/standups.tsx",
+      "loc": 1746
+    },
+    {
+      "file": "client/src/pages/EngineeringTasksPage.tsx",
+      "loc": 1745
     },
     {
       "file": "server/services/stage-lifecycle-service.ts",
       "loc": 1727
     },
     {
-      "file": "client/src/pages/standups.tsx",
-      "loc": 1726
-    },
-    {
       "file": "client/src/pages/project-lifecycle.tsx",
       "loc": 1724
+    },
+    {
+      "file": "server/routes/planning-tasks-routes.ts",
+      "loc": 1719
     },
     {
       "file": "server/eng-stage-routes.ts",
@@ -183,14 +187,6 @@
     {
       "file": "client/src/pages/qm-dashboard.tsx",
       "loc": 1641
-    },
-    {
-      "file": "client/src/pages/engineering/EngineeringTaskDrawer.tsx",
-      "loc": 1622
-    },
-    {
-      "file": "client/src/pages/EngineeringTasksPage.tsx",
-      "loc": 1619
     },
     {
       "file": "server/departments/exco-routes.ts",

@@ -3,10 +3,11 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
 import { projectInfo, projectExecutionState, workItems, workItemAssignments, notifications } from "@shared/schema";
+import type { CompanyRole } from "@shared/schema/users";
 import { logAuditFromReq } from "../audit-logger";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
-import { ApiError, sendError, badRequest, notFound, validationError, unauthorized, serverError, forbidden } from "../lib/api-error";
+import { ApiError, sendError, badRequest, notFound, validationError, unauthorized, serverError, forbidden, errMsg } from "../lib/api-error";
 import { validateTaskCreate, validateTaskUpdate } from "../lib/task-validation";
 import { normalizeStatus, normalizePriority } from "../lib/canonical-task-engine";
 import { isWorkItemsEnabled, getAllWorkItemsForPlanTab, hasPlanWorkItemsForProject, toCanonicalStatus } from "../work-items-adapter";
@@ -53,102 +54,31 @@ async function applyWorkItemUpdate(
   // the manual_overrides write per row.
   const matchedRows = await db.select({ id: workItems.id }).from(workItems).where(whereClause);
   if (matchedRows.length === 0) return { matchedCount: 0 };
-  for (const row of matchedRows) {
-    for (const [field, value] of tracked) {
-      await applyManualOverride({
-        table: "work_items",
-        rowId: row.id,
-        fieldName: field,
-        value: value as any,
-        editedBy: userId,
-      });
-    }
-  }
+  // Each (row, field) override is an independent write — run them in parallel
+  // instead of one sequential round-trip at a time, so a multi-row plan edit
+  // doesn't take seconds to save.
+  await Promise.all(
+    matchedRows.flatMap((row: { id: number }) =>
+      tracked.map(([field, value]) =>
+        applyManualOverride({
+          table: "work_items",
+          rowId: row.id,
+          fieldName: field,
+          value: value as any,
+          editedBy: userId,
+        }),
+      ),
+    ),
+  );
   if (Object.keys(untracked).length > 0) {
     await db.update(workItems).set(untracked as any).where(whereClause);
   }
   return { matchedCount: matchedRows.length };
 }
 
-// SA working days helpers (duplicated from routes.ts for self-containment)
-function formatDateKey(y: number, m: number, d: number): string {
-  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-}
-
-function parseDateParts(dateStr: string): { year: number; month: number; day: number } {
-  const s = dateStr.substring(0, 10);
-  return { year: parseInt(s.substring(0, 4)), month: parseInt(s.substring(5, 7)), day: parseInt(s.substring(8, 10)) };
-}
-
-function getSAPublicHolidays(year: number): Set<string> {
-  const holidays = new Set<string>();
-  const add = (m: number, d: number) => {
-    holidays.add(formatDateKey(year, m, d));
-    const dt = new Date(Date.UTC(year, m - 1, d));
-    if (dt.getUTCDay() === 0) {
-      const next = new Date(dt);
-      next.setUTCDate(next.getUTCDate() + 1);
-      holidays.add(formatDateKey(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate()));
-    }
-  };
-  add(1, 1); add(3, 21); add(4, 27); add(5, 1); add(6, 16);
-  add(8, 9); add(9, 24); add(12, 16); add(12, 25); add(12, 26);
-  const easter = computeEaster(year);
-  const goodFriday = new Date(Date.UTC(easter.year, easter.month - 1, easter.day));
-  goodFriday.setUTCDate(goodFriday.getUTCDate() - 2);
-  holidays.add(formatDateKey(goodFriday.getUTCFullYear(), goodFriday.getUTCMonth() + 1, goodFriday.getUTCDate()));
-  const familyDay = new Date(Date.UTC(easter.year, easter.month - 1, easter.day));
-  familyDay.setUTCDate(familyDay.getUTCDate() + 1);
-  holidays.add(formatDateKey(familyDay.getUTCFullYear(), familyDay.getUTCMonth() + 1, familyDay.getUTCDate()));
-  return holidays;
-}
-
-function computeEaster(year: number): { year: number; month: number; day: number } {
-  const a = year % 19;
-  const b = Math.floor(year / 100);
-  const c = year % 100;
-  const d = Math.floor(b / 4);
-  const e = b % 4;
-  const f = Math.floor((b + 8) / 25);
-  const g = Math.floor((b - f + 1) / 3);
-  const h = (19 * a + b - d - g + 15) % 30;
-  const i = Math.floor(c / 4);
-  const k = c % 4;
-  const l = (32 + 2 * e + 2 * i - h - k) % 7;
-  const m = Math.floor((a + 11 * h + 22 * l) / 451);
-  const month = Math.floor((h + l - 7 * m + 114) / 31);
-  const day = ((h + l - 7 * m + 114) % 31) + 1;
-  return { year, month, day };
-}
-
-const holidayCacheByYear = new Map<number, Set<string>>();
-function isHoliday(dateStr: string): boolean {
-  const year = parseInt(dateStr.substring(0, 4));
-  if (!holidayCacheByYear.has(year)) {
-    holidayCacheByYear.set(year, getSAPublicHolidays(year));
-  }
-  return holidayCacheByYear.get(year)!.has(dateStr);
-}
-
-function saWorkingDays(startDateStr: string | null, endDateStr: string | null): number | null {
-  if (!startDateStr || !endDateStr || !/^\d{4}-\d{2}-\d{2}/.test(startDateStr) || !/^\d{4}-\d{2}-\d{2}/.test(endDateStr)) return null;
-  const s = parseDateParts(startDateStr);
-  const e = parseDateParts(endDateStr);
-  const start = new Date(Date.UTC(s.year, s.month - 1, s.day));
-  const end = new Date(Date.UTC(e.year, e.month - 1, e.day));
-  if (end < start) return 0;
-  let count = 0;
-  const cursor = new Date(start);
-  while (cursor <= end) {
-    const dow = cursor.getUTCDay();
-    const ds = formatDateKey(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, cursor.getUTCDate());
-    if (dow !== 0 && dow !== 6 && !isHoliday(ds)) {
-      count++;
-    }
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-  return count;
-}
+// NOTE: SA working-day / holiday helpers used to be duplicated here but were
+// never called in this file (dead code). The canonical implementation lives
+// in server/lib/sa-holidays.ts (saWorkingDays / isHoliday / parseDateParts).
 
 async function notifyWorkItemWatchers(params: {
   workItemId: number;
@@ -178,8 +108,8 @@ async function notifyWorkItemWatchers(params: {
         changeDetails: JSON.stringify({ source: "watcher_notification", workItemId: params.workItemId }),
       });
     }
-  } catch (error: any) {
-    console.warn("[watcher-notify] Failed to notify watchers:", error?.message || error);
+  } catch (error) {
+    console.warn("[watcher-notify] Failed to notify watchers:", errMsg(error));
   }
 }
 
@@ -792,7 +722,7 @@ export function registerPlanningTasksRoutes(app: Express) {
 
       const result = Array.from(taskMap.values()).sort(sortByTaskCode);
 
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (userId) {
         try {
           const assignmentRows = await db.execute(sql`
@@ -862,7 +792,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       }
 
       res.json({ tasks: result, unlinkedOperationalCount, unlinkedOperationalTasks });
-    } catch (err: any) {
+    } catch (err) {
       console.error("Planning tasks error:", err);
       throw err;
     }
@@ -917,7 +847,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       }
 
       res.json(rollup);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Summary rollup error:", err);
       throw err;
     }
@@ -925,11 +855,14 @@ export function registerPlanningTasksRoutes(app: Express) {
 
   // ==================== PLAN TASK EDITING (with COO notifications) ====================
 
+  // Roles with blanket plan-edit rights. Typed against CompanyRole so a rename
+  // in the canonical role list fails the build instead of silently denying.
+  const PLAN_ADMIN_EDIT_ROLES: CompanyRole[] = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"];
   const canEditProjectTasks = async (req: Request, projectName: string): Promise<boolean> => {
-    const user = req.user as any;
+    const user = req.user;
     if (!user) return false;
     const role = user.role || "";
-    if (["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"].includes(role)) return true;
+    if ((PLAN_ADMIN_EDIT_ROLES as string[]).includes(role)) return true;
     const info = await storage.getProjectInfo(projectName);
     if (!info) return false;
     if (info.pm === user.name || info.pd === user.name) return true;
@@ -943,7 +876,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       if (taskId == null) {
         return res.status(400).json({ error: `Invalid task ID: ${paramStr(req, "taskId")}` });
       }
-      const user = req.user as any;
+      const user = req.user;
       const { projectName, ...updates } = req.body;
       if (!projectName) return res.status(400).json({ error: "projectName is required" });
 
@@ -1063,7 +996,7 @@ export function registerPlanningTasksRoutes(app: Express) {
           const mirrorResult = await applyWorkItemUpdate(
             wiMirror,
             and(eq(workItems.legacyTable, "project_plan"), eq(workItems.legacyId, actualTaskId)),
-            (req as any).user?.id ?? null,
+            req.user?.id ?? null,
           );
           if (mirrorResult.matchedCount === 0) {
             return res.status(409).json({
@@ -1101,7 +1034,7 @@ export function registerPlanningTasksRoutes(app: Express) {
                 const result = await applyWorkItemUpdate(
                   { percentComplete: wiPct },
                   and(eq(workItems.legacyTable, "project_plan"), eq(workItems.legacyId, actualTaskId)),
-                  (req as any).user?.id ?? null,
+                  req.user?.id ?? null,
                 );
                 if (result.matchedCount === 0) {
                   const wiByProject = await db.execute(sql`
@@ -1115,7 +1048,7 @@ export function registerPlanningTasksRoutes(app: Express) {
                     await applyWorkItemUpdate(
                       { percentComplete: wiPct },
                       eq(workItems.id, (wiByProject.rows[0] as any).id),
-                      (req as any).user?.id ?? null,
+                      req.user?.id ?? null,
                     );
                   }
                 }
@@ -1225,7 +1158,7 @@ export function registerPlanningTasksRoutes(app: Express) {
           await applyWorkItemUpdate(
             wiUpdateFields,
             eq(workItems.id, wi.id),
-            (req as any).user?.id ?? null,
+            req.user?.id ?? null,
           );
         }
 
@@ -1240,7 +1173,7 @@ export function registerPlanningTasksRoutes(app: Express) {
             await applyWorkItemUpdate(
               wiSyncFields,
               and(eq(workItems.legacyTable, "normalized_plan_tasks"), eq(workItems.legacyId, actualTaskId), isNull(workItems.deletedAt)),
-              (req as any).user?.id ?? null,
+              req.user?.id ?? null,
             );
           }
         } catch (e) {
@@ -1264,13 +1197,13 @@ export function registerPlanningTasksRoutes(app: Express) {
             startDate: updates.startDate,
             dueDate: updates.dueDate || updates.endDate,
           });
-        } catch (cascadeErr: any) {
-          console.warn("[planning-tasks] Non-fatal cascade error:", cascadeErr.message);
+        } catch (cascadeErr) {
+          console.warn("[planning-tasks] Non-fatal cascade error:", errMsg(cascadeErr));
         }
 
         await notifyWorkItemWatchers({
           workItemId: wi.id,
-          actorUserId: (req.user as any)?.id,
+          actorUserId: req.user?.id,
           projectName,
           title: `Task updated: ${taskName}`,
           body: `${taskName} was updated in ${projectName}.`,
@@ -1294,7 +1227,7 @@ export function registerPlanningTasksRoutes(app: Express) {
           await applyWorkItemUpdate(
             wiUpdateFields,
             eq(workItems.id, wi.id),
-            (req as any).user?.id ?? null,
+            req.user?.id ?? null,
           );
 
           // Legacy mirror removed — work_items is now the canonical source.
@@ -1302,7 +1235,7 @@ export function registerPlanningTasksRoutes(app: Express) {
 
         res.json({ success: true, taskId, workItemId: wi?.id ?? null });
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error("Plan task update error:", err);
       throw err;
     }
@@ -1310,7 +1243,8 @@ export function registerPlanningTasksRoutes(app: Express) {
 
   app.post("/api/planning-tasks", requireAuth, async (req: Request, res: Response) => {
     try {
-      const user = req.user as any;
+      const user = req.user;
+      if (!user) return sendError(res, unauthorized("Authentication required"));
       const { projectName, title, startDate, dueDate, status, priority, isMilestone, parentTaskId } = req.body;
       if (!projectName) return sendError(res, badRequest("projectName is required"));
       const validationErrors = validateTaskCreate(req.body);
@@ -1395,7 +1329,7 @@ export function registerPlanningTasksRoutes(app: Express) {
         eventType: "task_created",
       });
       res.json({ ...task, workItemId: workItem.id, wbsCode: newWbsCode });
-    } catch (err: any) {
+    } catch (err) {
       console.error("Plan task create error:", err);
       sendError(res, err);
     }
@@ -1403,7 +1337,7 @@ export function registerPlanningTasksRoutes(app: Express) {
 
   app.post("/api/planning-tasks/bulk", requireAuth, async (req: Request, res: Response) => {
     try {
-      const user = req.user as any;
+      const user = req.user;
       const { projectName, operation, taskIds } = req.body;
       if (!projectName || !operation || !Array.isArray(taskIds) || taskIds.length === 0) {
         return sendError(res, badRequest("projectName, operation, and taskIds[] required"));
@@ -1415,18 +1349,21 @@ export function registerPlanningTasksRoutes(app: Express) {
       const results: Array<{ id: number; success: boolean; error?: string }> = [];
 
       if (operation === "delete") {
-        for (const id of taskIds) {
-          try {
-            await db.update(workItems).set({ deletedAt: new Date() }).where(eq(workItems.id, id));
-            results.push({ id, success: true });
-          } catch (e: any) {
-            results.push({ id, success: false, error: e.message });
-          }
+        // Single batched soft-delete instead of one round-trip per id.
+        try {
+          await db.update(workItems).set({ deletedAt: new Date() }).where(inArray(workItems.id, taskIds));
+          for (const id of taskIds) results.push({ id, success: true });
+        } catch (e) {
+          for (const id of taskIds) results.push({ id, success: false, error: errMsg(e) });
         }
       } else if (operation === "indent") {
+        // Pre-fetch the selected rows once. Sibling lookups stay per-iteration
+        // because indent mutates parent/order as it goes.
+        const selectedRows = await db.select().from(workItems).where(inArray(workItems.id, taskIds));
+        const taskById = new Map<number, typeof workItems.$inferSelect>(selectedRows.map((t: typeof workItems.$inferSelect): [number, typeof workItems.$inferSelect] => [t.id, t]));
         for (const id of taskIds) {
           try {
-            const [task] = await db.select().from(workItems).where(eq(workItems.id, id));
+            const task = taskById.get(id);
             if (task) {
               const siblings = await db.select().from(workItems).where(
                 and(
@@ -1445,14 +1382,16 @@ export function registerPlanningTasksRoutes(app: Express) {
                 results.push({ id, success: false, error: "No task above to indent under" });
               }
             }
-          } catch (e: any) {
-            results.push({ id, success: false, error: e.message });
+          } catch (e) {
+            results.push({ id, success: false, error: errMsg(e) });
           }
         }
       } else if (operation === "outdent") {
+        const selectedRows = await db.select().from(workItems).where(inArray(workItems.id, taskIds));
+        const taskById = new Map<number, typeof workItems.$inferSelect>(selectedRows.map((t: typeof workItems.$inferSelect): [number, typeof workItems.$inferSelect] => [t.id, t]));
         for (const id of taskIds) {
           try {
-            const [task] = await db.select().from(workItems).where(eq(workItems.id, id));
+            const task = taskById.get(id);
             if (task && task.parentId) {
               const [parent] = await db.select().from(workItems).where(eq(workItems.id, task.parentId));
               await db.update(workItems).set({
@@ -1463,14 +1402,16 @@ export function registerPlanningTasksRoutes(app: Express) {
             } else {
               results.push({ id, success: false, error: "Already at top level" });
             }
-          } catch (e: any) {
-            results.push({ id, success: false, error: e.message });
+          } catch (e) {
+            results.push({ id, success: false, error: errMsg(e) });
           }
         }
       } else if (operation === "moveUp" || operation === "moveDown") {
+        const selectedRows = await db.select().from(workItems).where(inArray(workItems.id, taskIds));
+        const taskById = new Map<number, typeof workItems.$inferSelect>(selectedRows.map((t: typeof workItems.$inferSelect): [number, typeof workItems.$inferSelect] => [t.id, t]));
         for (const id of taskIds) {
           try {
-            const [task] = await db.select().from(workItems).where(eq(workItems.id, id));
+            const task = taskById.get(id);
             if (task) {
               const siblings = await db.select().from(workItems).where(
                 and(
@@ -1493,8 +1434,8 @@ export function registerPlanningTasksRoutes(app: Express) {
                 results.push({ id, success: false, error: `Cannot move ${operation === "moveUp" ? "up" : "down"}` });
               }
             }
-          } catch (e: any) {
-            results.push({ id, success: false, error: e.message });
+          } catch (e) {
+            results.push({ id, success: false, error: errMsg(e) });
           }
         }
       } else {
@@ -1512,7 +1453,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       });
 
       res.json({ success: true, results });
-    } catch (err: any) {
+    } catch (err) {
       console.error("Bulk plan task error:", err);
       sendError(res, err);
     }
@@ -1522,7 +1463,7 @@ export function registerPlanningTasksRoutes(app: Express) {
     try {
       const taskId = paramInt(req, "taskId");
       if (taskId == null) return sendError(res, badRequest("Invalid task ID"));
-      const user = req.user as any;
+      const user = req.user;
       const { projectName } = req.body;
       if (!projectName) return sendError(res, badRequest("projectName is required"));
 
@@ -1568,7 +1509,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       });
 
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err) {
       console.error("Plan task delete error:", err);
       sendError(res, err);
     }
@@ -1583,17 +1524,17 @@ export function registerPlanningTasksRoutes(app: Express) {
     try {
       const mappings = await storage.getKeyDateMappings(decodeURIComponent(paramStr(req, "projectName")));
       res.json(mappings);
-    } catch (err: any) {
+    } catch (err) {
       throw err;
     }
   });
 
   app.post("/api/key-date-mappings", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const mapping = await storage.createKeyDateMapping({ ...req.body, createdBy: (req.user as any)?.id });
+      const mapping = await storage.createKeyDateMapping({ ...req.body, createdBy: req.user?.id });
       logAuditFromReq(req, { entityType: "key_date_mapping", entityId: String(mapping.id), action: "create", changesJson: req.body });
       res.json(mapping);
-    } catch (err: any) {
+    } catch (err) {
       throw err;
     }
   });
@@ -1605,7 +1546,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       const updated = await storage.updateKeyDateMapping(id, req.body);
       logAuditFromReq(req, { entityType: "key_date_mapping", entityId: paramStr(req, "id"), action: "update", changesJson: req.body });
       res.json(updated);
-    } catch (err: any) {
+    } catch (err) {
       throw err;
     }
   });
@@ -1617,7 +1558,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       await storage.deleteKeyDateMapping(id);
       logAuditFromReq(req, { entityType: "key_date_mapping", entityId: paramStr(req, "id"), action: "delete" });
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err) {
       throw err;
     }
   });
@@ -1759,7 +1700,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       const [piRow] = await db.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId)).limit(1);
       const pName = piRow?.projectName || "";
       res.json(await resolveKeyDates(projectId, pName));
-    } catch (err: any) {
+    } catch (err) {
       throw err;
     }
   });
@@ -1770,7 +1711,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       const [piRow] = await db.select({ id: projectInfo.id }).from(projectInfo).where(eq(projectInfo.projectName, projectName)).limit(1);
       const projectId = piRow?.id || null;
       res.json(await resolveKeyDates(projectId, projectName));
-    } catch (err: any) {
+    } catch (err) {
       throw err;
     }
   });

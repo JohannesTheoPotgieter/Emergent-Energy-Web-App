@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo, useEffect } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect, Suspense } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { HoldReasonDialog } from "@/components/HoldReasonDialog";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -21,6 +21,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -106,7 +107,7 @@ import {
 } from "@/hooks/useEngineeringTaskFilters";
 import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
 import { engFetch } from "@/lib/eng-fetch";
-import { invalidateAllTaskCaches, engineeringTicketKeys } from "@/lib/task-cache";
+import { invalidateEngineeringTicketCaches, engineeringTicketKeys } from "@/lib/task-cache";
 import { canonicalizeTaskStatus } from "@/lib/task-status-compat";
 import {
   TASK_PRIORITY_VALUES,
@@ -144,6 +145,7 @@ import {
   LINKED_SOURCE_OPTIONS,
   SAVED_FILTERS,
   getSavedMyName,
+  setSavedMyName,
   getSavedEngDefaultView,
   saveEngDefaultView,
   clearEngDefaultView,
@@ -174,12 +176,16 @@ export { EngineeringWorkloadStrip } from "./engineering/engineering-workload-str
 
 
 
-// TaskDetailDrawer + PostUpdateForm extracted to
-// ./engineering/EngineeringTaskDrawer (UI/UX audit module split). Imported
-// for internal use + re-exported so the public surface (and ./engineering
-// barrels) is unchanged.
-import { TaskDetailDrawer } from "./engineering/EngineeringTaskDrawer";
-export { PostUpdateForm, TaskDetailDrawer } from "./engineering/EngineeringTaskDrawer";
+// TaskDetailDrawer is heavy (~89 KB) and only renders when a task is opened,
+// so it is lazy-loaded as its own chunk rather than bundled into this page.
+// The previous static re-export of PostUpdateForm / TaskDetailDrawer had no
+// external consumers and was removed — it pinned the drawer back into this
+// chunk and defeated the split.
+import { lazyWithRetry } from "@/lib/lazy-with-retry";
+
+const TaskDetailDrawer = lazyWithRetry(() =>
+  import("./engineering/EngineeringTaskDrawer").then((m) => ({ default: m.TaskDetailDrawer })),
+);
 
 
 /**
@@ -233,6 +239,17 @@ export default function EngineeringTasksPage() {
     return fullName.split(/\s+/)[0];
   });
   const [showNamePicker, setShowNamePicker] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const openNamePicker = useCallback(() => {
+    setNameDraft(myName);
+    setShowNamePicker(true);
+  }, [myName]);
+  const saveMyName = useCallback(() => {
+    const next = nameDraft.trim();
+    setMyName(next);
+    setSavedMyName(next);
+    setShowNamePicker(false);
+  }, [nameDraft]);
   // Canonicalise the incoming ?status= param so legacy uppercase links from
   // the dashboard, admin-approvals, or external bookmarks ("HOLD",
   // "NEEDS APPROVAL", "IN PROGRESS") resolve to the snake_case values the
@@ -442,7 +459,7 @@ export default function EngineeringTasksPage() {
       });
     },
     onSuccess: () => {
-      invalidateAllTaskCaches(queryClient);
+      invalidateEngineeringTicketCaches(queryClient);
       setCreateOpen(false);
       setNewTask({
         projectId: null,
@@ -463,24 +480,52 @@ export default function EngineeringTasksPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  // Optimistic helper for the per-card hot paths (status / priority / due
+  // date). Patches the board cache immediately so a drag or quick-edit lands
+  // instantly, snapshots the previous list for rollback, and reconciles with
+  // the server in onSettled. The board query is the single source the board /
+  // list / projects / timeline / my-tasks views all derive from.
+  const boardKey = engineeringTicketKeys.scope("board");
+  const optimisticTaskPatch = useCallback(async (taskId: number, patch: Partial<Task>) => {
+    await queryClient.cancelQueries({ queryKey: boardKey });
+    const previousTasks = queryClient.getQueryData<Task[]>(boardKey);
+    queryClient.setQueryData<Task[]>(boardKey, (old) =>
+      (old || []).map((t) => (t.id === taskId ? { ...t, ...patch } : t)),
+    );
+    return { previousTasks };
+  }, [queryClient, boardKey]);
+
+  const rollbackTasks = useCallback((ctx?: { previousTasks?: Task[] }) => {
+    if (ctx?.previousTasks) queryClient.setQueryData(boardKey, ctx.previousTasks);
+  }, [queryClient, boardKey]);
+
   const updateStatusMutation = useMutation({
     mutationFn: ({ taskId, status, holdReason, blockedType }: { taskId: number; status: string; holdReason?: string; blockedType?: string }) =>
       engFetch(`/api/eng/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ status, ...(holdReason ? { holdReason } : {}), ...(blockedType ? { blockedType } : {}) }) }),
+    onMutate: ({ taskId, status, holdReason, blockedType }) =>
+      optimisticTaskPatch(taskId, { status, ...(holdReason ? { holdReason } : {}), ...(blockedType ? { blockedType } : {}) } as Partial<Task>),
     onSuccess: () => {
-      invalidateAllTaskCaches(queryClient);
       toast({ title: "Status updated" });
     },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error, _vars, ctx) => {
+      rollbackTasks(ctx);
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    },
+    onSettled: () => invalidateEngineeringTicketCaches(queryClient),
   });
 
   const updatePriorityMutation = useMutation({
     mutationFn: ({ taskId, priority }: { taskId: number; priority: string }) =>
       engFetch(`/api/eng/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ priority }) }),
+    onMutate: ({ taskId, priority }) => optimisticTaskPatch(taskId, { priority } as Partial<Task>),
     onSuccess: () => {
-      invalidateAllTaskCaches(queryClient);
       toast({ title: "Priority updated" });
     },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error, _vars, ctx) => {
+      rollbackTasks(ctx);
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    },
+    onSettled: () => invalidateEngineeringTicketCaches(queryClient),
   });
 
   const requestStatusChange = useCallback((taskId: number, newStatus: string) => {
@@ -544,7 +589,7 @@ export default function EngineeringTasksPage() {
   const bulkStatusMutation = useMutation({
     mutationFn: ({ taskIds, status }: { taskIds: number[]; status: string }) => runBulkPatch(taskIds, { status }),
     onSuccess: ({ ok, failed }) => {
-      invalidateAllTaskCaches(queryClient);
+      invalidateEngineeringTicketCaches(queryClient);
       if (failed === 0) {
         toast({ title: `${ok} task${ok === 1 ? "" : "s"} updated` });
       } else {
@@ -562,7 +607,7 @@ export default function EngineeringTasksPage() {
   const bulkPriorityMutation = useMutation({
     mutationFn: ({ taskIds, priority }: { taskIds: number[]; priority: string }) => runBulkPatch(taskIds, { priority }),
     onSuccess: ({ ok, failed }) => {
-      invalidateAllTaskCaches(queryClient);
+      invalidateEngineeringTicketCaches(queryClient);
       if (failed === 0) {
         toast({ title: `${ok} task${ok === 1 ? "" : "s"} updated` });
       } else {
@@ -591,24 +636,28 @@ export default function EngineeringTasksPage() {
   const updateDueDateMutation = useMutation({
     mutationFn: ({ taskId, dueDate }: { taskId: number; dueDate: string }) =>
       engFetch(`/api/eng/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ dueDate }) }),
+    onMutate: ({ taskId, dueDate }) => optimisticTaskPatch(taskId, { dueDate } as Partial<Task>),
     onSuccess: () => {
-      invalidateAllTaskCaches(queryClient);
       toast({ title: "Due date updated" });
     },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error, _vars, ctx) => {
+      rollbackTasks(ctx);
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    },
+    onSettled: () => invalidateEngineeringTicketCaches(queryClient),
   });
 
   const handleDueDateChange = useCallback((taskId: number, dueDate: string) => {
     updateDueDateMutation.mutate({ taskId, dueDate });
   }, [updateDueDateMutation]);
 
-  const uniqueAssignees = Array.from(
+  const uniqueAssignees = useMemo(() => Array.from(
     new Set(
       tasks.flatMap((task) =>
         ((task.assignees || []).length > 0 ? (task.assignees || []) : (task.resolvedAssignees || []).map((user) => user.name)).filter(Boolean),
       ),
     ),
-  ).sort();
+  ).sort(), [tasks]);
   const uniqueProjects = useMemo(() => Array.from(new Set(tasks.map(t => t.projectName).filter(Boolean))).sort() as string[], [tasks]);
 
   const basePool = myTasksOnly ? myTasks : tasks;
@@ -773,10 +822,10 @@ export default function EngineeringTasksPage() {
   const boardStatuses = getVisibleStatusesForView("board");
   const filterStatuses = getVisibleStatusesForView("list");
 
-  const tasksByStatus = TASK_STATUSES.reduce((acc, status) => {
+  const tasksByStatus = useMemo(() => TASK_STATUSES.reduce((acc, status) => {
     acc[status] = filtered.filter((t) => canonicalizeTaskStatus(t.status) === status);
     return acc;
-  }, {} as Record<string, Task[]>);
+  }, {} as Record<string, Task[]>), [filtered]);
 
   // Column grouping (#13)
   const boardGroupKeys = useMemo(() => {
@@ -899,7 +948,7 @@ export default function EngineeringTasksPage() {
     <div data-testid="eng-tasks-page" className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-sm">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-sm">
             <ListTodo className="h-5 w-5 text-white" />
           </div>
           <div>
@@ -919,10 +968,12 @@ export default function EngineeringTasksPage() {
               className="h-8 px-2"
               onClick={() => {
                 setViewMode("mytasks");
-                if (!myName) setShowNamePicker(true);
+                if (!myName) openNamePicker();
               }}
               data-testid="btn-view-mytasks"
               title="My Tasks"
+              aria-label="My Tasks view"
+              aria-pressed={viewMode === "mytasks"}
             >
               <UserCog className="h-4 w-4" />
             </Button>
@@ -933,6 +984,8 @@ export default function EngineeringTasksPage() {
               onClick={() => setViewMode("board")}
               data-testid="btn-view-board"
               title="Kanban Board"
+              aria-label="Kanban board view"
+              aria-pressed={viewMode === "board"}
             >
               <Columns3 className="h-4 w-4" />
             </Button>
@@ -943,6 +996,8 @@ export default function EngineeringTasksPage() {
               onClick={() => setViewMode("projects")}
               data-testid="btn-view-projects"
               title="Projects View"
+              aria-label="Projects view"
+              aria-pressed={viewMode === "projects"}
             >
               <FolderKanban className="h-4 w-4" />
             </Button>
@@ -953,6 +1008,8 @@ export default function EngineeringTasksPage() {
               onClick={() => setViewMode("list")}
               data-testid="btn-view-list"
               title="List View"
+              aria-label="List view"
+              aria-pressed={viewMode === "list"}
             >
               <List className="h-4 w-4" />
             </Button>
@@ -963,6 +1020,8 @@ export default function EngineeringTasksPage() {
               onClick={() => setViewMode("timeline")}
               data-testid="btn-view-timeline"
               title="Timeline View"
+              aria-label="Timeline view"
+              aria-pressed={viewMode === "timeline"}
             >
               <GanttChart className="h-4 w-4" />
             </Button>
@@ -987,6 +1046,7 @@ export default function EngineeringTasksPage() {
                 onClick={handleResetDefaultView}
                 data-testid="btn-reset-default-view"
                 title="Reset to standard view"
+                aria-label="Reset to standard view"
               >
                 <RotateCw className="h-3.5 w-3.5" />
               </Button>
@@ -994,13 +1054,14 @@ export default function EngineeringTasksPage() {
           </div>
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-orange-600 hover:bg-orange-700 h-8 text-xs" data-testid="button-create-task">
+              <Button className="bg-emerald-600 hover:bg-emerald-700 h-8 text-xs" data-testid="button-create-task">
                 <Plus className="h-4 w-4 mr-1" /> New Task
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[500px]">
               <DialogHeader>
                 <DialogTitle>Create Task</DialogTitle>
+                <DialogDescription>Add an engineering task. A project and title are required.</DialogDescription>
               </DialogHeader>
               <div className="space-y-4 pt-4">
                 <div className="space-y-2">
@@ -1095,7 +1156,7 @@ export default function EngineeringTasksPage() {
                   </div>
                 </div>
                 <Button
-                  className="w-full bg-orange-600 hover:bg-orange-700"
+                  className="w-full bg-emerald-600 hover:bg-emerald-700"
                   data-testid="button-submit-task"
                   disabled={!newTask.projectId || !newTask.title || createMutation.isPending}
                   onClick={() => createMutation.mutate(newTask)}
@@ -1141,7 +1202,17 @@ export default function EngineeringTasksPage() {
       )}
 
       {(myTasksOnly || viewMode === "mytasks") && (
-        <PersonalKpiStrip tasks={tasks} myTasks={myTasks} />
+        <>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="my-tasks-identity">
+            <span>
+              {myName ? <>Showing tasks for <span className="font-medium text-foreground">{myName}</span></> : "No name set — My Tasks can't match your work yet"}
+            </span>
+            <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={openNamePicker} data-testid="btn-change-my-name">
+              {myName ? "Change" : "Set your name"}
+            </Button>
+          </div>
+          <PersonalKpiStrip tasks={tasks} myTasks={myTasks} />
+        </>
       )}
 
       <div className="flex flex-wrap items-center gap-2">
@@ -1450,11 +1521,14 @@ export default function EngineeringTasksPage() {
             if (count === 0) return null;
             const pct = (count / (filtered.length || 1)) * 100;
             return (
-              <div
+              <button
+                type="button"
                 key={status}
-                className={`h-full ${getTaskStatusBarClass(status)} transition-all duration-500 hover:brightness-110 cursor-pointer`}
+                className={`h-full ${getTaskStatusBarClass(status)} transition-all duration-500 hover:brightness-110 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset`}
                 style={{ width: `${Math.max(pct, 0.5)}%` }}
                 title={`${getTaskStatusLabel(status)}: ${count} (${Math.round(pct)}%)`}
+                aria-label={`Filter by ${getTaskStatusLabel(status)}: ${count} task${count === 1 ? "" : "s"} (${Math.round(pct)}%)`}
+                aria-pressed={statusFilter === status}
                 onClick={() => setStatusFilter(statusFilter === status ? "all" : status)}
                 data-testid={`status-bar-${status.toLowerCase().replace(/\s+/g, "-")}`}
               />
@@ -1462,27 +1536,44 @@ export default function EngineeringTasksPage() {
           })}
         </div>
 
-        {isMobile && <p className="text-[10px] text-muted-foreground text-center py-1">Swipe to see more columns →</p>}
-        <div className="flex gap-1.5 overflow-x-auto pb-4" style={{ minHeight: "400px" }}>
-          {boardGroupKeys.map(group => (
-            <KanbanColumn
-              key={group}
-              status={group}
-              tasks={tasksByGroup[group] || []}
-              onDrop={handleDrop}
-              onCardClick={setSelectedTask}
-              onStatusChange={handleStatusChange}
-              onPriorityChange={handlePriorityChange}
-              onDueDateChange={handleDueDateChange}
-              compact={boardCompact}
-              collapsed={collapsedColumns.has(group)}
-              onToggleCollapse={() => toggleColumnCollapse(group)}
-              totalTasks={filtered.length}
-              selectedTaskIds={selectedTaskIds}
-              onToggleSelect={toggleTaskSelection}
-            />
-          ))}
-        </div>
+        {isMobile && filtered.length > 0 && <p className="text-[10px] text-muted-foreground text-center py-1">Swipe to see more columns →</p>}
+        {filtered.length === 0 ? (
+          <Card className="shadow-sm" data-testid="engineering-board-no-matches">
+            <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+              <Filter className="h-10 w-10 text-muted-foreground/30 mb-3" />
+              <h3 className="text-base font-medium text-muted-foreground">No tasks match your filters</h3>
+              <p className="text-sm text-muted-foreground/70 mt-1 max-w-md">
+                {basePool.length} task{basePool.length === 1 ? "" : "s"} in scope are hidden by the current filters.
+              </p>
+              {hasActiveFilters && (
+                <Button variant="outline" size="sm" className="mt-3 h-8 text-xs gap-1.5" onClick={resetFilters} data-testid="btn-clear-filters-empty">
+                  <X className="h-3.5 w-3.5" /> Clear filters
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="flex gap-1.5 overflow-x-auto pb-4" style={{ minHeight: "400px" }}>
+            {boardGroupKeys.map(group => (
+              <KanbanColumn
+                key={group}
+                status={group}
+                tasks={tasksByGroup[group] || []}
+                onDrop={handleDrop}
+                onCardClick={setSelectedTask}
+                onStatusChange={handleStatusChange}
+                onPriorityChange={handlePriorityChange}
+                onDueDateChange={handleDueDateChange}
+                compact={boardCompact}
+                collapsed={collapsedColumns.has(group)}
+                onToggleCollapse={() => toggleColumnCollapse(group)}
+                totalTasks={filtered.length}
+                selectedTaskIds={selectedTaskIds}
+                onToggleSelect={toggleTaskSelection}
+              />
+            ))}
+          </div>
+        )}
         </>
       ) : viewMode === "mytasks" ? (
         <MyTasksView
@@ -1517,15 +1608,17 @@ export default function EngineeringTasksPage() {
       )}
 
       {selectedTask && (
-        <TaskDetailDrawer
-          task={selectedTask}
-          onClose={() => setSelectedTask(null)}
-          onUpdate={() => {
-            invalidateAllTaskCaches(queryClient);
-            const updatedTask = tasks.find(t => t.id === selectedTask.id);
-            if (updatedTask) setSelectedTask(updatedTask);
-          }}
-        />
+        <Suspense fallback={null}>
+          <TaskDetailDrawer
+            task={selectedTask}
+            onClose={() => setSelectedTask(null)}
+            onUpdate={() => {
+              invalidateEngineeringTicketCaches(queryClient);
+              const updatedTask = tasks.find(t => t.id === selectedTask.id);
+              if (updatedTask) setSelectedTask(updatedTask);
+            }}
+          />
+        </Suspense>
       )}
 
       <HoldReasonDialog
@@ -1584,12 +1677,45 @@ export default function EngineeringTasksPage() {
         onConfirm={executePendingBulk}
       />
 
+      <Dialog open={showNamePicker} onOpenChange={setShowNamePicker}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Who are you?</DialogTitle>
+            <DialogDescription>
+              "My Tasks" matches assignees whose name starts with what you enter. Use the first name your
+              tasks are assigned under so the right work shows up.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 pt-2">
+            <Label htmlFor="eng-my-name-input">Your name</Label>
+            <Input
+              id="eng-my-name-input"
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") saveMyName(); }}
+              placeholder="e.g. Eon"
+              data-testid="input-my-name"
+            />
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setShowNamePicker(false)} data-testid="btn-cancel-my-name">Cancel</Button>
+              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={saveMyName} data-testid="btn-save-my-name">Save</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {showShortcuts && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setShowShortcuts(false)}>
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full mx-4"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="eng-shortcuts-title"
+          >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-sm">Keyboard Shortcuts</h3>
-              <button onClick={() => setShowShortcuts(false)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+              <h3 id="eng-shortcuts-title" className="font-semibold text-sm">Keyboard Shortcuts</h3>
+              <button onClick={() => setShowShortcuts(false)} className="text-muted-foreground hover:text-foreground" aria-label="Close keyboard shortcuts"><X className="h-4 w-4" /></button>
             </div>
             <div className="space-y-2 text-xs">
               {[

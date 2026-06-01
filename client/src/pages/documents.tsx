@@ -19,7 +19,12 @@ import { UploadDialog } from "@/components/documents/UploadDialog";
 import { NewFolderDialog } from "@/components/documents/NewFolderDialog";
 import { RenameDialog } from "@/components/documents/RenameDialog";
 import { DocumentDetailDrawer } from "@/components/documents/DocumentDetailDrawer";
-import { useDocumentChildren, useDocumentRoots } from "@/components/documents/use-documents";
+import {
+  useDocumentChildren,
+  useDocumentRoots,
+  documentDownloadUrl,
+  type BrowseTarget,
+} from "@/components/documents/use-documents";
 import { FolderFiles } from "@/components/documents/FolderFiles";
 import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import {
@@ -31,18 +36,36 @@ import type { DocumentRootScope, GraphItem } from "@/components/documents/types"
 /**
  * /documents — generic SharePoint browser.
  *
- * Phase 1 (browse + download) ships today. Upload / new folder / rename /
- * check-in/out + comments are behind the same surface and are enabled
- * where server ACL permits.
+ * Company scope browses a company_sharepoint_roots root. Project scope is
+ * folder-keyed: pick a project, then one of its provisioned project_folders,
+ * and browse/upload/rename within it via the canonical
+ * /api/projects/:projectId/folders/:folderId/* endpoints (the cutover off the
+ * deprecated project_sharepoint_roots table).
  */
 export default function DocumentsPage() {
   const roots = useDocumentRoots();
+  const { projectsSummary, isLoading: projectsLoading } = useProjectsSummary();
+  const taxonomy = usePublicFolderTaxonomy();
+
   const [scope, setScope] = useState<DocumentRootScope>("project");
-  const [rootId, setRootId] = useState<number | null>(null);
+  const [companyRootId, setCompanyRootId] = useState<number | null>(null);
+  const [projectId, setProjectId] = useState<number | null>(null);
+  const [folderId, setFolderId] = useState<number | null>(null);
   const [crumbs, setCrumbs] = useState<Crumb[]>([]);
 
+  const projectFolders = useProjectFolders(scope === "project" ? projectId : null);
+
+  const target: BrowseTarget | null = useMemo(() => {
+    if (scope === "company") {
+      return companyRootId != null ? { kind: "company", rootId: companyRootId } : null;
+    }
+    return projectId != null && folderId != null
+      ? { kind: "folder", projectId, folderId }
+      : null;
+  }, [scope, companyRootId, projectId, folderId]);
+
   const parentItemId = crumbs.length > 0 ? crumbs[crumbs.length - 1].id : null;
-  const children = useDocumentChildren(scope, rootId, parentItemId);
+  const children = useDocumentChildren(target, parentItemId);
 
   const [uploadOpen, setUploadOpen] = useState(false);
   const [folderOpen, setFolderOpen] = useState(false);
@@ -51,24 +74,65 @@ export default function DocumentsPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailItemId, setDetailItemId] = useState<string | null>(null);
 
+  const projectOptions = useMemo(
+    () =>
+      (projectsSummary ?? [])
+        .filter((p) => typeof p.project_info_id === "number")
+        .map((p) => ({ projectId: p.project_info_id as number, name: p.project_name })),
+    [projectsSummary],
+  );
+
+  const taxByKey = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of taxonomy.data?.taxonomy ?? []) m.set(t.internalKey, t.displayName);
+    return m;
+  }, [taxonomy.data]);
+
+  // Only provisioned (browsable) folders appear as browse anchors; the
+  // project-root pseudo-folder is hidden.
+  const folderOptions = useMemo(
+    () =>
+      (projectFolders.data?.folders ?? [])
+        .filter((f) => f.taxonomyKey !== "_project_root_" && !!f.itemId)
+        .sort((a, b) => a.taxonomyKey.localeCompare(b.taxonomyKey))
+        .map((f) => ({
+          id: f.id,
+          taxonomyKey: f.taxonomyKey,
+          label: taxByKey.get(f.taxonomyKey) ?? f.taxonomyKey,
+        })),
+    [projectFolders.data, taxByKey],
+  );
+
   const rootLabel = useMemo(() => {
-    if (!rootId || !roots.data) return "Root";
-    if (scope === "project") {
-      const r = roots.data.project.find((p) => p.id === rootId);
-      return r?.name ?? "Project";
+    if (scope === "company") {
+      if (companyRootId == null) return "Company";
+      return roots.data?.company.find((c) => c.id === companyRootId)?.displayName ?? "Company";
     }
-    const r = roots.data.company.find((c) => c.id === rootId);
-    return r?.displayName ?? "Company";
-  }, [rootId, roots.data, scope]);
+    if (folderId == null) return "Folder";
+    return folderOptions.find((f) => f.id === folderId)?.label ?? "Folder";
+  }, [scope, companyRootId, folderId, roots.data, folderOptions]);
 
   function onScopeChange(next: DocumentRootScope) {
     setScope(next);
-    setRootId(null);
+    setCompanyRootId(null);
+    setProjectId(null);
+    setFolderId(null);
     setCrumbs([]);
   }
 
-  function onRootSelect(id: number) {
-    setRootId(id);
+  function onCompanyRootSelect(id: number) {
+    setCompanyRootId(id);
+    setCrumbs([]);
+  }
+
+  function onProjectSelect(id: number) {
+    setProjectId(id);
+    setFolderId(null);
+    setCrumbs([]);
+  }
+
+  function onFolderSelect(id: number) {
+    setFolderId(id);
     setCrumbs([]);
   }
 
@@ -90,8 +154,8 @@ export default function DocumentsPage() {
   }
 
   async function onDownload(item: GraphItem) {
-    if (!scope || !rootId) return;
-    const url = `/api/documents/${scope}/${rootId}/item/${encodeURIComponent(item.id)}/download`;
+    if (!target) return;
+    const url = documentDownloadUrl(target, item.id);
     const token = localStorage.getItem("auth_token");
     const headers: Record<string, string> = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -156,22 +220,31 @@ export default function DocumentsPage() {
             <RootSelector
               scope={scope}
               onScopeChange={onScopeChange}
-              projects={roots.data?.project ?? []}
               company={roots.data?.company ?? []}
-              selectedRootId={rootId}
-              onRootSelect={onRootSelect}
+              selectedCompanyRootId={companyRootId}
+              onCompanyRootSelect={onCompanyRootSelect}
+              projects={projectOptions}
+              projectsLoading={projectsLoading}
+              selectedProjectId={projectId}
+              onProjectSelect={onProjectSelect}
+              folders={folderOptions}
+              foldersLoading={scope === "project" && projectId != null && projectFolders.isLoading}
+              selectedFolderId={folderId}
+              onFolderSelect={onFolderSelect}
             />
           </CardContent>
         </Card>
 
         <Card className="lg:col-span-3">
           <CardContent className="pt-4 space-y-3">
-            {!rootId && (
+            {!target && (
               <p className="text-sm text-muted-foreground py-8 text-center">
-                Pick a library on the left to start browsing.
+                {scope === "project"
+                  ? "Pick a project and a folder on the left to start browsing."
+                  : "Pick a library on the left to start browsing."}
               </p>
             )}
-            {rootId && (
+            {target && (
               <>
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <DocumentsBreadcrumb rootLabel={rootLabel} crumbs={crumbs} onNavigate={onNavigateCrumb} />
@@ -209,39 +282,35 @@ export default function DocumentsPage() {
         </TabsContent>
       </Tabs>
 
-      {rootId && (
+      {target && (
         <UploadDialog
           open={uploadOpen}
           onOpenChange={setUploadOpen}
-          scope={scope}
-          rootId={rootId}
+          target={target}
           parentItemId={parentItemId}
         />
       )}
-      {rootId && (
+      {target && (
         <NewFolderDialog
           open={folderOpen}
           onOpenChange={setFolderOpen}
-          scope={scope}
-          rootId={rootId}
+          target={target}
           parentItemId={parentItemId}
         />
       )}
-      {rootId && (
+      {target && (
         <RenameDialog
           open={renameOpen}
           onOpenChange={setRenameOpen}
-          scope={scope}
-          rootId={rootId}
+          target={target}
           item={renameTarget}
         />
       )}
-      {rootId && (
+      {target && (
         <DocumentDetailDrawer
           open={detailOpen}
           onOpenChange={setDetailOpen}
-          scope={scope}
-          rootId={rootId}
+          target={target}
           itemId={detailItemId}
           onRename={onRenameRequest}
         />
@@ -256,23 +325,18 @@ export default function DocumentsPage() {
 // Drives the new taxonomy-aware flow from /documents:
 //   pick a project → see its provisioned folders → expand a folder to
 //   see managed_documents inline (with request-approval actions).
+//
+// Uploads go through the canonical folder-keyed endpoint
+// (/api/projects/:projectId/folders/:folderId/upload).
 // =========================================================================
 
 function ActiveClientsView() {
   const { projectsSummary, isLoading: projectsLoading } = useProjectsSummary();
   const taxonomy = usePublicFolderTaxonomy();
-  const roots = useDocumentRoots();
   const [projectId, setProjectId] = useState<number | null>(null);
   const folders = useProjectFolders(projectId);
   const [expandedFolderId, setExpandedFolderId] = useState<number | null>(null);
   const [uploadFolderId, setUploadFolderId] = useState<number | null>(null);
-  const [uploadFolderItemId, setUploadFolderItemId] = useState<string | null>(null);
-
-  const projectRootId = useMemo(() => {
-    if (!projectId || !roots.data) return null;
-    const root = roots.data.project.find((r) => r.projectId === projectId);
-    return root?.id ?? null;
-  }, [projectId, roots.data]);
 
   const projectOptions = (projectsSummary ?? []).filter(
     (p) => typeof p.project_info_id === "number",
@@ -397,15 +461,12 @@ function ActiveClientsView() {
                             Open
                           </a>
                         )}
-                        {f.itemId && projectRootId && (
+                        {f.itemId && (
                           <Button
                             size="sm"
                             variant="outline"
                             className="h-6 text-xs px-2 shrink-0"
-                            onClick={() => {
-                              setUploadFolderId(f.id);
-                              setUploadFolderItemId(f.itemId);
-                            }}
+                            onClick={() => setUploadFolderId(f.id)}
                             data-testid={`btn-active-clients-upload-${f.taxonomyKey}`}
                           >
                             <Upload className="h-3 w-3 mr-1" />
@@ -430,18 +491,14 @@ function ActiveClientsView() {
         </CardContent>
       </Card>
 
-      {projectRootId !== null && (
+      {uploadFolderId !== null && projectId !== null && (
         <UploadDialog
           open={uploadFolderId !== null}
           onOpenChange={(open) => {
-            if (!open) {
-              setUploadFolderId(null);
-              setUploadFolderItemId(null);
-            }
+            if (!open) setUploadFolderId(null);
           }}
-          scope="project"
-          rootId={projectRootId}
-          parentItemId={uploadFolderItemId}
+          target={{ kind: "folder", projectId, folderId: uploadFolderId }}
+          parentItemId={null}
         />
       )}
     </div>

@@ -11,6 +11,35 @@ import { getEffectiveUser, requireAuth } from "./auth-context";
 import { requirePermission } from "./permission-middleware";
 import { blockInProduction } from "./middleware/production-safety";
 import { parseIntParam } from "./lib/req-params";
+import { badRequest, notFound, forbidden, sendError } from "./lib/api-error";
+import { normalizeRoleForPermissions } from "@shared/schema";
+
+// Roles allowed to view standups, per shared/permissions/registry.ts
+// `standups.view_roles`. Read routes are gated against this set instead of
+// `requireAuth` alone so a logged-in user without standup view (the
+// registry restricts it) cannot pull another team's history / moods.
+const STANDUP_VIEW_ROLES = new Set<string>([
+  "COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER",
+  "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER", "QUALITY_MANAGER",
+  "ENGINEERING_MANAGER", "KEY_ACCOUNTS_MANAGER", "PROJECT_MANAGER_SITE",
+  "PROJECT_DEVELOPER", "ENGINEER", "ACCOUNTANT", "HSE_MANAGER", "SSEG_MANAGER",
+]);
+
+/**
+ * Express guard mirroring `requirePermission("standups","view")` for the
+ * legacy standup read routes, which were previously gated by `requireAuth`
+ * only. Kept local (rather than swapping in requirePermission everywhere)
+ * to avoid changing the response-shape contract of these legacy endpoints.
+ */
+function requireStandupView(req: Request, res: Response, next: () => void) {
+  const role = normalizeRoleForPermissions(getEffectiveUser(req)?.role || "");
+  if (!role || !STANDUP_VIEW_ROLES.has(role)) {
+    // Respond directly (middleware can't throw to the route try/catch).
+    // sendError sanitises — it only emits the ApiError's code/message.
+    return sendError(res, forbidden("You don't have access to standups."));
+  }
+  return next();
+}
 
 type AppUser = { id: number; email: string; name: string; role: string };
 
@@ -27,6 +56,50 @@ const STANDUP_ATTENDEE_ROLES = [
 
 function getUser(req: Request): AppUser {
   return getEffectiveUser(req) as AppUser;
+}
+
+// Admins who may mutate any schedule regardless of ownership/participation.
+const STANDUP_ADMIN_ROLES = new Set<string>([
+  "COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER",
+]);
+
+/**
+ * Authorize a schedule-level mutation (edit / delete / participant change).
+ *
+ * Holding the `standups:edit`/`delete` role is necessary but NOT sufficient:
+ * without an ownership/participation check, any editor could mutate or
+ * delete ANOTHER team's schedule by guessing its integer id (IDOR). Allow
+ * the mutation only when the caller is an admin, the schedule's creator, or
+ * a participant on it.
+ *
+ * Returns the schedule row when access is granted; throws ApiError
+ * (404 unknown id, 403 not yours) otherwise.
+ */
+async function assertScheduleAccess(scheduleId: number, user: AppUser) {
+  if (Number.isNaN(scheduleId)) throw badRequest("Invalid schedule id");
+
+  const [schedule] = await db
+    .select()
+    .from(standupSchedules)
+    .where(eq(standupSchedules.id, scheduleId))
+    .limit(1);
+  if (!schedule) throw notFound("Standup schedule");
+
+  const role = normalizeRoleForPermissions(user.role || "");
+  if (STANDUP_ADMIN_ROLES.has(role)) return schedule;
+  if (schedule.createdBy === user.id) return schedule;
+
+  const [participant] = await db
+    .select({ id: standupParticipants.id })
+    .from(standupParticipants)
+    .where(and(
+      eq(standupParticipants.scheduleId, scheduleId),
+      eq(standupParticipants.userId, user.id),
+    ))
+    .limit(1);
+  if (participant) return schedule;
+
+  throw forbidden("You can only modify standups you own or take part in.");
 }
 
 /** Check if today is a standup day for a given schedule (uses UTC to avoid DST issues) */
@@ -208,6 +281,7 @@ export function registerStandupRoutes(app: Express) {
   app.patch("/api/standups/schedules/:id", requireAuth, requirePermission("standups", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseIntParam(req.params.id);
+      await assertScheduleAccess(id, getUser(req));
       const updates: Partial<InsertStandupSchedule> = {};
       const allowed = ["name", "teamLabel", "projectId", "cadence", "cadenceDays", "anchorDate", "deadlineTime", "deadlineTimezone", "isActive"] as const;
       for (const key of allowed) {
@@ -231,6 +305,7 @@ export function registerStandupRoutes(app: Express) {
   app.delete("/api/standups/schedules/:id", requireAuth, requirePermission("standups", "delete"), async (req: Request, res: Response) => {
     try {
       const id = parseIntParam(req.params.id);
+      await assertScheduleAccess(id, getUser(req));
       await db.update(standupSchedules).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(standupSchedules.id, id)).returning();
       res.json({ success: true });
     } catch (err: unknown) {
@@ -241,7 +316,7 @@ export function registerStandupRoutes(app: Express) {
   // ── Participants ───────────────────────────────────────────────────────────
 
   /** List participants for a schedule */
-  app.get("/api/standups/schedules/:id/participants", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/standups/schedules/:id/participants", requireAuth, requireStandupView, async (req: Request, res: Response) => {
     try {
       const scheduleId = parseIntParam(req.params.id);
       const includeAll = req.query.includeAll === "1" || req.query.includeAll === "true";
@@ -276,6 +351,7 @@ export function registerStandupRoutes(app: Express) {
   app.post("/api/standups/schedules/:id/participants", requireAuth, requirePermission("standups", "edit"), async (req: Request, res: Response) => {
     try {
       const scheduleId = parseIntParam(req.params.id);
+      await assertScheduleAccess(scheduleId, getUser(req));
       const { userId, isRequired } = req.body;
 
       const [participant] = await db.insert(standupParticipants).values({
@@ -295,6 +371,8 @@ export function registerStandupRoutes(app: Express) {
     try {
       const scheduleId = parseIntParam(req.params.scheduleId);
       const userId = parseIntParam(req.params.userId);
+      await assertScheduleAccess(scheduleId, getUser(req));
+      if (Number.isNaN(userId)) throw badRequest("Invalid user id");
 
       await db.delete(standupParticipants).where(
         and(
@@ -312,7 +390,7 @@ export function registerStandupRoutes(app: Express) {
   // ── Entries ────────────────────────────────────────────────────────────────
 
   /** Get today's standup info (which schedules need a submission) */
-  app.get("/api/standups/today", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/standups/today", requireAuth, requireStandupView, async (req: Request, res: Response) => {
     try {
       if (req.query.team_id) {
         const date = new Date().toISOString().slice(0, 10);
@@ -420,12 +498,18 @@ export function registerStandupRoutes(app: Express) {
       let isLate = false;
       if (schedule.length > 0 && schedule[0].deadlineTime) {
         const tz = schedule[0].deadlineTimezone || "Africa/Johannesburg";
-        const nowInTz = new Date().toLocaleString("en-US", { timeZone: tz });
-        const nowLocal = new Date(nowInTz);
+        // Read the CURRENT wall-clock hour/minute in the schedule's timezone
+        // directly via Intl, then compare against the deadline. The previous
+        // `new Date(date.toLocaleString(...))` round-trip re-parsed the
+        // localized string in the SERVER's zone, double-shifting the time and
+        // making isLate wrong whenever the server TZ ≠ the schedule TZ.
+        const parts = new Intl.DateTimeFormat("en-US", {
+          timeZone: tz, hour12: false, hour: "2-digit", minute: "2-digit",
+        }).formatToParts(new Date());
+        const nowH = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+        const nowM = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
         const [h, m] = schedule[0].deadlineTime.split(":").map(Number);
-        const deadline = new Date(nowLocal);
-        deadline.setHours(h, m, 0, 0);
-        isLate = nowLocal > deadline;
+        isLate = nowH * 60 + nowM > h * 60 + m;
       }
 
       const [entry] = await db.insert(standupEntries).values({
@@ -452,8 +536,15 @@ export function registerStandupRoutes(app: Express) {
   app.patch("/api/standups/entries/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const id = parseIntParam(req.params.id);
+      if (Number.isNaN(id)) throw badRequest("Invalid entry id");
+      const user = getUser(req);
       const { whatIDid, whatImDoing, blockers, mood } = req.body;
 
+      // Ownership: a standup entry may only be edited by the person who
+      // wrote it. Without this, any authenticated user could overwrite
+      // anyone's entry by guessing its integer id. Admins are intentionally
+      // not exempted here — a standup entry is personal narrative, not a
+      // managed record; corrections go through the author.
       const [updated] = await db
         .update(standupEntries)
         .set({
@@ -461,9 +552,10 @@ export function registerStandupRoutes(app: Express) {
           mood: mood || null,
           updatedAt: new Date(),
         })
-        .where(eq(standupEntries.id, id))
+        .where(and(eq(standupEntries.id, id), eq(standupEntries.userId, user.id)))
         .returning();
 
+      if (!updated) throw notFound("Standup entry");
       res.json(updated);
     } catch (err: unknown) {
       throw err;
@@ -471,7 +563,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   /** List entries for a schedule on a specific date */
-  app.get("/api/standups/entries/:scheduleId", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/standups/entries/:scheduleId", requireAuth, requireStandupView, async (req: Request, res: Response) => {
     try {
       const scheduleId = parseIntParam(req.params.scheduleId);
       const date = (req.query.date as string) || today();
@@ -506,7 +598,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   /** Standup history for a schedule (with pagination and search) */
-  app.get("/api/standups/entries/:scheduleId/history", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/standups/entries/:scheduleId/history", requireAuth, requireStandupView, async (req: Request, res: Response) => {
     try {
       const scheduleId = parseIntParam(req.params.scheduleId);
       const limit = parseInt(req.query.limit as string) || 20;
@@ -575,7 +667,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   /** Standup analytics for a schedule */
-  app.get("/api/standups/analytics/:scheduleId", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/standups/analytics/:scheduleId", requireAuth, requireStandupView, async (req: Request, res: Response) => {
     try {
       const scheduleId = parseIntParam(req.params.scheduleId);
 
@@ -654,7 +746,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   /** Standup trends over time (for time-series charts) */
-  app.get("/api/standups/analytics/:scheduleId/trends", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/standups/analytics/:scheduleId/trends", requireAuth, requireStandupView, async (req: Request, res: Response) => {
     try {
       const scheduleId = parseIntParam(req.params.scheduleId);
       const days = parseInt(req.query.days as string) || 30;
@@ -753,7 +845,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   /** Per-person analytics for a schedule */
-  app.get("/api/standups/analytics/:scheduleId/per-person", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/standups/analytics/:scheduleId/per-person", requireAuth, requireStandupView, async (req: Request, res: Response) => {
     try {
       const scheduleId = parseIntParam(req.params.scheduleId);
 
@@ -831,7 +923,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   /** Generate formatted digest of a specific standup date */
-  app.get("/api/standups/digest/:scheduleId", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/standups/digest/:scheduleId", requireAuth, requireStandupView, async (req: Request, res: Response) => {
     try {
       const scheduleId = parseIntParam(req.params.scheduleId);
       const date = (req.query.date as string) || today();
@@ -926,7 +1018,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   /** Auto-populated suggestions from recent task activity */
-  app.get("/api/standups/suggestions", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/standups/suggestions", requireAuth, requireStandupView, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
 
@@ -982,7 +1074,7 @@ export function registerStandupRoutes(app: Express) {
   // ── Meeting Mode ────────────────────────────────────────────────────────
 
   /** Get meeting data: all participants with their entries + assigned tasks for the meeting carousel */
-  app.get("/api/standups/meeting/:scheduleId", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/standups/meeting/:scheduleId", requireAuth, requireStandupView, async (req: Request, res: Response) => {
     try {
       const scheduleId = parseIntParam(req.params.scheduleId);
       const date = (req.query.date as string) || today();
@@ -1231,7 +1323,7 @@ export function registerStandupRoutes(app: Express) {
     }
   });
 
-  app.get("/api/standups/history", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/standups/history", requireAuth, requireStandupView, async (req: Request, res: Response) => {
     try {
       const teamId = req.query.team_id ? Number(req.query.team_id) : null;
       const from = String(req.query.from || "1900-01-01");
@@ -1250,12 +1342,12 @@ export function registerStandupRoutes(app: Express) {
     }
   });
 
-  app.get("/api/standups/blockers/active", requireAuth, async (_req: Request, res: Response) => {
+  app.get("/api/standups/blockers/active", requireAuth, requireStandupView, async (_req: Request, res: Response) => {
     try {
       await ensureStandupV2Table();
       const isPostgres = getDbMode() === "postgres";
       const ageDaysExpr = isPostgres
-        ? "EXTRACT(EPOCH FROM (NOW() - e.date::date)) / 86400"
+        ? "EXTRACT(EPOCH FROM (NOW() - CAST(e.date AS date))) / 86400"
         : "CAST(julianday('now') - julianday(e.date) AS INTEGER)";
       const rows = await db.execute(sql.raw(`
         SELECT e.id, e.date, e.blockers, e.project_id, e.team_id, e.user_id, u.name as owner_name,
@@ -1292,7 +1384,6 @@ export function registerStandupRoutes(app: Express) {
       // Find the most recent Monday
       const now = new Date();
       const dayOfWeek = now.getDay();
-      const daysToMonday = dayOfWeek === 0 ? 1 : (dayOfWeek === 1 ? 0 : 8 - dayOfWeek);
       const nextMonday = new Date(now);
       nextMonday.setDate(now.getDate() - dayOfWeek + 1); // Go to this week's Monday
       const anchorDate = nextMonday.toISOString().split("T")[0];

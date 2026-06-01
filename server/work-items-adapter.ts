@@ -829,6 +829,7 @@ type EngineeringListOptions = {
   ownerUserId?: number;
   projectId?: number;
   ids?: number[];
+  parentId?: number;
 };
 
 /**
@@ -920,6 +921,9 @@ export async function listEngineeringWorkItems(options: EngineeringListOptions =
   if (options.phase) conditions.push(eq(workItems.phase, options.phase));
   if (options.ownerUserId) conditions.push(eq(workItems.ownerUserId, options.ownerUserId));
   if (options.projectId) conditions.push(eq(workItems.projectId, options.projectId));
+  // Indexed (work_items_parent_id_idx) — lets callers fetch one task's
+  // children directly instead of loading every ENG item and filtering in JS.
+  if (options.parentId !== undefined) conditions.push(eq(workItems.parentId, options.parentId));
   if (options.ids && options.ids.length > 0) conditions.push(inArray(workItems.id, options.ids));
   if (options.projectName) {
     conditions.push(sql`EXISTS (
