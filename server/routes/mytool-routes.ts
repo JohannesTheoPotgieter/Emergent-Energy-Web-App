@@ -125,7 +125,47 @@ async function enrichMytoolTasks(userId: number, tasks: any[]) {
   return tasks;
 }
 
+// Dependent "blocked" states are computed lazily on read in
+// enrichMytoolTasks (see the `isBlockedByDependencies` derivation), so there
+// is nothing to persist when an edge is added or removed. Kept as an
+// explicit no-op with this note so the call sites read clearly and a future
+// maintainer doesn't mistake the empty body for an unfinished feature.
 async function refreshDependentTaskStates(_taskId: number) {
+  // intentionally empty — blocked state is derived at read time
+}
+
+/**
+ * Transitive circular-dependency check over the LIVE dependency graph.
+ *
+ * Adding predecessor → successor creates a cycle iff `predecessor` is
+ * already reachable from `successor` by following existing edges. A one-hop
+ * check (only the direct reverse edge) misses longer loops such as
+ * A→B, B→C, then C→A. Soft-deleted edges (deletedAt set) are excluded so a
+ * removed dependency can't cause a false positive.
+ */
+async function wouldCreateDependencyCycle(predecessorId: number, successorId: number): Promise<boolean> {
+  const liveDeps = await db
+    .select({ predecessorId: workItemDependencies.predecessorId, successorId: workItemDependencies.successorId })
+    .from(workItemDependencies)
+    .where(isNull(workItemDependencies.deletedAt));
+
+  const adj = new Map<number, number[]>();
+  for (const dep of liveDeps) {
+    if (!adj.has(dep.predecessorId)) adj.set(dep.predecessorId, []);
+    adj.get(dep.predecessorId)!.push(dep.successorId);
+  }
+
+  const visited = new Set<number>();
+  const stack = [successorId];
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    if (node === predecessorId) return true;
+    if (visited.has(node)) continue;
+    visited.add(node);
+    const neighbors = adj.get(node);
+    if (neighbors) for (const n of neighbors) stack.push(n);
+  }
+  return false;
 }
 
 // ── computeNextDueDate (moved from routes.ts) ──
@@ -464,6 +504,14 @@ export function registerMytoolRoutes(app: Express): void {
         const [task] = await db.select().from(trItems).where(eq(trItems.id, taskId));
         if (!task) return res.status(404).json({ error: "Action item not found" });
 
+        // Ownership: tr_items carries an `ownerUserIds` array. Allow an
+        // owner or an oversight role to reschedule; otherwise refuse so a
+        // user can't move someone else's action item by guessing its ID.
+        const isOwner = Array.isArray(task.ownerUserIds) && task.ownerUserIds.includes(userId);
+        if (!isOwner && !isMyToolOversightRole(req)) {
+          return res.status(403).json({ error: "You can only schedule action items assigned to you" });
+        }
+
         await db.update(trItems)
           .set({
             scheduledDate: scheduledDate || null,
@@ -475,6 +523,12 @@ export function registerMytoolRoutes(app: Express): void {
       } else if (taskType === "deliverable") {
         const [task] = await db.select().from(deliverables).where(eq(deliverables.id, taskId));
         if (!task) return res.status(404).json({ error: "Deliverable not found" });
+
+        // Ownership: only the deliverable owner or an oversight role may
+        // reschedule it — mirrors the engineering/quality branches above.
+        if (task.ownerUserId !== userId && !isMyToolOversightRole(req)) {
+          return res.status(403).json({ error: "You can only schedule deliverables assigned to you" });
+        }
 
         await db.update(deliverables)
           .set({
@@ -811,15 +865,14 @@ export function registerMytoolRoutes(app: Express): void {
       // Verify user owns the successor task
       const task = await storage.getMytoolTask(successorTaskId);
       if (task && task.ownerUserId !== userId && !isMyToolOversightRole(req)) {
-        return res.status(403).json({ error: "Insufficient permissions to perform data imports" });
+        return res.status(403).json({ error: "You can only add dependencies to your own tasks" });
       }
       const validationMessage = validateDependencyPair(predecessorTaskId, successorTaskId);
       if (validationMessage) return res.status(400).json({ error: validationMessage });
 
-      const predecessorLinks = await db.select().from(workItemDependencies).where(
-        and(eq(workItemDependencies.successorId, predecessorTaskId), isNull(workItemDependencies.deletedAt))
-      );
-      if (predecessorLinks.some((l: any) => l.predecessorId === successorTaskId)) {
+      // Transitive cycle check — catches multi-hop loops (A→B→C→A), not just
+      // the direct reverse edge.
+      if (await wouldCreateDependencyCycle(predecessorTaskId, successorTaskId)) {
         return res.status(400).json({ error: "Circular dependency is not allowed" });
       }
 
@@ -845,7 +898,7 @@ export function registerMytoolRoutes(app: Express): void {
       const taskId = Number(req.params.id);
       const task = await storage.getMytoolTask(taskId);
       if (task && task.ownerUserId !== userId && !isMyToolOversightRole(req)) {
-        return res.status(403).json({ error: "Insufficient permissions to perform data imports" });
+        return res.status(403).json({ error: "You can only remove dependencies from your own tasks" });
       }
       const dependencyId = Number(req.params.dependencyId);
       const [dep] = await db.select().from(workItemDependencies).where(eq(workItemDependencies.id, dependencyId));

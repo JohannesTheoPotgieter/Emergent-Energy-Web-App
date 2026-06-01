@@ -6,7 +6,8 @@ const ROOT = process.cwd();
 
 const TARGET_ROUTE_FILES = [
   'server/engineering-routes.ts',
-  'server/routes/engineering.routes.ts',
+  // server/routes/engineering.routes.ts was a dead empty stub — deleted by
+  // the engineer-function audit (see engineering-containment.test.ts H9).
   'server/quality-routes.ts',
   'server/routes/quality.routes.ts',
   'server/commissioning-routes.ts',

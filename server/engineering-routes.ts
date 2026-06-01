@@ -60,7 +60,9 @@ import {
   findDeliverableById,
   findUserName,
   coalesceProjectExecState,
+  userCanAccessEngineeringTask,
 } from "./repositories/engineering-repository";
+import { getEffectiveWorkstreamVisibility } from "./workstream-visibility-middleware";
 import { getAssignmentsForEntity, getAssignmentsForEntities, listAssignableDirectory } from "./services/assignment-service";
 import { buildMyWorkSourceLinks } from "./lib/my-work-source-links";
 import { runCascadesAfterUpdate, validateParentCompletion } from "./services/task-cascade-service";
@@ -238,6 +240,49 @@ function requireEpmChallenge(req: Request, res: Response, next: NextFunction) {
   if ((ADMIN_ROLES as readonly string[]).includes(getUserRole(req))) return next();
   if ((req.session as any)?.epmChallengePassed) return next();
   res.status(403).json({ error: "epm_challenge_required", message: "EPM access code required", code: "EPM_CHALLENGE_REQUIRED" });
+}
+
+/**
+ * Per-row ownership guard for /api/eng/tasks/:id* (and :taskId).
+ *
+ * `requirePermission("eng_tasks", …)` only answers "may this ROLE touch
+ * engineering tasks at all" — it has no notion of WHICH task. Roles whose
+ * canonical workstream scope is 'own' (e.g. ENGINEER) must additionally be
+ * the owner of, or assigned to, the specific task; otherwise a scoped
+ * engineer could read or mutate another engineer's task by iterating the
+ * integer ID (IDOR).
+ *
+ * Roles with scope 'all' (managers, admins, PMs, etc.) pass through
+ * unchanged. The scope is read from the canonical visibility resolver, so
+ * this guard stays in lockstep with WORKSTREAM_VISIBILITY_DEFAULTS / any DB
+ * override rather than hardcoding a role list here.
+ *
+ * Place AFTER requireAuth + requirePermission in the chain.
+ */
+async function requireEngTaskOwnership(req: Request, res: Response, next: NextFunction) {
+  try {
+    const user = getUser(req);
+    if (!user) return sendError(res, forbidden());
+
+    const role = normalizeRoleForPermissions(user.role) ?? "";
+    const visibility = await getEffectiveWorkstreamVisibility(user.id, role);
+    // Only 'own'-scoped roles get the per-row narrowing; everyone else
+    // (scope 'all') keeps the existing entity-level behaviour.
+    if (visibility.scope !== "own") return next();
+
+    const rawId = req.params.id ?? req.params.taskId;
+    const taskId = parseIntParam(rawId);
+    if (Number.isNaN(taskId)) return sendError(res, badRequest("Invalid task ID"));
+
+    const allowed = await userCanAccessEngineeringTask(taskId, user.id);
+    if (!allowed) {
+      // 404 (not 403) so a scoped engineer can't probe which IDs exist.
+      return sendError(res, notFound("Task"));
+    }
+    return next();
+  } catch (err) {
+    return sendError(res, err);
+  }
 }
 
 /** Insert an in-app notification row with throttle deduplication. Silently no-ops on error. */
@@ -1050,7 +1095,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/eng/tasks/:id", requireAuth, requirePermission("eng_tasks", "edit"), validateBody(engTaskUpdateSchema), async (req, res) => {
+  app.patch("/api/eng/tasks/:id", requireAuth, requirePermission("eng_tasks", "edit"), requireEngTaskOwnership, validateBody(engTaskUpdateSchema), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
       const existing = await findEngineeringWorkItem(id);
@@ -1177,7 +1222,7 @@ export function registerEngineeringRoutes(app: Express) {
   });
 
   // Permission: submitting for approval requires edit on eng_tasks.
-  app.post("/api/eng/tasks/:id/send-for-approval", requireAuth, requirePermission("eng_tasks", "edit"), approvalUpload.single("file"), validateBody(engTaskSendForApprovalSchema), async (req, res) => {
+  app.post("/api/eng/tasks/:id/send-for-approval", requireAuth, requirePermission("eng_tasks", "edit"), requireEngTaskOwnership, approvalUpload.single("file"), validateBody(engTaskSendForApprovalSchema), async (req, res) => {
     const id = parseIntParam(req.params.id);
     const user = getUser(req);
     const note = req.body.note || "";
@@ -1432,7 +1477,7 @@ export function registerEngineeringRoutes(app: Express) {
   });
 
   // Permission: sending a deliverable requires edit on eng_tasks.
-  app.post("/api/eng/tasks/:id/send-deliverable", requireAuth, requirePermission("eng_tasks", "edit"), approvalUpload.single("file"), validateBody(engTaskSendDeliverableSchema), async (req, res) => {
+  app.post("/api/eng/tasks/:id/send-deliverable", requireAuth, requirePermission("eng_tasks", "edit"), requireEngTaskOwnership, approvalUpload.single("file"), validateBody(engTaskSendDeliverableSchema), async (req, res) => {
     const id = parseIntParam(req.params.id);
     const user = getUser(req);
 
@@ -1678,7 +1723,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.get("/api/eng/tasks/:id/deliverables", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
+  app.get("/api/eng/tasks/:id/deliverables", requireAuth, requirePermission("eng_tasks", "view"), requireEngTaskOwnership, async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
       const deliverables = await db.select({
@@ -1778,7 +1823,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/eng/tasks/:id", requireAuth, requirePermission('eng_tasks', 'delete'), async (req, res) => {
+  app.delete("/api/eng/tasks/:id", requireAuth, requirePermission('eng_tasks', 'delete'), requireEngTaskOwnership, async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
       const existing = await findEngineeringWorkItem(id);
@@ -1881,7 +1926,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/tasks/:id/link", requireAuth, requirePermission("eng_tasks", "edit"), validateBody(engTaskLinkSchema), async (req, res) => {
+  app.post("/api/eng/tasks/:id/link", requireAuth, requirePermission("eng_tasks", "edit"), requireEngTaskOwnership, validateBody(engTaskLinkSchema), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
       const { linkedPlanItemId, linkedDeliverableId, linkedQualityItemInstanceId } = req.body;
@@ -1906,7 +1951,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.get("/api/eng/tasks/:id/watchers", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
+  app.get("/api/eng/tasks/:id/watchers", requireAuth, requirePermission("eng_tasks", "view"), requireEngTaskOwnership, async (req, res) => {
     try {
       const watchers = await db.select({
         id: taskWatchers.id, userId: taskWatchers.userId,
@@ -1922,7 +1967,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/tasks/:id/watchers", requireAuth, requirePermission("eng_tasks", "edit"), validateBody(engTaskWatcherAddSchema), async (req, res) => {
+  app.post("/api/eng/tasks/:id/watchers", requireAuth, requirePermission("eng_tasks", "edit"), requireEngTaskOwnership, validateBody(engTaskWatcherAddSchema), async (req, res) => {
     try {
       const taskId = parseIntParam(req.params.id);
       const userId = parseInt(req.body.userId);
@@ -1961,7 +2006,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/eng/tasks/:taskId/watchers/:userId", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
+  app.delete("/api/eng/tasks/:taskId/watchers/:userId", requireAuth, requirePermission("eng_tasks", "edit"), requireEngTaskOwnership, async (req, res) => {
     try {
       const taskId = parseIntParam(req.params.taskId);
       const userId = parseIntParam(req.params.userId);
@@ -1992,7 +2037,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   // ========== TASK DETAIL ENDPOINTS ==========
 
-  app.get("/api/eng/tasks/:id", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
+  app.get("/api/eng/tasks/:id", requireAuth, requirePermission("eng_tasks", "view"), requireEngTaskOwnership, async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
       const task = await getEngineeringWorkItemById(id);
@@ -2005,7 +2050,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.get("/api/eng/tasks/:id/comments", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
+  app.get("/api/eng/tasks/:id/comments", requireAuth, requirePermission("eng_tasks", "view"), requireEngTaskOwnership, async (req, res) => {
     try {
       const comments = await db.select({
         id: taskComments.id,
@@ -2026,7 +2071,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/tasks/:id/comments", requireAuth, requirePermission("eng_tasks", "edit"), validateBody(engTaskCommentSchema), async (req, res) => {
+  app.post("/api/eng/tasks/:id/comments", requireAuth, requirePermission("eng_tasks", "edit"), requireEngTaskOwnership, validateBody(engTaskCommentSchema), async (req, res) => {
     try {
       const taskId = parseIntParam(req.params.id);
       const { body } = req.body;
@@ -2062,7 +2107,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.get("/api/eng/tasks/:id/activity", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
+  app.get("/api/eng/tasks/:id/activity", requireAuth, requirePermission("eng_tasks", "view"), requireEngTaskOwnership, async (req, res) => {
     try {
       const activity = await db.select({
         id: taskActivityLog.id,
@@ -2086,7 +2131,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.get("/api/eng/tasks/:id/subtasks", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
+  app.get("/api/eng/tasks/:id/subtasks", requireAuth, requirePermission("eng_tasks", "view"), requireEngTaskOwnership, async (req, res) => {
     try {
       const parentId = parseIntParam(req.params.id);
       const allItems = await listEngineeringWorkItems({});
@@ -2098,7 +2143,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/tasks/:id/subtasks", requireAuth, requirePermission("eng_tasks", "create"), validateBody(engTaskSubtaskSchema), async (req, res) => {
+  app.post("/api/eng/tasks/:id/subtasks", requireAuth, requirePermission("eng_tasks", "create"), requireEngTaskOwnership, validateBody(engTaskSubtaskSchema), async (req, res) => {
     try {
       const parentId = parseIntParam(req.params.id);
       const parent = await getEngineeringWorkItemById(parentId);
@@ -2339,28 +2384,41 @@ export function registerEngineeringRoutes(app: Express) {
       const existing = await findDeliverableById(id);
       if (!existing) return sendError(res, notFound("Deliverable"));
 
-      const newVersion = existing.currentVersion + 1;
+      // Compute the next version number atomically. Two concurrent revises
+      // must not both read the same currentVersion and produce duplicate
+      // version rows / a lost currentVersion update. We derive the next
+      // number from MAX(versionNumber) inside a transaction; the unique
+      // index on (deliverable_id, version_number) is the final backstop.
+      const { newVersion, version, updated } = await db.transaction(async (tx: any) => {
+        const [maxRow] = await tx
+          .select({ maxVersion: sql<number>`COALESCE(MAX(${deliverableVersions.versionNumber}), 0)` })
+          .from(deliverableVersions)
+          .where(eq(deliverableVersions.deliverableId, id));
+        const next = Number(maxRow?.maxVersion ?? 0) + 1;
 
-      const [version] = await db.insert(deliverableVersions).values({
-        deliverableId: id,
-        versionNumber: newVersion,
-        changeReason: changeReason || null,
-        impactJson: impactJson || null,
-        status: "in_progress",
-        createdByUserId: getUser(req).id,
-      }).returning();
+        const [createdVersion] = await tx.insert(deliverableVersions).values({
+          deliverableId: id,
+          versionNumber: next,
+          changeReason: changeReason || null,
+          impactJson: impactJson || null,
+          status: "in_progress",
+          createdByUserId: getUser(req).id,
+        }).returning();
 
-      const [updated] = await db.update(deliverables)
-        .set({ currentVersion: newVersion, status: "in_progress", updatedAt: new Date() })
-        .where(eq(deliverables.id, id)).returning();
+        const [updatedDeliverable] = await tx.update(deliverables)
+          .set({ currentVersion: next, status: "in_progress", updatedAt: new Date() })
+          .where(eq(deliverables.id, id)).returning();
 
-      await db.insert(deliverableEvents).values({
-        deliverableId: id,
-        eventType: "revised",
-        fromStatus: existing.status,
-        toStatus: "in_progress",
-        feedbackText: changeReason,
-        actorUserId: getUser(req).id,
+        await tx.insert(deliverableEvents).values({
+          deliverableId: id,
+          eventType: "revised",
+          fromStatus: existing.status,
+          toStatus: "in_progress",
+          feedbackText: changeReason,
+          actorUserId: getUser(req).id,
+        });
+
+        return { newVersion: next, version: createdVersion, updated: updatedDeliverable };
       });
 
       logAuditFromReq(req, { entityType: "deliverable", entityId: String(id), action: "update", projectName: updated.projectName, changesJson: { description: "Deliverable revised", newVersion, changeReason } });
