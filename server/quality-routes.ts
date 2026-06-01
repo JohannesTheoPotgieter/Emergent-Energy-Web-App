@@ -7,6 +7,7 @@ import { z } from "zod";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
 import {
   qcTemplate, qcTemplatePhase, qcTemplateGroup, qcTemplateItem,
@@ -30,6 +31,7 @@ import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import { getAssignmentsForEntity, getAssignmentsForEntities, setEntityAssignment } from "./services/assignment-service";
+import { getQualityHseScope, scopeAllowsProject, scopeAllowsProjectName, scopedProjectIdsArray, scopedProjectNamesArray } from "./services/quality-hse-scope";
 import {
   computeQualityRiskSummary,
   evaluateQualityGovernanceItem,
@@ -56,6 +58,12 @@ import {
   mergeProjectRow as repoMergeProjectRow,
   type MergedProjectRow,
 } from "./repositories/quality-repository";
+
+// F30: post-mortem red-flag threshold. Below this the project is flagged as
+// requiring a follow-up review. Lives here (vs hard-coded in the handler)
+// so changes don't bury the rule deep in logic; full owner-configurable
+// version waits on the template-config table.
+const POSTMORTEM_RED_FLAG_THRESHOLD = 0.85;
 
 const qmApprovalUploadsDir = path.join(process.cwd(), "uploads", "qm-approvals");
 if (!fs.existsSync(qmApprovalUploadsDir)) fs.mkdirSync(qmApprovalUploadsDir, { recursive: true });
@@ -115,17 +123,133 @@ async function resolveProjectIdForItemInstance(itemInstanceId: number): Promise<
   return typeof value === "number" ? value : null;
 }
 
+const requireAdminOrEpm = requireRoleCanonical([
+  "COO_ADMIN",
+  "CEO_ADMIN",
+  "ENGINEERING_MANAGER",
+]);
+
+// Kept for the access-challenge POST endpoint only — that endpoint is, by
+// design, QM-or-admin-only because it's the gate that QM users go through.
+// Routes that act on quality items no longer use this gate (per registry).
 const requireAdminOrQm = requireRoleCanonical([
   "COO_ADMIN",
   "CEO_ADMIN",
   "QUALITY_MANAGER",
 ]);
 
-const requireAdminOrEpm = requireRoleCanonical([
-  "COO_ADMIN",
-  "CEO_ADMIN",
-  "ENGINEERING_MANAGER",
-]);
+/**
+ * Gate that QUALITY_MANAGER users must have passed the access-code challenge
+ * (`/api/quality/access/verify`) before performing mutating quality actions.
+ *
+ * Admins (COO/CEO) bypass — they're already trusted at a higher level. Any
+ * non-QM role passes straight through (the registry's `requirePermission`
+ * gate runs separately and decides whether they're allowed at all).
+ *
+ * Front-end already polls `/api/quality/access/status` and shows the
+ * challenge modal when `needsChallenge` is true. A direct API call that
+ * bypasses the UI gets back `{ error: "qm_challenge_required" }`.
+ */
+function requireQmChallengePassed(req: Request, res: Response, next: NextFunction) {
+  // R10: if no access code is configured, the challenge feature is OFF.
+  // Without this guard a QM could never satisfy the gate (the verify endpoint
+  // 503s when QM_ACCESS_CODE is unset), permanently locking QMs out of every
+  // quality mutation. Feature-off ⇒ pass through.
+  if (!process.env.QM_ACCESS_CODE) return next();
+  const role = normalizeRoleForPermissions(getEffectiveUser(req)?.role || "");
+  if (role && (ADMIN_ROLES as readonly string[]).includes(role)) return next();
+  if (role !== "QUALITY_MANAGER") return next();
+  const challenged = !!(req.session as any)?.qmChallengePassed;
+  if (challenged) return next();
+  return res.status(403).json({
+    error: "qm_challenge_required",
+    code: "QM_CHALLENGE_REQUIRED",
+    message: "Quality Manager access code required before this action.",
+  });
+}
+
+/**
+ * Resolve the project_id for the project-name URL param, filtering
+ * soft-deleted projects. Returns null if no live project matches.
+ */
+async function resolveProjectIdByName(projectName: string): Promise<number | null> {
+  const [row] = await db
+    .select({ id: projectInfo.id })
+    .from(projectInfo)
+    .where(and(
+      sql`LOWER(TRIM(${projectInfo.projectName})) = LOWER(TRIM(${projectName}))`,
+      isNull(projectInfo.deletedAt),
+    ))
+    .limit(1);
+  return row?.id ?? null;
+}
+
+/**
+ * Assert that `itemInstanceId` belongs to the project named in the URL AND
+ * that the caller's quality/HSE scope includes that project. Sends a 403/404
+ * and returns false on any mismatch; returns true when both checks pass.
+ */
+async function assertItemBelongsToProject(
+  req: Request,
+  res: Response,
+  itemInstanceId: number,
+  urlProjectName: string,
+): Promise<boolean> {
+  const itemProjectId = await resolveProjectIdForItemInstance(itemInstanceId);
+  if (itemProjectId == null) {
+    res.status(404).json({ error: "item_not_found" });
+    return false;
+  }
+  const urlProjectId = await resolveProjectIdByName(urlProjectName);
+  if (urlProjectId == null) {
+    res.status(404).json({ error: "project_not_found" });
+    return false;
+  }
+  if (urlProjectId !== itemProjectId) {
+    res.status(403).json({
+      error: "project_scope_mismatch",
+      message: "Item does not belong to the project named in the URL.",
+    });
+    return false;
+  }
+  // R1: scoped roles only act on quality items for assigned projects.
+  const scope = await getQualityHseScope(req);
+  if (!scopeAllowsProject(scope, urlProjectId)) {
+    res.status(404).json({ error: "item_not_found" });
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Convenience: assert the caller's scope includes the URL :projectName. Used
+ * by per-project endpoints that don't go through a specific item id.
+ */
+async function assertProjectAccessByName(
+  req: Request,
+  res: Response,
+  urlProjectName: string,
+): Promise<boolean> {
+  const scope = await getQualityHseScope(req);
+  if (!scopeAllowsProjectName(scope, urlProjectName)) {
+    res.status(404).json({ error: "project_not_found" });
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Constant-time string compare for access-code verification. Returns false
+ * if either side is empty or the lengths differ (which would short-circuit
+ * timingSafeEqual to a non-constant path).
+ */
+function safeCompareCode(input: string, expected: string): boolean {
+  if (!input || !expected) return false;
+  const a = Buffer.from(input);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
 
 // Plan v3 § T3-4: the original notifications feature was removed but the
 // QM dashboard still needs to know "what would we have alerted about?"
@@ -157,18 +281,26 @@ async function createQmNotification(
   return null;
 }
 
+/**
+ * F29: count business days inclusive between two YYYY-MM-DD strings,
+ * skipping Saturdays, Sundays, and holidays. Uses UTC throughout so the
+ * result doesn't shift when the server's local timezone moves around
+ * (e.g. SAST vs UTC at the day boundary).
+ */
 function businessDaysBetween(startStr: string, endStr: string, holidays: string[]): number {
-  const start = new Date(startStr);
-  const end = new Date(endStr);
+  if (typeof startStr !== "string" || typeof endStr !== "string") return 0;
+  // Pin to start-of-day UTC so .getUTCDay() etc. don't pick up local-time offsets.
+  const start = new Date(`${startStr.slice(0, 10)}T00:00:00Z`);
+  const end = new Date(`${endStr.slice(0, 10)}T00:00:00Z`);
   if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
   const holSet = new Set(holidays);
   let count = 0;
   const cur = new Date(start);
-  while (cur <= end) {
-    const day = cur.getDay();
-    const dateStr = cur.toISOString().split('T')[0];
+  while (cur.getTime() <= end.getTime()) {
+    const day = cur.getUTCDay();
+    const dateStr = cur.toISOString().slice(0, 10);
     if (day !== 0 && day !== 6 && !holSet.has(dateStr)) count++;
-    cur.setDate(cur.getDate() + 1);
+    cur.setUTCDate(cur.getUTCDate() + 1);
   }
   return count;
 }
@@ -550,8 +682,10 @@ export function registerQualityRoutes(app: Express) {
         return res.status(503).json({ error: "QM_ACCESS_CODE not configured. Contact admin." });
       }
 
+      // Lockout is keyed on userId only — keying on (userId, role) would let
+      // an attacker with multiple lens roles get N×5 attempts.
       let [challenge] = await db.select().from(qcAccessChallenge)
-        .where(and(eq(qcAccessChallenge.userId, userId), eq(qcAccessChallenge.role, role)));
+        .where(eq(qcAccessChallenge.userId, userId));
 
       if (!challenge) {
         [challenge] = await db.insert(qcAccessChallenge).values({
@@ -564,7 +698,7 @@ export function registerQualityRoutes(app: Express) {
         return res.status(429).json({ error: `Account locked. Try again in ${remaining} minutes.`, locked: true });
       }
 
-      if (code === expectedCode) {
+      if (safeCompareCode(String(code), expectedCode)) {
         await db.update(qcAccessChallenge)
           .set({ lastSuccessAt: new Date(), failedAttemptsCount: 0, lockedUntil: null, updatedAt: new Date() })
           .where(eq(qcAccessChallenge.id, challenge.id));
@@ -618,6 +752,7 @@ export function registerQualityRoutes(app: Express) {
         return res.status(503).json({ error: "EPM_ACCESS_CODE not configured. Contact admin." });
       }
 
+      // Lockout keyed on userId only (see QM endpoint comment).
       let [challenge] = await db.select().from(qcAccessChallenge)
         .where(and(eq(qcAccessChallenge.userId, userId), eq(qcAccessChallenge.role, role)));
 
@@ -632,7 +767,7 @@ export function registerQualityRoutes(app: Express) {
         return res.status(429).json({ error: `Account locked. Try again in ${remaining} minutes.`, locked: true });
       }
 
-      if (code === expectedCode) {
+      if (safeCompareCode(String(code), expectedCode)) {
         await db.update(qcAccessChallenge)
           .set({ lastSuccessAt: new Date(), failedAttemptsCount: 0, lockedUntil: null, updatedAt: new Date() })
           .where(eq(qcAccessChallenge.id, challenge.id));
@@ -706,10 +841,18 @@ export function registerQualityRoutes(app: Express) {
   app.get("/api/quality/project/:projectName/checklist", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const requestedProjectName = decodeURIComponent(String(req.params.projectName));
+      // R1: scoped roles only see their assigned projects' checklists.
+      if (!(await assertProjectAccessByName(req, res, requestedProjectName))) return;
+      // F16: filter soft-deleted projects out of the lookup so we don't
+      // accidentally surface (or create against) a project that's been
+      // removed from the company workspace.
       const [project] = await db
         .select({ id: projectInfo.id, projectName: projectInfo.projectName })
         .from(projectInfo)
-        .where(sql`LOWER(TRIM(${projectInfo.projectName})) = LOWER(TRIM(${requestedProjectName}))`)
+        .where(and(
+          sql`LOWER(TRIM(${projectInfo.projectName})) = LOWER(TRIM(${requestedProjectName}))`,
+          isNull(projectInfo.deletedAt),
+        ))
         .limit(1);
       const projectId = project?.id ?? null;
       const canonicalProjectName = project?.projectName ?? requestedProjectName;
@@ -721,39 +864,22 @@ export function registerQualityRoutes(app: Express) {
             .where(sql`LOWER(TRIM(${qcChecklist.projectName})) = ${normalizedProjectName}`);
       let checklist = matchingChecklists
         .sort((left: any, right: any) => right.id - left.id)[0];
-      let wasCreated = false;
 
+      // F7: GET no longer auto-creates. If the project has no checklist
+      // yet, return an empty payload — the front end shows a "Create
+      // Checklist" button that POSTs to /api/quality/project/:projectName/checklist
+      // (gated by quality.create).
       if (!checklist) {
-        const [activeTemplate] = await db.select().from(qcTemplate).where(eq(qcTemplate.isActive, true));
-        if (!activeTemplate) return res.json({ checklist: null, phases: [], items: [], riskQuestions: [], riskAnswers: [], evidence: [] });
-        if (!projectId) return res.status(404).json({ error: "Project not found" });
-
-        [checklist] = await db.insert(qcChecklist).values({
-          projectId,
-          projectName: canonicalProjectName,
-          templateId: activeTemplate.id,
-          status: "active",
-        }).returning();
-        wasCreated = true;
-
-        const phases = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, activeTemplate.id));
-        const phaseIds = phases.map((p: QcTemplatePhaseRow) => p.id);
-        const groups = phaseIds.length ? await db.select().from(qcTemplateGroup).where(inArray(qcTemplateGroup.templatePhaseId, phaseIds)) : [];
-        const groupIds = groups.map((g: QcTemplateGroupRow) => g.id);
-        const templateItems = groupIds.length ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.templateGroupId, groupIds)) : [];
-
-        if (templateItems.length) {
-          await db.insert(qcItemInstance).values(
-            templateItems.map((ti: QcTemplateItemRow) => ({ checklistId: checklist.id, templateItemId: ti.id }))
-          );
-        }
-
-        const riskQuestions = phaseIds.length ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.templatePhaseId, phaseIds)) : [];
-        if (riskQuestions.length) {
-          await db.insert(qcRiskAnswer).values(
-            riskQuestions.map((rq: QcTemplateRiskQuestionRow) => ({ checklistId: checklist.id, templateRiskQuestionId: rq.id }))
-          );
-        }
+        return res.json({
+          checklist: null,
+          phases: [],
+          groups: [],
+          templateItems: [],
+          itemInstances: [],
+          riskQuestions: [],
+          riskAnswers: [],
+          evidence: [],
+        });
       }
 
       let itemInstances = await db.select().from(qcItemInstance).where(eq(qcItemInstance.checklistId, checklist.id));
@@ -762,7 +888,9 @@ export function registerQualityRoutes(app: Express) {
       // Backfill: an existing checklist may have been created when its template
       // had no items/risk-questions seeded. Re-create any missing rows so the
       // dashboard shows the current template content rather than an empty list.
-      if (!wasCreated && checklist.templateId) {
+      // Safe to run on GET because it only fires for checklists that already
+      // exist (the user already passed `quality.view`).
+      if (checklist.templateId) {
         const tplPhases = await db.select({ id: qcTemplatePhase.id }).from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, checklist.templateId));
         const tplPhaseIds = tplPhases.map((p: any) => p.id);
         const tplGroups = tplPhaseIds.length ? await db.select({ id: qcTemplateGroup.id }).from(qcTemplateGroup).where(inArray(qcTemplateGroup.templatePhaseId, tplPhaseIds)) : [];
@@ -801,7 +929,7 @@ export function registerQualityRoutes(app: Express) {
       const riskQuestions = phaseIds.length ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.templatePhaseId, phaseIds)) : [];
 
       res.json({
-        created: wasCreated,
+        created: false,
         checklist,
         phases,
         groups,
@@ -826,13 +954,114 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
+  // F7: Explicit checklist creation. Replaces the side-effect-on-GET
+  // behaviour. Gated by `quality.create` so non-creators (PMS, PD, etc.)
+  // can't accidentally bring a checklist into existence by opening the
+  // Quality page. Idempotent — returns the existing checklist if one is
+  // already there.
+  app.post(
+    "/api/quality/project/:projectName/checklist",
+    requireAuth,
+    requireQmChallengePassed,
+    requirePermission("quality", "create"),
+    async (req, res) => {
+      try {
+        const requestedProjectName = decodeURIComponent(String(req.params.projectName));
+        // R1: scoped roles only create checklists for their assigned projects.
+        if (!(await assertProjectAccessByName(req, res, requestedProjectName))) return;
+        const [project] = await db
+          .select({ id: projectInfo.id, projectName: projectInfo.projectName })
+          .from(projectInfo)
+          .where(and(
+            sql`LOWER(TRIM(${projectInfo.projectName})) = LOWER(TRIM(${requestedProjectName}))`,
+            isNull(projectInfo.deletedAt),
+          ))
+          .limit(1);
+        if (!project) return res.status(404).json({ error: "Project not found" });
+
+        // R9: lock + check-existing + insert all run inside one transaction
+        // guarded by a per-project advisory lock, so two concurrent
+        // "create checklist" clicks can't both pass the existence check and
+        // insert duplicate checklists. The lock auto-releases at tx end.
+        const outcome = await db.transaction(async (tx: NodePgDatabase<typeof schema>) => {
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`qc_checklist:${project.id}`}))`);
+
+          const existing = await tx.select().from(qcChecklist).where(eq(qcChecklist.projectId, project.id));
+          if (existing.length > 0) {
+            const checklist = existing.sort((l: any, r: any) => r.id - l.id)[0];
+            return { created: false as const, checklist };
+          }
+
+          const [activeTemplate] = await tx.select().from(qcTemplate).where(eq(qcTemplate.isActive, true));
+          if (!activeTemplate) {
+            return { created: false as const, checklist: null, noTemplate: true as const };
+          }
+
+          const [checklist] = await tx.insert(qcChecklist).values({
+            projectId: project.id,
+            projectName: project.projectName,
+            templateId: activeTemplate.id,
+            status: "active",
+          }).returning();
+
+          const phases = await tx.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, activeTemplate.id));
+          const phaseIds = phases.map((p: QcTemplatePhaseRow) => p.id);
+          const groups = phaseIds.length
+            ? await tx.select().from(qcTemplateGroup).where(inArray(qcTemplateGroup.templatePhaseId, phaseIds))
+            : [];
+          const groupIds = groups.map((g: QcTemplateGroupRow) => g.id);
+          const templateItems = groupIds.length
+            ? await tx.select().from(qcTemplateItem).where(inArray(qcTemplateItem.templateGroupId, groupIds))
+            : [];
+          if (templateItems.length) {
+            await tx.insert(qcItemInstance).values(
+              templateItems.map((ti: QcTemplateItemRow) => ({ checklistId: checklist.id, templateItemId: ti.id })),
+            );
+          }
+          const riskQuestions = phaseIds.length
+            ? await tx.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.templatePhaseId, phaseIds))
+            : [];
+          if (riskQuestions.length) {
+            await tx.insert(qcRiskAnswer).values(
+              riskQuestions.map((rq: QcTemplateRiskQuestionRow) => ({ checklistId: checklist.id, templateRiskQuestionId: rq.id })),
+            );
+          }
+          return { created: true as const, checklist, templateId: activeTemplate.id };
+        });
+
+        if ("noTemplate" in outcome && outcome.noTemplate) {
+          return res.status(409).json({
+            error: "no_active_template",
+            message: "No active quality template is configured. Contact admin.",
+          });
+        }
+
+        if (!outcome.created) {
+          return res.status(200).json({ created: false, checklist: outcome.checklist });
+        }
+
+        logAuditFromReq(req, {
+          entityType: "quality_checklist",
+          entityId: String(outcome.checklist.id),
+          action: "create",
+          projectName: project.projectName,
+          changesJson: { description: "Quality checklist created", templateId: outcome.templateId },
+        });
+
+        res.status(201).json({ created: true, checklist: outcome.checklist });
+      } catch (err) {
+        sendError(res, err);
+      }
+    },
+  );
+
   // Hard-delete a project's quality process so the PM can restart from scratch.
   // Removes evidence, plan links, warnings, post-mortem, then the checklist
   // (which cascades to item instances + risk answers). Atomic via transaction.
   app.delete(
     "/api/quality/project/:projectName/checklist",
     requireAuth,
-    requireAdminOrQm,
+    requireQmChallengePassed,
     requirePermission("quality", "delete"),
     async (req, res) => {
       try {
@@ -1010,9 +1239,15 @@ export function registerQualityRoutes(app: Express) {
 
   // ========== CHECKLIST ITEM OPERATIONS ==========
 
-  app.post("/api/quality/project/:projectName/item/:itemInstanceId", requireAuth, requireAdminOrQm, requirePermission('pd_quality', 'edit'), validateBody(updateItemSchema), async (req, res) => {
+  app.post("/api/quality/project/:projectName/item/:itemInstanceId", requireAuth, requireQmChallengePassed, requirePermission('pd_quality', 'edit'), validateBody(updateItemSchema), async (req, res) => {
     try {
       const itemId = parseIntParam(req.params.itemInstanceId);
+      const urlProjectName = decodeURIComponent(String(req.params.projectName));
+
+      // F17: assert :projectName matches the item's actual project.
+      const ok = await assertItemBelongsToProject(req, res, itemId, urlProjectName);
+      if (!ok) return;
+
       const {
         startDate,
         endDate,
@@ -1193,10 +1428,16 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/project/:projectName/item/:itemInstanceId/approve", requireAuth, requirePermission('quality', 'approve'), validateBody(approveItemSchema), async (req, res) => {
+  app.post("/api/quality/project/:projectName/item/:itemInstanceId/approve", requireAuth, requireQmChallengePassed, requirePermission('quality', 'approve'), validateBody(approveItemSchema), async (req, res) => {
     try {
       const itemId = parseIntParam(req.params.itemInstanceId);
       const { approved, comment } = req.body;
+      const urlProjectName = decodeURIComponent(String(req.params.projectName));
+
+      // F17: assert :projectName matches the item's actual project.
+      const ok = await assertItemBelongsToProject(req, res, itemId, urlProjectName);
+      if (!ok) return;
+
       const [existing] = await db.select().from(qcItemInstance).where(eq(qcItemInstance.id, itemId));
 
       // Plan v3 § D.G — softening: COO/CEO with override_reason may
@@ -1307,6 +1548,13 @@ export function registerQualityRoutes(app: Express) {
     try {
       const itemId = parseIntParam(req.params.itemInstanceId);
       const { evidenceUrl, evidenceNote } = req.body;
+      const urlProjectName = decodeURIComponent(String(req.params.projectName));
+
+      // F17: assert :projectName matches the item's actual project — prevents
+      // mis-scoped audit rows when a client posts an item ID from project B
+      // under a URL that names project A.
+      const ok = await assertItemBelongsToProject(req, res, itemId, urlProjectName);
+      if (!ok) return;
 
       const projectId = await resolveProjectIdForItemInstance(itemId);
       if (!projectId) return res.status(400).json({ error: "project_context_missing", message: "Cannot attach evidence without project linkage" });
@@ -1315,7 +1563,7 @@ export function registerQualityRoutes(app: Express) {
         projectId,
         itemInstanceId: itemId, evidenceUrl, evidenceNote,
       }).returning();
-      logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "update", projectName: decodeURIComponent(String(req.params.projectName)), changesJson: { description: "Evidence added", evidenceUrl } });
+      logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "update", projectName: urlProjectName, changesJson: { description: "Evidence added", evidenceUrl } });
       res.json(evidence);
     } catch (err) {
       sendError(res, err);
@@ -1328,6 +1576,11 @@ export function registerQualityRoutes(app: Express) {
       const file = req.file;
       if (!file) return res.status(400).json({ error: "No file uploaded" });
       const note = req.body.note || "";
+      const urlProjectName = decodeURIComponent(String(req.params.projectName));
+
+      // F17: same scope check as the JSON evidence-add endpoint.
+      const ok = await assertItemBelongsToProject(req, res, itemId, urlProjectName);
+      if (!ok) return;
 
       const evidenceUrl = `/uploads/qm-approvals/${file.filename}`;
       const projectId = await resolveProjectIdForItemInstance(itemId);
@@ -1391,6 +1644,10 @@ export function registerQualityRoutes(app: Express) {
       const projectName = decodeURIComponent(String(req.params.projectName));
       const approverUserId = req.body.approverUserId as number;
 
+      // F17: assert :projectName matches the item's actual project.
+      const ok = await assertItemBelongsToProject(req, res, itemId, projectName);
+      if (!ok) return;
+
       const [existing] = await db.select().from(qcItemInstance).where(eq(qcItemInstance.id, itemId));
       if (!existing) return res.status(404).json({ error: "Quality item not found" });
 
@@ -1436,8 +1693,36 @@ export function registerQualityRoutes(app: Express) {
 
   app.delete("/api/quality/evidence/:evidenceId", requireAuth, requirePermission("quality", "delete"), async (req, res) => {
     try {
-      await db.update(qcItemEvidence).set({ deletedAt: new Date(), deletedBy: getUser(req).id }).where(eq(qcItemEvidence.id, parseIntParam(req.params.evidenceId))).returning();
-      logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(req.params.evidenceId), action: "delete", changesJson: { description: "Evidence deleted" } });
+      const evidenceId = parseIntParam(req.params.evidenceId);
+
+      // F22: look up project context BEFORE deletion so the audit row carries
+      // the project name. Without this, "which project lost this evidence?"
+      // can't be answered after the fact.
+      const [evidence] = await db
+        .select({ projectId: qcItemEvidence.projectId, itemInstanceId: qcItemEvidence.itemInstanceId })
+        .from(qcItemEvidence)
+        .where(eq(qcItemEvidence.id, evidenceId));
+      let projectName: string | null = null;
+      if (evidence?.projectId) {
+        const [project] = await db
+          .select({ name: projectInfo.projectName })
+          .from(projectInfo)
+          .where(eq(projectInfo.id, evidence.projectId));
+        projectName = project?.name ?? null;
+      }
+
+      await db.update(qcItemEvidence).set({ deletedAt: new Date(), deletedBy: getUser(req).id }).where(eq(qcItemEvidence.id, evidenceId)).returning();
+      logAuditFromReq(req, {
+        entityType: "quality_checklist",
+        entityId: String(evidenceId),
+        action: "delete",
+        projectName: projectName ?? undefined,
+        changesJson: {
+          description: "Evidence deleted",
+          projectId: evidence?.projectId ?? null,
+          itemInstanceId: evidence?.itemInstanceId ?? null,
+        },
+      });
       res.json({ success: true });
     } catch (err) {
       sendError(res, err);
@@ -1446,7 +1731,7 @@ export function registerQualityRoutes(app: Express) {
 
   // ========== QC ITEM CREATE/DELETE ==========
 
-  app.post("/api/quality/project/:projectName/items", requireAuth, requireAdminOrQm, requirePermission('pd_quality', 'edit'), validateBody(createItemSchema), async (req, res) => {
+  app.post("/api/quality/project/:projectName/items", requireAuth, requireQmChallengePassed, requirePermission('pd_quality', 'edit'), validateBody(createItemSchema), async (req, res) => {
     try {
       const pName = decodeURIComponent(String(req.params.projectName));
       const { itemName, groupId } = req.body;
@@ -1492,7 +1777,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/quality/project/:projectName/item/:itemInstanceId", requireAuth, requireAdminOrQm, requirePermission('pd_quality', 'delete'), async (req, res) => {
+  app.delete("/api/quality/project/:projectName/item/:itemInstanceId", requireAuth, requireQmChallengePassed, requirePermission('pd_quality', 'delete'), async (req, res) => {
     try {
       const pName = decodeURIComponent(String(req.params.projectName));
       const itemId = parseIntParam(req.params.itemInstanceId);
@@ -1533,6 +1818,27 @@ export function registerQualityRoutes(app: Express) {
         answerValue,
         notes,
       } = req.body;
+      const pName = decodeURIComponent(String(req.params.projectName));
+
+      // F21: confirm the risk answer's checklist belongs to the project named
+      // in the URL — otherwise a quality.edit holder could flip risk answers
+      // for any project they don't work on.
+      const [answer] = await db
+        .select({ checklistId: qcRiskAnswer.checklistId })
+        .from(qcRiskAnswer)
+        .where(eq(qcRiskAnswer.id, riskAnswerId));
+      if (!answer) return res.status(404).json({ error: "risk_answer_not_found" });
+      const [checklist] = await db
+        .select({ projectId: qcChecklist.projectId })
+        .from(qcChecklist)
+        .where(eq(qcChecklist.id, answer.checklistId));
+      const urlProjectId = await resolveProjectIdByName(pName);
+      if (!checklist || !urlProjectId || checklist.projectId !== urlProjectId) {
+        return res.status(403).json({
+          error: "project_scope_mismatch",
+          message: "Risk answer does not belong to the project named in the URL.",
+        });
+      }
 
       const normalizedAnswerYesno =
         answerYesno !== undefined
@@ -1552,7 +1858,6 @@ export function registerQualityRoutes(app: Express) {
       if (answerNumber !== undefined) updates.answerNumber = answerNumber;
 
       const [updated] = await db.update(qcRiskAnswer).set(updates).where(eq(qcRiskAnswer.id, riskAnswerId)).returning();
-      const pName = decodeURIComponent(String(req.params.projectName));
       recalculateWarnings(pName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
 
 
@@ -1579,6 +1884,7 @@ export function registerQualityRoutes(app: Express) {
   app.get("/api/quality/project/:projectName/warnings", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
+      if (!(await assertProjectAccessByName(req, res, projectName))) return;
       const warnings = await db.select().from(qcWarning)
         .where(eq(qcWarning.projectName, projectName))
         .orderBy(desc(qcWarning.createdAt));
@@ -1591,6 +1897,9 @@ export function registerQualityRoutes(app: Express) {
   app.get("/api/quality/warnings", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const statusFilter = req.query.status as string;
+      // R1: trim the cross-project warnings list to the caller's scope.
+      const scope = await getQualityHseScope(req);
+      const scopedNames = scopedProjectNamesArray(scope);
       let storedWarnings: any[];
       if (statusFilter) {
         storedWarnings = await db.select().from(qcWarning)
@@ -1598,6 +1907,10 @@ export function registerQualityRoutes(app: Express) {
           .orderBy(desc(qcWarning.createdAt));
       } else {
         storedWarnings = await db.select().from(qcWarning).orderBy(desc(qcWarning.createdAt));
+      }
+      if (scopedNames !== null) {
+        const allowed = new Set(scopedNames.map((n) => normalizeProjectName(n)));
+        storedWarnings = storedWarnings.filter((w: any) => allowed.has(normalizeProjectName(w.projectName)));
       }
 
       const warnings = storedWarnings.filter((w: any) => w.warningType !== "task_complete_unapproved");
@@ -1681,6 +1994,7 @@ export function registerQualityRoutes(app: Express) {
   app.get("/api/quality/project/:projectName/plan-links", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
+      if (!(await assertProjectAccessByName(req, res, projectName))) return;
       const links = await db.select().from(qcPlanLink).where(eq(qcPlanLink.projectName, projectName));
       res.json(links);
     } catch (err) {
@@ -1692,6 +2006,18 @@ export function registerQualityRoutes(app: Express) {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
       const { planItemId, itemInstanceId, phaseId, linkType } = req.body;
+
+      // F17: if the link references a specific quality item, confirm that
+      // item belongs to the project named in the URL.
+      if (itemInstanceId) {
+        const ok = await assertItemBelongsToProject(req, res, itemInstanceId, projectName);
+        if (!ok) return;
+      } else {
+        // Phase-only links — still confirm the URL project exists.
+        const urlProjectId = await resolveProjectIdByName(projectName);
+        if (!urlProjectId) return res.status(404).json({ error: "project_not_found" });
+      }
+
       const [link] = await db.insert(qcPlanLink).values({
         projectName, planItemId, itemInstanceId: itemInstanceId || null, phaseId: phaseId || null, linkType: linkType || "phase_task",
       }).returning();
@@ -1706,6 +2032,8 @@ export function registerQualityRoutes(app: Express) {
   app.delete("/api/quality/plan-link/:linkId", requireAuth, requirePermission("quality", "delete"), async (req, res) => {
     try {
       const [deletedLink] = await db.select().from(qcPlanLink).where(eq(qcPlanLink.id, parseIntParam(req.params.linkId)));
+      // R1: scoped roles only delete links for their assigned projects.
+      if (deletedLink && !(await assertProjectAccessByName(req, res, deletedLink.projectName))) return;
       await db.delete(qcPlanLink).where(eq(qcPlanLink.id, parseIntParam(req.params.linkId)));
       if (deletedLink) recalculateWarnings(deletedLink.projectName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(req.params.linkId), action: "delete", projectName: deletedLink?.projectName, changesJson: { description: "Plan link deleted" } });
@@ -1720,6 +2048,7 @@ export function registerQualityRoutes(app: Express) {
   app.get("/api/quality/project/:projectName/summary", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
+      if (!(await assertProjectAccessByName(req, res, projectName))) return;
       const [projectRow] = await db.select().from(projectInfo)
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
         .where(eq(projectInfo.projectName, projectName));
@@ -1872,6 +2201,7 @@ export function registerQualityRoutes(app: Express) {
   app.get("/api/quality/project/:projectName/workspace", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
+      if (!(await assertProjectAccessByName(req, res, projectName))) return;
       const userId = getUser(req).id;
       const context = await loadProjectQualityGovernanceContext(projectName, userId);
 
@@ -1954,6 +2284,11 @@ export function registerQualityRoutes(app: Express) {
     try {
       const projectFilter = req.query.project as string | undefined;
       const phaseFilter = req.query.phase as string | undefined;
+      // R1: scoped roles see only items on their assigned projects.
+      const scope = await getQualityHseScope(req);
+      const scopedNames = scopedProjectNamesArray(scope);
+      if (scopedNames !== null && scopedNames.length === 0) return res.json([]);
+      if (projectFilter && !scopeAllowsProjectName(scope, projectFilter)) return res.json([]);
       const statusFilter = req.query.status as string | undefined;
 
       const allInstances = await db.select().from(qcItemInstance);
@@ -2054,6 +2389,10 @@ export function registerQualityRoutes(app: Express) {
       if (phaseFilter) {
         items = items.filter((i: any) => i.phaseName === phaseFilter);
       }
+      if (scopedNames !== null) {
+        const allowed = new Set(scopedNames.map((n) => normalizeProjectName(n)));
+        items = items.filter((i: any) => allowed.has(normalizeProjectName(i.projectName)));
+      }
 
       res.json(items);
     } catch (err) {
@@ -2065,6 +2404,11 @@ export function registerQualityRoutes(app: Express) {
 
   app.get("/api/quality/checklists", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
+      // R1: scoped roles only see their assigned projects' checklists.
+      const scope = await getQualityHseScope(req);
+      const scopedIdsForChecklists = scopedProjectIdsArray(scope);
+      const scopedNamesForChecklists = scopedProjectNamesArray(scope);
+      if (scopedIdsForChecklists !== null && scopedIdsForChecklists.length === 0) return res.json([]);
       const allChecklistsRaw = await db.select().from(qcChecklist);
       const allChecklists = allChecklistsRaw.filter((c: typeof allChecklistsRaw[number]) => c.projectId != null || c.projectName != null);
       const allProjectRows = await db.select().from(projectInfo)
@@ -2289,7 +2633,18 @@ export function registerQualityRoutes(app: Express) {
         };
       });
 
-      res.json(result);
+      // R1: filter the response set to projects the caller's scope sees.
+      const finalResult = scopedNamesForChecklists === null
+        ? result
+        : (() => {
+            const allowed = new Set(scopedNamesForChecklists.map((n) => normalizeProjectName(n)));
+            const allowedIds = new Set(scopedIdsForChecklists ?? []);
+            return result.filter((r: any) =>
+              (r.projectId != null && allowedIds.has(r.projectId)) ||
+              allowed.has(normalizeProjectName(r.projectName ?? "")),
+            );
+          })();
+      res.json(finalResult);
     } catch (err) {
       sendError(res, err);
     }
@@ -2299,9 +2654,33 @@ export function registerQualityRoutes(app: Express) {
 
   app.get("/api/quality/dashboard", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
-      const allChecklistsRaw = await db.select().from(qcChecklist);
+      // R1: pre-filter checklists by the caller's quality/HSE scope. Scoped
+      // users only see aggregates for projects they're assigned to; oversight
+      // roles (QM, HSE, COO, etc.) see the full company-wide rollup.
+      const dashboardScope = await getQualityHseScope(req);
+      const dashboardScopedIds = scopedProjectIdsArray(dashboardScope);
+      const dashboardScopedNames = scopedProjectNamesArray(dashboardScope);
+      if (dashboardScopedIds !== null && dashboardScopedIds.length === 0) {
+        return res.json({
+          totalChecklists: 0, pendingApprovals: 0, openWarnings: 0, totalWarnings: 0,
+          projectsAtRisk: [], overdueActions: 0, resubmissionNeeded: 0, evidenceRequired: 0,
+          blockedHandovers: 0, atRiskProjects: 0, topRiskProjects: [], outstandingPostmortems: [],
+        });
+      }
+      const allChecklistsRawUnfiltered = await db.select().from(qcChecklist);
+      const allowedNamesNorm = dashboardScopedNames === null ? null : new Set(dashboardScopedNames.map((n) => normalizeProjectName(n)));
+      const allowedIds = dashboardScopedIds === null ? null : new Set(dashboardScopedIds);
+      const allChecklistsRaw = allowedIds === null
+        ? allChecklistsRawUnfiltered
+        : allChecklistsRawUnfiltered.filter((c: any) =>
+            (c.projectId != null && allowedIds.has(c.projectId)) ||
+            (c.projectName != null && allowedNamesNorm!.has(normalizeProjectName(c.projectName))),
+          );
       const allChecklists = allChecklistsRaw.filter((c: typeof allChecklistsRaw[number]) => c.projectId != null || c.projectName != null);
-      const allWarnings = await db.select().from(qcWarning).where(sql`${qcWarning.status} != 'resolved'`);
+      const allWarningsRaw = await db.select().from(qcWarning).where(sql`${qcWarning.status} != 'resolved'`);
+      const allWarnings = allowedNamesNorm === null
+        ? allWarningsRaw
+        : allWarningsRaw.filter((w: any) => allowedNamesNorm.has(normalizeProjectName(w.projectName)));
       const allItems = await db.select().from(qcItemInstance);
       const allRiskAnswers = await db.select().from(qcRiskAnswer);
       const riskQuestionIds = uniqueNumberList(allRiskAnswers.map((answer: any) => answer.templateRiskQuestionId));
@@ -2366,7 +2745,9 @@ export function registerQualityRoutes(app: Express) {
         evidenceCountMap.set(evidence.itemInstanceId, (evidenceCountMap.get(evidence.itemInstanceId) || 0) + 1);
       }
 
-      const pendingApprovals = allItems.filter((i: any) => i.isApplicable && !i.approved);
+      // R1: limit pendingApprovals to items whose checklist is in scope.
+      const allowedChecklistIds = new Set(allChecklists.map((c: any) => c.id));
+      const pendingApprovals = allItems.filter((i: any) => i.isApplicable && !i.approved && allowedChecklistIds.has(i.checklistId));
       const projectWarningCounts: Record<string, { high: number; total: number; }> = {};
       for (const w of allWarnings) {
         if (!projectWarningCounts[w.projectName]) projectWarningCounts[w.projectName] = { high: 0, total: 0 };
@@ -2472,6 +2853,7 @@ export function registerQualityRoutes(app: Express) {
   app.post("/api/quality/project/:projectName/recalculate-warnings", requireAuth, requirePermission("quality", "edit"), validateBody(recalculateWarningsSchema), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
+      if (!(await assertProjectAccessByName(req, res, projectName))) return;
       const count = await recalculateWarnings(projectName);
       logAuditFromReq(req, { entityType: "qc_warning", entityId: "0", action: "create", projectName, changesJson: { description: "Warnings recalculated", warningsGenerated: count } });
       res.json({ success: true, warningsGenerated: count });
@@ -2485,6 +2867,7 @@ export function registerQualityRoutes(app: Express) {
   app.get("/api/quality/postmortem/:projectName", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
+      if (!(await assertProjectAccessByName(req, res, projectName))) return;
       const [pm] = await db.select().from(qcPostmortem).where(eq(qcPostmortem.projectName, projectName));
       if (!pm) return res.json({ postmortem: null, metricValues: [], summary: null });
 
@@ -2501,80 +2884,92 @@ export function registerQualityRoutes(app: Express) {
   app.post("/api/quality/postmortem/:projectName", requireAuth, requirePermission("quality", "edit"), validateBody(postmortemSchema), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
+      if (!(await assertProjectAccessByName(req, res, projectName))) return;
       const { metricInputs } = req.body;
+      const userId = getUser(req).id;
 
-      let [pm] = await db.select().from(qcPostmortem).where(eq(qcPostmortem.projectName, projectName));
-      if (!pm) {
-        [pm] = await db.insert(qcPostmortem).values({ projectName }).returning();
-      }
-
-      await db.delete(qcPostmortemMetricValue).where(eq(qcPostmortemMetricValue.postmortemId, pm.id));
-      await db.delete(qcPostmortemSummary).where(eq(qcPostmortemSummary.postmortemId, pm.id));
-
+      // Read metrics outside the transaction — they're template data, no
+      // mutation, safe to read up-front.
       const metrics = await db.select().from(qcTemplatePostmortemMetric);
-      const values: any[] = [];
 
-      for (const input of metricInputs) {
-        const metric = metrics.find((m: any) => m.id === input.templateMetricId);
-        if (!metric) continue;
-
-        let score: number | null = null;
-        const rule = metric.scoringRuleJson as any;
-        if (rule) {
-          if (metric.inputType === "choice" && rule.choices && input.inputValueChoice) {
-            score = rule.choices[input.inputValueChoice] ?? null;
-          } else if (metric.inputType === "count" && typeof rule.formula === "string" && input.inputValueNumber != null) {
-            const val = Number(input.inputValueNumber);
-            const raw = evaluateSafeFormula(rule.formula, { count: val, days: val });
-            score = raw == null ? null : Math.max(0, Math.min(1, raw));
-          }
+      // F25: wrap the full replace (delete metrics → delete summary →
+      // insert metrics → insert summary → mark postmortem complete) in a
+      // single transaction. A network blip mid-flow no longer leaves the
+      // post-mortem half-saved.
+      const result = await db.transaction(async (tx: NodePgDatabase<typeof schema>) => {
+        let [pm] = await tx.select().from(qcPostmortem).where(eq(qcPostmortem.projectName, projectName));
+        if (!pm) {
+          [pm] = await tx.insert(qcPostmortem).values({ projectName }).returning();
         }
 
-        values.push({
-          postmortemId: pm.id,
-          templateMetricId: input.templateMetricId,
-          inputValueNumber: input.inputValueNumber ?? null,
-          inputValueChoice: input.inputValueChoice ?? null,
-          score,
+        await tx.delete(qcPostmortemMetricValue).where(eq(qcPostmortemMetricValue.postmortemId, pm.id));
+        await tx.delete(qcPostmortemSummary).where(eq(qcPostmortemSummary.postmortemId, pm.id));
+
+        const values: any[] = [];
+        for (const input of metricInputs) {
+          const metric = metrics.find((m: any) => m.id === input.templateMetricId);
+          if (!metric) continue;
+
+          let score: number | null = null;
+          const rule = metric.scoringRuleJson as any;
+          if (rule) {
+            if (metric.inputType === "choice" && rule.choices && input.inputValueChoice) {
+              score = rule.choices[input.inputValueChoice] ?? null;
+            } else if (metric.inputType === "count" && typeof rule.formula === "string" && input.inputValueNumber != null) {
+              const val = Number(input.inputValueNumber);
+              const raw = evaluateSafeFormula(rule.formula, { count: val, days: val });
+              score = raw == null ? null : Math.max(0, Math.min(1, raw));
+            }
+          }
+
+          values.push({
+            postmortemId: pm.id,
+            templateMetricId: input.templateMetricId,
+            inputValueNumber: input.inputValueNumber ?? null,
+            inputValueChoice: input.inputValueChoice ?? null,
+            score,
+          });
+        }
+
+        if (values.length) {
+          await tx.insert(qcPostmortemMetricValue).values(values);
+        }
+
+        const contractorMetrics = values.filter(v => {
+          const m = metrics.find((mm: any) => mm.id === v.templateMetricId);
+          return m?.metricGroup === "contractor_quality" && v.score != null;
         });
-      }
+        const engineeringMetrics = values.filter(v => {
+          const m = metrics.find((mm: any) => mm.id === v.templateMetricId);
+          return m?.metricGroup === "engineering_quality" && v.score != null;
+        });
 
-      if (values.length) {
-        await db.insert(qcPostmortemMetricValue).values(values);
-      }
+        const contractorScore = contractorMetrics.length
+          ? contractorMetrics.reduce((a, b) => a + (b.score || 0), 0) / contractorMetrics.length
+          : null;
+        const engineeringScore = engineeringMetrics.length
+          ? engineeringMetrics.reduce((a, b) => a + (b.score || 0), 0) / engineeringMetrics.length
+          : null;
 
-      const contractorMetrics = values.filter(v => {
-        const m = metrics.find((mm: any) => mm.id === v.templateMetricId);
-        return m?.metricGroup === "contractor_quality" && v.score != null;
-      });
-      const engineeringMetrics = values.filter(v => {
-        const m = metrics.find((mm: any) => mm.id === v.templateMetricId);
-        return m?.metricGroup === "engineering_quality" && v.score != null;
-      });
+        const redFlag = (contractorScore != null && contractorScore < POSTMORTEM_RED_FLAG_THRESHOLD) || (engineeringScore != null && engineeringScore < POSTMORTEM_RED_FLAG_THRESHOLD);
 
-      const contractorScore = contractorMetrics.length
-        ? contractorMetrics.reduce((a, b) => a + (b.score || 0), 0) / contractorMetrics.length
-        : null;
-      const engineeringScore = engineeringMetrics.length
-        ? engineeringMetrics.reduce((a, b) => a + (b.score || 0), 0) / engineeringMetrics.length
-        : null;
+        await tx.insert(qcPostmortemSummary).values({
+          postmortemId: pm.id,
+          contractorQualityScore: contractorScore,
+          engineeringQualityScore: engineeringScore,
+          redFlag,
+        });
 
-      const redFlag = (contractorScore != null && contractorScore < 0.85) || (engineeringScore != null && engineeringScore < 0.85);
+        await tx.update(qcPostmortem).set({
+          completedAt: new Date(),
+          completedByUserId: userId,
+        }).where(eq(qcPostmortem.id, pm.id));
 
-      await db.insert(qcPostmortemSummary).values({
-        postmortemId: pm.id,
-        contractorQualityScore: contractorScore,
-        engineeringQualityScore: engineeringScore,
-        redFlag,
+        return { pmId: pm.id, contractorScore, engineeringScore, redFlag };
       });
 
-      await db.update(qcPostmortem).set({
-        completedAt: new Date(),
-        completedByUserId: getUser(req).id,
-      }).where(eq(qcPostmortem.id, pm.id));
-
-      logAuditFromReq(req, { entityType: "quality_template", entityId: String(pm.id), action: "create", projectName, changesJson: { description: "Post-mortem completed", contractorScore, engineeringScore, redFlag } });
-      res.json({ success: true, contractorScore, engineeringScore, redFlag });
+      logAuditFromReq(req, { entityType: "quality_template", entityId: String(result.pmId), action: "create", projectName, changesJson: { description: "Post-mortem completed", contractorScore: result.contractorScore, engineeringScore: result.engineeringScore, redFlag: result.redFlag } });
+      res.json({ success: true, contractorScore: result.contractorScore, engineeringScore: result.engineeringScore, redFlag: result.redFlag });
     } catch (err) {
       sendError(res, err);
     }
@@ -2582,7 +2977,7 @@ export function registerQualityRoutes(app: Express) {
 
   // ========== HOLIDAYS ==========
 
-  app.get("/api/quality/holidays", requireAuth, async (req, res) => {
+  app.get("/api/quality/holidays", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const holidays = await db.select().from(calendarHoliday);
       res.json(holidays);
@@ -2617,6 +3012,7 @@ export function registerQualityRoutes(app: Express) {
   app.get("/api/quality/plan-warnings/:projectName", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
+      if (!(await assertProjectAccessByName(req, res, projectName))) return;
       const warnings = await db.select().from(qcWarning)
         .where(and(
           eq(qcWarning.projectName, projectName),
@@ -2784,20 +3180,14 @@ export async function recalculateWarnings(projectName: string): Promise<number> 
     : [];
   const planLinks = await db.select().from(qcPlanLink).where(eq(qcPlanLink.projectName, projectName));
 
-  // Plan v3 § T3-4: capture how many warnings get auto-resolved by this
-  // recompute so the canonical audit_events row carries before+after.
-  const resolvedRows = await db
-    .select({ id: qcWarning.id, warningType: qcWarning.warningType })
-    .from(qcWarning)
-    .where(and(
-      eq(qcWarning.projectName, projectName),
-      sql`${qcWarning.status} = 'open'`,
-    ));
-
-  await db.delete(qcWarning).where(and(
-    eq(qcWarning.projectName, projectName),
-    sql`${qcWarning.status} = 'open'`
-  ));
+  // F14: the delete-then-insert sequence used to run outside a transaction,
+  // so two concurrent recomputes on the same project could leave duplicates
+  // or wipe each other's work. Capture-resolved + delete + insert now run
+  // inside one transaction guarded by a per-project advisory lock, so
+  // concurrent callers serialize cleanly.
+  //
+  // The advisory lock is `pg_advisory_xact_lock(hashtext(projectName))`,
+  // released automatically at transaction end.
 
   const newWarnings: any[] = [];
   const today = new Date().toISOString().split('T')[0];
@@ -2922,13 +3312,33 @@ export async function recalculateWarnings(projectName: string): Promise<number> 
     }
   }
 
-  if (newWarnings.length) {
-    await db.insert(qcWarning).values(newWarnings);
-  }
+  const resolvedCount = await db.transaction(async (tx: NodePgDatabase<typeof schema>) => {
+    // Advisory lock: serialize concurrent recomputes on the same project.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${projectName}))`);
+
+    const resolvedRows = await tx
+      .select({ id: qcWarning.id, warningType: qcWarning.warningType })
+      .from(qcWarning)
+      .where(and(
+        eq(qcWarning.projectName, projectName),
+        sql`${qcWarning.status} = 'open'`,
+      ));
+
+    await tx.delete(qcWarning).where(and(
+      eq(qcWarning.projectName, projectName),
+      sql`${qcWarning.status} = 'open'`,
+    ));
+
+    if (newWarnings.length) {
+      await tx.insert(qcWarning).values(newWarnings);
+    }
+
+    return resolvedRows.length;
+  });
 
   // Single canonical audit row per recompute — captures the delta even
   // when recalculate is fired-and-forgot from a mutation handler.
-  if (resolvedRows.length > 0 || newWarnings.length > 0) {
+  if (resolvedCount > 0 || newWarnings.length > 0) {
     await recordAudit({
       actorRole: "SYSTEM",
       entityType: "qc_warning_recalc",
@@ -2936,7 +3346,7 @@ export async function recalculateWarnings(projectName: string): Promise<number> 
       action: "RECALCULATE_WARNINGS",
       projectName,
       changesJson: {
-        autoResolvedCount: resolvedRows.length,
+        autoResolvedCount: resolvedCount,
         createdCount: newWarnings.length,
         createdTypes: Array.from(new Set(newWarnings.map((w) => w.warningType))),
       },

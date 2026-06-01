@@ -1,52 +1,115 @@
 /**
  * B7 (audit closeout) — Safety File routes.
  *
- * Permission model (mirrors B3 HSE incidents):
- *   - POST /api/projects/:projectId/safety-file/items
- *       any authenticated user can create an item
- *   - PATCH /api/safety-file-items/:id
- *       any authenticated user can edit descriptive fields
- *       ONLY HSE-approving roles (HSE_MANAGER, COO_ADMIN, CEO_ADMIN) can
- *       change compliance_status. Same gate pattern as B3.
- *   - DELETE /api/safety-file-items/:id
- *       any authenticated user can soft-delete (mark deleted_at)
- *   - GET endpoints require auth only
+ * Permission model: every mutating endpoint now goes through the canonical
+ * `hse_compliance` entity in the permission registry (create/edit/delete).
+ * The compliance_status field still flows through the approve-permission
+ * gate (HSE_MANAGER / COO_ADMIN / CEO_ADMIN per
+ * `hse_compliance.approve_roles`) so the editor/approver split stays in
+ * effect — but baseline writes are now properly gated rather than open to
+ * any authenticated user.
+ *
+ * Body validation: PATCH bodies are whitelisted via Zod. Snake_case ↔
+ * camelCase legacy bridging happens BEFORE Zod parsing so the schema sees
+ * one canonical shape.
+ *
+ * Soft-delete: PATCH/DELETE filter `isNull(deletedAt)`.
  */
 
 import { Router, type Express, type Request, type Response } from "express";
+import { z } from "zod";
 import { requireAuth } from "./shared-middleware";
+import { requirePermission, evaluatePermissionForRequest } from "../permission-middleware";
 import { db } from "../db";
 import { parseBody } from "../lib/input-validation";
-import { eq, and, isNull } from "drizzle-orm";
-import { safetyFileItems, insertSafetyFileItemSchema } from "@shared/schema/hse";
+import { eq, and, isNull, inArray } from "drizzle-orm";
+import { safetyFileItems, SAFETY_FILE_COMPLIANCE_STATUSES } from "@shared/schema/hse";
+import { projectInfo } from "@shared/schema/projects";
+import { getQualityHseScope, scopeAllowsProject, scopedProjectIdsArray } from "../services/quality-hse-scope";
 import {
   getSafetyFileCompleteness,
   getOverdueSafetyFileItems,
-  SAFETY_FILE_APPROVER_ROLES,
 } from "../services/safety-file-service";
 import { logAuditFromReq } from "../audit-logger";
+import { getEffectiveUser } from "../auth-context";
 
 const router = Router();
 
+const SAFETY_FILE_CATEGORIES = [
+  "statutory",
+  "registers",
+  "appointments",
+  "method_statements",
+  "emergency",
+  "other",
+] as const;
+
+const createSafetyFileItemSchema = z
+  .object({
+    itemCode: z.string().min(1).max(100),
+    itemName: z.string().min(1).max(500),
+    category: z.enum(SAFETY_FILE_CATEGORIES).optional(),
+    required: z.boolean().optional(),
+    dueDate: z.string().nullable().optional(),
+    sharepointRef: z.string().max(2048).nullable().optional(),
+    notes: z.string().max(5000).nullable().optional(),
+  })
+  .strict();
+
+const updateSafetyFileItemSchema = z
+  .object({
+    itemName: z.string().min(1).max(500).optional(),
+    category: z.enum(SAFETY_FILE_CATEGORIES).optional(),
+    required: z.boolean().optional(),
+    dueDate: z.string().nullable().optional(),
+    sharepointRef: z.string().max(2048).nullable().optional(),
+    notes: z.string().max(5000).nullable().optional(),
+    uploadedAt: z.union([z.string(), z.date()]).nullable().optional(),
+    complianceStatus: z.enum(SAFETY_FILE_COMPLIANCE_STATUSES).optional(),
+    rejectedReason: z.string().max(5000).nullable().optional(),
+  })
+  .strict();
+
 /**
- * Check whether the PATCH body includes a compliance_status change and,
- * if so, whether the caller is allowed to make it. Returns null if the
- * update is allowed; otherwise returns a 403 payload the caller should
- * return to the client.
+ * Normalise legacy snake_case → camelCase BEFORE Zod parsing so the schema
+ * has one canonical shape. Returns a fresh object — never mutates the
+ * caller's body.
+ */
+function bridgeLegacyBody(body: unknown): Record<string, unknown> {
+  if (!body || typeof body !== "object") return {};
+  const src = body as Record<string, unknown>;
+  const out: Record<string, unknown> = { ...src };
+  if (out.sharepoint_ref !== undefined && out.sharepointRef === undefined) {
+    out.sharepointRef = out.sharepoint_ref;
+  }
+  delete out.sharepoint_ref;
+  if (out.compliance_status !== undefined && out.complianceStatus === undefined) {
+    out.complianceStatus = out.compliance_status;
+  }
+  delete out.compliance_status;
+  if (out.rejected_reason !== undefined && out.rejectedReason === undefined) {
+    out.rejectedReason = out.rejected_reason;
+  }
+  delete out.rejected_reason;
+  return out;
+}
+
+/**
+ * If the PATCH changes `complianceStatus`, require `hse_compliance:approve`.
+ * Otherwise pass through. Reads use the normalized role from the canonical
+ * permission resolver — handles lens-impersonation and role aliases.
  */
 async function approveGateForSafetyFileStatus(
   req: Request,
   res: Response,
   itemId: number,
 ): Promise<boolean> {
-  if (!("complianceStatus" in req.body) && !("compliance_status" in req.body)) {
-    return true;
-  }
-  const newStatus = (req.body.complianceStatus ?? req.body.compliance_status) as string;
+  if (!("complianceStatus" in req.body)) return true;
+  const newStatus = req.body.complianceStatus as string;
   const [current] = await db
     .select({ status: safetyFileItems.complianceStatus })
     .from(safetyFileItems)
-    .where(eq(safetyFileItems.id, itemId))
+    .where(and(eq(safetyFileItems.id, itemId), isNull(safetyFileItems.deletedAt)))
     .limit(1);
   if (!current) {
     res.status(404).json({ error: "safety_file_item_not_found" });
@@ -54,15 +117,13 @@ async function approveGateForSafetyFileStatus(
   }
   if (current.status === newStatus) return true;
 
-  const role = String((req as any).user?.role ?? "");
-  if (!SAFETY_FILE_APPROVER_ROLES.has(role)) {
+  const approval = await evaluatePermissionForRequest(req, "hse_compliance", "approve");
+  if (!approval.allowed) {
     res.status(403).json({
       error: "forbidden",
-      entity: "safety_file",
+      entity: "hse_compliance",
       action: "approve",
-      reason:
-        "Only HSE Manager, COO, or CEO can change a Safety File item's compliance status.",
-      eligibleRoles: Array.from(SAFETY_FILE_APPROVER_ROLES),
+      reason: "Only HSE Manager, COO, or CEO can change a Safety File item's compliance status.",
       currentStatus: current.status,
       attemptedStatus: newStatus,
     });
@@ -73,149 +134,198 @@ async function approveGateForSafetyFileStatus(
 
 // ===================== LIST + COMPLETENESS =====================
 
-router.get("/api/projects/:projectId/safety-file", requireAuth, async (req: Request, res: Response) => {
-  try {
-    const projectId = Number(req.params.projectId);
-    if (Number.isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
+router.get(
+  "/api/projects/:projectId/safety-file",
+  requireAuth,
+  requirePermission("hse_compliance", "view"),
+  async (req: Request, res: Response) => {
+    try {
+      const projectId = Number(req.params.projectId);
+      if (Number.isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
+      // R1: scoped roles only see Safety Files for their projects.
+      const scope = await getQualityHseScope(req);
+      if (!scopeAllowsProject(scope, projectId)) return res.status(404).json({ error: "project_not_found" });
+      const completeness = await getSafetyFileCompleteness(projectId);
+      res.json(completeness);
+    } catch (err) {
+      console.error("[SafetyFile] Failed to load file:", err);
+      res.status(500).json({ error: "Failed to load safety file" });
+    }
+  },
+);
 
-    const completeness = await getSafetyFileCompleteness(projectId);
-    res.json(completeness);
-  } catch (err) {
-    console.error("[SafetyFile] Failed to load file:", err);
-    res.status(500).json({ error: "Failed to load safety file" });
-  }
-});
-
-// Dashboard query: overdue items across all projects.
-router.get("/api/safety-file/overdue", requireAuth, async (req: Request, res: Response) => {
-  try {
-    const limitRaw = Number(req.query.limit);
-    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 1000) : 500;
-    const items = await getOverdueSafetyFileItems({ limit });
-    res.json({ count: items.length, items });
-  } catch (err) {
-    console.error("[SafetyFile] Failed to load overdue items:", err);
-    res.status(500).json({ error: "Failed to load overdue safety file items" });
-  }
-});
+router.get(
+  "/api/safety-file/overdue",
+  requireAuth,
+  requirePermission("hse_compliance", "view"),
+  async (req: Request, res: Response) => {
+    try {
+      const limitRaw = Number(req.query.limit);
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 1000) : 500;
+      const items = await getOverdueSafetyFileItems({ limit });
+      // R1: filter overdue list down to the caller's project scope.
+      const scope = await getQualityHseScope(req);
+      const scopedIds = scopedProjectIdsArray(scope);
+      const filtered = scopedIds === null ? items : items.filter((it: any) => scopedIds.includes(it.projectId));
+      res.json({ count: filtered.length, items: filtered });
+    } catch (err) {
+      console.error("[SafetyFile] Failed to load overdue items:", err);
+      res.status(500).json({ error: "Failed to load overdue safety file items" });
+    }
+  },
+);
 
 // ===================== CREATE =====================
 
-router.post("/api/projects/:projectId/safety-file/items", requireAuth, async (req: Request, res: Response) => {
-  try {
-    const projectId = Number(req.params.projectId);
-    if (Number.isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
+router.post(
+  "/api/projects/:projectId/safety-file/items",
+  requireAuth,
+  requirePermission("hse_compliance", "create"),
+  async (req: Request, res: Response) => {
+    try {
+      const projectId = Number(req.params.projectId);
+      if (Number.isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
 
-    // Parse body with projectId injected so Zod validation catches bad input.
-    const bodyWithProject = { ...req.body, projectId, createdByUserId: (req as any).user?.id ?? null };
-    const [parsed, validationError] = parseBody(bodyWithProject, insertSafetyFileItemSchema);
-    if (validationError) return res.status(400).json(validationError);
+      const [parsed, validationError] = parseBody(bridgeLegacyBody(req.body), createSafetyFileItemSchema);
+      if (validationError) return res.status(400).json(validationError);
 
-    const [row] = await db.insert(safetyFileItems).values(parsed).returning();
+      // Validate the project exists and isn't soft-deleted — a clean 404
+      // instead of an FK-violation 500 (mirrors NCR create).
+      const [project] = await db
+        .select({ id: projectInfo.id })
+        .from(projectInfo)
+        .where(and(eq(projectInfo.id, projectId), isNull(projectInfo.deletedAt)))
+        .limit(1);
+      if (!project) return res.status(404).json({ error: "project_not_found" });
 
-    logAuditFromReq(req, {
-      entityType: "safety_file_item",
-      entityId: String(row.id),
-      action: "safety_file.item_created",
-      changesJson: {
-        projectId,
-        itemCode: row.itemCode,
-        itemName: row.itemName,
-        category: row.category,
-        dueDate: row.dueDate,
-      },
-    });
+      // R1: scoped roles only create items for their assigned projects.
+      const scope = await getQualityHseScope(req);
+      if (!scopeAllowsProject(scope, projectId)) return res.status(403).json({ error: "project_not_accessible" });
 
-    res.status(201).json(row);
-  } catch (err) {
-    console.error("[SafetyFile] Failed to create item:", err);
-    res.status(500).json({ error: "Failed to create safety file item" });
-  }
-});
+      const createdByUserId = getEffectiveUser(req)?.id ?? null;
+      const [row] = await db
+        .insert(safetyFileItems)
+        .values({ ...parsed, projectId, createdByUserId })
+        .returning();
+
+      logAuditFromReq(req, {
+        entityType: "safety_file_item",
+        entityId: String(row.id),
+        action: "safety_file.item_created",
+        changesJson: {
+          projectId,
+          itemCode: row.itemCode,
+          itemName: row.itemName,
+          category: row.category,
+          dueDate: row.dueDate,
+        },
+      });
+
+      res.status(201).json(row);
+    } catch (err) {
+      console.error("[SafetyFile] Failed to create item:", err);
+      res.status(500).json({ error: "Failed to create safety file item" });
+    }
+  },
+);
 
 // ===================== UPDATE =====================
 
-router.patch("/api/safety-file-items/:id", requireAuth, async (req: Request, res: Response) => {
-  try {
-    const id = Number(req.params.id);
-    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+// Access model B (owner decision): descriptive edits are OPEN to any
+// authenticated user (matches B7's documented "anyone can edit descriptive
+// fields" rule). The Zod whitelist below blocks mass-assignment, and the
+// compliance_status SIGN-OFF is gated by the approve check inside the handler.
+// create / view / delete remain role-restricted (see the other routes).
+router.patch(
+  "/api/safety-file-items/:id",
+  requireAuth,
+  async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
-    // B7: gate compliance_status transitions behind HSE approver roles.
-    const allowed = await approveGateForSafetyFileStatus(req, res, id);
-    if (!allowed) return;
+      const [parsed, validationError] = parseBody(bridgeLegacyBody(req.body), updateSafetyFileItemSchema);
+      if (validationError) return res.status(400).json(validationError);
+      req.body = parsed;
 
-    // Auto-populate approval fields when status moves to approved.
-    const updateData: Record<string, any> = { ...req.body, updatedAt: new Date() };
-    const newStatus = updateData.complianceStatus ?? updateData.compliance_status;
-    const userId = (req as any).user?.id ?? null;
-    if (newStatus === "approved") {
-      updateData.approvedAt = new Date();
-      updateData.approvedByUserId = userId;
-      updateData.rejectedReason = null;
+      // R1: scoped roles only patch items for their assigned projects.
+      const [target] = await db.select({ projectId: safetyFileItems.projectId }).from(safetyFileItems).where(and(eq(safetyFileItems.id, id), isNull(safetyFileItems.deletedAt))).limit(1);
+      if (!target) return res.status(404).json({ error: "safety_file_item_not_found" });
+      const scope = await getQualityHseScope(req);
+      if (!scopeAllowsProject(scope, target.projectId)) return res.status(404).json({ error: "safety_file_item_not_found" });
+
+      const allowed = await approveGateForSafetyFileStatus(req, res, id);
+      if (!allowed) return;
+
+      const userId = getEffectiveUser(req)?.id ?? null;
+      const updateData: Record<string, unknown> = { ...parsed, updatedAt: new Date() };
+      const newStatus = parsed.complianceStatus;
+      if (newStatus === "approved") {
+        updateData.approvedAt = new Date();
+        updateData.approvedByUserId = userId;
+        updateData.rejectedReason = null;
+      }
+      if (newStatus === "rejected") {
+        updateData.approvedAt = null;
+        updateData.approvedByUserId = null;
+      }
+
+      const [row] = await db
+        .update(safetyFileItems)
+        .set(updateData)
+        .where(and(eq(safetyFileItems.id, id), isNull(safetyFileItems.deletedAt)))
+        .returning();
+
+      if (!row) return res.status(404).json({ error: "safety_file_item_not_found" });
+
+      logAuditFromReq(req, {
+        entityType: "safety_file_item",
+        entityId: String(id),
+        action: newStatus ? `safety_file.status_changed.${newStatus}` : "safety_file.item_updated",
+        changesJson: { updates: parsed },
+      });
+
+      res.json(row);
+    } catch (err) {
+      console.error("[SafetyFile] Failed to update item:", err);
+      res.status(500).json({ error: "Failed to update safety file item" });
     }
-    if (newStatus === "rejected") {
-      updateData.approvedAt = null;
-      updateData.approvedByUserId = null;
-    }
-    if (updateData.sharepoint_ref && !updateData.sharepointRef) {
-      updateData.sharepointRef = updateData.sharepoint_ref;
-      delete updateData.sharepoint_ref;
-    }
-    if (updateData.compliance_status && !updateData.complianceStatus) {
-      updateData.complianceStatus = updateData.compliance_status;
-      delete updateData.compliance_status;
-    }
-
-    const [row] = await db
-      .update(safetyFileItems)
-      .set(updateData)
-      .where(eq(safetyFileItems.id, id))
-      .returning();
-
-    if (!row) return res.status(404).json({ error: "safety_file_item_not_found" });
-
-    logAuditFromReq(req, {
-      entityType: "safety_file_item",
-      entityId: String(id),
-      action: newStatus ? `safety_file.status_changed.${newStatus}` : "safety_file.item_updated",
-      changesJson: { updates: req.body },
-    });
-
-    res.json(row);
-  } catch (err) {
-    console.error("[SafetyFile] Failed to update item:", err);
-    res.status(500).json({ error: "Failed to update safety file item" });
-  }
-});
+  },
+);
 
 // ===================== SOFT DELETE =====================
 
-router.delete("/api/safety-file-items/:id", requireAuth, async (req: Request, res: Response) => {
-  try {
-    const id = Number(req.params.id);
-    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+router.delete(
+  "/api/safety-file-items/:id",
+  requireAuth,
+  requirePermission("hse_compliance", "delete"),
+  async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
-    const [row] = await db
-      .update(safetyFileItems)
-      .set({ deletedAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(safetyFileItems.id, id), isNull(safetyFileItems.deletedAt)))
-      .returning();
+      const [row] = await db
+        .update(safetyFileItems)
+        .set({ deletedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(safetyFileItems.id, id), isNull(safetyFileItems.deletedAt)))
+        .returning();
 
-    if (!row) return res.status(404).json({ error: "Safety file item not found" });
+      if (!row) return res.status(404).json({ error: "Safety file item not found" });
 
-    logAuditFromReq(req, {
-      entityType: "safety_file_item",
-      entityId: String(id),
-      action: "safety_file.item_deleted",
-      changesJson: { itemCode: row.itemCode },
-    });
+      logAuditFromReq(req, {
+        entityType: "safety_file_item",
+        entityId: String(id),
+        action: "safety_file.item_deleted",
+        changesJson: { itemCode: row.itemCode },
+      });
 
-    res.json(row);
-  } catch (err) {
-    console.error("[SafetyFile] Failed to delete item:", err);
-    res.status(500).json({ error: "Failed to delete safety file item" });
-  }
-});
+      res.json(row);
+    } catch (err) {
+      console.error("[SafetyFile] Failed to delete item:", err);
+      res.status(500).json({ error: "Failed to delete safety file item" });
+    }
+  },
+);
 
 export function registerSafetyFileRoutes(app: Express) {
   app.use(router);
