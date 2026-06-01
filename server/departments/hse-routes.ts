@@ -91,43 +91,43 @@ const updateCorrectiveActionSchema = z
   })
   .strict();
 
-// Create schemas intentionally OMIT status + verification/attribution fields.
-//   - `status` is not accepted: new records start at the column default
-//     ("open"). Advancing status goes through PATCH, which runs the
-//     approve-permission gate. Accepting status here would let a non-approver
-//     (e.g. CONSTRUCTION_MANAGER, who has hse.create but not hse.approve)
-//     create a record already in a closed/verified state, bypassing the gate.
+// Create schemas intentionally OMIT status + verification/attribution fields,
+// and run in STRIP mode (no `.strict()`) so any such fields a client sends are
+// silently dropped rather than rejected:
+//   - `status` is dropped: new records start at the column default ("open").
+//     Advancing status goes through PATCH, which runs the approve-permission
+//     gate. Accepting status here would let a non-approver (e.g.
+//     CONSTRUCTION_MANAGER, who has create rights but not hse.approve) create a
+//     record already in a closed/verified state, bypassing the gate. (R3)
 //   - `reportedByUserId` is stamped server-side from the session, never the
-//     body — otherwise a caller could spoof who reported an incident.
+//     body — otherwise a caller could spoof who reported an incident. (R2)
 //   - `verifiedByUserId` / `completionDate` are verification-stage fields and
 //     are not settable at creation.
-const createHseIncidentSchema = z
-  .object({
-    projectId: z.number().int().positive(),
-    siteId: z.number().int().positive().nullable().optional(),
-    incidentDate: z.string().min(1),
-    incidentType: z.enum(HSE_INCIDENT_TYPES),
-    severity: z.enum(HSE_SEVERITIES),
-    description: z.string().min(1).max(10_000),
-    location: z.string().max(500).nullable().optional(),
-    rootCause: z.string().max(10_000).nullable().optional(),
-    immediateActions: z.string().max(10_000).nullable().optional(),
-    evidenceLink: z.string().max(2048).nullable().optional(),
-  })
-  .strict();
+// Strip (not strict) so the documented B3 client payloads that include
+// `status: "open"` still succeed — the field is simply ignored.
+const createHseIncidentSchema = z.object({
+  projectId: z.number().int().positive(),
+  siteId: z.number().int().positive().nullable().optional(),
+  incidentDate: z.string().min(1),
+  incidentType: z.enum(HSE_INCIDENT_TYPES),
+  severity: z.enum(HSE_SEVERITIES),
+  description: z.string().min(1).max(10_000),
+  location: z.string().max(500).nullable().optional(),
+  rootCause: z.string().max(10_000).nullable().optional(),
+  immediateActions: z.string().max(10_000).nullable().optional(),
+  evidenceLink: z.string().max(2048).nullable().optional(),
+});
 
-const createCorrectiveActionSchema = z
-  .object({
-    sourceType: z.enum(CORRECTIVE_ACTION_SOURCE_TYPES),
-    sourceId: z.number().int().positive(),
-    projectId: z.number().int().positive().nullable().optional(),
-    title: z.string().min(1).max(500),
-    description: z.string().max(10_000).nullable().optional(),
-    assignedToUserId: z.number().int().positive().nullable().optional(),
-    dueDate: z.string().nullable().optional(),
-    evidenceLink: z.string().max(2048).nullable().optional(),
-  })
-  .strict();
+const createCorrectiveActionSchema = z.object({
+  sourceType: z.enum(CORRECTIVE_ACTION_SOURCE_TYPES),
+  sourceId: z.number().int().positive(),
+  projectId: z.number().int().positive().nullable().optional(),
+  title: z.string().min(1).max(500),
+  description: z.string().max(10_000).nullable().optional(),
+  assignedToUserId: z.number().int().positive().nullable().optional(),
+  dueDate: z.string().nullable().optional(),
+  evidenceLink: z.string().max(2048).nullable().optional(),
+});
 
 // ===================== Status-transition approve gates =====================
 
@@ -249,10 +249,16 @@ router.post(
   },
 );
 
+// B3: descriptive edits are intentionally OPEN to any authenticated user
+// ("anyone can enrich a safety record with context") — § 0A says the app must
+// not block safety reporting. The Zod whitelist below prevents mass-assignment
+// of projectId / reportedByUserId / deletedAt, and STATUS changes are gated by
+// the approve-permission check inside the handler. So "open edit" here is not a
+// privilege hole: identity/scope fields are unsettable and the lifecycle field
+// is gated.
 router.patch(
   "/api/hse/incidents/:id",
   requireAuth,
-  requirePermission("hse_incidents", "edit"),
   async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
@@ -347,10 +353,10 @@ router.post(
   },
 );
 
+// B3: descriptive edits open (see incident PATCH note); status changes gated.
 router.patch(
   "/api/hse/corrective-actions/:id",
   requireAuth,
-  requirePermission("hse", "edit"),
   async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);

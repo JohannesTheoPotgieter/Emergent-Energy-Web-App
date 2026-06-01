@@ -945,24 +945,24 @@ export function registerQualityRoutes(app: Express) {
           .limit(1);
         if (!project) return res.status(404).json({ error: "Project not found" });
 
-        // Idempotency: if a checklist already exists for this project, return it
-        // rather than creating a duplicate. This matches the historic behaviour
-        // a GET previously had, just without the privilege drift.
-        const existing = await db.select().from(qcChecklist).where(eq(qcChecklist.projectId, project.id));
-        if (existing.length > 0) {
-          const checklist = existing.sort((l: any, r: any) => r.id - l.id)[0];
-          return res.status(200).json({ created: false, checklist });
-        }
+        // R9: lock + check-existing + insert all run inside one transaction
+        // guarded by a per-project advisory lock, so two concurrent
+        // "create checklist" clicks can't both pass the existence check and
+        // insert duplicate checklists. The lock auto-releases at tx end.
+        const outcome = await db.transaction(async (tx: NodePgDatabase<typeof schema>) => {
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`qc_checklist:${project.id}`}))`);
 
-        const [activeTemplate] = await db.select().from(qcTemplate).where(eq(qcTemplate.isActive, true));
-        if (!activeTemplate) {
-          return res.status(409).json({
-            error: "no_active_template",
-            message: "No active quality template is configured. Contact admin.",
-          });
-        }
+          const existing = await tx.select().from(qcChecklist).where(eq(qcChecklist.projectId, project.id));
+          if (existing.length > 0) {
+            const checklist = existing.sort((l: any, r: any) => r.id - l.id)[0];
+            return { created: false as const, checklist };
+          }
 
-        const result = await db.transaction(async (tx: NodePgDatabase<typeof schema>) => {
+          const [activeTemplate] = await tx.select().from(qcTemplate).where(eq(qcTemplate.isActive, true));
+          if (!activeTemplate) {
+            return { created: false as const, checklist: null, noTemplate: true as const };
+          }
+
           const [checklist] = await tx.insert(qcChecklist).values({
             projectId: project.id,
             projectName: project.projectName,
@@ -992,18 +992,29 @@ export function registerQualityRoutes(app: Express) {
               riskQuestions.map((rq: QcTemplateRiskQuestionRow) => ({ checklistId: checklist.id, templateRiskQuestionId: rq.id })),
             );
           }
-          return checklist;
+          return { created: true as const, checklist, templateId: activeTemplate.id };
         });
+
+        if ("noTemplate" in outcome && outcome.noTemplate) {
+          return res.status(409).json({
+            error: "no_active_template",
+            message: "No active quality template is configured. Contact admin.",
+          });
+        }
+
+        if (!outcome.created) {
+          return res.status(200).json({ created: false, checklist: outcome.checklist });
+        }
 
         logAuditFromReq(req, {
           entityType: "quality_checklist",
-          entityId: String(result.id),
+          entityId: String(outcome.checklist.id),
           action: "create",
           projectName: project.projectName,
-          changesJson: { description: "Quality checklist created", templateId: activeTemplate.id },
+          changesJson: { description: "Quality checklist created", templateId: outcome.templateId },
         });
 
-        res.status(201).json({ created: true, checklist: result });
+        res.status(201).json({ created: true, checklist: outcome.checklist });
       } catch (err) {
         sendError(res, err);
       }
