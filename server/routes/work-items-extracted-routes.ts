@@ -44,7 +44,7 @@ export function registerWorkItemsExtractedRoutes(app: Express): void {
         .where(and(inArray(workItems.id, cleanIds), isNull(workItems.deletedAt)));
       logAuditFromReq(req, { entityType: "work_item", action: "soft_delete", changesJson: { description: `${cleanIds.length} work item(s) soft-deleted`, ids: cleanIds, deletedBy: userId } });
       res.json({ message: `Deleted ${cleanIds.length} work item(s)`, undoAvailable: true, ids: cleanIds });
-    } catch (error: any) {
+    } catch (error) {
       console.error("[WorkItemsDelete] Error:", error);
       res.status(500).json({ error: "Failed to delete work items" });
     }
@@ -63,7 +63,7 @@ export function registerWorkItemsExtractedRoutes(app: Express): void {
       await db.update(workItems).set({ deletedAt: null }).where(inArray(workItems.id, cleanIds));
       logAuditFromReq(req, { entityType: "work_item", action: "restore", changesJson: { description: `${cleanIds.length} work item(s) restored`, ids: cleanIds } });
       res.json({ message: `Restored ${cleanIds.length} work item(s)` });
-    } catch (error: any) {
+    } catch (error) {
       console.error("[WorkItemsRestore] Error:", error);
       res.status(500).json({ error: "Failed to restore work items" });
     }
@@ -74,7 +74,7 @@ export function registerWorkItemsExtractedRoutes(app: Express): void {
     try {
       const results = await workManagementRepository.listDeletedWorkItems(200);
       res.json(results);
-    } catch (error: any) {
+    } catch (error) {
       console.error("[WorkItemsDeleted] Error:", error);
       res.status(500).json({ error: "Failed to list deleted work items" });
     }
@@ -88,7 +88,7 @@ export function registerWorkItemsExtractedRoutes(app: Express): void {
       if (isNaN(workItemId)) return res.status(400).json({ error: "Invalid work item id" });
       const results = await workManagementRepository.listWorkItemViewers(workItemId);
       res.json(results);
-    } catch (error: any) {
+    } catch (error) {
       console.error("[WorkItemViewers] Error:", error);
       res.status(500).json({ error: "Failed to list viewers" });
     }
@@ -116,7 +116,7 @@ export function registerWorkItemsExtractedRoutes(app: Express): void {
       });
 
       res.json({ success: true, workItemId, viewerUserId });
-    } catch (error: any) {
+    } catch (error) {
       console.error("[WorkItemViewers] Add error:", error);
       res.status(500).json({ error: "Failed to add viewer" });
     }
@@ -138,7 +138,7 @@ export function registerWorkItemsExtractedRoutes(app: Express): void {
       });
 
       res.json({ success: true, workItemId, viewerUserId });
-    } catch (error: any) {
+    } catch (error) {
       console.error("[WorkItemViewers] Remove error:", error);
       res.status(500).json({ error: "Failed to remove viewer" });
     }

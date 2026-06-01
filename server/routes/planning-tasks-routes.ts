@@ -7,7 +7,7 @@ import type { CompanyRole } from "@shared/schema/users";
 import { logAuditFromReq } from "../audit-logger";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
-import { ApiError, sendError, badRequest, notFound, validationError, unauthorized, serverError, forbidden } from "../lib/api-error";
+import { ApiError, sendError, badRequest, notFound, validationError, unauthorized, serverError, forbidden, errMsg } from "../lib/api-error";
 import { validateTaskCreate, validateTaskUpdate } from "../lib/task-validation";
 import { normalizeStatus, normalizePriority } from "../lib/canonical-task-engine";
 import { isWorkItemsEnabled, getAllWorkItemsForPlanTab, hasPlanWorkItemsForProject, toCanonicalStatus } from "../work-items-adapter";
@@ -108,8 +108,8 @@ async function notifyWorkItemWatchers(params: {
         changeDetails: JSON.stringify({ source: "watcher_notification", workItemId: params.workItemId }),
       });
     }
-  } catch (error: any) {
-    console.warn("[watcher-notify] Failed to notify watchers:", error?.message || error);
+  } catch (error) {
+    console.warn("[watcher-notify] Failed to notify watchers:", errMsg(error));
   }
 }
 
@@ -792,7 +792,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       }
 
       res.json({ tasks: result, unlinkedOperationalCount, unlinkedOperationalTasks });
-    } catch (err: any) {
+    } catch (err) {
       console.error("Planning tasks error:", err);
       throw err;
     }
@@ -847,7 +847,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       }
 
       res.json(rollup);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Summary rollup error:", err);
       throw err;
     }
@@ -1197,8 +1197,8 @@ export function registerPlanningTasksRoutes(app: Express) {
             startDate: updates.startDate,
             dueDate: updates.dueDate || updates.endDate,
           });
-        } catch (cascadeErr: any) {
-          console.warn("[planning-tasks] Non-fatal cascade error:", cascadeErr.message);
+        } catch (cascadeErr) {
+          console.warn("[planning-tasks] Non-fatal cascade error:", errMsg(cascadeErr));
         }
 
         await notifyWorkItemWatchers({
@@ -1235,7 +1235,7 @@ export function registerPlanningTasksRoutes(app: Express) {
 
         res.json({ success: true, taskId, workItemId: wi?.id ?? null });
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error("Plan task update error:", err);
       throw err;
     }
@@ -1329,7 +1329,7 @@ export function registerPlanningTasksRoutes(app: Express) {
         eventType: "task_created",
       });
       res.json({ ...task, workItemId: workItem.id, wbsCode: newWbsCode });
-    } catch (err: any) {
+    } catch (err) {
       console.error("Plan task create error:", err);
       sendError(res, err);
     }
@@ -1353,8 +1353,8 @@ export function registerPlanningTasksRoutes(app: Express) {
         try {
           await db.update(workItems).set({ deletedAt: new Date() }).where(inArray(workItems.id, taskIds));
           for (const id of taskIds) results.push({ id, success: true });
-        } catch (e: any) {
-          for (const id of taskIds) results.push({ id, success: false, error: e.message });
+        } catch (e) {
+          for (const id of taskIds) results.push({ id, success: false, error: errMsg(e) });
         }
       } else if (operation === "indent") {
         // Pre-fetch the selected rows once. Sibling lookups stay per-iteration
@@ -1382,8 +1382,8 @@ export function registerPlanningTasksRoutes(app: Express) {
                 results.push({ id, success: false, error: "No task above to indent under" });
               }
             }
-          } catch (e: any) {
-            results.push({ id, success: false, error: e.message });
+          } catch (e) {
+            results.push({ id, success: false, error: errMsg(e) });
           }
         }
       } else if (operation === "outdent") {
@@ -1402,8 +1402,8 @@ export function registerPlanningTasksRoutes(app: Express) {
             } else {
               results.push({ id, success: false, error: "Already at top level" });
             }
-          } catch (e: any) {
-            results.push({ id, success: false, error: e.message });
+          } catch (e) {
+            results.push({ id, success: false, error: errMsg(e) });
           }
         }
       } else if (operation === "moveUp" || operation === "moveDown") {
@@ -1434,8 +1434,8 @@ export function registerPlanningTasksRoutes(app: Express) {
                 results.push({ id, success: false, error: `Cannot move ${operation === "moveUp" ? "up" : "down"}` });
               }
             }
-          } catch (e: any) {
-            results.push({ id, success: false, error: e.message });
+          } catch (e) {
+            results.push({ id, success: false, error: errMsg(e) });
           }
         }
       } else {
@@ -1453,7 +1453,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       });
 
       res.json({ success: true, results });
-    } catch (err: any) {
+    } catch (err) {
       console.error("Bulk plan task error:", err);
       sendError(res, err);
     }
@@ -1509,7 +1509,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       });
 
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err) {
       console.error("Plan task delete error:", err);
       sendError(res, err);
     }
@@ -1524,7 +1524,7 @@ export function registerPlanningTasksRoutes(app: Express) {
     try {
       const mappings = await storage.getKeyDateMappings(decodeURIComponent(paramStr(req, "projectName")));
       res.json(mappings);
-    } catch (err: any) {
+    } catch (err) {
       throw err;
     }
   });
@@ -1534,7 +1534,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       const mapping = await storage.createKeyDateMapping({ ...req.body, createdBy: req.user?.id });
       logAuditFromReq(req, { entityType: "key_date_mapping", entityId: String(mapping.id), action: "create", changesJson: req.body });
       res.json(mapping);
-    } catch (err: any) {
+    } catch (err) {
       throw err;
     }
   });
@@ -1546,7 +1546,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       const updated = await storage.updateKeyDateMapping(id, req.body);
       logAuditFromReq(req, { entityType: "key_date_mapping", entityId: paramStr(req, "id"), action: "update", changesJson: req.body });
       res.json(updated);
-    } catch (err: any) {
+    } catch (err) {
       throw err;
     }
   });
@@ -1558,7 +1558,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       await storage.deleteKeyDateMapping(id);
       logAuditFromReq(req, { entityType: "key_date_mapping", entityId: paramStr(req, "id"), action: "delete" });
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err) {
       throw err;
     }
   });
@@ -1700,7 +1700,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       const [piRow] = await db.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId)).limit(1);
       const pName = piRow?.projectName || "";
       res.json(await resolveKeyDates(projectId, pName));
-    } catch (err: any) {
+    } catch (err) {
       throw err;
     }
   });
@@ -1711,7 +1711,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       const [piRow] = await db.select({ id: projectInfo.id }).from(projectInfo).where(eq(projectInfo.projectName, projectName)).limit(1);
       const projectId = piRow?.id || null;
       res.json(await resolveKeyDates(projectId, projectName));
-    } catch (err: any) {
+    } catch (err) {
       throw err;
     }
   });
