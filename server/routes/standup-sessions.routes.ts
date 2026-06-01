@@ -22,25 +22,19 @@ import { requireRole } from "../middleware/requireRole";
 import { validateBody } from "../middleware/validateBody";
 import { ApiError, serverError } from "../lib/api-error";
 import { getEffectiveUser } from "../auth-context";
-import { COMPANY_ROLES } from "@shared/schema/users";
+import { ENTITY_PERMISSION_DEFAULTS } from "@shared/schema/users";
 import {
   createStandupSession,
   listRecentStandupSessions,
 } from "../repositories/standup-sessions-repository";
 
-// Standup is facilitated by engineering / quality leadership and execs.
-// Selected from the canonical role list rather than hardcoded literals.
-const STANDUP_FACILITATOR_ROLE_NAMES = [
-  "COO_ADMIN",
-  "CEO_ADMIN",
-  "ENGINEERING_MANAGER",
-  "ENGINEER",
-  "QUALITY_MANAGER",
-] as const;
-
-const STANDUP_FACILITATOR_ROLES = COMPANY_ROLES.filter((r) =>
-  (STANDUP_FACILITATOR_ROLE_NAMES as readonly string[]).includes(r),
-);
+// Who may facilitate (create/persist) a standup session is derived directly
+// from the canonical registry's `standups.edit_roles` — never a hand-kept
+// literal that can drift. Previously this was a hardcoded 5-role list that
+// (a) included plain ENGINEER (registry: view-only) and (b) omitted
+// PROGRAM_MANAGER / CONSTRUCTION_MANAGER who the registry grants edit.
+const STANDUP_FACILITATOR_ROLES =
+  ENTITY_PERMISSION_DEFAULTS.find((r) => r.entity === "standups")?.edit_roles ?? [];
 
 const taskMovementSchema = z.object({
   taskId: z.number().int(),
@@ -70,6 +64,34 @@ const createStandupSessionSchema = z.object({
   taskMovements: z.array(taskMovementSchema).max(1000),
   moodCounts: z.record(z.string(), z.number().int().nonnegative()),
   facilitatorNotes: z.array(facilitatorNoteSchema).max(500),
+}).superRefine((s, ctx) => {
+  // The counts are computed client-side; reject combinations that cannot
+  // reconcile so a buggy/forged client can't persist incoherent history
+  // (e.g. participantCount:0, completedCount:9999).
+  if (s.completedCount + s.skippedCount > s.participantCount) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["completedCount"],
+      message: "completedCount + skippedCount cannot exceed participantCount",
+    });
+  }
+  if (s.blockerCount > s.participantCount) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["blockerCount"],
+      message: "blockerCount cannot exceed participantCount",
+    });
+  }
+  // avg * completed should be in the neighbourhood of totalSeconds — allow
+  // generous slack (rounding + facilitator pauses) but reject impossibilities
+  // like a positive average across completed speakers with zero elapsed time.
+  if (s.completedCount > 0 && s.avgSecondsPerSpeaker > 0 && s.totalSeconds === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["totalSeconds"],
+      message: "totalSeconds cannot be 0 when speakers completed with a positive average",
+    });
+  }
 });
 
 type CreateStandupSessionBody = z.infer<typeof createStandupSessionSchema>;
