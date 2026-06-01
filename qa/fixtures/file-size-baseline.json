@@ -2,7 +2,7 @@
   "_documentation": "EE-QA-015 baseline — files above the FILE_SIZE_THRESHOLD LOC. The CI guard `qa/tests/unit/file-size-ratchet.test.ts` fails if any of these grow OR a NEW file lands over the threshold. To regenerate after a split, run `npx tsx scripts/build-file-size-baseline.ts` and commit the new JSON.",
   "threshold": 1500,
   "buffer": 50,
-  "generated": "2026-05-29",
+  "generated": "2026-06-01",
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
@@ -33,16 +33,16 @@
       "loc": 3556
     },
     {
+      "file": "server/quality-routes.ts",
+      "loc": 3245
+    },
+    {
       "file": "client/src/components/tabs/UnifiedPlanTab.tsx",
       "loc": 3074
     },
     {
       "file": "client/src/pages/cashflow.tsx",
       "loc": 2971
-    },
-    {
-      "file": "server/quality-routes.ts",
-      "loc": 2948
     },
     {
       "file": "client/src/pages/projects.tsx",
@@ -94,7 +94,7 @@
     },
     {
       "file": "client/src/components/tabs/QualityTab.tsx",
-      "loc": 2161
+      "loc": 2164
     },
     {
       "file": "server/departments/opportunities-routes.ts",
@@ -138,7 +138,7 @@
     },
     {
       "file": "client/src/pages/project-detail.tsx",
-      "loc": 1779
+      "loc": 1786
     },
     {
       "file": "server/routes/planning-tasks-routes.ts",
@@ -210,7 +210,7 @@
     },
     {
       "file": "server/routes/finance-legacy-extracted-routes.ts",
-      "loc": 1551
+      "loc": 1552
     },
     {
       "file": "shared/permissions/registry.ts",
