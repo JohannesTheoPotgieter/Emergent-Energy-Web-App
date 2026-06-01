@@ -110,10 +110,17 @@ app.post("/api/admin/stage-definitions/reorder", jwtAuth, requireAuth, requirePe
       if (!row || !Number.isFinite(Number(row.id)) || !Number.isFinite(Number(row.stageSequence))) {
         return res.status(400).json({ error: "order rows must include numeric id and stageSequence" });
       }
-      await db.update(schema.stageDefinitions)
-        .set({ stageSequence: Number(row.stageSequence), updatedAt: new Date() })
-        .where(eq(schema.stageDefinitions.id, Number(row.id)));
     }
+    // Atomic reorder: all rows move together or none do, so an interrupted
+    // request can never leave the user looking at a half-reordered list.
+    await db.transaction(async (tx: typeof db) => {
+      const now = new Date();
+      for (const row of order) {
+        await tx.update(schema.stageDefinitions)
+          .set({ stageSequence: Number(row.stageSequence), updatedAt: now })
+          .where(eq(schema.stageDefinitions.id, Number(row.id)));
+      }
+    });
     res.json({ success: true });
   } catch (err: any) {
     console.error("Stage definition reorder error:", err);

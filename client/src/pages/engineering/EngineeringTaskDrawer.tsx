@@ -65,9 +65,13 @@ import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
 import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
 import { engFetch } from "@/lib/eng-fetch";
 import { TaskDependenciesPanel } from "./panels/TaskDependenciesPanel";
+import { SendDeliverableDialog, type LocalSyncedSaveResult } from "./dialogs/SendDeliverableDialog";
+import { SendForApprovalDialog } from "./dialogs/SendForApprovalDialog";
+import { CommentInputWithMentions } from "./dialogs/CommentInputWithMentions";
+import { SubtaskQuickAdd } from "./dialogs/SubtaskQuickAdd";
 import { DocumentControlBadge } from "@/components/engineering/DocumentControlBadge";
 import { PHASE_COLORS } from "@/lib/phase-colors";
-import { invalidateAllTaskCaches } from "@/lib/task-cache";
+import { invalidateEngineeringTicketCaches } from "@/lib/task-cache";
 import { canonicalizeTaskStatus } from "@/lib/task-status-compat";
 import {
   TASK_PRIORITY_LABELS,
@@ -119,15 +123,15 @@ export function PostUpdateForm({ taskId, currentStatus, hasProject, onDone }: { 
           body: JSON.stringify(patch),
         });
       }
-      invalidateAllTaskCaches(queryClient);
+      invalidateEngineeringTicketCaches(queryClient);
       queryClient.invalidateQueries({ queryKey: ["task-comments", taskId] });
       queryClient.invalidateQueries({ queryKey: ["task-activity", taskId] });
       setUpdateText("");
       setHoldReason("");
       toast({ title: "Update posted" });
       onDone();
-    } catch (e: any) {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } catch (e) {
+      toast({ title: "Error", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
     } finally {
       setSubmitting(false);
     }
@@ -206,42 +210,26 @@ export function TaskDetailDrawer({
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [commentText, setCommentText] = useState("");
+  // Comment text + mentions popover state lives inside CommentInputWithMentions.
   const [activeTab, setActiveTab] = useState<"updates" | "activity" | "subtasks" | "dependencies">("updates");
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
   const [approvalComment, setApprovalComment] = useState("");
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [showApprovalActions, setShowApprovalActions] = useState(false);
+  // Send-for-Approval state lives inside SendForApprovalDialog.
   const [showSendForApproval, setShowSendForApproval] = useState(false);
-  const [sendApprovalNote, setSendApprovalNote] = useState("");
-  const [sendApprovalFile, setSendApprovalFile] = useState<File | null>(null);
-  const [sendingForApproval, setSendingForApproval] = useState(false);
+  // Send-Deliverable state lives inside SendDeliverableDialog so it only
+  // exists while the dialog is mounted. Drawer keeps the visibility flag.
   const [showSendDeliverable, setShowSendDeliverable] = useState(false);
-  const [deliverableFile, setDeliverableFile] = useState<File | null>(null);
-  const [deliverableRecipient, setDeliverableRecipient] = useState("");
-  const [deliverableNote, setDeliverableNote] = useState("");
-  const [sendingDeliverable, setSendingDeliverable] = useState(false);
-  const [recipientSuggestion, setRecipientSuggestion] = useState("");
-  const [recipientOverrideReason, setRecipientOverrideReason] = useState("");
-  const [linkedProjectSuggestion, setLinkedProjectSuggestion] = useState("");
-  const [linkedProjectFinal, setLinkedProjectFinal] = useState("");
-  const [linkedProjectOverrideReason, setLinkedProjectOverrideReason] = useState("");
-  const [approvalProjectSuggestion, setApprovalProjectSuggestion] = useState("");
-  const [approvalProjectFinal, setApprovalProjectFinal] = useState("");
-  const [approvalProjectOverrideReason, setApprovalProjectOverrideReason] = useState("");
-  const [approvalRouteSuggestion, setApprovalRouteSuggestion] = useState("");
-  const [approvalRouteFinal, setApprovalRouteFinal] = useState("");
-  const [approvalRouteOverrideReason, setApprovalRouteOverrideReason] = useState("");
+  // Approval project/route suggestion state lives inside SendForApprovalDialog.
   const [drawerHoldDialog, setDrawerHoldDialog] = useState(false);
   const [drawerHoldReason, setDrawerHoldReason] = useState("");
   const [drawerBlockedType, setDrawerBlockedType] = useState("");
   // X6: replace window.confirm with the shared ConfirmDialog so the
   // high-severity completion guard matches every other confirm in the app.
   const [drawerCompletionConfirm, setDrawerCompletionConfirm] = useState(false);
-  const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
-  const [showMentions, setShowMentions] = useState(false);
-  const [mentionQuery, setMentionQuery] = useState("");
+  // Subtask quick-add title state lives inside SubtaskQuickAdd.
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [mappedPathDraft, setMappedPathDraft] = useState("");
   const [fallbackDraft, setFallbackDraft] = useState<"download" | "clipboard">("download");
@@ -308,27 +296,9 @@ export function TaskDetailDrawer({
     };
   }, [task.projectName, drawerProjects]);
 
-  useEffect(() => {
-    if (!showSendDeliverable) return;
-    const suggestedRecipient = task.ownerUserId ? String(task.ownerUserId) : "";
-    setRecipientSuggestion(suggestedRecipient);
-    if (!deliverableRecipient && suggestedRecipient) {
-      setDeliverableRecipient(suggestedRecipient);
-    }
-    const projectSuggestion = task.projectName || "";
-    setLinkedProjectSuggestion(projectSuggestion);
-    if (!linkedProjectFinal) setLinkedProjectFinal(projectSuggestion);
-  }, [showSendDeliverable, task.id]);
+  // Bootstrap for the send-deliverable dialog moved into SendDeliverableDialog.
 
-  useEffect(() => {
-    if (!showSendForApproval) return;
-    const projectSuggestion = task.projectName || "";
-    setApprovalProjectSuggestion(projectSuggestion);
-    if (!approvalProjectFinal) setApprovalProjectFinal(projectSuggestion);
-    const routeSuggestion = task.ownerUserId ? String(task.ownerUserId) : "owner";
-    setApprovalRouteSuggestion(routeSuggestion);
-    if (!approvalRouteFinal) setApprovalRouteFinal(routeSuggestion);
-  }, [showSendForApproval, task.id]);
+  // Bootstrap for the send-for-approval dialog moved into SendForApprovalDialog.
 
 
   useEffect(() => {
@@ -350,7 +320,7 @@ export function TaskDetailDrawer({
     mutationFn: (updates: Record<string, any>) =>
       engFetch(`/api/eng/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify(updates) }),
     onSuccess: () => {
-      invalidateAllTaskCaches(queryClient);
+      invalidateEngineeringTicketCaches(queryClient);
       queryClient.invalidateQueries({ queryKey: ["task-activity", task.id] });
       onUpdate();
       toast({ title: "Task updated" });
@@ -364,7 +334,7 @@ export function TaskDetailDrawer({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["task-comments", task.id] });
       queryClient.invalidateQueries({ queryKey: ["task-activity", task.id] });
-      setCommentText("");
+      // Input clears its own text after submit (state lives inside the child).
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -373,7 +343,7 @@ export function TaskDetailDrawer({
     mutationFn: () =>
       engFetch(`/api/eng/tasks/${task.id}`, { method: "DELETE" }),
     onSuccess: () => {
-      invalidateAllTaskCaches(queryClient);
+      invalidateEngineeringTicketCaches(queryClient);
       onClose();
       onUpdate();
       toast({ title: "Task deleted" });
@@ -381,25 +351,24 @@ export function TaskDetailDrawer({
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const runLocalSyncedSaveAttempt = async (file: File | null, suggestedName: string) => {
+  const runLocalSyncedSaveAttempt = async (file: File | null, suggestedName: string): Promise<LocalSyncedSaveResult | null> => {
     if (!localSyncedSaveEnabled) return null;
     if (!file) {
       return { supported: false, status: "failed", error: "No file available for local save." };
     }
-    const pickerSupported = typeof window !== "undefined" && "showSaveFilePicker" in window;
-    if (!pickerSupported) {
+    const picker = typeof window !== "undefined" ? window.showSaveFilePicker : undefined;
+    if (!picker) {
       return { supported: false, status: "failed", error: "showSaveFilePicker is unavailable in this runtime." };
     }
     try {
-      // @ts-ignore
-      const handle = await window.showSaveFilePicker({ suggestedName });
+      const handle = await picker({ suggestedName });
       const writable = await handle.createWritable();
       await writable.write(await file.arrayBuffer());
       await writable.close();
       const targetPath = `${localSyncedConfig?.mappedPath || "mapped_path"}/${suggestedName}`;
       return { supported: true, status: "succeeded", targetPath };
-    } catch (err: any) {
-      return { supported: true, status: "failed", error: err?.message || "Local save cancelled or failed." };
+    } catch (err) {
+      return { supported: true, status: "failed", error: err instanceof Error ? err.message : "Local save cancelled or failed." };
     }
   };
 
@@ -518,7 +487,7 @@ export function TaskDetailDrawer({
               currentStatus={task.status}
               hasProject={!!task.projectName}
               onDone={() => {
-                invalidateAllTaskCaches(queryClient);
+                invalidateEngineeringTicketCaches(queryClient);
                 onUpdate();
               }}
             />
@@ -895,137 +864,15 @@ export function TaskDetailDrawer({
                     <Send className="h-3.5 w-3.5" /> Submit for QC Review
                   </Button>
 
-                  <Dialog open={showSendForApproval} onOpenChange={(open) => {
-                    setShowSendForApproval(open);
-                    if (!open) { setSendApprovalNote(""); setSendApprovalFile(null); }
-                  }}>
-                    <DialogContent className="max-w-md">
-                      <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-base">
-                          <Send className="h-4 w-4 text-amber-600" /> Submit for QC Review
-                        </DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-4 pt-2">
-                        <div className="space-y-1.5">
-                          <Label className="text-xs font-medium">Attachment (optional)</Label>
-                          <div
-                            className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer hover:border-amber-400 hover:bg-amber-50/30 ${sendApprovalFile ? "border-amber-400 bg-amber-50/20" : "border-muted"}`}
-                            onClick={() => {
-                              const input = document.createElement("input");
-                              input.type = "file";
-                              input.onchange = (e) => {
-                                const file = (e.target as HTMLInputElement).files?.[0];
-                                if (file) setSendApprovalFile(file);
-                              };
-                              input.click();
-                            }}
-                            data-testid="dropzone-approval-file"
-                          >
-                            {sendApprovalFile ? (
-                              <div className="flex items-center justify-center gap-2 text-sm">
-                                <CheckCircle2 className="h-4 w-4 text-amber-600" />
-                                <span className="truncate max-w-[200px]">{sendApprovalFile.name}</span>
-                                <button onClick={(e) => { e.stopPropagation(); setSendApprovalFile(null); }} className="text-muted-foreground hover:text-red-500">
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="text-xs text-muted-foreground">
-                                Click to upload a deliverable file
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        {localSyncedSaveEnabled && (
-                          <div className="rounded-md border p-2 text-[11px] text-muted-foreground space-y-1">
-                            <div>Local synced save mapping: <span className="font-medium">{localSyncedConfig?.mappedPath || "Not configured"}</span></div>
-                            {!localSyncedConfig?.mappedPath && <div className="text-amber-700">Fallback will be used; local synced save cannot be confirmed.</div>}
-                          </div>
-                        )}
-                        <div className="space-y-1.5">
-                          <Label className="text-xs font-medium">Suggested project</Label>
-                          <Input value={approvalProjectFinal} onChange={(e) => setApprovalProjectFinal(e.target.value)} className="h-8 text-xs" />
-                          {approvalProjectSuggestion && approvalProjectSuggestion !== approvalProjectFinal && (
-                            <Input value={approvalProjectOverrideReason} onChange={(e) => setApprovalProjectOverrideReason(e.target.value)} placeholder="Reason for overriding suggested project (required)" className="h-8 text-xs border-amber-300" />
-                          )}
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label className="text-xs font-medium">Suggested approval route</Label>
-                          <Input value={approvalRouteFinal} onChange={(e) => setApprovalRouteFinal(e.target.value)} className="h-8 text-xs" />
-                          {approvalRouteSuggestion && approvalRouteSuggestion !== approvalRouteFinal && (
-                            <Input value={approvalRouteOverrideReason} onChange={(e) => setApprovalRouteOverrideReason(e.target.value)} placeholder="Reason for overriding suggested route (required)" className="h-8 text-xs border-amber-300" />
-                          )}
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label className="text-xs font-medium">Note (optional)</Label>
-                          <Textarea
-                            value={sendApprovalNote}
-                            onChange={(e) => setSendApprovalNote(e.target.value)}
-                            placeholder="Add context for the reviewer..."
-                            className="min-h-[60px] text-sm"
-                            data-testid="textarea-send-approval-note"
-                          />
-                        </div>
-                        <div className="flex gap-2 pt-2">
-                          <Button
-                            className="flex-1 h-9 text-sm bg-amber-600 hover:bg-amber-700 gap-1.5"
-                            disabled={sendingForApproval || !!(approvalProjectSuggestion && approvalProjectFinal && approvalProjectSuggestion !== approvalProjectFinal && !approvalProjectOverrideReason.trim()) || !!(approvalRouteSuggestion && approvalRouteFinal && approvalRouteSuggestion !== approvalRouteFinal && !approvalRouteOverrideReason.trim())}
-                            onClick={async () => {
-                              setSendingForApproval(true);
-                              try {
-                                const formData = new FormData();
-                                formData.append("note", sendApprovalNote);
-                                if (sendApprovalFile) formData.append("file", sendApprovalFile);
-                                formData.append("projectSuggestion", approvalProjectSuggestion || "");
-                                formData.append("projectFinal", approvalProjectFinal || "");
-                                formData.append("projectOverrideReason", approvalProjectOverrideReason || "");
-                                formData.append("routeSuggestion", approvalRouteSuggestion || "");
-                                formData.append("routeFinal", approvalRouteFinal || "");
-                                formData.append("routeOverrideReason", approvalRouteOverrideReason || "");
-
-                                const localSave = await runLocalSyncedSaveAttempt(sendApprovalFile, sendApprovalFile?.name || `task_${task.id}_approval.txt`);
-                                if (localSave) {
-                                  formData.append("localSave", JSON.stringify(localSave));
-                                }
-
-                                const token = localStorage.getItem("auth_token");
-                                const res = await fetch(`/api/eng/tasks/${task.id}/send-for-approval`, {
-                                  method: "POST",
-                                  headers: token ? { Authorization: `Bearer ${token}` } : {},
-                                  body: formData,
-                                  credentials: "include",
-                                });
-                                if (!res.ok) {
-                                  const err = await res.json().catch(() => ({ error: "Failed" }));
-                                  throw new Error(err.error);
-                                }
-                                const payload = await res.json();
-                                const canonicalSaved = payload?.sendResult?.canonicalSystemRecord?.saved ? "Yes" : "No";
-                                const localSaved = payload?.sendResult?.localSyncedPath?.saved ? "Yes" : "No";
-                                toast({ title: "Sent for approval", description: `Saved to system: ${canonicalSaved} • Saved to local synced path: ${localSaved}` });
-                                setShowSendForApproval(false);
-                                setSendApprovalNote(""); setSendApprovalFile(null);
-                                onUpdate();
-                                queryClient.invalidateQueries({ queryKey: ["task-comments", task.id] });
-                                queryClient.invalidateQueries({ queryKey: ["task-activity", task.id] });
-                              } catch (err: any) {
-                                toast({ title: "Error", description: err.message, variant: "destructive" });
-                              } finally {
-                                setSendingForApproval(false);
-                              }
-                            }}
-                            data-testid="btn-confirm-send-approval"
-                          >
-                            {sendingForApproval ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                            {sendingForApproval ? "Submitting..." : "Submit for QC Review"}
-                          </Button>
-                          <Button variant="outline" className="h-9 text-sm" onClick={() => setShowSendForApproval(false)}>
-                            Cancel
-                          </Button>
-                        </div>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
+                  <SendForApprovalDialog
+                    task={task}
+                    localSyncedSaveEnabled={localSyncedSaveEnabled}
+                    localSyncedConfig={localSyncedConfig ? { mappedPath: localSyncedConfig.mappedPath } : undefined}
+                    runLocalSyncedSaveAttempt={runLocalSyncedSaveAttempt}
+                    onUpdate={onUpdate}
+                    open={showSendForApproval}
+                    onClose={() => setShowSendForApproval(false)}
+                  />
                 </>
               )}
                   </>
@@ -1127,8 +974,8 @@ export function TaskDetailDrawer({
                                   queryClient.invalidateQueries({ queryKey: ["task-deliverables", task.id] });
                                   queryClient.invalidateQueries({ queryKey: ["task-comments", task.id] });
                                   queryClient.invalidateQueries({ queryKey: ["task-activity", task.id] });
-                                } catch (err: any) {
-                                  toast({ title: "Error", description: err.message, variant: "destructive" });
+                                } catch (err) {
+                                  toast({ title: "Error", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
                                 }
                               }}
                               data-testid={`btn-acknowledge-${del.id}`}
@@ -1154,148 +1001,16 @@ export function TaskDetailDrawer({
                 </div>
               )}
 
-              <Dialog open={showSendDeliverable} onOpenChange={(open) => {
-                setShowSendDeliverable(open);
-                if (!open) { setDeliverableFile(null); setDeliverableRecipient(""); setDeliverableNote(""); }
-              }}>
-                <DialogContent className="max-w-md">
-                  <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2 text-base">
-                      <Send className="h-4 w-4 text-blue-600" /> Send Document
-                    </DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4 pt-2">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-medium">Recipient <span className="text-red-500">*</span></Label>
-                      <SearchableSelect
-                        value={deliverableRecipient}
-                        onValueChange={setDeliverableRecipient}
-                        placeholder="Select recipient..."
-                        triggerClassName="h-9 text-sm"
-                        options={teamMembers.filter(m => m.id !== user?.id).map(m => ({
-                          value: String(m.id),
-                          label: m.fullName,
-                        }))}
-                        data-testid="select-deliverable-recipient"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-medium">File <span className="text-red-500">*</span></Label>
-                      <div
-                        className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer hover:border-blue-400 hover:bg-blue-50/30 ${deliverableFile ? "border-blue-400 bg-blue-50/20" : "border-muted"}`}
-                        onClick={() => {
-                          const input = document.createElement("input");
-                          input.type = "file";
-                          input.onchange = (e) => {
-                            const file = (e.target as HTMLInputElement).files?.[0];
-                            if (file) setDeliverableFile(file);
-                          };
-                          input.click();
-                        }}
-                        data-testid="dropzone-deliverable-file"
-                      >
-                        {deliverableFile ? (
-                          <div className="flex items-center justify-center gap-2 text-sm">
-                            <CheckCircle2 className="h-4 w-4 text-blue-600" />
-                            <span className="truncate max-w-[200px]">{deliverableFile.name}</span>
-                            <button onClick={(e) => { e.stopPropagation(); setDeliverableFile(null); }} className="text-muted-foreground hover:text-red-500">
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="text-xs text-muted-foreground">Click to attach a deliverable file</div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-medium">Recipient suggestion</Label>
-                      <div className="text-[11px] text-muted-foreground">Suggested: {recipientSuggestion || "None"}</div>
-                      {recipientSuggestion && deliverableRecipient && recipientSuggestion !== deliverableRecipient && (
-                        <Input value={recipientOverrideReason} onChange={(e) => setRecipientOverrideReason(e.target.value)} placeholder="Reason for overriding suggested recipient (required)" className="h-8 text-xs border-amber-300" />
-                      )}
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-medium">Linked project</Label>
-                      <Input value={linkedProjectFinal} onChange={(e) => setLinkedProjectFinal(e.target.value)} className="h-8 text-xs" />
-                      {linkedProjectSuggestion && linkedProjectSuggestion !== linkedProjectFinal && (
-                        <Input value={linkedProjectOverrideReason} onChange={(e) => setLinkedProjectOverrideReason(e.target.value)} placeholder="Reason for overriding suggested linked project (required)" className="h-8 text-xs border-amber-300" />
-                      )}
-                    </div>
-                    {localSyncedSaveEnabled && (
-                      <div className="rounded-md border p-2 text-[11px] text-muted-foreground space-y-1">
-                        <div>Local synced save mapping: <span className="font-medium">{localSyncedConfig?.mappedPath || "Not configured"}</span></div>
-                        {!localSyncedConfig?.mappedPath && <div className="text-amber-700">Fallback will be used; local synced save cannot be confirmed.</div>}
-                      </div>
-                    )}
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-medium">Note (optional)</Label>
-                      <Textarea
-                        value={deliverableNote}
-                        onChange={(e) => setDeliverableNote(e.target.value)}
-                        placeholder="Add context for the recipient..."
-                        className="min-h-[60px] text-sm"
-                        data-testid="textarea-deliverable-note"
-                      />
-                    </div>
-                    <div className="flex gap-2 pt-2">
-                      <Button
-                        className="flex-1 h-9 text-sm bg-blue-600 hover:bg-blue-700 gap-1.5"
-                        disabled={!deliverableRecipient || !deliverableFile || sendingDeliverable || !!(recipientSuggestion && deliverableRecipient && recipientSuggestion !== deliverableRecipient && !recipientOverrideReason.trim()) || !!(linkedProjectSuggestion && linkedProjectFinal && linkedProjectSuggestion !== linkedProjectFinal && !linkedProjectOverrideReason.trim())}
-                        onClick={async () => {
-                          setSendingDeliverable(true);
-                          try {
-                            const formData = new FormData();
-                            formData.append("recipientUserId", deliverableRecipient);
-                            formData.append("note", deliverableNote);
-                            if (deliverableFile) formData.append("file", deliverableFile);
-                            formData.append("recipientSuggestion", recipientSuggestion || "");
-                            formData.append("recipientFinal", deliverableRecipient || "");
-                            formData.append("recipientOverrideReason", recipientOverrideReason || "");
-                            formData.append("linkedProjectSuggestion", linkedProjectSuggestion || "");
-                            formData.append("linkedProjectFinal", linkedProjectFinal || "");
-                            formData.append("linkedProjectOverrideReason", linkedProjectOverrideReason || "");
-
-                            const localSave = await runLocalSyncedSaveAttempt(deliverableFile, deliverableFile?.name || `task_${task.id}_deliverable.bin`);
-                            if (localSave) {
-                              formData.append("localSave", JSON.stringify(localSave));
-                            }
-
-                            const token = localStorage.getItem("auth_token");
-                            const res = await fetch(`/api/eng/tasks/${task.id}/send-deliverable`, {
-                              method: "POST",
-                              headers: token ? { Authorization: `Bearer ${token}` } : {},
-                              body: formData,
-                              credentials: "include",
-                            });
-                            if (!res.ok) {
-                              const err = await res.json().catch(() => ({ error: "Failed" }));
-                              throw new Error(err.error);
-                            }
-                            const payload = await res.json();
-                            const canonicalSaved = payload?.sendResult?.canonicalSystemRecord?.saved ? "Yes" : "No";
-                            const localSaved = payload?.sendResult?.localSyncedPath?.saved ? "Yes" : "No";
-                            toast({ title: "Deliverable sent", description: `Saved to system: ${canonicalSaved} • Saved to local synced path: ${localSaved}` });
-                            setShowSendDeliverable(false);
-                            setDeliverableFile(null); setDeliverableRecipient(""); setDeliverableNote("");
-                            queryClient.invalidateQueries({ queryKey: ["task-deliverables", task.id] });
-                            queryClient.invalidateQueries({ queryKey: ["task-comments", task.id] });
-                            queryClient.invalidateQueries({ queryKey: ["task-activity", task.id] });
-                          } catch (err: any) {
-                            toast({ title: "Error", description: err.message, variant: "destructive" });
-                          } finally {
-                            setSendingDeliverable(false);
-                          }
-                        }}
-                        data-testid="btn-confirm-send-deliverable"
-                      >
-                        {sendingDeliverable ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                        {sendingDeliverable ? "Sending..." : "Send Document"}
-                      </Button>
-                      <Button variant="outline" className="h-9 text-sm" onClick={() => setShowSendDeliverable(false)}>Cancel</Button>
-                    </div>
-                  </div>
-                </DialogContent>
-              </Dialog>
+              <SendDeliverableDialog
+                task={task}
+                currentUserId={user?.id}
+                teamMembers={teamMembers}
+                localSyncedSaveEnabled={localSyncedSaveEnabled}
+                localSyncedConfig={localSyncedConfig ? { mappedPath: localSyncedConfig.mappedPath } : undefined}
+                runLocalSyncedSaveAttempt={runLocalSyncedSaveAttempt}
+                open={showSendDeliverable}
+                onClose={() => setShowSendDeliverable(false)}
+              />
             </div>
 
             {task.holdReason && (
@@ -1375,72 +1090,11 @@ export function TaskDetailDrawer({
 
             {activeTab === "updates" && (
               <div className="space-y-3">
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Input
-                      value={commentText}
-                      onChange={(e) => {
-                        setCommentText(e.target.value);
-                        const val = e.target.value;
-                        const atIdx = val.lastIndexOf("@");
-                        if (atIdx >= 0 && atIdx === val.length - 1) {
-                          setMentionQuery("");
-                          setShowMentions(true);
-                        } else if (atIdx >= 0 && !val.substring(atIdx).includes(" ")) {
-                          setMentionQuery(val.substring(atIdx + 1).toLowerCase());
-                          setShowMentions(true);
-                        } else {
-                          setShowMentions(false);
-                        }
-                      }}
-                      placeholder="Add a comment... use @ to mention"
-                      className="text-sm"
-                      onKeyDown={(e) => {
-                        if (e.key === "Escape" && showMentions) { setShowMentions(false); e.stopPropagation(); return; }
-                        if (e.key === "Enter" && !e.shiftKey && commentText.trim() && !showMentions) {
-                          addCommentMutation.mutate(commentText.trim());
-                        }
-                      }}
-                      data-testid="input-comment"
-                    />
-                    {showMentions && (
-                      <div className="absolute bottom-full left-0 w-full mb-1 bg-white border rounded-md shadow-lg z-50 max-h-[150px] overflow-y-auto">
-                        {teamMembers
-                          .filter(m => !mentionQuery || m.fullName.toLowerCase().includes(mentionQuery))
-                          .slice(0, 6)
-                          .map(m => (
-                            <button
-                              key={m.id}
-                              className="w-full text-left px-3 py-1.5 text-xs hover:bg-blue-50 flex items-center gap-2"
-                              onClick={() => {
-                                const atIdx = commentText.lastIndexOf("@");
-                                setCommentText(commentText.substring(0, atIdx) + `@${m.fullName} `);
-                                setShowMentions(false);
-                              }}
-                            >
-                              <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white ${getAvatarColor(m.fullName)}`}>
-                                {getInitials(m.fullName)}
-                              </div>
-                              <span className="font-medium">{m.fullName}</span>
-                              <span className="text-muted-foreground ml-auto">{m.role}</span>
-                            </button>
-                          ))}
-                        {teamMembers.filter(m => !mentionQuery || m.fullName.toLowerCase().includes(mentionQuery)).length === 0 && (
-                          <p className="text-xs text-muted-foreground p-2 text-center">No matches</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <Button
-                    size="icon"
-                    className="h-9 w-9 shrink-0"
-                    disabled={!commentText.trim() || addCommentMutation.isPending}
-                    onClick={() => commentText.trim() && addCommentMutation.mutate(commentText.trim())}
-                    data-testid="btn-send-comment"
-                  >
-                    <Send className="h-4 w-4" />
-                  </Button>
-                </div>
+                <CommentInputWithMentions
+                  teamMembers={teamMembers}
+                  submitting={addCommentMutation.isPending}
+                  onSubmit={(body) => addCommentMutation.mutate(body)}
+                />
                 {comments.length === 0 ? (
                   <p className="text-xs text-muted-foreground text-center py-4">No updates yet - post the first one above!</p>
                 ) : (
@@ -1491,35 +1145,7 @@ export function TaskDetailDrawer({
 
             {activeTab === "subtasks" && (
               <div className="space-y-2">
-                <form
-                  className="flex gap-2"
-                  data-testid="subtask-create-form"
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    const title = newSubtaskTitle.trim();
-                    if (!title) return;
-                    try {
-                      await engFetch(`/api/eng/tasks/${task.id}/subtasks`, {
-                        method: "POST",
-                        body: JSON.stringify({ title }),
-                      });
-                      setNewSubtaskTitle("");
-                      queryClient.invalidateQueries({ queryKey: ["task-subtasks", task.id] });
-                      queryClient.invalidateQueries({ queryKey: ["task-activity", task.id] });
-                    } catch {}
-                  }}
-                >
-                  <Input
-                    value={newSubtaskTitle}
-                    onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                    placeholder="Add a subtask..."
-                    className="h-8 text-xs"
-                    data-testid="subtask-title-input"
-                  />
-                  <Button type="submit" size="sm" className="h-8 px-3" disabled={!newSubtaskTitle.trim()} data-testid="subtask-add-btn">
-                    <Plus className="h-3.5 w-3.5" />
-                  </Button>
-                </form>
+                <SubtaskQuickAdd taskId={task.id} />
                 {subtasks.length === 0 ? (
                   <p className="text-xs text-muted-foreground text-center py-4">No subtasks yet</p>
                 ) : (

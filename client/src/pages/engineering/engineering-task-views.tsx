@@ -50,7 +50,7 @@ import type { Task } from "@/components/tasks/types";
 import { formatDateShort, isOverdue, isDueThisWeek, daysLabel } from "@/lib/task-formatters";
 import { engFetch } from "@/lib/eng-fetch";
 import { PHASE_COLORS } from "@/lib/phase-colors";
-import { invalidateAllTaskCaches } from "@/lib/task-cache";
+import { invalidateEngineeringTicketCaches } from "@/lib/task-cache";
 import { canonicalizeTaskStatus } from "@/lib/task-status-compat";
 import {
   TASK_PRIORITY_LABELS,
@@ -185,7 +185,9 @@ export function ProjectKanbanView({
       setExpandedProjects(matching);
       setExpandedPhases(new Set(Array.from(phaseGrouped.keys())));
     }
-  }, [searchTerm]);
+    // projectGroups / phaseGrouped were read but missing from deps, so the
+    // auto-expand used stale groupings when the task list changed mid-search.
+  }, [searchTerm, projectGroups, phaseGrouped]);
 
   const STATUS_MINI = getVisibleStatusesForView("board").filter((s) => s !== "projects_assistance" && s !== "operational_approval");
 
@@ -610,6 +612,24 @@ export function TimelineView({ tasks, onCardClick }: { tasks: Task[]; onCardClic
   );
 }
 
+// Module-scope so React keeps a stable component identity. Previously this
+// was declared inside InlineListView's body, so every parent render produced
+// a brand-new component type and React remounted the whole table header.
+function SortHeader({ col, children, align, sortCol, sortDir, onToggle }: {
+  col: string;
+  children: React.ReactNode;
+  align?: string;
+  sortCol: string | null;
+  sortDir: "asc" | "desc";
+  onToggle: (col: string) => void;
+}) {
+  return (
+    <th className={`${align === "center" ? "text-center" : "text-left"} p-2 ${col === "title" ? "pl-3" : ""} cursor-pointer select-none hover:text-foreground transition-colors`} onClick={() => onToggle(col)}>
+      <span className="inline-flex items-center gap-1">{children}{sortCol === col && <span className="text-[9px]">{sortDir === "asc" ? "▲" : "▼"}</span>}</span>
+    </th>
+  );
+}
+
 export function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange, onBulkStatusChange, onBulkPriorityChange }: {
   tasks: Task[];
   onCardClick: (task: Task) => void;
@@ -657,11 +677,6 @@ export function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityC
   }, [tasks, sortCol, sortDir]);
 
   const visible = sorted.slice(0, visibleCount);
-  const SortHeader = ({ col, children, align }: { col: string; children: React.ReactNode; align?: string }) => (
-    <th className={`${align === "center" ? "text-center" : "text-left"} p-2 ${col === "title" ? "pl-3" : ""} cursor-pointer select-none hover:text-foreground transition-colors`} onClick={() => toggleSort(col)}>
-      <span className="inline-flex items-center gap-1">{children}{sortCol === col && <span className="text-[9px]">{sortDir === "asc" ? "▲" : "▼"}</span>}</span>
-    </th>
-  );
 
   return (
     <Card>
@@ -690,13 +705,13 @@ export function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityC
                 <th className="w-8 p-2 text-center">
                   <input type="checkbox" checked={selectedIds.size === tasks.length && tasks.length > 0} onChange={toggleAll} className="h-3 w-3" />
                 </th>
-                <SortHeader col="title">Title</SortHeader>
-                <SortHeader col="project">Project</SortHeader>
-                <SortHeader col="status">Status</SortHeader>
-                <SortHeader col="priority">Priority</SortHeader>
-                <SortHeader col="assignee">Assignee</SortHeader>
+                <SortHeader col="title" sortCol={sortCol} sortDir={sortDir} onToggle={toggleSort}>Title</SortHeader>
+                <SortHeader col="project" sortCol={sortCol} sortDir={sortDir} onToggle={toggleSort}>Project</SortHeader>
+                <SortHeader col="status" sortCol={sortCol} sortDir={sortDir} onToggle={toggleSort}>Status</SortHeader>
+                <SortHeader col="priority" sortCol={sortCol} sortDir={sortDir} onToggle={toggleSort}>Priority</SortHeader>
+                <SortHeader col="assignee" sortCol={sortCol} sortDir={sortDir} onToggle={toggleSort}>Assignee</SortHeader>
                 <th className="text-left p-2">Context</th>
-                <SortHeader col="dueDate">Due Date</SortHeader>
+                <SortHeader col="dueDate" sortCol={sortCol} sortDir={sortDir} onToggle={toggleSort}>Due Date</SortHeader>
                 <th className="text-center p-2">RAG</th>
               </tr>
             </thead>
@@ -916,7 +931,7 @@ export function MyTasksView({
     mutationFn: ({ taskId, dueDate }: { taskId: number; dueDate: string }) =>
       engFetch(`/api/eng/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ dueDate: dueDate || null }) }),
     onSuccess: () => {
-      invalidateAllTaskCaches(queryClient);
+      invalidateEngineeringTicketCaches(queryClient);
       toast({ title: "Due date updated" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -931,7 +946,7 @@ export function MyTasksView({
         method: "POST",
         body: JSON.stringify({ body: note }),
       });
-      invalidateAllTaskCaches(queryClient);
+      invalidateEngineeringTicketCaches(queryClient);
       queryClient.invalidateQueries({ queryKey: ["task-comments", taskId] });
       queryClient.invalidateQueries({ queryKey: ["task-activity", taskId] });
       setQuickNotes(prev => ({ ...prev, [taskId]: "" }));

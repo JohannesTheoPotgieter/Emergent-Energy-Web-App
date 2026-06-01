@@ -52,7 +52,7 @@ import {
 } from "@/lib/task-status";
 import type { Task } from "@/components/tasks/types";
 import { formatDateShort, isOverdue, isDueThisWeek, daysLabel, getAvatarColor, getInitials, sortTasksForColumn } from "@/lib/task-formatters";
-import { invalidateAllTaskCaches } from "@/lib/task-cache";
+import { invalidateEngineeringTicketCaches } from "@/lib/task-cache";
 import { canonicalizeTaskStatus } from "@/lib/task-status-compat";
 import {
   TASK_PRIORITY_LABELS,
@@ -92,7 +92,7 @@ export function QuickEditPopover({ task, onDueDateChange, onClose }: { task: Tas
     setPosting(true);
     try {
       await engFetch(`/api/eng/tasks/${task.id}/comments`, { method: "POST", body: JSON.stringify({ body: noteText.trim() }) });
-      invalidateAllTaskCaches(queryClient);
+      invalidateEngineeringTicketCaches(queryClient);
       queryClient.invalidateQueries({ queryKey: ["task-comments", task.id] });
       toast({ title: "Note added" });
       setNoteText("");

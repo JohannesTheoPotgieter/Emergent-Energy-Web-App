@@ -2,7 +2,7 @@
   "_documentation": "EE-QA-015 baseline — files above the FILE_SIZE_THRESHOLD LOC. The CI guard `qa/tests/unit/file-size-ratchet.test.ts` fails if any of these grow OR a NEW file lands over the threshold. To regenerate after a split, run `npx tsx scripts/build-file-size-baseline.ts` and commit the new JSON.",
   "threshold": 1500,
   "buffer": 50,
-  "generated": "2026-05-29",
+  "generated": "2026-06-01",
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
@@ -94,7 +94,7 @@
     },
     {
       "file": "client/src/components/tabs/QualityTab.tsx",
-      "loc": 2161
+      "loc": 2164
     },
     {
       "file": "server/departments/opportunities-routes.ts",
@@ -138,27 +138,27 @@
     },
     {
       "file": "client/src/pages/project-detail.tsx",
-      "loc": 1779
-    },
-    {
-      "file": "server/routes/planning-tasks-routes.ts",
-      "loc": 1778
+      "loc": 1786
     },
     {
       "file": "client/src/pages/pd-dashboard.tsx",
       "loc": 1750
     },
     {
+      "file": "client/src/pages/standups.tsx",
+      "loc": 1746
+    },
+    {
       "file": "server/services/stage-lifecycle-service.ts",
       "loc": 1727
     },
     {
-      "file": "client/src/pages/standups.tsx",
-      "loc": 1726
-    },
-    {
       "file": "client/src/pages/project-lifecycle.tsx",
       "loc": 1724
+    },
+    {
+      "file": "server/routes/planning-tasks-routes.ts",
+      "loc": 1719
     },
     {
       "file": "server/eng-stage-routes.ts",
@@ -185,12 +185,8 @@
       "loc": 1641
     },
     {
-      "file": "client/src/pages/engineering/EngineeringTaskDrawer.tsx",
-      "loc": 1622
-    },
-    {
       "file": "client/src/pages/EngineeringTasksPage.tsx",
-      "loc": 1619
+      "loc": 1625
     },
     {
       "file": "server/departments/exco-routes.ts",
@@ -210,7 +206,7 @@
     },
     {
       "file": "server/routes/finance-legacy-extracted-routes.ts",
-      "loc": 1551
+      "loc": 1552
     },
     {
       "file": "shared/permissions/registry.ts",
