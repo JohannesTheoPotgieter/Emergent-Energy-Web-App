@@ -19,14 +19,14 @@ function getAuthHeaders(): Record<string, string> {
 }
 
 function formatCurrency(n: number): string {
-  if (n == null || isNaN(n)) return "£0";
-  return "£" + Math.round(n).toLocaleString("en-GB");
+  if (n == null || isNaN(n)) return "R 0";
+  return "R " + Math.round(n).toLocaleString("en-ZA");
 }
 
 function formatDate(d: string | null): string {
   if (!d) return "—";
   try {
-    return new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" });
+    return new Date(d).toLocaleDateString("en-ZA", { day: "2-digit", month: "short", year: "2-digit" });
   } catch { return d; }
 }
 
