@@ -7988,12 +7988,17 @@ router.post(
           revenue && expenditure && parseFloat(revenue) > 0
             ? ((parseFloat(revenue) - parseFloat(expenditure)) / parseFloat(revenue)).toString()
             : null,
-        actualRevenue: null,
-        actualExpenditure: null,
-        actualProfit: null,
-        actualMargin: null,
-        voPmLimit: null,
-        currentVoTotal: null,
+        // upsertProjectRevenueSummary is a temporal soft-close + insert-new-
+        // version, so any field nulled here is wiped from the new current row.
+        // This endpoint only edits the costed (planned) figures — carry the
+        // rest forward from the existing summary so a costed save no longer
+        // destroys the project's VO limits and actuals.
+        actualRevenue: existingSummary?.actualRevenue ?? null,
+        actualExpenditure: existingSummary?.actualExpenditure ?? null,
+        actualProfit: existingSummary?.actualProfit ?? null,
+        actualMargin: existingSummary?.actualMargin ?? null,
+        voPmLimit: existingSummary?.voPmLimit ?? null,
+        currentVoTotal: existingSummary?.currentVoTotal ?? null,
       });
 
       try {
