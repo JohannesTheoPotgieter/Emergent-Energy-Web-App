@@ -2618,6 +2618,7 @@ export function registerLifecycleRoutes(app: Express) {
         const {
           sizeKwp,
           pd,
+          pdUserId,
           pm,
           pmUserId,
           contractValue,
@@ -2664,7 +2665,14 @@ export function registerLifecycleRoutes(app: Express) {
           updates.projectName = newName.trim();
         }
         if (sizeKwp !== undefined) updates.sizeKwp = sizeKwp || null;
-        if (pd !== undefined) updates.pd = pd || null;
+        if (pd !== undefined) {
+          updates.pd = pd || null;
+          // pdUserId is load-bearing for project ACLs / assignee resolution
+          // (project-access-service: pmUserId = me OR pdUserId = me). It was
+          // never set here, so reassigning the PD updated the label only and
+          // never granted the new PD access (nor revoked the old PD's).
+          updates.pdUserId = pdUserId ?? null;
+        }
         if (pm !== undefined) {
           updates.pm = pm || null;
           updates.pmUserId = pmUserId ?? null;

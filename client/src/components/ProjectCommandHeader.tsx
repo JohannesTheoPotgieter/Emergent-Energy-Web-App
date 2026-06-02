@@ -557,9 +557,14 @@ export function ProjectCommandHeader({
                     value={pd === "—" ? "__unassigned" : pd}
                     onValueChange={(val) => {
                       const newPd = val === "__unassigned" ? "" : val;
+                      const matched = pdAssignableUsers.find((u) => u.name === newPd);
                       if (projectInfoId) {
-                        engFetchPatch(`/api/lifecycle-board/projects/${projectInfoId}`, { pd: newPd })
-                          .then(() => { invalidateProjectV2Queries(queryClient, projectInfoId, projectName); });
+                        engFetchPatch(`/api/lifecycle-board/projects/${projectInfoId}`, { pd: newPd, pdUserId: matched?.id ?? null })
+                          .then(async (res) => {
+                            if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || e.error || "Failed to reassign PD"); }
+                            invalidateProjectV2Queries(queryClient, projectInfoId, projectName);
+                          })
+                          .catch((err) => toast({ title: "Could not reassign PD", description: err.message, variant: "destructive" }));
                       }
                     }}
                     triggerClassName="h-6 text-[11px] w-auto min-w-[90px] border-[var(--cmd-border)] bg-transparent text-[var(--cmd-text-secondary)] border-dashed"
@@ -587,7 +592,11 @@ export function ProjectCommandHeader({
                       const matched = pmAssignableUsers.find((u) => u.name === newPm);
                       if (projectInfoId) {
                         engFetchPatch(`/api/lifecycle-board/projects/${projectInfoId}`, { pm: newPm, pmUserId: matched?.id ?? null })
-                          .then(() => { invalidateProjectV2Queries(queryClient, projectInfoId, projectName); });
+                          .then(async (res) => {
+                            if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || e.error || "Failed to reassign PM"); }
+                            invalidateProjectV2Queries(queryClient, projectInfoId, projectName);
+                          })
+                          .catch((err) => toast({ title: "Could not reassign PM", description: err.message, variant: "destructive" }));
                       }
                     }}
                     triggerClassName="h-6 text-[11px] w-auto min-w-[90px] border-[var(--cmd-border)] bg-transparent text-[var(--cmd-text-secondary)] border-dashed"
