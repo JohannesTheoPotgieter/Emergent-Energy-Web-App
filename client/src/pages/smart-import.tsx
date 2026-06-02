@@ -510,9 +510,9 @@ export function UploadStep({
                         <p className="text-red-600">{safeStr(entry.error)}</p>
                       </div>
                     </div>
-                    <div className="border-t border-red-200 pt-1.5 mt-1.5">
-                      <p className="font-medium text-red-700 mb-1">How to fix</p>
-                      <ul className="text-red-600 space-y-0.5 list-disc list-inside">
+                    <details className="border-t border-red-200 pt-1.5 mt-1.5">
+                      <summary className="font-medium text-red-700 mb-1 cursor-pointer select-none">How to fix</summary>
+                      <ul className="text-red-600 space-y-0.5 list-disc list-inside mt-1">
                         {entry.error.toLowerCase().includes("no file") && (
                           <li>The file may not have been sent correctly. Try uploading again.</li>
                         )}
@@ -566,7 +566,7 @@ export function UploadStep({
                           </>
                         )}
                       </ul>
-                    </div>
+                    </details>
                   </div>
                 )}
               </div>
@@ -1111,31 +1111,15 @@ export function ColumnMappingStep({
               <TabsContent key={sectionName} value={sectionName}>
                 <Card className="bg-card rounded-xl shadow-sm">
                   <CardContent className="p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        {overallConfidence != null && (
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs text-muted-foreground">Confidence:</span>
-                            {confidenceBadge(overallConfidence)}
-                          </div>
-                        )}
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs text-muted-foreground">Sheet:</span>
-                          <span className="text-xs font-medium">{detection?.sheetName || "—"}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs text-muted-foreground">Rows:</span>
-                          <span className="text-xs font-medium">
-                            {detection ? (detection.dataEndRowIndex - detection.dataStartRowIndex + 1) : 0}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-slate-500">Destination:</span>
-                        <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-[10px] px-1.5 py-0 font-mono">
-                          {dbTable}
-                        </Badge>
-                      </div>
+                    {/* Compact one-line section meta (confidence · sheet · rows),
+                        with the technical destination table de-emphasised. */}
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      {overallConfidence != null && (
+                        <span className="inline-flex items-center gap-1.5">Confidence {confidenceBadge(overallConfidence)}</span>
+                      )}
+                      <span>Sheet <span className="font-medium text-foreground">{detection?.sheetName || "—"}</span></span>
+                      <span><span className="font-medium text-foreground">{detection ? (detection.dataEndRowIndex - detection.dataStartRowIndex + 1) : 0}</span> rows</span>
+                      <span className="ml-auto font-mono text-[10px] text-slate-400" title={`Destination table: ${dbTable}`}>→ {dbTable}</span>
                     </div>
 
                     {missingRequired.length > 0 && (

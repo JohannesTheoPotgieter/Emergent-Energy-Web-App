@@ -32,7 +32,8 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Upload, FileSpreadsheet, ExternalLink, RefreshCw, CheckCircle2, AlertTriangle, Clock, Eye, Play, Cloud, Save, Zap } from "lucide-react";
+import { Upload, FileSpreadsheet, ExternalLink, RefreshCw, CheckCircle2, AlertTriangle, Clock, Eye, Play, Cloud, Save, Zap, ChevronDown, ChevronRight } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatRelativeWithAbsoluteZA } from "@/lib/datetime";
 import { ConnectionsSection } from "./role-settings";
@@ -495,6 +496,9 @@ function SharePointAutoImportPanel() {
   const [lastPassedTestKey, setLastPassedTestKey] = useState<string | null>(null);
   // UI/UX audit X6 — turning auto-commit ON is gated behind a confirmation.
   const [confirmEnableOpen, setConfirmEnableOpen] = useState(false);
+  // Connection settings are tucked behind a collapsible so the panel leads with
+  // status + actions; opened automatically until the connection is configured.
+  const [showSettings, setShowSettings] = useState(false);
 
   // Sync form with server state when it loads / refetches.
   useEffect(() => {
@@ -655,113 +659,108 @@ function SharePointAutoImportPanel() {
               )}
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              Polls the active tracker workbook in SharePoint and commits
-              changes automatically — no human review. Set the interval, save,
-              and the in-process scheduler picks up the change on its next 60 s
-              tick. COO / CEO only.
+              Auto-commits the active tracker workbook on a schedule — no human review. COO / CEO only.
             </p>
           </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Last-error banner — shown when the most recent tick threw and
-            there hasn't been a successful run since. Surfaces the typed
-            error code + message so the admin can diagnose without reading
-            server logs. */}
+        {/* Status — one compact line (state · last run · next · interval). */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+          <span className="inline-flex items-center gap-1.5 font-medium">
+            <span className={`h-2 w-2 rounded-full ${enabled ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
+            {enabled ? "Scheduled imports on" : "Paused"}
+          </span>
+          <span className="text-muted-foreground">
+            Last run <span className="font-medium text-foreground" data-testid="text-last-run-at">{settingsQuery.data?.lastRunAt ? formatRelativeWithAbsoluteZA(settingsQuery.data.lastRunAt) : "Never"}</span>
+          </span>
+          <span className="text-muted-foreground">
+            Next <span className="font-medium text-foreground" data-testid="text-next-run-at">{enabled ? nextRunEstimate(settingsQuery.data?.lastSuccessAt ?? null, form.intervalMinutes) : "—"}</span>
+          </span>
+          <span className="text-muted-foreground">
+            Every <span className="font-medium text-foreground">{form.intervalMinutes} min</span>
+          </span>
+        </div>
+
+        {/* Concise failure line — only when the last tick failed with no later success. */}
         {settingsQuery.data?.lastErrorAt &&
           (!settingsQuery.data.lastSuccessAt ||
             new Date(settingsQuery.data.lastErrorAt).getTime() >
               new Date(settingsQuery.data.lastSuccessAt).getTime()) && (
-            <div
-              className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-900"
-              role="alert"
-              data-testid="sp-import-last-error"
-            >
-              <p className="font-medium">
-                Last tick failed
-                {settingsQuery.data.lastErrorCode ? ` — ${settingsQuery.data.lastErrorCode}` : ""}
-              </p>
-              {settingsQuery.data.lastErrorMessage && (
-                <p className="mt-1 break-words">{settingsQuery.data.lastErrorMessage}</p>
-              )}
-              <p className="mt-1 text-red-700">
-                Failed at {formatRelativeWithAbsoluteZA(settingsQuery.data.lastErrorAt)}.
-                {settingsQuery.data.lastSuccessAt
-                  ? ` Last success: ${formatRelativeWithAbsoluteZA(settingsQuery.data.lastSuccessAt)}.`
-                  : " No successful runs yet."}
-              </p>
-            </div>
+            <p className="text-xs text-red-700 break-words flex items-start gap-1.5" role="alert" data-testid="sp-import-last-error">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              <span>
+                Last run failed{settingsQuery.data.lastErrorCode ? ` — ${settingsQuery.data.lastErrorCode}` : ""}
+                {settingsQuery.data.lastErrorMessage ? `: ${settingsQuery.data.lastErrorMessage}` : ""}{" "}
+                <span className="text-red-600/80">({formatRelativeWithAbsoluteZA(settingsQuery.data.lastErrorAt)}{settingsQuery.data.lastSuccessAt ? "" : " · no successful runs yet"})</span>
+              </span>
+            </p>
           )}
 
-        {/* Status strip */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-          <div className="rounded-lg border bg-muted/30 px-3 py-2">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Last run</div>
-            <div className="font-medium" data-testid="text-last-run-at">
-              {settingsQuery.data?.lastRunAt
-                ? formatRelativeWithAbsoluteZA(settingsQuery.data.lastRunAt)
-                : "Never"}
+        {/* Connection settings — technical config tucked behind a collapsible so
+            the panel leads with status + actions. Stays open until configured. */}
+        <Collapsible open={showSettings || !configured} onOpenChange={setShowSettings}>
+          <CollapsibleTrigger
+            className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted/40"
+            data-testid="sp-settings-toggle"
+          >
+            <span className="inline-flex items-center gap-2">
+              <Cloud className="h-4 w-4 text-muted-foreground" />
+              Connection settings
+            </span>
+            {showSettings || !configured ? (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            )}
+          </CollapsibleTrigger>
+          <CollapsibleContent className="pt-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="sp-site-id">SharePoint Site ID</Label>
+                <Input
+                  id="sp-site-id"
+                  placeholder="e.g. emergent.sharepoint.com,abc-123,def-456"
+                  value={form.siteId}
+                  onChange={(e) => patch("siteId", e.target.value)}
+                  data-testid="input-sp-site-id"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="sp-drive-id">Drive ID</Label>
+                <Input
+                  id="sp-drive-id"
+                  placeholder="e.g. b!abc...xyz"
+                  value={form.driveId}
+                  onChange={(e) => patch("driveId", e.target.value)}
+                  data-testid="input-sp-drive-id"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="sp-folder-path">Folder Path (optional)</Label>
+                <Input
+                  id="sp-folder-path"
+                  placeholder="Active Trackers/2026"
+                  value={form.folderPath ?? ""}
+                  onChange={(e) => patch("folderPath", e.target.value || null)}
+                  data-testid="input-sp-folder-path"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="sp-interval">Interval (minutes)</Label>
+                <Input
+                  id="sp-interval"
+                  type="number"
+                  min={1}
+                  max={1440}
+                  value={form.intervalMinutes}
+                  onChange={(e) => patch("intervalMinutes", Math.max(1, Number(e.target.value) || 30))}
+                  data-testid="input-sp-interval"
+                />
+              </div>
             </div>
-          </div>
-          <div className="rounded-lg border bg-muted/30 px-3 py-2">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Next run</div>
-            <div className="font-medium" data-testid="text-next-run-at">
-              {enabled
-                ? nextRunEstimate(settingsQuery.data?.lastSuccessAt ?? null, form.intervalMinutes)
-                : "Disabled"}
-            </div>
-          </div>
-          <div className="rounded-lg border bg-muted/30 px-3 py-2">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Interval</div>
-            <div className="font-medium">{form.intervalMinutes} min</div>
-          </div>
-        </div>
-
-        {/* Configuration form */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <Label htmlFor="sp-site-id">SharePoint Site ID</Label>
-            <Input
-              id="sp-site-id"
-              placeholder="e.g. emergent.sharepoint.com,abc-123,def-456"
-              value={form.siteId}
-              onChange={(e) => patch("siteId", e.target.value)}
-              data-testid="input-sp-site-id"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="sp-drive-id">Drive ID</Label>
-            <Input
-              id="sp-drive-id"
-              placeholder="e.g. b!abc...xyz"
-              value={form.driveId}
-              onChange={(e) => patch("driveId", e.target.value)}
-              data-testid="input-sp-drive-id"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="sp-folder-path">Folder Path (optional)</Label>
-            <Input
-              id="sp-folder-path"
-              placeholder="Active Trackers/2026"
-              value={form.folderPath ?? ""}
-              onChange={(e) => patch("folderPath", e.target.value || null)}
-              data-testid="input-sp-folder-path"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="sp-interval">Interval (minutes)</Label>
-            <Input
-              id="sp-interval"
-              type="number"
-              min={1}
-              max={1440}
-              value={form.intervalMinutes}
-              onChange={(e) => patch("intervalMinutes", Math.max(1, Number(e.target.value) || 30))}
-              data-testid="input-sp-interval"
-            />
-          </div>
-        </div>
+          </CollapsibleContent>
+        </Collapsible>
 
         {/* Enable toggle */}
         <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2">
