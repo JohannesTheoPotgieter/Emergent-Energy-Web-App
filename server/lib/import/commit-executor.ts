@@ -975,9 +975,14 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
         // row-for-row aligned with the imported tracker.
         wiUpdates.title = fileRow.taskName || incomingWbsCode || "Imported plan task";
         wiUpdates.description = fileRow.comment || null;
-        wiUpdates.status = fileRow.status || "Not Started";
+        // HYBRID (2026-06, owner-approved): status + percentComplete are
+        // app-owned execution fields — the team maintains them in-app, so the
+        // re-import no longer force-refreshes them from the workbook and an
+        // in-app progress/status edit now persists across re-import. They are
+        // deliberately NOT added to the §9.3 comparison scope, so this adds no
+        // conflict-wizard noise. Structure (title, WBS, hierarchy, milestone,
+        // ordering) stays workbook-owned below.
         wiUpdates.type = fileRow.isMilestone ? "milestone" : "task";
-        wiUpdates.percentComplete = clampPercent(fileRow.pctComplete) ?? 0;
         wiUpdates.expectedPctComplete = clampPercent(fileRow.expectedPctComplete);
         wiUpdates.wbsCode = incomingWbsCode;
         wiUpdates.outlineNumber = incomingWbsCode;
