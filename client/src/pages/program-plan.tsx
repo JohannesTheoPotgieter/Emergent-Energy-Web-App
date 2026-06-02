@@ -339,7 +339,57 @@ function ProGantt({
   // if there are no deps or the graph cycles, no path is highlighted.
   const critical = useMemo(() => {
     const empty = new Set<number>();
-    if (dependencies.length === 0) return empty;
+    // No explicit predecessor links → infer a critical path from the schedule:
+    // the longest chain of leaf tasks where each starts on/after the previous
+    // one finishes (a best-guess "critical backbone" from WBS order + dates).
+    if (dependencies.length === 0) {
+      try {
+        type N = { id: number; s: number; e: number; dur: number };
+        const nodes: N[] = [];
+        for (const t of tasks) {
+          if (hasKids(t.id)) continue; // leaves only
+          const ef = eff.get(t.id);
+          if (!ef?.start || !ef?.end) continue;
+          nodes.push({ id: t.id, s: ef.start.getTime(), e: ef.end.getTime(), dur: Math.max(1, diffDays(ef.end, ef.start) + 1) });
+        }
+        if (nodes.length === 0) return empty;
+        nodes.sort((a, b) => a.s - b.s || a.e - b.e);
+        const best = new Map<number, number>();
+        const prev = new Map<number, number | null>();
+        let bestId = nodes[0].id;
+        let bestVal = -Infinity;
+        for (let i = 0; i < nodes.length; i++) {
+          const n = nodes[i];
+          let bv = n.dur;
+          let bp: number | null = null;
+          for (let j = 0; j < i; j++) {
+            const m = nodes[j];
+            if (m.e <= n.s) {
+              const cand = (best.get(m.id) ?? m.dur) + n.dur;
+              if (cand > bv) {
+                bv = cand;
+                bp = m.id;
+              }
+            }
+          }
+          best.set(n.id, bv);
+          prev.set(n.id, bp);
+          if (bv > bestVal) {
+            bestVal = bv;
+            bestId = n.id;
+          }
+        }
+        const crit = new Set<number>();
+        let cur: number | null = bestId;
+        while (cur != null) {
+          crit.add(cur);
+          cur = prev.get(cur) ?? null;
+        }
+        return crit;
+      } catch {
+        return empty;
+      }
+    }
     try {
       const dur = (id: number): number => {
         const e = eff.get(id);
@@ -589,7 +639,7 @@ function ProGantt({
         )}
         {dependencies.length === 0 && rows.length > 0 && (
           <p className="text-xs text-muted-foreground px-3 py-2 border-t">
-            No task dependencies found in the workbook — add a “Predecessors” column to the Project Plan sheet (e.g. <span className="font-mono">1.2, 1.3FS+2d</span>) and re-import to draw dependency links and the critical path.
+            The critical path shown is <strong>inferred from the schedule</strong> (WBS order + dates), since this plan has no predecessor links. For true dependency arrows and an exact critical path, add a “Predecessors” column to the Project Plan sheet (e.g. <span className="font-mono">1.2, 1.3FS+2d</span>) and re-import.
           </p>
         )}
       </CardContent>
