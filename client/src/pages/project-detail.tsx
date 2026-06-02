@@ -36,14 +36,10 @@ import BoardView from "@/components/BoardView";
 import CalendarView from "@/components/CalendarView";
 import UnifiedPlanTab from "@/components/tabs/UnifiedPlanTab";
 import { QualityTab } from "@/components/tabs/QualityTab";
-import { ProjectHistoryTab } from "@/components/tabs/ProjectHistoryTab";
-import { WeeklyReviewWizard } from "@/components/WeeklyReviewWizard";
-import { ProjectApprovalsTab } from "@/components/tabs/ProjectApprovalsTab";
 import { ProjectTimelineTab } from "@/components/tabs/ProjectTimelineTab";
 import { ProjectRaidTab } from "@/components/tabs/ProjectRaidTab";
 // Old ProjectCommissioningTab retired â€” replaced by /commissioning-dashboard page
 // ProjectConstructionTab removed â€” Construction tab retired from sub-nav
-import FinancialReviewTab from "@/components/tabs/FinancialReviewTab";
 import { ProjectHandoverTab } from "@/components/tabs/ProjectHandoverTab";
 import { BudgetBaselineStrip } from "@/components/tabs/BudgetBaselineStrip";
 import { DrawingRegisterTab } from "@/components/tabs/DrawingRegisterTab";
@@ -486,7 +482,7 @@ export default function ProjectDetailPage() {
     pm: canViewTab.overview || canViewTab.plan,
     finance: canViewTab.finance,
     engineering: canViewTab.engineering,
-    quality: canViewTab.quality || canViewTab.history,
+    quality: canViewTab.quality,
     procurement: canViewTab.procurement,
     documents: canViewTab.documents,
     history: canViewTab.decisions || canViewTab.history,
@@ -642,10 +638,10 @@ export default function ProjectDetailPage() {
       const firstFinanceSubTab = getVisibleFinanceSubTabs(financeSubTabGates)[0]?.key;
       if (firstFinanceSubTab) navigateToDept("finance", firstFinanceSubTab);
     }
-    if (dept === "quality" && !canViewTab.quality && canViewTab.history && activeSubTab !== "history") {
-      navigateToDept("quality", "history");
+    if (dept === "quality" && !canViewTab.quality && canViewTab.history) {
+      navigateToDept("history", "history");
     }
-    if (dept === "pm" && activeSubTab === "financial-review" && !canViewTab.finance) {
+    if (dept === "pm" && activeSubTab === "financial-review") {
       navigateToDept("pm", "plan");
     }
     if (dept === "procurement" && activeSubTab === "procurement" && !canViewSubTab.procurement && canViewSubTab.subcontractors) {
@@ -1538,37 +1534,53 @@ export default function ProjectDetailPage() {
             {stageData?.currentStage && <div><span className="text-muted-foreground">Gate:</span> <span className="font-semibold">{(stageData.currentStage as any).label || stageData.currentStage.stageCode}</span></div>}
           </div>
 
-          {/* PM sub-tabs */}
+          {/* PM sub-tabs — Plan groups the Gantt / Board / Calendar views
+              behind a switcher (below); RAID and Handover are siblings. */}
           <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="pm-sub-tabs">
             {[
               { key: "plan", label: "Plan", icon: ListTodo },
-              { key: "board", label: "Board", icon: Columns },
-              { key: "calendar", label: "Calendar", icon: CalendarDays },
-              { key: "commissioning", label: "Commissioning", icon: CheckCircle },
               { key: "raid", label: "RAID", icon: AlertTriangle },
               { key: "handover", label: "Handover", icon: Handshake },
-              { key: "financial-review", label: "Financial Review", icon: DollarSign, visible: canViewTab.finance },
-            ].filter((st: any) => st.visible !== false).map(st => (
-              <Button key={st.key} size="sm" variant={activeSubTab === st.key ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => navigateToSubTab(st.key)} data-testid={`subtab-${st.key}`}>
-                <st.icon className="h-3 w-3 mr-1" /> {st.label}
-              </Button>
-            ))}
+            ].filter((st: any) => st.visible !== false).map(st => {
+              const isActive = st.key === "plan"
+                ? (activeSubTab === "plan" || activeSubTab === "board" || activeSubTab === "calendar")
+                : activeSubTab === st.key;
+              return (
+                <Button key={st.key} size="sm" variant={isActive ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => navigateToSubTab(st.key)} data-testid={`subtab-${st.key}`}>
+                  <st.icon className="h-3 w-3 mr-1" /> {st.label}
+                </Button>
+              );
+            })}
           </div>
+
+          {/* Plan view switcher — Gantt / Board / Calendar are three views of
+              the same tasks, chosen here rather than as separate top-level tabs. */}
+          {(activeSubTab === "plan" || activeSubTab === "board" || activeSubTab === "calendar") && canViewTab.overview && (
+            <div className="inline-flex items-center gap-1 rounded-lg border bg-muted/40 p-1" data-testid="plan-view-switcher">
+              {[
+                { key: "plan", label: "Gantt", icon: ListTodo },
+                { key: "board", label: "Board", icon: Columns },
+                { key: "calendar", label: "Calendar", icon: CalendarDays },
+              ].map(v => (
+                <Button
+                  key={v.key}
+                  size="sm"
+                  variant={activeSubTab === v.key ? "default" : "ghost"}
+                  className="h-7 text-xs"
+                  onClick={() => navigateToSubTab(v.key)}
+                  data-testid={`plan-view-${v.key}`}
+                >
+                  <v.icon className="h-3 w-3 mr-1" /> {v.label}
+                </Button>
+              ))}
+            </div>
+          )}
 
           {activeSubTab === "plan" && canViewTab.overview && <UnifiedPlanTab projectName={projectName} projectId={projectInfoId} onTaskClick={handleTaskClick} />}
           {activeSubTab === "board" && canViewTab.overview && <BoardView projectName={projectName} onTaskClick={handleTaskClick} />}
           {activeSubTab === "calendar" && canViewTab.overview && <CalendarView projectName={projectName} onTaskClick={handleTaskClick} />}
-          {activeSubTab === "commissioning" && projectInfoId && (
-            <div className="rounded-lg border bg-muted/30 p-6 text-center space-y-3">
-              <p className="text-sm text-muted-foreground">Commissioning is now managed via the Commissioning Control Tower.</p>
-              <a href={`/commissioning-dashboard/${projectInfoId}`} className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
-                Open Commissioning Dashboard
-              </a>
-            </div>
-          )}
           {activeSubTab === "raid" && projectInfoId && <ProjectRaidTab projectId={projectInfoId} projectName={projectName} />}
           {activeSubTab === "handover" && projectInfoId && <ProjectHandoverTab projectId={projectInfoId} projectName={projectName} initialFilter={handoverFilter === "blocked" ? "blocked" : "all"} />}
-          {activeSubTab === "financial-review" && canViewTab.finance && projectInfoId && <FinancialReviewTab projectId={projectInfoId} projectName={projectName} />}
         </div>
       )}
 
@@ -1610,7 +1622,7 @@ export default function ProjectDetailPage() {
            QUALITY DEPARTMENT
            Permission guard: activeSection === "quality" && canViewTab.quality
          â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
-      {activeDept === "quality" && (canViewTab.quality || canViewTab.history) && (
+      {activeDept === "quality" && canViewTab.quality && (
         <div className="space-y-3" data-testid="dept-quality-section">
           {/* Quality KPI strip */}
           <div className="flex items-center gap-4 flex-wrap rounded-md border bg-muted/30 px-3 py-2 text-xs">
@@ -1628,8 +1640,6 @@ export default function ProjectDetailPage() {
             {[
               { key: "checklist", label: "QC Checklist", icon: ClipboardList, visible: canViewTab.quality },
               { key: "documents", label: "Documents", icon: FolderOpen, visible: canViewTab.quality },
-              { key: "history", label: "History", icon: History, visible: canViewTab.history },
-              { key: "approvals", label: "Approvals", icon: FileCheck, visible: canViewTab.quality },
             ].filter(st => st.visible).map(st => (
               <Button key={st.key} size="sm" variant={activeSubTab === st.key ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => navigateToSubTab(st.key)} data-testid={`subtab-${st.key}`}>
                 <st.icon className="h-3 w-3 mr-1" /> {st.label}
@@ -1639,23 +1649,6 @@ export default function ProjectDetailPage() {
 
           {activeSubTab === "checklist" && canViewTab.quality && <QualityTab projectName={projectName} projectInfoId={projectInfoId ?? null} initialStatusFilter={qualityFilter || undefined} chip={qualityChip || undefined} onNavigateSubTab={(sub) => navigateToSubTab(sub)} />}
           {activeSubTab === "documents" && canViewTab.quality && projectInfoId && <ProjectDocumentRegisterPanel projectId={projectInfoId} projectName={projectName} domain="quality" />}
-          {activeSubTab === "history" && canViewTab.history && (
-            <div className="space-y-2">
-              <WeeklyReviewWizard
-                projectName={projectName}
-                snapshotMetrics={{
-                  phase: phase || undefined,
-                  completion: projectInfo?.project_pct_complete ?? undefined,
-                  totalRevenue: totalPaidInflows,
-                  totalExpenses,
-                  margin: totalPaidInflows > 0 ? (totalPaidInflows - totalExpenses) / totalPaidInflows : 0,
-                  overdueCount: overdueEngineeringCount,
-                }}
-              />
-              <ProjectHistoryTab projectName={projectName} />
-            </div>
-          )}
-          {activeSubTab === "approvals" && canViewTab.quality && <ProjectApprovalsTab projectName={projectName} projectInfoId={projectInfoId ?? null} onNavigateSubTab={(sub) => navigateToSubTab(sub)} />}
         </div>
       )}
 
