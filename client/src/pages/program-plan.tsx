@@ -260,7 +260,6 @@ function ProGantt({
   startDate: string | null;
 }) {
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
-  const [showCritical, setShowCritical] = useState(true);
 
   const byId = useMemo(() => {
     const m = new Map<number, PlanTask>();
@@ -462,11 +461,7 @@ function ProGantt({
       <CardHeader>
         <div className="flex items-center justify-between flex-wrap gap-2">
           <CardTitle className="text-base">Programme Gantt</CardTitle>
-          <div className="flex items-center gap-3 text-xs">
-            <label className="inline-flex items-center gap-1 cursor-pointer select-none">
-              <input type="checkbox" checked={showCritical} onChange={(e) => setShowCritical(e.target.checked)} data-testid="gantt-critical-toggle" />
-              Critical path
-            </label>
+          <div className="flex items-center gap-2 text-xs">
             <Button size="sm" variant="outline" onClick={() => setCollapsed(new Set(allParentIds))} data-testid="gantt-collapse-all">Collapse all</Button>
             <Button size="sm" variant="outline" onClick={() => setCollapsed(new Set())} data-testid="gantt-expand-all">Expand all</Button>
           </div>
@@ -489,7 +484,7 @@ function ProGantt({
               <div className="border-b px-2 flex items-end pb-1 text-xs font-semibold text-muted-foreground" style={{ height: G_HEADER_H }}>WBS · Task</div>
               {rows.map(({ t, depth }) => {
                 const isParent = hasKids(t.id);
-                const isCrit = showCritical && critical.has(t.id);
+                const isCrit = critical.has(t.id);
                 return (
                   <div key={t.id} className="flex items-center border-b text-xs hover:bg-muted/20" style={{ height: G_ROW_H, paddingLeft: 6 + depth * 14 }} data-testid={`gantt-tree-row-${t.id}`}>
                     {isParent ? (
@@ -529,7 +524,7 @@ function ProGantt({
                   const top = G_HEADER_H + i * G_ROW_H;
                   const isParent = hasKids(t.id);
                   const isMs = !!t.isMilestone && !isParent;
-                  const isCrit = showCritical && critical.has(t.id);
+                  const isCrit = critical.has(t.id);
                   const pctDone = Math.max(0, Math.min(1, t.percentComplete ?? 0));
                   // Baseline overlay (planned) when distinct from the drawn span.
                   const bStart = asDay(t.baselineStart);
@@ -573,7 +568,7 @@ function ProGantt({
                     // FS/FF start from predecessor finish; SS/SF from its start.
                     const fromX = d.depType === "SS" || d.depType === "SF" ? gp.x0 : gp.x1;
                     const toX = d.depType === "FF" || d.depType === "SF" ? gs.x1 : gs.x0;
-                    const crit = showCritical && critical.has(d.predecessorId) && critical.has(d.successorId);
+                    const crit = critical.has(d.predecessorId) && critical.has(d.successorId);
                     const midX = Math.max(fromX, toX) + 8;
                     const path = `M ${fromX} ${yp} H ${midX} V ${ys} H ${toX}`;
                     return (
