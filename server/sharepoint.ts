@@ -548,7 +548,14 @@ export async function testConnection(
 }
 
 function isTrackerWorkbookName(name: unknown): boolean {
-  return typeof name === "string" && /\.(xlsx|xlsm|xls)$/i.test(name);
+  if (typeof name !== "string") return false;
+  const base = name.split(/[\\/]/).pop() ?? name;
+  // Exclude Excel lock/temp files ("~$Foo.xlsx") and OneDrive/Dropbox
+  // "conflicted copy" duplicates so an older/duplicate revision in the folder
+  // can't be imported and double-count a project (IMPORTER_AUDIT M2).
+  if (base.startsWith("~$")) return false;
+  if (/conflicted copy/i.test(base)) return false;
+  return /\.(xlsx|xlsm|xls)$/i.test(base);
 }
 
 export async function assertSharePointConnectionHealthyForEnable(

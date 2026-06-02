@@ -156,11 +156,14 @@ const ROW_DEFS: RowDef[] = [
   { key: "budgetCOS", label: "Budget COS", dataKey: "budgetCOS", colorClass: "text-emerald-700/60", group: "monthly" },
   { key: "budgetGP", label: "Budget GP", dataKey: "budgetGP", colorClass: "text-emerald-700 font-semibold", group: "monthly", emphasis: true },
   { key: "budgetMarginPct", label: "Budget Margin %", dataKey: "budgetMarginPct", colorClass: "text-muted-foreground", group: "monthly", isMarginPct: true },
-  // ── Planned ─────────────────────────────────────────────────────────────
-  { key: "plannedRevenue", label: "Planned Revenue", dataKey: "plannedRevenue", colorClass: "text-emerald-700 font-semibold", group: "monthly", newGroup: true },
-  { key: "plannedCOS", label: "Planned COS", dataKey: "plannedCOS", colorClass: "text-foreground font-semibold", group: "monthly" },
-  { key: "plannedGP", label: "Planned GP", dataKey: "plannedGP", colorClass: "text-foreground font-bold", group: "monthly", emphasis: true, expandable: true, projectsKey: "gpPlannedProjects" },
-  { key: "plannedMarginPct", label: "Planned Margin %", dataKey: "plannedMarginPct", colorClass: "text-muted-foreground", group: "monthly", isMarginPct: true },
+  // ── All-states total (Realised + Committed + un-invoiced) ────────────────
+  // NOT a budget/forecast — this is the running total of every cost line in the
+  // month regardless of state. Relabelled from "Planned" (owner decision
+  // 2026-06) so it isn't mistaken for the Budget plan or a forward forecast.
+  { key: "plannedRevenue", label: "Revenue — all states", dataKey: "plannedRevenue", colorClass: "text-emerald-700 font-semibold", group: "monthly", newGroup: true },
+  { key: "plannedCOS", label: "COS — all states", dataKey: "plannedCOS", colorClass: "text-foreground font-semibold", group: "monthly" },
+  { key: "plannedGP", label: "GP — all states", dataKey: "plannedGP", colorClass: "text-foreground font-bold", group: "monthly", emphasis: true, expandable: true, projectsKey: "gpPlannedProjects" },
+  { key: "plannedMarginPct", label: "Margin % — all states", dataKey: "plannedMarginPct", colorClass: "text-muted-foreground", group: "monthly", isMarginPct: true },
   // ── Realised ─────────────────────────────────────────────────────────────
   { key: "realisedRevenue", label: "Realised Revenue", dataKey: "realisedRevenue", colorClass: "text-foreground font-semibold", group: "monthly", newGroup: true },
   { key: "realisedCOS", label: "Realised COS", dataKey: "realisedCOS", colorClass: "text-foreground", group: "monthly" },
@@ -168,7 +171,7 @@ const ROW_DEFS: RowDef[] = [
   { key: "realisedMarginPct", label: "Realised Margin %", dataKey: "realisedMarginPct", colorClass: "text-muted-foreground", group: "monthly", isMarginPct: true },
   // ── YTD ──────────────────────────────────────────────────────────────────
   { key: "ytdBudgetGP", label: "YTD Budget GP", dataKey: "ytdBudgetGP", colorClass: "text-emerald-700", group: "ytd" },
-  { key: "ytdPlannedGP", label: "YTD Planned GP", dataKey: "ytdPlannedGP", colorClass: "text-foreground font-semibold", group: "ytd" },
+  { key: "ytdPlannedGP", label: "YTD GP — all states", dataKey: "ytdPlannedGP", colorClass: "text-foreground font-semibold", group: "ytd" },
   { key: "ytdRealisedGP", label: "YTD Realised GP", dataKey: "ytdRealisedGP", colorClass: "text-foreground font-bold", group: "ytd" },
 ];
 
