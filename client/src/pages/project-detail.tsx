@@ -36,14 +36,10 @@ import BoardView from "@/components/BoardView";
 import CalendarView from "@/components/CalendarView";
 import UnifiedPlanTab from "@/components/tabs/UnifiedPlanTab";
 import { QualityTab } from "@/components/tabs/QualityTab";
-import { ProjectHistoryTab } from "@/components/tabs/ProjectHistoryTab";
-import { WeeklyReviewWizard } from "@/components/WeeklyReviewWizard";
-import { ProjectApprovalsTab } from "@/components/tabs/ProjectApprovalsTab";
 import { ProjectTimelineTab } from "@/components/tabs/ProjectTimelineTab";
 import { ProjectRaidTab } from "@/components/tabs/ProjectRaidTab";
 // Old ProjectCommissioningTab retired â€” replaced by /commissioning-dashboard page
 // ProjectConstructionTab removed â€” Construction tab retired from sub-nav
-import FinancialReviewTab from "@/components/tabs/FinancialReviewTab";
 import { ProjectHandoverTab } from "@/components/tabs/ProjectHandoverTab";
 import { BudgetBaselineStrip } from "@/components/tabs/BudgetBaselineStrip";
 import { DrawingRegisterTab } from "@/components/tabs/DrawingRegisterTab";
@@ -51,7 +47,6 @@ import { ProjectDocumentRegisterPanel } from "@/components/project-documents/Pro
 import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { useAuth } from "@/hooks/use-auth";
 import { ProjectCommandHeader } from "@/components/ProjectCommandHeader";
-import { ProjectWorkspaceBetaBanner } from "@/components/ProjectWorkspaceBetaBanner";
 import { RevenueTrackingContent } from "@/pages/revenue-tracking";
 import { ExpenditureBreakdownContent } from "@/pages/expenditure-breakdown";
 import { ProgramPlanContent } from "@/pages/program-plan";
@@ -487,7 +482,7 @@ export default function ProjectDetailPage() {
     pm: canViewTab.overview || canViewTab.plan,
     finance: canViewTab.finance,
     engineering: canViewTab.engineering,
-    quality: canViewTab.quality || canViewTab.history,
+    quality: canViewTab.quality,
     procurement: canViewTab.procurement,
     documents: canViewTab.documents,
     history: canViewTab.decisions || canViewTab.history,
@@ -553,6 +548,8 @@ export default function ProjectDetailPage() {
   const [activeDept, setActiveDept] = useState<string>(resolvedFromUrl?.dept || "overview");
   const [activeSubTab, setActiveSubTab] = useState<string>(resolvedFromUrl?.sub || "command");
   const [showActivityTimeline, setShowActivityTimeline] = useState<boolean>(false);
+  const [showLifecycle, setShowLifecycle] = useState<boolean>(false);
+  const [showContext, setShowContext] = useState<boolean>(false);
   // Keep legacy aliases
   const activeSection = activeDept === "pm" ? "delivery" : activeDept === "eng" ? "engineering" : activeDept === "finance" ? "commercial" : activeDept;
 
@@ -641,10 +638,10 @@ export default function ProjectDetailPage() {
       const firstFinanceSubTab = getVisibleFinanceSubTabs(financeSubTabGates)[0]?.key;
       if (firstFinanceSubTab) navigateToDept("finance", firstFinanceSubTab);
     }
-    if (dept === "quality" && !canViewTab.quality && canViewTab.history && activeSubTab !== "history") {
-      navigateToDept("quality", "history");
+    if (dept === "quality" && !canViewTab.quality && canViewTab.history) {
+      navigateToDept("history", "history");
     }
-    if (dept === "pm" && activeSubTab === "financial-review" && !canViewTab.finance) {
+    if (dept === "pm" && activeSubTab === "financial-review") {
       navigateToDept("pm", "plan");
     }
     if (dept === "procurement" && activeSubTab === "procurement" && !canViewSubTab.procurement && canViewSubTab.subcontractors) {
@@ -1157,11 +1154,6 @@ export default function ProjectDetailPage() {
       <div data-testid="cockpit-mode-executive" className="hidden" />
       <div data-testid="cockpit-mode-execution" className="hidden" />
       <div data-testid="executive-summary-cards" className="hidden" />
-      {/* PR-E redesign (2026-05-27) — opt-in banner pointing to the new
-          4-tab workspace. The legacy detail page stays the default;
-          users self-select into the beta. Banner is dismissable so we
-          don't pester anyone who's tried it and prefers the legacy view. */}
-      {projectInfoId && <ProjectWorkspaceBetaBanner projectId={projectInfoId} />}
       <ProjectCommandHeader
         projectName={projectName}
         displayName={displayName}
@@ -1227,12 +1219,27 @@ export default function ProjectDetailPage() {
 
       {/* Stage Lifecycle â€” Critical Control Panel + Stage Timeline + Activity Timeline */}
       {projectInfoId && canViewTab.engineering && (
-        <div className="space-y-2" data-testid="stage-lifecycle-block">
-          <CriticalControlPanel
-            projectId={projectInfoId}
-            onViewGate={() => setLocation(`/project/id/${projectInfoId}/gate/${encodeURIComponent(stageData?.currentStage?.stageCode || "S01_FIRST_ASSESSMENT")}`)}
-            isAdmin={isAdmin}
-          />
+        <div className="rounded-lg border bg-card" data-testid="stage-lifecycle-block">
+          <button
+            type="button"
+            onClick={() => setShowLifecycle((v) => !v)}
+            className="flex w-full items-center justify-between gap-2 px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+            aria-expanded={showLifecycle}
+            data-testid="toggle-lifecycle"
+          >
+            <span className="flex items-center gap-2">
+              <Milestone className="h-3.5 w-3.5" />
+              Lifecycle &amp; gates
+            </span>
+            {showLifecycle ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
+          {showLifecycle && (
+            <div className="border-t p-3 space-y-2">
+              <CriticalControlPanel
+                projectId={projectInfoId}
+                onViewGate={() => setLocation(`/project/id/${projectInfoId}/gate/${encodeURIComponent(stageData?.currentStage?.stageCode || "S01_FIRST_ASSESSMENT")}`)}
+                isAdmin={isAdmin}
+              />
           {stageData && (stageData.stages || []).length > 0 && (
             <div className="rounded-lg border bg-card px-3 py-2" data-testid="stage-timeline-inline">
               <StageTimeline
@@ -1263,6 +1270,8 @@ export default function ProjectDetailPage() {
               </div>
             )}
           </div>
+            </div>
+          )}
         </div>
       )}
       {projectInfoId && !canViewTab.engineering && (
@@ -1271,12 +1280,30 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      {/* Priority badges */}
-      <ProjectPriorityBadges projectId={projectInfoId ?? null} />
-
-      {/* Linked entity info cards (B2/B3/B5) */}
+      {/* Project context — site, budget baseline & linked priorities.
+          Collapsed by default; reference data, not daily actions. */}
       {projectInfoId && (
-        <LinkedEntityCards projectInfoId={projectInfoId} />
+        <div className="rounded-lg border bg-card" data-testid="project-context-disclosure">
+          <button
+            type="button"
+            onClick={() => setShowContext((v) => !v)}
+            className="flex w-full items-center justify-between gap-2 px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+            aria-expanded={showContext}
+            data-testid="toggle-project-context"
+          >
+            <span className="flex items-center gap-2">
+              <MapPin className="h-3.5 w-3.5" />
+              Site, budget &amp; priorities
+            </span>
+            {showContext ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
+          {showContext && (
+            <div className="border-t p-3 space-y-3">
+              <ProjectPriorityBadges projectId={projectInfoId ?? null} />
+              <LinkedEntityCards projectInfoId={projectInfoId} />
+            </div>
+          )}
+        </div>
       )}
 
       {/* GC-012: Contract value reconciliation warning â€” uses V2 finance summary */}
@@ -1297,14 +1324,9 @@ export default function ProjectDetailPage() {
         ) : null;
       })()}
 
-      <div className="flex flex-wrap gap-1.5" data-testid="project-trust-markers">
-        <TrustMarker label="Project" source="App" updatedAt={v2DetailUpdatedAt} stale={v2DetailFetching} loadError={!v2Detail && !v2DetailFetching} />
-        <TrustMarker label="Revenue" source="Excel / App" updatedAt={revenueUpdatedAt} drift={revenueTrustData?.reconciliation?.status || null} stale={revenueFetching} loadError={revenueLoadError} lineage={v2Detail?.importLineage ?? null} />
-        <TrustMarker label="Cashflow" source="QuickBooks / App" updatedAt={cashflowUpdatedAt} stale={cashflowFetching} loadError={cashflowLoadError} lineage={v2Detail?.importLineage ?? null} />
-        <TrustMarker label="Quality" source="Manual override / App" updatedAt={qualityUpdatedAt} stale={qualityFetching} loadError={qualityLoadError} />
-      </div>
+      {/* Data-freshness trust markers now live inside the department "ⓘ" popover below. */}
 
-      {canViewTab.quality && (
+      {canViewTab.quality && (qualityWorkspaceLoading || qualityWorkspaceError || qualityWorkspace?.hasChecklist) && (
         <div className="rounded-md border bg-card px-3 py-2 text-xs" data-testid="project-quality-readiness-strip">
           {qualityWorkspaceLoading ? (
             <div className="flex items-center gap-2 text-muted-foreground">
@@ -1313,9 +1335,7 @@ export default function ProjectDetailPage() {
             </div>
           ) : qualityWorkspaceError ? (
             <div className="text-red-700">Could not load quality readiness. Open the Quality tab to retry.</div>
-          ) : !qualityWorkspace?.hasChecklist ? (
-            <div className="text-muted-foreground">No quality checklist is active for this project.</div>
-          ) : (
+          ) : qualityWorkspace?.hasChecklist ? (
             <div className="flex flex-wrap items-center gap-1.5">
               <button type="button" onClick={() => navigateToSubTab("checklist", undefined, "quality")} className="rounded border px-2 py-1 hover:bg-muted">
                 Quality status: <span className="font-semibold">{Math.round(qualityProgressPct)}%</span>
@@ -1333,7 +1353,7 @@ export default function ProjectDetailPage() {
                 Handover blocked: <span className="font-semibold">{qualityWorkspace.counts.blockedHandover || qualityWorkspace.handover?.blocked ? "Yes" : "No"}</span>
               </button>
             </div>
-          )}
+          ) : null}
         </div>
       )}
 
@@ -1421,6 +1441,15 @@ export default function ProjectDetailPage() {
                     : formatUpdatedAt(v2DetailUpdatedAt)
               }</div>
             </div>
+            <div className="border-t pt-2 space-y-1.5" data-testid="project-trust-markers">
+              <div className="font-semibold text-foreground text-[11px] uppercase tracking-wide">Data freshness</div>
+              <div className="flex flex-wrap gap-1.5">
+                <TrustMarker label="Project" source="App" updatedAt={v2DetailUpdatedAt} stale={v2DetailFetching} loadError={!v2Detail && !v2DetailFetching} />
+                <TrustMarker label="Revenue" source="Excel / App" updatedAt={revenueUpdatedAt} drift={revenueTrustData?.reconciliation?.status || null} stale={revenueFetching} loadError={revenueLoadError} lineage={v2Detail?.importLineage ?? null} />
+                <TrustMarker label="Cashflow" source="QuickBooks / App" updatedAt={cashflowUpdatedAt} stale={cashflowFetching} loadError={cashflowLoadError} lineage={v2Detail?.importLineage ?? null} />
+                <TrustMarker label="Quality" source="Manual override / App" updatedAt={qualityUpdatedAt} stale={qualityFetching} loadError={qualityLoadError} />
+              </div>
+            </div>
             <div className="border-t pt-2">
               <div className="font-semibold text-foreground text-[11px] uppercase tracking-wide mb-1.5">Related departments</div>
               <RelatedDepartmentLinks projectId={projectInfoId ?? null} projectName={projectName ?? null} />
@@ -1505,37 +1534,53 @@ export default function ProjectDetailPage() {
             {stageData?.currentStage && <div><span className="text-muted-foreground">Gate:</span> <span className="font-semibold">{(stageData.currentStage as any).label || stageData.currentStage.stageCode}</span></div>}
           </div>
 
-          {/* PM sub-tabs */}
+          {/* PM sub-tabs — Plan groups the Gantt / Board / Calendar views
+              behind a switcher (below); RAID and Handover are siblings. */}
           <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="pm-sub-tabs">
             {[
               { key: "plan", label: "Plan", icon: ListTodo },
-              { key: "board", label: "Board", icon: Columns },
-              { key: "calendar", label: "Calendar", icon: CalendarDays },
-              { key: "commissioning", label: "Commissioning", icon: CheckCircle },
               { key: "raid", label: "RAID", icon: AlertTriangle },
               { key: "handover", label: "Handover", icon: Handshake },
-              { key: "financial-review", label: "Financial Review", icon: DollarSign, visible: canViewTab.finance },
-            ].filter((st: any) => st.visible !== false).map(st => (
-              <Button key={st.key} size="sm" variant={activeSubTab === st.key ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => navigateToSubTab(st.key)} data-testid={`subtab-${st.key}`}>
-                <st.icon className="h-3 w-3 mr-1" /> {st.label}
-              </Button>
-            ))}
+            ].filter((st: any) => st.visible !== false).map(st => {
+              const isActive = st.key === "plan"
+                ? (activeSubTab === "plan" || activeSubTab === "board" || activeSubTab === "calendar")
+                : activeSubTab === st.key;
+              return (
+                <Button key={st.key} size="sm" variant={isActive ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => navigateToSubTab(st.key)} data-testid={`subtab-${st.key}`}>
+                  <st.icon className="h-3 w-3 mr-1" /> {st.label}
+                </Button>
+              );
+            })}
           </div>
+
+          {/* Plan view switcher — Gantt / Board / Calendar are three views of
+              the same tasks, chosen here rather than as separate top-level tabs. */}
+          {(activeSubTab === "plan" || activeSubTab === "board" || activeSubTab === "calendar") && canViewTab.overview && (
+            <div className="inline-flex items-center gap-1 rounded-lg border bg-muted/40 p-1" data-testid="plan-view-switcher">
+              {[
+                { key: "plan", label: "Gantt", icon: ListTodo },
+                { key: "board", label: "Board", icon: Columns },
+                { key: "calendar", label: "Calendar", icon: CalendarDays },
+              ].map(v => (
+                <Button
+                  key={v.key}
+                  size="sm"
+                  variant={activeSubTab === v.key ? "default" : "ghost"}
+                  className="h-7 text-xs"
+                  onClick={() => navigateToSubTab(v.key)}
+                  data-testid={`plan-view-${v.key}`}
+                >
+                  <v.icon className="h-3 w-3 mr-1" /> {v.label}
+                </Button>
+              ))}
+            </div>
+          )}
 
           {activeSubTab === "plan" && canViewTab.overview && <UnifiedPlanTab projectName={projectName} projectId={projectInfoId} onTaskClick={handleTaskClick} />}
           {activeSubTab === "board" && canViewTab.overview && <BoardView projectName={projectName} onTaskClick={handleTaskClick} />}
           {activeSubTab === "calendar" && canViewTab.overview && <CalendarView projectName={projectName} onTaskClick={handleTaskClick} />}
-          {activeSubTab === "commissioning" && projectInfoId && (
-            <div className="rounded-lg border bg-muted/30 p-6 text-center space-y-3">
-              <p className="text-sm text-muted-foreground">Commissioning is now managed via the Commissioning Control Tower.</p>
-              <a href={`/commissioning-dashboard/${projectInfoId}`} className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
-                Open Commissioning Dashboard
-              </a>
-            </div>
-          )}
           {activeSubTab === "raid" && projectInfoId && <ProjectRaidTab projectId={projectInfoId} projectName={projectName} />}
           {activeSubTab === "handover" && projectInfoId && <ProjectHandoverTab projectId={projectInfoId} projectName={projectName} initialFilter={handoverFilter === "blocked" ? "blocked" : "all"} />}
-          {activeSubTab === "financial-review" && canViewTab.finance && projectInfoId && <FinancialReviewTab projectId={projectInfoId} projectName={projectName} />}
         </div>
       )}
 
@@ -1577,7 +1622,7 @@ export default function ProjectDetailPage() {
            QUALITY DEPARTMENT
            Permission guard: activeSection === "quality" && canViewTab.quality
          â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
-      {activeDept === "quality" && (canViewTab.quality || canViewTab.history) && (
+      {activeDept === "quality" && canViewTab.quality && (
         <div className="space-y-3" data-testid="dept-quality-section">
           {/* Quality KPI strip */}
           <div className="flex items-center gap-4 flex-wrap rounded-md border bg-muted/30 px-3 py-2 text-xs">
@@ -1595,8 +1640,6 @@ export default function ProjectDetailPage() {
             {[
               { key: "checklist", label: "QC Checklist", icon: ClipboardList, visible: canViewTab.quality },
               { key: "documents", label: "Documents", icon: FolderOpen, visible: canViewTab.quality },
-              { key: "history", label: "History", icon: History, visible: canViewTab.history },
-              { key: "approvals", label: "Approvals", icon: FileCheck, visible: canViewTab.quality },
             ].filter(st => st.visible).map(st => (
               <Button key={st.key} size="sm" variant={activeSubTab === st.key ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => navigateToSubTab(st.key)} data-testid={`subtab-${st.key}`}>
                 <st.icon className="h-3 w-3 mr-1" /> {st.label}
@@ -1606,23 +1649,6 @@ export default function ProjectDetailPage() {
 
           {activeSubTab === "checklist" && canViewTab.quality && <QualityTab projectName={projectName} projectInfoId={projectInfoId ?? null} initialStatusFilter={qualityFilter || undefined} chip={qualityChip || undefined} onNavigateSubTab={(sub) => navigateToSubTab(sub)} />}
           {activeSubTab === "documents" && canViewTab.quality && projectInfoId && <ProjectDocumentRegisterPanel projectId={projectInfoId} projectName={projectName} domain="quality" />}
-          {activeSubTab === "history" && canViewTab.history && (
-            <div className="space-y-2">
-              <WeeklyReviewWizard
-                projectName={projectName}
-                snapshotMetrics={{
-                  phase: phase || undefined,
-                  completion: projectInfo?.project_pct_complete ?? undefined,
-                  totalRevenue: totalPaidInflows,
-                  totalExpenses,
-                  margin: totalPaidInflows > 0 ? (totalPaidInflows - totalExpenses) / totalPaidInflows : 0,
-                  overdueCount: overdueEngineeringCount,
-                }}
-              />
-              <ProjectHistoryTab projectName={projectName} />
-            </div>
-          )}
-          {activeSubTab === "approvals" && canViewTab.quality && <ProjectApprovalsTab projectName={projectName} projectInfoId={projectInfoId ?? null} onNavigateSubTab={(sub) => navigateToSubTab(sub)} />}
         </div>
       )}
 
@@ -1670,22 +1696,41 @@ export default function ProjectDetailPage() {
 
           </div>
 
-          {/* Finance sub-tabs */}
+          {/* Finance sub-tabs — the COS / Revenue / GP monthly grids share one
+              "Recognition" tab with a metric switcher (below). */}
           <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="finance-sub-tabs">
-            {[
-              { key: "revenue", label: "Milestone Tracker", icon: DollarSign, visible: financeSubTabGates.revenue },
-              { key: "cost-lines", label: "Expenditure Breakdown", icon: CreditCard, visible: financeSubTabGates.expenditure },
-              { key: "cos-tracker", label: "COS Tracker", icon: CheckCircle, visible: financeSubTabGates.cosTracker },
-              { key: "rev-tracker", label: "Revenue Tracker", icon: TrendingUp, visible: financeSubTabGates.revenueTracker },
-              { key: "gp-tracker", label: "GP Tracker", icon: TrendingUp, visible: financeSubTabGates.gpTracker },
-              { key: "cashflow", label: "Cashflow", icon: Activity, visible: financeSubTabGates.cashflow },
-              { key: "qb-recon", label: "QB Recon", icon: Plug, visible: financeSubTabGates.quickBooks },
-            ].filter(st => st.visible).map(st => (
-              <Button key={st.key} size="sm" variant={activeSubTab === st.key ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => navigateToSubTab(st.key)} data-testid={`subtab-${st.key}`}>
-                <st.icon className="h-3 w-3 mr-1" /> {st.label}
-              </Button>
-            ))}
+            {(() => {
+              const recognitionVisible = financeSubTabGates.revenueTracker || financeSubTabGates.cosTracker || financeSubTabGates.gpTracker;
+              const recognitionDefault: ProjectDetailSubTabKey = financeSubTabGates.revenueTracker ? "rev-tracker" : financeSubTabGates.cosTracker ? "cos-tracker" : "gp-tracker";
+              return [
+                { key: "revenue", label: "Invoice Milestones", icon: DollarSign, visible: financeSubTabGates.revenue, target: "revenue", group: ["revenue"] },
+                { key: "cost-lines", label: "Expenditure Breakdown", icon: CreditCard, visible: financeSubTabGates.expenditure, target: "cost-lines", group: ["cost-lines"] },
+                { key: "recognition", label: "Recognition", icon: TrendingUp, visible: recognitionVisible, target: recognitionDefault, group: ["rev-tracker", "cos-tracker", "gp-tracker"] },
+                { key: "cashflow", label: "Cashflow", icon: Activity, visible: financeSubTabGates.cashflow, target: "cashflow", group: ["cashflow"] },
+                { key: "qb-recon", label: "QB Recon", icon: Plug, visible: financeSubTabGates.quickBooks, target: "qb-recon", group: ["qb-recon"] },
+              ].filter(st => st.visible).map(st => (
+                <Button key={st.key} size="sm" variant={st.group.includes(activeSubTab) ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => navigateToSubTab(st.target)} data-testid={`subtab-${st.key}`}>
+                  <st.icon className="h-3 w-3 mr-1" /> {st.label}
+                </Button>
+              ));
+            })()}
           </div>
+
+          {/* Recognition switcher — Revenue / COS / GP are the same monthly grid,
+              one metric at a time. Each remains an independent deep-link + gate. */}
+          {(activeSubTab === "rev-tracker" || activeSubTab === "cos-tracker" || activeSubTab === "gp-tracker") && (
+            <div className="inline-flex items-center gap-1 rounded-lg border bg-muted/40 p-1" data-testid="recognition-view-switcher">
+              {[
+                { key: "rev-tracker", label: "Revenue", visible: financeSubTabGates.revenueTracker },
+                { key: "cos-tracker", label: "COS", visible: financeSubTabGates.cosTracker },
+                { key: "gp-tracker", label: "GP", visible: financeSubTabGates.gpTracker },
+              ].filter(v => v.visible).map(v => (
+                <Button key={v.key} size="sm" variant={activeSubTab === v.key ? "default" : "ghost"} className="h-7 text-xs" onClick={() => navigateToSubTab(v.key)} data-testid={`recognition-view-${v.key}`}>
+                  {v.label}
+                </Button>
+              ))}
+            </div>
+          )}
 
           {/* Budget baseline strip */}
           {projectInfoId && (activeSubTab === "revenue" || activeSubTab === "cost-lines" || activeSubTab === "gp-tracker") && (
