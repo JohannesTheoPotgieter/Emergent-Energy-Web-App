@@ -64,10 +64,10 @@ export const PROJECT_DETAIL_LEGACY_TAB_MAP: Record<string, { dept: ProjectDetail
   gantt: { dept: "pm", sub: "plan" },
   "key-dates": { dept: "pm", sub: "plan" },
   raid: { dept: "pm", sub: "raid" },
-  commissioning: { dept: "pm", sub: "commissioning" },
+  commissioning: { dept: "pm", sub: "plan" },
   construction: { dept: "pm", sub: "plan" },
   handover: { dept: "pm", sub: "handover" },
-  "readiness-gate": { dept: "pm", sub: "financial-review" },
+  "readiness-gate": { dept: "pm", sub: "plan" },
   plan: { dept: "pm", sub: "plan" },
   overview: { dept: "overview", sub: "command" },
   delivery: { dept: "pm", sub: "plan" },
@@ -75,8 +75,8 @@ export const PROJECT_DETAIL_LEGACY_TAB_MAP: Record<string, { dept: ProjectDetail
   "eng-stages": { dept: "eng", sub: "tasks" },
   engineering: { dept: "eng", sub: "tasks" },
   quality: { dept: "quality", sub: "checklist" },
-  history: { dept: "quality", sub: "history" },
-  approvals: { dept: "quality", sub: "approvals" },
+  history: { dept: "history", sub: "history" },
+  approvals: { dept: "history", sub: "approvals" },
   "revenue-tracking": { dept: "finance", sub: "revenue" },
   expenditure: { dept: "finance", sub: "cost-lines" },
   "monthly-realisation": { dept: "finance", sub: "cos-tracker" },
@@ -101,10 +101,10 @@ export const PROJECT_DETAIL_LEGACY_TAB_MAP: Record<string, { dept: ProjectDetail
 
 export const PROJECT_DETAIL_DEPT_SUBTABS: Record<ProjectDetailDeptKey, ProjectDetailSubTabKey[]> = {
   overview: ["command"],
-  pm: ["plan", "board", "calendar", "commissioning", "raid", "handover", "financial-review"],
+  pm: ["plan", "board", "calendar", "raid", "handover"],
   finance: ["revenue", "cost-lines", "cos-tracker", "rev-tracker", "gp-tracker", "cashflow", "qb-recon"],
   eng: ["tasks", "drawings", "documents"],
-  quality: ["checklist", "documents", "history", "approvals"],
+  quality: ["checklist", "documents"],
   procurement: ["procurement", "subcontractors"],
   documents: ["controlled-docs", "documents"],
   history: ["changes", "history", "approvals", "comms"],
@@ -155,6 +155,12 @@ export function normalizeProjectDetailDeepLink(search: string): { dept: ProjectD
   }
   if (dept === "finance" && (rawSub === "procurement" || rawSub === "subcontractors")) {
     return { dept: "procurement", sub: rawSub };
+  }
+  // Quality's "approvals" sub-tab was de-duplicated into History (its canonical
+  // home). Redirect legacy ?dept=quality&subTab=approvals links there so the
+  // user's intent (see approvals) is preserved rather than silently dropped.
+  if (dept === "quality" && rawSub === "approvals") {
+    return { dept: "history", sub: "approvals" };
   }
   if (isProjectDetailDept(dept)) {
     const allowed = PROJECT_DETAIL_DEPT_SUBTABS[dept];
@@ -216,7 +222,7 @@ export function getVisibleProjectDepartments(gates: ProjectDepartmentGates): { k
 
 export function getVisibleFinanceSubTabs(gates: FinanceSubTabGates): { key: ProjectDetailSubTabKey; label: string }[] {
   return [
-    { key: "revenue" as const, label: "Milestone Tracker", visible: gates.revenue },
+    { key: "revenue" as const, label: "Invoice Milestones", visible: gates.revenue },
     { key: "cost-lines" as const, label: "Expenditure Breakdown", visible: gates.expenditure },
     { key: "cos-tracker" as const, label: "COS Tracker", visible: gates.cosTracker },
     { key: "rev-tracker" as const, label: "Revenue Tracker", visible: gates.revenueTracker },

@@ -1811,104 +1811,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className="flex h-8 w-8 items-center justify-center border-r text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
-                  aria-label="Indent selected tasks"
-                  title="Indent selected tasks"
-                  disabled={!isAdmin || selectedIds.size === 0}
-                  onClick={() => {
-                    const selArr = Array.from(selectedIds);
-                    const selTasks = selArr.map(id => taskMap.get(id)).filter(Boolean);
-                    if (selTasks.length === 0) return;
-                    const firstSel = selTasks[0];
-                    const idx = visibleTasks.findIndex(t => t.id === firstSel.id);
-                    if (idx <= 0) return;
-                    const above = visibleTasks[idx - 1];
-                    const parentWiId = above?.workItemId;
-                    if (!parentWiId) return;
-                    const wiIds = selTasks.map((t: any) => t.workItemId).filter(Boolean);
-                    if (wiIds.length > 0) setParentMutation.mutate({ workItemIds: wiIds, parentWorkItemId: parentWiId });
-                  }}
-                  data-testid="toolbar-indent"
-                >
-                  <ArrowRight className="h-3.5 w-3.5 text-blue-600" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom"><p className="text-xs">Indent</p></TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className="flex h-8 w-8 items-center justify-center border-r text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
-                  aria-label="Outdent selected tasks"
-                  title="Outdent selected tasks"
-                  disabled={!isAdmin || selectedIds.size === 0}
-                  onClick={() => {
-                    const selArr = Array.from(selectedIds);
-                    const selTasks = selArr.map(id => taskMap.get(id)).filter(Boolean);
-                    const wiIds = selTasks.filter((t: any) => t.parentTaskId && t.workItemId).map((t: any) => t.workItemId);
-                    if (wiIds.length > 0) removeMilestoneMutation.mutate(wiIds);
-                  }}
-                  data-testid="toolbar-outdent"
-                >
-                  <ChevronLeft className="h-3.5 w-3.5 text-blue-600" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom"><p className="text-xs">Outdent</p></TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className="flex h-8 w-8 items-center justify-center border-r text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
-                  aria-label="Move selected task up"
-                  title="Move selected task up"
-                  disabled={!isAdmin || selectedIds.size !== 1}
-                  onClick={() => {
-                    const selId = Array.from(selectedIds)[0];
-                    const idx = visibleTasks.findIndex(t => t.id === selId);
-                    if (idx <= 0) return;
-                    const task = visibleTasks[idx];
-                    const above = visibleTasks[idx - 1];
-                    if (!task?.workItemId || !above?.workItemId) return;
-                    bulkReorderMutation.mutate([
-                      { workItemId: task.workItemId, sortOrder: (above.sortOrder ?? 0) - 1 },
-                    ]);
-                  }}
-                  data-testid="toolbar-move-up"
-                >
-                  <ArrowUp className="h-3.5 w-3.5" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom"><p className="text-xs">Move Up</p></TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className="flex h-8 w-8 items-center justify-center border-r text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
-                  aria-label="Move selected task down"
-                  title="Move selected task down"
-                  disabled={!isAdmin || selectedIds.size !== 1}
-                  onClick={() => {
-                    const selId = Array.from(selectedIds)[0];
-                    const idx = visibleTasks.findIndex(t => t.id === selId);
-                    if (idx < 0 || idx >= visibleTasks.length - 1) return;
-                    const task = visibleTasks[idx];
-                    const below = visibleTasks[idx + 1];
-                    if (!task?.workItemId || !below?.workItemId) return;
-                    bulkReorderMutation.mutate([
-                      { workItemId: task.workItemId, sortOrder: (below.sortOrder ?? 0) + 1 },
-                    ]);
-                  }}
-                  data-testid="toolbar-move-down"
-                >
-                  <ArrowDown className="h-3.5 w-3.5" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom"><p className="text-xs">Move Down</p></TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className="flex h-8 w-8 items-center justify-center border-r text-xs text-red-600 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex h-8 w-8 items-center justify-center text-xs text-red-600 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
                   aria-label={!canDelete ? "Delete (no permission)" : selectedIds.size === 0 ? "Delete (select tasks first)" : "Delete selected tasks"}
                   title={
                     !canDelete
@@ -1927,22 +1830,101 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
               </TooltipTrigger>
               <TooltipContent side="bottom"><p className="text-xs">Delete</p></TooltipContent>
             </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className="flex h-8 w-8 items-center justify-center text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
-                  aria-label="Renumber WBS"
-                  title="Renumber WBS"
-                  disabled={!isAdmin || renumberMutation.isPending}
-                  onClick={() => renumberMutation.mutate()}
-                  data-testid="button-renumber"
-                >
-                  <Hash className="h-3.5 w-3.5 text-violet-600" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom"><p className="text-xs">Renumber WBS</p></TooltipContent>
-            </Tooltip>
           </TooltipProvider>
+          {/* Structure actions — lower-frequency hierarchy / reorder ops
+              collapsed into one menu so the toolbar stays compact. Every
+              action keeps its handler, testid and disabled rule. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="flex h-8 items-center gap-1 border-l px-2.5 text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Structure actions"
+                title="Structure: indent, outdent, move, renumber"
+                disabled={!isAdmin}
+                data-testid="toolbar-structure-menu"
+              >
+                <Hash className="h-3.5 w-3.5 text-violet-600" />
+                Structure
+                <ChevronDown className="h-3 w-3 opacity-60" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="text-xs min-w-[190px]">
+              <DropdownMenuItem
+                disabled={!isAdmin || selectedIds.size === 0}
+                onClick={() => {
+                  const selArr = Array.from(selectedIds);
+                  const selTasks = selArr.map(id => taskMap.get(id)).filter(Boolean);
+                  if (selTasks.length === 0) return;
+                  const firstSel = selTasks[0];
+                  const idx = visibleTasks.findIndex(t => t.id === firstSel.id);
+                  if (idx <= 0) return;
+                  const above = visibleTasks[idx - 1];
+                  const parentWiId = above?.workItemId;
+                  if (!parentWiId) return;
+                  const wiIds = selTasks.map((t: any) => t.workItemId).filter(Boolean);
+                  if (wiIds.length > 0) setParentMutation.mutate({ workItemIds: wiIds, parentWorkItemId: parentWiId });
+                }}
+                data-testid="toolbar-indent"
+              >
+                <ArrowRight className="h-3.5 w-3.5 mr-2 text-blue-600" /> Indent
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!isAdmin || selectedIds.size === 0}
+                onClick={() => {
+                  const selArr = Array.from(selectedIds);
+                  const selTasks = selArr.map(id => taskMap.get(id)).filter(Boolean);
+                  const wiIds = selTasks.filter((t: any) => t.parentTaskId && t.workItemId).map((t: any) => t.workItemId);
+                  if (wiIds.length > 0) removeMilestoneMutation.mutate(wiIds);
+                }}
+                data-testid="toolbar-outdent"
+              >
+                <ChevronLeft className="h-3.5 w-3.5 mr-2 text-blue-600" /> Outdent
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                disabled={!isAdmin || selectedIds.size !== 1}
+                onClick={() => {
+                  const selId = Array.from(selectedIds)[0];
+                  const idx = visibleTasks.findIndex(t => t.id === selId);
+                  if (idx <= 0) return;
+                  const task = visibleTasks[idx];
+                  const above = visibleTasks[idx - 1];
+                  if (!task?.workItemId || !above?.workItemId) return;
+                  bulkReorderMutation.mutate([
+                    { workItemId: task.workItemId, sortOrder: (above.sortOrder ?? 0) - 1 },
+                  ]);
+                }}
+                data-testid="toolbar-move-up"
+              >
+                <ArrowUp className="h-3.5 w-3.5 mr-2" /> Move up
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!isAdmin || selectedIds.size !== 1}
+                onClick={() => {
+                  const selId = Array.from(selectedIds)[0];
+                  const idx = visibleTasks.findIndex(t => t.id === selId);
+                  if (idx < 0 || idx >= visibleTasks.length - 1) return;
+                  const task = visibleTasks[idx];
+                  const below = visibleTasks[idx + 1];
+                  if (!task?.workItemId || !below?.workItemId) return;
+                  bulkReorderMutation.mutate([
+                    { workItemId: task.workItemId, sortOrder: (below.sortOrder ?? 0) + 1 },
+                  ]);
+                }}
+                data-testid="toolbar-move-down"
+              >
+                <ArrowDown className="h-3.5 w-3.5 mr-2" /> Move down
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                disabled={!isAdmin || renumberMutation.isPending}
+                onClick={() => renumberMutation.mutate()}
+                data-testid="button-renumber"
+              >
+                <Hash className="h-3.5 w-3.5 mr-2 text-violet-600" /> Renumber WBS
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         <div className="ml-auto flex items-center gap-1.5">

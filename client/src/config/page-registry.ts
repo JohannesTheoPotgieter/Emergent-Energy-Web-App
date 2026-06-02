@@ -197,11 +197,6 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // trackers. The legacy /projects stays for one cycle so anyone
   // who needs the wide-column drill-down still has it.
   { id: "portfolio", path: "/portfolio", label: "Portfolio", iconKey: "LayoutGrid", navGroup: "PROJECTS", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "PortfolioPage" },
-  // PR-E redesign (2026-05-27) — /project/v2/:projectId 4-tab
-  // workspace. Opt-in via the "Try the new workspace (beta)" link on
-  // /project/id/:id. Not in the sidebar — users reach it from
-  // /portfolio rows or the legacy page link.
-  { id: "projectWorkspace", path: "/project/v2/:projectId", label: "Project Workspace", permissionEntity: "projects", routeComponentKey: "ProjectWorkspacePage" },
   { id: "executionBoard", path: "/execution-board", label: "Execution Board (legacy)", iconKey: "LayoutDashboard", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "ExecutionBoardPage", aliases: ["/execution-dashboard"], matchSubRoutes: true },
   { id: "executionBoardProgram", path: "/execution-board/program", label: "Program View", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "ExecutionBoardPage" },
   { id: "executionBoardConstruction", path: "/execution-board/construction", label: "Construction View", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "ExecutionBoardPage" },

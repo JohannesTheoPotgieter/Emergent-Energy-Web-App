@@ -218,15 +218,28 @@ export {
 } from "./engineering/engineering-task-views";
 
 
-export default function EngineeringTasksPage() {
+export default function EngineeringTasksPage({
+  embedded = false,
+  lockedProjectId,
+  lockedProjectName,
+}: {
+  /** When true, suppress page-level chrome (hero title, saved-view controls,
+   *  walkthroughs, URL sync, keyboard shortcuts) so the board can be embedded. */
+  embedded?: boolean;
+  /** Pin the board to a single project (by id). Hides the project filter. */
+  lockedProjectId?: number;
+  /** Project name, used to pre-fill the create-task dialog when locked. */
+  lockedProjectName?: string;
+} = {}) {
   const { enabled: microWalkthroughEnabled } = useRolloutFlag("micro_walkthrough");
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
   const savedDefaults = useMemo(() => getSavedEngDefaultView(user?.id), [user?.id]);
-  const initialUrlParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  const initialUrlParams = useMemo(() => new URLSearchParams(embedded ? "" : window.location.search), [embedded]);
   const [viewMode, setViewMode] = useState<"board" | "list" | "projects" | "mytasks" | "timeline">(() => {
+    if (embedded) return "board";
     const urlView = initialUrlParams.get("view") as any;
     if (urlView && ["board", "list", "projects", "mytasks", "timeline"].includes(urlView)) return urlView;
     return savedDefaults?.viewMode || "board";
@@ -285,6 +298,7 @@ export default function EngineeringTasksPage() {
   // ?project= carries the project filter (matches admin-approvals / lifecycle-board links);
   // ?q= carries the free-text search, so the two are no longer conflated.
   useEffect(() => {
+    if (embedded) return;
     const params = new URLSearchParams();
     if (viewMode !== "board") params.set("view", viewMode);
     if (statusFilter !== "all") params.set("status", statusFilter);
@@ -300,13 +314,13 @@ export default function EngineeringTasksPage() {
     if (url !== window.location.pathname + window.location.search) {
       window.history.replaceState(null, "", url);
     }
-  }, [viewMode, statusFilter, priorityFilter, assigneeFilter, dueDateFilter, workloadStateFilter, linkedSourceFilter, projectFilter, searchTerm]);
+  }, [embedded, viewMode, statusFilter, priorityFilter, assigneeFilter, dueDateFilter, workloadStateFilter, linkedSourceFilter, projectFilter, searchTerm]);
 
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [newTask, setNewTask] = useState({
-    projectId: null as number | null,
-    projectName: "",
+    projectId: (lockedProjectId ?? null) as number | null,
+    projectName: lockedProjectName ?? "",
     title: "",
     description: "",
     status: "to_do",
@@ -360,6 +374,7 @@ export default function EngineeringTasksPage() {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const goChordArmedRef = useRef<number | null>(null);
   useEffect(() => {
+    if (embedded) return;
     function handleKeyDown(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
@@ -390,15 +405,22 @@ export default function EngineeringTasksPage() {
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedTask, showShortcuts]);
+  }, [embedded, selectedTask, showShortcuts]);
 
-  const { data: tasks = [], isLoading, error, refetch } = useQuery<Task[]>({
+  const { data: rawTasks = [], isLoading, error, refetch } = useQuery<Task[]>({
     queryKey: engineeringTicketKeys.scope("board"),
     queryFn: () => engFetch("/api/eng/tasks"),
     refetchOnMount: "always",
     staleTime: 10_000,
     refetchInterval: 60_000,
   });
+  // When embedded in a single project's Engineering tab, scope the entire board
+  // to that project at the source (by projectId) so every column, count, metric
+  // and filter is project-local without touching the board's filter machinery.
+  const tasks = useMemo(
+    () => (lockedProjectId != null ? rawTasks.filter((t) => t.projectId === lockedProjectId) : rawTasks),
+    [rawTasks, lockedProjectId],
+  );
 
   const { data: pageTeamMembers = [] } = useQuery<TeamMember[]>({
     queryKey: ["team-members"],
@@ -947,6 +969,7 @@ export default function EngineeringTasksPage() {
     <ErrorBoundary>
     <div data-testid="eng-tasks-page" className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        {!embedded && (
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-sm">
             <ListTodo className="h-5 w-5 text-white" />
@@ -960,6 +983,7 @@ export default function EngineeringTasksPage() {
           </div>
           {microWalkthroughEnabled ? <ReplayWalkthrough screenId="eng-tasks" /> : null}
         </div>
+        )}
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex border rounded-md">
             <Button
@@ -1026,6 +1050,7 @@ export default function EngineeringTasksPage() {
               <GanttChart className="h-4 w-4" />
             </Button>
           </div>
+          {!embedded && (
           <div className="flex items-center border rounded-md">
             <Button
               variant="ghost"
@@ -1052,6 +1077,7 @@ export default function EngineeringTasksPage() {
               </Button>
             )}
           </div>
+          )}
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger asChild>
               <Button className="bg-emerald-600 hover:bg-emerald-700 h-8 text-xs" data-testid="button-create-task">
@@ -1277,7 +1303,7 @@ export default function EngineeringTasksPage() {
                 data-testid="filter-task-assignee"
               />
             )}
-            {uniqueProjects.length > 0 && (
+            {uniqueProjects.length > 0 && lockedProjectId == null && (
               <SearchableSelect
                 value={projectFilter}
                 onValueChange={setProjectFilter}
@@ -1355,8 +1381,8 @@ export default function EngineeringTasksPage() {
         </div>
       )}
 
-      {microWalkthroughEnabled ? <MicroWalkthrough screenId="eng-tasks" steps={engWalkthroughSteps} /> : null}
-      <ActionBar nextAction={engNextAction} blockers={engBlockers} />
+      {!embedded && microWalkthroughEnabled ? <MicroWalkthrough screenId="eng-tasks" steps={engWalkthroughSteps} /> : null}
+      {!embedded && <ActionBar nextAction={engNextAction} blockers={engBlockers} />}
       <EngineeringWorkloadStrip
         totalOpenWork={summaryMetrics.openTasks.length}
         unassignedCount={summaryMetrics.unassignedTasks.length}

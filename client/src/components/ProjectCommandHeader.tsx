@@ -28,20 +28,6 @@ function getPhaseLabel(phase: string | null): string {
   return PROJECT_PHASE_LABELS[phase as ProjectPhase] || phase;
 }
 
-// PR-G polish — collapse 8 phase accent hues to a single neutral
-// slate border; the phase TEXT in the badge already tells the user
-// which phase the project is in.
-const PHASE_ACCENT: Record<string, string> = {
-  P0_FIRST_ASSESSMENT: "border-slate-400",
-  P1_COST_PROPOSAL_DESIGN: "border-slate-400",
-  P2_PD_PM_HANDOVER: "border-slate-400",
-  P3_DETAILED_DESIGN_PROC_RELEASE: "border-slate-400",
-  P4_CONSTRUCTION_INSTALLATION: "border-slate-400",
-  P5_COMMISSIONING_TESTING: "border-slate-400",
-  P6_HANDOVER_CLIENT_MATRIARCH: "border-slate-400",
-  P7_CLOSEOUT_POSTMORTEM: "border-slate-400",
-};
-
 interface CommandHeaderProps {
   projectName: string;
   displayName: string;
@@ -81,15 +67,27 @@ function RagIndicator({ color, label }: { color: "green" | "amber" | "red"; labe
   );
 }
 
-function StatBlock({ label, value, color, suffix }: { label: string; value: string; color?: string; suffix?: string }) {
+// One KPI cell in the headline metric strip. Keeps the strip readable
+// with a small uppercase label over a bold value, and a single muted
+// "Restricted" state when the viewer can't see finance numbers.
+function KpiCell({
+  testid, label, children, span,
+}: {
+  testid: string;
+  label: string;
+  children: React.ReactNode;
+  span?: boolean;
+}) {
   return (
-    <div className="text-center px-3 py-1">
-      <p className="text-[10px] font-semibold text-[var(--cmd-text-muted)] uppercase tracking-wider mb-1">{label}</p>
-      <p className={`text-lg sm:text-xl font-bold leading-none ${color || "text-[var(--cmd-text)]"}`}>
-        {value}{suffix && <span className="text-xs font-normal text-[var(--cmd-text-muted)] ml-0.5">{suffix}</span>}
-      </p>
+    <div className={`px-3 py-2.5 text-center ${span ? "col-span-2 sm:col-span-1" : ""}`} data-testid={testid}>
+      <p className="text-[10px] font-medium text-[var(--cmd-text-muted)] uppercase tracking-wider mb-0.5">{label}</p>
+      {children}
     </div>
   );
+}
+
+function RestrictedValue() {
+  return <p className="text-xs font-semibold text-[var(--cmd-text-muted)] leading-none">Restricted</p>;
 }
 
 function useAlertStripData(projectInfoId: number | null, projectName: string | undefined, gates: { quality: boolean; procurement: boolean }) {
@@ -370,6 +368,10 @@ export function ProjectCommandHeader({
   const [ragDialogOpen, setRagDialogOpen] = useState(false);
   const [newRag, setNewRag] = useState<string>(ragStatus || "");
   const [ragComment, setRagComment] = useState("");
+  // Secondary identity (PD/PM, size, completion, health breakdown, import
+  // detail) is tucked behind this toggle so the resting header stays a
+  // single compact bar. Closed by default — the strong-declutter default.
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const ragMutation = useMutation({
     mutationFn: async () => {
@@ -410,222 +412,225 @@ export function ProjectCommandHeader({
     : overallRag === "RED" ? "Critical"
     : "Not Set";
 
-  const phaseAccent = phase ? PHASE_ACCENT[phase] || "border-slate-400" : "border-slate-400";
   const nextMilestoneDisplay = formatNextMilestoneSummary(nextMilestone, { truncateAt: 18 });
   const importStatus = summarizeImportLineage(importLineage);
 
   return (
     <div className="command-header" data-testid="project-command-header">
-      <div className="flex items-center gap-2 mb-3">
-        <Button variant="ghost" size="sm" onClick={() => setLocation("/projects")} className="gap-1.5 text-[var(--cmd-text-muted)] hover:text-[var(--cmd-text)] hover:bg-gray-100 h-7 px-2" data-testid="button-back">
-          <ArrowLeft className="h-3.5 w-3.5" />
-          <span className="text-xs">Project List</span>
-        </Button>
-      </div>
+      <div className="rounded-xl border border-[var(--cmd-border)] bg-[var(--cmd-bg)] shadow-sm overflow-hidden">
+        {/* ── Identity bar — always visible. Back · name · phase · import ·
+              health · primary actions · details toggle. One clean row. ── */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setLocation("/projects")}
+            className="gap-1.5 text-[var(--cmd-text-muted)] hover:text-[var(--cmd-text)] hover:bg-gray-100 h-7 px-2 shrink-0"
+            data-testid="button-back"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span className="text-xs hidden sm:inline">Projects</span>
+          </Button>
 
-      <div className="rounded-xl border border-[var(--cmd-border)] bg-[var(--cmd-bg)] overflow-hidden" style={{ borderRadius: '12px' }}>
-        <div className={`border-l-4 ${phaseAccent}`}>
-          <div className="p-4 sm:p-5">
-            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-              <div className="space-y-3 min-w-0 flex-1">
-                <div className="flex items-start gap-3 flex-wrap">
-                  <h1 className="text-xl sm:text-2xl font-heading font-bold text-[var(--cmd-text)] leading-tight" data-testid="text-project-name">
-                    {displayName}
-                  </h1>
-                  <button
-                    onClick={() => isAdmin && setLocation("/lifecycle-board")}
-                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border border-[var(--cmd-border)] bg-white text-[var(--cmd-text-secondary)] hover:bg-gray-50 transition-colors ${isAdmin ? "cursor-pointer" : "cursor-default"}`}
-                    disabled={!isAdmin}
-                    title={isAdmin ? "Manage phase on Lifecycle Board" : undefined}
-                    data-testid="badge-project-phase"
-                  >
-                    {getPhaseLabel(phase)}
-                    {isAdmin && <ArrowUpRight className="h-3 w-3 opacity-50" />}
-                  </button>
-                </div>
+          <h1
+            className="text-lg sm:text-xl font-heading font-bold text-[var(--cmd-text)] leading-tight truncate min-w-0"
+            data-testid="text-project-name"
+            title={displayName}
+          >
+            {displayName}
+          </h1>
 
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px]">
-                  {isAdmin ? (
-                    <span className="flex items-center gap-1.5 text-[var(--cmd-text-secondary)]">
-                      <User className="h-3.5 w-3.5 text-[var(--cmd-text-muted)]" /> PD:
-                      <SearchableSelect
-                        value={pd === "—" ? "__unassigned" : pd}
-                        onValueChange={(val) => {
-                          const newPd = val === "__unassigned" ? "" : val;
-                          if (projectInfoId) {
-                            engFetchPatch(`/api/lifecycle-board/projects/${projectInfoId}`, { pd: newPd })
-                              .then(() => { invalidateProjectV2Queries(queryClient, projectInfoId, projectName); });
-                          }
-                        }}
-                        triggerClassName="h-6 text-[11px] w-auto min-w-[90px] border-[var(--cmd-border)] bg-transparent text-[var(--cmd-text-secondary)] border-dashed"
-                        placeholder="Unassigned"
-                        data-testid="select-detail-pd"
-                        options={[
-                          { value: "__unassigned", label: "Unassigned" },
-                          ...pdAssignableUsers.map((u) => ({ value: u.name, label: u.name })),
-                        ]}
-                      />
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1.5 text-[var(--cmd-text-secondary)]">
-                      <User className="h-3.5 w-3.5 text-[var(--cmd-text-muted)]" /> PD: <span className="font-medium">{pd}</span>
-                    </span>
-                  )}
+          <button
+            onClick={() => isAdmin && setLocation("/lifecycle-board")}
+            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border border-[var(--cmd-border)] bg-white text-[var(--cmd-text-secondary)] hover:bg-gray-50 transition-colors shrink-0 ${isAdmin ? "cursor-pointer" : "cursor-default"}`}
+            disabled={!isAdmin}
+            title={isAdmin ? "Manage phase on Lifecycle Board" : "Project phase"}
+            data-testid="badge-project-phase"
+          >
+            {getPhaseLabel(phase)}
+            {isAdmin && <ArrowUpRight className="h-3 w-3 opacity-50" />}
+          </button>
 
-                  {isAdmin ? (
-                    <span className="flex items-center gap-1.5 text-[var(--cmd-text-secondary)]">
-                      <User className="h-3.5 w-3.5 text-[var(--cmd-text-muted)]" /> PM:
-                      <SearchableSelect
-                        value={pm === "—" ? "__unassigned" : pm}
-                        onValueChange={(val) => {
-                          const newPm = val === "__unassigned" ? "" : val;
-                          const matched = pmAssignableUsers.find((u) => u.name === newPm);
-                          if (projectInfoId) {
-                            engFetchPatch(`/api/lifecycle-board/projects/${projectInfoId}`, { pm: newPm, pmUserId: matched?.id ?? null })
-                              .then(() => { invalidateProjectV2Queries(queryClient, projectInfoId, projectName); });
-                          }
-                        }}
-                        triggerClassName="h-6 text-[11px] w-auto min-w-[90px] border-[var(--cmd-border)] bg-transparent text-[var(--cmd-text-secondary)] border-dashed"
-                        placeholder="Unassigned"
-                        data-testid="select-detail-pm"
-                        options={[
-                          { value: "__unassigned", label: "Unassigned" },
-                          ...pmAssignableUsers.map((u) => ({ value: u.name, label: u.name })),
-                        ]}
-                      />
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1.5 text-[var(--cmd-text-secondary)]">
-                      <User className="h-3.5 w-3.5 text-[var(--cmd-text-muted)]" /> PM: <span className="font-medium">{pm}</span>
-                    </span>
-                  )}
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] shrink-0 ${
+              importStatus.tone === "success"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : importStatus.tone === "warning"
+                  ? "border-amber-200 bg-amber-50 text-amber-800"
+                  : "border-gray-200 bg-gray-50 text-gray-700"
+            }`}
+            data-testid="project-import-lineage"
+            title={importStatus.detail}
+          >
+            Tracker import: <span className="font-semibold">{importStatus.label}</span>
+          </span>
 
-                  <span className="flex items-center gap-1.5 text-[var(--cmd-text-secondary)]">
-                    <Activity className="h-3.5 w-3.5 text-[var(--cmd-text-muted)]" />
-                    <span className="font-medium">{sizeKwp}</span>
-                  </span>
+          <div className="flex-1 min-w-[0.5rem]" />
 
-                  <span className="flex items-center gap-1.5 text-[var(--cmd-text-secondary)]">
-                    <TrendingUp className="h-3.5 w-3.5 text-[var(--cmd-text-muted)]" />
-                    <span className="font-medium">{completion}</span>
-                  </span>
+          <button
+            onClick={() => { if (canSetRag && projectInfoId) { setNewRag(ragStatus || ""); setRagDialogOpen(true); } }}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[var(--cmd-border)] bg-white transition-colors shrink-0 ${canSetRag ? "hover:bg-gray-50 cursor-pointer" : "cursor-default"}`}
+            data-testid="button-rag-status"
+            title={canSetRag ? "Set project health" : `Project health: ${ragLabel}`}
+          >
+            <span className={`w-2.5 h-2.5 rounded-full ${ragDotClass} shadow-sm`} />
+            <span className="text-xs font-semibold text-[var(--cmd-text)]">{ragLabel}</span>
+            {canSetRag && <ChevronDown className="h-3 w-3 text-[var(--cmd-text-muted)]" />}
+          </button>
 
-                  <span
-                    className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 ${
-                      importStatus.tone === "success"
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                        : importStatus.tone === "warning"
-                          ? "border-amber-200 bg-amber-50 text-amber-800"
-                          : "border-gray-200 bg-gray-50 text-gray-700"
-                    }`}
-                    data-testid="project-import-lineage"
-                    title={importStatus.detail}
-                  >
-                    Tracker import: <span className="font-semibold">{importStatus.label}</span>
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <CaptureDeliverable projectId={projectInfoId ?? undefined} projectName={projectName} />
-                  {canViewProcurement && <POGenerator projectName={projectName} projectManager={pm !== "—" ? pm : undefined} />}
-                </div>
-              </div>
-
-              <div className="flex flex-col items-end gap-3 shrink-0">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => { if (canSetRag && projectInfoId) { setNewRag(ragStatus || ""); setRagDialogOpen(true); } }}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[var(--cmd-border)] bg-white transition-colors ${canSetRag ? "hover:bg-gray-50 cursor-pointer" : "cursor-default"}`}
-                    data-testid="button-rag-status"
-                  >
-                    <span className={`w-3 h-3 rounded-full ${ragDotClass} shadow-sm`} />
-                    <span className="text-xs font-semibold text-[var(--cmd-text)]">{ragLabel}</span>
-                    {canSetRag && <ChevronDown className="h-3 w-3 text-[var(--cmd-text-muted)]" />}
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-3 bg-white rounded-lg border border-[var(--cmd-border)] px-3 py-2">
-                  <RagIndicator color={scheduleRag} label="Sch" />
-                  <RagIndicator color={costRag} label="Cost" />
-                  <RagIndicator color={qualityRag} label="Qual" />
-                </div>
-              </div>
-            </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <CaptureDeliverable projectId={projectInfoId ?? undefined} projectName={projectName} />
+            {canViewProcurement && <POGenerator projectName={projectName} projectManager={pm !== "—" ? pm : undefined} />}
           </div>
 
-          <div className="border-t border-[var(--cmd-border)]" style={{ background: 'var(--cmd-bg-panel)' }}>
-            <div className="grid grid-cols-2 sm:grid-cols-5 divide-x divide-[var(--cmd-border)]">
-              <div className="p-3 text-center" data-testid="kpi-contract">
-                <p className="text-[10px] font-medium text-[var(--cmd-text-muted)] uppercase tracking-wider mb-0.5">Contract</p>
-                {canViewFinance ? (
-                  <p className="text-base sm:text-lg font-bold text-[var(--cmd-text)]">R{(contractValue / 1000000).toFixed(1)}M</p>
-                ) : (
-                  <p className="text-xs font-semibold text-[var(--cmd-text-muted)]">Restricted</p>
-                )}
-              </div>
-              <div className="p-3 text-center" data-testid="kpi-revenue">
-                <p className="text-[10px] font-medium text-[var(--cmd-text-muted)] uppercase tracking-wider mb-0.5">Inflows Realised</p>
-                {canViewFinance ? (
-                  <p className={`text-base sm:text-lg font-bold ${revenueRealisedPct >= 80 ? "text-[var(--cmd-green)]" : revenueRealisedPct >= 40 ? "text-[var(--cmd-amber)]" : "text-[var(--cmd-text)]"}`}>{revenueRealisedPct.toFixed(1)}%</p>
-                ) : (
-                  <p className="text-xs font-semibold text-[var(--cmd-text-muted)]">Restricted</p>
-                )}
-              </div>
-              <div className="p-3 text-center" data-testid="kpi-cos">
-                <p className="text-[10px] font-medium text-[var(--cmd-text-muted)] uppercase tracking-wider mb-0.5">COS Realised</p>
-                {canViewFinance ? (
-                  <p className="text-base sm:text-lg font-bold text-[var(--cmd-text)]">{cosRealisedPct.toFixed(1)}%</p>
-                ) : (
-                  <p className="text-xs font-semibold text-[var(--cmd-text-muted)]">Restricted</p>
-                )}
-              </div>
-              <div className="p-3 text-center" data-testid="kpi-margin">
-                <p className="text-[10px] font-medium text-[var(--cmd-text-muted)] uppercase tracking-wider mb-0.5">Margin Δ</p>
-                {canViewFinance ? (
-                  <p className={`text-base sm:text-lg font-bold ${marginDelta >= 0 ? "text-[var(--cmd-green)]" : "text-[var(--cmd-red)]"}`}>
-                    {marginDelta >= 0 ? "+" : ""}{marginDelta.toFixed(1)}%
-                  </p>
-                ) : (
-                  <p className="text-xs font-semibold text-[var(--cmd-text-muted)]">Restricted</p>
-                )}
-              </div>
-              <div className="p-3 text-center col-span-2 sm:col-span-1" data-testid="kpi-milestone">
-                <p className="text-[10px] font-medium text-[var(--cmd-text-muted)] uppercase tracking-wider mb-0.5">Next Milestone</p>
-                {canViewFinance ? (
-                  <>
-                    <p className={`text-xs font-semibold truncate ${nextMilestoneDisplay.allPaid ? "text-[var(--cmd-green)]" : "text-[var(--cmd-text-secondary)]"}`}>
-                      {nextMilestoneDisplay.label}
-                    </p>
-                    {nextMilestoneDisplay.dateLabel && (
-                      <p className="text-[10px] text-[var(--cmd-text-muted)] mt-0.5">{nextMilestoneDisplay.dateLabel}</p>
-                    )}
-                  </>
-                ) : (
-                  <p className="text-xs font-semibold text-[var(--cmd-text-muted)]">Restricted</p>
-                )}
-              </div>
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={() => setDetailsOpen((v) => !v)}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-[var(--cmd-border)] bg-white text-xs font-medium text-[var(--cmd-text-secondary)] hover:bg-gray-50 transition-colors shrink-0"
+            aria-expanded={detailsOpen}
+            data-testid="toggle-command-details"
+          >
+            Details
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${detailsOpen ? "rotate-180" : ""}`} />
+          </button>
+        </div>
 
-          <div className="border-t border-[var(--cmd-border)] bg-[var(--cmd-bg)]">
-            <div className="h-1 bg-gray-200 overflow-hidden">
-              <div
-                className="h-full transition-all duration-700 ease-out"
-                style={{
-                  width: `${completionNum}%`,
-                  background: `linear-gradient(90deg, var(--cmd-brand) 0%, var(--cmd-brand-light) 100%)`,
-                }}
-              />
-            </div>
-          </div>
+        {/* ── Headline KPIs — always visible. Finance values mask to
+              "Restricted" for viewers without finance access. ── */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 border-t border-[var(--cmd-border)] divide-x divide-[var(--cmd-border)]">
+          <KpiCell testid="kpi-contract" label="Contract">
+            {canViewFinance ? (
+              <p className="text-base sm:text-lg font-bold text-[var(--cmd-text)] leading-none">R{(contractValue / 1000000).toFixed(1)}M</p>
+            ) : <RestrictedValue />}
+          </KpiCell>
+          <KpiCell testid="kpi-revenue" label="Inflows Realised">
+            {canViewFinance ? (
+              <p className={`text-base sm:text-lg font-bold leading-none ${revenueRealisedPct >= 80 ? "text-[var(--cmd-green)]" : revenueRealisedPct >= 40 ? "text-[var(--cmd-amber)]" : "text-[var(--cmd-text)]"}`}>{revenueRealisedPct.toFixed(1)}%</p>
+            ) : <RestrictedValue />}
+          </KpiCell>
+          <KpiCell testid="kpi-cos" label="COS Realised">
+            {canViewFinance ? (
+              <p className="text-base sm:text-lg font-bold text-[var(--cmd-text)] leading-none">{cosRealisedPct.toFixed(1)}%</p>
+            ) : <RestrictedValue />}
+          </KpiCell>
+          <KpiCell testid="kpi-margin" label="Margin Δ">
+            {canViewFinance ? (
+              <p className={`text-base sm:text-lg font-bold leading-none ${marginDelta >= 0 ? "text-[var(--cmd-green)]" : "text-[var(--cmd-red)]"}`}>
+                {marginDelta >= 0 ? "+" : ""}{marginDelta.toFixed(1)}%
+              </p>
+            ) : <RestrictedValue />}
+          </KpiCell>
+          <KpiCell testid="kpi-milestone" label="Next Milestone" span>
+            {canViewFinance ? (
+              <>
+                <p className={`text-xs font-semibold truncate leading-tight ${nextMilestoneDisplay.allPaid ? "text-[var(--cmd-green)]" : "text-[var(--cmd-text-secondary)]"}`}>
+                  {nextMilestoneDisplay.label}
+                </p>
+                {nextMilestoneDisplay.dateLabel && (
+                  <p className="text-[10px] text-[var(--cmd-text-muted)] mt-0.5">{nextMilestoneDisplay.dateLabel}</p>
+                )}
+              </>
+            ) : <RestrictedValue />}
+          </KpiCell>
+        </div>
 
-          <AlertStrip
-            projectInfoId={projectInfoId}
-            projectName={projectName}
-            canViewQuality={canViewQuality}
-            canViewProcurement={canViewProcurement}
+        {/* completion ribbon */}
+        <div className="h-1 bg-gray-200 overflow-hidden">
+          <div
+            className="h-full transition-all duration-700 ease-out"
+            style={{
+              width: `${completionNum}%`,
+              background: `linear-gradient(90deg, var(--cmd-brand) 0%, var(--cmd-brand-light) 100%)`,
+            }}
           />
         </div>
+
+        {/* ── Details panel — collapsible. PD/PM, size, completion, the
+              Sch/Cost/Qual health breakdown, and full import lineage. ── */}
+        {detailsOpen && (
+          <div className="border-t border-[var(--cmd-border)] bg-gray-50/60 px-4 py-3" data-testid="command-details-panel">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[12px]">
+              {isAdmin ? (
+                <span className="flex items-center gap-1.5 text-[var(--cmd-text-secondary)]">
+                  <User className="h-3.5 w-3.5 text-[var(--cmd-text-muted)]" /> PD:
+                  <SearchableSelect
+                    value={pd === "—" ? "__unassigned" : pd}
+                    onValueChange={(val) => {
+                      const newPd = val === "__unassigned" ? "" : val;
+                      if (projectInfoId) {
+                        engFetchPatch(`/api/lifecycle-board/projects/${projectInfoId}`, { pd: newPd })
+                          .then(() => { invalidateProjectV2Queries(queryClient, projectInfoId, projectName); });
+                      }
+                    }}
+                    triggerClassName="h-6 text-[11px] w-auto min-w-[90px] border-[var(--cmd-border)] bg-transparent text-[var(--cmd-text-secondary)] border-dashed"
+                    placeholder="Unassigned"
+                    data-testid="select-detail-pd"
+                    options={[
+                      { value: "__unassigned", label: "Unassigned" },
+                      ...pdAssignableUsers.map((u) => ({ value: u.name, label: u.name })),
+                    ]}
+                  />
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5 text-[var(--cmd-text-secondary)]">
+                  <User className="h-3.5 w-3.5 text-[var(--cmd-text-muted)]" /> PD: <span className="font-medium">{pd}</span>
+                </span>
+              )}
+
+              {isAdmin ? (
+                <span className="flex items-center gap-1.5 text-[var(--cmd-text-secondary)]">
+                  <User className="h-3.5 w-3.5 text-[var(--cmd-text-muted)]" /> PM:
+                  <SearchableSelect
+                    value={pm === "—" ? "__unassigned" : pm}
+                    onValueChange={(val) => {
+                      const newPm = val === "__unassigned" ? "" : val;
+                      const matched = pmAssignableUsers.find((u) => u.name === newPm);
+                      if (projectInfoId) {
+                        engFetchPatch(`/api/lifecycle-board/projects/${projectInfoId}`, { pm: newPm, pmUserId: matched?.id ?? null })
+                          .then(() => { invalidateProjectV2Queries(queryClient, projectInfoId, projectName); });
+                      }
+                    }}
+                    triggerClassName="h-6 text-[11px] w-auto min-w-[90px] border-[var(--cmd-border)] bg-transparent text-[var(--cmd-text-secondary)] border-dashed"
+                    placeholder="Unassigned"
+                    data-testid="select-detail-pm"
+                    options={[
+                      { value: "__unassigned", label: "Unassigned" },
+                      ...pmAssignableUsers.map((u) => ({ value: u.name, label: u.name })),
+                    ]}
+                  />
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5 text-[var(--cmd-text-secondary)]">
+                  <User className="h-3.5 w-3.5 text-[var(--cmd-text-muted)]" /> PM: <span className="font-medium">{pm}</span>
+                </span>
+              )}
+
+              <span className="flex items-center gap-1.5 text-[var(--cmd-text-secondary)]">
+                <Activity className="h-3.5 w-3.5 text-[var(--cmd-text-muted)]" />
+                <span className="font-medium">{sizeKwp}</span>
+              </span>
+
+              <span className="flex items-center gap-1.5 text-[var(--cmd-text-secondary)]">
+                <TrendingUp className="h-3.5 w-3.5 text-[var(--cmd-text-muted)]" />
+                <span className="font-medium">{completion} complete</span>
+              </span>
+
+              <span className="flex items-center gap-3 sm:ml-auto bg-white rounded-lg border border-[var(--cmd-border)] px-3 py-1.5">
+                <RagIndicator color={scheduleRag} label="Sch" />
+                <RagIndicator color={costRag} label="Cost" />
+                <RagIndicator color={qualityRag} label="Qual" />
+              </span>
+            </div>
+            <p className="mt-2 text-[11px] text-[var(--cmd-text-muted)]" title={importStatus.detail}>{importStatus.detail}</p>
+          </div>
+        )}
+
+        <AlertStrip
+          projectInfoId={projectInfoId}
+          projectName={projectName}
+          canViewQuality={canViewQuality}
+          canViewProcurement={canViewProcurement}
+        />
       </div>
 
       <Dialog open={ragDialogOpen} onOpenChange={setRagDialogOpen}>
