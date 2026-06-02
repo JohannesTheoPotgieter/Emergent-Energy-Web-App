@@ -144,35 +144,32 @@ const inWindow = (iso: string | null, fyStart?: string, fyEnd?: string): boolean
 const normalizeKey = (raw: string): string => raw.trim().toLowerCase();
 
 /**
- * Bucket classification — matches the COS / Revenue tracker taxonomy
- * (canonical COS realisation per § 3.2: invoice captured + invoice-date
- * BLACK-confirmed, with past-month auto-promote for closed months).
+ * Bucket classification — canonical COS realisation per § 3.2: invoice captured
+ * + invoice-date BLACK-confirmed. COLOUR-GATED FOR ALL MONTHS (owner decision
+ * 2026-06): a red invoice-date stays Committed even in a closed month — there is
+ * no past-month auto-promote.
  *
  *   planned    — no invoice yet
- *   committed  — invoice captured but unconfirmed (RED) and current/future month
- *   realised   — invoice captured + (BLACK-confirmed OR past-month with invoice)
+ *   committed  — invoice captured but unconfirmed (RED), any month
+ *   realised   — invoice captured + invoice-date BLACK-confirmed
  *
- * The fourth `unrealised` bucket from earlier iterations is folded back
- * into `committed` to align with how the COS tab classifies lines.
- * Realised numbers now match the COS / REV tabs exactly.
+ * The `unrealised` bucket from earlier iterations stays folded into the
+ * no-invoice `planned` slot here; the COS/Revenue trackers surface the
+ * planned-vs-unrealised split separately.
  */
 const classifyBucket = (
   invoiceNumber: string | null,
   invoiceDateFontColor: string | null,
   invoiceDateConfirmed: boolean | null,
-  recognitionMonth: string | null,
-  currentMonthKey: string,
+  _recognitionMonth: string | null,
+  _currentMonthKey: string,
 ): FinanceLineBucket => {
   const hasInvoice = !!(invoiceNumber && invoiceNumber.trim());
   if (!hasInvoice) return "planned";
 
-  // Past-month auto-promote: a closed month with an invoice IS the
-  // confirmation, matching the COS tracker's currentMonthKey logic.
-  const isPastMonth = recognitionMonth != null && recognitionMonth < currentMonthKey;
   const confirmed =
     invoiceDateFontColor?.toLowerCase() === "black" ||
-    invoiceDateConfirmed === true ||
-    isPastMonth;
+    invoiceDateConfirmed === true;
 
   return confirmed ? "realised" : "committed";
 };
@@ -605,7 +602,10 @@ export function deriveFinanceLinesFromRows(
 
     let perLineRevenue = 0;
     let warning: string | null = null;
-    if (persistedRevenue > 0) {
+    // Use the persisted col U when present, INCLUDING negatives (credit notes /
+    // reversals keep their sign — IMPORTER_AUDIT H2). Only a genuine 0/absent
+    // value falls through to the (Q/X)*J derivation below.
+    if (persistedRevenue !== 0) {
       perLineRevenue = persistedRevenue;
     } else if (parent == null) {
       warning = "orphan_actuals_row_no_parent";

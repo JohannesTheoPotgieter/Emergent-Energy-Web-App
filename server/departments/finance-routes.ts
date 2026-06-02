@@ -2576,11 +2576,8 @@ router.get('/api/cos-tracker', requireAuth, requirePermission('cos', 'view'), as
       { total: number; projects: Map<string, number> }
     >();
 
-    // Past-month auto-promote anchor: any month strictly before this key is
-    // treated as closed for the purposes of font-color confirmation. See the
-    // per-project helpers above for the matching rule.
-    const nowAnchor = new Date();
-    const cosCurrentMonthKey = `${nowAnchor.getUTCFullYear()}-${String(nowAnchor.getUTCMonth() + 1).padStart(2, '0')}`;
+    // Past-month auto-promote removed (owner decision 2026-06, C1): realisation
+    // is colour-gated for all months, so no current-month anchor is needed here.
 
     const addProjectAmount = (
       map: Map<string, { total: number; projects: Map<string, number> }>,
@@ -2625,14 +2622,13 @@ router.get('/api/cos-tracker', requireAuth, requirePermission('cos', 'view'), as
       const projectName = (row.projectName || '').replace(/_Tracker$/i, '');
       if (!projectName) continue;
       const hasInvoice = !!(row.invoiceNumber && String(row.invoiceNumber).trim());
-      const isPastMonth = monthKey < cosCurrentMonthKey;
+      // Colour-gated for ALL months (owner decision 2026-06, § 3.2): a red
+      // invoice-date stays Committed even in a closed month. No past-month
+      // auto-promote.
       const invoiceDateConfirmed =
         !!row.invoiceDate &&
         (row.invoiceDateFontColor === 'black' ||
-          row.invoiceDateConfirmed === true ||
-          // Past-month auto-promote: invoice number on a closed month IS
-          // the confirmation.
-          (isPastMonth && hasInvoice));
+          row.invoiceDateConfirmed === true);
 
       // COS classification — purchase order is intentionally NOT part of the
       // logic per finance rule. A PO without an invoice is still "Planned".
@@ -3008,8 +3004,8 @@ router.get(
       //   planned   = !realised && !committed (no invoice, no PO)
       // QB linkage is a separate concern surfaced via matchStatus only — it does
       // NOT change which bucket the line falls into.
-      const nowAnchor = new Date();
-      const cosCurrentMonthKey = `${nowAnchor.getUTCFullYear()}-${String(nowAnchor.getUTCMonth() + 1).padStart(2, '0')}`;
+      // Past-month auto-promote removed (owner decision 2026-06, C1): realisation
+      // is colour-gated for all months.
 
       const [allCostLines, links, rawBills] = await Promise.all([
         financeExpenseRepository.listAllActiveCostLines(),
@@ -3101,15 +3097,13 @@ router.get(
         if (project && projectName !== project) continue;
 
         const hasInvoice = !!(row.invoiceNumber && String(row.invoiceNumber).trim());
-        // YTD-aware: each line's "past month" check uses its own appMonth, not
-        // the URL's monthKey — otherwise a Sep line in a YTD-through-Jan range
-        // would lose its past-month auto-promote.
-        const isPastMonth = appMonth < cosCurrentMonthKey;
+        // Colour-gated for ALL months (owner decision 2026-06, § 3.2): a red
+        // invoice-date stays Committed even in a closed month. No past-month
+        // auto-promote.
         const invoiceDateConfirmed =
           !!row.invoiceDate &&
           ((row as any).invoiceDateFontColor === 'black' ||
-            (row as any).invoiceDateConfirmed === true ||
-            (isPastMonth && hasInvoice));
+            (row as any).invoiceDateConfirmed === true);
 
         // App-side classification (matches aggregate exactly). Purchase order
         // is intentionally NOT part of the logic — a PO without an invoice

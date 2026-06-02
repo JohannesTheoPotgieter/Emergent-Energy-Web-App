@@ -360,6 +360,12 @@ export class FinanceExpenseEngineRepository {
           invoiceNumber: normalizedCostLineActuals.invoiceNumber,
           invoiceDate: normalizedCostLineActuals.invoiceDate,
           financePaymentDate: normalizedCostLineActuals.financePaymentDate,
+          // Per-actual-row revenue recognition (col U). Carried through so a
+          // BOQ line settled across N invoices recognises EACH invoice's own
+          // revenue instead of inheriting the parent's col U N times. Without
+          // this, multi-invoice lines mis-state revenue and disagree with the
+          // line-level repository (RECON_FINDINGS Root Cause C).
+          revenueRecognitionAmount: normalizedCostLineActuals.revenueRecognitionAmount,
         })
         .from(normalizedCostLineActuals)
         .where(and(
@@ -632,6 +638,9 @@ export interface ChildActualRow {
   invoiceNumber: string | null;
   invoiceDate: string | Date | null;
   financePaymentDate: string | Date | null;
+  /** Per-actual-row revenue recognition (col U). When present, overrides the
+   * parent's value so each invoice recognises its own revenue. */
+  revenueRecognitionAmount?: string | number | null;
 }
 
 export function mergeLineLevelCostLines<P extends { id: number }>(
@@ -661,6 +670,12 @@ export function mergeLineLevelCostLines<P extends { id: number }>(
         invoiceNumber: child.invoiceNumber ?? p.invoiceNumber ?? null,
         invoiceDate: child.invoiceDate ?? p.invoiceDate ?? null,
         paidDate: child.financePaymentDate ?? p.paidDate ?? null,
+        // Use THIS invoice's own col U; fall back to the parent only when the
+        // child row has no recognition amount of its own (RECON Root Cause C).
+        revenueRecognitionAmount:
+          child.revenueRecognitionAmount != null
+            ? String(child.revenueRecognitionAmount)
+            : p.revenueRecognitionAmount,
       } as P);
     }
   }

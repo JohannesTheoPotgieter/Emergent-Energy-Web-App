@@ -1,7 +1,7 @@
 import type ExcelJS from "exceljs";
 import type { DetectionResult } from "./detector";
 import type { MappingResult } from "./mapper";
-import { worksheetToArray, parseDate, parseNumber, parsePercent, parseStatus, daysBetween, lastDayOfMonthFromDate } from "./utils";
+import { worksheetToArray, parseDate, parseNumber, parsePercent, parseStatus, daysBetween } from "./utils";
 
 /**
  * Per-cell formatting captured from the source workbook, keyed by canonical
@@ -1390,7 +1390,10 @@ export function extractCostLines(
       const orphanInvoiceNo = invoiceNumCol >= 0 ? cellStr(row, invoiceNumCol) : null;
       const orphanInvoiceDate = invoiceDateCol >= 0 ? parseDate(row[invoiceDateCol]) : null;
       const orphanPaidDate = paidDateCol >= 0 ? parseDate(row[paidDateCol]) : null;
-      const orphanInvoiceDateResolved = orphanInvoiceDate ?? lastDayOfMonthFromDate(orphanPaidDate);
+      // Owner rule 2026-06 (Root Cause A): recognition month = INVOICE RAISED
+      // DATE only; no EOMONTH(finance payment date) inference. Blank invoice
+      // dates on amount-bearing rows are flagged as blockers below.
+      const orphanInvoiceDateResolved = orphanInvoiceDate;
       const orphanPo = poCol >= 0 ? cellStr(row, poCol) : null;
       const orphanRevRecog = revenueRecogCol >= 0 ? parseNumber(row[revenueRecogCol]) : null;
       const orphanComments = commentsCol >= 0 ? cellStr(row, commentsCol) : null;
@@ -1403,6 +1406,19 @@ export function extractCostLines(
         !!orphanPo || orphanRevRecog !== null || !!orphanComments;
 
       if (orphanHasData) {
+        // Owner rule 2026-06: an amount-bearing actual line must carry an
+        // INVOICE RAISED DATE. Flag (do not guess) when it is missing.
+        if (orphanActualTotal != null && Number(orphanActualTotal) !== 0 && !orphanInvoiceDateResolved) {
+          issues.push({
+            severity: "BLOCKER",
+            section: "EXPENDITURE",
+            message: `Actual invoice line on row ${i + 1} has an amount but no INVOICE RAISED DATE — it cannot be recognised in a month until this is fixed.`,
+            suggestedAction: "Enter the INVOICE RAISED DATE (col T) for this line in the tracker.",
+            issueType: "MISSING_INVOICE_DATE",
+            issueFingerprint: makeFingerprint("MISSING_INVOICE_DATE", "EXPENDITURE", `orphan_${i + 1}`),
+            payloadJson: { row: i + 1 },
+          });
+        }
         const orphanCellFormat = ws ? buildRowCellFormat(ws, i, {
           actual_qty: actualQtyCol,
           actual_rate: actualRateCol,
@@ -1525,13 +1541,13 @@ export function extractCostLines(
     const rawInvoiceDate = invoiceDateCol >= 0 ? parseDate(row[invoiceDateCol]) : null;
     const approvedDate = approvedDateCol >= 0 ? parseDate(row[approvedDateCol]) : null;
     let paidDate = paidDateCol >= 0 ? parseDate(row[paidDateCol]) : null;
-    // Tracker workbooks define INVOICE RAISED DATE (col T) as the formula
-    //   IF(FINANCE_PAYMENT_DATE > 1, EOMONTH(FINANCE_PAYMENT_DATE, 0), "")
-    // When the workbook is saved without cached formula results that cell is
-    // empty and parseDate returns null. Replicating the formula in code keeps
-    // realised COS (and the col-U revenue recognition that buckets off it) in
-    // line with the Finance-COS / Finance-Revenue pivots.
-    const invoiceDate = rawInvoiceDate ?? lastDayOfMonthFromDate(paidDate);
+    // Owner rule 2026-06 (RECON_FINDINGS Root Cause A): the recognition month is
+    // driven by INVOICE RAISED DATE (col T) ONLY. We no longer silently infer it
+    // from the FINANCE PAYMENT DATE (EOMONTH) when col T is blank — that moved
+    // cost/revenue into the wrong month. A blank invoice date on a line that has
+    // an amount is flagged as a BLOCKER below and must be corrected in the
+    // workbook (recalculate/save so col T caches, or enter the date).
+    const invoiceDate = rawInvoiceDate;
     const poNumber = cellStr(row, poCol);
 
     const status = deriveCostStatus(invoiceNumber, invoiceDate, approvedDate, paidDate);
@@ -1543,6 +1559,21 @@ export function extractCostLines(
 
     if (!hasAmount) {
       continue;
+    }
+
+    // Owner rule 2026-06: an actual cost amount MUST carry an INVOICE RAISED
+    // DATE. Without it the line cannot be recognised in a month, so flag it for
+    // correction rather than guessing (or silently dropping) the period.
+    if (!invoiceDate) {
+      issues.push({
+        severity: "BLOCKER",
+        section: "EXPENDITURE",
+        message: `Cost line on row ${i + 1} has an actual amount but no INVOICE RAISED DATE — it cannot be recognised in a month until this is fixed.`,
+        suggestedAction: "Enter the INVOICE RAISED DATE (col T) for this line in the tracker (recalculate/save so the formula caches).",
+        issueType: "MISSING_INVOICE_DATE",
+        issueFingerprint: makeFingerprint("MISSING_INVOICE_DATE", "EXPENDITURE", `${categoryKey ?? category ?? "row"}_${i + 1}`),
+        payloadJson: { row: i + 1 },
+      });
     }
 
     if (counterparty) {
