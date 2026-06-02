@@ -88,10 +88,25 @@ export class FinanceExpenseEngineRepository {
    */
   async getAllCostLinesForCashflow(): Promise<any[]> {
     const { adaptCostToExpense, createNameResolver } = await import("../lib/data-merge");
-    const [costLines, piRows] = await Promise.all([
+    const [costLines, piRows, childActuals] = await Promise.all([
       this.dbInstance.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
       this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
+      this.dbInstance
+        .select({ costLineId: normalizedCostLineActuals.costLineId, actualTotal: normalizedCostLineActuals.actualTotal })
+        .from(normalizedCostLineActuals)
+        .where(and(isNull(normalizedCostLineActuals.effectiveTo), isNull(normalizedCostLineActuals.deletedAt))),
     ]);
+
+    // Owner decision M5: cash-out uses ACTUAL TOTAL. When a cost line has
+    // actuals children (the authoritative per-invoice actuals), the cashflow
+    // amount is the SUM of those children's actual_total — not the parent's
+    // quoted amount_ex_vat. Childless lines keep the parent amount. Stays at
+    // parent grain so the rowHash/sourceRow dedup below is unaffected.
+    const actualTotalByParent = new Map<number, number>();
+    for (const c of childActuals) {
+      const v = Number(c.actualTotal);
+      if (Number.isFinite(v)) actualTotalByParent.set(c.costLineId, (actualTotalByParent.get(c.costLineId) ?? 0) + v);
+    }
 
     // Build snapshotRunId → committedAt map so rows that haven't changed
     // between imports still report the most-recent import timestamp (not their
@@ -111,6 +126,10 @@ export class FinanceExpenseEngineRepository {
     }
     const costLinesWithTs = costLines.map((r: any) => ({
       ...r,
+      // M5: prefer the summed child actual_total when this line has actuals.
+      amountExVat: actualTotalByParent.has(r.id)
+        ? String(actualTotalByParent.get(r.id))
+        : r.amountExVat,
       snapshotRunCommittedAt: committedAtByRunId.get(r.snapshotRunId) ?? null,
     }));
 

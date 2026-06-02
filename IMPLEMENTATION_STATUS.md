@@ -45,15 +45,28 @@ of silent month-drift.
 
 ---
 
-## ⏸️ Deferred (need DB validation or are separate decisions) — not done blind
+## Round 2 — owner decisions on the previously-deferred items (2026-06-02)
 
-| Ref | Why deferred | What it needs |
+| Ref | Decision | Outcome |
 |---|---|---|
-| **H1** (distinct **Unrealised** state) | Taxonomy change; partially conflicts with the owner decision to keep "Planned" as the all-states total. Needs design (no-invoice + red + future ⇒ Planned; else Unrealised) and colour on no-invoice lines. | Owner sign-off on the 4-state taxonomy + UI columns. |
-| **M4** (portfolio cross-period duplicate-invoice scan) | Within-import duplicate detection already exists; a portfolio-wide cross-period scan needs a new query + a place to surface it. | Reporting surface + DB query, validated on the snapshot. |
-| **M5** (cash-out amount source) | Marked **UNKNOWN** in the audit; the COS/Revenue trackers use child `actualTotal` via the merge, but the cashflow-out path needs confirmation against data. | Data confirmation that cash-out sums `actual_total`. |
-| **L1 / L3 / L4** | Minor (grey-tint classification edge; fuzzy-header confidence floor; VAT gross/net reconciliation note). | Low priority. |
-| **L2** (GP% null vs 0 on REV=0) | Left as `null` — renders as "—", which is arguably clearer than a misleading 0%. | No change (defensible as-is). |
+| **M4** (duplicate-invoice flags) | "We can have multiple lines to one invoice — ignore those flags." | **Done** — the within-import `DUPLICATE_INVOICE` warnings (expenditure + revenue) are **suppressed** (`server/lib/import/normalizer.ts`). A shared invoice across lines is no longer flagged. |
+| **M5** (cash-out amount) | "Should use the actual total." | **Done** — `getAllCostLinesForCashflow` now sums each line's child `actual_total` and uses that as the cash-out amount (parent grain preserved so dedup is unaffected; childless lines keep the parent amount). `server/repositories/finance-expense-engine-repository.ts`. |
+| **L1** (colour rule) | "If it's RED it's not confirmed; any other colour it is confirmed." | **Done** — `classifyColorHex` now treats **only red** as unconfirmed; every other colour collapses to the confirmed ("black") signal (`server/lib/import/normalizer.ts`). |
+| **L3** (fuzzy header match) | "Fuzzy match should be ≥90% confident, otherwise ask the user to choose." | **Done** — `findBestMatch` only auto-maps a fuzzy header at **≥0.90** similarity; below that the column is left unmapped so the import wizard prompts the user (`server/lib/import/mapper.ts`). |
+| **H1** (distinct Unrealised state) | "Fine as is now — we don't need it." | **No change** (3-bucket taxonomy kept). |
+| **L2** (GP% null vs 0) | "Agree." | **No change** (`null` → renders "—"). |
+| **L4** (VAT gross/net) | — | Reconciliation **caveat only**, not a code change: cash-in is ex-VAT (matches canonical); compare net, not gross, against QuickBooks. |
+
+All validated: typecheck clean, full unit suite green (7008 passed). Numeric effect on
+real figures (and the M5 cash-out change) still to be confirmed on the snapshot.
+
+---
+
+## ⏸️ Remaining open items
+
+Nothing substantive outstanding. **H1** could be revisited if you later want the
+4-state taxonomy; **L4** is a reconciliation note (no code). All other audit
+findings are implemented.
 
 ---
 

@@ -566,13 +566,13 @@ function classifyColorHex(hex: string | null): { color: string | null; isBlack: 
   const g = parseInt(hex.substring(2, 4), 16);
   const b = parseInt(hex.substring(4, 6), 16);
   if (isNaN(r) || isNaN(g) || isNaN(b)) return { color: null, isBlack: false };
-  const isBlack = (r < 40 && g < 40 && b < 40);
+  // Owner rule 2026-06 (L1): only RED is "not confirmed". EVERY other colour —
+  // black, blue, grey, green, default — counts as confirmed. We collapse all
+  // non-red colours to the "black" realisation signal so the downstream
+  // `=== 'black'` / isBlack gates treat them as confirmed uniformly.
   const isRedish = r > 150 && g < 80 && b < 80;
-  const isBlueish = b > 150 && r < 80 && g < 80;
-  if (isBlack) return { color: "black", isBlack: true };
   if (isRedish) return { color: "red", isBlack: false };
-  if (isBlueish) return { color: "blue", isBlack: false };
-  return { color: hex, isBlack: false };
+  return { color: "black", isBlack: true };
 }
 
 function getCellFontColor(ws: ExcelJS.Worksheet, rowIdx: number, colIdx: number): { color: string | null; isBlack: boolean } {
@@ -1100,18 +1100,9 @@ function extractRevenueLines(
       }
     }
 
+    // Owner decision M4 (2026-06): a single invoice can legitimately cover
+    // multiple lines, so duplicate-invoice-number flags are noise — suppressed.
     if (invoiceNumber) {
-      if (invoiceNumbers.has(invoiceNumber)) {
-        issues.push({
-          severity: "WARNING",
-          section: "REVENUE",
-          message: `Duplicate invoice number "${invoiceNumber}" in revenue section`,
-          suggestedAction: "Verify whether these are distinct invoices or duplicates",
-          issueType: "DUPLICATE_INVOICE",
-          issueFingerprint: makeFingerprint("DUPLICATE_INVOICE", "REVENUE", invoiceNumber),
-          payloadJson: { invoiceNumber, row: i + 1 },
-        });
-      }
       invoiceNumbers.add(invoiceNumber);
     }
 
@@ -1596,18 +1587,10 @@ export function extractCostLines(
       counterpartySet.add(counterparty);
     }
 
+    // Owner decision M4 (2026-06): a single invoice can legitimately cover
+    // multiple cost lines, so duplicate-invoice-number flags are noise —
+    // suppressed.
     if (invoiceNumber) {
-      if (invoiceNumbers.has(invoiceNumber)) {
-        issues.push({
-          severity: "WARNING",
-          section: "EXPENDITURE",
-          message: `Duplicate invoice number "${invoiceNumber}" in expenditure section`,
-          suggestedAction: "Verify whether these are distinct invoices or duplicates",
-          issueType: "DUPLICATE_INVOICE",
-          issueFingerprint: makeFingerprint("DUPLICATE_INVOICE", "EXPENDITURE", invoiceNumber),
-          payloadJson: { invoiceNumber, row: i + 1 },
-        });
-      }
       invoiceNumbers.add(invoiceNumber);
     }
 

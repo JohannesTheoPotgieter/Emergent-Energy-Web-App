@@ -57,16 +57,18 @@ function findBestMatch(
       const diceSim = diceCoefficient(normalizedHeader, normSyn);
       const score = Math.max(levSim, diceSim);
 
-      if (score > bestScore && score >= 0.5) {
+      if (score > bestScore) {
         bestScore = score;
         bestField = field;
       }
     }
   }
 
-  if (bestField && bestScore >= 0.5) {
-    const confidence = 0.4 + bestScore * 0.4;
-    return { canonicalField: bestField, confidence: Math.min(confidence, 0.85), matchType: "fuzzy" };
+  // Owner rule 2026-06 (L3): only auto-map a fuzzy header at >= 90% similarity.
+  // Below that it stays UNMATCHED so the import wizard asks the user to choose,
+  // rather than silently mapping a shifted/renamed column to the wrong field.
+  if (bestField && bestScore >= 0.9) {
+    return { canonicalField: bestField, confidence: bestScore, matchType: "fuzzy" };
   }
 
   return null;
