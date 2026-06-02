@@ -575,7 +575,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ expenseId, taskId }),
       });
-      if (!res.ok) throw new Error("Failed to link task");
+      if (!res.ok) { let b: { error?: string; message?: string } = {}; try { b = await res.json(); } catch { /* non-JSON */ } throw new Error(b.message || b.error || "Failed to link task"); }
       return res.json();
     },
     onSuccess: () => {
@@ -584,17 +584,19 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
       setTaskSearchTerm("");
       toast({ title: "Task linked", description: "Expense linked to task successfully" });
     },
+    onError: (err: Error) => toast({ title: "Could not link task", description: err.message, variant: "destructive" }),
   });
 
   const unlinkTaskMutation = useMutation({
     mutationFn: async (expenseId: number) => {
       const res = await authFetch(`/api/expense-task-links/${encodeURIComponent(projectName)}/${expenseId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to unlink task");
+      if (!res.ok) { let b: { error?: string; message?: string } = {}; try { b = await res.json(); } catch { /* non-JSON */ } throw new Error(b.message || b.error || "Failed to unlink task"); }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: breakdownKey });
       toast({ title: "Task unlinked" });
     },
+    onError: (err: Error) => toast({ title: "Could not unlink task", description: err.message, variant: "destructive" }),
   });
 
   const addLineMutation = useMutation({
@@ -604,7 +606,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectName, ...data, idempotencyKey: crypto.randomUUID() }),
       });
-      if (!res.ok) throw new Error("Failed to add line");
+      if (!res.ok) { let b: { error?: string; message?: string } = {}; try { b = await res.json(); } catch { /* non-JSON */ } throw new Error(b.message || b.error || "Failed to add line"); }
       return res.json();
     },
     onSuccess: () => {
@@ -614,6 +616,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
       setNewLineData({ category: "", description: "", amount: "", poNumber: "", invoiceNo: "", invoiceDate: "", paymentDate: "" });
       toast({ title: "Line item added" });
     },
+    onError: (err: Error) => toast({ title: "Could not add line item", description: err.message, variant: "destructive" }),
   });
 
   const addCategoryMutation = useMutation({
@@ -623,7 +626,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectName, categoryName, idempotencyKey: crypto.randomUUID() }),
       });
-      if (!res.ok) throw new Error("Failed to add category");
+      if (!res.ok) { let b: { error?: string; message?: string } = {}; try { b = await res.json(); } catch { /* non-JSON */ } throw new Error(b.message || b.error || "Failed to add category"); }
       return res.json();
     },
     onSuccess: () => {
@@ -632,6 +635,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
       setNewCategoryName("");
       toast({ title: "Category added" });
     },
+    onError: (err: Error) => toast({ title: "Could not add category", description: err.message, variant: "destructive" }),
   });
 
   const insertTaskMutation = useMutation({
@@ -641,7 +645,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectName, taskId, expenseCategory, idempotencyKey: crypto.randomUUID() }),
       });
-      if (!res.ok) throw new Error("Failed to insert task");
+      if (!res.ok) { let b: { error?: string; message?: string } = {}; try { b = await res.json(); } catch { /* non-JSON */ } throw new Error(b.message || b.error || "Failed to insert task"); }
       return res.json();
     },
     onSuccess: () => {
@@ -652,6 +656,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
       setInsertTaskCategory("");
       toast({ title: "Task inserted as line item" });
     },
+    onError: (err: Error) => toast({ title: "Could not insert task", description: err.message, variant: "destructive" }),
   });
 
   const cosOverrideMutation = useMutation({
@@ -708,7 +713,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ noRevenueLinked }),
       });
-      if (!res.ok) throw new Error("Failed to update no-revenue-linked");
+      if (!res.ok) { let b: { error?: string; message?: string } = {}; try { b = await res.json(); } catch { /* non-JSON */ } throw new Error(b.message || b.error || "Failed to update no-revenue-linked"); }
       return res.json();
     },
     onSuccess: () => {
@@ -720,6 +725,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
       }});
       toast({ title: "Revenue link updated" });
     },
+    onError: (err: Error) => toast({ title: "Could not update revenue link", description: err.message, variant: "destructive" }),
   });
 
   const items = breakdownData?.items || [];
