@@ -133,15 +133,32 @@ describe("bucketCostLinesForRecognition — DF-22 filter and bucketing", () => {
     expect(result[0].cosRealised).toBe(true);
   });
 
-  it("classifies cosRealised true for past-month lines with invoice (auto-promote)", () => {
+  it("classifies cosRealised FALSE for past-month lines with a RED invoice date (no auto-promote)", () => {
+    // Owner decision 2026-06 (C1): realisation is colour-gated for ALL months.
+    // A closed-month line whose invoice date is RED stays Committed — it is NOT
+    // auto-promoted to realised just because the month has passed.
     const result = bucketCostLinesForRecognition(
       [
-        // April line, current month is May → past-month auto-promote
         expenseRow({
           expenseInvoicedDate: "2026-04-10",
           invoiceDateFontColor: "red",
           invoiceDateConfirmed: false,
           expenseInvoiceNumber: "INV-PAST",
+        }),
+      ],
+      { currentMonthKey: "2026-05" },
+    );
+    expect(result[0].cosRealised).toBe(false);
+  });
+
+  it("classifies cosRealised TRUE for past-month lines with a BLACK invoice date", () => {
+    const result = bucketCostLinesForRecognition(
+      [
+        expenseRow({
+          expenseInvoicedDate: "2026-04-10",
+          invoiceDateFontColor: "black",
+          invoiceDateConfirmed: true,
+          expenseInvoiceNumber: "INV-PAST-BLACK",
         }),
       ],
       { currentMonthKey: "2026-05" },

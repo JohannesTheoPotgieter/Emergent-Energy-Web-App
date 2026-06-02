@@ -1,7 +1,7 @@
 import type ExcelJS from "exceljs";
 import type { DetectionResult } from "./detector";
 import type { MappingResult } from "./mapper";
-import { worksheetToArray, parseDate, parseNumber, parsePercent, parseStatus, daysBetween, lastDayOfMonthFromDate } from "./utils";
+import { worksheetToArray, parseDate, parseNumber, parsePercent, parseStatus, daysBetween } from "./utils";
 
 /**
  * Per-cell formatting captured from the source workbook, keyed by canonical
@@ -133,6 +133,9 @@ export interface NormalizationResult {
     poNumber: string | null;
     invoiceNumber: string | null;
     invoiceDate: string | null;
+    /** Per-actual-row invoice-date realisation signal (§ 3.2 / M1). */
+    invoiceDateFontColor: string | null;
+    invoiceDateConfirmed: boolean | null;
     revenueRecognitionAmount: string | null;
     financePaymentDate: string | null;
     comments: string | null;
@@ -563,13 +566,13 @@ function classifyColorHex(hex: string | null): { color: string | null; isBlack: 
   const g = parseInt(hex.substring(2, 4), 16);
   const b = parseInt(hex.substring(4, 6), 16);
   if (isNaN(r) || isNaN(g) || isNaN(b)) return { color: null, isBlack: false };
-  const isBlack = (r < 40 && g < 40 && b < 40);
+  // Owner rule 2026-06 (L1): only RED is "not confirmed". EVERY other colour —
+  // black, blue, grey, green, default — counts as confirmed. We collapse all
+  // non-red colours to the "black" realisation signal so the downstream
+  // `=== 'black'` / isBlack gates treat them as confirmed uniformly.
   const isRedish = r > 150 && g < 80 && b < 80;
-  const isBlueish = b > 150 && r < 80 && g < 80;
-  if (isBlack) return { color: "black", isBlack: true };
   if (isRedish) return { color: "red", isBlack: false };
-  if (isBlueish) return { color: "blue", isBlack: false };
-  return { color: hex, isBlack: false };
+  return { color: "black", isBlack: true };
 }
 
 function getCellFontColor(ws: ExcelJS.Worksheet, rowIdx: number, colIdx: number): { color: string | null; isBlack: boolean } {
@@ -1097,18 +1100,9 @@ function extractRevenueLines(
       }
     }
 
+    // Owner decision M4 (2026-06): a single invoice can legitimately cover
+    // multiple lines, so duplicate-invoice-number flags are noise — suppressed.
     if (invoiceNumber) {
-      if (invoiceNumbers.has(invoiceNumber)) {
-        issues.push({
-          severity: "WARNING",
-          section: "REVENUE",
-          message: `Duplicate invoice number "${invoiceNumber}" in revenue section`,
-          suggestedAction: "Verify whether these are distinct invoices or duplicates",
-          issueType: "DUPLICATE_INVOICE",
-          issueFingerprint: makeFingerprint("DUPLICATE_INVOICE", "REVENUE", invoiceNumber),
-          payloadJson: { invoiceNumber, row: i + 1 },
-        });
-      }
       invoiceNumbers.add(invoiceNumber);
     }
 
@@ -1390,7 +1384,10 @@ export function extractCostLines(
       const orphanInvoiceNo = invoiceNumCol >= 0 ? cellStr(row, invoiceNumCol) : null;
       const orphanInvoiceDate = invoiceDateCol >= 0 ? parseDate(row[invoiceDateCol]) : null;
       const orphanPaidDate = paidDateCol >= 0 ? parseDate(row[paidDateCol]) : null;
-      const orphanInvoiceDateResolved = orphanInvoiceDate ?? lastDayOfMonthFromDate(orphanPaidDate);
+      // Owner rule 2026-06 (Root Cause A): recognition month = INVOICE RAISED
+      // DATE only; no EOMONTH(finance payment date) inference. Blank invoice
+      // dates on amount-bearing rows are flagged as blockers below.
+      const orphanInvoiceDateResolved = orphanInvoiceDate;
       const orphanPo = poCol >= 0 ? cellStr(row, poCol) : null;
       const orphanRevRecog = revenueRecogCol >= 0 ? parseNumber(row[revenueRecogCol]) : null;
       const orphanComments = commentsCol >= 0 ? cellStr(row, commentsCol) : null;
@@ -1403,6 +1400,19 @@ export function extractCostLines(
         !!orphanPo || orphanRevRecog !== null || !!orphanComments;
 
       if (orphanHasData) {
+        // Owner rule 2026-06: an amount-bearing actual line must carry an
+        // INVOICE RAISED DATE. Flag (do not guess) when it is missing.
+        if (orphanActualTotal != null && Number(orphanActualTotal) !== 0 && !orphanInvoiceDateResolved) {
+          issues.push({
+            severity: "BLOCKER",
+            section: "EXPENDITURE",
+            message: `Actual invoice line on row ${i + 1} has an amount but no INVOICE RAISED DATE — it cannot be recognised in a month until this is fixed.`,
+            suggestedAction: "Enter the INVOICE RAISED DATE (col T) for this line in the tracker.",
+            issueType: "MISSING_INVOICE_DATE",
+            issueFingerprint: makeFingerprint("MISSING_INVOICE_DATE", "EXPENDITURE", `orphan_${i + 1}`),
+            payloadJson: { row: i + 1 },
+          });
+        }
         const orphanCellFormat = ws ? buildRowCellFormat(ws, i, {
           actual_qty: actualQtyCol,
           actual_rate: actualRateCol,
@@ -1417,6 +1427,17 @@ export function extractCostLines(
           saving_overrun: savingOverrunCol,
         }) : null;
 
+        // Per-actual-row invoice-date colour (M1): read from the orphan's own
+        // invoice-date cell so a multi-invoice line classifies each invoice on
+        // its own BLACK/RED signal rather than the parent's single colour.
+        let orphanInvoiceDateFontColor: string | null = null;
+        let orphanInvoiceDateConfirmed: boolean | null = null;
+        if (ws && orphanInvoiceDateResolved && invoiceDateCol >= 0) {
+          const fc = getCellFontColor(ws, i, invoiceDateCol);
+          orphanInvoiceDateFontColor = fc.color;
+          orphanInvoiceDateConfirmed = fc.isBlack;
+        }
+
         actualNoForCurrentParent += 1;
         actualLineRows.push({
           parentCategoryKey: lastParentCategoryKey,
@@ -1429,6 +1450,8 @@ export function extractCostLines(
           poNumber: orphanPo,
           invoiceNumber: orphanInvoiceNo,
           invoiceDate: orphanInvoiceDateResolved,
+          invoiceDateFontColor: orphanInvoiceDateFontColor,
+          invoiceDateConfirmed: orphanInvoiceDateConfirmed,
           revenueRecognitionAmount: orphanRevRecog,
           financePaymentDate: orphanPaidDate,
           comments: orphanComments,
@@ -1525,13 +1548,13 @@ export function extractCostLines(
     const rawInvoiceDate = invoiceDateCol >= 0 ? parseDate(row[invoiceDateCol]) : null;
     const approvedDate = approvedDateCol >= 0 ? parseDate(row[approvedDateCol]) : null;
     let paidDate = paidDateCol >= 0 ? parseDate(row[paidDateCol]) : null;
-    // Tracker workbooks define INVOICE RAISED DATE (col T) as the formula
-    //   IF(FINANCE_PAYMENT_DATE > 1, EOMONTH(FINANCE_PAYMENT_DATE, 0), "")
-    // When the workbook is saved without cached formula results that cell is
-    // empty and parseDate returns null. Replicating the formula in code keeps
-    // realised COS (and the col-U revenue recognition that buckets off it) in
-    // line with the Finance-COS / Finance-Revenue pivots.
-    const invoiceDate = rawInvoiceDate ?? lastDayOfMonthFromDate(paidDate);
+    // Owner rule 2026-06 (RECON_FINDINGS Root Cause A): the recognition month is
+    // driven by INVOICE RAISED DATE (col T) ONLY. We no longer silently infer it
+    // from the FINANCE PAYMENT DATE (EOMONTH) when col T is blank — that moved
+    // cost/revenue into the wrong month. A blank invoice date on a line that has
+    // an amount is flagged as a BLOCKER below and must be corrected in the
+    // workbook (recalculate/save so col T caches, or enter the date).
+    const invoiceDate = rawInvoiceDate;
     const poNumber = cellStr(row, poCol);
 
     const status = deriveCostStatus(invoiceNumber, invoiceDate, approvedDate, paidDate);
@@ -1545,22 +1568,29 @@ export function extractCostLines(
       continue;
     }
 
+    // Owner rule 2026-06: an actual cost amount MUST carry an INVOICE RAISED
+    // DATE. Without it the line cannot be recognised in a month, so flag it for
+    // correction rather than guessing (or silently dropping) the period.
+    if (!invoiceDate) {
+      issues.push({
+        severity: "BLOCKER",
+        section: "EXPENDITURE",
+        message: `Cost line on row ${i + 1} has an actual amount but no INVOICE RAISED DATE — it cannot be recognised in a month until this is fixed.`,
+        suggestedAction: "Enter the INVOICE RAISED DATE (col T) for this line in the tracker (recalculate/save so the formula caches).",
+        issueType: "MISSING_INVOICE_DATE",
+        issueFingerprint: makeFingerprint("MISSING_INVOICE_DATE", "EXPENDITURE", `${categoryKey ?? category ?? "row"}_${i + 1}`),
+        payloadJson: { row: i + 1 },
+      });
+    }
+
     if (counterparty) {
       counterpartySet.add(counterparty);
     }
 
+    // Owner decision M4 (2026-06): a single invoice can legitimately cover
+    // multiple cost lines, so duplicate-invoice-number flags are noise —
+    // suppressed.
     if (invoiceNumber) {
-      if (invoiceNumbers.has(invoiceNumber)) {
-        issues.push({
-          severity: "WARNING",
-          section: "EXPENDITURE",
-          message: `Duplicate invoice number "${invoiceNumber}" in expenditure section`,
-          suggestedAction: "Verify whether these are distinct invoices or duplicates",
-          issueType: "DUPLICATE_INVOICE",
-          issueFingerprint: makeFingerprint("DUPLICATE_INVOICE", "EXPENDITURE", invoiceNumber),
-          payloadJson: { invoiceNumber, row: i + 1 },
-        });
-      }
       invoiceNumbers.add(invoiceNumber);
     }
 

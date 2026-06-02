@@ -192,17 +192,23 @@ export function getCosRealisationWarnings(input: CosLineInput): string[] {
  * COS Tracker drifts from QuickBooks.
  */
 export function isPastMonthAutoRealised(
-  exp: { cosStatusOverride?: string | null; expenseInvoiceNumber?: string | null } & Record<string, any>,
-  monthKey: string | null,
-  currentMonthKey: string,
+  _exp: { cosStatusOverride?: string | null; expenseInvoiceNumber?: string | null } & Record<string, any>,
+  _monthKey: string | null,
+  _currentMonthKey: string,
 ): boolean {
-  if (!monthKey || monthKey >= currentMonthKey) return false;
-  const override = String(exp?.cosStatusOverride ?? "").toUpperCase().trim();
-  if (OVERRIDE_NOT_REALISED.has(override)) return false;
-  const invoiceTrimmed = String(exp?.expenseInvoiceNumber ?? "").trim();
-  if (!invoiceTrimmed) return false;
-  if (PLACEHOLDER_INVOICES.has(invoiceTrimmed.toLowerCase())) return false;
-  return true;
+  // NEUTRALISED — owner decision 2026-06 (RECON_FINDINGS C1 / IMPORTER_AUDIT C1).
+  //
+  // This previously auto-promoted ANY invoice-bearing line in a closed month to
+  // "realised" regardless of the invoice-date colour, overriding the canonical
+  // red/black signal (§3.2) for every closed month and overstating Realised vs
+  // Committed. The realisation gate is now COLOUR-GATED FOR ALL MONTHS: a red
+  // invoice-date stays Committed even in a closed month. Retained as a no-op so
+  // existing call sites keep routing through the single canonical gate.
+  //
+  // If a "reconcile-to-QuickBooks" promotion is wanted later, model it as a
+  // distinct, visible state driven by QB evidence (lineAssignedQbExVat) — never
+  // a blanket date override.
+  return false;
 }
 
 /**
@@ -226,7 +232,10 @@ export function isEffectivelyRealised(
   monthKey: string | null,
   currentMonthKey: string,
 ): boolean {
-  if (isPastMonthAutoRealised(exp, monthKey, currentMonthKey)) return true;
+  // Colour-gated for ALL months (owner decision 2026-06, §3.2): realisation
+  // requires invoice captured + invoice-date BLACK/confirmed. No past-month
+  // auto-promote. The current-month boundary guard still prevents future-dated
+  // realised lines from leaking into the current period.
   if (!isCanonicalCosRealised(exp)) return false;
   return monthKey ? monthKey <= currentMonthKey : true;
 }
@@ -238,11 +247,12 @@ export function isEffectivelyRealised(
  */
 export function isEffectivelyCommitted(
   exp: any,
-  monthKey: string | null,
-  currentMonthKey: string,
+  _monthKey: string | null,
+  _currentMonthKey: string,
   classifyCosStatusFull: (e: any) => string,
 ): boolean {
-  if (isPastMonthAutoRealised(exp, monthKey, currentMonthKey)) return false;
+  // Past-month auto-promote removed (C1): a red closed-month line stays
+  // Committed rather than being silently reclassified as realised.
   if (isCanonicalCosRealised(exp)) return false;
   return classifyCosStatusFull(exp) === "Committed";
 }

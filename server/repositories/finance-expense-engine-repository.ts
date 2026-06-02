@@ -88,10 +88,25 @@ export class FinanceExpenseEngineRepository {
    */
   async getAllCostLinesForCashflow(): Promise<any[]> {
     const { adaptCostToExpense, createNameResolver } = await import("../lib/data-merge");
-    const [costLines, piRows] = await Promise.all([
+    const [costLines, piRows, childActuals] = await Promise.all([
       this.dbInstance.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
       this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
+      this.dbInstance
+        .select({ costLineId: normalizedCostLineActuals.costLineId, actualTotal: normalizedCostLineActuals.actualTotal })
+        .from(normalizedCostLineActuals)
+        .where(and(isNull(normalizedCostLineActuals.effectiveTo), isNull(normalizedCostLineActuals.deletedAt))),
     ]);
+
+    // Owner decision M5: cash-out uses ACTUAL TOTAL. When a cost line has
+    // actuals children (the authoritative per-invoice actuals), the cashflow
+    // amount is the SUM of those children's actual_total — not the parent's
+    // quoted amount_ex_vat. Childless lines keep the parent amount. Stays at
+    // parent grain so the rowHash/sourceRow dedup below is unaffected.
+    const actualTotalByParent = new Map<number, number>();
+    for (const c of childActuals) {
+      const v = Number(c.actualTotal);
+      if (Number.isFinite(v)) actualTotalByParent.set(c.costLineId, (actualTotalByParent.get(c.costLineId) ?? 0) + v);
+    }
 
     // Build snapshotRunId → committedAt map so rows that haven't changed
     // between imports still report the most-recent import timestamp (not their
@@ -111,6 +126,10 @@ export class FinanceExpenseEngineRepository {
     }
     const costLinesWithTs = costLines.map((r: any) => ({
       ...r,
+      // M5: prefer the summed child actual_total when this line has actuals.
+      amountExVat: actualTotalByParent.has(r.id)
+        ? String(actualTotalByParent.get(r.id))
+        : r.amountExVat,
       snapshotRunCommittedAt: committedAtByRunId.get(r.snapshotRunId) ?? null,
     }));
 
@@ -359,7 +378,18 @@ export class FinanceExpenseEngineRepository {
           poNumber: normalizedCostLineActuals.poNumber,
           invoiceNumber: normalizedCostLineActuals.invoiceNumber,
           invoiceDate: normalizedCostLineActuals.invoiceDate,
+          // Per-actual-row realisation colour (M1) — so multi-invoice lines
+          // classify each invoice on its own BLACK/RED signal in the COS/REV
+          // trackers, not the parent's single colour.
+          invoiceDateFontColor: normalizedCostLineActuals.invoiceDateFontColor,
+          invoiceDateConfirmed: normalizedCostLineActuals.invoiceDateConfirmed,
           financePaymentDate: normalizedCostLineActuals.financePaymentDate,
+          // Per-actual-row revenue recognition (col U). Carried through so a
+          // BOQ line settled across N invoices recognises EACH invoice's own
+          // revenue instead of inheriting the parent's col U N times. Without
+          // this, multi-invoice lines mis-state revenue and disagree with the
+          // line-level repository (RECON_FINDINGS Root Cause C).
+          revenueRecognitionAmount: normalizedCostLineActuals.revenueRecognitionAmount,
         })
         .from(normalizedCostLineActuals)
         .where(and(
@@ -631,7 +661,14 @@ export interface ChildActualRow {
   poNumber: string | null;
   invoiceNumber: string | null;
   invoiceDate: string | Date | null;
+  /** Per-actual-row realisation colour (M1). Overrides the parent's colour so
+   * each invoice classifies on its own BLACK/RED signal. */
+  invoiceDateFontColor?: string | null;
+  invoiceDateConfirmed?: boolean | null;
   financePaymentDate: string | Date | null;
+  /** Per-actual-row revenue recognition (col U). When present, overrides the
+   * parent's value so each invoice recognises its own revenue. */
+  revenueRecognitionAmount?: string | number | null;
 }
 
 export function mergeLineLevelCostLines<P extends { id: number }>(
@@ -661,6 +698,16 @@ export function mergeLineLevelCostLines<P extends { id: number }>(
         invoiceNumber: child.invoiceNumber ?? p.invoiceNumber ?? null,
         invoiceDate: child.invoiceDate ?? p.invoiceDate ?? null,
         paidDate: child.financePaymentDate ?? p.paidDate ?? null,
+        // M1: prefer this invoice's own realisation colour; fall back to the
+        // parent's when the child row predates the per-child colour column.
+        invoiceDateFontColor: child.invoiceDateFontColor ?? p.invoiceDateFontColor ?? null,
+        invoiceDateConfirmed: child.invoiceDateConfirmed ?? p.invoiceDateConfirmed ?? null,
+        // Use THIS invoice's own col U; fall back to the parent only when the
+        // child row has no recognition amount of its own (RECON Root Cause C).
+        revenueRecognitionAmount:
+          child.revenueRecognitionAmount != null
+            ? String(child.revenueRecognitionAmount)
+            : p.revenueRecognitionAmount,
       } as P);
     }
   }

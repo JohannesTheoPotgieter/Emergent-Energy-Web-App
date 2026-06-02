@@ -789,6 +789,12 @@ export const normalizedCostLineActuals = pgTable("normalized_cost_line_actuals",
   poNumber: text("po_number"),
   invoiceNumber: text("invoice_number"),
   invoiceDate: date("invoice_date"),
+  // Per-actual-row invoice-date realisation signal (§ 3.2). Captured per child
+  // so a BOQ line settled across several invoices can have one BLACK (realised)
+  // and one RED (committed) invoice without sharing the parent's single colour
+  // (IMPORTER_AUDIT M1). Read paths use child colour, falling back to parent.
+  invoiceDateFontColor: text("invoice_date_font_color"),
+  invoiceDateConfirmed: boolean("invoice_date_confirmed"),
   revenueRecognitionAmount: decimal("revenue_recognition_amount", { precision: 15, scale: 2 }),
   financePaymentDate: date("finance_payment_date"),
   comments: text("comments"),
