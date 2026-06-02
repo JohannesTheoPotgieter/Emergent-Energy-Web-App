@@ -78,6 +78,22 @@ describe("mergeLineLevelCostLines — cutover adapter", () => {
     expect(out[0].projectName).toBe("Mondi");
   });
 
+  it("overrides invoiceDateFontColor with the child's OWN colour when present (M1)", () => {
+    // A multi-invoice line can have one BLACK (realised) and one RED (pending)
+    // invoice. Each emitted row must carry its own colour — not the parent's —
+    // so the red invoice isn't mis-classified as realised.
+    const parents = [baseParent]; // parent colour is black
+    const children: ChildActualRow[] = [
+      { costLineId: 1, actualTotal: "60000", poNumber: null, invoiceNumber: "INV-1", invoiceDate: "2026-04-15", financePaymentDate: null, invoiceDateFontColor: "black", invoiceDateConfirmed: true },
+      { costLineId: 1, actualTotal: "40000", poNumber: null, invoiceNumber: "INV-2", invoiceDate: "2026-05-15", financePaymentDate: null, invoiceDateFontColor: "red", invoiceDateConfirmed: false },
+    ];
+    const out = mergeLineLevelCostLines(parents, children);
+    expect(out[0].invoiceDateFontColor).toBe("black");
+    expect(out[0].invoiceDateConfirmed).toBe(true);
+    expect(out[1].invoiceDateFontColor).toBe("red");
+    expect(out[1].invoiceDateConfirmed).toBe(false);
+  });
+
   it("falls back to parent values when child has nulls", () => {
     const parents = [baseParent];
     const children: ChildActualRow[] = [
