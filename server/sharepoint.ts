@@ -602,9 +602,10 @@ export async function listFolderChildren(
   }
 
   const result = await graphGet(url, "list folder children");
-  return (result.value || []).filter((item: any) =>
-    item.name?.endsWith('.xlsx') || item.name?.endsWith('.xlsm') || item.name?.endsWith('.xls')
-  );
+  // Folder + periodic auto-import discovery. Reuse isTrackerWorkbookName so the
+  // same extension check AND the lock-file (~$) / "conflicted copy" exclusions
+  // (IMPORTER_AUDIT M2) apply here, not just on the connection-test helper.
+  return (result.value || []).filter((item: any) => item.name && isTrackerWorkbookName(item.name));
 }
 
 export async function browseFolders(
