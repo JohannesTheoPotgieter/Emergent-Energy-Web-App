@@ -655,15 +655,19 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
   });
 
   const cosOverrideMutation = useMutation({
-    mutationFn: async ({ expenseId, projectName: pn, rowNumber, originalStatus, overrideStatus, reason }: {
+    mutationFn: async ({ expenseId, overrideStatus, reason }: {
       expenseId: number; projectName: string; rowNumber: number; originalStatus: string; overrideStatus: string; reason: string;
     }) => {
-      const res = await authFetch("/api/cos-status-override", {
-        method: "POST",
+      // Canonical, audited COS-override control: writes cosStatusOverride on
+      // the cost line with a mandatory reason + period-lock gating (COO/CEO/
+      // CFO/PFM). The old POST /api/cos-status-override was a no-op that
+      // reported success but persisted nothing.
+      const res = await authFetch(`/api/cos-tracker/override-status/${expenseId}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ expenseId, projectName: pn, rowNumber, originalStatus, overrideStatus, reason }),
+        body: JSON.stringify({ cosStatus: overrideStatus, reason }),
       });
-      if (!res.ok) throw new Error("Failed to save override");
+      if (!res.ok) { let b: { error?: string; message?: string } = {}; try { b = await res.json(); } catch { /* non-JSON */ } throw new Error(b.message || b.error || "Failed to save override"); }
       return res.json();
     },
     onSuccess: () => {
@@ -673,19 +677,27 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
       setCosOverrideReason("");
       toast({ title: "COS status override saved" });
     },
+    onError: (err: Error) => toast({ title: "Could not save COS override", description: err.message, variant: "destructive" }),
   });
 
   const removeCosOverrideMutation = useMutation({
     mutationFn: async (expenseId: number) => {
-      const res = await authFetch(`/api/cos-status-override/${expenseId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to remove override");
+      // Clearing the override = set cosStatus null on the canonical control.
+      const res = await authFetch(`/api/cos-tracker/override-status/${expenseId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cosStatus: null }),
+      });
+      if (!res.ok) { let b: { error?: string; message?: string } = {}; try { b = await res.json(); } catch { /* non-JSON */ } throw new Error(b.message || b.error || "Failed to remove override"); }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: breakdownKey });
       invalidateDashboardQueries(queryClient);
+      setCosOverrideTarget(null);
       toast({ title: "COS override removed" });
     },
+    onError: (err: Error) => toast({ title: "Could not remove COS override", description: err.message, variant: "destructive" }),
   });
 
   const noRevLinkedMutation = useMutation({

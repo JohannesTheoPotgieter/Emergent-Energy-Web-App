@@ -8982,8 +8982,20 @@ router.get('/api/expenditure-breakdown/:projectName', requireAuth, async (req, r
           plannedMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         }
 
-        const cosOverride = (cosOverrideByExpenseId.get(exp.id) ||
-          cosOverrideByRow.get(`${exp.projectName}:${exp.rowNumber}`)) as any;
+        // COS override now lives on the cost line itself, written by the
+        // audited PATCH /api/cos-tracker/override-status/:id control (mandatory
+        // reason, period-lock gating, COO/CEO/CFO/PFM). Surface it so the row's
+        // cosStatus reflects the override (applied just below). Falls back to
+        // the legacy maps if the field is absent — so this can't regress.
+        const cosOverride = (exp.cosStatusOverride
+          ? {
+              overrideStatus: exp.cosStatusOverride,
+              reason: exp.cosStatusOverrideReason ?? null,
+              overriddenBy: exp.cosStatusOverrideBy ?? null,
+              originalStatus: cosStatus,
+            }
+          : cosOverrideByExpenseId.get(exp.id) ||
+            cosOverrideByRow.get(`${exp.projectName}:${exp.rowNumber}`)) as any;
         const fieldAudits = {
           budgetTotal: buildExpenditureFieldAudit(
             projectName,
