@@ -3,9 +3,11 @@
  *
  * Renders the global Engineering Task Board (EngineeringTasksPage) locked to a
  * single project: identical Kanban columns, cards, filters, task drawer and bulk
- * actions, scoped by projectId. Page-level chrome (hero title, saved-view
- * controls, walkthroughs, URL sync and keyboard shortcuts) is suppressed via the
- * board's `embedded` flag so it sits cleanly inside the project detail page.
+ * actions, scoped by projectId. The project-scoped "Generate from Template"
+ * action (admin only) and an optional initial status filter are passed through.
+ * Page-level chrome (hero title, saved-view controls, walkthroughs, URL sync and
+ * keyboard shortcuts) is suppressed via the board's `embedded` flag so it sits
+ * cleanly inside the project detail page.
  *
  * The board is lazy-loaded so it stays in its own bundle chunk and does not
  * bloat the already-large project-detail page.
@@ -22,7 +24,7 @@ interface ProjectEngineeringTasksTabProps {
   initialStatusFilter?: string;
 }
 
-export function ProjectEngineeringTasksTab({ projectInfoId, projectName }: ProjectEngineeringTasksTabProps) {
+export function ProjectEngineeringTasksTab({ projectInfoId, isAdmin, projectName, initialStatusFilter }: ProjectEngineeringTasksTabProps) {
   return (
     <Suspense
       fallback={
@@ -31,7 +33,13 @@ export function ProjectEngineeringTasksTab({ projectInfoId, projectName }: Proje
         </div>
       }
     >
-      <EngineeringTasksPage embedded lockedProjectId={projectInfoId ?? undefined} lockedProjectName={projectName} />
+      <EngineeringTasksPage
+        embedded
+        lockedProjectId={projectInfoId ?? undefined}
+        lockedProjectName={projectName}
+        initialStatusFilter={initialStatusFilter}
+        canGenerateFromTemplate={isAdmin ?? false}
+      />
     </Suspense>
   );
 }

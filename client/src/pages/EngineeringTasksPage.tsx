@@ -208,6 +208,7 @@ import {
   InlineListView,
   MyTasksView,
 } from "./engineering/engineering-task-views";
+import { GenerateFromTemplateButton } from "./engineering/GenerateFromTemplateButton";
 export {
   ProjectKanbanView,
   PersonalKpiStrip,
@@ -222,6 +223,8 @@ export default function EngineeringTasksPage({
   embedded = false,
   lockedProjectId,
   lockedProjectName,
+  initialStatusFilter,
+  canGenerateFromTemplate = false,
 }: {
   /** When true, suppress page-level chrome (hero title, saved-view controls,
    *  walkthroughs, URL sync, keyboard shortcuts) so the board can be embedded. */
@@ -230,6 +233,10 @@ export default function EngineeringTasksPage({
   lockedProjectId?: number;
   /** Project name, used to pre-fill the create-task dialog when locked. */
   lockedProjectName?: string;
+  /** Seed the status filter when embedded (URL params are not read in that mode). */
+  initialStatusFilter?: string;
+  /** Surface the project-scoped "Generate from Template" action (admin-only endpoint). */
+  canGenerateFromTemplate?: boolean;
 } = {}) {
   const { enabled: microWalkthroughEnabled } = useRolloutFlag("micro_walkthrough");
   const { toast } = useToast();
@@ -267,7 +274,9 @@ export default function EngineeringTasksPage({
   // the dashboard, admin-approvals, or external bookmarks ("HOLD",
   // "NEEDS APPROVAL", "IN PROGRESS") resolve to the snake_case values the
   // filter compares against.
-  const initialStatusParam = initialUrlParams.get("status");
+  // Embedded mode ignores window.location.search, so honour an explicit status
+  // filter handed in by the host page (e.g. a "blocked tasks" deep link).
+  const initialStatusParam = initialUrlParams.get("status") || (embedded ? initialStatusFilter : undefined) || null;
   const initialStatus = initialStatusParam ? canonicalizeTaskStatus(initialStatusParam) : (savedDefaults?.statusFilter || "all");
   const [statusFilter, setStatusFilter] = useState<string>(initialStatus);
   const [priorityFilter, setPriorityFilter] = useState<string>(initialUrlParams.get("priority") || savedDefaults?.priorityFilter || "all");
@@ -1077,6 +1086,9 @@ export default function EngineeringTasksPage({
               </Button>
             )}
           </div>
+          )}
+          {lockedProjectId != null && canGenerateFromTemplate && (
+            <GenerateFromTemplateButton projectId={lockedProjectId} projectName={lockedProjectName} />
           )}
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger asChild>
