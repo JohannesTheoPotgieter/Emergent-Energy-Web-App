@@ -156,6 +156,12 @@ export function normalizeProjectDetailDeepLink(search: string): { dept: ProjectD
   if (dept === "finance" && (rawSub === "procurement" || rawSub === "subcontractors")) {
     return { dept: "procurement", sub: rawSub };
   }
+  // Quality's "approvals" sub-tab was de-duplicated into History (its canonical
+  // home). Redirect legacy ?dept=quality&subTab=approvals links there so the
+  // user's intent (see approvals) is preserved rather than silently dropped.
+  if (dept === "quality" && rawSub === "approvals") {
+    return { dept: "history", sub: "approvals" };
+  }
   if (isProjectDetailDept(dept)) {
     const allowed = PROJECT_DETAIL_DEPT_SUBTABS[dept];
     const sub = rawSub && allowed.includes(rawSub as ProjectDetailSubTabKey)

@@ -34,7 +34,7 @@ describe("Project Detail command surface routing", () => {
 
     expect(next).toBe("/project/id/42?chip=handover-blocked&dept=quality&sub=checklist");
     expect(normalizeProjectDetailDeepLink("?dept=quality&subTab=approvals")).toEqual({
-      dept: "quality",
+      dept: "history",
       sub: "approvals",
     });
     expect(normalizeProjectDetailDeepLink("?tab=excel-vs-app")).toEqual({
