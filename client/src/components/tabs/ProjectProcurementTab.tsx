@@ -131,7 +131,6 @@ const SUB_TABS: { key: ProcurementSubTab; label: string; icon: React.ElementType
   { key: "purchase-orders", label: "Purchase Orders", icon: ShoppingCart },
   { key: "deliveries", label: "Deliveries", icon: Truck },
   { key: "invoices", label: "Invoices", icon: FileText },
-  { key: "traceability", label: "Traceability", icon: Link2 },
 ];
 
 export function ProjectProcurementTab({ projectId, projectName, initialFilter }: ProjectProcurementTabProps) {
@@ -259,7 +258,9 @@ export function ProjectProcurementTab({ projectId, projectName, initialFilter }:
       <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg overflow-x-auto" data-testid="procurement-sub-tabs">
         {SUB_TABS.map((tab) => {
           const Icon = tab.icon;
-          const isActive = activeSubTab === tab.key;
+          const isActive = tab.key === "items"
+            ? (activeSubTab === "items" || activeSubTab === "traceability")
+            : activeSubTab === tab.key;
           return (
         <Button
               key={tab.key}
@@ -279,7 +280,17 @@ export function ProjectProcurementTab({ projectId, projectName, initialFilter }:
           );
         })}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        {(activeSubTab === "items" || activeSubTab === "traceability") && (
+          <div className="inline-flex items-center gap-1 rounded-lg border bg-slate-100 p-1" data-testid="items-view-switcher">
+            <Button size="sm" variant={activeSubTab === "items" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("items")} data-testid="items-view-list">
+              <Package className="w-3.5 h-3.5 mr-1" /> List
+            </Button>
+            <Button size="sm" variant={activeSubTab === "traceability" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("traceability")} data-testid="items-view-traceability">
+              <Link2 className="w-3.5 h-3.5 mr-1" /> Traceability
+            </Button>
+          </div>
+        )}
         <Button size="sm" variant={overdueOnly ? "default" : "outline"} className="h-7 text-xs" onClick={() => setOverdueOnly((v) => !v)}>
           {overdueOnly ? "Overdue only" : "Show overdue only"}
         </Button>
