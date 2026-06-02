@@ -292,7 +292,7 @@ export function RevenueTrackerTab({ projectName, projectId }: RevenueTrackerTabP
   });
 
   const mutation = useMutation({
-    mutationFn: async (body: { trackerType: string; monthKey: string; budget?: string }) => {
+    mutationFn: async (body: { trackerType: string; monthKey: string; budget?: string; projectInfoId?: number | null }) => {
       await apiRequest("POST", "/api/tracker-monthly", body);
     },
     onSuccess: () => {
@@ -307,9 +307,12 @@ export function RevenueTrackerTab({ projectName, projectId }: RevenueTrackerTabP
 
   const commitEdit = useCallback(() => {
     if (!editing) return;
-    const payload: Record<string, string> = {
+    const payload: Record<string, any> = {
       trackerType: "REV",
       monthKey: editing.monthKey,
+      // Scope the edit to THIS project so it no longer overwrites the
+      // program-wide budget for every project.
+      projectInfoId: projectId ?? null,
     };
     payload[editing.field] = editing.value;
     mutation.mutate(payload as any);

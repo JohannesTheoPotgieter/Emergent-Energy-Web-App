@@ -142,6 +142,9 @@ const trackerMonthlyBodySchema = z
     realised: decimalLike.optional(),
     outstanding: decimalLike.optional(),
     budget: decimalLike.optional(),
+    // NULL/absent = program-wide row; a project id scopes the entry so the
+    // project Revenue Tracker no longer overwrites the program budget.
+    projectInfoId: z.number().int().positive().nullable().optional(),
   })
   .passthrough();
 
@@ -2468,6 +2471,7 @@ router.post(
         realised: realised != null ? String(realised) : null,
         outstanding: outstanding != null ? String(outstanding) : null,
         budget: budget != null ? String(budget) : null,
+        projectInfoId: req.body.projectInfoId ?? null,
       });
       res.json(result);
     } catch (error) {
@@ -5323,7 +5327,7 @@ router.get(
       const [projectExpenses, revLines, manualEntries] = await Promise.all([
         getHighRiskProjectCostReadRows(projectName, projectIdParam),
         storage.getProgramInflowsByProject(projectName),
-        storage.getTrackerMonthlyManual('REV'),
+        storage.getTrackerMonthlyManual('REV', projectIdParam),
       ]);
 
       const manualBudgetMap = new Map(manualEntries.map((e) => [e.monthKey, e]));
