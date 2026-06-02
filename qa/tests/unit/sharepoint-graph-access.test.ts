@@ -73,8 +73,11 @@ describe("SharePoint Graph access helpers", () => {
 
     await listFolderChildren("drive-1", undefined, "/Emergent Energy Team Folder/01 - Clients/0.Active Trackers/");
 
+    // No `$filter=file ne null` — Graph rejects $filter on a driveItem's
+    // /children with 400 invalidRequest (was the cause of SCHEDULED_IMPORT_FAILED).
+    // Folders are excluded client-side instead.
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://graph.microsoft.com/v1.0/drives/drive-1/root:/Emergent%20Energy%20Team%20Folder/01%20-%20Clients/0.Active%20Trackers:/children?$filter=file ne null",
+      "https://graph.microsoft.com/v1.0/drives/drive-1/root:/Emergent%20Energy%20Team%20Folder/01%20-%20Clients/0.Active%20Trackers:/children",
       expect.any(Object),
     );
   });

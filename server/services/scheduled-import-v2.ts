@@ -346,6 +346,21 @@ export async function runScheduledImportV2(opts: {
         settings.folderPath || undefined,
       );
     } catch (err) {
+      // Surface the real Graph code/message (captured in ApiError.details) so the
+      // failure banner is diagnosable instead of just "Microsoft Graph failed".
+      if (err instanceof ApiError) {
+        const d = err.details ?? {};
+        const extra = [d.graphCode, d.graphMessage, d.requestId ? `requestId=${d.requestId}` : undefined]
+          .filter(Boolean)
+          .join(" · ");
+        throw new ApiError(
+          err.statusCode,
+          err.code,
+          `SharePoint folder listing failed: ${err.message}${extra ? ` — ${extra}` : ""}`,
+          err.details,
+          err.nextAction,
+        );
+      }
       throw new Error(`SharePoint folder listing failed: ${err instanceof Error ? err.message : String(err)}`);
     }
 
