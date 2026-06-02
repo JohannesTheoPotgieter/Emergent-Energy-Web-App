@@ -2251,6 +2251,8 @@ export interface ActualLineRowsContext extends AuxWriteContext {
     poNumber: string | null;
     invoiceNumber: string | null;
     invoiceDate: string | null;
+    invoiceDateFontColor: string | null;
+    invoiceDateConfirmed: boolean | null;
     revenueRecognitionAmount: string | null;
     financePaymentDate: string | null;
     comments: string | null;
@@ -2341,6 +2343,8 @@ export async function writeActualLineRows(
       poNumber: row.poNumber,
       invoiceNumber: row.invoiceNumber,
       invoiceDate: row.invoiceDate,
+      invoiceDateFontColor: row.invoiceDateFontColor,
+      invoiceDateConfirmed: row.invoiceDateConfirmed,
       revenueRecognitionAmount: row.revenueRecognitionAmount,
       financePaymentDate: row.financePaymentDate,
       comments: row.comments,
@@ -2359,6 +2363,8 @@ export async function writeActualLineRows(
       poNumber: row.poNumber,
       invoiceNumber: row.invoiceNumber,
       invoiceDate: row.invoiceDate,
+      invoiceDateFontColor: row.invoiceDateFontColor,
+      invoiceDateConfirmed: row.invoiceDateConfirmed,
       revenueRecognitionAmount: row.revenueRecognitionAmount,
       financePaymentDate: row.financePaymentDate,
       comments: row.comments,

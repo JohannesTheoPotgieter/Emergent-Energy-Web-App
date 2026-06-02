@@ -241,6 +241,10 @@ export class FinanceLineLevelRepository {
           poNumber: normalizedCostLineActuals.poNumber,
           invoiceNumber: normalizedCostLineActuals.invoiceNumber,
           invoiceDate: normalizedCostLineActuals.invoiceDate,
+          // Per-actual-row realisation colour (M1) — used to classify each
+          // invoice on its own BLACK/RED signal, falling back to the parent.
+          invoiceDateFontColor: normalizedCostLineActuals.invoiceDateFontColor,
+          invoiceDateConfirmed: normalizedCostLineActuals.invoiceDateConfirmed,
           financePaymentDate: normalizedCostLineActuals.financePaymentDate,
           description: normalizedCostLineActuals.description,
           qty: normalizedCostLineActuals.qty,
@@ -386,6 +390,10 @@ export interface FinanceLineActualsRowInput {
   poNumber: string | null;
   invoiceNumber: string | null;
   invoiceDate: string | Date | null;
+  /** Per-actual-row realisation colour (M1). Falls back to the parent's
+   * colour when this child has none (legacy rows imported before the column). */
+  invoiceDateFontColor?: string | null;
+  invoiceDateConfirmed?: boolean | null;
   financePaymentDate: string | Date | null;
   description: string | null;
   qty: string | null;
@@ -479,6 +487,8 @@ export function synthesizeActualsForParents(
       poNumber: parent.poNumber ?? null,
       invoiceNumber: parent.invoiceNumber ?? null,
       invoiceDate: (parent.invoiceDate as string | Date | null) ?? null,
+      invoiceDateFontColor: parent.invoiceDateFontColor ?? null,
+      invoiceDateConfirmed: parent.invoiceDateConfirmed ?? null,
       financePaymentDate: (parent.paidDate as string | Date | null) ?? null,
       description: parent.description ?? null,
       qty: null,
@@ -692,8 +702,10 @@ export function deriveFinanceLinesFromRows(
       plannedGpPct,
       bucket: classifyBucket(
         a.invoiceNumber ?? null,
-        parent?.invoiceDateFontColor ?? null,
-        parent?.invoiceDateConfirmed ?? null,
+        // M1: prefer THIS invoice's own colour; fall back to the parent's for
+        // legacy child rows imported before the per-child colour column.
+        a.invoiceDateFontColor ?? parent?.invoiceDateFontColor ?? null,
+        a.invoiceDateConfirmed ?? parent?.invoiceDateConfirmed ?? null,
         monthKey(recognitionDate),
         currentMonthKey,
       ),

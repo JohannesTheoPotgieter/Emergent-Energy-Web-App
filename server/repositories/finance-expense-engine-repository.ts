@@ -359,6 +359,11 @@ export class FinanceExpenseEngineRepository {
           poNumber: normalizedCostLineActuals.poNumber,
           invoiceNumber: normalizedCostLineActuals.invoiceNumber,
           invoiceDate: normalizedCostLineActuals.invoiceDate,
+          // Per-actual-row realisation colour (M1) — so multi-invoice lines
+          // classify each invoice on its own BLACK/RED signal in the COS/REV
+          // trackers, not the parent's single colour.
+          invoiceDateFontColor: normalizedCostLineActuals.invoiceDateFontColor,
+          invoiceDateConfirmed: normalizedCostLineActuals.invoiceDateConfirmed,
           financePaymentDate: normalizedCostLineActuals.financePaymentDate,
           // Per-actual-row revenue recognition (col U). Carried through so a
           // BOQ line settled across N invoices recognises EACH invoice's own
@@ -637,6 +642,10 @@ export interface ChildActualRow {
   poNumber: string | null;
   invoiceNumber: string | null;
   invoiceDate: string | Date | null;
+  /** Per-actual-row realisation colour (M1). Overrides the parent's colour so
+   * each invoice classifies on its own BLACK/RED signal. */
+  invoiceDateFontColor?: string | null;
+  invoiceDateConfirmed?: boolean | null;
   financePaymentDate: string | Date | null;
   /** Per-actual-row revenue recognition (col U). When present, overrides the
    * parent's value so each invoice recognises its own revenue. */
@@ -670,6 +679,10 @@ export function mergeLineLevelCostLines<P extends { id: number }>(
         invoiceNumber: child.invoiceNumber ?? p.invoiceNumber ?? null,
         invoiceDate: child.invoiceDate ?? p.invoiceDate ?? null,
         paidDate: child.financePaymentDate ?? p.paidDate ?? null,
+        // M1: prefer this invoice's own realisation colour; fall back to the
+        // parent's when the child row predates the per-child colour column.
+        invoiceDateFontColor: child.invoiceDateFontColor ?? p.invoiceDateFontColor ?? null,
+        invoiceDateConfirmed: child.invoiceDateConfirmed ?? p.invoiceDateConfirmed ?? null,
         // Use THIS invoice's own col U; fall back to the parent only when the
         // child row has no recognition amount of its own (RECON Root Cause C).
         revenueRecognitionAmount:

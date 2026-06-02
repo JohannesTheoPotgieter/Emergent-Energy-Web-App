@@ -133,6 +133,9 @@ export interface NormalizationResult {
     poNumber: string | null;
     invoiceNumber: string | null;
     invoiceDate: string | null;
+    /** Per-actual-row invoice-date realisation signal (§ 3.2 / M1). */
+    invoiceDateFontColor: string | null;
+    invoiceDateConfirmed: boolean | null;
     revenueRecognitionAmount: string | null;
     financePaymentDate: string | null;
     comments: string | null;
@@ -1433,6 +1436,17 @@ export function extractCostLines(
           saving_overrun: savingOverrunCol,
         }) : null;
 
+        // Per-actual-row invoice-date colour (M1): read from the orphan's own
+        // invoice-date cell so a multi-invoice line classifies each invoice on
+        // its own BLACK/RED signal rather than the parent's single colour.
+        let orphanInvoiceDateFontColor: string | null = null;
+        let orphanInvoiceDateConfirmed: boolean | null = null;
+        if (ws && orphanInvoiceDateResolved && invoiceDateCol >= 0) {
+          const fc = getCellFontColor(ws, i, invoiceDateCol);
+          orphanInvoiceDateFontColor = fc.color;
+          orphanInvoiceDateConfirmed = fc.isBlack;
+        }
+
         actualNoForCurrentParent += 1;
         actualLineRows.push({
           parentCategoryKey: lastParentCategoryKey,
@@ -1445,6 +1459,8 @@ export function extractCostLines(
           poNumber: orphanPo,
           invoiceNumber: orphanInvoiceNo,
           invoiceDate: orphanInvoiceDateResolved,
+          invoiceDateFontColor: orphanInvoiceDateFontColor,
+          invoiceDateConfirmed: orphanInvoiceDateConfirmed,
           revenueRecognitionAmount: orphanRevRecog,
           financePaymentDate: orphanPaidDate,
           comments: orphanComments,

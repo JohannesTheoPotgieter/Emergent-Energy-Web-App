@@ -11,10 +11,13 @@ was deliberately deferred (and why).
 4. **Rollout** — apply directly (no feature flag).
 
 **Validation in this environment:** `npm run check` (full typecheck) clean;
-`npm run test` (unit suite) green (7028 tests). **No live DB / data snapshot is
-available here**, so the *numeric* effect on real figures must still be confirmed
-on the snapshot (run `qa/audit/importer-canonical-recon.ts` and compare the COS/
-Revenue trackers before/after).
+`npm run test` (unit suite) green (7007 passed / 21 skipped); `npm run db:check`
+(schema-drift guard) in sync (additive migration `0081_actuals_invoice_colour`).
+**No live DB / data snapshot is available here**, so the *numeric* effect on real
+figures — and the new MISSING_INVOICE_DATE blocker and per-child colour on real
+workbooks — must still be confirmed on the snapshot (run
+`qa/audit/importer-canonical-recon.ts` and compare the COS/Revenue trackers
+before/after; run one real import to confirm the blocker volume is sane).
 
 ---
 
@@ -30,7 +33,8 @@ Revenue trackers before/after).
 | **M2** | Excel lock files (`~$*`) and "conflicted copy" duplicates excluded from import discovery. | `server/sharepoint.ts` |
 | **M3** | Resolved as a side effect of C1 — the COS tracker no longer derives a UTC current-month key (revenue tracker already uses SAST). | `server/departments/finance-routes.ts` |
 | **Planned relabel** | GP "Budget→Planned→Realised" grid: "Planned …" rows renamed to "… — all states" so they read as a running all-states total, not a budget. With C1 fixed, this total no longer collapses onto Realised for closed months. | `client/src/pages/finance-gp-company.tsx` |
-| Test update | `recognition-bucketing-unit` updated to the new colour-gated behaviour (past-month red → Committed, not Realised; added a black past-month case). | `qa/tests/unit/recognition-bucketing-unit.test.ts` |
+| **M1** (per-child invoice colour) | New nullable columns `invoice_date_font_color` / `invoice_date_confirmed` on `normalized_cost_line_actuals` (additive migration `0081`). Captured per actuals child at import; both read paths classify each invoice on its **own** BLACK/RED signal, falling back to the parent for legacy rows. Multi-invoice lines (one black + one red) now classify per-invoice. Fail-safe: colour-only thread, amounts/grain unchanged. | `shared/schema/finance.ts`, `migrations/0081_*.sql`, `server/lib/import/normalizer.ts`, `server/lib/import/commit-executor.ts`, `server/repositories/finance-expense-engine-repository.ts`, `server/repositories/finance-line-level-repository.ts` |
+| Test updates | `recognition-bucketing-unit` updated to the new colour-gated behaviour (past-month red → Committed; added a black past-month case); `finance-line-level-cutover` gains a per-child-colour-override case for M1. | `qa/tests/unit/recognition-bucketing-unit.test.ts`, `qa/tests/unit/finance-line-level-cutover.test.ts` |
 
 **Combined effect on the symptoms:** "Planned mirrors Realised for closed months"
 is resolved at the root — C1 means Committed is no longer auto-zeroed, so the
@@ -45,7 +49,6 @@ of silent month-drift.
 
 | Ref | Why deferred | What it needs |
 |---|---|---|
-| **M1** (per-child invoice-date colour) | The realisation half of the 1:N fix. Requires a **schema migration** on `normalized_cost_line_actuals` + import capture + both read paths. Pushing an unvalidated migration into the financial tables violates "trustworthiness first". | Additive migration (`invoice_date_font_color`, `invoice_date_confirmed`), normalizer capture, `mergeLineLevelCostLines` + finance-line-level reads, then **DB + workbook validation**. |
 | **H1** (distinct **Unrealised** state) | Taxonomy change; partially conflicts with the owner decision to keep "Planned" as the all-states total. Needs design (no-invoice + red + future ⇒ Planned; else Unrealised) and colour on no-invoice lines. | Owner sign-off on the 4-state taxonomy + UI columns. |
 | **M4** (portfolio cross-period duplicate-invoice scan) | Within-import duplicate detection already exists; a portfolio-wide cross-period scan needs a new query + a place to surface it. | Reporting surface + DB query, validated on the snapshot. |
 | **M5** (cash-out amount source) | Marked **UNKNOWN** in the audit; the COS/Revenue trackers use child `actualTotal` via the merge, but the cashflow-out path needs confirmation against data. | Data confirmation that cash-out sums `actual_total`. |
