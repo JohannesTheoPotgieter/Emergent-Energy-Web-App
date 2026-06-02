@@ -17,6 +17,7 @@ import { and, inArray, isNull } from "drizzle-orm";
 import { workItems } from "@shared/schema";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
+import { requirePermission } from "../permission-middleware";
 import { logAuditFromReq } from "../audit-logger";
 import { WorkManagementRepository } from "../repositories/work-management-repository";
 
@@ -26,7 +27,7 @@ export function registerWorkItemsExtractedRoutes(app: Express): void {
 
   // ==================== WORK ITEMS ADMIN ====================
 
-  app.post("/api/work-items/delete", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/work-items/delete", requireAuth, requirePermission('pd_plan', 'delete'), async (req, res) => {
     try {
       const { ids } = req.body;
       if (!Array.isArray(ids) || ids.length === 0) {

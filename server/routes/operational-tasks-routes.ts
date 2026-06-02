@@ -9,6 +9,7 @@ import { projectInfo, workItems, workItemAssignments, notifications } from "@sha
 import { logAuditFromReq } from "../audit-logger";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
+import { requirePermission } from "../permission-middleware";
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "../lib/task-workflow-guard";
 import { ApiError, sendError, badRequest, notFound, validationError, unauthorized, serverError } from "../lib/api-error";
 import { validateTaskCreate, validateTaskUpdate } from "../lib/task-validation";
@@ -19,7 +20,7 @@ import { paramStr, parseIntParam } from "../lib/req-params";
 export function registerOperationalTasksRoutes(app: Express) {
   // ==================== OPERATIONAL TASKS ====================
 
-  app.get("/api/operational-tasks/task/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.get("/api/operational-tasks/task/:id", requireAuth, requirePermission('pd_plan', 'view'), async (req: Request, res: Response) => {
     try {
       const id = parseIntParam(req.params.id);
       if (!Number.isFinite(id)) {
@@ -131,7 +132,7 @@ export function registerOperationalTasksRoutes(app: Express) {
     }
   });
 
-  app.get("/api/operational-tasks/:projectName", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.get("/api/operational-tasks/:projectName", requireAuth, requirePermission('pd_plan', 'view'), async (req: Request, res: Response) => {
     try {
       const projectName = paramStr(req.params.projectName);
 
@@ -148,7 +149,7 @@ export function registerOperationalTasksRoutes(app: Express) {
     }
   });
 
-  app.post("/api/operational-tasks", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.post("/api/operational-tasks", requireAuth, requirePermission('pd_plan', 'edit'), async (req: Request, res: Response) => {
     try {
       const validationErrors = validateTaskCreate(req.body);
       if (validationErrors.length > 0) {
@@ -174,7 +175,7 @@ export function registerOperationalTasksRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/operational-tasks/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.patch("/api/operational-tasks/:id", requireAuth, requirePermission('pd_plan', 'edit'), async (req: Request, res: Response) => {
     try {
       const id = parseIntParam(req.params.id);
       if (!Number.isFinite(id)) {
@@ -317,7 +318,7 @@ export function registerOperationalTasksRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/operational-tasks/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.delete("/api/operational-tasks/:id", requireAuth, requirePermission('pd_plan', 'delete'), async (req: Request, res: Response) => {
     try {
       const id = parseIntParam(req.params.id);
       const task = await storage.getOperationalTask(id);
@@ -340,7 +341,7 @@ export function registerOperationalTasksRoutes(app: Express) {
   });
 
   // GC-008: Task type/workstream conversion endpoint
-  app.post("/api/operational-tasks/:id/convert", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.post("/api/operational-tasks/:id/convert", requireAuth, requirePermission('pd_plan', 'edit'), async (req: Request, res: Response) => {
     try {
       const id = parseIntParam(req.params.id);
       const { targetWorkstream } = req.body;
@@ -385,7 +386,7 @@ export function registerOperationalTasksRoutes(app: Express) {
     }
   });
 
-  app.post("/api/operational-tasks/bulk-update", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.post("/api/operational-tasks/bulk-update", requireAuth, requirePermission('pd_plan', 'edit'), async (req: Request, res: Response) => {
     try {
       const { taskIds, updates } = req.body as { taskIds: number[]; updates: Record<string, any> };
       if (updates.status) updates.status = normalizeStatus(updates.status);
