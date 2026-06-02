@@ -216,7 +216,7 @@ export function getVisibleProjectDepartments(gates: ProjectDepartmentGates): { k
 
 export function getVisibleFinanceSubTabs(gates: FinanceSubTabGates): { key: ProjectDetailSubTabKey; label: string }[] {
   return [
-    { key: "revenue" as const, label: "Milestone Tracker", visible: gates.revenue },
+    { key: "revenue" as const, label: "Invoice Milestones", visible: gates.revenue },
     { key: "cost-lines" as const, label: "Expenditure Breakdown", visible: gates.expenditure },
     { key: "cos-tracker" as const, label: "COS Tracker", visible: gates.cosTracker },
     { key: "rev-tracker" as const, label: "Revenue Tracker", visible: gates.revenueTracker },

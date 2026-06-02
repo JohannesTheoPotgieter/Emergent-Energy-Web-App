@@ -1696,22 +1696,41 @@ export default function ProjectDetailPage() {
 
           </div>
 
-          {/* Finance sub-tabs */}
+          {/* Finance sub-tabs — the COS / Revenue / GP monthly grids share one
+              "Recognition" tab with a metric switcher (below). */}
           <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="finance-sub-tabs">
-            {[
-              { key: "revenue", label: "Milestone Tracker", icon: DollarSign, visible: financeSubTabGates.revenue },
-              { key: "cost-lines", label: "Expenditure Breakdown", icon: CreditCard, visible: financeSubTabGates.expenditure },
-              { key: "cos-tracker", label: "COS Tracker", icon: CheckCircle, visible: financeSubTabGates.cosTracker },
-              { key: "rev-tracker", label: "Revenue Tracker", icon: TrendingUp, visible: financeSubTabGates.revenueTracker },
-              { key: "gp-tracker", label: "GP Tracker", icon: TrendingUp, visible: financeSubTabGates.gpTracker },
-              { key: "cashflow", label: "Cashflow", icon: Activity, visible: financeSubTabGates.cashflow },
-              { key: "qb-recon", label: "QB Recon", icon: Plug, visible: financeSubTabGates.quickBooks },
-            ].filter(st => st.visible).map(st => (
-              <Button key={st.key} size="sm" variant={activeSubTab === st.key ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => navigateToSubTab(st.key)} data-testid={`subtab-${st.key}`}>
-                <st.icon className="h-3 w-3 mr-1" /> {st.label}
-              </Button>
-            ))}
+            {(() => {
+              const recognitionVisible = financeSubTabGates.revenueTracker || financeSubTabGates.cosTracker || financeSubTabGates.gpTracker;
+              const recognitionDefault: ProjectDetailSubTabKey = financeSubTabGates.revenueTracker ? "rev-tracker" : financeSubTabGates.cosTracker ? "cos-tracker" : "gp-tracker";
+              return [
+                { key: "revenue", label: "Invoice Milestones", icon: DollarSign, visible: financeSubTabGates.revenue, target: "revenue", group: ["revenue"] },
+                { key: "cost-lines", label: "Expenditure Breakdown", icon: CreditCard, visible: financeSubTabGates.expenditure, target: "cost-lines", group: ["cost-lines"] },
+                { key: "recognition", label: "Recognition", icon: TrendingUp, visible: recognitionVisible, target: recognitionDefault, group: ["rev-tracker", "cos-tracker", "gp-tracker"] },
+                { key: "cashflow", label: "Cashflow", icon: Activity, visible: financeSubTabGates.cashflow, target: "cashflow", group: ["cashflow"] },
+                { key: "qb-recon", label: "QB Recon", icon: Plug, visible: financeSubTabGates.quickBooks, target: "qb-recon", group: ["qb-recon"] },
+              ].filter(st => st.visible).map(st => (
+                <Button key={st.key} size="sm" variant={st.group.includes(activeSubTab) ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => navigateToSubTab(st.target)} data-testid={`subtab-${st.key}`}>
+                  <st.icon className="h-3 w-3 mr-1" /> {st.label}
+                </Button>
+              ));
+            })()}
           </div>
+
+          {/* Recognition switcher — Revenue / COS / GP are the same monthly grid,
+              one metric at a time. Each remains an independent deep-link + gate. */}
+          {(activeSubTab === "rev-tracker" || activeSubTab === "cos-tracker" || activeSubTab === "gp-tracker") && (
+            <div className="inline-flex items-center gap-1 rounded-lg border bg-muted/40 p-1" data-testid="recognition-view-switcher">
+              {[
+                { key: "rev-tracker", label: "Revenue", visible: financeSubTabGates.revenueTracker },
+                { key: "cos-tracker", label: "COS", visible: financeSubTabGates.cosTracker },
+                { key: "gp-tracker", label: "GP", visible: financeSubTabGates.gpTracker },
+              ].filter(v => v.visible).map(v => (
+                <Button key={v.key} size="sm" variant={activeSubTab === v.key ? "default" : "ghost"} className="h-7 text-xs" onClick={() => navigateToSubTab(v.key)} data-testid={`recognition-view-${v.key}`}>
+                  {v.label}
+                </Button>
+              ))}
+            </div>
+          )}
 
           {/* Budget baseline strip */}
           {projectInfoId && (activeSubTab === "revenue" || activeSubTab === "cost-lines" || activeSubTab === "gp-tracker") && (
