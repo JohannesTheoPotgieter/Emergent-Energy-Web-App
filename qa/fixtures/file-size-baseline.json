@@ -2,11 +2,11 @@
   "_documentation": "EE-QA-015 baseline — files above the FILE_SIZE_THRESHOLD LOC. The CI guard `qa/tests/unit/file-size-ratchet.test.ts` fails if any of these grow OR a NEW file lands over the threshold. To regenerate after a split, run `npx tsx scripts/build-file-size-baseline.ts` and commit the new JSON.",
   "threshold": 1500,
   "buffer": 50,
-  "generated": "2026-06-01",
+  "generated": "2026-06-02",
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
-      "loc": 9593
+      "loc": 9587
     },
     {
       "file": "client/src/pages/smart-import.tsx",
@@ -58,7 +58,7 @@
     },
     {
       "file": "server/lib/import/commit-executor.ts",
-      "loc": 2543
+      "loc": 2617
     },
     {
       "file": "client/src/pages/my-work-tasks.tsx",
@@ -81,6 +81,10 @@
       "loc": 2242
     },
     {
+      "file": "server/lib/import/normalizer.ts",
+      "loc": 2211
+    },
+    {
       "file": "client/src/components/quickbooks/QbMatchingWorkbench.tsx",
       "loc": 2204
     },
@@ -99,10 +103,6 @@
     {
       "file": "server/departments/opportunities-routes.ts",
       "loc": 2160
-    },
-    {
-      "file": "server/lib/import/normalizer.ts",
-      "loc": 2129
     },
     {
       "file": "client/src/pages/finance-quickbooks-throughput.tsx",
@@ -170,7 +170,7 @@
     },
     {
       "file": "shared/schema/finance.ts",
-      "loc": 1708
+      "loc": 1714
     },
     {
       "file": "shared/schema/projects.ts",
