@@ -1138,6 +1138,74 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
     }
   }
 
+  // ── dependency (predecessor) pass ──
+  // Resolve each plan row's parsed predecessor references (by WBS / outline
+  // number) to work_item ids and sync them into work_item_dependencies.
+  // Idempotent and non-destructive to hand-made links: only the importer-owned
+  // edges (source = "SMART_IMPORT") for this project's plan rows are replaced.
+  {
+    const depTable = ctx.workItemDependenciesTable;
+    const planRows = await tx
+      .select({ id: workItems.id, outlineNumber: workItems.outlineNumber })
+      .from(workItems)
+      .where(and(
+        eq(workItems.projectId, projectId),
+        eq(workItems.source, "SMART_IMPORT"),
+        isNull(workItems.deletedAt),
+      ));
+    const idByKey = new Map<string, number>();
+    for (const r of planRows as Array<{ id: number; outlineNumber: string | null }>) {
+      if (!r.outlineNumber) continue;
+      idByKey.set(r.outlineNumber, r.id);
+      const sep = r.outlineNumber.indexOf("::");
+      if (sep >= 0) idByKey.set(r.outlineNumber.slice(sep + 2), r.id); // multi-project suffix
+    }
+    const planIds = (planRows as Array<{ id: number }>).map(r => r.id);
+
+    const resolveRef = (ref: string, successorOutline: string): number | null => {
+      if (idByKey.has(ref)) return idByKey.get(ref)!;
+      const sep = successorOutline.indexOf("::");
+      if (sep >= 0) {
+        const k = `${successorOutline.slice(0, sep)}::${ref}`;
+        if (idByKey.has(k)) return idByKey.get(k)!;
+      }
+      return null;
+    };
+
+    const edges: Array<{ predecessorId: number; successorId: number; depType: string; lagDays: number; source: string }> = [];
+    const edgeSeen = new Set<string>();
+    for (const mr of matchedRows) {
+      const fr = (mr.fileRow ?? {}) as Record<string, any>;
+      const preds = Array.isArray(fr.predecessors) ? fr.predecessors : [];
+      const successorOutline = typeof fr.taskNo === "string" ? fr.taskNo : null;
+      if (preds.length === 0 || !successorOutline) continue;
+      const successorId = idByKey.get(successorOutline) ?? null;
+      if (successorId == null) continue;
+      for (const p of preds) {
+        const predId = resolveRef(String(p?.ref ?? ""), successorOutline);
+        if (predId == null || predId === successorId) continue; // unresolved or self-loop
+        const depType = ["FS", "SS", "FF", "SF"].includes(p?.type) ? p.type : "FS";
+        const lagDays = Number.isFinite(p?.lagDays) ? p.lagDays : 0;
+        const key = `${predId}->${successorId}`;
+        if (edgeSeen.has(key)) continue;
+        edgeSeen.add(key);
+        edges.push({ predecessorId: predId, successorId, depType, lagDays, source: "SMART_IMPORT" });
+      }
+    }
+
+    if (planIds.length > 0) {
+      // Re-derive importer edges from the workbook (removes deps deleted from the
+      // sheet); manual edges (source = "MANUAL") are left intact.
+      await tx.delete(depTable).where(and(
+        eq(depTable.source, "SMART_IMPORT"),
+        inArray(depTable.successorId, planIds),
+      ));
+    }
+    if (edges.length > 0) {
+      await tx.insert(depTable).values(edges);
+    }
+  }
+
   return { canonicalSource: CANONICAL_SOURCES.PLAN, counts, insertedIds, updatedIds, warnings, mergeConflicts };
 }
 

@@ -41,6 +41,10 @@ export interface NormalizationResult {
     resource2: string | null;
     trackerComments: string | null;
     workDays: number | null;
+    /** Raw predecessor cell text (e.g. "1.2, 1.3FS+2d"). */
+    predecessorsRaw: string | null;
+    /** Parsed dependency references for this task (by WBS/task-no). */
+    predecessors: Array<{ ref: string; type: "FS" | "SS" | "FF" | "SF"; lagDays: number }>;
     /** Per-cell font/fill colour, keyed by canonical field name. */
     cellFormat: CellFormatMap | null;
   }>;
@@ -745,6 +749,47 @@ function deriveIndentLevel(taskNo: string): number {
   return 0;
 }
 
+/**
+ * Parse a predecessor / dependency cell into structured references.
+ * Handles MS-Project-style tokens separated by comma/semicolon/newline, each
+ * being a WBS/task reference with an optional dependency type and lag, e.g.:
+ *   "1.2"          → FS, 0 lag
+ *   "3FS+2d"       → FS, +2 days
+ *   "4 SS -1 day"  → SS, -1 day
+ *   "10, 11FF"     → two deps
+ * The `ref` is left as the raw WBS/task number; resolution to a work_item id
+ * happens at commit time against the imported task numbers.
+ */
+type ParsedPredecessor = { ref: string; type: "FS" | "SS" | "FF" | "SF"; lagDays: number };
+function parsePredecessors(raw: string | null): ParsedPredecessor[] {
+  if (!raw) return [];
+  const out: ParsedPredecessor[] = [];
+  const seen = new Set<string>();
+  for (const tokenRaw of String(raw).split(/[,;\n]+/)) {
+    const token = tokenRaw.trim();
+    if (!token) continue;
+    const m = token.match(
+      /^([0-9]+(?:\.[0-9]+)*)\s*(FS|SS|FF|SF)?\s*([+-]\s*\d+(?:\.\d+)?)?\s*(d|day|days|w|wk|week|weeks)?/i,
+    );
+    if (!m) continue;
+    const ref = normalizeTaskNo(m[1]);
+    const type = (m[2]?.toUpperCase() as ParsedPredecessor["type"]) || "FS";
+    let lagDays = 0;
+    if (m[3]) {
+      const n = parseFloat(m[3].replace(/\s+/g, ""));
+      if (Number.isFinite(n)) {
+        const unit = (m[4] || "").toLowerCase();
+        lagDays = Math.round(unit.startsWith("w") ? n * 7 : n);
+      }
+    }
+    const key = `${ref}|${type}|${lagDays}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ ref, type, lagDays });
+  }
+  return out;
+}
+
 function extractPlanTasks(
   data: any[][],
   mapping: MappingResult,
@@ -777,6 +822,8 @@ function extractPlanTasks(
     resource2: string | null;
     trackerComments: string | null;
     workDays: number | null;
+    predecessorsRaw: string | null;
+    predecessors: ParsedPredecessor[];
     cellFormat: CellFormatMap | null;
   }> = [];
   const phases: NormalizationResult["executionPhases"] = [];
@@ -806,6 +853,7 @@ function extractPlanTasks(
   const resource1Col = getColIndex(mapping, "resource_1");
   const resource2Col = getColIndex(mapping, "resource_2");
   const workDaysCol = getColIndex(mapping, "work_days");
+  const predecessorCol = getColIndex(mapping, "predecessor");
 
   let currentPhase: string | null = null;
   let currentSubProject: string | null = null;
@@ -853,10 +901,11 @@ function extractPlanTasks(
     const hasWbs = !!(taskNo && taskNo.trim());
     const hasPlanOrActualDate = !!(startDate || endDate || actualStartDate || actualEndDate);
 
-    // Planned-only rows are valid programme rows. Actual dates can remain
-    // blank until work starts or completes; rows still need a WBS and at least
-    // one plan/actual schedule date so summary headers do not pollute work_items.
-    if (!hasWbs || !hasPlanOrActualDate) continue;
+    // Keep any row that carries a WBS — including dateless SUMMARY/parent rows,
+    // which a professional plan needs so children aren't orphaned — or at least
+    // one schedule date (covers un-numbered milestones). Only rows with neither a
+    // WBS nor a date are skipped; section headers were already filtered above.
+    if (!hasWbs && !hasPlanOrActualDate) continue;
 
     let durationDays: number | null = null;
     if (durationCol >= 0 && row[durationCol] != null) {
@@ -887,6 +936,8 @@ function extractPlanTasks(
       const parsed = parseInt(String(row[workDaysCol]));
       if (!isNaN(parsed)) workDaysVal = parsed;
     }
+
+    const predRaw = predecessorCol >= 0 ? cellStr(row, predecessorCol) : null;
 
     // Capture per-cell formatting (font, fill, bold) for every canonical
     // PLAN field that has a column in this workbook. Skipped when no
@@ -938,6 +989,8 @@ function extractPlanTasks(
       resource2: resource2Col >= 0 ? cellStr(row, resource2Col) : null,
       trackerComments: trackerCommentVal,
       workDays: workDaysVal,
+      predecessorsRaw: predRaw,
+      predecessors: parsePredecessors(predRaw),
       cellFormat,
     });
   }
@@ -956,22 +1009,21 @@ function extractPlanTasks(
 
   const tasks: NormalizationResult["planTasks"] = rawTasks.map(t => {
     const taskNo = t.taskNo;
-    let isMilestone = false;
     let parentTaskNo: string | null = null;
     let indentLevel = 0;
 
     if (taskNo) {
       parentTaskNo = deriveParentTaskNo(taskNo);
       indentLevel = deriveIndentLevel(taskNo);
-
-      if (!taskNo.includes(".") && /^\d+$/.test(taskNo) && childPrefixes.has(taskNo)) {
-        isMilestone = true;
-      }
     }
 
-    const isSubtask = parentTaskNo !== null || indentLevel > 0;
-
-    if (!isSubtask) {
+    // A task that has children is a SUMMARY / rollup — it is NEVER a milestone
+    // (the previous rule flagged every parent-with-children as a milestone,
+    // which is backwards). Milestone detection only applies to LEAF tasks, and
+    // at ANY level (a milestone is commonly a numbered leaf like "1.3 Energisation").
+    const isSummary = !!taskNo && childPrefixes.has(taskNo);
+    let isMilestone = false;
+    if (!isSummary) {
       const nameLower = (t.taskName || "").toLowerCase();
       for (const kw of milestoneKeywords) {
         if (nameLower.includes(kw)) {
@@ -979,10 +1031,10 @@ function extractPlanTasks(
           break;
         }
       }
-    }
-
-    if (!isSubtask && t.startDate && t.endDate && t.startDate === t.endDate && !isMilestone) {
-      isMilestone = true;
+      // A zero-length leaf (same start & end date) is a milestone.
+      if (!isMilestone && t.startDate && t.endDate && t.startDate === t.endDate) {
+        isMilestone = true;
+      }
     }
 
     if (parentTaskNo && !allTaskNos.has(parentTaskNo)) {

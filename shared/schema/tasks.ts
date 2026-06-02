@@ -392,6 +392,10 @@ export const workItemDependencies = pgTable("work_item_dependencies", {
   successorId: integer("successor_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
   depType: workItemDepTypeEnum("dep_type").notNull().default("FS"),
   lagDays: integer("lag_days").default(0),
+  // Provenance so re-imports can re-derive plan dependencies from the workbook
+  // without clobbering links a user created by hand. "SMART_IMPORT" rows are
+  // owned by the importer; "MANUAL" rows are never touched by it.
+  source: text("source").notNull().default("MANUAL"),
   deletedAt: timestamp("deleted_at"),
   deletedBy: integer("deleted_by"),
 });

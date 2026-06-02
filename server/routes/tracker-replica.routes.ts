@@ -250,15 +250,17 @@ export function registerTrackerReplicaRoutes(app: Express): void {
         const exists = await trackerReplicaRepository.projectExists(projectId);
         if (!exists) throw notFound("Project");
 
-        const [metadata, tasks] = await Promise.all([
+        const [metadata, tasks, dependencies] = await Promise.all([
           trackerReplicaRepository.getProjectMetadata(projectId),
           trackerReplicaRepository.getProgramPlanTasks(projectId),
+          trackerReplicaRepository.getProgramPlanDependencies(projectId),
         ]);
 
         res.json({
           projectId,
           metadata,
           tasks,
+          dependencies,
         });
       } catch (err) {
         if (err instanceof ApiError) throw err;

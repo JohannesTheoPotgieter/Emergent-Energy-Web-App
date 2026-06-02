@@ -31,7 +31,7 @@ import {
   type TrackerProjectMetadata,
   type FinancialEditRequest,
 } from "@shared/schema/finance";
-import { workItems, type WorkItem } from "@shared/schema/tasks";
+import { workItems, workItemDependencies, type WorkItem } from "@shared/schema/tasks";
 import { projectInfo } from "@shared/schema/projects";
 import { smartImportRuns } from "@shared/schema/imports";
 import { users } from "@shared/schema/users";
@@ -203,6 +203,54 @@ export class TrackerReplicaRepository {
         ),
       )
       .orderBy(asc(workItems.sortOrder), asc(workItems.sourceRow));
+  }
+
+  /**
+   * Dependency edges (predecessor → successor) among this project's plan tasks,
+   * for the Gantt's dependency arrows and critical-path calculation. Includes
+   * both importer-derived and manual links; cross-project edges are excluded.
+   */
+  async getProgramPlanDependencies(
+    projectId: number,
+  ): Promise<Array<{ predecessorId: number; successorId: number; depType: string; lagDays: number }>> {
+    const planRows: Array<{ id: number }> = await this.dbInstance
+      .select({ id: workItems.id })
+      .from(workItems)
+      .where(
+        and(
+          eq(workItems.projectId, projectId),
+          eq(workItems.source, "SMART_IMPORT"),
+          eq(workItems.workstream, "PM"),
+          isNull(workItems.deletedAt),
+        ),
+      );
+    const ids = planRows.map((r) => r.id);
+    if (ids.length === 0) return [];
+    const idSet = new Set(ids);
+    const rows: Array<{ predecessorId: number; successorId: number; depType: string | null; lagDays: number | null }> =
+      await this.dbInstance
+        .select({
+          predecessorId: workItemDependencies.predecessorId,
+          successorId: workItemDependencies.successorId,
+          depType: workItemDependencies.depType,
+          lagDays: workItemDependencies.lagDays,
+        })
+        .from(workItemDependencies)
+        .where(
+          and(
+            inArray(workItemDependencies.successorId, ids),
+            isNull(workItemDependencies.deletedAt),
+          ),
+        );
+    // Keep only edges whose predecessor is also part of this project's plan.
+    return rows
+      .filter((r) => idSet.has(r.predecessorId))
+      .map((r) => ({
+        predecessorId: r.predecessorId,
+        successorId: r.successorId,
+        depType: String(r.depType ?? "FS"),
+        lagDays: r.lagDays ?? 0,
+      }));
   }
 
   /**
