@@ -260,7 +260,6 @@ function ProGantt({
   startDate: string | null;
 }) {
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
-  const [showCritical, setShowCritical] = useState(true);
 
   const byId = useMemo(() => {
     const m = new Map<number, PlanTask>();
@@ -340,7 +339,57 @@ function ProGantt({
   // if there are no deps or the graph cycles, no path is highlighted.
   const critical = useMemo(() => {
     const empty = new Set<number>();
-    if (dependencies.length === 0) return empty;
+    // No explicit predecessor links → infer a critical path from the schedule:
+    // the longest chain of leaf tasks where each starts on/after the previous
+    // one finishes (a best-guess "critical backbone" from WBS order + dates).
+    if (dependencies.length === 0) {
+      try {
+        type N = { id: number; s: number; e: number; dur: number };
+        const nodes: N[] = [];
+        for (const t of tasks) {
+          if (hasKids(t.id)) continue; // leaves only
+          const ef = eff.get(t.id);
+          if (!ef?.start || !ef?.end) continue;
+          nodes.push({ id: t.id, s: ef.start.getTime(), e: ef.end.getTime(), dur: Math.max(1, diffDays(ef.end, ef.start) + 1) });
+        }
+        if (nodes.length === 0) return empty;
+        nodes.sort((a, b) => a.s - b.s || a.e - b.e);
+        const best = new Map<number, number>();
+        const prev = new Map<number, number | null>();
+        let bestId = nodes[0].id;
+        let bestVal = -Infinity;
+        for (let i = 0; i < nodes.length; i++) {
+          const n = nodes[i];
+          let bv = n.dur;
+          let bp: number | null = null;
+          for (let j = 0; j < i; j++) {
+            const m = nodes[j];
+            if (m.e <= n.s) {
+              const cand = (best.get(m.id) ?? m.dur) + n.dur;
+              if (cand > bv) {
+                bv = cand;
+                bp = m.id;
+              }
+            }
+          }
+          best.set(n.id, bv);
+          prev.set(n.id, bp);
+          if (bv > bestVal) {
+            bestVal = bv;
+            bestId = n.id;
+          }
+        }
+        const crit = new Set<number>();
+        let cur: number | null = bestId;
+        while (cur != null) {
+          crit.add(cur);
+          cur = prev.get(cur) ?? null;
+        }
+        return crit;
+      } catch {
+        return empty;
+      }
+    }
     try {
       const dur = (id: number): number => {
         const e = eff.get(id);
@@ -462,11 +511,7 @@ function ProGantt({
       <CardHeader>
         <div className="flex items-center justify-between flex-wrap gap-2">
           <CardTitle className="text-base">Programme Gantt</CardTitle>
-          <div className="flex items-center gap-3 text-xs">
-            <label className="inline-flex items-center gap-1 cursor-pointer select-none">
-              <input type="checkbox" checked={showCritical} onChange={(e) => setShowCritical(e.target.checked)} data-testid="gantt-critical-toggle" />
-              Critical path
-            </label>
+          <div className="flex items-center gap-2 text-xs">
             <Button size="sm" variant="outline" onClick={() => setCollapsed(new Set(allParentIds))} data-testid="gantt-collapse-all">Collapse all</Button>
             <Button size="sm" variant="outline" onClick={() => setCollapsed(new Set())} data-testid="gantt-expand-all">Expand all</Button>
           </div>
@@ -489,7 +534,7 @@ function ProGantt({
               <div className="border-b px-2 flex items-end pb-1 text-xs font-semibold text-muted-foreground" style={{ height: G_HEADER_H }}>WBS · Task</div>
               {rows.map(({ t, depth }) => {
                 const isParent = hasKids(t.id);
-                const isCrit = showCritical && critical.has(t.id);
+                const isCrit = critical.has(t.id);
                 return (
                   <div key={t.id} className="flex items-center border-b text-xs hover:bg-muted/20" style={{ height: G_ROW_H, paddingLeft: 6 + depth * 14 }} data-testid={`gantt-tree-row-${t.id}`}>
                     {isParent ? (
@@ -529,7 +574,7 @@ function ProGantt({
                   const top = G_HEADER_H + i * G_ROW_H;
                   const isParent = hasKids(t.id);
                   const isMs = !!t.isMilestone && !isParent;
-                  const isCrit = showCritical && critical.has(t.id);
+                  const isCrit = critical.has(t.id);
                   const pctDone = Math.max(0, Math.min(1, t.percentComplete ?? 0));
                   // Baseline overlay (planned) when distinct from the drawn span.
                   const bStart = asDay(t.baselineStart);
@@ -573,7 +618,7 @@ function ProGantt({
                     // FS/FF start from predecessor finish; SS/SF from its start.
                     const fromX = d.depType === "SS" || d.depType === "SF" ? gp.x0 : gp.x1;
                     const toX = d.depType === "FF" || d.depType === "SF" ? gs.x1 : gs.x0;
-                    const crit = showCritical && critical.has(d.predecessorId) && critical.has(d.successorId);
+                    const crit = critical.has(d.predecessorId) && critical.has(d.successorId);
                     const midX = Math.max(fromX, toX) + 8;
                     const path = `M ${fromX} ${yp} H ${midX} V ${ys} H ${toX}`;
                     return (
@@ -594,7 +639,7 @@ function ProGantt({
         )}
         {dependencies.length === 0 && rows.length > 0 && (
           <p className="text-xs text-muted-foreground px-3 py-2 border-t">
-            No task dependencies found in the workbook — add a “Predecessors” column to the Project Plan sheet (e.g. <span className="font-mono">1.2, 1.3FS+2d</span>) and re-import to draw dependency links and the critical path.
+            The critical path shown is <strong>inferred from the schedule</strong> (WBS order + dates), since this plan has no predecessor links. For true dependency arrows and an exact critical path, add a “Predecessors” column to the Project Plan sheet (e.g. <span className="font-mono">1.2, 1.3FS+2d</span>) and re-import.
           </p>
         )}
       </CardContent>
