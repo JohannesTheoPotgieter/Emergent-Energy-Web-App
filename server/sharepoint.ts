@@ -591,19 +591,25 @@ export async function listFolderChildren(
   }
   let url: string;
   if (folderItemId) {
-    url = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${folderItemId}/children?$filter=file ne null`;
+    url = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${folderItemId}/children`;
   } else {
     const normalizedFolderPath = normalizeSharePointFolderPath(folderPath);
     if (normalizedFolderPath) {
-      url = `https://graph.microsoft.com/v1.0/drives/${driveId}/root:/${encodeGraphDrivePath(normalizedFolderPath)}:/children?$filter=file ne null`;
+      url = `https://graph.microsoft.com/v1.0/drives/${driveId}/root:/${encodeGraphDrivePath(normalizedFolderPath)}:/children`;
     } else {
-      url = `https://graph.microsoft.com/v1.0/drives/${driveId}/root/children?$filter=file ne null`;
+      url = `https://graph.microsoft.com/v1.0/drives/${driveId}/root/children`;
     }
   }
 
   const result = await graphGet(url, "list folder children");
-  return (result.value || []).filter((item: any) =>
-    item.name?.endsWith('.xlsx') || item.name?.endsWith('.xlsm') || item.name?.endsWith('.xls')
+  // Folder + periodic auto-import discovery. NOTE: do NOT use `?$filter=file ne null`
+  // on /children — Microsoft Graph does not support $filter on a driveItem's
+  // children collection and returns 400 invalidRequest (this was the cause of
+  // SCHEDULED_IMPORT_FAILED / "no successful runs"). Exclude folders and apply
+  // the extension + lock-file/conflicted-copy exclusions (M2) client-side, the
+  // same way the connection-test path does.
+  return (result.value || []).filter(
+    (item: any) => item?.file && item.name && isTrackerWorkbookName(item.name),
   );
 }
 
