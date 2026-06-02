@@ -285,40 +285,19 @@ export default function ImportControlTowerPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <Card>
-          <CardContent className="pt-4 pb-3 text-center">
-            <div className="text-2xl font-bold tabular-nums" data-testid="text-total-runs">{totalRuns}</div>
-            <div className="text-xs text-muted-foreground">Total Runs</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-3 text-center">
-            <div className="text-2xl font-bold text-emerald-600 tabular-nums" data-testid="text-committed-runs">{committedRuns}</div>
-            <div className="text-xs text-muted-foreground">Committed</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-3 text-center">
-            <div className="text-2xl font-bold text-red-600 tabular-nums" data-testid="text-failed-runs">{failedRuns}</div>
-            <div className="text-xs text-muted-foreground">Failed</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-3 text-center">
-            <div className="text-2xl font-bold text-blue-600 tabular-nums" data-testid="text-preview-runs">{previewRuns}</div>
-            <div className="text-xs text-muted-foreground">Pending</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-3 text-center">
-            <div className="text-2xl font-bold tabular-nums" data-testid="text-success-rate">
-              {totalRecords > 0 ? Math.round((succeededRecords / totalRecords) * 100) : 0}%
-            </div>
-            <div className="text-xs text-muted-foreground">Success Rate</div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Compact summary strip — same five metrics, one slim row instead of
+          five large cards. */}
+      <Card>
+        <CardContent className="py-3">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+            <span><span className="text-base font-bold tabular-nums" data-testid="text-total-runs">{totalRuns}</span> <span className="text-muted-foreground">Total</span></span>
+            <span><span className="text-base font-bold tabular-nums text-emerald-600" data-testid="text-committed-runs">{committedRuns}</span> <span className="text-muted-foreground">Committed</span></span>
+            <span><span className="text-base font-bold tabular-nums text-red-600" data-testid="text-failed-runs">{failedRuns}</span> <span className="text-muted-foreground">Failed</span></span>
+            <span><span className="text-base font-bold tabular-nums text-blue-600" data-testid="text-preview-runs">{previewRuns}</span> <span className="text-muted-foreground">Pending</span></span>
+            <span className="ml-auto"><span className="text-base font-bold tabular-nums" data-testid="text-success-rate">{totalRecords > 0 ? Math.round((succeededRecords / totalRecords) * 100) : 0}%</span> <span className="text-muted-foreground">Success rate</span></span>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-3">
@@ -416,29 +395,36 @@ export default function ImportControlTowerPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-center">
-                          <div className="text-xs space-y-0.5">
-                            <div data-testid={`text-records-attempted-${run.id}`}>{run.recordsAttempted} attempted</div>
-                            {run.recordsSucceeded > 0 && (
-                              <div className="text-emerald-600" data-testid={`text-records-succeeded-${run.id}`}>{run.recordsSucceeded} ok</div>
-                            )}
-                            {run.recordsFailed > 0 && (
-                              <div className="text-red-600" data-testid={`text-records-failed-${run.id}`}>{run.recordsFailed} failed</div>
+                          <div className="text-xs tabular-nums">
+                            <span data-testid={`text-records-attempted-${run.id}`}>{run.recordsAttempted}</span>
+                            {(run.recordsSucceeded > 0 || run.recordsFailed > 0) && (
+                              <span className="text-muted-foreground">
+                                {" ("}
+                                {run.recordsSucceeded > 0 && (
+                                  <span className="text-emerald-600" data-testid={`text-records-succeeded-${run.id}`}>{run.recordsSucceeded} ok</span>
+                                )}
+                                {run.recordsSucceeded > 0 && run.recordsFailed > 0 && " · "}
+                                {run.recordsFailed > 0 && (
+                                  <span className="text-red-600" data-testid={`text-records-failed-${run.id}`}>{run.recordsFailed} failed</span>
+                                )}
+                                {")"}
+                              </span>
                             )}
                           </div>
                         </TableCell>
                         <TableCell className="text-center">
                           {run.totalIssues > 0 ? (
-                            <div className="text-xs space-y-0.5">
+                            <div className="text-xs tabular-nums flex items-center justify-center gap-2">
                               {run.unresolvedBlockers > 0 && (
-                                <div className="text-red-600 flex items-center justify-center gap-1">
-                                  <AlertTriangle className="h-3 w-3" /> {run.unresolvedBlockers}
-                                </div>
+                                <span className="text-red-600 inline-flex items-center gap-0.5">
+                                  <AlertTriangle className="h-3 w-3" />{run.unresolvedBlockers}
+                                </span>
                               )}
                               {run.unresolvedWarnings > 0 && (
-                                <div className="text-yellow-600">{run.unresolvedWarnings} warn</div>
+                                <span className="text-yellow-600">{run.unresolvedWarnings} warn</span>
                               )}
                               {run.resolvedIssues > 0 && (
-                                <div className="text-emerald-600">{run.resolvedIssues} resolved</div>
+                                <span className="text-emerald-600">{run.resolvedIssues} ok</span>
                               )}
                             </div>
                           ) : (
