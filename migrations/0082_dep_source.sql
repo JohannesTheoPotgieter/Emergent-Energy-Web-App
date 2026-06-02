@@ -1,0 +1,1 @@
+ALTER TABLE "work_item_dependencies" ADD COLUMN "source" text DEFAULT 'MANUAL' NOT NULL;
