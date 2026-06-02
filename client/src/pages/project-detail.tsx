@@ -51,7 +51,6 @@ import { ProjectDocumentRegisterPanel } from "@/components/project-documents/Pro
 import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { useAuth } from "@/hooks/use-auth";
 import { ProjectCommandHeader } from "@/components/ProjectCommandHeader";
-import { ProjectWorkspaceBetaBanner } from "@/components/ProjectWorkspaceBetaBanner";
 import { RevenueTrackingContent } from "@/pages/revenue-tracking";
 import { ExpenditureBreakdownContent } from "@/pages/expenditure-breakdown";
 import { ProgramPlanContent } from "@/pages/program-plan";
@@ -553,6 +552,8 @@ export default function ProjectDetailPage() {
   const [activeDept, setActiveDept] = useState<string>(resolvedFromUrl?.dept || "overview");
   const [activeSubTab, setActiveSubTab] = useState<string>(resolvedFromUrl?.sub || "command");
   const [showActivityTimeline, setShowActivityTimeline] = useState<boolean>(false);
+  const [showLifecycle, setShowLifecycle] = useState<boolean>(false);
+  const [showContext, setShowContext] = useState<boolean>(false);
   // Keep legacy aliases
   const activeSection = activeDept === "pm" ? "delivery" : activeDept === "eng" ? "engineering" : activeDept === "finance" ? "commercial" : activeDept;
 
@@ -1157,11 +1158,6 @@ export default function ProjectDetailPage() {
       <div data-testid="cockpit-mode-executive" className="hidden" />
       <div data-testid="cockpit-mode-execution" className="hidden" />
       <div data-testid="executive-summary-cards" className="hidden" />
-      {/* PR-E redesign (2026-05-27) — opt-in banner pointing to the new
-          4-tab workspace. The legacy detail page stays the default;
-          users self-select into the beta. Banner is dismissable so we
-          don't pester anyone who's tried it and prefers the legacy view. */}
-      {projectInfoId && <ProjectWorkspaceBetaBanner projectId={projectInfoId} />}
       <ProjectCommandHeader
         projectName={projectName}
         displayName={displayName}
@@ -1227,12 +1223,27 @@ export default function ProjectDetailPage() {
 
       {/* Stage Lifecycle â€” Critical Control Panel + Stage Timeline + Activity Timeline */}
       {projectInfoId && canViewTab.engineering && (
-        <div className="space-y-2" data-testid="stage-lifecycle-block">
-          <CriticalControlPanel
-            projectId={projectInfoId}
-            onViewGate={() => setLocation(`/project/id/${projectInfoId}/gate/${encodeURIComponent(stageData?.currentStage?.stageCode || "S01_FIRST_ASSESSMENT")}`)}
-            isAdmin={isAdmin}
-          />
+        <div className="rounded-lg border bg-card" data-testid="stage-lifecycle-block">
+          <button
+            type="button"
+            onClick={() => setShowLifecycle((v) => !v)}
+            className="flex w-full items-center justify-between gap-2 px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+            aria-expanded={showLifecycle}
+            data-testid="toggle-lifecycle"
+          >
+            <span className="flex items-center gap-2">
+              <Milestone className="h-3.5 w-3.5" />
+              Lifecycle &amp; gates
+            </span>
+            {showLifecycle ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
+          {showLifecycle && (
+            <div className="border-t p-3 space-y-2">
+              <CriticalControlPanel
+                projectId={projectInfoId}
+                onViewGate={() => setLocation(`/project/id/${projectInfoId}/gate/${encodeURIComponent(stageData?.currentStage?.stageCode || "S01_FIRST_ASSESSMENT")}`)}
+                isAdmin={isAdmin}
+              />
           {stageData && (stageData.stages || []).length > 0 && (
             <div className="rounded-lg border bg-card px-3 py-2" data-testid="stage-timeline-inline">
               <StageTimeline
@@ -1263,6 +1274,8 @@ export default function ProjectDetailPage() {
               </div>
             )}
           </div>
+            </div>
+          )}
         </div>
       )}
       {projectInfoId && !canViewTab.engineering && (
@@ -1271,12 +1284,30 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      {/* Priority badges */}
-      <ProjectPriorityBadges projectId={projectInfoId ?? null} />
-
-      {/* Linked entity info cards (B2/B3/B5) */}
+      {/* Project context — site, budget baseline & linked priorities.
+          Collapsed by default; reference data, not daily actions. */}
       {projectInfoId && (
-        <LinkedEntityCards projectInfoId={projectInfoId} />
+        <div className="rounded-lg border bg-card" data-testid="project-context-disclosure">
+          <button
+            type="button"
+            onClick={() => setShowContext((v) => !v)}
+            className="flex w-full items-center justify-between gap-2 px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+            aria-expanded={showContext}
+            data-testid="toggle-project-context"
+          >
+            <span className="flex items-center gap-2">
+              <MapPin className="h-3.5 w-3.5" />
+              Site, budget &amp; priorities
+            </span>
+            {showContext ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
+          {showContext && (
+            <div className="border-t p-3 space-y-3">
+              <ProjectPriorityBadges projectId={projectInfoId ?? null} />
+              <LinkedEntityCards projectInfoId={projectInfoId} />
+            </div>
+          )}
+        </div>
       )}
 
       {/* GC-012: Contract value reconciliation warning â€” uses V2 finance summary */}
@@ -1297,14 +1328,9 @@ export default function ProjectDetailPage() {
         ) : null;
       })()}
 
-      <div className="flex flex-wrap gap-1.5" data-testid="project-trust-markers">
-        <TrustMarker label="Project" source="App" updatedAt={v2DetailUpdatedAt} stale={v2DetailFetching} loadError={!v2Detail && !v2DetailFetching} />
-        <TrustMarker label="Revenue" source="Excel / App" updatedAt={revenueUpdatedAt} drift={revenueTrustData?.reconciliation?.status || null} stale={revenueFetching} loadError={revenueLoadError} lineage={v2Detail?.importLineage ?? null} />
-        <TrustMarker label="Cashflow" source="QuickBooks / App" updatedAt={cashflowUpdatedAt} stale={cashflowFetching} loadError={cashflowLoadError} lineage={v2Detail?.importLineage ?? null} />
-        <TrustMarker label="Quality" source="Manual override / App" updatedAt={qualityUpdatedAt} stale={qualityFetching} loadError={qualityLoadError} />
-      </div>
+      {/* Data-freshness trust markers now live inside the department "ⓘ" popover below. */}
 
-      {canViewTab.quality && (
+      {canViewTab.quality && (qualityWorkspaceLoading || qualityWorkspaceError || qualityWorkspace?.hasChecklist) && (
         <div className="rounded-md border bg-card px-3 py-2 text-xs" data-testid="project-quality-readiness-strip">
           {qualityWorkspaceLoading ? (
             <div className="flex items-center gap-2 text-muted-foreground">
@@ -1313,9 +1339,7 @@ export default function ProjectDetailPage() {
             </div>
           ) : qualityWorkspaceError ? (
             <div className="text-red-700">Could not load quality readiness. Open the Quality tab to retry.</div>
-          ) : !qualityWorkspace?.hasChecklist ? (
-            <div className="text-muted-foreground">No quality checklist is active for this project.</div>
-          ) : (
+          ) : qualityWorkspace?.hasChecklist ? (
             <div className="flex flex-wrap items-center gap-1.5">
               <button type="button" onClick={() => navigateToSubTab("checklist", undefined, "quality")} className="rounded border px-2 py-1 hover:bg-muted">
                 Quality status: <span className="font-semibold">{Math.round(qualityProgressPct)}%</span>
@@ -1333,7 +1357,7 @@ export default function ProjectDetailPage() {
                 Handover blocked: <span className="font-semibold">{qualityWorkspace.counts.blockedHandover || qualityWorkspace.handover?.blocked ? "Yes" : "No"}</span>
               </button>
             </div>
-          )}
+          ) : null}
         </div>
       )}
 
@@ -1420,6 +1444,15 @@ export default function ProjectDetailPage() {
                     ? formatUpdatedAt(Math.max(v2DetailUpdatedAt || 0, qualityUpdatedAt || 0))
                     : formatUpdatedAt(v2DetailUpdatedAt)
               }</div>
+            </div>
+            <div className="border-t pt-2 space-y-1.5" data-testid="project-trust-markers">
+              <div className="font-semibold text-foreground text-[11px] uppercase tracking-wide">Data freshness</div>
+              <div className="flex flex-wrap gap-1.5">
+                <TrustMarker label="Project" source="App" updatedAt={v2DetailUpdatedAt} stale={v2DetailFetching} loadError={!v2Detail && !v2DetailFetching} />
+                <TrustMarker label="Revenue" source="Excel / App" updatedAt={revenueUpdatedAt} drift={revenueTrustData?.reconciliation?.status || null} stale={revenueFetching} loadError={revenueLoadError} lineage={v2Detail?.importLineage ?? null} />
+                <TrustMarker label="Cashflow" source="QuickBooks / App" updatedAt={cashflowUpdatedAt} stale={cashflowFetching} loadError={cashflowLoadError} lineage={v2Detail?.importLineage ?? null} />
+                <TrustMarker label="Quality" source="Manual override / App" updatedAt={qualityUpdatedAt} stale={qualityFetching} loadError={qualityLoadError} />
+              </div>
             </div>
             <div className="border-t pt-2">
               <div className="font-semibold text-foreground text-[11px] uppercase tracking-wide mb-1.5">Related departments</div>
