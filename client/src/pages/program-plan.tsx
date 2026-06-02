@@ -26,7 +26,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { fetchQueryFn } from "@/lib/queryClient";
 import { styleForCell } from "@/lib/tracker-cell-format";
 import { humaniseField } from "@/lib/field-labels";
-import { Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 
 interface ProgramPlanResponse {
   projectId: number;
@@ -38,8 +38,16 @@ interface ProgramPlanResponse {
     durationMonthsToCapacityTest: string | null;
     cellFormat: unknown;
   } | null;
+  dependencies?: Array<{
+    predecessorId: number;
+    successorId: number;
+    depType: string;
+    lagDays: number;
+  }>;
   tasks: Array<{
     id: number;
+    parentId: number | null;
+    isMilestone: boolean | null;
     wbsCode: string | null;
     outlineNumber: string | null;
     indentLevel: number | null;
@@ -129,11 +137,16 @@ export function ProgramPlanContent({ projectId }: { projectId: number }) {
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="tasks" className="w-full">
+      <Tabs defaultValue="plan" className="w-full">
         <TabsList>
+          <TabsTrigger value="plan">Gantt</TabsTrigger>
           <TabsTrigger value="tasks">Task List</TabsTrigger>
           <TabsTrigger value="gantt">Daily Gantt</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="plan">
+          <ProGantt tasks={data.tasks} dependencies={data.dependencies ?? []} startDate={m?.projectStartDate ?? null} />
+        </TabsContent>
 
         <TabsContent value="gantt">
           <GanttSection tasks={data.tasks} startDate={m?.projectStartDate ?? null} />
@@ -220,6 +233,372 @@ export function ProgramPlanContent({ projectId }: { projectId: number }) {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Professional Gantt — WBS tree (collapse/expand), summary/task/milestone bars,
+// baseline overlay, dependency arrows, critical path, today line.
+// ---------------------------------------------------------------------------
+
+const G_ROW_H = 28;       // px per task row
+const G_HEADER_H = 38;    // px for the month/week header
+const G_LABEL_W = 360;    // px for the WBS + name tree column
+const G_DAY_W = 6;        // px per day on the timeline
+const G_BAR_H = 14;       // px bar height
+
+type PlanTask = ProgramPlanResponse["tasks"][number];
+type PlanDep = NonNullable<ProgramPlanResponse["dependencies"]>[number];
+
+function ProGantt({
+  tasks,
+  dependencies,
+  startDate,
+}: {
+  tasks: PlanTask[];
+  dependencies: PlanDep[];
+  startDate: string | null;
+}) {
+  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  const [showCritical, setShowCritical] = useState(true);
+
+  const byId = useMemo(() => {
+    const m = new Map<number, PlanTask>();
+    for (const t of tasks) m.set(t.id, t);
+    return m;
+  }, [tasks]);
+
+  // Children keyed by parent (null = root). Input order is already sortOrder/sourceRow.
+  const childrenOf = useMemo(() => {
+    const m = new Map<number | null, PlanTask[]>();
+    for (const t of tasks) {
+      const p = t.parentId != null && byId.has(t.parentId) ? t.parentId : null;
+      const arr = m.get(p) ?? [];
+      arr.push(t);
+      m.set(p, arr);
+    }
+    return m;
+  }, [tasks, byId]);
+  const hasKids = (id: number) => (childrenOf.get(id)?.length ?? 0) > 0;
+
+  // Effective start/end per task. Leaves use actual ?? planned dates; summaries
+  // roll up to span their descendants (min start / max end).
+  const eff = useMemo(() => {
+    const cache = new Map<number, { start: Date | null; end: Date | null }>();
+    const leafStart = (t: PlanTask) => asDay(t.actualStart ?? t.baselineStart ?? t.startDate);
+    const leafEnd = (t: PlanTask) => asDay(t.actualEnd ?? t.baselineEnd ?? t.endDate);
+    const compute = (t: PlanTask, seen: Set<number>): { start: Date | null; end: Date | null } => {
+      const hit = cache.get(t.id);
+      if (hit) return hit;
+      if (seen.has(t.id)) return { start: null, end: null };
+      seen.add(t.id);
+      let s = leafStart(t);
+      let e = leafEnd(t);
+      for (const k of childrenOf.get(t.id) ?? []) {
+        const ce = compute(k, seen);
+        if (ce.start && (!s || ce.start < s)) s = ce.start;
+        if (ce.end && (!e || ce.end > e)) e = ce.end;
+      }
+      const r = { start: s, end: e };
+      cache.set(t.id, r);
+      return r;
+    };
+    for (const t of tasks) compute(t, new Set());
+    return cache;
+  }, [tasks, childrenOf]);
+
+  // Timeline bounds (pad a week on each side).
+  const { minDate, totalDays } = useMemo(() => {
+    let lo: Date | null = asDay(startDate);
+    let hi: Date | null = null;
+    for (const t of tasks) {
+      const e = eff.get(t.id);
+      if (e?.start && (!lo || e.start < lo)) lo = e.start;
+      if (e?.end && (!hi || e.end > hi)) hi = e.end;
+    }
+    if (!lo) lo = asDay(new Date()) ?? new Date();
+    const start = addDays(lo, -3);
+    const span = hi ? Math.max(30, diffDays(hi, start) + 7) : 30;
+    return { minDate: start, totalDays: span };
+  }, [tasks, eff, startDate]);
+
+  // Visible rows: DFS preserving input order, skipping collapsed subtrees.
+  const rows = useMemo(() => {
+    const out: { t: PlanTask; depth: number }[] = [];
+    const walk = (parent: number | null, depth: number) => {
+      for (const t of childrenOf.get(parent) ?? []) {
+        out.push({ t, depth });
+        if (hasKids(t.id) && !collapsed.has(t.id)) walk(t.id, depth + 1);
+      }
+    };
+    walk(null, 0);
+    return out;
+  }, [childrenOf, collapsed]);
+
+  // Critical path (CPM) over leaf tasks using the dependency graph. Approximate
+  // (SS/SF keyed off predecessor start; FS/FF off finish) and fully guarded —
+  // if there are no deps or the graph cycles, no path is highlighted.
+  const critical = useMemo(() => {
+    const empty = new Set<number>();
+    if (dependencies.length === 0) return empty;
+    try {
+      const dur = (id: number): number => {
+        const e = eff.get(id);
+        if (e?.start && e?.end) return Math.max(1, diffDays(e.end, e.start) + 1);
+        const t = byId.get(id);
+        return Math.max(1, Number(t?.duration ?? 1));
+      };
+      const preds = new Map<number, PlanDep[]>();
+      const succs = new Map<number, PlanDep[]>();
+      for (const d of dependencies) {
+        if (!byId.has(d.predecessorId) || !byId.has(d.successorId)) continue;
+        (preds.get(d.successorId) ?? preds.set(d.successorId, []).get(d.successorId)!).push(d);
+        (succs.get(d.predecessorId) ?? succs.set(d.predecessorId, []).get(d.predecessorId)!).push(d);
+      }
+      const es = new Map<number, number>();
+      const ef = new Map<number, number>();
+      const calcES = (id: number, seen: Set<number>): number => {
+        const hit = es.get(id);
+        if (hit !== undefined) return hit;
+        if (seen.has(id)) return 0;
+        seen.add(id);
+        let v = 0;
+        for (const p of preds.get(id) ?? []) {
+          const useStart = p.depType === "SS" || p.depType === "SF";
+          const base = useStart ? calcES(p.predecessorId, seen) : calcEF(p.predecessorId, seen);
+          v = Math.max(v, base + (p.lagDays ?? 0));
+        }
+        es.set(id, v);
+        return v;
+      };
+      const calcEF = (id: number, seen: Set<number>): number => {
+        const hit = ef.get(id);
+        if (hit !== undefined) return hit;
+        const v = calcES(id, seen) + dur(id);
+        ef.set(id, v);
+        return v;
+      };
+      let projEnd = 0;
+      for (const t of tasks) projEnd = Math.max(projEnd, calcEF(t.id, new Set()));
+      const lf = new Map<number, number>();
+      const ls = new Map<number, number>();
+      const calcLF = (id: number, seen: Set<number>): number => {
+        const hit = lf.get(id);
+        if (hit !== undefined) return hit;
+        if (seen.has(id)) return projEnd;
+        seen.add(id);
+        const ss = succs.get(id) ?? [];
+        let v = ss.length === 0 ? projEnd : Infinity;
+        for (const s of ss) v = Math.min(v, calcLS(s.successorId, seen) - (s.lagDays ?? 0));
+        if (!Number.isFinite(v)) v = projEnd;
+        lf.set(id, v);
+        return v;
+      };
+      const calcLS = (id: number, seen: Set<number>): number => {
+        const hit = ls.get(id);
+        if (hit !== undefined) return hit;
+        const v = calcLF(id, seen) - dur(id);
+        ls.set(id, v);
+        return v;
+      };
+      for (const t of tasks) calcLF(t.id, new Set());
+      const crit = new Set<number>();
+      for (const t of tasks) {
+        if (hasKids(t.id)) continue; // summaries roll up; not on the path itself
+        const float = (ls.get(t.id) ?? 0) - (es.get(t.id) ?? 0);
+        if (float <= 0.0001) crit.add(t.id);
+      }
+      return crit;
+    } catch {
+      return empty;
+    }
+  }, [tasks, dependencies, eff, byId]);
+
+  // Per-row bar geometry (only for rows with a resolvable span).
+  const geom = useMemo(() => {
+    const m = new Map<number, { i: number; x0: number; x1: number }>();
+    rows.forEach(({ t }, i) => {
+      const e = eff.get(t.id);
+      if (!e?.start || !e?.end) return;
+      const x0 = diffDays(e.start, minDate) * G_DAY_W;
+      const x1 = (diffDays(e.end, minDate) + 1) * G_DAY_W;
+      m.set(t.id, { i, x0, x1 });
+    });
+    return m;
+  }, [rows, eff, minDate]);
+
+  // Month header segments.
+  const months = useMemo(() => {
+    const out: { label: string; x: number; w: number }[] = [];
+    let cursor = new Date(Date.UTC(minDate.getUTCFullYear(), minDate.getUTCMonth(), 1));
+    const last = addDays(minDate, totalDays);
+    while (cursor.getTime() <= last.getTime()) {
+      const next = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1));
+      const segStart = cursor.getTime() < minDate.getTime() ? minDate : cursor;
+      const x = Math.max(0, diffDays(segStart, minDate)) * G_DAY_W;
+      const w = (diffDays(next, segStart)) * G_DAY_W;
+      out.push({ label: cursor.toLocaleDateString("en-ZA", { month: "short", year: "2-digit" }), x, w });
+      cursor = next;
+    }
+    return out;
+  }, [minDate, totalDays]);
+
+  const today = asDay(new Date());
+  const todayX = today ? diffDays(today, minDate) * G_DAY_W : -1;
+  const timelineW = totalDays * G_DAY_W;
+  const bodyH = rows.length * G_ROW_H;
+
+  const toggle = (id: number) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const allParentIds = useMemo(() => tasks.filter((t) => hasKids(t.id)).map((t) => t.id), [tasks, childrenOf]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <CardTitle className="text-base">Programme Gantt</CardTitle>
+          <div className="flex items-center gap-3 text-xs">
+            <label className="inline-flex items-center gap-1 cursor-pointer select-none">
+              <input type="checkbox" checked={showCritical} onChange={(e) => setShowCritical(e.target.checked)} data-testid="gantt-critical-toggle" />
+              Critical path
+            </label>
+            <Button size="sm" variant="outline" onClick={() => setCollapsed(new Set(allParentIds))} data-testid="gantt-collapse-all">Collapse all</Button>
+            <Button size="sm" variant="outline" onClick={() => setCollapsed(new Set())} data-testid="gantt-expand-all">Expand all</Button>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground pt-1">
+          <span className="inline-flex items-center gap-1"><span className="inline-block w-4 h-2.5 bg-emerald-400 rounded-sm" /> Task</span>
+          <span className="inline-flex items-center gap-1"><span className="inline-block w-4 h-1.5 bg-slate-700" /> Summary</span>
+          <span className="inline-flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 bg-amber-500 rotate-45" /> Milestone</span>
+          <span className="inline-flex items-center gap-1"><span className="inline-block w-4 h-2.5 border border-red-500 rounded-sm" /> Critical</span>
+          <span className="inline-flex items-center gap-1"><span className="inline-block w-4 h-1 bg-slate-300" /> Baseline</span>
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        {rows.length === 0 ? (
+          <div className="text-center text-sm text-muted-foreground py-8">No plan tasks to plot.</div>
+        ) : (
+          <div className="flex border-t" data-testid="pro-gantt">
+            {/* Left: WBS tree */}
+            <div className="shrink-0 border-r bg-background" style={{ width: G_LABEL_W }}>
+              <div className="border-b px-2 flex items-end pb-1 text-xs font-semibold text-muted-foreground" style={{ height: G_HEADER_H }}>WBS · Task</div>
+              {rows.map(({ t, depth }) => {
+                const isParent = hasKids(t.id);
+                const isCrit = showCritical && critical.has(t.id);
+                return (
+                  <div key={t.id} className="flex items-center border-b text-xs hover:bg-muted/20" style={{ height: G_ROW_H, paddingLeft: 6 + depth * 14 }} data-testid={`gantt-tree-row-${t.id}`}>
+                    {isParent ? (
+                      <button onClick={() => toggle(t.id)} className="w-4 h-4 mr-1 flex items-center justify-center text-muted-foreground hover:text-foreground shrink-0" aria-label={collapsed.has(t.id) ? "Expand" : "Collapse"}>
+                        {collapsed.has(t.id) ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                      </button>
+                    ) : (
+                      <span className="w-4 mr-1 shrink-0" />
+                    )}
+                    <span className="font-mono text-muted-foreground shrink-0 mr-1.5">{t.wbsCode ?? t.outlineNumber ?? ""}</span>
+                    <span className={`truncate ${isParent ? "font-semibold" : ""} ${isCrit ? "text-red-600" : ""}`} title={t.title}>{t.title}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Right: timeline */}
+            <div className="overflow-x-auto flex-1" data-testid="gantt-timeline-scroll">
+              <div className="relative" style={{ width: Math.max(timelineW, 200), height: G_HEADER_H + bodyH }}>
+                {/* Month header */}
+                <div className="absolute top-0 left-0 right-0 border-b bg-background" style={{ height: G_HEADER_H }}>
+                  {months.map((mo, i) => (
+                    <div key={i} className="absolute top-0 h-full border-r text-[10px] text-muted-foreground px-1 pt-1 overflow-hidden" style={{ left: mo.x, width: mo.w }}>
+                      {mo.label}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Today line */}
+                {todayX >= 0 && todayX <= timelineW && (
+                  <div className="absolute w-px bg-blue-500/70 z-20" style={{ left: todayX, top: G_HEADER_H, height: bodyH }} title="Today" />
+                )}
+
+                {/* Row backgrounds + bars */}
+                {rows.map(({ t }, i) => {
+                  const g = geom.get(t.id);
+                  const top = G_HEADER_H + i * G_ROW_H;
+                  const isParent = hasKids(t.id);
+                  const isMs = !!t.isMilestone && !isParent;
+                  const isCrit = showCritical && critical.has(t.id);
+                  const pctDone = Math.max(0, Math.min(1, t.percentComplete ?? 0));
+                  // Baseline overlay (planned) when distinct from the drawn span.
+                  const bStart = asDay(t.baselineStart);
+                  const bEnd = asDay(t.baselineEnd);
+                  return (
+                    <div key={t.id} className="absolute left-0 right-0 border-b hover:bg-muted/10" style={{ top, height: G_ROW_H }}>
+                      {g && bStart && bEnd && (
+                        <div className="absolute bg-slate-300 rounded-sm" style={{ left: diffDays(bStart, minDate) * G_DAY_W, width: Math.max(2, (diffDays(bEnd, bStart) + 1) * G_DAY_W), top: G_ROW_H - 5, height: 3 }} title={`Baseline ${fmtDate(t.baselineStart)} → ${fmtDate(t.baselineEnd)}`} />
+                      )}
+                      {g && isMs && (
+                        <div className={`absolute ${isCrit ? "bg-red-500" : "bg-amber-500"} rotate-45`} style={{ left: g.x0 - 5, top: (G_ROW_H - 10) / 2, width: 10, height: 10 }} title={`${t.title} · ${fmtDate(t.startDate)}`} />
+                      )}
+                      {g && isParent && (
+                        <div className={`absolute ${isCrit ? "bg-red-600" : "bg-slate-700"}`} style={{ left: g.x0, width: Math.max(2, g.x1 - g.x0), top: (G_ROW_H - 6) / 2, height: 6, borderRadius: 2 }} title={`${t.title} (summary)`} />
+                      )}
+                      {g && !isParent && !isMs && (
+                        <div className={`absolute rounded-sm overflow-hidden border ${isCrit ? "border-red-500 bg-red-100" : "border-emerald-500 bg-emerald-100"}`} style={{ left: g.x0, width: Math.max(3, g.x1 - g.x0), top: (G_ROW_H - G_BAR_H) / 2, height: G_BAR_H }} title={`${t.title} · ${fmtDate(t.startDate)} → ${fmtDate(t.endDate)} · ${pct(t.percentComplete)}`}>
+                          <div className={`${isCrit ? "bg-red-500" : "bg-emerald-500"} h-full`} style={{ width: `${pctDone * 100}%` }} />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Dependency arrows */}
+                <svg className="absolute pointer-events-none" style={{ left: 0, top: G_HEADER_H, width: Math.max(timelineW, 200), height: bodyH, zIndex: 15 }}>
+                  <defs>
+                    <marker id="gantt-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                      <path d="M0,0 L6,3 L0,6 Z" className="fill-slate-400" />
+                    </marker>
+                    <marker id="gantt-arrow-crit" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                      <path d="M0,0 L6,3 L0,6 Z" className="fill-red-500" />
+                    </marker>
+                  </defs>
+                  {dependencies.map((d, idx) => {
+                    const gp = geom.get(d.predecessorId);
+                    const gs = geom.get(d.successorId);
+                    if (!gp || !gs) return null;
+                    const yp = gp.i * G_ROW_H + G_ROW_H / 2;
+                    const ys = gs.i * G_ROW_H + G_ROW_H / 2;
+                    // FS/FF start from predecessor finish; SS/SF from its start.
+                    const fromX = d.depType === "SS" || d.depType === "SF" ? gp.x0 : gp.x1;
+                    const toX = d.depType === "FF" || d.depType === "SF" ? gs.x1 : gs.x0;
+                    const crit = showCritical && critical.has(d.predecessorId) && critical.has(d.successorId);
+                    const midX = Math.max(fromX, toX) + 8;
+                    const path = `M ${fromX} ${yp} H ${midX} V ${ys} H ${toX}`;
+                    return (
+                      <path
+                        key={idx}
+                        d={path}
+                        fill="none"
+                        className={crit ? "stroke-red-500" : "stroke-slate-400"}
+                        strokeWidth={crit ? 1.5 : 1}
+                        markerEnd={`url(#${crit ? "gantt-arrow-crit" : "gantt-arrow"})`}
+                      />
+                    );
+                  })}
+                </svg>
+              </div>
+            </div>
+          </div>
+        )}
+        {dependencies.length === 0 && rows.length > 0 && (
+          <p className="text-xs text-muted-foreground px-3 py-2 border-t">
+            No task dependencies found in the workbook — add a “Predecessors” column to the Project Plan sheet (e.g. <span className="font-mono">1.2, 1.3FS+2d</span>) and re-import to draw dependency links and the critical path.
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
