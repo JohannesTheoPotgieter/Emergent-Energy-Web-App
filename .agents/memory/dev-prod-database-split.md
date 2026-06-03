@@ -30,3 +30,18 @@ looking at (23 = dev/helium, 287 = prod/neon).
 - Inspect live production data read-only through `claude_views.*` on `CLAUDE_RO_DATABASE_URL`.
 - Pointing dev at prod's data means repointing the dev `DATABASE_URL` secret to the
   Neon connection (a config change, not code).
+
+## Dev helium can have a migration "applied" in the journal but the column missing
+A migration can be recorded in `drizzle.__drizzle_migrations` yet its `ADD COLUMN`
+never took effect on helium, so the running app throws `column "x" does not exist`
+(code 42703) on every scheduler tick (e.g. `invoice_date_font_color` /
+`invoice_date_confirmed` on `normalized_cost_line_actuals`).
+- **Fix:** apply the missing column directly with an additive `ALTER TABLE ... ADD
+  COLUMN IF NOT EXISTS` on `DATABASE_URL` (dev only). Matches the additive-only
+  migration policy and is non-destructive.
+- **Why not `db:migrate`:** the migration is already journaled, so the runner skips
+  it and won't re-add the column.
+- **Why not `db:push`:** it drops columns not in the schema — destructive; never use
+  it to patch a single missing column.
+- Production (neon) may need the same migration applied at deploy; that's handled by
+  the deploy path, never patched from an agent session.

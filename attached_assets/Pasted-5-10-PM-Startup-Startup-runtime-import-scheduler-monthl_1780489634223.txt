@@ -1,0 +1,1782 @@
+5:10 PM [Startup] [Startup] runtime=import-scheduler, monthly-report-scheduler, notification-trigger-scheduler, cos-period-lock-scheduler, derived-project-kpis-scheduler, integration-registry-seed(inserted=0), dashboard-refresh-scheduler, alert-dispatcher-worker, task-reminder-scheduler, periodic-sync, qb-payment-refresh-scheduler
+12:25:10 PM [Startup] serving on port 5000
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 18
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 18 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 5
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 5 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 9
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 9 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 20
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 20 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 25
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 25 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 28
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 28 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 30
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 30 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 33
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 33 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 10
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 10 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 21
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 21 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 31
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 31 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 32
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 32 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 34
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 34 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 35
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 35 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 38
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 38 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 39
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 39 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 8
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 8 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 27
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 27 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 24
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 24 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 29
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 29 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 37
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 37 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 22
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 22 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 41
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 41 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 2
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 2 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 7
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 7 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 1
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 1 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 3
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 3 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 11
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 11 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 14
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 14 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 13
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 13 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 15
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 15 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 16
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 16 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 23
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 23 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 12
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 12 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 42
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 42 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 40
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 40 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 36
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 36 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 19
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 19 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 17
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 17 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 4
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 4 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 6
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 6 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+[canonical-dashboard-kpi] failed to populate recognisedRevenue: DrizzleQueryError: Failed query: select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)
+params: 26
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+    ... 7 lines matching cause stack trace ...
+    at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+  query: 'select "id", "cost_line_id", "project_id", "actual_total", "po_number", "invoice_number", "invoice_date", "invoice_date_font_color", "invoice_date_confirmed", "finance_payment_date", "description", "qty", "rate", "revenue_recognition_amount" from "normalized_cost_line_actuals" where ("normalized_cost_line_actuals"."project_id" in ($1) and "normalized_cost_line_actuals"."effective_to" is null and "normalized_cost_line_actuals"."deleted_at" is null)',
+  params: [ 26 ],
+  cause: error: column "invoice_date_font_color" does not exist
+      at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/src/pg-core/session.ts:71:12)
+      at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:154:19)
+      at async Promise.all (index 0)
+      at async FinanceLineLevelRepository.getPortfolioFinanceLines (/home/runner/workspace/server/repositories/finance-line-level-repository.ts:234:55)
+      at async populateRecognisedRevenue (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:231:19)
+      at async getCanonicalFinanceByProjectIds (/home/runner/workspace/server/services/canonical-dashboard-kpi-service.ts:202:3)
+      at async Promise.all (index 0)
+      at async computeProjectKpi (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:168:5)
+      at async recomputeAllDerivedKpis (/home/runner/workspace/server/services/derived-project-kpis-materializer.ts:110:24)
+      at async runOnce (/home/runner/workspace/server/bootstrap/derived-project-kpis-scheduler.ts:48:19) {
+    length: 124,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '107',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3727',
+    routine: 'errorMissingColumn'
+  }
+}
+12:25:36 PM [express] GET /api/version 200 in 11ms
+12:25:37 PM [express] GET /api/auth/me 304 in 5ms
+12:25:37 PM [express] GET /api/platform/connector-status 304 in 6ms
+12:25:37 PM [express] GET /api/notifications/unread-count 304 in 5ms
+12:25:37 PM [express] GET /api/upcoming-events 304 in 52ms
+12:25:37 PM [express] GET /api/lifecycle-board/execution-dashboard 200 in 119ms
+12:25:38 PM [express] GET /api/priorities 304 in 13ms
+12:25:38 PM [express] GET /api/my-work/all-tasks 304 in 37ms
+12:25:38 PM [express] GET /api/home/do-next 200 in 32ms
+12:25:38 PM [express] GET /api/auth/permissions 304 in 11ms
+12:25:38 PM [express] GET /api/feature-flags/rollout 304 in 119ms
+12:25:38 PM [express] GET /api/screen-settings 304 in 51ms
+[NotificationScheduler] Initial check complete — 0 notifications sent
+12:26:07 PM [express] POST /api/analytics/nav-event 204 in 82ms
+[TaskReminder] initial pass: scanned=1469 fired=0 skipped=1469
+12:26:38 PM [express] GET /api/notifications/unread-count 304 in 34ms
