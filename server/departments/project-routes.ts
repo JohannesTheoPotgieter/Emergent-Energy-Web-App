@@ -5,8 +5,9 @@ import { db, getDbMode } from "../db";
 import { requirePermission } from "../permission-middleware";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { OVERRIDE_CATEGORIES } from "@shared/schema";
+import { OVERRIDE_CATEGORIES, projectInfo, projectExecutionState } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import crypto from "node:crypto";
 import { UsersRepository } from "../repositories/users-repository";
 import { ProjectInfoRepository } from "../repositories/project-info-repository";
 
@@ -47,6 +48,54 @@ function currentMonthKeyUtc(): string {
 }
 
 const router = Router();
+
+// ─── Read-only BI feed (Phase 3) ───────────────────────────────────────────
+// Lets Power BI / Excel / Looker pull live portfolio KPIs without a login.
+// OFF by default: disabled unless a strong BI_FEED_TOKEN (>=16 chars) is set,
+// so it exposes nothing until the COO deliberately enables it. Read-only,
+// KPI-only (no PII), constant-time token compare.
+function requireBiToken(req: Request, res: Response, next: () => void) {
+  const configured = process.env.BI_FEED_TOKEN;
+  if (!configured || configured.length < 16) {
+    return res.status(404).json({ error: "bi_feed_disabled" });
+  }
+  const provided = String(req.header("x-bi-token") || req.query.token || "").trim();
+  const a = Buffer.from(provided);
+  const b = Buffer.from(configured);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+  next();
+}
+
+router.get("/api/bi/projects", requireBiToken, async (_req: Request, res: Response) => {
+  try {
+    const rows = await db
+      .select({
+        id: projectInfo.id,
+        projectName: projectInfo.projectName,
+        projectCode: projectInfo.projectCode,
+        pd: projectInfo.pd,
+        pm: projectInfo.pm,
+        sizeKwp: projectInfo.sizeKwp,
+        contractValue: projectInfo.contractValue,
+        deliveryModel: projectInfo.deliveryModel,
+        projectStatus: projectInfo.projectStatus,
+        inDlp: projectInfo.inDlp,
+        phase: projectExecutionState.phase,
+        executionPhase: projectExecutionState.executionPhase,
+        ragStatus: projectExecutionState.ragStatus,
+        escalationLevel: projectExecutionState.escalationLevel,
+      })
+      .from(projectInfo)
+      .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+      .where(sql`${projectInfo.deletedAt} IS NULL`);
+    res.json({ generatedAt: new Date().toISOString(), count: rows.length, projects: rows });
+  } catch (error) {
+    console.error("[bi-feed] error:", error);
+    res.status(500).json({ error: "server_error" });
+  }
+});
 
 const NUMERIC_PLAN_FIELDS = new Set(["actualPctComplete", "expectedPctComplete", "durationDays"]);
 
