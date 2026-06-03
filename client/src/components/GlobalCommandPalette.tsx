@@ -48,8 +48,11 @@ function groupFor(type: string): string {
   return "People";
 }
 
+// Index every rendered, non-parameterised page — not just `showInSidebar`
+// ones — so the palette is a complete "go to any screen" surface (the sidebar
+// curates; the palette reaches everything the role may open).
 const NAV_ITEMS = PAGE_REGISTRY.filter(
-  (p) => p.showInSidebar && p.routeComponentKey && !p.redirectTo
+  (p) => p.routeComponentKey && !p.redirectTo && p.type !== "alias" && !p.path.includes(":"),
 ).map((p) => ({
   path: p.path,
   label: p.label,
@@ -118,7 +121,13 @@ export function GlobalCommandPalette() {
       }
     }
     document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    // Allow the header / sidebar "Search…" buttons to open the palette.
+    function handleOpenEvent() { setOpen(true); }
+    window.addEventListener("ee:open-command-palette", handleOpenEvent);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("ee:open-command-palette", handleOpenEvent);
+    };
   }, []);
 
   useEffect(() => {

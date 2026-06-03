@@ -8,6 +8,8 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NetworkStatus } from "@/components/NetworkStatus";
 import AppLayout from "@/components/layout/AppLayout";
+import ModernAppLayout from "@/components/layout/ModernAppLayout";
+import { useModernNav } from "@/hooks/use-modern-nav";
 import { useAuth } from "@/hooks/use-auth";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
 import { normalizeRoleForPermissions } from "@shared/schema";
@@ -161,11 +163,13 @@ function ProtectedPages() {
   useScrollRestoration(location);
   usePageTitle(location);
   const { isScreenEnabled, isDegraded } = useScreenAvailability();
+  const { enabled: modernNav } = useModernNav();
+  const Layout = modernNav ? ModernAppLayout : AppLayout;
 
   return (
     <LensProvider>
     <RoleGuard>
-    <AppLayout>
+    <Layout>
       {isDegraded && <ScreenAvailabilityWarning />}
       <ErrorBoundary>
       <Suspense fallback={<div className="space-y-6 p-6"><LoadingState variant="skeleton-card" cards={4} /><LoadingState variant="skeleton-table" rows={6} /></div>}>
@@ -195,7 +199,7 @@ function ProtectedPages() {
       </div>
       </Suspense>
       </ErrorBoundary>
-    </AppLayout>
+    </Layout>
     </RoleGuard>
     </LensProvider>
   );

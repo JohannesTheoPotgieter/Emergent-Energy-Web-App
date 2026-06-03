@@ -27,6 +27,7 @@ import { NavOnboardingTour } from "@/components/layout/NavOnboardingTour";
 import { NavOrderCustomizer } from "@/components/layout/NavOrderCustomizer";
 import { useTheme } from "@/hooks/use-theme";
 import { useLayoutMode } from "@/hooks/use-layout-mode";
+import { useModernNav } from "@/hooks/use-modern-nav";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { trackNavClick, trackPageView } from "@/lib/nav-analytics";
 import { usePrefetchRoute } from "@/hooks/use-prefetch-route";
@@ -93,6 +94,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { enabled: onboardingTourEnabled } = useRolloutFlag("onboarding_tour");
   const { theme, setTheme } = useTheme();
   const { mode: layoutMode, setMode: setLayoutMode } = useLayoutMode();
+  const { setEnabled: setModernNav } = useModernNav();
   const { isMobile, isTablet } = useBreakpoint();
   const { sectionOrder } = useNavPreferences();
   const lens = useLensContext();
@@ -486,6 +488,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <DropdownMenuSeparator />
               <NavOrderCustomizer visibleSections={visibleSections} />
               <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setModernNav(true)} data-testid="switch-modern-nav"><LayoutGrid className="h-4 w-4 mr-2" />New navigation</DropdownMenuItem>
               <DropdownMenuItem onClick={() => logout()}><LogOut className="h-4 w-4 mr-2" />Log out</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
