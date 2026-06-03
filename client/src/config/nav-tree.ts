@@ -57,6 +57,7 @@ const NAV_EXCLUDE = new Set<string>([
   // Execution Board internal tabs
   "/execution-board/program", "/execution-board/construction",
   "/execution-board/finance", "/execution-board/realisation",
+  "/execution-board", // legacy board — superseded by Now + Portfolio
   "/execution-dashboard",
   // Project Lifecycle internal tabs
   "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates",
