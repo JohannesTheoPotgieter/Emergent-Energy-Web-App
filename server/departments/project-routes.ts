@@ -68,6 +68,7 @@ function requireBiToken(req: Request, res: Response, next: () => void) {
   next();
 }
 
+// permission-skip: token-gated BI feed (BI_FEED_TOKEN service token) — read-only, off unless configured, not an RBAC entity.
 router.get("/api/bi/projects", requireBiToken, async (_req: Request, res: Response) => {
   try {
     const rows = await db

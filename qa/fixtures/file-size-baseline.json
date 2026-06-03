@@ -2,19 +2,19 @@
   "_documentation": "EE-QA-015 baseline — files above the FILE_SIZE_THRESHOLD LOC. The CI guard `qa/tests/unit/file-size-ratchet.test.ts` fails if any of these grow OR a NEW file lands over the threshold. To regenerate after a split, run `npx tsx scripts/build-file-size-baseline.ts` and commit the new JSON.",
   "threshold": 1500,
   "buffer": 50,
-  "generated": "2026-06-02",
+  "generated": "2026-06-03",
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
-      "loc": 9587
+      "loc": 9608
     },
     {
       "file": "client/src/pages/smart-import.tsx",
-      "loc": 5263
+      "loc": 5247
     },
     {
       "file": "server/engineering-routes.ts",
-      "loc": 4167
+      "loc": 4171
     },
     {
       "file": "server/departments/priority-strategic-routes.ts",
@@ -30,15 +30,15 @@
     },
     {
       "file": "server/lifecycle-routes.ts",
-      "loc": 3556
+      "loc": 3564
     },
     {
       "file": "server/quality-routes.ts",
-      "loc": 3358
+      "loc": 3365
     },
     {
       "file": "client/src/components/tabs/UnifiedPlanTab.tsx",
-      "loc": 3074
+      "loc": 3263
     },
     {
       "file": "client/src/pages/cashflow.tsx",
@@ -58,7 +58,7 @@
     },
     {
       "file": "server/lib/import/commit-executor.ts",
-      "loc": 2617
+      "loc": 2622
     },
     {
       "file": "client/src/pages/my-work-tasks.tsx",
@@ -73,12 +73,16 @@
       "loc": 2262
     },
     {
+      "file": "client/src/components/tabs/ExpenditureEditableTab.tsx",
+      "loc": 2260
+    },
+    {
       "file": "client/src/pages/cos.tsx",
       "loc": 2256
     },
     {
-      "file": "client/src/components/tabs/ExpenditureEditableTab.tsx",
-      "loc": 2242
+      "file": "server/departments/project-routes.ts",
+      "loc": 2216
     },
     {
       "file": "server/lib/import/normalizer.ts",
@@ -90,15 +94,11 @@
     },
     {
       "file": "client/src/components/tabs/ProjectProcurementTab.tsx",
-      "loc": 2180
-    },
-    {
-      "file": "server/departments/project-routes.ts",
-      "loc": 2165
+      "loc": 2200
     },
     {
       "file": "client/src/components/tabs/QualityTab.tsx",
-      "loc": 2164
+      "loc": 2174
     },
     {
       "file": "server/departments/opportunities-routes.ts",
@@ -125,6 +125,10 @@
       "loc": 1861
     },
     {
+      "file": "client/src/pages/project-detail.tsx",
+      "loc": 1831
+    },
+    {
       "file": "server/seed-ee-info-updates.ts",
       "loc": 1820
     },
@@ -137,8 +141,8 @@
       "loc": 1788
     },
     {
-      "file": "client/src/pages/project-detail.tsx",
-      "loc": 1786
+      "file": "client/src/pages/EngineeringTasksPage.tsx",
+      "loc": 1783
     },
     {
       "file": "client/src/pages/pd-dashboard.tsx",
@@ -147,10 +151,6 @@
     {
       "file": "client/src/pages/standups.tsx",
       "loc": 1746
-    },
-    {
-      "file": "client/src/pages/EngineeringTasksPage.tsx",
-      "loc": 1745
     },
     {
       "file": "server/services/stage-lifecycle-service.ts",
@@ -162,15 +162,15 @@
     },
     {
       "file": "server/routes/planning-tasks-routes.ts",
+      "loc": 1724
+    },
+    {
+      "file": "shared/schema/finance.ts",
       "loc": 1719
     },
     {
       "file": "server/eng-stage-routes.ts",
       "loc": 1715
-    },
-    {
-      "file": "shared/schema/finance.ts",
-      "loc": 1714
     },
     {
       "file": "shared/schema/projects.ts",
