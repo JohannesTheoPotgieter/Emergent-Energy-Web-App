@@ -68,6 +68,24 @@ export function parsePrioritiesFilterParams(
   };
 }
 
+export type MyWorkSurfaceOrder = "priorities-first" | "tasks-first";
+
+export function getMyWorkSurfaceOrder({
+  priorityCount,
+  openTaskCount,
+}: {
+  priorityCount: number;
+  openTaskCount: number;
+}): MyWorkSurfaceOrder {
+  if (priorityCount === 0 && openTaskCount > 0) return "tasks-first";
+  return "priorities-first";
+}
+
+function isOpenTaskStatus(status: string | null | undefined): boolean {
+  const normalized = String(status ?? "").trim().toLowerCase();
+  return !["complete", "completed", "cancelled", "done"].includes(normalized);
+}
+
 async function fetchPriorities(params: string): Promise<PriorityRow[]> {
   const res = await apiRequest("GET", `/api/priorities?${params}`);
   const contentType = res.headers.get("content-type") || "";
@@ -541,10 +559,18 @@ export default function PrioritiesPage() {
     : filteredCompany;
   const activeCount = activeData.filter((p) => !isPriorityTerminalStatus(p.status)).length;
   const closedData = activeData.filter((p) => isPriorityTerminalStatus(p.status));
-  const openTaskCount = useMemo(() => myTasks.filter((t) => {
-    const s = (t.status ?? "").toLowerCase();
-    return s !== "complete" && s !== "completed" && s !== "cancelled" && s !== "done";
-  }).length, [myTasks]);
+  const openTaskCount = useMemo(
+    () => myTasks.filter((task) => isOpenTaskStatus(task.status)).length,
+    [myTasks],
+  );
+  const visibleOpenTaskCount = useMemo(
+    () => filteredMyTasks.filter((task) => isOpenTaskStatus(task.status)).length,
+    [filteredMyTasks],
+  );
+  const myWorkSurfaceOrder = getMyWorkSurfaceOrder({
+    priorityCount: filteredMy.length,
+    openTaskCount: visibleOpenTaskCount,
+  });
 
   // Tab-level summary stats — surfaces "where is the heat" without
   // the user having to scroll the cards. All values derived from the
@@ -613,6 +639,57 @@ export default function PrioritiesPage() {
       });
     }
   };
+
+  const renderMyPriorityList = () => (
+    <PriorityListSection
+      priorities={filteredMy}
+      isLoading={myWorkFeedQuery.isLoading}
+      isError={myWorkFeedQuery.isError}
+      error={myWorkFeedQuery.error as Error}
+      refetch={myWorkFeedQuery.refetch}
+      showEscalate={canEscalatePriorityRow}
+      onEscalate={(id) => {
+        const p = myPriorities.find((x) => x.id === id);
+        if (p) setEscalateTarget({ id: p.id, title: p.title, scope: p.scope });
+      }}
+      showReopen={showClosed && canUsePriorityAdminActions}
+      onReopen={(id) => reopenMutation.mutate(id)}
+      selectable={canUseBulkActions}
+      selectedIds={bulkSelected}
+      onToggleSelect={toggleBulkSelect}
+      density={density}
+      filtersActive={filtersActive}
+      onClearFilters={clearAllFilters}
+      emptyMessage="Nothing on your priority list yet"
+      emptyAction={
+        canCreateInActiveTab ? (
+          <Button size="sm" className="mt-3" onClick={() => setCreateDialogOpen(true)}>
+            <Plus className="w-4 h-4 mr-1" /> Create My Priority
+          </Button>
+        ) : undefined
+      }
+    />
+  );
+
+  const renderMyTaskCommandCenter = () => (
+    <MyWorkTasksList
+      tasks={filteredMyTasks}
+      onPromote={async (id) => {
+        await promoteTaskMutation.mutateAsync(id);
+      }}
+      promotingId={promoteTaskMutation.isPending ? (promoteTaskMutation.variables ?? null) as number | null : null}
+      onUpdateStatus={(id, status) => updateTaskStatusMutation.mutateAsync({ id, status }).then(() => undefined)}
+      onDelete={(id) => deleteTaskMutation.mutate(id)}
+      onAddTask={() => setCreateTaskDialogOpen(true)}
+      updatingId={updatingTaskId}
+      deletingId={deletingTaskId}
+      emptyMessage={
+        levelFilter !== "all" || healthFilter !== "all"
+          ? "No tasks match the active filter."
+          : "No tasks yet - click Add Task to create your first personal task, or tasks assigned to you will appear here."
+      }
+    />
+  );
 
   return (
     <PageShell>
@@ -1091,54 +1168,63 @@ export default function PrioritiesPage() {
           </div>
         )}
 
+        {activeTab === "my" && (filteredMy.length > 0 || filteredMyTasks.length > 0) && (
+          <div
+            className="mb-4 grid gap-2 rounded-md border border-slate-200 bg-white p-3 text-xs sm:grid-cols-2 xl:grid-cols-4"
+            data-testid="my-work-trust-strip"
+          >
+            <div>
+              <p className="font-semibold text-slate-950 tabular-nums">{filteredMy.length}</p>
+              <p className="text-muted-foreground">Visible priorities</p>
+            </div>
+            <div>
+              <p className="font-semibold text-slate-950 tabular-nums">{visibleOpenTaskCount}</p>
+              <p className="text-muted-foreground">Visible open tasks</p>
+            </div>
+            <div>
+              <p className="font-semibold text-slate-950">{filtersActive ? "Filtered" : "All work"}</p>
+              <p className="text-muted-foreground">Current view</p>
+            </div>
+            <div>
+              <p className="font-semibold text-slate-950">My Work feed</p>
+              <p className="text-muted-foreground">Source shown plainly</p>
+            </div>
+          </div>
+        )}
+
         <TabsContent value="my">
           <div className="space-y-6">
-            <PriorityListSection
-              priorities={filteredMy}
-              isLoading={myWorkFeedQuery.isLoading}
-              isError={myWorkFeedQuery.isError}
-              error={myWorkFeedQuery.error as Error}
-              refetch={myWorkFeedQuery.refetch}
-              showEscalate={canEscalatePriorityRow}
-              onEscalate={(id) => {
-                const p = myPriorities.find((x) => x.id === id);
-                if (p) setEscalateTarget({ id: p.id, title: p.title, scope: p.scope });
-              }}
-              showReopen={showClosed && canUsePriorityAdminActions}
-              onReopen={(id) => reopenMutation.mutate(id)}
-              selectable={canUseBulkActions}
-              selectedIds={bulkSelected}
-              onToggleSelect={toggleBulkSelect}
-              density={density}
-              filtersActive={filtersActive}
-              onClearFilters={clearAllFilters}
-              emptyMessage="Nothing on your priority list yet"
-              emptyAction={
-                canCreateInActiveTab ? (
-                  <Button size="sm" className="mt-3" onClick={() => setCreateDialogOpen(true)}>
-                    <Plus className="w-4 h-4 mr-1" /> Create My Priority
-                  </Button>
-                ) : undefined
-              }
-            />
-
-            <MyWorkTasksList
-              tasks={filteredMyTasks}
-              onPromote={async (id) => {
-                await promoteTaskMutation.mutateAsync(id);
-              }}
-              promotingId={promoteTaskMutation.isPending ? (promoteTaskMutation.variables ?? null) as number | null : null}
-              onUpdateStatus={(id, status) => updateTaskStatusMutation.mutateAsync({ id, status }).then(() => undefined)}
-              onDelete={(id) => deleteTaskMutation.mutate(id)}
-              onAddTask={() => setCreateTaskDialogOpen(true)}
-              updatingId={updatingTaskId}
-              deletingId={deletingTaskId}
-              emptyMessage={
-                levelFilter !== "all" || healthFilter !== "all"
-                  ? "No tasks match the active filter."
-                  : "No tasks yet - click Add Task to create your first personal task, or tasks assigned to you will appear here."
-              }
-            />
+            {myWorkSurfaceOrder === "tasks-first" ? (
+              <>
+                {renderMyTaskCommandCenter()}
+                <section
+                  className="rounded-lg border border-slate-200 bg-white/80 p-4"
+                  aria-label="My priority list"
+                  data-testid="my-priority-list-secondary"
+                >
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-950">Priority list</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Create a priority when a task needs owner-level focus or escalation.
+                      </p>
+                    </div>
+                    {canCreateInActiveTab && (
+                      <Button size="sm" variant="outline" onClick={() => setCreateDialogOpen(true)}>
+                        <Plus className="mr-1.5 h-3.5 w-3.5" />
+                        Add priority
+                      </Button>
+                    )}
+                  </div>
+                  {renderMyPriorityList()}
+                </section>
+              </>
+            ) : (
+              <>
+                {renderMyPriorityList()}
+                {renderMyTaskCommandCenter()}
+              </>
+            )}
           </div>
         </TabsContent>
 

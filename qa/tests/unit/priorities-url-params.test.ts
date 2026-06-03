@@ -16,7 +16,10 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { parsePrioritiesFilterParams } from "../../../client/src/pages/priorities";
+import {
+  getMyWorkSurfaceOrder,
+  parsePrioritiesFilterParams,
+} from "../../../client/src/pages/priorities";
 
 describe("parsePrioritiesFilterParams — Phase 7B URL contract", () => {
   describe("defaults", () => {
@@ -97,5 +100,19 @@ describe("parsePrioritiesFilterParams — Phase 7B URL contract", () => {
       expect(parsePrioritiesFilterParams("?health=amber").health).toBe("all");
       expect(parsePrioritiesFilterParams("?health=green").health).toBe("all");
     });
+  });
+});
+
+describe("getMyWorkSurfaceOrder", () => {
+  it("puts tasks first when the my-work queue has tasks but no visible priorities", () => {
+    expect(getMyWorkSurfaceOrder({ priorityCount: 0, openTaskCount: 4 })).toBe("tasks-first");
+  });
+
+  it("keeps priorities first when there is priority work to review", () => {
+    expect(getMyWorkSurfaceOrder({ priorityCount: 2, openTaskCount: 4 })).toBe("priorities-first");
+  });
+
+  it("keeps the empty priority state first when there are no open tasks", () => {
+    expect(getMyWorkSurfaceOrder({ priorityCount: 0, openTaskCount: 0 })).toBe("priorities-first");
   });
 });

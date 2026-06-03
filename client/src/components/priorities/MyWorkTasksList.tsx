@@ -423,7 +423,7 @@ export function MyWorkTasksList({
       className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm"
       data-testid="task-command-center"
     >
-      <div className="grid gap-4 border-b border-slate-200 bg-gradient-to-b from-white to-slate-50 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+      <div className="grid gap-4 border-b border-slate-200 bg-white p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <ListChecks className="h-5 w-5 text-emerald-700" />
@@ -431,9 +431,12 @@ export function MyWorkTasksList({
             <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
               {model.metrics.open} open
             </Badge>
+            <Badge variant="outline" className="border-slate-200 bg-white text-slate-600">
+              Source: My Work feed
+            </Badge>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Project tasks and personal follow-ups assigned to you.
+            Project tasks and personal follow-ups assigned to you, ordered for the next action.
           </p>
         </div>
 
@@ -486,8 +489,8 @@ export function MyWorkTasksList({
 
       <MetricsStrip metrics={model.metrics} />
 
-      <div className="grid min-h-[390px] xl:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="border-b border-slate-200 bg-slate-50/80 p-4 xl:border-b-0 xl:border-r">
+      <div className="grid min-h-[320px] xl:grid-cols-[280px_minmax(0,1fr)]">
+        <aside className="border-b border-slate-200 bg-slate-50 p-4 xl:border-b-0 xl:border-r">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
             Focus queue
           </p>
@@ -511,7 +514,7 @@ export function MyWorkTasksList({
         </aside>
 
         <div className="min-w-0">
-          <div className="flex flex-col gap-3 border-b border-slate-200 p-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-3 border-b border-slate-200 bg-white p-4 md:flex-row md:items-center md:justify-between">
             <ViewSwitcher value={view} onChange={setView} />
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-muted-foreground">
@@ -596,21 +599,27 @@ export function MyWorkTasksList({
 
 function MetricsStrip({ metrics }: { metrics: TaskCommandCenterMetrics }) {
   const items = [
-    { label: "Overdue", value: metrics.overdue, className: "border-red-200 bg-red-50 text-red-700" },
-    { label: "Due this week", value: metrics.dueThisWeek, className: "border-amber-200 bg-amber-50 text-amber-700" },
-    { label: "In progress", value: metrics.inProgress, className: "border-slate-200 bg-white text-slate-950" },
-    { label: "Blocked", value: metrics.blocked, className: "border-red-200 bg-white text-red-700" },
-    { label: "Completed", value: metrics.completed, className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+    { label: "Open", value: metrics.open, valueClass: "text-slate-950", accentClass: "border-l-slate-400" },
+    { label: "Overdue", value: metrics.overdue, valueClass: "text-red-700", accentClass: "border-l-red-500" },
+    { label: "Due this week", value: metrics.dueThisWeek, valueClass: "text-amber-700", accentClass: "border-l-amber-500" },
+    { label: "In progress", value: metrics.inProgress, valueClass: "text-slate-950", accentClass: "border-l-slate-400" },
+    { label: "Blocked", value: metrics.blocked, valueClass: "text-red-700", accentClass: "border-l-red-500" },
+    { label: "Completed", value: metrics.completed, valueClass: "text-emerald-700", accentClass: "border-l-emerald-500" },
   ];
 
   return (
-    <div className="grid gap-2 border-b border-slate-200 bg-slate-50/60 p-4 sm:grid-cols-2 xl:grid-cols-5">
+    <div className="grid gap-2 border-b border-slate-200 bg-slate-50 p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
       {items.map((item) => (
-        <div key={item.label} className={cn("rounded-md border p-3", item.className)}>
+        <div
+          key={item.label}
+          className={cn("rounded-md border border-slate-200 border-l-4 bg-white p-3", item.accentClass)}
+        >
           <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
             {item.label}
           </p>
-          <p className="mt-1 text-2xl font-bold leading-none">{item.value}</p>
+          <p className={cn("mt-1 text-xl font-semibold leading-none tabular-nums", item.valueClass)}>
+            {item.value}
+          </p>
         </div>
       ))}
     </div>
@@ -637,7 +646,7 @@ function FocusButton({
       className={cn(
         "mb-2 flex w-full items-center justify-between rounded-md border bg-white px-3 py-2 text-left text-xs transition",
         active
-          ? "border-emerald-300 shadow-sm shadow-emerald-900/5 ring-1 ring-emerald-100"
+          ? "border-emerald-300 bg-emerald-50/60 shadow-sm shadow-emerald-900/5 ring-1 ring-emerald-100"
           : "border-slate-200 hover:border-slate-300",
       )}
     >
@@ -664,7 +673,7 @@ function ViewSwitcher({
   ];
 
   return (
-    <div className="inline-flex w-fit rounded-md border border-slate-200 bg-slate-100 p-1">
+    <div className="inline-flex w-fit rounded-md border border-slate-200 bg-slate-50 p-1">
       {options.map((option) => {
         const Icon = option.icon;
         return (
