@@ -11,12 +11,13 @@
  *      COS-no-revenue flag, the NON_STANDARD_TEMPLATE exclusion, the FY window,
  *      and Plan-ahead continuity.
  *
- *   2. LIVE RECON (runs only when a DB with the snapshot is reachable):
+ *   2. LIVE RECON (opt-in via FYE_RECON_LIVE + a DB holding the snapshot):
  *      recomputes the tab from the raw imported lines and asserts the Excel
  *      figures for the same snapshot — state totals, YTD/May, project count
- *      (48), the Superspar de-dup, and the amber flags. Skips with a clear
- *      message when no DB is configured (the figures move with the data, so
- *      they are asserted against the live snapshot, never a cached total).
+ *      (48), the Superspar de-dup, and the amber flags. Skipped unless
+ *      FYE_RECON_LIVE is set, so it never runs against CI's empty DB (the
+ *      figures move with the data — asserted against the live snapshot, never
+ *      a cached total).
  */
 
 import { describe, it, expect } from "vitest";
@@ -406,13 +407,17 @@ describe("View B — dashboard (Revised Budget / Actual / Plan-ahead)", () => {
 });
 
 /**
- * LIVE RECONCILIATION — runs only when a DB with the 3-Jun-2026 snapshot is
- * reachable (DATABASE_URL set). Recomputes the tab from the raw imported lines
- * and asserts the Excel figures for that snapshot. Without a DB it self-skips
- * (this container has none). The service is imported dynamically so the
+ * LIVE RECONCILIATION — opt-in. Runs ONLY when `FYE_RECON_LIVE` is set AND a DB
+ * holding the 3-Jun-2026 snapshot is reachable (DATABASE_URL). It recomputes
+ * the tab from the raw imported lines and asserts the Excel figures for that
+ * snapshot. It is gated on a dedicated flag (not merely DATABASE_URL) so it
+ * never runs in normal CI — CI provides an empty Postgres service that has no
+ * snapshot to reconcile against. The service is imported dynamically so the
  * methodology tests above never load the DB layer.
+ *
+ *   FYE_RECON_LIVE=1 DATABASE_URL=… npm run test -- qa/tests/unit/fye_tracking.spec.ts
  */
-describe.skipIf(!process.env.DATABASE_URL)("Live snapshot reconciliation (DATABASE_URL set)", () => {
+describe.skipIf(!process.env.FYE_RECON_LIVE)("Live snapshot reconciliation (FYE_RECON_LIVE)", () => {
   // Tolerance: "within rounding" — tight enough to catch a misclassified line
   // (which would shift a bucket by far more), loose enough for cent-level FP.
   const close = (actual: number, expected: number, label: string) => {
