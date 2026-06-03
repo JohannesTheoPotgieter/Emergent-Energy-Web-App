@@ -1332,7 +1332,7 @@ router.get("/api/teams/groups/:id/messages", requireAuth, async (req, res) => {
   try {
     const { teamsChatMessages, users: usersTable } = await import("@shared/schema");
     const groupId = parseIntParam(req.params.id);
-    const limit = parseInt(req.query.limit as string) || 50;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
 
     const messages = await db.select({
       id: teamsChatMessages.id,
