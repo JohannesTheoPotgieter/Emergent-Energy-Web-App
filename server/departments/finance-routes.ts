@@ -142,6 +142,9 @@ const trackerMonthlyBodySchema = z
     realised: decimalLike.optional(),
     outstanding: decimalLike.optional(),
     budget: decimalLike.optional(),
+    // NULL/absent = program-wide row; a project id scopes the entry so the
+    // project Revenue Tracker no longer overwrites the program budget.
+    projectInfoId: z.number().int().positive().nullable().optional(),
   })
   .passthrough();
 
@@ -2468,6 +2471,7 @@ router.post(
         realised: realised != null ? String(realised) : null,
         outstanding: outstanding != null ? String(outstanding) : null,
         budget: budget != null ? String(budget) : null,
+        projectInfoId: req.body.projectInfoId ?? null,
       });
       res.json(result);
     } catch (error) {
@@ -5323,7 +5327,7 @@ router.get(
       const [projectExpenses, revLines, manualEntries] = await Promise.all([
         getHighRiskProjectCostReadRows(projectName, projectIdParam),
         storage.getProgramInflowsByProject(projectName),
-        storage.getTrackerMonthlyManual('REV'),
+        storage.getTrackerMonthlyManual('REV', projectIdParam),
       ]);
 
       const manualBudgetMap = new Map(manualEntries.map((e) => [e.monthKey, e]));
@@ -7988,12 +7992,17 @@ router.post(
           revenue && expenditure && parseFloat(revenue) > 0
             ? ((parseFloat(revenue) - parseFloat(expenditure)) / parseFloat(revenue)).toString()
             : null,
-        actualRevenue: null,
-        actualExpenditure: null,
-        actualProfit: null,
-        actualMargin: null,
-        voPmLimit: null,
-        currentVoTotal: null,
+        // upsertProjectRevenueSummary is a temporal soft-close + insert-new-
+        // version, so any field nulled here is wiped from the new current row.
+        // This endpoint only edits the costed (planned) figures — carry the
+        // rest forward from the existing summary so a costed save no longer
+        // destroys the project's VO limits and actuals.
+        actualRevenue: existingSummary?.actualRevenue ?? null,
+        actualExpenditure: existingSummary?.actualExpenditure ?? null,
+        actualProfit: existingSummary?.actualProfit ?? null,
+        actualMargin: existingSummary?.actualMargin ?? null,
+        voPmLimit: existingSummary?.voPmLimit ?? null,
+        currentVoTotal: existingSummary?.currentVoTotal ?? null,
       });
 
       try {
@@ -8973,8 +8982,20 @@ router.get('/api/expenditure-breakdown/:projectName', requireAuth, async (req, r
           plannedMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         }
 
-        const cosOverride = (cosOverrideByExpenseId.get(exp.id) ||
-          cosOverrideByRow.get(`${exp.projectName}:${exp.rowNumber}`)) as any;
+        // COS override now lives on the cost line itself, written by the
+        // audited PATCH /api/cos-tracker/override-status/:id control (mandatory
+        // reason, period-lock gating, COO/CEO/CFO/PFM). Surface it so the row's
+        // cosStatus reflects the override (applied just below). Falls back to
+        // the legacy maps if the field is absent — so this can't regress.
+        const cosOverride = (exp.cosStatusOverride
+          ? {
+              overrideStatus: exp.cosStatusOverride,
+              reason: exp.cosStatusOverrideReason ?? null,
+              overriddenBy: exp.cosStatusOverrideBy ?? null,
+              originalStatus: cosStatus,
+            }
+          : cosOverrideByExpenseId.get(exp.id) ||
+            cosOverrideByRow.get(`${exp.projectName}:${exp.rowNumber}`)) as any;
         const fieldAudits = {
           budgetTotal: buildExpenditureFieldAudit(
             projectName,

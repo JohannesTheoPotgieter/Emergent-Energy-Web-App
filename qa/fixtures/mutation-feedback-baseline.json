@@ -10,7 +10,6 @@
     "client/src/components/opportunities/OpportunityDrawer.tsx",
     "client/src/components/tabs/FinancialReviewTab.tsx",
     "client/src/components/tabs/LocalFolderTab.tsx",
-    "client/src/components/tabs/ProjectChangeControlTab.tsx",
     "client/src/components/tabs/ProjectCommissioningTab.tsx",
     "client/src/components/tabs/ProjectConstructionTab.tsx",
     "client/src/components/tabs/ProjectPlanTab.tsx",

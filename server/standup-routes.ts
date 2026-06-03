@@ -601,7 +601,7 @@ export function registerStandupRoutes(app: Express) {
   app.get("/api/standups/entries/:scheduleId/history", requireAuth, requireStandupView, async (req: Request, res: Response) => {
     try {
       const scheduleId = parseIntParam(req.params.scheduleId);
-      const limit = parseInt(req.query.limit as string) || 20;
+      const limit = Math.min(parseInt(req.query.limit as string) || 20, 200);
       const offset = parseInt(req.query.offset as string) || 0;
       const search = req.query.search as string;
 

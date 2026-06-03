@@ -104,3 +104,41 @@ export function saWorkingDays(startDateStr: string | null, endDateStr: string | 
   }
   return count;
 }
+
+function isWorkingDate(d: Date): boolean {
+  const dow = d.getUTCDay();
+  if (dow === 0 || dow === 6) return false;
+  return !isHoliday(formatDateKey(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()));
+}
+
+/**
+ * Date that is `n` SA working days after `dateStr` (Mon–Fri minus public
+ * holidays). n = 0 returns the same date if it is a working day, else the next
+ * working day. Returns null on malformed input. Used by the reschedule engine.
+ */
+export function addWorkingDays(dateStr: string | null, n: number): string | null {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}/.test(dateStr)) return null;
+  const p = parseDateParts(dateStr);
+  let cursor = new Date(Date.UTC(p.year, p.month - 1, p.day));
+  let remaining = Math.max(0, Math.floor(n));
+  while (remaining > 0) {
+    cursor = new Date(cursor.getTime() + 86400000);
+    if (isWorkingDate(cursor)) remaining--;
+  }
+  while (!isWorkingDate(cursor)) cursor = new Date(cursor.getTime() + 86400000);
+  return formatDateKey(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, cursor.getUTCDate());
+}
+
+/** `n` SA working days BEFORE `dateStr` (inverse of addWorkingDays). */
+export function subtractWorkingDays(dateStr: string | null, n: number): string | null {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}/.test(dateStr)) return null;
+  const p = parseDateParts(dateStr);
+  let cursor = new Date(Date.UTC(p.year, p.month - 1, p.day));
+  let remaining = Math.max(0, Math.floor(n));
+  while (remaining > 0) {
+    cursor = new Date(cursor.getTime() - 86400000);
+    if (isWorkingDate(cursor)) remaining--;
+  }
+  while (!isWorkingDate(cursor)) cursor = new Date(cursor.getTime() - 86400000);
+  return formatDateKey(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, cursor.getUTCDate());
+}

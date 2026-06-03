@@ -246,13 +246,13 @@ export function registerProcurementRoutes(app: Express): void {
         // allowed because the workflow is to create the PO during the
         // approve→order step, not during approval itself.
         if (req.body.status === 'ordered') {
-          const incomingPoId = (req.body as any).linkedPoId ?? old.linkedPoId ?? null;
+          const incomingPoId = (req.body as any).poId ?? old.poId ?? null;
           const overrideReason = typeof req.body?.overrideReason === "string" ? req.body.overrideReason.trim() : "";
           if (!incomingPoId && !overrideReason) {
             return res.status(400).json({
               error: "po_link_required",
               message:
-                "A procurement item must reference an approved PO (linkedPoId) before transitioning to 'ordered'. " +
+                "A procurement item must reference an approved PO (poId) before transitioning to 'ordered'. " +
                 "Resubmit with `overrideReason` if there is a documented reason no PO exists yet.",
               currentStatus: old.status,
             });

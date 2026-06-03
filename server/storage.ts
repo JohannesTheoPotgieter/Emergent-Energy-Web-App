@@ -272,7 +272,7 @@ export interface IStorage {
   addAvailablePaymentHistory(entry: InsertAvailablePaymentHistory): Promise<AvailablePaymentHistory>;
 
   // Tracker Monthly Manual (REV/COS)
-  getTrackerMonthlyManual(trackerType: string): Promise<TrackerMonthlyManual[]>;
+  getTrackerMonthlyManual(trackerType: string, projectInfoId?: number | null): Promise<TrackerMonthlyManual[]>;
   upsertTrackerMonthlyManual(data: InsertTrackerMonthlyManual): Promise<TrackerMonthlyManual>;
 
   // Operational Tasks (now backed by work_items)
@@ -1359,8 +1359,8 @@ export class DatabaseStorage implements IStorage {
     return this.financeSupportRepository.addAvailablePaymentHistory(entry);
   }
 
-  async getTrackerMonthlyManual(trackerType: string): Promise<TrackerMonthlyManual[]> {
-    return this.financeSupportRepository.getTrackerMonthlyManual(trackerType);
+  async getTrackerMonthlyManual(trackerType: string, projectInfoId?: number | null): Promise<TrackerMonthlyManual[]> {
+    return this.financeSupportRepository.getTrackerMonthlyManual(trackerType, projectInfoId ?? null);
   }
 
   async upsertTrackerMonthlyManual(data: InsertTrackerMonthlyManual): Promise<TrackerMonthlyManual> {

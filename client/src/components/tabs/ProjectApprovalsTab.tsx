@@ -106,7 +106,15 @@ export function ProjectApprovalsTab({
         pendingItems.push(...generalItems);
       }
 
-      return pendingItems;
+      // Dedupe: a still-pending general approval is returned by BOTH the
+      // /pending feed (as gen-<id>) and the /general feed, producing duplicate
+      // cards with colliding React keys. Collapse by id; first occurrence wins.
+      const seenIds = new Set<string>();
+      return pendingItems.filter((a) => {
+        if (seenIds.has(a.id)) return false;
+        seenIds.add(a.id);
+        return true;
+      });
     },
     enabled: !!projectName,
   });
@@ -215,8 +223,11 @@ export function ProjectApprovalsTab({
   });
 
   const filtered = approvals.filter(a => filter === "all" || a.type === filter);
-  const pending = filtered.filter(a => a.status === "pending" || a.status === "NEEDS APPROVAL" || a.status === "submitted");
-  const resolved = filtered.filter(a => a.status !== "pending" && a.status !== "NEEDS APPROVAL" && a.status !== "submitted");
+  // "review" is the status the server stamps on pending quality-gate approvals;
+  // without it here, QC items fall through to "resolved" and render as "Rejected".
+  const PENDING_STATUSES = ["pending", "NEEDS APPROVAL", "submitted", "review"];
+  const pending = filtered.filter(a => PENDING_STATUSES.includes(a.status));
+  const resolved = filtered.filter(a => !PENDING_STATUSES.includes(a.status));
 
   if (isLoading) {
     return (

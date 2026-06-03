@@ -559,10 +559,15 @@ export function registerPlanningTasksRoutes(app: Express) {
         }
       }
 
+      // Parent/summary rows are NOT milestones. The importer deliberately
+      // marks summaries as non-milestones; this loop used to force every
+      // parent to isMilestone=true, so summary rows rendered with a ◆ diamond
+      // instead of a summary bar. Mark them as summaries (isParent) instead so
+      // the grid/Gantt can distinguish a roll-up row from a real milestone.
       for (const [parentId] of childrenMap) {
         const parentTask = taskMap.get(parentId);
-        if (parentTask && !parentTask.isMilestone) {
-          parentTask.isMilestone = true;
+        if (parentTask) {
+          parentTask.isParent = true;
         }
       }
 

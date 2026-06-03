@@ -127,7 +127,23 @@ export function ProjectRaidTab({ projectId, projectName }: ProjectRaidTabProps) 
         { headers: getAuthHeaders(), credentials: "include" }
       );
       if (!res.ok) throw new Error("Failed to load RAID items");
-      return res.json();
+      // The /api/raid GET returns raw Drizzle rows (camelCase keys). This
+      // component's RaidItem interface + all reads are snake_case, so map the
+      // API shape onto the expected keys (defensive both ways). Without this,
+      // owner / due date / mitigation / timestamps all render blank.
+      const raw = await res.json();
+      return (Array.isArray(raw) ? raw : []).map((r: any) => ({
+        ...r,
+        owner_user_id: r.ownerUserId ?? r.owner_user_id ?? null,
+        owner_name: r.ownerName ?? r.owner_name ?? null,
+        due_date: r.dueDate ?? r.due_date ?? null,
+        mitigation_response: r.mitigationResponse ?? r.mitigation_response ?? null,
+        linked_task_id: r.linkedTaskId ?? r.linked_task_id ?? null,
+        created_by_user_id: r.createdByUserId ?? r.created_by_user_id ?? null,
+        created_at: r.createdAt ?? r.created_at,
+        updated_at: r.updatedAt ?? r.updated_at,
+        closed_at: r.closedAt ?? r.closed_at ?? null,
+      }));
     },
     enabled: !!projectId,
   });

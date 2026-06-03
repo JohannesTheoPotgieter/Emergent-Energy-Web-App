@@ -1,3 +1,5 @@
+import { isHoliday } from "./lib/sa-holidays";
+
 export interface CPMTask {
   id: number;
   taskNo: string;
@@ -48,12 +50,23 @@ function parseDate(dateStr: string | null | undefined): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+// Working-day calendar — Mon–Fri excluding SA public holidays. Unified with
+// server/lib/sa-holidays so the CPM schedule matches the rest of the app
+// (previously CPM counted Mon–Fri only and silently ignored holidays).
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+function isWorkingDay(d: Date): boolean {
+  const dow = d.getDay();
+  if (dow === 0 || dow === 6) return false;
+  return !isHoliday(`${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`);
+}
+
 function toWorkingDays(date: Date, referenceDate: Date): number {
   let count = 0;
   const d = new Date(referenceDate);
   while (d < date) {
-    const dow = d.getDay();
-    if (dow !== 0 && dow !== 6) count++;
+    if (isWorkingDay(d)) count++;
     d.setDate(d.getDate() + 1);
   }
   return count;
@@ -63,8 +76,7 @@ function calculateWorkingDuration(startDate: Date, endDate: Date): number {
   let count = 0;
   const d = new Date(startDate);
   while (d <= endDate) {
-    const dow = d.getDay();
-    if (dow !== 0 && dow !== 6) count++;
+    if (isWorkingDay(d)) count++;
     d.setDate(d.getDate() + 1);
   }
   return Math.max(1, count);

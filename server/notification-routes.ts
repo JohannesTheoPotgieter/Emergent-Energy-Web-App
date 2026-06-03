@@ -12,7 +12,7 @@ export function registerNotificationRoutes(app: Express) {
       const user = req.user as any;
       if (!user?.id) return res.status(401).json({ error: "Not authenticated" });
 
-      const limit = parseInt(req.query.limit as string, 10) || 30;
+      const limit = Math.min(parseInt(req.query.limit as string, 10) || 30, 100);
       const rows = await db
         .select()
         .from(notifications)

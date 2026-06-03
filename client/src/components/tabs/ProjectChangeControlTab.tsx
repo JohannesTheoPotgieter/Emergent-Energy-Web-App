@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
   DialogContent,
@@ -291,24 +292,38 @@ function ExpandedChangeRequest({ cr }: { cr: ChangeRequest }) {
   const [editImpact, setEditImpact] = useState(cr.impact_summary || "");
   const [editCost, setEditCost] = useState(String(cr.cost_impact ?? 0));
   const [editDays, setEditDays] = useState(String(cr.schedule_impact_days ?? 0));
+  const { toast } = useToast();
 
   const transitions = VALID_TRANSITIONS[cr.status] || [];
 
   const transitionMutation = useMutation({
     mutationFn: async (newStatus: string) => {
+      const payload: { status: string; rejectionReason?: string } = { status: newStatus };
+      // The server requires a non-empty rejectionReason when rejecting, so
+      // collect it up front — otherwise "Reject" silently 400s.
+      if (newStatus === "rejected") {
+        const reason = window.prompt("Reason for rejecting this change request (required):")?.trim();
+        if (!reason) throw new Error("A rejection reason is required.");
+        payload.rejectionReason = reason;
+      }
       const res = await fetch(`/api/change-requests/${cr.id}`, {
         method: "PATCH",
         headers: getAuthHeaders(),
         credentials: "include",
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error("Failed to update status");
+      if (!res.ok) {
+        let body: { error?: string; message?: string } = {};
+        try { body = await res.json(); } catch { /* non-JSON */ }
+        throw new Error(body.message || body.error || "Failed to update status");
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["change-requests", cr.project_id] });
       invalidateProjectV2Queries(queryClient, cr.project_id);
     },
+    onError: (err: Error) => toast({ title: "Could not update change request", description: err.message, variant: "destructive" }),
   });
 
   const updateMutation = useMutation({
@@ -329,7 +344,11 @@ function ExpandedChangeRequest({ cr }: { cr: ChangeRequest }) {
           scheduleImpactDays: parseInt(editDays) || 0,
         }),
       });
-      if (!res.ok) throw new Error("Failed to update");
+      if (!res.ok) {
+        let body: { error?: string; message?: string } = {};
+        try { body = await res.json(); } catch { /* non-JSON */ }
+        throw new Error(body.message || body.error || "Failed to update");
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -337,6 +356,7 @@ function ExpandedChangeRequest({ cr }: { cr: ChangeRequest }) {
       queryClient.invalidateQueries({ queryKey: ["change-requests", cr.project_id] });
       invalidateProjectV2Queries(queryClient, cr.project_id);
     },
+    onError: (err: Error) => toast({ title: "Could not save change request", description: err.message, variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
@@ -346,12 +366,17 @@ function ExpandedChangeRequest({ cr }: { cr: ChangeRequest }) {
         headers: getAuthHeaders(),
         credentials: "include",
       });
-      if (!res.ok) throw new Error("Failed to delete");
+      if (!res.ok) {
+        let body: { error?: string; message?: string } = {};
+        try { body = await res.json(); } catch { /* non-JSON */ }
+        throw new Error(body.message || body.error || "Failed to delete change request");
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["change-requests", cr.project_id] });
       invalidateProjectV2Queries(queryClient, cr.project_id);
     },
+    onError: (err: Error) => toast({ title: "Could not delete change request", description: err.message, variant: "destructive" }),
   });
 
   return (
@@ -524,6 +549,8 @@ function CreateChangeRequestDialog({
     label: u.name || u.username,
   }));
 
+  const { toast } = useToast();
+
   const createMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/change-requests", {
@@ -542,7 +569,11 @@ function CreateChangeRequestDialog({
           scheduleImpactDays: parseInt(scheduleImpactDays) || 0,
         }),
       });
-      if (!res.ok) throw new Error("Failed to create change request");
+      if (!res.ok) {
+        let body: { error?: string; message?: string } = {};
+        try { body = await res.json(); } catch { /* non-JSON */ }
+        throw new Error(body.message || body.error || "Failed to create change request");
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -551,6 +582,7 @@ function CreateChangeRequestDialog({
       onOpenChange(false);
       resetForm();
     },
+    onError: (err: Error) => toast({ title: "Could not create change request", description: err.message, variant: "destructive" }),
   });
 
   function resetForm() {
