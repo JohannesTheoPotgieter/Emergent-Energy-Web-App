@@ -72,6 +72,10 @@ const NAV_EXCLUDE = new Set<string>([
   "/priorities/lineage", "/my-work/tasks", "/my-work/settings",
   "/pending-approvals",
   "/admin/database-migration", "/admin/document-types", "/admin/handover-health",
+  // Intentionally retired from nav in the registry — honour that here too:
+  "/counterparties", "/subcontractor-dashboard", "/invoice-patterns", // absorbed into QuickBooks → Suppliers
+  "/admin/email-linker-dev", // dev-only tool
+  "/feedback", // not actively monitored
 ]);
 
 const PATH_TO_SCREEN_ID = new Map<string, string>(
