@@ -658,10 +658,10 @@ export async function getProjectListSummaries(
       : await db.execute(sql`
           SELECT
             project_id,
-            COALESCE(SUM(NULLIF(revenue_recognition_amount, '')::numeric), 0)::float8 AS planned_revenue,
-            COALESCE(SUM(CASE WHEN cos_realised THEN NULLIF(revenue_recognition_amount, '')::numeric ELSE 0 END), 0)::float8 AS realised_revenue,
-            COALESCE(SUM(NULLIF(amount_ex_vat, '')::numeric), 0)::float8 AS planned_cost,
-            COALESCE(SUM(CASE WHEN cos_realised THEN NULLIF(amount_ex_vat, '')::numeric ELSE 0 END), 0)::float8 AS realised_cost
+            COALESCE(SUM(CASE WHEN btrim(revenue_recognition_amount) ~ '^-?[0-9]+([.][0-9]+)?$' THEN btrim(revenue_recognition_amount)::numeric ELSE 0 END), 0)::float8 AS planned_revenue,
+            COALESCE(SUM(CASE WHEN cos_realised AND btrim(revenue_recognition_amount) ~ '^-?[0-9]+([.][0-9]+)?$' THEN btrim(revenue_recognition_amount)::numeric ELSE 0 END), 0)::float8 AS realised_revenue,
+            COALESCE(SUM(CASE WHEN btrim(amount_ex_vat) ~ '^-?[0-9]+([.][0-9]+)?$' THEN btrim(amount_ex_vat)::numeric ELSE 0 END), 0)::float8 AS planned_cost,
+            COALESCE(SUM(CASE WHEN cos_realised AND btrim(amount_ex_vat) ~ '^-?[0-9]+([.][0-9]+)?$' THEN btrim(amount_ex_vat)::numeric ELSE 0 END), 0)::float8 AS realised_cost
           FROM normalized_cost_lines
           WHERE project_id = ANY(${`{${ids.join(",")}}`}::int[])
             AND effective_to IS NULL
