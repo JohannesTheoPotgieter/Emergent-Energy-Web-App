@@ -11,7 +11,7 @@ import {
   workItems,
 } from "@shared/schema";
 import { projectStageInstances, projectStageExceptions, projectStageDecisions } from "@shared/schema";
-import { db } from "../db";
+import { db, getDbMode } from "../db";
 import { createProjectEvent } from "./project-event-service";
 import { notifyUsers } from "./notification-service";
 
@@ -38,9 +38,15 @@ export async function computeFinancialSnapshot(projectId: number) {
     .orderBy(desc(budgetBaselines.version))
     .limit(1);
 
-  // Actual costs (amount_ex_vat is text — cast and sum)
+  // Actual costs. amount_ex_vat is a decimal column, so Postgres sums it
+  // directly. The SQLite dev fallback stores it with looser affinity, so we
+  // CAST AS REAL there — dialect-aware so we never send `::` down the SQLite
+  // path (the `::` cast syntax breaks the SQLite parser).
+  const costSum = getDbMode() === "sqlite"
+    ? sql<string>`COALESCE(SUM(CAST(NULLIF(amount_ex_vat, '') AS REAL)), 0)`
+    : sql<string>`COALESCE(SUM(amount_ex_vat), 0)`;
   const costResult = await db
-    .select({ total: sql<string>`COALESCE(SUM(NULLIF(amount_ex_vat, '')::numeric), 0)` })
+    .select({ total: costSum })
     .from(normalizedCostLines)
     .where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))));
   const actualTotal = Number(costResult[0]?.total || 0);
