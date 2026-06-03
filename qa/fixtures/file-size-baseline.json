@@ -6,7 +6,7 @@
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
-      "loc": 9608
+      "loc": 9614
     },
     {
       "file": "client/src/pages/smart-import.tsx",
@@ -21,12 +21,12 @@
       "loc": 3995
     },
     {
-      "file": "server/smart-import-routes.ts",
-      "loc": 3903
+      "file": "server/db.ts",
+      "loc": 3907
     },
     {
-      "file": "server/db.ts",
-      "loc": 3863
+      "file": "server/smart-import-routes.ts",
+      "loc": 3903
     },
     {
       "file": "server/lifecycle-routes.ts",
@@ -38,7 +38,7 @@
     },
     {
       "file": "client/src/components/tabs/UnifiedPlanTab.tsx",
-      "loc": 3263
+      "loc": 3300
     },
     {
       "file": "client/src/pages/cashflow.tsx",
@@ -65,10 +65,6 @@
       "loc": 2380
     },
     {
-      "file": "server/departments/fye-revenue-tracking-routes.ts",
-      "loc": 2338
-    },
-    {
       "file": "client/src/pages/ee-info.tsx",
       "loc": 2262
     },
@@ -82,7 +78,7 @@
     },
     {
       "file": "server/departments/project-routes.ts",
-      "loc": 2216
+      "loc": 2215
     },
     {
       "file": "server/lib/import/normalizer.ts",
@@ -149,8 +145,16 @@
       "loc": 1750
     },
     {
+      "file": "shared/schema/finance.ts",
+      "loc": 1747
+    },
+    {
       "file": "client/src/pages/standups.tsx",
       "loc": 1746
+    },
+    {
+      "file": "server/routes/planning-tasks-routes.ts",
+      "loc": 1727
     },
     {
       "file": "server/services/stage-lifecycle-service.ts",
@@ -159,14 +163,6 @@
     {
       "file": "client/src/pages/project-lifecycle.tsx",
       "loc": 1724
-    },
-    {
-      "file": "server/routes/planning-tasks-routes.ts",
-      "loc": 1724
-    },
-    {
-      "file": "shared/schema/finance.ts",
-      "loc": 1719
     },
     {
       "file": "server/eng-stage-routes.ts",
@@ -189,6 +185,10 @@
       "loc": 1641
     },
     {
+      "file": "client/src/components/tabs/ProjectPlanTab.tsx",
+      "loc": 1626
+    },
+    {
       "file": "server/departments/exco-routes.ts",
       "loc": 1603
     },
@@ -199,10 +199,6 @@
     {
       "file": "server/handover-routes.ts",
       "loc": 1574
-    },
-    {
-      "file": "client/src/components/tabs/ProjectPlanTab.tsx",
-      "loc": 1565
     },
     {
       "file": "server/routes/finance-legacy-extracted-routes.ts",
