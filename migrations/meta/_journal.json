@@ -589,6 +589,20 @@
       "when": 1780428626283,
       "tag": "0083_tracker_monthly_per_project",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1780480000000,
+      "tag": "0084_restore_finance_tracker_support_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1780498810212,
+      "tag": "0085_fye_revised_budget_monthly",
+      "breakpoints": true
     }
   ]
 }
