@@ -33,8 +33,8 @@ import {
 import { DisciplinePanel } from "@/components/documents/DisciplinePanel";
 import { ManagedDocumentApprovalQueue } from "@/components/documents/ManagedDocumentApprovalQueue";
 import { ProjectReadinessCard } from "@/components/documents/ProjectReadinessCard";
+import { ProjectSharepointConnectionCard } from "@/components/documents/ProjectSharepointConnectionCard";
 import { LIFECYCLE_DEPARTMENTS } from "@shared/schema";
-import { AlertTriangle } from "lucide-react";
 
 export default function ProjectDocumentsPage() {
   const { projectId: projectIdStr } = useParams<{ projectId: string }>();
@@ -100,22 +100,6 @@ export default function ProjectDocumentsPage() {
     setActiveTab(disciplinesWithRows[0] ?? "ALL");
   }, [activeTab, initialDiscipline, disciplinesWithRows]);
 
-  const overallSummary = useMemo(() => {
-    const allRows = (taxonomy.data?.taxonomy ?? []).filter((r) => r.active);
-    const folderMap = new Map(
-      (folders.data?.folders ?? []).map((f) => [f.taxonomyKey, f] as const),
-    );
-    let provisioned = 0;
-    let errors = 0;
-    for (const r of allRows) {
-      const f = folderMap.get(r.internalKey);
-      if (f?.itemId) provisioned += 1;
-      if (f?.verifyError) errors += 1;
-    }
-    const total = allRows.length;
-    return { total, provisioned, missing: total - provisioned, errors };
-  }, [taxonomy.data, folders.data]);
-
   if (!isValid) return <PageError message="Invalid project id" />;
   if (project.isLoading || taxonomy.isLoading || folders.isLoading) return <PageSkeleton />;
   if (project.error) return <PageError message="Failed to load project" />;
@@ -127,23 +111,11 @@ export default function ProjectDocumentsPage() {
       data-testid="project-documents-page"
       header={<PageHeader title={title} subtitle="Documents" />}
     >
-      <ProjectReadinessCard projectId={projectId} />
+      <ProjectSharepointConnectionCard projectId={projectId} />
 
-      {overallSummary.errors > 0 && (
-        <div className="mt-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-2 text-sm text-rose-700">
-                <AlertTriangle className="h-4 w-4" />
-                <span data-testid="overall-summary-errors">
-                  {overallSummary.errors} folder{overallSummary.errors === 1 ? "" : "s"} report
-                  Graph verify errors — re-run <em>Verify</em> from the admin Provisioning tab.
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      <div className="mt-4">
+        <ProjectReadinessCard projectId={projectId} />
+      </div>
 
       <div className="mt-4">
         <ManagedDocumentApprovalQueue projectId={projectId} title="Approvals waiting on you" />
