@@ -7656,6 +7656,9 @@ router.get('/api/revenue-tab/:projectName', requireAuth, async (req, res) => {
         id: r.id,
         rowNumber: r.rowNumber,
         milestoneNo: r.milestoneNo,
+        // Carried through so the Revenue tab's sub-project filter populates
+        // (the inflow rows already expose it via adaptRevenueToInflow).
+        subProjectName: r.subProjectName ?? null,
         milestoneName: r.milestoneName,
         milestonePercent: r.milestonePercent,
         milestoneAmount: r.milestoneAmount,

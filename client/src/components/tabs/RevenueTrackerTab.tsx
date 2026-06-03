@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiRequest } from "@/lib/queryClient";
-import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permissions";
 import { formatZarAriaLabel } from "@/lib/currency";
 import {
   Bar,
@@ -268,7 +268,10 @@ type EditingCell = { field: string; monthKey: string; value: string };
 
 export function RevenueTrackerTab({ projectName, projectId }: RevenueTrackerTabProps) {
   const qc = useQueryClient();
-  const { isAdmin } = useAuth();
+  // Budget inline-edit gate mirrors the server (POST /api/tracker-monthly →
+  // revenue_tracker:edit). Was useAuth().isAdmin, which under-exposed the edit
+  // to the broader set of permitted finance roles.
+  const { allowed: isAdmin } = usePermission("revenue_tracker", "edit");
   const [drawerMonth, setDrawerMonth] = useState<{ month: RevenueMonthData; defaultFilter: "all" | "realised" | "unrealised" } | null>(null);
   const [editing, setEditing] = useState<EditingCell | null>(null);
 
