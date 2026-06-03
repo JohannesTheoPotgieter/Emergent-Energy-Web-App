@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -1433,6 +1433,34 @@ export const fyeReportSnapshots = pgTable("fye_report_snapshots", {
   approvedAt: timestamp("approved_at"),
 });
 export type FyeReportSnapshot = typeof fyeReportSnapshots.$inferSelect;
+
+/**
+ * FYE "Revised Budget" — manual, once-off monthly figures for the FYE Tracking
+ * dashboard (View B). One amount per (FY, metric, month). Metric is
+ * 'revenue' | 'cos' | 'gp'. Seeded from the ManCo "Adjusted Budget" line and
+ * editable in-app. These are NOT derived from trackers — they are the
+ * operator's revised plan that the Actual / Plan-ahead series are compared
+ * against. Everything else on the dashboard recomputes from imported lines.
+ */
+export const fyeRevisedBudgetMonthly = pgTable("fye_revised_budget_monthly", {
+  id: serial("id").primaryKey(),
+  fye: integer("fye").notNull(),
+  metric: text("metric").notNull(), // 'revenue' | 'cos' | 'gp'
+  monthKey: text("month_key").notNull(), // YYYY-MM
+  amount: decimal("amount", { precision: 15, scale: 2 }).notNull().default("0"),
+  updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  fyeMetricMonthIdx: uniqueIndex("fye_revised_budget_monthly_fye_metric_month_idx").on(
+    table.fye,
+    table.metric,
+    table.monthKey,
+  ),
+}));
+export const insertFyeRevisedBudgetMonthlySchema = createInsertSchema(fyeRevisedBudgetMonthly).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertFyeRevisedBudgetMonthly = z.infer<typeof insertFyeRevisedBudgetMonthlySchema>;
+export type FyeRevisedBudgetMonthly = typeof fyeRevisedBudgetMonthly.$inferSelect;
 
 // ===================== BUDGET BASELINES (B5) =====================
 

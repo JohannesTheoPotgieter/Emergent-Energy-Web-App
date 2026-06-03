@@ -54,6 +54,11 @@ export interface FinanceLine {
   poNumber: string | null;
   invoiceNumber: string | null;
   invoiceRaisedDate: string | null;
+  /** Resolved INVOICE RAISED DATE cell colour (child-first, parent fallback).
+   * Exposed so downstream views (e.g. FYE 4-state) can classify on the same
+   * signal the `bucket` field uses, without re-querying. */
+  invoiceDateFontColor: string | null;
+  invoiceDateConfirmed: boolean | null;
   paidDate: string | null;
   paidDateConfirmed: boolean | null;
 
@@ -689,6 +694,9 @@ export function deriveFinanceLinesFromRows(
       poNumber: a.poNumber ?? null,
       invoiceNumber: a.invoiceNumber ?? null,
       invoiceRaisedDate,
+      // Resolved colour (child-first) — same inputs the bucket classifier uses.
+      invoiceDateFontColor: a.invoiceDateFontColor ?? parent?.invoiceDateFontColor ?? null,
+      invoiceDateConfirmed: a.invoiceDateConfirmed ?? parent?.invoiceDateConfirmed ?? null,
       paidDate: isoDate(parent?.paidDate ?? a.financePaymentDate ?? null),
       paidDateConfirmed,
       categoryTotalActualTotal,
