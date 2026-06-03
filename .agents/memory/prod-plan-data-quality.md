@@ -28,6 +28,21 @@ root cause.
   is worse than flat. These need a per-project template (e.g. Red Rocket's clean
   dev copy in helium) — do NOT auto-guess.
 
+## Making a manual hierarchy fix survive re-import
+- Smart Import is idempotent (matches by `row_hash`, which prefers `wbs_code`),
+  so re-importing a workbook won't duplicate or error on soft-deleted rows
+  (partial unique indexes filter on `deleted_at IS NULL`).
+- BUT the importer **rebuilds `parent_id` from the `outline_number` prefix** on
+  every import, and on insert it writes `outline_number = wbs_code`. Legacy prod
+  rows have a **flat** `outline_number` (plain integers) while `wbs_code` is
+  dotted — so a re-import would *re-flatten* any hierarchy you fixed by `wbs_code`.
+- **Fix that survives re-import:** also set `outline_number = wbs_code` (only
+  where `wbs_code` is present — rows without `wbs_code` derive their hash from
+  `outline_number`, so don't touch those). Then a re-import re-derives the SAME
+  tree instead of flattening it. This mirrors what the importer itself does.
+- **Why:** data-only cleanup is otherwise undone by the next import; aligning the
+  field the importer reads from is what makes it durable without a code change.
+
 ## Gotchas
 - `work_items.start_date` / `end_date` are stored as **text** in helium, and the
   prod `claude_views.v_work_items` view returns them as text too. Always cast
