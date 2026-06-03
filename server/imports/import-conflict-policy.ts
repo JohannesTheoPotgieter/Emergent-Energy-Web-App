@@ -20,6 +20,33 @@ import {
   type FieldValue,
   type RowMergeResult as MergeRowResult,
 } from "../lib/import/merge-engine";
+import type { DiffSection } from "@shared/excel-vs-app/contract";
+
+// ---------------------------------------------------------------------------
+// File-wins policy (owner decision 2026-06)
+// ---------------------------------------------------------------------------
+//
+// Sections where the uploaded workbook is the SINGLE SOURCE OF TRUTH. A
+// re-import of these finance sections always overwrites in-app edits to the
+// tracked faithful-mirror fields (amounts, dates, invoice/PO numbers,
+// date-colour confirmations): the edits are not recorded as manual_overrides
+// and a lingering edit is reverted to the file value on the next import. This
+// is what guarantees the app "never goes off the trackers" for finance.
+//
+// PLAN (work_items — dates, owner, %) stays app-editable, so it is NOT
+// file-wins. App-owned columns that are not tracked merge fields
+// (cosStatusOverride, noRevenueLinked, task links) are never touched by the
+// merge engine, so they are unaffected either way.
+
+export const FILE_WINS_SECTIONS: ReadonlySet<DiffSection> = new Set<DiffSection>([
+  "REVENUE",
+  "EXPENDITURE",
+]);
+
+/** True when the workbook is authoritative for the section (file always wins). */
+export function sectionIsFileWins(section: DiffSection): boolean {
+  return FILE_WINS_SECTIONS.has(section);
+}
 
 // ---------------------------------------------------------------------------
 // Types
