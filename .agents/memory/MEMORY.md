@@ -1,2 +1,3 @@
 - [Dev/prod database split](dev-prod-database-split.md) — dev=heliumdb, prod=neondb (NOT shared); CLAUDE_RO reads prod via claude_views; project-id in breadcrumb tells you which DB (23=dev, 287=prod).
+- [Prod plan data-quality](prod-plan-data-quality.md) — prod plans render flat because importer leaves parent_id null; safe fix = re-parent by dotted-WBS prefix + dedup by title+start+end (soft-delete). Integer/blank-WBS tasks can't auto-nest. start_date/end_date are TEXT.
 - [Project plan critical path & reschedule](project-plan-critical-path.md) — hybrid CPM/date-chain critical path (strict `p.end<t.start`, lower-id ties), bright-red highlight, reschedule gated on dependencies.
