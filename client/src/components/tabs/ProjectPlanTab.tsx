@@ -15,7 +15,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import { Loader2, AlertTriangle, RotateCcw, Save, Trash2, Link, ChevronLeft, ChevronRight, Calendar, GitBranch, Search, ZoomIn, Target, Split, X, AlertCircle, GripVertical, Hash, Diamond, Milestone } from "lucide-react";
+import { Loader2, AlertTriangle, RotateCcw, Save, Trash2, Link, ChevronLeft, ChevronRight, Calendar, GitBranch, Search, ZoomIn, Target, Split, X, AlertCircle, GripVertical, Hash, Diamond, Milestone, ArrowUpDown } from "lucide-react";
 import { format, addDays, differenceInDays, eachDayOfInterval, parseISO, isValid, startOfDay, isBefore, isAfter, differenceInCalendarDays } from "date-fns";
 import { computeProjectProgress } from "@/lib/kpi-formulas";
 
@@ -204,6 +204,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
   
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<FilterType>("all");
+  const [sortMode, setSortMode] = useState<"wbs" | "dates">("wbs");
   const [splitView, setSplitView] = useState(true);
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>("month");
   const [hoveredTaskId, setHoveredTaskId] = useState<number | null>(null);
@@ -479,8 +480,54 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
       result = result.filter(t => t.predecessorIds.length > 0 && (t.percentComplete || 0) === 0);
     }
     
-    return result;
-  }, [tasks, searchQuery, filter]);
+    const dateMs = (d?: string | null) => {
+      if (!d) return Number.POSITIVE_INFINITY;
+      const t = new Date(d).getTime();
+      return Number.isNaN(t) ? Number.POSITIVE_INFINITY : t;
+    };
+    const compareDates = (a: CPMTask, b: CPMTask) => {
+      const sa = dateMs(a.startDate), sb = dateMs(b.startDate);
+      if (sa !== sb) return sa - sb;
+      return dateMs(a.endDate) - dateMs(b.endDate);
+    };
+    const compareWbs = (a?: string | null, b?: string | null) => {
+      const an = a?.trim();
+      const bn = b?.trim();
+      if (!an && !bn) return 0;
+      if (!an) return 1;
+      if (!bn) return -1;
+      const as = an.split("."), bs = bn.split(".");
+      const len = Math.max(as.length, bs.length);
+      for (let i = 0; i < len; i++) {
+        const aSeg = as[i];
+        const bSeg = bs[i];
+        if (aSeg === undefined) return -1; // shorter code (parent) sorts first
+        if (bSeg === undefined) return 1;
+        const aValid = /^\d+$/.test(aSeg);
+        const bValid = /^\d+$/.test(bSeg);
+        if (aValid && bValid) {
+          const d = parseInt(aSeg, 10) - parseInt(bSeg, 10);
+          if (d !== 0) return d;
+        } else if (aValid !== bValid) {
+          return aValid ? -1 : 1; // valid numeric segment before malformed
+        } else {
+          const c = aSeg.localeCompare(bSeg);
+          if (c !== 0) return c;
+        }
+      }
+      return 0;
+    };
+
+    return [...result].sort((a, b) => {
+      if (sortMode !== "dates") {
+        const w = compareWbs(a.taskNo, b.taskNo);
+        if (w !== 0) return w;
+      }
+      const d = compareDates(a, b);
+      if (d !== 0) return d;
+      return (a.id ?? 0) - (b.id ?? 0);
+    });
+  }, [tasks, searchQuery, filter, sortMode]);
 
   const zoomConfig = useMemo(() => {
     switch (zoomLevel) {
@@ -1067,6 +1114,20 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
+              <Button
+                variant={sortMode === "dates" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setSortMode((m) => (m === "wbs" ? "dates" : "wbs"))}
+                data-testid="button-sort-mode"
+                title={
+                  sortMode === "wbs"
+                    ? "Sorted by WBS, then start date, then finish date. Click to sort by start/finish date only (use when the WBS is wrong)."
+                    : "Sorted by start date, then finish date. Click to sort by WBS."
+                }
+              >
+                <ArrowUpDown className="h-4 w-4 mr-1" />
+                {sortMode === "wbs" ? "Sort by Date" : "Sort by WBS"}
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
