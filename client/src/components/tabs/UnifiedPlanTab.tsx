@@ -2911,7 +2911,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                         title={`${task.title}${pct >= 100 ? " (Done)" : ""}`}
                         data-testid={`gantt-bar-${task.id}`}
                       >
-                        <div className={`w-3 h-3 rotate-45 border ${pct >= 100 ? "bg-emerald-500 border-emerald-600" : "bg-amber-500 border-amber-600"}${showCriticalPath && criticalSet.has(task.id) ? " ring-2 ring-rose-500" : ""}`} />
+                        <div className={`w-3 h-3 rotate-45 border ${pct >= 100 ? "bg-emerald-500 border-emerald-600" : "bg-amber-500 border-amber-600"}${showCriticalPath && criticalSet.has(task.workItemId) ? " ring-2 ring-rose-500" : ""}`} />
                       </div>
                     )}
                     {bar && !isMilestone && (
@@ -2922,7 +2922,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                             : pct >= 100
                               ? "bg-emerald-200 border-emerald-300"
                               : `${gc.bg} ${gc.border}`
-                        }${showCriticalPath && criticalSet.has(task.id) ? " ring-2 ring-rose-500 ring-inset" : ""}`}
+                        }${showCriticalPath && criticalSet.has(task.workItemId) ? " ring-2 ring-rose-500 ring-inset" : ""}`}
                         style={{
                           left: bar.left,
                           width: Math.max(bar.width, 4),

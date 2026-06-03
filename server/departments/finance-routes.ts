@@ -7656,6 +7656,9 @@ router.get('/api/revenue-tab/:projectName', requireAuth, async (req, res) => {
         id: r.id,
         rowNumber: r.rowNumber,
         milestoneNo: r.milestoneNo,
+        // Carried through so the Revenue tab's sub-project filter populates
+        // (the inflow rows already expose it via adaptRevenueToInflow).
+        subProjectName: r.subProjectName ?? null,
         milestoneName: r.milestoneName,
         milestonePercent: r.milestonePercent,
         milestoneAmount: r.milestoneAmount,
@@ -8253,7 +8256,10 @@ router.post(
 router.delete(
   '/api/revenue-tab/:projectName/link-task/:milestoneRowNumber',
   requireAuth,
-  requireAdmin,
+  // Symmetry with the POST link-task gate: anyone who can LINK a milestone to a
+  // task (admin or financial editor) can UNLINK it too. Was requireAdmin, which
+  // 403'd financial editors who had just created the link.
+  requireAdminOrFinancialEditor,
   async (req, res) => {
     try {
       const projectName = paramStr(req.params.projectName);

@@ -114,6 +114,7 @@ function MonthDetailDrawer({ month, onClose, defaultFilter = "all" }: { month: P
   const filtered = useMemo(() => {
     let items = month.items || [];
     if (stateFilter === "realised") items = items.filter(i => i.isRealised);
+    if (stateFilter === "committed") items = items.filter(i => i.cosStatus === "Committed");
     if (stateFilter === "unrealised") items = items.filter(i => !i.isRealised);
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -192,6 +193,7 @@ function MonthDetailDrawer({ month, onClose, defaultFilter = "all" }: { month: P
           >
             <option value="all">All</option>
             <option value="realised">Realised</option>
+            <option value="committed">Committed</option>
             <option value="unrealised">Unrealised</option>
           </select>
         </div>

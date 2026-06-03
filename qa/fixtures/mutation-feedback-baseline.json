@@ -13,7 +13,6 @@
     "client/src/components/tabs/ProjectCommissioningTab.tsx",
     "client/src/components/tabs/ProjectConstructionTab.tsx",
     "client/src/components/tabs/ProjectPlanTab.tsx",
-    "client/src/components/tabs/ProjectRaidTab.tsx",
     "client/src/components/tabs/RevenueTrackerTab.tsx",
     "client/src/hooks/use-admin-document-types.ts",
     "client/src/hooks/use-approvals.ts",

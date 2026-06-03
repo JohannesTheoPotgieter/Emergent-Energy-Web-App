@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { usePermission } from "@/hooks/use-permissions";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -198,6 +199,10 @@ interface Props {
 export function QuickBooksReconciliationTab({ projectId, projectName }: Props) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  // Linking/unlinking maps QB docs to finance lines — a financials:edit action.
+  // The tab itself opens on financial_integration:view (a broader set), so gate
+  // the write controls here to avoid showing buttons that 403 for view-only roles.
+  const { allowed: canEditLinks } = usePermission("financials", "edit");
   const [mode, setMode] = useState<ReconMode>("cost");
 
   // Default to a 90-day window ending today so the QB query is bounded.
@@ -599,7 +604,7 @@ export function QuickBooksReconciliationTab({ projectId, projectName }: Props) {
                       </td>
                       <td className="px-2 py-1.5">
                         <div className="flex items-center gap-1">
-                          {row.matchType !== "linked" && row.costLine && row.bill && (
+                          {canEditLinks && row.matchType !== "linked" && row.costLine && row.bill && (
                             <Button
                               size="sm"
                               variant="outline"
@@ -615,7 +620,7 @@ export function QuickBooksReconciliationTab({ projectId, projectName }: Props) {
                               <Link2 className="h-3 w-3" /> Confirm
                             </Button>
                           )}
-                          {row.matchType === "linked" && row.link && (
+                          {canEditLinks && row.matchType === "linked" && row.link && (
                             <Button
                               size="sm"
                               variant="ghost"
@@ -696,6 +701,7 @@ export function QuickBooksReconciliationTab({ projectId, projectName }: Props) {
                           size="sm"
                           variant="outline"
                           className="h-6 text-[10px] gap-1"
+                          disabled={!canEditLinks}
                           onClick={() =>
                             setPendingLinkCostLineId(
                               pendingLinkCostLineId === row.costLine!.id
@@ -810,6 +816,8 @@ function RevenueReconView({
   linking: boolean;
 }) {
   const [pendingRevId, setPendingRevId] = useState<number | null>(null);
+  // Same financials:edit gate as the cost view (this is a separate component).
+  const { allowed: canEditLinks } = usePermission("financials", "edit");
   void projectId;
 
   if (query.isLoading) {
@@ -981,7 +989,7 @@ function RevenueReconView({
                         {row.amountVariance === null ? "—" : formatCurrency(row.amountVariance)}
                       </td>
                       <td className="px-2 py-1.5">
-                        {row.matchType !== "linked" && row.revenueLine && row.invoice && (
+                        {canEditLinks && row.matchType !== "linked" && row.revenueLine && row.invoice && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -1057,6 +1065,7 @@ function RevenueReconView({
                           size="sm"
                           variant="outline"
                           className="h-6 text-[10px] gap-1"
+                          disabled={!canEditLinks}
                           onClick={() =>
                             setPendingRevId(
                               pendingRevId === row.revenueLine!.id
