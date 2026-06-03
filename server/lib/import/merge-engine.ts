@@ -232,11 +232,33 @@ export function applyResolutions(
   resolutions: ConflictResolution[],
   /** When true, default unresolved conflicts to `keep_existing` (safer fallback for batch imports). */
   defaultToKeepExisting = false,
+  /**
+   * File-wins mode (owner decision 2026-06 for the finance sections — see
+   * import-conflict-policy.ts). The uploaded workbook is the source of truth:
+   * EVERY tracked field takes the file value, in-app edits are not preserved,
+   * and explicit `keep_existing` resolutions are ignored. `keep_db` reverts to
+   * the file value (which equals the snapshot, since the file did not change
+   * that field). Used only for REVENUE / EXPENDITURE.
+   */
+  fileWins = false,
 ): Record<string, FieldValue> {
   const resByField = new Map(resolutions.map(r => [r.fieldName, r]));
   const result: Record<string, FieldValue> = {};
 
   for (const [field, outcome] of Object.entries(merge.outcomes)) {
+    if (fileWins) {
+      // Always take the file value. keep_db → snapshot (the file did not
+      // change that field, so the snapshot IS the current file value);
+      // conflict → the incoming file value; accept_file is already the file
+      // value; no_change is file === db so the value is unchanged either way.
+      switch (outcome.type) {
+        case "no_change": result[field] = outcome.value; break;
+        case "accept_file": result[field] = outcome.to; break;
+        case "keep_db": result[field] = outcome.snapshotValue; break;
+        case "conflict": result[field] = outcome.file; break;
+      }
+      continue;
+    }
     switch (outcome.type) {
       case "no_change":
         result[field] = outcome.value;
@@ -310,6 +332,12 @@ export function updateManualOverrides(
   resolutions: ConflictResolution[],
   decidedBy: number | null,
   now: Date = new Date(),
+  /**
+   * File-wins mode: in-app edits to this section's tracked fields are NOT
+   * recorded as overrides — the workbook is the source of truth, so every
+   * processed field's override is cleared. See import-conflict-policy.ts.
+   */
+  fileWins = false,
 ): ManualOverridesMap {
   const next: ManualOverridesMap = { ...(current ?? {}) };
   const resByField = new Map(resolutions.map(r => [r.fieldName, r]));
@@ -321,6 +349,11 @@ export function updateManualOverrides(
     v === undefined ? null : v;
 
   for (const [field, outcome] of Object.entries(merge.outcomes)) {
+    if (fileWins) {
+      // File wins: never persist an in-app edit for this section's fields.
+      delete next[field];
+      continue;
+    }
     if (outcome.type === "keep_db") {
       if (!next[field]) {
         next[field] = {

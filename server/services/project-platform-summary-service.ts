@@ -633,56 +633,36 @@ export async function getProjectListSummaries(
     console.warn("[project-list-summaries] live task aggregation failed:", err?.message);
   }
 
-  // 3. Live finance aggregation from normalized_cost_lines.
+  // 3. Live finance fallback — used only when the materialised cache row is
+  //    missing/zero. Sourced from the SAME canonical, gate-based aggregator
+  //    the materialiser uses (getCanonicalFinanceByProjectIds), so the live
+  //    fallback and the cache can never disagree on the realised numbers.
+  //
+  //    Replaces the previous raw aggregation that filtered `amount_ex_vat` by
+  //    the persisted `cos_realised` boolean (invoice-only — no colour, no
+  //    future-date guard). That boolean was the split-brain behind the
+  //    realised over-count: this path now goes through `isCanonicalCosRealised`
+  //    (incl. the future-date guard) like every other reporting surface.
+  //
+  //    Owner decision 2026-06: cost is gate-realised; revenue is NOT gated —
+  //    `realisedRevenue` mirrors recognised (POC) revenue, matching the cache's
+  //    `revenueRealised = recognisedRevenue` (derived-project-kpis-materializer).
   const liveFinanceByProject = new Map<number, { plannedRevenue: number; realisedRevenue: number; plannedCost: number; realisedCost: number }>();
   try {
-    // Wave-3 audit (2026-05-26) — § 3.1 hard rule: snapshot reads use
-    // `effective_to IS NULL` ONLY. The previous `(IS NULL OR > NOW())`
-    // pattern would have included rows with a future-dated supersession
-    // (rare, but enough of an exception that any future scheduled-change
-    // pattern would have silently double-counted these aggregates).
-    const liveFinRows: any = getDbMode() === "sqlite"
-      ? await db.execute(sql.raw(`
-          SELECT
-            project_id,
-            COALESCE(SUM(CAST(NULLIF(revenue_recognition_amount, '') AS REAL)), 0) AS planned_revenue,
-            COALESCE(SUM(CASE WHEN COALESCE(cos_realised, 0) != 0 THEN CAST(NULLIF(revenue_recognition_amount, '') AS REAL) ELSE 0 END), 0) AS realised_revenue,
-            COALESCE(SUM(CAST(NULLIF(amount_ex_vat, '') AS REAL)), 0) AS planned_cost,
-            COALESCE(SUM(CASE WHEN COALESCE(cos_realised, 0) != 0 THEN CAST(NULLIF(amount_ex_vat, '') AS REAL) ELSE 0 END), 0) AS realised_cost
-          FROM normalized_cost_lines
-          WHERE project_id IN (${ids.map((id) => Number(id)).join(",")})
-            AND effective_to IS NULL
-            AND deleted_at IS NULL
-          GROUP BY project_id
-        `))
-      : await db.execute(sql`
-          -- revenue_recognition_amount is free-text (tracker cell) and can
-          -- hold non-numeric residue, so it is regex-guarded before ::numeric.
-          -- amount_ex_vat is a decimal column, so it sums directly — btrim()
-          -- has no numeric overload and would throw if applied to it.
-          SELECT
-            project_id,
-            COALESCE(SUM(CASE WHEN btrim(revenue_recognition_amount) ~ '^-?[0-9]+([.][0-9]+)?$' THEN btrim(revenue_recognition_amount)::numeric ELSE 0 END), 0)::float8 AS planned_revenue,
-            COALESCE(SUM(CASE WHEN cos_realised AND btrim(revenue_recognition_amount) ~ '^-?[0-9]+([.][0-9]+)?$' THEN btrim(revenue_recognition_amount)::numeric ELSE 0 END), 0)::float8 AS realised_revenue,
-            COALESCE(SUM(amount_ex_vat), 0)::float8 AS planned_cost,
-            COALESCE(SUM(CASE WHEN cos_realised THEN amount_ex_vat ELSE 0 END), 0)::float8 AS realised_cost
-          FROM normalized_cost_lines
-          WHERE project_id = ANY(${`{${ids.join(",")}}`}::int[])
-            AND effective_to IS NULL
-            AND deleted_at IS NULL
-          GROUP BY project_id
-        `);
-    const rows = liveFinRows.rows || liveFinRows;
-    for (const r of rows) {
-      liveFinanceByProject.set(Number(r.project_id), {
-        plannedRevenue: Number(r.planned_revenue || 0),
-        realisedRevenue: Number(r.realised_revenue || 0),
-        plannedCost: Number(r.planned_cost || 0),
-        realisedCost: Number(r.realised_cost || 0),
+    const canonicalFinance = await getCanonicalFinanceByProjectIds(ids);
+    for (const [projectId, finance] of canonicalFinance) {
+      // Mirror the materialiser's field mapping exactly:
+      //   totalPlannedRevenue  ← totalRevenue       revenueRealised ← recognisedRevenue
+      //   totalPlannedExpenses ← totalCost          cosRealised     ← realisedCost (gated)
+      liveFinanceByProject.set(projectId, {
+        plannedRevenue: finance.totalRevenue,
+        realisedRevenue: finance.recognisedRevenue,
+        plannedCost: finance.totalCost,
+        realisedCost: finance.realisedCost,
       });
     }
   } catch (err: any) {
-    console.warn("[project-list-summaries] live finance aggregation failed:", err?.message);
+    console.warn("[project-list-summaries] canonical finance fallback failed:", err?.message);
   }
 
   for (const row of baseRows) {

@@ -43,6 +43,23 @@ export const OVERRIDE_REALISED = new Set(["COS REALISED", "REALISED"]);
 export const OVERRIDE_NOT_REALISED = new Set(["PLANNED", "COMMITTED", "INVOICED", "APPROVED", "PAID"]);
 
 /**
+ * Parse a date-ish string to a UTC epoch (day precision), or null when the
+ * value is empty/unparseable. Fast-paths ISO `YYYY-MM-DD` (the normalizer /
+ * tracker format) to avoid timezone drift; falls back to Date.parse otherwise.
+ * Returning null on bad input lets the future-date guard SKIP rather than
+ * wrongly block realisation on a malformed date.
+ */
+function toEpochDay(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const s = String(value).trim();
+  if (!s) return null;
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+  const t = Date.parse(s);
+  return Number.isNaN(t) ? null : t;
+}
+
+/**
  * Canonical COS Realisation Check — SINGLE SOURCE OF TRUTH
  *
  * Business rules (do not reinterpret):
@@ -68,9 +85,11 @@ export const OVERRIDE_NOT_REALISED = new Set(["PLANNED", "COMMITTED", "INVOICED"
  * caller starts providing either field the strict gate engages. New callers
  * should always pass the confirmation fields.
  *
- * The `today` parameter is accepted for interface stability but is no longer
- * used in the core check — the rule does not depend on date comparison.
- * Month bucketing for period reporting is a separate concern handled by
+ * The `today` parameter is the as-at date for the future-date guard (step 2b):
+ * an invoice dated AFTER `today` has not been incurred yet, so it is Committed
+ * /Planned — not Realised. When `today` is omitted or unparseable the guard
+ * falls back to the current date (a live "realised as of now" read). Month
+ * bucketing for period reporting remains a separate concern handled by
  * getCosEffectiveDateAndSource().
  */
 export function isCanonicalCosRealised(input: CosLineInput): boolean {
@@ -87,6 +106,25 @@ export function isCanonicalCosRealised(input: CosLineInput): boolean {
       ? input.lineAssignedQbExVat
       : 0;
   if (qbEvidence > 0) return true;
+
+  // 2b. Future-date guard (owner decision 2026-06, line-level recon audit).
+  //     A line whose invoice date is AFTER the as-at date has not been
+  //     incurred yet — it is Committed/Planned, not Realised. Keeping the rule
+  //     HERE, in the single canonical gate, means every surface that routes
+  //     through it (COS Tracker, dashboards, portfolio KPIs, project header)
+  //     stops over-counting future-dated (e.g. month-end) lines as realised.
+  //     Admin override (step 1) and QB evidence (step 2) are checked ABOVE and
+  //     still win: an explicitly-confirmed or QB-billed cost can realise even
+  //     when the tracker's invoice date is in the future.
+  let asAtEpoch = toEpochDay(input.today);
+  if (asAtEpoch === null) {
+    const now = new Date();
+    asAtEpoch = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  }
+  const invoiceEpoch = toEpochDay(input.expenseInvoicedDate);
+  if (invoiceEpoch !== null && invoiceEpoch > asAtEpoch) {
+    return false;
+  }
 
   // 3. Invoice number check — must be a valid (non-placeholder) supplier invoice.
   //    Status labels (INVOICED, PAID, etc.) do NOT independently gate this.

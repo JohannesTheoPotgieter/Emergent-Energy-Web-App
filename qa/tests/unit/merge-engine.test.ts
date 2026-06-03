@@ -302,3 +302,80 @@ describe("updateManualOverrides — lifecycle", () => {
     expect(manual.x).toBeUndefined();
   });
 });
+
+describe("file-wins mode — workbook is the source of truth (finance sections)", () => {
+  // One merge that exercises all four outcome types at once:
+  //   conf → conflict, kept → keep_db, acc → accept_file, same → no_change.
+  function buildAllOutcomes() {
+    return mergeRow({
+      rowHash: "fw",
+      fileRow: { conf: "file", kept: "file", acc: "file", same: "x" },
+      existingRow: { id: 1, conf: "db", kept: "app-edit", acc: "snap", same: "x" },
+      importSnapshot: { conf: "snap", kept: "file", acc: "snap", same: "x" },
+      fields: ["conf", "kept", "acc", "same"],
+    });
+  }
+
+  it("the fixture classifies as conflict / keep_db / accept_file / no_change", () => {
+    const m = buildAllOutcomes();
+    expect(m.outcomes.conf.type).toBe("conflict");
+    expect(m.outcomes.kept.type).toBe("keep_db");
+    expect(m.outcomes.acc.type).toBe("accept_file");
+    expect(m.outcomes.same.type).toBe("no_change");
+  });
+
+  it("applyResolutions(fileWins) takes the FILE value for every field", () => {
+    const m = buildAllOutcomes();
+    const result = applyResolutions(m, [], /* defaultToKeepExisting */ true, /* fileWins */ true);
+    expect(result.conf).toBe("file"); // conflict → file, not the app value
+    expect(result.kept).toBe("file"); // keep_db → reverted to the file value
+    expect(result.acc).toBe("file");  // accept_file → file
+    expect(result.same).toBe("x");    // no_change → unchanged (file === db)
+  });
+
+  it("applyResolutions(fileWins) ignores an explicit keep_existing resolution", () => {
+    // Owner decision: in-app edits to finance fields do not survive a
+    // re-import, even when a keep decision is supplied.
+    const m = buildAllOutcomes();
+    const result = applyResolutions(
+      m,
+      [{ fieldName: "conf", resolution: "keep_existing" }],
+      true,
+      true,
+    );
+    expect(result.conf).toBe("file");
+  });
+
+  it("applyResolutions WITHOUT fileWins still preserves the app value (PLAN path)", () => {
+    const m = buildAllOutcomes();
+    const result = applyResolutions(m, [], /* defaultToKeepExisting */ true);
+    expect(result.conf).toBe("db");       // unresolved conflict → keep app
+    expect(result.kept).toBe("app-edit"); // keep_db → preserve app edit
+  });
+
+  it("updateManualOverrides(fileWins) records NO override for a keep_db edit", () => {
+    const m = mergeRow({
+      rowHash: "fw_ovr",
+      fileRow: { x: "file" },
+      existingRow: { id: 1, x: "app-edit" },
+      importSnapshot: { x: "file" },
+      fields: ["x"],
+    });
+    expect(m.outcomes.x.type).toBe("keep_db");
+    const next = updateManualOverrides(null, m, [], 42, new Date(), /* fileWins */ true);
+    expect(next.x).toBeUndefined();
+  });
+
+  it("updateManualOverrides(fileWins) clears a pre-existing override on the field", () => {
+    const m = mergeRow({
+      rowHash: "fw_ovr2",
+      fileRow: { x: "file" },
+      existingRow: { id: 1, x: "app-edit" },
+      importSnapshot: { x: "file" },
+      fields: ["x"],
+    });
+    const current = { x: { value: "app-edit", editedBy: 7, editedAt: "old", fromValue: "file" } };
+    const next = updateManualOverrides(current, m, [], 42, new Date(), true);
+    expect(next.x).toBeUndefined();
+  });
+});
