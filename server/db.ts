@@ -895,6 +895,19 @@ async function ensureSqliteSchema() {
     ] as const) {
       await ensureSqliteColumn("finance_cos_monthly", column, definition);
     }
+
+    await db.run(sql.raw(`
+      CREATE TABLE IF NOT EXISTS tracker_monthly_manual (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tracker_type TEXT NOT NULL,
+        month_key TEXT NOT NULL,
+        realised TEXT,
+        outstanding TEXT,
+        budget TEXT,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS idx_tracker_monthly_manual_type_month ON tracker_monthly_manual(tracker_type, month_key)`));
     
     // Upload Metadata table
     await db.run(sql`
@@ -1925,6 +1938,37 @@ async function ensureSqliteSchema() {
       WHERE cost_line_status IS NULL OR TRIM(cost_line_status) = ''
     `));
     await db.run(sql`CREATE INDEX IF NOT EXISTS idx_normalized_cost_lines_project ON normalized_cost_lines(project_id, project_name)`);
+
+    await db.run(sql.raw(`
+      CREATE TABLE IF NOT EXISTS category_revenue_allocations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL,
+        project_name TEXT NOT NULL,
+        category_number TEXT NOT NULL,
+        category_name TEXT NOT NULL,
+        category_key TEXT NOT NULL,
+        category_sort_order INTEGER NOT NULL,
+        revenue_allocation TEXT,
+        allocation_confidence TEXT NOT NULL DEFAULT 'provisional',
+        budget_total TEXT,
+        budget_cos TEXT,
+        import_run_id INTEGER,
+        effective_from TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        effective_to TEXT,
+        snapshot_run_id INTEGER,
+        source_sheet TEXT,
+        source_row INTEGER,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `));
+    await db.run(sql.raw(`
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_category_revenue_allocations_active
+      ON category_revenue_allocations(project_id, category_key)
+      WHERE effective_to IS NULL
+    `));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS idx_category_revenue_allocations_history ON category_revenue_allocations(project_id, category_key, effective_to)`));
+    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS idx_category_revenue_allocations_import_run ON category_revenue_allocations(import_run_id)`));
 
     await db.run(sql.raw(`
       CREATE TABLE IF NOT EXISTS normalized_cost_line_actuals (
