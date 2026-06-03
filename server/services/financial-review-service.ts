@@ -38,12 +38,13 @@ export async function computeFinancialSnapshot(projectId: number) {
     .orderBy(desc(budgetBaselines.version))
     .limit(1);
 
-  // Actual costs (amount_ex_vat is text — safe-cast and sum). Skip non-numeric
-  // values rather than crash: Postgres ::numeric is strict, SQLite CAST AS REAL
-  // is lenient — dialect-aware so we never send `::` down the SQLite path.
+  // Actual costs. amount_ex_vat is a decimal column, so Postgres sums it
+  // directly. The SQLite dev fallback stores it with looser affinity, so we
+  // CAST AS REAL there — dialect-aware so we never send `::` down the SQLite
+  // path (the `::` cast syntax breaks the SQLite parser).
   const costSum = getDbMode() === "sqlite"
     ? sql<string>`COALESCE(SUM(CAST(NULLIF(amount_ex_vat, '') AS REAL)), 0)`
-    : sql<string>`COALESCE(SUM(CASE WHEN btrim(amount_ex_vat) ~ '^-?[0-9]+([.][0-9]+)?$' THEN btrim(amount_ex_vat)::numeric ELSE 0 END), 0)`;
+    : sql<string>`COALESCE(SUM(amount_ex_vat), 0)`;
   const costResult = await db
     .select({ total: costSum })
     .from(normalizedCostLines)
