@@ -1767,10 +1767,7 @@ export default function ProjectDetailPage() {
 
       {activeDept === "documents" && canViewTab.documents && (
         <DocumentsWorkflowSection
-          activeSubTab={activeSubTab}
           projectInfoId={projectInfoId ?? null}
-          projectName={projectName}
-          navigateToSubTab={navigateToSubTab}
         />
       )}
 
