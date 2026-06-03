@@ -111,6 +111,16 @@ const MODERN_MIGRATION_PROBES: Record<
   // skip the migration.
   "0080_deliverable_versions_unique": (c) =>
     constraintExists(c, "deliverable_versions_deliverable_version_unique"),
+  // 0081 adds invoice-date colour columns to normalized_cost_line_actuals.
+  "0081_actuals_invoice_colour": (c) =>
+    columnExists(c, "normalized_cost_line_actuals", "invoice_date_font_color"),
+  // 0082 adds a source column to work_item_dependencies so the plan writer
+  // can delete only SMART_IMPORT edges without touching manual ones.
+  "0082_dep_source": (c) =>
+    columnExists(c, "work_item_dependencies", "source"),
+  // 0083 adds per-project scoping to tracker_monthly_manual rows.
+  "0083_tracker_monthly_per_project": (c) =>
+    columnExists(c, "tracker_monthly_manual", "project_info_id"),
 };
 
 async function tableExists(client: Client, table: string): Promise<boolean> {
