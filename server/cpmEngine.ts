@@ -304,6 +304,77 @@ export function calculateCPM(
   };
 }
 
+// Date-based critical path (hybrid fallback). Used when a plan has NO
+// dependencies entered yet: with no precedence to drive CPM, we infer the
+// schedule-defining chain purely from each task's start/end dates. Two tasks
+// form a sequential link when one finishes on or before the other starts; the
+// critical path is the heaviest such chain (by working-day duration) that ends
+// at the project's latest finish date. O(n^2) — fine for plan sizes.
+export function calculateCriticalPathByDates(
+  tasks: Array<{ id: number; startDate: string | null; endDate: string | null; type?: string | null }>,
+): number[] {
+  const valid = tasks
+    .map(t => {
+      const start = parseDate(t.startDate);
+      const end = parseDate(t.endDate);
+      if (!start || !end) return null;
+      return { id: t.id, start, end, dur: calculateWorkingDuration(start, end) };
+    })
+    .filter((t): t is { id: number; start: Date; end: Date; dur: number } => t !== null);
+  if (valid.length === 0) return [];
+
+  // Process earliest-starting first so predecessors are scored before successors.
+  const order = [...valid].sort(
+    (a, b) => a.start.getTime() - b.start.getTime() || a.end.getTime() - b.end.getTime(),
+  );
+  const longest = new Map<number, number>();
+  const parent = new Map<number, number | null>();
+
+  for (const t of order) {
+    let best = 0;
+    let bestParent: number | null = null;
+    for (const p of order) {
+      if (p.id === t.id) continue;
+      // p precedes t only when p finishes STRICTLY before t starts. Dates are
+      // inclusive day ranges [start..end], so p.end === t.start means they share
+      // that day (an overlap) and must NOT be chained.
+      if (p.end.getTime() < t.start.getTime()) {
+        const cand = longest.get(p.id) ?? 0;
+        // Heaviest predecessor wins; ties resolve to the lower id for determinism.
+        if (cand > best || (cand === best && bestParent !== null && p.id < bestParent)) {
+          best = cand;
+          bestParent = p.id;
+        }
+      }
+    }
+    longest.set(t.id, best + t.dur);
+    parent.set(t.id, bestParent);
+  }
+
+  // Anchor the path at the project finish (latest end date); heaviest chain wins,
+  // ties resolve to the lower id so the result is stable regardless of input order.
+  const maxEnd = Math.max(...order.map(t => t.end.getTime()));
+  let endId: number | null = null;
+  let endWeight = -1;
+  for (const t of order) {
+    if (t.end.getTime() !== maxEnd) continue;
+    const w = longest.get(t.id) ?? 0;
+    if (w > endWeight || (w === endWeight && endId !== null && t.id < endId)) {
+      endWeight = w;
+      endId = t.id;
+    }
+  }
+  if (endId == null) return [];
+
+  const path: number[] = [];
+  let cur: number | null = endId;
+  while (cur != null) {
+    path.push(cur);
+    cur = parent.get(cur) ?? null;
+  }
+  return path;
+}
+
 // Override tables dropped (Cleanup Prompt 4) — stubs return input unchanged
 export function applyOverridesToTasks(baseTasks: any[], _overrides: any[]): any[] {
   return baseTasks;

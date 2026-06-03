@@ -1171,6 +1171,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
 
   // ─── Auto-reschedule (Phase 2) — preview then apply, respect manual dates ──
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [depPromptOpen, setDepPromptOpen] = useState(false);
   const [reschedulePreview, setReschedulePreview] = useState<{ changes: any[]; hasCircularDependency: boolean; warnings: string[] } | null>(null);
   const runReschedule = async (commit: boolean) => {
     const token = localStorage.getItem("auth_token");
@@ -2163,9 +2164,15 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
               size="sm"
               variant="outline"
               className="h-7 text-xs"
-              onClick={() => reschedulePreviewMutation.mutate()}
+              onClick={() => {
+                if (!projectDependencies || projectDependencies.length === 0) {
+                  setDepPromptOpen(true);
+                  return;
+                }
+                reschedulePreviewMutation.mutate();
+              }}
               disabled={reschedulePreviewMutation.isPending}
-              title="Reflow successor dates from dependencies — preview before applying; manually-set dates are kept"
+              title="Find the most optimal schedule — pulls every task to its earliest start that respects dependencies; manually-set dates are kept"
               data-testid="button-reschedule"
             >
               {reschedulePreviewMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />} Reschedule
@@ -2180,6 +2187,32 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
           Circular dependency detected — resolve the dependency loop to compute the critical path.
         </div>
       )}
+
+      <Dialog open={depPromptOpen} onOpenChange={setDepPromptOpen}>
+        <DialogContent className="max-w-lg" data-testid="dialog-dependencies-required">
+          <DialogHeader>
+            <DialogTitle>Add dependencies first</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              To work out the most optimal schedule, the planner needs to know which tasks must
+              finish before others can start. There are no dependencies on this plan yet, so there's
+              nothing to optimise against.
+            </p>
+            <p>
+              Open a task's <span className="font-medium text-foreground">Predecessors</span> column
+              in the grid and link the tasks that come before it. Once dependencies are in place,
+              click <span className="font-medium text-foreground">Reschedule</span> again and we'll
+              pull every task to its earliest possible start (manually-set dates are kept).
+            </p>
+          </div>
+          <DialogFooter>
+            <Button size="sm" onClick={() => setDepPromptOpen(false)} data-testid="button-dep-prompt-close">
+              Got it
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={rescheduleOpen} onOpenChange={setRescheduleOpen}>
         <DialogContent className="max-w-2xl" data-testid="dialog-reschedule">
@@ -2454,6 +2487,8 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                     ? `Expected: ${expPct}% | Actual: ${pct}%${isLate ? ' (Behind schedule)' : ''}`
                     : `${pct}% complete`;
 
+                  const isCritical = showCriticalPath && criticalSet.has(task.workItemId);
+
                   return (
                     <tr
                       key={task.id}
@@ -2462,8 +2497,9 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                         ${hasChildren && !isMilestone ? "bg-muted font-semibold" : ""}
                         ${isMilestone ? "bg-amber-50/60 font-semibold" : ""}
                         ${!hasChildren && !isMilestone ? "hover:bg-blue-50/30" : ""}
-                        ${selectedIds.has(task.id) ? "!bg-blue-100/50" : ""}
-                        ${isLate && !isMilestone && !hasChildren ? "border-l-2 border-l-red-400" : ""}
+                        ${selectedIds.has(task.id) && !isCritical ? "!bg-blue-100/50" : ""}
+                        ${isLate && !isMilestone && !hasChildren && !isCritical ? "border-l-2 border-l-red-400" : ""}
+                        ${isCritical ? "!bg-red-200 !border-l-4 !border-l-red-600" : ""}
                         ${isDragging ? "opacity-40" : ""}
                         ${dropClass}
                       `}
@@ -2896,6 +2932,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                 const groupColor = getGroupColor(task);
                 const defaultColor = { bg: "bg-slate-200", border: "border-border", fill: "bg-slate-400", light: "" };
                 const gc = groupColor || defaultColor;
+                const isCritical = showCriticalPath && criticalSet.has(task.workItemId);
 
                 return (
                   <div
@@ -2911,7 +2948,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                         title={`${task.title}${pct >= 100 ? " (Done)" : ""}`}
                         data-testid={`gantt-bar-${task.id}`}
                       >
-                        <div className={`w-3 h-3 rotate-45 border ${pct >= 100 ? "bg-emerald-500 border-emerald-600" : "bg-amber-500 border-amber-600"}${showCriticalPath && criticalSet.has(task.workItemId) ? " ring-2 ring-rose-500" : ""}`} />
+                        <div className={`w-3 h-3 rotate-45 border ${pct >= 100 ? "bg-emerald-500 border-emerald-600" : "bg-amber-500 border-amber-600"}${isCritical ? " ring-2 ring-red-600 !border-red-600" : ""}`} />
                       </div>
                     )}
                     {bar && !isMilestone && (
@@ -2922,7 +2959,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                             : pct >= 100
                               ? "bg-emerald-200 border-emerald-300"
                               : `${gc.bg} ${gc.border}`
-                        }${showCriticalPath && criticalSet.has(task.workItemId) ? " ring-2 ring-rose-500 ring-inset" : ""}`}
+                        }${isCritical ? " ring-2 ring-red-600 ring-inset !border-red-600" : ""}`}
                         style={{
                           left: bar.left,
                           width: Math.max(bar.width, 4),
