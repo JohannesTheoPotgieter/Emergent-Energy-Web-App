@@ -18,6 +18,7 @@ import { runCascadesAfterUpdate, validateParentCompletion } from "../services/ta
 import { queryStr, queryInt, paramStr, paramInt } from "../lib/req-parse";
 import { applyManualOverride, manualOverridesEnabled } from "../lib/manual-overrides";
 import { PLAN_TRACKED_FIELDS } from "@shared/excel-vs-app/contract";
+import { canEditProjectPlan } from "../lib/plan-edit-access";
 
 /**
  * Workstream B: live=Excel invariant for the Plan tab.
@@ -872,7 +873,9 @@ export function registerPlanningTasksRoutes(app: Express) {
     if (!info) return false;
     if (info.pm === user.name || info.pd === user.name) return true;
     if (info.pmUserId === user.id || info.pdUserId === user.id) return true;
-    return false;
+    // pd_plan:edit roles (engineering / construction managers, assigned site
+    // PMs / developers) may edit plans for projects within their scope.
+    return await canEditProjectPlan(req, info.id);
   };
 
   app.patch("/api/planning-tasks/:taskId", requireAuth, async (req: Request, res: Response) => {

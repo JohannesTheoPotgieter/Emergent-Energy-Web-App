@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
+import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -108,6 +109,7 @@ interface ProjectRaidTabProps {
 
 export function ProjectRaidTab({ projectId, projectName }: ProjectRaidTabProps) {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("");
@@ -159,14 +161,19 @@ export function ProjectRaidTab({ projectId, projectName }: ProjectRaidTabProps) 
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/raid/${id}`, { method: "DELETE", headers: getAuthHeaders(), credentials: "include" });
-      if (!res.ok) throw new Error("Failed to delete");
+      // hard=true sets deleted_at (recoverable soft-delete) so the row leaves
+      // the list. Without it the server only flips status→closed and the row
+      // (still deleted_at IS NULL) keeps showing — the "delete does nothing" bug.
+      const res = await fetch(`/api/raid/${id}?hard=true`, { method: "DELETE", headers: getAuthHeaders(), credentials: "include" });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Failed to delete");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["raid-items", projectId] });
       invalidateProjectV2Queries(queryClient, projectId);
       setExpandedId(null);
+      toast({ title: "Deleted", description: "RAID item removed." });
     },
+    onError: (err: any) => toast({ title: "Delete failed", description: err?.message || "You may not have permission to delete this item.", variant: "destructive" }),
   });
 
   const updateMutation = useMutation({
@@ -177,13 +184,14 @@ export function ProjectRaidTab({ projectId, projectName }: ProjectRaidTabProps) 
         credentials: "include",
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to update");
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Failed to update");
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["raid-items", projectId] });
       invalidateProjectV2Queries(queryClient, projectId);
     },
+    onError: (err: any) => toast({ title: "Update failed", description: err?.message || "You may not have permission to edit this item.", variant: "destructive" }),
   });
 
   const totalCount = items.length;
@@ -536,6 +544,7 @@ function CreateRaidDialog({
   userOptions: { value: string; label: string }[];
 }) {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [type, setType] = useState("risk");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -552,7 +561,7 @@ function CreateRaidDialog({
         credentials: "include",
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error("Failed to create RAID item");
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Failed to create RAID item");
       return res.json();
     },
     onSuccess: () => {
@@ -561,6 +570,7 @@ function CreateRaidDialog({
       resetForm();
       onClose();
     },
+    onError: (err: any) => toast({ title: "Could not add item", description: err?.message || "You may not have permission to add RAID items.", variant: "destructive" }),
   });
 
   const resetForm = () => {

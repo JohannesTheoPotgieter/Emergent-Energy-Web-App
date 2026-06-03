@@ -7,6 +7,7 @@ import { logAuditFromReq } from "./audit-logger";
 import { jwtAuth, requireAuth } from "./auth-context";
 import { parseIntParam } from "./lib/req-params";
 import { sendError } from "./lib/api-error";
+import { canEditProjectPlan } from "./lib/plan-edit-access";
 
 async function detectCircular(predecessorId: number, successorId: number): Promise<boolean> {
   // Only live edges participate in the graph — soft-deleted dependencies
@@ -214,7 +215,7 @@ export function registerDependencyRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/dependencies", requireAuth, requirePermission("projects", "edit"), async (req: Request, res: Response) => {
+  app.post("/api/dependencies", requireAuth, requirePermission("pd_plan", "edit"), async (req: Request, res: Response) => {
     try {
       const parsed = insertWorkItemDependencySchema.safeParse(req.body);
       if (!parsed.success) {
@@ -238,6 +239,12 @@ export function registerDependencyRoutes(app: Express): void {
 
       if (predecessor.projectId !== successor.projectId) {
         return res.status(400).json({ error: "Tasks must belong to the same project" });
+      }
+
+      // Scope: pd_plan:edit holders may only manage dependencies on projects
+      // they are assigned to (oversight roles pass for all).
+      if (!(await canEditProjectPlan(req, predecessor.projectId))) {
+        return res.status(403).json({ error: "project_not_accessible" });
       }
 
       const isCircular = await detectCircular(predecessorId, successorId);
@@ -267,13 +274,18 @@ export function registerDependencyRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/dependencies/:id", requireAuth, requirePermission("projects", "edit"), async (req: Request, res: Response) => {
+  app.patch("/api/dependencies/:id", requireAuth, requirePermission("pd_plan", "edit"), async (req: Request, res: Response) => {
     try {
       const depId = parseIntParam(req.params.id);
       if (isNaN(depId)) return res.status(400).json({ error: "Invalid dependency ID" });
 
       const [existing] = await db.select().from(workItemDependencies).where(eq(workItemDependencies.id, depId));
       if (!existing) return res.status(404).json({ error: "Dependency not found" });
+
+      const [predWi] = await db.select({ projectId: workItems.projectId }).from(workItems).where(eq(workItems.id, existing.predecessorId));
+      if (predWi && !(await canEditProjectPlan(req, predWi.projectId))) {
+        return res.status(403).json({ error: "project_not_accessible" });
+      }
 
       const updates: Partial<{ depType: "FS" | "SS" | "FF" | "SF"; lagDays: number }> = {};
       if (req.body.depType !== undefined) {
@@ -310,13 +322,18 @@ export function registerDependencyRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/dependencies/:id", requireAuth, requirePermission("projects", "edit"), async (req: Request, res: Response) => {
+  app.delete("/api/dependencies/:id", requireAuth, requirePermission("pd_plan", "edit"), async (req: Request, res: Response) => {
     try {
       const depId = parseIntParam(req.params.id);
       if (isNaN(depId)) return res.status(400).json({ error: "Invalid dependency ID" });
 
       const [existing] = await db.select().from(workItemDependencies).where(eq(workItemDependencies.id, depId));
       if (!existing) return res.status(404).json({ error: "Dependency not found" });
+
+      const [predWi] = await db.select({ projectId: workItems.projectId }).from(workItems).where(eq(workItems.id, existing.predecessorId));
+      if (predWi && !(await canEditProjectPlan(req, predWi.projectId))) {
+        return res.status(403).json({ error: "project_not_accessible" });
+      }
 
       await db.update(workItemDependencies).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(workItemDependencies.id, depId)).returning();
 
