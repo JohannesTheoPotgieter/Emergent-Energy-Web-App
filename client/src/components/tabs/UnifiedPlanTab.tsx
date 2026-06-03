@@ -1169,6 +1169,37 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     },
   });
 
+  // ─── Auto-reschedule (Phase 2) — preview then apply, respect manual dates ──
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [reschedulePreview, setReschedulePreview] = useState<{ changes: any[]; hasCircularDependency: boolean; warnings: string[] } | null>(null);
+  const runReschedule = async (commit: boolean) => {
+    const token = localStorage.getItem("auth_token");
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`/api/projects/${encodeURIComponent(projectName)}/reschedule`, {
+      method: "POST", credentials: "include", headers, body: JSON.stringify({ commit }),
+    });
+    if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.message || b.error || "Reschedule failed"); }
+    return res.json();
+  };
+  const reschedulePreviewMutation = useMutation({
+    mutationFn: () => runReschedule(false),
+    onSuccess: (data) => { setReschedulePreview(data); setRescheduleOpen(true); },
+    onError: (err: any) => toast({ title: "Reschedule failed", description: err?.message, variant: "destructive" }),
+  });
+  const rescheduleApplyMutation = useMutation({
+    mutationFn: () => runReschedule(true),
+    onSuccess: (data: any) => {
+      invalidateTaskCaches();
+      invalidateProjectV2Queries(qc, projectId ?? null);
+      qc.invalidateQueries({ queryKey: ["critical-path", projectName] });
+      setRescheduleOpen(false);
+      setReschedulePreview(null);
+      toast({ title: "Schedule updated", description: `${data.applied} task(s) rescheduled.` });
+    },
+    onError: (err: any) => toast({ title: "Apply failed", description: err?.message, variant: "destructive" }),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (ids: number[]) => {
       const opsIds = ids.filter(id => id > 0);
@@ -2127,6 +2158,19 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
               <Save className="h-3 w-3 mr-1" /> Set baseline
             </Button>
           )}
+          {isAdmin && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={() => reschedulePreviewMutation.mutate()}
+              disabled={reschedulePreviewMutation.isPending}
+              title="Reflow successor dates from dependencies — preview before applying; manually-set dates are kept"
+              data-testid="button-reschedule"
+            >
+              {reschedulePreviewMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />} Reschedule
+            </Button>
+          )}
         </div>
       </div>
 
@@ -2136,6 +2180,56 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
           Circular dependency detected — resolve the dependency loop to compute the critical path.
         </div>
       )}
+
+      <Dialog open={rescheduleOpen} onOpenChange={setRescheduleOpen}>
+        <DialogContent className="max-w-2xl" data-testid="dialog-reschedule">
+          <DialogHeader>
+            <DialogTitle>Reschedule preview</DialogTitle>
+          </DialogHeader>
+          {reschedulePreview?.hasCircularDependency ? (
+            <div className="flex items-center gap-2 text-sm text-amber-700">
+              <AlertCircle className="h-4 w-4" /> Circular dependency — resolve the loop before rescheduling.
+            </div>
+          ) : (reschedulePreview?.changes?.length ?? 0) === 0 ? (
+            <div className="text-sm text-muted-foreground">No changes — every task already respects its dependencies.</div>
+          ) : (
+            <div className="max-h-[50vh] overflow-auto text-xs">
+              <div className="text-muted-foreground mb-2">
+                {reschedulePreview!.changes.length} task(s) will move. Manually-dated tasks are left unchanged.
+              </div>
+              <table className="w-full">
+                <thead>
+                  <tr className="text-left text-[10px] uppercase text-muted-foreground">
+                    <th className="py-1 pr-2">Task</th><th className="pr-2">Start</th><th className="pr-2">End</th><th>Slip</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reschedulePreview!.changes.map((c: any) => (
+                    <tr key={c.id} className="border-t" data-testid={`reschedule-change-${c.id}`}>
+                      <td className="py-1 pr-2">{c.taskNo ? `${c.taskNo} ` : ""}{c.name}</td>
+                      <td className="pr-2 tabular-nums whitespace-nowrap">{c.oldStart || "—"} → <span className="font-medium">{c.newStart}</span></td>
+                      <td className="pr-2 tabular-nums whitespace-nowrap">{c.oldEnd || "—"} → <span className="font-medium">{c.newEnd}</span></td>
+                      <td className={`tabular-nums ${c.slipDays > 0 ? "text-red-600" : c.slipDays < 0 ? "text-emerald-600" : ""}`}>{c.slipDays > 0 ? `+${c.slipDays}d` : c.slipDays < 0 ? `${c.slipDays}d` : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setRescheduleOpen(false)}>Cancel</Button>
+            <Button
+              size="sm"
+              disabled={rescheduleApplyMutation.isPending || !!reschedulePreview?.hasCircularDependency || (reschedulePreview?.changes?.length ?? 0) === 0}
+              onClick={() => rescheduleApplyMutation.mutate()}
+              data-testid="button-reschedule-apply"
+            >
+              {rescheduleApplyMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              Apply{(reschedulePreview?.changes?.length ?? 0) > 0 ? ` (${reschedulePreview!.changes.length})` : ""}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {showKeyDates && keyDates.length > 0 && (
         <div className="flex gap-2 flex-wrap p-2 rounded-md bg-slate-50 border border-slate-200" data-testid="key-dates-strip">

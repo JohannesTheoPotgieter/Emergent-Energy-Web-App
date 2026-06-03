@@ -595,6 +595,26 @@ export class WorkManagementRepository {
   }
 
   /**
+   * Persist auto-reschedule results — write the computed start/end dates
+   * directly to the work_item columns (NOT manual overrides), so the affected
+   * tasks stay auto-scheduled and re-flowable. Manual/fixed tasks are never in
+   * this set (the engine anchors them). Drizzle coerces the YYYY-MM-DD strings
+   * into the date columns, so no cast is needed.
+   */
+  async applyRescheduleDates(updates: Array<{ id: number; startDate: string; endDate: string }>): Promise<number> {
+    if (updates.length === 0) return 0;
+    await Promise.all(
+      updates.map((u) =>
+        this.dbInstance
+          .update(workItems)
+          .set({ startDate: u.startDate, endDate: u.endDate, updatedAt: new Date() })
+          .where(eq(workItems.id, u.id)),
+      ),
+    );
+    return updates.length;
+  }
+
+  /**
    * All non-deleted PM workstream work items, regardless of source. Used by
    * cross-program reporting that needs every PM-owned task.
    */

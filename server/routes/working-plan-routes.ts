@@ -7,11 +7,15 @@ import { db } from "../db";
 import { eq, and, sql, isNull, inArray } from "drizzle-orm";
 import { workItems, workItemDependencies, projectInfo } from "@shared/schema";
 import { calculateCPM, applyOverridesToTasks, applyOverridesToDependencies } from "../cpmEngine";
+import { computeReschedule } from "../lib/reschedule-engine";
+import { WorkManagementRepository } from "../repositories/work-management-repository";
 import { logAuditFromReq } from "../audit-logger";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { requirePermission } from "../permission-middleware";
 import { paramStr, parseIntParam } from "../lib/req-params";
+
+const workManagementRepository = new WorkManagementRepository();
 
 export function registerWorkingPlanRoutes(app: Express) {
   // ==================== PROJECT PLAN SCHEDULING API ====================
@@ -202,6 +206,118 @@ export function registerWorkingPlanRoutes(app: Express) {
         });
       } catch (error: any) {
         console.error("Error computing critical path:", error);
+        res.status(500).json({ error: "server_error" });
+      }
+    },
+  );
+
+  // Auto-reschedule (Phase 2): reflow successor dates from dependencies on the
+  // SA working calendar. Owner-chosen behaviour: PREVIEW by default (returns
+  // proposed changes, writes nothing); commit only when { commit: true }.
+  // Manually-dated tasks (a startDate/endDate manual override) are anchored —
+  // never moved — so it respects hand-set dates. Commit writes the computed
+  // dates to columns (not overrides) so auto tasks stay re-flowable.
+  app.post(
+    "/api/projects/:projectName/reschedule",
+    requireAuth,
+    requirePermission("pd_plan", "edit"),
+    async (req, res) => {
+      try {
+        const projectName = decodeURIComponent(paramStr(req.params.projectName));
+        const commit = req.body?.commit === true || req.query.commit === "true";
+        const piRow = await db
+          .select({ id: projectInfo.id })
+          .from(projectInfo)
+          .where(eq(projectInfo.projectName, projectName))
+          .limit(1);
+        const empty = { changes: [], hasCircularDependency: false, warnings: [] as string[], applied: 0 };
+        if (piRow.length === 0) return res.json(empty);
+
+        const rows = await db
+          .select({
+            id: workItems.id,
+            wbsCode: workItems.wbsCode,
+            title: workItems.title,
+            startDate: workItems.startDate,
+            endDate: workItems.endDate,
+            duration: workItems.duration,
+            parentId: workItems.parentId,
+            manualOverrides: workItems.manualOverrides,
+          })
+          .from(workItems)
+          .where(and(
+            eq(workItems.projectId, piRow[0].id),
+            eq(workItems.workstream, "PM"),
+            eq(workItems.source, "SMART_IMPORT"),
+            isNull(workItems.deletedAt),
+          ));
+        if (rows.length === 0) return res.json(empty);
+
+        type Row = (typeof rows)[number];
+        const parentIds = new Set(
+          rows.map((r: Row) => r.parentId).filter((p: number | null): p is number => p != null),
+        );
+        const leaves = rows.filter((r: Row) => !parentIds.has(r.id));
+        const leafIds = new Set(leaves.map((r: Row) => r.id));
+        const allIds = rows.map((r: Row) => r.id);
+
+        const depRows = allIds.length
+          ? await db
+              .select({
+                predecessorId: workItemDependencies.predecessorId,
+                successorId: workItemDependencies.successorId,
+                depType: workItemDependencies.depType,
+                lagDays: workItemDependencies.lagDays,
+              })
+              .from(workItemDependencies)
+              .where(and(
+                inArray(workItemDependencies.predecessorId, allIds),
+                isNull(workItemDependencies.deletedAt),
+              ))
+          : [];
+        type DRow = (typeof depRows)[number];
+
+        const result = computeReschedule(
+          leaves.map((r: Row) => {
+            const mo = r.manualOverrides as Record<string, unknown> | null;
+            // A startDate/endDate manual override means the user set this date
+            // by hand — anchor it (respect manual dates).
+            const isFixed = !!(mo && typeof mo === "object" && ((mo as any).startDate || (mo as any).endDate));
+            return {
+              id: r.id,
+              taskNo: r.wbsCode,
+              name: r.title,
+              startDate: r.startDate,
+              endDate: r.endDate,
+              durationDays: r.duration,
+              isFixed,
+            };
+          }),
+          depRows
+            .filter((d: DRow) => leafIds.has(d.predecessorId) && leafIds.has(d.successorId))
+            .map((d: DRow) => ({
+              predecessorTaskId: d.predecessorId,
+              successorTaskId: d.successorId,
+              dependencyType: d.depType || "FS",
+              lagDays: d.lagDays || 0,
+            })),
+        );
+
+        let applied = 0;
+        if (commit && result.changes.length > 0 && !result.hasCircularDependency) {
+          applied = await workManagementRepository.applyRescheduleDates(
+            result.changes.map((c) => ({ id: c.id, startDate: c.newStart, endDate: c.newEnd })),
+          );
+          logAuditFromReq(req, {
+            entityType: "plan_reschedule",
+            action: "update",
+            projectName,
+            changesJson: { description: `Auto-reschedule applied to ${applied} task(s)`, count: applied },
+          });
+        }
+        res.json({ ...result, applied });
+      } catch (error: any) {
+        console.error("Error rescheduling:", error);
         res.status(500).json({ error: "server_error" });
       }
     },
