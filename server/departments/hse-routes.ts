@@ -244,11 +244,10 @@ router.post(
     try {
       const [parsed, validationError] = parseBody(req.body, createHseIncidentSchema);
       if (validationError) return res.status(400).json(validationError);
-      // R1: scoped roles can only log incidents on their assigned projects.
-      const scope = await getQualityHseScope(req);
-      if (!scopeAllowsProject(scope, parsed.projectId)) {
-        return res.status(403).json({ error: "project_not_accessible" });
-      }
+      // §0A: safety reporting must NEVER be blocked. Any authenticated user
+      // holding hse_incidents:create may file an incident on ANY project — the
+      // person who witnesses a near-miss is not always a formal team member of
+      // that project. Status changes stay HSE-approve-gated (see PATCH).
       // Stamp the reporter from the session — never trust a client-supplied
       // reportedByUserId (reporter-spoofing). status defaults to "open".
       const reportedByUserId = getEffectiveUser(req)?.id ?? null;
@@ -280,11 +279,11 @@ router.patch(
       if (validationError) return res.status(400).json(validationError);
       req.body = parsed;
 
-      // R1: scoped roles can only patch incidents on their assigned projects.
-      const [target] = await db.select({ projectId: hseIncidents.projectId }).from(hseIncidents).where(and(eq(hseIncidents.id, id), isNull(hseIncidents.deletedAt))).limit(1);
+      // §0A: descriptive enrichment of a safety record is open to any
+      // authenticated user. Confirm the record exists (clean 404), but do NOT
+      // scope-gate the edit — only the status change is gated, below.
+      const [target] = await db.select({ id: hseIncidents.id }).from(hseIncidents).where(and(eq(hseIncidents.id, id), isNull(hseIncidents.deletedAt))).limit(1);
       if (!target) return res.status(404).json({ error: "hse_incident_not_found" });
-      const scope = await getQualityHseScope(req);
-      if (!scopeAllowsProject(scope, target.projectId)) return res.status(404).json({ error: "hse_incident_not_found" });
 
       const allowed = await approveGateForIncidentStatus(req, res, id);
       if (!allowed) return;
@@ -368,13 +367,8 @@ router.post(
     try {
       const [parsed, validationError] = parseBody(req.body, createCorrectiveActionSchema);
       if (validationError) return res.status(400).json(validationError);
-      // R1: if projectId provided, ensure caller's scope sees it.
-      if (parsed.projectId != null) {
-        const scope = await getQualityHseScope(req);
-        if (!scopeAllowsProject(scope, parsed.projectId)) {
-          return res.status(403).json({ error: "project_not_accessible" });
-        }
-      }
+      // §0A: raising a corrective action is open to any authenticated user
+      // holding hse:create, on any project. Status changes are gated in PATCH.
       const [row] = await db.insert(correctiveActions).values(parsed).returning();
       res.status(201).json(row);
     } catch (err) {
@@ -397,15 +391,11 @@ router.patch(
       if (validationError) return res.status(400).json(validationError);
       req.body = parsed;
 
-      // R1: scoped roles only patch CAs on projects they're assigned to. CAs
-      // can have a null projectId (cross-project work) — those stay visible
-      // to oversight only, which means scoped users see "not found".
-      const [target] = await db.select({ projectId: correctiveActions.projectId }).from(correctiveActions).where(and(eq(correctiveActions.id, id), isNull(correctiveActions.deletedAt))).limit(1);
+      // §0A: descriptive enrichment is open to any authenticated user. Confirm
+      // the record exists (clean 404), but do NOT scope-gate the edit — only
+      // the status change is gated, by approveGateForCorrectiveActionStatus.
+      const [target] = await db.select({ id: correctiveActions.id }).from(correctiveActions).where(and(eq(correctiveActions.id, id), isNull(correctiveActions.deletedAt))).limit(1);
       if (!target) return res.status(404).json({ error: "corrective_action_not_found" });
-      const scope = await getQualityHseScope(req);
-      if (scope.kind === "scoped" && (target.projectId == null || !scopeAllowsProject(scope, target.projectId))) {
-        return res.status(404).json({ error: "corrective_action_not_found" });
-      }
 
       const allowed = await approveGateForCorrectiveActionStatus(req, res, id);
       if (!allowed) return;

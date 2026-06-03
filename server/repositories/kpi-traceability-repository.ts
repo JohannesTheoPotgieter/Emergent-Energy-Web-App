@@ -86,7 +86,13 @@ export async function getKpiAggregates(): Promise<KpiAggregateBundle> {
     `).then(rows0),
     db.execute(sql`
       SELECT
-        COALESCE(SUM(CAST(budget_total AS NUMERIC)), 0) as total_budget_cos,
+        -- budget_total is free-text from the Excel tracker and can hold
+        -- non-numeric residue ("N/A", "-", "#REF!", blanks). Postgres
+        -- ::numeric is strict and would throw, which (with no .catch on
+        -- this sub-query) crashes the whole KPI bundle. Guard with a
+        -- numeric regex and treat anything else as 0. amount_ex_vat is a
+        -- decimal column, so its CAST is a safe no-op.
+        COALESCE(SUM(CASE WHEN btrim(budget_total) ~ '^-?[0-9]+([.][0-9]+)?$' THEN btrim(budget_total)::numeric ELSE 0 END), 0) as total_budget_cos,
         COALESCE(SUM(CAST(amount_ex_vat AS NUMERIC)), 0) as total_actual_cos
       FROM normalized_cost_lines
       WHERE effective_to IS NULL
