@@ -214,7 +214,8 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
       const dbStatus = getDbConfigStatus();
       const startupModes = getStartupModes();
 
-      res.json(buildHealthDiagnostics(dbMode, dbStatus, startupModes));
+      const diagnostics = buildHealthDiagnostics(dbMode, dbStatus, startupModes);
+      res.status(diagnostics.ok ? 200 : 503).json(diagnostics);
     } catch (error) {
       logApiError("GET /api/health", error);
       return sendError(res, new ApiError(500, "HEALTH_CHECK_FAILED", "Failed to collect health diagnostics."));
