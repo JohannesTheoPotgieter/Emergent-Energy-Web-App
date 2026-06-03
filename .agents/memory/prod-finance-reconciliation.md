@@ -30,6 +30,15 @@ aggregation/derivation layer.
   from Realised (black) — the `invoice_date_font_color` signal lives on
   `normalized_cost_line_actuals` and that column has been missing on prod (migration 0081
   journaled-but-not-applied). No colour → costs over-marked `cos_realised=t`.
+  - The line source the trackers audit against is `v_normalized_cost_lines`:
+    **COS = `amount_ex_vat`, REV = `revenue_recognition_amount`** (both TEXT, cast carefully).
+    `cost_line_status` is only paid/invoiced/planned and `cos_realised` is binary — prod has
+    NO Committed state, so it collapses 4 tracker states into 2.
+  - The overstatement concentrates in **future-dated lines** (invoice month-end beyond the
+    as-at, e.g. Jun–Aug for an FY-end Aug) wrongly flagged `cos_realised=t`. Restricting prod
+    realised to past months reconciles to the tracker's YTD realised within ~2%; the stripped
+    future block ≈ the tracker's Committed bucket. Fix needs a future-date guard + black-font
+    (confirmed) requirement, not invoice-presence alone.
 - **Project set inflated**: ~90 "active" projects, of which a large share have zero current
   financial lines (leads/deals/adhoc/folder artifacts). Golden delivery-project count is far
   lower. Named folder artifacts (BMG, Maynard Mall Extension, IconsSA KZN, Klein Karoo) leak
