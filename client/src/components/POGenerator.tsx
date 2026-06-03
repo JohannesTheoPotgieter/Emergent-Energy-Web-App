@@ -167,7 +167,6 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
   });
 
 
-  const [selectedApproverByPo, setSelectedApproverByPo] = useState<Record<number, string>>({});
 
   const submitForApprovalMutation = useMutation({
     mutationFn: async ({ poId, assignedApproverUserId }: { poId: number; assignedApproverUserId: number }) => {
@@ -437,29 +436,15 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
                           </Button>
                           {(po.status === "draft" || po.status === "requires_info" || po.status === "blocked") && (
                             <>
-                              <div className="flex items-center gap-2">
-                                <Label className="text-xs">Approver</Label>
-                                <select
-                                  className="h-8 rounded-md border bg-background px-2 text-xs"
-                                  value={selectedApproverByPo[po.id] || ""}
-                                  onChange={(e) => setSelectedApproverByPo((prev) => ({ ...prev, [po.id]: e.target.value }))}
-                                  data-testid={`select-po-approver-${po.id}`}
-                                >
-                                  <option value="">Select approver</option>
-                                  {eligibleApprovers.map((approver) => (
-                                    <option key={approver.id} value={String(approver.id)}>{approver.name} ({approver.role})</option>
-                                  ))}
-                                </select>
-                              </div>
+                              {/* Approver is chosen in the submit dialog below — the
+                                  previous inline dropdown's selection was discarded. */}
                               <Button
                                 variant="default"
                                 size="sm"
-
                                 onClick={() => { setSubmitForPoId(po.id); setSelectedApproverId(""); }}
                                 data-testid={`btn-submit-po-${po.id}`}
                               >
                                 <Send className="h-3.5 w-3.5 mr-1" /> Submit for Approval
-
                               </Button>
                               {po.status === "draft" && (
                                 <Button

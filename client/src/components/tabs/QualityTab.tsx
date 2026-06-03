@@ -2097,15 +2097,20 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
                                   step="any"
                                   className="h-8 text-xs"
                                   placeholder="Enter number..."
-                                  value={answer.answerNumber ?? ""}
-                                  onChange={(e) =>
-                                    updateRiskMutation.mutate({
-                                      riskAnswerId: answer.id,
-                                      updates: {
-                                        answerNumber: e.target.value === "" ? null : Number(e.target.value),
-                                      },
-                                    })
-                                  }
+                                  // Uncontrolled + commit-on-blur: binding value to
+                                  // server data and mutating per keystroke fired a
+                                  // save on every key and the refetch overwrote the
+                                  // field mid-typing (lost characters).
+                                  defaultValue={answer.answerNumber ?? ""}
+                                  onBlur={(e) => {
+                                    const next = e.target.value === "" ? null : Number(e.target.value);
+                                    if (next !== (answer.answerNumber ?? null)) {
+                                      updateRiskMutation.mutate({
+                                        riskAnswerId: answer.id,
+                                        updates: { answerNumber: next },
+                                      });
+                                    }
+                                  }}
                                   data-testid={`input-risk-number-${rq.id}`}
                                 />
                               ) : (
@@ -2113,13 +2118,15 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
                                   className="text-xs"
                                   placeholder="Enter response..."
                                   rows={2}
-                                  value={answer.answerText || ""}
-                                  onChange={(e) =>
-                                    updateRiskMutation.mutate({
-                                      riskAnswerId: answer.id,
-                                      updates: { answerText: e.target.value },
-                                    })
-                                  }
+                                  defaultValue={answer.answerText || ""}
+                                  onBlur={(e) => {
+                                    if (e.target.value !== (answer.answerText || "")) {
+                                      updateRiskMutation.mutate({
+                                        riskAnswerId: answer.id,
+                                        updates: { answerText: e.target.value },
+                                      });
+                                    }
+                                  }}
                                   data-testid={`input-risk-text-${rq.id}`}
                                 />
                               )}
