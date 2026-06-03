@@ -50,6 +50,7 @@ import {
   REVENUE_TRACKED_FIELDS,
   EXPENDITURE_TRACKED_FIELDS,
 } from "@shared/excel-vs-app/contract";
+import { sectionIsFileWins } from "../../imports/import-conflict-policy";
 
 /**
  * Gated wrapper around `mergeRowEngine`. When the kill switch
@@ -334,22 +335,34 @@ function resolveMergeResult(
   decidedBy: number | null,
   existingManualOverrides: ManualOverridesMap | null,
   now: Date,
+  /** When true the workbook is the source of truth for this section: every
+   *  tracked field takes the file value, in-app edits are NOT preserved, and
+   *  a lingering app edit (keep_db) is counted as a material change so the row
+   *  is rewritten to the file value. See import-conflict-policy.ts. */
+  fileWins = false,
 ): ResolvedMergeWrite {
-  const values = applyResolutions(merge, resolutions, /* defaultToKeepExisting */ true);
+  const values = applyResolutions(merge, resolutions, /* defaultToKeepExisting */ true, fileWins);
   const manualOverrides = updateManualOverrides(
     existingManualOverrides,
     merge,
     resolutions,
     decidedBy,
     now,
+    fileWins,
   );
   const snapshot = buildSnapshot(fileRow, fields);
   const conflictCount = merge.conflicts.length;
+  // Under file-wins, ANY non-no_change outcome means the file value differs
+  // from the current DB value (keep_db included), so the row must be rewritten
+  // — otherwise a lingering in-app edit would silently survive the import.
+  const hasMaterialChanges = fileWins
+    ? Object.values(merge.outcomes).some((o) => o.type !== "no_change")
+    : merge.hasMaterialChanges;
   return {
     values,
     snapshot,
     manualOverrides,
-    hasMaterialChanges: merge.hasMaterialChanges,
+    hasMaterialChanges,
     conflictCount,
   };
 }
@@ -1540,6 +1553,7 @@ export async function writeRevenueIncremental(ctx: TemporalWriteContext): Promis
         userId,
         existingManualOverrides,
         commitTimestamp,
+        sectionIsFileWins("REVENUE"),
       );
       counts.conflictsResolved += resolved.conflictCount;
 
@@ -2091,6 +2105,7 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
         userId,
         existingManualOverrides,
         commitTimestamp,
+        sectionIsFileWins("EXPENDITURE"),
       );
       counts.conflictsResolved += resolved.conflictCount;
 

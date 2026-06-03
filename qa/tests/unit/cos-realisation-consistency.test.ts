@@ -143,6 +143,79 @@ describe("isCanonicalCosRealised — black-font invoice-date confirmation gate",
 });
 
 // ---------------------------------------------------------------------------
+// A3. FUTURE-DATE GUARD — invoice dated after as-at is NOT realised
+// ---------------------------------------------------------------------------
+
+describe("isCanonicalCosRealised — future-date guard", () => {
+  it("invoice with FUTURE invoice date (after today) = NOT realised", () => {
+    // The month-end-dated committed lines (Jun–Aug) that were over-counted.
+    expect(isCanonicalCosRealised(makeLine({
+      expenseInvoiceNumber: "INV-001",
+      expenseInvoicedDate: "2026-05-31",
+      today: "2026-04-07",
+    }))).toBe(false);
+  });
+
+  it("future-date guard beats BLACK font (future cost not yet incurred)", () => {
+    expect(isCanonicalCosRealised(makeLine({
+      expenseInvoiceNumber: "INV-001",
+      expenseInvoicedDate: "2026-05-31",
+      invoiceDateFontColor: "black",
+      today: "2026-04-07",
+    }))).toBe(false);
+  });
+
+  it("invoice dated ON the as-at date = realised (boundary, inclusive)", () => {
+    expect(isCanonicalCosRealised(makeLine({
+      expenseInvoiceNumber: "INV-001",
+      expenseInvoicedDate: "2026-04-07",
+      today: "2026-04-07",
+    }))).toBe(true);
+  });
+
+  it("invoice dated in the PAST = realised (unchanged)", () => {
+    expect(isCanonicalCosRealised(makeLine({
+      expenseInvoiceNumber: "INV-001",
+      expenseInvoicedDate: "2026-03-15",
+      today: "2026-04-07",
+    }))).toBe(true);
+  });
+
+  it("invoice with NO date is unaffected by the guard (legacy fallback realises)", () => {
+    expect(isCanonicalCosRealised(makeLine({
+      expenseInvoiceNumber: "INV-001",
+      today: "2026-04-07",
+    }))).toBe(true);
+  });
+
+  it("admin override REALISED still wins over the future-date guard", () => {
+    expect(isCanonicalCosRealised(makeLine({
+      cosStatusOverride: "COS REALISED",
+      expenseInvoiceNumber: "INV-001",
+      expenseInvoicedDate: "2026-12-31",
+      today: "2026-04-07",
+    }))).toBe(true);
+  });
+
+  it("QB evidence still wins over the future-date guard", () => {
+    expect(isCanonicalCosRealised(makeLine({
+      expenseInvoiceNumber: "INV-001",
+      expenseInvoicedDate: "2026-12-31",
+      lineAssignedQbExVat: 5000,
+      today: "2026-04-07",
+    }))).toBe(true);
+  });
+
+  it("unparseable invoice date does not block realisation (guard skips)", () => {
+    expect(isCanonicalCosRealised(makeLine({
+      expenseInvoiceNumber: "INV-001",
+      expenseInvoicedDate: "TBC",
+      today: "2026-04-07",
+    }))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // B. STATUS LABELS DO NOT DETERMINE REALISATION
 // ---------------------------------------------------------------------------
 
