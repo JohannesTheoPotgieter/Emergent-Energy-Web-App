@@ -4,12 +4,13 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage } from "../storage";
 import { db } from "../db";
-import { eq, and, sql } from "drizzle-orm";
-import { workItems } from "@shared/schema";
+import { eq, and, sql, isNull, inArray } from "drizzle-orm";
+import { workItems, workItemDependencies, projectInfo } from "@shared/schema";
 import { calculateCPM, applyOverridesToTasks, applyOverridesToDependencies } from "../cpmEngine";
 import { logAuditFromReq } from "../audit-logger";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
+import { requirePermission } from "../permission-middleware";
 import { paramStr, parseIntParam } from "../lib/req-params";
 
 export function registerWorkingPlanRoutes(app: Express) {
@@ -94,6 +95,117 @@ export function registerWorkingPlanRoutes(app: Express) {
       res.status(500).json({ error: "server_error" });
     }
   });
+
+  // Critical path on the CANONICAL plan (work_items + work_item_dependencies).
+  // The legacy /working-plan route reads the deprecated projectPlanDependency
+  // table (now empty), so its critical path is always empty; this endpoint runs
+  // CPM on the same data the live Gantt shows. Computed on LEAF tasks only —
+  // summary/parent rows are roll-ups, not schedulable.
+  app.get(
+    "/api/projects/:projectName/critical-path",
+    requireAuth,
+    requirePermission("pd_plan", "view"),
+    async (req, res) => {
+      try {
+        const projectName = decodeURIComponent(paramStr(req.params.projectName));
+        const empty = {
+          criticalTaskIds: [] as number[],
+          slackById: {} as Record<number, number>,
+          projectFinish: 0,
+          hasCircularDependency: false,
+          warnings: [] as string[],
+        };
+        const piRow = await db
+          .select({ id: projectInfo.id })
+          .from(projectInfo)
+          .where(eq(projectInfo.projectName, projectName))
+          .limit(1);
+        if (piRow.length === 0) return res.json(empty);
+
+        const rows = await db
+          .select({
+            id: workItems.id,
+            wbsCode: workItems.wbsCode,
+            title: workItems.title,
+            startDate: workItems.startDate,
+            endDate: workItems.endDate,
+            type: workItems.type,
+            percentComplete: workItems.percentComplete,
+            parentId: workItems.parentId,
+          })
+          .from(workItems)
+          .where(and(
+            eq(workItems.projectId, piRow[0].id),
+            eq(workItems.workstream, "PM"),
+            eq(workItems.source, "SMART_IMPORT"),
+            isNull(workItems.deletedAt),
+          ));
+        if (rows.length === 0) return res.json(empty);
+
+        // Leaf tasks only — a row that is some other row's parent is a summary.
+        type PlanRow = (typeof rows)[number];
+        const parentIds = new Set(
+          rows.map((r: PlanRow) => r.parentId).filter((p: number | null): p is number => p != null),
+        );
+        const leaves = rows.filter((r: PlanRow) => !parentIds.has(r.id));
+        const leafIds = new Set(leaves.map((r: PlanRow) => r.id));
+
+        const allIds = rows.map((r: PlanRow) => r.id);
+        const depRows = allIds.length
+          ? await db
+              .select({
+                id: workItemDependencies.id,
+                predecessorId: workItemDependencies.predecessorId,
+                successorId: workItemDependencies.successorId,
+                depType: workItemDependencies.depType,
+                lagDays: workItemDependencies.lagDays,
+              })
+              .from(workItemDependencies)
+              .where(and(
+                inArray(workItemDependencies.predecessorId, allIds),
+                isNull(workItemDependencies.deletedAt),
+              ))
+          : [];
+
+        type DepRow = (typeof depRows)[number];
+        const cpm = calculateCPM(
+          leaves.map((r: PlanRow) => ({
+            id: r.id,
+            taskNo: r.wbsCode,
+            name: r.title,
+            // primary date = actual ?? planned (set by the importer) — the same
+            // dates the Gantt renders.
+            startDate: r.startDate,
+            endDate: r.endDate,
+            type: r.type,
+            percentComplete: r.percentComplete,
+          })),
+          depRows
+            .filter((d: DepRow) => leafIds.has(d.predecessorId) && leafIds.has(d.successorId))
+            .map((d: DepRow) => ({
+              id: d.id,
+              predecessorTaskId: d.predecessorId,
+              successorTaskId: d.successorId,
+              dependencyType: d.depType || "FS",
+              lagDays: d.lagDays || 0,
+            })),
+        );
+
+        const slackById: Record<number, number> = {};
+        for (const t of cpm.tasks) slackById[t.id] = t.slack;
+        res.json({
+          criticalTaskIds: cpm.criticalPath,
+          slackById,
+          projectFinish: cpm.projectFinish,
+          hasCircularDependency: cpm.hasCircularDependency,
+          warnings: cpm.warnings,
+        });
+      } catch (error: any) {
+        console.error("Error computing critical path:", error);
+        res.status(500).json({ error: "server_error" });
+      }
+    },
+  );
 
   // Reset working plan to baseline
   app.post("/api/projects/:projectName/working-plan/reset", requireAuth, requireAdmin, async (req, res) => {

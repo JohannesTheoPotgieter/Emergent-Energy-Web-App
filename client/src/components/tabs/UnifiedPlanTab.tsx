@@ -28,7 +28,7 @@ import {
   Calendar, AlertCircle, ChevronLeft, ZoomIn, ArrowRight,
   GripVertical, MoreHorizontal, ArrowDownToLine, Unlink,
   ArrowUp, ArrowDown, Diamond, FolderOpen, Link2, Link2Off,
-  Columns3, Save, RotateCcw, X, Eye, EyeOff, Info, Filter,
+  Columns3, Save, RotateCcw, X, Eye, EyeOff, Info, Filter, Zap,
 } from "lucide-react";
 import {
   Popover, PopoverContent, PopoverTrigger,
@@ -995,6 +995,35 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     },
     enabled: !!projectName,
   });
+
+  // ─── Critical path (CPM) ───────────────────────────────────────────────
+  // Server-computed on the canonical work_items + dependencies (leaf tasks).
+  // Off by default; toggled from the Gantt toolbar. Highlights the zero-slack
+  // chain that drives the project finish date.
+  const [showCriticalPath, setShowCriticalPath] = useState(false);
+  const { data: criticalPathData } = useQuery<{
+    criticalTaskIds: number[];
+    slackById: Record<number, number>;
+    projectFinish: number;
+    hasCircularDependency: boolean;
+    warnings: string[];
+  }>({
+    queryKey: ["critical-path", projectName],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectName)}/critical-path`, { credentials: "include", headers });
+      if (!res.ok) return { criticalTaskIds: [], slackById: {}, projectFinish: 0, hasCircularDependency: false, warnings: [] };
+      return res.json();
+    },
+    enabled: !!projectName && showCriticalPath,
+  });
+  const criticalSet = useMemo(
+    () => new Set<number>(criticalPathData?.criticalTaskIds ?? []),
+    [criticalPathData?.criticalTaskIds],
+  );
+  const hasCircularDep = !!criticalPathData?.hasCircularDependency;
 
   const addDependencyMutation = useMutation({
     mutationFn: async ({ predecessorId, successorId }: { predecessorId: number; successorId: number }) => {
@@ -2034,8 +2063,25 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
           <Button size="sm" variant="outline" className="h-7 text-xs" onClick={jumpToToday} data-testid="button-today">
             <Target className="h-3 w-3 mr-1" /> Today
           </Button>
+          <Button
+            size="sm"
+            variant={showCriticalPath ? "default" : "outline"}
+            className="h-7 text-xs"
+            onClick={() => setShowCriticalPath((v) => !v)}
+            title="Highlight the critical path — the zero-slack chain of tasks that drives the finish date"
+            data-testid="button-critical-path"
+          >
+            <Zap className="h-3 w-3 mr-1" /> Critical path
+          </Button>
         </div>
       </div>
+
+      {showCriticalPath && hasCircularDep && (
+        <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs text-amber-800" data-testid="critical-path-circular-warning">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          Circular dependency detected — resolve the dependency loop to compute the critical path.
+        </div>
+      )}
 
       {showKeyDates && keyDates.length > 0 && (
         <div className="flex gap-2 flex-wrap p-2 rounded-md bg-slate-50 border border-slate-200" data-testid="key-dates-strip">
@@ -2712,7 +2758,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                         title={`${task.title}${pct >= 100 ? " (Done)" : ""}`}
                         data-testid={`gantt-bar-${task.id}`}
                       >
-                        <div className={`w-3 h-3 rotate-45 border ${pct >= 100 ? "bg-emerald-500 border-emerald-600" : "bg-amber-500 border-amber-600"}`} />
+                        <div className={`w-3 h-3 rotate-45 border ${pct >= 100 ? "bg-emerald-500 border-emerald-600" : "bg-amber-500 border-amber-600"}${showCriticalPath && criticalSet.has(task.id) ? " ring-2 ring-rose-500" : ""}`} />
                       </div>
                     )}
                     {bar && !isMilestone && (
@@ -2723,7 +2769,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                             : pct >= 100
                               ? "bg-emerald-200 border-emerald-300"
                               : `${gc.bg} ${gc.border}`
-                        }`}
+                        }${showCriticalPath && criticalSet.has(task.id) ? " ring-2 ring-rose-500 ring-inset" : ""}`}
                         style={{
                           left: bar.left,
                           width: Math.max(bar.width, 4),
