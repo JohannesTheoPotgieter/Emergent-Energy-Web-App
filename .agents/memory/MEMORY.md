@@ -1,1 +1,2 @@
+- [Dev/prod database split](dev-prod-database-split.md) — dev=heliumdb, prod=neondb (NOT shared); CLAUDE_RO reads prod via claude_views; project-id in breadcrumb tells you which DB (23=dev, 287=prod).
 - [Project plan critical path & reschedule](project-plan-critical-path.md) — hybrid CPM/date-chain critical path (strict `p.end<t.start`, lower-id ties), bright-red highlight, reschedule gated on dependencies.
