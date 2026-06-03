@@ -208,8 +208,24 @@ process.on("exit", (code) => {
   console.error("[Process] exit with code:", code);
 });
 process.on("SIGTERM", () => {
-  console.error("[Process] Received SIGTERM");
+  console.error("[Process] Received SIGTERM — draining connections");
+  httpServer.close(() => {
+    console.log("[Process] HTTP server closed cleanly");
+    process.exit(0);
+  });
+  setTimeout(() => {
+    console.error("[Process] Drain timeout exceeded — forcing exit");
+    process.exit(1);
+  }, 10_000).unref();
 });
 process.on("SIGINT", () => {
-  console.error("[Process] Received SIGINT");
+  console.error("[Process] Received SIGINT — draining connections");
+  httpServer.close(() => {
+    console.log("[Process] HTTP server closed cleanly");
+    process.exit(0);
+  });
+  setTimeout(() => {
+    console.error("[Process] Drain timeout exceeded — forcing exit");
+    process.exit(1);
+  }, 10_000).unref();
 });
