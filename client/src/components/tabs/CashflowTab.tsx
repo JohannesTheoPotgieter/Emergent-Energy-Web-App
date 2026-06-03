@@ -226,6 +226,9 @@ function WeekDetailPanel({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
+      // Also refresh any open week-detail panel — its key is a sibling, not a
+      // child, of the summary key, so the broad invalidate above misses it.
+      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026/detail"] });
       toast({ title: "Expense date override saved" });
     },
     onError: () => toast({ title: "Failed to save override", variant: "destructive" }),
@@ -244,6 +247,7 @@ function WeekDetailPanel({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026/detail"] });
       toast({ title: "Inflow date override saved" });
     },
     onError: () => toast({ title: "Failed to save override", variant: "destructive" }),

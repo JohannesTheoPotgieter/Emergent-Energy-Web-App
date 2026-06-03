@@ -1,4 +1,4 @@
-import { eq, desc, and, gte } from "drizzle-orm";
+import { eq, desc, and, gte, isNull } from "drizzle-orm";
 import {
   cashflowWeeklyManual, cashflowBalanceHistory, opexBudgetMonthly,
   opexWeeklyManual, availablePaymentOverrides, availablePaymentHistory,
@@ -151,13 +151,29 @@ export class FinanceSupportRepository {
   }
 
   // Tracker Monthly Manual
-  async getTrackerMonthlyManual(trackerType: string): Promise<TrackerMonthlyManual[]> {
-    return this.dbInstance.select().from(trackerMonthlyManual).where(eq(trackerMonthlyManual.trackerType, trackerType));
+  async getTrackerMonthlyManual(trackerType: string, projectInfoId: number | null = null): Promise<TrackerMonthlyManual[]> {
+    return this.dbInstance.select().from(trackerMonthlyManual).where(
+      and(
+        eq(trackerMonthlyManual.trackerType, trackerType),
+        // Default (null) = program-wide rows only, so existing program
+        // callers are unaffected; a project id scopes to that project.
+        projectInfoId == null
+          ? isNull(trackerMonthlyManual.projectInfoId)
+          : eq(trackerMonthlyManual.projectInfoId, projectInfoId),
+      ),
+    );
   }
 
   async upsertTrackerMonthlyManual(data: InsertTrackerMonthlyManual): Promise<TrackerMonthlyManual> {
+    const scopeProjectInfoId = (data as any).projectInfoId ?? null;
     const existing = await this.dbInstance.select().from(trackerMonthlyManual)
-      .where(and(eq(trackerMonthlyManual.trackerType, (data as any).trackerType), eq(trackerMonthlyManual.monthKey, (data as any).monthKey)));
+      .where(and(
+        eq(trackerMonthlyManual.trackerType, (data as any).trackerType),
+        eq(trackerMonthlyManual.monthKey, (data as any).monthKey),
+        scopeProjectInfoId == null
+          ? isNull(trackerMonthlyManual.projectInfoId)
+          : eq(trackerMonthlyManual.projectInfoId, scopeProjectInfoId),
+      ));
     if (existing[0]) {
       const updated = await this.dbInstance.update(trackerMonthlyManual)
         .set({ ...data, updatedAt: new Date() })

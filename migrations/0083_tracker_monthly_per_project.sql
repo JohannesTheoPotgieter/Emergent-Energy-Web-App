@@ -1,0 +1,2 @@
+ALTER TABLE "tracker_monthly_manual" ADD COLUMN "project_info_id" integer;--> statement-breakpoint
+ALTER TABLE "tracker_monthly_manual" ADD CONSTRAINT "tracker_monthly_manual_project_info_id_project_info_id_fk" FOREIGN KEY ("project_info_id") REFERENCES "public"."project_info"("id") ON DELETE cascade ON UPDATE no action;

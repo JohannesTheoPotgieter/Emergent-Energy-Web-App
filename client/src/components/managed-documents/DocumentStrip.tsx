@@ -143,7 +143,7 @@ function DocumentRow({ row, onSubmit }: { row: ProjectDocumentSummary; onSubmit:
         )}
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
-        {approved?.sharepointPath && (
+        {approved?.sharepointPath?.startsWith("http") && (
           <Button
             size="sm"
             variant="outline"
@@ -152,7 +152,7 @@ function DocumentRow({ row, onSubmit }: { row: ProjectDocumentSummary; onSubmit:
             data-testid={`btn-open-${type.typeKey}`}
           >
             <a
-              href={approved.sharepointPath.startsWith("http") ? approved.sharepointPath : "#"}
+              href={approved.sharepointPath}
               target="_blank"
               rel="noopener noreferrer"
             >

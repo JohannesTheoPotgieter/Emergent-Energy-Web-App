@@ -835,7 +835,7 @@ export function registerSyncRoutes(app: Express) {
   // ===== Sync Audit Log =====
   app.get("/api/sp-sync/audit-log", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const limit = parseInt(req.query.limit as string) || 50;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
       const logs = await db.select().from(syncAuditLog)
         .orderBy(desc(syncAuditLog.createdAt))
         .limit(limit);

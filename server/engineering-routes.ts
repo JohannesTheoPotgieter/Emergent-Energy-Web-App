@@ -1768,7 +1768,11 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/eng/deliverables/:id/acknowledge", requireAuth, requirePermission("deliverables", "edit"), async (req, res) => {
+  // Acknowledge is gated by RECIPIENT IDENTITY below ("Only the recipient can
+  // acknowledge"), not by edit rights — so it only needs deliverables:view
+  // (which Engineers have). deliverables:edit excluded ENGINEER/ENGINEERING_MGR,
+  // making the send->acknowledge loop structurally dead for the usual recipient.
+  app.patch("/api/eng/deliverables/:id/acknowledge", requireAuth, requirePermission("deliverables", "view"), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
       const [deliverable] = await db.select().from(taskDeliverables).where(eq(taskDeliverables.id, id));

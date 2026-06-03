@@ -59,7 +59,7 @@ export function registerTaskManagementRoutes(app: Express) {
         sortBy, sortDir,
       } = req.query;
 
-      const limit = parseInt(limitStr as string) || 50;
+      const limit = Math.min(parseInt(limitStr as string) || 50, 200);
       const offset = parseInt(offsetStr as string) || 0;
 
       const conditions = [isNull(workItems.deletedAt), ...buildWorkstreamConditions(req)];

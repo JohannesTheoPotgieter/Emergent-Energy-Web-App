@@ -463,13 +463,20 @@ export function RevenueTrackingTab({ projectName, highlightId, projectId }: Reve
         method: "POST",
         headers,
         body: JSON.stringify({
-          revenue: parseFloat(values.revenue) || null,
-          expenditure: parseFloat(values.expenditure) || null,
+          // Use the parsed number when finite so a legitimate 0 is sent as 0 —
+          // the old `parseFloat(...) || null` turned 0 into null, which the
+          // server schema rejected, making an R0 costed value unsavable.
+          revenue: Number.isFinite(parseFloat(values.revenue)) ? parseFloat(values.revenue) : null,
+          expenditure: Number.isFinite(parseFloat(values.expenditure)) ? parseFloat(values.expenditure) : null,
           changeCategory: "RECONCILIATION",
           changeReason: costedChangeReason.trim() || "Costed revenue and expenditure adjusted from the revenue tracking workspace.",
         }),
       });
-      if (!res.ok) throw new Error("Failed to save costed values");
+      if (!res.ok) {
+        let body: { error?: string; message?: string } = {};
+        try { body = await res.json(); } catch { /* non-JSON */ }
+        throw new Error(body.message || body.error || "Failed to save costed values");
+      }
       return res.json();
     },
     onSuccess: (data) => {
@@ -490,8 +497,8 @@ export function RevenueTrackingTab({ projectName, highlightId, projectId }: Reve
       setCostedChangeReason("");
       toast({ title: "Costed values saved", description: "High-level costed values updated" });
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to save costed values", variant: "destructive" });
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message || "Failed to save costed values", variant: "destructive" });
     },
   });
 

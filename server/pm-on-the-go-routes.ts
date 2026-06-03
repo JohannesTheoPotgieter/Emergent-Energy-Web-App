@@ -11,6 +11,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 // import { isOutlookConfigured, sendMail } from "./outlook"; // removed with notifications
+import { createNotification } from "./services/notification-service";
 import { logAuditFromReq } from "./audit-logger";
 import { sanitizeFilename } from "./lib/upload-security";
 import { jwtAuth, requireAuth } from "./auth-context";
@@ -93,16 +94,34 @@ async function throttledNotify(
   // no-op: notifications feature removed
 }
 
-// Notifications feature removed - notifyAndEmail is now a no-op
+// Field actions notify the project's PD + PM (oversight). Previously a no-op,
+// so on-the-go risk/delay/escalation/progress events reached nobody.
 async function notifyAndEmail(
-  _projectId: number,
-  _eventType: string,
-  _title: string,
-  _body: string,
-  _projectName: string,
+  projectId: number,
+  eventType: string,
+  title: string,
+  body: string,
+  projectName: string,
   _actorName: string
 ) {
-  // no-op: notifications feature removed
+  try {
+    const [proj] = await db
+      .select({ pmUserId: projectInfo.pmUserId, pdUserId: projectInfo.pdUserId })
+      .from(projectInfo)
+      .where(eq(projectInfo.id, projectId))
+      .limit(1);
+    if (!proj) return;
+    const recipientIds = Array.from(
+      new Set([proj.pdUserId, proj.pmUserId].filter((id): id is number => id != null)),
+    );
+    await Promise.all(
+      recipientIds.map((recipientUserId) =>
+        createNotification({ recipientUserId, eventType, title, body, projectName, projectId }),
+      ),
+    );
+  } catch (err) {
+    console.warn("[pm-otg] notify failed (non-critical):", err instanceof Error ? err.message : err);
+  }
 }
 
 function getWeekStart(): string {

@@ -1,7 +1,8 @@
 /**
  * C5: Notification trigger scheduler.
- * Runs checkAllNotificationTriggers() every hour to create notifications
- * for overdue snags, stalled handovers, late deliveries, etc.
+ * Runs checkAllNotificationTriggers() every 15 minutes to create notifications
+ * for overdue snags, stalled handovers, late deliveries, etc. (was hourly —
+ * tightened so condition-based alerts surface within ~15 min, not up to an hour).
  */
 
 import { checkAllNotificationTriggers } from "./notification-triggers";
@@ -18,7 +19,7 @@ export function getSchedulerStatus() {
   };
 }
 
-const INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+const INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
 
 export function startNotificationTriggerScheduler() {
   if (intervalHandle) return; // already running

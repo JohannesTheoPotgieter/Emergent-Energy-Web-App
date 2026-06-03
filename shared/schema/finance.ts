@@ -454,6 +454,11 @@ export const trackerMonthlyManual = pgTable("tracker_monthly_manual", {
   realised: decimal("realised", { precision: 15, scale: 2 }),
   outstanding: decimal("outstanding", { precision: 15, scale: 2 }),
   budget: decimal("budget", { precision: 15, scale: 2 }),
+  // Nullable project scope: NULL = program-wide (company FY) row — the
+  // historical behaviour the program trackers read/write. A set value scopes
+  // the row to one project so the project-detail Revenue Tracker no longer
+  // overwrites the program budget across every project.
+  projectInfoId: integer("project_info_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 export const insertTrackerMonthlyManualSchema = createInsertSchema(trackerMonthlyManual).omit({ id: true, updatedAt: true } as any);

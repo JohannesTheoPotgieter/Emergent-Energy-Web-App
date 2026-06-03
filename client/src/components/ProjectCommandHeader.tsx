@@ -380,7 +380,7 @@ export function ProjectCommandHeader({
       if (token) headers["Authorization"] = `Bearer ${token}`;
       const res = await fetch(`/api/lifecycle-board/projects/${projectInfoId}/rag`, {
         method: "POST", headers, credentials: "include",
-        body: JSON.stringify({ ragStatus: newRag, comment: ragComment }),
+        body: JSON.stringify({ rag: newRag, comment: ragComment }),
       });
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || "Failed to update RAG"); }
       return res.json();
@@ -557,9 +557,14 @@ export function ProjectCommandHeader({
                     value={pd === "—" ? "__unassigned" : pd}
                     onValueChange={(val) => {
                       const newPd = val === "__unassigned" ? "" : val;
+                      const matched = pdAssignableUsers.find((u) => u.name === newPd);
                       if (projectInfoId) {
-                        engFetchPatch(`/api/lifecycle-board/projects/${projectInfoId}`, { pd: newPd })
-                          .then(() => { invalidateProjectV2Queries(queryClient, projectInfoId, projectName); });
+                        engFetchPatch(`/api/lifecycle-board/projects/${projectInfoId}`, { pd: newPd, pdUserId: matched?.id ?? null })
+                          .then(async (res) => {
+                            if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || e.error || "Failed to reassign PD"); }
+                            invalidateProjectV2Queries(queryClient, projectInfoId, projectName);
+                          })
+                          .catch((err) => toast({ title: "Could not reassign PD", description: err.message, variant: "destructive" }));
                       }
                     }}
                     triggerClassName="h-6 text-[11px] w-auto min-w-[90px] border-[var(--cmd-border)] bg-transparent text-[var(--cmd-text-secondary)] border-dashed"
@@ -587,7 +592,11 @@ export function ProjectCommandHeader({
                       const matched = pmAssignableUsers.find((u) => u.name === newPm);
                       if (projectInfoId) {
                         engFetchPatch(`/api/lifecycle-board/projects/${projectInfoId}`, { pm: newPm, pmUserId: matched?.id ?? null })
-                          .then(() => { invalidateProjectV2Queries(queryClient, projectInfoId, projectName); });
+                          .then(async (res) => {
+                            if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || e.error || "Failed to reassign PM"); }
+                            invalidateProjectV2Queries(queryClient, projectInfoId, projectName);
+                          })
+                          .catch((err) => toast({ title: "Could not reassign PM", description: err.message, variant: "destructive" }));
                       }
                     }}
                     triggerClassName="h-6 text-[11px] w-auto min-w-[90px] border-[var(--cmd-border)] bg-transparent text-[var(--cmd-text-secondary)] border-dashed"
@@ -657,7 +666,7 @@ export function ProjectCommandHeader({
               />
             </div>
             <div>
-              <Label className="text-xs">Comment (optional)</Label>
+              <Label className="text-xs">Comment (required — min 5 characters)</Label>
               <Textarea
                 value={ragComment}
                 onChange={(e) => setRagComment(e.target.value)}
@@ -671,7 +680,7 @@ export function ProjectCommandHeader({
             <Button variant="outline" onClick={() => setRagDialogOpen(false)}>Cancel</Button>
             <Button
               onClick={() => ragMutation.mutate()}
-              disabled={!newRag || ragMutation.isPending}
+              disabled={!newRag || ragComment.trim().length < 5 || ragMutation.isPending}
               data-testid="button-save-rag"
             >
               {ragMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}

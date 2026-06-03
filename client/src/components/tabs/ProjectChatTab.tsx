@@ -88,7 +88,9 @@ export function ProjectChatTab({ projectName, projectInfoId }: { projectName: st
   const [chatSearch, setChatSearch] = useState("");
   const [showPicker, setShowPicker] = useState(false);
   const userRole = user?.role || "";
-  const isAdmin = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(userRole);
+  // "Change chat" (unlink) is COO/CEO-only server-side — don't show it to a
+  // plain `admin` (it would 403). Matches the server gate.
+  const isAdmin = ["COO_ADMIN", "CEO_ADMIN"].includes(userRole);
 
   const { data: projectComms = [] } = useQuery<ProjectCommunicationItem[]>({
     queryKey: ["project-ms-objects", projectInfoId],
@@ -217,12 +219,25 @@ export function ProjectChatTab({ projectName, projectInfoId }: { projectName: st
         credentials: "include",
         body: JSON.stringify({ type: "teams" }),
       });
-      if (!res.ok) throw new Error("Sync failed");
-      return res.json();
+      const data = await res.json().catch(() => ({}));
+      // The sync endpoint returns HTTP 200 with { success: false } when the
+      // user's Microsoft account isn't connected — treat that as a failure
+      // rather than reporting a false "synced" success.
+      if (!res.ok || data?.success === false) {
+        throw new Error(
+          data?.error === "ms_sso_required"
+            ? "Connect your Microsoft account to sync Teams chats."
+            : (data?.message || data?.error || "Sync failed"),
+        );
+      }
+      return data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["ms-teams-project-chat", projectInfoId] });
       toast({ title: "Teams data refreshed", description: "Your Teams chats have been synced." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Teams sync failed", description: err.message, variant: "destructive" });
     },
   });
 

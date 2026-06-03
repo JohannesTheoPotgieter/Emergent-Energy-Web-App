@@ -1691,7 +1691,11 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/quality/evidence/:evidenceId", requireAuth, requirePermission("quality", "delete"), async (req, res) => {
+  // Deleting an evidence file is the inverse of uploading one (which uses
+  // quality:edit) — gate it symmetrically so a QM/Construction Mgr who can
+  // attach evidence can also remove a wrong one. quality:delete (COO/CEO) was
+  // a mismatch: the client shows the trash button to every quality:edit role.
+  app.delete("/api/quality/evidence/:evidenceId", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
     try {
       const evidenceId = parseIntParam(req.params.evidenceId);
 
@@ -2029,7 +2033,10 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/quality/plan-link/:linkId", requireAuth, requirePermission("quality", "delete"), async (req, res) => {
+  // Unlinking a plan task is the inverse of linking one (which uses
+  // quality:edit) — gate it symmetrically. quality:delete (COO/CEO) left
+  // QM/Construction Mgr able to add a link but not remove it.
+  app.delete("/api/quality/plan-link/:linkId", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
     try {
       const [deletedLink] = await db.select().from(qcPlanLink).where(eq(qcPlanLink.id, parseIntParam(req.params.linkId)));
       // R1: scoped roles only delete links for their assigned projects.

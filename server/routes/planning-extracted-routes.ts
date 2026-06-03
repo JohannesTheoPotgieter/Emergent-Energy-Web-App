@@ -21,6 +21,7 @@ import { workItems } from "@shared/schema";
 import { OVERRIDE_CATEGORIES } from "@shared/schema";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
+import { requirePermission } from "../permission-middleware";
 import { logAuditFromReq } from "../audit-logger";
 import { recordOverride } from "../lib/audit/diff-engine";
 import { recordManualEditFlag } from "../lib/manual-edit-flag";
@@ -128,7 +129,7 @@ export function registerPlanningExtractedRoutes(app: Express): void {
 
   // ==================== PROJECT PLAN OVERRIDES (WRITE) ====================
 
-  app.post("/api/project-plan/overrides", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/project-plan/overrides", requireAuth, requirePermission('pd_plan', 'edit'), async (req, res) => {
     try {
       const { overrides, overrideCategory, overrideComment } = req.body;
       if (!Array.isArray(overrides)) {
@@ -209,7 +210,7 @@ export function registerPlanningExtractedRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/project-plan/structure", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.post("/api/project-plan/structure", requireAuth, requirePermission('pd_plan', 'edit'), async (req: Request, res: Response) => {
     try {
       const { operation, projectName: rawProjectName, data } = req.body;
       if (!rawProjectName || !operation) {
@@ -747,6 +748,15 @@ export function registerPlanningExtractedRoutes(app: Express): void {
         return res.json({ message: "Milestone deleted and children ungrouped" });
       }
 
+      if (operation === "setBaselineWI") {
+        const projectInfoRow = await storage.getProjectInfo(rawProjectName);
+        const projectId = projectInfoRow?.id || null;
+        if (!projectId) return res.status(400).json({ error: "Project not found" });
+        const n = await workManagementRepository.captureBaseline(projectId);
+        notifyStructureChange(`Baseline captured for ${n} task(s).`);
+        return res.json({ message: `Baseline set for ${n} tasks`, count: n });
+      }
+
       logAuditFromReq(req, { entityType: "plan_structure", action: "update", projectName: rawProjectName, changesJson: { description: `Plan structure operation: ${operation}`, operation, projectName: rawProjectName } });
       return res.status(400).json({ error: `Unknown operation: ${operation}` });
     } catch (error: any) {
@@ -755,7 +765,7 @@ export function registerPlanningExtractedRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/project-plan/delete-tasks", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/project-plan/delete-tasks", requireAuth, requirePermission('pd_plan', 'delete'), async (req, res) => {
     try {
       const { projectName, rowNumbers } = req.body;
       if (!projectName || !Array.isArray(rowNumbers) || rowNumbers.length === 0) {

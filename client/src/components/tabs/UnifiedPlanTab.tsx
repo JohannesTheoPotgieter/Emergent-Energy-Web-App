@@ -28,7 +28,7 @@ import {
   Calendar, AlertCircle, ChevronLeft, ZoomIn, ArrowRight,
   GripVertical, MoreHorizontal, ArrowDownToLine, Unlink,
   ArrowUp, ArrowDown, Diamond, FolderOpen, Link2, Link2Off,
-  Columns3, Save, RotateCcw, X, Eye, EyeOff, Info, Filter,
+  Columns3, Save, RotateCcw, X, Eye, EyeOff, Info, Filter, Zap,
 } from "lucide-react";
 import {
   Popover, PopoverContent, PopoverTrigger,
@@ -996,6 +996,35 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     enabled: !!projectName,
   });
 
+  // ─── Critical path (CPM) ───────────────────────────────────────────────
+  // Server-computed on the canonical work_items + dependencies (leaf tasks).
+  // Off by default; toggled from the Gantt toolbar. Highlights the zero-slack
+  // chain that drives the project finish date.
+  const [showCriticalPath, setShowCriticalPath] = useState(false);
+  const { data: criticalPathData } = useQuery<{
+    criticalTaskIds: number[];
+    slackById: Record<number, number>;
+    projectFinish: number;
+    hasCircularDependency: boolean;
+    warnings: string[];
+  }>({
+    queryKey: ["critical-path", projectName],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectName)}/critical-path`, { credentials: "include", headers });
+      if (!res.ok) return { criticalTaskIds: [], slackById: {}, projectFinish: 0, hasCircularDependency: false, warnings: [] };
+      return res.json();
+    },
+    enabled: !!projectName && showCriticalPath,
+  });
+  const criticalSet = useMemo(
+    () => new Set<number>(criticalPathData?.criticalTaskIds ?? []),
+    [criticalPathData?.criticalTaskIds],
+  );
+  const hasCircularDep = !!criticalPathData?.hasCircularDependency;
+
   const addDependencyMutation = useMutation({
     mutationFn: async ({ predecessorId, successorId }: { predecessorId: number; successorId: number }) => {
       await apiRequest("POST", "/api/dependencies", { predecessorId, successorId, depType: "FS", lagDays: 0 });
@@ -1121,6 +1150,54 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     onError: (err: any) => {
       toast({ title: "Refresh WBS failed", description: err?.message || "Could not renumber tasks", variant: "destructive" });
     },
+  });
+
+  // ─── Schedule baseline (Phase 2) ───────────────────────────────────────
+  const [showBaseline, setShowBaseline] = useState(false);
+  const setBaselineMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/project-plan/structure", { operation: "setBaselineWI", projectName, data: {} });
+    },
+    onSuccess: () => {
+      invalidateTaskCaches();
+      invalidateProjectV2Queries(qc, projectId ?? null);
+      setShowBaseline(true);
+      toast({ title: "Baseline captured", description: "Current dates saved as the schedule baseline." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Set baseline failed", description: err?.message || "Could not capture baseline", variant: "destructive" });
+    },
+  });
+
+  // ─── Auto-reschedule (Phase 2) — preview then apply, respect manual dates ──
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [reschedulePreview, setReschedulePreview] = useState<{ changes: any[]; hasCircularDependency: boolean; warnings: string[] } | null>(null);
+  const runReschedule = async (commit: boolean) => {
+    const token = localStorage.getItem("auth_token");
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`/api/projects/${encodeURIComponent(projectName)}/reschedule`, {
+      method: "POST", credentials: "include", headers, body: JSON.stringify({ commit }),
+    });
+    if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.message || b.error || "Reschedule failed"); }
+    return res.json();
+  };
+  const reschedulePreviewMutation = useMutation({
+    mutationFn: () => runReschedule(false),
+    onSuccess: (data) => { setReschedulePreview(data); setRescheduleOpen(true); },
+    onError: (err: any) => toast({ title: "Reschedule failed", description: err?.message, variant: "destructive" }),
+  });
+  const rescheduleApplyMutation = useMutation({
+    mutationFn: () => runReschedule(true),
+    onSuccess: (data: any) => {
+      invalidateTaskCaches();
+      invalidateProjectV2Queries(qc, projectId ?? null);
+      qc.invalidateQueries({ queryKey: ["critical-path", projectName] });
+      setRescheduleOpen(false);
+      setReschedulePreview(null);
+      toast({ title: "Schedule updated", description: `${data.applied} task(s) rescheduled.` });
+    },
+    onError: (err: any) => toast({ title: "Apply failed", description: err?.message, variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
@@ -1375,6 +1452,20 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       left: leftDays * dayWidth,
       width: widthDays * dayWidth,
     };
+  }, [ganttRange, dayWidth]);
+
+  // Baseline bar geometry — uses the captured baseline_start/end (original
+  // schedule) so the Gantt can draw a baseline shadow under the live bar.
+  const getBaselineBarStyle = useCallback((task: any) => {
+    const s = task.baselineStart;
+    const e = task.baselineEnd;
+    if (!s || !e) return null;
+    const startD = new Date(s);
+    const endD = new Date(e);
+    if (!isValid(startD) || !isValid(endD)) return null;
+    const leftDays = differenceInDays(startD, ganttRange.start);
+    const widthDays = Math.max(1, differenceInDays(endD, startD) + 1);
+    return { left: leftDays * dayWidth, width: widthDays * dayWidth };
   }, [ganttRange, dayWidth]);
 
   const jumpToToday = () => {
@@ -2034,8 +2125,111 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
           <Button size="sm" variant="outline" className="h-7 text-xs" onClick={jumpToToday} data-testid="button-today">
             <Target className="h-3 w-3 mr-1" /> Today
           </Button>
+          <Button
+            size="sm"
+            variant={showCriticalPath ? "default" : "outline"}
+            className="h-7 text-xs"
+            onClick={() => setShowCriticalPath((v) => !v)}
+            title="Highlight the critical path — the zero-slack chain of tasks that drives the finish date"
+            data-testid="button-critical-path"
+          >
+            <Zap className="h-3 w-3 mr-1" /> Critical path
+          </Button>
+          <Button
+            size="sm"
+            variant={showBaseline ? "default" : "outline"}
+            className="h-7 text-xs"
+            onClick={() => setShowBaseline((v) => !v)}
+            title="Show the captured baseline (original schedule) as a shadow under each bar"
+            data-testid="button-show-baseline"
+          >
+            <Diamond className="h-3 w-3 mr-1" /> Baseline
+          </Button>
+          {isAdmin && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={() => setBaselineMutation.mutate()}
+              disabled={setBaselineMutation.isPending}
+              title="Capture the current schedule as the baseline for variance tracking"
+              data-testid="button-set-baseline"
+            >
+              <Save className="h-3 w-3 mr-1" /> Set baseline
+            </Button>
+          )}
+          {isAdmin && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={() => reschedulePreviewMutation.mutate()}
+              disabled={reschedulePreviewMutation.isPending}
+              title="Reflow successor dates from dependencies — preview before applying; manually-set dates are kept"
+              data-testid="button-reschedule"
+            >
+              {reschedulePreviewMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />} Reschedule
+            </Button>
+          )}
         </div>
       </div>
+
+      {showCriticalPath && hasCircularDep && (
+        <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs text-amber-800" data-testid="critical-path-circular-warning">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          Circular dependency detected — resolve the dependency loop to compute the critical path.
+        </div>
+      )}
+
+      <Dialog open={rescheduleOpen} onOpenChange={setRescheduleOpen}>
+        <DialogContent className="max-w-2xl" data-testid="dialog-reschedule">
+          <DialogHeader>
+            <DialogTitle>Reschedule preview</DialogTitle>
+          </DialogHeader>
+          {reschedulePreview?.hasCircularDependency ? (
+            <div className="flex items-center gap-2 text-sm text-amber-700">
+              <AlertCircle className="h-4 w-4" /> Circular dependency — resolve the loop before rescheduling.
+            </div>
+          ) : (reschedulePreview?.changes?.length ?? 0) === 0 ? (
+            <div className="text-sm text-muted-foreground">No changes — every task already respects its dependencies.</div>
+          ) : (
+            <div className="max-h-[50vh] overflow-auto text-xs">
+              <div className="text-muted-foreground mb-2">
+                {reschedulePreview!.changes.length} task(s) will move. Manually-dated tasks are left unchanged.
+              </div>
+              <table className="w-full">
+                <thead>
+                  <tr className="text-left text-[10px] uppercase text-muted-foreground">
+                    <th className="py-1 pr-2">Task</th><th className="pr-2">Start</th><th className="pr-2">End</th><th>Slip</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reschedulePreview!.changes.map((c: any) => (
+                    <tr key={c.id} className="border-t" data-testid={`reschedule-change-${c.id}`}>
+                      <td className="py-1 pr-2">{c.taskNo ? `${c.taskNo} ` : ""}{c.name}</td>
+                      <td className="pr-2 tabular-nums whitespace-nowrap">{c.oldStart || "—"} → <span className="font-medium">{c.newStart}</span></td>
+                      <td className="pr-2 tabular-nums whitespace-nowrap">{c.oldEnd || "—"} → <span className="font-medium">{c.newEnd}</span></td>
+                      <td className={`tabular-nums ${c.slipDays > 0 ? "text-red-600" : c.slipDays < 0 ? "text-emerald-600" : ""}`}>{c.slipDays > 0 ? `+${c.slipDays}d` : c.slipDays < 0 ? `${c.slipDays}d` : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setRescheduleOpen(false)}>Cancel</Button>
+            <Button
+              size="sm"
+              disabled={rescheduleApplyMutation.isPending || !!reschedulePreview?.hasCircularDependency || (reschedulePreview?.changes?.length ?? 0) === 0}
+              onClick={() => rescheduleApplyMutation.mutate()}
+              data-testid="button-reschedule-apply"
+            >
+              {rescheduleApplyMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              Apply{(reschedulePreview?.changes?.length ?? 0) > 0 ? ` (${reschedulePreview!.changes.length})` : ""}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {showKeyDates && keyDates.length > 0 && (
         <div className="flex gap-2 flex-wrap p-2 rounded-md bg-slate-50 border border-slate-200" data-testid="key-dates-strip">
@@ -2690,6 +2884,11 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
             <div>
               {visibleTasks.map((task) => {
                 const bar = getBarStyle(task);
+                const baselineBar = showBaseline ? getBaselineBarStyle(task) : null;
+                const baselineDisplay = showBaseline ? displayRange(task) : null;
+                const slipDays = (baselineBar && task.baselineEnd && baselineDisplay?.end)
+                  ? differenceInDays(new Date(baselineDisplay.end), new Date(task.baselineEnd))
+                  : null;
                 const pct = task.percentComplete || 0;
                 const isMilestone = task.isVirtualMilestone || task.isMilestone;
                 const expPct = task.computedExpectedPct ?? task.expectedPercentComplete ?? null;
@@ -2712,7 +2911,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                         title={`${task.title}${pct >= 100 ? " (Done)" : ""}`}
                         data-testid={`gantt-bar-${task.id}`}
                       >
-                        <div className={`w-3 h-3 rotate-45 border ${pct >= 100 ? "bg-emerald-500 border-emerald-600" : "bg-amber-500 border-amber-600"}`} />
+                        <div className={`w-3 h-3 rotate-45 border ${pct >= 100 ? "bg-emerald-500 border-emerald-600" : "bg-amber-500 border-amber-600"}${showCriticalPath && criticalSet.has(task.id) ? " ring-2 ring-rose-500" : ""}`} />
                       </div>
                     )}
                     {bar && !isMilestone && (
@@ -2723,7 +2922,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                             : pct >= 100
                               ? "bg-emerald-200 border-emerald-300"
                               : `${gc.bg} ${gc.border}`
-                        }`}
+                        }${showCriticalPath && criticalSet.has(task.id) ? " ring-2 ring-rose-500 ring-inset" : ""}`}
                         style={{
                           left: bar.left,
                           width: Math.max(bar.width, 4),
@@ -2750,6 +2949,14 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                           />
                         )}
                       </div>
+                    )}
+                    {baselineBar && (
+                      <div
+                        className="absolute h-1 rounded-sm bg-slate-400/70 border border-slate-500/40"
+                        style={{ left: baselineBar.left, width: Math.max(baselineBar.width, 4), bottom: 1 }}
+                        title={slipDays != null && slipDays !== 0 ? (slipDays > 0 ? `Baseline — ${slipDays}d behind` : `Baseline — ${-slipDays}d ahead`) : "Baseline (on schedule)"}
+                        data-testid={`gantt-baseline-${task.id}`}
+                      />
                     )}
                     {!bar && isMilestone && (
                       <div

@@ -30,7 +30,6 @@ import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   AlertTriangle,
-  CheckCircle2,
   Info,
   ExternalLink,
   Database,
@@ -286,19 +285,6 @@ export function ReconciliationDrawer({ open, onClose, exception: exc }: Props) {
                     Open project reconciliation
                   </Link>
                 </Button>
-                {!actionBlocked && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="w-full justify-start gap-2 text-emerald-700 border-emerald-200 hover:bg-emerald-50"
-                    disabled
-                    data-testid="btn-mark-reviewed"
-                    aria-label="Mark reviewed — open project reconciliation page to use this action"
-                  >
-                    <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-                    Mark reviewed (open project page)
-                  </Button>
-                )}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
                 Resolution actions (accept Excel, keep app, send for approval) are available on the project reconciliation page.

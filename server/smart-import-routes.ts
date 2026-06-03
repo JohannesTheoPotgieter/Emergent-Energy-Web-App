@@ -3683,7 +3683,7 @@ router.get("/api/import-control-tower/history", requireAuth, requirePermission("
     const importType = req.query.importType as string | undefined;
     const status = req.query.status as string | undefined;
     const batchRunId = (req.query.batchRunId as string | undefined)?.trim() || undefined;
-    const limit = parseInt(req.query.limit as string) || 100;
+    const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
 
     const runs = await db
       .select()

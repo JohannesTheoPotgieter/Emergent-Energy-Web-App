@@ -570,6 +570,51 @@ export class WorkManagementRepository {
   }
 
   /**
+   * Capture the current schedule as the baseline: copy start/end/duration into
+   * the baseline_* columns for every PM imported task on the project. Powers
+   * the Gantt baseline-vs-current variance overlay. Same-type column copies
+   * (date←date, int←int) — no cast, SQLite-dev-safe.
+   */
+  async captureBaseline(projectId: number): Promise<number> {
+    const result = await this.dbInstance
+      .update(workItems)
+      .set({
+        baselineStart: sql`${workItems.startDate}`,
+        baselineEnd: sql`${workItems.endDate}`,
+        baselineDuration: sql`${workItems.duration}`,
+        updatedAt: new Date(),
+      })
+      .where(and(
+        eq(workItems.projectId, projectId),
+        eq(workItems.workstream, "PM"),
+        eq(workItems.source, "SMART_IMPORT"),
+        isNull(workItems.deletedAt),
+      ))
+      .returning({ id: workItems.id });
+    return result.length;
+  }
+
+  /**
+   * Persist auto-reschedule results — write the computed start/end dates
+   * directly to the work_item columns (NOT manual overrides), so the affected
+   * tasks stay auto-scheduled and re-flowable. Manual/fixed tasks are never in
+   * this set (the engine anchors them). Drizzle coerces the YYYY-MM-DD strings
+   * into the date columns, so no cast is needed.
+   */
+  async applyRescheduleDates(updates: Array<{ id: number; startDate: string; endDate: string }>): Promise<number> {
+    if (updates.length === 0) return 0;
+    await Promise.all(
+      updates.map((u) =>
+        this.dbInstance
+          .update(workItems)
+          .set({ startDate: u.startDate, endDate: u.endDate, updatedAt: new Date() })
+          .where(eq(workItems.id, u.id)),
+      ),
+    );
+    return updates.length;
+  }
+
+  /**
    * All non-deleted PM workstream work items, regardless of source. Used by
    * cross-program reporting that needs every PM-owned task.
    */

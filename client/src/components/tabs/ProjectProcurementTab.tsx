@@ -1567,6 +1567,7 @@ function PurchaseOrdersSubTab({ projectName, projectId }: { projectName: string;
 
 function DeliveriesSubTab({ items, projectId, projectName }: { items: any[]; projectId: number; projectName: string }) {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const patchMutation = useMutation({
     mutationFn: async ({ id, status }: { id: number; status: string }) => {
@@ -1576,10 +1577,15 @@ function DeliveriesSubTab({ items, projectId, projectName }: { items: any[]; pro
         credentials: "include",
         body: JSON.stringify({ status }),
       });
-      if (!res.ok) throw new Error("Failed to update status");
+      if (!res.ok) {
+        let body: { error?: string; message?: string } = {};
+        try { body = await res.json(); } catch { /* non-JSON */ }
+        throw new Error(body.message || body.error || "Failed to update status");
+      }
       return res.json();
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["procurement", projectId] }),
+    onError: (err: Error) => toast({ title: "Delivery update failed", description: err.message, variant: "destructive" }),
   });
 
   const awaitingDelivery = items.filter((i: any) => i.status === "ordered");
@@ -2023,6 +2029,9 @@ function CaptureInvoiceDialog({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["invoice-captures", projectId] });
+      // Capturing an invoice mutates the linked procurement row (actual cost,
+      // payment status, invoice ref) — refresh the procurement lists too.
+      queryClient.invalidateQueries({ queryKey: ["procurement", projectId] });
       invalidateProjectV2Queries(queryClient, projectId);
       onOpenChange(false);
       setForm({ invoiceNumber: "", invoiceDate: "", amount: "", vatAmount: "", supplierId: "", linkedPoId: "", linkedProcurementItemId: "", notes: "", budgetLine: "", linkedDeliverableId: "", linkedMilestone: "", exceptionReason: "" });
