@@ -1,1 +1,1 @@
-- [Deploy & DB ops](deploy-and-db-ops.md) — shared dev/prod DB, poisoned drizzle watermark trap, and which deploy logs are/aren't retrievable.
+- [Project plan critical path & reschedule](project-plan-critical-path.md) — hybrid CPM/date-chain critical path (strict `p.end<t.start`, lower-id ties), bright-red highlight, reschedule gated on dependencies.

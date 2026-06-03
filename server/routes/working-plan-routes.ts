@@ -6,7 +6,7 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { eq, and, sql, isNull, inArray } from "drizzle-orm";
 import { workItems, workItemDependencies, projectInfo } from "@shared/schema";
-import { calculateCPM, applyOverridesToTasks, applyOverridesToDependencies } from "../cpmEngine";
+import { calculateCPM, calculateCriticalPathByDates, applyOverridesToTasks, applyOverridesToDependencies } from "../cpmEngine";
 import { computeReschedule } from "../lib/reschedule-engine";
 import { WorkManagementRepository } from "../repositories/work-management-repository";
 import { logAuditFromReq } from "../audit-logger";
@@ -172,33 +172,44 @@ export function registerWorkingPlanRoutes(app: Express) {
           : [];
 
         type DepRow = (typeof depRows)[number];
-        const cpm = calculateCPM(
-          leaves.map((r: PlanRow) => ({
-            id: r.id,
-            taskNo: r.wbsCode,
-            name: r.title,
-            // primary date = actual ?? planned (set by the importer) — the same
-            // dates the Gantt renders.
-            startDate: r.startDate,
-            endDate: r.endDate,
-            type: r.type,
-            percentComplete: r.percentComplete,
-          })),
-          depRows
-            .filter((d: DepRow) => leafIds.has(d.predecessorId) && leafIds.has(d.successorId))
-            .map((d: DepRow) => ({
-              id: d.id,
-              predecessorTaskId: d.predecessorId,
-              successorTaskId: d.successorId,
-              dependencyType: d.depType || "FS",
-              lagDays: d.lagDays || 0,
-            })),
-        );
+        const leafTasks = leaves.map((r: PlanRow) => ({
+          id: r.id,
+          taskNo: r.wbsCode,
+          name: r.title,
+          // primary date = actual ?? planned (set by the importer) — the same
+          // dates the Gantt renders.
+          startDate: r.startDate,
+          endDate: r.endDate,
+          type: r.type,
+          percentComplete: r.percentComplete,
+        }));
+        const leafDeps = depRows
+          .filter((d: DepRow) => leafIds.has(d.predecessorId) && leafIds.has(d.successorId))
+          .map((d: DepRow) => ({
+            id: d.id,
+            predecessorTaskId: d.predecessorId,
+            successorTaskId: d.successorId,
+            dependencyType: d.depType || "FS",
+            lagDays: d.lagDays || 0,
+          }));
+
+        const cpm = calculateCPM(leafTasks, leafDeps);
+
+        // Hybrid: drive the critical path from dependencies when they exist;
+        // otherwise fall back to the date-based longest chain so the
+        // schedule-defining path still shows before dependencies are entered.
+        const criticalTaskIds =
+          leafDeps.length > 0
+            ? cpm.criticalPath
+            : calculateCriticalPathByDates(
+                leafTasks.map((t: (typeof leafTasks)[number]) => ({ id: t.id, startDate: t.startDate, endDate: t.endDate, type: t.type })),
+              );
 
         const slackById: Record<number, number> = {};
         for (const t of cpm.tasks) slackById[t.id] = t.slack;
         res.json({
-          criticalTaskIds: cpm.criticalPath,
+          criticalTaskIds,
+          criticalPathMode: leafDeps.length > 0 ? "dependencies" : "dates",
           slackById,
           projectFinish: cpm.projectFinish,
           hasCircularDependency: cpm.hasCircularDependency,
