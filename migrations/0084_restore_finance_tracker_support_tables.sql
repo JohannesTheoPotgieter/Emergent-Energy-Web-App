@@ -47,14 +47,25 @@ ALTER TABLE normalized_cost_lines
   ADD COLUMN IF NOT EXISTS category_allocation_id INTEGER REFERENCES category_revenue_allocations(id);
 
 CREATE TABLE IF NOT EXISTS tracker_monthly_manual (
-  id           SERIAL PRIMARY KEY,
-  tracker_type TEXT NOT NULL,
-  month_key    TEXT NOT NULL,
-  realised     NUMERIC(15,2),
-  outstanding  NUMERIC(15,2),
-  budget       NUMERIC(15,2),
-  updated_at   TIMESTAMP NOT NULL DEFAULT NOW()
+  id              SERIAL PRIMARY KEY,
+  tracker_type    TEXT NOT NULL,
+  month_key       TEXT NOT NULL,
+  realised        NUMERIC(15,2),
+  outstanding     NUMERIC(15,2),
+  budget          NUMERIC(15,2),
+  project_info_id INTEGER REFERENCES project_info(id) ON DELETE CASCADE,
+  updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+-- Belt-and-suspenders: if the table already existed without project_info_id
+-- (e.g. environments that ran the baseline before this restore migration),
+-- add the column safely. No-op if already present.
+ALTER TABLE tracker_monthly_manual
+  ADD COLUMN IF NOT EXISTS project_info_id INTEGER REFERENCES project_info(id) ON DELETE CASCADE;
+
+-- Same guard for work_item_dependencies.source (migration 0082 target).
+ALTER TABLE work_item_dependencies
+  ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'MANUAL';
 
 CREATE INDEX IF NOT EXISTS idx_tracker_monthly_manual_type_month
   ON tracker_monthly_manual (tracker_type, month_key);
