@@ -1680,7 +1680,10 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
                                                   isCurrentStatus ? `${sc.bg} ${sc.color} shadow-sm border` : `text-muted-foreground hover:text-foreground hover:bg-card`
                                                 }`}
                                                 onClick={() => {
-                                                  if (s === "pass" && (currentStatus === "review" || currentStatus === "fail") && !isQmOrAdmin) return;
+                                                  if (s === "pass" && (currentStatus === "review" || currentStatus === "fail") && !isQmOrAdmin) {
+                                                    toast({ title: "Not allowed", description: "Only a Quality Manager can pass an item that's in review or failed.", variant: "destructive" });
+                                                    return;
+                                                  }
                                                   updateItemMutation.mutate({ itemInstanceId: instance.id, updates: { qmStatus: s } });
                                                 }}
                                                 data-testid={`btn-status-${s}-${instance.id}`}

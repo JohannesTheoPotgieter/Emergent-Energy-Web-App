@@ -88,7 +88,9 @@ export function ProjectChatTab({ projectName, projectInfoId }: { projectName: st
   const [chatSearch, setChatSearch] = useState("");
   const [showPicker, setShowPicker] = useState(false);
   const userRole = user?.role || "";
-  const isAdmin = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(userRole);
+  // "Change chat" (unlink) is COO/CEO-only server-side — don't show it to a
+  // plain `admin` (it would 403). Matches the server gate.
+  const isAdmin = ["COO_ADMIN", "CEO_ADMIN"].includes(userRole);
 
   const { data: projectComms = [] } = useQuery<ProjectCommunicationItem[]>({
     queryKey: ["project-ms-objects", projectInfoId],
