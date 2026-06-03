@@ -111,6 +111,17 @@ const MODERN_MIGRATION_PROBES: Record<
   // skip the migration.
   "0080_deliverable_versions_unique": (c) =>
     constraintExists(c, "deliverable_versions_deliverable_version_unique"),
+  // 0081 adds invoice_date_font_color + invoice_date_confirmed to actuals.
+  "0081_actuals_invoice_colour": (c) =>
+    columnExists(c, "normalized_cost_line_actuals", "invoice_date_font_color"),
+  // 0082 adds the provenance source column to work_item_dependencies so
+  // Smart Import can distinguish importer-owned vs hand-made edges.
+  "0082_dep_source": (c) =>
+    columnExists(c, "work_item_dependencies", "source"),
+  // 0083 adds project_info_id to tracker_monthly_manual so per-project
+  // Revenue / COS tracker rows are scoped separately from program-wide rows.
+  "0083_tracker_monthly_per_project": (c) =>
+    columnExists(c, "tracker_monthly_manual", "project_info_id"),
 };
 
 async function tableExists(client: Client, table: string): Promise<boolean> {
