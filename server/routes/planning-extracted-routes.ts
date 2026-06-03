@@ -748,6 +748,15 @@ export function registerPlanningExtractedRoutes(app: Express): void {
         return res.json({ message: "Milestone deleted and children ungrouped" });
       }
 
+      if (operation === "setBaselineWI") {
+        const projectInfoRow = await storage.getProjectInfo(rawProjectName);
+        const projectId = projectInfoRow?.id || null;
+        if (!projectId) return res.status(400).json({ error: "Project not found" });
+        const n = await workManagementRepository.captureBaseline(projectId);
+        notifyStructureChange(`Baseline captured for ${n} task(s).`);
+        return res.json({ message: `Baseline set for ${n} tasks`, count: n });
+      }
+
       logAuditFromReq(req, { entityType: "plan_structure", action: "update", projectName: rawProjectName, changesJson: { description: `Plan structure operation: ${operation}`, operation, projectName: rawProjectName } });
       return res.status(400).json({ error: `Unknown operation: ${operation}` });
     } catch (error: any) {

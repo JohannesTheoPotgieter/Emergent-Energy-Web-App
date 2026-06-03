@@ -570,6 +570,31 @@ export class WorkManagementRepository {
   }
 
   /**
+   * Capture the current schedule as the baseline: copy start/end/duration into
+   * the baseline_* columns for every PM imported task on the project. Powers
+   * the Gantt baseline-vs-current variance overlay. Same-type column copies
+   * (date←date, int←int) — no cast, SQLite-dev-safe.
+   */
+  async captureBaseline(projectId: number): Promise<number> {
+    const result = await this.dbInstance
+      .update(workItems)
+      .set({
+        baselineStart: sql`${workItems.startDate}`,
+        baselineEnd: sql`${workItems.endDate}`,
+        baselineDuration: sql`${workItems.duration}`,
+        updatedAt: new Date(),
+      })
+      .where(and(
+        eq(workItems.projectId, projectId),
+        eq(workItems.workstream, "PM"),
+        eq(workItems.source, "SMART_IMPORT"),
+        isNull(workItems.deletedAt),
+      ))
+      .returning({ id: workItems.id });
+    return result.length;
+  }
+
+  /**
    * All non-deleted PM workstream work items, regardless of source. Used by
    * cross-program reporting that needs every PM-owned task.
    */

@@ -1152,6 +1152,23 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     },
   });
 
+  // ─── Schedule baseline (Phase 2) ───────────────────────────────────────
+  const [showBaseline, setShowBaseline] = useState(false);
+  const setBaselineMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/project-plan/structure", { operation: "setBaselineWI", projectName, data: {} });
+    },
+    onSuccess: () => {
+      invalidateTaskCaches();
+      invalidateProjectV2Queries(qc, projectId ?? null);
+      setShowBaseline(true);
+      toast({ title: "Baseline captured", description: "Current dates saved as the schedule baseline." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Set baseline failed", description: err?.message || "Could not capture baseline", variant: "destructive" });
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (ids: number[]) => {
       const opsIds = ids.filter(id => id > 0);
@@ -1404,6 +1421,20 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       left: leftDays * dayWidth,
       width: widthDays * dayWidth,
     };
+  }, [ganttRange, dayWidth]);
+
+  // Baseline bar geometry — uses the captured baseline_start/end (original
+  // schedule) so the Gantt can draw a baseline shadow under the live bar.
+  const getBaselineBarStyle = useCallback((task: any) => {
+    const s = task.baselineStart;
+    const e = task.baselineEnd;
+    if (!s || !e) return null;
+    const startD = new Date(s);
+    const endD = new Date(e);
+    if (!isValid(startD) || !isValid(endD)) return null;
+    const leftDays = differenceInDays(startD, ganttRange.start);
+    const widthDays = Math.max(1, differenceInDays(endD, startD) + 1);
+    return { left: leftDays * dayWidth, width: widthDays * dayWidth };
   }, [ganttRange, dayWidth]);
 
   const jumpToToday = () => {
@@ -2073,6 +2104,29 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
           >
             <Zap className="h-3 w-3 mr-1" /> Critical path
           </Button>
+          <Button
+            size="sm"
+            variant={showBaseline ? "default" : "outline"}
+            className="h-7 text-xs"
+            onClick={() => setShowBaseline((v) => !v)}
+            title="Show the captured baseline (original schedule) as a shadow under each bar"
+            data-testid="button-show-baseline"
+          >
+            <Diamond className="h-3 w-3 mr-1" /> Baseline
+          </Button>
+          {isAdmin && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={() => setBaselineMutation.mutate()}
+              disabled={setBaselineMutation.isPending}
+              title="Capture the current schedule as the baseline for variance tracking"
+              data-testid="button-set-baseline"
+            >
+              <Save className="h-3 w-3 mr-1" /> Set baseline
+            </Button>
+          )}
         </div>
       </div>
 
@@ -2736,6 +2790,11 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
             <div>
               {visibleTasks.map((task) => {
                 const bar = getBarStyle(task);
+                const baselineBar = showBaseline ? getBaselineBarStyle(task) : null;
+                const baselineDisplay = showBaseline ? displayRange(task) : null;
+                const slipDays = (baselineBar && task.baselineEnd && baselineDisplay?.end)
+                  ? differenceInDays(new Date(baselineDisplay.end), new Date(task.baselineEnd))
+                  : null;
                 const pct = task.percentComplete || 0;
                 const isMilestone = task.isVirtualMilestone || task.isMilestone;
                 const expPct = task.computedExpectedPct ?? task.expectedPercentComplete ?? null;
@@ -2796,6 +2855,14 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                           />
                         )}
                       </div>
+                    )}
+                    {baselineBar && (
+                      <div
+                        className="absolute h-1 rounded-sm bg-slate-400/70 border border-slate-500/40"
+                        style={{ left: baselineBar.left, width: Math.max(baselineBar.width, 4), bottom: 1 }}
+                        title={slipDays != null && slipDays !== 0 ? (slipDays > 0 ? `Baseline — ${slipDays}d behind` : `Baseline — ${-slipDays}d ahead`) : "Baseline (on schedule)"}
+                        data-testid={`gantt-baseline-${task.id}`}
+                      />
                     )}
                     {!bar && isMilestone && (
                       <div
