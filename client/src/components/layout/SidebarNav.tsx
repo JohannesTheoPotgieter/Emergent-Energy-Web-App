@@ -1,21 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import { NavIcon } from "@/lib/nav-icons";
-import { ChevronDown, Search, Star, Clock, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { ChevronDown, Search, Star, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { findActiveNavItem, type NavGroup, type NavItem } from "@/config/nav-tree";
-import type { RecentEntry } from "@/hooks/use-nav-favorites";
-
-const OPEN_KEY = "ee_nav_open_groups";
-
-function readOpenState(): Record<string, boolean> {
-  if (typeof localStorage === "undefined") return {};
-  try {
-    return JSON.parse(localStorage.getItem(OPEN_KEY) || "{}");
-  } catch {
-    return {};
-  }
-}
 
 export interface SidebarNavProps {
   groups: NavGroup[];
@@ -23,7 +11,6 @@ export interface SidebarNavProps {
   collapsed: boolean;
   onToggleCollapsed: () => void;
   pinned: string[];
-  recents: RecentEntry[];
   isPinned: (path: string) => boolean;
   onTogglePin: (path: string) => void;
   onOpenSearch: () => void;
@@ -32,32 +19,25 @@ export interface SidebarNavProps {
 
 export function SidebarNav({
   groups, location, collapsed, onToggleCollapsed,
-  pinned, recents, isPinned, onTogglePin, onOpenSearch, onNavigate,
+  pinned, isPinned, onTogglePin, onOpenSearch, onNavigate,
 }: SidebarNavProps) {
-  const [openState, setOpenState] = useState<Record<string, boolean>>(readOpenState);
-
   const active = useMemo(() => findActiveNavItem(location, groups), [location, groups]);
-  const activeGroupKey = active?.group.key;
-  const activePath = active?.item.path;
+  const activeGroupKey = active?.group.key ?? null;
+  const activePath = active?.item.path ?? null;
+
+  // Accordion: one section open at a time. It follows the active section on
+  // navigation; the user can open another or collapse the current one.
+  const [openGroup, setOpenGroup] = useState<string | null>(activeGroupKey);
+  useEffect(() => { if (activeGroupKey) setOpenGroup(activeGroupKey); }, [activeGroupKey]);
 
   const itemByPath = useMemo(() => {
     const m = new Map<string, NavItem>();
     for (const g of groups) for (const it of g.items) m.set(it.path, it);
     return m;
   }, [groups]);
-
   const pinnedItems = pinned.map((p) => itemByPath.get(p)).filter(Boolean) as NavItem[];
 
-  const toggleGroup = (key: string) => {
-    setOpenState((prev) => {
-      const next = { ...prev, [key]: prev[key] === false ? true : false };
-      try { localStorage.setItem(OPEN_KEY, JSON.stringify(next)); } catch { /* ignore */ }
-      return next;
-    });
-  };
-  const isGroupOpen = (key: string) => key === activeGroupKey || openState[key] !== false;
-
-  const renderItem = (item: NavItem, opts?: { showStar?: boolean }) => {
+  const renderItem = (item: NavItem) => {
     const isActive = item.path === activePath;
     return (
       <li key={item.id} className="group/navitem relative">
@@ -68,29 +48,26 @@ export function SidebarNav({
           title={collapsed ? item.label : undefined}
           onClick={() => onNavigate(item)}
           className={cn(
-            "relative flex items-center gap-2.5 rounded-md py-1.5 text-sm transition-colors",
-            collapsed ? "justify-center px-0 mx-1.5" : "px-3 mx-2",
+            "flex items-center gap-2.5 rounded-md py-1.5 text-sm transition-colors",
+            collapsed ? "mx-1.5 justify-center px-0" : "mx-2 pl-9 pr-7",
             isActive
-              ? "bg-sidebar-accent text-sidebar-primary font-medium"
-              : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+              ? "bg-sidebar-accent font-medium text-sidebar-primary"
+              : "text-sidebar-foreground/75 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
           )}
         >
-          {isActive && !collapsed && (
-            <span className="pointer-events-none absolute left-0 top-1 bottom-1 w-[3px] rounded-r bg-sidebar-primary" />
-          )}
           <NavIcon iconKey={item.iconKey} className="h-4 w-4 shrink-0" />
           {!collapsed && <span className="truncate">{item.label}</span>}
         </Link>
-        {!collapsed && opts?.showStar !== false && (
+        {!collapsed && (
           <button
             type="button"
             onClick={() => onTogglePin(item.path)}
             aria-label={isPinned(item.path) ? `Unpin ${item.label}` : `Pin ${item.label}`}
             className={cn(
-              "absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-0.5 transition-opacity",
+              "absolute right-3 top-1/2 -translate-y-1/2 rounded p-0.5 transition-opacity",
               isPinned(item.path)
                 ? "text-amber-500 opacity-100"
-                : "text-muted-foreground/50 opacity-0 group-hover/navitem:opacity-100 hover:text-amber-500",
+                : "text-muted-foreground/40 opacity-0 hover:text-amber-500 group-hover/navitem:opacity-100",
             )}
           >
             <Star className="h-3.5 w-3.5" fill={isPinned(item.path) ? "currentColor" : "none"} />
@@ -102,22 +79,22 @@ export function SidebarNav({
 
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground" data-testid="sidebar-nav">
-      {/* Search trigger */}
+      {/* Search */}
       <div className="p-2">
         <button
           type="button"
           onClick={onOpenSearch}
           data-testid="sidebar-search-trigger"
+          title="Search — ⌘K"
           className={cn(
             "flex w-full items-center gap-2 rounded-md border border-sidebar-border bg-sidebar-accent/40 text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent",
             collapsed ? "justify-center px-0 py-2" : "px-3 py-2",
           )}
-          title="Search — ⌘K"
         >
           <Search className="h-4 w-4 shrink-0" />
           {!collapsed && (
             <>
-              <span className="flex-1 text-left">Search…</span>
+              <span className="flex-1 text-left">Search</span>
               <kbd className="rounded border border-border/60 bg-background/60 px-1 text-[10px]">⌘K</kbd>
             </>
           )}
@@ -125,54 +102,59 @@ export function SidebarNav({
       </div>
 
       <nav aria-label="Primary" className="flex-1 overflow-y-auto pb-3">
-        {/* Pinned */}
+        {/* Pinned (only when the user has pinned something) */}
         {pinnedItems.length > 0 && (
-          <Section heading="Pinned" icon={<Star className="h-3.5 w-3.5" />} collapsed={collapsed}>
-            <ul className="space-y-0.5">{pinnedItems.map((it) => renderItem(it))}</ul>
-          </Section>
+          <div className="mb-2">
+            {!collapsed && (
+              <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">Pinned</div>
+            )}
+            <ul className="space-y-0.5">{pinnedItems.map(renderItem)}</ul>
+          </div>
         )}
 
-        {/* Recent */}
-        {!collapsed && recents.length > 0 && (
-          <Section heading="Recent" icon={<Clock className="h-3.5 w-3.5" />} collapsed={collapsed}>
-            <ul className="space-y-0.5">
-              {recents.map((r) => {
-                const it = itemByPath.get(r.path) ?? { id: `recent-${r.path}`, path: r.path, label: r.label };
-                return renderItem(it as NavItem, { showStar: false });
-              })}
-            </ul>
-          </Section>
-        )}
-
-        {/* Domain groups */}
         {groups.map((group) => {
-          const open = isGroupOpen(group.key);
+          const open = !collapsed && openGroup === group.key;
+          if (collapsed) {
+            // Icon rail: one icon per section, linking to its first screen.
+            const first = group.items[0];
+            const isActiveGroup = activeGroupKey === group.key;
+            return (
+              <Link
+                key={group.key}
+                href={first.path}
+                title={group.heading}
+                data-testid={`sidebar-group-${group.key}`}
+                onClick={() => onNavigate(first)}
+                className={cn(
+                  "mx-1.5 my-0.5 flex justify-center rounded-md py-2 transition-colors",
+                  isActiveGroup ? "bg-sidebar-accent text-sidebar-primary" : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60",
+                )}
+              >
+                <NavIcon iconKey={group.iconKey} className="h-4 w-4" />
+              </Link>
+            );
+          }
           return (
-            <div key={group.key} className="mb-1" data-testid={`sidebar-group-${group.key}`}>
-              {collapsed ? (
-                <div className="my-2 flex justify-center text-muted-foreground/60" title={group.heading}>
-                  <NavIcon iconKey={group.iconKey} className="h-4 w-4" />
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(group.key)}
-                  aria-expanded={open}
-                  className="flex w-full items-center gap-1.5 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground hover:text-foreground"
-                >
-                  <ChevronDown className={cn("h-3 w-3 transition-transform", !open && "-rotate-90")} />
-                  {group.heading}
-                </button>
-              )}
-              {(open || collapsed) && (
-                <ul className="space-y-0.5">{group.items.map((it) => renderItem(it))}</ul>
-              )}
+            <div key={group.key} data-testid={`sidebar-group-${group.key}`}>
+              <button
+                type="button"
+                onClick={() => setOpenGroup((prev) => (prev === group.key ? null : group.key))}
+                aria-expanded={open}
+                className={cn(
+                  "flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors mx-0",
+                  open ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/75 hover:text-sidebar-foreground",
+                )}
+              >
+                <NavIcon iconKey={group.iconKey} className="h-4 w-4 shrink-0" />
+                <span className="flex-1 text-left">{group.heading}</span>
+                <ChevronDown className={cn("h-3.5 w-3.5 text-muted-foreground/60 transition-transform", !open && "-rotate-90")} />
+              </button>
+              {open && <ul className="space-y-0.5 pb-1">{group.items.map(renderItem)}</ul>}
             </div>
           );
         })}
       </nav>
 
-      {/* Collapse toggle */}
       <div className="shrink-0 border-t border-sidebar-border p-2">
         <button
           type="button"
@@ -188,22 +170,6 @@ export function SidebarNav({
           {!collapsed && <span>Collapse</span>}
         </button>
       </div>
-    </div>
-  );
-}
-
-function Section({
-  heading, icon, collapsed, children,
-}: { heading: string; icon: React.ReactNode; collapsed: boolean; children: React.ReactNode }) {
-  return (
-    <div className="mb-2" data-testid={`sidebar-section-${heading.toLowerCase()}`}>
-      {!collapsed && (
-        <div className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-          {icon}
-          {heading}
-        </div>
-      )}
-      {children}
     </div>
   );
 }

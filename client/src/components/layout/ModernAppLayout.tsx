@@ -48,7 +48,7 @@ export default function ModernAppLayout({ children }: { children: React.ReactNod
   const { mode: layoutMode, setMode: setLayoutMode } = useLayoutMode();
   const lens = useLensContext();
   const { setEnabled: setModernNav } = useModernNav();
-  const { pinned, recents, isPinned, togglePin, recordVisit } = useNavFavorites();
+  const { pinned, isPinned, togglePin } = useNavFavorites();
 
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof localStorage === "undefined") return false;
@@ -72,13 +72,6 @@ export default function ModernAppLayout({ children }: { children: React.ReactNod
     });
   };
 
-  // Record the active top-level destination for the Recent list.
-  useEffect(() => {
-    if (active && active.item.path === location.split("?")[0]) {
-      recordVisit({ path: active.item.path, label: active.item.label });
-    }
-  }, [active, location, recordVisit]);
-
   // Close the mobile drawer on navigation.
   useEffect(() => { setMobileNavOpen(false); }, [location]);
 
@@ -98,7 +91,6 @@ export default function ModernAppLayout({ children }: { children: React.ReactNod
 
   const onNavigate = (item: { path: string; label: string }) => {
     trackNavClick(item.label);
-    recordVisit({ path: item.path, label: item.label });
   };
 
   // Bottom-bar destinations: Home + the first item of each subsequent domain.
@@ -121,7 +113,6 @@ export default function ModernAppLayout({ children }: { children: React.ReactNod
       collapsed={collapsed && !isMobile}
       onToggleCollapsed={toggleCollapsed}
       pinned={pinned}
-      recents={recents}
       isPinned={isPinned}
       onTogglePin={togglePin}
       onOpenSearch={openCommandPalette}

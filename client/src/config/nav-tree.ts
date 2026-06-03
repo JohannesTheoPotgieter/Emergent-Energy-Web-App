@@ -78,6 +78,35 @@ const PATH_TO_SCREEN_ID = new Map<string, string>(
   PAGE_REGISTRY.filter((p) => p.id && p.path).map((p) => [p.path, p.id]),
 );
 
+/**
+ * Cleaner display labels for the sidebar. The group heading already gives
+ * context, so items drop the redundant domain prefix (e.g. "Engineering Task
+ * Board" → "Task Board") and abbreviations are spelled out ("COS" → "Cost of
+ * Sales"). Keyed by registry id; the registry label is the fallback and stays
+ * the source of truth for breadcrumbs/search elsewhere.
+ */
+const NAV_LABEL_OVERRIDES: Record<string, string> = {
+  // Engineering
+  engineering: "Overview",
+  engineeringTasks: "Task Board",
+  engineeringDocuments: "Documents",
+  engineeringStandup: "Standup",
+  // Quality
+  quality: "Overview",
+  qualityTasks: "Task Board",
+  qualityDocuments: "Documents",
+  // Company
+  companyOverview: "Overview",
+  // Project Development
+  pdDashboard: "Overview",
+  // Finance — spell out abbreviations
+  cos: "Cost of Sales",
+  financeGpCompany: "Gross Profit",
+  financeQuickBooksThroughput: "QuickBooks",
+  fyeRevenueTracking: "Year-End Tracking",
+  financialReviewQueue: "Financial Reviews",
+};
+
 function isNavCandidate(e: PageRegistryEntry): boolean {
   return (
     Boolean(e.routeComponentKey) &&
@@ -101,7 +130,7 @@ export function buildNavTree({ canViewPath, isScreenEnabled }: BuildNavTreeOpts)
     const screenId = PATH_TO_SCREEN_ID.get(e.path);
     if (screenId && !isScreenEnabled(screenId)) continue;
     if (e.path !== "/" && !canViewPath(e.path)) continue;
-    const item: NavItem = { id: e.id, path: e.path, label: e.label, iconKey: e.iconKey };
+    const item: NavItem = { id: e.id, path: e.path, label: NAV_LABEL_OVERRIDES[e.id] ?? e.label, iconKey: e.iconKey };
     const group = e.navGroup as NavGroupKey;
     const arr = byGroup.get(group) ?? [];
     arr.push(item);
