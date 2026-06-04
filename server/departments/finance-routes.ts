@@ -326,8 +326,7 @@ import {
   getInvoices,
   getMonthlyPnLReport,
   getQuickBooksConnectionStatus,
-  extractMonthlyAccountDetailsFromPnL,
-  extractMonthlyAccountTotalsFromPnL,
+  extractMonthlyPnLSections,
 } from '../services/quickbooks-service';
 import {
   billRawToSummary,
@@ -2545,19 +2544,20 @@ router.get('/api/cos-tracker', requireAuth, requirePermission('cos', 'view'), as
       linksByCostLineId.set(link.appEntityId, arr);
     }
 
-    // QB COS totals from the P&L report (matches the QB P&L / Excel view), with
-    // account-level detail for 100-series accounts in the drilldown drawer.
-    const qbCosAccountDetails = pnlReport
-      ? extractMonthlyAccountDetailsFromPnL(pnlReport, (acc) => acc.id?.startsWith('100') === true)
-      : [];
-    const qbCosByMonth = qbCosAccountDetails.length
-      ? qbCosAccountDetails.reduce((map, detail) => {
-          map.set(detail.monthKey, (map.get(detail.monthKey) ?? 0) + detail.amount);
-          return map;
-        }, new Map<string, number>())
-      : pnlReport
-        ? parsePnLCosMonthly(pnlReport)
-        : new Map<string, number>();
+    // QB COS totals = QuickBooks' OWN "Cost of Sales" section on the P&L report
+    // (read by section, NOT by account-number prefix), with per-account detail
+    // inside that section for the drilldown drawer. The section total is the
+    // sum of its leaf accounts, so it reconciles to the drilldown to the cent.
+    // Falls back to the section Summary (parsePnLCosMonthly) for the headline
+    // total when the realm returns a COS section with no per-account rows.
+    const qbSections = pnlReport ? extractMonthlyPnLSections(pnlReport) : null;
+    const qbCosAccountDetails = qbSections?.costOfSalesAccounts ?? [];
+    const qbCosByMonth =
+      qbSections && qbSections.costOfSales.size > 0
+        ? qbSections.costOfSales
+        : pnlReport
+          ? parsePnLCosMonthly(pnlReport)
+          : new Map<string, number>();
     const qbCosAccountProjectsByMonth = new Map<string, Map<string, number>>();
     for (const detail of qbCosAccountDetails) {
       if (!monthKeyInFinanceScope(detail.monthKey, fyScope)) continue;
@@ -6022,52 +6022,28 @@ async function revenueTrackerHandler(req: Request, res: Response) {
     void revenueLinks; // (kept fetched for invoice-link-based drilldowns elsewhere)
     void qbInvoices; // keep QB invoice fetch available for connection/payment status side effects.
     const qbRevenueByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
-    // QB Revenue actual = monthly credits to account 1000000 "Sales" from
-    // the QB ProfitAndLoss report. This is finance's canonical revenue-
-    // recognition source: ex-VAT, accrual-based, and includes both
-    // invoice income and journal-entry recognition (e.g. milestone moves
-    // from Deferred Revenue → Sales). Previously this row summed
-    // Invoice.TotalAmt across all A/R invoices, which is VAT-inclusive
-    // and double-counts deposits posted to liability accounts — producing
-    // overstated figures (e.g. Sep 2025 reported R 11.76M vs QB Sales
-    // ledger R 2.49M; Oct R 20.02M vs R 16.29M).
-    const qbRevenueAccountDetails = qbMonthlyPnL
-      ? extractMonthlyAccountDetailsFromPnL(
-          qbMonthlyPnL,
-          (acc) => acc.id?.startsWith('200') === true,
-        )
-      : [];
-    const monthlySales = qbRevenueAccountDetails.length
-      ? qbRevenueAccountDetails.reduce((map, detail) => {
-          map.set(detail.monthKey, (map.get(detail.monthKey) ?? 0) + detail.amount);
-          return map;
-        }, new Map<string, number>())
-      : qbMonthlyPnL
-        ? extractMonthlyAccountTotalsFromPnL(qbMonthlyPnL, (acc) => {
-            if (acc.id === '1000000') return true;
-            const name = (acc.name || '').trim().toLowerCase();
-            return name === 'sales';
-          })
-        : new Map<string, number>();
-    if (qbMonthlyPnL && monthlySales.size === 0) {
-      // Diagnostic: parser found no Sales row. Dump the income-section
-      // account names + ids visible in the report so we can see what the
-      // realm actually returns. Logs once per request.
+    // QB Revenue actual = QuickBooks' OWN "Income" section on the P&L report
+    // (ex-VAT, accrual-based). Read by P&L section — NOT by account-number
+    // prefix — so it matches QuickBooks' own revenue definition and is immune
+    // to chart-of-accounts numbering. The per-account detail inside the Income
+    // section drives the drilldown drawer and sums exactly to the section total.
+    // (Previously this matched account ids by `startsWith('200')` with a
+    // fallback that treated account 1000000 — actually a Cost-of-Sales account —
+    // as "Sales", which could pull COS into the revenue figure.)
+    const qbSections = qbMonthlyPnL ? extractMonthlyPnLSections(qbMonthlyPnL) : null;
+    const qbRevenueAccountDetails = qbSections?.incomeAccounts ?? [];
+    if (qbMonthlyPnL && (!qbSections || qbSections.income.size === 0)) {
+      // Diagnostic: no Income section matched. Dump the top-level section
+      // labels so we can see what the realm actually returns. Logs once/request.
       try {
-        const seen: Array<{ id: string | null; name: string | null; type: string }> = [];
-        const walk = (row: any) => {
-          if (!row) return;
-          const hCell = row?.Header?.ColData?.[0];
-          const dCell = Array.isArray(row?.ColData) ? row.ColData[0] : null;
-          if (hCell)
-            seen.push({ id: hCell.id ?? null, name: hCell.value ?? null, type: 'Section' });
-          if (dCell)
-            seen.push({ id: dCell.id ?? null, name: dCell.value ?? null, type: row.type ?? '?' });
-          for (const c of row?.Rows?.Row ?? []) walk(c);
-        };
-        for (const r of qbMonthlyPnL?.Rows?.Row ?? []) walk(r);
+        const seen: string[] = [];
+        for (const r of qbMonthlyPnL?.Rows?.Row ?? []) {
+          const h =
+            r?.Header?.ColData?.[0]?.value ?? r?.Summary?.ColData?.[0]?.value ?? r?.group;
+          if (h) seen.push(String(h));
+        }
         console.warn(
-          '[qb-revenue] No 1000000/Sales row matched. Accounts visible in P&L:',
+          '[qb-revenue] No Income section matched. Top-level P&L rows:',
           JSON.stringify(seen.slice(0, 60)),
         );
       } catch (e) {
@@ -6084,19 +6060,6 @@ async function revenueTrackerHandler(req: Request, res: Response) {
       bucket.total += detail.amount;
       bucket.projects.set(label, (bucket.projects.get(label) || 0) + detail.amount);
     }
-    monthlySales.forEach((amount, monthKey) => {
-      if (!Number.isFinite(amount) || amount === 0) return;
-      if (!monthKeyInFinanceScope(monthKey, fyScope)) return;
-      if (qbRevenueAccountDetails.length) return;
-      if (!qbRevenueByMonth.has(monthKey))
-        qbRevenueByMonth.set(monthKey, { total: 0, projects: new Map() });
-      const bucket = qbRevenueByMonth.get(monthKey)!;
-      bucket.total += amount;
-      bucket.projects.set(
-        'Sales (a/c 1000000)',
-        (bucket.projects.get('Sales (a/c 1000000)') || 0) + amount,
-      );
-    });
 
     const months: any[] = [];
     const sourceMonthKeys = [
@@ -6104,7 +6067,6 @@ async function revenueTrackerHandler(req: Request, res: Response) {
       ...revByMonth.keys(),
       ...realisedByMonth.keys(),
       ...qbRevenueByMonth.keys(),
-      ...monthlySales.keys(),
     ];
     const monthKeys = getFinanceScopeMonthKeys(fyScope, sourceMonthKeys);
     let ytdRevenue = 0,
