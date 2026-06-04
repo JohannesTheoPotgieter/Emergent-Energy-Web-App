@@ -387,6 +387,95 @@ export function monthKeyLabel(mk: string): string {
   return `${MONTH_LABELS[Number(m) - 1]} ${y.slice(2)}`;
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// Per-month, per-state, per-project breakdown.
+//
+// The single Realised/Committed/Planned/Unrealised source the standalone
+// Revenue / COS / GP tabs read from, so they reconcile to the FYE Tracking
+// Report (and the trackers) exactly. Uses the SAME classification
+// (classifyFyeState) and recognition month as computeDashboard, so the
+// Realised state here equals the dashboard's "Actual" to the cent.
+// ───────────────────────────────────────────────────────────────────────────
+
+export interface FyeStateBucket {
+  /** Total amount for this (month, state). */
+  total: number;
+  /** Per-project breakdown for the drilldown, keyed by display project name. */
+  projects: Map<string, number>;
+}
+
+export interface FyeMonthStateBreakdown {
+  monthKey: string;
+  revenue: Record<FyeState, FyeStateBucket>;
+  cos: Record<FyeState, FyeStateBucket>;
+}
+
+function emptyStateBuckets(): Record<FyeState, FyeStateBucket> {
+  return {
+    realised: { total: 0, projects: new Map() },
+    committed: { total: 0, projects: new Map() },
+    planned: { total: 0, projects: new Map() },
+    unrealised: { total: 0, projects: new Map() },
+  };
+}
+
+function addToBucket(bucket: FyeStateBucket, project: string, amount: number): void {
+  if (!Number.isFinite(amount) || amount === 0) return;
+  bucket.total += amount;
+  if (project) bucket.projects.set(project, (bucket.projects.get(project) ?? 0) + amount);
+}
+
+/**
+ * Classify every FY line into its recognition-month + 4-state bucket, tracking
+ * revenue (perLineRevenue) and COS (actualTotal) per state AND per project.
+ * `projectNameOf` maps a line's projectId to the display name the tabs
+ * aggregate by. Returns one row per FY month (in order), zero-filled.
+ */
+export function computeMonthlyStateBreakdown(
+  lines: FinanceLine[],
+  fyMonthKeys: string[],
+  today: string,
+  projectNameOf: (projectId: number) => string,
+): FyeMonthStateBreakdown[] {
+  const monthSet = new Set(fyMonthKeys);
+  const byMonth = new Map<string, FyeMonthStateBreakdown>();
+  const ensure = (mk: string): FyeMonthStateBreakdown => {
+    let row = byMonth.get(mk);
+    if (!row) {
+      row = { monthKey: mk, revenue: emptyStateBuckets(), cos: emptyStateBuckets() };
+      byMonth.set(mk, row);
+    }
+    return row;
+  };
+
+  for (const l of lines) {
+    const mk = l.recognitionMonth;
+    if (!mk || !monthSet.has(mk)) continue;
+    const state = classifyFyeState(
+      {
+        invoiceNumber: l.invoiceNumber,
+        invoiceDateFontColor: l.invoiceDateFontColor,
+        invoiceDateConfirmed: l.invoiceDateConfirmed,
+        invoiceRaisedDate: l.invoiceRaisedDate,
+      },
+      today,
+    );
+    const row = ensure(mk);
+    const name = projectNameOf(l.projectId);
+    addToBucket(row.revenue[state], name, l.perLineRevenue);
+    addToBucket(row.cos[state], name, l.actualTotal);
+  }
+
+  return fyMonthKeys.map(
+    (mk) =>
+      byMonth.get(mk) ?? {
+        monthKey: mk,
+        revenue: emptyStateBuckets(),
+        cos: emptyStateBuckets(),
+      },
+  );
+}
+
 /**
  * Compute View B — the Revenue/COS/GP dashboard with monthly + YTD running
  * figures for three series (Revised Budget / Actual / Plan-ahead).

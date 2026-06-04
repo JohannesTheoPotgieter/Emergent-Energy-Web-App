@@ -23,11 +23,13 @@ import { getFinanceYearBounds, getCurrentFinanceYear } from "../../finance-year-
 import {
   computeProjectTable,
   computeDashboard,
+  computeMonthlyStateBreakdown,
   normalizeName,
   type FyeProjectMeta,
   type FyeProjectType,
   type FyeProjectTableResult,
   type FyeDashboardResult,
+  type FyeMonthStateBreakdown,
   type RevisedBudgetMap,
   type FyeMetric,
 } from "./compute";
@@ -79,11 +81,28 @@ export interface FyeTrackingResult {
   asAt: { date: string; sourceFileName: string | null; committedAt: string | null };
   projectTable: FyeProjectTableResult;
   dashboard: FyeDashboardResult;
+  /**
+   * Per-month, per-state, per-project Revenue/COS breakdown over the SAME
+   * curated, classified lines as `dashboard`. The single realised/committed/
+   * planned/unrealised source the standalone Revenue/COS/GP tabs read from so
+   * they reconcile to this report exactly.
+   */
+  monthlyStates: FyeMonthStateBreakdown[];
 }
 
 export interface FyeServiceDeps {
   financeLines?: FinanceLineLevelRepository;
   data?: FyeTrackingDataRepository;
+}
+
+export interface FyeBuildOptions {
+  /**
+   * Override the "Actual through" cut-off month (YYYY-MM). When omitted the
+   * dashboard auto-clamps Actual to the last CLOSED month. Must be one of the
+   * FY's 12 month keys, otherwise it is ignored and the auto value is used.
+   * Lets the FYE tab choose how far the Actual line runs.
+   */
+  actualThroughMonthKey?: string | null;
 }
 
 /**
@@ -93,6 +112,7 @@ export async function buildFyeTracking(
   fy: number = getCurrentFinanceYear(),
   deps: FyeServiceDeps = {},
   now: Date = new Date(),
+  opts: FyeBuildOptions = {},
 ): Promise<FyeTrackingResult> {
   const financeRepo = deps.financeLines ?? new FinanceLineLevelRepository();
   const dataRepo = deps.data ?? new FyeTrackingDataRepository();
@@ -100,7 +120,13 @@ export async function buildFyeTracking(
   const bounds = getFinanceYearBounds(fy);
   const todayIso = sastTodayIso(now);
   const months = fyMonthKeys(fy);
-  const lastClosed = lastClosedMonthKey(fy, todayIso);
+  const autoLastClosed = lastClosedMonthKey(fy, todayIso);
+  // Actual cut-off: caller override (the FYE tab's month picker) when it is a
+  // valid FY month, otherwise the auto last-closed month.
+  const lastClosed =
+    opts.actualThroughMonthKey && months.includes(opts.actualThroughMonthKey)
+      ? opts.actualThroughMonthKey
+      : autoLastClosed;
 
   const [projectMeta, trackerSource, trackerDates, revisedRows, latestRun] = await Promise.all([
     dataRepo.listProjectMeta(),
@@ -161,6 +187,16 @@ export async function buildFyeTracking(
   }
   const dashboard = computeDashboard(dashboardLines, revised, months, lastClosed, todayIso);
 
+  // Per-month, per-state, per-project breakdown over the same curated lines —
+  // the single source the standalone tabs read from. Keyed by the same display
+  // name the tabs aggregate by (project name with the _Tracker suffix stripped).
+  const monthlyStates = computeMonthlyStateBreakdown(
+    dashboardLines,
+    months,
+    todayIso,
+    (pid) => (metas.get(pid)?.projectName ?? "").replace(/_Tracker$/i, ""),
+  );
+
   return {
     fye: fy,
     asAt: {
@@ -170,5 +206,6 @@ export async function buildFyeTracking(
     },
     projectTable,
     dashboard,
+    monthlyStates,
   };
 }
