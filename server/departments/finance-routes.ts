@@ -2611,45 +2611,63 @@ router.get('/api/cos-tracker', requireAuth, requirePermission('cos', 'view'), as
       if (!hasAmt && hasInvoice) cosNullCount += 1;
     }
 
+    // ── Single engine (owner decision 2026-06): realised/committed/planned COS
+    // come from the reconciled FYE engine — the curated (48-project),
+    // classifyFyeState, per-invoice lines the FYE Tracking Report and the
+    // reconciliation test use — so this tab matches the trackers. The
+    // app-only-pending QB-reconciliation drilldown below stays on the
+    // QB-link-aware app rows (FYE does not model QB links). Replaces the old
+    // per-handler COS classification for this tab.
+    const fyeYear = fyScope.fy ?? getCurrentFinanceYear();
+    const fye = await buildFyeTracking(fyeYear);
+    const fyeLastClosed = fye.dashboard.lastClosedMonthKey;
+    const countedNames = new Set(
+      fye.projectTable.rows.filter((r) => !r.excludedFromTotals).map((r) => r.project),
+    );
+    for (const ms of fye.monthlyStates) {
+      if (!monthKeyInFinanceScope(ms.monthKey, fyScope)) continue;
+      // Realised clamped to last closed (mirrors the FYE "Actual" clamp) so
+      // YTD realised == the FYE Tracking Report's.
+      const isClosed = fyeLastClosed ? ms.monthKey <= fyeLastClosed : true;
+      if (isClosed && ms.cos.realised.total !== 0) {
+        realisedByMonth.set(ms.monthKey, {
+          total: ms.cos.realised.total,
+          projects: new Map(ms.cos.realised.projects),
+        });
+      }
+      if (ms.cos.committed.total !== 0) {
+        committedByMonth.set(ms.monthKey, {
+          total: ms.cos.committed.total,
+          projects: new Map(ms.cos.committed.projects),
+        });
+      }
+      // The COS tab's "Planned" (no invoice) = FYE planned + unrealised.
+      const plannedTotal = ms.cos.planned.total + ms.cos.unrealised.total;
+      if (plannedTotal !== 0) {
+        const projects = new Map<string, number>(ms.cos.planned.projects);
+        ms.cos.unrealised.projects.forEach((v, k) => projects.set(k, (projects.get(k) ?? 0) + v));
+        plannedByMonth.set(ms.monthKey, { total: plannedTotal, projects });
+      }
+    }
+
+    // App-only pending QB-reconciliation drilldown: "invoice captured but date
+    // unconfirmed AND not yet linked to a QB bill". Curated to the FYE counted
+    // set for consistency with the realised/committed/planned figures above.
     for (const row of rawCostLines) {
       const amount = row.amountExVat ? Number(row.amountExVat) : 0;
       if (!Number.isFinite(amount) || amount === 0) continue;
-      // COS realisation is bucketed by invoice_date only (per finance rule).
-      // Cashflow uses payment dates separately. Rows without invoice_date are
-      // not realised yet and fall out of the tracker by design.
       const lineMonthDate = row.invoiceDate;
       if (!lineMonthDate) continue;
       const dm = String(lineMonthDate).match(/^(\d{4})-(\d{2})/);
       if (!dm) continue;
       const monthKey = `${dm[1]}-${dm[2]}`;
       if (!monthKeyInFinanceScope(monthKey, fyScope)) continue;
-      // Skip rows without a project association — these are OPEX/admin lines imported
-      // without a project and should not inflate project-scoped COS aggregates.
       const projectName = (row.projectName || '').replace(/_Tracker$/i, '');
-      if (!projectName) continue;
+      if (!projectName || !countedNames.has(projectName)) continue;
       const hasInvoice = !!(row.invoiceNumber && String(row.invoiceNumber).trim());
-      // Colour-gated for ALL months (owner decision 2026-06, § 3.2): a red
-      // invoice-date stays Committed even in a closed month. No past-month
-      // auto-promote.
       const invoiceDateConfirmed =
         !!row.invoiceDate &&
-        (row.invoiceDateFontColor === 'black' ||
-          row.invoiceDateConfirmed === true);
-
-      // COS classification — purchase order is intentionally NOT part of the
-      // logic per finance rule. A PO without an invoice is still "Planned".
-      //   Realised  = invoice present AND invoice date confirmed (black)
-      //   Committed = invoice present AND invoice date unconfirmed (red)
-      //   Planned   = no invoice
-      if (hasInvoice && invoiceDateConfirmed) {
-        addProjectAmount(realisedByMonth, monthKey, projectName, amount);
-      } else if (hasInvoice) {
-        addProjectAmount(committedByMonth, monthKey, projectName, amount);
-      } else {
-        addProjectAmount(plannedByMonth, monthKey, projectName, amount);
-      }
-
-      // App-only pending is explicitly "unlinked app rows with invoice captured but unconfirmed".
+        (row.invoiceDateFontColor === 'black' || row.invoiceDateConfirmed === true);
       if (!linksByCostLineId.has(row.id) && hasInvoice && !invoiceDateConfirmed) {
         addProjectAmount(appOnlyPendingByMonth, monthKey, projectName, amount);
       }
@@ -5507,12 +5525,14 @@ router.get(
       // `recognitionAmountFor` helper reads the persisted per-line POC value
       // directly.
 
-      const nowDate = new Date();
-      // DF-3 (audit V2): currentMonthKey is the SAST month, so a line dated
-      // "today SAST" classifies identically here and in /api/cos-tracker /
-      // /api/gp-tracker / /api/revenue-tracker / lifecycle-routes. Before
-      // this fix the UTC anchor here disagreed with the SAST anchor in
-      // finance-line-level-repository for the first 2h of every SAST day.
+      // ── Single engine (owner decision 2026-06): GP = Revenue − COS, both
+      // sourced from the reconciled FYE engine (curated 48-project,
+      // classifyFyeState, per-invoice lines) so the GP tab matches the FYE
+      // Tracking Report + trackers. Replaces the recognition-bucketing path.
+      const fye = await buildFyeTracking(getCurrentFinanceYear());
+      const fyeLastClosed = fye.dashboard.lastClosedMonthKey;
+      // SAST month anchor — still used by the downstream month loop to mark the
+      // current/closed boundary.
       const currentMonthKey = sastCurrentMonthKey();
 
       const cosByMonth = new Map<string, number>();
@@ -5524,23 +5544,31 @@ router.get(
         { revenue: number; cos: number; gp: number; gpPct: number }
       >();
 
-      // Finance PR 3: § 3.3.2 — recognition via canonical bucketing helper.
-      for (const b of bucketCostLinesForRecognition(allExpenses, { currentMonthKey })) {
-        const { amount, monthKey, revenueAmount, cosRealised, projectName: pName } = b;
-        cosByMonth.set(monthKey, (cosByMonth.get(monthKey) || 0) + amount);
-        revByMonth.set(monthKey, (revByMonth.get(monthKey) || 0) + revenueAmount);
+      const sumStates = (s: Record<string, { total: number }>): number =>
+        s.realised.total + s.committed.total + s.planned.total + s.unrealised.total;
+      const bumpPg = (name: string, rev: number, cos: number) => {
+        if (!name) return;
+        const pg = projectGpMap.get(name) ?? { revenue: 0, cos: 0, gp: 0, gpPct: 0 };
+        pg.revenue += rev;
+        pg.cos += cos;
+        projectGpMap.set(name, pg);
+      };
 
-        if (cosRealised) {
-          realisedCosByMonth.set(monthKey, (realisedCosByMonth.get(monthKey) || 0) + amount);
-          realisedRevByMonth.set(monthKey, (realisedRevByMonth.get(monthKey) || 0) + revenueAmount);
+      for (const ms of fye.monthlyStates) {
+        cosByMonth.set(ms.monthKey, sumStates(ms.cos));
+        revByMonth.set(ms.monthKey, sumStates(ms.revenue));
+        // Realised clamped to last closed (mirrors the FYE "Actual" clamp).
+        const isClosed = fyeLastClosed ? ms.monthKey <= fyeLastClosed : true;
+        if (isClosed) {
+          realisedCosByMonth.set(ms.monthKey, ms.cos.realised.total);
+          realisedRevByMonth.set(ms.monthKey, ms.revenue.realised.total);
         }
-
-        if (!projectGpMap.has(pName)) {
-          projectGpMap.set(pName, { revenue: 0, cos: 0, gp: 0, gpPct: 0 });
+        for (const st of ['realised', 'committed', 'planned', 'unrealised'] as const) {
+          ms.revenue[st].projects.forEach((v, name) => bumpPg(name, v, 0));
+          ms.cos[st].projects.forEach((v, name) => bumpPg(name, 0, v));
         }
-        const pg = projectGpMap.get(pName)!;
-        pg.cos += amount;
-        pg.revenue += revenueAmount;
+      }
+      for (const pg of projectGpMap.values()) {
         pg.gp = pg.revenue - pg.cos;
         pg.gpPct = pg.revenue !== 0 ? (pg.gp / pg.revenue) * 100 : 0;
       }
