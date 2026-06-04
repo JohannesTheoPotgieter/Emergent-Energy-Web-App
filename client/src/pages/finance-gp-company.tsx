@@ -65,6 +65,8 @@ interface CosMonthData {
   committedCOS: number;
   plannedCOS: number;
   budget: number;
+  /** QuickBooks' own Cost-of-Sales (P&L "Cost of Sales" section) for the month. */
+  qbOnlyActual: number;
   cosPlannedProjects: ProjBreak[];
   realisedProjects: ProjBreak[];
   committedProjects: ProjBreak[];
@@ -85,6 +87,8 @@ interface RevMonthData {
   realisedRevenue: number;
   unrealisedRevenue: number;
   budget: number;
+  /** QuickBooks' own Revenue (P&L "Income" section) for the month. */
+  qbRevenueActual: number;
   revProjects: ProjBreak[];
   realisedProjects: ProjBreak[];
   unrealisedProjects: ProjBreak[];
@@ -120,6 +124,14 @@ interface GpMonthData {
   realisedCOS: number;
   realisedGP: number;
   realisedMarginPct: number;
+  // QuickBooks (P&L) — independent comparison, sourced purely from QuickBooks.
+  // Company-level only (the QB P&L has no project split), so these fall to 0
+  // when the view is project-filtered.
+  qbRevenue: number;
+  qbCOS: number;
+  qbGP: number;
+  /** QB GP − app Realised GP — the QB-vs-app reconciliation delta for the month. */
+  qbVsRealisedGP: number;
   // Per-project GP breakdowns (for expandable rows)
   gpPlannedProjects: ProjBreak[];
   gpRealisedProjects: ProjBreak[];
@@ -133,6 +145,7 @@ interface GpMonthData {
   ytdRealisedRevenue: number;
   ytdRealisedCOS: number;
   ytdRealisedGP: number;
+  ytdQbGP: number;
 }
 
 // ── Row definitions ──────────────────────────────────────────────────────────
@@ -169,10 +182,19 @@ const ROW_DEFS: RowDef[] = [
   { key: "realisedCOS", label: "Realised COS", dataKey: "realisedCOS", colorClass: "text-foreground", group: "monthly" },
   { key: "realisedGP", label: "Realised GP", dataKey: "realisedGP", colorClass: "text-foreground font-bold", group: "monthly", emphasis: true, expandable: true, projectsKey: "gpRealisedProjects" },
   { key: "realisedMarginPct", label: "Realised Margin %", dataKey: "realisedMarginPct", colorClass: "text-muted-foreground", group: "monthly", isMarginPct: true },
+  // ── QuickBooks (P&L) ──────────────────────────────────────────────────────
+  // Independent comparison sourced purely from QuickBooks' own P&L sections
+  // (Income / Cost of Sales). It never feeds — and is never fed by — the app's
+  // tracker numbers above. Company-level only (no project split in the QB P&L).
+  { key: "qbRevenue", label: "QuickBooks Revenue", dataKey: "qbRevenue", colorClass: "text-sky-700 font-semibold", group: "monthly", newGroup: true },
+  { key: "qbCOS", label: "QuickBooks COS", dataKey: "qbCOS", colorClass: "text-sky-700", group: "monthly" },
+  { key: "qbGP", label: "QuickBooks GP", dataKey: "qbGP", colorClass: "text-sky-700 font-bold", group: "monthly", emphasis: true },
+  { key: "qbVsRealisedGP", label: "QB GP − Realised GP", dataKey: "qbVsRealisedGP", colorClass: "text-muted-foreground", group: "monthly" },
   // ── YTD ──────────────────────────────────────────────────────────────────
   { key: "ytdBudgetGP", label: "YTD Budget GP", dataKey: "ytdBudgetGP", colorClass: "text-emerald-700", group: "ytd" },
   { key: "ytdPlannedGP", label: "YTD GP — all states", dataKey: "ytdPlannedGP", colorClass: "text-foreground font-semibold", group: "ytd" },
   { key: "ytdRealisedGP", label: "YTD Realised GP", dataKey: "ytdRealisedGP", colorClass: "text-foreground font-bold", group: "ytd" },
+  { key: "ytdQbGP", label: "YTD QuickBooks GP", dataKey: "ytdQbGP", colorClass: "text-sky-700 font-bold", group: "ytd" },
 ];
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -272,6 +294,7 @@ export default function FinanceGpCompanyPage() {
     let ytdBudgetRev = 0, ytdBudgetCOS = 0;
     let ytdPlannedRev = 0, ytdPlannedCOS = 0;
     let ytdRealisedRev = 0, ytdRealisedCOS = 0;
+    let ytdQbGP = 0;
 
     return keys.map((key) => {
       const cos = cosMap.get(key);
@@ -289,6 +312,12 @@ export default function FinanceGpCompanyPage() {
       const realisedCOS = cos?.realisedCOS ?? 0;
       const realisedGP = realisedRevenue - realisedCOS;
 
+      // QuickBooks (P&L) — pure QB, never mixed with the tracker numbers above.
+      const qbRevenue = rev?.qbRevenueActual ?? 0;
+      const qbCOS = cos?.qbOnlyActual ?? 0;
+      const qbGP = qbRevenue - qbCOS;
+      const qbVsRealisedGP = qbGP - realisedGP;
+
       const gpPlannedProjects = mergeProjectGP(rev?.revProjects ?? [], cos?.cosPlannedProjects ?? []);
       const gpRealisedProjects = mergeProjectGP(rev?.realisedProjects ?? [], cos?.realisedProjects ?? []);
 
@@ -298,6 +327,7 @@ export default function FinanceGpCompanyPage() {
       ytdPlannedCOS += plannedCOS;
       ytdRealisedRev += realisedRevenue;
       ytdRealisedCOS += realisedCOS;
+      ytdQbGP += qbGP;
 
       return {
         monthKey: key,
@@ -314,6 +344,10 @@ export default function FinanceGpCompanyPage() {
         realisedCOS,
         realisedGP,
         realisedMarginPct: marginPct(realisedGP, realisedRevenue),
+        qbRevenue,
+        qbCOS,
+        qbGP,
+        qbVsRealisedGP,
         gpPlannedProjects,
         gpRealisedProjects,
         ytdBudgetRevenue: ytdBudgetRev,
@@ -325,6 +359,7 @@ export default function FinanceGpCompanyPage() {
         ytdRealisedRevenue: ytdRealisedRev,
         ytdRealisedCOS: ytdRealisedCOS,
         ytdRealisedGP: ytdRealisedRev - ytdRealisedCOS,
+        ytdQbGP,
       };
     });
   }, [rawCosMonths, rawRevMonths]);
@@ -370,6 +405,12 @@ export default function FinanceGpCompanyPage() {
         budgetCOS: 0,
         budgetGP: 0,
         budgetMarginPct: 0,
+        // QB P&L is company-level only — blank it out under a project filter.
+        qbRevenue: 0,
+        qbCOS: 0,
+        qbGP: 0,
+        qbVsRealisedGP: 0,
+        ytdQbGP: 0,
         plannedRevenue,
         plannedCOS,
         plannedGP,

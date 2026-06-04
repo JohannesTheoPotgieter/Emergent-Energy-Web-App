@@ -863,6 +863,140 @@ export function extractMonthlyAccountTotalsFromPnL(
   return out;
 }
 
+// ===================== P&L SECTION TOTALS (Income / COS / GP) =====================
+
+/**
+ * QuickBooks' own Revenue / Cost-of-Sales / Gross-Profit, read straight from
+ * the standard P&L section structure rather than guessing account-number
+ * prefixes.
+ *
+ * QuickBooks already files every account under an "Income" or "Cost of Sales"
+ * section on the Profit & Loss report; this reads those sections directly so
+ * the figure is QB's own definition of revenue/COS/GP and is immune to
+ * chart-of-accounts numbering differences. Each section total is the SUM of
+ * its leaf-account rows (parent/sub-account summaries are skipped so the total
+ * always reconciles to the per-account drilldown to the cent).
+ *
+ * Gross profit = Income − Cost of Sales (matches QB's own Gross Profit line).
+ */
+export interface MonthlyPnLSectionResult {
+  /** monthKey ("YYYY-MM") → Income section total. */
+  income: Map<string, number>;
+  /** monthKey → Cost of Sales section total. */
+  costOfSales: Map<string, number>;
+  /** monthKey → Gross Profit (Income − Cost of Sales). */
+  grossProfit: Map<string, number>;
+  /** Per-account, per-month detail inside the Income section (for drilldown). */
+  incomeAccounts: MonthlyPnLAccountDetail[];
+  /** Per-account, per-month detail inside the Cost of Sales section. */
+  costOfSalesAccounts: MonthlyPnLAccountDetail[];
+}
+
+function buildMonthByCol(report: any): Map<number, string> {
+  const cols: any[] = report?.Columns?.Column ?? [];
+  const monthByCol = new Map<number, string>();
+  cols.forEach((col: any, idx: number) => {
+    const meta: any[] = col?.MetaData ?? [];
+    const startDate = meta.find((m: any) => m?.Name === 'StartDate')?.Value;
+    const dm = String(startDate || '').match(/^(\d{4})-(\d{2})/);
+    if (dm) monthByCol.set(idx, `${dm[1]}-${dm[2]}`);
+  });
+  return monthByCol;
+}
+
+function sectionLabel(row: any): string {
+  const headerVal = row?.Header?.ColData?.[0]?.value;
+  const summaryVal = row?.Summary?.ColData?.[0]?.value;
+  return String(headerVal ?? summaryVal ?? '').trim().toLowerCase();
+}
+
+function isIncomeSection(row: any): boolean {
+  if (row?.group === 'Income') return true;
+  const label = sectionLabel(row);
+  return label === 'income' || label === 'total income';
+}
+
+function isCostOfSalesSection(row: any): boolean {
+  if (row?.group === 'COGS' || row?.group === 'CostOfGoodsSold') return true;
+  const label = sectionLabel(row);
+  return label.includes('cost of goods sold') || label.includes('cost of sales');
+}
+
+/**
+ * Collect every LEAF account row (type === 'Data') inside a P&L section,
+ * recursing through any parent/sub-account nesting. Parent "Section" summary
+ * rows are intentionally skipped so summing these details never double-counts
+ * a parent that also lists its children.
+ */
+function collectSectionLeafAccounts(
+  section: any,
+  monthByCol: Map<number, string>,
+): MonthlyPnLAccountDetail[] {
+  const out: MonthlyPnLAccountDetail[] = [];
+  const visit = (row: any): void => {
+    if (!row) return;
+    if (row.type === 'Data' && Array.isArray(row.ColData)) {
+      const accCell = row.ColData[0] ?? {};
+      const accountId = accCell?.id ? String(accCell.id) : null;
+      const accountName = accCell?.value ? String(accCell.value) : null;
+      monthByCol.forEach((monthKey, idx) => {
+        const v = row.ColData[idx]?.value;
+        const n = v === undefined || v === null || v === '' ? 0 : Number(v);
+        if (Number.isFinite(n) && n !== 0) {
+          out.push({ accountId, accountName, monthKey, amount: n });
+        }
+      });
+    }
+    for (const child of row?.Rows?.Row ?? []) visit(child);
+  };
+  for (const child of section?.Rows?.Row ?? []) visit(child);
+  return out;
+}
+
+function sumDetailsByMonth(details: MonthlyPnLAccountDetail[]): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const d of details) m.set(d.monthKey, (m.get(d.monthKey) ?? 0) + d.amount);
+  return m;
+}
+
+export function extractMonthlyPnLSections(report: any): MonthlyPnLSectionResult {
+  const empty: MonthlyPnLSectionResult = {
+    income: new Map(),
+    costOfSales: new Map(),
+    grossProfit: new Map(),
+    incomeAccounts: [],
+    costOfSalesAccounts: [],
+  };
+  try {
+    const monthByCol = buildMonthByCol(report);
+    if (monthByCol.size === 0) return empty;
+
+    const topRows: any[] = report?.Rows?.Row ?? [];
+    const incomeSection = topRows.find(isIncomeSection) ?? null;
+    const cosSection = topRows.find(isCostOfSalesSection) ?? null;
+
+    const incomeAccounts = incomeSection
+      ? collectSectionLeafAccounts(incomeSection, monthByCol)
+      : [];
+    const costOfSalesAccounts = cosSection
+      ? collectSectionLeafAccounts(cosSection, monthByCol)
+      : [];
+
+    const income = sumDetailsByMonth(incomeAccounts);
+    const costOfSales = sumDetailsByMonth(costOfSalesAccounts);
+
+    // Gross profit = Income − Cost of Sales, month by month (QB's own GP line).
+    const grossProfit = new Map<string, number>(income);
+    for (const [mk, cos] of costOfSales) {
+      grossProfit.set(mk, (grossProfit.get(mk) ?? 0) - cos);
+    }
+
+    return { income, costOfSales, grossProfit, incomeAccounts, costOfSalesAccounts };
+  } catch {
+    return empty;
+  }
+}
+
 export interface QuickBooksConnectionStatus {
   connected: boolean;
   realmId: string | null;

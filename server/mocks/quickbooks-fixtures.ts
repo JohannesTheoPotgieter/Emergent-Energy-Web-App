@@ -294,14 +294,71 @@ export function mockProfitAndLossReport(_startDate: string, _endDate: string) {
 }
 
 export function mockMonthlyPnLReport(startDate: string, endDate: string) {
+  // Shaped like a real QuickBooks ProfitAndLoss report with
+  // summarize_column_by=Month: account rows nested inside the standard
+  // "Income" and "Cost of Sales" sections, one money column per month
+  // (StartDate in the column MetaData). This is the shape the section /
+  // account-detail extractors in quickbooks-service.ts expect, so the dev
+  // QB Revenue/COS/GP comparison columns are exercised without a real realm.
+  // Account numbers mirror the live chart (Income 200x, COS 1000x) but
+  // classification is by section, not number.
+  const col = (start: string, title: string) => ({
+    ColTitle: title,
+    ColType: "Money",
+    MetaData: [{ Name: "StartDate", Value: start }],
+  });
+  const acct = (id: string, name: string, sep: string, oct: string, nov: string) => ({
+    type: "Data",
+    ColData: [
+      { id, value: `${id} ${name}` },
+      { value: sep },
+      { value: oct },
+      { value: nov },
+      { value: (Number(sep) + Number(oct) + Number(nov)).toFixed(2) },
+    ],
+  });
   return {
-    Header: { ReportName: "MonthlyPnL", Currency: "ZAR", StartPeriod: startDate, EndPeriod: endDate },
-    Columns: { Column: [{ ColTitle: "Month" }, { ColTitle: "Revenue" }, { ColTitle: "COS" }, { ColTitle: "GP" }] },
+    Header: { ReportName: "ProfitAndLoss", Currency: "ZAR", StartPeriod: startDate, EndPeriod: endDate },
+    Columns: {
+      Column: [
+        { ColTitle: "", ColType: "Account" },
+        col("2025-09-01", "Sep 2025"),
+        col("2025-10-01", "Oct 2025"),
+        col("2025-11-01", "Nov 2025"),
+        { ColTitle: "Total", ColType: "Money" },
+      ],
+    },
     Rows: {
       Row: [
-        { ColData: [{ value: "2026-02" }, { value: "287500.00" }, { value: "193875.00" }, { value: "93625.00" }] },
-        { ColData: [{ value: "2026-03" }, { value: "0.00" }, { value: "48875.00" }, { value: "-48875.00" }] },
-        { ColData: [{ value: "2026-04" }, { value: "517500.00" }, { value: "298325.00" }, { value: "219175.00" }] },
+        {
+          type: "Section",
+          group: "Income",
+          Header: { ColData: [{ value: "Income" }] },
+          Rows: {
+            Row: [
+              acct("200000", "Solar EPC Revenue", "250000.00", "480000.00", "320000.00"),
+              acct("200100", "O&M Revenue", "37500.00", "37500.00", "37500.00"),
+            ],
+          },
+          Summary: { ColData: [{ value: "Total Income" }, { value: "287500.00" }, { value: "517500.00" }, { value: "357500.00" }, { value: "1162500.00" }] },
+        },
+        {
+          type: "Section",
+          group: "COGS",
+          Header: { ColData: [{ value: "Cost of Sales" }] },
+          Rows: {
+            Row: [
+              acct("1000000", "Materials", "150000.00", "290000.00", "195000.00"),
+              acct("1000100", "Subcontractors", "43875.00", "8325.00", "60000.00"),
+            ],
+          },
+          Summary: { ColData: [{ value: "Total Cost of Sales" }, { value: "193875.00" }, { value: "298325.00" }, { value: "255000.00" }, { value: "747200.00" }] },
+        },
+        {
+          type: "Section",
+          group: "GrossProfit",
+          Summary: { ColData: [{ value: "Gross Profit" }, { value: "93625.00" }, { value: "219175.00" }, { value: "102500.00" }, { value: "415300.00" }] },
+        },
       ],
     },
   };
