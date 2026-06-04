@@ -116,7 +116,7 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Revenue", path: "/revenue-tracker" },
       { label: "Gross Profit", path: "/finance/gp/company" },
       { label: "FYE Tracking Report", path: "/fye-revenue-tracking" },
-      { label: "QuickBooks Throughput", path: "/finance/quickbooks" },
+      { label: "QuickBooks", path: "/finance/quickbooks" },
       { label: "Payment Requests", path: "/payment-request-board" },
       { label: "PO Approvals", path: "/po-approval-board" },
     ],

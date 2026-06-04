@@ -408,7 +408,7 @@ export function QuickBooksReconciliationTab({ projectId, projectName }: Props) {
         </Button>
         <div className="flex-1" />
         <a
-          href="/finance/quickbooks-customer-mapping"
+          href="/finance/quickbooks"
           className="text-[10px] text-muted-foreground underline hover:text-foreground"
         >
           Manage customer mapping
@@ -858,7 +858,7 @@ function RevenueReconView({
             </p>
             <div className="mt-2">
               <a
-                href="/finance/quickbooks-customer-mapping"
+                href="/finance/quickbooks"
                 className="inline-flex items-center gap-1 text-xs font-medium text-amber-900 underline"
               >
                 <Link2 className="h-3 w-3" /> Map a customer
