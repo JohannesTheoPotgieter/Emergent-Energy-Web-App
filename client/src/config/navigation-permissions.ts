@@ -21,7 +21,7 @@ const SECTION_HELP_TEXT: Partial<Record<SectionKey, string>> = {
   PRIORITIES: "Department, Company",
   PROJECT_DEVELOPMENT: "Project Development Dashboard, Pipeline / Opportunities, Clients, Handover Queue, Project Development Reports",
   PROJECT_DELIVERY: "Execution Dashboard, PM Dashboard, Portfolio Dashboard, All Projects, PM On-The-Go, Handover & Closeout, and delivery controls",
-  FINANCE: "Cashflow, COS, Revenue, QB Throughput",
+  FINANCE: "Cashflow, COS, Revenue, QuickBooks",
   ENGINEERING: "Engineering Dashboard, Task Board, Standup",
   HSE: "HSE Dashboard",
   QUALITY: "Quality Dashboard, Commissioning",

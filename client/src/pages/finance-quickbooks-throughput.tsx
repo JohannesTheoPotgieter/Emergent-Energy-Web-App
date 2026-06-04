@@ -10,7 +10,6 @@ import { PageSkeleton } from "@/components/ui/page-states";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertTriangle,
-  CheckCircle2,
   Loader2,
   Plug,
   RefreshCw,
@@ -18,13 +17,12 @@ import {
   Link2,
   Link2Off,
   Users,
-  Activity,
-  History,
   Search,
   X,
   ChevronDown,
   Receipt,
   Banknote,
+  Sparkles,
 } from "lucide-react";
 import { apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
 import { isApiError } from "@/lib/api-error";
@@ -33,9 +31,7 @@ import { FinanceShell } from "@/components/layout/FinanceShell";
 import { FinanceTrustStrip } from "@/components/finance/FinanceTrustStrip";
 import { useAuth } from "@/hooks/use-auth";
 import { SuggestMatchesDialog } from "@/components/quickbooks/SuggestMatchesDialog";
-import { QbMatchingWorkbench } from "@/components/quickbooks/QbMatchingWorkbench";
 import { FieldHint } from "@/components/ui/field-hint";
-import { Sparkles } from "lucide-react";
 
 
 type IntegrationHealthState = "healthy" | "stale" | "failing" | "unknown";
@@ -56,289 +52,6 @@ interface QuickBooksStatus {
   ageMs: number | null;
   staleAfterMs: number;
 }
-
-function formatRelativeAge(ageMs: number | null): string {
-  if (ageMs === null || ageMs < 0) return "—";
-  const minutes = Math.floor(ageMs / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days} d ago`;
-}
-
-function formatDateTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleString();
-}
-
-function healthBadgeClass(state: IntegrationHealthState): string {
-  switch (state) {
-    case "healthy":
-      return "bg-emerald-100 text-emerald-700 border-emerald-200";
-    case "stale":
-      return "bg-amber-100 text-amber-700 border-amber-200";
-    case "failing":
-      return "bg-rose-100 text-rose-700 border-rose-200";
-    default:
-      return "bg-slate-100 text-slate-600 border-slate-200";
-  }
-}
-
-function ConnectionTab({ status }: { status: QuickBooksStatus | undefined }) {
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const isConnected = status?.connected ?? false;
-
-  const disconnectMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/quickbooks/disconnect");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/quickbooks/status"] });
-      toast({ title: "QuickBooks disconnected" });
-    },
-    onError: (err: Error) => {
-      toast({ title: "Disconnect failed", description: err.message, variant: "destructive" });
-    },
-  });
-
-  const { data: pnlReport } = useQuery<any>({
-    queryKey: ["/api/quickbooks/reports/pnl-throughput"],
-    queryFn: async () => {
-      const end = new Date();
-      const start = new Date(end.getFullYear(), end.getMonth() - 2, 1);
-      const iso = (d: Date) => d.toISOString().slice(0, 10);
-      const res = await apiRequest(
-        "GET",
-        `/api/quickbooks/reports/pnl?startDate=${iso(start)}&endDate=${iso(end)}`,
-      );
-      return res.json();
-    },
-    enabled: isConnected,
-  });
-
-  const summaryRow = pnlReport?.Rows?.Row?.find?.((r: any) => r?.Summary);
-  const netIncome =
-    summaryRow?.Summary?.ColData?.[summaryRow.Summary.ColData.length - 1]?.value ?? "—";
-
-  return (
-    <div className="space-y-4">
-      {!isConnected ? (
-        <Card className="border-amber-200 bg-amber-50/50">
-          <CardContent className="p-4">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-amber-800">QuickBooks is not connected</p>
-                <p className="text-xs text-amber-700 mt-1">
-                  Click Connect to authorize this workspace. You'll be redirected to Intuit.
-                </p>
-                <Button
-                  size="sm"
-                  className="mt-3 gap-1.5"
-                  onClick={() => {
-                    window.location.href = "/api/quickbooks/auth";
-                  }}
-                >
-                  <Plug className="h-4 w-4" /> Connect to QuickBooks
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <>
-          <Card
-            className={
-              status?.health === "failing"
-                ? "border-rose-200 bg-rose-50/40"
-                : status?.isStale || status?.health === "stale"
-                  ? "border-amber-200 bg-amber-50/40"
-                  : "border-emerald-200 bg-emerald-50/40"
-            }
-          >
-            <CardContent className="p-4">
-              <div className="flex items-start gap-3">
-                {status?.health === "failing" ? (
-                  <AlertTriangle className="h-5 w-5 text-rose-500 shrink-0 mt-0.5" />
-                ) : status?.isStale || status?.health === "stale" ? (
-                  <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
-                ) : (
-                  <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0 mt-0.5" />
-                )}
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium">Integration health</span>
-                    <Badge
-                      variant="outline"
-                      className={`text-[10px] ${healthBadgeClass(status?.health ?? "unknown")}`}
-                    >
-                      {status?.health ?? "unknown"}
-                    </Badge>
-                    {status?.isStale && status?.health !== "failing" && (
-                      <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
-                        stale data
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                    <div>
-                      <div className="text-muted-foreground">Last successful sync</div>
-                      <div className="font-medium">
-                        {status?.lastSuccessfulSyncAt
-                          ? `${formatDateTime(status.lastSuccessfulSyncAt)} (${formatRelativeAge(status.ageMs)})`
-                          : "never"}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-muted-foreground">Last failed sync</div>
-                      <div className="font-medium">
-                        {status?.lastFailedSyncAt ? formatDateTime(status.lastFailedSyncAt) : "—"}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-muted-foreground">Last failure reason</div>
-                      <div className="font-medium truncate" title={status?.lastFailureReason ?? undefined}>
-                        {status?.lastFailureCode
-                          ? `${status.lastFailureCode}${status.lastFailureReason ? ` — ${status.lastFailureReason}` : ""}`
-                          : "—"}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Card>
-              <CardContent className="p-3">
-                <div className="text-xs text-muted-foreground mb-1">Company</div>
-                <div className="text-sm font-medium truncate">{status?.companyName ?? "—"}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-3">
-                <div className="text-xs text-muted-foreground mb-1">Realm ID</div>
-                <div className="text-sm font-medium truncate">{status?.realmId ?? "—"}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-3">
-                <div className="text-xs text-muted-foreground mb-1">Access token expiry</div>
-                <div className="text-sm font-medium">{formatDateTime(status?.tokenExpiry)}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-3">
-                <div className="text-xs text-muted-foreground mb-1">3-mo Net Income (QB P&L)</div>
-                <div className="text-sm font-medium">{netIncome}</div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="flex justify-end">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => disconnectMutation.mutate()}
-              disabled={disconnectMutation.isPending}
-              className="gap-1.5"
-            >
-              {disconnectMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Plug className="h-4 w-4" />
-              )}
-              Disconnect
-            </Button>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-interface SyncLogEvent {
-  id: number;
-  runAt: string;
-  status: "ok" | "error" | "running";
-  kind: string | null;
-  message: string | null;
-  recordCount: number | null;
-}
-
-function SyncLogTab() {
-  const { data, isLoading } = useQuery<{ events: SyncLogEvent[] }>({
-    queryKey: ["/api/quickbooks/sync-log"],
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/quickbooks/sync-log");
-      return res.json();
-    },
-  });
-
-  const events = data?.events ?? [];
-
-  if (isLoading) return <PageSkeleton lines={5} />;
-
-  return (
-    <Card>
-      <CardContent className="p-0 overflow-x-auto">
-        {events.length === 0 ? (
-          <div className="p-6 text-center text-sm text-muted-foreground">
-            No sync events recorded yet. Trigger a sync from the Connection tab.
-          </div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-xs text-muted-foreground">
-              <tr>
-                <th className="text-left px-3 py-2 font-medium">When</th>
-                <th className="text-left px-3 py-2 font-medium">Type</th>
-                <th className="text-left px-3 py-2 font-medium">Status</th>
-                <th className="text-right px-3 py-2 font-medium">Records</th>
-                <th className="text-left px-3 py-2 font-medium">Details</th>
-              </tr>
-            </thead>
-            <tbody>
-              {events.map((evt) => (
-                <tr key={evt.id} className="border-t">
-                  <td className="px-3 py-2 whitespace-nowrap">{formatDateTime(evt.runAt)}</td>
-                  <td className="px-3 py-2">{evt.kind ?? "—"}</td>
-                  <td className="px-3 py-2">
-                    {evt.status === "ok" ? (
-                      <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
-                        <CheckCircle2 className="h-3 w-3 mr-1" /> OK
-                      </Badge>
-                    ) : evt.status === "error" ? (
-                      <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200">
-                        <AlertTriangle className="h-3 w-3 mr-1" /> Error
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200">
-                        <Loader2 className="h-3 w-3 mr-1 animate-spin" /> Running
-                      </Badge>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-right">{evt.recordCount ?? "—"}</td>
-                  <td className="px-3 py-2 text-xs text-muted-foreground max-w-[400px] truncate">
-                    {evt.message ?? ""}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-// ===================== Mapping tab =====================
 
 interface QbCustomerRaw {
   Id: string;
@@ -384,6 +97,54 @@ interface CounterpartyRow {
   nameCanonical: string;
   typeDefault: string;
   isActive: boolean;
+}
+
+interface QbBillRaw {
+  Id: string;
+  DocNumber?: string | null;
+  TxnDate?: string | null;
+  TotalAmt?: number | null;
+  TxnTaxDetail?: { TotalTax?: number | null };
+  Balance?: number | null;
+  VendorRef?: { name?: string | null; value?: string | null };
+}
+
+interface AppCostLineSummary {
+  id: number;
+  projectId: number;
+  projectName: string | null;
+  invoiceNumber: string | null;
+  invoiceDate: string | null;
+  amountExVat: number | null;
+  counterpartyName: string | null;
+  description: string | null;
+}
+
+interface QuickBooksLinkRow {
+  id: number;
+  projectId: number | null;
+  appEntityId: number;
+  qbEntityId: string;
+  qbDocNumber: string | null;
+  qbTxnDate: string | null;
+  qbAmount: string | null;
+  qbCounterpartyName: string | null;
+  matchType: string;
+  confirmedAt: string;
+  confirmedBy: number | null;
+  appEntityType?: string;
+  qbEntityType?: string;
+}
+
+function formatRelativeAge(ageMs: number | null): string {
+  if (ageMs === null || ageMs < 0) return "—";
+  const minutes = Math.floor(ageMs / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} d ago`;
 }
 
 function SearchPicker({
@@ -967,248 +728,10 @@ function VendorsMappingView({ isConnected }: { isConnected: boolean }) {
 
 // ===================== Suppliers =====================
 
-interface CounterpartySummaryRow {
-  id: number;
-  nameCanonical: string;
-  typeDefault: string;
-  isActive: boolean;
-  isCore: boolean;
-  roleTags: string[];
-  usageCount: number;
-  linkedProjectCount: number;
-  totalSpendExVat: number;
-  openAmountExVat: number;
-  activeContactCount: number;
-}
-
-function SuppliersTab({ isConnected }: { isConnected: boolean }) {
-  const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState<string>("ALL");
-  const [sortBy, setSortBy] = useState<"spend" | "name" | "projects">("spend");
-
-  const { data: counterparties, isLoading: cpLoading } = useQuery<CounterpartySummaryRow[]>({
-    queryKey: ["/api/counterparties/summary"],
-    queryFn: async () => (await apiRequest("GET", "/api/counterparties/summary")).json(),
-  });
-
-  const { data: vendorMappingsResp } = useQuery<{ mappings: VendorMappingRow[] }>({
-    queryKey: ["/api/quickbooks/vendor-mappings"],
-    queryFn: async () => (await apiRequest("GET", "/api/quickbooks/vendor-mappings")).json(),
-    enabled: isConnected,
-  });
-
-  const mappings = vendorMappingsResp?.mappings ?? [];
-  const mappingByCpId = useMemo(() => {
-    const m = new Map<number, VendorMappingRow>();
-    for (const x of mappings) m.set(x.counterpartyId, x);
-    return m;
-  }, [mappings]);
-
-  const rows = counterparties ?? [];
-
-  const typeOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const r of rows) if (r.typeDefault) set.add(r.typeDefault);
-    return ["ALL", ...Array.from(set).sort()];
-  }, [rows]);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    let out = rows.filter((r) => r.isActive !== false);
-    if (typeFilter !== "ALL") out = out.filter((r) => r.typeDefault === typeFilter);
-    if (q) out = out.filter((r) => r.nameCanonical.toLowerCase().includes(q));
-    out = [...out];
-    if (sortBy === "spend") out.sort((a, b) => (b.totalSpendExVat ?? 0) - (a.totalSpendExVat ?? 0));
-    else if (sortBy === "projects") out.sort((a, b) => b.linkedProjectCount - a.linkedProjectCount);
-    else out.sort((a, b) => a.nameCanonical.localeCompare(b.nameCanonical));
-    return out;
-  }, [rows, search, typeFilter, sortBy]);
-
-  const totalSpend = useMemo(
-    () => filtered.reduce((sum, r) => sum + (r.totalSpendExVat ?? 0), 0),
-    [filtered],
-  );
-  const totalOpen = useMemo(
-    () => filtered.reduce((sum, r) => sum + (r.openAmountExVat ?? 0), 0),
-    [filtered],
-  );
-  const mappedCount = useMemo(
-    () => filtered.filter((r) => mappingByCpId.has(r.id)).length,
-    [filtered, mappingByCpId],
-  );
-
-  return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        <Card><CardContent className="p-3">
-          <div className="text-[10px] text-muted-foreground">Active suppliers</div>
-          <div className="text-lg font-semibold">{filtered.length}</div>
-        </CardContent></Card>
-        <Card><CardContent className="p-3">
-          <div className="text-[10px] text-muted-foreground">Total spend ex VAT</div>
-          <div className="text-lg font-semibold">{formatRand(totalSpend)}</div>
-        </CardContent></Card>
-        <Card><CardContent className="p-3">
-          <div className="text-[10px] text-muted-foreground">Open balance ex VAT</div>
-          <div className="text-lg font-semibold text-amber-700">{formatRand(totalOpen)}</div>
-        </CardContent></Card>
-        <Card><CardContent className="p-3">
-          <div className="text-[10px] text-muted-foreground">Mapped to QB vendor</div>
-          <div className="text-lg font-semibold text-emerald-700">
-            {mappedCount}/{filtered.length}
-          </div>
-        </CardContent></Card>
-      </div>
-
-      <Card>
-        <CardContent className="p-3 space-y-2">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2">
-              <div className="relative w-[220px]">
-                <Search className="h-3.5 w-3.5 absolute left-2.5 top-2.5 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search supplier..."
-                  className="h-8 pl-8 text-xs"
-                />
-              </div>
-              <select
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
-                className="h-8 text-xs border rounded px-2 bg-background"
-              >
-                {typeOptions.map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as "spend" | "name" | "projects")}
-                className="h-8 text-xs border rounded px-2 bg-background"
-              >
-                <option value="spend">Sort by spend</option>
-                <option value="projects">Sort by projects</option>
-                <option value="name">Sort by name</option>
-              </select>
-            </div>
-            <div className="text-[10px] text-muted-foreground">
-              Showing {filtered.length} of {rows.length} counterparties
-            </div>
-          </div>
-          <div className="overflow-x-auto border rounded">
-            {cpLoading ? (
-              <div className="p-4"><PageSkeleton lines={4} /></div>
-            ) : filtered.length === 0 ? (
-              <div className="p-6 text-center text-sm text-muted-foreground">No suppliers match.</div>
-            ) : (
-              <table className="w-full text-xs">
-                <thead className="bg-muted/50 text-[10px] text-muted-foreground uppercase sticky top-0">
-                  <tr>
-                    <th className="px-2 py-1.5 text-left">Supplier</th>
-                    <th className="px-2 py-1.5 text-left">Type</th>
-                    <th className="px-2 py-1.5 text-right">Projects</th>
-                    <th className="px-2 py-1.5 text-right">Bills</th>
-                    <th className="px-2 py-1.5 text-right">Spend ex VAT</th>
-                    <th className="px-2 py-1.5 text-right">Open ex VAT</th>
-                    <th className="px-2 py-1.5 text-left">QB vendor</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((r) => {
-                    const mapping = mappingByCpId.get(r.id);
-                    return (
-                      <tr key={r.id} className="border-t hover:bg-muted/40">
-                        <td className="px-2 py-1.5">
-                          <div className="font-medium">{r.nameCanonical}</div>
-                          {r.roleTags.length > 0 && (
-                            <div className="flex flex-wrap gap-0.5 mt-0.5">
-                              {r.roleTags.slice(0, 3).map((t) => (
-                                <Badge key={t} variant="outline" className="text-[9px]">{t}</Badge>
-                              ))}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <Badge variant="outline" className="text-[9px]">{r.typeDefault}</Badge>
-                          {r.isCore && <Badge className="text-[9px] bg-sky-100 text-sky-800 ml-1">Core</Badge>}
-                        </td>
-                        <td className="px-2 py-1.5 text-right">{r.linkedProjectCount}</td>
-                        <td className="px-2 py-1.5 text-right">{r.usageCount}</td>
-                        <td className="px-2 py-1.5 text-right font-medium">{formatRand(r.totalSpendExVat)}</td>
-                        <td className={`px-2 py-1.5 text-right ${(r.openAmountExVat ?? 0) > 0 ? "text-amber-700" : ""}`}>
-                          {formatRand(r.openAmountExVat)}
-                        </td>
-                        <td className="px-2 py-1.5">
-                          {mapping ? (
-                            <Badge variant="outline" className="gap-1 bg-emerald-50 text-emerald-700 border-emerald-200">
-                              <Link2 className="h-3 w-3" />
-                              {mapping.qbVendorName ?? mapping.qbVendorId}
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-700 border-amber-200">
-                              Unmapped
-                            </Badge>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
-          <div className="text-[10px] text-muted-foreground">
-            Map unmapped suppliers to their QuickBooks vendors in the Mapping tab. Totals reflect posted app bills ex VAT.
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-// ===================== Reconciliation — Bills (Cost) =====================
-
-interface QbBillRaw {
-  Id: string;
-  DocNumber?: string | null;
-  TxnDate?: string | null;
-  TotalAmt?: number | null;
-  TxnTaxDetail?: { TotalTax?: number | null };
-  Balance?: number | null;
-  VendorRef?: { name?: string | null; value?: string | null };
-}
-
-interface AppCostLineSummary {
-  id: number;
-  projectId: number;
-  projectName: string | null;
-  invoiceNumber: string | null;
-  invoiceDate: string | null;
-  amountExVat: number | null;
-  counterpartyName: string | null;
-  description: string | null;
-}
-
-interface QuickBooksLinkRow {
-  id: number;
-  projectId: number | null;
-  appEntityId: number;
-  qbEntityId: string;
-  qbDocNumber: string | null;
-  qbTxnDate: string | null;
-  qbAmount: string | null;
-  qbCounterpartyName: string | null;
-  matchType: string;
-  confirmedAt: string;
-  confirmedBy: number | null;
-  appEntityType?: string;
-  qbEntityType?: string;
-}
-
 function BillsReconciliationView({ isConnected }: { isConnected: boolean }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { isAdmin } = useAuth();
   const [selectedBill, setSelectedBill] = useState<QbBillRaw | null>(null);
   const [costLineSearch, setCostLineSearch] = useState("");
   const [allocationDraft, setAllocationDraft] = useState<Record<number, string>>({});
@@ -1349,7 +872,13 @@ function BillsReconciliationView({ isConnected }: { isConnected: boolean }) {
                       <tr
                         key={bill.Id}
                         className={`border-t cursor-pointer ${isSelected ? "bg-sky-50/70" : "hover:bg-muted/40"}`}
-                        onClick={() => setSelectedBill(isSelected ? null : bill)}
+                        onClick={() => {
+                          const next = isSelected ? null : bill;
+                          setSelectedBill(next);
+                          // Prefill the line search with the bill's number so the
+                          // likely matching cost line surfaces immediately.
+                          setCostLineSearch(next?.DocNumber ?? "");
+                        }}
                       >
                         <td className="px-2 py-1.5 font-medium">{bill.DocNumber ?? bill.Id}</td>
                         <td className="px-2 py-1.5">{bill.TxnDate ?? "—"}</td>
@@ -1375,7 +904,7 @@ function BillsReconciliationView({ isConnected }: { isConnected: boolean }) {
           <CardContent className="p-3 space-y-2">
             <div className="flex items-center justify-between">
               <div className="text-xs font-semibold flex items-center gap-2">
-                2. Pick a project cost line <FieldHint hint="Auto-generated hash ID — do not edit manually" />
+                2. Pick a project cost line <FieldHint hint="The likely match (same invoice number) is shown first. Search to pick a different line." />
                 <Badge variant="outline" className="text-[10px]">
                   {costLineSearchResp?.costLines.length ?? 0} candidates
                 </Badge>
@@ -1510,15 +1039,19 @@ function BillsReconciliationView({ isConnected }: { isConnected: boolean }) {
                       <td className="px-2 py-1.5">{link.qbCounterpartyName ?? "—"}</td>
                       <td className="px-2 py-1.5 text-right">{formatRand(link.qbAmount)}</td>
                       <td className="px-2 py-1.5 text-right">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-6 text-[10px] gap-1"
-                          onClick={() => unlinkMutation.mutate(link.id)}
-                          disabled={unlinkMutation.isPending}
-                        >
-                          <Link2Off className="h-3 w-3" /> Unlink
-                        </Button>
+                        {isAdmin ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-[10px] gap-1"
+                            onClick={() => unlinkMutation.mutate(link.id)}
+                            disabled={unlinkMutation.isPending}
+                          >
+                            <Link2Off className="h-3 w-3" /> Unlink
+                          </Button>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground">—</span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -1560,6 +1093,7 @@ interface AppRevenueLineSummary {
 function InvoicesReconciliationView({ isConnected }: { isConnected: boolean }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { isAdmin } = useAuth();
   const [selectedInvoice, setSelectedInvoice] = useState<QbInvoiceRaw | null>(null);
   const [revenueSearch, setRevenueSearch] = useState("");
 
@@ -1702,7 +1236,13 @@ function InvoicesReconciliationView({ isConnected }: { isConnected: boolean }) {
                       <tr
                         key={inv.Id}
                         className={`border-t cursor-pointer ${isSelected ? "bg-sky-50/70" : "hover:bg-muted/40"}`}
-                        onClick={() => setSelectedInvoice(isSelected ? null : inv)}
+                        onClick={() => {
+                          const next = isSelected ? null : inv;
+                          setSelectedInvoice(next);
+                          // Prefill the line search with the invoice number so the
+                          // likely matching revenue line surfaces immediately.
+                          setRevenueSearch(next?.DocNumber ?? "");
+                        }}
                       >
                         <td className="px-2 py-1.5 font-medium">{inv.DocNumber ?? inv.Id}</td>
                         <td className="px-2 py-1.5">{inv.TxnDate ?? "—"}</td>
@@ -1857,15 +1397,19 @@ function InvoicesReconciliationView({ isConnected }: { isConnected: boolean }) {
                       <td className="px-2 py-1.5">{link.qbCounterpartyName ?? "—"}</td>
                       <td className="px-2 py-1.5 text-right">{formatRand(link.qbAmount)}</td>
                       <td className="px-2 py-1.5 text-right">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-6 text-[10px] gap-1"
-                          onClick={() => unlinkMutation.mutate(link.id)}
-                          disabled={unlinkMutation.isPending}
-                        >
-                          <Link2Off className="h-3 w-3" /> Unlink
-                        </Button>
+                        {isAdmin ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-[10px] gap-1"
+                            onClick={() => unlinkMutation.mutate(link.id)}
+                            disabled={unlinkMutation.isPending}
+                          >
+                            <Link2Off className="h-3 w-3" /> Unlink
+                          </Button>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground">—</span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -1879,34 +1423,24 @@ function InvoicesReconciliationView({ isConnected }: { isConnected: boolean }) {
   );
 }
 
-function ReconciliationTab({ isConnected }: { isConnected: boolean }) {
-  const [sub, setSub] = useState<string>("find");
+function LinkTab({ isConnected }: { isConnected: boolean }) {
+  const [sub, setSub] = useState<string>("bills");
   return (
     <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        Pick an unlinked QuickBooks document, then attach it to the matching
+        project line item. The likely match is surfaced first — usually one
+        click.
+      </p>
       <Tabs value={sub} onValueChange={setSub}>
         <TabsList className="h-auto p-1 bg-muted/50">
-          <TabsTrigger value="find" className="gap-1.5 text-xs">
-            <Sparkles className="h-3 w-3" /> Matching Workbench
-          </TabsTrigger>
           <TabsTrigger value="bills" className="gap-1.5 text-xs">
-            <Banknote className="h-3 w-3" /> Bills (COS)
+            <Banknote className="h-3 w-3" /> Supplier bills
           </TabsTrigger>
           <TabsTrigger value="invoices" className="gap-1.5 text-xs">
-            <Receipt className="h-3 w-3" /> Invoices (Revenue)
+            <Receipt className="h-3 w-3" /> Customer invoices
           </TabsTrigger>
         </TabsList>
-        <TabsContent value="find" className="mt-3">
-          {isConnected ? (
-            <QbMatchingWorkbench defaultScope="cost" />
-          ) : (
-            <Card className="border-amber-200 bg-amber-50/40">
-              <CardContent className="p-4 text-xs text-amber-800">
-                Connect QuickBooks to start fuzzy-matching app invoices to QB
-                records.
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
         <TabsContent value="bills" className="mt-3">
           <BillsReconciliationView isConnected={isConnected} />
         </TabsContent>
@@ -1945,7 +1479,8 @@ function MappingTab({ isConnected }: { isConnected: boolean }) {
 export default function FinanceQuickBooksThroughputPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<string>("connection");
+  const { isAdmin } = useAuth();
+  const [activeTab, setActiveTab] = useState<string>("link");
 
   const { data: status, isLoading: statusLoading } = useQuery<QuickBooksStatus>({
     queryKey: ["/api/quickbooks/status"],
@@ -2047,7 +1582,7 @@ export default function FinanceQuickBooksThroughputPage() {
                 <Plug className="w-5 h-5 text-emerald-600" />
               </div>
               <div>
-                <div className="text-base font-semibold">QuickBooks Throughput</div>
+                <div className="text-base font-semibold">QuickBooks</div>
                 <div className="text-xs text-muted-foreground">
                   {isConnected
                     ? `Connected to ${status?.companyName ?? "QuickBooks"} · Last sync ${status?.lastSuccessfulSyncAt ? formatRelativeAge(status.ageMs) : "never"}`
@@ -2055,7 +1590,7 @@ export default function FinanceQuickBooksThroughputPage() {
                 </div>
               </div>
             </div>
-            {isConnected && (
+            {isConnected ? (
               <Button
                 size="sm"
                 onClick={() => syncMutation.mutate()}
@@ -2070,47 +1605,41 @@ export default function FinanceQuickBooksThroughputPage() {
                 )}
                 Sync Now
               </Button>
+            ) : isAdmin ? (
+              <Button
+                size="sm"
+                onClick={() => {
+                  window.location.href = "/api/quickbooks/auth";
+                }}
+                className="gap-1.5"
+                data-testid="qb-connect"
+              >
+                <Plug className="h-4 w-4" /> Connect QuickBooks
+              </Button>
+            ) : (
+              <span className="text-xs text-muted-foreground">
+                Ask an admin to connect QuickBooks.
+              </span>
             )}
           </CardContent>
         </Card>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="h-auto p-1 bg-muted/60">
-            <TabsTrigger value="connection" className="gap-1.5">
-              <Activity className="h-3.5 w-3.5" /> Connection
+            <TabsTrigger value="link" className="gap-1.5">
+              <Link2 className="h-3.5 w-3.5" /> Link
             </TabsTrigger>
-            <TabsTrigger value="mapping" className="gap-1.5">
-              <Building2 className="h-3.5 w-3.5" /> Mapping
-            </TabsTrigger>
-            <TabsTrigger value="reconciliation" className="gap-1.5">
-              <Link2 className="h-3.5 w-3.5" /> Reconciliation
-            </TabsTrigger>
-            <TabsTrigger value="suppliers" className="gap-1.5">
-              <Users className="h-3.5 w-3.5" /> Suppliers
-            </TabsTrigger>
-            <TabsTrigger value="log" className="gap-1.5">
-              <History className="h-3.5 w-3.5" /> Sync Log
+            <TabsTrigger value="setup" className="gap-1.5">
+              <Building2 className="h-3.5 w-3.5" /> Setup
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="connection" className="mt-4">
-            <ConnectionTab status={status} />
+          <TabsContent value="link" className="mt-4">
+            <LinkTab isConnected={isConnected} />
           </TabsContent>
 
-          <TabsContent value="mapping" className="mt-4">
+          <TabsContent value="setup" className="mt-4">
             <MappingTab isConnected={isConnected} />
-          </TabsContent>
-
-          <TabsContent value="reconciliation" className="mt-4">
-            <ReconciliationTab isConnected={isConnected} />
-          </TabsContent>
-
-          <TabsContent value="suppliers" className="mt-4">
-            <SuppliersTab isConnected={isConnected} />
-          </TabsContent>
-
-          <TabsContent value="log" className="mt-4">
-            <SyncLogTab />
           </TabsContent>
         </Tabs>
       </div>

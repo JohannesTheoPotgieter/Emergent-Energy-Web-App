@@ -185,8 +185,8 @@ export default function FinanceQuickBooksLinksPage() {
       />
 
       <FinanceLimitedBetaBanner
-        title="Moved — use Finance → QuickBooks Throughput"
-        body="Bill linking now lives inside the consolidated Throughput page (tab: Bills → Costs). This standalone screen is kept for now as a fallback only and may be removed in a future release. Behaviour is unchanged: COS realisation is still NOT performed here — use the COS Tracker."
+        title="Moved — use Finance → QuickBooks"
+        body="Bill linking now lives inside the consolidated QuickBooks page (tab: Link → Supplier bills). This standalone screen is kept for now as a fallback only and may be removed in a future release. Behaviour is unchanged: COS realisation is still NOT performed here — use the COS Tracker."
       />
 
       <ReportTrustNotice

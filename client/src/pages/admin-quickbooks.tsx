@@ -113,7 +113,7 @@ export default function AdminQuickBooksPage() {
   // primary surface (Throughput) and never see admin-only OAuth controls.
   useEffect(() => {
     if (!authLoading && !isAdmin) {
-      setLocation("/finance/quickbooks/throughput");
+      setLocation("/finance/quickbooks");
     }
   }, [authLoading, isAdmin, setLocation]);
   const isUnauthorized = !authLoading && !isAdmin;

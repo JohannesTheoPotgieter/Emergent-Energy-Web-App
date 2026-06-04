@@ -163,13 +163,13 @@ export default function FinanceQuickBooksCustomerMappingPage() {
       />
 
       <FinanceLimitedBetaBanner
-        title="Moved — use Finance → QuickBooks Throughput"
+        title="Moved — use Finance → QuickBooks"
         body={
           <>
-            Customer mapping now lives inside the consolidated Throughput page (tab: Mappings → Customers → Projects),
+            Customer mapping now lives inside the consolidated QuickBooks page (tab: Setup → Customers → Projects),
             with admin-only fuzzy <em>Suggest matches</em> + cascade. This standalone screen is kept as a fallback only.{" "}
-            <Link href="/finance/quickbooks/throughput" className="underline font-medium">
-              Open Throughput
+            <Link href="/finance/quickbooks" className="underline font-medium">
+              Open QuickBooks
             </Link>
             .
           </>

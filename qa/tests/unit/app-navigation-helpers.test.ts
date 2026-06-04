@@ -104,7 +104,7 @@ describe("app navigation helpers", () => {
     const finance = TOP_SECTIONS.find((section) => section.label === "Finance");
     expect(finance?.secondary.map((item) => [item.label, item.path])).toEqual(
       expect.arrayContaining([
-        ["QuickBooks Throughput", "/finance/quickbooks"],
+        ["QuickBooks", "/finance/quickbooks"],
         ["Payment Requests", "/payment-request-board"],
         ["PO Approvals", "/po-approval-board"],
       ]),
