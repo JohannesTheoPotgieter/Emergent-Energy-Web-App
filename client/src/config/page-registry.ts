@@ -152,7 +152,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // QB Throughput — single source for all QuickBooks integration UI.
   // Absorbs: QB Customer Mapping, QB Bill Linking, Counterparties,
   // Subcontractor Dashboard, Invoice Patterns, Admin QB.
-  { id: "financeQuickBooksThroughput", path: "/finance/quickbooks", label: "QB Throughput", iconKey: "Plug", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: false, routeComponentKey: "FinanceQuickBooksThroughputPage" },
+  { id: "financeQuickBooksThroughput", path: "/finance/quickbooks", label: "QuickBooks", iconKey: "Plug", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: false, routeComponentKey: "FinanceQuickBooksThroughputPage" },
   { id: "priorities", path: "/priorities", label: "Priorities", iconKey: "Flag", navGroup: "PRIORITIES", permissionEntity: "company_priorities", accessPolicy: "ungated", showInSidebar: true, routeComponentKey: "PrioritiesPage" },
   // Lineage view MUST be listed BEFORE priorityDetail because wouter's
   // <Switch> matches in source order — the :id wildcard would otherwise

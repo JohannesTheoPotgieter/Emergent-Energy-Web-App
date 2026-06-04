@@ -102,7 +102,7 @@
     },
     {
       "file": "client/src/pages/finance-quickbooks-throughput.tsx",
-      "loc": 2120
+      "loc": 1649
     },
     {
       "file": "server/ee-info-routes.ts",
