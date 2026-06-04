@@ -476,6 +476,56 @@ export function computeMonthlyStateBreakdown(
   );
 }
 
+// Per-line classified detail — the single source the tracker drilldown drawers
+// read from, so they reconcile to the headers (which read monthlyStates) to the
+// cent. Supplier / canonical-key / no-revenue flags are NOT modelled here; the
+// drawers enrich those from the expense rows they already fetch, by parentLineId.
+export interface FyeLineDetail {
+  lineId: number;
+  parentLineId: number;
+  projectId: number;
+  projectName: string;
+  recognitionMonth: string | null;
+  state: FyeState;
+  revenue: number;
+  cos: number;
+  invoiceNumber: string | null;
+  poNumber: string | null;
+  invoiceDate: string | null;
+  category: string | null;
+  lineItem: string | null;
+}
+
+export function computeLineDetail(
+  lines: FinanceLine[],
+  today: string,
+  projectNameOf: (projectId: number) => string,
+): FyeLineDetail[] {
+  return lines.map((l) => ({
+    lineId: l.lineId,
+    parentLineId: l.parentLineId,
+    projectId: l.projectId,
+    projectName: projectNameOf(l.projectId),
+    recognitionMonth: l.recognitionMonth,
+    state: classifyFyeState(
+      {
+        invoiceNumber: l.invoiceNumber,
+        invoiceDateFontColor: l.invoiceDateFontColor,
+        invoiceDateConfirmed: l.invoiceDateConfirmed,
+        invoiceRaisedDate: l.invoiceRaisedDate,
+      },
+      today,
+    ),
+    revenue: l.perLineRevenue,
+    cos: l.actualTotal,
+    invoiceNumber: l.invoiceNumber,
+    poNumber: l.poNumber,
+    invoiceDate: l.invoiceRaisedDate,
+    category: l.categoryName,
+    lineItem: l.descriptionOfWork,
+  }));
+}
+
 /**
  * Compute View B — the Revenue/COS/GP dashboard with monthly + YTD running
  * figures for three series (Revised Budget / Actual / Plan-ahead).
