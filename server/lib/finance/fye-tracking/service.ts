@@ -23,11 +23,13 @@ import { getFinanceYearBounds, getCurrentFinanceYear } from "../../finance-year-
 import {
   computeProjectTable,
   computeDashboard,
+  computeMonthlyStateBreakdown,
   normalizeName,
   type FyeProjectMeta,
   type FyeProjectType,
   type FyeProjectTableResult,
   type FyeDashboardResult,
+  type FyeMonthStateBreakdown,
   type RevisedBudgetMap,
   type FyeMetric,
 } from "./compute";
@@ -79,6 +81,13 @@ export interface FyeTrackingResult {
   asAt: { date: string; sourceFileName: string | null; committedAt: string | null };
   projectTable: FyeProjectTableResult;
   dashboard: FyeDashboardResult;
+  /**
+   * Per-month, per-state, per-project Revenue/COS breakdown over the SAME
+   * curated, classified lines as `dashboard`. The single realised/committed/
+   * planned/unrealised source the standalone Revenue/COS/GP tabs read from so
+   * they reconcile to this report exactly.
+   */
+  monthlyStates: FyeMonthStateBreakdown[];
 }
 
 export interface FyeServiceDeps {
@@ -178,6 +187,16 @@ export async function buildFyeTracking(
   }
   const dashboard = computeDashboard(dashboardLines, revised, months, lastClosed, todayIso);
 
+  // Per-month, per-state, per-project breakdown over the same curated lines —
+  // the single source the standalone tabs read from. Keyed by the same display
+  // name the tabs aggregate by (project name with the _Tracker suffix stripped).
+  const monthlyStates = computeMonthlyStateBreakdown(
+    dashboardLines,
+    months,
+    todayIso,
+    (pid) => (metas.get(pid)?.projectName ?? "").replace(/_Tracker$/i, ""),
+  );
+
   return {
     fye: fy,
     asAt: {
@@ -187,5 +206,6 @@ export async function buildFyeTracking(
     },
     projectTable,
     dashboard,
+    monthlyStates,
   };
 }
