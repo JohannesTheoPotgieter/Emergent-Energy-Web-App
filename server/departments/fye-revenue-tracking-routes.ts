@@ -45,6 +45,13 @@ function parseFy(raw: unknown): number {
   return getCurrentFinanceYear();
 }
 
+/** Parse the optional "Actual through" month override (YYYY-MM). Returns null
+ * when absent/malformed, in which case the dashboard auto-clamps to last-closed. */
+function parseActualThrough(raw: unknown): string | null {
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return typeof v === "string" && /^\d{4}-\d{2}$/.test(v) ? v : null;
+}
+
 function logAndFail(res: Response, where: string, error: unknown): void {
   // Never leak raw DB / stack details to the client (§ 5).
   console.error(`[fye-tracking] ${where}:`, error instanceof Error ? error.message : error);
@@ -107,7 +114,10 @@ router.get(
   async (req, res) => {
     try {
       const fy = parseFy(req.query.fy ?? req.query.fye);
-      const result = await buildFyeTracking(fy);
+      const actualThrough = parseActualThrough(req.query.actualThrough);
+      const result = await buildFyeTracking(fy, {}, new Date(), {
+        actualThroughMonthKey: actualThrough,
+      });
       res.json({ fye: result.fye, asAt: result.asAt, dashboard: result.dashboard });
     } catch (error) {
       logAndFail(res, "fetch FYE dashboard", error);

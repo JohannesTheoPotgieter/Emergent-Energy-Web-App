@@ -86,6 +86,16 @@ export interface FyeServiceDeps {
   data?: FyeTrackingDataRepository;
 }
 
+export interface FyeBuildOptions {
+  /**
+   * Override the "Actual through" cut-off month (YYYY-MM). When omitted the
+   * dashboard auto-clamps Actual to the last CLOSED month. Must be one of the
+   * FY's 12 month keys, otherwise it is ignored and the auto value is used.
+   * Lets the FYE tab choose how far the Actual line runs.
+   */
+  actualThroughMonthKey?: string | null;
+}
+
 /**
  * Build the full FYE Tracking result for a given FY.
  */
@@ -93,6 +103,7 @@ export async function buildFyeTracking(
   fy: number = getCurrentFinanceYear(),
   deps: FyeServiceDeps = {},
   now: Date = new Date(),
+  opts: FyeBuildOptions = {},
 ): Promise<FyeTrackingResult> {
   const financeRepo = deps.financeLines ?? new FinanceLineLevelRepository();
   const dataRepo = deps.data ?? new FyeTrackingDataRepository();
@@ -100,7 +111,13 @@ export async function buildFyeTracking(
   const bounds = getFinanceYearBounds(fy);
   const todayIso = sastTodayIso(now);
   const months = fyMonthKeys(fy);
-  const lastClosed = lastClosedMonthKey(fy, todayIso);
+  const autoLastClosed = lastClosedMonthKey(fy, todayIso);
+  // Actual cut-off: caller override (the FYE tab's month picker) when it is a
+  // valid FY month, otherwise the auto last-closed month.
+  const lastClosed =
+    opts.actualThroughMonthKey && months.includes(opts.actualThroughMonthKey)
+      ? opts.actualThroughMonthKey
+      : autoLastClosed;
 
   const [projectMeta, trackerSource, trackerDates, revisedRows, latestRun] = await Promise.all([
     dataRepo.listProjectMeta(),
