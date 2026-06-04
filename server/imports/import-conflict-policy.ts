@@ -23,30 +23,54 @@ import {
 import type { DiffSection } from "@shared/excel-vs-app/contract";
 
 // ---------------------------------------------------------------------------
-// File-wins policy (owner decision 2026-06)
+// File-wins policy (owner decision 2026-06 — "Excel always wins")
 // ---------------------------------------------------------------------------
 //
-// Sections where the uploaded workbook is the SINGLE SOURCE OF TRUTH. A
-// re-import of these finance sections always overwrites in-app edits to the
-// tracked faithful-mirror fields (amounts, dates, invoice/PO numbers,
-// date-colour confirmations): the edits are not recorded as manual_overrides
-// and a lingering edit is reverted to the file value on the next import. This
-// is what guarantees the app "never goes off the trackers" for finance.
+// EVERY import section treats the uploaded workbook as the SINGLE SOURCE OF
+// TRUTH. A re-import always overwrites in-app edits to the tracked
+// faithful-mirror fields (amounts, dates, invoice/PO numbers, date-colour
+// confirmations for finance; task dates, owner, %, status for the plan): the
+// edits are not recorded as manual_overrides and a lingering edit is reverted
+// to the file value on the next import. This guarantees the app "never goes
+// off the trackers".
 //
-// PLAN (work_items — dates, owner, %) stays app-editable, so it is NOT
-// file-wins. App-owned columns that are not tracked merge fields
-// (cosStatusOverride, noRevenueLinked, task links) are never touched by the
-// merge engine, so they are unaffected either way.
+// Originally (2026-06, first pass) only REVENUE / EXPENDITURE were file-wins
+// and PLAN stayed app-editable. The owner then extended the rule to PLAN as
+// well ("Excel wins everywhere") — so all three sections are now file-wins.
+// App-owned columns that are not tracked merge fields (cosStatusOverride,
+// noRevenueLinked, task links) are never touched by the merge engine, so they
+// are unaffected either way.
 
 export const FILE_WINS_SECTIONS: ReadonlySet<DiffSection> = new Set<DiffSection>([
   "REVENUE",
   "EXPENDITURE",
+  "PLAN",
 ]);
 
 /** True when the workbook is authoritative for the section (file always wins). */
 export function sectionIsFileWins(section: DiffSection): boolean {
   return FILE_WINS_SECTIONS.has(section);
 }
+
+// ---------------------------------------------------------------------------
+// "Never prompt" policy (owner decision 2026-06 — file / folder / auto imports)
+// ---------------------------------------------------------------------------
+//
+// When true, the commit handler and the scheduler auto-satisfy every
+// operator-decision gate in the file's favour instead of returning a 4xx that
+// asks the operator to choose:
+//   - field conflicts (3-way merge)      → file wins (no v2ConflictResolutions)
+//   - previously-deleted "resurrections" → restore_and_apply (Excel has it)
+//   - duplicate project candidates       → attach to closest match ≥0.75, else new
+//   - manual-edit warnings               → acknowledged (Excel overwrites)
+//   - recency (older / equal-date file)  → committed (manual uploads always win)
+//
+// Structural backstops that FAIL the file with a reason (not a prompt) are
+// deliberately kept: the >80% soft-close "wipe" guard and unparseable BLOCKER
+// issues. Default ON; set IMPORT_FILE_ALWAYS_WINS=false to restore the
+// interactive per-conflict wizard.
+export const IMPORT_FILE_ALWAYS_WINS: boolean =
+  process.env.IMPORT_FILE_ALWAYS_WINS !== "false";
 
 // ---------------------------------------------------------------------------
 // Types

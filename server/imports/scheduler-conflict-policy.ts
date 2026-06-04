@@ -44,6 +44,7 @@
  */
 
 import type { PlannerResult } from "../lib/import/planner";
+import { IMPORT_FILE_ALWAYS_WINS } from "./import-conflict-policy";
 
 export type SchedulerConflictDecision = "commit" | "park";
 
@@ -73,8 +74,24 @@ export interface SchedulerConflictPolicyResult {
 
 export function resolveSchedulerConflictPolicy(
   plannerResult: PlannerResult,
+  fileAlwaysWins: boolean = IMPORT_FILE_ALWAYS_WINS,
 ): SchedulerConflictPolicyResult {
   const conflicts = plannerResult.conflicts;
+
+  // File-always-wins (owner decision 2026-06): never park for field conflicts
+  // on the auto path — the commit writer applies the file value for every
+  // section. scheduled-import-v2.ts still parks runs with no confident project
+  // match or with deleted-row resurrections (the two unattended-only safety
+  // cases). The flag is injectable so the legacy conflict-resolution path
+  // stays unit-testable when it is off.
+  if (fileAlwaysWins) {
+    return {
+      decision: "commit",
+      reason: "file_always_wins",
+      resolutions: {},
+      unresolvable: [],
+    };
+  }
 
   if (!conflicts || !conflicts.hasBlockingConflicts) {
     return {

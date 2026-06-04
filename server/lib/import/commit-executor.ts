@@ -737,7 +737,14 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
       const resolvedFieldNames = new Set(engineResolutions.map(r => r.fieldName));
       const unresolvedConflicts = merge.conflicts.filter(c => !resolvedFieldNames.has(c.fieldName));
 
-      if (unresolvedConflicts.length > 0 && existingForMerge) {
+      // PLAN is now file-wins (owner decision 2026-06 — "Excel wins
+      // everywhere"). Under file-wins we do NOT collect/skip conflicting rows:
+      // resolveMergeResult takes the file value for every tracked field, so the
+      // row is written rather than surfaced as a 409. Mirrors REVENUE /
+      // EXPENDITURE, which never enter this skip branch.
+      const planFileWins = sectionIsFileWins("PLAN");
+
+      if (!planFileWins && unresolvedConflicts.length > 0 && existingForMerge) {
         const rowLabel = mr.businessKey.rowLabel ?? rowUid;
         for (const c of unresolvedConflicts) {
           mergeConflicts.push({
@@ -771,6 +778,7 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
             userId,
             existingManualOverrides,
             commitNow,
+            planFileWins,
           )
         : null;
 
