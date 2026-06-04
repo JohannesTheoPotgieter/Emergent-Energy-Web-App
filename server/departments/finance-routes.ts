@@ -363,10 +363,12 @@ import {
   paymentTermsMissing,
 } from '@shared/lib/cashflow-trust';
 import {
+  getCurrentFinanceYear,
   getFinanceScopeMonthKeys,
   monthKeyInFinanceScope,
   resolveFinanceYearScope,
 } from '../lib/finance-year-scope';
+import { buildFyeTracking } from '../lib/finance/fye-tracking/service';
 
 const FINANCIAL_APPROVER_ROLES = [
   'COO_ADMIN',
@@ -5933,31 +5935,35 @@ async function revenueTrackerHandler(req: Request, res: Response) {
       cosByProject.set(pName, (cosByProject.get(pName) || 0) + amount);
     }
 
-    const nowDate = new Date();
-    // DF-3 (audit V2): SAST currentMonthKey — see timezone-helpers.ts.
-    const currentMonthKey = sastCurrentMonthKey();
+    // ── Single engine (owner decision 2026-06): Revenue states come from the
+    // reconciled FYE engine — the same curated (48-project), classified,
+    // per-invoice lines the FYE Tracking Report and the reconciliation test
+    // use — so this tab matches the trackers to the cent. (QuickBooks + manual
+    // budget below stay tab-specific.) Replaces the old per-handler
+    // recognition-bucketing path for this tab.
+    const fyeYear = fyScope.fy ?? getCurrentFinanceYear();
+    const fye = await buildFyeTracking(fyeYear);
+    const fyeLastClosed = fye.dashboard.lastClosedMonthKey;
 
     const revByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
     const realisedByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
-
-    // Finance PR 3: § 3.3.2 — recognition via canonical bucketing helper.
-    for (const b of bucketCostLinesForRecognition(allExpenses, { currentMonthKey })) {
-      const { monthKey, revenueAmount, cosRealised, projectName: pName } = b;
-      if (!monthKeyInFinanceScope(monthKey, fyScope)) continue;
-      // Keep revenue tracker project-scoped — skip lines with no project.
-      if (!pName) continue;
-
-      if (!revByMonth.has(monthKey)) revByMonth.set(monthKey, { total: 0, projects: new Map() });
-      const revBucket = revByMonth.get(monthKey)!;
-      revBucket.total += revenueAmount;
-      revBucket.projects.set(pName, (revBucket.projects.get(pName) || 0) + revenueAmount);
-
-      if (cosRealised) {
-        if (!realisedByMonth.has(monthKey))
-          realisedByMonth.set(monthKey, { total: 0, projects: new Map() });
-        const realBucket = realisedByMonth.get(monthKey)!;
-        realBucket.total += revenueAmount;
-        realBucket.projects.set(pName, (realBucket.projects.get(pName) || 0) + revenueAmount);
+    for (const ms of fye.monthlyStates) {
+      if (!monthKeyInFinanceScope(ms.monthKey, fyScope)) continue;
+      // Total recognised revenue for the month = all four states.
+      const total = { total: 0, projects: new Map<string, number>() };
+      for (const st of [ms.revenue.realised, ms.revenue.committed, ms.revenue.planned, ms.revenue.unrealised]) {
+        total.total += st.total;
+        st.projects.forEach((v, k) => total.projects.set(k, (total.projects.get(k) ?? 0) + v));
+      }
+      revByMonth.set(ms.monthKey, total);
+      // Realised is clamped to the last CLOSED month (mirrors the FYE dashboard
+      // "Actual" clamp) so YTD realised == the FYE Tracking Report's.
+      const isClosed = fyeLastClosed ? ms.monthKey <= fyeLastClosed : true;
+      if (isClosed && ms.revenue.realised.total !== 0) {
+        realisedByMonth.set(ms.monthKey, {
+          total: ms.revenue.realised.total,
+          projects: new Map(ms.revenue.realised.projects),
+        });
       }
     }
 
