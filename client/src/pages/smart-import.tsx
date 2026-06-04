@@ -198,6 +198,63 @@ export function UploadStep({
     setError(null);
   };
 
+  // Upload one tracker file with a HARD TIMEOUT + bounded retry. Without this
+  // a single request that never returns (proxy drop, cold start, server busy
+  // parsing/running the planner) freezes the whole batch forever — the
+  // root cause of the "stuck at file N of M" hang. AbortController guarantees
+  // every attempt settles; transient failures (timeout / network / 5xx / 429)
+  // are retried with exponential backoff, terminal 4xx errors fail fast.
+  const uploadTrackerFile = async (
+    file: File,
+    opts?: { timeoutMs?: number; retries?: number },
+  ): Promise<any> => {
+    const timeoutMs = opts?.timeoutMs ?? 120_000;
+    const maxRetries = opts?.retries ?? 2;
+    let lastError: Error = new Error("Upload failed");
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await fetch("/api/smart-import/upload", {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: formData,
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({ error: `Upload failed (${res.status})` }));
+          const message = errBody.error || `Upload failed (${res.status})`;
+          const transient = res.status >= 500 || res.status === 429 || res.status === 408;
+          if (transient && attempt < maxRetries) {
+            lastError = new Error(message);
+            await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+            continue;
+          }
+          throw new Error(message);
+        }
+        return await res.json();
+      } catch (err: any) {
+        clearTimeout(timer);
+        const aborted = err?.name === "AbortError";
+        lastError = aborted
+          ? new Error(`Timed out after ${Math.round(timeoutMs / 1000)}s — server did not respond`)
+          : err instanceof Error ? err : new Error(String(err));
+        // Our own timeout (AbortError) and network failures (TypeError) are
+        // transient; retry. Errors we threw for a non-ok response are terminal.
+        const transient = aborted || err?.name === "TypeError";
+        if (transient && attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+          continue;
+        }
+        throw lastError;
+      }
+    }
+    throw lastError;
+  };
+
   const retryFile = async (idx: number) => {
     const entry = files[idx];
     if (!entry || entry.status === "success" || entry.status === "uploading") return;
@@ -206,18 +263,7 @@ export function UploadStep({
     setFiles(updatedFiles);
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append("file", entry.file);
-      const res = await fetch("/api/smart-import/upload", {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: formData,
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: "Upload failed" }));
-        throw new Error(err.error || `Upload failed (${res.status})`);
-      }
-      const data = await res.json();
+      const data = await uploadTrackerFile(entry.file);
       updatedFiles[idx] = {
         ...entry,
         status: "success",
@@ -264,18 +310,7 @@ export function UploadStep({
       setBatchProgress({ current: i + 1, total: files.length });
 
       try {
-        const formData = new FormData();
-        formData.append("file", entry.file);
-        const res = await fetch("/api/smart-import/upload", {
-          method: "POST",
-          headers: getAuthHeaders(),
-          body: formData,
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({ error: "Upload failed" }));
-          throw new Error(err.error || `Upload failed (${res.status})`);
-        }
-        const data = await res.json();
+        const data = await uploadTrackerFile(entry.file);
         entry.status = "success";
         entry.runId = data.runId;
         entry.preview = data.preview;
