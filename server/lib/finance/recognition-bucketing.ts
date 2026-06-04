@@ -26,11 +26,10 @@ import {
   recognitionAmountFor,
   type CostLineForRecognition,
 } from "./revenue-recognition";
-import { isPastMonthAutoRealised } from "./cos-realisation";
+import { classifyFyeState } from "./fye-tracking/fye-state";
 import { getCosEffectiveDateAndSource } from "../expense-row-selector";
 import {
   extractMonthKey,
-  isCosRealised,
   parseExpenseAmount,
 } from "../calculations/financeUtils";
 
@@ -56,20 +55,15 @@ export interface BucketCostLinesOptions {
 }
 
 /**
- * Realised classifier matching the local shadow in
- * `finance-routes.ts:isEffectivelyRealised`. The financeUtils
- * `isCosRealised` wrapper now forwards `expenseActualTotal` as
- * `amountExVat`, so the canonical zero-amount gate fires — an R0
- * invoiced line is not realised (COO business rule 2026-05). The
- * canonical `isEffectivelyRealised` in `cos-realisation.ts` is NOT
- * used directly here because it expects `amountExVat` on the input
- * row; adapted expense rows expose the amount as `expenseActualTotal`.
+ * Realised classification is now the single FYE rule (`classifyFyeState`):
+ * a line is realised iff it carries a real (non-placeholder) invoice AND the
+ * invoice date is BLACK / confirmed. Consolidated 2026-06 so every tracker
+ * surface — the Revenue / COS / GP tabs and these drilldown drawers — shares
+ * ONE realised rule and reconciles to the trackers. (The older
+ * `isCanonicalCosRealised` path is no longer used by any tracker tab; it
+ * remains the gate for non-tracker surfaces such as cashflow.) The
+ * current-month clamp below is kept so future months never count as realised.
  */
-function isEffectivelyRealisedLocal(exp: CostLineForRecognition, monthKey: string | null, currentMonthKey: string): boolean {
-  if (isPastMonthAutoRealised(exp as any, monthKey, currentMonthKey)) return true;
-  if (!isCosRealised(exp as any)) return false;
-  return monthKey ? monthKey <= currentMonthKey : true;
-}
 
 /**
  * Iterate `expenses` once and emit a normalised stream of bucketed lines.
@@ -86,6 +80,9 @@ export function bucketCostLinesForRecognition<T extends CostLineForRecognition &
   options: BucketCostLinesOptions,
 ): RecognitionBucketedLine<T>[] {
   const out: RecognitionBucketedLine<T>[] = [];
+  // SAST "today" anchor for classifyFyeState. It only affects the no-invoice
+  // Planned/Unrealised split, so it does not change the realised flag we read.
+  const today = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString().slice(0, 10);
   for (const exp of expenses) {
     if (exp.rowType !== "item") continue;
     const amount = parseExpenseAmount(exp);
@@ -96,7 +93,22 @@ export function bucketCostLinesForRecognition<T extends CostLineForRecognition &
     if (!monthKey) continue;
 
     const revenueAmount = recognitionAmountFor(exp);
-    const cosRealised = isEffectivelyRealisedLocal(exp, monthKey, options.currentMonthKey);
+    const r = exp as CostLineForRecognition & {
+      expenseInvoiceNumber?: string | null;
+      invoiceDateFontColor?: string | null;
+      invoiceDateConfirmed?: boolean | null;
+      expenseInvoicedDate?: string | null;
+    };
+    const cosRealised =
+      classifyFyeState(
+        {
+          invoiceNumber: r.expenseInvoiceNumber ?? null,
+          invoiceDateFontColor: r.invoiceDateFontColor ?? null,
+          invoiceDateConfirmed: r.invoiceDateConfirmed ?? null,
+          invoiceRaisedDate: r.expenseInvoicedDate ?? null,
+        },
+        today,
+      ) === "realised" && monthKey <= options.currentMonthKey;
     const projectName = (exp.projectName || "").replace(/_Tracker$/i, "");
 
     out.push({ exp, amount, monthKey, revenueAmount, cosRealised, projectName });
