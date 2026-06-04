@@ -41,6 +41,7 @@ import { requireAdmin } from "./middleware/requireAdmin";
 import { runSmartImportPreview } from "./lib/import/index";
 import { runPreflightValidator } from "./lib/import/preflight-validator";
 import { runImportPlanner, type PlannerResult } from "./lib/import/planner";
+import { IMPORT_FILE_ALWAYS_WINS } from "./imports/import-conflict-policy";
 import { writePlanIncremental, writeRevenueIncremental, writeExpenditureIncremental, writeActualLineRows, writeProjectMetadata, writeRevenueSummary, mergeConflictsToWizardRows, type IncrementalCommitResult } from "./lib/import/commit-executor";
 import { newImportMetrics, emitImportMetrics, threeWayMergeEnabled } from "./lib/import/feature-flags";
 import { matchRows, generateBusinessKey, type SectionType, type MatchedRow } from "./lib/import/row-matcher";
@@ -1970,8 +1971,10 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       if (lastDate && currentDate) {
         const lastTs = new Date(lastDate).getTime();
         const currentTs = new Date(currentDate).getTime();
-        const forceCommit = req.body?.forceCommit === true;
-        const ackEqualDate = req.body?.acknowledgeEqualDate === true;
+        // File-always-wins: a manually-uploaded file is the operator's intent,
+        // so it always commits regardless of the previous import's timestamp.
+        const forceCommit = req.body?.forceCommit === true || IMPORT_FILE_ALWAYS_WINS;
+        const ackEqualDate = req.body?.acknowledgeEqualDate === true || IMPORT_FILE_ALWAYS_WINS;
 
         if (currentTs < lastTs && !forceCommit) {
           return res.status(409).json({
@@ -2000,7 +2003,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
     // Run the planner to detect true conflicts (both app and file diverged from baseline).
     // Unresolved conflicts block commit.
     const v2ConflictResolutions = req.body?.v2ConflictResolutions as Record<string, "keep_app" | "accept_file"> | undefined;
-    const resurrectionDecisions = req.body?.resurrectionDecisions as
+    let resurrectionDecisions = req.body?.resurrectionDecisions as
       | Record<string, "keep_deleted" | "restore_and_apply">
       | undefined;
     const preserveManualEditsEarly = req.body?.preserveManualEdits === true;
@@ -2010,6 +2013,22 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       if (summary?.normalization) {
         try {
           const plannerResult = await runImportPlanner(run.projectId, summary.normalization);
+
+          // File-always-wins: auto-restore every previously-deleted row the
+          // tracker still contains (restore_and_apply, no operator decision).
+          // The apply pass below uses these decisions to un-delete + overwrite
+          // with the file values — which also prevents the matcher from
+          // re-inserting them as NEW duplicate rows.
+          if (IMPORT_FILE_ALWAYS_WINS && plannerResult.resurrections.length > 0) {
+            resurrectionDecisions = {
+              ...(resurrectionDecisions ?? {}),
+              ...Object.fromEntries(
+                plannerResult.resurrections.map(
+                  (r): [string, "restore_and_apply"] => [r.resurrectionKey, "restore_and_apply"],
+                ),
+              ),
+            };
+          }
 
           // Resurrection gate — when a file row's business key matches a
           // row the operator previously soft-deleted in the app, the
@@ -2031,7 +2050,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
             }
           }
 
-          if (plannerResult.conflicts?.hasBlockingConflicts) {
+          if (plannerResult.conflicts?.hasBlockingConflicts && !IMPORT_FILE_ALWAYS_WINS) {
             const unresolvedConflicts = plannerResult.conflicts.allRows
               .filter(r => r.conflictStatus === "HAS_CONFLICTS")
               .map(r => ({
@@ -2074,7 +2093,9 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       }
     }
 
-    const acknowledgeManualEdits = req.body?.acknowledgeManualEdits === true;
+    // File-always-wins: Excel overwrites in-app manual edits, so the
+    // manual-edits warning gate is auto-acknowledged (no prompt).
+    const acknowledgeManualEdits = req.body?.acknowledgeManualEdits === true || IMPORT_FILE_ALWAYS_WINS;
     const preserveManualEdits = preserveManualEditsEarly;
     const conflictResolutions = req.body?.conflictResolutions as Record<string, "keep" | "import"> | undefined;
 
@@ -2302,8 +2323,20 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         projectId = existingProj[0].id;
         await db.update(smartImportRuns).set({ projectId }).where(eq(smartImportRuns.id, runId));
       } else {
-        const forceRecreate = req.body?.forceRecreate === true;
-        const confirmNewProject = req.body?.confirmNewProject === true;
+        // File-always-wins (owner decision 2026-06): attach to the closest
+        // existing project (≥0.75) instead of prompting; only create a
+        // brand-new project when nothing is close. Avoids duplicate-project
+        // sprawl on re-import.
+        if (IMPORT_FILE_ALWAYS_WINS) {
+          const closeMatches = await findProjectMatches(projectName);
+          const best = closeMatches.find((m) => m.confidence >= 0.75);
+          if (best) {
+            projectId = best.projectId;
+            await db.update(smartImportRuns).set({ projectId }).where(eq(smartImportRuns.id, runId));
+          }
+        }
+        const forceRecreate = req.body?.forceRecreate === true || IMPORT_FILE_ALWAYS_WINS;
+        const confirmNewProject = req.body?.confirmNewProject === true || IMPORT_FILE_ALWAYS_WINS;
         if (!forceRecreate) {
           const deletedAudit = await db.select({ id: auditEvents.id, createdAt: auditEvents.createdAt, userName: auditEvents.userName })
             .from(auditEvents)
@@ -2339,21 +2372,23 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           }
         }
 
-        const detectedInfo = summary.detection?.projectInfo;
-        const newProjectFields = {
-          projectName,
-          // 2026-05-18 — phase is no longer sourced from the import. Always
-          // seed new projects with the canonical "PLANNING" default; project
-          // phase is owned by the lifecycle, not Smart Import.
-          phase: "PLANNING",
-          sizeKwp: detectedInfo?.sizeKwp || null,
-          pd: detectedInfo?.pd || null,
-          contractValue: detectedInfo?.contractValue || null,
-        };
-        const [newProject] = await db.insert(projectInfo).values(newProjectFields as any).returning();
-        await syncProjectSplitTablesAfterInsert(newProject.id, newProjectFields);
-        projectId = newProject.id;
-        await db.update(smartImportRuns).set({ projectId }).where(eq(smartImportRuns.id, runId));
+        if (!projectId) {
+          const detectedInfo = summary.detection?.projectInfo;
+          const newProjectFields = {
+            projectName,
+            // 2026-05-18 — phase is no longer sourced from the import. Always
+            // seed new projects with the canonical "PLANNING" default; project
+            // phase is owned by the lifecycle, not Smart Import.
+            phase: "PLANNING",
+            sizeKwp: detectedInfo?.sizeKwp || null,
+            pd: detectedInfo?.pd || null,
+            contractValue: detectedInfo?.contractValue || null,
+          };
+          const [newProject] = await db.insert(projectInfo).values(newProjectFields as any).returning();
+          await syncProjectSplitTablesAfterInsert(newProject.id, newProjectFields);
+          projectId = newProject.id;
+          await db.update(smartImportRuns).set({ projectId }).where(eq(smartImportRuns.id, runId));
+        }
       }
     }
 
