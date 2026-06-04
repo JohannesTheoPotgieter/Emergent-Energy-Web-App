@@ -24,12 +24,14 @@ import {
   computeProjectTable,
   computeDashboard,
   computeMonthlyStateBreakdown,
+  computeLineDetail,
   normalizeName,
   type FyeProjectMeta,
   type FyeProjectType,
   type FyeProjectTableResult,
   type FyeDashboardResult,
   type FyeMonthStateBreakdown,
+  type FyeLineDetail,
   type RevisedBudgetMap,
   type FyeMetric,
 } from "./compute";
@@ -88,6 +90,7 @@ export interface FyeTrackingResult {
    * they reconcile to this report exactly.
    */
   monthlyStates: FyeMonthStateBreakdown[];
+  lineDetail: FyeLineDetail[];
 }
 
 export interface FyeServiceDeps {
@@ -197,6 +200,12 @@ export async function buildFyeTracking(
     (pid) => (metas.get(pid)?.projectName ?? "").replace(/_Tracker$/i, ""),
   );
 
+  const lineDetail = computeLineDetail(
+    dashboardLines,
+    todayIso,
+    (pid) => (metas.get(pid)?.projectName ?? "").replace(/_Tracker$/i, ""),
+  );
+
   return {
     fye: fy,
     asAt: {
@@ -207,5 +216,6 @@ export async function buildFyeTracking(
     projectTable,
     dashboard,
     monthlyStates,
+    lineDetail,
   };
 }

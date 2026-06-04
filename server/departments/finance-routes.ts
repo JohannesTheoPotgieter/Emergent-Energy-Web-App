@@ -297,18 +297,11 @@ import {
   classifyCosStatusFull,
   normalizeProjectName,
   mapToSortedArray,
-  currentMonthKey as getCurrentMonthKey,
-  parseExpenseAmount,
 } from '../lib/calculations/financeUtils';
 import { recordOverride } from '../lib/audit/diff-engine';
 // § 3.3 canonical revenue-recognition helper. All "Revenue" KPIs MUST come
 // from this — see docs/AGENT_GUARDRAILS.md § 3.3.
 import { recognitionAmountFor } from '../lib/finance/revenue-recognition';
-// Finance PR 3 (Tier 3): monthly-rollup bucketing helper. Consolidates the
-// per-line iteration that 6 tracker handlers were rebuilding inline so
-// `recognitionAmountFor` + `getCosEffectiveDateAndSource` +
-// `isEffectivelyRealised` are read through one canonical path per § 3.3.2.
-import { bucketCostLinesForRecognition } from '../lib/finance/recognition-bucketing';
 import { isWorkItemsEnabled, getWorkItemsAsOperationalTasks } from '../work-items-adapter';
 import { refreshProjectMetricsAsync } from '../services/dashboard-metrics';
 import { createNotification } from '../services/notification-service';
@@ -369,6 +362,7 @@ import {
   resolveFinanceYearScope,
 } from '../lib/finance-year-scope';
 import { buildFyeTracking } from '../lib/finance/fye-tracking/service';
+import { normalizeName } from '../lib/finance/fye-tracking/compute';
 
 const FINANCIAL_APPROVER_ROLES = [
   'COO_ADMIN',
@@ -5364,39 +5358,52 @@ router.get(
         return s + amount;
       }, 0);
 
-      const nowDate = new Date();
-      // DF-3 (audit V2): currentMonthKey is the SAST month, so a line dated
-      // "today SAST" classifies identically here and in /api/cos-tracker /
-      // /api/gp-tracker / /api/revenue-tracker / lifecycle-routes. Before
-      // this fix the UTC anchor here disagreed with the SAST anchor in
-      // finance-line-level-repository for the first 2h of every SAST day.
-      const currentMonthKey = sastCurrentMonthKey();
-
       const revByMonth = new Map<string, number>();
       const realisedRevByMonth = new Map<string, number>();
       const itemsByMonth = new Map<string, any[]>();
 
-      // Finance PR 3: § 3.3.2 — recognition via canonical bucketing helper.
-      for (const b of bucketCostLinesForRecognition(projectExpenses, { currentMonthKey })) {
-        const { exp, amount, monthKey, revenueAmount, cosRealised } = b;
-        revByMonth.set(monthKey, (revByMonth.get(monthKey) || 0) + revenueAmount);
-        if (cosRealised) {
-          realisedRevByMonth.set(monthKey, (realisedRevByMonth.get(monthKey) || 0) + revenueAmount);
+      // Single engine (owner decision 2026-06): re-source the drilldown from the
+      // reconciled FYE per-line detail so the drawer reconciles to the tab header
+      // (which reads monthlyStates) to the cent. Supplier / canonicalLineKey /
+      // noRevenueLinked are enriched from the expense rows already fetched, by
+      // parentLineId. Replaces the old recognition-bucketing path.
+      const fye = await buildFyeTracking(getCurrentFinanceYear());
+      const fyeLastClosed = fye.dashboard.lastClosedMonthKey;
+      const expById = new Map<number, any>();
+      for (const e of projectExpenses) expById.set((e as any).id, e);
+
+      const wantName = normalizeName(projectName.replace(/_Tracker$/i, ''));
+      for (const l of fye.lineDetail) {
+        const keep =
+          projectIdParam != null
+            ? l.projectId === projectIdParam
+            : normalizeName(l.projectName) === wantName;
+        if (!keep) continue;
+        if (l.recognitionMonth == null) continue;
+        const mk = l.recognitionMonth;
+        const isRealised =
+          l.state === 'realised' &&
+          (!fyeLastClosed || (l.recognitionMonth != null && l.recognitionMonth <= fyeLastClosed));
+        const exp = expById.get(l.parentLineId);
+
+        revByMonth.set(mk, (revByMonth.get(mk) || 0) + l.revenue);
+        if (isRealised) {
+          realisedRevByMonth.set(mk, (realisedRevByMonth.get(mk) || 0) + l.revenue);
         }
-        if (!itemsByMonth.has(monthKey)) itemsByMonth.set(monthKey, []);
-        itemsByMonth.get(monthKey)!.push({
-          id: exp.id,
-          canonicalLineKey: (exp as any).canonicalLineKey || null,
-          category: exp.expenseCategory || null,
-          lineItem: exp.expenseLineItem || null,
-          costAmount: amount,
-          revenueAmount,
-          invoiceNumber: exp.expenseInvoiceNumber || null,
-          poNumber: exp.expensePoNumber || null,
-          invoiceDate: exp.expenseInvoicedDate || null,
-          supplier: exp.supplierName || null,
-          isRealised: cosRealised,
-          noRevenueLinked: !!(exp as any).noRevenueLinked,
+        if (!itemsByMonth.has(mk)) itemsByMonth.set(mk, []);
+        itemsByMonth.get(mk)!.push({
+          id: l.lineId,
+          canonicalLineKey: exp?.canonicalLineKey ?? null,
+          category: exp?.expenseCategory ?? l.category,
+          lineItem: exp?.expenseLineItem ?? l.lineItem,
+          costAmount: l.cos,
+          revenueAmount: l.revenue,
+          invoiceNumber: l.invoiceNumber,
+          poNumber: l.poNumber,
+          invoiceDate: l.invoiceDate,
+          supplier: exp?.supplierName ?? null,
+          isRealised,
+          noRevenueLinked: !!exp?.noRevenueLinked,
         });
       }
 
@@ -5707,46 +5714,58 @@ router.get(
         return s + amount;
       }, 0);
 
-      const nowDate = new Date();
-      // DF-3 (audit V2): currentMonthKey is the SAST month, so a line dated
-      // "today SAST" classifies identically here and in /api/cos-tracker /
-      // /api/gp-tracker / /api/revenue-tracker / lifecycle-routes. Before
-      // this fix the UTC anchor here disagreed with the SAST anchor in
-      // finance-line-level-repository for the first 2h of every SAST day.
-      const currentMonthKey = sastCurrentMonthKey();
-
       const cosByMonth = new Map<string, number>();
       const realisedCosByMonth = new Map<string, number>();
       const revByMonth = new Map<string, number>();
       const realisedRevByMonth = new Map<string, number>();
       const itemsByMonth = new Map<string, any[]>();
 
-      // Finance PR 3: § 3.3.2 — recognition via canonical bucketing helper.
-      for (const b of bucketCostLinesForRecognition(projectExpenses, { currentMonthKey })) {
-        const { exp, amount, monthKey, revenueAmount, cosRealised } = b;
-        cosByMonth.set(monthKey, (cosByMonth.get(monthKey) || 0) + amount);
-        revByMonth.set(monthKey, (revByMonth.get(monthKey) || 0) + revenueAmount);
+      // Single engine (owner decision 2026-06): re-source the drilldown from the
+      // reconciled FYE per-line detail so the drawer reconciles to the tab header
+      // (which reads monthlyStates) to the cent. Supplier / canonicalLineKey /
+      // noRevenueLinked are enriched from the expense rows already fetched, by
+      // parentLineId. Replaces the old recognition-bucketing path.
+      const fye = await buildFyeTracking(getCurrentFinanceYear());
+      const fyeLastClosed = fye.dashboard.lastClosedMonthKey;
+      const expById = new Map<number, any>();
+      for (const e of projectExpenses) expById.set((e as any).id, e);
 
-        if (cosRealised) {
-          realisedCosByMonth.set(monthKey, (realisedCosByMonth.get(monthKey) || 0) + amount);
-          realisedRevByMonth.set(monthKey, (realisedRevByMonth.get(monthKey) || 0) + revenueAmount);
+      const wantName = normalizeName(projectName.replace(/_Tracker$/i, ''));
+      for (const l of fye.lineDetail) {
+        const keep =
+          projectIdParam != null
+            ? l.projectId === projectIdParam
+            : normalizeName(l.projectName) === wantName;
+        if (!keep) continue;
+        if (l.recognitionMonth == null) continue;
+        const mk = l.recognitionMonth;
+        const isRealised =
+          l.state === 'realised' &&
+          (!fyeLastClosed || (l.recognitionMonth != null && l.recognitionMonth <= fyeLastClosed));
+        const exp = expById.get(l.parentLineId);
+
+        cosByMonth.set(mk, (cosByMonth.get(mk) || 0) + l.cos);
+        revByMonth.set(mk, (revByMonth.get(mk) || 0) + l.revenue);
+        if (isRealised) {
+          realisedCosByMonth.set(mk, (realisedCosByMonth.get(mk) || 0) + l.cos);
+          realisedRevByMonth.set(mk, (realisedRevByMonth.get(mk) || 0) + l.revenue);
         }
 
-        if (!itemsByMonth.has(monthKey)) itemsByMonth.set(monthKey, []);
-        itemsByMonth.get(monthKey)!.push({
-          id: exp.id,
-          canonicalLineKey: (exp as any).canonicalLineKey || null,
-          category: exp.expenseCategory || null,
-          lineItem: exp.expenseLineItem || null,
-          costAmount: amount,
-          revenueAmount,
-          gpAmount: revenueAmount - amount,
-          invoiceNumber: exp.expenseInvoiceNumber || null,
-          poNumber: exp.expensePoNumber || null,
-          invoiceDate: exp.expenseInvoicedDate || null,
-          supplier: exp.supplierName || null,
-          isRealised: cosRealised,
-          noRevenueLinked: !!(exp as any).noRevenueLinked,
+        if (!itemsByMonth.has(mk)) itemsByMonth.set(mk, []);
+        itemsByMonth.get(mk)!.push({
+          id: l.lineId,
+          canonicalLineKey: exp?.canonicalLineKey ?? null,
+          category: exp?.expenseCategory ?? l.category,
+          lineItem: exp?.expenseLineItem ?? l.lineItem,
+          costAmount: l.cos,
+          revenueAmount: l.revenue,
+          gpAmount: l.revenue - l.cos,
+          invoiceNumber: l.invoiceNumber,
+          poNumber: l.poNumber,
+          invoiceDate: l.invoiceDate,
+          supplier: exp?.supplierName ?? null,
+          isRealised,
+          noRevenueLinked: !!exp?.noRevenueLinked,
         });
       }
 
@@ -5850,41 +5869,43 @@ router.get(
       // formula and are now unused — `recognitionAmountFor(exp)` reads the
       // persisted per-line POC value directly.
 
-      const curMK = getCurrentMonthKey();
       const items: any[] = [];
 
-      // Finance PR 3: § 3.3.2 — recognition via canonical bucketing helper.
-      for (const b of bucketCostLinesForRecognition(allExpenses, { currentMonthKey: curMK })) {
-        const {
-          exp,
-          amount,
-          monthKey: itemMonthKey,
-          revenueAmount,
-          cosRealised,
-          projectName: pName,
-        } = b;
-        if (itemMonthKey !== monthKey) continue;
-        if (project && pName !== project) continue;
-        const gpAmount = revenueAmount - amount;
-        const gpState = cosRealised ? 'Realised' : 'Unrealised';
+      // Single engine (owner decision 2026-06): re-source the drilldown from the
+      // reconciled FYE per-line detail (same source as the tab header) so it
+      // reconciles to the cent; enrich from the fetched expense rows by parentLineId.
+      const fye = await buildFyeTracking(getCurrentFinanceYear());
+      const fyeLastClosed = fye.dashboard.lastClosedMonthKey;
+      const expById = new Map<number, any>();
+      for (const e of allExpenses) expById.set((e as any).id, e);
+
+      for (const l of fye.lineDetail) {
+        if (l.recognitionMonth !== monthKey) continue;
+        if (project && l.projectName !== project) continue;
+        const isRealised =
+          l.state === 'realised' &&
+          (!fyeLastClosed || (l.recognitionMonth != null && l.recognitionMonth <= fyeLastClosed));
+        const exp = expById.get(l.parentLineId);
+        const gpAmount = l.revenue - l.cos;
+        const gpState = isRealised ? 'Realised' : 'Unrealised';
         if (stateFilter && stateFilter.toLowerCase() !== gpState.toLowerCase()) continue;
 
         items.push({
-          id: exp.id,
-          canonicalLineKey: (exp as any).canonicalLineKey || null,
-          projectName: pName,
-          category: exp.expenseCategory || null,
-          lineItem: exp.expenseLineItem || null,
-          costAmount: amount,
-          revenueAmount,
+          id: l.lineId,
+          canonicalLineKey: exp?.canonicalLineKey ?? null,
+          projectName: l.projectName,
+          category: exp?.expenseCategory ?? l.category,
+          lineItem: exp?.expenseLineItem ?? l.lineItem,
+          costAmount: l.cos,
+          revenueAmount: l.revenue,
           gpAmount,
-          gpPct: revenueAmount !== 0 ? (gpAmount / revenueAmount) * 100 : 0,
-          invoiceNumber: exp.expenseInvoiceNumber || null,
-          poNumber: exp.expensePoNumber || null,
-          invoiceDate: exp.expenseInvoicedDate || null,
-          supplier: exp.supplierName || null,
-          isRealised: cosRealised,
-          noRevenueLinked: !!(exp as any).noRevenueLinked,
+          gpPct: l.revenue !== 0 ? (gpAmount / l.revenue) * 100 : 0,
+          invoiceNumber: l.invoiceNumber,
+          poNumber: l.poNumber,
+          invoiceDate: l.invoiceDate,
+          supplier: exp?.supplierName ?? null,
+          isRealised,
+          noRevenueLinked: !!exp?.noRevenueLinked,
           gpState,
         });
       }
@@ -6249,54 +6270,49 @@ router.get(
         cosByProject.set(pName, (cosByProject.get(pName) || 0) + amount);
       }
 
-      const nowDate = new Date();
-      // DF-3 (audit V2): currentMonthKey is the SAST month, so a line dated
-      // "today SAST" classifies identically here and in /api/cos-tracker /
-      // /api/gp-tracker / /api/revenue-tracker / lifecycle-routes. Before
-      // this fix the UTC anchor here disagreed with the SAST anchor in
-      // finance-line-level-repository for the first 2h of every SAST day.
-      const currentMonthKey = sastCurrentMonthKey();
-
       const items: any[] = [];
-      // Finance PR 3: § 3.3.2 — recognition via canonical bucketing helper.
-      for (const b of bucketCostLinesForRecognition(allExpenses, { currentMonthKey })) {
-        const {
-          exp,
-          amount,
-          monthKey: itemMonthKey,
-          revenueAmount,
-          cosRealised,
-          projectName: pName,
-        } = b;
-        if (itemMonthKey !== monthKey) continue;
-        // Keep revenue drill-down project-scoped — skip lines with no project.
-        if (!pName) continue;
+      // Single engine (owner decision 2026-06): re-source the drilldown from the
+      // reconciled FYE per-line detail (same source as the tab header) so it
+      // reconciles to the cent; enrich from the fetched expense rows by parentLineId.
+      const fye = await buildFyeTracking(getCurrentFinanceYear());
+      const fyeLastClosed = fye.dashboard.lastClosedMonthKey;
+      const expById = new Map<number, any>();
+      for (const e of allExpenses) expById.set((e as any).id, e);
 
-        const revState = cosRealised ? 'Realised' : 'Unrealised';
+      for (const l of fye.lineDetail) {
+        if (l.recognitionMonth !== monthKey) continue;
+        // Keep revenue drill-down project-scoped — skip lines with no project.
+        if (!l.projectName) continue;
+        const isRealised =
+          l.state === 'realised' &&
+          (!fyeLastClosed || (l.recognitionMonth != null && l.recognitionMonth <= fyeLastClosed));
+        const exp = expById.get(l.parentLineId);
+
+        const revState = isRealised ? 'Realised' : 'Unrealised';
         if (stateFilter && stateFilter.toLowerCase() !== revState.toLowerCase()) continue;
 
         items.push({
-          id: exp.id,
-          canonicalLineKey: (exp as any).canonicalLineKey || null,
-          projectName: pName,
-          category: exp.expenseCategory || null,
-          lineItem: exp.expenseLineItem || null,
-          costAmount: amount,
-          revenueAmount,
-          invoiceNumber: exp.expenseInvoiceNumber || null,
-          poNumber: exp.expensePoNumber || null,
-          invoiceDate: exp.expenseInvoicedDate || null,
-          supplier: exp.supplierName || null,
-          isRealised: cosRealised,
-          noRevenueLinked: !!(exp as any).noRevenueLinked,
+          id: l.lineId,
+          canonicalLineKey: exp?.canonicalLineKey ?? null,
+          projectName: l.projectName,
+          category: exp?.expenseCategory ?? l.category,
+          lineItem: exp?.expenseLineItem ?? l.lineItem,
+          costAmount: l.cos,
+          revenueAmount: l.revenue,
+          invoiceNumber: l.invoiceNumber,
+          poNumber: l.poNumber,
+          invoiceDate: l.invoiceDate,
+          supplier: exp?.supplierName ?? null,
+          isRealised,
+          noRevenueLinked: !!exp?.noRevenueLinked,
           revState,
           dataSource: 'app',
           qbTransactionType: null,
           qbDocNumber: null,
           paymentReference: null,
           transactionDate: null,
-          recognitionDate: exp.expenseInvoicedDate || null,
-          sourceTraceId: `ncl:${exp.id}`,
+          recognitionDate: l.invoiceDate,
+          sourceTraceId: `ncl:${l.lineId}`,
           matchStatus: 'app_only',
         });
       }
