@@ -310,19 +310,40 @@ function MetricBlock({ fye, block, canEdit }: { fye: number; block: MetricBlockD
 }
 
 function DashboardView({ apiQueryString, canEdit }: { apiQueryString: string; canEdit: boolean }) {
+  // "" = Auto (server clamps Actual to the last closed month). A chosen month
+  // overrides how far the Actual line runs (passed through as ?actualThrough).
+  const [actualThrough, setActualThrough] = useState<string>("");
+  const qs = actualThrough ? `${apiQueryString}&actualThrough=${actualThrough}` : apiQueryString;
   const { data, isLoading, isError, error } = useQuery<DashboardResponse>({
-    queryKey: [`/api/fye-revenue-tracking/dashboard?${apiQueryString}`],
-    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/dashboard?${apiQueryString}`),
+    queryKey: [`/api/fye-revenue-tracking/dashboard?${qs}`],
+    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/dashboard?${qs}`),
   });
   if (isLoading) return <PageSkeleton />;
   if (isError) return <PageError message={(error as Error)?.message} />;
   if (!data) return null;
   const d = data.dashboard;
+  const monthOptions = d.revenue.monthly.map((m) => ({ monthKey: m.monthKey, label: m.label }));
   return (
     <div className="space-y-4">
-      <p className="text-xs text-muted-foreground">
-        Actuals close to <span className="font-medium">{d.lastClosedMonthKey ?? "—"}</span>; Plan-ahead continues with Committed + Planned pipeline to year-end. Revised Budget is manual and editable.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          Actuals close to <span className="font-medium">{d.lastClosedMonthKey ?? "—"}</span>; Plan-ahead continues with Committed + Planned pipeline to year-end. Revised Budget is manual and editable.
+        </p>
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground whitespace-nowrap">
+          Actuals through
+          <select
+            className="h-8 rounded-md border bg-background px-2 text-sm"
+            value={actualThrough}
+            onChange={(e) => setActualThrough(e.target.value)}
+            data-testid="fye-actual-through"
+          >
+            <option value="">Auto (last closed)</option>
+            {monthOptions.map((m) => (
+              <option key={m.monthKey} value={m.monthKey}>{m.label}</option>
+            ))}
+          </select>
+        </label>
+      </div>
       <MetricBlock fye={data.fye} block={d.revenue} canEdit={canEdit} />
       <MetricBlock fye={data.fye} block={d.cos} canEdit={canEdit} />
       <MetricBlock fye={data.fye} block={d.gp} canEdit={canEdit} />
