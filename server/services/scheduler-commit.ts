@@ -27,6 +27,7 @@
 
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "../db";
+import { IMPORT_FILE_ALWAYS_WINS } from "../imports/import-conflict-policy";
 import {
   smartImportRuns,
   normalizedCostLines,
@@ -215,7 +216,7 @@ export async function commitSmartImportRunAsSystem(
   // moved since the orchestrator's earlier check.
   try {
     const plannerResult = await runImportPlanner(projectId, norm);
-    if (plannerResult.conflicts?.hasBlockingConflicts) {
+    if (plannerResult.conflicts?.hasBlockingConflicts && !IMPORT_FILE_ALWAYS_WINS) {
       const unresolvedRows = plannerResult.conflicts.allRows
         .filter((r) => r.conflictStatus === "HAS_CONFLICTS")
         .flatMap((r) =>

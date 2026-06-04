@@ -53,10 +53,13 @@ function makePlannerResult(overrides: Partial<{
   } as PlannerResult;
 }
 
+// These tests exercise the LEGACY conflict-resolution path (file-always-wins
+// OFF) — every call passes `false` explicitly. The file-always-wins ON path
+// (always "commit") is covered in file-always-wins-policy.test.ts.
 describe("scheduler conflict policy", () => {
   describe("commit decision", () => {
     it("commits when planner reports no blocking conflicts", () => {
-      const result = resolveSchedulerConflictPolicy(makePlannerResult({ hasBlockingConflicts: false }));
+      const result = resolveSchedulerConflictPolicy(makePlannerResult({ hasBlockingConflicts: false }), false);
       expect(result.decision).toBe("commit");
       expect(result.reason).toBe("no_blocking_conflicts");
       expect(result.resolutions).toEqual({});
@@ -76,7 +79,7 @@ describe("scheduler conflict policy", () => {
             ],
           },
         ],
-      }));
+      }), false);
       expect(result.decision).toBe("commit");
     });
 
@@ -90,7 +93,7 @@ describe("scheduler conflict policy", () => {
             fields: [{ fieldName: "amount", mergeCase: "UNCHANGED", requiresDecision: false }],
           },
         ],
-      }));
+      }), false);
       expect(result.decision).toBe("commit");
     });
   });
@@ -115,7 +118,7 @@ describe("scheduler conflict policy", () => {
             ],
           },
         ],
-      }));
+      }), false);
       expect(result.decision).toBe("park");
       expect(result.reason).toBe("unresolvable_conflicts_1");
       expect(result.unresolvable).toHaveLength(1);
@@ -150,7 +153,7 @@ describe("scheduler conflict policy", () => {
             ],
           },
         ],
-      }));
+      }), false);
       expect(result.decision).toBe("park");
       expect(result.unresolvable).toHaveLength(2);
       expect(result.unresolvable.map((u) => u.rowKey)).toEqual(["revenue::r1", "expenditure::r2"]);
@@ -171,7 +174,7 @@ describe("scheduler conflict policy", () => {
             fields: [{ fieldName: "amount", mergeCase: "CONFLICT", requiresDecision: true }],
           },
         ],
-      }));
+      }), false);
       expect(result.decision).toBe("park");
       expect(result.unresolvable).toHaveLength(1);
       expect(result.unresolvable[0].rowKey).toBe("row-dirty");
@@ -181,7 +184,7 @@ describe("scheduler conflict policy", () => {
       const result = resolveSchedulerConflictPolicy(makePlannerResult({
         hasBlockingConflicts: true,
         allRows: [],
-      }));
+      }), false);
       expect(result.decision).toBe("park");
       expect(result.reason).toBe("blocking_conflicts_without_field_detail");
       expect(result.unresolvable).toEqual([]);
@@ -202,7 +205,7 @@ describe("scheduler conflict policy", () => {
             ],
           },
         ],
-      }));
+      }), false);
       expect(result.decision).toBe("park");
       expect(result.resolutions).toEqual({});
     });

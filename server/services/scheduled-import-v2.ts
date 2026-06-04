@@ -48,6 +48,7 @@ import {
 } from "../lib/import/project-match";
 import { resolveSchedulerConflictPolicy } from "../imports/scheduler-conflict-policy";
 import { commitSmartImportRunAsSystem } from "./scheduler-commit";
+import { IMPORT_FILE_ALWAYS_WINS } from "../imports/import-conflict-policy";
 
 export interface ScheduledImportV2Result {
   triggerType: "schedule" | "manual";
@@ -160,7 +161,11 @@ async function processFileV2(
   const extractedName = extractProjectNameFromFilename(fileName);
   const projectMatches: ProjectMatch[] = await findProjectMatches(extractedName);
   const bestMatch = projectMatches[0];
-  const autoMappedProjectId = bestMatch && bestMatch.confidence >= 0.85 ? bestMatch.projectId : null;
+  // File-always-wins lowers the unattended auto-match bar to match the
+  // interactive "attach to closest ≥0.75" policy; otherwise keep the
+  // conservative ≥0.85 auto-map.
+  const autoMatchThreshold = IMPORT_FILE_ALWAYS_WINS ? 0.75 : 0.85;
+  const autoMappedProjectId = bestMatch && bestMatch.confidence >= autoMatchThreshold ? bestMatch.projectId : null;
   const resolvedProjectName = autoMappedProjectId && bestMatch ? bestMatch.projectName : extractedName;
 
   // Run planner (only meaningful if we have a project id; otherwise everything is NEW).
@@ -179,6 +184,14 @@ async function processFileV2(
   const policyDecision = plannerResult
     ? resolveSchedulerConflictPolicy(plannerResult)
     : { decision: "park" as const, reason: "no_planner_result", resolutions: {} };
+
+  // Unattended-only safety: even under file-always-wins, never auto-restore
+  // previously-deleted rows without a human (the one case that can silently
+  // re-insert / duplicate data). Park for review; the interactive commit path
+  // auto-resolves it (restore_and_apply) with no prompt.
+  const hasResurrections = (plannerResult?.resurrections?.length ?? 0) > 0;
+  const effectiveDecision: "commit" | "park" =
+    hasResurrections ? "park" : policyDecision.decision;
 
   const summaryJson = {
     ...(preview as unknown as Record<string, unknown>),
@@ -201,7 +214,7 @@ async function processFileV2(
   // Insert the run as `preview` (matching the upload route's contract) when
   // we have a project and the policy says commit; otherwise as
   // `awaiting_review` so the UI surfaces it for human attention.
-  const initialStatus = autoMappedProjectId && policyDecision.decision === "commit"
+  const initialStatus = autoMappedProjectId && effectiveDecision === "commit"
     ? "preview"
     : "awaiting_review";
 
@@ -221,7 +234,7 @@ async function processFileV2(
   // Auto-commit path: when we have a project AND the policy decided to
   // commit, hand off to the scheduler commit service. Anything other than a
   // clean commit leaves the run for human review.
-  if (autoMappedProjectId && policyDecision.decision === "commit") {
+  if (autoMappedProjectId && effectiveDecision === "commit") {
     try {
       const commitResult = await commitSmartImportRunAsSystem({
         runId: run.id,
