@@ -14,6 +14,14 @@ Owner: Johannes Theo Potgieter (COO)
 - **DB Push (Drizzle Kit):** `npm run db:push`
 - **Required Env Vars:** Azure MSAL credentials, Key Vault URI, database connection string.
 
+## Build & publish (Replit)
+- **Deploy build:** `npm run build && npm run db:migrate` (from `.replit [deployment]` — do not change without owner approval).
+- **Run:** `npm run start`
+- **Hosting:** Replit **autoscale**, single port **5000**.
+- **Schema changes:** every change ships as a committed Drizzle migration file (`npm run db:generate`); deploy applies them via `drizzle-kit migrate`. A `db:push`-only change will **NOT** publish.
+- **PR done = green:** `npm run check`, `npm run db:check`, `npm run test`, and `npm run build` all pass.
+- **Secrets:** Replit Secrets Manager only — never in `.replit` or committed files.
+
 ## Stack
 - **Frontend:** React 19, TypeScript, Vite, wouter, Tailwind CSS v4, shadcn/ui, TanStack React Query v5, React Hook Form, Zod.
 - **Backend:** Node.js, Express 5, TypeScript, Zod.
