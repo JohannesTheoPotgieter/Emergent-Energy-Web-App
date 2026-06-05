@@ -151,6 +151,28 @@ const MODERN_MIGRATION_PROBES: Record<
       c,
       "sp_settings_alert_sender_user_id_users_id_fk",
     )),
+  // 0089 backfills 18 tables declared in shared/schema/*.ts whose migrations
+  // were presumed-applied while their DDL never ran on dev OR prod (same class
+  // as 0087 -> 0088). Several 500 at runtime: document approval requirements,
+  // project folders/taxonomy, project hold + stage-exception history, and the
+  // QuickBooks link cascade history. Multi-artifact canary spanning the
+  // actively-queried tables (+ a representative column) so a partial apply
+  // replays rather than being presumed complete.
+  "0089_missing_tables_drift_repair": async (c) =>
+    (await tableExists(c, "folder_taxonomy")) &&
+    (await tableExists(c, "project_folders")) &&
+    (await tableExists(c, "document_approval_requirements")) &&
+    (await tableExists(c, "qb_link_proposed_cascade_history")) &&
+    (await tableExists(c, "project_hold_metadata")) &&
+    (await tableExists(c, "project_stage_exception_history")) &&
+    (await columnExists(c, "folder_taxonomy", "lifecycle_mode")) &&
+    // Tail artifact (the migration's final statement) so a partial apply that
+    // fails near the end is not falsely presumed complete.
+    (await tableExists(c, "vat_period_locks")) &&
+    (await constraintExists(
+      c,
+      "vat_period_locks_unlocked_by_user_id_users_id_fk",
+    )),
 };
 
 async function tableExists(client: Client, table: string): Promise<boolean> {
