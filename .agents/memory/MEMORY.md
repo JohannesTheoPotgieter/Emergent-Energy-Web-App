@@ -2,6 +2,7 @@
 - [Deploy & DB ops](deploy-and-db-ops.md) — non-obvious deploy pipeline, DB topology, and migration self-heal facts not visible in code.
 - [Dev/prod DB split](dev-prod-database-split.md) — dev=heliumdb, prod=neondb; separate Postgres DBs with diverged data, not shared.
 - [Drizzle migration drift](drizzle-migration-drift.md) — why prod schema drifts despite db:migrate; rule: register a canary probe + keep migrations idempotent.
+- [Deploy build vs promote failure](deploy-promote-vs-build-failure.md) — a "failed" build whose log ends after "migrations applied" + image layers pushed is a promote/health-check failure, not a build error; no runtime logs ⇒ reproduce `npm run start` locally, check GET / 200, confirm env parity.
 - [Prod finance reconciliation](prod-finance-reconciliation.md) — how to sum Revenue/COS/GP from prod normalized line views, and recurring distortions to watch.
 - [Prod plan data-quality](prod-plan-data-quality.md) — why prod project plans render flat/messy and the data-safe way to clean them.
 - [Project plan critical path](project-plan-critical-path.md) — how the PM plan's critical path is computed (hybrid) and how reschedule gates on dependencies.
