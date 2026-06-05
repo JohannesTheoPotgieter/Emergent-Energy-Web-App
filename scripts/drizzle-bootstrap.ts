@@ -195,6 +195,40 @@ async function constraintExists(
   return res.rows[0]?.exists === true;
 }
 
+/**
+ * Connect with bounded timeouts and a short retry, so a cold or briefly
+ * unreachable database (e.g. Neon waking up) does not hang or fail the
+ * whole deploy build. `statement_timeout` guards against a probe/DDL
+ * stalling the bootstrap indefinitely.
+ */
+async function createConnectedClient(url: string): Promise<Client> {
+  const attempts = 3;
+  let lastErr: unknown;
+  for (let i = 1; i <= attempts; i++) {
+    const client = new Client({
+      connectionString: url,
+      connectionTimeoutMillis: 15_000,
+      statement_timeout: 60_000,
+    });
+    try {
+      await client.connect();
+      return client;
+    } catch (err) {
+      lastErr = err;
+      await client.end().catch(() => {});
+      if (i < attempts) {
+        const backoff = 2_000 * i;
+        console.warn(
+          `[drizzle-bootstrap] connect attempt ${i}/${attempts} failed ` +
+            `(${(err as Error).message}); retrying in ${backoff}ms…`,
+        );
+        await new Promise((r) => setTimeout(r, backoff));
+      }
+    }
+  }
+  throw lastErr;
+}
+
 async function hashForEntry(entry: JournalEntry): Promise<string> {
   const sqlPath = path.join(MIGRATIONS_DIR, `${entry.tag}.sql`);
   const sql = await readFile(sqlPath, "utf-8");
@@ -215,8 +249,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const client = new Client({ connectionString: url });
-  await client.connect();
+  const client = await createConnectedClient(url);
   try {
     // Step 1 — Detect existing app schema. If neither core table
     // exists this is a fresh DB; let drizzle-kit migrate run the
