@@ -617,6 +617,13 @@
       "when": 1780653463778,
       "tag": "0087_smart_import_bindings_and_alerts",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1780666762195,
+      "tag": "0088_smart_import_alerts_drift_repair",
+      "breakpoints": true
     }
   ]
 }
