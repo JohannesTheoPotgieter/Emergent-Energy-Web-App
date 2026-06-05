@@ -74,3 +74,10 @@ tsc-errors.txt
 .cache/
 .migrations-drift-check/
 qa/reports/vitest-results.json
+
+# -- Replit paste artefacts & DB dumps (never source) --
+attached_assets/*.png
+attached_assets/*.jpeg
+attached_assets/*.jpg
+attached_assets/*.zip
+*.dump
