@@ -395,3 +395,55 @@ export function useTestCompanyRoot() {
     },
   });
 }
+
+// =========================================================================
+// SharePoint picker — browse sites -> libraries -> folders so admins can
+// choose the Active Projects root without pasting a raw Graph drive id.
+// =========================================================================
+
+export interface SharepointSite {
+  id: string;
+  displayName: string;
+  webUrl: string;
+}
+
+export function useSharepointSites(enabled = true) {
+  return useQuery<{ sites: SharepointSite[] }>({
+    queryKey: ["/api/admin/sharepoint/sites"],
+    queryFn: getQueryFn({ on401: "throw" }),
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+export interface SharepointDrive {
+  id: string;
+  name: string;
+  webUrl?: string;
+  driveType?: string;
+}
+
+export function useSharepointSiteDrives(siteId: string | null) {
+  return useQuery<{ drives: SharepointDrive[] }>({
+    queryKey: [`/api/admin/sharepoint/sites/${encodeURIComponent(siteId ?? "")}/drives`],
+    queryFn: getQueryFn({ on401: "throw" }),
+    enabled: Boolean(siteId),
+  });
+}
+
+export interface SharepointFolder {
+  id: string;
+  name: string;
+  path?: string;
+  webUrl?: string;
+}
+
+export function useSharepointDriveFolders(driveId: string | null, parentItemId: string | null) {
+  const base = `/api/admin/sharepoint/drives/${encodeURIComponent(driveId ?? "")}/folders`;
+  const url = parentItemId ? `${base}?parentItemId=${encodeURIComponent(parentItemId)}` : base;
+  return useQuery<{ folders: SharepointFolder[] }>({
+    queryKey: [url],
+    queryFn: getQueryFn({ on401: "throw" }),
+    enabled: Boolean(driveId),
+  });
+}

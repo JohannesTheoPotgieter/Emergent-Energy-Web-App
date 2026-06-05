@@ -207,6 +207,17 @@ export function mockSharePointSites() {
   ];
 }
 
+/**
+ * Document libraries (drives) for a site. Reuses the same drive ids the
+ * DM mock store is keyed on so the folder picker browses a populated tree.
+ */
+export function mockSiteDrives(_siteId: string) {
+  return [
+    { id: "drive-company-mock", name: "Documents", webUrl: "https://mock.sharepoint.com/sites/x/Shared%20Documents", driveType: "documentLibrary" },
+    { id: "drive-project-mock", name: "Projects", webUrl: "https://mock.sharepoint.com/sites/x/Projects", driveType: "documentLibrary" },
+  ];
+}
+
 export function mockSharePointLists(_siteId: string) {
   return [
     { id: "list-proposals-pipeline", displayName: "Proposals Pipeline", itemCount: 2 },
