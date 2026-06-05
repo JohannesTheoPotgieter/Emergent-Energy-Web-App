@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useLocation } from "wouter";
 import { useGatesPipeline, type GateProjectCard } from "@/hooks/use-gates";
-import { ApprovalQueueCard } from "@/components/managed-documents";
+import { ManagedDocumentApprovalQueue } from "@/components/documents/ManagedDocumentApprovalQueue";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { PageLayout } from "@/components/layout";
@@ -106,7 +106,7 @@ export default function CeoHome() {
       {/* Row 1: Waiting on me */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-1">
-          <ApprovalQueueCard />
+          <ManagedDocumentApprovalQueue title="Approvals waiting on you" />
         </div>
         <div className="lg:col-span-2">
           <UpcomingHandoversCard rows={upcomingHandovers} />

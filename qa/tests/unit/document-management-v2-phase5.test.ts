@@ -37,7 +37,7 @@ const queueComponent = fs.readFileSync(
   "utf8",
 );
 const projectDocsPage = fs.readFileSync(
-  path.join(repoRoot, "client", "src", "pages", "project-documents.tsx"),
+  path.join(repoRoot, "client", "src", "components", "documents", "ProjectDocumentsView.tsx"),
   "utf8",
 );
 const hooksFile = fs.readFileSync(

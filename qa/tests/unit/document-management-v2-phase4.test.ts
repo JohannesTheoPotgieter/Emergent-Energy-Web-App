@@ -23,7 +23,7 @@ const panelFile = fs.readFileSync(
   "utf8",
 );
 const pageFile = fs.readFileSync(
-  path.join(repoRoot, "client", "src", "pages", "project-documents.tsx"),
+  path.join(repoRoot, "client", "src", "components", "documents", "ProjectDocumentsView.tsx"),
   "utf8",
 );
 const hooksFile = fs.readFileSync(
@@ -108,12 +108,11 @@ describe("D6 Phase 4 — project-documents page", () => {
     expect(pageFile).toMatch(/LIFECYCLE_DEPARTMENTS/);
   });
 
-  it("surfaces verify-error operational signal when any folder is broken on Graph", () => {
-    // Phase 6 replaced the per-page provisioned/missing summary with the
-    // <ProjectReadinessCard>; only the verify-errors callout remains as a
-    // page-level signal because it indicates Graph drift (operational), not
-    // process readiness.
-    expect(pageFile).toMatch(/data-testid="overall-summary-errors"/);
+  it("surfaces the SharePoint connection + verify-error signal via the connection card", () => {
+    // The standalone per-page verify-errors callout was replaced by the
+    // ProjectSharepointConnectionCard, which leads the view and surfaces
+    // connected / needs-attention state plus inline Verify + Set up actions.
+    expect(pageFile).toMatch(/<ProjectSharepointConnectionCard/);
   });
 });
 
