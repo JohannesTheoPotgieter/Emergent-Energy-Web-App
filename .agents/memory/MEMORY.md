@@ -1,2 +1,7 @@
-- [Prod finance reconciliation](prod-finance-reconciliation.md) — sum Rev/COS/GP via claude_views with `effective_to IS NULL` + FY window or numbers explode ~80x; distortions live in derivation, not the import.
-- [Drizzle migration drift on deploy](drizzle-migration-drift.md) — db:migrate only replays a migration if its tag has a failing canary probe; un-probed tags silently skip → prod drift. New migrations MUST register a multi-artifact probe + be idempotent.
+- [COS/revenue realisation gate](cos-revenue-realisation-gate.md) — single source of truth for "Realised"; future guard is MONTH-granular (current month counts, tracker dates costs at month-end), confirmation gate still applies.
+- [Deploy & DB ops](deploy-and-db-ops.md) — non-obvious deploy pipeline, DB topology, and migration self-heal facts not visible in code.
+- [Dev/prod DB split](dev-prod-database-split.md) — dev=heliumdb, prod=neondb; separate Postgres DBs with diverged data, not shared.
+- [Drizzle migration drift](drizzle-migration-drift.md) — why prod schema drifts despite db:migrate; rule: register a canary probe + keep migrations idempotent.
+- [Prod finance reconciliation](prod-finance-reconciliation.md) — how to sum Revenue/COS/GP from prod normalized line views, and recurring distortions to watch.
+- [Prod plan data-quality](prod-plan-data-quality.md) — why prod project plans render flat/messy and the data-safe way to clean them.
+- [Project plan critical path](project-plan-critical-path.md) — how the PM plan's critical path is computed (hybrid) and how reschedule gates on dependencies.

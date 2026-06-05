@@ -143,11 +143,12 @@ describe("isCanonicalCosRealised — black-font invoice-date confirmation gate",
 });
 
 // ---------------------------------------------------------------------------
-// A3. FUTURE-DATE GUARD — invoice dated after as-at is NOT realised
+// A3. FUTURE-MONTH GUARD — invoice in a month after the as-at month is NOT
+//     realised (month-granular: current-month lines clear the guard)
 // ---------------------------------------------------------------------------
 
-describe("isCanonicalCosRealised — future-date guard", () => {
-  it("invoice with FUTURE invoice date (after today) = NOT realised", () => {
+describe("isCanonicalCosRealised — future-MONTH guard (month-granular)", () => {
+  it("invoice in a FUTURE month = NOT realised", () => {
     // The month-end-dated committed lines (Jun–Aug) that were over-counted.
     expect(isCanonicalCosRealised(makeLine({
       expenseInvoiceNumber: "INV-001",
@@ -156,13 +157,52 @@ describe("isCanonicalCosRealised — future-date guard", () => {
     }))).toBe(false);
   });
 
-  it("future-date guard beats BLACK font (future cost not yet incurred)", () => {
+  it("future-MONTH guard beats BLACK font (future cost not yet incurred)", () => {
     expect(isCanonicalCosRealised(makeLine({
       expenseInvoiceNumber: "INV-001",
       expenseInvoicedDate: "2026-05-31",
       invoiceDateFontColor: "black",
       today: "2026-04-07",
     }))).toBe(false);
+  });
+
+  it("same-month month-end date AFTER today, BLACK confirmed = realised (month-granular)", () => {
+    // Owner decision 2026-06-05: once the as-at date has reached the month,
+    // that month's confirmed lines realise even though the tracker stamps
+    // them at the month-END date (the common real-world case).
+    expect(isCanonicalCosRealised(makeLine({
+      expenseInvoiceNumber: "INV-001",
+      expenseInvoicedDate: "2026-04-30",
+      invoiceDateFontColor: "black",
+      today: "2026-04-07",
+    }))).toBe(true);
+  });
+
+  it("same-month month-end date AFTER today but RED = NOT realised (confirmation gate still applies)", () => {
+    expect(isCanonicalCosRealised(makeLine({
+      expenseInvoiceNumber: "INV-001",
+      expenseInvoicedDate: "2026-04-30",
+      invoiceDateFontColor: "red",
+      today: "2026-04-07",
+    }))).toBe(false);
+  });
+
+  it("next-month line across a YEAR boundary (Dec as-at, Jan invoice) = NOT realised", () => {
+    expect(isCanonicalCosRealised(makeLine({
+      expenseInvoiceNumber: "INV-001",
+      expenseInvoicedDate: "2027-01-31",
+      invoiceDateFontColor: "black",
+      today: "2026-12-15",
+    }))).toBe(false);
+  });
+
+  it("same-month line at a YEAR boundary (Dec as-at, Dec month-end) = realised", () => {
+    expect(isCanonicalCosRealised(makeLine({
+      expenseInvoiceNumber: "INV-001",
+      expenseInvoicedDate: "2026-12-31",
+      invoiceDateFontColor: "black",
+      today: "2026-12-15",
+    }))).toBe(true);
   });
 
   it("invoice dated ON the as-at date = realised (boundary, inclusive)", () => {
