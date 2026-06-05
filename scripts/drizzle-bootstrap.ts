@@ -122,6 +122,23 @@ const MODERN_MIGRATION_PROBES: Record<
   // Revenue / COS tracker rows are scoped separately from program-wide rows.
   "0083_tracker_monthly_per_project": (c) =>
     columnExists(c, "tracker_monthly_manual", "project_info_id"),
+  // 0084 restores the finance tracker support tables (category revenue
+  // allocations + manual tracker rows). Multi-artifact canary so a partial
+  // apply (table present but the cost-line FK column missing) still replays.
+  "0084_restore_finance_tracker_support_tables": async (c) =>
+    (await tableExists(c, "category_revenue_allocations")) &&
+    (await columnExists(c, "normalized_cost_lines", "category_allocation_id")) &&
+    (await tableExists(c, "tracker_monthly_manual")),
+  // 0085 creates the FYE revised-budget monthly table that the FYE
+  // revenue-tracking tab reads from. Require table + FK + unique index so a
+  // partial apply replays rather than being presumed complete.
+  "0085_fye_revised_budget_monthly": async (c) =>
+    (await tableExists(c, "fye_revised_budget_monthly")) &&
+    (await constraintExists(
+      c,
+      "fye_revised_budget_monthly_updated_by_users_id_fk",
+    )) &&
+    (await indexExists(c, "fye_revised_budget_monthly_fye_metric_month_idx")),
 };
 
 async function tableExists(client: Client, table: string): Promise<boolean> {
@@ -146,6 +163,21 @@ async function columnExists(
        WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2
      ) AS exists;`,
     [table, column],
+  );
+  return res.rows[0]?.exists === true;
+}
+
+async function indexExists(
+  client: Client,
+  index: string,
+): Promise<boolean> {
+  const res = await client.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM pg_class c
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE c.relkind = 'i' AND n.nspname = 'public' AND c.relname = $1
+     ) AS exists;`,
+    [index],
   );
   return res.rows[0]?.exists === true;
 }
