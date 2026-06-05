@@ -117,6 +117,12 @@ export function ProjectSharepointConnectionCard({
               (s.errors > 0 ? ` · ${s.errors} error${s.errors === 1 ? "" : "s"}` : ""),
             variant: s.errors > 0 ? "destructive" : undefined,
           });
+          // Auto-verify a clean provision so transient Graph failures surface
+          // immediately instead of on the next manual "Verify now". Silent —
+          // no extra toast; just refreshes the folder/verify state.
+          if (s.errors === 0) {
+            verify.mutate(projectId);
+          }
         },
         onError: (err) => {
           toast({
