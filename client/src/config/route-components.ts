@@ -11,6 +11,7 @@ const ProjectDocumentsPage = lazyWithRetry(() => import("@/pages/project-documen
 const DocumentsPage = lazyWithRetry(() => import("@/pages/documents"));
 // (removed) QuickBooksHomePage — orphaned surface, consolidated into FinanceQuickBooksThroughputPage in Task #30.
 const AdminDocumentManagementPage = lazyWithRetry(() => import("@/pages/admin-document-management"));
+const AdminImportMappingsPage = lazyWithRetry(() => import("@/pages/admin-import-mappings"));
 const AdminEmailLinkerDevPage = lazyWithRetry(() => import("@/pages/admin-email-linker-dev"));
 const AdminPriorityTemplatesPage = lazyWithRetry(() => import("@/pages/admin-priority-templates"));
 const HandoverLivePage = lazyWithRetry(() => import("@/pages/handover-live"));
@@ -300,6 +301,7 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   ProjectDocumentsPage,
   DocumentsPage,
   AdminDocumentManagementPage,
+  AdminImportMappingsPage,
   AdminEmailLinkerDevPage,
   AdminPriorityTemplatesPage,
   HandoverLivePage,

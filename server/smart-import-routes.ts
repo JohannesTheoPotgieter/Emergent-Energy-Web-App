@@ -39,6 +39,8 @@ import { requirePermission, hasImportPermission } from "./permission-middleware"
 import { jwtAuth, requireAuth } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
 import { runSmartImportPreview } from "./lib/import/index";
+import { getLearnedMappingsForFile, upsertProjectBinding } from "./repositories/import-config-repository";
+import { deriveTemplateProfileName } from "./lib/import/source-key";
 import { runPreflightValidator } from "./lib/import/preflight-validator";
 import { runImportPlanner, type PlannerResult } from "./lib/import/planner";
 import { IMPORT_FILE_ALWAYS_WINS } from "./imports/import-conflict-policy";
@@ -350,8 +352,11 @@ router.post("/api/smart-import/upload", requireAuth, requirePermission("smart_im
 
     console.log(`[SmartImport] Processing file: ${fileName} (${buffer.length} bytes)`);
 
-    const preview = await runSmartImportPreview(buffer, fileName);
-    
+    // Reuse learned column mappings for this tracker (keyed by filename) so
+    // corrected columns aren't re-questioned; falls back to synonym/fuzzy.
+    const learnedMappings = await getLearnedMappingsForFile(fileName);
+    const preview = await runSmartImportPreview(buffer, fileName, learnedMappings);
+
     console.log(`[SmartImport] Detection: ${preview.detection.sections.length} sections, ${preview.detection.unmatched.length} unmatched`);
 
     const fileHash = crypto.createHash("sha256").update(buffer).digest("hex");
@@ -778,6 +783,20 @@ router.patch("/api/smart-import/:runId/assign-project", requireAuth, requirePerm
     await db.update(smartImportRuns)
       .set({ projectId: targetProject.id, projectName: targetProject.projectName })
       .where(eq(smartImportRuns.id, runId));
+
+    // Remember this human confirmation so the next scheduled run of the same
+    // tracker binds to this project automatically instead of re-guessing.
+    try {
+      await upsertProjectBinding({
+        fileName: run.sourceFileName,
+        projectId: targetProject.id,
+        matchType: "manual",
+        confidence: 1.0,
+        confirmedByUserId: (req as any).user?.id ?? null,
+      });
+    } catch (bindErr) {
+      console.warn("[smart-import] Failed to persist project binding:", bindErr instanceof Error ? bindErr.message : String(bindErr));
+    }
 
     logAuditFromReq(req, {
       entityType: "smart_import",
@@ -1602,13 +1621,8 @@ router.patch("/api/smart-import/:runId/mapping", requireAuth, requirePermission(
 
     if (sourceHeader) {
       try {
-        const filePattern = run.sourceFileName
-          .replace(/^\d+_/, "")
-          .replace(/\.(xlsx|xlsm|xls)$/i, "")
-          .replace(/_/g, " ")
-          .trim();
-
-        const profileName = filePattern || run.projectName || "Default Template";
+        // Same derivation the reuse path uses to find these rules again.
+        const profileName = deriveTemplateProfileName(run.sourceFileName, run.projectName);
 
         const existingProfiles = await db
           .select()

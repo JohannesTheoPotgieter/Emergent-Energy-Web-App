@@ -95,6 +95,21 @@ function selectTaxonomyForMode(
   return taxonomy.filter((t) => t.lifecycleMode === mode || t.lifecycleMode === "both");
 }
 
+/**
+ * Preview the folders a lifecycle mode would create — uses the exact same
+ * taxonomy selection `provisionProjectFolders` walks, so the UI preview can't
+ * drift from what actually gets created. Read-only; no Graph calls.
+ */
+export async function previewProjectFolders(
+  lifecycleMode: FolderLifecycleMode,
+): Promise<{ key: string; name: string }[]> {
+  const taxonomyAll = await listActiveTaxonomy();
+  return selectTaxonomyForMode(taxonomyAll, lifecycleMode).map((t) => ({
+    key: t.internalKey,
+    name: t.displayName,
+  }));
+}
+
 /** Order rows so parents always precede children (BFS ordered by depth). */
 function topoOrder(rows: FolderTaxonomy[]): FolderTaxonomy[] {
   const byKey = new Map(rows.map((r) => [r.internalKey, r] as const));
