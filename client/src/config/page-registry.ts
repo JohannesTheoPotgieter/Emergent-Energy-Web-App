@@ -202,6 +202,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "executionBoardFinance", path: "/execution-board/finance", label: "Program Finance", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "ExecutionBoardPage" },
   { id: "executionBoardRealisation", path: "/execution-board/realisation", label: "Realisation KPIs", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "ExecutionBoardPage" },
   { id: "smartImport", path: "/admin/smart-import", label: "Smart Import", iconKey: "FileSpreadsheet", navGroup: "SYSTEM", permissionEntity: "smart_import", showInSidebar: false, routeComponentKey: "SmartImportPage" },
+  { id: "adminImportMappings", path: "/admin/import-mappings", label: "Import setup", iconKey: "FileSpreadsheet", navGroup: "SYSTEM", permissionEntity: "smart_import", showInSidebar: true, routeComponentKey: "AdminImportMappingsPage" },
   // Absorbed into QB Throughput > Suppliers tab — hidden from nav.
   // Routes retained for direct-URL access and embedded rendering by the Throughput page.
   { id: "invoicePatterns", path: "/invoice-patterns", label: "Invoice Patterns", iconKey: "FileSpreadsheet", navGroup: "FINANCE", permissionEntity: "invoice_patterns", showInSidebar: false, routeComponentKey: "InvoicePatternsPage" },
