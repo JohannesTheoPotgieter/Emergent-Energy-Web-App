@@ -7,7 +7,8 @@
  * `smart_import` permission — view to read, edit to mutate).
  */
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useApiMutation } from "@/hooks/use-api-mutation";
 import { apiRequest, getQueryFn } from "@/lib/queryClient";
 
 // =========================================================================
@@ -132,7 +133,7 @@ export interface UpdateRulePayload {
 
 export function useUpdateImportRule() {
   const qc = useQueryClient();
-  return useMutation<
+  return useApiMutation<
     { rule: ImportRule },
     Error,
     { id: number; profileId: number; patch: UpdateRulePayload }
@@ -149,7 +150,7 @@ export function useUpdateImportRule() {
 
 export function useDeleteImportRule() {
   const qc = useQueryClient();
-  return useMutation<
+  return useApiMutation<
     { success: true },
     Error,
     { id: number; profileId: number }
@@ -167,7 +168,7 @@ export function useDeleteImportRule() {
 
 export function useDeleteImportProfile() {
   const qc = useQueryClient();
-  return useMutation<{ success: true }, Error, number>({
+  return useApiMutation<{ success: true }, Error, number>({
     mutationFn: async (profileId) => {
       const res = await apiRequest("DELETE", `/api/import-config/profiles/${profileId}`);
       return res.json();
@@ -211,7 +212,7 @@ export function useProjectBindings(enabled = true) {
 
 export function useDeleteProjectBinding() {
   const qc = useQueryClient();
-  return useMutation<{ success: true }, Error, number>({
+  return useApiMutation<{ success: true }, Error, number>({
     mutationFn: async (id) => {
       const res = await apiRequest("DELETE", `/api/import-config/bindings/${id}`);
       return res.json();
@@ -254,7 +255,7 @@ export type UpdateAlertSettingsPayload = Partial<ImportAlertSettings>;
 
 export function useUpdateImportAlertSettings() {
   const qc = useQueryClient();
-  return useMutation<
+  return useApiMutation<
     { alerts: ImportAlertSettings },
     Error,
     UpdateAlertSettingsPayload

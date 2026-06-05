@@ -352,15 +352,11 @@ router.post("/api/smart-import/upload", requireAuth, requirePermission("smart_im
 
     console.log(`[SmartImport] Processing file: ${fileName} (${buffer.length} bytes)`);
 
-    // Reuse previously-learned column mappings for this tracker's template
-    // profile (keyed by the derived filename), so corrected columns are not
-    // re-questioned on re-import. Falls back to synonym/fuzzy when none exist.
+    // Reuse learned column mappings for this tracker (keyed by filename) so
+    // corrected columns aren't re-questioned; falls back to synonym/fuzzy.
     const learnedMappings = await getLearnedMappingsForFile(fileName);
     const preview = await runSmartImportPreview(buffer, fileName, learnedMappings);
 
-    if (learnedMappings.length > 0) {
-      console.log(`[SmartImport] Applied ${learnedMappings.length} learned mapping rule(s) for "${fileName}"`);
-    }
     console.log(`[SmartImport] Detection: ${preview.detection.sections.length} sections, ${preview.detection.unmatched.length} unmatched`);
 
     const fileHash = crypto.createHash("sha256").update(buffer).digest("hex");

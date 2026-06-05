@@ -153,7 +153,6 @@ function MappingsTab() {
                     toast({ title: "Template forgotten", description: `"${selected.name}" and its rules were cleared.` });
                     setSelectedId(null);
                   },
-                  onError: () => toast({ title: "Could not clear template", variant: "destructive" }),
                 })
               }
             >
@@ -227,7 +226,6 @@ function RuleRow({ rule, profileId }: { rule: ImportRule; profileId: number }) {
               { id: rule.id, profileId, patch: { canonicalField: field.trim() } },
               {
                 onSuccess: () => toast({ title: "Mapping updated" }),
-                onError: () => toast({ title: "Could not update mapping", variant: "destructive" }),
               },
             )
           }
@@ -244,7 +242,6 @@ function RuleRow({ rule, profileId }: { rule: ImportRule; profileId: number }) {
               { id: rule.id, profileId },
               {
                 onSuccess: () => toast({ title: "Rule removed" }),
-                onError: () => toast({ title: "Could not remove rule", variant: "destructive" }),
               },
             )
           }
@@ -310,7 +307,6 @@ function BindingsTab() {
                       onClick={() =>
                         remove.mutate(b.id, {
                           onSuccess: () => toast({ title: "Binding forgotten" }),
-                          onError: () => toast({ title: "Could not forget binding", variant: "destructive" }),
                         })
                       }
                     >
@@ -442,7 +438,6 @@ function AlertsTab() {
           onClick={() =>
             save.mutate(form, {
               onSuccess: () => toast({ title: "Alert settings saved" }),
-              onError: () => toast({ title: "Could not save alert settings", variant: "destructive" }),
             })
           }
         >
