@@ -1303,15 +1303,6 @@ function CompanyRootCard(props: {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setPickerOpen(true)}
-                data-testid="btn-browse-active-projects-root-edit"
-              >
-                <FolderTree className="h-3.5 w-3.5 mr-1" />
-                Browse
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
                 onClick={testConnection}
                 disabled={testRoot.isPending || !form.driveId.trim()}
                 data-testid="btn-test-active-projects-root"
