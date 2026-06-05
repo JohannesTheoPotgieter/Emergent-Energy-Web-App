@@ -25,14 +25,13 @@
  * Documents Administration page.
  */
 
-import { asc, eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "./db";
 import {
   folderTaxonomy,
   companySharepointRoots,
   type InsertFolderTaxonomy,
 } from "@shared/schema/documents";
-import { projectInfo } from "@shared/schema/projects";
 import { isConnectorMocked } from "./lib/connector-mode";
 
 // =========================================================================
