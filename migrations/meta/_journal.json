@@ -610,6 +610,13 @@
       "when": 1780645346517,
       "tag": "0086_drop_controlled_documents",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1780653463778,
+      "tag": "0087_smart_import_bindings_and_alerts",
+      "breakpoints": true
     }
   ]
 }

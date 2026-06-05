@@ -18,6 +18,8 @@
  */
 
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { getQueryFn } from "@/lib/queryClient";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -72,6 +74,14 @@ export function ProjectSharepointConnectionCard({
 
   const [lifecycle, setLifecycle] = useState<LifecycleMode>("both");
 
+  // What the selected lifecycle mode would create — so the user sees the
+  // folder count before committing and never picks the wrong mode blind.
+  const folderPreview = useQuery<{ mode: string; count: number; folders: { key: string; name: string }[] }>({
+    queryKey: [`/api/projects/${projectId}/folder-preview?mode=${lifecycle}`],
+    queryFn: getQueryFn({ on401: "throw" }),
+    enabled: canProvision,
+  });
+
   const status = useMemo(() => {
     const all = folders.data?.folders ?? [];
     const root = all.find((f) => f.taxonomyKey === PROJECT_ROOT_KEY) ?? null;
@@ -117,11 +127,19 @@ export function ProjectSharepointConnectionCard({
               (s.errors > 0 ? ` · ${s.errors} error${s.errors === 1 ? "" : "s"}` : ""),
             variant: s.errors > 0 ? "destructive" : undefined,
           });
+          // Auto-verify a clean provision so transient Graph failures surface
+          // immediately instead of on the next manual "Verify now". Silent —
+          // no extra toast; just refreshes the folder/verify state.
+          if (s.errors === 0) {
+            verify.mutate(projectId);
+          }
         },
         onError: (err) => {
           toast({
             title: "Could not set up folders",
-            description: err.message || "Provisioning failed. Check the SharePoint root is configured.",
+            description:
+              err.message ||
+              "Provisioning failed — set the Active Projects SharePoint root in Document Management → Provisioning first.",
             variant: "destructive",
           });
         },
@@ -231,7 +249,8 @@ export function ProjectSharepointConnectionCard({
             )}
 
             {canProvision && (
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-col items-end gap-1">
+                <div className="flex items-center gap-1.5">
                 <Select value={lifecycle} onValueChange={(v) => setLifecycle(v as LifecycleMode)}>
                   <SelectTrigger className="h-8 w-[180px] text-xs" data-testid="select-lifecycle-mode">
                     <SelectValue />
@@ -260,12 +279,22 @@ export function ProjectSharepointConnectionCard({
                   )}
                   {status.kind === "not_connected" ? "Set up folders" : "Re-provision"}
                 </Button>
+                </div>
+                {folderPreview.data && (
+                  <span
+                    className="text-[10px] text-muted-foreground cursor-help"
+                    title={folderPreview.data.folders.map((f) => f.name).join("\n")}
+                    data-testid="folder-preview-hint"
+                  >
+                    Creates {folderPreview.data.count} folder{folderPreview.data.count === 1 ? "" : "s"} — hover to see the list
+                  </span>
+                )}
               </div>
             )}
 
             {!canProvision && status.kind === "not_connected" && (
               <Badge variant="outline" className="text-[10px]">
-                Ask a super-user to set up folders
+                A COO/admin needs to set up this project's folders
               </Badge>
             )}
           </div>

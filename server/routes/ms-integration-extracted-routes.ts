@@ -25,6 +25,8 @@ import { sql } from "drizzle-orm";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { logAuditFromReq } from "../audit-logger";
+import { getCompanyRootByKind } from "../repositories/company-sharepoint-roots-repository";
+import { isConnectorMocked } from "../lib/connector-mode";
 
 // ── SSO helpers (moved from routes.ts) ──
 
@@ -121,6 +123,84 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
         },
       });
     } catch (err: any) {
+      throw err;
+    }
+  });
+
+  // ==================== MS 365 READINESS ====================
+  // Plain-English "what's missing before M365 works" checklist for the
+  // Connections settings card. Returns booleans + hints only — never secret
+  // values — so a non-technical admin sees exactly what to fix instead of
+  // hitting silent 401s. Admin-gated (mirrors System Settings).
+  app.get("/api/ms-integration/readiness", requireAuth, requireAdmin, async (_req, res) => {
+    try {
+      const mocked = isConnectorMocked("ms-graph");
+      const checks: Array<{ key: string; label: string; status: "ok" | "warn" | "missing"; detail: string }> = [];
+
+      const hasCreds = !!(process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET);
+      checks.push({
+        key: "credentials",
+        label: "Microsoft 365 app credentials",
+        status: hasCreds ? "ok" : mocked ? "warn" : "missing",
+        detail: hasCreds
+          ? "Tenant, client ID and secret are configured."
+          : mocked
+            ? "Running on mock connectors (dev). Set AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET in Secrets for live data."
+            : "Set AZURE_TENANT_ID, AZURE_CLIENT_ID and AZURE_CLIENT_SECRET in your environment Secrets.",
+      });
+
+      const hasKey = !!process.env.TOKEN_ENCRYPTION_KEY && process.env.TOKEN_ENCRYPTION_KEY.length >= 64;
+      checks.push({
+        key: "encryptionKey",
+        label: "Token encryption key",
+        status: hasKey ? "ok" : "missing",
+        detail: hasKey
+          ? "Stored Microsoft tokens are encrypted at rest."
+          : "Set TOKEN_ENCRYPTION_KEY (64 hex chars) in Secrets so tokens are stored securely.",
+      });
+
+      let conn: { configured: boolean; connected: boolean; email?: string | null } = { configured: false, connected: false };
+      try {
+        conn = await outlook.getConnectionStatus();
+      } catch (e) {
+        console.warn("[ms-readiness] connection status check failed:", e instanceof Error ? e.message : e);
+      }
+      checks.push({
+        key: "signedIn",
+        label: "Connected to Microsoft",
+        status: conn.connected ? "ok" : conn.configured ? "warn" : "missing",
+        detail: conn.connected
+          ? `Connected${conn.email ? ` as ${conn.email}` : ""}.`
+          : conn.configured
+            ? "Credentials present but no active session — use Connect to sign in."
+            : "Not connected. Connect Microsoft 365 to enable Outlook, SharePoint and Teams.",
+      });
+
+      let rootReady = false;
+      try {
+        const root = await getCompanyRootByKind("active_projects");
+        rootReady = !!(root && root.driveId);
+      } catch (e) {
+        console.warn("[ms-readiness] sharepoint root check failed:", e instanceof Error ? e.message : e);
+      }
+      checks.push({
+        key: "sharepointRoot",
+        label: "Active Projects folder root",
+        status: rootReady ? "ok" : "warn",
+        detail: rootReady
+          ? "Project folders can be provisioned."
+          : "Set the Active Projects root in Document Management → Provisioning before setting up project folders.",
+      });
+
+      const overall: "ok" | "warn" | "missing" = checks.some((c) => c.status === "missing")
+        ? "missing"
+        : checks.some((c) => c.status === "warn")
+          ? "warn"
+          : "ok";
+
+      res.json({ overall, mocked, checks });
+    } catch (err) {
+      console.error("[ms-readiness] error:", err);
       throw err;
     }
   });

@@ -37,6 +37,7 @@ import {
 import {
   provisionProjectFolders,
   verifyProjectFolders,
+  previewProjectFolders,
 } from "../services/folder-provisioning-service";
 import { listFoldersForProject } from "../repositories/project-folders-repository";
 import { listManagedDocumentsByFolder } from "../repositories/managed-documents-repository";
@@ -50,6 +51,32 @@ const provisionBodySchema = z.object({
 });
 
 export function registerDocumentProvisioningRoutes(app: Express): void {
+  // ====================================================================
+  // GET /api/projects/:projectId/folder-preview?mode=<lifecycle>
+  // What "Set up folders" would create for a lifecycle mode — same taxonomy
+  // selection the provision path walks. Lets the UI show "creates N folders"
+  // before the user commits, so they never pick the wrong mode blind.
+  // ====================================================================
+  app.get(
+    "/api/projects/:projectId/folder-preview",
+    requireAuth,
+    requirePermission("documents", "view"),
+    async (req: Request, res: Response) => {
+      const parsed = projectIdParam.safeParse(req.params.projectId);
+      if (!parsed.success) throw badRequest("Invalid projectId");
+      const mode = z.enum(FOLDER_LIFECYCLE_MODES).safeParse(req.query.mode);
+      if (!mode.success) throw badRequest("Invalid lifecycle mode");
+      try {
+        const folders = await previewProjectFolders(mode.data);
+        res.json({ mode: mode.data, count: folders.length, folders });
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        console.error("[doc-provisioning] folder-preview error:", err);
+        throw serverError("Failed to load folder preview");
+      }
+    },
+  );
+
   // ====================================================================
   // GET /api/projects/:projectId/folders
   // ====================================================================

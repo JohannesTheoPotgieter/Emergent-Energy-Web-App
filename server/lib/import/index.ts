@@ -11,7 +11,17 @@ export interface SmartImportPreview {
   needsReview: boolean;
 }
 
-export async function runSmartImportPreview(buffer: Buffer, fileName: string): Promise<SmartImportPreview> {
+export async function runSmartImportPreview(
+  buffer: Buffer,
+  fileName: string,
+  /**
+   * Previously-learned column mappings for this file's template profile.
+   * When supplied, `mapColumns` prefers them over synonym/fuzzy matching so a
+   * tracker whose columns were corrected once is not re-questioned on re-import.
+   * Optional — callers without DB context (or a fresh template) pass nothing.
+   */
+  learnedMappings?: { section: string; sourceHeader: string; canonicalField: string; confidenceWeight: number }[],
+): Promise<SmartImportPreview> {
   const workbook = new ExcelJS.Workbook();
   try {
     // ExcelJS declares `interface Buffer extends ArrayBuffer` globally, creating a merge
@@ -32,7 +42,7 @@ export async function runSmartImportPreview(buffer: Buffer, fileName: string): P
 
   const detection = detectSections(workbook);
 
-  const mappings = detection.sections.map(section => mapColumns(section, workbook));
+  const mappings = detection.sections.map(section => mapColumns(section, workbook, learnedMappings));
 
   const normalization = normalizeData(detection, mappings, workbook);
 

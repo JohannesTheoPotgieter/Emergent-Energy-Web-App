@@ -40,6 +40,26 @@ export const spSettings = pgTable("sp_settings", {
   lastErrorCode: text("last_error_code"),
   /** Full, sanitised human-readable error message (already redacts tokens). */
   lastErrorMessage: text("last_error_message"),
+  // ── Scheduled-import alerts (Microsoft Teams) ──
+  /** Master switch for outbound import alerts. Off by default. */
+  alertsEnabled: boolean("alerts_enabled").notNull().default(false),
+  /** Teams team + channel the alert is posted to. */
+  alertTeamId: text("alert_team_id"),
+  alertChannelId: text("alert_channel_id"),
+  /**
+   * Whose stored delegated Graph token posts the alert. The scheduler runs
+   * with no user context, so it borrows this user's token to send.
+   */
+  alertSenderUserId: integer("alert_sender_user_id").references(() => users.id, { onDelete: "set null" }),
+  /** Post when a scheduled run fails outright. */
+  alertOnFailure: boolean("alert_on_failure").notNull().default(true),
+  /** Post when a scheduled run parks for review (conflicts need a human). */
+  alertOnReview: boolean("alert_on_review").notNull().default(true),
+  /**
+   * Last alert state we dispatched, so a stuck scheduler doesn't re-spam the
+   * channel every 60s. Transition-detection only.
+   */
+  lastAlertState: text("last_alert_state"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
 });
@@ -252,6 +272,40 @@ export const mappingRules = pgTable("mapping_rules", {
 export const insertMappingRuleSchema = createInsertSchema(mappingRules).omit({ id: true, createdAt: true } as any);
 export type InsertMappingRule = z.infer<typeof insertMappingRuleSchema>;
 export type MappingRule = typeof mappingRules.$inferSelect;
+
+/**
+ * Sticky filename → project bindings. Once a tracker is matched (or a human
+ * confirms the project for an uploaded file), we remember it here so the next
+ * scheduled run of the same tracker binds to the same project instead of
+ * re-guessing by name similarity. Surfaced + editable in the import-mappings
+ * management screen.
+ */
+export const smartImportProjectBindings = pgTable("smart_import_project_bindings", {
+  id: serial("id").primaryKey(),
+  /**
+   * Normalised match signal — lower-cased source filename with volatile
+   * date/version suffixes stripped. One binding per key.
+   */
+  sourceKey: text("source_key").notNull(),
+  /** How the key was derived, for display + future sources. */
+  matchType: text("match_type").notNull().default("filename"), // 'filename' | 'folder' | 'manual'
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  /** Confidence assigned when the binding was created (1.0 = human-confirmed). */
+  confidence: real("confidence").notNull().default(1.0),
+  /** Set when a human confirmed the project for this source (vs. auto-learned). */
+  confirmedByUserId: integer("confirmed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  /** Telemetry for the management screen + future pruning of stale bindings. */
+  lastUsedAt: timestamp("last_used_at"),
+  timesUsed: integer("times_used").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  sourceKeyUnique: unique().on(t.sourceKey),
+}));
+export const insertSmartImportProjectBindingSchema = createInsertSchema(smartImportProjectBindings).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertSmartImportProjectBinding = z.infer<typeof insertSmartImportProjectBindingSchema>;
+export type SmartImportProjectBinding = typeof smartImportProjectBindings.$inferSelect;
 
 export const normalizedPlanTasks = pgTable("normalized_plan_tasks", {
   id: serial("id").primaryKey(),
