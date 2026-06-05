@@ -44,3 +44,36 @@ greater than the latest journal entry (so the watermark replays it) PLUS its
 probe — never editing/re-stamping the original. Compare the live schemas of
 both DBs with `pg_catalog` (the RO prod user can't read `information_schema`
 or the `drizzle` schema, but `pg_catalog.pg_class`/`pg_attribute` are visible).
+
+## Capturing canonical DDL when the baseline won't replay
+
+`drizzle-kit migrate` from an empty DB FAILS on baseline 0000 (it is a
+non-replayable squash), so you cannot get a clean schema by replaying the
+chain. To capture the canonical CURRENT shape of many missing tables at once:
+create a scratch DB, `DATABASE_URL=<scratch> drizzle-kit push --force` from
+`shared/schema.ts` (materializes the exact code-defined schema), then
+`pg_dump --schema-only --no-owner --no-privileges --no-comments -t public.<t>...`
+the target tables. Transform that dump into the idempotent repair migration.
+Drop the scratch DB after.
+
+**Why:** push reflects the code exactly (what the app expects), and pg_dump of
+a freshly-pushed DB gives constraint/sequence/index DDL you would otherwise
+hand-write and get subtly wrong.
+
+## Exception classes for idempotent ADD CONSTRAINT (must catch all three)
+
+When wrapping `ALTER TABLE ... ADD CONSTRAINT` in a `DO $$ ... EXCEPTION`
+block so replay on a HEALTHY DB is a no-op, `duplicate_object` alone is NOT
+enough. Re-adding a **PRIMARY KEY** raises `invalid_table_definition`
+("multiple primary keys not allowed"), and re-adding a **UNIQUE** constraint
+raises `duplicate_table` (its backing index "already exists"), neither of which
+is `duplicate_object`. Use:
+`EXCEPTION WHEN duplicate_object OR invalid_table_definition OR duplicate_table THEN null;`
+Validate by applying the migration to a scratch DB twice (drop targets, apply
+= fresh create, apply again = clean no-op) BEFORE running it for real — the
+second run is what surfaces these missing exception classes.
+
+Note pg_dump (newer versions) emits `\restrict`/`\unrestrict` psql
+meta-command lines; strip lines starting with `\` or they glue onto the next
+statement. Also strip the final trailing `;` per statement when splitting on
+`;\n` or the last statement gets a double `;;` syntax error.

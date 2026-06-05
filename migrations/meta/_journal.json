@@ -624,6 +624,13 @@
       "when": 1780666762195,
       "tag": "0088_smart_import_alerts_drift_repair",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1780666762196,
+      "tag": "0089_missing_tables_drift_repair",
+      "breakpoints": true
     }
   ]
 }
