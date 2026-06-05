@@ -1,1 +1,2 @@
 - [Prod finance reconciliation](prod-finance-reconciliation.md) — sum Rev/COS/GP via claude_views with `effective_to IS NULL` + FY window or numbers explode ~80x; distortions live in derivation, not the import.
+- [Drizzle migration drift on deploy](drizzle-migration-drift.md) — db:migrate only replays a migration if its tag has a failing canary probe; un-probed tags silently skip → prod drift. New migrations MUST register a multi-artifact probe + be idempotent.
