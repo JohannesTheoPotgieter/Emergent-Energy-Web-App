@@ -34,3 +34,13 @@ without a probe drizzle-kit trusts the journal, and the journal can claim
 (pg_class relkind='i'; a `CREATE UNIQUE INDEX` is an index, NOT a constraint).
 Validate by running `tsx scripts/drizzle-bootstrap.ts` against dev: a fully
 up-to-date DB must report `deleted=0` (no needless replay).
+
+**Diagnosis signature (recurs every time someone adds a migration without a
+probe):** a table/column that HAS a migration file "does not exist" in *both*
+dev and prod, while the journal claims it's applied. Re-running `npm run
+db:migrate` will NOT fix it — drizzle-kit trusts the journal and no-ops. The
+fix is always a NEW idempotent repair migration (next number) with a `when`
+greater than the latest journal entry (so the watermark replays it) PLUS its
+probe — never editing/re-stamping the original. Compare the live schemas of
+both DBs with `pg_catalog` (the RO prod user can't read `information_schema`
+or the `drizzle` schema, but `pg_catalog.pg_class`/`pg_attribute` are visible).

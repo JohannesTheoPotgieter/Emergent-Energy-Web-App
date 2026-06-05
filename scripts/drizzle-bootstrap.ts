@@ -139,6 +139,18 @@ const MODERN_MIGRATION_PROBES: Record<
       "fye_revised_budget_monthly_updated_by_users_id_fk",
     )) &&
     (await indexExists(c, "fye_revised_budget_monthly_fye_metric_month_idx")),
+  // 0088 backfills 0087_smart_import_bindings_and_alerts, which had no probe
+  // and was presumed-applied while its DDL never ran on dev OR prod — Smart
+  // Import / auto-import settings saves 500'd on sp_settings.alerts_enabled.
+  // Multi-artifact canary (bindings table + alert column + sender FK) so a
+  // partial apply replays rather than being presumed complete.
+  "0088_smart_import_alerts_drift_repair": async (c) =>
+    (await tableExists(c, "smart_import_project_bindings")) &&
+    (await columnExists(c, "sp_settings", "alerts_enabled")) &&
+    (await constraintExists(
+      c,
+      "sp_settings_alert_sender_user_id_users_id_fk",
+    )),
 };
 
 async function tableExists(client: Client, table: string): Promise<boolean> {
