@@ -31,9 +31,32 @@ import {
   getLatestRunForProject,
   listRunsNeedingAttention,
 } from "../repositories/import-runs-repository";
+import { getSpSettingsRow, updateAlertSettings } from "../repositories/sp-settings-repository";
 import { summarizeImportRun } from "../lib/import/run-summary";
 
 const idParam = z.coerce.number().int().positive();
+
+const alertSettingsSchema = z.object({
+  alertsEnabled: z.boolean().optional(),
+  alertTeamId: z.string().trim().nullable().optional(),
+  alertChannelId: z.string().trim().nullable().optional(),
+  alertSenderUserId: z.number().int().positive().nullable().optional(),
+  alertOnFailure: z.boolean().optional(),
+  alertOnReview: z.boolean().optional(),
+});
+
+/** Project the alert-relevant fields out of the sp_settings row for the UI. */
+function alertView(s: Awaited<ReturnType<typeof getSpSettingsRow>>) {
+  if (!s) return null;
+  return {
+    alertsEnabled: s.alertsEnabled,
+    alertTeamId: s.alertTeamId,
+    alertChannelId: s.alertChannelId,
+    alertSenderUserId: s.alertSenderUserId,
+    alertOnFailure: s.alertOnFailure,
+    alertOnReview: s.alertOnReview,
+  };
+}
 
 const updateRuleSchema = z
   .object({
@@ -244,6 +267,53 @@ export function registerImportConfigRoutes(app: Express): void {
         if (err instanceof ApiError) throw err;
         console.error("[import-config] delete binding error:", err);
         throw serverError("Failed to delete project binding");
+      }
+    },
+  );
+
+  // ====================================================================
+  // Teams alert settings (scheduled-import alerts)
+  // ====================================================================
+
+  app.get(
+    "/api/import-config/alert-settings",
+    requireAuth,
+    requirePermission("smart_import", "view"),
+    async (_req: Request, res: Response) => {
+      try {
+        const settings = await getSpSettingsRow();
+        res.json({ configured: !!settings, alerts: alertView(settings) });
+      } catch (err) {
+        console.error("[import-config] get alert-settings error:", err);
+        throw serverError("Failed to load alert settings");
+      }
+    },
+  );
+
+  app.put(
+    "/api/import-config/alert-settings",
+    requireAuth,
+    requirePermission("smart_import", "edit"),
+    async (req: Request, res: Response) => {
+      const body = alertSettingsSchema.safeParse(req.body);
+      if (!body.success) throw badRequest(body.error.issues[0]?.message ?? "Invalid body");
+      try {
+        const updated = await updateAlertSettings(body.data);
+        if (!updated) {
+          throw badRequest("Configure the SharePoint scheduler before enabling import alerts");
+        }
+        logAuditFromReq(req, {
+          entityType: "smart_import",
+          entityId: "alert-settings",
+          action: "update_alert_settings",
+          source: "SETTINGS",
+          changesJson: body.data,
+        });
+        res.json({ alerts: alertView(updated) });
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        console.error("[import-config] update alert-settings error:", err);
+        throw serverError("Failed to update alert settings");
       }
     },
   );

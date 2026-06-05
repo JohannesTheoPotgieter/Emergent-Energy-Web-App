@@ -17,6 +17,12 @@ import { smartImportRuns, type SmartImportRun } from "@shared/schema";
 /** Statuses that mean "a human still needs to look at this". */
 export const ATTENTION_STATUSES = ["awaiting_review", "failed"] as const;
 
+/** A single run by id. */
+export async function getRunById(id: number): Promise<SmartImportRun | null> {
+  const [row] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, id)).limit(1);
+  return row ?? null;
+}
+
 /** The most recent run for a project, any status (null if never imported). */
 export async function getLatestRunForProject(projectId: number): Promise<SmartImportRun | null> {
   const [row] = await db

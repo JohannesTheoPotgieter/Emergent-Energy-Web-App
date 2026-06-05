@@ -56,6 +56,7 @@ import {
   recordBindingUsage,
   getProjectNameById,
 } from "../repositories/import-config-repository";
+import { maybeSendImportAlert } from "./import-alert-service";
 
 export interface ScheduledImportV2Result {
   triggerType: "schedule" | "manual";
@@ -438,12 +439,14 @@ export async function runScheduledImportV2(opts: {
         } else if (outcome.status === "parked") {
           result.filesParked++;
           if (outcome.runId) result.runIds.push(outcome.runId);
+          await maybeSendImportAlert("needs_review", outcome.runId ?? null);
         } else if (outcome.status === "skipped") {
           result.filesSkipped++;
         } else {
           result.filesFailed++;
           if (outcome.error) result.errors.push({ fileName: child.name, error: outcome.error });
           if (outcome.runId) result.runIds.push(outcome.runId);
+          await maybeSendImportAlert("failed", outcome.runId ?? null);
         }
       } catch (err) {
         result.filesFailed++;
