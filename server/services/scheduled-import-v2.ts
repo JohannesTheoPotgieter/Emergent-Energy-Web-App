@@ -7,22 +7,23 @@
  * pipeline so they appear as `smart_import_runs` rows in the UI for the
  * source-of-truth banner.
  *
- * **Current scope (Phase 6, PR 1):**
+ * **Behaviour:**
  * - Discover Excel files in the configured SharePoint folder.
- * - Download each file, run `runSmartImportPreview()` against it.
- * - Resolve project matches by filename.
- * - Create a `smart_import_runs` row in `awaiting_review` state with the
- *   full preview, planner output, and project-match diagnostics so the
- *   UI's existing approval flow can finish the commit.
- * - Update `sp_settings.lastRunAt` on completion.
+ * - Download each file and run `runSmartImportPreview()` against it, reusing
+ *   any learned column mappings for the file's template profile so a tracker
+ *   whose columns were corrected once is not re-questioned on re-import.
+ * - Resolve the project by filename: a sticky project binding wins; otherwise
+ *   fall back to name similarity at the auto-match threshold.
+ * - Create a `smart_import_runs` row, then decide commit vs. park: when a
+ *   project auto-matched AND the conflict policy (`scheduler-conflict-policy.ts`)
+ *   reports the run is clean (no blocking conflicts, no resurrections), hand
+ *   off to `commitSmartImportRunAsSystem()` (scheduler-commit.ts) to
+ *   auto-commit. Anything else is parked as `awaiting_review` for a human.
+ * - Update `sp_settings.lastRunAt` (and alert state) on completion.
  *
- * **Deferred to follow-up PR:**
- * - Auto-commit when the planner reports no conflicts. Needs the
- *   `smart-import-routes.ts:/commit` handler (1,199 LOC) to be refactored
- *   into a reusable `commitSmartImportRun()` service first — that touches
- *   finance-write paths and warrants its own focused review.
- * - The auto-resolution policy (see `scheduler-conflict-policy.ts`) is
- *   ready to plug in once the commit service exists.
+ * Note: auto-commit IS wired (it is not deferred). The finance-write commit
+ * lives in the dedicated `scheduler-commit.ts` service rather than a refactor
+ * of the 1,199-line HTTP `/commit` handler.
  */
 
 import crypto from "crypto";
@@ -49,6 +50,12 @@ import {
 import { resolveSchedulerConflictPolicy } from "../imports/scheduler-conflict-policy";
 import { commitSmartImportRunAsSystem } from "./scheduler-commit";
 import { IMPORT_FILE_ALWAYS_WINS } from "../imports/import-conflict-policy";
+import {
+  getLearnedMappingsForFile,
+  findActiveBindingForFile,
+  recordBindingUsage,
+  getProjectNameById,
+} from "../repositories/import-config-repository";
 
 export interface ScheduledImportV2Result {
   triggerType: "schedule" | "manual";
@@ -137,10 +144,12 @@ async function processFileV2(
     return { status: "skipped" };
   }
 
-  // Run v2 preview.
+  // Run v2 preview, reusing any learned column mappings for this tracker so
+  // corrected columns aren't re-questioned on the next scheduled run.
   let preview: SmartImportPreview;
   try {
-    preview = await runSmartImportPreview(buffer, fileName);
+    const learnedMappings = await getLearnedMappingsForFile(fileName);
+    preview = await runSmartImportPreview(buffer, fileName, learnedMappings);
   } catch (err) {
     const envelope = buildImportFailureEnvelope("preview", fileName, err);
     const runId = await persistFailedImportRun({
@@ -157,16 +166,44 @@ async function processFileV2(
     };
   }
 
-  // Resolve project by filename.
+  // Resolve project by filename. A sticky binding (a human previously
+  // confirmed this tracker's project) wins outright; otherwise fall back to
+  // name similarity at the auto-match threshold.
   const extractedName = extractProjectNameFromFilename(fileName);
-  const projectMatches: ProjectMatch[] = await findProjectMatches(extractedName);
-  const bestMatch = projectMatches[0];
-  // File-always-wins lowers the unattended auto-match bar to match the
-  // interactive "attach to closest ≥0.75" policy; otherwise keep the
-  // conservative ≥0.85 auto-map.
-  const autoMatchThreshold = IMPORT_FILE_ALWAYS_WINS ? 0.75 : 0.85;
-  const autoMappedProjectId = bestMatch && bestMatch.confidence >= autoMatchThreshold ? bestMatch.projectId : null;
-  const resolvedProjectName = autoMappedProjectId && bestMatch ? bestMatch.projectName : extractedName;
+  const binding = await findActiveBindingForFile(fileName);
+
+  let projectMatches: ProjectMatch[] = [];
+  let bestMatch: ProjectMatch | undefined;
+  let autoMappedProjectId: number | null = null;
+  let autoMappedProjectName: string | null = null;
+  let resolvedProjectName = extractedName;
+  let matchSource: "binding" | "name" | "none" = "none";
+
+  if (binding) {
+    const boundName = await getProjectNameById(binding.projectId);
+    if (boundName) {
+      autoMappedProjectId = binding.projectId;
+      autoMappedProjectName = boundName;
+      resolvedProjectName = boundName;
+      matchSource = "binding";
+      await recordBindingUsage(binding.id);
+    }
+  }
+
+  if (!autoMappedProjectId) {
+    projectMatches = await findProjectMatches(extractedName);
+    bestMatch = projectMatches[0];
+    // File-always-wins lowers the unattended auto-match bar to match the
+    // interactive "attach to closest ≥0.75" policy; otherwise keep the
+    // conservative ≥0.85 auto-map.
+    const autoMatchThreshold = IMPORT_FILE_ALWAYS_WINS ? 0.75 : 0.85;
+    if (bestMatch && bestMatch.confidence >= autoMatchThreshold) {
+      autoMappedProjectId = bestMatch.projectId;
+      autoMappedProjectName = bestMatch.projectName;
+      resolvedProjectName = bestMatch.projectName;
+      matchSource = "name";
+    }
+  }
 
   // Run planner (only meaningful if we have a project id; otherwise everything is NEW).
   let plannerResult: Awaited<ReturnType<typeof runImportPlanner>> | null = null;
@@ -201,7 +238,8 @@ async function processFileV2(
       batchRunId,
       extractedProjectName: extractedName,
       autoMappedProjectId,
-      autoMappedProjectName: autoMappedProjectId && bestMatch ? bestMatch.projectName : null,
+      autoMappedProjectName,
+      matchSource,
       projectMatchCandidates: projectMatches,
       plannerImportMode: plannerResult?.importMode ?? null,
       plannerHasBlockingConflicts: plannerResult?.conflicts?.hasBlockingConflicts ?? false,
