@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { AdminPageShell, AdminQueryState } from "@/components/admin/admin-shell";
 import { IntegrationStatusCard, type IntegrationStatus } from "@/components/admin/integration-status-card";
+import { MsReadinessChecklist } from "@/components/admin/MsReadinessChecklist";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -376,6 +377,7 @@ export function ConnectionsSection() {
 
   return (
     <div className="space-y-4">
+      <MsReadinessChecklist />
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <AdminQueryState
           isLoading={integrationStatusQuery.isLoading || (outlookStatusQuery.isLoading && !integrationStatus?.outlook)}
