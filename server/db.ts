@@ -621,19 +621,6 @@ async function ensureSqliteSchema() {
     `));
 
     await db.run(sql.raw(`
-      CREATE TABLE IF NOT EXISTS project_sharepoint_roots (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_id INTEGER NOT NULL UNIQUE,
-        drive_id TEXT,
-        root_item_id TEXT,
-        root_path TEXT NOT NULL,
-        configured_by_user_id INTEGER,
-        configured_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `));
-
-    await db.run(sql.raw(`
       CREATE TABLE IF NOT EXISTS managed_documents (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         root_scope TEXT NOT NULL,

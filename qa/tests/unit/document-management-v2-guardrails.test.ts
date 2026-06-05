@@ -17,10 +17,11 @@ describe("document permission entities — bridge guard", () => {
 });
 
 describe("document migration safety — non-destructive guard", () => {
+  // controlled_documents + controlled_document_types + project_sharepoint_roots
+  // were intentionally dropped (see the drop_controlled_documents migration);
+  // this guard protects the CURRENT document tables from accidental drops.
   const LEGACY_DOC_TABLES = [
-    "controlled_documents",
     "managed_documents",
-    "project_sharepoint_roots",
     "company_sharepoint_roots",
     "folder_taxonomy",
     "project_folders",

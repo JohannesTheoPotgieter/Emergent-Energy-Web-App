@@ -259,10 +259,9 @@ describe("D6 Phase 2 — admin page registration", () => {
     expect(adminEntry!.edit_roles.sort()).toEqual(["CEO_ADMIN", "COO_ADMIN"].sort());
   });
 
-  it("hides the legacy /admin/document-types from the sidebar", () => {
+  it("fully removes the legacy /admin/document-types page (controlled-documents retired)", () => {
     const legacy = PAGE_REGISTRY.find((p) => p.path === "/admin/document-types");
-    expect(legacy).toBeDefined();
-    expect(legacy!.showInSidebar).toBe(false);
+    expect(legacy).toBeUndefined();
   });
 });
 
