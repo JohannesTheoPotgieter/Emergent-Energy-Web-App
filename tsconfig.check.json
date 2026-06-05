@@ -26,6 +26,7 @@
     "server/routes.ts",
     "server/storage.ts",
     "server/index.ts",
+    "server/scripts/**/*.ts",
     "shared/**/*.ts",
     "scripts/**/*.ts"
   ],

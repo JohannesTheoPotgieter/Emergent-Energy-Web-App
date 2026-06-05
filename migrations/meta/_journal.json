@@ -631,6 +631,13 @@
       "when": 1780666762196,
       "tag": "0089_missing_tables_drift_repair",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1780702383723,
+      "tag": "0090_fiscal_period_backbone",
+      "breakpoints": true
     }
   ]
 }

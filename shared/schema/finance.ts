@@ -381,6 +381,8 @@ export const cashflowWeeklyManual = pgTable("cashflow_weekly_manual", {
   id: serial("id").primaryKey(),
   weekStartDate: date("week_start_date").notNull().unique(),
   openingBalance: decimal("opening_balance", { precision: 15, scale: 2 }),
+  // Fiscal-calendar backbone (nullable, additive). Backfilled from week_start_date.
+  fiscalPeriodId: integer("fiscal_period_id").references(() => fiscalPeriods.id, { onDelete: "set null" }),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 export const insertCashflowWeeklyManualSchema = createInsertSchema(cashflowWeeklyManual).omit({ id: true, updatedAt: true } as any);
@@ -431,6 +433,8 @@ export const opexBudgetMonthly = pgTable("opex_budget_monthly", {
   id: serial("id").primaryKey(),
   monthKey: text("month_key").notNull().unique(),
   amount: decimal("amount", { precision: 15, scale: 2 }).notNull().default("0"),
+  // Fiscal-calendar backbone (nullable, additive). Backfilled from month_key.
+  fiscalPeriodId: integer("fiscal_period_id").references(() => fiscalPeriods.id, { onDelete: "set null" }),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 export const insertOpexBudgetMonthlySchema = createInsertSchema(opexBudgetMonthly).omit({ id: true, updatedAt: true } as any);
@@ -459,6 +463,8 @@ export const trackerMonthlyManual = pgTable("tracker_monthly_manual", {
   // the row to one project so the project-detail Revenue Tracker no longer
   // overwrites the program budget across every project.
   projectInfoId: integer("project_info_id").references(() => projectInfo.id, { onDelete: "cascade" }),
+  // Fiscal-calendar backbone (nullable, additive). Backfilled from month_key.
+  fiscalPeriodId: integer("fiscal_period_id").references(() => fiscalPeriods.id, { onDelete: "set null" }),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 export const insertTrackerMonthlyManualSchema = createInsertSchema(trackerMonthlyManual).omit({ id: true, updatedAt: true } as any);
@@ -1448,6 +1454,8 @@ export const fyeRevisedBudgetMonthly = pgTable("fye_revised_budget_monthly", {
   metric: text("metric").notNull(), // 'revenue' | 'cos' | 'gp'
   monthKey: text("month_key").notNull(), // YYYY-MM
   amount: decimal("amount", { precision: 15, scale: 2 }).notNull().default("0"),
+  // Fiscal-calendar backbone (nullable, additive). Backfilled from month_key.
+  fiscalPeriodId: integer("fiscal_period_id").references(() => fiscalPeriods.id, { onDelete: "set null" }),
   updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
