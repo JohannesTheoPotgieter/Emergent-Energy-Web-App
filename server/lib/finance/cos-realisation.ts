@@ -107,22 +107,37 @@ export function isCanonicalCosRealised(input: CosLineInput): boolean {
       : 0;
   if (qbEvidence > 0) return true;
 
-  // 2b. Future-date guard (owner decision 2026-06, line-level recon audit).
-  //     A line whose invoice date is AFTER the as-at date has not been
-  //     incurred yet — it is Committed/Planned, not Realised. Keeping the rule
-  //     HERE, in the single canonical gate, means every surface that routes
-  //     through it (COS Tracker, dashboards, portfolio KPIs, project header)
-  //     stops over-counting future-dated (e.g. month-end) lines as realised.
+  // 2b. Future-MONTH guard (owner decision 2026-06, revised 2026-06-05).
+  //     A line whose invoice date falls in a month AFTER the as-at month has
+  //     not been incurred yet — it is Committed/Planned, not Realised.
+  //
+  //     The guard is MONTH-granular, not day-granular: the tracker books a
+  //     month's costs at the month-END date (e.g. 30 June), so a day-level
+  //     "after today" check would hold the CURRENT month at zero until its
+  //     final day even after finance has confirmed those lines. Once the as-at
+  //     date has REACHED a month, that month's lines clear this guard and the
+  //     confirmation gate (step 3b) decides realisation as usual. Only LATER
+  //     months are excluded, so this does not re-introduce the cross-month
+  //     over-counting the original guard removed.
+  //
   //     Admin override (step 1) and QB evidence (step 2) are checked ABOVE and
   //     still win: an explicitly-confirmed or QB-billed cost can realise even
-  //     when the tracker's invoice date is in the future.
+  //     when the tracker's invoice date is in a future month.
   let asAtEpoch = toEpochDay(input.today);
   if (asAtEpoch === null) {
     const now = new Date();
     asAtEpoch = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   }
+  const asAtDate = new Date(asAtEpoch);
+  // First day of the month AFTER the as-at month. Any invoice dated on/after
+  // this lands in a future month and is not yet incurred.
+  const nextMonthStart = Date.UTC(
+    asAtDate.getUTCFullYear(),
+    asAtDate.getUTCMonth() + 1,
+    1,
+  );
   const invoiceEpoch = toEpochDay(input.expenseInvoicedDate);
-  if (invoiceEpoch !== null && invoiceEpoch > asAtEpoch) {
+  if (invoiceEpoch !== null && invoiceEpoch >= nextMonthStart) {
     return false;
   }
 
