@@ -52,7 +52,7 @@ import { EnergyLoader } from "@/components/ui/energy-loader";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import DataSourceDebug from "@/components/DataSourceDebug";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
-import { ApprovalQueueCard } from "@/components/managed-documents";
+import { ManagedDocumentApprovalQueue } from "@/components/documents/ManagedDocumentApprovalQueue";
 import { apiRequest } from "@/lib/queryClient";
 import { formatCurrencyCompact, formatCurrencyFull } from "@/lib/execution-dashboard";
 import { formatForDisplayZA, parseIsoDateStrict } from "@shared/utils/dates";
@@ -1001,8 +1001,8 @@ export default function PMDashboard() {
         </TabsContent>
       </Tabs>
 
-      {/* D3 controlled-document approvals waiting on this PM */}
-      <ApprovalQueueCard />
+      {/* Managed-document approvals waiting on this PM */}
+      <ManagedDocumentApprovalQueue title="Approvals waiting on you" />
 
       {/* Handover-complete projects section */}
       <HandoverCompleteSection />

@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
+import { SharepointRootPicker, type PickedRoot } from "@/components/admin/SharepointRootPicker";
 import {
   useFolderTaxonomy,
   useCreateTaxonomyRow,
@@ -1062,6 +1063,7 @@ function CompanyRootCard(props: {
   const testRoot = useTestCompanyRoot();
   const [testResult, setTestResult] = useState<CompanyRootTestResult | null>(null);
   const [editing, setEditing] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [form, setForm] = useState({
     displayName: "Active Projects",
     rootPath: "01 - Clients/01 - active projects (1)",
@@ -1087,6 +1089,22 @@ function CompanyRootCard(props: {
   function patchForm<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((s) => ({ ...s, [key]: value }));
     setTestResult(null);
+  }
+
+  function handlePicked(picked: PickedRoot) {
+    setForm((s) => ({
+      ...s,
+      driveId: picked.driveId,
+      rootItemId: picked.rootItemId,
+      rootPath: picked.rootPath || s.rootPath,
+      displayName: s.displayName.trim() ? s.displayName : picked.displayName,
+    }));
+    setTestResult(null);
+    setEditing(true);
+    toast({
+      title: "SharePoint folder selected",
+      description: `${picked.driveName}${picked.rootPath ? `/${picked.rootPath}` : ""} — review and Save.`,
+    });
   }
 
   async function save() {
@@ -1187,15 +1205,25 @@ function CompanyRootCard(props: {
                 <span className="font-mono">{root?.rootItemId ?? "—"}</span>
               </div>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={startEdit}
-              data-testid="btn-edit-active-projects-root"
-            >
-              <Pencil className="h-3.5 w-3.5 mr-1" />
-              {configured ? "Edit" : "Configure"}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={() => setPickerOpen(true)}
+                data-testid="btn-browse-active-projects-root"
+              >
+                <FolderTree className="h-3.5 w-3.5 mr-1" />
+                Browse SharePoint
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={startEdit}
+                data-testid="btn-edit-active-projects-root"
+              >
+                <Pencil className="h-3.5 w-3.5 mr-1" />
+                {configured ? "Edit" : "Configure"}
+              </Button>
+            </div>
           </>
         ) : (
           <div className="space-y-2">
@@ -1236,8 +1264,8 @@ function CompanyRootCard(props: {
               </div>
             </div>
             <p className="text-[11px] text-muted-foreground">
-              The drive + item IDs come from Graph Explorer or the SharePoint URL. In dev (mock
-              connector), placeholder IDs are auto-seeded.
+              Easiest: use <strong>Browse SharePoint</strong> to pick the folder and fill these in
+              automatically. In dev (mock connector), placeholder IDs are auto-seeded.
             </p>
             {testResult && (
               <div
@@ -1301,6 +1329,12 @@ function CompanyRootCard(props: {
             </div>
           </div>
         )}
+
+        <SharepointRootPicker
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          onSelect={handlePicked}
+        />
       </CardContent>
     </Card>
   );

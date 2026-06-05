@@ -621,14 +621,54 @@ async function ensureSqliteSchema() {
     `));
 
     await db.run(sql.raw(`
-      CREATE TABLE IF NOT EXISTS project_sharepoint_roots (
+      CREATE TABLE IF NOT EXISTS folder_taxonomy (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_id INTEGER NOT NULL UNIQUE,
+        internal_key TEXT NOT NULL UNIQUE,
+        display_name TEXT NOT NULL,
+        parent_key TEXT,
+        lifecycle_mode TEXT NOT NULL,
+        stage_code TEXT,
+        disciplines TEXT NOT NULL DEFAULT '[]',
+        description TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `));
+
+    await db.run(sql.raw(`
+      CREATE TABLE IF NOT EXISTS project_folders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL,
+        taxonomy_key TEXT NOT NULL,
         drive_id TEXT,
-        root_item_id TEXT,
-        root_path TEXT NOT NULL,
-        configured_by_user_id INTEGER,
-        configured_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        item_id TEXT,
+        sharepoint_path TEXT,
+        web_url TEXT,
+        provisioned_at TEXT,
+        provisioned_by_user_id INTEGER,
+        last_verified_at TEXT,
+        verify_error TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (project_id, taxonomy_key)
+      )
+    `));
+
+    await db.run(sql.raw(`
+      CREATE TABLE IF NOT EXISTS document_approval_requirements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        taxonomy_key TEXT NOT NULL,
+        file_name_pattern TEXT,
+        display_name TEXT NOT NULL,
+        description TEXT,
+        approver_roles TEXT NOT NULL DEFAULT '[]',
+        requires_all_approvers INTEGER NOT NULL DEFAULT 0,
+        extract_spec TEXT,
+        active INTEGER NOT NULL DEFAULT 1,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     `));

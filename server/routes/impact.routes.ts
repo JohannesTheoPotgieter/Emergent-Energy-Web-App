@@ -39,7 +39,6 @@ import {
   workItemDependencies,
 } from "@shared/schema/tasks";
 import { approvals } from "@shared/schema/collaboration";
-import { controlledDocuments } from "@shared/schema/documents";
 import { purchaseOrders, poReviewAssignments, paymentRequests, invoiceCaptures } from "@shared/schema/finance";
 import { ApiError, badRequest, notFound, serverError } from "../lib/api-error";
 
@@ -76,10 +75,9 @@ async function getProjectDeleteImpact(projectId: number): Promise<{ subject: str
     .limit(1);
   if (!project) return null;
 
-  const [workItemCount, pendingApprovalCount, controlledDocCount] = await Promise.all([
+  const [workItemCount, pendingApprovalCount] = await Promise.all([
     countRows(workItems, eq(workItems.projectId, projectId)),
     countRows(approvals, and(eq(approvals.projectId, projectId), eq(approvals.status, "pending"), isNull(approvals.deletedAt))),
-    countRows(controlledDocuments, and(eq(controlledDocuments.projectId, projectId), isNull(controlledDocuments.deletedAt))),
   ]);
 
   const rows: ImpactRow[] = [];
@@ -99,15 +97,6 @@ async function getProjectDeleteImpact(projectId: number): Promise<{ subject: str
       note: "Approvers will be notified",
     });
   }
-  if (controlledDocCount > 0) {
-    rows.push({
-      label: "Controlled documents",
-      count: controlledDocCount,
-      severity: controlledDocCount > 5 ? "high" : "medium",
-      note: "Drafts, approved, history",
-    });
-  }
-
   return { subject: project.projectName, rows };
 }
 
@@ -279,52 +268,6 @@ async function getWorkItemDeleteImpact(workItemId: number): Promise<{ subject: s
   return { subject: item.title ?? `Work item #${item.id}`, rows };
 }
 
-/**
- * Controlled-document delete impact. D3 uses soft-delete by default
- * (deletedAt set) rather than hard-delete, so the blast radius is
- * normally small. High severity only when the row is currently in
- * state='approved' — removing an approved document can break downstream
- * references (CEO home headline numbers, handover packs).
- */
-async function getControlledDocDeleteImpact(docId: number): Promise<{ subject: string; rows: ImpactRow[] } | null> {
-  const [doc] = await db
-    .select({ id: controlledDocuments.id, fileName: controlledDocuments.fileName, state: controlledDocuments.state, typeKey: controlledDocuments.typeKey })
-    .from(controlledDocuments)
-    .where(eq(controlledDocuments.id, docId))
-    .limit(1);
-  if (!doc) return null;
-
-  const rows: ImpactRow[] = [];
-  if (doc.state === "approved") {
-    rows.push({
-      label: "Current approved version",
-      count: 1,
-      severity: "high",
-      note: "CEO home + handover packs reference this",
-    });
-  } else if (doc.state === "submitted") {
-    // Pending approvals will be cancelled.
-    const pendingApprovalsCount = await countRows(
-      approvals,
-      and(
-        eq(approvals.relatedEntityType, "controlled_document"),
-        eq(approvals.relatedEntityId, docId),
-        eq(approvals.status, "pending"),
-      ),
-    );
-    if (pendingApprovalsCount > 0) {
-      rows.push({
-        label: "Pending approvals that will be cancelled",
-        count: pendingApprovalsCount,
-        severity: "medium",
-        note: "Approvers notified",
-      });
-    }
-  }
-
-  return { subject: `${doc.typeKey}: ${doc.fileName}`, rows };
-}
-
 export function registerImpactRoutes(app: Express): void {
   // ------------------------------------------------------------------
   // GET /api/projects/:id/delete-impact
@@ -436,25 +379,4 @@ export function registerImpactRoutes(app: Express): void {
     },
   );
 
-  // ------------------------------------------------------------------
-  // GET /api/documents/:id/delete-impact   (controlled documents)
-  // ------------------------------------------------------------------
-  app.get(
-    "/api/documents/:id/delete-impact",
-    requireAuth,
-    requireRole(ALL_STAFF_ROLES),
-    async (req: Request, res: Response) => {
-      const parsed = projectIdParam.safeParse(req.params.id);
-      if (!parsed.success) throw badRequest("Invalid document id");
-      try {
-        const impact = await getControlledDocDeleteImpact(parsed.data);
-        if (!impact) throw notFound(`Controlled document ${parsed.data} not found`);
-        res.json(impact);
-      } catch (err) {
-        if (err instanceof ApiError) throw err;
-        console.error("[impact] controlled-doc delete-impact error:", err);
-        throw serverError("Failed to compute delete impact");
-      }
-    },
-  );
 }

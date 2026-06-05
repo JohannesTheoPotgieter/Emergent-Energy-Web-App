@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   ExternalLink,
+  FolderSearch,
   FolderTree,
   HardDriveUpload,
   Loader2,
@@ -31,6 +32,7 @@ import {
   type CompanyRootTestResult,
 } from "@/hooks/use-document-management-admin";
 import { useDocumentRoots } from "@/components/documents/use-documents";
+import { SharepointRootPicker, type PickedRoot } from "./SharepointRootPicker";
 
 const ACTIVE_PROJECTS_KIND = "active_projects";
 const DEFAULT_DISPLAY_NAME = "Active Projects";
@@ -182,6 +184,7 @@ export function DocumentManagementSharePointPanel() {
   const testRoot = useTestCompanyRoot();
   const [form, setForm] = useState<RootForm>(() => defaultForm());
   const [testResult, setTestResult] = useState<CompanyRootTestResult | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const activeProjectsRoot = useMemo(
     () => companyRoots.data?.roots.find((root) => root.kind === ACTIVE_PROJECTS_KIND),
@@ -283,6 +286,21 @@ export function DocumentManagementSharePointPanel() {
     }
   }
 
+  function handlePicked(picked: PickedRoot) {
+    setForm((current) => ({
+      ...current,
+      driveId: picked.driveId,
+      rootItemId: picked.rootItemId,
+      rootPath: picked.rootPath || current.rootPath,
+      displayName: current.displayName.trim() ? current.displayName : picked.displayName,
+    }));
+    setTestResult(null);
+    toast({
+      title: "SharePoint folder selected",
+      description: `${picked.driveName}${picked.rootPath ? `/${picked.rootPath}` : ""} — review and Save.`,
+    });
+  }
+
   return (
     <Card data-testid="document-management-sharepoint-panel">
       <CardHeader className="pb-3">
@@ -337,7 +355,7 @@ export function DocumentManagementSharePointPanel() {
           <StatusLine
             ok={configured}
             label="Active Projects root"
-            helper={configured ? "Drive ID is saved." : "Paste the Drive ID and folder item ID below."}
+            helper={configured ? "Drive ID is saved." : "Browse SharePoint to pick it, or paste the IDs below."}
           />
           <StatusLine
             ok={browserRootsLoaded}
@@ -353,13 +371,27 @@ export function DocumentManagementSharePointPanel() {
         <div className="rounded-lg border p-3 space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-sm font-semibold">Shared Active Projects SharePoint root</h3>
-            <Button asChild size="sm" variant="outline" className="ml-auto">
+            <Button
+              size="sm"
+              className="ml-auto"
+              onClick={() => setPickerOpen(true)}
+              data-testid="btn-browse-sharepoint-root"
+            >
+              <FolderSearch className="h-3.5 w-3.5" />
+              Browse SharePoint
+            </Button>
+            <Button asChild size="sm" variant="outline">
               <Link href="/admin/document-management">
                 <FolderTree className="h-3.5 w-3.5" />
                 Taxonomy & provisioning
               </Link>
             </Button>
           </div>
+
+          <p className="text-xs text-muted-foreground">
+            Easiest: click <strong>Browse SharePoint</strong> and pick the folder — the drive and
+            item IDs fill in automatically. Or enter them manually below.
+          </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="space-y-1">
@@ -439,6 +471,12 @@ export function DocumentManagementSharePointPanel() {
             </Button>
           </div>
         </div>
+
+        <SharepointRootPicker
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          onSelect={handlePicked}
+        />
       </CardContent>
     </Card>
   );

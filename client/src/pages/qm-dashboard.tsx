@@ -64,7 +64,7 @@ import { MicroWalkthrough, ReplayWalkthrough } from "@/components/guidance/Micro
 import { useRolloutFlag } from "@/hooks/use-rollout-flag";
 import type { NextAction, BlockerInfo } from "@/hooks/use-guidance";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
-import { ApprovalQueueCard } from "@/components/managed-documents";
+import { ManagedDocumentApprovalQueue } from "@/components/documents/ManagedDocumentApprovalQueue";
 import { NcrLegacyDeepLinkBanner } from "@/components/quality/NcrLegacyDeepLinkBanner";
 import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
 import { QualityTab } from "@/components/tabs/QualityTab";
@@ -604,9 +604,9 @@ export default function QmDashboardPage() {
       {/* No global loading gate: each section below renders from its own
           query state so a slow/failed /api/quality/checklists call never
           blanks the KPI cards, warnings, NCRs, or approvals. */}
-      {/* D3 controlled-document approvals waiting on this QM */}
+      {/* Managed-document approvals waiting on this QM */}
       <div className="mb-4">
-        <ApprovalQueueCard />
+        <ManagedDocumentApprovalQueue title="Approvals waiting on you" />
       </div>
       <SectionHeader
         icon={<ShieldCheck className="h-5 w-5" />}

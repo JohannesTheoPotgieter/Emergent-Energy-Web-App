@@ -7,14 +7,6 @@ import { registerQuickBooksInvoiceMatchRoutes } from './quickbooks-invoice-match
 import { registerFinanceTrustRoutes } from './finance-trust-routes';
 import { registerFinanceLinesRoutes } from './finance-lines.routes';
 import { registerPdIntakeRoutes } from './pd-intake.routes';
-// D6 Phase 5 — `registerControlledDocumentRoutes` is the legacy
-// controlled-documents flow. The Document Management v2 rebuild routes
-// every approval through the canonical `approvals` table via
-// `managed-document-approvals.routes.ts`. Import is kept for type
-// reference but the call site is intentionally retired below.
-// Tracker: drop `documents.routes.ts` + `controlled-documents-repository.ts`
-// once D6 ships and the destructive cleanup migration runs.
-// import { registerControlledDocumentRoutes } from './documents.routes';
 import { registerImpactRoutes } from './impact.routes';
 import { registerEmailLinksRoutes } from './email-links.routes';
 import { registerScreenSettingsRoutes } from './admin-screen-settings.routes';

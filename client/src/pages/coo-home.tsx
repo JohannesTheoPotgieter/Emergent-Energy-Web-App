@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { getQueryFn } from "@/lib/queryClient";
 import { formatZarCompact } from "@/lib/currency";
 import { useGatesPipeline, useGatesHandovers } from "@/hooks/use-gates";
-import { ApprovalQueueCard } from "@/components/managed-documents";
 import { PortfolioReadinessTile } from "@/components/documents/PortfolioReadinessTile";
 import { ManagedDocumentApprovalQueue } from "@/components/documents/ManagedDocumentApprovalQueue";
 import { PageHeader } from "@/components/ui/page-header";
@@ -133,9 +132,6 @@ export default function CooHome() {
 
           {/* Documents readiness across the portfolio (D6) */}
           <PortfolioReadinessTile />
-
-          {/* Legacy controlled-documents queue, kept until destructive cleanup */}
-          <ApprovalQueueCard />
 
           {/* Finance KPI strip — revenue, CoS, outstanding, margin */}
           <FinanceKpiStrip kpis={execQuery.data?.kpis} loading={execQuery.isLoading} />
