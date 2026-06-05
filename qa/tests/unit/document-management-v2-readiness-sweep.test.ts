@@ -49,7 +49,7 @@ const disciplinePanel = fs.readFileSync(
   "utf8",
 );
 const projectDocsPage = fs.readFileSync(
-  path.join(repoRoot, "client", "src", "pages", "project-documents.tsx"),
+  path.join(repoRoot, "client", "src", "components", "documents", "ProjectDocumentsView.tsx"),
   "utf8",
 );
 const approvalsService = fs.readFileSync(
@@ -254,13 +254,10 @@ describe("D6 Phase 6.1 — stage filter + pattern matching + tile mount", () => 
     expect(cooHome).toMatch(/<PortfolioReadinessTile\s*\/>/);
   });
 
-  it("ManagedDocumentApprovalQueue replaces the legacy ApprovalQueueCard at the top of coo-home", () => {
-    // The managed-document queue must precede (above) the legacy card so
-    // the COO sees the new flow first.
-    const managedIdx = cooHome.indexOf("ManagedDocumentApprovalQueue");
-    const legacyIdx = cooHome.indexOf("<ApprovalQueueCard");
-    expect(managedIdx).toBeGreaterThan(0);
-    expect(legacyIdx).toBeGreaterThan(0);
-    expect(managedIdx).toBeLessThan(legacyIdx);
+  it("uses the canonical ManagedDocumentApprovalQueue on coo-home (legacy card retired)", () => {
+    // Full removal: the legacy controlled-documents ApprovalQueueCard is
+    // gone; coo-home now shows only the managed-document queue.
+    expect(cooHome).toMatch(/ManagedDocumentApprovalQueue/);
+    expect(cooHome).not.toContain("<ApprovalQueueCard");
   });
 });

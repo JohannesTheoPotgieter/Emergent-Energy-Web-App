@@ -106,7 +106,6 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // /quickbooks merged into the existing /finance/quickbooks (Throughput).
   // Kept as a redirect so any bookmarked link still lands in the right place.
   { id: "quickbooksHomeRedirect", path: "/quickbooks", label: "QuickBooks (moved)", type: "alias", permissionEntity: "financials", redirectTo: "/finance/quickbooks" },
-  { id: "adminDocumentTypes", path: "/admin/document-types", label: "Document types (legacy)", iconKey: "FileText", navGroup: "SYSTEM", permissionEntity: "admin_roles", showInSidebar: false, routeComponentKey: "AdminDocumentTypesPage" },
   // Visible to anyone with company_priorities:view since the template
   // LIST endpoint already filters by dept visibility (regular users
   // only see role-scope templates they could instantiate). The Create

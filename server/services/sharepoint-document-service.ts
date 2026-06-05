@@ -19,6 +19,7 @@ import { getSsoTokenForUser } from "../ms-account-service";
 import { ApiError, badRequest, conflict, notFound } from "../lib/api-error";
 import {
   mockListChildren,
+  mockSiteDrives,
   mockGetItem,
   mockDownloadBuffer,
   mockListVersions,
@@ -199,6 +200,33 @@ export async function listChildren(
     : `https://graph.microsoft.com/v1.0/drives/${driveId}/root/children`;
   const data = await graphGetJson<{ value?: any[] }>(url, token, "listChildren");
   return (data.value ?? []).map(mapGraphItem);
+}
+
+export interface SiteDrive {
+  id: string;
+  name: string;
+  webUrl?: string;
+  driveType?: string;
+}
+
+/**
+ * List the document libraries (drives) on a SharePoint site, so the admin
+ * setup picker can offer "pick a site → pick a library → browse to the
+ * folder" instead of pasting a raw Graph drive id.
+ */
+export async function listSiteDrives(siteId: string): Promise<SiteDrive[]> {
+  if (isConnectorMocked("ms-graph")) {
+    return mockSiteDrives(siteId);
+  }
+  const token = await appOnlyToken();
+  const url = `https://graph.microsoft.com/v1.0/sites/${siteId}/drives?$select=id,name,webUrl,driveType`;
+  const data = await graphGetJson<{ value?: any[] }>(url, token, "listSiteDrives");
+  return (data.value ?? []).map((d) => ({
+    id: String(d.id),
+    name: String(d.name ?? "Documents"),
+    webUrl: d.webUrl,
+    driveType: d.driveType,
+  }));
 }
 
 export async function getItem(

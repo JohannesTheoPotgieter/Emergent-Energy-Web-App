@@ -44,7 +44,6 @@ DELETE FROM commissioning_snapshots WHERE project_id::text IN ('393', '394', '39
 DELETE FROM communication_follow_ups WHERE project_id::text IN ('393', '394', '395');
 DELETE FROM contractor_assignments WHERE project_id::text IN ('393', '394', '395');
 DELETE FROM contracts WHERE project_id::text IN ('393', '394', '395');
-DELETE FROM controlled_documents WHERE project_id::text IN ('393', '394', '395');
 DELETE FROM corrective_actions WHERE project_id::text IN ('393', '394', '395');
 DELETE FROM cos_status_overrides WHERE project_id::text IN ('393', '394', '395');
 DELETE FROM dashboard_project_metrics WHERE project_id::text IN ('393', '394', '395');
@@ -131,7 +130,6 @@ DELETE FROM project_queries WHERE project_id::text IN ('393', '394', '395');
 DELETE FROM project_rag_audit WHERE project_id::text IN ('393', '394', '395');
 DELETE FROM project_revenue_summary WHERE project_id::text IN ('393', '394', '395');
 DELETE FROM project_settings WHERE project_id::text IN ('393', '394', '395');
-DELETE FROM project_sharepoint_roots WHERE project_id::text IN ('393', '394', '395');
 DELETE FROM project_stage_data WHERE project_id::text IN ('393', '394', '395');
 DELETE FROM project_stage_decisions WHERE project_id::text IN ('393', '394', '395');
 DELETE FROM project_stage_dependencies WHERE project_id::text IN ('393', '394', '395');

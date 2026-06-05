@@ -21,7 +21,7 @@
 import { FolderTree } from "lucide-react";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { ManagedDocumentApprovalQueue } from "@/components/documents/ManagedDocumentApprovalQueue";
-import DocumentsPage from "../documents";
+import { DisciplineProjectDocuments } from "@/components/documents/DisciplineProjectDocuments";
 
 export default function EngineeringDocumentsPage() {
   return (
@@ -30,10 +30,10 @@ export default function EngineeringDocumentsPage() {
         icon={<FolderTree className="h-5 w-5" />}
         eyebrow="Engineering"
         title="Engineering Document Management"
-        description="Drawings, specs, NCR evidence and calibration certificates. Approvals waiting on you appear first; the full SharePoint-backed browser is below."
+        description="Drawings, specs, NCR evidence and calibration certificates. Approvals waiting on you appear first; pick a project to see its engineering folders and SharePoint connection."
       />
       <ManagedDocumentApprovalQueue title="Engineering approvals waiting on me" />
-      <DocumentsPage />
+      <DisciplineProjectDocuments discipline="ENGINEERING" />
     </PageShell>
   );
 }

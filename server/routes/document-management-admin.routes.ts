@@ -58,6 +58,7 @@ import {
   upsertCompanyRoot,
 } from "../repositories/company-sharepoint-roots-repository";
 import * as sp from "../services/sharepoint-document-service";
+import { discoverSites } from "../sharepoint-list";
 import {
   insertFolderTaxonomySchema,
   insertDocumentApprovalRequirementSchema,
@@ -396,6 +397,67 @@ export function registerDocumentManagementAdminRoutes(app: Express): void {
         if (err instanceof ApiError) throw err;
         console.error("[doc-mgmt-admin] list company roots error:", err);
         throw serverError("Failed to load company SharePoint roots");
+      }
+    },
+  );
+
+  // ── SharePoint picker (browse sites → libraries → folders) ──────────
+  // Read-only helpers so admins can choose the Active Projects root by
+  // browsing in the UI, instead of pasting a raw Graph drive id.
+  app.get(
+    "/api/admin/sharepoint/sites",
+    requireAuth,
+    requirePermission("documents_admin", "view"),
+    async (_req: Request, res: Response) => {
+      try {
+        const sites = await discoverSites();
+        res.json({ sites });
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        console.error("[doc-mgmt-admin] list sites error:", err);
+        throw serverError("Failed to list SharePoint sites");
+      }
+    },
+  );
+
+  app.get(
+    "/api/admin/sharepoint/sites/:siteId/drives",
+    requireAuth,
+    requirePermission("documents_admin", "view"),
+    async (req: Request, res: Response) => {
+      const siteId = String(req.params.siteId ?? "").trim();
+      if (!siteId) throw badRequest("Invalid site id");
+      try {
+        const drives = await sp.listSiteDrives(siteId);
+        res.json({ drives });
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        console.error("[doc-mgmt-admin] list drives error:", err);
+        throw serverError("Failed to list document libraries");
+      }
+    },
+  );
+
+  app.get(
+    "/api/admin/sharepoint/drives/:driveId/folders",
+    requireAuth,
+    requirePermission("documents_admin", "view"),
+    async (req: Request, res: Response) => {
+      const driveId = String(req.params.driveId ?? "").trim();
+      if (!driveId) throw badRequest("Invalid drive id");
+      const rawParent = req.query.parentItemId;
+      const parentItemId =
+        typeof rawParent === "string" && rawParent.trim() ? rawParent.trim() : null;
+      try {
+        const items = await sp.listChildren(driveId, parentItemId);
+        const folders = items
+          .filter((i) => i.isFolder)
+          .map((i) => ({ id: i.id, name: i.name, path: i.path, webUrl: i.webUrl }));
+        res.json({ folders });
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        console.error("[doc-mgmt-admin] browse folders error:", err);
+        throw serverError("Failed to browse SharePoint folder");
       }
     },
   );

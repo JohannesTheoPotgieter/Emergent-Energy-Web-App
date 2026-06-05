@@ -25,15 +25,13 @@
  * Documents Administration page.
  */
 
-import { asc, eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "./db";
 import {
   folderTaxonomy,
   companySharepointRoots,
-  projectSharepointRoots,
   type InsertFolderTaxonomy,
 } from "@shared/schema/documents";
-import { projectInfo } from "@shared/schema/projects";
 import { isConnectorMocked } from "./lib/connector-mode";
 
 // =========================================================================
@@ -539,28 +537,6 @@ export async function seedFolderTaxonomy(): Promise<{ inserted: number; skipped:
         sortOrder: 0,
         active: true,
       });
-    }
-
-    const [firstProject] = await db
-      .select({ id: projectInfo.id, name: projectInfo.projectName })
-      .from(projectInfo)
-      .where(isNull(projectInfo.deletedAt))
-      .orderBy(asc(projectInfo.id))
-      .limit(1);
-    if (firstProject) {
-      const [existingProjRoot] = await db
-        .select({ id: projectSharepointRoots.id })
-        .from(projectSharepointRoots)
-        .where(eq(projectSharepointRoots.projectId, firstProject.id))
-        .limit(1);
-      if (!existingProjRoot) {
-        await db.insert(projectSharepointRoots).values({
-          projectId: firstProject.id,
-          driveId: "drive-project-mock",
-          rootItemId: "proj-root",
-          rootPath: firstProject.name ?? "Project (mock)",
-        });
-      }
     }
   }
 

@@ -39,7 +39,6 @@ export default function ProjectCreatePage() {
     projectCode: "",
     location: "",
     initialPhase: "P0_FIRST_ASSESSMENT",
-    sharepointRootPath: "",
   });
   const [result, setResult] = useState<any>(null);
   const [duplicateWarningDismissed, setDuplicateWarningDismissed] = useState(false);
@@ -119,7 +118,6 @@ export default function ProjectCreatePage() {
       projectCode: "",
       location: "",
       initialPhase: "P0_FIRST_ASSESSMENT",
-      sharepointRootPath: "",
     });
   };
 
@@ -131,11 +129,8 @@ export default function ProjectCreatePage() {
 
     setSaving(true);
     try {
-      // sharepointRootPath is not a /api/projects field — it's persisted
-      // to /api/projects/:id/sharepoint-root after creation. Strip it here.
-      const { sharepointRootPath: _drop, ...projectForm } = form;
       const body = {
-        ...projectForm,
+        ...form,
         clientId: form.clientId ? Number(form.clientId) : null,
         clientName: selectedClient?.name || null,
         // Pass the source opportunity so the server sets
@@ -159,26 +154,6 @@ export default function ProjectCreatePage() {
 
       setResult(data);
       toast({ title: "Project created successfully" });
-
-      // If the user provided a SharePoint root path, save it now against
-      // the just-created project. Silent-fail on error — not worth
-      // blocking project creation if the root save misses; a super user
-      // can set it later from project-detail.
-      const newProjectId = data?.id ?? data?.project?.id;
-      if (newProjectId && form.sharepointRootPath.trim()) {
-        try {
-          await authFetch(`/api/projects/${newProjectId}/sharepoint-root`, {
-            method: "PUT",
-            body: JSON.stringify({ rootPath: form.sharepointRootPath.trim() }),
-          });
-        } catch {
-          toast({
-            title: "SharePoint root not saved",
-            description: "Project was created but the SharePoint root couldn't be set. A super user can configure it from the project page.",
-            variant: "destructive",
-          });
-        }
-      }
     } catch (error: any) {
       toast({
         title: "Error",
@@ -415,19 +390,6 @@ export default function ProjectCreatePage() {
                 label: phaseLabels[phase] || phase,
               }))}
             />
-          </div>
-          <div>
-            <label className="text-sm font-medium">SharePoint root path (optional)</label>
-            <Input
-              value={form.sharepointRootPath}
-              onChange={(event) => setForm((current) => ({ ...current, sharepointRootPath: event.target.value }))}
-              placeholder="e.g. Sites/EngineeringSupport/Projects/ClientName/ProjectName"
-              className="font-mono text-xs"
-              data-testid="input-sharepoint-root-path"
-            />
-            <p className="text-[11px] text-muted-foreground mt-1">
-              If you set this now, controlled documents can be submitted for approval right from the start. You can also configure it later from the project's Controlled docs tab.
-            </p>
           </div>
           <Button
             className="w-full"
