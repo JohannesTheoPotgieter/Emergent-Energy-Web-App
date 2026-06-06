@@ -71,6 +71,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { TrackerGapTab } from '@/components/cos/TrackerGapTab';
+import { CosLineReviewPanel } from '@/components/cos/cos-line-review-panel';
 import { useFinancialYearScope } from '@/hooks/use-financial-year-scope';
 
 interface ProjectBreakdown {
@@ -960,7 +961,7 @@ export default function CosTracker() {
     fromMonthKey?: string;
   } | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'recon' | 'trend' | 'gap'>('recon');
+  const [activeTab, setActiveTab] = useState<'recon' | 'trend' | 'gap' | 'lines'>('recon');
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   const [projectSearch, setProjectSearch] = useState('');
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -2076,7 +2077,7 @@ export default function CosTracker() {
 
             <Tabs
               value={activeTab}
-              onValueChange={(v) => setActiveTab(v as 'recon' | 'trend' | 'gap')}
+              onValueChange={(v) => setActiveTab(v as 'recon' | 'trend' | 'gap' | 'lines')}
             >
               <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
                 <TabsList className="bg-muted/60">
@@ -2103,6 +2104,14 @@ export default function CosTracker() {
                   >
                     <AlertTriangle className="h-3.5 w-3.5" />
                     Tracker Gap
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="lines"
+                    className="data-[state=active]:bg-card gap-1.5"
+                    data-testid="tab-lines"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    Line review
                   </TabsTrigger>
                 </TabsList>
 
@@ -2233,6 +2242,9 @@ export default function CosTracker() {
               </TabsContent>
               <TabsContent value="gap" className="mt-0">
                 <TrackerGapTab />
+              </TabsContent>
+              <TabsContent value="lines" className="mt-0">
+                <CosLineReviewPanel cosTrackerQueryKey={cosTrackerQueryKey} />
               </TabsContent>
             </Tabs>
           </div>
