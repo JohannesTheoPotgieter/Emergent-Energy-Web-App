@@ -26,6 +26,8 @@ import {
   Upload,
   Filter,
   ExternalLink,
+  Scale,
+  Ban,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -66,6 +68,43 @@ interface ImportRun {
   // never auto-committed. Null for normal runs.
   quarantineReason: string | null;
   quarantineKind: "conflicted_copy" | "older_revision" | null;
+  // Why the scheduler PARKED this run instead of auto-committing (tightened
+  // "clean" gate): e.g. "locked period 2026-03-01", "over-wipe: 92% …". Null
+  // when the run did not park on the gate.
+  autoCommitGateReason: string | null;
+}
+
+// Post-commit reconciliation preview (rolled-back dry-run) for a parked run.
+interface ReconPreviewLine {
+  lineId: number;
+  categoryName: string | null;
+  description: string | null;
+  invoiceNumber: string | null;
+  revenueDerived: number;
+  revenueStored: number | null;
+  reconDelta: number | null;
+  derivationWarning: string | null;
+  offending: boolean;
+}
+interface ReconPreviewResponse {
+  runId: number;
+  projectId: number | null;
+  note: string | null;
+  importQuality: {
+    colourReadDates: number;
+    defaultedDates: number;
+    paymentDerivedInvoiceDates: number;
+    categoriesMissingAllocation: number;
+  };
+  recon: {
+    status: "green" | "amber" | "red";
+    appTotal: number;
+    trackerTotal: number;
+    appVsTrackerDelta: number;
+    accumulatedAbsDelta: number;
+    reason: string;
+    lines: ReconPreviewLine[];
+  } | null;
 }
 
 interface ImportIssue {
@@ -132,12 +171,22 @@ function sectionBadge(section: string) {
   return <Badge data-testid={`section-${section.toLowerCase()}`} className={colors[section] || "bg-gray-100 text-gray-700"}>{section}</Badge>;
 }
 
+function reconStatusBadge(status: "green" | "amber" | "red") {
+  if (status === "red") return <Badge data-testid="recon-status-red" className="bg-red-100 text-red-800">Red</Badge>;
+  if (status === "amber") return <Badge data-testid="recon-status-amber" className="bg-amber-100 text-amber-800">Amber</Badge>;
+  return <Badge data-testid="recon-status-green" className="bg-emerald-100 text-emerald-800">Green</Badge>;
+}
+
 export default function ImportControlTowerPage() {
   const { toast } = useToast();
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [expandedRun, setExpandedRun] = useState<number | null>(null);
+  // Parked-run review: reconciliation-preview dialog + reject dialog.
+  const [previewRunId, setPreviewRunId] = useState<number | null>(null);
+  const [rejectRunId, setRejectRunId] = useState<number | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
 
   // `?batchRunId=…` filters the tower to a single folder-pickup batch —
   // the "folder import completion screen". The smart-import wizard, the
@@ -196,6 +245,48 @@ export default function ImportControlTowerPage() {
     },
     onError: (err: Error) => {
       toast({ title: "Retry Failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  // Post-commit reconciliation preview for the run open in the preview dialog.
+  const { data: reconPreview, isLoading: previewLoading } = useQuery<ReconPreviewResponse>({
+    queryKey: ["/api/smart-import/reconciliation-preview", previewRunId],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/smart-import/${previewRunId}/reconciliation-preview`, { headers, credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load reconciliation preview");
+      return res.json();
+    },
+    enabled: !!previewRunId,
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: async ({ runId, reason }: { runId: number; reason: string }) => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/smart-import/${runId}/reject`, {
+        method: "POST",
+        headers,
+        credentials: "include",
+        body: JSON.stringify({ reason }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || err.error || "Reject failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Import rejected", description: "The parked run was dismissed. The source file and all figures are untouched." });
+      setRejectRunId(null);
+      setRejectReason("");
+      queryClient.invalidateQueries({ queryKey: ["/api/import-control-tower/history"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Reject Failed", description: err.message, variant: "destructive" });
     },
   });
 
@@ -480,6 +571,28 @@ export default function ImportControlTowerPage() {
                                 <RotateCcw className="h-3.5 w-3.5" />
                               </Button>
                             )}
+                            {(run.status === "awaiting_review" || run.status === "preview") && (
+                              <>
+                                <Button
+                                  data-testid={`button-preview-recon-${run.id}`}
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setPreviewRunId(run.id)}
+                                  title="Preview reconciliation (post-commit dry-run)"
+                                >
+                                  <Scale className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  data-testid={`button-reject-${run.id}`}
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => { setRejectRunId(run.id); setRejectReason(""); }}
+                                  title="Reject this parked run (file untouched)"
+                                >
+                                  <Ban className="h-3.5 w-3.5 text-red-600" />
+                                </Button>
+                              </>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -529,6 +642,25 @@ export default function ImportControlTowerPage() {
                                     <p className="mt-1 text-sm text-amber-900">{run.quarantineReason}</p>
                                     <p className="mt-1 text-[11px] text-amber-700">
                                       Parked for review — not auto-committed, so it cannot double-count a project.
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            {run.autoCommitGateReason && !run.quarantineReason && (
+                              <div
+                                className="mb-4 rounded-md border border-blue-200 bg-blue-50 p-3"
+                                data-testid={`text-park-reason-${run.id}`}
+                              >
+                                <div className="flex items-start gap-2">
+                                  <Clock className="h-4 w-4 mt-0.5 shrink-0 text-blue-700" />
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+                                      Parked for review — not auto-committed
+                                    </p>
+                                    <p className="mt-1 text-sm text-blue-900">{run.autoCommitGateReason}</p>
+                                    <p className="mt-1 text-[11px] text-blue-700">
+                                      Review the reconciliation preview, then commit deliberately (lock-aware) or reject.
                                     </p>
                                   </div>
                                 </div>
@@ -660,6 +792,114 @@ export default function ImportControlTowerPage() {
               )}
             </div>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {/* Reconciliation preview — the post-commit dry-run for a parked run. */}
+      <Dialog open={!!previewRunId} onOpenChange={() => setPreviewRunId(null)}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Scale className="h-5 w-5" />
+              Reconciliation preview — Run #{previewRunId}
+            </DialogTitle>
+          </DialogHeader>
+          {previewLoading ? (
+            <div className="py-8 text-center text-muted-foreground">Computing post-commit reconciliation…</div>
+          ) : reconPreview ? (
+            <div className="space-y-4" data-testid="recon-preview-body">
+              <p className="text-xs text-muted-foreground">
+                What this project's reconciliation would be after committing this file — computed by a dry-run that is rolled back, so nothing is saved.
+              </p>
+              {reconPreview.recon ? (
+                <>
+                  <div className="flex items-center gap-3">
+                    {reconStatusBadge(reconPreview.recon.status)}
+                    <span className="text-sm text-muted-foreground">{reconPreview.recon.reason}</span>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                    <div><span className="text-muted-foreground">App (§3.3):</span><div className="tabular-nums">R {reconPreview.recon.appTotal.toLocaleString()}</div></div>
+                    <div><span className="text-muted-foreground">Tracker (col-U):</span><div className="tabular-nums">R {reconPreview.recon.trackerTotal.toLocaleString()}</div></div>
+                    <div><span className="text-muted-foreground">App − tracker:</span><div className="tabular-nums">R {reconPreview.recon.appVsTrackerDelta.toLocaleString()}</div></div>
+                    <div><span className="text-muted-foreground">Σ |drift|:</span><div className="tabular-nums">R {reconPreview.recon.accumulatedAbsDelta.toLocaleString()}</div></div>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs text-muted-foreground">
+                    <div>Colour-read dates: <span className="font-medium text-foreground">{reconPreview.importQuality.colourReadDates}</span></div>
+                    <div>Defaulted dates: <span className="font-medium text-foreground">{reconPreview.importQuality.defaultedDates}</span></div>
+                    <div>Payment-derived inv. dates: <span className="font-medium text-foreground">{reconPreview.importQuality.paymentDerivedInvoiceDates}</span></div>
+                    <div>Categories missing alloc.: <span className="font-medium text-foreground">{reconPreview.importQuality.categoriesMissingAllocation}</span></div>
+                  </div>
+                  <Separator />
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Category</TableHead>
+                          <TableHead>Invoice</TableHead>
+                          <TableHead className="text-right">Derived (Q/X)×J</TableHead>
+                          <TableHead className="text-right">Stored col-U</TableHead>
+                          <TableHead className="text-right">Δ</TableHead>
+                          <TableHead>V-check</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {reconPreview.recon.lines.slice(0, 100).map((l) => (
+                          <TableRow key={l.lineId} data-testid={`recon-preview-line-${l.lineId}`} className={l.offending ? "bg-red-50" : undefined}>
+                            <TableCell className="text-sm max-w-[200px] truncate" title={l.description ?? undefined}>{l.categoryName || "—"}</TableCell>
+                            <TableCell className="text-xs">{l.invoiceNumber || "—"}</TableCell>
+                            <TableCell className="text-right tabular-nums text-sm">{l.revenueDerived.toLocaleString()}</TableCell>
+                            <TableCell className="text-right tabular-nums text-sm">{l.revenueStored != null ? l.revenueStored.toLocaleString() : "—"}</TableCell>
+                            <TableCell className="text-right tabular-nums text-sm">{l.reconDelta != null ? l.reconDelta.toLocaleString() : "—"}</TableCell>
+                            <TableCell>{l.derivationWarning ? <Badge className="bg-red-100 text-red-800">{l.derivationWarning}</Badge> : <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
+              ) : (
+                <div className="py-6 text-center text-sm text-muted-foreground" data-testid="recon-preview-note">{reconPreview.note || "No reconciliation preview available."}</div>
+              )}
+            </div>
+          ) : (
+            <div className="py-8 text-center text-muted-foreground">No preview.</div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject — dismiss a parked run; file + figures untouched, audited. */}
+      <Dialog open={!!rejectRunId} onOpenChange={(open) => { if (!open) { setRejectRunId(null); setRejectReason(""); } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Ban className="h-5 w-5 text-red-600" />
+              Reject import — Run #{rejectRunId}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Dismiss this parked run. The source file in SharePoint and every reported figure stay untouched; the run is recorded as rejected with your reason (audited).
+            </p>
+            <textarea
+              data-testid="input-reject-reason"
+              className="w-full min-h-[90px] rounded-md border border-input bg-background p-2 text-sm"
+              placeholder="Why is this import being rejected? (required)"
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" data-testid="button-cancel-reject" onClick={() => { setRejectRunId(null); setRejectReason(""); }}>Cancel</Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                data-testid="button-confirm-reject"
+                disabled={!rejectReason.trim() || rejectMutation.isPending}
+                onClick={() => rejectRunId && rejectMutation.mutate({ runId: rejectRunId, reason: rejectReason.trim() })}
+              >
+                {rejectMutation.isPending ? "Rejecting…" : "Reject import"}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </PageLayout>
