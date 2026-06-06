@@ -836,6 +836,10 @@ export const normalizedCostLineActuals = pgTable("normalized_cost_line_actuals",
   //   revenue_stored   — the pasted col-U value (revenue_recognition_amount)
   //     as imported. A cross-check, never the source of truth.
   //   recon_delta      — revenue_stored − revenue_derived. Drift measure.
+  //   recon_exceeds    — |recon_delta| > R1 — flags the line for the
+  //     reconciliation board (P2.2) to find. Set on every recompute alongside
+  //     recon_delta; null until first computed, false when within R1 or when
+  //     there is no stored value to reconcile.
   //   recognition_method — how recognition was established for this row.
   //   colour_source    — whether the invoice-date colour signal (§ 3.7) was
   //     read from the cell or defaulted.
@@ -843,6 +847,7 @@ export const normalizedCostLineActuals = pgTable("normalized_cost_line_actuals",
   revenueDerived: decimal("revenue_derived", { precision: 15, scale: 2 }),
   revenueStored: decimal("revenue_stored", { precision: 15, scale: 2 }),
   reconDelta: decimal("recon_delta", { precision: 15, scale: 2 }),
+  reconExceeds: boolean("recon_exceeds"),
   recognitionMethod: text("recognition_method"), // 'true_invoice' | 'payment_derived'
   colourSource: text("colour_source"), // 'read' | 'defaulted'
   sourceFileHash: text("source_file_hash"),

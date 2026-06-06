@@ -161,6 +161,26 @@ describe("Finance provenance — Coega fixture revenue_derived reconciliation", 
     }
   });
 
+  it("every Coega line has derived/stored/delta with a boolean recon_exceeds flag", () => {
+    const updates = computeProvenanceUpdates(actuals, parents, allocations);
+    expect(updates).toHaveLength(actuals.length);
+
+    for (const u of updates) {
+      // Every line is revenue-derived (non-null numeric string, > 0 here).
+      expect(typeof u.revenueDerived).toBe("string");
+      const derived = Number(u.revenueDerived);
+      expect(Number.isFinite(derived)).toBe(true);
+      expect(derived).toBeGreaterThan(0);
+
+      // The Coega fixture carries no pasted col-U value, so there is nothing to
+      // reconcile: stored + delta are null and the flag is a definite false.
+      expect(u.revenueStored).toBeNull();
+      expect(u.reconDelta).toBeNull();
+      expect(typeof u.reconExceeds).toBe("boolean");
+      expect(u.reconExceeds).toBe(false);
+    }
+  });
+
   it("recon_delta = stored − derived, and is null when col U is absent", () => {
     const alloc: FinanceLineAllocationRowInput[] = [
       {
@@ -191,10 +211,14 @@ describe("Finance provenance — Coega fixture revenue_derived reconciliation", 
     expect(Number(byId.get(10)?.revenueDerived)).toBeCloseTo(250000, 2);
     expect(byId.get(10)?.revenueStored).toBe("500001.00");
     expect(Number(byId.get(10)?.reconDelta)).toBeCloseTo(250001, 2);
+    // |250001| > R1 → the line is flagged for the reconciliation board.
+    expect(byId.get(10)?.reconExceeds).toBe(true);
     expect(byId.get(10)?.recognitionMethod).toBe("true_invoice");
 
     expect(byId.get(11)?.revenueStored).toBeNull();
     expect(byId.get(11)?.reconDelta).toBeNull();
+    // No stored value to reconcile → not flagged.
+    expect(byId.get(11)?.reconExceeds).toBe(false);
     expect(byId.get(11)?.recognitionMethod).toBeNull();
   });
 });

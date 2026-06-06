@@ -53,6 +53,7 @@ import {
   mergeConflictsToWizardRows,
   type IncrementalCommitResult,
 } from "../lib/import/commit-executor";
+import { refreshProvenanceForProjects } from "../lib/finance/provenance";
 import { newImportMetrics, emitImportMetrics, threeWayMergeEnabled } from "../lib/import/feature-flags";
 import { matchRows, generateBusinessKey, type SectionType, type MatchedRow } from "../lib/import/row-matcher";
 import { runConflictEngine, type RowMergeResult } from "../lib/import/conflict-engine";
@@ -524,6 +525,30 @@ export async function commitSmartImportRunAsSystem(
             ));
         } catch (reconErr) {
           console.warn("[SchedulerCommit] noRevenueLinked recon failed (non-blocking):", reconErr instanceof Error ? reconErr.message : String(reconErr));
+        }
+      }
+
+      // S11.5: provenance / reconciliation refresh — recompute the canonical
+      // § 3.3 revenue_derived for this project's live actuals and persist
+      // revenue_derived / revenue_stored / recon_delta / recon_exceeds,
+      // snapshot-guarded. Keeps the reconciliation columns current on every
+      // scheduled commit; does NOT change which value any read path reports.
+      // Non-blocking, gated to imports that could have moved a finance input.
+      const provenanceTouched =
+        !!costResult ||
+        (Array.isArray(catAllocs) && catAllocs.length > 0) ||
+        (Array.isArray(norm.actualLineRows) && norm.actualLineRows.length > 0);
+      if (provenanceTouched) {
+        try {
+          const prov = await refreshProvenanceForProjects(tx, [projectId]);
+          console.log(
+            `[SchedulerCommit] provenance refresh: ${prov.written} actuals · ${prov.flagged} flagged (|Δ| > R1) · max |recon_delta| = ${prov.maxAbsDelta.toFixed(2)}`,
+          );
+        } catch (provErr) {
+          console.warn(
+            "[SchedulerCommit] provenance refresh failed (non-blocking):",
+            provErr instanceof Error ? provErr.message : String(provErr),
+          );
         }
       }
 
