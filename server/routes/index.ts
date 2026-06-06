@@ -27,6 +27,7 @@ import { registerStandupSessionsRoutes } from './standup-sessions.routes';
 import { registerDeliveryMilestonesRoutes } from './delivery-milestones.routes';
 import { registerMyQueueRoutes } from './my-queue.routes';
 import { registerImportConfigRoutes } from './import-config.routes';
+import { registerSmartImportReviewRoutes } from './smart-import-review.routes';
 
 export async function registerRoutes(httpServer: Server, app: Express) {
   registerTemplateGovernanceRoutes(app);
@@ -56,5 +57,6 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerDeliveryMilestonesRoutes(app);
   registerMyQueueRoutes(app);
   registerImportConfigRoutes(app);
+  registerSmartImportReviewRoutes(app);
   return registerLegacyRoutes(httpServer, app);
 }

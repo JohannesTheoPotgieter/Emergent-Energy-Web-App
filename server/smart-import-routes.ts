@@ -3892,6 +3892,7 @@ router.get("/api/import-control-tower/history", requireAuth, requirePermission("
         // Quarantine reason stamped by the scheduler's ingest-hygiene pass (conflicted-copy / older-revision parked as awaiting_review, never auto-committed).
         quarantineReason: typeof summary?.schedulerV2?.quarantine?.reason === "string" ? summary.schedulerV2.quarantine.reason : null,
         quarantineKind: typeof summary?.schedulerV2?.quarantine?.kind === "string" ? summary.schedulerV2.quarantine.kind : null,
+        autoCommitGateReason: summary?.schedulerV2?.autoCommitGate?.decision === "park" && typeof summary.schedulerV2.autoCommitGate.reason === "string" ? summary.schedulerV2.autoCommitGate.reason : null,
       };
     }));
 

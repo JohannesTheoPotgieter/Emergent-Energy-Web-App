@@ -54,7 +54,11 @@ import {
   type IncrementalCommitResult,
 } from "../lib/import/commit-executor";
 import { refreshProvenanceForProjects } from "../lib/finance/provenance";
-import { refreshReconciliationForProjects } from "./reconciliation-service";
+import {
+  refreshReconciliationForProjects,
+  getReconciliationDetail,
+  type ReconProjectDetail,
+} from "./reconciliation-service";
 import { newImportMetrics, emitImportMetrics, threeWayMergeEnabled } from "../lib/import/feature-flags";
 import { matchRows, generateBusinessKey, type SectionType, type MatchedRow } from "../lib/import/row-matcher";
 import { runConflictEngine, type RowMergeResult } from "../lib/import/conflict-engine";
@@ -122,6 +126,16 @@ export type SchedulerCommitResult =
       status: "blocked_writer_engine_conflicts";
       runId: number;
       conflicts: ReturnType<typeof mergeConflictsToWizardRows>;
+    }
+  | {
+      /**
+       * Dry-run preview only — applies the import inside a transaction that is
+       * ALWAYS rolled back, then returns the reconciliation the project WOULD
+       * have after this commit. Persists nothing; touches no reported number.
+       */
+      status: "dry_run_preview";
+      runId: number;
+      recon: ReconProjectDetail | null;
     };
 
 export interface SchedulerCommitOptions {
@@ -132,6 +146,13 @@ export interface SchedulerCommitOptions {
    * Empty when the conservative policy parked the run.
    */
   v2ConflictResolutions?: Record<string, "keep_app" | "accept_file">;
+  /**
+   * When true, apply every write inside the transaction exactly as a real
+   * commit would, compute the resulting reconciliation, then ROLL BACK so
+   * nothing persists. Used by the review screen's post-commit preview. The
+   * run is never marked committed and no audit / metrics rows are written.
+   */
+  dryRun?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -248,6 +269,7 @@ export async function commitSmartImportRunAsSystem(
   const counts = { planTasks: 0, revenueLines: 0, costLines: 0, executionPhases: 0 };
   let v2Result: IncrementalCommitResult | null = null;
   let writerEngineConflicts: ReturnType<typeof mergeConflictsToWizardRows> | null = null;
+  let dryRunRecon: ReconProjectDetail | null = null;
 
   try {
     await db.transaction(async (tx: any) => {
@@ -529,6 +551,15 @@ export async function commitSmartImportRunAsSystem(
         }
       }
 
+      // Dry-run preview: cost lines, actuals and category allocations are now
+      // written in this transaction, so the §3.3 reconciliation reflects the
+      // post-commit state. Capture it and roll the whole transaction back —
+      // the review screen shows this without persisting anything.
+      if (opts.dryRun) {
+        dryRunRecon = await getReconciliationDetail(tx, projectId);
+        throw Object.assign(new Error("dry-run rollback"), { code: "dry_run_rollback" });
+      }
+
       // S11.5: provenance / reconciliation refresh — recompute the canonical
       // § 3.3 revenue_derived for this project's live actuals and persist
       // revenue_derived / revenue_stored / recon_delta / recon_exceeds,
@@ -713,6 +744,12 @@ export async function commitSmartImportRunAsSystem(
       }
     });
   } catch (err) {
+    // Dry-run preview: the rollback we deliberately threw after computing the
+    // reconciliation inside the transaction. Nothing was persisted — return
+    // the captured preview, not a failure.
+    if ((err as any)?.code === "dry_run_rollback") {
+      return { status: "dry_run_preview", runId, recon: dryRunRecon };
+    }
     // H1: claim-race — a concurrent UI commit got there first. Return
     // `skipped_already_committed` instead of reporting a false failure so
     // the orchestrator doesn't tally a scheduler "failure" and so we don't

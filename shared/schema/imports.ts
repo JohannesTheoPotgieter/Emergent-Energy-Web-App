@@ -6,7 +6,7 @@ import { users } from "./users";
 import { projectInfo } from "./projects";
 import { counterparties, counterpartyTypeEnum } from "./finance";
 
-export const smartImportStatusEnum = pgEnum('smart_import_status', ['preview', 'awaiting_review', 'committed', 'rolled_back', 'failed', 'superseded']);
+export const smartImportStatusEnum = pgEnum('smart_import_status', ['preview', 'awaiting_review', 'committed', 'rolled_back', 'failed', 'superseded', 'rejected']);
 export const importIssueSeverityEnum = pgEnum('import_issue_severity', ['INFO', 'WARNING', 'BLOCKER']);
 export const importSectionEnum = pgEnum('import_section', ['PLAN', 'REVENUE', 'EXPENDITURE', 'CASHFLOW', 'GENERAL']);
 export const importTriggerTypeEnum = pgEnum('import_trigger_type', ['schedule', 'manual', 'webhook']);

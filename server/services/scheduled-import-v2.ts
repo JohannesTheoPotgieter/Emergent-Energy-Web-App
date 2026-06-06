@@ -51,6 +51,14 @@ import {
   planFolderIngest,
   type QuarantinedFile,
 } from "../lib/import/ingest-hygiene";
+import {
+  decideSchedulerAutoCommit,
+  computeSoftClosePct,
+  detectErrorOnRev,
+  detectMissingAllocationOnNewLines,
+  collectCommitLockDates,
+} from "../lib/import/auto-commit-gate";
+import { enforceCosPeriodLock } from "../lib/finance/period-lock";
 import { resolveSchedulerConflictPolicy } from "../imports/scheduler-conflict-policy";
 import { commitSmartImportRunAsSystem } from "./scheduler-commit";
 import { IMPORT_FILE_ALWAYS_WINS } from "../imports/import-conflict-policy";
@@ -221,21 +229,50 @@ async function processFileV2(
     console.warn(`[ScheduledImportV2] Planner failed for ${fileName}:`, err instanceof Error ? err.message : err);
   }
 
-  // Apply scheduler conflict policy to decide what the commit step would do.
-  // For Phase 6 PR 1 the policy decision is informational — the row is still
-  // parked as `awaiting_review`. The follow-up PR will use the policy to
-  // gate auto-commit.
+  // The existing scheduler conflict policy produces the auto-resolution map
+  // and a coarse commit/park signal that the gate below consumes.
   const policyDecision = plannerResult
     ? resolveSchedulerConflictPolicy(plannerResult)
     : { decision: "park" as const, reason: "no_planner_result", resolutions: {} };
-
-  // Unattended-only safety: even under file-always-wins, never auto-restore
-  // previously-deleted rows without a human (the one case that can silently
-  // re-insert / duplicate data). Park for review; the interactive commit path
-  // auto-resolves it (restore_and_apply) with no prompt.
   const hasResurrections = (plannerResult?.resurrections?.length ?? 0) > 0;
-  const effectiveDecision: "commit" | "park" =
-    hasResurrections ? "park" : policyDecision.decision;
+
+  // Locked-period check — replicate the HTTP commit's effective-date set and
+  // resolve it against the COS period locks with NO actor (the scheduler can't
+  // override). A locked period parks gracefully with a reason instead of
+  // erroring at commit time; a human commits later via the lock-aware review.
+  let lockedPeriods: string[] = [];
+  try {
+    const lockEnforcement = await enforceCosPeriodLock({
+      effectiveDates: collectCommitLockDates(preview.normalization),
+      role: undefined,
+    });
+    lockedPeriods = lockEnforcement.lockedPeriods;
+  } catch (lockErr) {
+    // Fail safe: if the lock check itself errors, park rather than risk an
+    // unattended write into a possibly-locked period.
+    console.warn(
+      `[ScheduledImportV2] period-lock check failed for ${fileName} (parking to be safe):`,
+      lockErr instanceof Error ? lockErr.message : lockErr,
+    );
+    lockedPeriods = ["unknown"];
+  }
+
+  // Tighten "clean" for unattended auto-commit: anything not provably clean
+  // parks (with a reason) instead of forcing/erroring. Clean runs still
+  // auto-commit silently — this adds no prompt to the clean path (owner #1012).
+  const gate = decideSchedulerAutoCommit({
+    hasBlockers: preview.hasBlockers,
+    lockedPeriods,
+    errorOnRev: detectErrorOnRev(preview.normalization.categoryAllocations),
+    missingAllocationOnNewLines: detectMissingAllocationOnNewLines(
+      plannerResult,
+      preview.normalization.categoryAllocations,
+    ),
+    softClosePct: computeSoftClosePct(plannerResult),
+    hasResurrections,
+    conflictPolicyParks: policyDecision.decision === "park",
+  });
+  const effectiveDecision: "commit" | "park" = gate.decision;
 
   const summaryJson = {
     ...(preview as unknown as Record<string, unknown>),
@@ -253,6 +290,9 @@ async function processFileV2(
       policyDecision: policyDecision.decision,
       policyReason: policyDecision.reason,
       autoResolvedConflictCount: Object.keys(policyDecision.resolutions).length,
+      // Tightened auto-commit gate: why this run auto-committed or parked.
+      autoCommitGate: { decision: gate.decision, reason: gate.reason },
+      lockedPeriods,
     },
   };
 
