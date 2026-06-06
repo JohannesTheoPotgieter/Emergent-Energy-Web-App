@@ -24,11 +24,8 @@ import { getAllPMWorkItemsAsProjectPlan, getAllWorkItemsForProgress } from "../w
 import { computeAllProjectPlanPills } from "../services/plan-rollup-service";
 import { safeNum, isWithinDays, isThisWeek, isThisMonth, getFYRange, findMaxEndDate, findMinStartDate } from "../lib/home-helpers";
 import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
-import {
-  sumRevenueRecognition,
-  sumRealisedRevenueRecognition,
-} from "../lib/finance/revenue-recognition";
-import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
+import { getRepoRevenueTotals } from "../lib/finance/revenue-recognition-repo";
+import { FinanceLineLevelRepository } from "../repositories/finance-line-level-repository";
 
 export function registerHomeExtractedRoutes(app: Express): void {
 
@@ -182,14 +179,16 @@ export function registerHomeExtractedRoutes(app: Express): void {
       // and FY Revenue Tracker. Cash inflows / outstanding AR are reported
       // separately below.
       let actualRevenue = 0, actualExpenses = 0, currentVoTotal = 0;
-      const nowHm = new Date();
-      const cmkHm = `${nowHm.getUTCFullYear()}-${String(nowHm.getUTCMonth() + 1).padStart(2, '0')}`;
-      const getCosMonthKeyHm = (line: any): string | null => {
-        const { date } = getCosEffectiveDateAndSource(line);
-        return date ? date.substring(0, 7) : null;
-      };
-      actualRevenue = sumRealisedRevenueRecognition(allExpenses as any, cmkHm, getCosMonthKeyHm);
-      const plannedRevenue = sumRevenueRecognition(allExpenses as any);
+      // POC revenue via the § 3.3.2 single read path (P2.1c): planned = Σ
+      // perLineRevenue; realised = Σ on canonical realised lines. Scope = the
+      // projects present in allExpenses.
+      const repoHm = new FinanceLineLevelRepository();
+      const repoRevenueHm = await getRepoRevenueTotals(
+        repoHm,
+        allExpenses.map((e: any) => e.projectId),
+      );
+      actualRevenue = repoRevenueHm.realised;
+      const plannedRevenue = repoRevenueHm.planned;
       for (const expense of allExpenses) {
         if (expense.expenseActualTotal) {
           const state = classifyExpenseState(expense as any);

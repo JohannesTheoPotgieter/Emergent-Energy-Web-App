@@ -16,11 +16,8 @@ import { mapCostToExpenseInput } from "../lib/data-merge";
 import { resolveInflowEffectiveDates } from "../lib/cashflow-helpers";
 import { isWorkItemsEnabled } from "../work-items-adapter";
 import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
-import {
-  sumRevenueRecognition,
-  sumRealisedRevenueRecognition,
-} from "../lib/finance/revenue-recognition";
-import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
+import { getRepoRevenueTotals } from "../lib/finance/revenue-recognition-repo";
+import { FinanceLineLevelRepository } from "../repositories/finance-line-level-repository";
 
 export function registerOverviewExtractedRoutes(app: Express): void {
 
@@ -181,23 +178,18 @@ export function registerOverviewExtractedRoutes(app: Express): void {
         }
       }
 
-      // revenue_realised — CANONICAL Revenue Recognition (POC method).
-      // Source: normalized_cost_lines.revenue_recognition_amount, gated on the
-      // line being effectively realised (past-month auto-promote + canonical
-      // strict realisation check). NOT milestone/cash — for cash inflows see
-      // /api/home/summary.weeklyInflows or /api/cos-tracker.
-      const nowOv = new Date();
-      const cmkOv = `${nowOv.getUTCFullYear()}-${String(nowOv.getUTCMonth() + 1).padStart(2, '0')}`;
-      const getCosMonthKeyOv = (line: any): string | null => {
-        const { date } = getCosEffectiveDateAndSource(line);
-        return date ? date.substring(0, 7) : null;
-      };
-      const revenueRealised = sumRealisedRevenueRecognition(
-        allExpenses as any,
-        cmkOv,
-        getCosMonthKeyOv,
+      // revenue_realised / revenue_planned — CANONICAL § 3.3 POC revenue via the
+      // § 3.3.2 single read path (P2.1c — no longer the deprecated col-U sum):
+      // planned = Σ perLineRevenue; realised = Σ on canonical realised lines.
+      // Scope = exactly the projects present in allExpenses. NOT milestone/cash —
+      // for cash inflows see /api/home/summary.weeklyInflows or /api/cos-tracker.
+      const repoOv = new FinanceLineLevelRepository();
+      const repoRevenueOv = await getRepoRevenueTotals(
+        repoOv,
+        allExpenses.map((e: any) => e.projectId),
       );
-      const revenuePlanned = sumRevenueRecognition(allExpenses as any);
+      const revenueRealised = repoRevenueOv.realised;
+      const revenuePlanned = repoRevenueOv.planned;
 
       const uniqueProjects = new Set<string>();
       for (const info of allProjectInfo) uniqueProjects.add(info.projectName);
