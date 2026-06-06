@@ -58,6 +58,7 @@ describe("nav cleanup — six-tab COO spec", () => {
       "/cos",
       "/revenue-tracker",
       "/finance/gp/company",
+      "/finance/reconciliation",
       "/fye-revenue-tracking",
       "/finance/quickbooks",
       "/payment-request-board",

@@ -47,6 +47,7 @@ import { runImportPlanner, type PlannerResult } from "./lib/import/planner";
 import { IMPORT_FILE_ALWAYS_WINS } from "./imports/import-conflict-policy";
 import { writePlanIncremental, writeRevenueIncremental, writeExpenditureIncremental, writeActualLineRows, writeProjectMetadata, writeRevenueSummary, mergeConflictsToWizardRows, type IncrementalCommitResult } from "./lib/import/commit-executor";
 import { refreshProvenanceForProjects } from "./lib/finance/provenance";
+import { refreshReconciliationForProjects } from "./services/reconciliation-service";
 import { newImportMetrics, emitImportMetrics, threeWayMergeEnabled } from "./lib/import/feature-flags";
 import { matchRows, generateBusinessKey, type SectionType, type MatchedRow } from "./lib/import/row-matcher";
 import { runConflictEngine, type RowMergeResult } from "./lib/import/conflict-engine";
@@ -2990,6 +2991,21 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           console.warn(
             "[SmartImport] provenance refresh failed (non-blocking):",
             provErr instanceof Error ? provErr.message : String(provErr),
+          );
+        }
+
+        // P2.2 — refresh the app-vs-tracker reconciliation status for this
+        // project (per fiscal period) into financial_reconciliation. Read-only
+        // computation over the just-written lines; non-blocking.
+        try {
+          const recon = await refreshReconciliationForProjects(tx, [projectId]);
+          console.log(
+            `[SmartImport] reconciliation refresh: ${recon.rowsWritten} row(s) written, ${recon.rowsUnchanged} unchanged`,
+          );
+        } catch (reconErr: unknown) {
+          console.warn(
+            "[SmartImport] reconciliation refresh failed (non-blocking):",
+            reconErr instanceof Error ? reconErr.message : String(reconErr),
           );
         }
       }

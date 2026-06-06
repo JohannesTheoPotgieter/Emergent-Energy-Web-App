@@ -54,6 +54,7 @@ import {
   type IncrementalCommitResult,
 } from "../lib/import/commit-executor";
 import { refreshProvenanceForProjects } from "../lib/finance/provenance";
+import { refreshReconciliationForProjects } from "./reconciliation-service";
 import { newImportMetrics, emitImportMetrics, threeWayMergeEnabled } from "../lib/import/feature-flags";
 import { matchRows, generateBusinessKey, type SectionType, type MatchedRow } from "../lib/import/row-matcher";
 import { runConflictEngine, type RowMergeResult } from "../lib/import/conflict-engine";
@@ -548,6 +549,20 @@ export async function commitSmartImportRunAsSystem(
           console.warn(
             "[SchedulerCommit] provenance refresh failed (non-blocking):",
             provErr instanceof Error ? provErr.message : String(provErr),
+          );
+        }
+
+        // P2.2 — refresh app-vs-tracker reconciliation status into
+        // financial_reconciliation for this project. Read-only; non-blocking.
+        try {
+          const recon = await refreshReconciliationForProjects(tx, [projectId]);
+          console.log(
+            `[SchedulerCommit] reconciliation refresh: ${recon.rowsWritten} row(s) written, ${recon.rowsUnchanged} unchanged`,
+          );
+        } catch (reconErr) {
+          console.warn(
+            "[SchedulerCommit] reconciliation refresh failed (non-blocking):",
+            reconErr instanceof Error ? reconErr.message : String(reconErr),
           );
         }
       }

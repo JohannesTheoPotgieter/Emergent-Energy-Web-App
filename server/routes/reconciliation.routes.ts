@@ -34,6 +34,13 @@ import {
 } from "../lib/reconciliation/selected-truth-registry";
 import type { RiskLevel, MismatchType } from "../lib/reconciliation/mismatch-classifier";
 import type { ProgramDriftRow } from "../repositories/tracker-replica-repository";
+import { db } from "../db";
+import { parseIntParam } from "../lib/req-params";
+import {
+  getReconciliationPortfolio,
+  getReconciliationDetail,
+  refreshReconciliationForProjects,
+} from "../services/reconciliation-service";
 
 // ---------------------------------------------------------------------------
 // Shared types surfaced in response bodies
@@ -331,6 +338,80 @@ export function registerReconciliationRoutes(app: Express): void {
       } catch (err) {
         console.error("[reconciliation] truth-registry error:", err);
         res.status(500).json({ error: "truth_registry_failed" });
+      }
+    },
+  );
+
+  // ── GET /api/finance/reconciliation ─────────────────────────────────────
+  // Portfolio board: per-project app-vs-tracker status + headline deltas, for
+  // every active project. Reads the persisted financial_reconciliation rows.
+  app.get(
+    "/api/finance/reconciliation",
+    requireAuth,
+    requirePermission("financials", "view"),
+    async (_req: Request, res: Response) => {
+      try {
+        const projects = await getReconciliationPortfolio(db);
+        res.json({
+          generatedAt: new Date().toISOString(),
+          projects,
+          summary: {
+            total: projects.length,
+            red: projects.filter((p) => p.status === "red").length,
+            amber: projects.filter((p) => p.status === "amber").length,
+            green: projects.filter((p) => p.status === "green").length,
+            unknown: projects.filter((p) => p.status === "unknown").length,
+          },
+        });
+      } catch (err) {
+        console.error("[reconciliation] portfolio error:", err);
+        res.status(500).json({ error: "reconciliation_portfolio_failed" });
+      }
+    },
+  );
+
+  // ── GET /api/finance/reconciliation/:projectId ──────────────────────────
+  // Detail: contributing lines with revenue_derived / revenue_stored /
+  // recon_delta + source_cell, flagging the offending line(s) the drawer drills to.
+  app.get(
+    "/api/finance/reconciliation/:projectId",
+    requireAuth,
+    requirePermission("financials", "view"),
+    async (req: Request, res: Response) => {
+      const projectId = parseIntParam(req.params.projectId);
+      if (projectId == null) {
+        res.status(400).json({ error: "invalid_project_id" });
+        return;
+      }
+      try {
+        const detail = await getReconciliationDetail(db, projectId);
+        res.json({ generatedAt: new Date().toISOString(), ...detail });
+      } catch (err) {
+        console.error("[reconciliation] detail error:", err);
+        res.status(500).json({ error: "reconciliation_detail_failed" });
+      }
+    },
+  );
+
+  // ── POST /api/finance/reconciliation/refresh ────────────────────────────
+  // On-demand recompute (the smart-import commit triggers this automatically).
+  // Recomputes + snapshot-refreshes financial_reconciliation for all active
+  // projects, or the optional `projectIds` body subset.
+  app.post(
+    "/api/finance/reconciliation/refresh",
+    requireAuth,
+    requirePermission("financials", "edit"),
+    async (req: Request, res: Response) => {
+      try {
+        const body = (req.body ?? {}) as { projectIds?: unknown };
+        const projectIds = Array.isArray(body.projectIds)
+          ? body.projectIds.map((x) => Number(x)).filter((x) => Number.isInteger(x) && x > 0)
+          : null;
+        const summary = await refreshReconciliationForProjects(db, projectIds);
+        res.json({ refreshedAt: new Date().toISOString(), ...summary });
+      } catch (err) {
+        console.error("[reconciliation] refresh error:", err);
+        res.status(500).json({ error: "reconciliation_refresh_failed" });
       }
     },
   );
