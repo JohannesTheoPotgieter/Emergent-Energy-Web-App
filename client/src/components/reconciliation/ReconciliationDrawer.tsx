@@ -40,6 +40,7 @@ import {
   BookOpen,
 } from "lucide-react";
 import { Link } from "wouter";
+import { formatZar } from "@/lib/currency";
 
 // ---------------------------------------------------------------------------
 // Types (mirrors server ProgramAssessmentException shape)
@@ -70,6 +71,20 @@ export interface ReconciliationException {
   };
   ruleUsed: string;
   selectedTruthSource: string;
+  /** P2.3 — tracker-vs-QuickBooks rollup for the project (optional). */
+  qbStatus?: "green" | "amber" | "red" | "unknown" | null;
+  qbDelta?: number | null;
+  /** P2.3 — suppressed QB variances, shown (never silently dropped). */
+  reconIgnores?: Array<{
+    side: "cost" | "revenue";
+    qbEntityId: string;
+    qbDocNumber: string | null;
+    counterpartyName: string | null;
+    amountExVat: number | null;
+    reason: string;
+    ignoredByName: string | null;
+    ignoredAt: string | null;
+  }>;
 }
 
 interface Props {
@@ -241,6 +256,47 @@ export function ReconciliationDrawer({ open, onClose, exception: exc }: Props) {
               <ProofRow icon={Database} label="Selected truth source" value={exc.selectedTruthSource} />
               <ProofRow icon={Info} label="Issue type" value={exc.issueType} muted />
             </Section>
+
+            {/* P2.3 — tracker vs QuickBooks */}
+            {exc.qbStatus && exc.qbStatus !== "unknown" && (
+              <Section title="Tracker vs QuickBooks" testId="drawer-section-qb">
+                <div className="flex items-center gap-2 text-xs" data-testid="drawer-qb-status">
+                  <Receipt className="h-3.5 w-3.5 text-muted-foreground shrink-0" aria-hidden="true" />
+                  <span className="text-muted-foreground">Status:</span>
+                  <span className="font-medium capitalize text-foreground">{exc.qbStatus}</span>
+                  {typeof exc.qbDelta === "number" && exc.qbDelta !== 0 && (
+                    <span className="font-mono text-foreground">· gap {formatZar(exc.qbDelta)}</span>
+                  )}
+                </div>
+              </Section>
+            )}
+
+            {/* P2.3 — recon-ignores: suppressed variances, shown not dropped */}
+            {exc.reconIgnores && exc.reconIgnores.length > 0 && (
+              <Section title="Suppressed QB variances (recon-ignores)" testId="drawer-section-recon-ignores">
+                {exc.reconIgnores.map((ig, i) => (
+                  <div
+                    key={`${ig.side}-${ig.qbEntityId}-${i}`}
+                    className="rounded-md border border-amber-200 bg-amber-50/60 px-2.5 py-1.5 text-xs"
+                    data-testid="recon-ignore-row"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-foreground">
+                        {ig.side === "cost" ? "Bill" : "Invoice"} {ig.qbDocNumber ?? ig.qbEntityId}
+                        {ig.counterpartyName ? ` · ${ig.counterpartyName}` : ""}
+                      </span>
+                      {ig.amountExVat != null && (
+                        <span className="font-mono">{formatZar(ig.amountExVat)}</span>
+                      )}
+                    </div>
+                    <div className="text-muted-foreground mt-0.5" data-testid="recon-ignore-meta">
+                      Ignored by {ig.ignoredByName ?? "unknown"}
+                      {ig.ignoredAt ? `, ${ig.ignoredAt.slice(0, 10)}` : ""} — {ig.reason}
+                    </div>
+                  </div>
+                ))}
+              </Section>
+            )}
 
             {/* Suggested owner */}
             <Section title="Ownership" testId="drawer-section-ownership">

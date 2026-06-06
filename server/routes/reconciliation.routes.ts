@@ -40,7 +40,9 @@ import {
   getReconciliationPortfolio,
   getReconciliationDetail,
   refreshReconciliationForProjects,
+  refreshTrackerVsQbForProjects,
 } from "../services/reconciliation-service";
+import { computeQbTrackerGapByProject } from "../services/reconciliation-qb-gap";
 
 // ---------------------------------------------------------------------------
 // Shared types surfaced in response bodies
@@ -412,6 +414,36 @@ export function registerReconciliationRoutes(app: Express): void {
       } catch (err) {
         console.error("[reconciliation] refresh error:", err);
         res.status(500).json({ error: "reconciliation_refresh_failed" });
+      }
+    },
+  );
+
+  // ── POST /api/finance/reconciliation/refresh-qb ─────────────────────────
+  // P2.3 — consume the EXISTING QuickBooks comparison (the per-project gap) and
+  // write tracker_vs_qb_status / tracker_vs_qb_delta into financial_reconciliation.
+  // Needs a live QuickBooks connection (not part of the import); best-effort —
+  // writes nothing when QB is unavailable. NEVER adjusts a tracker figure.
+  app.post(
+    "/api/finance/reconciliation/refresh-qb",
+    requireAuth,
+    requirePermission("financials", "edit"),
+    async (req: Request, res: Response) => {
+      try {
+        const body = (req.body ?? {}) as { startDate?: unknown; endDate?: unknown };
+        const isIso = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+        const startDate = isIso(body.startDate) ? body.startDate : "2000-01-01";
+        const endDate = isIso(body.endDate) ? body.endDate : "2100-12-31";
+
+        const gaps = await computeQbTrackerGapByProject(startDate, endDate);
+        const result = await refreshTrackerVsQbForProjects(db, gaps);
+        res.json({
+          refreshedAt: new Date().toISOString(),
+          projectsWithGap: gaps.size,
+          rowsWritten: result.rowsWritten,
+        });
+      } catch (err) {
+        console.error("[reconciliation] refresh-qb error:", err);
+        res.status(500).json({ error: "reconciliation_refresh_qb_failed" });
       }
     },
   );

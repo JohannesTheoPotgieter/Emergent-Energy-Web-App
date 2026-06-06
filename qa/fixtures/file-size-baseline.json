@@ -9,6 +9,10 @@
       "loc": 9614
     },
     {
+      "file": "server/services/quickbooks-cascade-proposals-service.ts",
+      "loc": 1522
+    },
+    {
       "file": "client/src/pages/smart-import.tsx",
       "loc": 5247
     },
