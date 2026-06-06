@@ -27,6 +27,7 @@ import { Router, type Express, type Response } from "express";
 import { z } from "zod";
 import { requireAuth } from "../auth-context";
 import { requirePermission } from "../permission-middleware";
+import { guardCosPeriodLock } from "../lib/finance/period-lock-guard";
 import { getCurrentFinanceYear } from "../lib/finance-year-scope";
 import { buildFyeTracking } from "../lib/finance/fye-tracking/service";
 import { FyeTrackingDataRepository } from "../repositories/fye-tracking-data-repository";
@@ -154,7 +155,14 @@ router.put(
         amount: z.union([z.string(), z.number()]),
       });
       const data = schema.parse(req.body);
+      if (await guardCosPeriodLock(req, res, { effectiveDates: [data.monthKey], surface: "FYE revised budget", entityType: "fye_revised_budget", entityId: `${data.fye}:${data.metric}:${data.monthKey}` })) return;
+      // fix/period-lock-all-write-paths: attribute the write to the real actor.
+      // requireAuth guarantees req.user; refuse rather than write an unattributed
+      // (null-actor) figure into a periodised table.
       const userId = (req as { user?: { id?: number } }).user?.id ?? null;
+      if (userId == null) {
+        return res.status(401).json({ error: "unauthenticated", message: "A signed-in actor is required to edit the revised budget." });
+      }
       await dataRepo.upsertRevisedBudget({
         fye: data.fye,
         metric: data.metric as FyeMetric,

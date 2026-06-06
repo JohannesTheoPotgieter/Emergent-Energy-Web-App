@@ -23,6 +23,7 @@ import {
   PERIOD_LOCK_OVERRIDE_ROLES,
   firstOfMonthSast,
 } from '../lib/finance/period-lock';
+import { guardCosPeriodLock } from '../lib/finance/period-lock-guard';
 import { logAuditFromReq } from '../audit-logger';
 import { storage } from '../storage';
 import { db } from '../db';
@@ -2014,6 +2015,17 @@ router.post(
         lockSnapshot.adminDateOverride || lockSnapshot.invoiceDate || lockSnapshot.paidDate || null;
       const targetEffectiveDate =
         dateOverride || lockSnapshot.invoiceDate || lockSnapshot.paidDate || null;
+      // fix/period-lock-all-write-paths: a null SOURCE date must NOT let the
+      // lock check be skipped — the target period must still be resolvable and
+      // verified. If we cannot resolve the target period at all, reject rather
+      // than write into an unknown (possibly locked) month.
+      if (!targetEffectiveDate) {
+        return res.status(422).json({
+          error: 'unresolved_target_period',
+          message:
+            'Cannot apply this date change without a resolvable target date (override / invoice / paid). The period lock cannot be verified, so the change is refused.',
+        });
+      }
       for (const [label, date] of [
         ['source', sourceEffectiveDate] as const,
         ['target', targetEffectiveDate] as const,
@@ -2461,6 +2473,7 @@ router.post(
       if (!['COS', 'REV', 'GP'].includes(trackerType)) {
         return res.status(400).json({ error: 'trackerType must be COS, REV, or GP' });
       }
+      if (await guardCosPeriodLock(req, res, { effectiveDates: [monthKey], surface: 'Tracker monthly', entityType: 'tracker_monthly_manual', entityId: `${trackerType}:${monthKey}` })) return;
       const result = await storage.upsertTrackerMonthlyManual({
         trackerType,
         monthKey,
@@ -7982,6 +7995,16 @@ router.post(
       const { revenue, expenditure, changeReason, changeCategory } = req.body;
       const userId = req.user?.id;
       const userRole = req.user?.role;
+      // fix/period-lock-all-write-paths: a costed baseline retroactively shifts
+      // every month's recognition, so it cannot be edited while ANY month of the
+      // active fiscal year (Sep–Aug) is locked, unless a COO/CFO/CEO overrides
+      // with a reason.
+      const fyToday = new Date();
+      const activeFy = (fyToday.getUTCMonth() + 1) >= 9 ? fyToday.getUTCFullYear() + 1 : fyToday.getUTCFullYear();
+      const fyMonthFirsts: string[] = [];
+      for (let m = 9; m <= 12; m += 1) fyMonthFirsts.push(`${activeFy - 1}-${String(m).padStart(2, '0')}-01`);
+      for (let m = 1; m <= 8; m += 1) fyMonthFirsts.push(`${activeFy}-${String(m).padStart(2, '0')}-01`);
+      if (await guardCosPeriodLock(req, res, { effectiveDates: fyMonthFirsts, surface: 'Revenue-tab costed baseline', entityType: 'project_revenue_summary', entityId: projectName, projectName })) return;
       const existingSummary = await storage.getProjectRevenueSummary(projectName);
       const auditComment =
         typeof changeReason === 'string' && changeReason.trim().length >= 3

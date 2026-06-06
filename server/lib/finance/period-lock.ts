@@ -376,3 +376,106 @@ export async function getCosPeriodLockStatuses(params: {
   }
   return months;
 }
+
+// ── Reusable write-path enforcement ──
+
+/**
+ * Decision shape for a periodised-figure write against the COS period locks.
+ * `blocked === true` ⇒ the caller MUST return 423 and not write. When the write
+ * proceeds under an override, `overriddenPeriods` lists the locked period(s) the
+ * caller must record a `cos.locked_period_override` audit row for.
+ */
+export interface CosPeriodLockEnforcement {
+  /** Distinct locked periods (YYYY-MM-01) touched by the supplied dates. */
+  lockedPeriods: string[];
+  /** true → return HTTP 423, do NOT write. */
+  blocked: boolean;
+  /** Whether the actor's role could override (locked + role allowed). */
+  overrideAvailable: boolean;
+  /** Locked periods the write is proceeding past under a reasoned override. */
+  overriddenPeriods: string[];
+}
+
+/**
+ * Pure decision: given the locked periods a write touches, whether the actor can
+ * override, and whether a reason was supplied, decide block / override / proceed.
+ * Exported so the enforcement logic can be unit-tested without a database.
+ *
+ *   - no locked period                  → proceed
+ *   - locked, role can't bypass         → 423 (blocked)
+ *   - locked, role can bypass, no reason→ 423 (blocked, override available)
+ *   - locked, role can bypass + reason  → proceed, audit each period
+ */
+export function decideCosPeriodLockEnforcement(input: {
+  lockedPeriods: readonly string[];
+  canOverride: boolean;
+  hasOverrideReason: boolean;
+}): CosPeriodLockEnforcement {
+  const lockedPeriods = [...new Set(input.lockedPeriods)].sort();
+  if (lockedPeriods.length === 0) {
+    return { lockedPeriods: [], blocked: false, overrideAvailable: false, overriddenPeriods: [] };
+  }
+  if (input.canOverride && input.hasOverrideReason) {
+    return { lockedPeriods, blocked: false, overrideAvailable: true, overriddenPeriods: lockedPeriods };
+  }
+  return { lockedPeriods, blocked: true, overrideAvailable: input.canOverride, overriddenPeriods: [] };
+}
+
+/**
+ * Reusable lock enforcement for ANY path that writes a periodised financial
+ * figure. Resolves every supplied effective date to its SAST month, checks the
+ * COS period locks once per distinct month, and returns the block/override
+ * decision. Batch-aware (the Smart Import commit passes every row's date so a
+ * single locked period blocks the whole commit).
+ *
+ * The caller renders the 423 (see `periodLockedBody`) and, on override, writes
+ * the `cos.locked_period_override` audit row(s) — this helper does no req/res or
+ * audit I/O so it stays unit-testable and reusable from the executor too.
+ */
+export async function enforceCosPeriodLock(params: {
+  effectiveDates: ReadonlyArray<string | Date | null | undefined>;
+  role: string | null | undefined;
+  overrideReason?: string | null;
+}): Promise<CosPeriodLockEnforcement> {
+  // Dedupe dates → one representative per SAST month → one lock query per month.
+  const repByPeriod = new Map<string, string | Date>();
+  for (const d of params.effectiveDates) {
+    const parsed = parseSastDate(d ?? null);
+    if (parsed) repByPeriod.set(firstOfMonthSast(parsed), d as string | Date);
+  }
+  let canOverride = PERIOD_LOCK_OVERRIDE_ROLES.has(String(params.role ?? ""));
+  const lockedPeriods: string[] = [];
+  for (const repDate of repByPeriod.values()) {
+    const status = await checkCosPeriodLock({ effectiveDate: repDate, role: params.role });
+    if (status) {
+      canOverride = status.canOverride;
+      if (status.locked) lockedPeriods.push(status.period);
+    }
+  }
+  return decideCosPeriodLockEnforcement({
+    lockedPeriods,
+    canOverride,
+    hasOverrideReason: !!(params.overrideReason && params.overrideReason.trim()),
+  });
+}
+
+/**
+ * Standard 423 response body for a blocked periodised write. `surface` names the
+ * write path (e.g. "Smart Import commit", "Tracker monthly") for the message.
+ */
+export function periodLockedBody(enforcement: CosPeriodLockEnforcement, surface: string): {
+  error: "period_locked";
+  lockedPeriods: string[];
+  canOverride: boolean;
+  message: string;
+} {
+  const periods = enforcement.lockedPeriods.join(", ");
+  return {
+    error: "period_locked",
+    lockedPeriods: enforcement.lockedPeriods,
+    canOverride: enforcement.overrideAvailable,
+    message: enforcement.overrideAvailable
+      ? `${surface}: period(s) ${periods} are locked. A COO / CFO / CEO override requires a reason — resend with overrideReason.`
+      : `${surface}: period(s) ${periods} are locked. Only COO / CFO / CEO can write into a locked month.`,
+  };
+}
