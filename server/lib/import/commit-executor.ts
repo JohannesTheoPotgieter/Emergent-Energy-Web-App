@@ -2461,6 +2461,15 @@ export async function writeActualLineRows(
       invoiceDate: row.invoiceDate,
       invoiceDateFontColor: row.invoiceDateFontColor,
       invoiceDateConfirmed: row.invoiceDateConfirmed,
+      // fix/colour-default-not-realised: provenance of the invoice-date colour.
+      // 'unknown' (the importer's not-resolvable value) ⇒ defaulted; an explicit
+      // colour ⇒ read; null ⇒ no colour signal.
+      colourSource:
+        row.invoiceDateFontColor === "unknown"
+          ? "defaulted"
+          : row.invoiceDateFontColor
+            ? "read"
+            : null,
       revenueRecognitionAmount: row.revenueRecognitionAmount,
       financePaymentDate: row.financePaymentDate,
       comments: row.comments,

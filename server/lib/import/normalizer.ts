@@ -556,10 +556,11 @@ function extractFontColorHex(fontColor: any): string | null {
   // and explicit red ARGB for unconfirmed dates. Tinted variants of theme 1
   // (e.g. tint 0.35 = dark grey) are still "confirmed" — only explicit red is not.
   if (fontColor.theme != null && typeof fontColor.theme === "number") {
-    if (fontColor.theme === 1 || fontColor.theme === 0) return "000000"; // black — matches legacy parser
-    // Cannot reliably resolve accent/other theme colors without workbook theme XML.
-    // Default to black since tracker text is black unless explicitly red.
-    return "000000";
+    if (fontColor.theme === 1 || fontColor.theme === 0) return "000000"; // black (window text) — resolvable
+    // fix/colour-default-not-realised: accent / other theme colours can't be
+    // resolved without the workbook theme XML. Return null so the caller
+    // classifies them as UNKNOWN rather than silently assuming black.
+    return null;
   }
   return null;
 }
@@ -579,26 +580,46 @@ function classifyColorHex(hex: string | null): { color: string | null; isBlack: 
   return { color: "black", isBlack: true };
 }
 
-function getCellFontColor(ws: ExcelJS.Worksheet, rowIdx: number, colIdx: number): { color: string | null; isBlack: boolean } {
+/** Colour-resolution provenance for the invoice/paid-date cell colour signal. */
+export type ColourSource = "read" | "defaulted";
+
+/**
+ * Pure font → colour classification. Single source of truth for the §3.2 / §3.7
+ * realisation colour signal.
+ *
+ * fix/colour-default-not-realised (owner-approved): when the font colour CANNOT
+ * be resolved — no font, no colour, unresolvable hex, accent/other theme — we
+ * return `unknown` (isBlack=false, source='defaulted') instead of silently
+ * defaulting to black. The canonical COS gate (isCanonicalCosRealised) treats a
+ * non-black colour as NOT confirmed, so an unreadable colour no longer realises
+ * COS. An explicitly-resolved colour returns source='read'.
+ */
+export function classifyFont(
+  font: { color?: unknown } | null | undefined,
+): { color: string; isBlack: boolean; source: ColourSource } {
+  const colour = font && typeof font === "object" ? (font as { color?: unknown }).color : null;
+  if (!colour) return { color: "unknown", isBlack: false, source: "defaulted" };
+  const hex = extractFontColorHex(colour);
+  if (hex === null) return { color: "unknown", isBlack: false, source: "defaulted" };
+  const classified = classifyColorHex(hex);
+  if (classified.color === null) return { color: "unknown", isBlack: false, source: "defaulted" };
+  return { color: classified.color, isBlack: classified.isBlack, source: "read" };
+}
+
+function getCellFontColor(
+  ws: ExcelJS.Worksheet,
+  rowIdx: number,
+  colIdx: number,
+): { color: string | null; isBlack: boolean; source: ColourSource } {
   try {
     const cell = ws.getRow(rowIdx + 1).getCell(colIdx + 1);
-    if (!cell || !cell.value) return { color: null, isBlack: false };
-    const font = cell.font;
-    // No font or no color specified → Excel default = black
-    if (!font || !font.color) {
-      return { color: "black", isBlack: true };
-    }
-    const hex = extractFontColorHex(font.color);
-    if (hex === null) {
-      // Unresolvable color → default to black/confirmed.
-      // Tracker convention: only explicitly red text means unconfirmed.
-      // Matches legacy excelParser behaviour which treated theme 0/1 as black.
-      return { color: "black", isBlack: true };
-    }
-    return classifyColorHex(hex);
+    // Empty cell → no colour signal at all (NOT a defaulted black). The callers
+    // only read colour when a date is present, so this is a defensive guard.
+    if (!cell || !cell.value) return { color: null, isBlack: false, source: "read" };
+    return classifyFont(cell.font);
   } catch {
-    // Extraction error → default to black/confirmed (matches legacy parser).
-    return { color: "black", isBlack: true };
+    // Extraction error → unreadable → UNKNOWN (never silently black).
+    return { color: "unknown", isBlack: false, source: "defaulted" };
   }
 }
 
@@ -1488,6 +1509,19 @@ export function extractCostLines(
           const fc = getCellFontColor(ws, i, invoiceDateCol);
           orphanInvoiceDateFontColor = fc.color;
           orphanInvoiceDateConfirmed = fc.isBlack;
+          // fix/colour-default-not-realised: unreadable colour on an invoiced
+          // (multi-invoice) actual → NOT realised; flag the line.
+          if (fc.source === "defaulted" && isValidInvoiceNumber(orphanInvoiceNo)) {
+            issues.push({
+              severity: "WARNING",
+              section: "EXPENDITURE",
+              message: `Unreadable INVOICE RAISED DATE colour at ${sheetName} row ${i + 1} (invoice ${orphanInvoiceNo}). Treated as NOT realised — an unreadable colour is no longer assumed black/confirmed.`,
+              suggestedAction: "Set the invoice-date font colour explicitly in the tracker (black = confirmed, red = pending) and re-import.",
+              issueType: "COLOUR_DEFAULTED",
+              issueFingerprint: makeFingerprint("COLOUR_DEFAULTED", "EXPENDITURE", `orphan_${i + 1}`),
+              payloadJson: { row: i + 1, invoice: orphanInvoiceNo },
+            });
+          }
         }
 
         actualNoForCurrentParent += 1;
@@ -1682,6 +1716,20 @@ export function extractCostLines(
       const fc = getCellFontColor(ws, i, invoiceDateCol);
       invoiceDateFontColor = fc.color;
       invoiceDateConfirmed = fc.isBlack;
+      // fix/colour-default-not-realised: an unreadable invoice-date colour on an
+      // invoiced line is now treated as NOT realised (was silently black). Flag
+      // it so finance can set the colour explicitly.
+      if (fc.source === "defaulted" && isValidInvoiceNumber(invoiceNumber)) {
+        issues.push({
+          severity: "WARNING",
+          section: "EXPENDITURE",
+          message: `Unreadable INVOICE RAISED DATE colour at ${sheetName} row ${i + 1} (invoice ${invoiceNumber}). Treated as NOT realised — an unreadable colour is no longer assumed black/confirmed.`,
+          suggestedAction: "Set the invoice-date font colour explicitly in the tracker (black = confirmed, red = pending) and re-import.",
+          issueType: "COLOUR_DEFAULTED",
+          issueFingerprint: makeFingerprint("COLOUR_DEFAULTED", "EXPENDITURE", `R${i + 1}`),
+          payloadJson: { row: i + 1, invoice: invoiceNumber },
+        });
+      }
     }
     if (ws && paidDate) {
       const fc = getCellFontColor(ws, i, paidDateCol);
