@@ -46,6 +46,10 @@ import {
   computeCosLineFlags,
   type CosLineFlagInput,
 } from "../lib/finance/cos-line-flags";
+import {
+  cosLineReviewAffectedDates,
+  type CosLineReviewAction,
+} from "../lib/finance/cos-line-review-dates";
 
 const financeLines = new FinanceLineLevelRepository();
 const expenseRepo = new FinanceExpenseEngineRepository();
@@ -102,8 +106,8 @@ async function writeRecognitionOverride(
   req: Request,
   res: Response,
   costLineId: number,
+  action: Exclude<CosLineReviewAction, "remove">,
   newOverride: string | null,
-  action: string,
   reason: string,
 ): Promise<void> {
   const snapshot = await expenseRepo.getCostLineForLockCheck(costLineId);
@@ -114,13 +118,13 @@ async function writeRecognitionOverride(
 
   const sourceRecognition =
     snapshot.recognitionDateOverride || snapshot.invoiceDate || null;
-  const targetRecognition = newOverride || snapshot.invoiceDate || null;
 
   // Single reason covers both the action audit and any locked-period override.
   (req.body as Record<string, unknown>).lockOverrideReason = reason;
 
+  // Lock-guard BOTH the source and target months (the pure matrix is unit-pinned).
   const blocked = await guardCosPeriodLock(req, res, {
-    effectiveDates: [sourceRecognition, targetRecognition],
+    effectiveDates: cosLineReviewAffectedDates(action, snapshot, newOverride),
     surface: "COS line review",
     entityType: "normalized_cost_line",
     entityId: String(costLineId),
@@ -152,7 +156,7 @@ async function writeRecognitionOverride(
   logAuditFromReq(req, {
     entityType: "normalized_cost_line",
     entityId: String(costLineId),
-    action,
+    action: `cos.line.${action}`,
     projectName: snapshot.projectName ?? undefined,
     changesJson: {
       reason,
@@ -304,8 +308,8 @@ export function registerCosLineReviewRoutes(app: Express): void {
           req,
           res,
           costLineId,
+          "move_period",
           `${targetMonth}-01`,
-          "cos.line.move_period",
           reason,
         );
       } catch (err) {
@@ -330,8 +334,8 @@ export function registerCosLineReviewRoutes(app: Express): void {
           req,
           res,
           costLineId,
+          "set_invoice_date",
           invoiceDate,
-          "cos.line.set_invoice_date",
           reason,
         );
       } catch (err) {
@@ -356,8 +360,8 @@ export function registerCosLineReviewRoutes(app: Express): void {
           req,
           res,
           costLineId,
+          "clear_override",
           null,
-          "cos.line.clear_override",
           reason,
         );
       } catch (err) {
@@ -388,7 +392,7 @@ export function registerCosLineReviewRoutes(app: Express): void {
         (req.body as Record<string, unknown>).lockOverrideReason = reason;
 
         const blocked = await guardCosPeriodLock(req, res, {
-          effectiveDates: [recognition],
+          effectiveDates: cosLineReviewAffectedDates("remove", snapshot, null),
           surface: "COS line review (remove)",
           entityType: "normalized_cost_line",
           entityId: String(costLineId),
