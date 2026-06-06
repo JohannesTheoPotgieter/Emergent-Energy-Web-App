@@ -13,6 +13,7 @@ import {
   // gate fires and R0 invoiced lines stop being counted as realised
   // (COO business rule 2026-05).
   isPastMonthAutoRealised,
+  isCanonicalCosRealised,
 } from '../lib/finance/cos-realisation';
 import {
   checkCosPeriodLock,
@@ -3115,19 +3116,33 @@ router.get(
         if (project && projectName !== project) continue;
 
         const hasInvoice = !!(row.invoiceNumber && String(row.invoiceNumber).trim());
-        // Colour-gated for ALL months (owner decision 2026-06, § 3.2): a red
-        // invoice-date stays Committed even in a closed month. No past-month
-        // auto-promote.
+        // Kept for the reasonBucket display split below (RED captured-but-
+        // unconfirmed invoice date).
         const invoiceDateConfirmed =
           !!row.invoiceDate &&
           ((row as any).invoiceDateFontColor === 'black' ||
             (row as any).invoiceDateConfirmed === true);
 
-        // App-side classification (matches aggregate exactly). Purchase order
-        // is intentionally NOT part of the logic — a PO without an invoice
-        // is still "Planned".
+        // Realisation via the SINGLE canonical predicate (§ 3.3) so the COS
+        // tracker matches the FY card / recon grid / COS page line-for-line
+        // (admin override, placeholder-invoice and future-month gates included).
+        const isRealised = isCanonicalCosRealised({
+          status: null,
+          cosStatusOverride: (row as any).cosStatusOverride ?? null,
+          cosRealised: (row as any).cosRealised ?? null,
+          expenseInvoiceNumber: row.invoiceNumber ?? null,
+          expenseInvoicedDate: row.invoiceDate ?? null,
+          expensePoNumber: null,
+          paymentDate: null,
+          today: new Date().toISOString().slice(0, 10),
+          invoiceDateFontColor: (row as any).invoiceDateFontColor ?? null,
+          invoiceDateConfirmed: (row as any).invoiceDateConfirmed ?? null,
+        });
+
+        // App-side classification. Purchase order is intentionally NOT part of
+        // the logic — a PO without an invoice is still "Planned".
         let cosState: 'realised' | 'committed' | 'planned';
-        if (hasInvoice && invoiceDateConfirmed) cosState = 'realised';
+        if (isRealised) cosState = 'realised';
         else if (hasInvoice) cosState = 'committed';
         else cosState = 'planned';
 
