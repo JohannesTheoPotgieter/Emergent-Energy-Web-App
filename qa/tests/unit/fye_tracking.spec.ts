@@ -73,6 +73,8 @@ function makeLine(p: Partial<FinanceLine> & { projectId: number }): FinanceLine 
     perLineRevenue,
     perLineGp: perLineRevenue - actualTotal,
     perLineGpPct: perLineRevenue !== 0 ? (perLineRevenue - actualTotal) / perLineRevenue : null,
+    revenueStored: p.revenueStored ?? null,
+    reconDelta: p.reconDelta ?? null,
     plannedActualTotal: 0,
     plannedRevenue: 0,
     plannedGp: 0,
