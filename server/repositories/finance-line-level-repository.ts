@@ -67,10 +67,22 @@ export interface FinanceLine {
   categoryTotalActualTotal: number;
   categoryRevenueAllocation: number | null;
 
-  /** Read-derived per-line values (§ 3.3). */
+  /** Read-derived per-line values (§ 3.3). This is the REPORTED revenue/GP —
+   *  always the canonical category-scoped (Q/X)×J formula (revenue_derived). */
   perLineRevenue: number;
   perLineGp: number;
   perLineGpPct: number | null;
+
+  /**
+   * Reconciliation cross-check — NOT the reported figure. `revenueStored` is the
+   * pasted Excel col-U value (`revenue_recognition_amount`) as imported;
+   * `reconDelta` is `revenueStored − perLineRevenue` (stored minus the reported
+   * formula, matching P2.1's `recon_delta` sign). The reconciliation board
+   * (P2.2) surfaces lines where `|reconDelta| > R1`. Both null when the line
+   * carries no pasted col-U value (nothing to reconcile).
+   */
+  revenueStored: number | null;
+  reconDelta: number | null;
 
   /**
    * Per-line BUDGET / PLANNED values, computed analogously to the
@@ -627,21 +639,24 @@ export function deriveFinanceLinesFromRows(
       ? toNum(allocation.revenueAllocation)
       : null;
 
-    // Persisted Smart Import value (col U). Smart Import writes this
-    // per-actual-row at import time using the canonical category-scoped
-    // (Q/X)*J formula (§ 3.3). When present, prefer it over re-deriving
-    // — that's the same source the Revenue tracker reads from, so the
-    // numbers reconcile exactly.
-    const persistedRevenue = toNum(a.revenueRecognitionAmount);
+    // Persisted Smart Import value (col U) — the pasted workbook figure. As of
+    // the P2.1b cutover (owner ruling: the formula is canonical) this is kept
+    // ONLY as a reconciliation cross-check (`revenueStored`), NEVER as the
+    // reported revenue. The previous "prefer persisted col U when present"
+    // branch is gone: when a stale paste disagreed with the formula, the app
+    // reported the stale paste — now it always reports the formula and exposes
+    // the delta for the reconciliation board.
+    const storedRaw = a.revenueRecognitionAmount;
+    const hasStored = storedRaw != null && String(storedRaw).trim() !== "";
+    const revenueStored = hasStored ? toNum(storedRaw) : null;
 
+    // perLineRevenue is ALWAYS the canonical category-scoped (Q/X)*J formula
+    // (revenue_derived). § 3.3 edge cases resolve to 0 + a warning — never the
+    // stale col U, and never a silent GP = -cost: the warning drives the page's
+    // "allocation missing" badge so the -cost GP is surfaced, not hidden.
     let perLineRevenue = 0;
     let warning: string | null = null;
-    // Use the persisted col U when present, INCLUDING negatives (credit notes /
-    // reversals keep their sign — IMPORTER_AUDIT H2). Only a genuine 0/absent
-    // value falls through to the (Q/X)*J derivation below.
-    if (persistedRevenue !== 0) {
-      perLineRevenue = persistedRevenue;
-    } else if (parent == null) {
+    if (parent == null) {
       warning = "orphan_actuals_row_no_parent";
     } else if (allocId == null) {
       // Distinguish "parent has nothing to lookup with" from "parent had a
@@ -672,6 +687,9 @@ export function deriveFinanceLinesFromRows(
 
     const perLineGp = perLineRevenue - actualTotal;
     const perLineGpPct = perLineRevenue !== 0 ? perLineGp / perLineRevenue : null;
+    // Reconciliation cross-check (P2.1b): pasted col U minus the reported
+    // formula. Null when there is no pasted value to reconcile.
+    const reconDelta = revenueStored != null ? revenueStored - perLineRevenue : null;
     const paidDateConfirmed = parent?.paidDateConfirmed ?? null;
 
     // Planned-side derivation — same shape as the actual formula but
@@ -723,6 +741,8 @@ export function deriveFinanceLinesFromRows(
       perLineRevenue,
       perLineGp,
       perLineGpPct,
+      revenueStored,
+      reconDelta,
       plannedActualTotal,
       plannedRevenue,
       plannedGp,

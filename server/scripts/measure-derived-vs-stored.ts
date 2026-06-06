@@ -1,39 +1,40 @@
 #!/usr/bin/env tsx
 /**
- * measure-derived-vs-stored.ts — READ-ONLY exposure analysis. Writes NO data
- * and changes NO behaviour. Quantifies how much the owner-canonical revenue
- * formula (revenue_derived, AGENT_GUARDRAILS § 3.3) differs from the figure the
- * app REPORTS today (which prefers the pasted Excel col-U value,
- * revenue_recognition_amount) — so the owner can decide whether to switch
- * reporting to the formula (P2.1b) with eyes open.
+ * measure-derived-vs-stored.ts — READ-ONLY exposure / reconciliation analysis.
+ * Writes NO data and changes NO behaviour. Quantifies how far the pasted Excel
+ * col-U value (revenue_recognition_amount) sits from the owner-canonical revenue
+ * formula (AGENT_GUARDRAILS § 3.3).
  *
- * For each LIVE actuals row (effective_to IS NULL), two per-line revenues:
- *   - REPORTED — what finance-line-level-repository.ts produces today. It
- *     PREFERS the persisted col-U value when present, else derives (Q/X)×J.
- *     This is the single read path (§ 3.3.2); we call it directly so the
- *     "reported" number is exactly what every FY card / recon grid / page total
- *     consumes. No parent synthesis — scope is real actuals rows.
- *   - DERIVED — the STRICT § 3.3 (Q/X)×J for every line (col U ignored),
- *     computed by the SAME helper the backfill + on-import refresh persist into
- *     `revenue_derived`. Identical category totals X as the reported pass, so the
- *     only difference between the two numbers is the col-U preference.
+ * As of the P2.1b cutover the app REPORTS the formula
+ * (finance-line-level-repository.ts: perLineRevenue is always (Q/X)×J), and col
+ * U is kept only as a cross-check (`revenueStored`). So this report now serves
+ * two equivalent purposes: (a) the historical record of what the cutover moved,
+ * and (b) the ongoing reconciliation feed — which lines still carry a col-U
+ * paste that disagrees with the reported formula.
  *
- * Per-line GP = revenue − actual_total. COS (actual_total) is identical under
- * both scenarios, so per line ΔGP ≡ Δrevenue; the GP columns are reported
- * separately for the owner's convenience and equal the revenue columns' deltas
- * by construction.
+ * For each LIVE actuals row (effective_to IS NULL), two per-line revenues, both
+ * read from the § 3.3.2 single read path:
+ *   - DERIVED  — perLineRevenue, the canonical (Q/X)×J formula the app now
+ *     reports. No parent synthesis — scope is real actuals rows.
+ *   - REPORTED — the PRE-cutover figure: the col-U preference, reconstructed as
+ *     `revenueStored ?? perLineRevenue` (the app used to report the pasted col U
+ *     when present, else the formula). For a line with no col U, reported ==
+ *     derived → no change.
  *
- * Output: count of lines that WOULD change (|Δ| > R1) and the SUM of revenue and
- * GP that would change, broken down by project and fiscal period (the period
- * containing the line's invoice-raised date — the § 3.3 recognition date).
- * Prints a summary table and writes qa/reports/derived-vs-stored-exposure.csv.
+ * `revenue_delta = derived − reported`. For a line with a col-U paste this is
+ * `perLineRevenue − revenueStored` (= −reconDelta); for a line without one it is
+ * 0. Per-line GP = revenue − actual_total; COS is identical under both scenarios
+ * so ΔGP ≡ Δrevenue (the GP columns equal the revenue deltas by construction).
  *
- * This is the same shape as measure-colour-default.ts (read-only exposure for an
- * owner decision). It depends on NO prior backfill — it re-derives both numbers
- * from live rows, so it is correct even before the provenance columns are
- * populated. The pure summarise/format helpers are exported + unit-tested
- * (qa/tests/unit/measure-derived-vs-stored.test.ts) so the exposure maths are
- * verified independently of any database.
+ * Output: count of lines that changed (|Δ| > R1) and the SUM of revenue and GP
+ * that changed, broken down by project and fiscal period (the period containing
+ * the line's invoice-raised date — the § 3.3 recognition date). Prints a summary
+ * table and writes qa/reports/derived-vs-stored-exposure.csv.
+ *
+ * Same shape as measure-colour-default.ts (read-only exposure for the owner).
+ * The pure summarise/format helpers are exported + unit-tested
+ * (qa/tests/unit/measure-derived-vs-stored.test.ts) so the maths are verified
+ * independently of any database.
  *
  * Usage: tsx server/scripts/measure-derived-vs-stored.ts [--dry-run]
  *   --dry-run prints the summary but does not write the CSV.
@@ -48,7 +49,6 @@ import { inArray } from "drizzle-orm";
 import { db, initializeDatabase } from "../db";
 import { fiscalPeriods, fiscalYears, projectInfo } from "@shared/schema";
 import {
-  computeProvenanceUpdates,
   loadProvenanceInputs,
   RECON_DELTA_R1,
 } from "../lib/finance/provenance";
@@ -219,14 +219,11 @@ async function main(): Promise<void> {
   // Live, snapshot-guarded inputs for every project (null = all projects).
   const { actualsRows, parentRows, allocationRows } = await loadProvenanceInputs(db, null);
 
-  // REPORTED per-line revenue — the single read path (prefers col U).
+  // Single read path (§ 3.3.2). Each line now carries BOTH the canonical
+  // formula it reports (perLineRevenue) AND the pasted col-U cross-check
+  // (revenueStored), so we read both from one place — no separate derivation.
   const reportedLines = deriveFinanceLinesFromRows(actualsRows, parentRows, allocationRows);
   const reportedById = new Map(reportedLines.map((l) => [l.lineId, l]));
-
-  // DERIVED per-line revenue — strict § 3.3 (col U nulled), same helper the
-  // backfill / on-import refresh persist into revenue_derived.
-  const derivedUpdates = computeProvenanceUpdates(actualsRows, parentRows, allocationRows);
-  const derivedById = new Map(derivedUpdates.map((u) => [u.id, Number(u.revenueDerived)]));
 
   // Fiscal calendar (optional). When seeded, the line's invoice-raised date maps
   // to exactly one period; otherwise we fall back to the YYYY-MM month key.
@@ -265,19 +262,22 @@ async function main(): Promise<void> {
     return { label: "(unrecognised)", sortKey: "9999-99" };
   };
 
-  // Build the pure exposure-line list from the two derivations.
+  // Build the pure exposure-line list. derived = the formula the app now
+  // reports (perLineRevenue); reported = the PRE-cutover col-U-preferring figure
+  // (revenueStored when present, else the formula). The delta is what the
+  // cutover moved — and equivalently the col-U-vs-formula reconciliation gap.
   const lines: ExposureLine[] = [];
   for (const a of actualsRows) {
-    const reported = reportedById.get(a.id);
-    if (!reported) continue; // window/derivation excluded the row (shouldn't happen — no window)
-    const fp = resolveFiscalPeriod(reported.invoiceRaisedDate, reported.recognitionMonth);
+    const line = reportedById.get(a.id);
+    if (!line) continue; // window/derivation excluded the row (shouldn't happen — no window)
+    const fp = resolveFiscalPeriod(line.invoiceRaisedDate, line.recognitionMonth);
     lines.push({
       projectId: a.projectId,
       fiscalPeriod: fp.label,
       fiscalSortKey: fp.sortKey,
-      reportedRevenue: reported.perLineRevenue,
-      derivedRevenue: derivedById.get(a.id) ?? 0,
-      cost: reported.actualTotal,
+      reportedRevenue: line.revenueStored ?? line.perLineRevenue,
+      derivedRevenue: line.perLineRevenue,
+      cost: line.actualTotal,
     });
   }
 

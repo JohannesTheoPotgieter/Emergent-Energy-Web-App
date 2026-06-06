@@ -117,10 +117,12 @@ const actuals: FinanceLineActualsRowInput[] = [
 /** Build the pure ExposureLine[] exactly as the script's main() does, but with a
  *  fixed two-period fiscal calendar instead of a DB lookup. */
 function buildExposureLines(): ExposureLine[] {
+  // Post-cutover the read path reports the formula (perLineRevenue) and exposes
+  // the pasted col U as revenueStored. derived = the formula; reported = the
+  // PRE-cutover col-U-preferring figure (revenueStored ?? formula) — mirroring
+  // the script's main().
   const reported = deriveFinanceLinesFromRows(actuals, parents, allocations);
   const reportedById = new Map(reported.map((l) => [l.lineId, l]));
-  const derived = computeProvenanceUpdates(actuals, parents, allocations);
-  const derivedById = new Map(derived.map((u) => [u.id, Number(u.revenueDerived)]));
 
   // Map invoice month → a labelled period so the breakdown splits A (Jan) from
   // B (Feb), exercising the per-period bucketing.
@@ -138,8 +140,8 @@ function buildExposureLines(): ExposureLine[] {
       projectId: a.projectId,
       fiscalPeriod: fp.label,
       fiscalSortKey: fp.sortKey,
-      reportedRevenue: r.perLineRevenue,
-      derivedRevenue: derivedById.get(a.id) ?? 0,
+      reportedRevenue: r.revenueStored ?? r.perLineRevenue,
+      derivedRevenue: r.perLineRevenue,
       cost: r.actualTotal,
     });
   }
