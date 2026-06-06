@@ -46,6 +46,7 @@ import { runPreflightValidator } from "./lib/import/preflight-validator";
 import { runImportPlanner, type PlannerResult } from "./lib/import/planner";
 import { IMPORT_FILE_ALWAYS_WINS } from "./imports/import-conflict-policy";
 import { writePlanIncremental, writeRevenueIncremental, writeExpenditureIncremental, writeActualLineRows, writeProjectMetadata, writeRevenueSummary, mergeConflictsToWizardRows, type IncrementalCommitResult } from "./lib/import/commit-executor";
+import { refreshProvenanceForProjects } from "./lib/finance/provenance";
 import { newImportMetrics, emitImportMetrics, threeWayMergeEnabled } from "./lib/import/feature-flags";
 import { matchRows, generateBusinessKey, type SectionType, type MatchedRow } from "./lib/import/row-matcher";
 import { runConflictEngine, type RowMergeResult } from "./lib/import/conflict-engine";
@@ -2962,6 +2963,34 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
             ));
         } catch (reconErr: unknown) {
           console.warn("[SmartImport] noRevenueLinked recon failed (non-blocking):", reconErr instanceof Error ? reconErr.message : String(reconErr));
+        }
+      }
+
+      // ── S11.5: provenance / reconciliation refresh ──
+      // Now that cost lines, actuals, and category allocations are written and
+      // relinked (S09/S10), recompute the canonical § 3.3 revenue_derived for
+      // this project's live actuals and persist revenue_derived / revenue_stored
+      // / recon_delta / recon_exceeds, snapshot-guarded. This keeps the
+      // reconciliation columns current on every import — it does NOT change which
+      // value any read path reports (perLineRevenue still prefers persisted col U).
+      // Non-blocking: the canonical commit has already succeeded; a refresh
+      // failure must not abort it. Gated to imports that could have moved a
+      // finance input (expenditure, actuals, or allocations).
+      const provenanceTouched =
+        !!costResult ||
+        (Array.isArray(catAllocs) && catAllocs.length > 0) ||
+        (Array.isArray(norm.actualLineRows) && norm.actualLineRows.length > 0);
+      if (provenanceTouched) {
+        try {
+          const prov = await refreshProvenanceForProjects(tx, [projectId]);
+          console.log(
+            `[SmartImport] provenance refresh: ${prov.written} actuals · ${prov.flagged} flagged (|Δ| > R1) · max |recon_delta| = ${prov.maxAbsDelta.toFixed(2)}`,
+          );
+        } catch (provErr: unknown) {
+          console.warn(
+            "[SmartImport] provenance refresh failed (non-blocking):",
+            provErr instanceof Error ? provErr.message : String(provErr),
+          );
         }
       }
 
