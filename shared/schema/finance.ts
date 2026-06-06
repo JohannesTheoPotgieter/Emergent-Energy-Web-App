@@ -1366,6 +1366,41 @@ export const fiscalPeriods = pgTable("fiscal_periods", {
 }));
 export type FiscalPeriod = typeof fiscalPeriods.$inferSelect;
 
+// ===================== FINANCIAL RECONCILIATION =====================
+
+// Per project × fiscal-period reconciliation status for the two cross-system
+// comparisons the trust board surfaces: app⇄tracker and tracker⇄QuickBooks.
+// Status is a traffic light ('green' | 'amber' | 'red'); delta is the signed
+// numeric difference behind that light. Snapshot-guarded like the other finance
+// temporal tables (§ 3.1) — reads must filter effective_to IS NULL.
+//
+// This table is populated later (WP6/WP7). No writer in this change; it ships
+// empty. Additive only.
+export const financialReconciliation = pgTable("financial_reconciliation", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  fiscalPeriodId: integer("fiscal_period_id").notNull().references(() => fiscalPeriods.id, { onDelete: "cascade" }),
+  appVsTrackerStatus: text("app_vs_tracker_status"), // 'green' | 'amber' | 'red'
+  appVsTrackerDelta: decimal("app_vs_tracker_delta", { precision: 15, scale: 2 }),
+  trackerVsQbStatus: text("tracker_vs_qb_status"), // 'green' | 'amber' | 'red'
+  trackerVsQbDelta: decimal("tracker_vs_qb_delta", { precision: 15, scale: 2 }),
+  computedAt: timestamp("computed_at", { withTimezone: true }),
+  notes: text("notes"),
+  // Standard snapshot columns (mirrors the other temporal finance tables).
+  effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
+  effectiveTo: timestamp("effective_to"),
+  snapshotRunId: integer("snapshot_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
+}, (table) => ({
+  // Active-row lookup per (project, fiscal period). Partial on effective_to IS NULL
+  // so the snapshot guard is index-backed.
+  projectPeriodActiveIdx: index("financial_reconciliation_project_period_active_idx")
+    .on(table.projectId, table.fiscalPeriodId)
+    .where(sql`${table.effectiveTo} IS NULL`),
+}));
+export const insertFinancialReconciliationSchema = createInsertSchema(financialReconciliation).omit({ id: true, effectiveFrom: true, effectiveTo: true } as any);
+export type InsertFinancialReconciliation = z.infer<typeof insertFinancialReconciliationSchema>;
+export type FinancialReconciliation = typeof financialReconciliation.$inferSelect;
+
 export const forecastPipeline = pgTable("forecast_pipeline", {
   id: serial("id").primaryKey(),
   fyeYear: integer("fye_year").notNull().default(2026),
