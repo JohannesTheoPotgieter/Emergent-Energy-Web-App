@@ -823,6 +823,88 @@ interface AcceptArgs {
   importRunId?: number | null;
 }
 
+// ── Period-lock surface (fix/qb-cascade-lock-or-document) ──
+
+/**
+ * The `applyFieldOverwrite` proposal types — the ONLY cascade writes that move a
+ * reported figure (`amount_ex_vat`/`vat_amount`), a recognition date
+ * (`invoice_date`, §3.3), a cash date (`paid_date`, §3.4), or the realisation
+ * gate (`invoice_number`). Every other type is metadata; none sets `cos_realised`.
+ */
+export const CASCADE_FIGURE_PROPOSAL_TYPES: ReadonlySet<string> = new Set([
+  "invoice_date",
+  "paid_date",
+  "invoice_number",
+  "amount_ex_vat",
+  "vat_amount",
+]);
+
+/**
+ * Pure: effective dates whose fiscal period a cascade-accept touches (for the
+ * guard). [] for metadata. Includes the line's recognition date (§3.3) and, for
+ * a date change, the proposed new date so source AND target periods are checked.
+ */
+export function cascadeAffectedDates(
+  proposalType: string,
+  line: { invoiceDate: string | null; paidDate: string | null },
+  proposedValue: string | null,
+): Array<string | null> {
+  if (!CASCADE_FIGURE_PROPOSAL_TYPES.has(proposalType)) return [];
+  const dates: Array<string | null> = [line.invoiceDate];
+  if (proposalType === "invoice_date") dates.push(proposedValue);
+  if (proposalType === "paid_date") dates.push(line.paidDate, proposedValue);
+  return dates;
+}
+
+export interface CascadeLockContext {
+  /** Periodised effective dates the accept touches; [] for metadata proposals. */
+  effectiveDates: Array<string | null>;
+  entityType: string;
+  entityId: string;
+  projectName: string | null;
+}
+
+/**
+ * Period-lock context for a cascade-accept (loads proposal + linked line) so the
+ * route can call `guardCosPeriodLock`. Metadata / missing-link → empty dates.
+ */
+export async function getCascadeLockContext(proposalId: number): Promise<CascadeLockContext | null> {
+  const proposal = await getProposalById(proposalId);
+  if (!proposal) return null;
+  const base = { entityType: "qb_cascade_proposal", entityId: String(proposalId), projectName: null as string | null };
+  if (!CASCADE_FIGURE_PROPOSAL_TYPES.has(proposal.proposalType)) {
+    return { effectiveDates: [], ...base };
+  }
+  const [link] = await db
+    .select()
+    .from(quickbooksInvoiceLinks)
+    .where(eq(quickbooksInvoiceLinks.id, proposal.linkId))
+    .limit(1);
+  if (!link) return { effectiveDates: [], ...base };
+  const isCost = link.appEntityType === "cost_line";
+  const [line] = isCost
+    ? await db
+        .select({ invoiceDate: normalizedCostLines.invoiceDate, paidDate: normalizedCostLines.paidDate })
+        .from(normalizedCostLines)
+        .where(and(eq(normalizedCostLines.id, link.appEntityId), isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)))
+        .limit(1)
+    : await db
+        .select({ invoiceDate: normalizedRevenueLines.invoiceDate, paidDate: normalizedRevenueLines.paidDate })
+        .from(normalizedRevenueLines)
+        .where(and(eq(normalizedRevenueLines.id, link.appEntityId), isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)))
+        .limit(1);
+  return {
+    effectiveDates: cascadeAffectedDates(
+      proposal.proposalType,
+      { invoiceDate: line?.invoiceDate ?? null, paidDate: line?.paidDate ?? null },
+      proposal.qbValue ?? null,
+    ),
+    entityType: isCost ? "normalized_cost_line" : "normalized_revenue_line",
+    entityId: String(link.appEntityId),
+    projectName: base.projectName,
+  };
+}
+
 /**
  * Apply a `pending` proposal. Writes the underlying mutation, marks the
  * proposal `accepted`, and (for field-level overwrites) records an
@@ -1074,6 +1156,9 @@ async function applyMutation(
       return;
     }
     case "counterparty_id": {
+      // Metadata-only write to normalized_cost_lines: re-points the line to a
+      // different counterparty (supplier identity). Changes no amount, date,
+      // recognition month, or realisation — intentionally NOT period-locked.
       if (!proposal.qbValue) return;
       const newCounterpartyId = Number(proposal.qbValue);
       if (!Number.isFinite(newCounterpartyId)) return;
@@ -1243,6 +1328,11 @@ async function applyMutation(
   }
 }
 
+/**
+ * Generic field overwrite for the five `CASCADE_FIGURE_PROPOSAL_TYPES` — the only
+ * cascade write that moves a figure / recognition / cash date or realisation
+ * gate. Period-lock-guarded at the accept route; never sets `cos_realised`.
+ */
 async function applyFieldOverwrite(
   tx: typeof db,
   proposal: QbLinkProposedCascade,
