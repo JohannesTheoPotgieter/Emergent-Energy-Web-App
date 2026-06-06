@@ -1,18 +1,19 @@
 /**
- * Repository-backed revenue recognition — the canonical replacement for the
- * legacy col-U readers in `revenue-recognition.ts`.
+ * Repository-backed revenue recognition — the canonical, and now only, source
+ * for "Revenue" KPI tiles (the legacy col-U readers in `revenue-recognition.ts`
+ * were removed once every caller routed through here).
  *
  * Per AGENT_GUARDRAILS § 3.3.2 the ONLY place per-line revenue is computed is
  * `finance-line-level-repository.ts`. Every "Revenue" KPI must consume its
  * output and sum — never re-read the deprecated persisted col-U column. These
  * helpers do exactly that:
  *
- *   planned  = Σ perLineRevenue over all lines          (the § 3.3 recognised /
- *              POC revenue — the analogue of the legacy sumRevenueRecognition).
+ *   planned  = Σ perLineRevenue over all lines (the § 3.3 recognised / POC
+ *              revenue total).
  *   realised = Σ perLineRevenue where bucket === "realised" (the canonical
- *              realised gate — analogue of sumRealisedRevenueRecognition; the
- *              repository's bucket is derived from isCanonicalCosRealised so the
- *              realised split matches the COS tracker line-for-line).
+ *              realised gate — the repository's bucket is derived from
+ *              isCanonicalCosRealised so the split matches the COS tracker
+ *              line-for-line).
  *
  * Post the P2.1b cutover the repository reports the strict (Q/X)×J formula, so
  * routing the tiles here makes "reported revenue = formula" hold on every
