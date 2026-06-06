@@ -303,7 +303,7 @@ import {
 import { recordOverride } from '../lib/audit/diff-engine';
 // § 3.3 canonical revenue-recognition helper. All "Revenue" KPIs MUST come
 // from this — see docs/AGENT_GUARDRAILS.md § 3.3.
-import { recognitionAmountFor } from '../lib/finance/revenue-recognition';
+import { FinanceLineLevelRepository } from '../repositories/finance-line-level-repository';
 import { isWorkItemsEnabled, getWorkItemsAsOperationalTasks } from '../work-items-adapter';
 import { refreshProjectMetricsAsync } from '../services/dashboard-metrics';
 import { createNotification } from '../services/notification-service';
@@ -570,46 +570,47 @@ function setFinanceTrustHeaders(res: Response, params: FinanceTrustHeaderParams)
   setFinanceTrustHeadersShared(res, params);
 }
 
-// § 3.3 fix: this function used to bucket realised COS as revenue at the
-// invoice-paid date — both wrong inputs and wrong dates. § 3.3.3:
-// "Revenue is not recognised on … invoice payment". The amount must be
-// the per-line revenue recognition value (already persisted at import
-// time on `normalized_cost_lines.revenue_recognition_amount` per § 3.3.1
-// category-scoped POC formula). We delegate to the canonical
-// `recognitionAmountFor` helper.
-//
-// FOLLOW-UP (Tier 3): two known gaps tracked for the next finance refactor.
-//   1. § 3.3.2 — every callsite reading per-line revenue recognition (this
-//      file uses the in-line `recognitionAmountFor` from
-//      `server/lib/finance/revenue-recognition.ts`) should route through
-//      `server/repositories/finance-line-level-repository.ts` so the
-//      persisted-vs-derived parity audit fires.
-//   2. The date axis (`expenseInvoicedDate`) is the parent cost line's
-//      invoice date, not the actuals-row invoice date that § 3.3 canonical
-//      date guidance prefers. Pre-existing inconsistency.
-function calculateRevenueRecognition(
+// § 3.3 revenue recognition distributed weekly for the cashflow chart. Sourced
+// from the § 3.3.2 single read path (finance-line-level-repository): the amount
+// is per-line `perLineRevenue` (the canonical (Q/X)×J formula the app reports),
+// and the date axis is the ACTUALS-row invoice date (col T) per § 3.3 — NOT the
+// parent cost line's invoice date and NOT the pasted col U. This replaces the
+// legacy `recognitionAmountFor` col-U reader and resolves both gaps the previous
+// follow-up note tracked (canonical per-line source + actuals-row date axis).
+async function calculateRevenueRecognition(
   expenses: any[],
   projectName: string | null,
-): { weekly: Map<string, Map<string, number>>; cumulative: Map<string, Map<string, number>> } {
+): Promise<{ weekly: Map<string, Map<string, number>>; cumulative: Map<string, Map<string, number>> }> {
   const weekly = new Map<string, Map<string, number>>();
   const cumulative = new Map<string, Map<string, number>>();
 
-  const relevantExpenses = expenses.filter((e) => {
-    if (projectName && e.projectName !== projectName) return false;
-    if (!e.expenseInvoiceNumber || !e.expenseInvoicedDate) return false;
-    return recognitionAmountFor(e as any) !== 0;
-  });
+  // Project scope + id->name from the canonical cost lines already loaded (each
+  // carries a numeric projectId). Honour the optional project-name filter.
+  const projIdToName = new Map<number, string>();
+  for (const e of expenses) {
+    if (projectName && e.projectName !== projectName) continue;
+    const pid = Number(e.projectId);
+    if (Number.isInteger(pid) && pid > 0 && !projIdToName.has(pid)) {
+      projIdToName.set(pid, e.projectName);
+    }
+  }
+  if (projIdToName.size === 0) return { weekly, cumulative };
 
-  for (const expense of relevantExpenses) {
-    const pName = expense.projectName;
-    const weekStart = getWeekStartDate(expense.expenseInvoicedDate);
-    const amount = recognitionAmountFor(expense as any);
+  const repo = new FinanceLineLevelRepository();
+  const lines = await repo.getPortfolioFinanceLines([...projIdToName.keys()]);
 
+  for (const line of lines) {
+    // Recognised when the actuals row has an invoice date (col T — the § 3.3
+    // recognition date) and a non-zero per-line revenue.
+    if (!line.invoiceRaisedDate || line.perLineRevenue === 0) continue;
+    const pName = projIdToName.get(line.projectId);
+    if (!pName) continue;
+    const weekStart = getWeekStartDate(line.invoiceRaisedDate);
     if (!weekly.has(pName)) {
       weekly.set(pName, new Map());
     }
     const projectWeekly = weekly.get(pName)!;
-    projectWeekly.set(weekStart, (projectWeekly.get(weekStart) || 0) + amount);
+    projectWeekly.set(weekStart, (projectWeekly.get(weekStart) || 0) + line.perLineRevenue);
   }
 
   Array.from(weekly.entries()).forEach(([pName, weeklyData]) => {
@@ -5556,9 +5557,8 @@ router.get(
       }
 
       // § 3.3 hotfix: `revByProject` and `cosByProject` previously fed the
-      // project-pooled formula and are now unused — the canonical
-      // `recognitionAmountFor` helper reads the persisted per-line POC value
-      // directly.
+      // project-pooled formula and are now unused — per-line POC revenue is
+      // read from the § 3.3.2 single read path (finance-line-level-repository).
 
       // ── Single engine (owner decision 2026-06): GP = Revenue − COS, both
       // sourced from the reconciled FYE engine (curated 48-project,
@@ -5894,8 +5894,8 @@ router.get(
 
       // § 3.3 hotfix: `revByProject` and `cosByProject` previously fed the
       // project-pooled `allocateRevenue(amount, totalCOSProject, totalRevProject)`
-      // formula and are now unused — `recognitionAmountFor(exp)` reads the
-      // persisted per-line POC value directly.
+      // formula and are now unused — per-line POC revenue is read from the
+      // § 3.3.2 single read path (finance-line-level-repository) instead.
 
       const items: any[] = [];
 
@@ -6901,7 +6901,7 @@ router.get(
         points.push(...dynamicPoints);
       }
 
-      const { weekly, cumulative } = calculateRevenueRecognition(expenses, projectName);
+      const { weekly, cumulative } = await calculateRevenueRecognition(expenses, projectName);
 
       Array.from(weekly.entries()).forEach(([pName, weeklyData]) => {
         Array.from(weeklyData.entries()).forEach(([weekStart, amount]) => {

@@ -17,11 +17,8 @@ import { recordOverride } from "../lib/audit/diff-engine";
 import { classifyExpenseState, isDateBlack } from "../lib/calculations/stateClassifier";
 import { isCosRealised, classifyCosStatusFull } from "../lib/calculations/financeUtils";
 import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
-import {
-  recognitionAmountFor,
-  sumRevenueRecognition,
-  sumRealisedRevenueRecognition,
-} from "../lib/finance/revenue-recognition";
+import { getRepoRevenueTotals, getRepoRevenueByProject } from "../lib/finance/revenue-recognition-repo";
+import { FinanceLineLevelRepository } from "../repositories/finance-line-level-repository";
 import { isEffectivelyRealised } from "../lib/finance/cos-realisation";
 import { buildCanonicalResolver } from "../services/project-summary-helpers";
 import { getProjectHeaderKpis, recomputeHeaderKpiProjectionForActiveProjects } from "../services/project-header-kpi-service";
@@ -388,16 +385,16 @@ router.get("/api/overview", requireAuth, async (req, res) => {
       }
     }
 
-    // CANONICAL Revenue Recognition (POC method).
-    // Source: normalized_cost_lines.revenue_recognition_amount on lines whose
-    // underlying COS is effectively realised. NOT cash inflows.
-    const cmkOv = currentMonthKeyUtc();
-    const revenueRealised = sumRealisedRevenueRecognition(
-      allExpenses as any,
-      cmkOv,
-      cosMonthKeyForLine,
+    // CANONICAL § 3.3 POC revenue via the § 3.3.2 single read path (P2.1c):
+    // planned = Σ perLineRevenue; realised = Σ on canonical realised lines.
+    // NOT cash inflows.
+    const financeRepoOv = new FinanceLineLevelRepository();
+    const repoRevenueOv = await getRepoRevenueTotals(
+      financeRepoOv,
+      allExpenses.map((e: any) => e.projectId),
     );
-    const revenuePlannedOv = sumRevenueRecognition(allExpenses as any);
+    const revenueRealised = repoRevenueOv.realised;
+    const revenuePlannedOv = repoRevenueOv.planned;
 
     const uniqueProjects = new Set<string>();
     for (const info of allProjectInfo) {
@@ -580,12 +577,15 @@ router.get("/api/home/summary", requireAuth, async (req, res) => {
     // mix POC revenue with Paid-state cost.
     let actualRevenue = 0, realisedCost = 0, currentVoTotal = 0;
     const cmkHm = currentMonthKeyUtc();
-    actualRevenue = sumRealisedRevenueRecognition(
-      allExpenses as any,
-      cmkHm,
-      cosMonthKeyForLine,
+    // POC revenue via the § 3.3.2 single read path (P2.1c). cmkHm is still used
+    // by the realised-COST gate below.
+    const financeRepoHm = new FinanceLineLevelRepository();
+    const repoRevenueHm = await getRepoRevenueTotals(
+      financeRepoHm,
+      allExpenses.map((e: any) => e.projectId),
     );
-    const plannedRevenue = sumRevenueRecognition(allExpenses as any);
+    actualRevenue = repoRevenueHm.realised;
+    const plannedRevenue = repoRevenueHm.planned;
     let actualExpenses = 0; // Cash-paid concept (kept for cashflow tile)
     for (const expense of allExpenses) {
       const amt = safeNum(expense.expenseActualTotal);
@@ -929,6 +929,15 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
       if (pill?.projectName) projectsSummaryPillsByName.set(toCanonicalProjectName(pill.projectName), pill);
     }
 
+    // P2.1c — precompute § 3.3 POC revenue per project once (the .map() below is
+    // synchronous, so the async repository read can't run inside it). Keyed by
+    // projectId; looked up per project inside the loop.
+    const financeRepoPs = new FinanceLineLevelRepository();
+    const repoRevByProject = await getRepoRevenueByProject(
+      financeRepoPs,
+      allExpenses.map((e: any) => e.projectId),
+    );
+
     const projectsSummary = Array.from(allProjectNames).map(projectName => {
       const info = projectInfoMap.get(projectName) || projectInfoByCanonical.get(toCanonicalProjectName(projectName));
       const projectExpenses = expensesByProject.get(projectName) || [];
@@ -1002,13 +1011,13 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
       //                          effective COS realisation for the period.
       // Falls back to milestone billing total for projects with no costed
       // revenue captured yet, so newly-imported projects don't show R0.
-      const cmkPlist = currentMonthKeyUtc();
-      let totalContractRevenue = sumRevenueRecognition(projectExpenses as any);
-      let actualRevenue = sumRealisedRevenueRecognition(
-        projectExpenses as any,
-        cmkPlist,
-        cosMonthKeyForLine,
-      );
+      // POC revenue via the § 3.3.2 single read path (P2.1c), precomputed per
+      // project above. Keyed by the projectId on this project's cost lines so
+      // the scope matches projectExpenses exactly.
+      const psPid = (projectExpenses[0] as any)?.projectId ?? info?.id ?? null;
+      const psRepoRev = psPid != null ? repoRevByProject.get(psPid) : undefined;
+      let totalContractRevenue = psRepoRev?.planned ?? 0;
+      const actualRevenue = psRepoRev?.realised ?? 0;
       if (totalContractRevenue === 0) {
         for (const inflow of projectInflows) {
           if (inflow.milestoneAmount) {
