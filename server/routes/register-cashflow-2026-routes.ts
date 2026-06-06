@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { requireAuth as sharedRequireAuth } from "../auth-context";
 import { requirePermission } from "../permission-middleware";
 import { logAuditFromReq } from "../audit-logger";
+import { guardCosPeriodLock } from "../lib/finance/period-lock-guard";
 import {
   isDateConfirmedCheck,
   getMergedExpensesAndInflows,
@@ -370,6 +371,19 @@ export function registerCashflow2026Routes(app: Express) {
       const compVal = computedValue != null ? parseFloat(String(computedValue)) : null;
       const delta = compVal != null ? newVal - compVal : null;
 
+      // Period-lock guard. clearForward bulk-deletes every later week, so those
+      // weeks' periods are checked too — a single locked week blocks the write.
+      const obLockDates: string[] = [weekStartDate];
+      if (clearForward) {
+        const nw = new Date(weekStartDate);
+        nw.setUTCDate(nw.getUTCDate() + 7);
+        const nws = nw.toISOString().split("T")[0];
+        for (const m of existingManuals as any[]) {
+          if (m?.weekStartDate && String(m.weekStartDate) >= nws) obLockDates.push(String(m.weekStartDate));
+        }
+      }
+      if (await guardCosPeriodLock(req, res, { effectiveDates: obLockDates, surface: "Cashflow opening balance", entityType: "cashflow_balance", entityId: weekStartDate })) return;
+
       const user = req.user as any;
       await storage.addBalanceHistory({
         weekStartDate,
@@ -419,6 +433,7 @@ export function registerCashflow2026Routes(app: Express) {
       if (!weekStartDate) {
         return res.status(400).json({ error: "weekStartDate required" });
       }
+      if (await guardCosPeriodLock(req, res, { effectiveDates: [weekStartDate], surface: "Cashflow opening balance", entityType: "cashflow_balance", entityId: weekStartDate })) return;
       const existingManuals = await storage.getAllCashflowWeeklyManual();
       const existing = existingManuals.find((m: any) => m.weekStartDate === weekStartDate);
       if (existing) {
@@ -447,6 +462,7 @@ export function registerCashflow2026Routes(app: Express) {
       if (!monthKey || amount == null) {
         return res.status(400).json({ error: "monthKey and amount required" });
       }
+      if (await guardCosPeriodLock(req, res, { effectiveDates: [monthKey], surface: "OPEX budget", entityType: "opex_budget", entityId: monthKey })) return;
       const result = await storage.upsertOpexBudgetMonthly(monthKey, String(amount));
       logAuditFromReq(req, { entityType: "opex_budget", action: "update", entityId: monthKey, changesJson: { description: "OPEX budget updated", monthKey, amount } });
       res.json(result);
@@ -472,6 +488,7 @@ export function registerCashflow2026Routes(app: Express) {
       if (!weekStartDate || opexAmount == null) {
         return res.status(400).json({ error: "weekStartDate and opexAmount required" });
       }
+      if (await guardCosPeriodLock(req, res, { effectiveDates: [weekStartDate], surface: "OPEX weekly", entityType: "opex_weekly", entityId: weekStartDate })) return;
       const result = await storage.upsertOpexWeeklyManual(weekStartDate, String(opexAmount));
       logAuditFromReq(req, { entityType: "opex_weekly", action: "update", entityId: weekStartDate, changesJson: { description: "OPEX weekly override updated", weekStartDate, opexAmount } });
       res.json(result);
@@ -487,6 +504,7 @@ export function registerCashflow2026Routes(app: Express) {
       if (!weekStartDate) {
         return res.status(400).json({ error: "weekStartDate required" });
       }
+      if (await guardCosPeriodLock(req, res, { effectiveDates: [weekStartDate], surface: "OPEX weekly", entityType: "opex_weekly", entityId: weekStartDate })) return;
       await storage.deleteOpexWeeklyManual(weekStartDate);
       logAuditFromReq(req, { entityType: "opex_weekly", action: "delete", entityId: weekStartDate, changesJson: { description: "OPEX weekly override deleted", weekStartDate } });
       res.json({ success: true });
@@ -502,6 +520,7 @@ export function registerCashflow2026Routes(app: Express) {
       if (!weekStartDate || overrideValue == null) {
         return res.status(400).json({ error: "weekStartDate and overrideValue required" });
       }
+      if (await guardCosPeriodLock(req, res, { effectiveDates: [weekStartDate], surface: "Available payment override", entityType: "available_payment", entityId: weekStartDate })) return;
 
       const existingOverrides = await storage.getAllAvailablePaymentOverrides();
       const existing = existingOverrides.find((o: any) => o.weekStartDate === weekStartDate);
@@ -540,6 +559,7 @@ export function registerCashflow2026Routes(app: Express) {
       if (!weekStartDate) {
         return res.status(400).json({ error: "weekStartDate required" });
       }
+      if (await guardCosPeriodLock(req, res, { effectiveDates: [weekStartDate], surface: "Available payment override", entityType: "available_payment", entityId: weekStartDate })) return;
       const existingOverrides = await storage.getAllAvailablePaymentOverrides();
       const existing = existingOverrides.find((o: any) => o.weekStartDate === weekStartDate);
       if (existing) {
