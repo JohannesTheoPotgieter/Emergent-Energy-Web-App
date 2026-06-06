@@ -30,13 +30,10 @@
  */
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import { and, eq, inArray, isNull } from "drizzle-orm";
 
 import { requireAuth } from "../auth-context";
 import { requirePermission } from "../permission-middleware";
 import { validateBody } from "../middleware/validateBody";
-import { db } from "../db";
-import { normalizedCostLines, purchaseOrders } from "@shared/schema";
 import { FinanceLineLevelRepository } from "../repositories/finance-line-level-repository";
 import { FinanceExpenseEngineRepository } from "../repositories/finance-expense-engine-repository";
 import { guardCosPeriodLock } from "../lib/finance/period-lock-guard";
@@ -70,33 +67,6 @@ const setInvoiceDateSchema = z.object({
 const reasonOnlySchema = z.object({ reason: reasonField });
 
 type ReqUser = { id?: number; name?: string; role?: string } | undefined;
-
-/** Authorised PO total keyed by PO number (string). Latest PO row per number
- *  wins (highest id), so a revised PO doesn't double-count. */
-async function loadPoTotalsByNumber(
-  projectIds: number[],
-): Promise<Map<string, number>> {
-  if (projectIds.length === 0) return new Map();
-  const rows = await db
-    .select({
-      id: purchaseOrders.id,
-      poNumber: purchaseOrders.poNumber,
-      total: purchaseOrders.total,
-    })
-    .from(purchaseOrders)
-    .where(inArray(purchaseOrders.projectId, projectIds));
-  const latest = new Map<string, { id: number; total: number }>();
-  for (const r of rows) {
-    const key = String(r.poNumber);
-    const prev = latest.get(key);
-    if (!prev || r.id > prev.id) {
-      latest.set(key, { id: r.id, total: Number(r.total ?? 0) });
-    }
-  }
-  const out = new Map<string, number>();
-  for (const [key, v] of latest) out.set(key, v.total);
-  return out;
-}
 
 /**
  * Shared write path for the three date actions (move / set / clear). Writes the
@@ -210,18 +180,7 @@ export function registerCosLineReviewRoutes(app: Express): void {
           .map((s) => Number(s.trim()))
           .filter((n) => Number.isInteger(n) && n > 0);
 
-        const projRows = await db
-          .selectDistinct({
-            projectId: normalizedCostLines.projectId,
-            projectName: normalizedCostLines.projectName,
-          })
-          .from(normalizedCostLines)
-          .where(
-            and(
-              isNull(normalizedCostLines.effectiveTo),
-              isNull(normalizedCostLines.deletedAt),
-            ),
-          );
+        const projRows = await expenseRepo.listActiveCostLineProjects();
         for (const r of projRows) {
           if (r.projectId == null) continue;
           projectNameById.set(
@@ -240,7 +199,7 @@ export function registerCosLineReviewRoutes(app: Express): void {
 
         const [lines, poTotals] = await Promise.all([
           financeLines.getPortfolioFinanceLines(projectIds, { fyStart, fyEnd }),
-          loadPoTotalsByNumber(projectIds),
+          expenseRepo.listPurchaseOrderTotalsByProject(projectIds),
         ]);
 
         const flagInputs: CosLineFlagInput[] = lines.map((l) => ({

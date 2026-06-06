@@ -6,6 +6,7 @@ import { getAssignedEvidenceByCostLineIds } from "../lib/finance/qb-allocation-r
 import { logAudit } from "../audit-logger";
 import {
   normalizedCostLines, normalizedCostLineActuals, projectInfo, smartImportRuns,
+  purchaseOrders,
   type ProgramExpense, type InsertProgramExpense,
 } from "@shared/schema";
 import { db } from "../db";
@@ -698,6 +699,54 @@ export class FinanceExpenseEngineRepository {
       ))
       .returning();
     return updated ?? null;
+  }
+
+  /**
+   * Distinct active-cost-line projects (id + name). For portfolio reads that
+   * scope to "every project with cost lines" (e.g. the COS line review).
+   */
+  async listActiveCostLineProjects(): Promise<
+    Array<{ projectId: number | null; projectName: string | null }>
+  > {
+    return this.dbInstance
+      .selectDistinct({
+        projectId: normalizedCostLines.projectId,
+        projectName: normalizedCostLines.projectName,
+      })
+      .from(normalizedCostLines)
+      .where(and(
+        isNull(normalizedCostLines.effectiveTo),
+        isNull(normalizedCostLines.deletedAt),
+      ));
+  }
+
+  /**
+   * Authorised PO total per PO number (string) for the given projects, latest
+   * PO row per number winning. Backs the COS line-review invoice↔PO check (R3).
+   */
+  async listPurchaseOrderTotalsByProject(
+    projectIds: number[],
+  ): Promise<Map<string, number>> {
+    if (projectIds.length === 0) return new Map();
+    const rows = await this.dbInstance
+      .select({
+        id: purchaseOrders.id,
+        poNumber: purchaseOrders.poNumber,
+        total: purchaseOrders.total,
+      })
+      .from(purchaseOrders)
+      .where(inArray(purchaseOrders.projectId, projectIds));
+    const latest = new Map<string, { id: number; total: number }>();
+    for (const r of rows) {
+      const key = String(r.poNumber);
+      const prev = latest.get(key);
+      if (!prev || r.id > prev.id) {
+        latest.set(key, { id: r.id, total: Number(r.total ?? 0) });
+      }
+    }
+    const out = new Map<string, number>();
+    for (const [key, v] of latest) out.set(key, v.total);
+    return out;
   }
 }
 
