@@ -23,6 +23,7 @@ import {
   normalizedCostLines,
 } from "@shared/schema";
 import { db } from "../db";
+import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
 
 export type FinanceLineBucket = "planned" | "committed" | "realised";
 
@@ -149,34 +150,44 @@ const inWindow = (iso: string | null, fyStart?: string, fyEnd?: string): boolean
 const normalizeKey = (raw: string): string => raw.trim().toLowerCase();
 
 /**
- * Bucket classification — canonical COS realisation per § 3.2: invoice captured
- * + invoice-date BLACK-confirmed. COLOUR-GATED FOR ALL MONTHS (owner decision
- * 2026-06): a red invoice-date stays Committed even in a closed month — there is
- * no past-month auto-promote.
+ * Bucket classification — delegates the realised gate to the SINGLE canonical
+ * predicate `isCanonicalCosRealised` (§ 3.3) so the FY card, recon grid and COS
+ * page agree line-for-line. The 3-way split is preserved:
  *
- *   planned    — no invoice yet
- *   committed  — invoice captured but unconfirmed (RED), any month
- *   realised   — invoice captured + invoice-date BLACK-confirmed
+ *   realised   — isCanonicalCosRealised() is true (admin override, OR a valid
+ *                non-placeholder invoice confirmed BLACK / confirmed=true and not
+ *                dated in a future month, OR the legacy cosRealised flag)
+ *   committed  — not realised, but an invoice is captured
+ *   planned    — no invoice
  *
- * The `unrealised` bucket from earlier iterations stays folded into the
- * no-invoice `planned` slot here; the COS/Revenue trackers surface the
- * planned-vs-unrealised split separately.
+ * Inputs mirror exactly what the COS page passes the canonical predicate (no QB
+ * / amount signals), so the three surfaces stay identical.
  */
 const classifyBucket = (
   invoiceNumber: string | null,
   invoiceDateFontColor: string | null,
   invoiceDateConfirmed: boolean | null,
-  _recognitionMonth: string | null,
-  _currentMonthKey: string,
+  invoiceDate: string | null,
+  cosStatusOverride: string | null,
+  cosRealised: boolean | null,
+  today: string,
 ): FinanceLineBucket => {
+  const realised = isCanonicalCosRealised({
+    status: null,
+    cosStatusOverride,
+    cosRealised,
+    expenseInvoiceNumber: invoiceNumber,
+    expenseInvoicedDate: invoiceDate,
+    expensePoNumber: null,
+    paymentDate: null,
+    today,
+    invoiceDateFontColor,
+    invoiceDateConfirmed,
+  });
+  if (realised) return "realised";
+
   const hasInvoice = !!(invoiceNumber && invoiceNumber.trim());
-  if (!hasInvoice) return "planned";
-
-  const confirmed =
-    invoiceDateFontColor?.toLowerCase() === "black" ||
-    invoiceDateConfirmed === true;
-
-  return confirmed ? "realised" : "committed";
+  return hasInvoice ? "committed" : "planned";
 };
 
 // Anchor to SAST (UTC+2 year-round, no DST). Server is UTC but the
@@ -287,6 +298,10 @@ export class FinanceLineLevelRepository {
           // realised bucket with the COS tracker's classification.
           invoiceDateFontColor: normalizedCostLines.invoiceDateFontColor,
           invoiceDateConfirmed: normalizedCostLines.invoiceDateConfirmed,
+          // Admin override + legacy realised flag — fed to the canonical
+          // realisation predicate so the bucket matches the COS page.
+          cosStatusOverride: normalizedCostLines.cosStatusOverride,
+          cosRealised: normalizedCostLines.cosRealised,
           // Persisted Smart Import col U — preferred over derived
           // (Q/X)*J so the GP page matches the Revenue tracker.
           revenueRecognitionAmount: normalizedCostLines.revenueRecognitionAmount,
@@ -433,6 +448,10 @@ export interface FinanceLineParentRowInput {
   // Used by the bucket classifier to align with the COS tracker.
   invoiceDateFontColor?: string | null;
   invoiceDateConfirmed?: boolean | null;
+  // Admin override + legacy realised flag — fed to the canonical realisation
+  // predicate so the bucket classifier matches the COS page line-for-line.
+  cosStatusOverride?: string | null;
+  cosRealised?: boolean | null;
   /** Persisted Smart Import col U on the parent (text). Falls through
    * to synthesized actuals rows so parent-only lines get the same
    * revenue-recognition number the Revenue tracker would show. */
@@ -714,8 +733,12 @@ export function deriveFinanceLinesFromRows(
         // legacy child rows imported before the per-child colour column.
         a.invoiceDateFontColor ?? parent?.invoiceDateFontColor ?? null,
         a.invoiceDateConfirmed ?? parent?.invoiceDateConfirmed ?? null,
-        monthKey(recognitionDate),
-        currentMonthKey,
+        invoiceRaisedDate,
+        // Admin override + legacy flag live on the parent cost line.
+        parent?.cosStatusOverride ?? null,
+        parent?.cosRealised ?? null,
+        // SAST-anchored as-at date for the canonical future-month guard.
+        `${currentMonthKey}-01`,
       ),
       // Use invoice-date recognition only. No-invoice lines remain
       // unrecognised for actual COS/REV month rollups.
