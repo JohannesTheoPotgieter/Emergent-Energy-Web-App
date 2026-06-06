@@ -76,6 +76,7 @@ import {
   loadCostLineContext,
   loadRevenueLineContext,
   acceptProposal,
+  getCascadeLockContext,
   declineProposal,
   getProposalAgeSummary,
   listPendingProposalsForLink,
@@ -83,6 +84,7 @@ import {
   type AppRowContext,
   type QbDocSnapshot,
 } from "../services/quickbooks-cascade-proposals-service";
+import { guardCosPeriodLock } from "../lib/finance/period-lock-guard";
 import { refreshProjectMetricsAsync } from "../services/dashboard-metrics";
 import {
   confirmCostLineLink,
@@ -2371,6 +2373,9 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
   //    body: { note?: string }
   const proposalActionBody = z.object({
     note: z.string().max(500).optional(),
+    // COO/CFO/CEO reason to override a COS period lock on the affected line
+    // (consumed by guardCosPeriodLock on the accept path).
+    overrideReason: z.string().max(500).optional(),
   });
 
   app.post(
@@ -2386,6 +2391,23 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
         }
         const body = req.body as z.infer<typeof proposalActionBody>;
         const userId = getEffectiveUser(req)?.id ?? null;
+        // fix/qb-cascade-lock-or-document: a cascade that overwrites an amount,
+        // a recognition/cash date, or an invoice number must respect the COS
+        // period lock for the affected line's fiscal period(s). Metadata
+        // proposals resolve to empty effectiveDates → the guard is a no-op.
+        const lockCtx = await getCascadeLockContext(id);
+        if (
+          lockCtx &&
+          (await guardCosPeriodLock(req, res, {
+            effectiveDates: lockCtx.effectiveDates,
+            surface: "QuickBooks cascade accept",
+            entityType: lockCtx.entityType,
+            entityId: lockCtx.entityId,
+            projectName: lockCtx.projectName,
+          }))
+        ) {
+          return;
+        }
         try {
           const updated = await acceptProposal({
             proposalId: id,
