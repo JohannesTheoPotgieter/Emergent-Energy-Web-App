@@ -34,11 +34,8 @@ import { getFeatureFlag, getFeatureFlags } from "../lib/feature-flags";
 import { isWorkItemsEnabled, getAllWorkItemsForPlanTab } from "../work-items-adapter";
 import { computeScheduleRag, computeCostRag, computeQualityRag, computeOverallRag } from "@shared/kpi-definitions";
 import { classifyCosStatusFull, isCosRealised as isCosRealisedCanonical } from "../lib/calculations/financeUtils";
-import {
-  sumRevenueRecognition,
-  sumRealisedRevenueRecognition,
-} from "../lib/finance/revenue-recognition";
-import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
+import { getRepoRevenueTotals } from "../lib/finance/revenue-recognition-repo";
+import { FinanceLineLevelRepository } from "../repositories/finance-line-level-repository";
 import { actorFromReq, createProjectEvent } from "../services/project-event-service";
 import { paramStr, parseIntParam } from "../lib/req-params";
 import { classifyProjectInfoPayload } from "../services/source-of-truth-policy";
@@ -132,9 +129,15 @@ export function registerProjectInfoExtractedRoutes(app: Express): void {
         })(),
       ]);
 
-      // Contract value and budget — POC (canonical revenue recognition).
-      // The fallback uses POC sum from cost lines, NOT milestone billing total.
-      const pocRevenuePlanned = sumRevenueRecognition(expenses as any);
+      // Contract value and budget — POC revenue via the § 3.3.2 single read
+      // path (P2.1c — no longer the deprecated col-U sum). planned = Σ
+      // perLineRevenue; realised = Σ perLineRevenue on canonical realised lines.
+      const repo = new FinanceLineLevelRepository();
+      const pid = (projectInfoRow as any)?.id ?? null;
+      const repoRevenue = pid != null
+        ? await getRepoRevenueTotals(repo, [pid])
+        : { planned: 0, realised: 0 };
+      const pocRevenuePlanned = repoRevenue.planned;
       const totalRevenueActual = pocRevenuePlanned;
       const contractValue = (projectInfoRow as any)?.contractValue || totalRevenueActual || 0;
       const totalBudgetFromExpenses = expenses.reduce((s: number, e: any) => s + (Number(e.budgetTotal) || 0), 0);
@@ -188,20 +191,11 @@ export function registerProjectInfoExtractedRoutes(app: Express): void {
       const qualityRag = computeQualityRag(hasQualityData, qualityGatesPassed, qualityGatesTotal, combinedApprovedItems);
 
       // Revenue realised % — POC method:
-      //   numerator   = revenue_recognition_amount on effectively-realised lines
+      //   numerator   = Σ perLineRevenue on canonical realised lines (the
+      //                 repository's "realised" bucket, from isCanonicalCosRealised)
       //   denominator = contractValue (or POC planned if contract missing)
       // totalPaidInflows is kept for the cashflow tile (cash actually banked).
-      const nowPi = new Date();
-      const cmkPi = `${nowPi.getUTCFullYear()}-${String(nowPi.getUTCMonth() + 1).padStart(2, '0')}`;
-      const getCosMonthKeyPi = (line: any): string | null => {
-        const { date } = getCosEffectiveDateAndSource(line);
-        return date ? date.substring(0, 7) : null;
-      };
-      const pocRevenueRealised = sumRealisedRevenueRecognition(
-        expenses as any,
-        cmkPi,
-        getCosMonthKeyPi,
-      );
+      const pocRevenueRealised = repoRevenue.realised;
       const totalPaidInflows = inflows
         .filter((m: any) => m.inBank === 1 || m.inBank === true)
         .reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
