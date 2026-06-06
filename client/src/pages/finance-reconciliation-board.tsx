@@ -37,6 +37,17 @@ import {
 
 type ReconDisplayStatus = "green" | "amber" | "red" | "unknown";
 
+interface ReconIgnoreView {
+  side: "cost" | "revenue";
+  qbEntityId: string;
+  qbDocNumber: string | null;
+  counterpartyName: string | null;
+  amountExVat: number | null;
+  reason: string;
+  ignoredByName: string | null;
+  ignoredAt: string | null;
+}
+
 interface PortfolioProject {
   projectId: number;
   projectName: string;
@@ -47,6 +58,9 @@ interface PortfolioProject {
   amberPeriods: number;
   redPeriods: number;
   computedAt: string | null;
+  qbStatus: ReconDisplayStatus;
+  qbDelta: number;
+  qbAbsDelta: number;
 }
 interface PortfolioResponse {
   generatedAt: string;
@@ -77,6 +91,9 @@ interface DetailResponse {
   accumulatedAbsDelta: number;
   reason: string;
   lines: DetailLine[];
+  trackerVsQbStatus: ReconDisplayStatus;
+  trackerVsQbDelta: number;
+  reconIgnores: ReconIgnoreView[];
 }
 
 // ── Status presentation — colour-blind safe (icon + word always paired) ──
@@ -130,25 +147,29 @@ function StatusChip({ status }: { status: ReconDisplayStatus }) {
   );
 }
 
-/** Build a drawer exception from the worst offending line of a project detail. */
-function exceptionFromDetail(detail: DetailResponseWithMeta): ReconciliationException | null {
-  const offending = detail.lines.find((l) => l.offending) ?? detail.lines[0];
-  if (!offending) return null;
+/** Build a drawer exception for a project — drilled to the worst offending line
+ *  when there is one, and always carrying tracker-vs-QB + recon-ignores. */
+function exceptionFromDetail(detail: DetailResponseWithMeta): ReconciliationException {
+  const offending = detail.lines.find((l) => l.offending) ?? detail.lines[0] ?? null;
   const structural = detail.status === "red";
-  const lineLabel =
-    offending.description || offending.categoryName || `line ${offending.lineId}`;
+  const lineLabel = offending
+    ? offending.description || offending.categoryName || `line ${offending.lineId}`
+    : (detail.projectName ?? `Project ${detail.projectId}`);
+  const appVsTrackerOk = detail.status === "green";
   return {
-    id: `recon-${detail.projectId}-${offending.lineId}`,
+    id: `recon-${detail.projectId}-${offending?.lineId ?? "project"}`,
     projectId: detail.projectId,
     projectName: detail.projectName ?? `Project ${detail.projectId}`,
     tracker: "Revenue",
-    issueType: offending.derivationWarning ?? "amount_mismatch",
-    displayIssue: structural
-      ? `Structural: ${lineLabel} cannot derive revenue (${offending.derivationWarning ?? "missing allocation"})`
-      : `Drift: ${lineLabel} pasted value differs from the §3.3 formula`,
-    excelValue: offending.revenueStored != null ? formatZar(offending.revenueStored) : null,
-    appValue: formatZar(offending.revenueDerived),
-    variance: offending.reconDelta != null ? formatZar(offending.reconDelta) : null,
+    issueType: offending?.derivationWarning ?? "amount_mismatch",
+    displayIssue: !offending || appVsTrackerOk
+      ? `${detail.projectName ?? "Project"} — reconciliation detail`
+      : structural
+        ? `Structural: ${lineLabel} cannot derive revenue (${offending.derivationWarning ?? "missing allocation"})`
+        : `Drift: ${lineLabel} pasted value differs from the §3.3 formula`,
+    excelValue: offending?.revenueStored != null ? formatZar(offending.revenueStored) : null,
+    appValue: offending ? formatZar(offending.revenueDerived) : null,
+    variance: offending?.reconDelta != null ? formatZar(offending.reconDelta) : null,
     risk: structural ? "high" : "medium",
     suggestedOwner: "Programme Finance Manager",
     status: "open",
@@ -160,20 +181,27 @@ function exceptionFromDetail(detail: DetailResponseWithMeta): ReconciliationExce
     allowBulkClose: false,
     requireOwnerNote: true,
     sourceProof: {
-      app: {
-        table: "normalized_cost_line_actuals",
-        field: "revenue_derived",
-        recordId: offending.lineId,
-        value: formatZar(offending.revenueDerived),
-      },
-      excel: {
-        sheet: offending.sourceCell ?? "Expenditure Breakdown · col U",
-        value: offending.revenueStored != null ? formatZar(offending.revenueStored) : null,
-      },
+      app: offending
+        ? {
+            table: "normalized_cost_line_actuals",
+            field: "revenue_derived",
+            recordId: offending.lineId,
+            value: formatZar(offending.revenueDerived),
+          }
+        : { table: "normalized_cost_line_actuals", field: "revenue_derived", recordId: null, value: null },
+      excel: offending
+        ? {
+            sheet: offending.sourceCell ?? "Expenditure Breakdown · col U",
+            value: offending.revenueStored != null ? formatZar(offending.revenueStored) : null,
+          }
+        : null,
       qb: null,
     },
     ruleUsed: detail.reason,
     selectedTruthSource: "canonical §3.3 formula (revenue_derived)",
+    qbStatus: detail.trackerVsQbStatus,
+    qbDelta: detail.trackerVsQbDelta,
+    reconIgnores: detail.reconIgnores,
   };
 }
 
@@ -186,6 +214,7 @@ export default function FinanceReconciliationBoardPage() {
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [drawerException, setDrawerException] = useState<ReconciliationException | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshingQb, setRefreshingQb] = useState(false);
 
   const portfolio = useQuery<PortfolioResponse>({
     queryKey: ["/api/finance/reconciliation"],
@@ -203,8 +232,7 @@ export default function FinanceReconciliationBoardPage() {
   useEffect(() => {
     if (selectedProjectId == null || !detail.data) return;
     if (detail.data.projectId !== selectedProjectId) return;
-    const exc = exceptionFromDetail(detail.data);
-    if (exc) setDrawerException(exc);
+    setDrawerException(exceptionFromDetail(detail.data));
   }, [detail.data, selectedProjectId]);
 
   async function handleRefresh() {
@@ -214,6 +242,16 @@ export default function FinanceReconciliationBoardPage() {
       await queryClient.invalidateQueries({ queryKey: ["/api/finance/reconciliation"] });
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  async function handleRefreshQb() {
+    setRefreshingQb(true);
+    try {
+      await apiRequest("POST", "/api/finance/reconciliation/refresh-qb", {});
+      await queryClient.invalidateQueries({ queryKey: ["/api/finance/reconciliation"] });
+    } finally {
+      setRefreshingQb(false);
     }
   }
 
@@ -253,6 +291,18 @@ export default function FinanceReconciliationBoardPage() {
           >
             <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} aria-hidden="true" />
             {refreshing ? "Refreshing…" : "Refresh"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefreshQb}
+            disabled={refreshingQb}
+            className="gap-2"
+            data-testid="btn-recon-refresh-qb"
+            title="Recompute tracker-vs-QuickBooks (needs a live QuickBooks connection)"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${refreshingQb ? "animate-spin" : ""}`} aria-hidden="true" />
+            {refreshingQb ? "Refreshing…" : "Refresh QB"}
           </Button>
         </div>
 
@@ -296,8 +346,13 @@ export default function FinanceReconciliationBoardPage() {
             data-testid="recon-board-grid"
           >
             {projects.map((p) => {
-              const interactive = p.status === "amber" || p.status === "red";
-              const m = STATUS_META[p.status];
+              const flagged = (s: ReconDisplayStatus) => s === "amber" || s === "red";
+              const interactive = flagged(p.status) || flagged(p.qbStatus);
+              // Border accent reflects the worse of the two comparisons.
+              const rankOf: Record<ReconDisplayStatus, number> = { red: 0, amber: 1, unknown: 2, green: 3 };
+              const worst: ReconDisplayStatus = rankOf[p.qbStatus] < rankOf[p.status] ? p.qbStatus : p.status;
+              const m = STATUS_META[worst];
+              const appMeta = STATUS_META[p.status];
               return (
                 <Card
                   key={p.projectId}
@@ -328,21 +383,48 @@ export default function FinanceReconciliationBoardPage() {
                     >
                       {p.projectName}
                     </h2>
-                    <StatusChip status={p.status} />
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <div className="flex items-center gap-1" title="App vs tracker">
+                        <span className="text-[9px] font-medium uppercase text-[#A1AFA0]">App</span>
+                        <StatusChip status={p.status} />
+                      </div>
+                      <div className="flex items-center gap-1" title="Tracker vs QuickBooks">
+                        <span className="text-[9px] font-medium uppercase text-[#A1AFA0]">QB</span>
+                        <StatusChip status={p.qbStatus} />
+                      </div>
+                    </div>
                   </CardHeader>
                   <CardContent className="p-4 pt-0">
                     <div className="flex items-end justify-between">
-                      <div>
-                        <p className="text-[10px] uppercase tracking-wider text-[#A1AFA0]">
-                          App vs tracker
-                        </p>
-                        <p
-                          className="font-mono text-base font-semibold"
-                          style={{ color: m.accent }}
-                          data-testid={`recon-card-delta-${p.projectId}`}
-                        >
-                          {p.absDelta === 0 ? formatZar(0) : formatZar(p.appVsTrackerDelta)}
-                        </p>
+                      <div className="flex gap-4">
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wider text-[#A1AFA0]">
+                            App vs tracker
+                          </p>
+                          <p
+                            className="font-mono text-base font-semibold"
+                            style={{ color: appMeta.accent }}
+                            data-testid={`recon-card-delta-${p.projectId}`}
+                          >
+                            {p.absDelta === 0 ? formatZar(0) : formatZar(p.appVsTrackerDelta)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wider text-[#A1AFA0]">
+                            Tracker vs QB
+                          </p>
+                          <p
+                            className="font-mono text-base font-semibold"
+                            style={{ color: STATUS_META[p.qbStatus].accent }}
+                            data-testid={`recon-card-qb-delta-${p.projectId}`}
+                          >
+                            {p.qbStatus === "unknown"
+                              ? "—"
+                              : p.qbAbsDelta === 0
+                                ? formatZar(0)
+                                : formatZar(p.qbDelta)}
+                          </p>
+                        </div>
                       </div>
                       <div className="text-right text-xs text-[#A1AFA0]">
                         <p>
@@ -359,7 +441,7 @@ export default function FinanceReconciliationBoardPage() {
                     </div>
                     {interactive && (
                       <div className="mt-2 flex items-center gap-1 text-xs font-medium" style={{ color: m.accent }}>
-                        View offending line
+                        View detail
                         <ChevronRight className="h-3 w-3" aria-hidden="true" />
                       </div>
                     )}

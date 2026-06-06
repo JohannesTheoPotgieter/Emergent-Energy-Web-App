@@ -1307,16 +1307,39 @@ async function applyMutation(
     }
     case "recon_ignore_clear": {
       if (!proposal.targetId) return;
+      let cleared = false;
       if (proposal.targetTable === "qb_recon_ignores") {
         await tx
           .update(qbReconIgnores)
           .set({ deletedAt: new Date() })
           .where(eq(qbReconIgnores.id, proposal.targetId));
+        cleared = true;
       } else if (proposal.targetTable === "qb_revenue_recon_ignores") {
         await tx
           .update(qbRevenueReconIgnores)
           .set({ deletedAt: new Date() })
           .where(eq(qbRevenueReconIgnores.id, proposal.targetId));
+        cleared = true;
+      }
+      if (cleared) {
+        // P2.3: a CASCADE-driven recon-ignore clear must be audited too — never
+        // silently dropped. (Route-level create/clear already audit via
+        // logAuditFromReq; this is the only clear path that previously didn't.)
+        await recordAudit({
+          userId: (proposal.resolvedBy ?? proposal.createdBy ?? undefined) as number | undefined,
+          entityType:
+            proposal.targetTable === "qb_revenue_recon_ignores"
+              ? "qb_revenue_recon_ignore"
+              : "qb_recon_ignore",
+          entityId: String(proposal.targetId),
+          action: "recon_ignore_cleared_via_cascade",
+          changesJson: {
+            reason:
+              "QB entity was linked to the tracker — the prior Ignore was cleared as a cascade side-effect.",
+            cascadeProposalId: proposal.id,
+            targetTable: proposal.targetTable,
+          },
+        });
       }
       return;
     }
