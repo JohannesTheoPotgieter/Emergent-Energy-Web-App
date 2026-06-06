@@ -37,6 +37,26 @@ and `docs/architecture.md` for the architecture baseline.
 - `npm run db:check` — CI guard. Fails if `shared/schema/*.ts` was edited
   without a matching new migration file. Invoked on every PR.
 
+## Build & publish (Replit)
+
+Deploys on Replit (**autoscale**), single port **5000**. The pipeline lives in
+`.replit [deployment]` — do not change it without owner approval:
+
+- **Deploy build:** `npm run build && npm run db:migrate`
+- **Run:** `npm run start`
+
+Rules that keep a change deploy-safe:
+
+- **Every schema change ships as a committed Drizzle migration file.** Edit
+  `shared/schema/*.ts`, then `npm run db:generate -- --name=<short_snake_case>`
+  and commit the generated `migrations/*.sql` + `migrations/meta/*`. Deploy
+  applies migrations via `drizzle-kit migrate`. A `db:push`-only change will
+  **NOT** publish — `db:push` does not run on deploy.
+- **A PR is not done until `npm run check`, `npm run db:check`, `npm run test`,
+  and `npm run build` all pass.**
+- **Secrets live in Replit Secrets Manager** — never in `.replit`, `replit.md`,
+  or any committed file.
+
 ## Project Structure
 
 ```
