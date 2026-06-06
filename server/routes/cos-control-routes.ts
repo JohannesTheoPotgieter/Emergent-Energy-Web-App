@@ -53,6 +53,20 @@ function isEffectivelyRealisedLocal(exp: any, monthKey: string | null, currentMo
   });
 }
 
+// § 3.3 RECOGNITION amount: ACTUAL only — budget is NEVER substituted (that would
+// recognise unincurred cost). Used on every COS recognition surface.
+export function recognitionActualAmount(e: any): number {
+  const v = parseFloat(e?.expenseActualTotal || '0');
+  return Number.isFinite(v) ? v : 0;
+}
+
+// § 3.4 CASH outflow amount — the cashflow-forecast surfaces' own (actual-else-
+// budget) logic, kept SEPARATE and clearly named. Cash logic unchanged.
+export function cashOutflowAmount(e: any): number {
+  const v = parseFloat(e?.expenseActualTotal || e?.budgetTotal || '0');
+  return Number.isFinite(v) ? v : 0;
+}
+
 export function registerCosControlRoutes(app: Express) {
   // =========================================================================
   // COS CONTROL TOWER APIs
@@ -65,7 +79,7 @@ export function registerCosControlRoutes(app: Express) {
       const lines = expenses
         .filter((e: any) => e.rowType === 'item' || !e.rowType)
         .filter((e: any) => {
-          const amt = parseFloat(e.expenseActualTotal || e.budgetTotal || '0');
+          const amt = recognitionActualAmount(e);
           return !isNaN(amt) && amt !== 0;
         })
         .map((e: any) => ({
@@ -73,7 +87,7 @@ export function registerCosControlRoutes(app: Express) {
           projectName: e.projectName,
           expenseCategory: e.expenseCategory,
           expenseLineItem: e.expenseLineItem,
-          amount: Math.abs(parseFloat(e.expenseActualTotal || e.budgetTotal || '0')),
+          amount: Math.abs(recognitionActualAmount(e)),
           state: e.computedState || classifyExpenseState(e),
           invoiceNumber: e.expenseInvoiceNumber,
           poNumber: e.expensePoNumber,
@@ -104,7 +118,7 @@ export function registerCosControlRoutes(app: Express) {
       const lines = expenses
         .filter((e: any) => e.rowType === 'item' || !e.rowType)
         .filter((e: any) => {
-          const amt = parseFloat(e.expenseActualTotal || e.budgetTotal || '0');
+          const amt = recognitionActualAmount(e);
           return !isNaN(amt) && amt !== 0;
         })
         .map((e: any) => ({
@@ -112,7 +126,7 @@ export function registerCosControlRoutes(app: Express) {
           projectName: e.projectName,
           expenseCategory: e.expenseCategory,
           expenseLineItem: e.expenseLineItem,
-          amount: Math.abs(parseFloat(e.expenseActualTotal || e.budgetTotal || '0')),
+          amount: Math.abs(recognitionActualAmount(e)),
           state: e.computedState || classifyExpenseState(e),
           invoiceNumber: e.expenseInvoiceNumber,
           poNumber: e.expensePoNumber,
@@ -141,7 +155,7 @@ export function registerCosControlRoutes(app: Express) {
       let lines = expenses
         .filter((e: any) => e.rowType === 'item' || !e.rowType)
         .filter((e: any) => {
-          const amt = parseFloat(e.expenseActualTotal || e.budgetTotal || '0');
+          const amt = recognitionActualAmount(e);
           return !isNaN(amt) && amt !== 0;
         })
         .map((e: any) => ({
@@ -242,7 +256,7 @@ export function registerCosControlRoutes(app: Express) {
           });
         }
         const entry = poMap.get(po)!;
-        entry.totalAmount += Math.abs(parseFloat(e.expenseActualTotal || e.budgetTotal || '0'));
+        entry.totalAmount += Math.abs(recognitionActualAmount(e));
         entry.projects.add(e.projectName);
         if (e.expenseInvoiceNumber) entry.invoiceNumbers.add(e.expenseInvoiceNumber);
         entry.lineCount++;
@@ -285,14 +299,14 @@ export function registerCosControlRoutes(app: Express) {
       const outflowLines: CashflowLineItem[] = expenses
         .filter((e: any) => e.rowType === 'item' || !e.rowType)
         .filter((e: any) => {
-          const amt = parseFloat(e.expenseActualTotal || e.budgetTotal || '0');
+          const amt = cashOutflowAmount(e);
           return !isNaN(amt) && amt !== 0;
         })
         .map((e: any) => ({
           id: e.id,
           projectName: e.projectName,
           type: 'outflow' as const,
-          amount: Math.abs(parseFloat(e.expenseActualTotal || e.budgetTotal || '0')),
+          amount: Math.abs(cashOutflowAmount(e)),
           actualDate: e.expensePaymentDate || null,
           forecastDate: e.computedForecastPaymentDate || null,
           confidence: scoreExpenseConfidence(e),
@@ -356,14 +370,14 @@ export function registerCosControlRoutes(app: Express) {
       const outflowLines: CashflowLineItem[] = mergedWeekDetail.expenses
         .filter((e: any) => e.rowType === 'item' || !e.rowType)
         .filter((e: any) => {
-          const amt = parseFloat(e.expenseActualTotal || e.budgetTotal || '0');
+          const amt = cashOutflowAmount(e);
           return !isNaN(amt) && amt !== 0;
         })
         .map((e: any) => ({
           id: e.id,
           projectName: e.projectName,
           type: 'outflow' as const,
-          amount: Math.abs(parseFloat(e.expenseActualTotal || e.budgetTotal || '0')),
+          amount: Math.abs(cashOutflowAmount(e)),
           actualDate: e.expensePaymentDate || null,
           forecastDate: e.computedForecastPaymentDate || null,
           confidence: scoreExpenseConfidence(e),
@@ -680,7 +694,7 @@ export function registerCosControlRoutes(app: Express) {
         projectName: e.projectName,
         expenseCategory: e.expenseCategory,
         expenseLineItem: e.expenseLineItem,
-        amount: Math.abs(parseFloat(e.expenseActualTotal || e.budgetTotal || '0')),
+        amount: Math.abs(recognitionActualAmount(e)),
         state: e.computedState || classifyExpenseState(e),
         invoiceNumber: e.expenseInvoiceNumber,
         poNumber: e.expensePoNumber,
@@ -694,14 +708,16 @@ export function registerCosControlRoutes(app: Express) {
       }));
 
       let scenarioLines = cosLines;
-      let baselineMonthly = computeMonthlyBuckets(cosLines);
+      const baselineResult = computeMonthlyBuckets(cosLines);
+      let baselineMonthly = baselineResult.buckets;
 
       if (scenarioId) {
         const overrideMap = new Map();
         scenarioLines = cosLines;
       }
 
-      const scenarioMonthly = computeMonthlyBuckets(scenarioLines);
+      const scenarioResult = computeMonthlyBuckets(scenarioLines);
+      const scenarioMonthly = scenarioResult.buckets;
 
       const allMonths = new Set([...baselineMonthly.keys(), ...scenarioMonthly.keys()]);
       const sortedMonths = Array.from(allMonths).sort();
@@ -726,7 +742,10 @@ export function registerCosControlRoutes(app: Express) {
 
       const summary = aggregateCOS(scenarioLines);
 
-      res.json({ monthly: monthlyData, summary, lineCount: scenarioLines.length });
+      // § 3.3: lines with a blank invoice date are flagged, never bucketed by
+      // another date. Surface the flag so the UI can prompt for the invoice date.
+      const missingInvoiceDate = Array.from(new Set([...baselineResult.missingInvoiceDate, ...scenarioResult.missingInvoiceDate]));
+      res.json({ monthly: monthlyData, summary, lineCount: scenarioLines.length, missingInvoiceDate });
     } catch (err: any) {
       console.error('[COS Control Scenario Monthly]', err);
       throw err;
@@ -931,7 +950,7 @@ export function registerCosControlRoutes(app: Express) {
       const invoiceMap = new Map<string, any>();
 
       for (const e of items) {
-        const amount = Math.abs(parseFloat(e.expenseActualTotal || e.budgetTotal || '0'));
+        const amount = Math.abs(recognitionActualAmount(e));
         if (amount === 0) continue;
 
         const lineState = e.computedState || classifyExpenseState(e);
@@ -1019,7 +1038,7 @@ export function registerCosControlRoutes(app: Express) {
       }
 
       let lines = items.map((e: any) => {
-        const amount = Math.abs(parseFloat(e.expenseActualTotal || e.budgetTotal || '0'));
+        const amount = Math.abs(recognitionActualAmount(e));
         const lineState = e.computedState || classifyExpenseState(e);
 
         const entityKey = `expense_line::${e.id}`;
@@ -1146,7 +1165,7 @@ export function registerCosControlRoutes(app: Express) {
 
       const buildCashflowLines = (expenses: any[], inflows: any[], overrideMap: any = {}): { inflowLines: CashflowLineItem[]; outflowLines: CashflowLineItem[] } => {
         const outflowLines: CashflowLineItem[] = expenses.map((e: any) => {
-          const amount = Math.abs(parseFloat(e.expenseActualTotal || e.budgetTotal || '0'));
+          const amount = Math.abs(cashOutflowAmount(e));
           if (amount === 0) return null;
 
           const entityKey = `expense_line::${e.id}`;
@@ -1259,7 +1278,7 @@ export function registerCosControlRoutes(app: Express) {
       const lines: any[] = [];
 
       for (const e of expenseItems) {
-        const amount = Math.abs(parseFloat(e.expenseActualTotal || e.budgetTotal || '0'));
+        const amount = Math.abs(cashOutflowAmount(e));
         if (amount === 0) continue;
 
         const entityKey = `expense_line::${e.id}`;
