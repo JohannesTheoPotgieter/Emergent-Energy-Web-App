@@ -109,6 +109,14 @@ export interface FinanceLine {
   /** YYYY-MM month key derived from invoiceRaisedDate; null when no T date. */
   recognitionMonth: string | null;
 
+  /**
+   * R1 "move period": the human-corrected invoice-raised date on the parent
+   * line, or null when the line sits on its imported invoice date. When set,
+   * `invoiceRaisedDate` / `recognitionMonth` already reflect it; this field
+   * just lets read surfaces badge the line as moved and undo it.
+   */
+  recognitionDateOverride: string | null;
+
   /** Human-readable warning when this line could not be revenue-derived. */
   derivationWarning: string | null;
 }
@@ -780,6 +788,7 @@ export function deriveFinanceLinesFromRows(
       // Use invoice-date recognition only. No-invoice lines remain
       // unrecognised for actual COS/REV month rollups.
       recognitionMonth: monthKey(recognitionDate),
+      recognitionDateOverride: (parent?.recognitionDateOverride as string | null) ?? null,
       derivationWarning: warning,
     });
   }

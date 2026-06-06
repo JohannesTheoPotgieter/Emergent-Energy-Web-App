@@ -2665,7 +2665,7 @@ router.get('/api/cos-tracker', requireAuth, requirePermission('cos', 'view'), as
     for (const row of rawCostLines) {
       const amount = row.amountExVat ? Number(row.amountExVat) : 0;
       if (!Number.isFinite(amount) || amount === 0) continue;
-      const lineMonthDate = row.invoiceDate;
+      const lineMonthDate = row.recognitionDateOverride ?? row.invoiceDate;
       if (!lineMonthDate) continue;
       const dm = String(lineMonthDate).match(/^(\d{4})-(\d{2})/);
       if (!dm) continue;
@@ -3119,8 +3119,8 @@ router.get(
         const projectName = (row.projectName || '').replace(/_Tracker$/i, '') || null;
         if (!projectName) continue;
 
-        // Month bucket — invoice_date only, identical to the aggregate.
-        const appMonth = String(row.invoiceDate || '').slice(0, 7) || null;
+        // Month bucket — recognition date (override ?? invoice_date) so a moved line lands in its chosen month, as in the §3.3 totals.
+        const appMonth = String((row.recognitionDateOverride ?? row.invoiceDate) || '').slice(0, 7) || null;
         if (!appMonth) continue;
         if (fromMonthKey) {
           if (appMonth < fromMonthKey || appMonth > monthKey) continue;
@@ -3212,8 +3212,8 @@ router.get(
           checkFlag: (row as any).checkFlag ?? null,
           qbTransactionType: linkedBill ? 'Bill' : null,
           qbTransactionDate: linkedBill?.txnDate ?? null,
-          recognitionDate: row.invoiceDate
-            ? String(row.invoiceDate)
+          recognitionDate: (row.recognitionDateOverride ?? row.invoiceDate)
+            ? String(row.recognitionDateOverride ?? row.invoiceDate)
             : (linkedBill?.txnDate ?? null),
           syncSource: linkedBill ? 'quickbooks' : 'app',
           sourceTraceId: linkedBill ? `qb-bill:${linkedBill.id}` : `ncl:${row.id}`,
@@ -4696,7 +4696,7 @@ router.get(
           .toLowerCase();
         if (rowSupplier && billSupplier && rowSupplier !== billSupplier)
           codes.push('Supplier mismatch');
-        const rowMonth = String(row?.invoiceDate || '').slice(0, 7);
+        const rowMonth = String((row?.recognitionDateOverride ?? row?.invoiceDate) || '').slice(0, 7);
         const billMonth = String(bill?.txnDate || '').slice(0, 7);
         if (rowMonth && billMonth && rowMonth !== billMonth) codes.push('Posted to wrong month');
         const rowAmt = Number(row?.amountExVat ?? 0);
@@ -4709,7 +4709,7 @@ router.get(
         const siblings = linkByCost.get(row.id) ?? [];
         const link = siblings[0];
         const bill = link ? billById.get(String(link.qbEntityId)) : null;
-        const month = String(bill?.txnDate || row.invoiceDate || '').slice(0, 7);
+        const month = String(bill?.txnDate || row.recognitionDateOverride || row.invoiceDate || '').slice(0, 7);
         if (!month) continue;
         if (monthKey && month !== monthKey) continue;
         const reasons = link ? reasonCodesFor(row, bill) : reasonCodesFor(row, null);

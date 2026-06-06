@@ -627,6 +627,7 @@ export class FinanceExpenseEngineRepository {
     invoiceDate: string | null;
     paidDate: string | null;
     adminDateOverride: string | null;
+    recognitionDateOverride: string | null;
   } | null> {
     const [row] = await this.dbInstance
       .select({
@@ -636,6 +637,7 @@ export class FinanceExpenseEngineRepository {
         invoiceDate: normalizedCostLines.invoiceDate,
         paidDate: normalizedCostLines.paidDate,
         adminDateOverride: normalizedCostLines.adminDateOverride,
+        recognitionDateOverride: normalizedCostLines.recognitionDateOverride,
       })
       .from(normalizedCostLines)
       .where(and(
@@ -645,6 +647,57 @@ export class FinanceExpenseEngineRepository {
       ))
       .limit(1);
     return row ?? null;
+  }
+
+  /**
+   * R1 "move period" / "set invoice date" — write the recognition-date
+   * override (the human-corrected invoice-raised date) on the active parent
+   * cost line. In-place update of the active snapshot row, mirroring
+   * updateCostLineAdminDateOverride. Smart Import never writes these columns,
+   * so the override survives a re-import (R6 — the old month cannot be silently
+   * resurrected). Pass nulls to clear the override.
+   */
+  async updateCostLineRecognitionDateOverride(
+    expenseId: number,
+    fields: {
+      recognitionDateOverride: string | null;
+      recognitionDateOverrideReason: string | null;
+      recognitionDateOverrideBy: number | null;
+      recognitionDateOverrideAt: Date | null;
+    },
+  ): Promise<typeof normalizedCostLines.$inferSelect | null> {
+    const [updated] = await this.dbInstance
+      .update(normalizedCostLines)
+      .set(fields)
+      .where(and(
+        eq(normalizedCostLines.id, expenseId),
+        isNull(normalizedCostLines.effectiveTo),
+        isNull(normalizedCostLines.deletedAt),
+      ))
+      .returning();
+    return updated ?? null;
+  }
+
+  /**
+   * R1 "remove" — soft-close the active cost line so it drops out of every COS
+   * / revenue / GP read (all of which filter isNull(deletedAt)). The who/why is
+   * captured in the audit event by the caller; the period-lock guard runs first
+   * so a line cannot be removed from a locked month without a reasoned
+   * COO/CFO/CEO override.
+   */
+  async softRemoveCostLine(
+    expenseId: number,
+  ): Promise<typeof normalizedCostLines.$inferSelect | null> {
+    const [updated] = await this.dbInstance
+      .update(normalizedCostLines)
+      .set({ deletedAt: new Date() })
+      .where(and(
+        eq(normalizedCostLines.id, expenseId),
+        isNull(normalizedCostLines.effectiveTo),
+        isNull(normalizedCostLines.deletedAt),
+      ))
+      .returning();
+    return updated ?? null;
   }
 }
 

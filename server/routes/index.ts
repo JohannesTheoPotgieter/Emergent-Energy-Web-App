@@ -28,6 +28,7 @@ import { registerDeliveryMilestonesRoutes } from './delivery-milestones.routes';
 import { registerMyQueueRoutes } from './my-queue.routes';
 import { registerImportConfigRoutes } from './import-config.routes';
 import { registerSmartImportReviewRoutes } from './smart-import-review.routes';
+import { registerCosLineReviewRoutes } from './cos-line-review.routes';
 
 export async function registerRoutes(httpServer: Server, app: Express) {
   registerTemplateGovernanceRoutes(app);
@@ -58,5 +59,6 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerMyQueueRoutes(app);
   registerImportConfigRoutes(app);
   registerSmartImportReviewRoutes(app);
+  registerCosLineReviewRoutes(app);
   return registerLegacyRoutes(httpServer, app);
 }
