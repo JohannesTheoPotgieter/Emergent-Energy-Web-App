@@ -115,6 +115,7 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Cost of Sales", path: "/cos" },
       { label: "Revenue", path: "/revenue-tracker" },
       { label: "Gross Profit", path: "/finance/gp/company" },
+      { label: "Reconciliation", path: "/finance/reconciliation", requiredPathPermissions: ["financials:view"] },
       { label: "FYE Tracking Report", path: "/fye-revenue-tracking" },
       { label: "QuickBooks", path: "/finance/quickbooks" },
       { label: "Payment Requests", path: "/payment-request-board" },
