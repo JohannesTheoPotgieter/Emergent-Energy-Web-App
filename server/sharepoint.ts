@@ -602,14 +602,18 @@ export async function listFolderChildren(
   }
 
   const result = await graphGet(url, "list folder children");
-  // Folder + periodic auto-import discovery. NOTE: do NOT use `?$filter=file ne null`
-  // on /children — Microsoft Graph does not support $filter on a driveItem's
-  // children collection and returns 400 invalidRequest (this was the cause of
-  // SCHEDULED_IMPORT_FAILED / "no successful runs"). Exclude folders and apply
-  // the extension + lock-file/conflicted-copy exclusions (M2) client-side, the
-  // same way the connection-test path does.
+  // Return every Excel-extension file in the folder (folders excluded). We no
+  // longer drop Office lock files ("~$…") or "conflicted copy" duplicates here:
+  // the scheduled importer (server/services/scheduled-import-v2.ts) now owns
+  // ingest hygiene, so those files are surfaced — skipped-with-a-log or
+  // quarantined as `awaiting_review` — instead of silently disappearing. The
+  // connection-test path keeps using isTrackerWorkbookName for its clean count.
+  // NOTE: do NOT use `?$filter=file ne null` on /children — Microsoft Graph
+  // does not support $filter on a driveItem's children collection and returns
+  // 400 invalidRequest (this was the cause of SCHEDULED_IMPORT_FAILED).
   return (result.value || []).filter(
-    (item: any) => item?.file && item.name && isTrackerWorkbookName(item.name),
+    (item: any) =>
+      item?.file && typeof item.name === "string" && /\.(xlsx|xlsm|xls)$/i.test(item.name),
   );
 }
 

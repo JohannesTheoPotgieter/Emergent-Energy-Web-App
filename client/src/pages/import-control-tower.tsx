@@ -61,6 +61,11 @@ interface ImportRun {
   batchRunId: string | null;
   /** "scheduler" = folder pickup, "manual" = single-file upload. */
   source: "scheduler" | "manual";
+  // Set when the scheduler quarantined this file during ingest hygiene — a
+  // conflicted-copy / older-revision duplicate parked as awaiting_review and
+  // never auto-committed. Null for normal runs.
+  quarantineReason: string | null;
+  quarantineKind: "conflicted_copy" | "older_revision" | null;
 }
 
 interface ImportIssue {
@@ -386,8 +391,11 @@ export default function ImportControlTowerPage() {
                           {run.uploadedAt ? format(new Date(run.uploadedAt), "dd MMM yyyy HH:mm") : "—"}
                         </TableCell>
                         <TableCell>
-                          {run.errorMessage ? (
-                            <span title={run.errorMessage} data-testid={`status-with-error-${run.id}`}>
+                          {(run.errorMessage || run.quarantineReason) ? (
+                            <span
+                              title={run.errorMessage ?? run.quarantineReason ?? undefined}
+                              data-testid={`status-with-error-${run.id}`}
+                            >
                               {statusBadge(run.status)}
                             </span>
                           ) : (
@@ -501,6 +509,27 @@ export default function ImportControlTowerPage() {
                                         {format(new Date(run.errorAt), "dd MMM yyyy HH:mm")}
                                       </p>
                                     )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            {run.quarantineReason && (
+                              <div
+                                className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3"
+                                data-testid={`text-quarantine-message-${run.id}`}
+                              >
+                                <div className="flex items-start gap-2">
+                                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-amber-700" />
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+                                      {run.quarantineKind === "conflicted_copy" && "Quarantined — conflicted / duplicate copy"}
+                                      {run.quarantineKind === "older_revision" && "Quarantined — older revision"}
+                                      {!run.quarantineKind && "Quarantined — duplicate"}
+                                    </p>
+                                    <p className="mt-1 text-sm text-amber-900">{run.quarantineReason}</p>
+                                    <p className="mt-1 text-[11px] text-amber-700">
+                                      Parked for review — not auto-committed, so it cannot double-count a project.
+                                    </p>
                                   </div>
                                 </div>
                               </div>

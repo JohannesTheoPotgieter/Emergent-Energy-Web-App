@@ -3889,6 +3889,9 @@ router.get("/api/import-control-tower/history", requireAuth, requirePermission("
         errorAt: errorEnvelope?.failedAt ?? null,
         batchRunId,
         source,
+        // Quarantine reason stamped by the scheduler's ingest-hygiene pass (conflicted-copy / older-revision parked as awaiting_review, never auto-committed).
+        quarantineReason: typeof summary?.schedulerV2?.quarantine?.reason === "string" ? summary.schedulerV2.quarantine.reason : null,
+        quarantineKind: typeof summary?.schedulerV2?.quarantine?.kind === "string" ? summary.schedulerV2.quarantine.kind : null,
       };
     }));
 

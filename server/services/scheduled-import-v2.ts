@@ -47,6 +47,10 @@ import {
   findProjectMatches,
   type ProjectMatch,
 } from "../lib/import/project-match";
+import {
+  planFolderIngest,
+  type QuarantinedFile,
+} from "../lib/import/ingest-hygiene";
 import { resolveSchedulerConflictPolicy } from "../imports/scheduler-conflict-policy";
 import { commitSmartImportRunAsSystem } from "./scheduler-commit";
 import { IMPORT_FILE_ALWAYS_WINS } from "../imports/import-conflict-policy";
@@ -87,6 +91,12 @@ interface FileOutcome {
 function computeHash(buffer: Buffer): string {
   return crypto.createHash("sha256").update(buffer).digest("hex");
 }
+
+// Auto-match bar for unattended folder pickups. File-always-wins lowers it to
+// match the interactive "attach to closest >=0.75" policy; otherwise keep the
+// conservative >=0.85 auto-map. Shared by processFileV2 and the dedupe
+// resolver so the two never drift.
+const AUTO_MATCH_THRESHOLD = IMPORT_FILE_ALWAYS_WINS ? 0.75 : 0.85;
 
 /**
  * Build an ISO-keyed batch identifier for one scheduler tick.
@@ -194,11 +204,7 @@ async function processFileV2(
   if (!autoMappedProjectId) {
     projectMatches = await findProjectMatches(extractedName);
     bestMatch = projectMatches[0];
-    // File-always-wins lowers the unattended auto-match bar to match the
-    // interactive "attach to closest ≥0.75" policy; otherwise keep the
-    // conservative ≥0.85 auto-map.
-    const autoMatchThreshold = IMPORT_FILE_ALWAYS_WINS ? 0.75 : 0.85;
-    if (bestMatch && bestMatch.confidence >= autoMatchThreshold) {
+    if (bestMatch && bestMatch.confidence >= AUTO_MATCH_THRESHOLD) {
       autoMappedProjectId = bestMatch.projectId;
       autoMappedProjectName = bestMatch.projectName;
       resolvedProjectName = bestMatch.projectName;
@@ -335,6 +341,82 @@ async function processFileV2(
 }
 
 /**
+ * Read-only project resolution mirroring processFileV2's binding + name-match
+ * logic, used by the dedupe pre-pass to group same-project files in one cycle.
+ * No side effects — binding-usage is recorded later, and only for the file
+ * that actually becomes the candidate (inside processFileV2).
+ */
+async function resolveAutoMappedProjectId(fileName: string): Promise<number | null> {
+  const binding = await findActiveBindingForFile(fileName);
+  if (binding) {
+    const boundName = await getProjectNameById(binding.projectId);
+    if (boundName) return binding.projectId;
+  }
+  const extractedName = extractProjectNameFromFilename(fileName);
+  const matches = await findProjectMatches(extractedName);
+  const best = matches[0];
+  return best && best.confidence >= AUTO_MATCH_THRESHOLD ? best.projectId : null;
+}
+
+/**
+ * Park a quarantined file as an `awaiting_review` smart_import_runs row with a
+ * clear reason. Quarantined files are NEVER auto-committed and NEVER reach the
+ * finance write path — the operator decides in the Control Tower. The file is
+ * a known duplicate/older revision, so we do not download it: there is no
+ * preview and no content hash, just the reason for review.
+ */
+async function parkQuarantinedFile(
+  q: QuarantinedFile,
+  triggeredBy: string,
+  batchRunId: string,
+): Promise<number | null> {
+  let projectId: number | null = null;
+  let projectName = extractProjectNameFromFilename(q.file.name);
+  if (q.kind === "older_revision" && typeof q.projectKey === "number") {
+    const boundName = await getProjectNameById(q.projectKey);
+    if (boundName) {
+      projectId = q.projectKey;
+      projectName = boundName;
+    }
+  }
+
+  const summaryJson = {
+    schedulerV2: {
+      triggeredBy,
+      triggerType: "schedule",
+      batchRunId,
+      quarantine: {
+        kind: q.kind,
+        reason: q.reason,
+        chosenFile: q.chosenFile ?? null,
+      },
+    },
+  };
+
+  try {
+    const [row] = await db
+      .insert(smartImportRuns)
+      .values({
+        projectId,
+        projectName,
+        uploadedBy: null,
+        sourceFileName: q.file.name,
+        sourceFileHash: null,
+        status: "awaiting_review",
+        summaryJson,
+      })
+      .returning({ id: smartImportRuns.id });
+    return row?.id ?? null;
+  } catch (err) {
+    console.error(
+      `[ScheduledImportV2] Failed to park quarantined file ${q.file.name}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
+}
+
+/**
  * Run the v2 scheduled-import flow against the configured SharePoint folder.
  * Discovers Excel files, parses each through Smart Import v2, and parks them
  * as `awaiting_review` runs for one-click commit via the existing UI.
@@ -389,8 +471,16 @@ export async function runScheduledImportV2(opts: {
       console.warn("[ScheduledImportV2] detectChanges housekeeping failed (non-blocking):", err instanceof Error ? err.message : err);
     }
 
-    // List current files in the configured folder.
-    let folderChildren: Array<{ id: string; name: string }>;
+    // List current files in the configured folder. The listing now includes
+    // Office lock files and "conflicted copy" duplicates (previously dropped in
+    // sharepoint.ts) so the dedupe pass below can skip/quarantine them instead
+    // of letting them silently disappear.
+    let folderChildren: Array<{
+      id: string;
+      name: string;
+      size?: number;
+      lastModifiedDateTime?: string;
+    }>;
     try {
       folderChildren = await listFolderChildren(
         settings.driveId,
@@ -423,7 +513,41 @@ export async function runScheduledImportV2(opts: {
     const batchRunId = makeBatchRunId();
     result.batchRunId = batchRunId;
 
-    for (const child of folderChildren) {
+    // Ingest hygiene + per-project dedupe: one project = one candidate per
+    // cycle. Junk is skipped (debug log only), duplicate / older-revision files
+    // are quarantined as `awaiting_review` (never auto-committed), and only the
+    // surviving candidates flow through the unchanged clean path below.
+    const plan = await planFolderIngest(
+      folderChildren.map((c) => ({
+        id: c.id,
+        name: c.name,
+        size: typeof c.size === "number" ? c.size : null,
+        lastModifiedDateTime: typeof c.lastModifiedDateTime === "string" ? c.lastModifiedDateTime : null,
+      })),
+      resolveAutoMappedProjectId,
+    );
+
+    // (1) Skip junk — Office lock files + zero-byte files. No run row is
+    // created and nothing reaches finance; we only debug-log so the reason is
+    // discoverable without parking an empty review.
+    for (const skipped of plan.skipped) {
+      console.debug(`[ScheduledImportV2] Skipping ${skipped.reason}: ${skipped.file.name}`);
+      result.filesSkipped++;
+    }
+
+    // (2) Quarantine duplicates / older revisions — parked for human review,
+    // surfaced in the awaiting_review UI with the reason, never auto-committed.
+    for (const quarantined of plan.quarantined) {
+      const runId = await parkQuarantinedFile(quarantined, opts.triggeredBy, batchRunId);
+      result.filesParked++;
+      if (runId) {
+        result.runIds.push(runId);
+        await maybeSendImportAlert("needs_review", runId);
+      }
+    }
+
+    // (3) Candidates — the clean single-file flow, byte-for-byte unchanged.
+    for (const child of plan.candidates) {
       try {
         const outcome = await processFileV2(
           { id: child.id, name: child.name, driveId: settings.driveId },
