@@ -6,6 +6,7 @@ import { getAssignedEvidenceByCostLineIds } from "../lib/finance/qb-allocation-r
 import { logAudit } from "../audit-logger";
 import {
   normalizedCostLines, normalizedCostLineActuals, projectInfo, smartImportRuns,
+  purchaseOrders,
   type ProgramExpense, type InsertProgramExpense,
 } from "@shared/schema";
 import { db } from "../db";
@@ -627,6 +628,7 @@ export class FinanceExpenseEngineRepository {
     invoiceDate: string | null;
     paidDate: string | null;
     adminDateOverride: string | null;
+    recognitionDateOverride: string | null;
   } | null> {
     const [row] = await this.dbInstance
       .select({
@@ -636,6 +638,7 @@ export class FinanceExpenseEngineRepository {
         invoiceDate: normalizedCostLines.invoiceDate,
         paidDate: normalizedCostLines.paidDate,
         adminDateOverride: normalizedCostLines.adminDateOverride,
+        recognitionDateOverride: normalizedCostLines.recognitionDateOverride,
       })
       .from(normalizedCostLines)
       .where(and(
@@ -645,6 +648,105 @@ export class FinanceExpenseEngineRepository {
       ))
       .limit(1);
     return row ?? null;
+  }
+
+  /**
+   * R1 "move period" / "set invoice date" — write the recognition-date
+   * override (the human-corrected invoice-raised date) on the active parent
+   * cost line. In-place update of the active snapshot row, mirroring
+   * updateCostLineAdminDateOverride. Smart Import never writes these columns,
+   * so the override survives a re-import (R6 — the old month cannot be silently
+   * resurrected). Pass nulls to clear the override.
+   */
+  async updateCostLineRecognitionDateOverride(
+    expenseId: number,
+    fields: {
+      recognitionDateOverride: string | null;
+      recognitionDateOverrideReason: string | null;
+      recognitionDateOverrideBy: number | null;
+      recognitionDateOverrideAt: Date | null;
+    },
+  ): Promise<typeof normalizedCostLines.$inferSelect | null> {
+    const [updated] = await this.dbInstance
+      .update(normalizedCostLines)
+      .set(fields)
+      .where(and(
+        eq(normalizedCostLines.id, expenseId),
+        isNull(normalizedCostLines.effectiveTo),
+        isNull(normalizedCostLines.deletedAt),
+      ))
+      .returning();
+    return updated ?? null;
+  }
+
+  /**
+   * R1 "remove" — soft-close the active cost line so it drops out of every COS
+   * / revenue / GP read (all of which filter isNull(deletedAt)). The who/why is
+   * captured in the audit event by the caller; the period-lock guard runs first
+   * so a line cannot be removed from a locked month without a reasoned
+   * COO/CFO/CEO override.
+   */
+  async softRemoveCostLine(
+    expenseId: number,
+  ): Promise<typeof normalizedCostLines.$inferSelect | null> {
+    const [updated] = await this.dbInstance
+      .update(normalizedCostLines)
+      .set({ deletedAt: new Date() })
+      .where(and(
+        eq(normalizedCostLines.id, expenseId),
+        isNull(normalizedCostLines.effectiveTo),
+        isNull(normalizedCostLines.deletedAt),
+      ))
+      .returning();
+    return updated ?? null;
+  }
+
+  /**
+   * Distinct active-cost-line projects (id + name). For portfolio reads that
+   * scope to "every project with cost lines" (e.g. the COS line review).
+   */
+  async listActiveCostLineProjects(): Promise<
+    Array<{ projectId: number | null; projectName: string | null }>
+  > {
+    return this.dbInstance
+      .selectDistinct({
+        projectId: normalizedCostLines.projectId,
+        projectName: normalizedCostLines.projectName,
+      })
+      .from(normalizedCostLines)
+      .where(and(
+        isNull(normalizedCostLines.effectiveTo),
+        isNull(normalizedCostLines.deletedAt),
+      ));
+  }
+
+  /**
+   * Authorised PO total per PO number (string) for the given projects, latest
+   * PO row per number winning. Backs the COS line-review invoice↔PO check (R3).
+   */
+  async listPurchaseOrderTotalsByProject(
+    projectIds: number[],
+  ): Promise<Map<string, number>> {
+    if (projectIds.length === 0) return new Map();
+    const rows = await this.dbInstance
+      .select({
+        id: purchaseOrders.id,
+        poNumber: purchaseOrders.poNumber,
+        total: purchaseOrders.total,
+      })
+      .from(purchaseOrders)
+      .where(inArray(purchaseOrders.projectId, projectIds));
+    const latest = new Map<string, { id: number; total: number }>();
+    for (const r of rows) {
+      const key = String(r.poNumber);
+      const prev = latest.get(key);
+      if (!prev || r.id > prev.id) {
+        latest.set(key, { id: r.id, total: Number(r.total ?? 0) });
+      }
+    }
+    const out = new Map<string, number>();
+    for (const [key, v] of latest) out.set(key, v.total);
+    return out;
   }
 }
 

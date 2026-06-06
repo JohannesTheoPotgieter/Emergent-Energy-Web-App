@@ -109,6 +109,14 @@ export interface FinanceLine {
   /** YYYY-MM month key derived from invoiceRaisedDate; null when no T date. */
   recognitionMonth: string | null;
 
+  /**
+   * R1 "move period": the human-corrected invoice-raised date on the parent
+   * line, or null when the line sits on its imported invoice date. When set,
+   * `invoiceRaisedDate` / `recognitionMonth` already reflect it; this field
+   * just lets read surfaces badge the line as moved and undo it.
+   */
+  recognitionDateOverride: string | null;
+
   /** Human-readable warning when this line could not be revenue-derived. */
   derivationWarning: string | null;
 }
@@ -317,6 +325,10 @@ export class FinanceLineLevelRepository {
           // Persisted Smart Import col U — preferred over derived
           // (Q/X)*J so the GP page matches the Revenue tracker.
           revenueRecognitionAmount: normalizedCostLines.revenueRecognitionAmount,
+          // R1 "move period": a human-corrected invoice-raised date. When set
+          // it wins over the imported invoice_date for the recognition bucket
+          // (§ 3.3) — formula unchanged, just which invoice-raised date.
+          recognitionDateOverride: normalizedCostLines.recognitionDateOverride,
         })
         .from(normalizedCostLines)
         .where(
@@ -464,6 +476,10 @@ export interface FinanceLineParentRowInput {
   // predicate so the bucket classifier matches the COS page line-for-line.
   cosStatusOverride?: string | null;
   cosRealised?: boolean | null;
+  // R1 "move period" — human-corrected invoice-raised date. When set it wins
+  // over the imported invoice_date for the recognition bucket (§ 3.3); formula
+  // unchanged. Null/absent for every un-moved line.
+  recognitionDateOverride?: string | null;
   /** Persisted Smart Import col U on the parent (text). Falls through
    * to synthesized actuals rows so parent-only lines get the same
    * revenue-recognition number the Revenue tracker would show. */
@@ -622,7 +638,16 @@ export function deriveFinanceLinesFromRows(
   const lines: FinanceLine[] = [];
   for (const a of actualsRows) {
     const parent = parentById.get(a.costLineId);
-    const invoiceRaisedDate = isoDate(a.invoiceDate);
+    // R1 "move period" / "set invoice date": a human-corrected invoice-raised
+    // date on the parent line wins over the imported invoice_date for the
+    // recognition bucket. It is null for every un-touched line, so this is a
+    // no-op except where the weekly finance meeting deliberately (audited,
+    // lock-checked) moved a line. The § 3.3 formula and the § 3.2 realisation
+    // signal are unchanged — recognition still buckets on the invoice-raised
+    // date, this just resolves WHICH invoice-raised date. A re-import refreshes
+    // invoice_date but the override still wins, so the old month can't be
+    // silently resurrected (P1.3 / P3.2).
+    const invoiceRaisedDate = isoDate((parent?.recognitionDateOverride as string | null) ?? a.invoiceDate);
     // Recognition date: Excel parity requires invoice date only
     // (Expenditure Breakdown col T). Forecast/payment dates are cashflow
     // planning inputs and must not move actual COS/REV recognition.
@@ -763,6 +788,7 @@ export function deriveFinanceLinesFromRows(
       // Use invoice-date recognition only. No-invoice lines remain
       // unrecognised for actual COS/REV month rollups.
       recognitionMonth: monthKey(recognitionDate),
+      recognitionDateOverride: (parent?.recognitionDateOverride as string | null) ?? null,
       derivationWarning: warning,
     });
   }

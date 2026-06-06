@@ -85,6 +85,7 @@ import { DateOverridePopover } from '@/components/cashflow/DateOverridePopover';
 import { EditCellPopover } from '@/components/cashflow/EditCellPopover';
 import { OverrideChipMenu } from '@/components/cashflow/OverrideChipMenu';
 import { FindQbMatchesPanel } from '@/components/quickbooks/FindQbMatchesPanel';
+import { PaymentPlanner } from '@/components/cashflow/payment-planner';
 
 interface OutflowByStatus {
   outOfBank: number;
@@ -2268,6 +2269,16 @@ export default function CashflowPage() {
                       </CardContent>
                     )}
                   </Card>
+
+                  {/* R5 — Payment planner. What-if tool to move expense
+                      payment dates and smooth weekly outflows, plus a "Paying
+                      this week" view. Self-contained Card; persistence runs
+                      through the existing date-override endpoint inside it. */}
+                  <PaymentPlanner
+                    fyScope={fyScope}
+                    selectedProjects={selectedProjects}
+                    canEdit={!!canEditCashflow}
+                  />
 
                   <Card
                     className="border border-border shadow-sm rounded-xl overflow-hidden"

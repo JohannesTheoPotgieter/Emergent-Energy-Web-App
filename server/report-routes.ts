@@ -340,8 +340,9 @@ export function registerReportRoutes(app: Express) {
         return true;
       };
 
-      // COS reports filter by invoice_date only (per finance rule).
-      const filteredCost = costRows.filter((r: any) => inPeriod(r.invoiceDate));
+      // COS reports filter by recognition date (override ?? invoice_date), so a
+      // moved line reports in its chosen month (parity with §3.3 / COS tracker).
+      const filteredCost = costRows.filter((r: any) => inPeriod(r.recognitionDateOverride ?? r.invoiceDate));
       const filteredPlan = planRows.filter((r: any) => inPeriod(r.endDate || r.startDate));
 
       const totalCost = filteredCost.reduce((sum: any, row: any) => sum + (parseFloat(row.amountExVat || "0") || 0), 0);

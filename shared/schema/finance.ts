@@ -731,6 +731,18 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   adminDateOverrideReason: text("admin_date_override_reason"),
   adminDateOverrideBy: integer("admin_date_override_by").references(() => users.id, { onDelete: "set null" }),
   adminDateOverrideAt: timestamp("admin_date_override_at"),
+  // Recognition-month override (R1 "move period" / "set invoice date"). A
+  // human-corrected invoice-raised date: the § 3.3 read path buckets COS +
+  // revenue on `recognitionDateOverride ?? invoiceDate`, so a finance-meeting
+  // move lands the line in the chosen month WITHOUT mutating the imported
+  // value (a re-import refreshes invoice_date but the override still wins, so
+  // it can't be silently resurrected — P1.3 / P3.2). The formula is unchanged;
+  // recognition stays on the invoice-raised date (§ 3.3) — this is just which
+  // invoice-raised date, audited + lock-checked on source AND target periods.
+  recognitionDateOverride: date("recognition_date_override"),
+  recognitionDateOverrideReason: text("recognition_date_override_reason"),
+  recognitionDateOverrideBy: integer("recognition_date_override_by").references(() => users.id, { onDelete: "set null" }),
+  recognitionDateOverrideAt: timestamp("recognition_date_override_at"),
   subProjectName: text("sub_project_name"),
   cosStatusOverride: text("cos_status_override"),
   cosStatusOverrideBy: integer("cos_status_override_by").references(() => users.id, { onDelete: "set null" }),
