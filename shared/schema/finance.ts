@@ -591,6 +591,19 @@ export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   // Tracker col R — Milestone Notes & Comments. Previously dropped
   // by the importer (synonym `requirements` mapped to nothing).
   milestoneNotes: text("milestone_notes"),
+  // ---------------------------------------------------------------------------
+  // Provenance / reconciliation (additive — no calculation change).
+  //
+  // Generic source-provenance fields, mirroring the block on
+  // normalized_cost_line_actuals. Revenue (milestone) lines carry the invoiced
+  // figure directly, so the (Q/X)×J derivation trio does not apply here — only
+  // the recognition / colour / source fields are relevant. All nullable; no
+  // read path consumes them for finance aggregates.
+  recognitionMethod: text("recognition_method"), // 'true_invoice' | 'payment_derived'
+  colourSource: text("colour_source"), // 'read' | 'defaulted'
+  sourceFileHash: text("source_file_hash"),
+  sourceCell: text("source_cell"),
+  // ---------------------------------------------------------------------------
   // Per-cell font/fill colour from the source workbook. Keyed by canonical
   // field name, e.g. { invoice_date: { font: "#FF0000", fill: "#FFFF00" } }.
   // The legacy `*_font_color` text columns are kept for backward compat.
@@ -807,6 +820,34 @@ export const normalizedCostLineActuals = pgTable("normalized_cost_line_actuals",
   invoiceDateFontColor: text("invoice_date_font_color"),
   invoiceDateConfirmed: boolean("invoice_date_confirmed"),
   revenueRecognitionAmount: decimal("revenue_recognition_amount", { precision: 15, scale: 2 }),
+  // ---------------------------------------------------------------------------
+  // Provenance / reconciliation (additive — no calculation change).
+  //
+  // These columns let every per-line revenue figure trace back to its source
+  // and make drift between the pasted workbook value and the canonical formula
+  // measurable. They are populated by server/scripts/backfill-provenance.ts
+  // and, going forward, by the importer. NO read path consumes them for
+  // finance aggregates — the canonical figure is still derived in
+  // server/repositories/finance-line-level-repository.ts per
+  // AGENT_GUARDRAILS § 3.3. All nullable.
+  //
+  //   revenue_derived  — recomputed (Q/X)×J: (actual_total / category
+  //     totalActualTotal) × category.revenueAllocation. The canonical formula.
+  //   revenue_stored   — the pasted col-U value (revenue_recognition_amount)
+  //     as imported. A cross-check, never the source of truth.
+  //   recon_delta      — revenue_stored − revenue_derived. Drift measure.
+  //   recognition_method — how recognition was established for this row.
+  //   colour_source    — whether the invoice-date colour signal (§ 3.7) was
+  //     read from the cell or defaulted.
+  //   source_file_hash / source_cell — origin of the imported value.
+  revenueDerived: decimal("revenue_derived", { precision: 15, scale: 2 }),
+  revenueStored: decimal("revenue_stored", { precision: 15, scale: 2 }),
+  reconDelta: decimal("recon_delta", { precision: 15, scale: 2 }),
+  recognitionMethod: text("recognition_method"), // 'true_invoice' | 'payment_derived'
+  colourSource: text("colour_source"), // 'read' | 'defaulted'
+  sourceFileHash: text("source_file_hash"),
+  sourceCell: text("source_cell"),
+  // ---------------------------------------------------------------------------
   financePaymentDate: date("finance_payment_date"),
   comments: text("comments"),
   checkFlag: text("check_flag"),

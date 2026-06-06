@@ -645,6 +645,13 @@
       "when": 1780704581981,
       "tag": "0091_financial_reconciliation_table",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1780704638591,
+      "tag": "0092_finance_provenance_columns",
+      "breakpoints": true
     }
   ]
 }
