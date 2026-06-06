@@ -1442,6 +1442,49 @@ export const insertFinancialReconciliationSchema = createInsertSchema(financialR
 export type InsertFinancialReconciliation = z.infer<typeof insertFinancialReconciliationSchema>;
 export type FinancialReconciliation = typeof financialReconciliation.$inferSelect;
 
+// ===================== MANUAL ADJUSTMENTS =====================
+
+// Unified home for manual financial overrides. In Phase 5 this REPLACES the
+// scattered *_manual tables (tracker_monthly_manual, cashflow_weekly_manual,
+// opex_weekly_manual, available_payment_overrides, fye_revised_budget_monthly).
+// For now those tables stay the live source — this table is populated by a COPY
+// backfill (server/scripts/backfill-manual-adjustments.ts) and is NOT read by
+// any surface yet. Additive only; no behaviour change.
+//
+// One row per logical override: (scope, project, fiscal period, type) → value.
+// `adjustment_type` carries the source-specific discriminator (e.g.
+// 'tracker_<trackerType>_realised', 'fye_revised_<metric>', 'opex_weekly').
+// Snapshot-guarded (§ 3.1) like the other temporal finance tables.
+export const manualAdjustments = pgTable("manual_adjustments", {
+  id: serial("id").primaryKey(),
+  scope: text("scope").notNull(), // 'project' | 'program' | 'opex'
+  // Nullable: only 'project' scope sets it; 'program'/'opex' rows are company-wide.
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
+  // Nullable FK to the fiscal calendar. Resolved from the source row's month/week
+  // key during backfill; left null when the period is outside the seeded calendar
+  // so a COPY never drops a row (preserves row/value parity with the source).
+  fiscalPeriodId: integer("fiscal_period_id").references(() => fiscalPeriods.id, { onDelete: "set null" }),
+  adjustmentType: text("adjustment_type").notNull(),
+  value: decimal("value", { precision: 15, scale: 2 }),
+  reason: text("reason").notNull(),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  // Standard snapshot columns (mirrors the other temporal finance tables).
+  effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
+  effectiveTo: timestamp("effective_to"),
+  snapshotRunId: integer("snapshot_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
+}, (table) => ({
+  scopePeriodActiveIdx: index("manual_adjustments_scope_period_active_idx")
+    .on(table.scope, table.fiscalPeriodId)
+    .where(sql`${table.effectiveTo} IS NULL`),
+  projectActiveIdx: index("manual_adjustments_project_active_idx")
+    .on(table.projectId)
+    .where(sql`${table.effectiveTo} IS NULL`),
+}));
+export const insertManualAdjustmentSchema = createInsertSchema(manualAdjustments).omit({ id: true, createdAt: true, effectiveFrom: true, effectiveTo: true } as any);
+export type InsertManualAdjustment = z.infer<typeof insertManualAdjustmentSchema>;
+export type ManualAdjustment = typeof manualAdjustments.$inferSelect;
+
 export const forecastPipeline = pgTable("forecast_pipeline", {
   id: serial("id").primaryKey(),
   fyeYear: integer("fye_year").notNull().default(2026),
