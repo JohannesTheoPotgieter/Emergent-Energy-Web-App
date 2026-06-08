@@ -173,6 +173,52 @@ const MODERN_MIGRATION_PROBES: Record<
       c,
       "vat_period_locks_unlocked_by_user_id_users_id_fk",
     )),
+  // 0090 adds fiscal_period_id (+ FK) to four finance manual/budget tables.
+  // Probe the migration's final statement (the tracker_monthly_manual FK) so a
+  // partial apply replays rather than being presumed complete.
+  "0090_fiscal_period_backbone": (c) =>
+    constraintExists(
+      c,
+      "tracker_monthly_manual_fiscal_period_id_fiscal_periods_id_fk",
+    ),
+  // 0091 creates the financial_reconciliation table (+ FKs + partial index).
+  // Require table + tail index so a partial apply replays.
+  "0091_financial_reconciliation_table": async (c) =>
+    (await tableExists(c, "financial_reconciliation")) &&
+    (await indexExists(
+      c,
+      "financial_reconciliation_project_period_active_idx",
+    )),
+  // 0092 adds finance provenance columns to normalized_cost_line_actuals and
+  // normalized_revenue_lines. Probe one column on each table (the second is the
+  // migration's tail) so a partial apply replays.
+  "0092_finance_provenance_columns": async (c) =>
+    (await columnExists(c, "normalized_cost_line_actuals", "recognition_method")) &&
+    (await columnExists(c, "normalized_revenue_lines", "source_cell")),
+  // 0093 creates the manual_adjustments table (+ FKs + two partial indexes).
+  // Require table + tail index so a partial apply replays.
+  "0093_manual_adjustments_table": async (c) =>
+    (await tableExists(c, "manual_adjustments")) &&
+    (await indexExists(c, "manual_adjustments_project_active_idx")),
+  // 0094 adds the recon_exceeds flag column to normalized_cost_line_actuals.
+  "0094_recon_exceeds_flag": (c) =>
+    columnExists(c, "normalized_cost_line_actuals", "recon_exceeds"),
+  // 0095 adds the 'rejected' value to the smart_import_status enum. Probe the
+  // enum label directly — there is no table/column artifact.
+  "0095_smart_import_rejected_status": (c) =>
+    enumValueExists(c, "smart_import_status", "rejected"),
+  // 0096 adds the recognition-date override columns (+ FK) to
+  // normalized_cost_lines. Probe the tail column + FK so a partial apply replays.
+  "0096_cos_line_recognition_override": async (c) =>
+    (await columnExists(
+      c,
+      "normalized_cost_lines",
+      "recognition_date_override_at",
+    )) &&
+    (await constraintExists(
+      c,
+      "normalized_cost_lines_recognition_date_override_by_users_id_fk",
+    )),
 };
 
 async function tableExists(client: Client, table: string): Promise<boolean> {
@@ -225,6 +271,23 @@ async function constraintExists(
        SELECT 1 FROM pg_constraint WHERE conname = $1
      ) AS exists;`,
     [constraint],
+  );
+  return res.rows[0]?.exists === true;
+}
+
+async function enumValueExists(
+  client: Client,
+  enumType: string,
+  value: string,
+): Promise<boolean> {
+  const res = await client.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM pg_enum e
+       JOIN pg_type t ON t.oid = e.enumtypid
+       JOIN pg_namespace n ON n.oid = t.typnamespace
+       WHERE n.nspname = 'public' AND t.typname = $1 AND e.enumlabel = $2
+     ) AS exists;`,
+    [enumType, value],
   );
   return res.rows[0]?.exists === true;
 }
