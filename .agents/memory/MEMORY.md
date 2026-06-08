@@ -1,1 +1,1 @@
-- [Migration drift & probes](migration-drift-and-probes.md) — every new migration needs a canary probe or it's silently presumed-applied; non-idempotent CREATE TABLE collides with push-created shells.
+- [Finance empty-data / 500 causes](finance-empty-data-causes.md) — recon board "No data" = empty fiscal_periods; company-overview 500 = handover_packs missing migrated columns (db drift).
