@@ -30,6 +30,37 @@ export const brand = {
   /** Logo intrinsic dimensions (px). */
   logoWidth: 800,
   logoHeight: 202,
+  // ── Official Emergent palette ──────────────────────────────────────
+  // Centralised brand surface colours. The hex authority is index.css
+  // (--ee-brand-*); referenced here as CSS vars so there is a single
+  // source of truth for the value. Use these (or the Tailwind `brand-*`
+  // utilities) instead of hardcoding hex in components.
+  /** Energetic Green — primary / positive / ties. */
+  energeticGreen: "var(--ee-brand-green)",
+  /** Bright Chartreuse — accent, used sparingly. */
+  brightChartreuse: "var(--ee-brand-chartreuse)",
+  /** Solar Beam — surface. */
+  solarBeam: "var(--ee-brand-surface)",
+  /** Slate Grey — body text. */
+  slateGrey: "var(--ee-brand-text)",
+  /** Light Slate — muted text. */
+  lightSlate: "var(--ee-brand-muted)",
+} as const;
+
+// -----------------------------------------------------------------------------
+// Figure / reconciliation status colours. Colour-blind-safe — always pair with
+// an icon + word at the component level. Authority: index.css (--ee-status-*).
+// -----------------------------------------------------------------------------
+
+export const figureStatus = {
+  /** Green — ties / on-track / reconciled. */
+  ties: "var(--ee-status-ties)",
+  /** Amber — drift / needs attention. */
+  drift: "var(--ee-status-drift)",
+  /** Red — adverse / structural. */
+  adverse: "var(--ee-status-adverse)",
+  /** Slate — period locked / signed. */
+  locked: "var(--ee-status-locked)",
 } as const;
 
 // -----------------------------------------------------------------------------

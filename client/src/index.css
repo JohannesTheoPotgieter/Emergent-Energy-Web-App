@@ -45,6 +45,19 @@
   --color-sidebar-border: hsl(var(--sidebar-border));
   --color-sidebar-ring: hsl(var(--sidebar-ring));
 
+  /* Emergent brand palette — exposed as Tailwind utilities (bg-brand-surface,
+     text-brand-text, text-brand-muted, text-brand-green, border-status-drift,
+     …). Authority is the --ee-* custom properties in :root. */
+  --color-brand-green: var(--ee-brand-green);
+  --color-brand-chartreuse: var(--ee-brand-chartreuse);
+  --color-brand-surface: var(--ee-brand-surface);
+  --color-brand-text: var(--ee-brand-text);
+  --color-brand-muted: var(--ee-brand-muted);
+  --color-status-ties: var(--ee-status-ties);
+  --color-status-drift: var(--ee-status-drift);
+  --color-status-adverse: var(--ee-status-adverse);
+  --color-status-locked: var(--ee-status-locked);
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -92,6 +105,24 @@
   --warning: 35 92% 45%;
   --danger: 0 72% 51%;
   --info: 214 78% 48%;
+
+  /* ── Emergent brand palette (official) ───────────────────────────────
+     Single source of truth for the finance brand surfaces. The hex lives
+     ONLY here; components reference the `brand-*` / `status-*` Tailwind
+     utilities (via @theme below) or the TS mirror in
+     client/src/design/tokens.ts. Fixed brand primitives — must not drift,
+     so they are intentionally identical in light and dark. */
+  --ee-brand-green: #1A993A;       /* Energetic Green — primary / positive / ties */
+  --ee-brand-chartreuse: #54AF19;  /* Bright Chartreuse — accent, used sparingly */
+  --ee-brand-surface: #FAF4EF;     /* Solar Beam — surface */
+  --ee-brand-text: #3D4A3D;        /* Slate Grey — body text */
+  --ee-brand-muted: #A1AFA0;       /* Light Slate — muted text */
+  /* Figure / reconciliation status — colour-blind-safe, always paired with
+     an icon + word at the component level. */
+  --ee-status-ties: #1A993A;       /* green — ties / on-track */
+  --ee-status-drift: #B45309;      /* amber — drift / attention */
+  --ee-status-adverse: #B91C1C;    /* red — adverse / structural */
+  --ee-status-locked: #3D4A3D;     /* slate — period locked / signed */
 
   --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
   --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.06);
