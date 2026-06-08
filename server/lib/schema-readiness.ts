@@ -116,6 +116,28 @@ export function computeReadinessFromHashes(
 ): SchemaReadiness {
   const applied = appliedHashes instanceof Set ? appliedHashes : new Set(appliedHashes);
   const sorted = [...migrations].sort((a, b) => a.idx - b.idx);
+  const totalCount = sorted.length;
+
+  // An EMPTY bookkeeping table while migrations exist means the DB is not
+  // migrate-managed — e.g. `db:push`-managed (CI `quality-gate`, local dev),
+  // where the schema is built straight from shared/schema.ts and no journal
+  // rows are written, or a brand-new DB. We cannot infer drift from the
+  // journal here, so fail OPEN ("unknown") rather than falsely reporting every
+  // migration pending (which would 503 health/finance on a healthy push DB).
+  // The real incident has a POPULATED table (0000–0089 applied) with only the
+  // 0090–0096 tail missing, so detection is unaffected.
+  if (totalCount > 0 && applied.size === 0) {
+    return {
+      ready: true,
+      state: "unknown",
+      mode,
+      pendingMigrations: [],
+      appliedCount: 0,
+      totalCount,
+      checkedAt: new Date().toISOString(),
+    };
+  }
+
   const pendingMigrations = sorted.filter((m) => !applied.has(m.hash)).map((m) => m.tag);
   const ready = pendingMigrations.length === 0;
 
@@ -124,8 +146,8 @@ export function computeReadinessFromHashes(
     state: ready ? "ready" : "schema_behind",
     mode,
     pendingMigrations,
-    appliedCount: sorted.length - pendingMigrations.length,
-    totalCount: sorted.length,
+    appliedCount: totalCount - pendingMigrations.length,
+    totalCount,
     checkedAt: new Date().toISOString(),
   };
 }

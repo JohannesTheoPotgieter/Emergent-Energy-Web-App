@@ -60,19 +60,30 @@ async function main(): Promise<void> {
   }
 
   const readiness = computeReadinessFromHashes(migrations, appliedHashes, "postgres");
-  const pending = new Set(readiness.pendingMigrations);
+  const applied = new Set(appliedHashes);
 
   console.log("");
   console.log("Migration status (read-only)");
   console.log("────────────────────────────");
   console.log(`Recorded hashes : ${appliedHashes.length}`);
   console.log(`Total committed : ${readiness.totalCount}`);
+
+  // No journal rows + migrations present = the DB is not migrate-managed
+  // (db:push-managed or brand new). We cannot determine drift from the journal.
+  if (readiness.state === "unknown") {
+    console.log("");
+    console.log("? Cannot determine drift: drizzle.__drizzle_migrations has no rows.");
+    console.log("  The DB is db:push-managed or brand new (not migrate-tracked).");
+    console.log("");
+    process.exit(0);
+  }
+
   console.log(`Applied         : ${readiness.appliedCount}`);
   console.log(`Pending         : ${readiness.pendingMigrations.length}`);
   console.log("");
 
   for (const migration of migrations) {
-    const mark = pending.has(migration.tag) ? "✗ PENDING" : "✓ applied";
+    const mark = applied.has(migration.hash) ? "✓ applied" : "✗ PENDING";
     console.log(`  ${mark}  ${migration.tag}`);
   }
   console.log("");

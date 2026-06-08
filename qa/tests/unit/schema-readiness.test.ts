@@ -83,19 +83,30 @@ describe("computeReadinessFromHashes", () => {
   });
 
   it("lists pending migrations in journal (idx) order, not hash/when order", () => {
-    const result = computeReadinessFromHashes(MIGRATIONS, [], "postgres");
+    // Only 0091 recorded — the rest pending. 0079 (largest `when`) must still
+    // come first because listing is by idx, not by when.
+    const result = computeReadinessFromHashes(MIGRATIONS, ["h0091"], "postgres");
     expect(result.pendingMigrations).toEqual([
       "0079_dev_drift_repair",
       "0089_missing_tables_drift_repair",
       "0090_fiscal_period_backbone",
-      "0091_financial_reconciliation_table",
       "0096_cos_line_recognition_override",
     ]);
+  });
+
+  it("fails open (unknown) when the bookkeeping table is empty (db:push / fresh DB)", () => {
+    // An empty applied set with migrations present is a push-managed or fresh
+    // DB — the schema may well be current; we must NOT 503 it as fully behind.
+    const result = computeReadinessFromHashes(MIGRATIONS, [], "postgres");
+    expect(result.state).toBe("unknown");
+    expect(result.ready).toBe(true);
+    expect(result.pendingMigrations).toEqual([]);
   });
 
   it("is ready for an empty journal", () => {
     const result = computeReadinessFromHashes([], [], "postgres");
     expect(result.ready).toBe(true);
+    expect(result.state).toBe("ready");
     expect(result.pendingMigrations).toEqual([]);
   });
 });
