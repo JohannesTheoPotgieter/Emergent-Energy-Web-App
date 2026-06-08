@@ -119,7 +119,7 @@ export default function FinanceHomePage() {
   });
 
   // Cash available this week — weekly cashflow series.
-  const cashflowQuery = useQuery<CashflowWeek[]>({
+  const cashflowQuery = useQuery<{ weeks: CashflowWeek[] }>({
     queryKey: ["/api/cashflow-2026"],
     queryFn: fetchQueryFn("/api/cashflow-2026"),
     staleTime: 60_000,
@@ -140,7 +140,7 @@ export default function FinanceHomePage() {
   const revVsTarget = overviewQuery.data?.executiveSummary?.revenueVsTarget ?? null;
 
   const currentWeek = useMemo(() => {
-    const weeks = cashflowQuery.data ?? [];
+    const weeks = cashflowQuery.data?.weeks ?? [];
     return (
       weeks.find((w) => w.weekStart <= todayIso && todayIso < w.weekEnd) ??
       weeks.find((w) => w.weekStart <= todayIso) ??
