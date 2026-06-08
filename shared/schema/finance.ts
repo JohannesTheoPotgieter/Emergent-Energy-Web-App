@@ -1459,6 +1459,9 @@ export const insertFinancialReconciliationSchema = createInsertSchema(financialR
 export type InsertFinancialReconciliation = z.infer<typeof insertFinancialReconciliationSchema>;
 export type FinancialReconciliation = typeof financialReconciliation.$inferSelect;
 
+// Company-wide QB↔tracker reconciliation tables (qb_recon_line / qb_recon_summary)
+// live in ./qb-recon.ts — kept out of this already-large module.
+
 // ===================== MANUAL ADJUSTMENTS =====================
 
 // Unified home for manual financial overrides. In Phase 5 this REPLACES the

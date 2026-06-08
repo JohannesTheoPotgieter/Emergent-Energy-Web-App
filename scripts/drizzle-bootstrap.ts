@@ -219,6 +219,13 @@ const MODERN_MIGRATION_PROBES: Record<
       c,
       "normalized_cost_lines_recognition_date_override_by_users_id_fk",
     )),
+  // 0097 creates the company-wide QB↔tracker reconciliation snapshot tables
+  // (qb_recon_line + qb_recon_summary). 0079_dev_drift_repair's future-dated
+  // `when` pins the migrate watermark above 0097, so without this probe
+  // drizzle-kit migrate would skip it. Both tables must exist to count applied.
+  "0097_qb_recon_tables": async (c) =>
+    (await tableExists(c, "qb_recon_line")) &&
+    (await tableExists(c, "qb_recon_summary")),
 };
 
 async function tableExists(client: Client, table: string): Promise<boolean> {
