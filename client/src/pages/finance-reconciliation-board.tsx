@@ -10,32 +10,27 @@
  * Read-only: it renders persisted financial_reconciliation status + the live
  * §3.3 line detail. It alters no calculation.
  *
- * Brand: Solar Beam surface (#FAF4EF), Slate Grey text (#3D4A3D), Light Slate
- * muted (#A1AFA0), Energetic Green (#1A993A) for positive/ties.
+ * Brand: centralised Emergent tokens (brand-surface / brand-text / brand-muted /
+ * status-ties) — no hardcoded hex. See client/src/design/tokens.ts + index.css.
  */
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  CheckCircle2,
-  AlertTriangle,
-  AlertOctagon,
-  HelpCircle,
-  RefreshCw,
-  ChevronRight,
-} from "lucide-react";
+import { RefreshCw, ChevronRight } from "lucide-react";
 
 import { fetchQueryFn, apiRequest } from "@/lib/queryClient";
 import { formatZar } from "@/lib/currency";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LoadingState } from "@/components/ui/loading-state";
 import {
   ReconciliationDrawer,
   type ReconciliationException,
 } from "@/components/reconciliation/ReconciliationDrawer";
-
-type ReconDisplayStatus = "green" | "amber" | "red" | "unknown";
+import {
+  ReconStatusChip,
+  RECON_STATUS_META,
+  type ReconDisplayStatus,
+} from "@/components/finance/recon-status";
 
 interface ReconIgnoreView {
   side: "cost" | "revenue";
@@ -96,56 +91,8 @@ interface DetailResponse {
   reconIgnores: ReconIgnoreView[];
 }
 
-// ── Status presentation — colour-blind safe (icon + word always paired) ──
-const STATUS_META: Record<
-  ReconDisplayStatus,
-  { label: string; icon: typeof CheckCircle2; chip: string; accent: string; meaning: string }
-> = {
-  green: {
-    label: "Ties",
-    icon: CheckCircle2,
-    chip: "border-[#1A993A]/30 bg-[#1A993A]/10 text-[#1A993A]",
-    accent: "#1A993A",
-    meaning: "App ties to the tracker within R1.",
-  },
-  amber: {
-    label: "Drift",
-    icon: AlertTriangle,
-    chip: "border-amber-300 bg-amber-50 text-amber-800",
-    accent: "#B45309",
-    meaning: "Pasted tracker value drifts from the §3.3 formula.",
-  },
-  red: {
-    label: "Structural",
-    icon: AlertOctagon,
-    chip: "border-red-300 bg-red-50 text-red-700",
-    accent: "#B91C1C",
-    meaning: "A line cannot be reconciled (missing/invalid allocation).",
-  },
-  unknown: {
-    label: "No data",
-    icon: HelpCircle,
-    chip: "border-[#A1AFA0]/40 bg-[#A1AFA0]/10 text-[#3D4A3D]",
-    accent: "#A1AFA0",
-    meaning: "No reconciliation has been computed for this project yet.",
-  },
-};
-
-function StatusChip({ status }: { status: ReconDisplayStatus }) {
-  const m = STATUS_META[status];
-  const Icon = m.icon;
-  return (
-    <Badge
-      variant="outline"
-      className={`gap-1 text-xs font-medium ${m.chip}`}
-      data-testid={`recon-status-${status}`}
-      title={m.meaning}
-    >
-      <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-      {m.label}
-    </Badge>
-  );
-}
+// Status presentation (chip + meta) is centralised in
+// @/components/finance/recon-status — shared with the Finance Home health list.
 
 /** Build a drawer exception for a project — drilled to the worst offending line
  *  when there is one, and always carrying tracker-vs-QB + recon-ignores. */
@@ -268,15 +215,15 @@ export default function FinanceReconciliationBoardPage() {
   );
 
   return (
-    <div className="min-h-full bg-[#FAF4EF] text-[#3D4A3D]" data-testid="reconciliation-board">
+    <div className="min-h-full bg-brand-surface text-brand-text" data-testid="reconciliation-board">
       <div className="mx-auto max-w-[1400px] px-6 py-6 space-y-5">
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight text-[#3D4A3D]">
+            <h1 className="text-xl font-semibold tracking-tight text-brand-text">
               Reconciliation Board
             </h1>
-            <p className="text-sm text-[#A1AFA0]">
+            <p className="text-sm text-brand-muted">
               Per-project app-vs-tracker health. The app reports the canonical §3.3
               formula; each project is checked against its pasted tracker value.
             </p>
@@ -309,7 +256,7 @@ export default function FinanceReconciliationBoardPage() {
         {/* Summary chips */}
         <div className="flex flex-wrap gap-2" data-testid="recon-summary">
           {summaryChips.map(({ status, count }) => {
-            const m = STATUS_META[status];
+            const m = RECON_STATUS_META[status];
             const Icon = m.icon;
             return (
               <div
@@ -337,7 +284,7 @@ export default function FinanceReconciliationBoardPage() {
             Could not load the reconciliation board.
           </div>
         ) : projects.length === 0 ? (
-          <div className="rounded-md border border-[#A1AFA0]/40 bg-white px-4 py-8 text-center text-sm text-[#A1AFA0]">
+          <div className="rounded-md border border-brand-muted/40 bg-white px-4 py-8 text-center text-sm text-brand-muted">
             No active projects.
           </div>
         ) : (
@@ -351,8 +298,8 @@ export default function FinanceReconciliationBoardPage() {
               // Border accent reflects the worse of the two comparisons.
               const rankOf: Record<ReconDisplayStatus, number> = { red: 0, amber: 1, unknown: 2, green: 3 };
               const worst: ReconDisplayStatus = rankOf[p.qbStatus] < rankOf[p.status] ? p.qbStatus : p.status;
-              const m = STATUS_META[worst];
-              const appMeta = STATUS_META[p.status];
+              const m = RECON_STATUS_META[worst];
+              const appMeta = RECON_STATUS_META[p.status];
               return (
                 <Card
                   key={p.projectId}
@@ -378,19 +325,19 @@ export default function FinanceReconciliationBoardPage() {
                 >
                   <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 p-4 pb-2">
                     <h2
-                      className="text-sm font-semibold leading-tight text-[#3D4A3D] line-clamp-2"
+                      className="text-sm font-semibold leading-tight text-brand-text line-clamp-2"
                       data-testid={`recon-card-name-${p.projectId}`}
                     >
                       {p.projectName}
                     </h2>
                     <div className="flex flex-col items-end gap-1 shrink-0">
                       <div className="flex items-center gap-1" title="App vs tracker">
-                        <span className="text-[9px] font-medium uppercase text-[#A1AFA0]">App</span>
-                        <StatusChip status={p.status} />
+                        <span className="text-[9px] font-medium uppercase text-brand-muted">App</span>
+                        <ReconStatusChip status={p.status} />
                       </div>
                       <div className="flex items-center gap-1" title="Tracker vs QuickBooks">
-                        <span className="text-[9px] font-medium uppercase text-[#A1AFA0]">QB</span>
-                        <StatusChip status={p.qbStatus} />
+                        <span className="text-[9px] font-medium uppercase text-brand-muted">QB</span>
+                        <ReconStatusChip status={p.qbStatus} />
                       </div>
                     </div>
                   </CardHeader>
@@ -398,7 +345,7 @@ export default function FinanceReconciliationBoardPage() {
                     <div className="flex items-end justify-between">
                       <div className="flex gap-4">
                         <div>
-                          <p className="text-[10px] uppercase tracking-wider text-[#A1AFA0]">
+                          <p className="text-[10px] uppercase tracking-wider text-brand-muted">
                             App vs tracker
                           </p>
                           <p
@@ -410,12 +357,12 @@ export default function FinanceReconciliationBoardPage() {
                           </p>
                         </div>
                         <div>
-                          <p className="text-[10px] uppercase tracking-wider text-[#A1AFA0]">
+                          <p className="text-[10px] uppercase tracking-wider text-brand-muted">
                             Tracker vs QB
                           </p>
                           <p
                             className="font-mono text-base font-semibold"
-                            style={{ color: STATUS_META[p.qbStatus].accent }}
+                            style={{ color: RECON_STATUS_META[p.qbStatus].accent }}
                             data-testid={`recon-card-qb-delta-${p.projectId}`}
                           >
                             {p.qbStatus === "unknown"
@@ -426,7 +373,7 @@ export default function FinanceReconciliationBoardPage() {
                           </p>
                         </div>
                       </div>
-                      <div className="text-right text-xs text-[#A1AFA0]">
+                      <div className="text-right text-xs text-brand-muted">
                         <p>
                           {p.periodCount} period{p.periodCount === 1 ? "" : "s"}
                         </p>

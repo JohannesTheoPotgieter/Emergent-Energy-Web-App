@@ -156,6 +156,7 @@ const FinanceGpPage = lazyWithRetry(() => import("@/pages/finance-gp"));
 const FinanceGpCompanyPage = lazyWithRetry(() => import("@/pages/finance-gp-company"));
 const FinanceAuditPrepPage = lazyWithRetry(() => import("@/pages/finance-audit-prep"));
 const FinanceReconciliationBoardPage = lazyWithRetry(() => import("@/pages/finance-reconciliation-board"));
+const FinanceHomePage = lazyWithRetry(() => import("@/pages/finance-home"));
 // Phase-1 new pages — Engineering Doc Mgmt, Quality Task Board + Doc Mgmt,
 // Functionality Control, Integration Statuses.
 const EngineeringDocumentsPage = lazyWithRetry(() => import("@/pages/engineering/documents"));
@@ -283,6 +284,7 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   FinanceGpCompanyPage,
   FinanceAuditPrepPage,
   FinanceReconciliationBoardPage,
+  FinanceHomePage,
   AdminBackfillPage,
   AdminWorkItemLinkagePage,
   AdminWorkflowConfigPage,
