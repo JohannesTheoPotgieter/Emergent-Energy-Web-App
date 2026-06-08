@@ -348,7 +348,7 @@ export default function FinanceHomePage() {
                 {healthRows.map((p) => (
                   <li key={p.projectId} className="py-2" data-testid={`finance-home-health-row-${p.projectId}`}>
                     <Link
-                      href={`/project/${encodeURIComponent(p.projectName)}?tab=revenue-tracking`}
+                      href={`/projects/${p.projectId}/finance`}
                       className="flex items-center justify-between gap-3 -mx-2 px-2 py-1 rounded hover:bg-[hsl(var(--surface-tint))] transition-colors"
                     >
                       <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">

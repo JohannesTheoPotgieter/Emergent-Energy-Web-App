@@ -29,6 +29,7 @@ import { db } from "../db";
 import {
   FinanceLineLevelRepository,
   type FinanceLine,
+  type FinanceLineBucket,
 } from "../repositories/finance-line-level-repository";
 import {
   resolvePeriodIdForDate,
@@ -425,14 +426,32 @@ export async function getReconciliationPortfolio(
 
 export interface ReconDetailLine {
   lineId: number;
+  /** Parent cost line id — the key the COS line-review actions are keyed on. */
+  costLineId: number;
   categoryName: string | null;
   description: string | null;
   invoiceNumber: string | null;
   invoiceRaisedDate: string | null;
+  /** COS — the actual cost amount on this line (Excel col Q). */
+  actualTotal: number;
   revenueDerived: number;
   revenueStored: number | null;
   reconDelta: number | null;
+  /** Per-line GP = revenueDerived − actualTotal (§ 3.3). */
+  perLineGp: number;
+  /** Realised / committed / planned (§ 3.2 realisation gate). */
+  bucket: FinanceLineBucket;
+  /** Date-colour realisation signal — true = BLACK/confirmed (read),
+   *  false/null = RED/defaulted (forecast). */
+  invoiceDateConfirmed: boolean | null;
+  invoiceDateFontColor: string | null;
+  /** YYYY-MM recognition bucket + any human move-period override. */
+  recognitionMonth: string | null;
+  recognitionDateOverride: string | null;
+  poNumber: string | null;
+  /** Provenance — where the imported value came from. */
   sourceCell: string | null;
+  sourceFileHash: string | null;
   derivationWarning: string | null;
   /** True when this line is the reason the project is amber/red. */
   offending: boolean;
@@ -469,18 +488,29 @@ export async function getReconciliationDetail(
   const result = computeAppVsTrackerStatus(lines.map(toReconLine));
   const offending = new Set(result.offendingLineIds);
 
-  // source_cell provenance lives on the persisted actuals rows (migration 0092).
+  // source_cell + source_file_hash provenance live on the persisted actuals
+  // rows (migration 0092). Both surfaced so the project finance view can prove
+  // every line back to its origin cell + file (D4).
   const lineIds = lines.map((l) => l.lineId).filter((id) => id > 0);
   const sourceCellById = new Map<number, string | null>();
+  const sourceFileHashById = new Map<number, string | null>();
   if (lineIds.length > 0) {
     const cells = (await dbi
-      .select({ id: normalizedCostLineActuals.id, sourceCell: normalizedCostLineActuals.sourceCell })
+      .select({
+        id: normalizedCostLineActuals.id,
+        sourceCell: normalizedCostLineActuals.sourceCell,
+        sourceFileHash: normalizedCostLineActuals.sourceFileHash,
+      })
       .from(normalizedCostLineActuals)
       .where(inArray(normalizedCostLineActuals.id, lineIds))) as Array<{
       id: number;
       sourceCell: string | null;
+      sourceFileHash: string | null;
     }>;
-    for (const c of cells) sourceCellById.set(c.id, c.sourceCell);
+    for (const c of cells) {
+      sourceCellById.set(c.id, c.sourceCell);
+      sourceFileHashById.set(c.id, c.sourceFileHash);
+    }
   }
 
   const [proj] = (await dbi
@@ -494,14 +524,24 @@ export async function getReconciliationDetail(
   const detailLines: ReconDetailLine[] = lines
     .map((l) => ({
       lineId: l.lineId,
+      costLineId: l.parentLineId,
       categoryName: l.categoryName,
       description: l.descriptionOfWork,
       invoiceNumber: l.invoiceNumber,
       invoiceRaisedDate: l.invoiceRaisedDate,
+      actualTotal: round2(l.actualTotal),
       revenueDerived: round2(l.perLineRevenue),
       revenueStored: l.revenueStored != null ? round2(l.revenueStored) : null,
       reconDelta: l.reconDelta != null ? round2(l.reconDelta) : null,
+      perLineGp: round2(l.perLineGp),
+      bucket: l.bucket,
+      invoiceDateConfirmed: l.invoiceDateConfirmed,
+      invoiceDateFontColor: l.invoiceDateFontColor,
+      recognitionMonth: l.recognitionMonth,
+      recognitionDateOverride: l.recognitionDateOverride,
+      poNumber: l.poNumber,
       sourceCell: sourceCellById.get(l.lineId) ?? null,
+      sourceFileHash: sourceFileHashById.get(l.lineId) ?? null,
       derivationWarning: l.derivationWarning,
       offending: offending.has(l.lineId),
     }))

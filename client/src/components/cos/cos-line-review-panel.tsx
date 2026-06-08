@@ -63,7 +63,7 @@ import {
 // Response types — mirror GET /api/cos-line-review exactly so we never `as any`.
 // ---------------------------------------------------------------------------
 
-interface LineReviewFlags {
+export interface LineReviewFlags {
   allocationMissing: boolean;
   poMismatch: boolean;
   poDelta: number | null;
@@ -72,7 +72,7 @@ interface LineReviewFlags {
   flagged: boolean;
 }
 
-interface LineReviewRow {
+export interface LineReviewRow {
   lineId: number;
   costLineId: number;
   projectId: number | null;
@@ -107,7 +107,7 @@ interface LineReviewResponse {
 type FlagFilter = 'allocationMissing' | 'poMismatch' | 'anomaly';
 
 // The four line actions, each backed by its own POST endpoint.
-type ActionKind = 'move' | 'invoiceDate' | 'clear' | 'remove';
+export type ActionKind = 'move' | 'invoiceDate' | 'clear' | 'remove';
 
 function formatRand(val: number | null | undefined): string {
   return formatZar(val);
@@ -124,7 +124,7 @@ function formatSignedRand(val: number): string {
 // AND a text label, never colour alone.
 // ---------------------------------------------------------------------------
 
-function FlagBadges({ row }: { row: LineReviewRow }) {
+export function FlagBadges({ row }: { row: LineReviewRow }) {
   const { flags } = row;
   const hasAny =
     flags.allocationMissing ||
@@ -259,7 +259,7 @@ const formSchema = z.object({
 
 type LineActionForm = z.infer<typeof formSchema>;
 
-function LineActionDialog({
+export function LineActionDialog({
   action,
   row,
   onClose,
