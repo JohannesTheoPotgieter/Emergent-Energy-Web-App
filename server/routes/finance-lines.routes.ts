@@ -43,15 +43,15 @@ import {
   normalizedCostLines,
   projectInfo,
 } from "@shared/schema";
-import { STATIC_COS_BUDGET_FY26 } from "../lib/calculations/financeUtils";
 import { storage } from "../storage";
 
 /**
  * Monthly budget figures keyed by `YYYY-MM`. Matches what the COS / REV
- * tabs show as Budget: COS uses `STATIC_COS_BUDGET_FY26` overlaid with
- * manual entries; Revenue is manual-only (no static). Surfaced on the
- * GP company response so the page can render a "Budget" row whose
- * numbers reconcile to the existing trackers.
+ * tabs show as Budget: both are manual-only (tracker_monthly_manual). The
+ * hardcoded STATIC_COS_BUDGET_FY26 fallback was removed
+ * (fix/remove-placeholder-analytics) — a month with no manual entry shows 0.
+ * Surfaced on the GP company response so the page can render a "Budget" row
+ * whose numbers reconcile to the existing trackers.
  */
 interface BudgetByMonth {
   cos: Record<string, number>;
@@ -81,15 +81,12 @@ async function loadBudgetByMonth(): Promise<BudgetByMonth> {
   // Iterate over the static COS budget keys to seed the FY26 frame —
   // any month present in static or manual will appear.
   const monthKeys = new Set<string>([
-    ...Object.keys(STATIC_COS_BUDGET_FY26),
     ...cosManualMap.keys(),
     ...revManualMap.keys(),
   ]);
   for (const mk of monthKeys) {
     const manualCos = cosManualMap.get(mk);
-    cos[mk] = manualCos != null && Number.isFinite(manualCos)
-      ? manualCos
-      : (STATIC_COS_BUDGET_FY26[mk] ?? 0);
+    cos[mk] = manualCos != null && Number.isFinite(manualCos) ? manualCos : 0;
     const manualRev = revManualMap.get(mk);
     revenue[mk] = manualRev != null && Number.isFinite(manualRev) ? manualRev : 0;
   }

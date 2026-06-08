@@ -37,7 +37,6 @@ import { invalidateProjectFinanceReads } from "../services/dashboard-metrics";
 import { mapCostToExpenseInput } from "../lib/data-merge";
 import { getMergedExpensesAndInflows } from "../lib/cashflow-helpers";
 import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
-import { STATIC_COS_BUDGET_FY26 } from "../lib/calculations/financeUtils";
 import { FinanceInflowsRepository } from "../repositories/finance-inflows-repository";
 
 const financeInflowsRepository = new FinanceInflowsRepository();
@@ -558,12 +557,22 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
         return series;
       }
 
-      // Budget variance for COS YTD
+      // Budget variance for COS YTD — canonical manual budget only
+      // (tracker_monthly_manual). The hardcoded STATIC_COS_BUDGET_FY26 fallback
+      // was removed (fix/remove-placeholder-analytics); months with no manual
+      // entry contribute 0 rather than a synthesized figure.
+      const cosBudgetManual = await storage.getTrackerMonthlyManual("COS");
+      const cosBudgetByMonth = new Map<string, number>(
+        cosBudgetManual.map((e: { monthKey: string; budget: string | null }) => [
+          e.monthKey,
+          e.budget != null ? Number(e.budget) : 0,
+        ]),
+      );
       let ytdBudget = 0;
       for (let i = 0; i < 12; i++) {
         const d = new Date(Date.UTC(fyStartYear, 8 + i, 1));
         const mk = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-        if (mk <= currentMK) ytdBudget += STATIC_COS_BUDGET_FY26[mk] ?? 0;
+        if (mk <= currentMK) ytdBudget += cosBudgetByMonth.get(mk) ?? 0;
       }
 
       res.json({

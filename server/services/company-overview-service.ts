@@ -426,7 +426,11 @@ export async function getCompanyOverviewData() {
     : 0;
 
   const pdKpis = new Map<string, { actual: number | null; target?: number | null; trend?: "up" | "down" | "flat" }>([
-    ["pd_signed_pipeline_vs_target", { actual: signedPipelineValue, target: signedPipelineValue * 1.2 }], // placeholder target
+    // No real signed-pipeline target source exists. The fabricated × 1.2
+    // placeholder was removed (fix/remove-placeholder-analytics): target=null ⇒
+    // calculateKpiScore returns null, so the KPI is greyed and excluded from the
+    // department score rather than scored against a fake target. See docs/parked-features.md.
+    ["pd_signed_pipeline_vs_target", { actual: signedPipelineValue, target: null }],
     ["pd_deal_conversion_rate", { actual: conversionRate }],
     ["pd_active_deal_ageing", { actual: Math.round(avgDealAgeing) }],
     ["pd_blocked_deal_count", { actual: blockedDeals.length }],
@@ -695,8 +699,6 @@ export async function getCompanyOverviewData() {
     (sum, r) => sum + toNum(r.amountExVat), 0
   );
 
-  const targetMarginPct = 20; // Target margin placeholder
-
   const costRowsMissingLineage = costRows.filter((r) =>
     activeProjectIds.has(r.projectId) &&
     !r.effectiveTo &&
@@ -730,7 +732,10 @@ export async function getCompanyOverviewData() {
     ["fin_revenue_vs_target", { actual: realisedRevenueFytd, target: revenuePlannedFytd }], // Revenue realised (COS-ratio) vs FYTD-anchored plan
     ["fin_cash_collected_vs_target", { actual: cashReceivedFytd, target: revenuePlannedFytd }], // Cash received vs FYTD-anchored plan
     ["fin_cos_vs_target", { actual: realisedCostFytd, target: costPlannedFytd }], // COS realised (invoice-based) vs FYTD-anchored plan
-    ["fin_gross_margin_vs_target", { actual: realisedGrossMarginPct, target: targetMarginPct }], // Realised GP%
+    // No board-set gross-margin target exists. The fabricated 20% placeholder was
+    // removed (fix/remove-placeholder-analytics): target=null ⇒ the KPI is greyed
+    // and excluded from the Finance score. See docs/parked-features.md.
+    ["fin_gross_margin_vs_target", { actual: realisedGrossMarginPct, target: null }],
     ["fin_overdue_debtors", { actual: overdueDebtorValue }],
   ]);
 

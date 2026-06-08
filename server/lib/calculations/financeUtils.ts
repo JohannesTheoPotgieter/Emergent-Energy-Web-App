@@ -12,9 +12,14 @@ import { classifyCosStatus, type CosStatus } from './stateClassifier';
 import { isCanonicalCosRealised, getCosRealisationWarnings, type CosLineInput } from '../finance/cos-realisation';
 import { computeCostEvidence } from '../finance/qb-allocation';
 
-// ─── Static fallback COS budget (FY2025-2026) ───
-// Used when no manual budget override has been entered for a month.
-// Single source of truth — previously duplicated in COS tracker and GP tracker.
+// ─── Static fallback COS budget (FY2025-2026) — DEPRECATED / PARKED ───
+// REMOVED from the live budget read path (fix/remove-placeholder-analytics):
+// these are hardcoded/fabricated budget numbers. The monthly COS budget now
+// comes ONLY from the canonical manual entries (tracker_monthly_manual) — a
+// month with no manual entry shows 0, not a synthesized figure. This constant
+// is retained (not deleted) for reference + easy re-enable; see
+// docs/parked-features.md. Do NOT re-import it into the COS tracker / GP / finance-
+// lines budget code without a real DB-backed budget baseline source.
 export const STATIC_COS_BUDGET_FY26: Record<string, number> = {
   '2025-09': 8083466.99,
   '2025-10': 16346971.77,
