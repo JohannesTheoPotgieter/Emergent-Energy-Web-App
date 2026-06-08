@@ -360,6 +360,7 @@ export function registerReconciliationRoutes(app: Express): void {
           summary: {
             total: projects.length,
             red: projects.filter((p) => p.status === "red").length,
+            unlinked: projects.filter((p) => p.status === "unlinked").length,
             amber: projects.filter((p) => p.status === "amber").length,
             green: projects.filter((p) => p.status === "green").length,
             unknown: projects.filter((p) => p.status === "unknown").length,

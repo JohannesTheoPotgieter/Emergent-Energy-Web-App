@@ -72,7 +72,7 @@ export interface ReconciliationException {
   ruleUsed: string;
   selectedTruthSource: string;
   /** P2.3 — tracker-vs-QuickBooks rollup for the project (optional). */
-  qbStatus?: "green" | "amber" | "red" | "unknown" | null;
+  qbStatus?: "green" | "amber" | "red" | "unlinked" | "unknown" | null;
   qbDelta?: number | null;
   /** P2.3 — suppressed QB variances, shown (never silently dropped). */
   reconIgnores?: Array<{

@@ -63,21 +63,52 @@ describe("computeAppVsTrackerStatus", () => {
     expect(r.appVsTrackerDelta).toBeCloseTo(-5_000, 2);
   });
 
-  it("RED — a structural derivation warning (missing allocation) outranks drift", () => {
+  it("UNLINKED — a 'category allocation missing' line is honest 'unlinked', not red, and outranks drift", () => {
     const r = computeAppVsTrackerStatus([
-      line(21, 0, null, "category_revenue_allocation_missing"), // structural
-      line(22, 100_000, 130_000), // also drifted, but structural wins
+      line(21, 0, null, "category_revenue_allocation_missing"), // allocation not linked
+      line(22, 100_000, 130_000), // also drifted, but the unlinked line wins
     ]);
-    expect(r.status).toBe("red");
+    // §3.3 "allocation missing" is a data-readiness state (re-import), NOT a
+    // structural reconciliation fault — so it must NOT show as red "Structural".
+    expect(r.status).toBe("unlinked");
     expect(r.offendingLineIds).toContain(21);
+    expect(r.unlinkedLineIds).toContain(21);
+    expect(r.structuralLineIds).toHaveLength(0);
+    expect(r.reason).toMatch(/re-import/i);
   });
 
-  it("RED — orphan actuals row with no parent is structural", () => {
+  it("UNLINKED — missing linkage and a zero category total are 'unlinked', not red", () => {
+    expect(
+      computeAppVsTrackerStatus([line(51, 0, null, "missing_category_allocation_linkage")]).status,
+    ).toBe("unlinked");
+    expect(
+      computeAppVsTrackerStatus([line(52, 0, null, "category_total_actual_zero")]).status,
+    ).toBe("unlinked");
+  });
+
+  it("RED — orphan actuals row with no parent is structural (genuine corruption)", () => {
     const r = computeAppVsTrackerStatus([
       line(41, 0, null, "orphan_actuals_row_no_parent"),
     ]);
     expect(r.status).toBe("red");
     expect(r.offendingLineIds).toEqual([41]);
+  });
+
+  it("RED — a negative category total (credits > costs) is structural", () => {
+    const r = computeAppVsTrackerStatus([
+      line(61, 0, null, "category_total_actual_negative"),
+    ]);
+    expect(r.status).toBe("red");
+    expect(r.offendingLineIds).toEqual([61]);
+  });
+
+  it("RED outranks UNLINKED — genuine corruption wins over an allocation-missing line", () => {
+    const r = computeAppVsTrackerStatus([
+      line(71, 0, null, "category_revenue_allocation_missing"), // unlinked
+      line(72, 0, null, "orphan_actuals_row_no_parent"), // structural
+    ]);
+    expect(r.status).toBe("red");
+    expect(r.offendingLineIds).toContain(72);
   });
 
   it("empty period → green, nothing to reconcile", () => {
@@ -93,6 +124,10 @@ describe("worstStatus rollup", () => {
   });
   it("red dominates", () => {
     expect(worstStatus(["green", "amber", "red"])).toBe("red");
+  });
+  it("red outranks unlinked; unlinked outranks amber", () => {
+    expect(worstStatus(["unlinked", "amber", "red"])).toBe("red");
+    expect(worstStatus(["green", "amber", "unlinked"])).toBe("unlinked");
   });
   it("amber over green", () => {
     expect(worstStatus(["green", "amber", "green"])).toBe("amber");

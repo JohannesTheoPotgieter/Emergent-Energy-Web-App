@@ -7,13 +7,13 @@
  * `accent` (a CSS-var string) is for the few inline-style needs (left border,
  * delta text colour); `chip` is the Tailwind utility set for the badge.
  */
-import { CheckCircle2, AlertTriangle, AlertOctagon, HelpCircle } from "lucide-react";
+import { CheckCircle2, AlertTriangle, AlertOctagon, HelpCircle, Unlink } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { figureStatus, brand } from "@/design/tokens";
 import { cn } from "@/lib/utils";
 
-export type ReconDisplayStatus = "green" | "amber" | "red" | "unknown";
+export type ReconDisplayStatus = "green" | "amber" | "red" | "unlinked" | "unknown";
 
 export interface ReconStatusMeta {
   label: string;
@@ -45,7 +45,14 @@ export const RECON_STATUS_META: Record<ReconDisplayStatus, ReconStatusMeta> = {
     icon: AlertOctagon,
     chip: "border-red-300 bg-red-50 text-red-700",
     accent: figureStatus.adverse,
-    meaning: "A line cannot be reconciled (missing/invalid allocation).",
+    meaning: "An actuals row has no parent, or a category's net actuals are negative — a genuine reconciliation fault.",
+  },
+  unlinked: {
+    label: "Not linked",
+    icon: Unlink,
+    chip: "border-slate-300 bg-slate-50 text-slate-700",
+    accent: brand.lightSlate,
+    meaning: "Category allocations aren't linked yet, so revenue can't be derived for some lines (§3.3). Re-import the project to link them.",
   },
   unknown: {
     label: "No data",
@@ -56,12 +63,14 @@ export const RECON_STATUS_META: Record<ReconDisplayStatus, ReconStatusMeta> = {
   },
 };
 
-/** Attention rank — lower sorts first (red → amber → unknown → green). */
+/** Attention rank — lower sorts first
+ *  (red → unlinked → amber → unknown → green). */
 export const RECON_STATUS_RANK: Record<ReconDisplayStatus, number> = {
   red: 0,
-  amber: 1,
-  unknown: 2,
-  green: 3,
+  unlinked: 1,
+  amber: 2,
+  unknown: 3,
+  green: 4,
 };
 
 export function ReconStatusChip({
