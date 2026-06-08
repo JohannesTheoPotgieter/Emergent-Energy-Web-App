@@ -34,7 +34,8 @@ export function registerAnalyticsRoutes(app: Express) {
   // To avoid a silent fabrication risk, the endpoints now return HTTP 410
   // unless the caller explicitly opts in with `?demo=true`, in which case
   // the response includes `synthetic: true` so any debug consumer can show
-  // a "Demo data" badge.
+  // a "Demo data" badge. No live client screen consumes these. Parked +
+  // registered: see docs/parked-features.md ("Synthetic analytics endpoints").
   const DEMO_GATE_BODY = {
     error: "synthetic_disabled",
     message:

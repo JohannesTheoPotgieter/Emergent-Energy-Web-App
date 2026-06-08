@@ -293,7 +293,6 @@ const qbLinksRepository = new QuickBooksLinksRepository();
 import { recordManualEdit } from '../lib/audit/diff-engine';
 import { classifyExpenseState } from '../lib/calculations/stateClassifier';
 import {
-  STATIC_COS_BUDGET_FY26,
   extractMonthKey,
   isCosRealised as isCosRealisedShared,
   classifyCosStatusFull,
@@ -2691,10 +2690,11 @@ router.get('/api/cos-tracker', requireAuth, requirePermission('cos', 'view'), as
       );
     }
 
-    const staticCosBudget = STATIC_COS_BUDGET_FY26;
+    // STATIC_COS_BUDGET_FY26 fallback removed (fix/remove-placeholder-analytics):
+    // the monthly COS budget is canonical manual-only; a month with no manual
+    // entry shows 0 rather than a hardcoded figure.
     const sourceMonthKeys = [
       ...manualMap.keys(),
-      ...Object.keys(staticCosBudget),
       ...realisedByMonth.keys(),
       ...committedByMonth.keys(),
       ...plannedByMonth.keys(),
@@ -2747,7 +2747,7 @@ router.get('/api/cos-tracker', requireAuth, requirePermission('cos', 'view'), as
       const appOnlyPending = appOnlyPendingBucket?.total ?? 0;
 
       const manual = manualMap.get(monthKey);
-      const budget = manual?.budget ? parseFloat(manual.budget) : (staticCosBudget[monthKey] ?? 0);
+      const budget = manual?.budget ? parseFloat(manual.budget) : 0;
 
       // QB is the source of truth for actuals. Variance compares the app's
       // recognised COS (realised + committed) against the QB booked value
@@ -5526,11 +5526,11 @@ router.get(
         cosManualEntries.map((e) => [e.monthKey, e.budget ? parseFloat(e.budget) : 0]),
       );
 
-      // Uses shared static COS budget from financeUtils.ts (single source of truth)
+      // Budget is canonical manual-only; static COS fallback removed (no manual ⇒ 0).
       function getCosBudget(monthKey: string): number {
         const manual = cosManualBudgetMap.get(monthKey);
         if (manual && manual !== 0) return manual;
-        return STATIC_COS_BUDGET_FY26[monthKey] ?? 0;
+        return 0;
       }
 
       // GP = Revenue - COS. Suspicious NULLs in either side silently deflate the
