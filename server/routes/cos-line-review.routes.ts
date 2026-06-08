@@ -250,6 +250,109 @@ export function registerCosLineReviewRoutes(app: Express): void {
     },
   );
 
+  // ── Close-prep — missing supplier invoices (read-only, derived) ──
+  // Committed POs / expected costs with NO captured invoice (§ 3.3 bucket =
+  // "planned"), per project, with a chase urgency DERIVED from the forecast
+  // payment date. Nothing is stored or written; no chase state is persisted.
+  // This is a payables / close-prep list — NEVER a revenue figure (§ 3.4: cash
+  // ≠ revenue). Snapshot-guarded via the canonical line repository.
+  app.get(
+    "/api/cos-line-review/missing-invoices",
+    requireAuth,
+    requirePermission("cos", "view"),
+    async (_req: Request, res: Response) => {
+      try {
+        const projRows = await expenseRepo.listActiveCostLineProjects();
+        const nameById = new Map<number, string>();
+        for (const r of projRows) {
+          if (r.projectId == null) continue;
+          nameById.set(r.projectId, (r.projectName ?? "").replace(/_Tracker$/i, ""));
+        }
+        const projectIds = [...nameById.keys()];
+        if (projectIds.length === 0) {
+          return res.json({
+            generatedAt: new Date().toISOString(),
+            lines: [],
+            summary: { total: 0, value: 0, overdue: 0, due: 0, scheduled: 0, projects: 0 },
+          });
+        }
+
+        const lines = await financeLines.getPortfolioFinanceLines(projectIds);
+        const today = new Date().toISOString().slice(0, 10);
+        const toNum = (v: unknown): number => {
+          const n = Number(v);
+          return Number.isFinite(n) ? n : 0;
+        };
+        const isIso = (v: string | null | undefined): v is string =>
+          !!v && /^\d{4}-\d{2}-\d{2}/.test(v);
+
+        const out = lines
+          // "planned" bucket = no captured supplier invoice (§ 3.3 classifier).
+          .filter((l) => l.bucket === "planned")
+          .map((l) => ({
+            l,
+            expected: l.actualTotal > 0 ? l.actualTotal : toNum(l.budgetTotal),
+          }))
+          // A concrete expectation: an expected amount AND either a committed PO
+          // or a forecast payment date. Pure forecasts with neither are skipped.
+          .filter(
+            ({ l, expected }) =>
+              expected > 0 && (!!(l.poNumber && l.poNumber.trim()) || isIso(l.forecastPaymentDate)),
+          )
+          .map(({ l, expected }) => {
+            const fp = isIso(l.forecastPaymentDate) ? l.forecastPaymentDate.slice(0, 10) : null;
+            let chase: "overdue" | "due" | "scheduled" = "scheduled";
+            let daysOverdue = 0;
+            if (fp) {
+              if (fp < today) {
+                chase = "overdue";
+                daysOverdue = Math.max(
+                  0,
+                  Math.round((Date.parse(today) - Date.parse(fp)) / 86_400_000),
+                );
+              } else {
+                const daysUntil = Math.round((Date.parse(fp) - Date.parse(today)) / 86_400_000);
+                chase = daysUntil <= 14 ? "due" : "scheduled";
+              }
+            }
+            return {
+              lineId: l.lineId,
+              costLineId: l.parentLineId,
+              projectId: l.projectId,
+              projectName: nameById.get(l.projectId) ?? null,
+              category: l.categoryName,
+              description: l.descriptionOfWork,
+              poNumber: l.poNumber,
+              expectedAmount: Math.round(expected * 100) / 100,
+              forecastPaymentDate: fp,
+              daysOverdue,
+              chase,
+            };
+          });
+
+        const chaseRank: Record<string, number> = { overdue: 0, due: 1, scheduled: 2 };
+        out.sort((a, b) => {
+          if (chaseRank[a.chase] !== chaseRank[b.chase]) return chaseRank[a.chase] - chaseRank[b.chase];
+          if (b.daysOverdue !== a.daysOverdue) return b.daysOverdue - a.daysOverdue;
+          return b.expectedAmount - a.expectedAmount;
+        });
+
+        const summary = {
+          total: out.length,
+          value: Math.round(out.reduce((s, r) => s + r.expectedAmount, 0) * 100) / 100,
+          overdue: out.filter((r) => r.chase === "overdue").length,
+          due: out.filter((r) => r.chase === "due").length,
+          scheduled: out.filter((r) => r.chase === "scheduled").length,
+          projects: new Set(out.map((r) => r.projectId)).size,
+        };
+        return res.json({ generatedAt: new Date().toISOString(), lines: out, summary });
+      } catch (err) {
+        console.error("[cos-line-review] missing-invoices read failed:", err);
+        return res.status(500).json({ error: "Failed to load missing invoices" });
+      }
+    },
+  );
+
   // ── R1 — move period (change the recognition month) ──
   app.post(
     "/api/cos-line-review/:costLineId/move-period",
