@@ -128,6 +128,10 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // (GP vs budget, revenue recognised vs FY target, cash this week, tracker-vs-QB)
   // then the per-project reconciliation health list. Reads canonical endpoints only.
   { id: "financeHome", path: "/finance", label: "Finance Home", iconKey: "LayoutDashboard", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceHomePage" },
+  // Weekly close — answer-first cashflow planner + AR schedule + missing-invoice
+  // list, the three actions the weekly finance meeting runs. Reads canonical
+  // endpoints; the only write is the planner's lock-aware date override.
+  { id: "financeWeeklyClose", path: "/finance/close", label: "Weekly Close", iconKey: "CalendarCheck", navGroup: "FINANCE", permissionEntity: "cashflow", showInSidebar: true, routeComponentKey: "FinanceWeeklyClosePage" },
   { id: "cashflow", path: "/cashflow", label: "Cashflow", iconKey: "Wallet", navGroup: "FINANCE", permissionEntity: "cashflow", showInSidebar: true, routeComponentKey: "CashflowPage", roleLandingEligibility: ["CFO", "PROGRAM_FINANCE_MANAGER", "ACCOUNTANT"] },
   { id: "cashflowAnalysis", path: "/cashflow/analysis", label: "Cashflow Analysis", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "cashflow", showInSidebar: false, routeComponentKey: "CashflowAnalysisPage" },
   { id: "cos", path: "/cos", label: "COS", iconKey: "TrendingUp", navGroup: "FINANCE", permissionEntity: "cos", showInSidebar: true, routeComponentKey: "CostTracker" },
