@@ -39,20 +39,35 @@ import {
 /** Ties / drift tolerance (Rand). Matches the §3.3.2 R1 audit tolerance. */
 export const RECON_R1 = 1;
 
-export type ReconStatus = "green" | "amber" | "red";
+export type ReconStatus = "green" | "amber" | "red" | "unlinked";
 /** Portfolio-only display state for projects with no computed row yet. */
 export type ReconDisplayStatus = ReconStatus | "unknown";
 
 export type DbOrTx = typeof db;
 
-/** `derivationWarning` values that mean the line cannot be revenue-derived at
- *  all → structural (red). Mirrors finance-line-level-repository's warnings. */
+/**
+ * `derivationWarning` values split into two honest buckets:
+ *
+ *  - STRUCTURAL (red): genuine corruption — an actuals row with no parent, or a
+ *    category whose net actuals are negative (credits > costs) so the §3.3
+ *    per-line formula would invert sign. These are real reconciliation faults.
+ *
+ *  - UNLINKED (not red): the §3.3 "allocation missing / not yet derivable" line
+ *    conditions — the cost line has no LIVE category_revenue_allocations row to
+ *    look up (FK + (project, category_key) fallback both miss), or the category
+ *    carries no revenue allocation / no actuals to divide by. Per §3.3 this is an
+ *    "allocation missing" badge / data-readiness state (re-import to link the
+ *    allocation), NOT a reconciliation failure. Surfacing it as red "Structural"
+ *    is misleading — every project with one un-linked line reads as a corruption.
+ */
 const STRUCTURAL_WARNINGS = new Set<string>([
   "orphan_actuals_row_no_parent",
+  "category_total_actual_negative",
+]);
+const UNLINKED_WARNINGS = new Set<string>([
   "missing_category_allocation_linkage",
   "category_revenue_allocation_missing",
   "category_total_actual_zero",
-  "category_total_actual_negative",
 ]);
 
 /** Minimal per-line shape the status maths need. Decoupled from FinanceLine so
@@ -80,7 +95,10 @@ export interface ReconStatusResult {
   appVsTrackerDelta: number;
   /** Σ |reconDelta| — the accumulated drift between paste and formula. */
   accumulatedAbsDelta: number;
+  /** Genuine corruption (orphan row / negative category) → red. */
   structuralLineIds: number[];
+  /** §3.3 "allocation missing / not yet derivable" lines → unlinked (not red). */
+  unlinkedLineIds: number[];
   driftLineIds: number[];
   /** Lines to surface in the drawer, worst-first (structural, then drift). */
   offendingLineIds: number[];
@@ -99,12 +117,15 @@ export function computeAppVsTrackerStatus(
   let accumulatedAbsDelta = 0;
   let signedDelta = 0; // Σ (perLineRevenue − revenueStored) over stored lines
   const structuralLineIds: number[] = [];
+  const unlinkedLineIds: number[] = [];
   const drift: Array<{ id: number; abs: number }> = [];
 
   for (const l of lines) {
     appTotal += l.perLineRevenue;
     if (l.derivationWarning && STRUCTURAL_WARNINGS.has(l.derivationWarning)) {
       structuralLineIds.push(l.lineId);
+    } else if (l.derivationWarning && UNLINKED_WARNINGS.has(l.derivationWarning)) {
+      unlinkedLineIds.push(l.lineId);
     }
     if (l.reconDelta != null) {
       const stored = l.revenueStored ?? 0;
@@ -126,8 +147,15 @@ export function computeAppVsTrackerStatus(
 
   if (structuralLineIds.length > 0) {
     status = "red";
-    reason = `${structuralLineIds.length} structural issue${structuralLineIds.length === 1 ? "" : "s"} — missing or invalid category allocation (cannot derive revenue).`;
+    reason = `${structuralLineIds.length} structural issue${structuralLineIds.length === 1 ? "" : "s"} — an actuals row has no parent cost line, or a category's net actuals are negative (cannot derive revenue).`;
     offendingLineIds = structuralLineIds;
+  } else if (unlinkedLineIds.length > 0) {
+    // §3.3 "allocation missing": the line(s) have no LIVE category allocation to
+    // derive revenue against. This is a data-readiness state (re-import to link),
+    // NOT a reconciliation failure — surfaced honestly as "unlinked", never red.
+    status = "unlinked";
+    reason = `${unlinkedLineIds.length} line${unlinkedLineIds.length === 1 ? "" : "s"} not yet linked to a category allocation — re-import the project to derive revenue (§3.3 'allocation missing'). Revenue/GP for these lines is excluded until linked.`;
+    offendingLineIds = unlinkedLineIds;
   } else if (accumulatedAbsDelta > RECON_R1) {
     status = "amber";
     reason = `Pasted tracker value drifts from the §3.3 formula by R${accumulatedAbsDelta.toFixed(2)} across ${driftLineIds.length} line${driftLineIds.length === 1 ? "" : "s"} (stale paste).`;
@@ -148,6 +176,7 @@ export function computeAppVsTrackerStatus(
     appVsTrackerDelta: round2(signedDelta),
     accumulatedAbsDelta: round2(accumulatedAbsDelta),
     structuralLineIds,
+    unlinkedLineIds,
     driftLineIds,
     offendingLineIds,
     reason,
@@ -156,10 +185,12 @@ export function computeAppVsTrackerStatus(
 
 const round2 = (n: number): number => Number(n.toFixed(2));
 
-/** Worst-of rollup for the per-project board chip. */
+/** Worst-of rollup for the per-project board chip. Precedence:
+ *  red (corruption) → unlinked (allocation missing) → amber (drift) → green. */
 export function worstStatus(statuses: readonly ReconStatus[]): ReconDisplayStatus {
   if (statuses.length === 0) return "unknown";
   if (statuses.includes("red")) return "red";
+  if (statuses.includes("unlinked")) return "unlinked";
   if (statuses.includes("amber")) return "amber";
   return "green";
 }
@@ -375,7 +406,7 @@ export async function getReconciliationPortfolio(
     const periodRows = byProject.get(p.id) ?? [];
     const statuses = periodRows
       .map((r) => r.status)
-      .filter((s): s is ReconStatus => s === "green" || s === "amber" || s === "red");
+      .filter((s): s is ReconStatus => s === "green" || s === "amber" || s === "red" || s === "unlinked");
     const status = worstStatus(statuses);
     let signed = 0;
     let abs = 0;
@@ -414,9 +445,10 @@ export async function getReconciliationPortfolio(
     };
   });
 
-  // Worst first across BOTH dimensions (red, amber, then by combined abs delta),
-  // so the board surfaces problems regardless of which comparison flagged them.
-  const rank: Record<ReconDisplayStatus, number> = { red: 0, amber: 1, unknown: 2, green: 3 };
+  // Worst first across BOTH dimensions, so the board surfaces problems regardless
+  // of which comparison flagged them. red (corruption) → unlinked (allocation
+  // missing) → amber (drift) → unknown → green.
+  const rank: Record<ReconDisplayStatus, number> = { red: 0, unlinked: 1, amber: 2, unknown: 3, green: 4 };
   const worstOf = (p: ReconPortfolioProject) => Math.min(rank[p.status], rank[p.qbStatus]);
   out.sort(
     (a, b) => worstOf(a) - worstOf(b) || b.absDelta + b.qbAbsDelta - (a.absDelta + a.qbAbsDelta),

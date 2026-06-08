@@ -75,7 +75,7 @@ interface ReconProject {
 }
 interface ReconResponse {
   projects: ReconProject[];
-  summary: { total: number; red: number; amber: number; green: number; unknown: number };
+  summary: { total: number; red: number; unlinked: number; amber: number; green: number; unknown: number };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -165,7 +165,7 @@ export default function FinanceHomePage() {
   // tracker-derived figures (GP, Revenue). "Do these numbers reconcile?"
   const portfolioTrust: "ties" | "drift" = useMemo(() => {
     const s = reconQuery.data?.summary;
-    return s && s.red + s.amber > 0 ? "drift" : "ties";
+    return s && s.red + s.amber + s.unlinked > 0 ? "drift" : "ties";
   }, [reconQuery.data]);
 
   const healthRows = useMemo(() => {

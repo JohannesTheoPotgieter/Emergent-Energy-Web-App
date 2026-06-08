@@ -60,7 +60,7 @@ interface PortfolioProject {
 interface PortfolioResponse {
   generatedAt: string;
   projects: PortfolioProject[];
-  summary: { total: number; red: number; amber: number; green: number; unknown: number };
+  summary: { total: number; red: number; unlinked: number; amber: number; green: number; unknown: number };
 }
 
 interface DetailLine {
@@ -207,7 +207,7 @@ export default function FinanceReconciliationBoardPage() {
 
   const summaryChips = useMemo(
     () =>
-      (["red", "amber", "green", "unknown"] as ReconDisplayStatus[]).map((s) => ({
+      (["red", "unlinked", "amber", "green", "unknown"] as ReconDisplayStatus[]).map((s) => ({
         status: s,
         count: summary ? summary[s] : 0,
       })),
@@ -293,10 +293,10 @@ export default function FinanceReconciliationBoardPage() {
             data-testid="recon-board-grid"
           >
             {projects.map((p) => {
-              const flagged = (s: ReconDisplayStatus) => s === "amber" || s === "red";
+              const flagged = (s: ReconDisplayStatus) => s === "amber" || s === "red" || s === "unlinked";
               const interactive = flagged(p.status) || flagged(p.qbStatus);
               // Border accent reflects the worse of the two comparisons.
-              const rankOf: Record<ReconDisplayStatus, number> = { red: 0, amber: 1, unknown: 2, green: 3 };
+              const rankOf: Record<ReconDisplayStatus, number> = { red: 0, unlinked: 1, amber: 2, unknown: 3, green: 4 };
               const worst: ReconDisplayStatus = rankOf[p.qbStatus] < rankOf[p.status] ? p.qbStatus : p.status;
               const m = RECON_STATUS_META[worst];
               const appMeta = RECON_STATUS_META[p.status];
