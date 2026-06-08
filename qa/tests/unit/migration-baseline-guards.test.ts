@@ -142,3 +142,104 @@ describe("CI workflows run db:check", () => {
     });
   }
 });
+
+/**
+ * QB-recon migration integrity (0008 vs 0097)
+ *
+ * Two unrelated migrations share the `_qb_recon_tables` filename suffix and
+ * are routinely mistaken for duplicates:
+ *
+ *   - 0008_qb_recon_tables — cost-side Tracker-Gap annotation tables
+ *     (qb_recon_ignores + qb_class_project_overrides), shipped in PR #1017,
+ *     baseline-era journal entry idx 8, applied on every environment.
+ *   - 0097_qb_recon_tables — company-wide tracker-vs-QuickBooks reconciliation
+ *     snapshot tables (qb_recon_line + qb_recon_summary), shipped in PR #1048,
+ *     journal entry idx 97.
+ *
+ * They create four DISJOINT relations — they are not duplicates. This block
+ * pins that fact so the recurring "0008 is a stray duplicate of 0097, delete
+ * it" misdiagnosis cannot land: removing 0008 would drop two live tables from
+ * every fresh DB and break scripts/drizzle-bootstrap.ts, which resolves every
+ * journal tag to migrations/<tag>.sql by name.
+ */
+describe("QB-recon migration integrity (0008 vs 0097)", () => {
+  const journal = readJson("migrations/meta/_journal.json") as {
+    entries: Array<{ idx: number; tag: string; when: number }>;
+  };
+  const tags = journal.entries.map((e) => e.tag);
+
+  /** Active-migration tags (journal order) whose DDL creates `table`. */
+  function creatorsOf(table: string): string[] {
+    const re = new RegExp(`CREATE TABLE IF NOT EXISTS "${table}"`);
+    return tags.filter((tag) => re.test(read(`migrations/${tag}.sql`)));
+  }
+
+  it("journal tags are unique and idx is contiguous (no stray renumbering)", () => {
+    expect(new Set(tags).size, "duplicate journal tags").toBe(tags.length);
+    journal.entries.forEach((e, i) => expect(e.idx).toBe(i));
+  });
+
+  it("every journal entry resolves to an on-disk migration .sql file", () => {
+    // drizzle-kit migrate AND scripts/drizzle-bootstrap.ts both resolve each
+    // journal tag to migrations/<tag>.sql; a missing file breaks the deploy.
+    for (const tag of tags) {
+      expect(
+        fs.existsSync(path.join(process.cwd(), "migrations", `${tag}.sql`)),
+        `migrations/${tag}.sql is referenced by the journal but missing`,
+      ).toBe(true);
+    }
+  });
+
+  it("0008 and 0097 are both present as distinct journal entries", () => {
+    expect(tags).toContain("0008_qb_recon_tables");
+    expect(tags).toContain("0097_qb_recon_tables");
+  });
+
+  it("0008 creates the cost-side annotation tables only", () => {
+    const sql = read("migrations/0008_qb_recon_tables.sql");
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "qb_recon_ignores"/);
+    expect(sql).toMatch(
+      /CREATE TABLE IF NOT EXISTS "qb_class_project_overrides"/,
+    );
+    expect(sql).not.toMatch(/"qb_recon_line"|"qb_recon_summary"/);
+  });
+
+  it("0097 creates the reconciliation snapshot tables only", () => {
+    const sql = read("migrations/0097_qb_recon_tables.sql");
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "qb_recon_line"/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "qb_recon_summary"/);
+    expect(sql).not.toMatch(/"qb_recon_ignores"|"qb_class_project_overrides"/);
+  });
+
+  it("each QB-recon table is created by exactly one migration (no double-create)", () => {
+    expect(creatorsOf("qb_recon_line")).toEqual(["0097_qb_recon_tables"]);
+    expect(creatorsOf("qb_recon_summary")).toEqual(["0097_qb_recon_tables"]);
+    expect(creatorsOf("qb_recon_ignores")).toEqual(["0008_qb_recon_tables"]);
+    expect(creatorsOf("qb_class_project_overrides")).toEqual([
+      "0008_qb_recon_tables",
+    ]);
+  });
+
+  it("both QB-recon migrations are idempotent (CREATE TABLE IF NOT EXISTS)", () => {
+    for (const tag of ["0008_qb_recon_tables", "0097_qb_recon_tables"]) {
+      // Anchor to real statements at line-start; comment lines begin with `--`
+      // (0097's header wraps the words "CREATE TABLE IF / NOT EXISTS").
+      const creates =
+        read(`migrations/${tag}.sql`).match(/^[ \t]*CREATE TABLE\b[^\n]*/gm) ?? [];
+      expect(creates.length, `${tag} creates no tables?`).toBeGreaterThan(0);
+      for (const stmt of creates) {
+        expect(stmt, `${tag}: ${stmt}`).toMatch(/CREATE TABLE IF NOT EXISTS/);
+      }
+    }
+  });
+
+  it("drizzle bootstrap keeps the 0097 canary probing both snapshot tables", () => {
+    // 0079_dev_drift_repair carries a future-dated journal `when`, which pins
+    // drizzle-kit migrate's watermark above 0097; without this canary the
+    // company-wide recon tables would be skipped on already-migrated DBs.
+    const boot = read("scripts/drizzle-bootstrap.ts");
+    expect(boot).toMatch(/"0097_qb_recon_tables":/);
+    expect(boot).toMatch(/tableExists\(c, "qb_recon_line"\)/);
+    expect(boot).toMatch(/tableExists\(c, "qb_recon_summary"\)/);
+  });
+});
