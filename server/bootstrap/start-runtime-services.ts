@@ -142,5 +142,19 @@ export async function startRuntimeServices(options: {
     log("Skipped QB payment-refresh scheduler in SQLite mode.", "Startup:Runtime");
   }
 
+  // Company-wide tracker-vs-QuickBooks reconciliation: daily recompute into
+  // qb_recon_line / qb_recon_summary (snapshot-guarded). Postgres-only.
+  if (!isSqlite) {
+    try {
+      const { scheduleQbReconRefresh } = await import("./qb-recon-refresh-scheduler");
+      scheduleQbReconRefresh();
+      started.push("qb-recon-refresh-scheduler");
+    } catch (err) {
+      log(`[QB Tracker Reconcile Scheduler] Failed to start: ${err}`, "Startup:Runtime");
+    }
+  } else {
+    log("Skipped QB tracker-reconcile scheduler in SQLite mode.", "Startup:Runtime");
+  }
+
   return started;
 }
