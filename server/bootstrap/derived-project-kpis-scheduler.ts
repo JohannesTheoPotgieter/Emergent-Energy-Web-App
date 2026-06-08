@@ -30,6 +30,8 @@
  */
 
 import { recomputeAllDerivedKpis } from "../services/derived-project-kpis-materializer";
+import { evaluateAppSchemaReadiness } from "./schema-readiness-runtime";
+import { formatPendingSummary, isSchemaBehind } from "../lib/schema-readiness";
 
 const FIFTEEN_MIN_MS = 15 * 60 * 1000;
 const JITTER_MS = 30 * 1000; // ±30s jitter for multi-instance deployments
@@ -39,11 +41,28 @@ let lastRunStartedAt: string | null = null;
 let lastRunFinishedAt: string | null = null;
 let lastRunProjectCount = 0;
 let lastRunErrored = false;
+let schemaBehindWarned = false;
 
 async function runOnce(): Promise<void> {
   const startedAt = new Date();
   lastRunStartedAt = startedAt.toISOString();
   lastRunErrored = false;
+
+  // Skip the cycle (with a single warning) when the DB is behind on
+  // migrations, rather than throwing a Drizzle error every run.
+  const readiness = await evaluateAppSchemaReadiness().catch(() => null);
+  if (readiness && isSchemaBehind(readiness)) {
+    if (!schemaBehindWarned) {
+      console.warn(
+        `[derived-project-kpis-scheduler] Skipping refresh — DB schema behind on migrations (${formatPendingSummary(readiness)}). Apply migrations to resume.`,
+      );
+      schemaBehindWarned = true;
+    }
+    lastRunFinishedAt = new Date().toISOString();
+    return;
+  }
+  schemaBehindWarned = false;
+
   try {
     const count = await recomputeAllDerivedKpis();
     lastRunProjectCount = count;

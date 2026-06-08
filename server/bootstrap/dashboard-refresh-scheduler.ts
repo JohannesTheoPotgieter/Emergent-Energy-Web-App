@@ -12,8 +12,11 @@ import {
   refreshAllDashboards,
   registerDashboard,
 } from "../services/dashboard-refresh-service";
+import { evaluateAppSchemaReadiness } from "./schema-readiness-runtime";
+import { formatPendingSummary, isSchemaBehind } from "../lib/schema-readiness";
 
 let refreshTimer: NodeJS.Timeout | null = null;
+let schemaBehindWarned = false;
 
 async function registerOrgWideDashboards(): Promise<void> {
   // Company overview — exec home tile.
@@ -59,6 +62,20 @@ async function registerOrgWideDashboards(): Promise<void> {
  * compute failures are captured inside refreshDashboard.
  */
 export async function runDashboardRefreshCycle(): Promise<void> {
+  // Skip the cycle (with a single warning) when the DB is behind on
+  // migrations, rather than throwing a Drizzle error every run.
+  const readiness = await evaluateAppSchemaReadiness().catch(() => null);
+  if (readiness && isSchemaBehind(readiness)) {
+    if (!schemaBehindWarned) {
+      console.warn(
+        `[DashboardRefresh] Skipping cycle — DB schema behind on migrations (${formatPendingSummary(readiness)}).`,
+      );
+      schemaBehindWarned = true;
+    }
+    return;
+  }
+  schemaBehindWarned = false;
+
   try {
     const result = await refreshAllDashboards();
     console.log(

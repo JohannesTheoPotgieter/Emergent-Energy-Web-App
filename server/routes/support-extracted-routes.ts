@@ -214,7 +214,18 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
       const dbStatus = getDbConfigStatus();
       const startupModes = getStartupModes();
 
-      const diagnostics = buildHealthDiagnostics(dbMode, dbStatus, startupModes);
+      // Live readiness re-check so a behind-schema DB reports 503 and a
+      // since-repaired one self-clears without a restart. Fail open: if the
+      // check itself errors, health still reports its DB diagnostics.
+      let schemaReadiness = null;
+      try {
+        const { evaluateAppSchemaReadiness } = await import("../bootstrap/schema-readiness-runtime");
+        schemaReadiness = await evaluateAppSchemaReadiness();
+      } catch (readinessErr) {
+        logApiError("GET /api/health schema readiness", readinessErr);
+      }
+
+      const diagnostics = buildHealthDiagnostics(dbMode, dbStatus, startupModes, schemaReadiness);
       res.status(diagnostics.ok ? 200 : 503).json(diagnostics);
     } catch (error) {
       logApiError("GET /api/health", error);

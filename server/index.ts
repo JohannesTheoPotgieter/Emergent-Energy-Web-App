@@ -19,6 +19,7 @@ import { getEnvironmentStatus } from "./bootstrap/environment-status";
 import { getRuntimeMutationPolicy } from "./bootstrap/runtime-mutation-policy";
 import { createStartupReport, logStartupSummary } from "./bootstrap/startup-report";
 import { runStartupOrchestrator } from "./bootstrap/startup-orchestrator";
+import { runSchemaReadinessBootGate } from "./bootstrap/schema-readiness-runtime";
 import { registerOpsDashboardRoute } from "./routes/ops-dashboard.routes";
 
 declare module "http" {
@@ -76,6 +77,12 @@ async function bootstrap() {
 
   const { sessionSecret } = enforceRuntimeEnvironmentGuards();
   await initializeDatabase();
+
+  // Make schema drift loud and safe BEFORE routes register: dev auto-applies
+  // pending migrations once; production logs one fatal-style line and serves a
+  // maintenance state (health 503 + finance 503) instead of raw 500s. Seeds
+  // the readiness cache the finance gate and schedulers read.
+  await runSchemaReadinessBootGate({ log });
 
   applySecurityAndParsingMiddleware(app);
 

@@ -18,6 +18,10 @@ import { registerInfoRoutes } from "./register-info-routes";
 import { registerSupportRoutes } from "./register-support-routes";
 import { registerExtractedRoutes } from "./route-registry";
 import { applyLegacyUrlAliases } from "../middleware/legacy-url-aliases";
+import {
+  FINANCE_SCHEMA_GATE_PREFIXES,
+  financeSchemaReadinessGate,
+} from "../middleware/schema-readiness-gate";
 
 export async function registerAllRoutes(options: {
   app: Express;
@@ -25,6 +29,12 @@ export async function registerAllRoutes(options: {
   log: (message: string, source?: string) => void;
 }) {
   const { app, httpServer, log } = options;
+
+  // Schema-readiness gate for the finance surface. Mounted before any finance
+  // route registers so that, when the DB is behind on migrations, finance
+  // endpoints return one typed 503 "schema_behind" instead of raw Drizzle
+  // 500s. No-op (pass-through) whenever the schema is current.
+  app.use(FINANCE_SCHEMA_GATE_PREFIXES, financeSchemaReadinessGate);
 
   // Task #61: alias /api/engineering-tickets/* -> /api/pd/tickets/* and
   // /api/engineering-pm-handover/* -> /api/pd-pm-handover/* before any
