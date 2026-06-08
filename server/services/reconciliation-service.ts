@@ -28,6 +28,7 @@ import { qbReconIgnores, qbRevenueReconIgnores } from "@shared/schema/integratio
 import { db } from "../db";
 import {
   FinanceLineLevelRepository,
+  aggregateLinesByMonth,
   type FinanceLine,
   type FinanceLineBucket,
 } from "../repositories/finance-line-level-repository";
@@ -35,6 +36,8 @@ import {
   resolvePeriodIdForDate,
   type FiscalPeriodRow,
 } from "../scripts/backfill-fiscal-period";
+import { getProfitAndLossReport } from "./quickbooks-service";
+import { parsePnLCompanyTotals } from "./qb-pnl-totals";
 
 /** Ties / drift tolerance (Rand). Matches the §3.3.2 R1 audit tolerance. */
 export const RECON_R1 = 1;
@@ -747,6 +750,117 @@ async function getTrackerVsQbForProject(
     if (Number.isFinite(d)) signed += d;
   }
   return { status: worstStatus(statuses), delta: round2(signed) };
+}
+
+// ---------------------------------------------------------------------------
+// COMPANY-LEVEL tracker-vs-QuickBooks (Revenue / COS / GP)
+//
+// QB cost bills are not project-tagged, so COS/GP only reconcile to QuickBooks
+// at the COMPANY level. This compares the app's canonical §3.3 company totals
+// (Σ perLineRevenue / Σ COS / Σ GP, via the single read path) against
+// QuickBooks' own P&L Revenue / COS / GP for the same window. Read-only — the
+// app COMPARES and flags; it never adjusts a tracker (§ 3.4).
+// ---------------------------------------------------------------------------
+
+/** Company tie/drift tolerance (Rand). Same R1 tie tolerance used elsewhere. */
+export const COMPANY_QB_TOLERANCE = RECON_R1;
+
+export type CompanyQbMetric = "revenue" | "cos" | "gp";
+
+export interface CompanyMetricComparison {
+  metric: CompanyQbMetric;
+  /** App canonical §3.3 total for the window. */
+  tracker: number;
+  /** QuickBooks P&L total, or null when QB is unavailable / omits the section. */
+  qb: number | null;
+  /** tracker − qb (0 when qb is null). Signed: positive ⇒ app reports more. */
+  delta: number;
+  /** green = ties within tolerance, amber = drift, unknown = no QB figure. */
+  status: ReconDisplayStatus;
+}
+
+export interface CompanyTrackerVsQb {
+  generatedAt: string;
+  fyLabel: string;
+  qbAvailable: boolean;
+  revenue: CompanyMetricComparison;
+  cos: CompanyMetricComparison;
+  gp: CompanyMetricComparison;
+  /** green (all tie) · amber (any drift) · unknown (no QB data at all). */
+  overallStatus: ReconDisplayStatus;
+}
+
+/** PURE: classify one company metric (tracker vs QB) into ties / drift / unknown. */
+export function classifyCompanyMetric(
+  metric: CompanyQbMetric,
+  trackerTotal: number,
+  qbTotal: number | null,
+  tolerance: number = COMPANY_QB_TOLERANCE,
+): CompanyMetricComparison {
+  const tracker = round2(trackerTotal);
+  if (qbTotal == null) {
+    return { metric, tracker, qb: null, delta: 0, status: "unknown" };
+  }
+  const qb = round2(qbTotal);
+  const delta = round2(tracker - qb);
+  return { metric, tracker, qb, delta, status: Math.abs(delta) <= tolerance ? "green" : "amber" };
+}
+
+/** PURE: roll the three metric statuses into the headline company status. */
+export function rollupCompanyStatus(
+  statuses: readonly ReconDisplayStatus[],
+): ReconDisplayStatus {
+  if (statuses.includes("amber")) return "amber";
+  if (statuses.every((s) => s === "unknown")) return "unknown";
+  return "green";
+}
+
+export async function getCompanyTrackerVsQb(
+  dbi: DbOrTx,
+  opts: { fyStart?: string; fyEnd?: string; fyLabel?: string } = {},
+): Promise<CompanyTrackerVsQb> {
+  // App canonical company totals via the single §3.3 read path.
+  const projects = (await dbi
+    .select({ id: projectInfo.id })
+    .from(projectInfo)
+    .where(isNull(projectInfo.deletedAt))) as Array<{ id: number }>;
+  const projectIds = projects.map((p) => p.id);
+  const repo = new FinanceLineLevelRepository(dbi);
+  const lines = projectIds.length
+    ? await repo.getPortfolioFinanceLines(projectIds, { fyStart: opts.fyStart, fyEnd: opts.fyEnd })
+    : [];
+  const total = aggregateLinesByMonth(lines).total;
+  const tracker = { revenue: total.revenue, cos: total.cos, gp: total.gp };
+
+  // QuickBooks P&L company totals (best-effort — null when QB unavailable).
+  let qb: { revenue: number | null; cos: number | null; gp: number | null } | null = null;
+  try {
+    const report = await getProfitAndLossReport(
+      opts.fyStart ?? "2000-01-01",
+      opts.fyEnd ?? "2100-12-31",
+    );
+    qb = parsePnLCompanyTotals(report);
+  } catch (err) {
+    console.warn(
+      "[reconciliation] company QB P&L unavailable:",
+      err instanceof Error ? err.message : String(err),
+    );
+    qb = null;
+  }
+
+  const revenue = classifyCompanyMetric("revenue", tracker.revenue, qb?.revenue ?? null);
+  const cos = classifyCompanyMetric("cos", tracker.cos, qb?.cos ?? null);
+  const gp = classifyCompanyMetric("gp", tracker.gp, qb?.gp ?? null);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    fyLabel: opts.fyLabel ?? "",
+    qbAvailable: qb != null && (qb.revenue != null || qb.cos != null || qb.gp != null),
+    revenue,
+    cos,
+    gp,
+    overallStatus: rollupCompanyStatus([revenue.status, cos.status, gp.status]),
+  };
 }
 
 /** A suppressed QB variance, surfaced (never silently dropped). */

@@ -78,6 +78,23 @@ interface ReconResponse {
   summary: { total: number; red: number; unlinked: number; amber: number; green: number; unknown: number };
 }
 
+interface CompanyMetricCmp {
+  metric: "revenue" | "cos" | "gp";
+  tracker: number;
+  qb: number | null;
+  delta: number;
+  status: ReconDisplayStatus;
+}
+interface CompanyTrackerVsQb {
+  generatedAt: string;
+  fyLabel: string;
+  qbAvailable: boolean;
+  revenue: CompanyMetricCmp;
+  cos: CompanyMetricCmp;
+  gp: CompanyMetricCmp;
+  overallStatus: ReconDisplayStatus;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const todayIso = new Date().toISOString().slice(0, 10);
@@ -91,6 +108,13 @@ function weekLabel(weekStart: string): string {
   const d = new Date(`${weekStart}T00:00:00`);
   if (Number.isNaN(d.getTime())) return weekStart;
   return d.toLocaleDateString("en-ZA", { day: "numeric", month: "short" });
+}
+
+/** Compact per-metric label for the company QB tile: ties / Δ amount / n/a. */
+function fmtCqMetric(m: CompanyMetricCmp): string {
+  if (m.status === "unknown") return "n/a";
+  if (m.status === "green") return "ties";
+  return `Δ ${formatZarCompact(m.delta)}`;
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -132,6 +156,13 @@ export default function FinanceHomePage() {
     staleTime: 60_000,
   });
 
+  // Company-level Tracker vs QuickBooks (Revenue / COS / GP from QB's P&L).
+  const companyQbQuery = useQuery<CompanyTrackerVsQb>({
+    queryKey: ["/api/finance/reconciliation/company-qb", qs],
+    queryFn: fetchQueryFn(`/api/finance/reconciliation/company-qb?${qs}`),
+    staleTime: 60_000,
+  });
+
   const gp = useMemo(() => {
     const months = buildGpMonthSummaries(cosQuery.data ?? [], revQuery.data?.months ?? []);
     return pickCurrentMonth(months, currentYyyyMm);
@@ -148,18 +179,7 @@ export default function FinanceHomePage() {
     );
   }, [cashflowQuery.data]);
 
-  const qb = useMemo(() => {
-    const projects = reconQuery.data?.projects ?? [];
-    let green = 0;
-    let needsReview = 0;
-    let noData = 0;
-    for (const p of projects) {
-      if (p.qbStatus === "green") green += 1;
-      else if (p.qbStatus === "amber" || p.qbStatus === "red") needsReview += 1;
-      else noData += 1;
-    }
-    return { green, needsReview, noData, total: projects.length };
-  }, [reconQuery.data]);
+  const cq = companyQbQuery.data;
 
   // Portfolio reconciliation posture — drives the trust badge on the
   // tracker-derived figures (GP, Revenue). "Do these numbers reconcile?"
@@ -282,26 +302,39 @@ export default function FinanceHomePage() {
             href="/cashflow"
           />
 
-          {/* 4 — Tracker vs QuickBooks */}
+          {/* 4 — Tracker vs QuickBooks (company-level P&L: Revenue / COS / GP) */}
           <KpiTile
             data-testid="finance-home-tracker-qb"
             label="Tracker vs QuickBooks"
-            description={reconQuery.data ? `of ${qb.total} projects` : undefined}
-            value={reconQuery.data ? `${qb.green} tie` : placeholder(reconQuery.isLoading)}
-            tone={qb.needsReview > 0 ? "warning" : "positive"}
+            description={cq ? `Company P&L · ${cq.fyLabel}` : undefined}
+            value={
+              cq
+                ? cq.overallStatus === "unknown"
+                  ? "No QB data"
+                  : cq.overallStatus === "green"
+                    ? "Ties"
+                    : "Drift"
+                : placeholder(companyQbQuery.isLoading)
+            }
+            tone={
+              cq
+                ? cq.overallStatus === "amber"
+                  ? "warning"
+                  : cq.overallStatus === "unknown"
+                    ? "default"
+                    : "positive"
+                : "default"
+            }
             supporting={
-              reconQuery.data
-                ? `${qb.needsReview} need review${qb.noData > 0 ? ` · ${qb.noData} no QB data` : ""}`
-                : reconQuery.isLoading
+              cq
+                ? `Rev ${fmtCqMetric(cq.revenue)} · COS ${fmtCqMetric(cq.cos)} · GP ${fmtCqMetric(cq.gp)}`
+                : companyQbQuery.isLoading
                   ? "Loading…"
                   : "No data"
             }
             sourceBadge={
-              reconQuery.data ? (
-                <TrustBadge
-                  status={qb.needsReview > 0 ? "drift" : "ties"}
-                  label={qb.needsReview > 0 ? `${qb.needsReview} drift` : "Ties"}
-                />
+              cq && cq.overallStatus !== "unknown" ? (
+                <TrustBadge status={cq.overallStatus === "amber" ? "drift" : "ties"} />
               ) : undefined
             }
             href="/finance/reconciliation"
