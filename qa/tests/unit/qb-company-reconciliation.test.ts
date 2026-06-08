@@ -106,17 +106,19 @@ describe("company tile composition — tie when tracker == QB, drift otherwise",
   });
 });
 
-describe("board QB column is honest (per-project revenue; COS company-level)", () => {
+describe("board no longer carries a per-project QB column (retired in feat/qb-recon-view)", () => {
   const board = fs.readFileSync(
     path.join(process.cwd(), "client/src/pages/finance-reconciliation-board.tsx"),
     "utf8",
   );
 
-  it("labels the per-project QB column 'Revenue vs QB' (not a per-project COS)", () => {
-    expect(board).toMatch(/Revenue vs QB/);
+  it("removed the per-project QB chip + delta cell (no 'Revenue vs QB' / qb-delta testid)", () => {
+    expect(board).not.toMatch(/Revenue vs QB/);
+    expect(board).not.toMatch(/recon-card-qb-delta/);
   });
 
-  it("renders a company-level QB card for COS/GP", () => {
-    expect(board).toMatch(/recon-company-qb/);
+  it("links to the company-wide QuickBooks Reconciliation view instead", () => {
+    expect(board).toMatch(/\/finance\/qb-reconciliation/);
+    expect(board).toMatch(/recon-open-qb/);
   });
 });

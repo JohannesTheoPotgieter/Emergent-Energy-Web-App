@@ -78,21 +78,24 @@ interface ReconResponse {
   summary: { total: number; red: number; unlinked: number; amber: number; green: number; unknown: number };
 }
 
-interface CompanyMetricCmp {
-  metric: "revenue" | "cos" | "gp";
-  tracker: number;
-  qb: number | null;
-  delta: number;
-  status: ReconDisplayStatus;
+// Company-wide tracker-vs-QuickBooks summary (the R2 invoice-level engine).
+interface QbReconRow {
+  stream: "COS" | "REV";
+  trackerTotal: number;
+  qbTotal: number;
+  varianceTotal: number;
 }
-interface CompanyTrackerVsQb {
-  generatedAt: string;
-  fyLabel: string;
-  qbAvailable: boolean;
-  revenue: CompanyMetricCmp;
-  cos: CompanyMetricCmp;
-  gp: CompanyMetricCmp;
-  overallStatus: ReconDisplayStatus;
+interface QbReconPeriod {
+  periodKey: string;
+  rev: QbReconRow | null;
+  cos: QbReconRow | null;
+  gpTracker: number;
+  gpQb: number;
+  gpDelta: number;
+}
+interface QbReconSummaryResp {
+  grain: string;
+  periods: QbReconPeriod[];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -110,11 +113,11 @@ function weekLabel(weekStart: string): string {
   return d.toLocaleDateString("en-ZA", { day: "numeric", month: "short" });
 }
 
-/** Compact per-metric label for the company QB tile: ties / Δ amount / n/a. */
-function fmtCqMetric(m: CompanyMetricCmp): string {
-  if (m.status === "unknown") return "n/a";
-  if (m.status === "green") return "ties";
-  return `Δ ${formatZarCompact(m.delta)}`;
+/** Per-metric tracker-vs-QB delta for the company QB tile (ties within R1). */
+function qbMetric(tracker: number, qb: number): { delta: number; tie: boolean; text: string } {
+  const delta = Number((tracker - qb).toFixed(2));
+  const tie = Math.abs(delta) <= 1;
+  return { delta, tie, text: tie ? "ties" : `Δ ${formatZarCompact(delta)}` };
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -156,10 +159,10 @@ export default function FinanceHomePage() {
     staleTime: 60_000,
   });
 
-  // Company-level Tracker vs QuickBooks (Revenue / COS / GP from QB's P&L).
-  const companyQbQuery = useQuery<CompanyTrackerVsQb>({
-    queryKey: ["/api/finance/reconciliation/company-qb", qs],
-    queryFn: fetchQueryFn(`/api/finance/reconciliation/company-qb?${qs}`),
+  // Company-wide tracker-vs-QuickBooks for the current month (the R2 engine).
+  const qbReconQuery = useQuery<QbReconSummaryResp>({
+    queryKey: ["/api/finance/qb-recon/summary", "month"],
+    queryFn: fetchQueryFn("/api/finance/qb-recon/summary?grain=month"),
     staleTime: 60_000,
   });
 
@@ -179,7 +182,20 @@ export default function FinanceHomePage() {
     );
   }, [cashflowQuery.data]);
 
-  const cq = companyQbQuery.data;
+  // The current month's QB reconciliation (fallback to the latest period).
+  const qbPeriod = useMemo(() => {
+    const periods = qbReconQuery.data?.periods ?? [];
+    if (periods.length === 0) return null;
+    return periods.find((p) => p.periodKey === currentYyyyMm) ?? periods[periods.length - 1];
+  }, [qbReconQuery.data]);
+
+  const cq = useMemo(() => {
+    if (!qbPeriod) return null;
+    const rev = qbMetric(qbPeriod.rev?.trackerTotal ?? 0, qbPeriod.rev?.qbTotal ?? 0);
+    const cos = qbMetric(qbPeriod.cos?.trackerTotal ?? 0, qbPeriod.cos?.qbTotal ?? 0);
+    const gp = qbMetric(qbPeriod.gpTracker, qbPeriod.gpQb);
+    return { periodKey: qbPeriod.periodKey, rev, cos, gp, allTie: rev.tie && cos.tie && gp.tie };
+  }, [qbPeriod]);
 
   // Portfolio reconciliation posture — drives the trust badge on the
   // tracker-derived figures (GP, Revenue). "Do these numbers reconcile?"
@@ -302,42 +318,22 @@ export default function FinanceHomePage() {
             href="/cashflow"
           />
 
-          {/* 4 — Tracker vs QuickBooks (company-level P&L: Revenue / COS / GP) */}
+          {/* 4 — Tracker vs QuickBooks (company-wide invoice match, current period) */}
           <KpiTile
             data-testid="finance-home-tracker-qb"
             label="Tracker vs QuickBooks"
-            description={cq ? `Company P&L · ${cq.fyLabel}` : undefined}
-            value={
-              cq
-                ? cq.overallStatus === "unknown"
-                  ? "No QB data"
-                  : cq.overallStatus === "green"
-                    ? "Ties"
-                    : "Drift"
-                : placeholder(companyQbQuery.isLoading)
-            }
-            tone={
-              cq
-                ? cq.overallStatus === "amber"
-                  ? "warning"
-                  : cq.overallStatus === "unknown"
-                    ? "default"
-                    : "positive"
-                : "default"
-            }
+            description={cq ? `Invoice match · ${cq.periodKey}` : undefined}
+            value={cq ? (cq.allTie ? "Ties" : "Variance") : placeholder(qbReconQuery.isLoading)}
+            tone={cq ? (cq.allTie ? "positive" : "warning") : "default"}
             supporting={
               cq
-                ? `Rev ${fmtCqMetric(cq.revenue)} · COS ${fmtCqMetric(cq.cos)} · GP ${fmtCqMetric(cq.gp)}`
-                : companyQbQuery.isLoading
+                ? `Rev ${cq.rev.text} · COS ${cq.cos.text} · GP ${cq.gp.text}`
+                : qbReconQuery.isLoading
                   ? "Loading…"
-                  : "No data"
+                  : "No data yet"
             }
-            sourceBadge={
-              cq && cq.overallStatus !== "unknown" ? (
-                <TrustBadge status={cq.overallStatus === "amber" ? "drift" : "ties"} />
-              ) : undefined
-            }
-            href="/finance/reconciliation"
+            sourceBadge={cq ? <TrustBadge status={cq.allTie ? "ties" : "drift"} /> : undefined}
+            href="/finance/qb-reconciliation"
           />
         </div>
 

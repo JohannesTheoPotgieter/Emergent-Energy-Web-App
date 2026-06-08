@@ -156,6 +156,7 @@ const FinanceGpPage = lazyWithRetry(() => import("@/pages/finance-gp"));
 const FinanceGpCompanyPage = lazyWithRetry(() => import("@/pages/finance-gp-company"));
 const FinanceAuditPrepPage = lazyWithRetry(() => import("@/pages/finance-audit-prep"));
 const FinanceReconciliationBoardPage = lazyWithRetry(() => import("@/pages/finance-reconciliation-board"));
+const FinanceQbReconciliationPage = lazyWithRetry(() => import("@/pages/finance-qb-reconciliation"));
 const FinanceHomePage = lazyWithRetry(() => import("@/pages/finance-home"));
 const FinanceProjectDetailPage = lazyWithRetry(() => import("@/pages/finance-project-detail"));
 const FinanceWeeklyClosePage = lazyWithRetry(() => import("@/pages/finance-weekly-close"));
@@ -286,6 +287,7 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   FinanceGpCompanyPage,
   FinanceAuditPrepPage,
   FinanceReconciliationBoardPage,
+  FinanceQbReconciliationPage,
   FinanceHomePage,
   FinanceProjectDetailPage,
   FinanceWeeklyClosePage,

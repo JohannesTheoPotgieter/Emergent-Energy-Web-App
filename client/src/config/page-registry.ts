@@ -145,6 +145,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "financeAuditPrep", path: "/finance/audit-prep", label: "Audit Prep", iconKey: "ShieldCheck", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceAuditPrepPage" },
   // P2.2 — per-project app-vs-tracker reconciliation board. Gated on financials:view.
   { id: "financeReconciliationBoard", path: "/finance/reconciliation", label: "Reconciliation", iconKey: "GitCompare", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceReconciliationBoardPage" },
+  { id: "financeQbReconciliation", path: "/finance/qb-reconciliation", label: "QB Reconciliation", iconKey: "GitCompare", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceQbReconciliationPage" },
   // Per-project Tracker replicas — read-only views that render the source
   // workbook 1:1 with font/fill fidelity. Not in the sidebar; reached from
   // project-level navigation. Permission scope mirrors the existing finance
