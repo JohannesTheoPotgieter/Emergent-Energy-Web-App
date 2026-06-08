@@ -63,6 +63,23 @@ interface PortfolioResponse {
   summary: { total: number; red: number; unlinked: number; amber: number; green: number; unknown: number };
 }
 
+interface CompanyMetricCmp {
+  metric: "revenue" | "cos" | "gp";
+  tracker: number;
+  qb: number | null;
+  delta: number;
+  status: ReconDisplayStatus;
+}
+interface CompanyQbResponse {
+  generatedAt: string;
+  fyLabel: string;
+  qbAvailable: boolean;
+  revenue: CompanyMetricCmp;
+  cos: CompanyMetricCmp;
+  gp: CompanyMetricCmp;
+  overallStatus: ReconDisplayStatus;
+}
+
 interface DetailLine {
   lineId: number;
   categoryName: string | null;
@@ -166,6 +183,13 @@ export default function FinanceReconciliationBoardPage() {
   const portfolio = useQuery<PortfolioResponse>({
     queryKey: ["/api/finance/reconciliation"],
     queryFn: fetchQueryFn("/api/finance/reconciliation"),
+  });
+
+  // Company-level Tracker vs QuickBooks (Revenue / COS / GP from QB's P&L).
+  // COS/GP only reconcile to QB here because QB cost bills aren't project-tagged.
+  const companyQb = useQuery<CompanyQbResponse>({
+    queryKey: ["/api/finance/reconciliation/company-qb"],
+    queryFn: fetchQueryFn("/api/finance/reconciliation/company-qb"),
   });
 
   const detail = useQuery<DetailResponseWithMeta>({
@@ -272,6 +296,52 @@ export default function FinanceReconciliationBoardPage() {
           })}
         </div>
 
+        {/* Company-level Tracker vs QuickBooks (Revenue / COS / GP from QB's P&L) */}
+        {companyQb.data && (
+          <div
+            className="rounded-md border border-brand-muted/40 bg-white px-4 py-3"
+            data-testid="recon-company-qb"
+          >
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-brand-text">
+                Company · Tracker vs QuickBooks
+                <span className="ml-2 font-normal normal-case text-brand-muted">
+                  {companyQb.data.fyLabel}
+                </span>
+              </p>
+              <ReconStatusChip status={companyQb.data.overallStatus} />
+            </div>
+            {companyQb.data.qbAvailable ? (
+              <div className="grid grid-cols-3 gap-3">
+                {[companyQb.data.revenue, companyQb.data.cos, companyQb.data.gp].map((m) => (
+                  <div key={m.metric} data-testid={`recon-company-qb-${m.metric}`}>
+                    <p className="text-[10px] uppercase tracking-wider text-brand-muted">
+                      {m.metric === "gp" ? "GP" : m.metric === "cos" ? "COS" : "Revenue"}
+                    </p>
+                    <p
+                      className="font-mono text-sm font-semibold"
+                      style={{ color: RECON_STATUS_META[m.status].accent }}
+                    >
+                      {m.status === "green" ? "Ties" : `Δ ${formatZar(m.delta)}`}
+                    </p>
+                    <p className="text-[10px] text-brand-muted">
+                      app {formatZar(m.tracker)} · QB {m.qb == null ? "—" : formatZar(m.qb)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-brand-muted">
+                QuickBooks P&amp;L unavailable — connect QuickBooks to compare company Revenue / COS / GP.
+              </p>
+            )}
+            <p className="mt-2 text-[10px] text-brand-muted">
+              COS &amp; GP reconcile to QuickBooks at company level only (QB cost bills aren&apos;t
+              project-tagged). The per-project QB column below covers revenue/AR.
+            </p>
+          </div>
+        )}
+
         {/* Board */}
         {portfolio.isLoading ? (
           <LoadingState variant="skeleton-card" cards={6} />
@@ -335,8 +405,11 @@ export default function FinanceReconciliationBoardPage() {
                         <span className="text-[9px] font-medium uppercase text-brand-muted">App</span>
                         <ReconStatusChip status={p.status} />
                       </div>
-                      <div className="flex items-center gap-1" title="Tracker vs QuickBooks">
-                        <span className="text-[9px] font-medium uppercase text-brand-muted">QB</span>
+                      <div
+                        className="flex items-center gap-1"
+                        title="Revenue vs QuickBooks (per-project, matched via the QB customer). QB cost bills aren't project-tagged, so COS/GP reconcile to QuickBooks at company level only — see the company card above."
+                      >
+                        <span className="text-[9px] font-medium uppercase text-brand-muted">Rev·QB</span>
                         <ReconStatusChip status={p.qbStatus} />
                       </div>
                     </div>
@@ -356,9 +429,9 @@ export default function FinanceReconciliationBoardPage() {
                             {p.absDelta === 0 ? formatZar(0) : formatZar(p.appVsTrackerDelta)}
                           </p>
                         </div>
-                        <div>
+                        <div title="Per-project QuickBooks reconciliation covers REVENUE/AR only (matched via the QB customer). COS is company-level.">
                           <p className="text-[10px] uppercase tracking-wider text-brand-muted">
-                            Tracker vs QB
+                            Revenue vs QB
                           </p>
                           <p
                             className="font-mono text-base font-semibold"

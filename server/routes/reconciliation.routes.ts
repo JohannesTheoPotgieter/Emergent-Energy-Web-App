@@ -39,6 +39,7 @@ import { parseIntParam } from "../lib/req-params";
 import {
   getReconciliationPortfolio,
   getReconciliationDetail,
+  getCompanyTrackerVsQb,
   refreshReconciliationForProjects,
   refreshTrackerVsQbForProjects,
 } from "../services/reconciliation-service";
@@ -233,6 +234,31 @@ function computeDataConfidence(
 // Route registration
 // ---------------------------------------------------------------------------
 
+/**
+ * Resolve the FY window for the company-level QB comparison from the same `fy`
+ * query param the trackers use (FY = 1 Sep → 31 Aug, SAST-anchored). `fy=all`
+ * (or absent + scope=all) widens to the whole history.
+ */
+function resolveCompanyQbWindow(query: Request["query"]): {
+  fyStart?: string;
+  fyEnd?: string;
+  fyLabel: string;
+} {
+  const raw = String(query.fy ?? "").trim().toLowerCase();
+  if (raw === "all" || String(query.scope ?? "").toLowerCase() === "all") {
+    return { fyLabel: "All data" };
+  }
+  const sast = new Date(Date.now() + 120 * 60 * 1000);
+  const currentFy = sast.getUTCMonth() + 1 >= 9 ? sast.getUTCFullYear() + 1 : sast.getUTCFullYear();
+  const parsed = Number.parseInt(raw, 10);
+  const fy = Number.isFinite(parsed) && parsed > 2000 ? parsed : currentFy;
+  return {
+    fyStart: `${fy - 1}-09-01`,
+    fyEnd: `${fy}-08-31`,
+    fyLabel: `FY${String(fy).slice(-2)}`,
+  };
+}
+
 export function registerReconciliationRoutes(app: Express): void {
   // ── GET /api/reconciliation/program-assessment ──────────────────────────
   app.get(
@@ -369,6 +395,28 @@ export function registerReconciliationRoutes(app: Express): void {
       } catch (err) {
         console.error("[reconciliation] portfolio error:", err);
         res.status(500).json({ error: "reconciliation_portfolio_failed" });
+      }
+    },
+  );
+
+  // ── GET /api/finance/reconciliation/company-qb ──────────────────────────
+  // Company-level tracker-vs-QuickBooks: app canonical §3.3 totals (Revenue /
+  // COS / GP) vs QuickBooks' P&L for the FY window, with per-metric tie/drift.
+  // QB cost bills aren't project-tagged, so COS/GP reconcile at company grain
+  // only (per-project QB stays revenue/AR). Registered BEFORE :projectId so the
+  // literal path isn't captured by the detail matcher. Read-only.
+  app.get(
+    "/api/finance/reconciliation/company-qb",
+    requireAuth,
+    requirePermission("financials", "view"),
+    async (req: Request, res: Response) => {
+      try {
+        const { fyStart, fyEnd, fyLabel } = resolveCompanyQbWindow(req.query);
+        const result = await getCompanyTrackerVsQb(db, { fyStart, fyEnd, fyLabel });
+        res.json(result);
+      } catch (err) {
+        console.error("[reconciliation] company-qb error:", err);
+        res.status(500).json({ error: "reconciliation_company_qb_failed" });
       }
     },
   );
