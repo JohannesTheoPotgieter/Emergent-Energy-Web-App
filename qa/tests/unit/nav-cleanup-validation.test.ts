@@ -54,11 +54,13 @@ describe("nav cleanup — six-tab COO spec", () => {
   it("Finance has the locked items and operations in spec order", () => {
     const section = findTop("Finance");
     expect(section.secondary.map((item) => item.path)).toEqual([
+      "/finance",
       "/cashflow",
       "/cos",
       "/revenue-tracker",
       "/finance/gp/company",
       "/finance/reconciliation",
+      "/finance/close",
       "/fye-revenue-tracking",
       "/finance/quickbooks",
       "/payment-request-board",

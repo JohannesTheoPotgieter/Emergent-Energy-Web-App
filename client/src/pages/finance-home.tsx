@@ -47,7 +47,6 @@ import {
   type CosTrackerMonth,
   type RevTrackerResponse,
 } from "@/lib/finance/gp-summary";
-import { brand } from "@/design/tokens";
 import { ArrowRight, GitCompare } from "lucide-react";
 
 // ── Response shapes (subset of canonical endpoints) ───────────────────────────
@@ -184,19 +183,15 @@ export default function FinanceHomePage() {
 
   return (
     <PageShell data-testid="finance-home-page">
-      {/* Header */}
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <img src={brand.logo} alt="Emergent Energy" className="h-8 w-auto" />
-          <div>
-            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground">
-              Finance Home
-            </h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              The four answers the weekly meeting asks — {fyScope.label}.
-            </p>
-          </div>
-        </div>
+      {/* Header — title only; the Emergent logo lives in the global app
+          header (AppLayout), so the page must not render a second one. */}
+      <div className="mb-5">
+        <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground">
+          Finance Home
+        </h1>
+        <p className="text-sm text-muted-foreground mt-0.5">
+          The four answers the weekly meeting asks — {fyScope.label}.
+        </p>
       </div>
 
       {/* The four answers */}

@@ -110,12 +110,21 @@ export const TOP_SECTIONS: TopSection[] = [
       "/cashflow", "/cos", "/revenue-tracker", "/finance", "/fye-revenue-tracking",
       "/payment-request-board", "/po-approval-board", "/payment-batch-manager",
     ]),
+    // Every item gates on its own path: buildVisibleTopSections calls
+    // canViewPath(item.path), which resolves the path's permission entity via
+    // page-registry (e.g. /finance → financials:view, /finance/close →
+    // cashflow:view). Do NOT gate finance items with
+    // requiredPathPermissions: ["financials:view"] — that field is evaluated
+    // as a PATH (canViewPath), and an "entity:action" string is an unknown
+    // path → denied for everyone. That mis-gate was hiding Reconciliation.
     secondary: [
+      { label: "Finance Home", path: "/finance" },
       { label: "Cashflow", path: "/cashflow" },
       { label: "Cost of Sales", path: "/cos" },
       { label: "Revenue", path: "/revenue-tracker" },
       { label: "Gross Profit", path: "/finance/gp/company" },
-      { label: "Reconciliation", path: "/finance/reconciliation", requiredPathPermissions: ["financials:view"] },
+      { label: "Reconciliation", path: "/finance/reconciliation" },
+      { label: "Weekly Close", path: "/finance/close" },
       { label: "FYE Tracking Report", path: "/fye-revenue-tracking" },
       { label: "QuickBooks", path: "/finance/quickbooks" },
       { label: "Payment Requests", path: "/payment-request-board" },
