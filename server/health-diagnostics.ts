@@ -1,4 +1,5 @@
 import { getStartupModes } from "./startup-modes";
+import type { SchemaReadiness } from "./lib/schema-readiness";
 
 interface DbConfigStatus {
   connected: boolean;
@@ -12,6 +13,7 @@ export function buildHealthDiagnostics(
   dbMode: string,
   dbStatus: DbConfigStatus,
   startupModes: ReturnType<typeof getStartupModes>,
+  schemaReadiness?: SchemaReadiness | null,
 ) {
   const startupManifest = {
     sessionSchemaRepair: startupModes.startupSchemaRepairEnabled,
@@ -21,8 +23,23 @@ export function buildHealthDiagnostics(
     schemaRepairBlocks: startupModes.startupSchemaRepairEnabled,
   };
 
+  // A DB that is behind on migrations is reported as NOT ok (HTTP 503), with
+  // the pending migration list, so operators get one clear maintenance signal
+  // instead of a wall of raw finance 500s.
+  const schemaBehind = schemaReadiness?.state === "schema_behind";
+
   return {
-    ok: dbStatus.connected,
+    ok: dbStatus.connected && !schemaBehind,
+    reason: schemaBehind ? ("schema_behind" as const) : undefined,
+    schema: schemaReadiness
+      ? {
+          ready: schemaReadiness.ready,
+          state: schemaReadiness.state,
+          pendingMigrations: schemaReadiness.pendingMigrations,
+          appliedCount: schemaReadiness.appliedCount,
+          totalCount: schemaReadiness.totalCount,
+        }
+      : undefined,
     dbMode,
     dbConnected: dbStatus.connected,
     dbHost: dbStatus.host,
