@@ -16,6 +16,7 @@ import { parseIntParam } from "../lib/req-params";
 import {
   getQbReconSummary,
   getQbReconLines,
+  getActiveQbReconIgnores,
   refreshQbTrackerReconciliation,
   type PeriodGrain,
   type ReconLineStatus,
@@ -58,6 +59,23 @@ export function registerQbReconRoutes(app: Express): void {
       } catch (err) {
         console.error("[qb-recon] lines error:", err);
         res.status(500).json({ error: "qb_recon_lines_failed" });
+      }
+    },
+  );
+
+  // Active recon-ignores (both sides), surfaced with who/why so suppressed QB
+  // variances are visible, never silently dropped. Read-only.
+  app.get(
+    "/api/finance/qb-recon/ignores",
+    requireAuth,
+    requirePermission("financials", "view"),
+    async (_req: Request, res: Response) => {
+      try {
+        const ignores = await getActiveQbReconIgnores(db);
+        res.json({ generatedAt: new Date().toISOString(), count: ignores.length, ignores });
+      } catch (err) {
+        console.error("[qb-recon] ignores error:", err);
+        res.status(500).json({ error: "qb_recon_ignores_failed" });
       }
     },
   );

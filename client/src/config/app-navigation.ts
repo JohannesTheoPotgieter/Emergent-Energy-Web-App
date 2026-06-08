@@ -124,6 +124,7 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Revenue", path: "/revenue-tracker" },
       { label: "Gross Profit", path: "/finance/gp/company" },
       { label: "Reconciliation", path: "/finance/reconciliation" },
+      { label: "QB Reconciliation", path: "/finance/qb-reconciliation" },
       { label: "Weekly Close", path: "/finance/close" },
       { label: "FYE Tracking Report", path: "/fye-revenue-tracking" },
       { label: "QuickBooks", path: "/finance/quickbooks" },

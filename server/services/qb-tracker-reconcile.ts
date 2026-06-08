@@ -441,3 +441,54 @@ export async function getQbReconLines(
     .from(qbReconLine)
     .where(and(...conds))) as Array<typeof qbReconLine.$inferSelect>;
 }
+
+/** A suppressed QB variance, surfaced (never silently dropped). */
+export interface QbReconIgnoreView {
+  side: "cost" | "revenue";
+  qbDocNumber: string | null;
+  counterpartyName: string | null;
+  amountExVat: number | null;
+  reason: string;
+  ignoredByName: string | null;
+  ignoredAt: string | null;
+}
+
+/**
+ * Active company-wide recon-ignores (both sides), so suppressed QB variances
+ * stay visible as "ignored by {user}, {reason}" rather than silently dropped.
+ * Read-only — the engine excludes these docs from the gap; this surfaces them.
+ */
+export async function getActiveQbReconIgnores(dbi: DbOrTx): Promise<QbReconIgnoreView[]> {
+  const [cost, revenue] = await Promise.all([
+    dbi
+      .select({
+        qbDocNumber: qbReconIgnores.qbDocNumber,
+        vendorName: qbReconIgnores.vendorName,
+        lineAmountExVat: qbReconIgnores.lineAmountExVat,
+        reason: qbReconIgnores.reason,
+        ignoredByName: qbReconIgnores.ignoredByName,
+        ignoredAt: qbReconIgnores.ignoredAt,
+      })
+      .from(qbReconIgnores)
+      .where(isNull(qbReconIgnores.deletedAt)),
+    dbi
+      .select({
+        qbDocNumber: qbRevenueReconIgnores.qbDocNumber,
+        customerName: qbRevenueReconIgnores.customerName,
+        lineAmountExVat: qbRevenueReconIgnores.lineAmountExVat,
+        reason: qbRevenueReconIgnores.reason,
+        ignoredByName: qbRevenueReconIgnores.ignoredByName,
+        ignoredAt: qbRevenueReconIgnores.ignoredAt,
+      })
+      .from(qbRevenueReconIgnores)
+      .where(isNull(qbRevenueReconIgnores.deletedAt)),
+  ]);
+  const out: QbReconIgnoreView[] = [];
+  for (const c of cost as Array<{ qbDocNumber: string | null; vendorName: string | null; lineAmountExVat: string | null; reason: string; ignoredByName: string | null; ignoredAt: Date | null }>) {
+    out.push({ side: "cost", qbDocNumber: c.qbDocNumber, counterpartyName: c.vendorName, amountExVat: c.lineAmountExVat == null ? null : toNum(c.lineAmountExVat), reason: c.reason, ignoredByName: c.ignoredByName, ignoredAt: c.ignoredAt ? c.ignoredAt.toISOString() : null });
+  }
+  for (const r of revenue as Array<{ qbDocNumber: string | null; customerName: string | null; lineAmountExVat: string | null; reason: string; ignoredByName: string | null; ignoredAt: Date | null }>) {
+    out.push({ side: "revenue", qbDocNumber: r.qbDocNumber, counterpartyName: r.customerName, amountExVat: r.lineAmountExVat == null ? null : toNum(r.lineAmountExVat), reason: r.reason, ignoredByName: r.ignoredByName, ignoredAt: r.ignoredAt ? r.ignoredAt.toISOString() : null });
+  }
+  return out;
+}
