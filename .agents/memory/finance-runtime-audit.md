@@ -1,49 +1,32 @@
 ---
-name: Finance runtime audit harness
-description: How to drive the Emergent Energy app + DB for runtime finance audits, what is/isn't testable, and the durable finance-data defects.
+name: Finance runtime audit harness & known defects
+description: How to re-run the Emergent Energy finance source-of-truth audit and the durable defects it keeps surfacing.
 ---
 
-# Authenticating for runtime API audits (dev only)
-The app gates every finance endpoint behind MSAL + JWT. For programmatic API testing in dev:
-1. `GET /api/auth/dev-login` → 302 to `/auth/ms-callback?code=<64-hex>` (logs in the seeded COO_ADMIN account).
-2. `POST /api/auth/exchange-code {code}` → `{token}` (JWT, ~60s code TTL).
-3. Send `Authorization: Bearer <token>` to any endpoint.
-**Why:** captures the exact payloads React-Query pages render. **Blocked when NODE_ENV=production.**
+# Finance source-of-truth audit
 
-# Dev browser UI cannot authenticate through the supported flow (auth-contract defect)
-The client was migrated to **cookie-only** auth: `getAuthToken()` returns null, `setAuthToken()` is a no-op,
-requests use `credentials:"include"`. But the server only accepts a passport session (set solely by
-`req.logIn` on the REAL MS callback) OR a Bearer header. `dev-login`/`exchange-code` **never call `req.logIn`**
-(just `res.json({token})`), so the dev `connect.sid` cookie is unauthenticated → cookie-only requests get 401
-everywhere; the page redirects to login. Proven: `/api/auth/me` cookie-only=401, Bearer=200.
-**Workaround that DOES render the real browser UI:** inject `Authorization: Bearer <dev JWT>` on every request
-via the browser context (Playwright `newContext({extraHTTPHeaders:{Authorization:'Bearer '+TOK}})`) — then full
-authenticated UI renders and per-page button/UX testing is possible. (Supersedes the old "screenshot tool is
-unauthenticated, browser UX not testable" note — it IS testable with header injection.)
-**Why it matters:** prod MS login calls `req.logIn` so prod cookie auth works; this break is dev-login–specific
-but makes the dev UI unreachable without the workaround.
+Reports: `docs/finance-source-of-truth-audit.md` (V1), `docs/finance-source-of-truth-audit-v2.md` (V2). Both RED.
 
-# Playwright button-pass harness gotchas
-Use `process.env.REPLIT_PLAYWRIGHT_CHROMIUM_EXECUTABLE`. Pattern that survives hangs: fresh context per route +
-~28s watchdog + capped `ctx.close()` (force-aborts) + resume-from-JSON. `browser.newContext()` itself is the one
-un-capped step and can stall after many open/close cycles (a couple routes may not finish — accept partial).
-Treat clicks on "Microsoft"/"Back to Dashboard" as logout/nav false-positives, and Vite HMR ws errors as benign.
+## Auth harness (required for every API + browser call)
+- Cookie/session auth on the dev UI is BROKEN: cookie-only `/api/auth/me` = 401; the app preview redirects to login.
+- Working path: `dev-login → exchange-code → JWT`; send `Authorization: Bearer <jwt>` on every request. Bearer = 200.
+- Browser (Playwright): inject the Bearer via `extraHTTPHeaders` AND localStorage init-script. Use
+  `process.env.REPLIT_PLAYWRIGHT_CHROMIUM_EXECUTABLE`, `--no-sandbox`, `waitUntil:'domcontentloaded'` (NOT
+  `networkidle` — Vite HMR websocket retries never settle and hang the run). Vite HMR websocket console errors are
+  harness noise, not app bugs.
 
-# DB access (dev + prod read-only)
-`psql "$DATABASE_URL"` = live dev DB (helium/heliumdb). **Prod, read-only:** `psql "$CLAUDE_RO_DATABASE_URL"`
-(neondb) — finance tables exposed as views in schema **`claude_views`** (e.g. `claude_views.v_project_revenue_summary`).
-`amount_ex_vat` is TEXT in both — guard casts: `case when btrim(x) ~ '^-?[0-9]+([.][0-9]+)?$' then x::numeric else 0 end`.
-Active snapshot row = `effective_to IS NULL`.
+## Durable defects (data layer — survive across audits; dev DB stable)
+- **PRS mis-keyed:** `project_revenue_summary.project_id` ≠ `project_info.id`; 27 orphan rows in dev (~90% of revenue
+  in prod). Admin `revenue_actual` (PRS all-active) is inflated vs canonical `inflow_total_value` (normalized lines).
+- **Same number, many surfaces:** revenue, realised-COS, GP, and GP-margin each render as several irreconcilable
+  values; each surface is internally consistent but built on a different unreconciled base.
+- **Canonical = normalized_*_lines** (active = `effective_to IS NULL`), NOT project_revenue_summary.
+- `cashflow_points` / `finance_*_monthly` tables are empty (dev+prod) → KPI cashflow tiles show 0; cashflow-tracker
+  still emits epoch-zero week dates (1899-12-25). `manual_overrides` and `quickbooks_invoice_links` absent/empty.
+- `amount_ex_vat` / `revenue_recognition_amount` are TEXT — always guard-cast with a numeric regex before summing.
 
-# Durable finding: cross-surface finance numbers don't reconcile (and PROD is WORSE)
-The PRS (`project_revenue_summary`) snapshot is mis-keyed (project_id != project_info.id), orphaned, and
-duplicated. PRS-reading surfaces (admin kpi-traceability, GP pages, v2 project-finance `costedSummary`) disagree
-with canonical normalized_* line totals by up to ~R200M; project-detail can show a different project's summary
-(id=19 "Mondi" → costedSummary "Hungry Lion Citrusdal"). cashflow_points + finance_*_monthly are 0 rows in BOTH
-dev and prod. **Dev is a stale subset of prod and defects scale up there:** prod has 91 projects vs 42, and
-**~90% of prod PRS revenue (R416M, 50 orphan rows) is orphaned** vs dev's R121.8M/27 rows — freezing/promoting
-does not escape the corruption.
-**Why:** any "is finance correct?" task must compare the same number across pages (not just internal
-consistency) AND check prod, since prod is the authoritative-but-more-corrupt dataset.
-**Report:** consolidated into a single file `docs/finance-source-of-truth-audit.md` (V1+V2+button-pass+dev-vs-prod
-recon merged; the former `-v2.md` was removed).
+**Why:** these are data-model / source-of-truth problems, not display bugs; do not "fix" by changing a query —
+the underlying keying and snapshot-table population are the issue.
+
+## Prod read access
+- Prod is read-only via `CLAUDE_RO_DATABASE_URL`, schema `claude_views`, tables `v_*` (not `public.*`).
