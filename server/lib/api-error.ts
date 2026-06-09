@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Response } from "express";
 
 /**
@@ -104,5 +105,44 @@ export function sendError(res: Response, error: unknown, traceId?: string) {
     nextAction: "Retry shortly or contact support if this continues.",
     detail: extractDebugDetail(error),
     ...(traceId ? { traceId } : {}),
+  });
+}
+
+/** A transient dependency (QuickBooks, schema not yet migrated, cache warming)
+ *  is unavailable — render as a "try again shortly" 503, never a hard failure. */
+export function serviceUnavailable(
+  message = "This data source is temporarily unavailable. Please retry shortly.",
+) {
+  return new ApiError(503, "SERVICE_UNAVAILABLE", message, undefined, "Retry in a few moments.");
+}
+
+/**
+ * Typed error response for a finance READ endpoint whose handler caught an
+ * unexpected failure. Mints a correlation id (traceId), logs the root cause
+ * server-side against that id, and returns a typed JSON body the finance cards
+ * render as a friendly "couldn't load — retry". The stable machine `code` is
+ * preserved (the cards key on it); the raw error/stack is NEVER sent to the
+ * client in production (detail is dev-only, mirroring `sendError`).
+ *
+ *   } catch (err) { return sendFinanceError(res, "reconciliation_portfolio_failed", err); }
+ *   } catch (err) { return sendFinanceError(res, "qb_recon_failed", err, { status: 503 }); }
+ */
+export function sendFinanceError(
+  res: Response,
+  code: string,
+  cause: unknown,
+  opts: { status?: number; message?: string; nextAction?: string } = {},
+): Response {
+  const traceId = randomUUID();
+  logApiError(`finance:${code} [traceId=${traceId}]`, cause);
+  return res.status(opts.status ?? 500).json({
+    error: code,
+    code,
+    type: code,
+    message: opts.message ?? "We couldn't load this finance view. Please retry.",
+    nextAction:
+      opts.nextAction ?? "Retry shortly. If it keeps happening, share this trace id with support.",
+    traceId,
+    detail: extractDebugDetail(cause),
   });
 }

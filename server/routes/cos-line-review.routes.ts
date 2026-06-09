@@ -47,6 +47,7 @@ import {
   cosLineReviewAffectedDates,
   type CosLineReviewAction,
 } from "../lib/finance/cos-line-review-dates";
+import { sendFinanceError } from "../lib/api-error";
 
 const financeLines = new FinanceLineLevelRepository();
 const expenseRepo = new FinanceExpenseEngineRepository();
@@ -244,8 +245,7 @@ export function registerCosLineReviewRoutes(app: Express): void {
         };
         return res.json({ lines: result, summary });
       } catch (err) {
-        console.error("[cos-line-review] read failed:", err);
-        return res.status(500).json({ error: "Failed to load COS line review" });
+        return sendFinanceError(res, "Failed to load COS line review", err);
       }
     },
   );
@@ -347,8 +347,7 @@ export function registerCosLineReviewRoutes(app: Express): void {
         };
         return res.json({ generatedAt: new Date().toISOString(), lines: out, summary });
       } catch (err) {
-        console.error("[cos-line-review] missing-invoices read failed:", err);
-        return res.status(500).json({ error: "Failed to load missing invoices" });
+        return sendFinanceError(res, "Failed to load missing invoices", err);
       }
     },
   );

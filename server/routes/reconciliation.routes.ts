@@ -36,6 +36,7 @@ import type { RiskLevel, MismatchType } from "../lib/reconciliation/mismatch-cla
 import type { ProgramDriftRow } from "../repositories/tracker-replica-repository";
 import { db } from "../db";
 import { parseIntParam } from "../lib/req-params";
+import { sendFinanceError } from "../lib/api-error";
 import {
   getReconciliationPortfolio,
   getReconciliationDetail,
@@ -344,8 +345,7 @@ export function registerReconciliationRoutes(app: Express): void {
           exceptions: allExceptions,
         });
       } catch (err) {
-        console.error("[reconciliation] program-assessment error:", err);
-        res.status(500).json({ error: "program_assessment_failed" });
+        return sendFinanceError(res, "program_assessment_failed", err);
       }
     },
   );
@@ -364,8 +364,7 @@ export function registerReconciliationRoutes(app: Express): void {
           managementReadyCount: KPI_REGISTRY.filter((e) => !e.hasKnownGaps).length,
         });
       } catch (err) {
-        console.error("[reconciliation] truth-registry error:", err);
-        res.status(500).json({ error: "truth_registry_failed" });
+        return sendFinanceError(res, "truth_registry_failed", err);
       }
     },
   );
@@ -393,8 +392,7 @@ export function registerReconciliationRoutes(app: Express): void {
           },
         });
       } catch (err) {
-        console.error("[reconciliation] portfolio error:", err);
-        res.status(500).json({ error: "reconciliation_portfolio_failed" });
+        return sendFinanceError(res, "reconciliation_portfolio_failed", err);
       }
     },
   );
@@ -415,8 +413,7 @@ export function registerReconciliationRoutes(app: Express): void {
         const result = await getCompanyTrackerVsQb(db, { fyStart, fyEnd, fyLabel });
         res.json(result);
       } catch (err) {
-        console.error("[reconciliation] company-qb error:", err);
-        res.status(500).json({ error: "reconciliation_company_qb_failed" });
+        return sendFinanceError(res, "reconciliation_company_qb_failed", err);
       }
     },
   );
@@ -438,8 +435,7 @@ export function registerReconciliationRoutes(app: Express): void {
         const detail = await getReconciliationDetail(db, projectId);
         res.json({ generatedAt: new Date().toISOString(), ...detail });
       } catch (err) {
-        console.error("[reconciliation] detail error:", err);
-        res.status(500).json({ error: "reconciliation_detail_failed" });
+        return sendFinanceError(res, "reconciliation_detail_failed", err);
       }
     },
   );

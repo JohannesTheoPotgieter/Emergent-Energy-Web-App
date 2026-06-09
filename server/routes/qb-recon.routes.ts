@@ -13,6 +13,7 @@ import { requireAuth } from "../auth-context";
 import { requirePermission } from "../permission-middleware";
 import { db } from "../db";
 import { parseIntParam } from "../lib/req-params";
+import { sendFinanceError } from "../lib/api-error";
 import {
   getQbReconSummary,
   getQbReconLines,
@@ -38,8 +39,7 @@ export function registerQbReconRoutes(app: Express): void {
         const periods = await getQbReconSummary(db, grain);
         res.json({ generatedAt: new Date().toISOString(), grain, periods });
       } catch (err) {
-        console.error("[qb-recon] summary error:", err);
-        res.status(500).json({ error: "qb_recon_summary_failed" });
+        return sendFinanceError(res, "qb_recon_summary_failed", err);
       }
     },
   );
@@ -57,8 +57,7 @@ export function registerQbReconRoutes(app: Express): void {
         const lines = await getQbReconLines(db, { status, fiscalPeriodId });
         res.json({ generatedAt: new Date().toISOString(), count: lines.length, lines });
       } catch (err) {
-        console.error("[qb-recon] lines error:", err);
-        res.status(500).json({ error: "qb_recon_lines_failed" });
+        return sendFinanceError(res, "qb_recon_lines_failed", err);
       }
     },
   );
@@ -74,8 +73,7 @@ export function registerQbReconRoutes(app: Express): void {
         const ignores = await getActiveQbReconIgnores(db);
         res.json({ generatedAt: new Date().toISOString(), count: ignores.length, ignores });
       } catch (err) {
-        console.error("[qb-recon] ignores error:", err);
-        res.status(500).json({ error: "qb_recon_ignores_failed" });
+        return sendFinanceError(res, "qb_recon_ignores_failed", err);
       }
     },
   );
