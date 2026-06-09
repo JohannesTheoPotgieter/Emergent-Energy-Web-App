@@ -1,0 +1,32 @@
+You are working on the Emergent Energy financial reporting tool (TypeScript, Express, Drizzle, Postgres, React) on REPLIT, with production data.
+
+GOAL: build a tracker-derived "golden" expected-values set for 5 projects (line-item + project + monthly REV/COS/GP/cashflow) and a test that asserts PRODUCTION matches it — to pin and prove the data-integrity defects (the PRS orphan corruption) and to be a permanent regression oracle.
+
+RULES:
+- READ-ONLY against prod data — do NOT modify schema/data/migrations. This task produces a fixture + a test script + a diff report only.
+- The golden values must be computed INDEPENDENTLY of the app's import/derivation code (no circularity): write a standalone parser that reads the tracker workbooks and applies the canonical tracker maths directly. Cross-check it against the embedded oracle below.
+- Branch: test/golden-tracker-5. Done = `npm run check`, `npm run test`, `npm run build` pass (paste output) + the diff report committed.
+
+THE 5 PROJECTS: Mondi, Coega Steels Ph2, Unitrans Brackenfell, De Drift, Seshego Circle.
+
+TRACKER MATHS (canonical, per the Expenditure Breakdown sheet — confirmed structure):
+- Actual side (cols L–X): Q = Actual Total = COS; R = PO No; S = Invoice No; T = Invoice Raised Date (recognition/period); U = Revenue Recognition Amount; W = Finance Payment Date (cash); X = category Total COS = SUM(Q) over the category block.
+- Costed side (cols B–J): J (category header) = category Total Revenue.
+- Per line: COS = Q; Revenue = U = (Q / X_category) × J_category; GP = Revenue − Q.
+- Realisation: font colour on the date cell — BLACK = realised, RED = forecast/unrealised. Period = the month of T (invoice-raised date). Cash period = month of W with its font colour (black = paid).
+- Ex-VAT throughout.
+
+STEPS:
+1. Pull the 5 project trackers from SharePoint (use the app's existing download path, e.g. server/sharepoint.ts downloadFileContent, from the Active Trackers library). Parse each with a standalone openpyxl/exceljs reader (resolve font colour) — NOT the app importer.
+2. Compute, per project: per-LINE COS, revenue, GP, realised flag, period (from T), cash period (from W); roll up to per-PROJECT Realised REV/COS/GP and all-states Budget REV/COS/GP; and the MONTHLY Realised REV/COS/GP series.
+3. Cross-check your parse against this embedded ORACLE (tracker-recompiled dashboard, run 08/06/2026). Any project-level figure that differs from the oracle by > R1 means your parser or the workbook revision differs — investigate and reconcile before trusting it:
+   Mondi Realised REV 50,222,621.62 / COS 46,258,307.86 / GP 3,964,313.76; Budget 141,915,077.20 / 135,882,341.94 / 6,032,735.27.
+   Coega Steels Ph2 Realised 13,730,976.65 / 10,492,741.49 / 3,238,235.16; Budget 13,730,976.65 / 11,264,425.87 / 2,466,550.78.
+   Seshego Circle Realised 10,447,228.82 / 7,626,862.68 / 2,820,366.13; Budget 10,428,344.30 / 7,631,925.19 / 2,796,419.11.
+   De Drift Realised 5,542,316.91 / 4,553,804.89 / 988,512.02; Budget 5,960,420.95 / 5,141,328.05 / 819,092.91.
+   Unitrans Brackenfell Realised 4,499,896.88 / 3,734,959.55 / 764,937.33; Budget 5,338,965.23 / 5,128,642.35 / 210,322.88.
+4. Write the golden fixture to qa/fixtures/golden-trackers-5.json (line-level + project-level + monthly).
+5. Compare against PRODUCTION: for each of the 5 projects, read what the app reports (canonical finance endpoints / normalized lines / PRS) and assert == golden within R1 at line and project level. Emit qa/reports/golden-vs-prod.csv naming every mismatch, every prod line with no tracker counterpart (orphan), and every tracker line missing from prod. Expect this to surface the PRS orphan corruption — quantify it (which projects, how much).
+6. Wire `npm run verify:golden`.
+
+ACCEPTANCE: golden fixture for the 5 projects (line+project+monthly) ties to the embedded oracle within R1; a prod-vs-golden diff report that quantifies the orphan/mismatch corruption per project; `npm run verify:golden` runs read-only. NO prod data changed.
