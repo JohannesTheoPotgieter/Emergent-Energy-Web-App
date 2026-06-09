@@ -18,7 +18,7 @@ import {
   Wrench, PlusCircle, Circle, Calendar, PauseCircle, AlertTriangle,
   ChevronDown, ChevronUp, Eye, Play, Zap, Target, Trash2, Plus,
   FolderOpen, FileCheck, Search, X,
-  Handshake, MapPin, LayoutDashboard, FileText, ClipboardList, Plug,
+  Handshake, MapPin, LayoutDashboard, FileText, ClipboardList,
   CalendarClock, Info,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -26,7 +26,6 @@ import { EnergyLoader } from "@/components/ui/energy-loader";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
 import { ExpenditureEditableTab } from "@/components/tabs/ExpenditureEditableTab";
 import { GpTrackerTab } from "@/components/tabs/GpTrackerTab";
-import { QuickBooksReconciliationTab } from "@/components/tabs/QuickBooksReconciliationTab";
 // Legacy finance tab imports removed â€” revenue/GP/COS now under PD department
 import { CashflowTab } from "@/components/tabs/CashflowTab";
 import { MonthlyRealisationTab } from "@/components/tabs/MonthlyRealisationTab";
@@ -470,7 +469,6 @@ export default function ProjectDetailPage() {
     cashflow: canViewPerm("pd_cashflow"),
     subcontractors: canViewPerm("pd_subcontractors"),
     procurement: canViewProcurement,
-    quickBooks: canViewPerm("pd_expenditure") && canViewFinance,
     engTasks: canViewPerm("pd_eng_tasks"),
     engStages: canViewPerm("pd_eng_stages"),
     gantt: canViewPerm("pd_gantt"),
@@ -495,7 +493,6 @@ export default function ProjectDetailPage() {
     revenueTracker: canViewSubTab.revenue,
     gpTracker: canViewSubTab.revenue && canViewSubTab.expenditure,
     cashflow: canViewSubTab.cashflow,
-    quickBooks: canViewSubTab.quickBooks,
   };
   const visibleDepartmentKeys = useMemo(
     () => new Set(getVisibleProjectDepartments(departmentGates).map((dept) => dept.key)),
@@ -520,7 +517,6 @@ export default function ProjectDetailPage() {
       financeSubTabGates.revenueTracker,
       financeSubTabGates.gpTracker,
       financeSubTabGates.cashflow,
-      financeSubTabGates.quickBooks,
     ],
   );
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
@@ -1707,7 +1703,6 @@ export default function ProjectDetailPage() {
                 { key: "cost-lines", label: "Expenditure Breakdown", icon: CreditCard, visible: financeSubTabGates.expenditure, target: "cost-lines", group: ["cost-lines"] },
                 { key: "recognition", label: "Recognition", icon: TrendingUp, visible: recognitionVisible, target: recognitionDefault, group: ["rev-tracker", "cos-tracker", "gp-tracker"] },
                 { key: "cashflow", label: "Cashflow", icon: Activity, visible: financeSubTabGates.cashflow, target: "cashflow", group: ["cashflow"] },
-                { key: "qb-recon", label: "QB Recon", icon: Plug, visible: financeSubTabGates.quickBooks, target: "qb-recon", group: ["qb-recon"] },
               ].filter(st => st.visible).map(st => (
                 <Button key={st.key} size="sm" variant={st.group.includes(activeSubTab) ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => navigateToSubTab(st.target)} data-testid={`subtab-${st.key}`}>
                   <st.icon className="h-3 w-3 mr-1" /> {st.label}
@@ -1743,9 +1738,6 @@ export default function ProjectDetailPage() {
           {activeSubTab === "rev-tracker" && canViewSubTab.revenue && <RevenueTrackerTab projectName={projectName} projectId={projectInfoId ?? null} />}
           {activeSubTab === "gp-tracker" && canViewSubTab.revenue && canViewSubTab.expenditure && <GpTrackerTab projectName={projectName} projectId={projectInfoId ?? null} />}
           {activeSubTab === "cashflow" && canViewSubTab.cashflow && <CashflowTab projectName={projectName} canOverrideFinance={v2Perms?.canOverrideFinance ?? false} />}
-          {activeSubTab === "qb-recon" && canViewSubTab.quickBooks && projectInfoId && (
-            <QuickBooksReconciliationTab projectId={projectInfoId} projectName={projectName} />
-          )}
         </div>
         </ErrorBoundary>
       )}

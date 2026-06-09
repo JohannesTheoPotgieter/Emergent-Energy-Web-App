@@ -34,7 +34,6 @@ export type ProjectDetailSubTabKey =
   | "cashflow"
   | "procurement"
   | "subcontractors"
-  | "qb-recon"
   | "changes"
   | "controlled-docs"
   | "comms"
@@ -102,7 +101,7 @@ export const PROJECT_DETAIL_LEGACY_TAB_MAP: Record<string, { dept: ProjectDetail
 export const PROJECT_DETAIL_DEPT_SUBTABS: Record<ProjectDetailDeptKey, ProjectDetailSubTabKey[]> = {
   overview: ["command"],
   pm: ["plan", "board", "calendar", "raid", "handover"],
-  finance: ["revenue", "cost-lines", "cos-tracker", "rev-tracker", "gp-tracker", "cashflow", "qb-recon"],
+  finance: ["revenue", "cost-lines", "cos-tracker", "rev-tracker", "gp-tracker", "cashflow"],
   eng: ["tasks", "drawings", "documents"],
   quality: ["checklist", "documents"],
   procurement: ["procurement", "subcontractors"],
@@ -130,7 +129,6 @@ export interface FinanceSubTabGates {
   revenueTracker: boolean;
   gpTracker: boolean;
   cashflow: boolean;
-  quickBooks: boolean;
 }
 
 export function buildLegacyProjectNameRedirect(projectId: number, currentSearch = ""): string {
@@ -228,7 +226,6 @@ export function getVisibleFinanceSubTabs(gates: FinanceSubTabGates): { key: Proj
     { key: "rev-tracker" as const, label: "Revenue Tracker", visible: gates.revenueTracker },
     { key: "gp-tracker" as const, label: "GP Tracker", visible: gates.gpTracker },
     { key: "cashflow" as const, label: "Cashflow", visible: gates.cashflow },
-    { key: "qb-recon" as const, label: "QB Recon", visible: gates.quickBooks },
   ].filter((tab) => tab.visible).map(({ key, label }) => ({ key, label }));
 }
 

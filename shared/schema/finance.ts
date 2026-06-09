@@ -1440,8 +1440,6 @@ export const financialReconciliation = pgTable("financial_reconciliation", {
   fiscalPeriodId: integer("fiscal_period_id").notNull().references(() => fiscalPeriods.id, { onDelete: "cascade" }),
   appVsTrackerStatus: text("app_vs_tracker_status"), // 'green' | 'amber' | 'red'
   appVsTrackerDelta: decimal("app_vs_tracker_delta", { precision: 15, scale: 2 }),
-  trackerVsQbStatus: text("tracker_vs_qb_status"), // 'green' | 'amber' | 'red'
-  trackerVsQbDelta: decimal("tracker_vs_qb_delta", { precision: 15, scale: 2 }),
   computedAt: timestamp("computed_at", { withTimezone: true }),
   notes: text("notes"),
   // Standard snapshot columns (mirrors the other temporal finance tables).
