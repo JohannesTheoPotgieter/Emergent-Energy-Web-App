@@ -51,6 +51,10 @@ interface ChangeRequest {
   cost_impact: string | number | null;
   schedule_impact_days: number;
   status: string;
+  // VO 5%-of-GP gate (BR-025/026), frozen at submit — the same flag the finance
+  // VO-impact view shows, so execution and finance never disagree.
+  requires_management_review?: boolean | null;
+  gp_impact_pct_at_submit?: string | number | null;
   approval_id: number | null;
   created_at: string;
 }
@@ -251,6 +255,15 @@ function ChangeRequestCard({
               <Badge variant="outline" className={`text-[9px] shrink-0 ${STATUS_COLORS[cr.status] || ""}`} data-testid={`cr-status-${cr.id}`}>
                 {statusLabel(cr.status)}
               </Badge>
+              {cr.requires_management_review ? (
+                <Badge
+                  variant="outline"
+                  className="text-[9px] shrink-0 bg-red-50 text-red-700 border-red-200"
+                  data-testid={`cr-mgmt-review-${cr.id}`}
+                >
+                  Mgmt review
+                </Badge>
+              ) : null}
             </div>
             <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
               <span className="flex items-center gap-1">

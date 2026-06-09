@@ -50,6 +50,7 @@ import {
   type LineReviewRow,
 } from "@/components/cos/cos-line-review-panel";
 import { usePermission } from "@/hooks/use-permissions";
+import { VoImpactPanel } from "@/components/finance/VoImpactPanel";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -672,6 +673,7 @@ export default function FinanceProjectDetailPage() {
         </p>
       </div>
       <FinanceProjectDetailContent projectId={projectId} />
+      <VoImpactPanel projectId={projectId} />
     </div>
   );
 }

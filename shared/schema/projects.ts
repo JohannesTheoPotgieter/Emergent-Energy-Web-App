@@ -1236,6 +1236,15 @@ export const changeRequests = pgTable("change_requests", {
   approvedAt: timestamp("approved_at"),
   rejectionReason: text("rejection_reason"),
   rejectedAt: timestamp("rejected_at"),
+  // VO 5%-of-GP gate (BR-025/026) — frozen at submit time by the change-control
+  // submit path. `requiresManagementReview` is set true when the VO's GP impact
+  // (revenueImpact − cosImpact) exceeds 5% of the project's canonical (§3.3) GP,
+  // routing the VO to management review + RCA instead of PM self-approval.
+  // `gpImpactPctAtSubmit` records the ratio (gpImpact ÷ projectGp) used for that
+  // decision. Both stay null until the VO is first submitted. Derived from the
+  // canonical engine — never a parallel calc (see server/services/vo-impact-service.ts).
+  requiresManagementReview: boolean("requires_management_review"),
+  gpImpactPctAtSubmit: decimal("gp_impact_pct_at_submit", { precision: 8, scale: 4 }),
   deletedAt: timestamp("deleted_at"),
   deletedBy: integer("deleted_by"),
   deleteReason: text("delete_reason"),
