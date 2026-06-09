@@ -687,6 +687,13 @@
       "when": 1780918424231,
       "tag": "0097_qb_recon_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1780992130251,
+      "tag": "0098_drop_fye_kpi_counters",
+      "breakpoints": true
     }
   ]
 }

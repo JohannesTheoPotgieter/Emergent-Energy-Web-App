@@ -226,6 +226,11 @@ const MODERN_MIGRATION_PROBES: Record<
   "0097_qb_recon_tables": async (c) =>
     (await tableExists(c, "qb_recon_line")) &&
     (await tableExists(c, "qb_recon_summary")),
+  // 0098 DROPS the dead fye_kpi_counters rollup. For a DROP migration, "applied"
+  // means the artifact is GONE — so the canary returns true only once the table
+  // no longer exists, forcing drizzle-kit migrate to run the drop on an existing
+  // (presumed-applied) DB that still has the table.
+  "0098_drop_fye_kpi_counters": async (c) => !(await tableExists(c, "fye_kpi_counters")),
 };
 
 async function tableExists(client: Client, table: string): Promise<boolean> {

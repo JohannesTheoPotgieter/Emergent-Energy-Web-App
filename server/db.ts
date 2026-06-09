@@ -3801,18 +3801,6 @@ async function ensureSqliteSchema() {
     `));
 
     await db.run(sql`
-      CREATE TABLE IF NOT EXISTS fye_kpi_counters (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        fye_year INTEGER NOT NULL UNIQUE,
-        brought_in INTEGER NOT NULL DEFAULT 0,
-        signed INTEGER NOT NULL DEFAULT 0,
-        updated_by INTEGER,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    await db.run(sql`
       CREATE TABLE IF NOT EXISTS fye_report_snapshots (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         fye_year INTEGER NOT NULL,

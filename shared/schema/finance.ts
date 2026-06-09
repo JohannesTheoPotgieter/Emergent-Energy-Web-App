@@ -1548,19 +1548,6 @@ export const insertLostDealSchema = createInsertSchema(lostDeals).omit({ id: tru
 export type InsertLostDeal = z.infer<typeof insertLostDealSchema>;
 export type LostDeal = typeof lostDeals.$inferSelect;
 
-export const fyeKpiCounters = pgTable("fye_kpi_counters", {
-  id: serial("id").primaryKey(),
-  fyeYear: integer("fye_year").notNull().unique(),
-  broughtIn: integer("brought_in").notNull().default(0),
-  signed: integer("signed").notNull().default(0),
-  updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-export const insertFyeKpiCounterSchema = createInsertSchema(fyeKpiCounters).omit({ id: true, createdAt: true, updatedAt: true } as any);
-export type InsertFyeKpiCounter = z.infer<typeof insertFyeKpiCounterSchema>;
-export type FyeKpiCounter = typeof fyeKpiCounters.$inferSelect;
-
 export const fyeReportSnapshots = pgTable("fye_report_snapshots", {
   id: serial("id").primaryKey(),
   fyeYear: integer("fye_year").notNull(),
