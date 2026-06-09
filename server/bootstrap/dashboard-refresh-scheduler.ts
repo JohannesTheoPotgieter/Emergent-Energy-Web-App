@@ -14,6 +14,7 @@ import {
 } from "../services/dashboard-refresh-service";
 import { evaluateAppSchemaReadiness } from "./schema-readiness-runtime";
 import { formatPendingSummary, isSchemaBehind } from "../lib/schema-readiness";
+import { errMsg } from "../lib/api-error";
 
 let refreshTimer: NodeJS.Timeout | null = null;
 let schemaBehindWarned = false;
@@ -87,7 +88,10 @@ export async function runDashboardRefreshCycle(): Promise<void> {
       }
     }
   } catch (err) {
-    console.error("[DashboardRefresh] cycle threw:", err);
+    // Per-dashboard failures are already captured + warned individually inside
+    // refreshAllDashboards; this only fires on a whole-cycle fault. Keep it to
+    // one concise line so a persistent fault never spams a stack every cycle.
+    console.warn(`[DashboardRefresh] cycle failed: ${errMsg(err)}`);
   }
 }
 
@@ -100,13 +104,13 @@ export async function scheduleDashboardRefresh(): Promise<void> {
   // Kick one immediate refresh so readers don't see an empty cache.
   // Don't await — let it run in the background.
   runDashboardRefreshCycle().catch((err) => {
-    console.error("[DashboardRefresh] initial cycle error:", err);
+    console.warn(`[DashboardRefresh] initial cycle failed: ${errMsg(err)}`);
   });
 
   if (refreshTimer) clearInterval(refreshTimer);
   refreshTimer = setInterval(() => {
     runDashboardRefreshCycle().catch((err) => {
-      console.error("[DashboardRefresh] scheduled cycle error:", err);
+      console.warn(`[DashboardRefresh] scheduled cycle failed: ${errMsg(err)}`);
     });
   }, DASHBOARD_REFRESH_INTERVAL_MS);
 

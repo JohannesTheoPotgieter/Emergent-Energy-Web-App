@@ -13,6 +13,7 @@
 import { db } from "../db";
 import { refreshQbTrackerReconciliation } from "../services/qb-tracker-reconcile";
 import { recordIntegrationRun } from "../services/integration-health-service";
+import { errMsg } from "../lib/api-error";
 
 const INTEGRATION_NAME = "quickbooks-tracker-reconcile";
 const DAILY_MS = 24 * 60 * 60 * 1000;
@@ -74,7 +75,9 @@ export function scheduleQbReconRefresh(): void {
     if (lastRunDate === today) return;
     lastRunDate = today;
     await runWithAudit().catch((err) =>
-      console.error("[qb-tracker-reconcile] Unhandled error in scheduler:", err),
+      // runWithAudit already records the failure to integration health; this is
+      // a backstop. One concise line — never a full stack every cycle.
+      console.warn(`[qb-tracker-reconcile] scheduler cycle failed: ${errMsg(err)}`),
     );
   };
 
