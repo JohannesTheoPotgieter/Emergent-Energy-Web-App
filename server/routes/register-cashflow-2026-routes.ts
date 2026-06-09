@@ -30,8 +30,8 @@ export function registerCashflow2026Routes(app: Express) {
         getCanonicalAllCurrentCostLines(),
         // Reads normalized_revenue_lines with effectiveTo IS NULL guard and
         // adapts each row to the legacy inflow shape the rest of this handler
-        // expects. Uses the explicitly-named canonical method instead of the
-        // misleading getAllProgramInflows alias so the source is obvious here.
+        // expects. Uses the explicitly-named canonical method so the source is
+        // obvious here.
         storage.getAllRevenueLinesForCashflow(),
         storage.getAllCashflowWeeklyManual(),
         storage.getAllOpexBudgetMonthly(),
@@ -194,7 +194,7 @@ export function registerCashflow2026Routes(app: Express) {
 
       const [legacyExp, legacyInf, allTaskLinks, allOpTasks, allPlanTasks, qbLinks] = await Promise.all([
         getCanonicalAllCurrentCostLines(),
-        storage.getAllProgramInflows(),
+        storage.getAllRevenueLinesForCashflow(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),

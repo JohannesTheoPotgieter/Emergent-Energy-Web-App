@@ -351,7 +351,7 @@ router.get("/api/overview", requireAuth, async (req, res) => {
     const [allProjectInfo, allExpenses, rawInflows, allPlans, latestRefresh, allTaskLinks, allOpTasks] = await Promise.all([
       storage.getAllProjectInfo(),
       getCanonicalAllCurrentCostLines(),
-      storage.getAllProgramInflows(),
+      storage.getAllRevenueLinesForCashflow(),
       storage.getAllProjectPlans(),
       storage.getLatestRefresh(),
       storage.getAllMilestoneTaskLinks(),
@@ -432,7 +432,7 @@ router.get("/api/home/summary", requireAuth, async (req, res) => {
     const [allProjectInfo, allExpenses, rawInflows, allPlans, latestRefresh, revenueSummaries, allTaskLinks, allOpTasks] = await Promise.all([
       storage.getAllProjectInfo(),
       getCanonicalAllCurrentCostLines(),
-      storage.getAllProgramInflows(),
+      storage.getAllRevenueLinesForCashflow(),
       storage.getAllProjectPlans(),
       storage.getLatestRefresh(),
       storage.getAllProjectRevenueSummaries(),
@@ -752,7 +752,7 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
     const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, smartImportRows, workItemsResult, handoverRows, phaseRows] = await Promise.all([
       storage.getAllProjectInfo().catch((e: any) => { console.warn("[dept-projects] allProjectInfo failed:", e.message); return []; }),
       getCanonicalAllCurrentCostLines().catch((e: any) => { console.warn("[dept-projects] allExpenses failed:", e.message); return []; }),
-      storage.getAllProgramInflows().catch((e: any) => { console.warn("[dept-projects] rawInflows failed:", e.message); return []; }),
+      storage.getAllRevenueLinesForCashflow().catch((e: any) => { console.warn("[dept-projects] rawInflows failed:", e.message); return []; }),
       storage.getAllProjectPlans().catch((e: any) => { console.warn("[dept-projects] rawPlans failed:", e.message); return []; }),
       storage.getAllProjectEditableFields().catch((e: any) => { console.warn("[dept-projects] allEditableFields failed:", e.message); return []; }),
       storage.getAllMilestoneTaskLinks().catch((e: any) => { console.warn("[dept-projects] allTaskLinks failed:", e.message); return []; }),
@@ -1289,7 +1289,7 @@ router.get("/api/program-dashboard", requireAuth, async (req, res) => {
     const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, manualEntries] = await Promise.all([
       storage.getAllProjectInfo(),
       getCanonicalAllCurrentCostLines(),
-      storage.getAllProgramInflows(),
+      storage.getAllRevenueLinesForCashflow(),
       storage.getAllProjectPlans(),
       storage.getAllProjectEditableFields(),
       storage.getAllMilestoneTaskLinks(),
@@ -1710,7 +1710,7 @@ router.get("/api/dashboard/high-priority", requireAuth, async (req, res) => {
     const [allProjectInfo, allExpenses, rawInflows, allPlans, allTaskLinks, allOpTasks] = await Promise.all([
       storage.getAllProjectInfo(),
       getCanonicalAllCurrentCostLines(),
-      storage.getAllProgramInflows(),
+      storage.getAllRevenueLinesForCashflow(),
       storage.getAllProjectPlans(),
       storage.getAllMilestoneTaskLinks(),
       storage.getAllOperationalTasks(),

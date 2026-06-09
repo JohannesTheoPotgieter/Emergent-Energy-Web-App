@@ -319,7 +319,7 @@ router.get("/api/writeback/workbook-sheets", requireAuth, requireAdmin, async (r
 async function buildDataByEntity(): Promise<Record<string, any[]>> {
   const projects = await storage.getAllProjects();
   const expenses = await storage.getAllExpenses();
-  const inflows = await storage.getAllProgramInflows();
+  const inflows = await storage.getAllRevenueLinesForCashflow();
   return { project: projects, expense: expenses, inflow: inflows, plan: [] };
 }
 

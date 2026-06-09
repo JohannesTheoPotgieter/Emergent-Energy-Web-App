@@ -66,10 +66,10 @@ const LEGACY_DEPENDENCY_MAP: FinanceLegacyDependency[] = [
     notes: "PI compat type; adapter over normalized_revenue_lines.",
   },
   {
-    path: "server/storage.ts#getAllProgramInflows",
+    path: "server/storage.ts#getAllRevenueLinesForCashflow",
     kind: "storage",
     status: "active",
-    notes: "Legacy cached read path for PI compat shape.",
+    notes: "Canonical cashflow inflow read over normalized_revenue_lines (replaced the former misleading-name inflow alias).",
   },
   {
     path: "server/routes/finance-legacy-extracted-routes.ts",

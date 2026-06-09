@@ -86,18 +86,6 @@ export class FinanceInflowsRepository {
     return this._dbInstance || db;
   }
 
-  /**
-   * Misleading-name alias kept for the ~15 existing call sites that still
-   * read inflows via this legacy "getAllProgramInflows" method name. The actual
-   * source is `normalized_revenue_lines` with the snapshot guard applied —
-   * identical to {@link getAllRevenueLinesForCashflow}. New call sites
-   * should use that method instead so the source is obvious at the call.
-   * @deprecated Use {@link getAllRevenueLinesForCashflow} instead.
-   */
-  async getAllProgramInflows(): Promise<any[]> {
-    return this.getAllRevenueLinesForCashflow();
-  }
-
   async getAllRevenueLinesForCashflow(): Promise<any[]> {
     // Canonical read: normalized_revenue_lines only, no promoted fallback complexity.
     // Aligns cashflow inflow reads with the canonical source.

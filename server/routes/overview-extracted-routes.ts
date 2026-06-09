@@ -29,7 +29,7 @@ export function registerOverviewExtractedRoutes(app: Express): void {
       const [allProjectInfo, allExpenses, rawInflows, allPlans, latestRefresh, allTaskLinks, allOpTasks, allNormCostsOv, allNormRevOv, allNormPlansOv] = await Promise.all([
         storage.getAllProjectInfo(),
         getCanonicalAllCurrentCostLines(),
-        storage.getAllProgramInflows(),
+        storage.getAllRevenueLinesForCashflow(),
         storage.getAllProjectPlans(),
         storage.getLatestRefresh(),
         storage.getAllMilestoneTaskLinks(),

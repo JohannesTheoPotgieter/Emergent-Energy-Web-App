@@ -36,7 +36,7 @@ export function registerHomeExtractedRoutes(app: Express): void {
       const [allProjectInfo, legacyExpenses, legacyRawInflows, legacyPlans, latestRefresh, revenueSummaries, allTaskLinks, allOpTasks, allPlanOverrides, allPlanTasks] = await Promise.all([
         storage.getAllProjectInfo(),
         getCanonicalAllCurrentCostLines(),
-        storage.getAllProgramInflows(),
+        storage.getAllRevenueLinesForCashflow(),
         storage.getAllProjectPlans(),
         storage.getLatestRefresh(),
         storage.getAllProjectRevenueSummaries(),

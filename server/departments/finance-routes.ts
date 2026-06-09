@@ -6650,7 +6650,7 @@ router.get(
           canonicalTable: 'normalized_revenue_lines',
         });
       } else {
-        inflows = await storage.getAllProgramInflows();
+        inflows = await storage.getAllRevenueLinesForCashflow();
         setFinanceTrustHeaders(res, {
           sourceLayer: 'canonical',
           canonicalTable: 'normalized_revenue_lines',
@@ -6774,7 +6774,7 @@ router.get(
       const [rawInflows, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
         projectName
           ? storage.getInflowLinesByProject(projectName)
-          : storage.getAllProgramInflows(),
+          : storage.getAllRevenueLinesForCashflow(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),

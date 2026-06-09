@@ -149,7 +149,6 @@ export interface IStorage {
   updateProgramInflowFields(id: number, fields: Record<string, any>): Promise<any | undefined>;
 
   // Program Inflows (new)
-  getAllProgramInflows(): Promise<InflowLine[]>;
   getInflowLinesByProject(projectName: string, opts?: { applyOverrides?: boolean }): Promise<InflowLine[]>;
   // Canonical revenue-line read for cashflow — reads normalized_revenue_lines only.
   getAllRevenueLinesForCashflow(): Promise<any[]>;
@@ -771,10 +770,6 @@ export class DatabaseStorage implements IStorage {
 
   async updateProgramInflowFields(id: number, fields: Record<string, any>): Promise<any | undefined> {
     return this.financeInflowsRepository.updateProgramInflowFields(id, fields);
-  }
-
-  async getAllProgramInflows(): Promise<any[]> {
-    return this.financeInflowsRepository.getAllProgramInflows();
   }
 
   async getAllRevenueLinesForCashflow(): Promise<any[]> {
