@@ -108,8 +108,10 @@ describe("Clients merge & soft-delete (Task #73)", () => {
 
     // 4. work_items row attached to A.
     const wi = await pool.query(
-      `INSERT INTO work_items (workstream, title, source, status, client_id)
-       VALUES ('PD', $1, 'UI', 'not_started', $2) RETURNING id`,
+      // work_items.created_by is NOT NULL (no default) since this fixture was
+      // written; supply a seeded user so the row inserts.
+      `INSERT INTO work_items (workstream, title, source, status, client_id, created_by)
+       VALUES ('PD', $1, 'UI', 'not_started', $2, (SELECT id FROM users ORDER BY id LIMIT 1)) RETURNING id`,
       [`T73 WI ${stamp}`, clientAId],
     );
     const workItemId = wi.rows[0].id as number;

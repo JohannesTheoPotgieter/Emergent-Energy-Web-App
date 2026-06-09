@@ -21,6 +21,7 @@
     "db:status": "tsx scripts/db-status.ts",
     "verify:finance": "tsx server/scripts/verify-all-projects-reconciliation.ts",
     "check:agent-docs": "tsx scripts/check-agent-docs.ts",
+    "qa:role-audit": "tsx scripts/generate-role-permission-audit.ts",
     "reconcile:priority-links": "tsx scripts/reconcile-priority-links.ts",
     "diagnose:blast-radius:paiddate": "tsx scripts/blast-radius-paiddate.ts",
     "test": "vitest run -c qa/vitest.config.ts --exclude 'qa/tests/api/**' --exclude 'qa/tests/e2e/**' --exclude 'qa/tests/integration/**'",
