@@ -198,7 +198,7 @@ export const overviewApi = {
   getProjectsSummary: async () => {
     return fetchJSON<ProjectSummary[]>(`${API_BASE}/projects-summary`);
   },
-  getProgramExpenses: async (projectName?: string, startDate?: string, endDate?: string) => {
+  getExpenseLines: async (projectName?: string, startDate?: string, endDate?: string) => {
     if (projectName) {
       const params = new URLSearchParams();
       if (startDate) params.append('startDate', startDate);
@@ -212,7 +212,7 @@ export const overviewApi = {
     const url = params.toString() ? `${API_BASE}/program-expenses?${params}` : `${API_BASE}/program-expenses`;
     return fetchJSON<ExpenseLine[]>(url);
   },
-  getProgramInflows: async (projectName?: string, startDate?: string, endDate?: string) => {
+  getInflowLines: async (projectName?: string, startDate?: string, endDate?: string) => {
     if (projectName) {
       const params = new URLSearchParams();
       if (startDate) params.append('startDate', startDate);

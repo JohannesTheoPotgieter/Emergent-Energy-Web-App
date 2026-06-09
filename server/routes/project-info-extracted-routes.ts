@@ -84,7 +84,7 @@ export function registerProjectInfoExtractedRoutes(app: Express): void {
       // Fetch all data in parallel
       const [expenses, inflows, planTasks, qualitySummaryRes, projectInfoRow, engStagesRes, engTasksRes] = await Promise.all([
         getCanonicalProjectCostLinesByName(decodedName).then((r) => r.rows),
-        storage.getProgramInflowsByProject(decodedName),
+        storage.getInflowLinesByProject(decodedName),
         (async () => {
           const useCanonical = await isWorkItemsEnabled();
           if (useCanonical) {

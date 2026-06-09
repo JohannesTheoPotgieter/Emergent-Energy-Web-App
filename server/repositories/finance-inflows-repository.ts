@@ -132,13 +132,13 @@ export class FinanceInflowsRepository {
       .map(({ row, name }) => adaptRevenueToInflow(row, resolve(name)));
   }
 
-  async getProgramInflowsByProject(projectName: string, opts?: { applyOverrides?: boolean }): Promise<any[]> {
+  async getInflowLinesByProject(projectName: string, opts?: { applyOverrides?: boolean }): Promise<any[]> {
     const byName = await this.listProgramInflowsByProjectNames([projectName], opts);
     return byName.get(projectName) ?? [];
   }
 
   /**
-   * Finance PR 3 (Tier 3) — batched cousin of `getProgramInflowsByProject`.
+   * Finance PR 3 (Tier 3) — batched cousin of `getInflowLinesByProject`.
    *
    * Loads the inflow rows for many project names in a fixed 2 queries
    * (project_info name-variant lookup + normalized_revenue_lines fetch),

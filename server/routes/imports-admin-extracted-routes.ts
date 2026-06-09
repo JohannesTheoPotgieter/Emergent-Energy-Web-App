@@ -527,7 +527,7 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
         let totalInflows = 0;
         
         for (const project of projects.slice(0, 5)) {
-          const inflows = await storage.getProgramInflowsByProject(project.projectName);
+          const inflows = await storage.getInflowLinesByProject(project.projectName);
           totalInflows += inflows.length;
         }
         

@@ -4022,7 +4022,7 @@ router.delete(
  *
  * The portfolio route reads all lines via getAllRevenueLinesForCashflow() and
  * filters by normalized project name. The legacy per-project call
- * (getProgramInflowsByProject) uses an exact SQL string match which can miss
+ * (getInflowLinesByProject) uses an exact SQL string match which can miss
  * variant names (e.g. "Mondi_Tracker" vs "Mondi"). Read-only.
  */
 async function getProjectRevenueLinesConsistent(projectName: string): Promise<any[]> {
@@ -5369,7 +5369,7 @@ router.get(
       const projectIdParam = req.query.projectId ? parseInt(String(req.query.projectId), 10) : null;
       const [projectExpenses, revLines, manualEntries] = await Promise.all([
         getHighRiskProjectCostReadRows(projectName, projectIdParam),
-        storage.getProgramInflowsByProject(projectName),
+        storage.getInflowLinesByProject(projectName),
         storage.getTrackerMonthlyManual('REV', projectIdParam),
       ]);
 
@@ -5726,7 +5726,7 @@ router.get(
       const projectIdParam = req.query.projectId ? parseInt(String(req.query.projectId), 10) : null;
       const [projectExpenses, revLines, cosOverrideMapProj] = await Promise.all([
         getHighRiskProjectCostReadRows(projectName, projectIdParam),
-        storage.getProgramInflowsByProject(projectName),
+        storage.getInflowLinesByProject(projectName),
         Promise.resolve(new Map()),
       ]);
 
@@ -6239,7 +6239,7 @@ router.get(
       ]);
 
       const allInflowsRaw = project
-        ? await storage.getProgramInflowsByProject(project)
+        ? await storage.getInflowLinesByProject(project)
         : await storage.getAllRevenueLinesForCashflow();
 
       const revenueByProject = new Map<string, number>();
@@ -6644,7 +6644,7 @@ router.get(
       let inflows;
 
       if (projectName && typeof projectName === 'string') {
-        inflows = await storage.getProgramInflowsByProject(projectName);
+        inflows = await storage.getInflowLinesByProject(projectName);
         setFinanceTrustHeaders(res, {
           sourceLayer: 'canonical',
           canonicalTable: 'normalized_revenue_lines',
@@ -6709,7 +6709,7 @@ router.get(
     try {
       const projectName = paramStr(req.params.projectName);
       const { startDate, endDate } = req.query;
-      let inflows = await storage.getProgramInflowsByProject(projectName);
+      let inflows = await storage.getInflowLinesByProject(projectName);
       setFinanceTrustHeaders(res, {
         sourceLayer: 'canonical',
         canonicalTable: 'normalized_revenue_lines',
@@ -6773,7 +6773,7 @@ router.get(
 
       const [rawInflows, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
         projectName
-          ? storage.getProgramInflowsByProject(projectName)
+          ? storage.getInflowLinesByProject(projectName)
           : storage.getAllProgramInflows(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
@@ -7438,7 +7438,7 @@ router.get('/api/revenue-tab/:projectName', requireAuth, async (req, res) => {
     ] = await Promise.all([
       // Operational-tab read: overlay manual_overrides on top of the
       // live column for tracked revenue fields.
-      storage.getProgramInflowsByProject(projectName, { applyOverrides: manualOverridesEnabled() }),
+      storage.getInflowLinesByProject(projectName, { applyOverrides: manualOverridesEnabled() }),
       Promise.resolve([]),
       storage.getAllProjectInfo(),
       storage.getProjectRevenueSummary(projectName).catch(() => undefined),
@@ -8108,7 +8108,7 @@ router.get(
       const [legacyTasks, canonicalAlertTasks, inflows, taskLinks] = await Promise.all([
         storage.getOperationalTasksByProject(projectName),
         useCanonicalAlerts ? getWorkItemsAsOperationalTasks(projectName) : Promise.resolve([]),
-        storage.getProgramInflowsByProject(projectName),
+        storage.getInflowLinesByProject(projectName),
         storage.getMilestoneTaskLinks(projectName),
       ]);
       const tasks =
