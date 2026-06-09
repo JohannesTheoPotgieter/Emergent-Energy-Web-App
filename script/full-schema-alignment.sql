@@ -2083,24 +2083,6 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='fye_budgets') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fye_budgets' AND column_name='updated_at') THEN
     ALTER TABLE "fye_budgets" ADD COLUMN "updated_at" TIMESTAMP;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='fye_kpi_counters') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fye_kpi_counters' AND column_name='fye_year') THEN
-    ALTER TABLE "fye_kpi_counters" ADD COLUMN "fye_year" INTEGER;
-  END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='fye_kpi_counters') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fye_kpi_counters' AND column_name='brought_in') THEN
-    ALTER TABLE "fye_kpi_counters" ADD COLUMN "brought_in" INTEGER DEFAULT 0;
-  END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='fye_kpi_counters') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fye_kpi_counters' AND column_name='signed') THEN
-    ALTER TABLE "fye_kpi_counters" ADD COLUMN "signed" INTEGER DEFAULT 0;
-  END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='fye_kpi_counters') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fye_kpi_counters' AND column_name='updated_by') THEN
-    ALTER TABLE "fye_kpi_counters" ADD COLUMN "updated_by" INTEGER;
-  END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='fye_kpi_counters') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fye_kpi_counters' AND column_name='created_at') THEN
-    ALTER TABLE "fye_kpi_counters" ADD COLUMN "created_at" TIMESTAMP;
-  END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='fye_kpi_counters') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fye_kpi_counters' AND column_name='updated_at') THEN
-    ALTER TABLE "fye_kpi_counters" ADD COLUMN "updated_at" TIMESTAMP;
-  END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='fye_report_snapshots') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fye_report_snapshots' AND column_name='fye_year') THEN
     ALTER TABLE "fye_report_snapshots" ADD COLUMN "fye_year" INTEGER;
   END IF;
