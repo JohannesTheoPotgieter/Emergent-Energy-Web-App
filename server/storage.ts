@@ -150,7 +150,7 @@ export interface IStorage {
 
   // Program Inflows (new)
   getAllProgramInflows(): Promise<InflowLine[]>;
-  getProgramInflowsByProject(projectName: string, opts?: { applyOverrides?: boolean }): Promise<InflowLine[]>;
+  getInflowLinesByProject(projectName: string, opts?: { applyOverrides?: boolean }): Promise<InflowLine[]>;
   // Canonical revenue-line read for cashflow — reads normalized_revenue_lines only.
   getAllRevenueLinesForCashflow(): Promise<any[]>;
   createManyProgramInflows(inflows: InsertInflowLine[]): Promise<InflowLine[]>;
@@ -781,8 +781,8 @@ export class DatabaseStorage implements IStorage {
     return this.financeInflowsRepository.getAllRevenueLinesForCashflow();
   }
 
-  async getProgramInflowsByProject(projectName: string, opts?: { applyOverrides?: boolean }): Promise<any[]> {
-    return this.financeInflowsRepository.getProgramInflowsByProject(projectName, opts);
+  async getInflowLinesByProject(projectName: string, opts?: { applyOverrides?: boolean }): Promise<any[]> {
+    return this.financeInflowsRepository.getInflowLinesByProject(projectName, opts);
   }
 
   async createManyProgramInflows(inflowList: InsertInflowLine[]): Promise<InflowLine[]> {

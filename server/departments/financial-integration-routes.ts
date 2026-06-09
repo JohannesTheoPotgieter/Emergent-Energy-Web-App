@@ -402,7 +402,7 @@ router.get("/api/financial-integration/warnings/:projectName", requireAuth, asyn
     const warnings: { type: string; severity: string; message: string; details?: any }[] = [];
 
     const { rows: expenses } = await getCanonicalProjectCostLinesByName(projectName);
-    const inflows = await storage.getProgramInflowsByProject(projectName);
+    const inflows = await storage.getInflowLinesByProject(projectName);
     const projectId = await projectInfoRepository.findIdByProjectName(projectName);
     const planTasks = projectId !== null
       ? await workManagementRepository.listByProjectIdNonDeleted(projectId)
@@ -557,7 +557,7 @@ router.get("/api/financial-integration/sync-status/:projectName", requireAuth, a
     const projectName = paramStr(req.params.projectName);
 
     const { rows: expenses } = await getCanonicalProjectCostLinesByName(projectName);
-    const inflows = await storage.getProgramInflowsByProject(projectName);
+    const inflows = await storage.getInflowLinesByProject(projectName);
     const projectIdSync = await projectInfoRepository.findIdByProjectName(projectName);
     const planTasks = projectIdSync !== null
       ? await workManagementRepository.listByProjectIdNonDeleted(projectIdSync)
@@ -704,7 +704,7 @@ router.get("/api/financial-integration/suggested-rules/:projectName", requireAut
     }[] = [];
 
     const { rows: expenses } = await getCanonicalProjectCostLinesByName(projectName);
-    const inflows = await storage.getProgramInflowsByProject(projectName);
+    const inflows = await storage.getInflowLinesByProject(projectName);
     const planTasks = await storage.getProjectPlansByProject(projectName);
     const revSummary = await storage.getProjectRevenueSummary(projectName);
 

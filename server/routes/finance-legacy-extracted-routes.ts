@@ -619,7 +619,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
         if (!isProjectAccessibleByName(infScope, projectName)) {
           return res.status(403).json({ error: "FORBIDDEN", message: "You do not have access to this project" });
         }
-        inflows = await storage.getProgramInflowsByProject(projectName);
+        inflows = await storage.getInflowLinesByProject(projectName);
 
         // Apply overrides if requested
         if (applyOverrides === 'true') {

@@ -229,7 +229,7 @@ vi.mock("../../../server/lib/finance-route-access", () => ({
 
 vi.mock("../../../server/storage", () => ({
   storage: {
-    getProgramInflowsByProject: vi.fn(async () => [{ milestoneAmount: "400" }]),
+    getInflowLinesByProject: vi.fn(async () => [{ milestoneAmount: "400" }]),
     getTrackerMonthlyManual: vi.fn(async () => []),
     getExpenseTaskLinks: vi.fn(async () => []),
     getOperationalTasksByProject: vi.fn(async () => []),
