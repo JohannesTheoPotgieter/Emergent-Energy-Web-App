@@ -30,8 +30,8 @@ import {
   type UploadMetadata, type InsertUploadMetadata,
   type RefreshLog, type InsertRefreshLog,
   type ProjectInfo, type InsertProjectInfo,
-  type ProgramExpense, type InsertProgramExpense,
-  type ProgramInflows, type InsertProgramInflows,
+  type ExpenseLine, type InsertExpenseLine,
+  type InflowLine, type InsertInflowLine,
   type ProjectPlan, type InsertProjectPlan,
   type CashflowPoint, type InsertCashflowPoint,
   type FinanceRevenueMonthly, type InsertFinanceRevenueMonthly,
@@ -143,17 +143,17 @@ export interface IStorage {
   // Canonical cost-line read for cashflow — reads normalized_cost_lines only,
   // bypassing the program_expense merge. Returns adapted expense-shaped rows.
   getAllCostLinesForCashflow(): Promise<any[]>;
-  createManyProgramExpenses(expenses: InsertProgramExpense[]): Promise<ProgramExpense[]>;
+  createManyProgramExpenses(expenses: InsertExpenseLine[]): Promise<ExpenseLine[]>;
   deleteProgramExpensesByProject(projectName: string): Promise<void>;
-  updateProgramExpenseFields(id: number, fields: Record<string, any>): Promise<ProgramExpense | undefined>;
+  updateProgramExpenseFields(id: number, fields: Record<string, any>): Promise<ExpenseLine | undefined>;
   updateProgramInflowFields(id: number, fields: Record<string, any>): Promise<any | undefined>;
 
   // Program Inflows (new)
-  getAllProgramInflows(): Promise<ProgramInflows[]>;
-  getProgramInflowsByProject(projectName: string, opts?: { applyOverrides?: boolean }): Promise<ProgramInflows[]>;
+  getAllProgramInflows(): Promise<InflowLine[]>;
+  getProgramInflowsByProject(projectName: string, opts?: { applyOverrides?: boolean }): Promise<InflowLine[]>;
   // Canonical revenue-line read for cashflow — reads normalized_revenue_lines only.
   getAllRevenueLinesForCashflow(): Promise<any[]>;
-  createManyProgramInflows(inflows: InsertProgramInflows[]): Promise<ProgramInflows[]>;
+  createManyProgramInflows(inflows: InsertInflowLine[]): Promise<InflowLine[]>;
   deleteProgramInflowsByProject(projectName: string): Promise<void>;
 
   // Project Plan (new)
@@ -232,7 +232,7 @@ export interface IStorage {
   updateExpenseTaskLinkDateOverride(projectName: string, expenseId: number, dateOverride: string | null, reason: string | null): Promise<void>;
 
   // Manual Expense Rows
-  createManualExpense(data: InsertProgramExpense & { projectName?: string; idempotencyKey?: string; projectId?: number }): Promise<ProgramExpense>;
+  createManualExpense(data: InsertExpenseLine & { projectName?: string; idempotencyKey?: string; projectId?: number }): Promise<ExpenseLine>;
 
   // Home Notes
   getHomeNotes(): Promise<HomeNotes | undefined>;
@@ -757,7 +757,7 @@ export class DatabaseStorage implements IStorage {
     return this.financeExpenseEngineRepository.getAllCostLinesForCashflow();
   }
 
-  async createManyProgramExpenses(expenseList: InsertProgramExpense[]): Promise<ProgramExpense[]> {
+  async createManyProgramExpenses(expenseList: InsertExpenseLine[]): Promise<ExpenseLine[]> {
     return this.financeExpenseEngineRepository.createManyProgramExpenses(expenseList);
   }
 
@@ -765,7 +765,7 @@ export class DatabaseStorage implements IStorage {
     return this.financeExpenseEngineRepository.deleteProgramExpensesByProject(projectName);
   }
 
-  async updateProgramExpenseFields(id: number, fields: Record<string, any>, expectedUpdatedAt?: string): Promise<ProgramExpense | undefined> {
+  async updateProgramExpenseFields(id: number, fields: Record<string, any>, expectedUpdatedAt?: string): Promise<ExpenseLine | undefined> {
     return this.financeExpenseEngineRepository.updateProgramExpenseFields(id, fields, expectedUpdatedAt);
   }
 
@@ -785,7 +785,7 @@ export class DatabaseStorage implements IStorage {
     return this.financeInflowsRepository.getProgramInflowsByProject(projectName, opts);
   }
 
-  async createManyProgramInflows(inflowList: InsertProgramInflows[]): Promise<ProgramInflows[]> {
+  async createManyProgramInflows(inflowList: InsertInflowLine[]): Promise<InflowLine[]> {
     return this.financeInflowsRepository.createManyProgramInflows(inflowList);
   }
 
@@ -1266,7 +1266,7 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(expenseTaskLinks.projectName, projectName), eq(expenseTaskLinks.expenseId, expenseId)));
   }
 
-  async createManualExpense(data: InsertProgramExpense & { idempotencyKey?: string; projectId?: number; projectName?: string }): Promise<ProgramExpense> {
+  async createManualExpense(data: InsertExpenseLine & { idempotencyKey?: string; projectId?: number; projectName?: string }): Promise<ExpenseLine> {
     return this.financeExpenseEngineRepository.createManualExpense(data);
   }
 

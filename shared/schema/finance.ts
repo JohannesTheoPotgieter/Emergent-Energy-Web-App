@@ -37,15 +37,15 @@ export const trSuggestionDecisionEnum = pgEnum("tr_suggestion_decision", ["sugge
 export const rowSourceEnum = pgEnum("row_source", ["imported", "manual", "imported_edited"]);
 
 // ============================================================================
-// PROGRAM EXPENSE / PROGRAM INFLOWS — RETIRED LEGACY TABLES
+// EXPENSE LINE / INFLOW LINE — RETIRED LEGACY TABLES
 // ============================================================================
 //
 // program_expense and program_inflows are physically dropped from the database
 // (migrations/20260414_drop_program_expense_and_program_inflows.sql). The
 // pgTable definitions are removed.
 //
-// The TypeScript type names ProgramExpense / InsertProgramExpense /
-// ProgramInflows / InsertProgramInflows are preserved as standalone interfaces
+// The TypeScript type names ExpenseLine / InsertExpenseLine /
+// InflowLine / InsertInflowLine are preserved as standalone interfaces
 // because many files across the repo still use them as method-signature types
 // for the PE-shape compatibility view returned by adaptCostToExpense /
 // adaptRevenueToInflow. The canonical reads now live in
@@ -54,9 +54,7 @@ export const rowSourceEnum = pgEnum("row_source", ["imported", "manual", "import
 // PE/PI field shape.
 //
 // The interfaces below mirror the field shapes the old pgTable-derived types
-// produced, so callers compile unchanged. A cosmetic follow-up can rename
-// these to `ExpenseLine` / `InflowLine` and update call sites in a single
-// mechanical pass — that's optional Wave 4 work.
+// produced, so callers compile unchanged.
 //
 // NEW CODE SHOULD NOT USE THESE TYPES. Use NormalizedCostLine /
 // NormalizedRevenueLine from below instead.
@@ -73,7 +71,7 @@ export const rowSourceEnum = pgEnum("row_source", ["imported", "manual", "import
  * type for new features — it will be removed once the last legacy adapter
  * is retired.
  */
-export interface ProgramExpense {
+export interface ExpenseLine {
   id: number;
   projectName: string;
   rowNumber: number | null;
@@ -129,9 +127,9 @@ export interface ProgramExpense {
 
 /**
  * @internal
- * @deprecated PE-shape insert payload (TF-26 — see ProgramExpense above).
+ * @deprecated PE-shape insert payload (TF-26 — see ExpenseLine above).
  */
-export type InsertProgramExpense = Partial<Omit<ProgramExpense, "id" | "createdAt" | "effectiveFrom" | "effectiveTo">> & {
+export type InsertExpenseLine = Partial<Omit<ExpenseLine, "id" | "createdAt" | "effectiveFrom" | "effectiveTo">> & {
   projectName: string;
   projectId: number;
 };
@@ -140,11 +138,11 @@ export type InsertProgramExpense = Partial<Omit<ProgramExpense, "id" | "createdA
  * @internal
  * @deprecated PI-shape compatibility view over normalized_revenue_lines.
  *
- * TF-26 (audit V3): same status as ProgramExpense above — compatibility
+ * TF-26 (audit V3): same status as ExpenseLine above — compatibility
  * shape only, for the legacy adapters. New code must use
  * `NormalizedRevenueLine`.
  */
-export interface ProgramInflows {
+export interface InflowLine {
   id: number;
   projectName: string;
   rowNumber: number | null;
@@ -181,35 +179,12 @@ export interface ProgramInflows {
 
 /**
  * @internal
- * @deprecated PI-shape insert payload (TF-26 — see ProgramInflows above).
+ * @deprecated PI-shape insert payload (TF-26 — see InflowLine above).
  */
-export type InsertProgramInflows = Partial<Omit<ProgramInflows, "id" | "createdAt" | "effectiveFrom" | "effectiveTo">> & {
+export type InsertInflowLine = Partial<Omit<InflowLine, "id" | "createdAt" | "effectiveFrom" | "effectiveTo">> & {
   projectName: string;
   projectId: number;
 };
-
-// ============================================================================
-// EE-QA-024 — canonical aliases for the legacy PE/PI compatibility shapes.
-//
-// New code should reference `ExpenseLine` / `InflowLine` (and the matching
-// `Insert*` types) rather than the historical `ProgramExpense` /
-// `ProgramInflows` names. Both are still the same compatibility shape — the
-// aliases simply remove the misleading "Program*" prefix from new call sites
-// (the underlying tables `program_expense` / `program_inflows` were dropped
-// by migration 20260414, see comment block at top of this file).
-//
-// The 20 existing legacy call sites still reference Program(Expense|Inflows)
-// directly. They are tracked for a mechanical rename as a structural
-// workstream — see audit/EE-QA-Assessment-2026-05-06.md § EE-QA-024.
-// ============================================================================
-
-/** Canonical name for the PE-shape compatibility view. New code must use this. */
-export type ExpenseLine = ProgramExpense;
-export type InsertExpenseLine = InsertProgramExpense;
-
-/** Canonical name for the PI-shape compatibility view. New code must use this. */
-export type InflowLine = ProgramInflows;
-export type InsertInflowLine = InsertProgramInflows;
 
 // ===================== PROJECT PLAN =====================
 

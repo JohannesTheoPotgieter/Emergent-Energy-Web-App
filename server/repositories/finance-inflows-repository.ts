@@ -3,7 +3,7 @@ import { softCloseByProjectName } from "../lib/temporal-helpers";
 import { logAudit } from "../audit-logger";
 import {
   normalizedRevenueLines, projectInfo, smartImportRuns,
-  type ProgramInflows, type InsertProgramInflows,
+  type InflowLine, type InsertInflowLine,
 } from "@shared/schema";
 import { db } from "../db";
 
@@ -88,7 +88,7 @@ export class FinanceInflowsRepository {
 
   /**
    * Misleading-name alias kept for the ~15 existing call sites that still
-   * read inflows via the legacy "ProgramInflows" identifier. The actual
+   * read inflows via this legacy "getAllProgramInflows" method name. The actual
    * source is `normalized_revenue_lines` with the snapshot guard applied —
    * identical to {@link getAllRevenueLinesForCashflow}. New call sites
    * should use that method instead so the source is obvious at the call.
@@ -269,7 +269,7 @@ export class FinanceInflowsRepository {
     return adaptRevenueToInflow(result[0], result[0].projectName);
   }
 
-  async createManyProgramInflows(inflowList: InsertProgramInflows[], audit?: AuditCtx): Promise<ProgramInflows[]> {
+  async createManyProgramInflows(inflowList: InsertInflowLine[], audit?: AuditCtx): Promise<InflowLine[]> {
     if (inflowList.length === 0) return [];
     const mapped = inflowList.map((i: any) => ({
       projectName: i.projectName,

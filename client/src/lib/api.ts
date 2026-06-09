@@ -204,13 +204,13 @@ export const overviewApi = {
       if (startDate) params.append('startDate', startDate);
       if (endDate) params.append('endDate', endDate);
       const qs = params.toString() ? `?${params}` : '';
-      return fetchJSON<ProgramExpense[]>(`${API_BASE}/projects/${encodeURIComponent(projectName)}/cost-lines${qs}`);
+      return fetchJSON<ExpenseLine[]>(`${API_BASE}/projects/${encodeURIComponent(projectName)}/cost-lines${qs}`);
     }
     const params = new URLSearchParams();
     if (startDate) params.append('startDate', startDate);
     if (endDate) params.append('endDate', endDate);
     const url = params.toString() ? `${API_BASE}/program-expenses?${params}` : `${API_BASE}/program-expenses`;
-    return fetchJSON<ProgramExpense[]>(url);
+    return fetchJSON<ExpenseLine[]>(url);
   },
   getProgramInflows: async (projectName?: string, startDate?: string, endDate?: string) => {
     if (projectName) {
@@ -385,7 +385,7 @@ export interface ProjectInfo {
   updatedAt: string;
 }
 
-export interface ProgramExpense {
+export interface ExpenseLine {
   id: number;
   projectName: string;
   rowNumber: number | null;

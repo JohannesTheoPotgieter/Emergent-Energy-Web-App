@@ -7,7 +7,7 @@ import { logAudit } from "../audit-logger";
 import {
   normalizedCostLines, normalizedCostLineActuals, projectInfo, smartImportRuns,
   purchaseOrders,
-  type ProgramExpense, type InsertProgramExpense,
+  type ExpenseLine, type InsertExpenseLine,
 } from "@shared/schema";
 import { db } from "../db";
 
@@ -143,7 +143,7 @@ export class FinanceExpenseEngineRepository {
     return winners;
   }
 
-  async createManyProgramExpenses(expenseList: InsertProgramExpense[], audit?: AuditCtx): Promise<ProgramExpense[]> {
+  async createManyProgramExpenses(expenseList: InsertExpenseLine[], audit?: AuditCtx): Promise<ExpenseLine[]> {
     if (expenseList.length === 0) return [];
     const mapped = expenseList.map((e: any) => ({
       projectName: e.projectName,
@@ -198,7 +198,7 @@ export class FinanceExpenseEngineRepository {
     await softCloseByProjectName(this.dbInstance, "normalized_cost_lines", projectName);
   }
 
-  async updateProgramExpenseFields(id: number, fields: Record<string, any>, expectedUpdatedAt?: string, audit?: AuditCtx): Promise<ProgramExpense | undefined> {
+  async updateProgramExpenseFields(id: number, fields: Record<string, any>, expectedUpdatedAt?: string, audit?: AuditCtx): Promise<ExpenseLine | undefined> {
     const mappedFields: Record<string, any> = {};
     const fieldMap: Record<string, string> = {
       expenseCategory: 'costCategory',
@@ -277,7 +277,7 @@ export class FinanceExpenseEngineRepository {
     return adaptCostToExpense(result[0], result[0].projectName) as any;
   }
 
-  async createManualExpense(data: InsertProgramExpense & { idempotencyKey?: string; projectId?: number; projectName?: string }, audit?: AuditCtx): Promise<ProgramExpense> {
+  async createManualExpense(data: InsertExpenseLine & { idempotencyKey?: string; projectId?: number; projectName?: string }, audit?: AuditCtx): Promise<ExpenseLine> {
     const d = data as any;
 
     return this.dbInstance.transaction(async (tx: typeof db) => {
