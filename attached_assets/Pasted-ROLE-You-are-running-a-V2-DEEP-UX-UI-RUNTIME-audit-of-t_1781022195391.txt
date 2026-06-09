@@ -1,0 +1,143 @@
+ROLE
+You are running a V2 DEEP UX/UI RUNTIME audit of the finance function, on top of the V1
+source-of-truth audit (docs/finance-source-of-truth-audit.md, verdict: RED). V2 has two jobs:
+  (1) REGRESSION — re-verify every one of the 12 V1 defects: is it FIXED, PARTIAL, or OPEN?
+  (2) UX/UI DEPTH — drive every finance page as a real user across every role and every UI
+      state, exercising every button, field, tab, filter, drawer, export and calculation, and
+      prove the SAME number is identical everywhere it appears.
+Boot the running app and drive it through the browser (Playwright/headed). Read the DB only to
+verify what the UI shows. Produce ONE Markdown report with screenshot evidence. Change NO code,
+schema, or migrations. The only writes allowed are the controlled write-path tests below, against
+a clearly-named throwaway test project that you create and fully revert. If a write cannot be
+reverted, STOP and report it. If this is pointed at production data, do PART U-WRITE in read-only
+"dry-run" mode (assert the request payload + target table without committing).
+
+CONTRACT FILES (read first):
+  server/lib/reconciliation/selected-truth-registry.ts, server/services/source-of-truth-policy.ts,
+  shared/schema/finance.ts, shared/schema/projects.ts, client/src/config/page-registry.ts
+  (FINANCE nav group), and docs/finance-source-of-truth-audit.md (the V1 defect register).
+
+HARD QUERY RULES: every snapshot-table aggregate filters effective_to IS NULL (and deleted_at IS
+NULL where present). Per-line revenue = (actualTotal / categoryTotalActual) × categoryRevenueAllocation;
+per-line GP = perLineRevenue − actualTotal; no cross-project pooling.
+
+──────────────────────────────────────────────────────────
+PART R — V1 DEFECT REGRESSION (do this FIRST)
+For EACH of the 12 items in the V1 discrepancy register, state: defect id, one-line description,
+the exact runtime check you ran, the live result, and a verdict FIXED / PARTIAL / OPEN with the
+Rand delta now observed. Explicitly re-test:
+  - project_revenue_summary: does every active (effective_to IS NULL) row's project_id match
+    <project_info.id>? Count orphan active rows and phantom Rand. Count duplicate active rows sharing
+    one project_id. Confirm per-project consumers (project-v2-repository, financial-review-service)
+    now serve the CORRECT project's finances by spot-checking 5 named projects in the UI against raw SQL.
+  - Gross profit: how many distinct GP values does the app surface for the same project/period, and
+    what is the spread? Target: ONE value.
+  - Realised cost: invoice-based vs colour-signal — single value now? Show both, show which the UI uses.
+  - revenue_realised: non-zero and matching canonical? 
+  - cashflow_points / finance_*_monthly: populated, or is the UI computing on-read? Confirm the
+    cashflow page renders real numbers, not zeros/fallbacks.
+  - tracker_vs_app_drift: does its source table exist and return a sane count?
+  - KPI-traceability admin total vs true canonical total — delta now?
+
+──────────────────────────────────────────────────────────
+PART X — CROSS-SURFACE CONSISTENCY (the headline V2 test)
+Build a matrix: for each finance number, list EVERY page/component that displays it, capture the
+rendered value on each, and assert they are byte-identical (within R1 formatting tolerance). A
+number that differs between two screens is a FAIL even if each is internally consistent. Minimum set:
+  - Project revenue (total/invoiced/realised): finance-home, finance-gp, finance-gp-company,
+    revenue-tracker, finance-project-detail, reconciliation board, project overview header.
+  - Project COS (budgeted/committed/realised): finance-home, cos, finance-gp, finance-project-detail.
+  - Project GP & margin %: finance-home, finance-gp, finance-gp-company, finance-project-detail.
+  - Contract value: project header vs project-detail vs revenue-tracker.
+  - App-vs-Tracker delta: reconciliation board card vs project-detail header vs finance-home tile.
+  - Cash available this week: finance-home tile vs cashflow page KPI.
+  - FYTD revenue vs target: finance-home vs any programme report.
+For each row: page, rendered value, canonical SQL value, PASS/FAIL, delta. Drill EACH KPI tile via
+its drilldownRoute and assert the destination page's total equals the tile.
+
+──────────────────────────────────────────────────────────
+PART P — EVERY PAGE, DEEP (one section per page)
+Cover all FINANCE-group routes: /finance, /finance/close, /cashflow, /cashflow/analysis, /cos,
+/cos/analysis, /revenue-tracker, /fye-revenue-tracking, /finance/gp, /finance/gp/company,
+/finance/audit-prep, /finance/reconciliation, /finance/qb-reconciliation, /projects/:id/finance,
+/finance/quickbooks(+customer-mapping,+links), /invoice-patterns, /counterparties,
+/subcontractor-dashboard, /projects/:id/revenue-tracking, /projects/:id/expenditure-breakdown,
+/projects/:id/manual-overrides, /program/excel-vs-app, /projects/:id/excel-vs-app,
+/payment-request-board, /po-approval-board, /payment-batch-manager.
+
+For EACH page produce a control inventory table (one row per control) with columns:
+  control label | type (button/field/tab/filter/drawer/export) | action taken | expected | observed |
+  endpoint hit | DB effect | PASS/FAIL/SKIPPED(reason) | screenshot ref.
+No control may be left untested or silently skipped — a SKIP needs a reason. Within each page test:
+  • every tab switches and reloads the correct dataset;
+  • every filter/search/date-range/dropdown/multi-select/toggle actually re-filters the grid AND the
+    totals row recomputes;
+  • every expandable row / detail drawer fetches detail keyed correctly and the drawer's line totals
+    sum to the parent row (assert the footer reconciliation where the page has one, e.g.
+    finance-project-detail "FY grid total = Σ line detail");
+  • every chart renders with non-empty series and its tooltip values match the grid;
+  • every export (CSV/Excel/audit bundle) downloads a non-empty file with headers matching the grid.
+
+──────────────────────────────────────────────────────────
+PART S — UX STATE COVERAGE (per page, capture each state)
+For each page, force and screenshot every applicable state, and confirm the UI degrades correctly:
+  • LOADING — skeletons/spinners, no layout jump, no flash of zeros presented as real data.
+  • EMPTY — project/period with no finance data shows an explicit empty state, NOT "R0" styled as a
+    real total.
+  • ERROR — kill the feeding endpoint (or pick a known-failing project): the page shows an error
+    state and never renders a raw stack trace, Drizzle error, or partial wrong number.
+  • LOCKED — for a locked COS period, editable cells/buttons are disabled or show the lock message.
+  • PERMISSION-DENIED — see PART RBAC.
+  • STALE/TRUST badges — pages that show trust/confidence chips (reconciliation, project-detail,
+    registry-fed KPIs) show the correct High/Medium/Low badge and "known gaps" flags.
+
+──────────────────────────────────────────────────────────
+PART RBAC — ROLE-BY-ROLE RENDERING
+Log in as a privileged finance role (e.g. CFO/COO) and a low-privilege role and, for each finance
+page, confirm: privileged sees edit controls + correct numbers; low-privilege either cannot reach
+the page (correct redirect/403) or sees it read-only with edit controls hidden — never a broken
+half-rendered page. Verify the COS admin-only actions (override realised status, period unlock) are
+invisible/blocked for non-admins. Confirm each page enforces its page-registry permission.
+
+──────────────────────────────────────────────────────────
+PART U-WRITE — WRITE PATHS & VALIDATION (throwaway test project only)
+Using ONE clearly-named test project you create and revert, exercise every mutation end-to-end and
+confirm endpoint + payload + DB landing + UI refresh + optimistic-update correctness:
+  Revenue/COS "Budget (Manual)" inline edit → /api/tracker-monthly (REV/COS); cashflow opening
+  balance (POST+DELETE); opex budget/weekly; available-payment override; expense/inflow date
+  overrides; payment-planner Apply(batch, reason≥3) + Discard; COS line review Move Period / Set
+  Invoice Date / Undo / Remove / Flag / Toggle Realised / Override Status; period lock/unlock;
+  reconciliation Refresh + Ignore/Unignore; payment-request board Start Review/Load/Request
+  Info/Complete; PO board Approve/Reject/Request Info/Delegate/PDF.
+VALIDATION — submit each form with BAD then GOOD input and confirm the exact rejection message then
+acceptance: planner reason empty/2-char rejected (min 3); date override reason >500 rejected,
+non-ISO date rejected; opening balance non-numeric rejected; planning overrides empty
+array/projectName/category rejected; period-lock notes >500 rejected.
+LOCK/PERMISSION GUARD — with a locked target period, a non-privileged user gets HTTP 423 and the UI
+lock message; a COO/CFO/CEO is allowed WITH an audit-log row written. Verify override-status is
+COO/CFO/CEO-only.
+Then REVERT every test write and prove via SQL the test project is gone and no other row changed.
+
+──────────────────────────────────────────────────────────
+PART D — CALCULATION RE-DERIVATION
+For every on-screen calc, capture the rendered value, recompute independently from canonical tables,
+assert equal within R1: GP (line/month/cumulative), margin % (guard COS=0), revenue-vs-target, cash
+available/week, app-vs-tracker delta, QB variance, budget variance %, YTD cumulatives, revenue/COS
+bucket classification, VO impact, cashflow aging buckets, forecast payment date precedence
+(adminOverride ?? computed ?? forecast), available-payment override-aware value, recon status colour
+thresholds. Show rendered vs recomputed vs delta per calc.
+
+──────────────────────────────────────────────────────────
+OUTPUT (one Markdown report with embedded screenshot refs)
+  1. Top-line verdict: GREEN/AMBER/RED — "Is finance safe to freeze as-is for 6 months?" with the
+     single blocking reason if not.
+  2. PART R regression table (12 defects: FIXED/PARTIAL/OPEN + current delta).
+  3. PART X cross-surface consistency matrix.
+  4. PART P per-page control inventories (every control, PASS/FAIL/SKIP).
+  5. PART S UX-state evidence grid.
+  6. PART RBAC results.
+  7. PART U-WRITE results (write/validation/lock) + revert proof.
+  8. PART D calc table.
+  9. Prioritised defect register v2 with file/line refs and exact Rand deltas, each tagged
+     NEW / CARRIED-OVER-FROM-V1 / REGRESSED.
+Change nothing beyond the reverted test writes. Describe bugs; do not fix them in this pass.
