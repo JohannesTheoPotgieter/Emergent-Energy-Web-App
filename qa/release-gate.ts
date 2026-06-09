@@ -192,10 +192,17 @@ function main() {
       name: "Reconciliation status",
       required: financeModelChanged,
       category: financeModelChanged ? "proof" : "optional",
-      status: financeModelChanged ? "fail" : "warning",
+      // Reconciliation evidence is only meaningful when finance-model files
+      // change — the gate detects that and FAILS hard if evidence is missing
+      // then. When no finance-model files changed, the check is not applicable,
+      // so record PASS rather than a blocking soft-warning (the prior "warning"
+      // failed the gate on every non-finance release). A committed static "pass"
+      // is deliberately NOT used — it would mask a real finance-change release
+      // that skipped reconciliation.
+      status: financeModelChanged ? "fail" : "pass",
       details: financeModelChanged
         ? `Missing or invalid reconciliation evidence: ${RECONCILIATION_FILE} (required because finance model files changed)`
-        : `Reconciliation evidence not found (not required — no finance model changes detected).`,
+        : `Not applicable — no finance-model changes in this release (reconciliation evidence only required when finance-model files change).`,
     });
   } else {
     const reconStatus = reconciliation.status || "fail";
