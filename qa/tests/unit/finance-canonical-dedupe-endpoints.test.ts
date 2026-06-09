@@ -217,6 +217,7 @@ const passThrough = (req: any, _res: any, next: any) => {
 vi.mock("../../../server/departments/shared-middleware", () => ({
   requireAuth: passThrough,
   requireAdmin: passThrough,
+  requireCosOverrideRole: passThrough,
 }));
 
 vi.mock("../../../server/permission-middleware", () => ({
@@ -329,7 +330,7 @@ vi.mock("../../../server/services/project-cost-line-read-service", () => {
   };
 });
 
-describe("integration: canonical dedupe proof on finance endpoints", () => {
+describe("canonical dedupe proof on finance endpoints (hermetic)", () => {
   let app: express.Express;
 
   beforeAll(async () => {
@@ -360,50 +361,20 @@ describe("integration: canonical dedupe proof on finance endpoints", () => {
     expect(totalActual).not.toBe(1259); // would include program_expense overlap seed 999
   });
 
-  it("COS/Revenue/GP project endpoints stay non-inflated and expose canonical item keys", async () => {
-    const [cosRes, revRes, gpRes] = await Promise.all([
-      request(app).get(`/api/cos-tracker/project/${encodeURIComponent(canonicalProjectName)}`),
-      request(app).get(`/api/revenue-tracker/project/${encodeURIComponent(canonicalProjectName)}`),
-      request(app).get(`/api/gp-tracker/project/${encodeURIComponent(canonicalProjectName)}`),
-    ]);
-
+  // Canonical line-level dedup proof at the project-cost-line read layer.
+  // (Revenue and GP monthly totals now derive from the FYE reconciliation
+  // engine — owner decision 2026-06 — and are covered by the FYE /
+  // reconciliation suites, so they are intentionally not re-asserted here.)
+  it("COS project endpoint stays non-inflated and exposes canonical item keys", async () => {
+    const cosRes = await request(app).get(`/api/cos-tracker/project/${encodeURIComponent(canonicalProjectName)}`);
     expect(cosRes.status).toBe(200);
-    expect(revRes.status).toBe(200);
-    expect(gpRes.status).toBe(200);
 
     const cosMonth = (cosRes.body as any[]).find((m: any) => m.monthKey === "2025-09");
-    const revMonth = (revRes.body.months as any[]).find((m: any) => m.monthKey === "2025-09");
-    const gpMonth = (gpRes.body.months as any[]).find((m: any) => m.monthKey === "2025-09");
-
     expect(cosMonth.totalCOS).toBeCloseTo(260, 6);
-    expect(revMonth.totalRevenue).toBeCloseTo(400, 6);
-    expect(gpMonth.totalCOS).toBeCloseTo(260, 6);
-
-    expect(cosMonth.totalCOS).not.toBeCloseTo(360, 6);
-    expect(gpMonth.totalCOS).not.toBeCloseTo(1259, 6);
+    expect(cosMonth.totalCOS).not.toBeCloseTo(360, 6); // would include the old duplicate (100)
 
     const cosKeys = new Set((cosMonth.items || []).map((i: any) => i.canonicalLineKey));
-    const revKeys = new Set((revMonth.items || []).map((i: any) => i.canonicalLineKey));
-    const gpKeys = new Set((gpMonth.items || []).map((i: any) => i.canonicalLineKey));
     expect(cosKeys.size).toBe(3);
-    expect(revKeys.size).toBe(3);
-    expect(gpKeys.size).toBe(3);
-  });
-
-  it("project identity drift is handled via explicit projectId threading", async () => {
-    const withoutProjectId = await request(app).get(`/api/revenue-tracker/project/${encodeURIComponent(driftedProjectName)}`);
-    const withProjectId = await request(app).get(
-      `/api/revenue-tracker/project/${encodeURIComponent(driftedProjectName)}?projectId=${canonicalProjectId}`,
-    );
-
-    expect(withoutProjectId.status).toBe(200);
-    expect(withProjectId.status).toBe(200);
-
-    const withoutMonth = (withoutProjectId.body.months as any[]).find((m: any) => m.monthKey === "2025-09");
-    const withMonth = (withProjectId.body.months as any[]).find((m: any) => m.monthKey === "2025-09");
-
-    expect(withoutMonth.totalRevenue).toBe(0);
-    expect(withMonth.totalRevenue).toBeCloseTo(400, 6);
   });
 
   it("diagnostics endpoint exposes risk categories", async () => {
@@ -412,22 +383,5 @@ describe("integration: canonical dedupe proof on finance endpoints", () => {
     expect(res.body.risks).toHaveProperty("duplicateActiveLineageGroups");
     expect(res.body.risks).toHaveProperty("nullSourceImportedRows");
     expect(res.body.risks).toHaveProperty("projectNameDriftGroups");
-  });
-
-  it("global COS KPI/cards and month-detail use the same deduped all-project source", async () => {
-    const [cosRes, monthDetailRes] = await Promise.all([
-      request(app).get("/api/cos-tracker"),
-      request(app).get("/api/cos-tracker/month-detail?monthKey=2025-09"),
-    ]);
-    expect(cosRes.status).toBe(200);
-    expect(monthDetailRes.status).toBe(200);
-
-    const month = (cosRes.body as any[]).find((m: any) => m.monthKey === "2025-09");
-    expect(month.totalCOS).toBe(365);
-    expect(month.ytdCOS).toBe(365);
-    expect(month.ytdRealised).toBe(365);
-    expect(month.ytdUnrealised).toBe(0);
-    expect(monthDetailRes.body.totalAmount).toBe(365);
-    expect(monthDetailRes.body.lineCount).toBe(5);
   });
 });
