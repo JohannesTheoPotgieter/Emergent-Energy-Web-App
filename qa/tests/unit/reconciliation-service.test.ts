@@ -16,7 +16,6 @@ import path from "node:path";
 
 import {
   computeAppVsTrackerStatus,
-  computeTrackerVsQbStatus,
   worstStatus,
   RECON_R1,
   type ReconLineInput,
@@ -134,27 +133,6 @@ describe("worstStatus rollup", () => {
   });
   it("all green → green", () => {
     expect(worstStatus(["green", "green"])).toBe("green");
-  });
-});
-
-describe("computeTrackerVsQbStatus (P2.3)", () => {
-  it("GREEN — tracker reconciles to QuickBooks within R1", () => {
-    expect(computeTrackerVsQbStatus(0).status).toBe("green");
-    expect(computeTrackerVsQbStatus(0.5).status).toBe("green");
-  });
-
-  it("AMBER — a seeded QB gap is flagged WITH its delta", () => {
-    const r = computeTrackerVsQbStatus(12_500);
-    expect(r.status).toBe("amber");
-    expect(r.delta).toBeCloseTo(12_500, 2);
-    expect(r.reason).toMatch(/12500\.00/);
-  });
-
-  it("RED — QB entries that can't be attributed to the tracker are structural", () => {
-    const r = computeTrackerVsQbStatus(8_000, 2);
-    expect(r.status).toBe("red");
-    expect(r.delta).toBeCloseTo(8_000, 2);
-    expect(r.reason).toMatch(/could not be attributed/i);
   });
 });
 

@@ -54,9 +54,6 @@ interface PortfolioProject {
   amberPeriods: number;
   redPeriods: number;
   computedAt: string | null;
-  qbStatus: ReconDisplayStatus;
-  qbDelta: number;
-  qbAbsDelta: number;
 }
 interface PortfolioResponse {
   generatedAt: string;
@@ -87,8 +84,6 @@ interface DetailResponse {
   accumulatedAbsDelta: number;
   reason: string;
   lines: DetailLine[];
-  trackerVsQbStatus: ReconDisplayStatus;
-  trackerVsQbDelta: number;
   reconIgnores: ReconIgnoreView[];
 }
 
@@ -147,8 +142,6 @@ function exceptionFromDetail(detail: DetailResponseWithMeta): ReconciliationExce
     },
     ruleUsed: detail.reason,
     selectedTruthSource: "canonical §3.3 formula (revenue_derived)",
-    qbStatus: detail.trackerVsQbStatus,
-    qbDelta: detail.trackerVsQbDelta,
     reconIgnores: detail.reconIgnores,
   };
 }
@@ -162,7 +155,6 @@ export default function FinanceReconciliationBoardPage() {
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [drawerException, setDrawerException] = useState<ReconciliationException | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [refreshingQb, setRefreshingQb] = useState(false);
 
   const portfolio = useQuery<PortfolioResponse>({
     queryKey: ["/api/finance/reconciliation"],
@@ -190,16 +182,6 @@ export default function FinanceReconciliationBoardPage() {
       await queryClient.invalidateQueries({ queryKey: ["/api/finance/reconciliation"] });
     } finally {
       setRefreshing(false);
-    }
-  }
-
-  async function handleRefreshQb() {
-    setRefreshingQb(true);
-    try {
-      await apiRequest("POST", "/api/finance/reconciliation/refresh-qb", {});
-      await queryClient.invalidateQueries({ queryKey: ["/api/finance/reconciliation"] });
-    } finally {
-      setRefreshingQb(false);
     }
   }
 
@@ -239,18 +221,6 @@ export default function FinanceReconciliationBoardPage() {
           >
             <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} aria-hidden="true" />
             {refreshing ? "Refreshing…" : "Refresh"}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefreshQb}
-            disabled={refreshingQb}
-            className="gap-2"
-            data-testid="btn-recon-refresh-qb"
-            title="Recompute tracker-vs-QuickBooks (needs a live QuickBooks connection)"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${refreshingQb ? "animate-spin" : ""}`} aria-hidden="true" />
-            {refreshingQb ? "Refreshing…" : "Refresh QB"}
           </Button>
         </div>
 

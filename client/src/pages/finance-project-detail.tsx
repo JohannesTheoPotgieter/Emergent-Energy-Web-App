@@ -115,8 +115,6 @@ interface DetailResponse {
   accumulatedAbsDelta: number;
   reason: string;
   lines: ReconDetailLine[];
-  trackerVsQbStatus: ReconDisplayStatus;
-  trackerVsQbDelta: number;
   reconIgnores: ReconIgnoreView[];
 }
 
@@ -210,8 +208,6 @@ function lineToException(detail: DetailResponse, line: ReconDetailLine): Reconci
     },
     ruleUsed: detail.reason,
     selectedTruthSource: "canonical §3.3 formula (revenue_derived)",
-    qbStatus: detail.trackerVsQbStatus,
-    qbDelta: detail.trackerVsQbDelta,
     reconIgnores: detail.reconIgnores,
   };
 }
@@ -384,13 +380,6 @@ export function FinanceProjectDetailContent({ projectId }: { projectId: number }
               <ReconStatusChip status={detail.status} />
               <span className="font-mono text-sm tabular-nums text-foreground" data-testid="header-app-vs-tracker-delta">
                 {formatZar(detail.appVsTrackerDelta)}
-              </span>
-            </div>
-            <div className="flex items-center gap-2" title="Tracker vs QuickBooks">
-              <span className="text-[10px] font-medium uppercase text-muted-foreground">Tracker vs QB</span>
-              <ReconStatusChip status={detail.trackerVsQbStatus} />
-              <span className="font-mono text-sm tabular-nums text-foreground" data-testid="header-tracker-vs-qb-delta">
-                {detail.trackerVsQbStatus === "unknown" ? "—" : formatZar(detail.trackerVsQbDelta)}
               </span>
             </div>
           </div>
@@ -679,7 +668,7 @@ export default function FinanceProjectDetailPage() {
         </Link>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Project Finance</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          Every number, traced to its line and source cell — app vs tracker vs QuickBooks.
+          Every number, traced to its line and source cell — app vs tracker.
         </p>
       </div>
       <FinanceProjectDetailContent projectId={projectId} />

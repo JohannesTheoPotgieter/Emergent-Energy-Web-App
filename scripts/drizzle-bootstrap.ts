@@ -231,6 +231,11 @@ const MODERN_MIGRATION_PROBES: Record<
   // no longer exists, forcing drizzle-kit migrate to run the drop on an existing
   // (presumed-applied) DB that still has the table.
   "0098_drop_fye_kpi_counters": async (c) => !(await tableExists(c, "fye_kpi_counters")),
+  // 0099 DROPS the retired per-project tracker_vs_qb_* columns. Applied iff the
+  // columns are gone, so the drop runs on an existing presumed-applied DB.
+  "0099_drop_tracker_vs_qb_columns": async (c) =>
+    !(await columnExists(c, "financial_reconciliation", "tracker_vs_qb_status")) &&
+    !(await columnExists(c, "financial_reconciliation", "tracker_vs_qb_delta")),
 };
 
 async function tableExists(client: Client, table: string): Promise<boolean> {

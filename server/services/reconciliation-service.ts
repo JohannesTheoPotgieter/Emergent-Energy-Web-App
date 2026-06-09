@@ -16,7 +16,8 @@
  *            J-cell surfaces here as a missing/zero allocation). These are the
  *            repository's `derivationWarning`s.
  *
- * tracker_vs_qb_* columns are out of scope for P2.2 and left null.
+ * Per-project tracker-vs-QuickBooks was retired (QB cost bills aren't project-
+ * tagged); company-level QB reconciliation lives in qb-tracker-reconcile.ts.
  */
 
 import { and, eq, inArray, isNull } from "drizzle-orm";
@@ -319,8 +320,6 @@ export async function refreshReconciliationForProjects(
         fiscalPeriodId,
         appVsTrackerStatus: result.status,
         appVsTrackerDelta: newDelta,
-        trackerVsQbStatus: null,
-        trackerVsQbDelta: null,
         computedAt: now,
         notes: result.reason,
         effectiveFrom: now,
@@ -349,12 +348,6 @@ export interface ReconPortfolioProject {
   amberPeriods: number;
   redPeriods: number;
   computedAt: string | null;
-  /** Tracker-vs-QuickBooks (P2.3), rolled up across the project's periods. */
-  qbStatus: ReconDisplayStatus;
-  /** Σ tracker_vs_qb_delta (signed unreconciled QB gap). */
-  qbDelta: number;
-  /** Σ |tracker_vs_qb_delta| — headline QB gap magnitude. */
-  qbAbsDelta: number;
 }
 
 /**
@@ -376,8 +369,6 @@ export async function getReconciliationPortfolio(
       projectId: financialReconciliation.projectId,
       status: financialReconciliation.appVsTrackerStatus,
       delta: financialReconciliation.appVsTrackerDelta,
-      qbStatus: financialReconciliation.trackerVsQbStatus,
-      qbDelta: financialReconciliation.trackerVsQbDelta,
       computedAt: financialReconciliation.computedAt,
     })
     .from(financialReconciliation)
@@ -393,8 +384,6 @@ export async function getReconciliationPortfolio(
     projectId: number;
     status: string | null;
     delta: string | null;
-    qbStatus: string | null;
-    qbDelta: string | null;
     computedAt: Date | null;
   }>;
 
@@ -413,8 +402,6 @@ export async function getReconciliationPortfolio(
     const status = worstStatus(statuses);
     let signed = 0;
     let abs = 0;
-    let qbSigned = 0;
-    let qbAbs = 0;
     let computedAt: Date | null = null;
     for (const r of periodRows) {
       const d = r.delta != null ? Number(r.delta) : 0;
@@ -422,16 +409,8 @@ export async function getReconciliationPortfolio(
         signed += d;
         abs += Math.abs(d);
       }
-      const qd = r.qbDelta != null ? Number(r.qbDelta) : 0;
-      if (Number.isFinite(qd)) {
-        qbSigned += qd;
-        qbAbs += Math.abs(qd);
-      }
       if (r.computedAt && (!computedAt || r.computedAt > computedAt)) computedAt = r.computedAt;
     }
-    const qbStatuses = periodRows
-      .map((r) => r.qbStatus)
-      .filter((s): s is ReconStatus => s === "green" || s === "amber" || s === "red");
     return {
       projectId: p.id,
       projectName: p.projectName,
@@ -442,20 +421,13 @@ export async function getReconciliationPortfolio(
       amberPeriods: periodRows.filter((r) => r.status === "amber").length,
       redPeriods: periodRows.filter((r) => r.status === "red").length,
       computedAt: computedAt ? computedAt.toISOString() : null,
-      qbStatus: worstStatus(qbStatuses),
-      qbDelta: round2(qbSigned),
-      qbAbsDelta: round2(qbAbs),
     };
   });
 
-  // Worst first across BOTH dimensions, so the board surfaces problems regardless
-  // of which comparison flagged them. red (corruption) → unlinked (allocation
-  // missing) → amber (drift) → unknown → green.
+  // Worst first, so the board surfaces problems. red (corruption) → unlinked
+  // (allocation missing) → amber (drift) → unknown → green, then by |delta|.
   const rank: Record<ReconDisplayStatus, number> = { red: 0, unlinked: 1, amber: 2, unknown: 3, green: 4 };
-  const worstOf = (p: ReconPortfolioProject) => Math.min(rank[p.status], rank[p.qbStatus]);
-  out.sort(
-    (a, b) => worstOf(a) - worstOf(b) || b.absDelta + b.qbAbsDelta - (a.absDelta + a.qbAbsDelta),
-  );
+  out.sort((a, b) => rank[a.status] - rank[b.status] || b.absDelta - a.absDelta);
   return out;
 }
 
@@ -502,9 +474,6 @@ export interface ReconProjectDetail {
   accumulatedAbsDelta: number;
   reason: string;
   lines: ReconDetailLine[];
-  /** Tracker-vs-QuickBooks (P2.3), rolled up across the project's periods. */
-  trackerVsQbStatus: ReconDisplayStatus;
-  trackerVsQbDelta: number;
   /** Suppressed QB variances — shown, never silently dropped. */
   reconIgnores: ReconIgnoreView[];
 }
@@ -586,7 +555,6 @@ export async function getReconciliationDetail(
     });
 
   const reconIgnores = await getProjectReconIgnores(dbi, proj?.projectName ?? null);
-  const qb = await getTrackerVsQbForProject(dbi, projectId);
 
   return {
     projectId,
@@ -598,158 +566,8 @@ export async function getReconciliationDetail(
     accumulatedAbsDelta: result.accumulatedAbsDelta,
     reason: result.reason,
     lines: detailLines,
-    trackerVsQbStatus: qb.status,
-    trackerVsQbDelta: qb.delta,
     reconIgnores,
   };
-}
-
-// ---------------------------------------------------------------------------
-// P2.3 — tracker vs QuickBooks
-//
-// The app COMPARES the tracker to QuickBooks and FLAGS mismatches; it NEVER
-// auto-adjusts the tracker (owner rule — trackers stay the source of truth).
-// The per-project signal is the QB reconciliation GAP: QuickBooks bills/invoices
-// resolved to a project that are NOT reconciled (matched/linked) to the tracker,
-// EXCLUDING active recon-ignores (which are surfaced separately, with reason).
-// ---------------------------------------------------------------------------
-
-export interface TrackerVsQbResult {
-  status: ReconStatus;
-  /** The unreconciled QB gap (signed; same units as the trackers). */
-  delta: number;
-  reason: string;
-}
-
-/**
- * PURE: classify a project×period QB gap. green = reconciles within R1; amber =
- * an unreconciled gap exists (drift); red = structural — unmapped QB entries
- * that can't even be attributed to the tracker. Never adjusts a figure.
- */
-export function computeTrackerVsQbStatus(
-  gapDelta: number,
-  unmappedCount = 0,
-): TrackerVsQbResult {
-  const abs = Math.abs(gapDelta);
-  if (unmappedCount > 0) {
-    return {
-      status: "red",
-      delta: round2(gapDelta),
-      reason: `${unmappedCount} QuickBooks entr${unmappedCount === 1 ? "y" : "ies"} could not be attributed to the tracker (R${abs.toFixed(2)} unreconciled).`,
-    };
-  }
-  if (abs > RECON_R1) {
-    return {
-      status: "amber",
-      delta: round2(gapDelta),
-      reason: `R${abs.toFixed(2)} of QuickBooks activity is not reconciled to the tracker.`,
-    };
-  }
-  return {
-    status: "green",
-    delta: round2(gapDelta),
-    reason: "Tracker reconciles to QuickBooks within R1.",
-  };
-}
-
-/** Per (project, period) QB gap, consumed from the existing QB comparison. */
-export interface TrackerVsQbGap {
-  fiscalPeriodId: number;
-  /** Σ unreconciled QB amount resolved to the project in the period (non-ignored). */
-  gapDelta: number;
-  /** QB entries resolved to a project but with no usable mapping (red). */
-  unmappedCount?: number;
-}
-
-/**
- * Write tracker_vs_qb_status / tracker_vs_qb_delta onto the active
- * financial_reconciliation row for each (project, period), consuming the QB gap.
- * Updates the QB columns IN PLACE on the active row (annotation metadata — it
- * does not touch app_vs_tracker history); inserts a row when none exists yet.
- * Never adjusts a tracker figure.
- */
-export async function refreshTrackerVsQbForProjects(
-  dbi: DbOrTx,
-  gapsByProject: ReadonlyMap<number, readonly TrackerVsQbGap[]>,
-): Promise<{ rowsWritten: number }> {
-  const now = new Date();
-  let rowsWritten = 0;
-  for (const [projectId, gaps] of gapsByProject) {
-    for (const g of gaps) {
-      const res = computeTrackerVsQbStatus(g.gapDelta, g.unmappedCount ?? 0);
-      const [active] = await dbi
-        .select({ id: financialReconciliation.id })
-        .from(financialReconciliation)
-        .where(
-          and(
-            eq(financialReconciliation.projectId, projectId),
-            eq(financialReconciliation.fiscalPeriodId, g.fiscalPeriodId),
-            isNull(financialReconciliation.effectiveTo),
-          ),
-        )
-        .limit(1);
-
-      if (active != null) {
-        await dbi
-          .update(financialReconciliation)
-          .set({
-            trackerVsQbStatus: res.status,
-            trackerVsQbDelta: res.delta.toFixed(2),
-            computedAt: now,
-          })
-          .where(
-            and(
-              eq(financialReconciliation.id, active.id),
-              isNull(financialReconciliation.effectiveTo),
-            ),
-          );
-      } else {
-        await dbi.insert(financialReconciliation).values({
-          projectId,
-          fiscalPeriodId: g.fiscalPeriodId,
-          appVsTrackerStatus: null,
-          appVsTrackerDelta: null,
-          trackerVsQbStatus: res.status,
-          trackerVsQbDelta: res.delta.toFixed(2),
-          computedAt: now,
-          notes: res.reason,
-          effectiveFrom: now,
-          effectiveTo: null,
-        });
-      }
-      rowsWritten += 1;
-    }
-  }
-  return { rowsWritten };
-}
-
-/** Roll up a project's persisted tracker_vs_qb across its active periods. */
-async function getTrackerVsQbForProject(
-  dbi: DbOrTx,
-  projectId: number,
-): Promise<{ status: ReconDisplayStatus; delta: number }> {
-  const rows = (await dbi
-    .select({
-      status: financialReconciliation.trackerVsQbStatus,
-      delta: financialReconciliation.trackerVsQbDelta,
-    })
-    .from(financialReconciliation)
-    .where(
-      and(
-        eq(financialReconciliation.projectId, projectId),
-        isNull(financialReconciliation.effectiveTo),
-      ),
-    )) as Array<{ status: string | null; delta: string | null }>;
-
-  const statuses = rows
-    .map((r) => r.status)
-    .filter((s): s is ReconStatus => s === "green" || s === "amber" || s === "red");
-  let signed = 0;
-  for (const r of rows) {
-    const d = r.delta != null ? Number(r.delta) : 0;
-    if (Number.isFinite(d)) signed += d;
-  }
-  return { status: worstStatus(statuses), delta: round2(signed) };
 }
 
 // ---------------------------------------------------------------------------
