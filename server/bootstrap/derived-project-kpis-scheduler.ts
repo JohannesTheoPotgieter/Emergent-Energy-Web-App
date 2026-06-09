@@ -32,6 +32,7 @@
 import { recomputeAllDerivedKpis } from "../services/derived-project-kpis-materializer";
 import { evaluateAppSchemaReadiness } from "./schema-readiness-runtime";
 import { formatPendingSummary, isSchemaBehind } from "../lib/schema-readiness";
+import { errMsg } from "../lib/api-error";
 
 const FIFTEEN_MIN_MS = 15 * 60 * 1000;
 const JITTER_MS = 30 * 1000; // ±30s jitter for multi-instance deployments
@@ -68,9 +69,10 @@ async function runOnce(): Promise<void> {
     lastRunProjectCount = count;
   } catch (err) {
     lastRunErrored = true;
-    console.error(
-      "[derived-project-kpis-scheduler] unhandled error during refresh:",
-      err,
+    // One concise line — the materializer already catches per-project, so this
+    // only fires on a whole-cycle fault. Never spam a full stack every tick.
+    console.warn(
+      `[derived-project-kpis-scheduler] refresh cycle failed: ${errMsg(err)}`,
     );
   } finally {
     lastRunFinishedAt = new Date().toISOString();

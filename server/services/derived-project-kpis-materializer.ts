@@ -61,6 +61,7 @@
  */
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "../db";
+import { errMsg } from "../lib/api-error";
 import {
   derivedProjectKpis,
   normalizedCostLines,
@@ -111,10 +112,10 @@ export async function recomputeAllDerivedKpis(): Promise<number> {
       await upsertDerivedKpiRow(computed);
       count += 1;
     } catch (err) {
-      // Best-effort: a single project failing must not block the rest.
+      // Best-effort: a single project failing must not block the rest. One
+      // concise warning per project — never a full stack dump every cycle.
       console.warn(
-        `[derived-project-kpis] failed to recompute project ${project.id}:`,
-        err,
+        `[derived-project-kpis] project ${project.id} skipped: ${errMsg(err)}`,
       );
     }
   }

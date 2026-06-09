@@ -3,6 +3,7 @@ import { requireAuth } from "../auth-context";
 import { requirePermission } from "../permission-middleware";
 import { getCompanyOverviewData } from "../services/company-overview-service";
 import { setFinanceTrustHeaders } from "../lib/finance-trust/envelope";
+import { sendFinanceError } from "../lib/api-error";
 
 export function registerCompanyOverviewRoutes(app: Express) {
   app.get("/api/company-overview", requireAuth, requirePermission("execution_board", "view"), async (_req, res) => {
@@ -16,8 +17,7 @@ export function registerCompanyOverviewRoutes(app: Express) {
       });
       res.json(data);
     } catch (err: unknown) {
-      console.error("[CompanyOverview] Error:", err instanceof Error ? err.message : String(err));
-      res.status(500).json({ error: "Failed to load company overview data" });
+      return sendFinanceError(res, "Failed to load company overview data", err);
     }
   });
 }

@@ -41,7 +41,7 @@ import { validateBody } from '../middleware/validateBody';
 // `res.status(500).json(...)` sites with `sendError(res, serverError(msg))`.
 // User-facing messages are preserved; the response shape now carries
 // `code` + (in dev) `detail` + traceId per server/lib/api-error.ts.
-import { sendError, serverError } from '../lib/api-error';
+import { sendError, serverError, sendFinanceError } from '../lib/api-error';
 
 // ── Finance write-surface Zod schemas (Phase 2b-PR2) ──
 // .passthrough() for now so existing UI payloads survive; tighten in a
@@ -6194,8 +6194,7 @@ async function revenueTrackerHandler(req: Request, res: Response) {
       nullCount: revenueNullCount,
     });
   } catch (error) {
-    console.error('Revenue tracker error:', error);
-    sendError(res, serverError('Failed to fetch revenue tracker data'));
+    return sendFinanceError(res, "revenue_tracker_failed", error);
   }
 }
 
@@ -6360,8 +6359,7 @@ router.get(
       });
       res.json(items);
     } catch (error) {
-      console.error('Revenue tracker month-detail error:', error);
-      sendError(res, serverError('Failed to fetch revenue tracker month detail'));
+      return sendFinanceError(res, "revenue_tracker_month_detail_failed", error);
     }
   },
 );

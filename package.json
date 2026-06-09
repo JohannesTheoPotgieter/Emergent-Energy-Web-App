@@ -19,6 +19,7 @@
     "db:migrate": "tsx scripts/drizzle-bootstrap.ts && drizzle-kit migrate",
     "db:check": "tsx scripts/db-check-drift.ts",
     "db:status": "tsx scripts/db-status.ts",
+    "verify:finance": "tsx server/scripts/verify-all-projects-reconciliation.ts",
     "check:agent-docs": "tsx scripts/check-agent-docs.ts",
     "reconcile:priority-links": "tsx scripts/reconcile-priority-links.ts",
     "diagnose:blast-radius:paiddate": "tsx scripts/blast-radius-paiddate.ts",

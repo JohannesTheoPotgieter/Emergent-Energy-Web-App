@@ -14,6 +14,7 @@ import { quickbooksInvoiceLinks, quickbooksDocuments } from "@shared/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
 import { effectiveAllocatedAmountExVat } from "@shared/config/qb-allocations";
+import { sendFinanceError } from "../lib/api-error";
 
 const requireAuth = sharedRequireAuth;
 
@@ -172,8 +173,7 @@ export function registerCashflow2026Routes(app: Express) {
 
       res.json(weeks);
     } catch (error) {
-      console.error("Cashflow 2026 error:", error);
-      res.status(500).json({ error: "Failed to fetch cashflow 2026 data", message: "Failed to fetch cashflow 2026 data" });
+      return sendFinanceError(res, "Failed to fetch cashflow 2026 data", error);
     }
   });
 
@@ -350,8 +350,7 @@ export function registerCashflow2026Routes(app: Express) {
 
       res.json({ outflows, inflows });
     } catch (error) {
-      console.error("Cashflow 2026 detail error:", error);
-      res.status(500).json({ error: "Failed to fetch cashflow detail", message: "Failed to fetch cashflow detail" });
+      return sendFinanceError(res, "Failed to fetch cashflow detail", error);
     }
   });
 
@@ -422,8 +421,7 @@ export function registerCashflow2026Routes(app: Express) {
       const allHistory = await storage.getAllBalanceHistory();
       res.json(allHistory);
     } catch (error) {
-      console.error("Balance history error:", error);
-      res.status(500).json({ error: "Failed to fetch balance history" });
+      return sendFinanceError(res, "Failed to fetch balance history", error);
     }
   });
 
@@ -477,8 +475,7 @@ export function registerCashflow2026Routes(app: Express) {
       const entries = await storage.getAllOpexBudgetMonthly();
       res.json(entries);
     } catch (error) {
-      console.error("OPEX budget fetch error:", error);
-      res.status(500).json({ error: "Failed to fetch OPEX budgets", message: "Failed to fetch OPEX budgets" });
+      return sendFinanceError(res, "Failed to fetch OPEX budgets", error);
     }
   });
 
@@ -591,8 +588,7 @@ export function registerCashflow2026Routes(app: Express) {
       const history = await storage.getAvailablePaymentHistory(weekStart);
       res.json(history);
     } catch (error) {
-      console.error("Available payment history error:", error);
-      res.status(500).json({ error: "Failed to fetch available payment history" });
+      return sendFinanceError(res, "Failed to fetch available payment history", error);
     }
   });
 }
