@@ -7,6 +7,7 @@ import { logAuditFromReq } from "./audit-logger";
 import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
 import { createVoApproval } from "./services/approval-service";
+import { getProjectGp, voGpImpact, evaluateVoGate } from "./services/vo-impact-service";
 import { z } from "zod";
 import { parseIntParam } from "./lib/req-params";
 
@@ -179,6 +180,9 @@ export function registerChangeControlRoutes(app: Express): void {
       const old = existing[0];
 
       const updates: Record<string, unknown> = { updatedAt: new Date() };
+      // VO 5%-of-GP gate outputs surfaced to the caller (null unless this PATCH submits a VO).
+      let voGate: Record<string, unknown> | null = null;
+      const voWarnings: string[] = [];
       const parsed = updateChangeRequestSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
       const { title, description, changeType, ownerUserId, impactSummary, costImpact, scheduleImpactDays, status,
@@ -250,37 +254,81 @@ export function registerChangeControlRoutes(app: Express): void {
         if (status === 'submitted') {
           try {
             const user = getEffectiveUser(req);
-            // B8: Use universal approval service with VO-specific metadata
-          const revImpact = Number(old.revenueImpact || parsed.data.revenueImpact || old.costImpact || 0);
 
-          // Resolve approver from project_access (canApprove = true) for this project
-          const [approverRow] = await db
-            .select({ userId: projectAccess.userId })
-            .from(projectAccess)
-            .where(
-              and(
-                eq(projectAccess.projectId, old.projectId),
-                eq(projectAccess.canApprove, true),
-                isNull(projectAccess.deletedAt),
-              ),
-            )
-            .limit(1);
+            // BR-025/026 — 5%-of-GP gate. Size the VO's GP impact (revenue −
+            // COS delta, from the merged post-update values) against the
+            // project's canonical (§3.3) GP, and FREEZE the decision onto the
+            // row so finance and execution read the same gate state.
+            const mergedCr = {
+              revenueImpact: (updates.revenueImpact ?? old.revenueImpact) as string | null,
+              cosImpact: (updates.cosImpact ?? old.cosImpact) as string | null,
+              costImpact: (updates.costImpact ?? old.costImpact) as string | null,
+              cause: (updates.cause ?? old.cause) as string | null,
+            };
+            let projectGp = 0;
+            try {
+              projectGp = await getProjectGp(old.projectId);
+            } catch (gpErr) {
+              console.warn(
+                "[ChangeControl] project GP lookup failed; gating conservatively:",
+                gpErr instanceof Error ? gpErr.message : String(gpErr),
+              );
+            }
+            const gpImpact = voGpImpact(mergedCr);
+            const gate = evaluateVoGate(gpImpact, projectGp);
+            updates.requiresManagementReview = gate.exceedsThreshold;
+            updates.gpImpactPctAtSubmit = gate.gpImpactPct != null ? String(gate.gpImpactPct) : null;
+            voGate = {
+              gpImpact,
+              projectGp,
+              gpImpactPct: gate.gpImpactPct,
+              requiresManagementReview: gate.exceedsThreshold,
+              thresholdPct: 0.05,
+            };
+            // RCA is a soft requirement (§0A): flag, do NOT block submit.
+            if (gate.exceedsThreshold && !(mergedCr.cause && String(mergedCr.cause).trim())) {
+              voWarnings.push(
+                "This VO exceeds 5% of project GP (BR-026): management review applies and a root-cause (cause/RCA) is recommended.",
+              );
+            }
 
-          const approverUserId = approverRow?.userId ?? null;
-          if (!approverUserId) {
-            console.warn(
-              `[ChangeControl] No approver with canApprove=true found for project ${old.projectId}, change request ${old.id}`,
-            );
-          }
+            const revImpact = Number(old.revenueImpact || parsed.data.revenueImpact || old.costImpact || 0);
 
-          const approval = await createVoApproval({
-            projectId: old.projectId,
-            changeRequestId: old.id,
-            requestedByUserId: user?.id ?? 0,
-            approverUserId,
-            title: `Change Request: ${old.title}`,
-            revenueImpact: revImpact || undefined,
-          });
+            // Routing (BR-025/026): ≤5% stays PM-approvable (the project's
+            // canApprove holder); >5% is escalated — leave the approver
+            // unassigned so the universal approval policy's VO management roles
+            // (COO / CEO / CFO / Programme*) own the decision (approvals-routes.ts).
+            let approverUserId: number | null = null;
+            if (!gate.exceedsThreshold) {
+              const [approverRow] = await db
+                .select({ userId: projectAccess.userId })
+                .from(projectAccess)
+                .where(
+                  and(
+                    eq(projectAccess.projectId, old.projectId),
+                    eq(projectAccess.canApprove, true),
+                    isNull(projectAccess.deletedAt),
+                  ),
+                )
+                .limit(1);
+              approverUserId = approverRow?.userId ?? null;
+              if (!approverUserId) {
+                console.warn(
+                  `[ChangeControl] No approver with canApprove=true found for project ${old.projectId}, change request ${old.id}`,
+                );
+              }
+            }
+
+            const approval = await createVoApproval({
+              projectId: old.projectId,
+              changeRequestId: old.id,
+              requestedByUserId: user?.id ?? 0,
+              approverUserId,
+              title: gate.exceedsThreshold
+                ? `Change Request (>5% GP — management review): ${old.title}`
+                : `Change Request: ${old.title}`,
+              revenueImpact: revImpact || undefined,
+            });
             updates.approvalId = approval.id;
           } catch (approvalErr: unknown) {
             const msg = approvalErr instanceof Error ? approvalErr.message : String(approvalErr);
@@ -312,7 +360,7 @@ export function registerChangeControlRoutes(app: Express): void {
           idempotencyKey: `change-status:${id}:${old.status}:${updates.status}`,
         });
       }
-      res.json(result[0]);
+      res.json({ ...result[0], voGate, warnings: voWarnings });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("[ChangeControl] Update error:", message);

@@ -239,6 +239,12 @@ const MODERN_MIGRATION_PROBES: Record<
   // still has the table.
   "0100_drop_vat_period_locks": async (c) =>
     !(await tableExists(c, "vat_period_locks")),
+  // 0101 adds the VO 5%-of-GP gate columns (requires_management_review +
+  // gp_impact_pct_at_submit) to change_requests. Probe the tail column so a
+  // partial apply replays rather than being presumed complete.
+  "0101_vo_management_review_flag": async (c) =>
+    (await columnExists(c, "change_requests", "requires_management_review")) &&
+    (await columnExists(c, "change_requests", "gp_impact_pct_at_submit")),
 };
 
 async function tableExists(client: Client, table: string): Promise<boolean> {

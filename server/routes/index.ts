@@ -6,6 +6,7 @@ import { registerQuickBooksRoutes } from '../quickbooks-routes';
 import { registerQuickBooksInvoiceMatchRoutes } from './quickbooks-invoice-matches.routes';
 import { registerFinanceTrustRoutes } from './finance-trust-routes';
 import { registerFinanceLinesRoutes } from './finance-lines.routes';
+import { registerFinanceVoImpactRoutes } from './finance-vo-impact.routes';
 import { registerPdIntakeRoutes } from './pd-intake.routes';
 import { registerImpactRoutes } from './impact.routes';
 import { registerEmailLinksRoutes } from './email-links.routes';
@@ -37,6 +38,7 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerQuickBooksInvoiceMatchRoutes(app);
   registerFinanceTrustRoutes(app);
   registerFinanceLinesRoutes(app);
+  registerFinanceVoImpactRoutes(app);
   registerPdIntakeRoutes(app);
   // registerControlledDocumentRoutes(app); — retired in D6 Phase 5.
   registerImpactRoutes(app);
