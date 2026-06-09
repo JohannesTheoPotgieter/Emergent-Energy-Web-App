@@ -1,0 +1,86 @@
+ROLE: You are doing a RUNTIME source-of-truth audit of the finance function in this
+repo. The goal is to prove — against the LIVE database and the RUNNING app — that
+every finance number and every project-level finance number resolves to its declared
+canonical source, with no drift. DO NOT change any business logic, schema, or data.
+This is a report-only task. Boot the app, query the DB, hit the endpoints, compare,
+and produce a written reconciliation report.
+
+USE THE REPO AS SOURCE OF TRUTH. Before computing anything, read these files and treat
+them as the contract:
+  - server/lib/reconciliation/selected-truth-registry.ts   ← canonical KPI formulas (THE anchor)
+  - server/services/source-of-truth-policy.ts
+  - shared/schema/finance.ts and shared/schema/projects.ts  ← table/column definitions
+  - server/repositories/finance-line-level-repository.ts    ← per-line revenue/GP formula
+  - server/services/project-header-kpi-service.ts           ← project header KPIs
+  - server/services/canonical-dashboard-kpi-service.ts      ← dashboard aggregates
+  - qa/tests/unit/finance-snapshot-guards.test.ts           ← the invariants that must hold
+
+CANONICAL RULES YOU MUST ENFORCE IN EVERY QUERY (these are HARD):
+  1. Every aggregate over a temporal/snapshot table MUST filter `effective_to IS NULL`.
+     Snapshot tables include: normalized_cost_lines, normalized_revenue_lines,
+     normalized_cost_line_actuals, cashflow_points, finance_revenue_monthly,
+     finance_cos_monthly, category_revenue_allocations, project_revenue_summary,
+     tracker_revenue_summary.
+  2. Where a soft-delete column exists, also filter `deleted_at IS NULL`. Note that some
+     tables still use isActive/deletedFlag instead — flag any inconsistency you find.
+  3. Per-line revenue formula = (actualTotal / categoryTotalActual) × categoryRevenueAllocation,
+     summed per project. Per-line GP = perLineRevenue − actualTotal. No cross-project pooling.
+
+PART A — KPI registry reconciliation (app-wide numbers)
+For EACH entry in KPI_REGISTRY (revenue_realised, revenue_invoiced, revenue_planned,
+cos_realised, cos_committed, cos_budgeted, gross_profit_realised, cashflow_net,
+tracker_vs_app_drift, invoice_without_po, unmatched_cost_invoices, active_projects):
+  1. Compute the value THREE ways and show all three:
+       (a) RAW SQL exactly as the registry `formula` string specifies, run against the live DB.
+       (b) The value the RUNNING APP returns — hit the actual API endpoint / call the
+           service that surfaces this KPI (e.g. the dashboard/programme/reconciliation routes).
+       (c) The DERIVED/snapshot table value if one exists (finance_revenue_monthly,
+           finance_cos_monthly, project_revenue_summary rollups).
+  2. Report: KPI key, the three values, the deltas between them, PASS if all agree within
+     R1 tolerance, FAIL otherwise. For any FAIL, show the offending rows and your hypothesis.
+  3. Confirm the registry's snapshot/soft-delete guards are actually present in the code path
+     that serves (b). Flag any KPI where the live query omits `effective_to IS NULL` or
+     `deleted_at IS NULL`.
+
+PART B — Project-level reconciliation (walk EVERY project)
+For EVERY project in project_info, build one row and reconcile these numbers:
+  - contractValue (project_info)
+  - revenue: total / invoiced / realised  (SUM amount_ex_vat from normalized_revenue_lines,
+    snapshot-guarded, by status)
+  - cost: budgeted / committed / realised (SUM amount_ex_vat from normalized_cost_lines,
+    snapshot-guarded, by status + invoice presence)
+  - gross profit & margin (per-line formula summed, vs project_revenue_summary.actualProfit /
+    actualMargin)
+  - margin baseline (priority: budget_baselines.marginBaseline > project_execution_state.marginBaseline
+    > project_revenue_summary.plannedMargin) — confirm scale is 0–100, not 0–1.
+For each project, compare:
+  (a) canonical lines computed via raw SQL,
+  (b) what finance-line-level-repository / project-header-kpi-service returns at runtime,
+  (c) the project_revenue_summary snapshot row (effective_to IS NULL).
+Output a per-project table: projectId, name, the figures, and PASS/FAIL per figure with deltas.
+Call out any project where (a), (b), (c) disagree beyond R1.
+
+PART C — Snapshot integrity sweep
+  1. For each snapshot table above, report row counts split by effective_to IS NULL vs NOT NULL,
+     and confirm there is exactly ONE active (effective_to IS NULL) row per natural key
+     (e.g. per (projectId, rowHash); per project for project_revenue_summary). List any
+     duplicates — duplicate active rows = double-counting risk.
+  2. Re-run the assertions in finance-snapshot-guards.test.ts against live data and confirm none
+     regress.
+  3. Grep every finance aggregation query in server/ for SUM/COUNT over a snapshot table that is
+     MISSING `effective_to IS NULL` (or `deleted_at IS NULL` where applicable). List file+line.
+
+PART D — Known soft spots (verify these specifically)
+  - cashflow_net and unmatched_cost_invoices are registry-flagged hasKnownGaps/medium — quantify
+    exactly what is missing or unverifiable for each.
+  - Soft-delete inconsistency: list every finance table still using isActive/deletedFlag instead of
+    deleted_at, and whether any aggregate reads them incorrectly.
+  - PostgreSQL vs SQLite branch parity in canonical-dashboard-kpi-service.ts — confirm BOTH branches
+    apply effective_to IS NULL AND deleted_at IS NULL.
+
+OUTPUT
+A single Markdown report with: (1) a top-line GREEN/AMBER/RED verdict on whether finance can be
+frozen for 6 months, (2) the Part A KPI table, (3) the Part B per-project table, (4) the Part C
+integrity findings, (5) the Part D soft-spot findings, and (6) a prioritised list of any
+discrepancies with file/line references and exact rand deltas. Do NOT modify code, schema, or
+data — if you find a bug, describe it; do not fix it.
