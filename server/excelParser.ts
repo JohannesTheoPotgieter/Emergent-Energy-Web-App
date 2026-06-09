@@ -10,8 +10,8 @@
 import ExcelJS from "exceljs";
 import type {
   InsertProjectInfo,
-  InsertProgramExpense,
-  InsertProgramInflows,
+  InsertExpenseLine,
+  InsertInflowLine,
   InsertProjectPlan,
   InsertCashflowPoint,
   InsertFinanceRevenueMonthly,
@@ -21,8 +21,8 @@ import type {
 export interface ParseResult {
   projectName: string;
   projectInfo: InsertProjectInfo | null;
-  expenses: InsertProgramExpense[];
-  inflows: InsertProgramInflows[];
+  expenses: InsertExpenseLine[];
+  inflows: InsertInflowLine[];
   planItems: InsertProjectPlan[];
   cashflowPoints: InsertCashflowPoint[];
   financeRevenueMonthly: InsertFinanceRevenueMonthly[];
@@ -271,8 +271,8 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
   await workbook.xlsx.load(buffer as any);
 
   let projectInfo: InsertProjectInfo | null = null;
-  const expenses: InsertProgramExpense[] = [];
-  const inflows: InsertProgramInflows[] = [];
+  const expenses: InsertExpenseLine[] = [];
+  const inflows: InsertInflowLine[] = [];
   const planItems: InsertProjectPlan[] = [];
 
   const sheetNames = workbook.worksheets.map(ws => ws.name);
@@ -1192,7 +1192,7 @@ export async function extractFontColors(buffer: Buffer): Promise<Map<string, { i
   return colorMap;
 }
 
-export async function applyFontColors(expenses: InsertProgramExpense[], buffer: Buffer): Promise<InsertProgramExpense[]> {
+export async function applyFontColors(expenses: InsertExpenseLine[], buffer: Buffer): Promise<InsertExpenseLine[]> {
   const colorMap = await extractFontColors(buffer);
   
   for (const exp of expenses) {

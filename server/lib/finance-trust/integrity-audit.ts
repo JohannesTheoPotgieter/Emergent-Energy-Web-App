@@ -53,14 +53,14 @@ export interface FinanceIntegrityReport {
  */
 const LEGACY_DEPENDENCY_MAP: FinanceLegacyDependency[] = [
   {
-    path: "shared/schema/finance.ts#ProgramExpense interface",
+    path: "shared/schema/finance.ts#ExpenseLine interface",
     kind: "schema_type",
     status: "deprecated",
     notes:
       "PE compat type used by legacy cashflow, revenue tab, and dashboard consumers. Read-only adapter over normalized_cost_lines.",
   },
   {
-    path: "shared/schema/finance.ts#ProgramInflows interface",
+    path: "shared/schema/finance.ts#InflowLine interface",
     kind: "schema_type",
     status: "deprecated",
     notes: "PI compat type; adapter over normalized_revenue_lines.",
