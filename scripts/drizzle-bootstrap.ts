@@ -165,14 +165,10 @@ const MODERN_MIGRATION_PROBES: Record<
     (await tableExists(c, "qb_link_proposed_cascade_history")) &&
     (await tableExists(c, "project_hold_metadata")) &&
     (await tableExists(c, "project_stage_exception_history")) &&
-    (await columnExists(c, "folder_taxonomy", "lifecycle_mode")) &&
-    // Tail artifact (the migration's final statement) so a partial apply that
-    // fails near the end is not falsely presumed complete.
-    (await tableExists(c, "vat_period_locks")) &&
-    (await constraintExists(
-      c,
-      "vat_period_locks_unlocked_by_user_id_users_id_fk",
-    )),
+    // 0089's original tail artifact (vat_period_locks + its FK) was dropped in
+    // 0100; the six tables above + this column remain a robust multi-artifact
+    // canary that 0089 ran to (near) completion.
+    (await columnExists(c, "folder_taxonomy", "lifecycle_mode")),
   // 0090 adds fiscal_period_id (+ FK) to four finance manual/budget tables.
   // Probe the migration's final statement (the tracker_monthly_manual FK) so a
   // partial apply replays rather than being presumed complete.
@@ -236,6 +232,13 @@ const MODERN_MIGRATION_PROBES: Record<
   "0099_drop_tracker_vs_qb_columns": async (c) =>
     !(await columnExists(c, "financial_reconciliation", "tracker_vs_qb_status")) &&
     !(await columnExists(c, "financial_reconciliation", "tracker_vs_qb_delta")),
+  // 0100 DROPS the retired vat_period_locks table (VAT is handled entirely in
+  // QuickBooks). For a DROP migration, "applied" means the artifact is GONE, so
+  // the canary returns true only once the table no longer exists — forcing
+  // drizzle-kit migrate to run the drop on an existing presumed-applied DB that
+  // still has the table.
+  "0100_drop_vat_period_locks": async (c) =>
+    !(await tableExists(c, "vat_period_locks")),
 };
 
 async function tableExists(client: Client, table: string): Promise<boolean> {
