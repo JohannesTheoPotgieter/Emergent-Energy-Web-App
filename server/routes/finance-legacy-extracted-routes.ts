@@ -626,7 +626,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
           // Override data now baked into base rows
         }
       } else {
-        inflows = await storage.getAllProgramInflows();
+        inflows = await storage.getAllRevenueLinesForCashflow();
         // RLS: filter to accessible projects
         const { resolveProjectScope, isProjectAccessibleByName } = await import("../services/project-access-service");
         const infUser = (req as any).user;

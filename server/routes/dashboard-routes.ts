@@ -78,7 +78,7 @@ export function registerDashboardRoutes(app: Express) {
       const [allProjectInfo, legacyExpenses, legacyRawInflows, legacyRawPlans, allPlanOverrides, allTaskLinks, allOpTasks, inBankOverrides] = await Promise.all([
         storage.getAllProjectInfo(),
         getCanonicalAllCurrentCostLines(),
-        storage.getAllProgramInflows(),
+        storage.getAllRevenueLinesForCashflow(),
         storage.getAllProjectPlans(),
         Promise.resolve([] as any[]),
         storage.getAllMilestoneTaskLinks(),

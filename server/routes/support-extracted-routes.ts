@@ -68,7 +68,7 @@ function validateWorkbookPath(wbPath: string): { safe: boolean; resolved: string
 async function buildDataByEntity(): Promise<Record<string, any[]>> {
   const projects = await storage.getAllProjects();
   const expenses = await storage.getAllExpenses();
-  const inflows = await storage.getAllProgramInflows();
+  const inflows = await storage.getAllRevenueLinesForCashflow();
   return { project: projects, expense: expenses, inflow: inflows, plan: [] };
 }
 
@@ -279,7 +279,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
 
   app.get("/api/export/revenues", requireAuth, async (req, res) => {
     try {
-      const revenues = await storage.getAllProgramInflows();
+      const revenues = await storage.getAllRevenueLinesForCashflow();
       const csv = generateCSV(revenues, [
         "id", "projectName", "milestoneNo", "milestoneName",
         "milestoneAmount", "plannedPaymentDate", "milestoneInvoiceNumber",
