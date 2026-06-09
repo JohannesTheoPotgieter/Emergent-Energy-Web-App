@@ -1,2 +1,5 @@
-- [Finance empty-data / 500 causes](finance-empty-data-causes.md) — recon board "No data" = empty fiscal_periods; company-overview 500 = handover_packs missing migrated columns (db drift).
-- [Finance runtime audit harness](finance-runtime-audit.md) — dev-login→Bearer JWT; dev UI cookie-auth broken (inject Bearer header); prod read-only via claude_views; PRS mis-key ~R200M cross-surface, worse in prod.
+# Memory Index
+
+- [Dev DB schema drift](dev-db-drift.md) — ledger can say "all migrations applied" while columns are absent; root-cause via Postgres 42703 and re-apply idempotent ALTERs to dev only.
+- [Playwright / long gates in this container](playwright-and-gates.md) — bundled Chromium misses libglib; use REPLIT_PLAYWRIGHT_CHROMIUM_EXECUTABLE + --no-sandbox; detached bash jobs die across calls — use the validation runner.
+- [strict-runtime-config test env leak](strict-runtime-config-test.md) — fails in Replit containers because PGHOST fallback synthesises DATABASE_URL; not an app bug.

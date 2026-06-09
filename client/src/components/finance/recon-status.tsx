@@ -80,13 +80,18 @@ export function ReconStatusChip({
   status: ReconDisplayStatus;
   className?: string;
 }) {
-  const m = RECON_STATUS_META[status];
+  // Guard: a missing or out-of-enum status must render a safe "No data" chip
+  // rather than throw `TypeError: Cannot read properties of undefined (reading 'icon')`
+  // and trip the page ErrorBoundary.
+  const safeStatus: ReconDisplayStatus =
+    status != null && status in RECON_STATUS_META ? status : "unknown";
+  const m = RECON_STATUS_META[safeStatus];
   const Icon = m.icon;
   return (
     <Badge
       variant="outline"
       className={cn("gap-1 text-xs font-medium", m.chip, className)}
-      data-testid={`recon-status-${status}`}
+      data-testid={`recon-status-${safeStatus}`}
       title={m.meaning}
     >
       <Icon className="h-3.5 w-3.5" aria-hidden="true" />

@@ -1,0 +1,113 @@
+You are working on the Emergent Energy financial reporting tool (React 19, wouter, Express, Drizzle, Postgres) on REPLIT, against production-like data.
+
+GOAL: a complete runtime + functional + UX QA of the FINANCE front end. For every finance screen, drive every meaningful interaction in an authenticated headless browser and ASSERT the expected outcome (HTTP status, UI change, persistence on reload, audit row, correct numbers). Produce a pass/fail matrix and a defect register, and fix the small/safe defects.
+
+RULES
+- This is QA: REPORT everything; FIX only small/safe UI defects (null-guards, missing states, broken handlers, hydration/DOM-nesting, label/a11y); RAISE larger/data ones with a clear repro. Do NOT change finance calculations or production data.
+- Branch: chore/finance-fe-full-qa. Deliver docs/finance-fe-qa-report.md (matrix + register) and the safe fixes.
+- Done = `npm run check`, `npm run test`, `npm run build`, `npm run test:smoke` pass (paste output) + the QA report.
+- Auth: drive the SUPPORTED login flow; if the dev cookie flow is broken (known auth-contract defect), fix it or use the documented workaround, and note it.
+- Anchor: use the 5 golden projects (Mondi, Coega Steels Ph2, Unitrans Brackenfell, De Drift, Seshego Circle) and the golden values from qa/fixtures/golden-trackers-5.json (Prompt 1) for the correctness checks.
+
+============================================================
+A. GLOBAL CHECKS — apply to EVERY finance screen
+============================================================
+For each route, on load AND after each interaction, capture and assert:
+1. No uncaught JS errors; no React ErrorBoundary trip; no red console errors.
+2. No React hydration / DOM-nesting warnings.
+3. No network 4xx/5xx (except intentional 423 lock responses, which must be handled gracefully in the UI).
+4. The shared states render correctly: loading (skeleton/spinner, not blank), error (the shared "couldn't load — retry" card, and Retry actually refetches), empty (shared empty-state, not a blank panel or a spinner-forever).
+5. Brand consistency: tokens not raw hex; the shared page-header present; numbers via the shared money formatter; status via the shared trust/status badge.
+6. Responsive: usable at ~1280px and ~768px (no overflow/clipping of key controls).
+7. Accessibility: icon-only buttons have aria-labels; status never colour-only (icon/label paired); dialogs/drawers trap focus and close on Esc; primary flows keyboard-navigable.
+(Ignore as non-defects: logout and back-to-dashboard navigations.)
+
+============================================================
+B. PER-SCREEN FUNCTIONAL MATRIX — drive each action, assert the result
+============================================================
+For EACH screen below: (i) load, (ii) drive each listed action, (iii) assert the expected outcome, (iv) force the listed states.
+
+1. FINANCE HOME (/finance or finance-home)
+   - Actions: the four headline tiles populate (GP this month, revenue vs FY target, cash this week, tracker-vs-QB); click each tile → drills to the right screen; per-project health list renders and sorts; "Reconciliation board" link works.
+   - Assert: GP/revenue/cash values are non-placeholder and consistent with the project list; the FY-target tile shows "provisional" if no board target set.
+   - States: a project with no current-month data shows the empty/"no tracker data" state, not 0-as-error.
+
+2. COST OF SALES (/finance/cos, cos.tsx) + COS line review
+   - Actions: FY/period filter changes refetch; open a project's COS lines; per-line review — MOVE PERIOD, SET INVOICE DATE, REMOVE (soft-close), OVERRIDE STATUS (Planned/Committed/Realised), TOGGLE REALISED.
+   - Assert: each edit returns 2xx, the row updates in the UI, the change PERSISTS on reload, and an audit entry exists; a lock-relevant edit into a LOCKED month returns 423 and the UI shows the override path (COO/CFO/CEO + reason) — and a non-privileged user is blocked.
+   - Flags: allocation-missing (R2), invoice↔PO mismatch (R3), ≥8× anomaly (R4) render on the right lines.
+   - Correctness: a golden project's COS total on screen == golden COS within R1.
+
+3. REVENUE (/finance/revenue, revenue-tracker/revenue-tracking)
+   - Actions: open revenue lines; DISPUTE open/resolve; WRITE-OFF (authorised); inline edits if present.
+   - Assert: 2xx + persist + audit; a golden project's revenue total == golden revenue within R1; derived vs stored (recon_delta) is visible.
+
+4. GROSS PROFIT (/finance/gp, finance-gp / finance-gp-company)
+   - Actions: project + company GP views; filters.
+   - Assert: GP = REV − COS on screen; golden project GP matches within R1; company GP ties to the sum of projects.
+
+5. FYE TRACKING (fye-revenue-tracking)
+   - Actions: dashboard + projects; edit a revised-budget cell.
+   - Assert: edit is lock-checked + attributed (no null user); persists + audits; monthly series matches the golden monthly REV/COS/GP.
+
+6. CASHFLOW (/finance/cashflow, cashflow.tsx) + WEEKLY CLOSE
+   - Actions: weekly grid loads; PAYMENT PLANNER — model moving a payment date (does NOT persist until applied), then APPLY (persists via the audited, lock-aware date-override); opening-balance / opex / available-payment overrides (lock-aware); "available this week" + "paying this week" lists.
+   - Assert: model is local-only until Apply; Apply → 2xx + persist + audit; lock-month override blocked unless privileged; AR schedule (raised, unpaid, overdue) and missing-supplier-invoice list render with real rows; cash ≠ revenue is never conflated.
+
+7. RECONCILIATION BOARD (/finance/reconciliation)
+   - Actions: portfolio loads with per-project app-vs-tracker status; open a project → drawer → drill to offending line → source cell; Refresh recomputes.
+   - Assert: KNOWN DEFECT — the ReconStatusChip crash (TypeError reading 'icon'): guard it so a missing/unknown status renders a safe chip, no ErrorBoundary trip. A golden project that ties shows green; a seeded drift shows amber and names the line.
+
+8. QB RECONCILIATION (/finance/qb-reconciliation)
+   - Actions: period selector Day/Week/Month switches the data; REV/COS/GP tiles; variance/unmatched/timing worklist sorts; open a recon-ignore (shows by-whom/why).
+   - Assert: switching grain refetches and totals change coherently; a seeded amount-variance is top of the worklist; company REV/COS/GP for the period are plausible vs the golden monthly series.
+
+9. PROJECT FINANCE DETAIL (finance-project-detail / project-detail finance tabs)
+   - Actions: open a golden project; per-line derived/stored/delta, realised vs committed, colour state; drill any total → lines → source cell.
+   - Assert (TRUST CHECK): the project's REV/COS/GP here == the same project on the finance pages AND the reconciliation board within R1 (catches the parallel-UI divergence). Flag any mismatch loudly.
+
+10. PROCURE-TO-PAY
+   - POs (/finance PO board): generate PO → PDF renders; submit → approve → delegate; board "my reviews".
+   - Invoice capture: capture an invoice → links to PO/project; pattern classify runs.
+   - Payment requests → board → review; payment batches → submit → ManCo approve → release → confirm → proof-of-payment.
+   - Assert: each state transition is enforced (can't skip), returns 2xx, persists, audits; a confirmed batch flips the linked requests to complete.
+
+11. SMART IMPORT (smart-import) — the weekly loop
+   - Actions: upload/select a tracker → preview + reconcile diff → COMMIT (lock-aware) → a parked (awaiting_review) run is reviewable; reject.
+   - Assert: numbers don't change until commit; a locked-period commit parks/blocks with reason; over-wipe (>80% soft-close) is blocked; reject leaves data untouched + audited.
+
+12. INVOICE PATTERNS, FINANCE AUDIT PREP, ADMIN/MAPPING screens
+   - Actions: list/create/edit a pattern; classify; auditor export downloads.
+   - Assert: CRUD works + audits; export produces a file with the expected columns.
+
+============================================================
+C. END-TO-END JOURNEYS (drive the whole flow, assert each step)
+============================================================
+J1 Monday close: Finance Home → COS tracker → move a May cost line to June (lock-aware) → set an invoice date → check "missing invoices" → re-import preview → commit → numbers update consistently across Home/COS/board.
+J2 Cash week: Cashflow → "paying this week" → model moving a payment → apply → AR overdue → missing supplier invoices.
+J3 Reconcile: Reconciliation board (a green + an amber project) → drill the amber to the line → QB Reconciliation for the month → a variance → open its ignore.
+J4 Pay run: PO board → generate/approve a PO → capture its invoice → payment request → batch → submit → approve → release → confirm.
+For each: every step works, persists, audits; numbers stay consistent end-to-end.
+
+============================================================
+D. DATA-CORRECTNESS & CONSISTENCY (through the UI)
+============================================================
+- For each of the 5 golden projects: the REV/COS/GP shown on Finance pages, project detail, and the reconciliation board all equal each other AND the golden value within R1. Record a 5×(3 screens) matrix.
+- Company totals on screen are plausible vs golden company totals; flag if the UI shows anything near the corrupt R416M (it should not, post-fix).
+- Drill-downs sum to their totals (a category's lines sum to the category; project sums to portfolio).
+
+============================================================
+E. PERMISSIONS / ROLES (UI gating)
+============================================================
+- For at least: a viewer, a PFM/finance editor, and a COO/CFO — assert the finance nav entries and the per-action controls (realise, override, lock, commit, payment approve) show/hide and enforce correctly server-side (the UI must not offer an action the role can't perform, and the API must reject it if forced).
+
+============================================================
+F. OUTPUT
+============================================================
+Write docs/finance-fe-qa-report.md:
+- A PASS/FAIL matrix: rows = screens/journeys, columns = load · interactions · states · correctness · a11y.
+- A DEFECT REGISTER: id, severity (P0 blocks sign-off … P3 polish), screen, exact repro, network/console evidence, root cause if known, fix-applied vs raised, owner.
+- A summary: is finance usable and correct through the UI end-to-end? List the P0/P1s that block the front-end sign-off.
+Fix the safe defects in this PR (at minimum the ReconStatusChip crash, hydration/DOM-nesting warnings, the dev auth flow, and any missing loading/error/empty state). Raise the rest.
+
+ACCEPTANCE: every finance route + the 4 journeys driven with the matrix filled; every primary action asserted (status + persistence + audit + correctness); the 5-project consistency matrix complete; safe defects fixed; a complete defect register with severities; smoke green.

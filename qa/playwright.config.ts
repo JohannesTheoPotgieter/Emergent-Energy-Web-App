@@ -7,7 +7,7 @@ export default defineConfig({
   retries: 1,
   workers: 1,
   reporter: [
-    ["html", { outputFolder: "artifacts/e2e/report" }],
+    ["html", { outputFolder: "artifacts/e2e/report", open: "never" }],
     ["json", { outputFile: "reports/e2e-results.json" }],
   ],
   outputDir: "artifacts/e2e/results",
@@ -16,6 +16,12 @@ export default defineConfig({
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
+    launchOptions: {
+      ...(process.env.REPLIT_PLAYWRIGHT_CHROMIUM_EXECUTABLE
+        ? { executablePath: process.env.REPLIT_PLAYWRIGHT_CHROMIUM_EXECUTABLE }
+        : {}),
+      args: ["--no-sandbox"],
+    },
   },
   projects: [
     {
