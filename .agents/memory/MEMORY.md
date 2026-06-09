@@ -1,2 +1,2 @@
 - [Finance empty-data / 500 causes](finance-empty-data-causes.md) — recon board "No data" = empty fiscal_periods; company-overview 500 = handover_packs missing migrated columns (db drift).
-- [Finance runtime audit harness](finance-runtime-audit.md) — dev-login→exchange-code for Bearer JWT; screenshot tool is unauthenticated; PRS mis-key makes finance numbers disagree ~R200M cross-surface.
+- [Finance runtime audit harness](finance-runtime-audit.md) — dev-login→Bearer JWT; dev UI cookie-auth broken (inject Bearer header); prod read-only via claude_views; PRS mis-key ~R200M cross-surface, worse in prod.
