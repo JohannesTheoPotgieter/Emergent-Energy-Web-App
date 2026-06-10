@@ -26,6 +26,7 @@
     "check:agent-docs": "tsx scripts/check-agent-docs.ts",
     "qa:role-audit": "tsx scripts/generate-role-permission-audit.ts",
     "reconcile:priority-links": "tsx scripts/reconcile-priority-links.ts",
+    "report:qb-project-match": "tsx server/scripts/qb-project-match-report.ts",
     "diagnose:blast-radius:paiddate": "tsx scripts/blast-radius-paiddate.ts",
     "test": "vitest run -c qa/vitest.config.ts --exclude 'qa/tests/api/**' --exclude 'qa/tests/e2e/**' --exclude 'qa/tests/integration/**'",
     "test:api": "tsx script/run-with-app.ts \"vitest run -c qa/vitest.config.ts --no-file-parallelism qa/tests/api\"",
