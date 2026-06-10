@@ -136,7 +136,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "cashflowAnalysis", path: "/cashflow/analysis", label: "Cashflow Analysis", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "cashflow", showInSidebar: false, routeComponentKey: "CashflowAnalysisPage" },
   { id: "cos", path: "/cos", label: "COS", iconKey: "TrendingUp", navGroup: "FINANCE", permissionEntity: "cos", showInSidebar: true, routeComponentKey: "CostTracker" },
   { id: "cosAnalysis", path: "/cos/analysis", label: "COS Analysis", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "cos", showInSidebar: false, routeComponentKey: "CosAnalysisPage" },
-  { id: "revenueTracker", path: "/revenue-tracker", label: "Revenue", iconKey: "TrendingUp", navGroup: "FINANCE", permissionEntity: "revenue_tracker", showInSidebar: true, routeComponentKey: "RevenueTrackerPage" },
+  { id: "revenueTracker", path: "/revenue-tracker", label: "Revenue", iconKey: "TrendingUp", navGroup: "FINANCE", permissionEntity: "revenue_tracker", showInSidebar: true, routeComponentKey: "RevenueTrackerPage", aliases: ["/finance/revenue"] },
   { id: "fyeRevenueTracking", path: "/fye-revenue-tracking", label: "FYE Tracking", iconKey: "CalendarRange", navGroup: "FINANCE", permissionEntity: "fye_revenue_tracking", showInSidebar: true, routeComponentKey: "FyeRevenueTrackingPage" },
   { id: "financeGpCompany", path: "/finance/gp/company", label: "GP", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceGpCompanyPage" },
   { id: "financeGp", path: "/finance/gp", label: "GP — by project", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: false, routeComponentKey: "FinanceGpPage" },
