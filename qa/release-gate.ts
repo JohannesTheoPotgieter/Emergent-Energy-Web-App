@@ -33,6 +33,14 @@ const SKIP_SMOKE = process.env.SKIP_SMOKE_TESTS === "true";
 
 const REQUIRED_COMMAND_CHECKS = [
   { name: "Type check", command: "npm run check" },
+  // Ledger-independent schema proof: every table/column declared in
+  // shared/schema must actually exist in the live DB. Catches the
+  // "migration recorded as applied but DDL never ran" class (0071,
+  // 0090–0096). Postgres-only — skipped when DATABASE_URL is absent
+  // (SQLite dev fallback keeps itself current via the additive bootstrap).
+  ...(process.env.DATABASE_URL
+    ? [{ name: "Live schema verification", command: "npm run db:verify-schema" }]
+    : []),
   { name: "API tests", command: "npm run test:api" },
   ...(SKIP_SMOKE ? [] : [{ name: "Smoke tests", command: "npm run test:smoke" }]),
   { name: "Routes tests", command: "npm run test:routes" },

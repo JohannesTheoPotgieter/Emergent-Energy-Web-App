@@ -1,5 +1,6 @@
 import { getStartupModes } from "./startup-modes";
 import type { SchemaReadiness } from "./lib/schema-readiness";
+import type { SchemaVerification } from "./lib/schema-verification";
 
 interface DbConfigStatus {
   connected: boolean;
@@ -14,6 +15,7 @@ export function buildHealthDiagnostics(
   dbStatus: DbConfigStatus,
   startupModes: ReturnType<typeof getStartupModes>,
   schemaReadiness?: SchemaReadiness | null,
+  schemaVerification?: SchemaVerification | null,
 ) {
   const startupManifest = {
     sessionSchemaRepair: startupModes.startupSchemaRepairEnabled,
@@ -27,10 +29,17 @@ export function buildHealthDiagnostics(
   // the pending migration list, so operators get one clear maintenance signal
   // instead of a wall of raw finance 500s.
   const schemaBehind = schemaReadiness?.state === "schema_behind";
+  // Column-level drift — the migration ledger reports applied but declared
+  // tables/columns are missing from the live DB. Same maintenance signal.
+  const schemaDrift = schemaVerification?.state === "schema_drift";
 
   return {
-    ok: dbStatus.connected && !schemaBehind,
-    reason: schemaBehind ? ("schema_behind" as const) : undefined,
+    ok: dbStatus.connected && !schemaBehind && !schemaDrift,
+    reason: schemaBehind
+      ? ("schema_behind" as const)
+      : schemaDrift
+        ? ("schema_drift" as const)
+        : undefined,
     schema: schemaReadiness
       ? {
           ready: schemaReadiness.ready,
@@ -38,6 +47,17 @@ export function buildHealthDiagnostics(
           pendingMigrations: schemaReadiness.pendingMigrations,
           appliedCount: schemaReadiness.appliedCount,
           totalCount: schemaReadiness.totalCount,
+        }
+      : undefined,
+    schemaVerification: schemaVerification
+      ? {
+          ok: schemaVerification.ok,
+          state: schemaVerification.state,
+          missingTables: schemaVerification.missingTables,
+          missingColumns: schemaVerification.missingColumns.map(
+            (c) => `${c.table}.${c.column}`,
+          ),
+          expectedTableCount: schemaVerification.expectedTableCount,
         }
       : undefined,
     dbMode,

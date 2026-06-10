@@ -32,6 +32,7 @@
 import { recomputeAllDerivedKpis } from "../services/derived-project-kpis-materializer";
 import { evaluateAppSchemaReadiness } from "./schema-readiness-runtime";
 import { formatPendingSummary, isSchemaBehind } from "../lib/schema-readiness";
+import { formatDriftSummary, getCachedSchemaVerification, isSchemaDrifted } from "../lib/schema-verification";
 import { errMsg } from "../lib/api-error";
 
 const FIFTEEN_MIN_MS = 15 * 60 * 1000;
@@ -43,6 +44,7 @@ let lastRunFinishedAt: string | null = null;
 let lastRunProjectCount = 0;
 let lastRunErrored = false;
 let schemaBehindWarned = false;
+let schemaDriftWarned = false;
 
 async function runOnce(): Promise<void> {
   const startedAt = new Date();
@@ -63,6 +65,21 @@ async function runOnce(): Promise<void> {
     return;
   }
   schemaBehindWarned = false;
+
+  // Same skip for column-level drift (ledger says applied, columns missing) —
+  // reads the boot/health-refreshed cache, no extra query per cycle.
+  const verification = getCachedSchemaVerification();
+  if (verification && isSchemaDrifted(verification)) {
+    if (!schemaDriftWarned) {
+      console.warn(
+        `[derived-project-kpis-scheduler] Skipping refresh — live schema is missing migrated artifacts (${formatDriftSummary(verification)}). Apply the drift-repair migration to resume.`,
+      );
+      schemaDriftWarned = true;
+    }
+    lastRunFinishedAt = new Date().toISOString();
+    return;
+  }
+  schemaDriftWarned = false;
 
   try {
     const count = await recomputeAllDerivedKpis();

@@ -88,6 +88,9 @@ jobs:
       # that invalidates the cache used to fail at `npx turbo run test`.
       # Push the schema, seed the test users, then let turbo run.
       - run: npm run db:push
+      # Column-level proof that the pushed schema matches shared/schema —
+      # also exercises the verifier the release gate re-runs below.
+      - run: npm run db:verify-schema
       - run: npm run seed:test-users
       - uses: actions/cache@v4
         with:
@@ -110,3 +113,64 @@ jobs:
       - run: npm run release:gate
         env:
           SKIP_SMOKE_TESTS: "true"
+
+  # ── Migration integrity: the DEPLOY path, proven end-to-end ───────────
+  # Replit deploys with `npm run build && npm run db:migrate` — but the
+  # quality-gate provisions its DB with db:push, so the migrate path was
+  # never exercised in CI. That blind spot is how "ledger says applied,
+  # columns missing" shipped twice (0071; 0090–0096). This job proves on
+  # every PR that:
+  #   1. migrate-from-ZERO yields exactly the shared/schema column set, and
+  #   2. an already-migrated DB that has drifted (simulated 0071 incident)
+  #      CONVERGES on the next `npm run db:migrate`.
+  migration-integrity:
+    runs-on: ubuntu-latest
+    needs: compile
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: emergent_migrate
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/emergent_migrate
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci --prefer-offline --no-audit
+      # Fresh DB → full migrate-from-zero (drizzle-bootstrap + drizzle-kit).
+      - name: Migrate from zero
+        run: npm run db:migrate
+      - name: Verify fresh schema (column level)
+        run: npm run db:verify-schema
+      # Simulate the 0071 incident: drop migrated columns + table while the
+      # ledger still records the migrations as applied.
+      - name: Simulate ledger-vs-schema drift
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -c 'ALTER TABLE change_requests DROP COLUMN submitted_by_user_id, DROP COLUMN approver_user_id, DROP COLUMN rejected_at;' \
+            -c 'DROP TABLE post_handover_reviews;'
+          if npm run db:verify-schema; then
+            echo "::error::db:verify-schema failed to detect simulated drift" && exit 1
+          fi
+      # An already-migrated (drifted) DB must CONVERGE on the next migrate:
+      # the drizzle-bootstrap canary detects the missing artifacts and
+      # replays the repair migration.
+      - name: Re-migrate drifted DB and verify convergence
+        run: |
+          npm run db:migrate
+          npm run db:verify-schema

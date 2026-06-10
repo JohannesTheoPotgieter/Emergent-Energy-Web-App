@@ -14,10 +14,12 @@ import {
 } from "../services/dashboard-refresh-service";
 import { evaluateAppSchemaReadiness } from "./schema-readiness-runtime";
 import { formatPendingSummary, isSchemaBehind } from "../lib/schema-readiness";
+import { formatDriftSummary, getCachedSchemaVerification, isSchemaDrifted } from "../lib/schema-verification";
 import { errMsg } from "../lib/api-error";
 
 let refreshTimer: NodeJS.Timeout | null = null;
 let schemaBehindWarned = false;
+let schemaDriftWarned = false;
 
 async function registerOrgWideDashboards(): Promise<void> {
   // Company overview — exec home tile.
@@ -76,6 +78,20 @@ export async function runDashboardRefreshCycle(): Promise<void> {
     return;
   }
   schemaBehindWarned = false;
+
+  // Same skip for column-level drift (ledger says applied, columns missing) —
+  // reads the boot/health-refreshed cache, no extra query per cycle.
+  const verification = getCachedSchemaVerification();
+  if (verification && isSchemaDrifted(verification)) {
+    if (!schemaDriftWarned) {
+      console.warn(
+        `[DashboardRefresh] Skipping cycle — live schema is missing migrated artifacts (${formatDriftSummary(verification)}).`,
+      );
+      schemaDriftWarned = true;
+    }
+    return;
+  }
+  schemaDriftWarned = false;
 
   try {
     const result = await refreshAllDashboards();

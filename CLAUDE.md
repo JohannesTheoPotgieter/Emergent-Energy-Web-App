@@ -33,9 +33,17 @@ and `docs/architecture.md` for the architecture baseline.
   `--name=<short_snake_case>` to produce a new migration file next to the
   baseline.
 - `npm run db:migrate` — see `docs/AGENT_GUARDRAILS.md` § 6 (default:
-  agents do not run; per-session user approval required).
+  agents do not run; per-session user approval required). Chains
+  `db:verify-schema --repair` after `drizzle-kit migrate`, so the deploy
+  command cannot exit 0 while declared columns are missing.
+- `npm run db:verify-schema` — ledger-independent proof that the live DB
+  contains every table/column declared in `shared/schema/*.ts` (exit 1 on
+  missing artifacts). Runs in CI (`migration-integrity` job) and the
+  release gate.
 - `npm run db:check` — CI guard. Fails if `shared/schema/*.ts` was edited
-  without a matching new migration file. Invoked on every PR.
+  without a matching new migration file, and validates migration-journal
+  `when` integrity (strictly increasing, never future-dated). Invoked on
+  every PR.
 
 ## Build & publish (Replit)
 

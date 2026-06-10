@@ -245,6 +245,21 @@ const MODERN_MIGRATION_PROBES: Record<
   "0101_vo_management_review_flag": async (c) =>
     (await columnExists(c, "change_requests", "requires_management_review")) &&
     (await columnExists(c, "change_requests", "gp_impact_pct_at_submit")),
+  // 0102 re-asserts 0071_handover_signoff_and_cr_approver, which was recorded
+  // as applied (presumed — it had no probe) while its DDL never ran: the
+  // out-of-order journal `when` values pinned the migrate watermark above it.
+  // Multi-artifact canary across all four touched tables so a partial apply
+  // replays rather than being presumed complete.
+  "0102_handover_cr_approver_drift_repair": async (c) =>
+    (await tableExists(c, "post_handover_reviews")) &&
+    (await columnExists(c, "change_requests", "submitted_by_user_id")) &&
+    (await columnExists(c, "change_requests", "rejected_at")) &&
+    (await columnExists(c, "handover_packs", "matriarch_accepted_by_user_id")) &&
+    (await columnExists(c, "sseg_items", "metering_confirmed_at")) &&
+    (await constraintExists(
+      c,
+      "change_requests_approver_user_id_users_id_fk",
+    )),
 };
 
 async function tableExists(client: Client, table: string): Promise<boolean> {
@@ -428,12 +443,64 @@ async function main(): Promise<void> {
     }
 
     // Step 4 — Read current __drizzle_migrations state.
-    const existingRes = await client.query<{ id: number; hash: string }>(
-      `SELECT id, hash FROM "drizzle"."__drizzle_migrations";`,
-    );
+    const existingRes = await client.query<{
+      id: number;
+      hash: string;
+      created_at: string | number | null;
+    }>(`SELECT id, hash, created_at FROM "drizzle"."__drizzle_migrations";`);
     const existingByHash = new Map<string, number>();
     for (const row of existingRes.rows) {
       existingByHash.set(row.hash, row.id);
+    }
+
+    // Step 4b — Normalise bookkeeping timestamps to the committed journal.
+    //
+    // drizzle-kit migrate decides "pending" with a single watermark:
+    // a journal entry applies iff `when > MAX(created_at)`. Rows recorded
+    // under the journal's historical out-of-order / future-dated `when`
+    // values (0079_dev_drift_repair was stamped 1782000000000 ≈ 2026-06-18)
+    // keep poisoning that watermark long after the journal itself is
+    // repaired — every migration generated before the stale stamp's date
+    // would be silently skipped. Rewrite created_at for every row whose
+    // hash matches a journal entry, and clamp any unmatched row (e.g. from
+    // a file edited after it was recorded) down to the journal ceiling so
+    // no orphan can hold the watermark above real migrations.
+    const whenByHash = new Map<string, number>();
+    for (const item of planned) whenByHash.set(item.hash, item.entry.when);
+    const journalCeiling = Math.max(...planned.map((p) => p.entry.when));
+    let normalized = 0;
+    let clamped = 0;
+    await client.query("BEGIN");
+    try {
+      for (const row of existingRes.rows) {
+        const created = row.created_at === null ? null : Number(row.created_at);
+        const expected = whenByHash.get(row.hash);
+        if (expected !== undefined) {
+          if (created !== expected) {
+            await client.query(
+              `UPDATE "drizzle"."__drizzle_migrations" SET created_at = $1 WHERE id = $2;`,
+              [expected, row.id],
+            );
+            normalized++;
+          }
+        } else if (created !== null && created > journalCeiling) {
+          await client.query(
+            `UPDATE "drizzle"."__drizzle_migrations" SET created_at = $1 WHERE id = $2;`,
+            [journalCeiling, row.id],
+          );
+          clamped++;
+        }
+      }
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    }
+    if (normalized > 0 || clamped > 0) {
+      console.log(
+        `[drizzle-bootstrap] Watermark normalised: ${normalized} row(s) re-stamped to journal 'when', ` +
+          `${clamped} unmatched row(s) clamped to the journal ceiling (${journalCeiling}).`,
+      );
     }
 
     // Step 5 — Compute the watermark.

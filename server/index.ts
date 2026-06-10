@@ -20,6 +20,7 @@ import { getRuntimeMutationPolicy } from "./bootstrap/runtime-mutation-policy";
 import { createStartupReport, logStartupSummary } from "./bootstrap/startup-report";
 import { runStartupOrchestrator } from "./bootstrap/startup-orchestrator";
 import { runSchemaReadinessBootGate } from "./bootstrap/schema-readiness-runtime";
+import { runSchemaVerificationBootGate } from "./bootstrap/schema-verification-runtime";
 import { registerOpsDashboardRoute } from "./routes/ops-dashboard.routes";
 
 declare module "http" {
@@ -83,6 +84,12 @@ async function bootstrap() {
   // maintenance state (health 503 + finance 503) instead of raw 500s. Seeds
   // the readiness cache the finance gate and schedulers read.
   await runSchemaReadinessBootGate({ log });
+
+  // The ledger alone is not proof: a migration can be recorded as applied
+  // while its DDL never ran (the 0071 / 0090–0096 class). Verify the live
+  // schema against shared/schema at COLUMN level — dev auto-repairs
+  // additively, production serves a maintenance state instead of raw 500s.
+  await runSchemaVerificationBootGate({ log });
 
   applySecurityAndParsingMiddleware(app);
 

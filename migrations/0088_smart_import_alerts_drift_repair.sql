@@ -46,7 +46,11 @@ ALTER TABLE "sp_settings" ADD COLUMN IF NOT EXISTS "last_alert_state" text;--> s
 DO $$ BEGIN
  ALTER TABLE "smart_import_project_bindings" ADD CONSTRAINT "smart_import_project_bindings_source_key_unique" UNIQUE("source_key");
 EXCEPTION
- WHEN duplicate_object THEN null;
+ -- duplicate_table (42P07) added 2026-06-10: on a fresh migrate-from-zero
+ -- 0087 has already created this constraint inline, and PG reports the
+ -- existing backing index as "relation already exists" (duplicate_table),
+ -- which duplicate_object alone does not catch. 0089 already guards this way.
+ WHEN duplicate_object OR duplicate_table THEN null;
 END $$;
 --> statement-breakpoint
 DO $$ BEGIN
