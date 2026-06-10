@@ -15,11 +15,16 @@
  *                                        target (P4.4).
  *   3. Cash available this week       → /api/cashflow-2026 (current week
  *                                        availablePayment).
- *   4. Tracker-vs-QB status           → /api/finance/reconciliation (per-project
- *                                        qbStatus counts).
+ *   4. Tracker-vs-QB (COMPANY only)   → /api/finance/qb-recon/summary (current
+ *                                        period REV/COS/GP, company grain). QB
+ *                                        cost bills aren't project-tagged, so QB
+ *                                        reconciles at company level ONLY — there
+ *                                        is no per-project QB anywhere on this page.
  *
- * Below the four answers: the per-project GP / reconciliation health list,
- * reusing the reconciliation portfolio data, sorted attention-first.
+ * Below the four answers: the per-project app-vs-tracker reconciliation health
+ * list, reusing the reconciliation portfolio data, sorted attention-first. Each
+ * row shows the project, its app-vs-tracker delta, and its app-vs-tracker status
+ * (Ties / Drift / Structural) — never a per-project QB column.
  *
  * Brand: centralised tokens only (brand-* / status-* utilities, design/tokens).
  */
@@ -67,11 +72,12 @@ interface CashflowWeek {
 interface ReconProject {
   projectId: number;
   projectName: string;
+  /** App-vs-tracker status (the §3.3 cross-check). There is no per-project QB
+   *  status — QB cost bills aren't project-tagged (company-grain QB only). */
   status: ReconDisplayStatus;
-  qbStatus: ReconDisplayStatus;
+  /** Σ (app §3.3 revenue − pasted tracker value), signed. */
   appVsTrackerDelta: number;
   absDelta: number;
-  qbDelta: number;
 }
 interface ReconResponse {
   projects: ReconProject[];
@@ -120,6 +126,15 @@ function qbMetric(tracker: number, qb: number): { delta: number; tie: boolean; t
   return { delta, tie, text: tie ? "ties" : `Δ ${formatZarCompact(delta)}` };
 }
 
+/**
+ * Explicit empty-state tile value — visually distinct from a real "R 0" figure
+ * (muted, lighter, italic, smaller) so "we have no data" never reads as "the
+ * value is zero" (mirrors the formatZar integrity rule in lib/currency.ts).
+ */
+function noDataValue(text: string) {
+  return <span className="text-base font-medium italic text-slate-400">{text}</span>;
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function FinanceHomePage() {
@@ -152,7 +167,7 @@ export default function FinanceHomePage() {
     staleTime: 60_000,
   });
 
-  // Tracker-vs-QB + per-project health — reconciliation portfolio.
+  // Per-project app-vs-tracker health — reconciliation portfolio (no QB here).
   const reconQuery = useQuery<ReconResponse>({
     queryKey: ["/api/finance/reconciliation"],
     queryFn: fetchQueryFn("/api/finance/reconciliation"),
@@ -170,6 +185,14 @@ export default function FinanceHomePage() {
     const months = buildGpMonthSummaries(cosQuery.data ?? [], revQuery.data?.months ?? []);
     return pickCurrentMonth(months, currentYyyyMm);
   }, [cosQuery.data, revQuery.data]);
+
+  const gpCur = gp.current;
+  // Non-null ONLY when the month has genuine realised tracker activity (some
+  // realised revenue OR some realised COS). A break-even month (realised rev =
+  // realised COS, GP = R0) still has data and renders "R 0"; a month with no
+  // realised lines at all renders the explicit "No data" empty state instead.
+  const gpRealised =
+    gpCur != null && (gpCur.realisedRevenue !== 0 || gpCur.realisedCOS !== 0) ? gpCur : null;
 
   const revVsTarget = overviewQuery.data?.executiveSummary?.revenueVsTarget ?? null;
 
@@ -206,10 +229,12 @@ export default function FinanceHomePage() {
 
   const healthRows = useMemo(() => {
     const projects = [...(reconQuery.data?.projects ?? [])];
+    // Attention-first on the app-vs-tracker status alone — there is no
+    // per-project QB status to factor in (QB cost bills aren't project-tagged).
     return projects.sort((a, b) => {
-      const worstA = Math.min(RECON_STATUS_RANK[a.status], RECON_STATUS_RANK[a.qbStatus]);
-      const worstB = Math.min(RECON_STATUS_RANK[b.status], RECON_STATUS_RANK[b.qbStatus]);
-      if (worstA !== worstB) return worstA - worstB;
+      const rankA = RECON_STATUS_RANK[a.status];
+      const rankB = RECON_STATUS_RANK[b.status];
+      if (rankA !== rankB) return rankA - rankB;
       return (b.absDelta ?? 0) - (a.absDelta ?? 0);
     });
   }, [reconQuery.data]);
@@ -237,28 +262,36 @@ export default function FinanceHomePage() {
           <KpiTile
             data-testid="finance-home-gp"
             label="GP this month"
-            description={gp.current?.monthLabel}
-            value={gp.current ? <Money value={gp.current.realisedGP} /> : placeholder(gpLoading)}
+            description={gpCur?.monthLabel}
+            value={
+              gpLoading
+                ? "…"
+                : gpRealised
+                  ? <Money value={gpRealised.realisedGP} />
+                  : noDataValue("No data")
+            }
             tone={
-              gp.current && gp.current.budgetGP !== 0
-                ? gp.current.realisedGP >= gp.current.budgetGP
+              gpRealised && gpRealised.budgetGP !== 0
+                ? gpRealised.realisedGP >= gpRealised.budgetGP
                   ? "positive"
                   : "critical"
                 : "default"
             }
             supporting={
-              gp.current?.realisedMarginPct != null
-                ? `Margin ${gp.current.realisedMarginPct.toFixed(1)}%`
+              gpRealised
+                ? gpRealised.realisedMarginPct != null
+                  ? `Margin ${gpRealised.realisedMarginPct.toFixed(1)}%`
+                  : "No realised revenue this month"
                 : gpLoading
                   ? "Loading…"
-                  : "No tracker data this month"
+                  : "No realised tracker data this month"
             }
             delta={
-              gp.current && gp.current.budgetGP !== 0
+              gpRealised && gpRealised.budgetGP !== 0
                 ? {
                     label: "vs budget",
-                    priorValue: <Money value={gp.current.budgetGP} />,
-                    pct: variancePct(gp.current.realisedGP, gp.current.budgetGP),
+                    priorValue: <Money value={gpRealised.budgetGP} />,
+                    pct: variancePct(gpRealised.realisedGP, gpRealised.budgetGP),
                     positiveIs: "good",
                   }
                 : undefined
@@ -318,19 +351,32 @@ export default function FinanceHomePage() {
             href="/cashflow"
           />
 
-          {/* 4 — Tracker vs QuickBooks (company-wide invoice match, current period) */}
+          {/* 4 — Tracker vs QuickBooks (COMPANY-WIDE invoice match, current period).
+                 QB is not project-tagged, so this is the ONLY QB surface on the
+                 page. No qb-recon result for the period → an explicit empty state,
+                 never a silent "—". */}
           <KpiTile
             data-testid="finance-home-tracker-qb"
             label="Tracker vs QuickBooks"
-            description={cq ? `Invoice match · ${cq.periodKey}` : undefined}
-            value={cq ? (cq.allTie ? "Ties" : "Variance") : placeholder(qbReconQuery.isLoading)}
+            description={cq ? `Invoice match · ${cq.periodKey}` : "Company-wide"}
+            value={
+              qbReconQuery.isLoading
+                ? "…"
+                : cq
+                  ? cq.allTie
+                    ? "Ties"
+                    : "Variance"
+                  : noDataValue("Not run")
+            }
             tone={cq ? (cq.allTie ? "positive" : "warning") : "default"}
             supporting={
               cq
                 ? `Rev ${cq.rev.text} · COS ${cq.cos.text} · GP ${cq.gp.text}`
                 : qbReconQuery.isLoading
                   ? "Loading…"
-                  : "No data yet"
+                  : qbReconQuery.isError
+                    ? "QB recon unavailable right now"
+                    : "QB recon not run for this period"
             }
             sourceBadge={cq ? <TrustBadge status={cq.allTie ? "ties" : "drift"} /> : undefined}
             href="/finance/qb-reconciliation"
@@ -339,18 +385,20 @@ export default function FinanceHomePage() {
 
         <p className="mt-2 text-[11px] text-muted-foreground">
           Revenue target is <span className="font-medium">provisional</span> — the sum of planned
-          revenue, pending a board-set FY revenue target (P4.4). All figures read from canonical
-          endpoints; no values are recalculated here.
+          revenue, pending a board-set FY revenue target (P4.4). Every tile reads the same canonical
+          endpoints as the finance pages; GP this month is Revenue − COS from those trackers — the
+          identical derivation the GP page uses — so Home never shows a figure the finance pages
+          don&apos;t.
         </p>
       </section>
 
-      {/* Per-project GP / reconciliation health */}
+      {/* Per-project app-vs-tracker reconciliation health (no per-project QB) */}
       <section aria-label="Project reconciliation health">
         <Card data-testid="finance-home-health">
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
             <CardTitle className="text-sm flex items-center gap-2">
               <GitCompare className="h-4 w-4 text-brand-green" />
-              Project GP &amp; reconciliation health
+              Project reconciliation health
               <Badge variant="outline" className="text-[10px]">{healthRows.length}</Badge>
             </CardTitle>
             <Link
@@ -378,17 +426,13 @@ export default function FinanceHomePage() {
                       <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
                         {p.projectName}
                       </span>
-                      <span className="font-mono text-xs tabular-nums text-muted-foreground shrink-0 w-24 text-right">
-                        {p.absDelta === 0 ? formatZarCompact(0) : formatZarCompact(p.appVsTrackerDelta)}
+                      <span
+                        className="font-mono text-xs tabular-nums text-muted-foreground shrink-0 w-24 text-right"
+                        title="App §3.3 revenue minus the pasted tracker value (app-vs-tracker delta)"
+                      >
+                        Δ {p.absDelta === 0 ? formatZarCompact(0) : formatZarCompact(p.appVsTrackerDelta)}
                       </span>
-                      <span className="flex items-center gap-1 shrink-0">
-                        <span className="text-[9px] font-medium uppercase text-muted-foreground">App</span>
-                        <ReconStatusChip status={p.status} />
-                      </span>
-                      <span className="hidden sm:flex items-center gap-1 shrink-0">
-                        <span className="text-[9px] font-medium uppercase text-muted-foreground">QB</span>
-                        <ReconStatusChip status={p.qbStatus} />
-                      </span>
+                      <ReconStatusChip status={p.status} className="shrink-0" />
                     </Link>
                   </li>
                 ))}
