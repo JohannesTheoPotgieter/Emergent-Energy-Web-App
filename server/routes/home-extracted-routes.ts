@@ -18,14 +18,12 @@ import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { requirePermission } from "../permission-middleware";
 import { logAuditFromReq } from "../audit-logger";
-import { classifyExpenseState } from "../lib/calculations/stateClassifier";
 import { resolveInflowEffectiveDates } from "../lib/cashflow-helpers";
 import { getAllPMWorkItemsAsProjectPlan, getAllWorkItemsForProgress } from "../work-items-adapter";
 import { computeAllProjectPlanPills } from "../services/plan-rollup-service";
 import { safeNum, isWithinDays, isThisWeek, isThisMonth, getFYRange, findMaxEndDate, findMinStartDate } from "../lib/home-helpers";
 import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
-import { getRepoRevenueTotals } from "../lib/finance/revenue-recognition-repo";
-import { FinanceLineLevelRepository } from "../repositories/finance-line-level-repository";
+import { getCanonicalProjectTotals } from "../lib/finance/canonical-project-totals";
 
 export function registerHomeExtractedRoutes(app: Express): void {
 
@@ -172,32 +170,32 @@ export function registerHomeExtractedRoutes(app: Express): void {
         if (isWithinDays(dates.clientHandover, 30)) clientHandoverDue30++;
       }
 
-      // Financial summary — CANONICAL Revenue Recognition (POC method).
-      // actualRevenue = sum of revenue_recognition_amount on cost lines whose
-      // underlying COS is effectively realised (past-month auto-promote +
-      // canonical strict realisation check). This matches the Revenue Tracker
-      // and FY Revenue Tracker. Cash inflows / outstanding AR are reported
-      // separately below.
-      let actualRevenue = 0, actualExpenses = 0, currentVoTotal = 0;
-      // POC revenue via the § 3.3.2 single read path (P2.1c): planned = Σ
-      // perLineRevenue; realised = Σ on canonical realised lines. Scope = the
-      // projects present in allExpenses.
-      const repoHm = new FinanceLineLevelRepository();
-      const repoRevenueHm = await getRepoRevenueTotals(
-        repoHm,
-        allExpenses.map((e: any) => e.projectId),
+      // Financial summary — CANONICAL Revenue / COS / GP via the § 3.3.2 single
+      // read path (server/lib/finance/canonical-project-totals over the line-level
+      // repository), so Finance Home reports the SAME REV/COS/GP as the finance
+      // pages, dashboards and the company overview. actualRevenue / actualExpenses
+      // are the § 3.2 realised subset; plannedRevenue is the (G/I)×J budget. The
+      // previous GP mixed realised revenue with CASH-PAID expenses (state === 'Paid')
+      // — a cash/recognition conflation (§ 3.3.3) that diverged from every other
+      // surface and is removed. Cash inflows / outstanding AR are reported
+      // separately below (§ 3.4).
+      let currentVoTotal = 0;
+      const hmProjectIds = Array.from(
+        new Set(
+          allExpenses
+            .map((e: any) => e.projectId)
+            .filter((id: any): id is number => Number.isInteger(id)),
+        ),
       );
-      actualRevenue = repoRevenueHm.realised;
-      const plannedRevenue = repoRevenueHm.planned;
-      for (const expense of allExpenses) {
-        if (expense.expenseActualTotal) {
-          const state = classifyExpenseState(expense as any);
-          if (state === 'Paid') {
-            actualExpenses += safeNum(expense.expenseActualTotal);
-          }
-        }
+      const hmTotals = await getCanonicalProjectTotals(hmProjectIds);
+      let actualRevenue = 0, actualExpenses = 0, plannedRevenue = 0;
+      for (const t of hmTotals.values()) {
+        actualRevenue += t.realisedRevenue;
+        actualExpenses += t.realisedCos;
+        plannedRevenue += t.plannedRevenue;
       }
-      // VO totals still come from the legacy revenue summaries table.
+      // VO totals still come from the project_revenue_summary VO columns (VO is
+      // not a REV/COS/GP metric, so it is unaffected by the single-read-path work).
       for (const rs of revenueSummaries) {
         currentVoTotal += safeNum(rs.currentVoTotal);
       }
