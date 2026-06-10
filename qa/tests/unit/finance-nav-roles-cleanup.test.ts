@@ -101,7 +101,6 @@ const FINANCE_ROUTE_FILES = [
   "server/routes/reconciliation.routes.ts",
   "server/routes/cos-control-routes.ts",
   "server/routes/cos-line-review.routes.ts",
-  "server/routes/register-cashflow-2026-routes.ts",
 ];
 
 describe("Finance routes — modern permission gates only (no legacy requireRole)", () => {

@@ -204,6 +204,33 @@ export async function runCrossSurfaceFinanceVerification(
     }
   }
 
+  // ── Cash cross-surface: ONE weekly-cash engine, consumed everywhere ─────────
+  // Finance Home, the Cashflow grid and Weekly Close all read the single
+  // GET /api/cashflow-2026 series, whose availablePayment comes from the one
+  // engine (server/lib/finance/weekly-cashflow-engine.ts: opening + inflows −
+  // outflows). A single handler + single engine is the structural guarantee
+  // that "available this week" is ONE value within R1 on every surface — the
+  // numeric identity is pinned by qa/tests/unit/weekly-cashflow-engine.test.ts.
+  // This is the cash analog of the REV/COS/GP "one read path" check above and
+  // would have caught the dual-handler defect (opening+inflows vs the engine).
+  {
+    const repoRoot = process.cwd();
+    const financeRoutes = readFileSync(path.join(repoRoot, "server/departments/finance-routes.ts"), "utf8");
+    const bareGetHandlers = (financeRoutes.match(/router\.get\(\s*['"]\/api\/cashflow-2026['"]/g) ?? []).length;
+    const deadDuplicateGone = existsSync(path.join(repoRoot, "server/routes/register-cashflow-2026-routes.ts")) ? 0 : 1;
+    const usesEngine =
+      /resolveWeeklyAvailablePayment\s*\(/.test(financeRoutes) && /weekly-cashflow-engine/.test(financeRoutes) ? 1 : 0;
+    // The fixed defect: availablePayment must NOT be opening + inflows (no outflows).
+    const noOpeningPlusInflowsBug = /availablePayment\s*=\s*openingBalance\s*\+\s*projectInflowsSum\s*;/.test(financeRoutes)
+      ? 0
+      : 1;
+
+    compare("company", null, "Cashflow", "available_this_week:single_handler", "source", 1, bareGetHandlers);
+    compare("company", null, "Cashflow", "available_this_week:duplicate_removed", "source", 1, deadDuplicateGone);
+    compare("company", null, "Cashflow", "available_this_week:uses_one_engine", "source", 1, usesEngine);
+    compare("company", null, "Cashflow", "available_this_week:no_outflows_omitted_bug", "source", 1, noOpeningPlusInflowsBug);
+  }
+
   const failures = rows.filter((r) => !r.pass);
   return { rows, failures, comparisons: rows.length, pass: failures.length === 0 };
 }
