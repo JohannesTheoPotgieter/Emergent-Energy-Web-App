@@ -291,10 +291,14 @@ function buildOverdueFinanceLedger(params: {
   );
   const projectOwnerById = new Map<number, string>();
   const projectOwnerByNorm = new Map<string, string>();
+  // Display name resolves from project_info (activeProjects) by project_id —
+  // never the denormalised line `project_name`, which goes stale on rename.
+  const projectNameById = new Map<number, string>();
   for (const p of activeProjects) {
     const owner = p.pm || 'Unassigned';
     projectOwnerById.set(p.id, owner);
     projectOwnerByNorm.set(normalizeName(p.projectName), owner);
+    projectNameById.set(p.id, p.projectName);
   }
 
   const daysOverdue = (dueDate: string) => {
@@ -360,7 +364,7 @@ function buildOverdueFinanceLedger(params: {
     apItems.push({
       id: dedupeKey,
       projectId: row.projectId || null,
-      projectName: row.projectName || 'Unknown project',
+      projectName: projectNameById.get(row.projectId ?? -1) ?? row.projectName ?? 'Unknown project',
       counterparty: row.supplier || 'Unknown supplier',
       invoiceNumber: row.invoiceNumber,
       invoiceDate,
@@ -372,7 +376,7 @@ function buildOverdueFinanceLedger(params: {
         : projectOwnerByNorm.get(rowProjectNorm) || 'Unassigned',
       status: 'Open / Unpaid',
       recordLink: row.projectName
-        ? `/project/${encodeURIComponent(row.projectName)}?tab=expenditure`
+        ? `/project/${encodeURIComponent(projectNameById.get(row.projectId ?? -1) ?? row.projectName ?? "")}?tab=expenditure`
         : null,
     });
   }
@@ -418,7 +422,7 @@ function buildOverdueFinanceLedger(params: {
     arItems.push({
       id: dedupeKey,
       projectId: row.projectId || null,
-      projectName: row.projectName || 'Unknown project',
+      projectName: projectNameById.get(row.projectId ?? -1) ?? row.projectName ?? 'Unknown project',
       counterparty: row.client || 'Unknown client',
       invoiceNumber: row.invoiceNumber,
       invoiceDate,
@@ -430,7 +434,7 @@ function buildOverdueFinanceLedger(params: {
         : projectOwnerByNorm.get(rowProjectNorm) || 'Unassigned',
       status: 'Open / Unreceived',
       recordLink: row.projectName
-        ? `/project/${encodeURIComponent(row.projectName)}?tab=revenue`
+        ? `/project/${encodeURIComponent(projectNameById.get(row.projectId ?? -1) ?? row.projectName ?? "")}?tab=revenue`
         : null,
     });
   }

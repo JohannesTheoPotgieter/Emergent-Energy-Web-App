@@ -24,6 +24,7 @@ import { projectInfo, projectRevenueSummary } from "@shared/schema/projects";
 import { diffDays } from "@shared/lib/financeAnalysis";
 import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
 import { getFyWindow } from "../lib/fy-window";
+import { loadProjectNameMap, resolveProjectName } from "../lib/finance/project-name-resolver";
 
 const COS_TOLERANCE_RULE_TYPE = "cos_tolerance_band_pct";
 
@@ -75,10 +76,13 @@ const COST_INVOICED_OR_PAID: Array<"invoiced" | "approved" | "paid"> = [
 // AR — outstanding revenue lines (anything not yet "paid", "in_bank" or "realised").
 export async function listOutstandingRevenueLines(): Promise<OutstandingRevenueRow[]> {
   const projectTermsMap = await loadCustomerTermsByProject();
+  // Display name resolves from project_info by project_id (§ attribution rule) —
+  // never the denormalised normalized_revenue_lines.project_name, which goes
+  // stale on rename.
+  const nameMap = await loadProjectNameMap();
   type Row = {
     id: number;
     projectId: number;
-    projectName: string;
     amount: string | null;
     invoiceDate: string | null;
     expectedDate: string | null;
@@ -90,7 +94,6 @@ export async function listOutstandingRevenueLines(): Promise<OutstandingRevenueR
     .select({
       id: normalizedRevenueLines.id,
       projectId: normalizedRevenueLines.projectId,
-      projectName: normalizedRevenueLines.projectName,
       amount: normalizedRevenueLines.amountExVat,
       invoiceDate: normalizedRevenueLines.invoiceDate,
       expectedDate: normalizedRevenueLines.expectedPaymentDate,
@@ -110,7 +113,7 @@ export async function listOutstandingRevenueLines(): Promise<OutstandingRevenueR
   return rows.map((r): OutstandingRevenueRow => ({
     id: r.id,
     projectId: r.projectId,
-    projectName: r.projectName,
+    projectName: resolveProjectName(r.projectId, nameMap),
     customer: null,
     amount: numeric(r.amount),
     invoiceDate: dateToIso(r.invoiceDate),
@@ -124,10 +127,12 @@ export async function listOutstandingRevenueLines(): Promise<OutstandingRevenueR
 // AP — outstanding cost lines (anything not yet "paid").
 export async function listOutstandingCostLines(): Promise<OutstandingCostRow[]> {
   const counterpartyTermsMap = await loadCounterpartyTerms();
+  // Display name resolves from project_info by project_id — never the
+  // denormalised normalized_cost_lines.project_name (stale on rename).
+  const nameMap = await loadProjectNameMap();
   type Row = {
     id: number;
     projectId: number;
-    projectName: string;
     counterpartyId: number | null;
     counterpartyName: string | null;
     amount: string | null;
@@ -141,7 +146,6 @@ export async function listOutstandingCostLines(): Promise<OutstandingCostRow[]> 
     .select({
       id: normalizedCostLines.id,
       projectId: normalizedCostLines.projectId,
-      projectName: normalizedCostLines.projectName,
       counterpartyId: normalizedCostLines.counterpartyId,
       counterpartyName: normalizedCostLines.counterpartyName,
       amount: normalizedCostLines.amountExVat,
@@ -163,7 +167,7 @@ export async function listOutstandingCostLines(): Promise<OutstandingCostRow[]> 
   return rows.map((r): OutstandingCostRow => ({
     id: r.id,
     projectId: r.projectId,
-    projectName: r.projectName,
+    projectName: resolveProjectName(r.projectId, nameMap),
     counterpartyId: r.counterpartyId ?? null,
     counterpartyName: r.counterpartyName ?? null,
     amount: numeric(r.amount),

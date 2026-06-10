@@ -24,6 +24,7 @@ import { computeAllProjectPlanPills } from "../services/plan-rollup-service";
 import { safeNum, isWithinDays, isThisWeek, isThisMonth, getFYRange, findMaxEndDate, findMinStartDate } from "../lib/home-helpers";
 import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
 import { getCanonicalProjectTotals } from "../lib/finance/canonical-project-totals";
+import { loadProjectNameMap, resolveProjectName } from "../lib/finance/project-name-resolver";
 
 export function registerHomeExtractedRoutes(app: Express): void {
 
@@ -507,6 +508,13 @@ export function registerHomeExtractedRoutes(app: Express): void {
         }
       }
 
+      // Display name resolves from project_info by project_id — never the
+      // denormalised line/task project_name (stale on rename).
+      const eventNameMap = await loadProjectNameMap();
+      for (const ev of events) {
+        if (ev.projectId != null) ev.projectName = resolveProjectName(ev.projectId, eventNameMap);
+      }
+
       events.sort((a, b) => a.date.localeCompare(b.date));
       res.json({ rangeStart, rangeEnd, events });
     } catch (err: any) {
@@ -588,6 +596,13 @@ export function registerHomeExtractedRoutes(app: Express): void {
             invoiceNumber: c.invoiceNumber || null,
           });
         }
+      }
+
+      // Display name resolves from project_info by project_id — never the
+      // denormalised line project_name (stale on rename).
+      const finEventNameMap = await loadProjectNameMap();
+      for (const ev of events) {
+        if (ev.projectId != null) ev.projectName = resolveProjectName(ev.projectId, finEventNameMap);
       }
 
       events.sort((a, b) => a.date.localeCompare(b.date));

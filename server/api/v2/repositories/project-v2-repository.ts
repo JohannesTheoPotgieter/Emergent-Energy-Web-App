@@ -241,17 +241,25 @@ export async function createInvoice(projectId: number, payload: any, userId: num
 export async function getProjectFinanceSummary(projectId: number) {
   // Task #124: cost_line_status / revenue_line_status enums are lowercase
   // (see shared/schema/finance.ts). Keep IN-list literals lowercase.
-  const [cos, revenue, budgetAgg, costedSummary] = await Promise.all([
+  const [cos, revenue, budgetAgg, costedSummary, projRow] = await Promise.all([
     db.select({ planned: sql<number>`coalesce(sum(cast(${normalizedCostLines.amountExVat} as numeric)),0)`, actual: sql<number>`coalesce(sum(case when ${normalizedCostLines.status} in ('approved','paid') then cast(${normalizedCostLines.amountExVat} as numeric) else 0 end),0)` }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)))),
     db.select({ planned: sql<number>`coalesce(sum(cast(${normalizedRevenueLines.amountExVat} as numeric)),0)`, actual: sql<number>`coalesce(sum(case when ${normalizedRevenueLines.status} in ('invoiced','paid','in_bank','realised') then cast(${normalizedRevenueLines.amountExVat} as numeric) else 0 end),0)` }).from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectId, projectId), and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)))),
     db.select({ budgetTotal: sql<number>`coalesce(sum(cast(${normalizedCostLines.budgetTotal} as numeric)),0)` }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)))),
     db.select().from(projectRevenueSummary).where(and(eq(projectRevenueSummary.projectId, projectId), isNull(projectRevenueSummary.effectiveTo))).limit(1),
+    db.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId)).limit(1),
   ]);
+  // Display name comes from project_info by id — NOT the denormalised
+  // project_revenue_summary.project_name, which goes stale on rename. The PRS
+  // row's name is overwritten with the canonical name so no stale name leaks.
+  const canonicalName = projRow[0]?.projectName ?? null;
+  const summary = costedSummary[0] ?? null;
   return {
+    projectId,
+    projectName: canonicalName,
     cost: cos[0] ?? { planned: 0, actual: 0 },
     revenue: revenue[0] ?? { planned: 0, actual: 0 },
     budget: { total: budgetAgg[0]?.budgetTotal ?? 0 },
-    costedSummary: costedSummary[0] ?? null,
+    costedSummary: summary ? { ...summary, projectName: canonicalName } : null,
   };
 }
 
