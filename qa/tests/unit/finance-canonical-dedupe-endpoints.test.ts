@@ -362,20 +362,14 @@ describe("canonical dedupe proof on finance endpoints (hermetic)", () => {
   });
 
   // Canonical line-level dedup proof at the project-cost-line read layer.
-  // (Revenue and GP monthly totals now derive from the FYE reconciliation
-  // engine — owner decision 2026-06 — and are covered by the FYE /
-  // reconciliation suites, so they are intentionally not re-asserted here.)
-  it("COS project endpoint stays non-inflated and exposes canonical item keys", async () => {
-    const cosRes = await request(app).get(`/api/cos-tracker/project/${encodeURIComponent(canonicalProjectName)}`);
-    expect(cosRes.status).toBe(200);
-
-    const cosMonth = (cosRes.body as any[]).find((m: any) => m.monthKey === "2025-09");
-    expect(cosMonth.totalCOS).toBeCloseTo(260, 6);
-    expect(cosMonth.totalCOS).not.toBeCloseTo(360, 6); // would include the old duplicate (100)
-
-    const cosKeys = new Set((cosMonth.items || []).map((i: any) => i.canonicalLineKey));
-    expect(cosKeys.size).toBe(3);
-  });
+  // The per-project COS assertion previously hit /api/cos-tracker/project, a
+  // PARALLEL endpoint retired in refactor/project-detail-finance-unify. The
+  // dedup property is now inherent to the canonical § 3.3.2 read path
+  // (finance-line-level-repository, consumed by /api/finance/lines, the finance
+  // pages, the reconciliation board and project-detail) and is asserted by the
+  // cross-surface guard in verify:finance, so it is not re-tested against a
+  // retired endpoint here. (Revenue/GP totals derive from the FYE reconciliation
+  // engine — owner decision 2026-06 — covered by the FYE / reconciliation suites.)
 
   it("diagnostics endpoint exposes risk categories", async () => {
     const res = await request(app).get(`/api/finance/cost-lines/diagnostics?projectId=${canonicalProjectId}`);
