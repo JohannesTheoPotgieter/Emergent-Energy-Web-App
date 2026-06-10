@@ -1545,7 +1545,7 @@ export default function RevenueTrackerPage() {
                       <strong>Realised</strong> = invoice captured AND invoice date confirmed.
                     </p>
                     <p className="mt-1 text-muted-foreground">
-                      Allocated via the COS-ratio method. This is recognition, not cash received.
+                      Canonical per-line recognition (§ 3.3 category-scoped POC). This is recognition, not cash received.
                     </p>
                   </TooltipContent>
                 </UiTooltip>

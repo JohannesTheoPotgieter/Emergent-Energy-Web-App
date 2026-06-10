@@ -59,6 +59,7 @@ import {
   deriveFinanceLinesFromRows,
   type FinanceLine,
 } from "../server/repositories/finance-line-level-repository";
+import { aggregateCanonicalProjectTotals } from "../server/lib/finance/canonical-project-totals";
 import { relinkCategoryAllocationsForProject } from "../server/lib/import/allocation-relink";
 import { upsertProjectRevenueSummary } from "../server/lib/import/derivative-materializer";
 import { hashActualRow } from "../server/lib/import/row-hasher";
@@ -393,22 +394,14 @@ export async function runFinanceLinkageBackfill(opts: RunOptions): Promise<Backf
       // 3. Canonical § 3.3 derivation → PRS refresh (rename-safe upsert).
       const rows = await fetchDerivationRows(tx, p.id);
       const lines = deriveProject(rows);
-      let realisedRev = 0;
-      let realisedCos = 0;
-      let plannedRev = 0;
-      let plannedCos = 0;
-      for (const l of lines) {
-        plannedRev += l.plannedRevenue;
-        plannedCos += l.plannedActualTotal;
-        if (l.bucket === "realised") {
-          realisedRev += l.perLineRevenue;
-          realisedCos += l.actualTotal;
-        }
-      }
-      realisedRev = r2(realisedRev);
-      realisedCos = r2(realisedCos);
-      plannedRev = r2(plannedRev);
-      plannedCos = r2(plannedCos);
+      // Same aggregation every surface consumes (one read path, § 3.3.2) —
+      // the backfill and the import-time PRS materializer agree by
+      // construction because both call aggregateCanonicalProjectTotals.
+      const canonical = aggregateCanonicalProjectTotals(lines, [p.id]).get(p.id)!;
+      const realisedRev = canonical.realisedRevenue;
+      const realisedCos = canonical.realisedCos;
+      const plannedRev = canonical.plannedRevenue;
+      const plannedCos = canonical.plannedCos;
 
       const vals: Record<string, string | null> = {
         actualRevenue: String(realisedRev),
