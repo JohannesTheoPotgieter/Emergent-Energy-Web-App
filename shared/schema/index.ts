@@ -5,6 +5,7 @@ export * from "./users";
 export * from "./projects";
 export * from "./finance";
 export * from "./qb-recon";
+export * from "./qb-project-match";
 export * from "./engineering";
 export * from "./tasks";
 export * from "./quality";
