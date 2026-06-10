@@ -102,6 +102,7 @@ jobs:
         if: hashFiles('**/*.test.ts') != ''
       # Non-cacheable integration steps (need a live server + DB)
       - run: npm run test:api
+      - run: npm run reconciliation:report
       - run: npm run release:gate
         env:
           SKIP_SMOKE_TESTS: "true"
