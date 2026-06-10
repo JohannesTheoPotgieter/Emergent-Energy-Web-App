@@ -110,6 +110,7 @@ jobs:
       # (it swaps the full smoke suite for these two). Install the browser + OS
       # deps so they don't error on a missing chromium executable.
       - run: npx playwright install --with-deps chromium
+      - run: npm run reconciliation:report
       - run: npm run release:gate
         env:
           SKIP_SMOKE_TESTS: "true"

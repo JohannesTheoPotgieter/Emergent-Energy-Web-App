@@ -1,9 +1,7 @@
 import { and, inArray, isNull, sql } from "drizzle-orm";
 import { normalizedCostLines, normalizedRevenueLines, workItems } from "@shared/schema";
 import { db, getDbMode } from "../db";
-import { getCosRealisedAmountForNclRow } from "../lib/calculations/financeUtils";
-import { getAssignedEvidenceByCostLineIds } from "../lib/finance/qb-allocation-read";
-import { FinanceLineLevelRepository } from "../repositories/finance-line-level-repository";
+import { getCanonicalProjectTotals } from "../lib/finance/canonical-project-totals";
 
 function toNumber(value: unknown): number {
   if (value === null || value === undefined || value === "") return 0;
@@ -111,7 +109,6 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
       }
     }
 
-    const assignedByCostLineId = await getAssignedEvidenceByCostLineIds(costRows.map((r: any) => r.id));
     for (const row of costRows) {
       const current = byProject.get(row.projectId);
       if (!current) continue;
@@ -127,17 +124,10 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
         } else {
           current.outstandingCost += amount;
         }
-        current.realisedCost += getCosRealisedAmountForNclRow(
-          row as any,
-          assignedByCostLineId.get(row.id) ?? null,
-        );
       }
     }
 
-    await populateRecognisedRevenue(byProject, projectIds);
-    for (const current of byProject.values()) {
-      current.recognisedRevenue = Number(current.recognisedRevenue.toFixed(2));
-    }
+    await populateCanonicalRecognised(byProject, projectIds);
 
     return byProject;
   }
@@ -168,18 +158,15 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
     current.outstandingRevenue = toNumber(row.outstanding_revenue);
   }
 
-  // One cost query feeds all four totals (total/paid/outstanding/realised).
-  // The realised-amount computation relies on the invoice-date-confirmed
-  // gate + override rules which live in `isCanonicalCosRealised`, so we
-  // need the raw rows anyway — issuing a separate aggregate SQL would
-  // duplicate business logic and add a round-trip.
+  // AP / cash totals (total/paid/outstanding) come from the parent rows;
+  // the RECOGNISED family (recognisedRevenue + realisedCost) comes from the
+  // single § 3.3.2 read path below — the parallel parent-grain realised
+  // computation that used to live here yielded a different value from the
+  // finance pages and is deleted.
   const rawCostRows = await db
     .select()
     .from(normalizedCostLines)
     .where(and(inArray(normalizedCostLines.projectId, projectIds), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))));
-  const assignedByCostLineId = await getAssignedEvidenceByCostLineIds(
-    (rawCostRows as any[]).map((r: any) => r.id),
-  );
 
   for (const row of rawCostRows as any[]) {
     const current = byProject.get(row.projectId);
@@ -193,52 +180,47 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
     } else {
       current.outstandingCost += amount;
     }
-    current.realisedCost += getCosRealisedAmountForNclRow(
-      row,
-      assignedByCostLineId.get(row.id) ?? null,
-    );
   }
 
-  await populateRecognisedRevenue(byProject, projectIds);
+  await populateCanonicalRecognised(byProject, projectIds);
 
   for (const current of byProject.values()) {
     current.totalCost = Number(current.totalCost.toFixed(2));
     current.paidCost = Number(current.paidCost.toFixed(2));
     current.outstandingCost = Number(current.outstandingCost.toFixed(2));
-    current.realisedCost = Number(current.realisedCost.toFixed(2));
-    current.recognisedRevenue = Number(current.recognisedRevenue.toFixed(2));
   }
 
   return byProject;
 }
 
 /**
- * § 3.3 POC recognised revenue, summed per project from the canonical
- * line-level repository. This is the ONLY correct source for "revenue
- * recognised" KPIs — the milestone-billing sum stored on `totalRevenue`
- * is contract value, not revenue (per § 3.3.3, must not be conflated).
+ * § 3.3 recognised REV + realised COS, sourced from the SINGLE read path
+ * (canonical-project-totals over FinanceLineLevelRepository). This is the
+ * only correct source for "revenue recognised" / "COS realised" KPIs — the
+ * milestone-billing sum stored on `totalRevenue` is contract value, not
+ * revenue (per § 3.3.3, must not be conflated).
  *
  * Batched: one repository call covers every project in the input set;
  * categories are scoped per project inside the repository (§ 3.3.1).
  */
-async function populateRecognisedRevenue(
+async function populateCanonicalRecognised(
   byProject: Map<number, CanonicalProjectFinanceRow>,
   projectIds: number[],
 ): Promise<void> {
   if (projectIds.length === 0) return;
   try {
-    const repo = new FinanceLineLevelRepository();
-    const lines = await repo.getPortfolioFinanceLines(projectIds);
-    for (const line of lines) {
-      const current = byProject.get(line.projectId);
+    const totals = await getCanonicalProjectTotals(projectIds);
+    for (const [projectId, t] of totals) {
+      const current = byProject.get(projectId);
       if (!current) continue;
-      current.recognisedRevenue += Number.isFinite(line.perLineRevenue) ? line.perLineRevenue : 0;
+      current.recognisedRevenue = t.recognisedRevenueAllLines;
+      current.realisedCost = t.realisedCos;
     }
   } catch (err) {
-    // Recognised revenue is additive — leave the field as 0 on failure rather
-    // than fail the entire KPI read. The legacy totalRevenue field remains
-    // populated so dashboards still render their backward-compatible figure.
-    console.warn("[canonical-dashboard-kpi] failed to populate recognisedRevenue:", err);
+    // Recognised figures are additive — leave the fields as 0 on failure
+    // rather than fail the entire KPI read. The legacy totalRevenue field
+    // remains populated so dashboards still render their billing figure.
+    console.warn("[canonical-dashboard-kpi] failed to populate recognised figures:", err);
   }
 }
 

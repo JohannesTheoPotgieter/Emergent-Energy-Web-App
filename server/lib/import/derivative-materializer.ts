@@ -3,7 +3,7 @@
  *
  * After a v2 incremental commit writes to normalized_cost_lines and
  * normalized_revenue_lines, this helper refreshes project_revenue_summary
- * from the normalized costedSummary so the FYE Detail view sees fresh
+ * from the CANONICAL § 3.3 line-level derivation so the FYE Detail view sees fresh
  * budget/actual revenue and COS figures after each commit.
  *
  * Historical note: this file used to also materialize program_expense and
@@ -20,6 +20,7 @@ import type { NormalizationResult } from "./normalizer";
 import { addTemporalColumns } from "../temporal-helpers";
 import { projectRevenueSummary } from "@shared/schema";
 import { and, eq, isNull, ne } from "drizzle-orm";
+import { getCanonicalProjectTotals } from "../finance/canonical-project-totals";
 
 /**
  * Rename-safe upsert of the project's live `project_revenue_summary` row.
@@ -126,28 +127,40 @@ export interface MaterializerResult {
 }
 
 /**
- * Refresh project_revenue_summary from the normalized costedSummary after
+ * Refresh project_revenue_summary from the canonical line-level totals after
  * a v2 incremental commit. Idempotent upsert keyed by project name.
  */
 export async function materializeDerivatives(ctx: MaterializerContext): Promise<MaterializerResult> {
-  const { tx, projectId, projectName, runId, commitTimestamp, norm } = ctx;
+  const { tx, projectId, projectName, runId, commitTimestamp } = ctx;
   const result: MaterializerResult = {
     projectRevenueSummaryUpdated: false,
   };
 
-  if (norm.costedSummary && projectName) {
-    const cs = norm.costedSummary;
-    const hasData = cs.plannedRevenue != null || cs.plannedExpenditure != null;
-    if (hasData) {
-      const vals: Record<string, any> = {};
-      if (cs.plannedRevenue != null) vals.plannedRevenue = String(cs.plannedRevenue);
-      if (cs.plannedExpenditure != null) vals.plannedExpenditure = String(cs.plannedExpenditure);
-      if (cs.plannedProfit != null) vals.plannedProfit = String(cs.plannedProfit);
-      if (cs.plannedMargin != null) vals.plannedMargin = String(cs.plannedMargin);
-      if (cs.actualRevenue != null) vals.actualRevenue = String(cs.actualRevenue);
-      if (cs.actualExpenditure != null) vals.actualExpenditure = String(cs.actualExpenditure);
-      if (cs.actualProfit != null) vals.actualProfit = String(cs.actualProfit);
-      if (cs.actualMargin != null) vals.actualMargin = String(cs.actualMargin);
+  // PRS is a MATERIALIZED VIEW over the canonical § 3.3 line-level
+  // derivation — refreshed inside the commit transaction so it can never
+  // disagree with the finance pages. The pasted workbook header summary
+  // (norm.costedSummary) is deliberately NOT written here any more: it was
+  // one of the "four values" (tracker_revenue_summary still preserves the
+  // workbook figures verbatim for audit/replica use via writeRevenueSummary).
+  if (projectName) {
+    const totals = (await getCanonicalProjectTotals([projectId], {}, tx)).get(projectId);
+    if (totals) {
+      const vals: Record<string, any> = {
+        actualRevenue: String(totals.realisedRevenue),
+        actualExpenditure: String(totals.realisedCos),
+        actualProfit: String(totals.realisedGp),
+        actualMargin:
+          totals.realisedRevenue !== 0
+            ? String(Number((totals.realisedGp / totals.realisedRevenue).toFixed(4)))
+            : null,
+        plannedRevenue: String(totals.plannedRevenue),
+        plannedExpenditure: String(totals.plannedCos),
+        plannedProfit: String(totals.plannedGp),
+        plannedMargin:
+          totals.plannedRevenue !== 0
+            ? String(Number((totals.plannedGp / totals.plannedRevenue).toFixed(4)))
+            : null,
+      };
       await upsertProjectRevenueSummary(tx, { projectId, projectName, vals, runId, commitTimestamp });
       result.projectRevenueSummaryUpdated = true;
     }

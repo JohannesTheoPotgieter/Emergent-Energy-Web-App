@@ -44,8 +44,7 @@ import { computeQcProgress } from "@shared/quality-governance";
 import { evaluateRevenueArStatus, isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { computeMarginPct } from "../lib/finance/margin";
 import { effectiveRagBucket } from "@shared/utils/effective-rag";
-import { getCosRealisedAmountForNclRow } from "../lib/calculations/financeUtils";
-import { getAssignedEvidenceByCostLineIds } from "../lib/finance/qb-allocation-read";
+import { getCanonicalProjectTotals } from "../lib/finance/canonical-project-totals";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -55,7 +54,7 @@ function toNum(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function getFytdRange(): { fyStart: string; fyEnd: string; today: string } {
+export function getFytdRange(): { fyStart: string; fyEnd: string; today: string } {
   const now = new Date();
   const fyStartYear = now.getMonth() + 1 >= 9 ? now.getFullYear() : now.getFullYear() - 1;
   return {
@@ -152,14 +151,13 @@ export async function getCompanyOverviewData() {
   });
 
   const activeProjectIds = new Set(activeProjects.map((p) => p.id));
-  const assignedByCostLineId = await getAssignedEvidenceByCostLineIds(costRows.map((r: any) => r.id));
 
   // ── Finance FYTD aggregation ───────────────────────────────────────
   // Four distinct concepts (never blended):
   //   1. Cash received — money received from clients (driven by payment date / in-bank)
   //   2. Cash paid — money paid to suppliers (driven by payment date / out-of-bank)
-  //   3. COS realised — invoice captured under actuals (canonical invoice-only rule)
-  //   4. Revenue realised — COS-ratio allocation from COS-realised lines only
+  //   3. COS realised — canonical § 3.3 line-level realised bucket (single read path)
+  //   4. Revenue realised — canonical § 3.3 per-line (Q/X)×J, realised bucket (single read path)
   const isInFy = (d: string | null | undefined) =>
     !!(d && /^\d{4}-\d{2}-\d{2}/.test(d) && d >= fyStart && d <= fyEnd);
 
@@ -167,7 +165,6 @@ export async function getCompanyOverviewData() {
   let cashReceivedFytd = 0;
   let totalCostFytd = 0;
   let cashPaidFytd = 0;
-  let realisedCostFytd = 0;
 
   // Revenue / cash received aggregation
   // Two distinct FY-window questions per § 3.4:
@@ -203,32 +200,17 @@ export async function getCompanyOverviewData() {
     }
   }
 
-  // Cost / cash paid / COS realised aggregation
-  // Also build per-project totals for COS-ratio revenue allocation
-  const projectTotalCos = new Map<number, number>();
-  const projectTotalRev = new Map<number, number>();
-  const projectRealisedCos = new Map<number, number>();
-
+  // Cost / cash paid aggregation (billed + cash concepts only — the
+  // RECOGNISED family comes from the single § 3.3.2 read path below).
   for (const row of costRows) {
     if (!activeProjectIds.has(row.projectId)) continue;
     const amount = toNum(row.amountExVat);
-
-    // Project-level COS totals (all time) for ratio denominator
-    projectTotalCos.set(row.projectId, (projectTotalCos.get(row.projectId) || 0) + amount);
 
     // Cost recognition FY-window: paid → invoice → approved fallback
     const recognitionDate =
       (row as any).paidDate || (row as any).invoiceDate || (row as any).approvedDate;
     if (isInFy(recognitionDate)) {
       totalCostFytd += amount;
-      const realised = getCosRealisedAmountForNclRow(
-        row as any,
-        assignedByCostLineId.get(row.id) ?? null,
-      );
-      if (realised > 0) {
-        realisedCostFytd += realised;
-        projectRealisedCos.set(row.projectId, (projectRealisedCos.get(row.projectId) || 0) + realised);
-      }
     }
 
     // Cash paid FY-window: paidDate ONLY per § 3.4. No fallback.
@@ -238,20 +220,21 @@ export async function getCompanyOverviewData() {
     }
   }
 
-  // Build project-level revenue totals for COS-ratio allocation
-  for (const row of revenueRows) {
-    if (!activeProjectIds.has(row.projectId)) continue;
-    const amount = toNum(row.amountExVat);
-    projectTotalRev.set(row.projectId, (projectTotalRev.get(row.projectId) || 0) + amount);
-  }
-
-  // Revenue realised = COS-ratio allocation from COS-realised cost lines
+  // Realised REV / COS — the canonical § 3.3 per-line derivation, summed.
+  // The previous COS-ratio blend ((realisedCos/totalCos) × totalRev) was a
+  // parallel formula that disagreed with the finance pages by design; it is
+  // deleted. One read path, one value (§ 3.3.2), FY-windowed on the same
+  // recognition date every finance surface uses.
   let realisedRevenueFytd = 0;
-  for (const [projId, realisedCos] of projectRealisedCos) {
-    const totalCos = projectTotalCos.get(projId) || 0;
-    const totalRev = projectTotalRev.get(projId) || 0;
-    if (totalCos > 0) {
-      realisedRevenueFytd += (realisedCos / totalCos) * totalRev;
+  let realisedCostFytd = 0;
+  {
+    const canonicalTotals = await getCanonicalProjectTotals(
+      [...activeProjectIds],
+      { fyStart, fyEnd },
+    );
+    for (const t of canonicalTotals.values()) {
+      realisedRevenueFytd += t.realisedRevenue;
+      realisedCostFytd += t.realisedCos;
     }
   }
 
@@ -729,7 +712,7 @@ export async function getCompanyOverviewData() {
     revenueRows.filter((r) => activeProjectIds.has(r.projectId) && !r.effectiveTo && nullAmountWithInvoice(r)).length;
 
   const finKpis = new Map<string, { actual: number | null; target?: number | null }>([
-    ["fin_revenue_vs_target", { actual: realisedRevenueFytd, target: revenuePlannedFytd }], // Revenue realised (COS-ratio) vs FYTD-anchored plan
+    ["fin_revenue_vs_target", { actual: realisedRevenueFytd, target: revenuePlannedFytd }], // Revenue realised (canonical § 3.3 line-level) vs FYTD-anchored plan
     ["fin_cash_collected_vs_target", { actual: cashReceivedFytd, target: revenuePlannedFytd }], // Cash received vs FYTD-anchored plan
     ["fin_cos_vs_target", { actual: realisedCostFytd, target: costPlannedFytd }], // COS realised (invoice-based) vs FYTD-anchored plan
     // No board-set gross-margin target exists. The fabricated 20% placeholder was
@@ -995,6 +978,9 @@ export async function getCompanyOverviewData() {
         trackedItems: scheduleItemCount,
       },
     },
+    // Exposed so verify:finance can re-derive the SAME company aggregate
+    // from the canonical read path over the SAME project set + FY window.
+    activeProjectIds: [...activeProjectIds],
     financeSnapshot: {
       // Cash concepts
       cashReceivedFytd,
