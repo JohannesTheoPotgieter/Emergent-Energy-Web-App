@@ -83,6 +83,7 @@ import {
 import { normalizeCategoryKey } from "./lib/import/normalizer";
 import { normalizeCostLineStatus, normalizeAllocationConfidence } from "./lib/import/utils";
 import { materializeDerivatives } from "./lib/import/derivative-materializer";
+import { relinkCategoryAllocationsForProject } from "./lib/import/allocation-relink";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { softCloseByProjectId, softCloseByProjectName, softCloseByImportRunId, addTemporalColumns, dedupeCostLineInserts } from "./lib/temporal-helpers";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
@@ -2896,51 +2897,20 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         }
       }
 
-      // ── S10: Populate category_key and category_allocation_id on NCL rows ──
-      // Set category_key on all active NCL rows for this project, including UNCHANGED rows.
-      if (catAllocIdByKey.size > 0) {
-        // Build a lookup from category_name (stripped) → categoryKey + allocationId
-        const catNameToKeyId = new Map<string, { key: string; id: number }>();
-        for (const ca of catAllocs!) {
-          catNameToKeyId.set(ca.categoryName.toLowerCase(), { key: ca.categoryKey, id: catAllocIdByKey.get(ca.categoryKey)! });
-          // Also index by full key for rows that already have numbered categories
-          catNameToKeyId.set(ca.categoryKey.toLowerCase(), { key: ca.categoryKey, id: catAllocIdByKey.get(ca.categoryKey)! });
-        }
-
-        // Fetch ALL active NCL rows for this project (includes UNCHANGED ones).
-        // categoryAllocationId is included so the condition below can skip
-        // rows that are already fully up-to-date, avoiding unnecessary writes.
-        const activeNclRows = await tx.select({
-          id: normalizedCostLines.id,
-          costCategory: normalizedCostLines.costCategory,
-          categoryKey: normalizedCostLines.categoryKey,
-          categoryAllocationId: normalizedCostLines.categoryAllocationId,
-        })
-          .from(normalizedCostLines)
-          .where(and(
-            eq(normalizedCostLines.projectId, projectId),
-            and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)),
-          ));
-
-        // Update each row whose categoryKey or categoryAllocationId is wrong.
-        // Because category_revenue_allocations are soft-closed and re-inserted
-        // on every import, the FK always needs refreshing — even for rows that
-        // already have the correct key string.
-        for (const row of activeNclRows) {
-          const catName = (row.costCategory || "").toLowerCase().trim();
-          const match = catNameToKeyId.get(catName);
-          if (match && (row.categoryKey !== match.key || row.categoryAllocationId !== match.id)) {
-            await tx.update(normalizedCostLines)
-              .set({
-                categoryKey: match.key,
-                categoryAllocationId: match.id,
-              })
-              .where(and(
-                eq(normalizedCostLines.id, row.id),
-                isNull(normalizedCostLines.effectiveTo),
-              ));
-          }
-        }
+      // ── S10: Re-point category_key / category_allocation_id on NCL rows ──
+      // Shared implementation (also used by the scheduler path and the prod
+      // remediation backfill). Runs UNCONDITIONALLY — not only when this run
+      // extracted allocations — so a commit that didn't carry a budget pane
+      // still repairs stale FKs left by an earlier allocation rotation, and
+      // unresolvable lines are explicitly flagged instead of silently
+      // orphaned (the prod 31-of-42-projects-unlinked corruption).
+      const relink = await relinkCategoryAllocationsForProject(tx, projectId);
+      if (relink.relinked > 0 || relink.unresolved > 0) {
+        console.warn(
+          `[SmartImport] S10 allocation relink: ${relink.relinked} re-pointed, ` +
+            `${relink.unresolved} unresolved (flagged ${relink.flagged}) against ` +
+            `${relink.allocationCount} live allocation(s) for project ${projectId}.`,
+        );
       }
 
       // ── S11: noRevenueLinked recon ──

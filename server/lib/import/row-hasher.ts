@@ -34,7 +34,17 @@ import { normalizeWithFieldType } from "./value-normalization";
 const HASH_VERSION_PLAN = 1;
 const HASH_VERSION_REVENUE = 1;
 const HASH_VERSION_EXPENDITURE = 2;
-const HASH_VERSION_ACTUAL = 1;
+// v2 (2026-06-10, finance-linkage orphan fix): identity no longer includes
+// the parent's DB id (`cost_line_id`). Cost-line parents are soft-closed and
+// re-inserted with a NEW id whenever they change, so a parent-id-keyed hash
+// changed on every parent rotation — the soft-close-by-hash matched nothing,
+// a duplicate child was inserted under the new parent, and the old child
+// stayed live pointing at the dead parent (orphaned COS that double-counted
+// and derived zero § 3.3 revenue). v2 keys on the stable workbook anchor
+// (projectId + parent source row) instead. Old v1 hashes occupy a disjoint
+// space; the end-of-pass sweep in writeActualLineRows retires them on the
+// next import of each project.
+const HASH_VERSION_ACTUAL = 2;
 
 const FIELD_SEPARATOR = "";
 
@@ -136,22 +146,29 @@ export function hashExpenditureRow(input: {
 }
 
 /**
- * ACTUAL-row identity = (cost_line_id, actual_no, invoice_number,
- * invoice_date).
+ * ACTUAL-row identity = (project_id, parent_source_row, actual_no,
+ * invoice_number, invoice_date).
  *
  * One costed line can have N actual entries (multiple invoice batches).
  * The pair (actual_no, invoice_number) is the natural identifier within
  * the parent costed line; date is added so the same invoice number
  * issued in different periods doesn't collide.
+ *
+ * The parent is identified by its WORKBOOK anchor (`parentSourceRow` —
+ * the Expenditure Breakdown row the costed line sits on), never by the
+ * parent's DB id: the DB id rotates on every parent soft-close+re-insert,
+ * which is exactly what orphaned actuals children before v2.
  */
 export function hashActualRow(input: {
-  costLineId: number | string;
+  projectId: number | string;
+  parentSourceRow: number | string;
   actualNo: number | string;
   invoiceNumber?: string | null;
   invoiceDate?: string | null;
 }): string {
   return hashIdentity(HASH_VERSION_ACTUAL, "ACTUAL", [
-    input.costLineId,
+    input.projectId,
+    input.parentSourceRow,
     input.actualNo,
     input.invoiceNumber ?? "",
     input.invoiceDate ?? "",
