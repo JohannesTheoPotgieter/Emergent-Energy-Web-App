@@ -70,6 +70,7 @@ import {
   detectImportMode,
 } from "../lib/import/baseline";
 import { materializeDerivatives } from "../lib/import/derivative-materializer";
+import { relinkCategoryAllocationsForProject } from "../lib/import/allocation-relink";
 import { syncProjectSplitTables } from "../lib/project-info-sync";
 import { recordImportChange } from "../lib/audit/diff-engine";
 import { logAudit } from "../audit-logger";
@@ -497,41 +498,17 @@ export async function commitSmartImportRunAsSystem(
         }
       }
 
-      // S10: populate category_key + category_allocation_id on active NCL rows
-      if (catAllocIdByKey.size > 0) {
-        const catNameToKeyId = new Map<string, { key: string; id: number }>();
-        for (const ca of catAllocs!) {
-          catNameToKeyId.set(ca.categoryName.toLowerCase(), { key: ca.categoryKey, id: catAllocIdByKey.get(ca.categoryKey)! });
-          catNameToKeyId.set(ca.categoryKey.toLowerCase(), { key: ca.categoryKey, id: catAllocIdByKey.get(ca.categoryKey)! });
-        }
-
-        const activeNclRows = await tx.select({
-          id: normalizedCostLines.id,
-          costCategory: normalizedCostLines.costCategory,
-          categoryKey: normalizedCostLines.categoryKey,
-          categoryAllocationId: normalizedCostLines.categoryAllocationId,
-        })
-          .from(normalizedCostLines)
-          .where(and(
-            eq(normalizedCostLines.projectId, projectId),
-            and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)),
-          ));
-
-        for (const row of activeNclRows) {
-          const catName = (row.costCategory || "").toLowerCase().trim();
-          const match = catNameToKeyId.get(catName);
-          if (match && (row.categoryKey !== match.key || row.categoryAllocationId !== match.id)) {
-            await tx.update(normalizedCostLines)
-              .set({
-                categoryKey: match.key,
-                categoryAllocationId: match.id,
-              })
-              .where(and(
-                eq(normalizedCostLines.id, row.id),
-                isNull(normalizedCostLines.effectiveTo),
-              ));
-          }
-        }
+      // S10: re-point category_key + category_allocation_id on active NCL rows.
+      // Shared implementation with the wizard path — runs unconditionally so
+      // stale FKs from earlier allocation rotations are repaired even when
+      // this run carried no budget pane; unresolvable lines are flagged.
+      const relink = await relinkCategoryAllocationsForProject(tx, projectId);
+      if (relink.relinked > 0 || relink.unresolved > 0) {
+        console.warn(
+          `[SchedulerCommit] S10 allocation relink: ${relink.relinked} re-pointed, ` +
+            `${relink.unresolved} unresolved (flagged ${relink.flagged}) against ` +
+            `${relink.allocationCount} live allocation(s) for project ${projectId}.`,
+        );
       }
 
       // S11: noRevenueLinked recon

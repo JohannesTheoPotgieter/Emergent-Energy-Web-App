@@ -2378,18 +2378,26 @@ export interface ActualLineRowsContext extends AuxWriteContext {
  */
 export async function writeActualLineRows(
   ctx: ActualLineRowsContext,
-): Promise<{ inserted: number; skipped: number; orphaned: number }> {
+): Promise<{ inserted: number; skipped: number; orphaned: number; swept: number }> {
   const { tx, projectId, runId, commitTimestamp, actualLineRows } = ctx;
   if (!actualLineRows || actualLineRows.length === 0) {
-    return { inserted: 0, skipped: 0, orphaned: 0 };
+    return { inserted: 0, skipped: 0, orphaned: 0, swept: 0 };
   }
 
   const { normalizedCostLines, normalizedCostLineActuals } = await import("@shared/schema");
-  const { eq, and, isNull } = await import("drizzle-orm");
+  const { eq, and, isNull, or, notInArray } = await import("drizzle-orm");
 
   let inserted = 0;
   let skipped = 0;
   let orphaned = 0;
+
+  // Every hash (re-)asserted by this run. The end-of-pass sweep soft-closes
+  // active children NOT in this set — without it, a child whose identity
+  // changed in the workbook (corrected invoice number/date) or whose hash
+  // recipe was upgraded left its old version live forever: orphaned COS
+  // that double-counted against the re-inserted replacement and derived
+  // zero § 3.3 revenue (the prod orphan-revenue corruption).
+  const seenActualHashes = new Set<string>();
 
   for (const row of actualLineRows) {
     // Resolve parent cost line by (project, sourceRow). Active rows only.
@@ -2410,20 +2418,27 @@ export async function writeActualLineRows(
       continue;
     }
 
+    // v2 identity — keyed on the stable workbook anchor (projectId +
+    // parentSourceRow), NEVER the parent's rotating DB id. See row-hasher.
     const rowHash = hashActualRow({
-      costLineId: parent.id,
+      projectId,
+      parentSourceRow: row.parentSourceRow,
       actualNo: row.actualNo,
       invoiceNumber: row.invoiceNumber,
       invoiceDate: row.invoiceDate,
     });
+    seenActualHashes.add(rowHash);
 
-    // Soft-close any existing active row with the same hash.
+    // Soft-close any existing active row with the same hash (project-wide,
+    // not parent-id-scoped: after a parent rotation the predecessor child
+    // points at the soft-closed parent's id, and scoping on the new id
+    // missed it — leaving the stale child live).
     await tx
       .update(normalizedCostLineActuals)
       .set({ effectiveTo: commitTimestamp })
       .where(
         and(
-          eq(normalizedCostLineActuals.costLineId, parent.id),
+          eq(normalizedCostLineActuals.projectId, projectId),
           eq(normalizedCostLineActuals.rowHash, rowHash),
           isNull(normalizedCostLineActuals.effectiveTo),
         ),
@@ -2489,7 +2504,35 @@ export async function writeActualLineRows(
     inserted++;
   }
 
-  return { inserted, skipped, orphaned };
+  // End-of-pass sweep — mirror of the cost/revenue sections' hash cleanup.
+  // The workbook's actuals section is the full statement of this project's
+  // actual entries (every row above was re-asserted unconditionally), so any
+  // active child whose hash was NOT seen this run is stale: identity changed
+  // in the workbook, parent rotated under the old v1 hash recipe, or a
+  // legacy pre-hash row. Soft-close them; temporal history preserves the rows.
+  // Defensive: if NOTHING landed (every row orphaned on parent resolution),
+  // skip the sweep rather than soft-closing the project's entire child set.
+  let swept = 0;
+  if (seenActualHashes.size > 0) {
+    const sweepResult = await tx
+      .update(normalizedCostLineActuals)
+      .set({ effectiveTo: commitTimestamp })
+      .where(
+        and(
+          eq(normalizedCostLineActuals.projectId, projectId),
+          isNull(normalizedCostLineActuals.effectiveTo),
+          isNull(normalizedCostLineActuals.deletedAt),
+          or(
+            isNull(normalizedCostLineActuals.rowHash),
+            notInArray(normalizedCostLineActuals.rowHash, [...seenActualHashes]),
+          ),
+        ),
+      )
+      .returning({ id: normalizedCostLineActuals.id });
+    swept = Array.isArray(sweepResult) ? sweepResult.length : 0;
+  }
+
+  return { inserted, skipped, orphaned, swept };
 }
 
 export interface ProjectMetadataContext extends AuxWriteContext {

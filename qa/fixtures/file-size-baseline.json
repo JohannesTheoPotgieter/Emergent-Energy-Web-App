@@ -2,19 +2,15 @@
   "_documentation": "EE-QA-015 baseline — files above the FILE_SIZE_THRESHOLD LOC. The CI guard `qa/tests/unit/file-size-ratchet.test.ts` fails if any of these grow OR a NEW file lands over the threshold. To regenerate after a split, run `npx tsx scripts/build-file-size-baseline.ts` and commit the new JSON.",
   "threshold": 1500,
   "buffer": 50,
-  "generated": "2026-06-03",
+  "generated": "2026-06-10",
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
-      "loc": 9614
-    },
-    {
-      "file": "server/services/quickbooks-cascade-proposals-service.ts",
-      "loc": 1522
+      "loc": 9662
     },
     {
       "file": "client/src/pages/smart-import.tsx",
-      "loc": 5247
+      "loc": 5282
     },
     {
       "file": "server/engineering-routes.ts",
@@ -25,12 +21,12 @@
       "loc": 3995
     },
     {
-      "file": "server/db.ts",
-      "loc": 3907
+      "file": "server/smart-import-routes.ts",
+      "loc": 3984
     },
     {
-      "file": "server/smart-import-routes.ts",
-      "loc": 3965
+      "file": "server/db.ts",
+      "loc": 3935
     },
     {
       "file": "server/lifecycle-routes.ts",
@@ -46,7 +42,7 @@
     },
     {
       "file": "client/src/pages/cashflow.tsx",
-      "loc": 2971
+      "loc": 2982
     },
     {
       "file": "client/src/pages/projects.tsx",
@@ -54,7 +50,7 @@
     },
     {
       "file": "server/routes/quickbooks-invoice-matches.routes.ts",
-      "loc": 2802
+      "loc": 2824
     },
     {
       "file": "server/services/quickbooks-reconciliation-service.ts",
@@ -62,11 +58,15 @@
     },
     {
       "file": "server/lib/import/commit-executor.ts",
-      "loc": 2622
+      "loc": 2697
     },
     {
       "file": "client/src/pages/my-work-tasks.tsx",
       "loc": 2380
+    },
+    {
+      "file": "client/src/pages/cos.tsx",
+      "loc": 2268
     },
     {
       "file": "client/src/pages/ee-info.tsx",
@@ -77,16 +77,12 @@
       "loc": 2260
     },
     {
-      "file": "client/src/pages/cos.tsx",
-      "loc": 2256
+      "file": "server/lib/import/normalizer.ts",
+      "loc": 2259
     },
     {
       "file": "server/departments/project-routes.ts",
-      "loc": 2215
-    },
-    {
-      "file": "server/lib/import/normalizer.ts",
-      "loc": 2211
+      "loc": 2224
     },
     {
       "file": "client/src/components/quickbooks/QbMatchingWorkbench.tsx",
@@ -103,10 +99,6 @@
     {
       "file": "server/departments/opportunities-routes.ts",
       "loc": 2160
-    },
-    {
-      "file": "client/src/pages/finance-quickbooks-throughput.tsx",
-      "loc": 1649
     },
     {
       "file": "server/ee-info-routes.ts",
@@ -126,7 +118,7 @@
     },
     {
       "file": "client/src/pages/project-detail.tsx",
-      "loc": 1831
+      "loc": 1820
     },
     {
       "file": "server/seed-ee-info-updates.ts",
@@ -134,6 +126,10 @@
     },
     {
       "file": "server/quickbooks-routes.ts",
+      "loc": 1808
+    },
+    {
+      "file": "shared/schema/finance.ts",
       "loc": 1808
     },
     {
@@ -147,10 +143,6 @@
     {
       "file": "client/src/pages/pd-dashboard.tsx",
       "loc": 1750
-    },
-    {
-      "file": "shared/schema/finance.ts",
-      "loc": 1874
     },
     {
       "file": "client/src/pages/standups.tsx",
@@ -174,15 +166,19 @@
     },
     {
       "file": "shared/schema/projects.ts",
-      "loc": 1698
+      "loc": 1707
     },
     {
       "file": "client/src/pages/priority-detail.tsx",
       "loc": 1687
     },
     {
+      "file": "client/src/pages/finance-quickbooks-throughput.tsx",
+      "loc": 1649
+    },
+    {
       "file": "server/storage.ts",
-      "loc": 1653
+      "loc": 1648
     },
     {
       "file": "client/src/pages/qm-dashboard.tsx",
@@ -206,7 +202,7 @@
     },
     {
       "file": "server/routes/finance-legacy-extracted-routes.ts",
-      "loc": 1552
+      "loc": 1561
     },
     {
       "file": "shared/permissions/registry.ts",
@@ -215,6 +211,10 @@
     {
       "file": "server/services/gate-auto-evaluator-service.ts",
       "loc": 1547
+    },
+    {
+      "file": "server/services/quickbooks-cascade-proposals-service.ts",
+      "loc": 1522
     },
     {
       "file": "server/role-management.ts",

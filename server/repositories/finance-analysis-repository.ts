@@ -200,13 +200,20 @@ export async function listProjectCosRows(): Promise<ProjectCosRow[]> {
     })
     .from(projectPlan);
 
+  // Live-project guard: PRS rows are name-keyed snapshots that historically
+  // survived project renames/deletions as live orphans. Joining to live
+  // projectInfo keeps those orphan rows out of every downstream sum.
   const summaries = await db
     .select({
       projectId: projectRevenueSummary.projectId,
       plannedExpenditure: projectRevenueSummary.plannedExpenditure,
     })
     .from(projectRevenueSummary)
-    .where(isNull(projectRevenueSummary.effectiveTo));
+    .innerJoin(projectInfo, eq(projectRevenueSummary.projectId, projectInfo.id))
+    .where(and(
+      isNull(projectRevenueSummary.effectiveTo),
+      isNull(projectInfo.deletedAt),
+    ));
 
   // Sum from the child actuals table — each row is one invoiced actual
   // for its parent cost line. Reading parent.amountExVat instead inflated

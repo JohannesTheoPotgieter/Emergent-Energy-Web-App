@@ -89,17 +89,38 @@ describe("PR 3 audit — column R (PO number) preserved", () => {
 });
 
 describe("PR 3 audit — S10 links cost lines to category allocations", () => {
+  // S10 moved to the SHARED implementation in
+  // server/lib/import/allocation-relink.ts (finance-linkage orphan fix):
+  // one matcher for the wizard path, the scheduler path, and the prod
+  // remediation backfill, invoked UNCONDITIONALLY (not only when the run
+  // extracted allocations) so stale FKs from earlier rotations are repaired
+  // and unresolvable lines are flagged instead of silently orphaned.
+  const allocationRelink = read("server/lib/import/allocation-relink.ts");
+  const schedulerCommit = read("server/services/scheduler-commit.ts");
+
   it("S10 stage populates categoryKey + categoryAllocationId on NCL rows", () => {
-    expect(smartImportRoutes).toContain("// ── S10: Populate category_key and category_allocation_id");
-    expect(smartImportRoutes).toContain("categoryAllocationId");
-    expect(smartImportRoutes).toContain("normalizedCostLines");
+    expect(smartImportRoutes).toContain("relinkCategoryAllocationsForProject(tx, projectId)");
+    expect(allocationRelink).toContain("categoryAllocationId: match.id");
+    expect(allocationRelink).toContain("normalizedCostLines");
   });
 
   it("S10 covers ALL active rows (including UNCHANGED) so re-imports re-link", () => {
     // Soft-close + re-insert pattern means the FK always needs refreshing.
     // If S10 ever filters to "only changed rows", historical rows orphan.
-    expect(smartImportRoutes).toMatch(/Fetch ALL active NCL rows/i);
-    expect(smartImportRoutes).toContain("isNull(normalizedCostLines.effectiveTo)");
+    expect(allocationRelink).toContain("isNull(normalizedCostLines.effectiveTo)");
+    expect(allocationRelink).toMatch(/every active cost line/i);
+  });
+
+  it("S10 runs unconditionally on BOTH commit paths (wizard + scheduler)", () => {
+    // The pre-fix inline blocks ran only when the current run extracted
+    // allocations (`catAllocIdByKey.size > 0`), so commits without a budget
+    // pane never repaired stale FKs — most prod projects ended up unlinked.
+    expect(smartImportRoutes).toMatch(/Runs UNCONDITIONALLY/i);
+    expect(schedulerCommit).toContain("relinkCategoryAllocationsForProject(tx, projectId)");
+  });
+
+  it("unresolvable lines are flagged, never silently orphaned", () => {
+    expect(allocationRelink).toContain("noRevenueLinked: true");
   });
 });
 
