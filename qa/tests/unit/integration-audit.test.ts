@@ -97,22 +97,9 @@ describe("Phase 5: Frontend sub-project filters", () => {
     expect(source).toContain("subProjects.length === 0");
   });
 
-  it("RevenueTrackingTab has sub-project filter state", () => {
-    const source = read("client/src/components/tabs/RevenueTrackingTab.tsx");
-    expect(source).toContain("subProjectFilter");
-    expect(source).toContain("setSubProjectFilter");
-    expect(source).toContain("revenue-sub-project-filter");
-  });
-
-  it("RevenueTrackingTab filters milestones by sub-project", () => {
-    const source = read("client/src/components/tabs/RevenueTrackingTab.tsx");
-    expect(source).toContain("m.subProjectName === subProjectFilter");
-  });
-
-  it("RevenueTrackingTab only shows filter when sub-projects exist", () => {
-    const source = read("client/src/components/tabs/RevenueTrackingTab.tsx");
-    expect(source).toContain("subProjectNames.length > 0");
-  });
+  // RevenueTrackingTab's sub-project filter cases were removed with the tab
+  // itself in refactor/project-detail-finance-unify — project-detail finance
+  // now renders the canonical ProjectFinanceCanonical view.
 });
 
 describe("Phase 6: Null safety for new fields", () => {

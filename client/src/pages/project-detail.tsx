@@ -23,13 +23,13 @@ import {
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { EnergyLoader } from "@/components/ui/energy-loader";
-import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
 import { ExpenditureEditableTab } from "@/components/tabs/ExpenditureEditableTab";
-import { GpTrackerTab } from "@/components/tabs/GpTrackerTab";
-// Legacy finance tab imports removed â€” revenue/GP/COS now under PD department
+// Finance recognition (REV/COS/GP) + invoice-milestone subtabs now render the
+// ONE canonical per-project read path. The five parallel-computation tabs
+// (RevenueTrackingTab, RevenueTrackerTab, MonthlyRealisationTab, GpTrackerTab)
+// were removed in refactor/project-detail-finance-unify.
+import { ProjectFinanceCanonical } from "@/components/finance/ProjectFinanceCanonical";
 import { CashflowTab } from "@/components/tabs/CashflowTab";
-import { MonthlyRealisationTab } from "@/components/tabs/MonthlyRealisationTab";
-import { RevenueTrackerTab } from "@/components/tabs/RevenueTrackerTab";
 import TaskDetailDrawer from "@/components/TaskDetailDrawer";
 import BoardView from "@/components/BoardView";
 import CalendarView from "@/components/CalendarView";
@@ -1732,11 +1732,11 @@ export default function ProjectDetailPage() {
             <BudgetBaselineStrip projectId={projectInfoId} actualRevenue={totalRevenueActual} />
           )}
 
-          {activeSubTab === "revenue" && canViewSubTab.revenue && <RevenueTrackingTab projectName={projectName} projectId={projectInfoId ?? null} highlightId={highlightType === 'revenue' ? highlightId : null} />}
+          {activeSubTab === "revenue" && canViewSubTab.revenue && <ProjectFinanceCanonical projectId={projectInfoId ?? null} projectName={projectName} focus="revenue" />}
           {activeSubTab === "cost-lines" && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} projectId={projectInfoId ?? null} highlightId={highlightType === 'expense' ? highlightId : null} initialFilter={costFilter || undefined} />}
-          {activeSubTab === "cos-tracker" && canViewSubTab.cosTracker && <MonthlyRealisationTab projectName={projectName} projectId={projectInfoId ?? null} />}
-          {activeSubTab === "rev-tracker" && canViewSubTab.revenue && <RevenueTrackerTab projectName={projectName} projectId={projectInfoId ?? null} />}
-          {activeSubTab === "gp-tracker" && canViewSubTab.revenue && canViewSubTab.expenditure && <GpTrackerTab projectName={projectName} projectId={projectInfoId ?? null} />}
+          {activeSubTab === "cos-tracker" && canViewSubTab.cosTracker && <ProjectFinanceCanonical projectId={projectInfoId ?? null} projectName={projectName} focus="cos" />}
+          {activeSubTab === "rev-tracker" && canViewSubTab.revenue && <ProjectFinanceCanonical projectId={projectInfoId ?? null} projectName={projectName} focus="revenue" />}
+          {activeSubTab === "gp-tracker" && canViewSubTab.revenue && canViewSubTab.expenditure && <ProjectFinanceCanonical projectId={projectInfoId ?? null} projectName={projectName} focus="gp" />}
           {activeSubTab === "cashflow" && canViewSubTab.cashflow && <CashflowTab projectName={projectName} canOverrideFinance={v2Perms?.canOverrideFinance ?? false} />}
         </div>
         </ErrorBoundary>

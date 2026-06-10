@@ -1,5 +1,5 @@
 {
-  "_documentation": "EE-QA-021 baseline \u2014 files using useMutation without onError or useApiMutation. Adding NEW entries here is forbidden by qa/tests/unit/mutation-feedback-contract.test.ts. Removing one (by adding onError or migrating to useApiMutation) is celebrated.",
+  "_documentation": "EE-QA-021 baseline — files using useMutation without onError or useApiMutation. Adding NEW entries here is forbidden by qa/tests/unit/mutation-feedback-contract.test.ts. Removing one (by adding onError or migrating to useApiMutation) is celebrated.",
   "files": [
     "client/src/components/BoardView.tsx",
     "client/src/components/LifecycleStoryMode.tsx",
@@ -12,7 +12,6 @@
     "client/src/components/tabs/ProjectCommissioningTab.tsx",
     "client/src/components/tabs/ProjectConstructionTab.tsx",
     "client/src/components/tabs/ProjectPlanTab.tsx",
-    "client/src/components/tabs/RevenueTrackerTab.tsx",
     "client/src/hooks/use-approvals.ts",
     "client/src/hooks/use-collaboration-workflow.ts",
     "client/src/hooks/use-document-management-admin.ts",

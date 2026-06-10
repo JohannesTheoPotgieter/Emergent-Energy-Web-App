@@ -231,6 +231,46 @@ export async function runCrossSurfaceFinanceVerification(
     compare("company", null, "Cashflow", "available_this_week:no_outflows_omitted_bug", "source", 1, noOpeningPlusInflowsBug);
   }
 
+  // ── Project-detail cross-surface: ONE canonical per-project read path ────────
+  // project-detail's finance content must read the § 3.3.2 single read path
+  // (/api/finance/lines/:projectId, finance-line-level-repository) — the SAME
+  // path the Finance pages and the Reconciliation board use — so a project
+  // shows ONE REV/COS/GP everywhere. This guards the parallel-tab regression:
+  // the five embedded tabs that each recomputed off a per-project endpoint.
+  {
+    const repoRoot = process.cwd();
+    const financeRoutes = readFileSync(path.join(repoRoot, "server/departments/finance-routes.ts"), "utf8");
+    const canonicalView = existsSync(path.join(repoRoot, "client/src/components/finance/ProjectFinanceCanonical.tsx"))
+      ? readFileSync(path.join(repoRoot, "client/src/components/finance/ProjectFinanceCanonical.tsx"), "utf8")
+      : "";
+    const projectDetail = readFileSync(path.join(repoRoot, "client/src/pages/project-detail.tsx"), "utf8");
+
+    const parallelEndpointsGone = /\/api\/(cos-tracker|revenue-tracker|gp-tracker)\/project\//.test(financeRoutes) ? 0 : 1;
+    const viewReadsCanonical =
+      /\/api\/finance\/lines\/\$\{projectId\}/.test(canonicalView) &&
+      !/(cos-tracker|revenue-tracker|gp-tracker)\/project|revenue-tab/.test(canonicalView)
+        ? 1
+        : 0;
+    const parallelTabsRemoved = [
+      "RevenueTrackingTab",
+      "RevenueTrackerTab",
+      "MonthlyRealisationTab",
+      "GpTrackerTab",
+    ].every((t) => !existsSync(path.join(repoRoot, `client/src/components/tabs/${t}.tsx`)))
+      ? 1
+      : 0;
+    const projectDetailUsesCanonical =
+      projectDetail.includes("ProjectFinanceCanonical") &&
+      !/from ["']@\/components\/tabs\/(RevenueTrackingTab|RevenueTrackerTab|MonthlyRealisationTab|GpTrackerTab)["']/.test(projectDetail)
+        ? 1
+        : 0;
+
+    compare("company", null, "ProjectDetail", "per_project_rev_cos_gp:parallel_endpoints_gone", "source", 1, parallelEndpointsGone);
+    compare("company", null, "ProjectDetail", "per_project_rev_cos_gp:canonical_view_reads_lines", "source", 1, viewReadsCanonical);
+    compare("company", null, "ProjectDetail", "per_project_rev_cos_gp:parallel_tabs_removed", "source", 1, parallelTabsRemoved);
+    compare("company", null, "ProjectDetail", "per_project_rev_cos_gp:detail_uses_canonical", "source", 1, projectDetailUsesCanonical);
+  }
+
   const failures = rows.filter((r) => !r.pass);
   return { rows, failures, comparisons: rows.length, pass: failures.length === 0 };
 }
