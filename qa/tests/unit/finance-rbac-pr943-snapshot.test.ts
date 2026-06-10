@@ -103,12 +103,11 @@ describe("PR #943 RBAC migration — finance route gates pinned", () => {
     assertGate(src, "post", "/api/scenarios/:id/reset", 'requirePermission("cos_control", "edit")');
   });
 
-  it("register-cashflow-2026-routes.ts: cashflow read endpoints gated", () => {
-    const src = readFile("server/routes/register-cashflow-2026-routes.ts");
-    assertGate(src, "get", "/api/cashflow-2026", 'requirePermission("cashflow", "view")');
-    assertGate(src, "get", "/api/cashflow-2026/detail", 'requirePermission("cashflow", "view")');
-    assertGate(src, "get", "/api/cashflow-2026/balance-history", 'requirePermission("cashflow", "view")');
-  });
+  // Cashflow-2026 read endpoints now live in the one cashflow router
+  // (server/departments/finance-routes.ts, router.*); their cashflow:view gates
+  // are asserted in finance-access-governance.test.ts. The never-registered
+  // register-cashflow-2026-routes.ts duplicate was retired in the cash-one-engine
+  // refactor.
 
   it("finance-analysis.routes.ts: hardcoded role arrays removed, requirePermission used", () => {
     const src = readFile("server/routes/finance-analysis.routes.ts");

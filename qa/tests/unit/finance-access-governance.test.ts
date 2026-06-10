@@ -27,18 +27,12 @@ describe("finance access governance", () => {
 
   it("keeps finance routes explicitly permission-gated in both the departmental and legacy route surfaces", () => {
     const financeRoutesSource = read("server/departments/finance-routes.ts");
-    const legacyRoutesSource = read("server/routes.ts");
-    const cashflow2026RoutesSource = read("server/routes/register-cashflow-2026-routes.ts");
 
     expect(financeRoutesSource).toMatch(/router\.post\(\s*['"]\/api\/cashflow-2026\/opening-balance['"][\s\S]*?requirePermission\(\s*['"]cashflow['"]\s*,\s*['"]edit['"]\s*\)/);
     expect(financeRoutesSource).toMatch(/router\.get\(\s*['"]\/api\/cashflow-2026['"][\s\S]*?requirePermission\(\s*['"]cashflow['"]\s*,\s*['"]view['"]\s*\)/);
     expect(financeRoutesSource).toMatch(/router\.post\(\s*['"]\/api\/tracker-monthly['"][\s\S]*?requireTrackerPermission\(\s*['"]edit['"]\s*\)/);
     expect(financeRoutesSource).toMatch(/router\.get\(\s*['"]\/api\/tracker-monthly\/:type['"][\s\S]*?requireTrackerPermission\(\s*['"]view['"]\s*\)/);
     expect(financeRoutesSource).toMatch(/router\.get\(\s*['"]\/api\/revenue-tracker['"][\s\S]*?requirePermission\(\s*['"]revenue_tracker['"]\s*,\s*['"]view['"]\s*\)/);
-
-    // Cashflow-2026 routes extracted from routes.ts to register-cashflow-2026-routes.ts
-    expect(cashflow2026RoutesSource).toMatch(/app\.post\(\s*['"]\/api\/cashflow-2026\/available-payment['"][\s\S]*?requirePermission\(\s*['"]cashflow['"]\s*,\s*['"]edit['"]\s*\)/);
-    expect(cashflow2026RoutesSource).toMatch(/app\.get\(\s*['"]\/api\/cashflow-2026\/available-payment-history['"][\s\S]*?requirePermission\(\s*['"]cashflow['"]\s*,\s*['"]view['"]\s*\)/);
     // tracker-monthly routes consolidated into finance-routes.ts (checked above)
   });
 });

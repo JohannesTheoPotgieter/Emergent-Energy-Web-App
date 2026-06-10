@@ -312,6 +312,11 @@ import {
   getOutflowAmountBreakdown,
 } from '../lib/expense-row-selector';
 import {
+  cashEventOutflowDate,
+  cashEventOutflowDateAndSource,
+  resolveWeeklyAvailablePayment,
+} from '../lib/finance/weekly-cashflow-engine';
+import {
   getCanonicalAllCurrentCostLines,
   getCanonicalCostLineDiagnostics,
   getCostLineRiskDiagnostics,
@@ -1307,6 +1312,7 @@ router.get(
         manualBalances,
         opexBudgets,
         opexWeeklyOverrides,
+        availPaymentOverrides,
         allTaskLinks,
         allOpTasks,
         allPlanTasks,
@@ -1317,6 +1323,7 @@ router.get(
         storage.getAllCashflowWeeklyManual(),
         storage.getAllOpexBudgetMonthly(),
         storage.getAllOpexWeeklyManual(),
+        storage.getAllAvailablePaymentOverrides(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
@@ -1338,6 +1345,17 @@ router.get(
       );
       const opexWeeklyMap = new Map(
         opexWeeklyOverrides.map((o) => [o.weekStartDate, parseFloat(o.opexAmount || '0')]),
+      );
+      const availPayMap = new Map(
+        availPaymentOverrides.map((o) => [
+          o.weekStartDate,
+          {
+            value: parseFloat(o.overrideValue || '0'),
+            reason: o.reason ?? null,
+            updatedAt: (o as { updatedAt?: Date | string | null }).updatedAt ?? null,
+            updatedBy: (o as { updatedBy?: string | null }).updatedBy ?? null,
+          },
+        ]),
       );
 
       const scopeDateCandidates: string[] = [];
@@ -1419,7 +1437,7 @@ router.get(
 
       for (const expense of itemExpenses) {
         if (projectFilters && !projectFilters.has(expense.projectName || '')) continue;
-        const dateInfo = getExpenseEffectiveDateAndSource(expense);
+        const dateInfo = cashEventOutflowDateAndSource(expense);
         if (dateInfo.source && (diagnostics.dateSource as any)[dateInfo.source] != null)
           (diagnostics.dateSource as any)[dateInfo.source] += 1;
         else diagnostics.dateSource.none += 1;
@@ -1458,8 +1476,11 @@ router.get(
           // Bottom-up: only aggregate leaf-node (item) rows, matching project-detail level logic
           if (projectFilters && !projectFilters.has(expense.projectName || '')) continue;
 
-          // Use effective payment date: admin override first, then actual payment date, then computed forecast, then forecast, then invoice date
-          const dateInfo = getExpenseEffectiveDateAndSource(expense);
+          // Cash-event date per § 3.4: admin schedule-override → actual payment
+          // → computed forecast → forecast. Invoice date is recognition, not
+          // cash, so it is NOT in the fallback chain (one engine, one rule —
+          // server/lib/finance/weekly-cashflow-engine.ts).
+          const dateInfo = cashEventOutflowDateAndSource(expense);
           const d = dateInfo.date;
           if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
 
@@ -1501,9 +1522,15 @@ router.get(
           opexOutflows = hasOpexOverride ? opexWeeklyMap.get(weekStart)! : computedOpex;
         }
 
-        const closingBalance =
-          openingBalance + projectInflowsSum - opexOutflows - projectOutflowsSum;
-        const availablePayment = openingBalance + projectInflowsSum;
+        // THE single cash formula (server/lib/finance/weekly-cashflow-engine.ts):
+        // available = opening + inflows − outflows (a manual override only
+        // changes the DISPLAYED value, never the running balance carried forward).
+        const cash = resolveWeeklyAvailablePayment({
+          openingBalance,
+          inflows: projectInflowsSum,
+          totalOutflows: opexOutflows + projectOutflowsSum,
+          override: availPayMap.get(weekStart) ?? null,
+        });
 
         weeks.push({
           weekStart,
@@ -1520,11 +1547,16 @@ router.get(
           opexOutflows,
           computedOpex,
           hasOpexOverride,
-          closingBalance,
-          availablePayment,
+          closingBalance: cash.closingBalance,
+          availablePayment: cash.availablePayment,
+          computedAvailablePayment: cash.computedAvailablePayment,
+          hasAvailPayOverride: cash.hasAvailPayOverride,
+          availPayReason: cash.availPayReason,
+          availPayOverrideAt: cash.availPayOverrideAt,
+          availPayOverrideBy: cash.availPayOverrideBy,
         });
 
-        runningBalance = closingBalance;
+        runningBalance = cash.closingBalance;
         cursor.setUTCDate(cursor.getUTCDate() + 7);
       }
 
@@ -1664,7 +1696,9 @@ router.get(
         .filter((e) => {
           if (e.rowType !== 'item') return false;
           if (projectFilters && !projectFilters.has(e.projectName || '')) return false;
-          const pd = getExpenseEffectiveDateAndSource(e).date;
+          // Same §3.4 cash-event date as the weekly series (no invoice-date
+          // fallback) so the drilldown rows reconcile to the series total.
+          const pd = cashEventOutflowDate(e);
           if (!pd || !/^\d{4}-\d{2}-\d{2}$/.test(pd)) return false;
           return pd >= weekStart && pd < weekEnd;
         })
