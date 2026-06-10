@@ -27,6 +27,11 @@ CREATE TYPE "public"."raid_status" AS ENUM('open', 'mitigating', 'resolved', 'cl
 CREATE TYPE "public"."raid_type" AS ENUM('risk', 'assumption', 'issue', 'decision');--> statement-breakpoint
 CREATE TYPE "public"."signed_status_enum" AS ENUM('NONE', 'PENDING', 'SIGNED');--> statement-breakpoint
 CREATE TYPE "public"."subcontractor_assignment_status" AS ENUM('active', 'completed', 'suspended', 'terminated');--> statement-breakpoint
+-- Added 2026-06-10 (migration-ledger integrity repair): the baseline creates
+-- "core"."departments" / "core"."role_definitions" but never created the
+-- schema itself, so migrate-from-zero failed at this very first migration on
+-- every fresh database. Existing DBs got the schema from the db:push era.
+CREATE SCHEMA IF NOT EXISTS "core";--> statement-breakpoint
 CREATE TYPE "public"."allocation_confidence" AS ENUM('direct', 'header_error_positional', 'provisional', 'manual');--> statement-breakpoint
 CREATE TYPE "public"."cost_line_status" AS ENUM('planned', 'invoiced', 'approved', 'paid');--> statement-breakpoint
 CREATE TYPE "public"."counterparty_type" AS ENUM('SUPPLIER', 'INSTALLER', 'OTHER');--> statement-breakpoint

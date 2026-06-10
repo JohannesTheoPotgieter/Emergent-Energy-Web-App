@@ -54,6 +54,19 @@ UPDATE stage_definitions SET stage_sequence = 9   WHERE stage_code = 'S10_POST_H
 -- ------------------------------------------------------------
 -- 4. Extend stage_code_aliases for the new labels and terminal branches.
 -- ------------------------------------------------------------
+-- GUARDED 2026-06-10 (migration-ledger integrity repair): this section
+-- references prod-era legacy artifacts (stage_code_aliases and/or
+-- project_info.phase / execution_phase) that schema-built fresh databases
+-- never had, so the unguarded statements failed migrate-from-zero at parse
+-- time. plpgsql resolves statements lazily, so on a fresh DB the body is
+-- never parsed. DML is unchanged.
+DO $lc_v2_aliases$
+BEGIN
+IF EXISTS (
+     SELECT 1 FROM information_schema.tables
+     WHERE table_schema = 'public' AND table_name = 'stage_code_aliases'
+   ) THEN
+
 INSERT INTO stage_code_aliases (alias_text, canonical_code) VALUES
   -- New canonical labels (and tolerated variants)
   ('cost proposal & design',      'S02_DESIGN_COST_PROPOSAL'),
@@ -76,6 +89,9 @@ INSERT INTO stage_code_aliases (alias_text, canonical_code) VALUES
   ('canceled',                    'S_DONE')
 ON CONFLICT (alias_text) DO UPDATE SET canonical_code = EXCLUDED.canonical_code;
 
+END IF;
+END $lc_v2_aliases$;
+
 -- ------------------------------------------------------------
 -- 5. Add previous_phase column to project_execution_state so Hold
 --    can preserve where the project was before being parked.
@@ -88,6 +104,23 @@ ALTER TABLE project_execution_state
 --    project_info still carries phase + execution_phase columns;
 --    project_execution_state mirrors them.
 -- ------------------------------------------------------------
+-- GUARDED 2026-06-10 (migration-ledger integrity repair): this section
+-- references prod-era legacy artifacts (stage_code_aliases and/or
+-- project_info.phase / execution_phase) that schema-built fresh databases
+-- never had, so the unguarded statements failed migrate-from-zero at parse
+-- time. plpgsql resolves statements lazily, so on a fresh DB the body is
+-- never parsed. DML is unchanged.
+DO $lc_v2_pi_phase$
+BEGIN
+IF EXISTS (
+     SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'project_info' AND column_name = 'phase'
+   )
+   AND EXISTS (
+     SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'project_info' AND column_name = 'execution_phase'
+   ) THEN
+
 UPDATE project_info
    SET phase = 'Cost Proposal & Design'
  WHERE phase IN ('Design & Cost Proposal', 'Cost Proposal');
@@ -100,6 +133,9 @@ UPDATE project_info
 UPDATE project_info
    SET execution_phase = '3 Months Post HO Review'
  WHERE execution_phase IN ('Post-Handover Review', 'Commercial Close Out', 'Commercial Close out', 'Closeout');
+
+END IF;
+END $lc_v2_pi_phase$;
 
 UPDATE project_execution_state
    SET phase = 'Cost Proposal & Design'
@@ -138,6 +174,27 @@ UPDATE project_execution_state
 --          label is itself a code.
 --       4. Leave NULL if nothing resolves — better to require an
 --          explicit pick on resume than to corrupt current_stage_code.
+-- GUARDED 2026-06-10 (migration-ledger integrity repair): this section
+-- references prod-era legacy artifacts (stage_code_aliases and/or
+-- project_info.phase / execution_phase) that schema-built fresh databases
+-- never had, so the unguarded statements failed migrate-from-zero at parse
+-- time. plpgsql resolves statements lazily, so on a fresh DB the body is
+-- never parsed. DML is unchanged.
+DO $lc_v2_prev_phase$
+BEGIN
+IF EXISTS (
+     SELECT 1 FROM information_schema.tables
+     WHERE table_schema = 'public' AND table_name = 'stage_code_aliases'
+   )
+   AND EXISTS (
+     SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'project_info' AND column_name = 'phase'
+   )
+   AND EXISTS (
+     SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'project_info' AND column_name = 'execution_phase'
+   ) THEN
+
 WITH sequential_codes AS (
   SELECT stage_code FROM stage_definitions
    WHERE stage_code NOT IN ('S_HOLD', 'S_DONE')
@@ -200,6 +257,9 @@ UPDATE project_execution_state pes
          resolved.from_pi_phase_literal,
          resolved.from_pi_exec_phase_literal
        ) IS NOT NULL;
+
+END IF;
+END $lc_v2_prev_phase$;
 
 -- Defensive cleanup: if any earlier run of this migration left a stale
 -- non-canonical previous_phase value behind (e.g. "Construction"),

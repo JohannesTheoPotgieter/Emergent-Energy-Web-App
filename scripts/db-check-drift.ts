@@ -30,7 +30,7 @@ fs.mkdirSync(scratch, { recursive: true });
 const scratchMigrations = scratch;
 
 type Journal = {
-  entries?: Array<{ tag?: string }>;
+  entries?: Array<{ tag?: string; when?: number; idx?: number }>;
 };
 
 function checkMigrationJournalIntegrity(): void {
@@ -42,7 +42,8 @@ function checkMigrationJournalIntegrity(): void {
   const journalPath = path.join(migrationsDir, "meta", "_journal.json");
   const journalRaw = fs.readFileSync(journalPath, "utf8");
   const journal = JSON.parse(journalRaw) as Journal;
-  const tracked = new Set((journal.entries ?? []).map((entry) => `${entry.tag ?? ""}.sql`));
+  const entries = journal.entries ?? [];
+  const tracked = new Set(entries.map((entry) => `${entry.tag ?? ""}.sql`));
 
   const untracked = sqlFiles.filter((file) => !tracked.has(file));
   if (untracked.length > 0) {
@@ -56,6 +57,58 @@ function checkMigrationJournalIntegrity(): void {
     console.error("");
     console.error("Fix by regenerating/committing the matching journal+snapshot state");
     console.error("for these migrations so CI and deploy use the same migration truth.");
+    console.error("");
+    process.exit(3);
+  }
+
+  const missingSql = entries
+    .map((entry) => `${entry.tag ?? ""}.sql`)
+    .filter((file) => !sqlFiles.includes(file));
+  if (missingSql.length > 0) {
+    console.error("");
+    console.error("✖ Journal entries without an on-disk migration file:");
+    for (const file of missingSql) console.error(`    ${file}`);
+    console.error("");
+    console.error("drizzle-kit migrate and scripts/drizzle-bootstrap.ts both resolve every");
+    console.error("journal tag to migrations/<tag>.sql — a missing file breaks the deploy.");
+    console.error("");
+    process.exit(3);
+  }
+
+  // Watermark-integrity guard. drizzle-kit migrate applies a journal entry
+  // iff its `when` exceeds MAX(created_at) in drizzle.__drizzle_migrations —
+  // a single watermark, not a per-migration check. A `when` that is
+  // out-of-order (below an earlier-idx entry) or future-dated silently
+  // skips real migrations while the ledger reports them applied; this is
+  // the exact mechanism behind the 0071 column loss and the 0090–0096
+  // outage. New entries get `when = Date.now()` from drizzle-kit; the only
+  // way to violate this is hand-editing the journal — which this blocks.
+  const FUTURE_GRACE_MS = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const violations: string[] = [];
+  let previousWhen = 0;
+  for (const entry of entries) {
+    const when = entry.when ?? 0;
+    if (when <= previousWhen) {
+      violations.push(
+        `${entry.tag}: when=${when} is not strictly greater than the previous entry's (${previousWhen})`,
+      );
+    }
+    if (when > now + FUTURE_GRACE_MS) {
+      violations.push(`${entry.tag}: when=${when} is future-dated (now=${now})`);
+    }
+    previousWhen = Math.max(previousWhen, when);
+  }
+  if (violations.length > 0) {
+    console.error("");
+    console.error("✖ Migration journal `when` integrity violated.");
+    console.error("");
+    for (const violation of violations) console.error(`    ${violation}`);
+    console.error("");
+    console.error("Out-of-order or future-dated `when` values poison drizzle-kit's");
+    console.error("migrate watermark: later migrations get silently skipped while the");
+    console.error("ledger reports them applied. Never hand-edit `when`; let");
+    console.error("`npm run db:generate` append entries.");
     console.error("");
     process.exit(3);
   }

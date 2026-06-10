@@ -7,7 +7,28 @@
 -- belongs to) with in_dlp=true preserving the warranty-period context.
 -- Active projects with no signal at all default to First Assessment.
 -- Pure DML — no schema changes. Idempotent: each statement has a precondition.
-BEGIN;
+-- GUARDED 2026-06-10 (migration-ledger integrity repair): this is a
+-- prod-data DML backfill written against the April-2026 PRODUCTION shape of
+-- project_info, which still carried legacy phase / execution_phase /
+-- phase_updated_at columns. A schema-built (fresh) database has none of
+-- them, so the unguarded statements failed migrate-from-zero at parse time.
+-- The whole body now runs only where those legacy columns exist (i.e. the
+-- prod-era DBs it was written for); plpgsql resolves statements lazily, so
+-- on a fresh DB nothing inside the IF is ever parsed. DML is unchanged.
+DO $phase_backfill$
+BEGIN
+IF EXISTS (
+     SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'project_info' AND column_name = 'phase'
+   )
+   AND EXISTS (
+     SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'project_info' AND column_name = 'execution_phase'
+   )
+   AND EXISTS (
+     SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'project_info' AND column_name = 'phase_updated_at'
+   ) THEN
 
 INSERT INTO project_phase_history (project_id, from_phase, to_phase, changed_by_user_id, reason, changed_at)
 SELECT 257, 'Handover', 'O&M Handover', 22, 'canonical-phase-backfill 2026-04-21', NOW()
@@ -274,5 +295,6 @@ SELECT 362, NULL, 'Design & Cost Proposal', 22, 'canonical-phase-backfill 2026-0
 WHERE EXISTS (SELECT 1 FROM project_info WHERE id = 362 AND COALESCE(NULLIF(TRIM(phase),''),'__NULL__') IS DISTINCT FROM COALESCE('Design & Cost Proposal','__NULL__'));
 UPDATE project_info SET phase = 'Design & Cost Proposal', execution_phase = 'Design & Cost Proposal', phase_updated_at = NOW() WHERE id = 362;
 
-COMMIT;
+END IF;
+END $phase_backfill$;
 -- Summary: 66 project_info UPDATEs, 66 project_phase_history INSERTs

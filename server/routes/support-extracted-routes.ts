@@ -225,7 +225,18 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
         logApiError("GET /api/health schema readiness", readinessErr);
       }
 
-      const diagnostics = buildHealthDiagnostics(dbMode, dbStatus, startupModes, schemaReadiness);
+      // Live column-level re-check (ledger ≠ proof): reports 503 while
+      // declared tables/columns are missing and self-clears once the
+      // drift-repair migration lands, without a restart. Fails open.
+      let schemaVerification = null;
+      try {
+        const { evaluateAppSchemaVerification } = await import("../bootstrap/schema-verification-runtime");
+        schemaVerification = await evaluateAppSchemaVerification();
+      } catch (verificationErr) {
+        logApiError("GET /api/health schema verification", verificationErr);
+      }
+
+      const diagnostics = buildHealthDiagnostics(dbMode, dbStatus, startupModes, schemaReadiness, schemaVerification);
       res.status(diagnostics.ok ? 200 : 503).json(diagnostics);
     } catch (error) {
       logApiError("GET /api/health", error);

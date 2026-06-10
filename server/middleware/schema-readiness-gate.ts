@@ -16,6 +16,11 @@
 import type { NextFunction, Request, Response } from "express";
 import { ApiError } from "../lib/api-error";
 import { getCachedSchemaReadiness, isSchemaBehind } from "../lib/schema-readiness";
+import {
+  formatDriftSummary,
+  getCachedSchemaVerification,
+  isSchemaDrifted,
+} from "../lib/schema-verification";
 
 /**
  * URL prefixes that make up the gated finance surface. `app.use(prefix, …)`
@@ -33,6 +38,30 @@ export function financeSchemaReadinessGate(
   _res: Response,
   next: NextFunction,
 ): void {
+  // Column-level drift: the ledger reports migrations applied but declared
+  // tables/columns are missing from the live DB (the 0071 / 0090–0096
+  // class). Same maintenance treatment as schema_behind — one typed 503
+  // instead of raw Drizzle 500s. Fails OPEN like the readiness check.
+  const verification = getCachedSchemaVerification();
+  if (verification && isSchemaDrifted(verification)) {
+    next(
+      new ApiError(
+        503,
+        "schema_drift",
+        "Finance is temporarily unavailable: the live database schema is missing migrated tables/columns.",
+        {
+          missingTables: verification.missingTables.join(", "),
+          missingColumns: verification.missingColumns
+            .map((c) => `${c.table}.${c.column}`)
+            .join(", "),
+          summary: formatDriftSummary(verification),
+        },
+        "An operator must apply the drift-repair migration (`npm run db:migrate`), confirm with `npm run db:verify-schema`, then retry.",
+      ),
+    );
+    return;
+  }
+
   const readiness = getCachedSchemaReadiness();
   if (!readiness || !isSchemaBehind(readiness)) {
     next();
