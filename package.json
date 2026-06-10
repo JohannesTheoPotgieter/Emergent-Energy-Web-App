@@ -20,6 +20,7 @@
     "db:check": "tsx scripts/db-check-drift.ts",
     "db:status": "tsx scripts/db-status.ts",
     "verify:finance": "tsx server/scripts/verify-all-projects-reconciliation.ts",
+    "verify:golden": "tsx qa/golden-oracle/verify-golden.ts",
     "check:agent-docs": "tsx scripts/check-agent-docs.ts",
     "qa:role-audit": "tsx scripts/generate-role-permission-audit.ts",
     "reconcile:priority-links": "tsx scripts/reconcile-priority-links.ts",

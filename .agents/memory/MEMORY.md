@@ -1,5 +1,2 @@
-# Memory Index
-
-- [Dev DB schema drift](dev-db-drift.md) — ledger can say "all migrations applied" while columns are absent; root-cause via Postgres 42703 and re-apply idempotent ALTERs to dev only.
-- [Playwright / long gates in this container](playwright-and-gates.md) — bundled Chromium misses libglib; use REPLIT_PLAYWRIGHT_CHROMIUM_EXECUTABLE + --no-sandbox; detached bash jobs die across calls — use the validation runner.
-- [strict-runtime-config test env leak](strict-runtime-config-test.md) — fails in Replit containers because PGHOST fallback synthesises DATABASE_URL; not an app bug.
+- [Claude read-only prod access](claude-ro-views.md) — CLAUDE_RO_DATABASE_URL exposes only `claude_views.*` snapshot-dated views, never base tables.
+- [Golden oracle finance reconciliation](golden-oracle-finance.md) — oracle realised REV is a prod-derived blend, not reproducible from one raw tracker surface; prod cost-line view inflates Mondi/Coega ~2×.

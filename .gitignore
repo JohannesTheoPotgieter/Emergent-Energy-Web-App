@@ -81,3 +81,4 @@ attached_assets/*.jpeg
 attached_assets/*.jpg
 attached_assets/*.zip
 *.dump
+qa/golden-oracle/.cache/
