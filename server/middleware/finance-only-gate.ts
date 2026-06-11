@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { normalizeRoleForPermissions } from "@shared/schema";
 import {
-  FINANCE_ONLY_MODE,
+  isFinanceOnlyEnforced,
   isAlwaysAllowedApiPath,
   isRoleAllowedInFinanceModule,
 } from "@shared/config/enabled-modules";
@@ -29,7 +29,7 @@ import { getEffectiveUser } from "../auth-context";
  * Reversibility: no-op when FINANCE_ONLY_MODE is false.
  */
 export function financeOnlyApiGate(req: Request, res: Response, next: NextFunction): void {
-  if (!FINANCE_ONLY_MODE) {
+  if (!isFinanceOnlyEnforced()) {
     next();
     return;
   }

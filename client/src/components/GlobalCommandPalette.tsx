@@ -4,7 +4,7 @@ import { CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, C
 import { PAGE_REGISTRY } from "@/config/page-registry";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
 import { getAvailableQuickCreateActions } from "@/lib/action-access";
-import { FINANCE_ONLY_MODE, isPageEnabled, isFinanceSearchType } from "@shared/config/enabled-modules";
+import { isFinanceOnlyEnforced, isPageEnabled, isFinanceSearchType } from "@shared/config/enabled-modules";
 import {
   Navigation, Search, Plus, ArrowRight, Zap,
   FileText, FolderOpen, Receipt, User, Briefcase, Hash,
@@ -116,7 +116,7 @@ export function GlobalCommandPalette() {
   const quickActions = useMemo(() => {
     // Finance-only: non-finance quick-actions (create PD ticket, engineering
     // request, task, handover, PO) are disabled — see the finance-only module.
-    if (!actionLaunchpadEnabled || FINANCE_ONLY_MODE) return [];
+    if (!actionLaunchpadEnabled || isFinanceOnlyEnforced()) return [];
     return getAvailableQuickCreateActions({ canAccessEntityAction, canViewPath });
   }, [actionLaunchpadEnabled, canAccessEntityAction, canViewPath]);
 

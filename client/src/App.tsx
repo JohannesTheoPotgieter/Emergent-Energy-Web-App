@@ -26,7 +26,7 @@ import { ROUTE_COMPONENTS } from "@/config/route-components";
 import { useScreenAvailability } from "@/hooks/use-screen-availability";
 import { FinanceModuleNoAccess } from "@/components/FinanceModuleNoAccess";
 import {
-  FINANCE_ONLY_MODE,
+  isFinanceOnlyEnforced,
   FINANCE_ONLY_LANDING_PATH,
   isPageEnabled,
   isRoleAllowedInFinanceModule,
@@ -187,7 +187,7 @@ function ProtectedPages() {
       <div className="page-enter">
         <Switch>
           <Route path="/">
-            {() => (FINANCE_ONLY_MODE ? <Redirect to={FINANCE_ONLY_LANDING_PATH} /> : <HomePage />)}
+            {() => (isFinanceOnlyEnforced() ? <Redirect to={FINANCE_ONLY_LANDING_PATH} /> : <HomePage />)}
           </Route>
           {APP_ROUTES.map((route) => {
             if (route.redirectTo) {
@@ -249,7 +249,7 @@ function FinanceModuleGate({ children }: { children: React.ReactNode }) {
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
   const effectiveRole = normalizeRoleForPermissions(user?.role || companyRole);
 
-  if (FINANCE_ONLY_MODE && effectiveRole && !isRoleAllowedInFinanceModule(effectiveRole)) {
+  if (isFinanceOnlyEnforced() && effectiveRole && !isRoleAllowedInFinanceModule(effectiveRole)) {
     return <FinanceModuleNoAccess />;
   }
   return <>{children}</>;

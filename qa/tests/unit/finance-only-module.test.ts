@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   FINANCE_ONLY_MODE,
+  isFinanceOnlyEnforced,
   FINANCE_ONLY_MODULE_CONFIG,
   FINANCE_ONLY_LANDING_PATH,
   FINANCE_ONLY_NO_ACCESS_PATH,
@@ -29,6 +30,50 @@ import { COMPANY_ROLES } from "@shared/schema/users";
  * restores its routes (isPageEnabledIn) and its nav (isNavGroupEnabledIn →
  * section gate), while disabled routes redirect to /finance.
  */
+
+describe("finance-only module — runtime enforcement (deploy-mode)", () => {
+  // Finance-only is a deploy mode: enforced in production + unit tests, but
+  // inert in the run-with-app integration/e2e harness (server API_TEST_MODE,
+  // client served by `npm run dev`) and local dev, so the existing full-app
+  // api/e2e suite keeps validating every module. This guards that contract —
+  // it is the reason CI's test:api / release:gate stay green.
+  const origNodeEnv = process.env.NODE_ENV;
+  const origApiTestMode = process.env.API_TEST_MODE;
+  afterEach(() => {
+    process.env.NODE_ENV = origNodeEnv;
+    if (origApiTestMode === undefined) delete process.env.API_TEST_MODE;
+    else process.env.API_TEST_MODE = origApiTestMode;
+  });
+
+  it("enforces by default (vitest / production-like)", () => {
+    delete process.env.API_TEST_MODE;
+    process.env.NODE_ENV = "test";
+    expect(isFinanceOnlyEnforced()).toBe(true);
+    process.env.NODE_ENV = "production";
+    expect(isFinanceOnlyEnforced()).toBe(true);
+  });
+
+  it("is INERT in the integration/e2e harness (API_TEST_MODE=true)", () => {
+    process.env.NODE_ENV = "test";
+    process.env.API_TEST_MODE = "true";
+    expect(isFinanceOnlyEnforced()).toBe(false);
+  });
+
+  it("is INERT in development (local dev + run-with-app e2e client)", () => {
+    delete process.env.API_TEST_MODE;
+    process.env.NODE_ENV = "development";
+    expect(isFinanceOnlyEnforced()).toBe(false);
+  });
+
+  it("when inert, the wrappers behave as full-app (nothing blocked)", () => {
+    process.env.NODE_ENV = "development";
+    expect(isNavGroupEnabled("ENGINEERING")).toBe(true);
+    expect(isPageEnabled({ id: "engineering", navGroup: "ENGINEERING" })).toBe(true);
+    expect(isRoleAllowedInFinanceModule("ENGINEER")).toBe(true);
+    expect(resolveFinanceOnlyLanding("ENGINEER")).toBeNull();
+    expect(isFinanceSearchType("task")).toBe(true);
+  });
+});
 
 describe("finance-only module — role allowlist", () => {
   it("is exactly the seven locked management + finance roles", () => {

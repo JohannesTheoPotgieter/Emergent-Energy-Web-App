@@ -108,8 +108,44 @@ export const FINANCE_ONLY_MODULE_CONFIG: ModuleRegistryConfig = {
   },
 };
 
-/** Master switch. Set to `false` to lift the finance-only restriction entirely. */
+/**
+ * Master config switch — is the module registry finance-only?
+ * Set to `false` to lift the finance-only configuration entirely.
+ *
+ * This is the CONFIG flag. Whether the restriction is actively ENFORCED in the
+ * current runtime is `isFinanceOnlyEnforced()` below — finance-only is a
+ * *deploy mode*: it enforces in production (and in unit tests, which lock the
+ * behaviour) but stays inert in the integration / e2e harness and local dev so
+ * the existing full-app api/e2e suite keeps validating every module.
+ */
 export const FINANCE_ONLY_MODE = true;
+
+/**
+ * Is the finance-only restriction actively enforced in THIS runtime?
+ *
+ * Enforced: production deploy (NODE_ENV=production) + unit tests
+ * (vitest, NODE_ENV=test). NOT enforced: local dev and the
+ * `script/run-with-app.ts` integration / e2e harness (server sets
+ * API_TEST_MODE=true; client is served by `npm run dev` → NODE_ENV=development).
+ *
+ * `process.env.NODE_ENV` is statically inlined by Vite in the client bundle, so
+ * this resolves correctly on the server, in vitest, and in the browser.
+ */
+export function isFinanceOnlyEnforced(): boolean {
+  if (!FINANCE_ONLY_MODE) return false;
+  // Local dev + the run-with-app e2e client (served by `npm run dev`) → full app.
+  if (process.env.NODE_ENV === "development") return false;
+  // Server-only harness flag — run-with-app sets it for test:api / release:gate.
+  // Guarded so the lookup never runs in the browser bundle.
+  if (
+    typeof window === "undefined" &&
+    typeof process !== "undefined" &&
+    process.env.API_TEST_MODE === "true"
+  ) {
+    return false;
+  }
+  return true;
+}
 
 /** The config the production helpers read. */
 export const ACTIVE_MODULE_CONFIG: ModuleRegistryConfig = FINANCE_ONLY_MODULE_CONFIG;
@@ -165,35 +201,36 @@ export function isRoleAllowedIn(allowlist: readonly string[], role?: string | nu
 }
 
 // ---------------------------------------------------------------------------
-// Production wrappers — mode-aware, read ACTIVE_MODULE_CONFIG. When
-// FINANCE_ONLY_MODE is off these all return "enabled / allowed".
+// Production wrappers — runtime-enforcement-aware, read ACTIVE_MODULE_CONFIG.
+// When finance-only is NOT enforced in this runtime (dev / e2e harness) these
+// all return "enabled / allowed" so the full app works.
 // ---------------------------------------------------------------------------
 
-/** Is a whole nav-group reachable in the current configuration? */
+/** Is a whole nav-group reachable in the current runtime? */
 export function isNavGroupEnabled(navGroup?: string | null): boolean {
-  if (!FINANCE_ONLY_MODE) return true;
+  if (!isFinanceOnlyEnforced()) return true;
   return isNavGroupEnabledIn(ACTIVE_MODULE_CONFIG, navGroup);
 }
 
 /** Is a specific page (by registry id + navGroup) reachable? */
 export function isPageEnabled(page: { id?: string | null; navGroup?: string | null }): boolean {
-  if (!FINANCE_ONLY_MODE) return true;
+  if (!isFinanceOnlyEnforced()) return true;
   return isPageEnabledIn(ACTIVE_MODULE_CONFIG, page);
 }
 
 /** May this company role enter the finance module at all? */
 export function isRoleAllowedInFinanceModule(role?: string | null): boolean {
-  if (!FINANCE_ONLY_MODE) return true;
+  if (!isFinanceOnlyEnforced()) return true;
   return isRoleAllowedIn(FINANCE_MODULE_ROLE_ALLOWLIST as readonly string[], role);
 }
 
 /**
  * Effective post-login landing path for the finance-only module.
- * Returns null when FINANCE_ONLY_MODE is off (callers then use their legacy
+ * Returns null when finance-only is not enforced (callers then use their legacy
  * role-landing logic).
  */
 export function resolveFinanceOnlyLanding(role?: string | null): string | null {
-  if (!FINANCE_ONLY_MODE) return null;
+  if (!isFinanceOnlyEnforced()) return null;
   return isRoleAllowedInFinanceModule(role)
     ? FINANCE_ONLY_LANDING_PATH
     : FINANCE_ONLY_NO_ACCESS_PATH;
@@ -207,7 +244,7 @@ export function resolveFinanceOnlyLanding(role?: string | null): string | null {
 export const FINANCE_SEARCH_TYPES = ["project", "cost", "revenue", "invoice", "po", "client"] as const;
 
 export function isFinanceSearchType(type?: string | null): boolean {
-  if (!FINANCE_ONLY_MODE) return true;
+  if (!isFinanceOnlyEnforced()) return true;
   return !!type && (FINANCE_SEARCH_TYPES as readonly string[]).includes(type);
 }
 
