@@ -119,6 +119,10 @@ Because this repository snapshot does not include live prod DB credentials here,
 - **Recommended sequencing:** **#8**.
 
 ### 9) Procurement control workspace (true control, not monitoring-only)
+> **PARKED / SUPERSEDED (2026-05-07).** Procure-to-pay (PR→PO→delivery→invoice, payment, proof,
+> subcontractor) is **deferred / out of scope for finance Done** — see
+> `docs/finance-source-of-truth-audit.md` Part I § D and `docs/AGENT_GUARDRAILS.md` § 3B S4. The
+> **no-PO red flag is RETIRED** (do not re-add); the line below is kept for historical context only.
 - **Business problem solved:** Current procurement surfaces are informative; stronger controls are needed around PR→PO→delivery→invoice linkage and no-PO red-flag enforcement.
 - **Department impact:** Procurement, Finance, PM, Commercial.
 - **Quick win or deeper build:** **Deeper build** (phased).

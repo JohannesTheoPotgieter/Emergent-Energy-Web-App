@@ -547,6 +547,16 @@ require registration with the relevant network service provider.
 | × totalRevenueCosted\_project). Cash flow forecasting depends on     |
 | this discipline.                                                     |
 +----------------------------------------------------------------------+
+
+> **OWNER ANNOTATION (2026-05-07) — two clarifications to the box above.** The canonical, current
+> finance rules live in `docs/finance-source-of-truth-audit.md` Part I (enforced by
+> `docs/AGENT_GUARDRAILS.md` § 3 / § 3B). Where the box differs, the canonical doc wins:
+> 1. **"An invoice without a PO is a red flag" is RETIRED.** Invoices may exist without POs; the no-PO
+>    flag / audit pattern is no longer required and must not be re-added.
+> 2. **Revenue recognition is the category-scoped per-line POC** `perLineRevenue = (Q ÷ X_category) ×
+>    J_category`, recognised on the invoice-raised date (col T) — the authoritative form. The
+>    project-scoped cost-to-cost ratio written in the box is a simplification superseded by § 3.3.
+
 ### SUBSTITUTION APPROVAL WORKFLOW
 Component substitutions happen --- out-of-stock, lead-time, price
 change, supplier failure. They must not happen silently.

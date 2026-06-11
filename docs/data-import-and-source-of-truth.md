@@ -1,6 +1,19 @@
 # Data Import and Source of Truth
 
-> **Last verified:** 2026-05-04 (refreshed after the source-of-truth audit)
+> **Last verified:** 2026-06-11 (aligned to the canonical finance source of truth)
+
+> **Finance numbers have ONE computation path.** REV / COS / GP / cash are computed **solely** by
+> `server/repositories/finance-line-level-repository.ts` from the normalized lines
+> (`normalized_cost_lines` + `normalized_cost_line_actuals`) and `category_revenue_allocations`, per
+> `docs/finance-source-of-truth-audit.md` Part I and `docs/AGENT_GUARDRAILS.md` § 3.3.2 / § 3B.
+> **There are no parallel finance calculations.** Summary/snapshot tables below
+> (e.g. `project_revenue_summary`, `tracker_revenue_summary`, the monthly tables) are **derived
+> snapshots for display / reconciliation — they are NOT a finance source of truth** and must never be
+> summed as an independent revenue/GP figure.
+>
+> **QuickBooks reconciliation is COMPANY-LEVEL.** Per-project QB attribution exists **only** via the
+> invoice + ex-VAT-amount auto-matcher and must always show match coverage, never imply completeness
+> (Part I § E). There is no per-project "QB is complete" path.
 
 ## Ownership model
 Data ownership is intentionally split by domain:
@@ -38,7 +51,8 @@ the `finance-snapshot-queries` skill in `CLAUDE.md`.
 - `finance_revenue_monthly`
 - `finance_cos_monthly`
 - `category_revenue_allocations`
-- `project_revenue_summary`
+- `project_revenue_summary` — derived snapshot only; **not** a finance source of truth (the line-level
+  repository is). Read it snapshot-guarded for display, never as an independent revenue/GP total.
 - `dashboard_project_metrics`
 - `dashboard_program_metrics`
 - `monthly_report_snapshots` (PM and Engineering — frozen JSON blobs;

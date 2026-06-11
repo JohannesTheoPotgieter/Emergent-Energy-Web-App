@@ -91,6 +91,21 @@ summary you can read inside the app.
 - **SSEG Manager** — SSEG/handover focus.
 - **Read-Only Viewer** — login + view nothing else.
 
+## Finance route access (recorded 2026-06-11)
+
+The finance section nav is exactly seven items — **Finance Home, Revenue, Cost of Sales, Gross
+Profit, Cashflow, Reconciliation, QB Reconciliation** — per the canonical
+`docs/finance-source-of-truth-audit.md` Part I § G.
+
+- **Revenue page:** route `/revenue-tracker` (label *Revenue*), with `/finance/revenue` registered as
+  an **alias** of it. Gated by the `revenue_tracker` entity (`revenue_tracker:view`). The COO/CEO
+  Executive template and finance templates carry this, so COO_ADMIN can view Revenue.
+- **Corrected access:** an earlier regression left `/finance/revenue` **unregistered**, so it resolved
+  to an unknown path and was denied for everyone (including COO_ADMIN). It is now registered as the
+  alias above — Revenue is reachable for anyone with `revenue_tracker:view`. (Reconciliation was a
+  similar mis-gate; see the note in `client/src/config/app-navigation.ts` — finance nav items must not
+  be gated with an `entity:action` string in `requiredPathPermissions`, which is evaluated as a path.)
+
 ## Audit & rollback
 
 - Every apply writes a row to the audit log with **who**, **what** (template

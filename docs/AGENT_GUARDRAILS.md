@@ -1,8 +1,8 @@
 # AGENT_GUARDRAILS.md — Emergent Energy Web App
 **Owner:** Johannes Theo Potgieter (COO)
 **Repo:** `JohannesTheoPotgieter/Emergent-Energy-Web-App`
-**Last verified:** 2026-05-08
-**Status:** Layer 1 canonical guardrails. Source of truth for all AI coding agents (Claude Code, Codex, Replit Agent) operating against this repo.
+**Last verified:** 2026-06-11
+**Status:** Layer 1 canonical guardrails. Source of truth for all AI coding agents (Claude Code, Codex, Replit Agent) operating against this repo. **Finance rules are SETTLED — see § 3B and the canonical `docs/finance-source-of-truth-audit.md` Part I.**
 ---
 ## 0. How to use this file
 This is the single document every AI agent must read **before** doing work in this repo. Tool-specific files (`CLAUDE.md`, `AGENTS.md`, `replit.md`) reference this file and contain only IDE-specific operational guidance (commands, hooks, slash commands). Everything substantive — business invariants, security boundaries, architectural rules, the Do NOT list — lives here.
@@ -140,6 +140,35 @@ The rule applies uniformly to:
 The import reads colour as the canonical signal; the app stores the derived realised flag against the actual-date row. Loss of colour fidelity during import (or during any future re-import / round-trip) is a hard regression — the realisation signal must survive the round-trip.
 **Open challenge to be resolved by owner:** date colour is a fragile signal (lost on copy/paste, lost on PDF export, lost across Excel versions). The current rule is "colour is canonical at import time" — but once imported, the app should store the realisation as a derived `realised: bool` + `realisation_method: 'colour' | 'manual' | …` so the app never depends on colour after the import boundary. **Confirm with owner before any agent extends colour-handling code.**
 ---
+## 3B. SETTLED — DO NOT RE-LITIGATE OR PROPOSE CHANGES
+> **These are locked owner decisions. The canonical record is `docs/finance-source-of-truth-audit.md` Part I.** Agents **implement and verify** these rules; agents do **not** propose changes to them, re-open the formula, or re-add retired flags. To change anything here, the owner updates the canonical doc first. If asked to change a SETTLED rule, refuse and point at this section.
+
+**S1 — Revenue formula (locked).** Revenue is the § 3.3 category-scoped per-line POC: `perLineRevenue = (Q ÷ X_category) × J_category` (Q = col Q line `actual_total`; X_category = col X category sum; J_category = col J `category_revenue_allocations.revenue_allocation`), summed per line, never pooled (§ 3.3.1). **Recognition date = invoice-raised date (col T).** **Receipt / payment date (col W) drives CASHFLOW ONLY and never revenue.** No invoice-payment / receipt / contract / milestone revenue trigger. This is the same HARD rule as § 3.2–§ 3.4 — no override path.
+
+**S2 — No-PO red flag is RETIRED (owner direction 2026-05-07).** An invoice without a PO is **not** a red flag. Do **not** re-add a no-PO flag/audit/exception to any report, KPI, reconciliation, worklist, or schema. (Also recorded in § 13.)
+
+**S3 — Definition of Done = the four goalposts (scope fence).** Finance is done only when all four are met:
+- **GP1** Replicate the tracker exactly (line-for-line vs the source Excel).
+- **GP2** REV / COS / GP by **FY / month / project / line / invoice** + cashflow by **week / line / invoice**.
+- **GP3** Tracker-vs-QuickBooks: REV & COS at **invoice level**, GP at **month level**, matched on **invoice number + ex-VAT amount**.
+- **GP4** AR / AP + a **past-dated missing-invoice worklist**.
+
+**S4 — Deferred / out of scope for finance done** (parked — do not block on, do not expand scope to, without owner direction): VO impact; **procure-to-pay** (PO / payment / proof-of-payment / financial-reviews / subcontractor — parked); VAT removal; board pack; commission.
+
+**S5 — QuickBooks reconciliation grain.** QB reconciliation is **COMPANY-LEVEL**. Per-project QB exists **only** via the invoice + ex-VAT-amount auto-matcher, which must **always show match coverage** and **never imply completeness**. Unmatched is the default, not an error.
+
+**S6 — Single read path + cross-surface equality.** `server/repositories/finance-line-level-repository.ts` is the **sole** computation of REV / COS / GP / cash (§ 3.3.2). No parallel finance calculations anywhere. **`npm run verify:finance` must ASSERT cross-surface equality** (`verify-all-projects-reconciliation.ts` + `verify-cross-surface-finance.ts`) — the same business number resolves to **one value on every surface**; a divergence fails the script.
+
+**S7 — Audit-validity rule.** Only audits run **against Postgres / production with the current guardrails in place** count toward finance sign-off. **Local-SQLite runs report environment health only — never finance trust.** Production finance audits are **READ-ONLY** (no writes, no mutations on prod).
+
+**S8 — FY is dynamic.** The company FY runs **Sep–Aug** and must be computed dynamically via `server/lib/fy-window.ts`. **No hardcoded fiscal year** anywhere (no literal `FY26`, no `2026` constant gating period logic).
+
+**S9 — Fail loud, no silent SQLite fallback.** Finance must **FAIL LOUD** if Postgres or the correct schema is unavailable. A finance read path must never silently fall back to SQLite and present numbers as trusted — that is an environment-health condition, not a finance answer.
+
+**S10 — Finance code is FROZEN.** The finance computation paths (the line-level repository, the recognition / realisation predicates, the FY window, the cashflow engine, the QB matcher) are frozen. **Formula / number / calculation changes require explicit owner approval.** Refactors that preserve every number are allowed only if `verify:finance` and the finance unit tests stay green.
+
+---
+
 ## 3A. Business-workflow invariants — SOFT rules with override paths
 These are operationally important but they are *workflow* rules, not math. The right person + reason + audit can override. The app records the override; it does not refuse.
 1. **No approval bypass without a corresponding `audit_events` entry.** This is the override pattern itself — it does not block; it records. Code that bypasses approval without writing audit is wrong because it loses the record, not because the bypass itself is forbidden. *Override:* not applicable — this rule *is* the override pattern.
@@ -374,6 +403,6 @@ Per owner standing instructions and the playbook:
 - App database logic or the data model itself
 - Hold/Blocked status semantics
 These can change — but only via an explicit playbook update + owner authorisation. The agent does not redefine them mid-task. If a code change appears to require redefinition, **stop and ask the owner** before proceeding.
-**Note:** the no-PO flag rule that previously appeared in the AGENTS.md invariant set has been removed at owner direction (2026-05-07). Invoices may exist without POs; the audit / flag pattern is no longer required. If audit policy on this changes again, it returns via owner update to this file.
+**Note:** the no-PO flag rule that previously appeared in the AGENTS.md invariant set has been removed at owner direction (2026-05-07) — see § 3B (S2) and `docs/finance-source-of-truth-audit.md` Part I § B. Invoices may exist without POs; the audit / flag pattern is **retired** — do not re-add. If audit policy on this changes again, it returns via owner update to the canonical doc and this file.
 ---
 *End of canonical guardrails. See companion files: `CLAUDE.md` (Claude Code operational guidance), `AGENTS.md` (Codex operational guidance), `replit.md` (Replit Agent operational guidance), `docs/architecture.md` (system structure), `docs/claude-code-mastery-guide.md` (Claude Code playbook).*

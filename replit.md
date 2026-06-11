@@ -20,7 +20,17 @@ Owner: Johannes Theo Potgieter (COO)
 - **Hosting:** Replit **autoscale**, single port **5000**.
 - **Schema changes:** every change ships as a committed Drizzle migration file (`npm run db:generate`); deploy applies them via `drizzle-kit migrate`. A `db:push`-only change will **NOT** publish.
 - **PR done = green:** `npm run check`, `npm run db:check`, `npm run test`, and `npm run build` all pass.
-- **Secrets:** Replit Secrets Manager only — never in `.replit` or committed files.
+- **Secrets:** Replit Secrets Manager only — never in `.replit`, `replit.md`, or any committed file.
+
+## Finance & database invariants (Replit)
+Canonical finance rules: `docs/finance-source-of-truth-audit.md` Part I + `docs/AGENT_GUARDRAILS.md` § 3B.
+- **Fail loud on DB.** Finance must **fail loud** if Postgres or the correct schema is unavailable.
+  There is **no silent SQLite fallback** for finance trust — SQLite (dev) is for environment health
+  only, never for trusted finance numbers. Production finance audits are **READ-ONLY**.
+- **Secrets** live in **Replit Secrets Manager only** — never committed (no secrets in `.replit`,
+  `replit.md`, `.env*`, or source). Production secrets resolve via Azure Key Vault.
+- **FY is dynamic.** The company FY runs **Sep–Aug**, computed at runtime via `server/lib/fy-window.ts`.
+  No hardcoded fiscal year.
 
 ## Stack
 - **Frontend:** React 19, TypeScript, Vite, wouter, Tailwind CSS v4, shadcn/ui, TanStack React Query v5, React Hook Form, Zod.

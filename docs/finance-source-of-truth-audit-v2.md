@@ -1,5 +1,10 @@
 # Finance Source-of-Truth Audit — V2 (Fresh Runtime Re-Run)
 
+> **SUPERSEDED — historical evidence only.** The single canonical source of finance rules is
+> `docs/finance-source-of-truth-audit.md` (Part I = locked rules; Part II = consolidated audit
+> evidence which folds in this V2). Do not treat this file as a source of finance rules or current
+> state; read the canonical doc instead.
+
 **Date:** 2026-06-09 · **Auditor role:** COO_ADMIN (johannes, user id=1) · **Build:** v1.5.0 / Build 260608
 **Scope:** Deep UX/UI + runtime audit of the finance surface re-run **fresh** against current live data.
 **Prior report:** `docs/finance-source-of-truth-audit.md` (V1, verdict 🔴 RED). This document is **standalone** — every
