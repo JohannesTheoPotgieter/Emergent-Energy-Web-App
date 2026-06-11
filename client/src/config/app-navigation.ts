@@ -14,6 +14,7 @@
  */
 
 import type { CompanyRole } from "@shared/schema/users";
+import { isNavGroupEnabled } from "@shared/config/enabled-modules";
 
 export const SECTION_KEYS = [
   "HOME",
@@ -117,6 +118,11 @@ export const TOP_SECTIONS: TopSection[] = [
     // requiredPathPermissions: ["financials:view"] — that field is evaluated
     // as a PATH (canViewPath), and an "entity:action" string is an unknown
     // path → denied for everyone. That mis-gate was hiding Reconciliation.
+    // Finance-only module sidebar — exactly 7 items (2026-06-11). Weekly Close
+    // is SCRAPPED (its AR + missing-invoice worklists moved into Cashflow;
+    // /finance/close now redirects to /cashflow). Payment Requests + PO
+    // Approvals are PARKED (procure-to-pay deferred — see AGENT_GUARDRAILS § 3B
+    // S4) and removed from the sidebar.
     secondary: [
       { label: "Finance Home", path: "/finance" },
       { label: "Cashflow", path: "/cashflow" },
@@ -124,10 +130,7 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Revenue", path: "/revenue-tracker" },
       { label: "Gross Profit", path: "/finance/gp/company" },
       { label: "QB Reconciliation", path: "/finance/qb-reconciliation" },
-      { label: "Weekly Close", path: "/finance/close" },
       { label: "FYE Tracking Report", path: "/fye-revenue-tracking" },
-      { label: "Payment Requests", path: "/payment-request-board" },
-      { label: "PO Approvals", path: "/po-approval-board" },
     ],
   },
   {
@@ -378,6 +381,42 @@ export function buildVisibleTopSections(options: {
       };
     })
     .filter(Boolean) as TopSection[];
+}
+
+/**
+ * Module-enablement layer (finance-only) — orthogonal to the role/permission
+ * model in buildVisibleTopSections. A top-nav section maps to one or more
+ * page-registry nav-groups; the section is shown only when at least one of
+ * those nav-groups is enabled in shared/config/enabled-modules.ts.
+ *
+ * Keeping this separate from buildVisibleTopSections means the role→section
+ * capability model is unchanged (a module re-enabled in the registry shows up
+ * for exactly the roles that already had it), while the active module set is a
+ * single one-line config flip.
+ */
+const SECTION_TO_NAV_GROUPS: Record<SectionKey, string[]> = {
+  HOME: ["MY_WORK"],
+  PORTFOLIO: ["PORTFOLIO", "GATES"],
+  PRIORITIES: ["PRIORITIES"],
+  PROJECT_DEVELOPMENT: ["PROJECT_DEVELOPMENT"],
+  PROJECT_DELIVERY: ["PROJECTS", "PROJECT_MANAGEMENT"],
+  FINANCE: ["FINANCE"],
+  ENGINEERING: ["ENGINEERING"],
+  HSE: ["HSE"],
+  QUALITY: ["QUALITY"],
+  REPORTS: ["REPORTS"],
+  ADMIN: ["SYSTEM", "KNOWLEDGE"],
+};
+
+/** Is this top-nav section enabled by the active module registry? */
+export function isSectionModuleEnabled(sectionKey: SectionKey): boolean {
+  const groups = SECTION_TO_NAV_GROUPS[sectionKey] ?? [];
+  return groups.some((group) => isNavGroupEnabled(group));
+}
+
+/** Drop any top-nav sections whose module is disabled (finance-only gate). */
+export function filterSectionsByEnabledModules<T extends { key: SectionKey }>(sections: T[]): T[] {
+  return sections.filter((section) => isSectionModuleEnabled(section.key));
 }
 
 export function linkIsActive(current: string, target: string) {
