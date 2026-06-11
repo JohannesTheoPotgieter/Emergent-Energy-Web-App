@@ -1,4 +1,121 @@
-# Finance Source-of-Truth Audit — Consolidated (V1 + V2 + Runtime Button Pass)
+# Finance — Source of Truth (Canonical Finance Rules + Audit Evidence)
+
+> **STATUS: CANONICAL — THIS IS THE SINGLE SOURCE OF FINANCE RULES for Emergent Energy.**
+> Every agent (Claude Code, Codex, Replit) and every finance surface defers to **Part I** below.
+> The technical enforcement of these rules lives in `docs/AGENT_GUARDRAILS.md` § 3 and § 3B
+> (SETTLED). **Part II** is the read-only audit evidence (2026-06-09) that motivated locking
+> these rules. If any other document disagrees with Part I, **Part I wins** and the other document
+> is the defect (see the contradiction register at the end of Part I).
+>
+> **Owner:** Johannes Theo Potgieter (COO). **Rules locked:** 2026-05-07. **Last reconciled:** 2026-06-11.
+
+## PART I — CANONICAL FINANCE RULES (LOCKED / SETTLED — DO NOT RE-LITIGATE OR PROPOSE CHANGES)
+
+These are settled owner decisions. Agents **implement and verify** them; agents do **not** propose
+changes to them. To change anything here, the **owner updates this document first**.
+
+### A. Revenue recognition — category-scoped per-line POC (§ 3.3)
+
+- Revenue is the **§ 3.3 percentage-of-completion** value, computed **per cost-actuals line**:
+
+  ```
+  perLineRevenue = (Q ÷ X_category) × J_category
+  ```
+
+  where **Q** = line actual cost (Excel col Q, `normalized_cost_line_actuals.actual_total`),
+  **X_category** = SUM of Q over all live actuals rows in the same category for that project
+  (Excel col X), **J_category** = that category's revenue allocation (Excel col J,
+  `category_revenue_allocations.revenue_allocation`). Categories are **scoped to a single project** —
+  never pooled across projects (§ 3.3.1).
+- **Recognition date = invoice-raised date (Excel col T)** = `normalized_cost_line_actuals.invoice_date`.
+  Revenue **and** COS both bucket on col T.
+- **Receipt / payment date (Excel col W) drives CASHFLOW ONLY and NEVER revenue.** A received payment
+  (col W, BLACK) is a cash inflow, not a recognition event. Conflating the two in any KPI tile,
+  dashboard, or report is a hard defect.
+- Per-line GP = `perLineRevenue − Q`. Aggregates = **sum of per-line values** (§ 3.3.1) — never a
+  pooled `(ΣQ ÷ ΣX) × ΣJ`.
+
+### B. The no-PO-invoice red flag is RETIRED
+
+- **Owner direction, 2026-05-07: an invoice without a PO is NOT a red flag.** Invoices may exist
+  without POs. The no-PO audit/flag pattern is **retired**. **Do not re-add it** to any report, KPI,
+  reconciliation, exception list, worklist, or schema. (Mirrored in AGENT_GUARDRAILS § 3B and § 13.)
+
+### C. Definition of Done — the four goalposts
+
+Finance is "done" when, and only when, **all four** goalposts are met:
+
+- **GP1 — Replicate the tracker exactly.** The app reproduces the source-of-truth Excel tracker
+  numbers line-for-line.
+- **GP2 — Slice REV / COS / GP and cashflow.** REV/COS/GP by **FY / month / project / line / invoice**;
+  cashflow by **week / line / invoice**.
+- **GP3 — Tracker-vs-QuickBooks reconciliation.** REV and COS at **invoice level**, GP at **month level**,
+  matched on **invoice number + ex-VAT amount**.
+- **GP4 — AR / AP + worklist.** Accounts receivable / payable plus a **past-dated missing-invoice worklist**.
+
+### D. Deferred / out of scope for "finance done"
+
+Explicitly **not** required for finance Done (parked — do not block on them, do not expand scope to
+them without owner direction): VO (variation-order) impact; **procure-to-pay** (PO / payment /
+proof-of-payment / financial-reviews / subcontractor surfaces — parked); VAT removal; board pack;
+commission.
+
+### E. QuickBooks reconciliation grain
+
+- **QB reconciliation is COMPANY-LEVEL.** The trusted tracker-vs-QB reconciliation is at company scope.
+- **Per-project QB exists ONLY via the invoice + ex-VAT-amount auto-matcher.** Any per-project QB view
+  must **always show match coverage** (how many invoices / amounts matched) and must **never imply
+  completeness**. Unmatched is the default state, not an error.
+
+### F. Single computation path, cross-surface equality, FY, fail-loud, freeze
+
+- **`server/repositories/finance-line-level-repository.ts` is the SOLE computation of REV / COS / GP / cash.**
+  Every surface (FY card, monthly recon grid, Revenue / COS / GP / Cashflow pages, dashboards, KPIs,
+  project detail) consumes its output and sums. **No parallel finance calculations** anywhere (§ 3.3.2).
+- **`npm run verify:finance` must ASSERT cross-surface equality** (all-projects reconciliation +
+  cross-surface finance): the same business number must resolve to **one value on every surface**.
+- **FY is computed dynamically — the company FY runs Sep–Aug** via `server/lib/fy-window.ts`. No
+  hardcoded year anywhere.
+- **Finance FAILS LOUD if Postgres / the correct schema is unavailable** — there is **no silent SQLite
+  fallback** for finance trust.
+- **Finance code is FROZEN.** Formula, number, and calculation changes require **explicit owner approval**.
+
+### G. Finance navigation — exactly seven items
+
+The finance section nav is exactly, in order:
+**Finance Home · Revenue · Cost of Sales · Gross Profit · Cashflow · Reconciliation · QB Reconciliation.**
+(Operational tools — Weekly Close, FYE Tracking, QuickBooks, Payment Requests, etc. — are deeper tools,
+not the canonical seven.)
+
+### H. Audit validity (mirrored in AGENT_GUARDRAILS § 3B)
+
+- Only audits run **against Postgres / production with the current guardrails** count toward finance
+  sign-off. **Local-SQLite runs report environment health only — never finance trust.**
+- Production finance audits are **READ-ONLY**.
+
+### Contradiction register — resolved 2026-06-11
+
+Statements found elsewhere that contradict Part I, now aligned to point here:
+
+| Source | Old statement | Resolution |
+|---|---|---|
+| `docs/ops-library/finance-report-trust-guide.md` | no-PO invoice is a red flag; revenue = project-scoped cost-to-cost ratio | retired no-PO; revenue restated to § 3.3 category-scoped POC; cross-refs this doc |
+| `docs/operating-model/playbook-v2.0.md` § 4.3 | "An invoice without a PO is a red flag"; project-scoped revenue ratio | annotated RETIRED (2026-05-07) + canonical formula pointer (playbook prose preserved) |
+| `docs/operating-system-functional-additions-priority-2026-04-14.md` | "no-PO red-flag enforcement" | annotated retired/parked |
+| `docs/data-import-and-source-of-truth.md` | `project_revenue_summary` implied as a revenue source | clarified: PRS is a derived snapshot, **not** a finance source of truth — § 3.3 repo is |
+| `docs/finance-source-of-truth-audit-v2.md` | standalone "source-of-truth" audit | banner added: superseded by this canonical doc |
+
+---
+
+## PART II — AUDIT EVIDENCE (2026-06-09, report-only)
+
+> The audit below is the **2026-06-09 read-only snapshot** that motivated locking Part I. It is
+> retained as **evidence**. **Its numbers are historical** and predate the canonical-read-path
+> consolidation (single `finance-line-level-repository` read path; per-project QB invoice+ex-VAT
+> auto-matcher; `/finance/revenue` RBAC registration). Do **not** treat Part II figures as current
+> state. No code, schema, migration, or data was changed by the audit.
+
+### Consolidated audit (V1 + V2 + Runtime Button Pass)
 
 **Type:** Report-only audit. **No code / schema / migration / data was changed.** The only writes attempted were rejected-on-purpose validation probes (bad input → 4xx, zero rows written — proven in §8).
 **Supersedes:** the former `finance-source-of-truth-audit.md` (V1) and `finance-source-of-truth-audit-v2.md` (V2). This single document merges both, adds an **authenticated browser button pass** (the V1/V2 "NOT EXECUTED" UI items are now executed), and adds a **dev-vs-production reconciliation**.

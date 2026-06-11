@@ -10,6 +10,22 @@ Full-stack TypeScript monorepo: React 19 + Vite (client) + Express 5 (server) +
 Drizzle ORM + PostgreSQL. Hosted on Replit. See `replit.md` for full architecture
 and `docs/architecture.md` for the architecture baseline.
 
+## Finance — canonical source, Definition of Done, and FREEZE
+
+- **Single source of finance rules:** `docs/finance-source-of-truth-audit.md` **Part I** (enforced by
+  `docs/AGENT_GUARDRAILS.md` § 3 + § 3B, SETTLED). These rules are **locked** — implement and verify
+  them; do **not** re-litigate or propose formula changes.
+- **Definition of Done = the four goalposts (scope fence):** (GP1) replicate the tracker exactly;
+  (GP2) REV/COS/GP by FY/month/project/line/invoice + cashflow by week/line/invoice; (GP3) tracker-vs-QB
+  REV/COS at invoice level and GP at month level, matched on invoice no + ex-VAT amount; (GP4) AR/AP +
+  past-dated missing-invoice worklist. **Deferred / out of scope:** VO impact, procure-to-pay
+  (PO/payment/proof/financial-reviews/subcontractor — parked), VAT removal, board pack, commission.
+- **FREEZE:** the finance computation paths (`server/repositories/finance-line-level-repository.ts`, the
+  recognition/realisation predicates, `server/lib/fy-window.ts`, the cashflow engine, the QB matcher)
+  are **frozen**. Do not modify them — formula/number/calculation changes need **explicit owner
+  approval**. Number-preserving refactors are allowed only if `npm run verify:finance` and the finance
+  unit tests stay green.
+
 ## Commands
 
 - `npm run dev` — Start Express server on port 5000. Vite is mounted as middleware
@@ -95,6 +111,8 @@ qa/release-gate.ts  Must pass before any release
 
 Substantive rules live in `docs/AGENT_GUARDRAILS.md`. Do not duplicate them here.
 
+- **Finance rules (SETTLED / frozen):** canonical = `docs/finance-source-of-truth-audit.md` Part I;
+  enforcement = `docs/AGENT_GUARDRAILS.md` § 3 + § 3B. Do not propose finance formula changes.
 - **Schema rules:** see `docs/AGENT_GUARDRAILS.md` § 6.
 - **Database & migrations:** see `docs/AGENT_GUARDRAILS.md` § 6. Snapshot-table
   `effectiveTo IS NULL` guard is HARD — § 3.1.
