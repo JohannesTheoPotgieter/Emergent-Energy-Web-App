@@ -30,6 +30,22 @@ interface QuickBooksStatus {
   isStale: boolean;
   ageMs: number | null;
   staleAfterMs: number;
+  daysUntilRefreshTokenExpiry: number | null;
+  refreshTokenExpiryState: "ok" | "expiring_soon" | "critical" | "expired" | "unknown";
+  reconnectRequired: boolean;
+  reconnectPath: string;
+}
+
+function refreshExpiryClass(state: QuickBooksStatus["refreshTokenExpiryState"]): string {
+  switch (state) {
+    case "expired":
+    case "critical":
+      return "text-rose-700";
+    case "expiring_soon":
+      return "text-amber-700";
+    default:
+      return "text-muted-foreground";
+  }
 }
 
 function formatRelativeAge(ageMs: number | null): string {
@@ -350,6 +366,35 @@ export default function AdminQuickBooksPage() {
                     </div>
                   </div>
                 </div>
+                {status.daysUntilRefreshTokenExpiry !== null && (
+                  <p
+                    className={`mt-2 text-xs font-medium ${refreshExpiryClass(status.refreshTokenExpiryState)}`}
+                    data-testid="qb-refresh-token-expiry"
+                  >
+                    {status.daysUntilRefreshTokenExpiry <= 0
+                      ? "Refresh token EXPIRED — re-authorise to restore syncing."
+                      : `Refresh token expires in ${status.daysUntilRefreshTokenExpiry} day${status.daysUntilRefreshTokenExpiry === 1 ? "" : "s"}.`}
+                  </p>
+                )}
+                {status.reconnectRequired && (
+                  <div className="mt-2 flex flex-col gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2">
+                    <p className="text-xs text-rose-800">
+                      QuickBooks needs re-authorisation — its refresh token was revoked or has expired, so
+                      new data isn't syncing. Reconciliation data below is shown as of the last successful
+                      sync above.
+                    </p>
+                    <Button
+                      size="sm"
+                      className="gap-1.5 self-start"
+                      onClick={() => {
+                        window.location.href = status.reconnectPath;
+                      }}
+                      data-testid="qb-reconnect"
+                    >
+                      <Plug className="h-4 w-4" /> Reconnect QuickBooks
+                    </Button>
+                  </div>
+                )}
                 {status.isStale && (
                   <p className="mt-2 text-xs text-amber-700">
                     QuickBooks data shown below may be stale (no successful sync in{" "}

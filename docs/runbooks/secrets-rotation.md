@@ -20,7 +20,10 @@ successful. It is the source of truth for "who owns which secret."
 | `DATABASE_URL` | PostgreSQL connection string. | Replit Secrets Manager (prod) — auto-injected by the Replit PostgreSQL module if used | Whenever DB credentials change |
 | `AZURE_TENANT_ID` | Azure AD tenant identifier. **Not a secret** — public OAuth value. | `.replit` `[userenv.shared]` (safe to commit) | Never rotates |
 | `AZURE_CLIENT_ID` | Azure AD application registration ID. **Not a secret**. | `.replit` `[userenv.shared]` (safe to commit) | Never rotates |
-| `AZURE_CLIENT_SECRET` | Azure AD application secret. **THIS IS A SECRET.** | Azure Key Vault → Replit Secrets Manager | Every 180 days, or per Azure expiry |
+| `AZURE_CLIENT_SECRET` | Azure AD application secret (delegated SSO + Outlook/Teams via MS Graph). **THIS IS A SECRET.** | Azure Key Vault → Replit Secrets Manager | Every 180 days, or per Azure expiry |
+| `SHAREPOINT_CLIENT_SECRET` | App-only SharePoint Graph app secret — the preferred SharePoint read / tracker-fetch path (falls back to the Replit connector if unset). **THIS IS A SECRET.** | Azure Key Vault → Replit Secrets Manager | Every 180 days, or per Azure expiry |
+| `AZURE_CLIENT_SECRET_EXPIRES_ON` | Expiry **date** of `AZURE_CLIENT_SECRET` (ISO `YYYY-MM-DD`). **NOT a secret** — a plain date. Drives the COO's 30/7-day expiry alerts + the Connection Health countdown. | Replit Secrets / env (plain config) | **Set this to the new expiry every time `AZURE_CLIENT_SECRET` is rotated** |
+| `SHAREPOINT_CLIENT_SECRET_EXPIRES_ON` | Expiry **date** of `SHAREPOINT_CLIENT_SECRET` (ISO `YYYY-MM-DD`). **NOT a secret.** Drives the SharePoint secret-expiry alerts + countdown. | Replit Secrets / env (plain config) | **Set this to the new expiry every time `SHAREPOINT_CLIENT_SECRET` is rotated** |
 | `QM_ACCESS_CODE` | Shared access code for Quality Manager features. | Replit Secrets Manager (prod) | On every staff change in QM team |
 | `EPM_ACCESS_CODE` | Shared access code for Engineering PM features. | Replit Secrets Manager (prod) | On every staff change in EPM team |
 | `SEED_ADMIN_PASSWORD` | Default password for non-production seed users. Min 12 chars. | Replit Secrets Manager (dev/staging only) — must NOT exist in prod | Every staging refresh |
@@ -147,6 +150,57 @@ This key encrypts at-rest data. Rotating it requires re-encrypting:
 
 ---
 
+## 5A. Reconnecting an integration after a credential lapses (the 15-minute task)
+
+Tokens auto-refresh; the credentials that lapse on a fixed clock during a long
+unattended period do **not** self-heal. The app counts each one down and pages
+**COO_ADMIN** at **30 and 7 days** (and on expiry) via the in-app notification
+inbox, and shows a live countdown on **Admin → Integration Statuses → Connection
+Health**. When you get one of those alerts, this is the whole job. None of it is
+a code change — it is an ops action.
+
+### 5A.1 QuickBooks "Reconnect required" / refresh-token expiring (~2 min)
+
+QuickBooks rotates its refresh token on use and hard-expires it ~100 days after
+the last re-auth. If the app sits idle past that, or the connection is revoked
+in Intuit, you'll get a **"Reconnect required: QuickBooks"** alert.
+
+1. Open **Admin → QuickBooks** (or **Integration Statuses → Connection Health**).
+2. Click **Reconnect QuickBooks** (this is the one-click `/api/quickbooks/auth`
+   OAuth flow — admin only).
+3. Approve the Intuit consent screen for the Emergent Energy company.
+4. Verify the tile flips to **Connected** and "Last successful sync" updates.
+
+No env changes — the new tokens are stored (encrypted) automatically. Until you
+reconnect, finance pages keep showing the **last-good** reconciliation data with
+an "as of \<timestamp\>" banner; they do not break.
+
+### 5A.2 Azure / SharePoint client secret expiring (~15 min)
+
+`AZURE_CLIENT_SECRET` (delegated SSO + Outlook/Teams) and
+`SHAREPOINT_CLIENT_SECRET` (app-only SharePoint reads) are the credentials most
+likely to lapse in a multi-month freeze. They are rotated in Azure, not in code.
+
+1. **Generate a new secret** — Azure Portal → App registrations → *Emergent
+   Energy* → **Certificates & secrets** → **New client secret**. Choose an
+   expiry (e.g. 180 days) and **copy the value immediately** (Azure shows it once).
+   Note the **expiry date** it displays.
+2. **Update the secret** in Replit Secrets Manager (or Key Vault): set
+   `AZURE_CLIENT_SECRET` (or `SHAREPOINT_CLIENT_SECRET`) to the new value.
+3. **Update the expiry date** — set `AZURE_CLIENT_SECRET_EXPIRES_ON`
+   (or `SHAREPOINT_CLIENT_SECRET_EXPIRES_ON`) to the new expiry as `YYYY-MM-DD`.
+   This is what resets the countdown and silences the alert; **do not skip it**.
+4. **Restart** the app (Stop → Run) so the new secret loads.
+5. **Verify**: sign in via Microsoft SSO; open Integration Statuses → Connection
+   Health and confirm the secret-expiry countdown now reads the new date and the
+   "Reconnect required / Secret expiring" badge has cleared.
+
+The 30/7-day alert dedup auto-resets once the expiry date moves forward, so the
+next cycle alerts afresh. Until rotation, SharePoint/Outlook reads degrade to
+last-imported tracker data rather than crashing.
+
+---
+
 ## 6. What NOT to do
 
 - **Never** commit a secret value to `.replit`, `.env`, `package.json`, source code, or any documentation file in the repo.
@@ -165,6 +219,9 @@ This key encrypts at-rest data. Rotating it requires re-encrypting:
 - [ ] New `QM_ACCESS_CODE` generated and set in Replit Secrets
 - [ ] New `EPM_ACCESS_CODE` generated and set in Replit Secrets (if applicable)
 - [ ] `AZURE_CLIENT_SECRET` rotated in Azure Portal and updated in Replit Secrets
+- [ ] `AZURE_CLIENT_SECRET_EXPIRES_ON` updated to the new expiry date (resets the alert/countdown)
+- [ ] `SHAREPOINT_CLIENT_SECRET` rotated + `SHAREPOINT_CLIENT_SECRET_EXPIRES_ON` updated (if the app-only SharePoint app is in use)
+- [ ] Connection Health tile shows the new secret-expiry countdown and no "Reconnect required" badge
 - [ ] App restarted without `[Secrets] Missing required runtime secrets` error
 - [ ] Microsoft SSO login verified end-to-end
 - [ ] Dashboard loads with financial data

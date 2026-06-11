@@ -25,6 +25,14 @@ const SECRET_RESOLUTIONS: SecretResolution[] = [
 
 const strictRuntime = process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging";
 
+/**
+ * Cache of credential expiry dates read from Key Vault `properties.expiresOn`
+ * during preload. Lets the integration-health monitor count down to a client
+ * secret's expiry on Azure-hosted deploys. On Replit (env-only) this stays
+ * empty and the monitor falls back to the configured *_EXPIRES_ON date.
+ */
+const secretExpiries = new Map<SecretName, Date | null>();
+
 let secretClient: any = null;
 
 async function getVaultClient(): Promise<any | null> {
@@ -47,9 +55,14 @@ async function getVaultClient(): Promise<any | null> {
   }
 }
 
-async function readVaultSecret(client: any, vaultName: string): Promise<string | null> {
+async function readVaultSecret(
+  client: any,
+  vaultName: string,
+): Promise<{ value: string | null; expiresOn: Date | null }> {
   const response = await client.getSecret(vaultName);
-  return response.value || null;
+  const rawExpiry = response?.properties?.expiresOn ?? null;
+  const expiresOn = rawExpiry ? new Date(rawExpiry) : null;
+  return { value: response.value || null, expiresOn };
 }
 
 export async function preloadRuntimeSecrets(): Promise<void> {
@@ -71,10 +84,13 @@ export async function preloadRuntimeSecrets(): Promise<void> {
     if (process.env[secret.envName]) continue;
 
     try {
-      const value = await readVaultSecret(client, secret.vaultName);
+      const { value, expiresOn } = await readVaultSecret(client, secret.vaultName);
       if (value) {
         process.env[secret.envName] = value;
       }
+      // Record the credential's expiry even when the value came from env —
+      // the integration-health monitor uses it for the secret-expiry countdown.
+      secretExpiries.set(secret.envName, expiresOn);
     } catch (err) {
       const e = err as Error;
       throw new Error(`[Secrets] Failed to retrieve required runtime secrets (name=${secret.vaultName}): ${e.message}`);
@@ -93,4 +109,13 @@ export async function preloadRuntimeSecrets(): Promise<void> {
 
 export function getSecretFromEnv(name: SecretName): string | undefined {
   return process.env[name];
+}
+
+/**
+ * Credential expiry date sourced from Key Vault `properties.expiresOn` during
+ * preload, or null when unknown (e.g. env-only Replit deploys, where the
+ * integration-health monitor falls back to the configured *_EXPIRES_ON date).
+ */
+export function getSecretExpiryFromVault(name: string): Date | null {
+  return secretExpiries.get(name as SecretName) ?? null;
 }

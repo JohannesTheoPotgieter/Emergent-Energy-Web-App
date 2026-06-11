@@ -16,6 +16,21 @@ import {
   type IntegrationHealthTile,
 } from './integration-health-service';
 import { isConnectorMocked } from '../lib/connector-mode';
+import { encryptToken, decryptToken } from '../lib/token-encryption';
+import {
+  getCircuitBreaker,
+  withRetry,
+  isTransientError,
+  CircuitOpenError,
+} from '../lib/http-resilience';
+import {
+  CONNECTOR_CREDENTIALS,
+  daysUntilExpiry,
+  expiryState,
+  parseExpiryDate,
+  type CredentialAlertState,
+  type CredentialExpiryState,
+} from '../lib/integration-credentials';
 import * as qbMocks from '../mocks/quickbooks-fixtures';
 
 export const QB_INTEGRATION_NAME = 'quickbooks';
@@ -51,6 +66,8 @@ export type QuickBooksTokenMetadata = {
   updatedAt?: string;
   /** Cached company name from last `getCompanyInfo()` call. */
   companyName?: string;
+  /** Credential-expiry alert dedup state (set by the daily expiry sweep). */
+  credentialAlert?: CredentialAlertState;
 };
 
 function getApiBase(realmId: string): string {
@@ -99,14 +116,37 @@ async function loadQuickBooksIntegrationRow() {
   return rows[0] ?? null;
 }
 
+/**
+ * Tokens are SECRETS — encrypted at rest with AES-256-GCM (§ 5A: no plaintext
+ * secrets in the DB). Only the access + refresh tokens are encrypted; the
+ * non-secret fields (realmId, expiry timestamps, companyName, alert state)
+ * stay readable so the health tile / status endpoint can use them without a
+ * decrypt round-trip. `decryptToken` tolerates legacy plaintext values, so the
+ * first refresh after deploy transparently migrates existing rows.
+ */
+function encryptStoredTokens(metadata: QuickBooksTokenMetadata): QuickBooksTokenMetadata {
+  const out: QuickBooksTokenMetadata = { ...metadata };
+  if (out.accessToken) out.accessToken = encryptToken(out.accessToken);
+  if (out.refreshToken) out.refreshToken = encryptToken(out.refreshToken);
+  return out;
+}
+
+function decryptStoredTokens(metadata: QuickBooksTokenMetadata): QuickBooksTokenMetadata {
+  const out: QuickBooksTokenMetadata = { ...metadata };
+  if (out.accessToken) out.accessToken = decryptToken(out.accessToken) ?? undefined;
+  if (out.refreshToken) out.refreshToken = decryptToken(out.refreshToken) ?? undefined;
+  return out;
+}
+
 export async function loadQuickBooksMetadata(): Promise<QuickBooksTokenMetadata> {
   const row = await loadQuickBooksIntegrationRow();
   const metadata = (row?.metadata as QuickBooksTokenMetadata | null) ?? {};
-  return metadata ?? {};
+  return decryptStoredTokens(metadata ?? {});
 }
 
 async function saveQuickBooksMetadata(metadata: QuickBooksTokenMetadata): Promise<void> {
   const row = await loadQuickBooksIntegrationRow();
+  const encrypted = encryptStoredTokens(metadata);
   if (!row) {
     // Seed row is expected to be created at boot; fall back to insert.
     await db.insert(integrations).values({
@@ -119,14 +159,14 @@ async function saveQuickBooksMetadata(metadata: QuickBooksTokenMetadata): Promis
       fallbackDescription:
         'Financial data can still be managed manually. QuickBooks data will sync on the next successful connection.',
       alertTarget: 'COO_ADMIN',
-      metadata,
+      metadata: encrypted,
     } as any);
     return;
   }
 
   await db
     .update(integrations)
-    .set({ metadata, updatedAt: new Date() } as any)
+    .set({ metadata: encrypted, updatedAt: new Date() } as any)
     .where(eq(integrations.id, row.id));
 }
 
@@ -163,17 +203,40 @@ async function postToTokenEndpoint(body: URLSearchParams): Promise<IntuitTokenRe
   );
   console.log(`[QuickBooks] Token body params: ${[...body.keys()].join(', ')}`);
 
-  const response = await fetch(QB_TOKEN_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Authorization: authHeader,
+  // Retry transient failures (429 / 5xx / network) with backoff. A 400
+  // invalid_grant (revoked refresh token) is NOT transient and falls straight
+  // through to the diagnostic block below so the caller can flag needs_reconnect.
+  const { response, text } = await withRetry(
+    async () => {
+      const r = await fetch(QB_TOKEN_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Authorization: authHeader,
+        },
+        body: body.toString(),
+      });
+      const t = await r.text();
+      if (!r.ok && (r.status === 429 || r.status >= 500)) {
+        const e = new Error(
+          `QuickBooks token endpoint returned ${r.status}: ${t || r.statusText}`,
+        ) as Error & { status?: number };
+        e.status = r.status;
+        throw e;
+      }
+      return { response: r, text: t };
     },
-    body: body.toString(),
-  });
+    {
+      attempts: 3,
+      baseDelayMs: 500,
+      onRetry: ({ attempt, delayMs }) =>
+        console.warn(
+          `[QuickBooks] token endpoint transient error — retry ${attempt} in ${delayMs}ms`,
+        ),
+    },
+  );
 
-  const text = await response.text();
   if (!response.ok) {
     // Diagnostic: include credential shape in error so it surfaces in the UI
     const { clientId, clientSecret } = getClientCredentials();
@@ -425,6 +488,27 @@ export function isQbReconnectRequiredError(err: unknown): boolean {
   return classifyQbError(err).code === 'needs_reconnect';
 }
 
+/** Shared circuit breaker for outbound QuickBooks data calls (keyed per-process). */
+const QB_BREAKER_KEY = 'quickbooks';
+function qbBreaker() {
+  return getCircuitBreaker(QB_BREAKER_KEY, { failureThreshold: 5, cooldownMs: 60_000 });
+}
+
+/**
+ * Classify a qbGet failure into a run-event errorCode. Extends classifyQbError
+ * with the two codes qbGet produces on its own: a tripped circuit breaker
+ * (treated as a transient upstream outage so the page degrades to last-good)
+ * and an invalid-JSON response.
+ */
+function classifyQbFailure(err: unknown): { code: string; detail: string } {
+  if (err instanceof CircuitOpenError) {
+    return { code: 'upstream_error', detail: err.message };
+  }
+  const detail = err instanceof Error ? err.message : String(err);
+  if (/returned invalid JSON/i.test(detail)) return { code: 'invalid_json', detail };
+  return classifyQbError(err);
+}
+
 /**
  * Internal helper — records a run event against the `quickbooks`
  * integration. Wrapped in try/catch so a run-log failure never takes down
@@ -456,76 +540,69 @@ async function recordQbRun(params: {
 
 async function qbGet<T = any>(path: string): Promise<T> {
   const startedAt = new Date();
+  const runType = `qbGet:${path.split('?')[0]}`;
   try {
     const { accessToken, realmId } = await getValidAccessToken();
     const url = `${getApiBase(realmId)}${path}`;
 
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: 'application/json',
-      },
-    });
-
-    const text = await response.text();
-    if (!response.ok) {
-      const err = new Error(
-        `QuickBooks API ${path} returned ${response.status}: ${text || response.statusText}`,
-      );
-      const { code, detail } = classifyQbError(err);
-      await recordQbRun({
-        runType: `qbGet:${path.split('?')[0]}`,
-        startedAt,
-        ok: false,
-        errorCode: code,
-        errorDetail: detail,
-        metadata: { path, httpStatus: response.status },
-      });
-      throw err;
-    }
+    // Breaker + retry: transient failures (429 / 5xx / network) retry with
+    // backoff; only those count toward tripping the breaker. A tripped breaker
+    // fails fast (CircuitOpenError) so a flapping QB doesn't hammer the API or
+    // block the finance page — the caller degrades to last-good data.
+    const text = await qbBreaker().exec(
+      () =>
+        withRetry(
+          async () => {
+            const response = await fetch(url, {
+              method: 'GET',
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                Accept: 'application/json',
+              },
+            });
+            const body = await response.text();
+            if (!response.ok) {
+              const err = new Error(
+                `QuickBooks API ${path} returned ${response.status}: ${body || response.statusText}`,
+              ) as Error & { status?: number };
+              err.status = response.status;
+              throw err;
+            }
+            return body;
+          },
+          {
+            attempts: 3,
+            baseDelayMs: 400,
+            onRetry: ({ attempt, delayMs }) =>
+              console.warn(
+                `[QuickBooks] ${runType} transient error — retry ${attempt} in ${delayMs}ms`,
+              ),
+          },
+        ),
+      isTransientError,
+    );
 
     let parsed: T;
     try {
       parsed = JSON.parse(text) as T;
     } catch {
-      const err = new Error(`QuickBooks API ${path} returned invalid JSON`);
-      await recordQbRun({
-        runType: `qbGet:${path.split('?')[0]}`,
-        startedAt,
-        ok: false,
-        errorCode: 'invalid_json',
-        errorDetail: err.message,
-        metadata: { path },
-      });
-      throw err;
+      throw new Error(`QuickBooks API ${path} returned invalid JSON`);
     }
 
-    await recordQbRun({
-      runType: `qbGet:${path.split('?')[0]}`,
-      startedAt,
-      ok: true,
-      metadata: { path },
-    });
+    await recordQbRun({ runType, startedAt, ok: true, metadata: { path } });
     return parsed;
   } catch (err) {
-    // Only log here if we haven't already logged above (e.g. token-refresh
-    // failure before the HTTP call even fired).
-    if (
-      err instanceof Error &&
-      !/returned \d{3}:/.test(err.message) &&
-      !/returned invalid JSON/.test(err.message)
-    ) {
-      const { code, detail } = classifyQbError(err);
-      await recordQbRun({
-        runType: `qbGet:${path.split('?')[0]}`,
-        startedAt,
-        ok: false,
-        errorCode: code,
-        errorDetail: detail,
-        metadata: { path },
-      });
-    }
+    // One failure event per call — covers token-refresh failures, non-transient
+    // HTTP errors, exhausted transient retries, a tripped breaker, and bad JSON.
+    const { code, detail } = classifyQbFailure(err);
+    await recordQbRun({
+      runType,
+      startedAt,
+      ok: false,
+      errorCode: code,
+      errorDetail: detail,
+      metadata: { path },
+    });
     throw err;
   }
 }
@@ -1019,6 +1096,14 @@ export interface QuickBooksConnectionStatus {
   ageMs: number | null;
   /** Window (ms) after which we flag data as stale. Exposed for the UI. */
   staleAfterMs: number;
+  /** Whole days until the refresh token (the QB credential that lapses) expires. */
+  daysUntilRefreshTokenExpiry: number | null;
+  /** Banded refresh-token expiry state: ok | expiring_soon | critical | expired | unknown. */
+  refreshTokenExpiryState: CredentialExpiryState;
+  /** True when the connection must be re-authorised (revoked/expired token). */
+  reconnectRequired: boolean;
+  /** One-click re-authorise path for the UI ("Reconnect" CTA). */
+  reconnectPath: string;
 }
 
 /**
@@ -1105,6 +1190,16 @@ export async function getQuickBooksConnectionStatus(): Promise<QuickBooksConnect
   const ageMs = run.lastSuccessAt ? now.getTime() - run.lastSuccessAt.getTime() : null;
   const isStale = ageMs === null ? connected : ageMs > QB_STALE_AFTER_MS;
 
+  const refreshExpiresAt = parseExpiryDate(metadata.refreshTokenExpiry);
+  const daysUntilRefreshTokenExpiry = daysUntilExpiry(refreshExpiresAt, now);
+  const refreshTokenExpiryState = expiryState(daysUntilRefreshTokenExpiry);
+  // Re-auth needed when the refresh token was revoked (needs_reconnect), has
+  // expired, or the tokens are gone but the connection was used before.
+  const reconnectRequired =
+    run.lastFailureCode === 'needs_reconnect' ||
+    refreshTokenExpiryState === 'expired' ||
+    (!connected && run.lastRunAt !== null);
+
   return {
     connected,
     realmId: metadata.realmId ?? null,
@@ -1119,5 +1214,9 @@ export async function getQuickBooksConnectionStatus(): Promise<QuickBooksConnect
     isStale,
     ageMs,
     staleAfterMs: QB_STALE_AFTER_MS,
+    daysUntilRefreshTokenExpiry,
+    refreshTokenExpiryState,
+    reconnectRequired,
+    reconnectPath: CONNECTOR_CREDENTIALS[QB_INTEGRATION_NAME]?.reconnectPath ?? '/api/quickbooks/auth',
   };
 }

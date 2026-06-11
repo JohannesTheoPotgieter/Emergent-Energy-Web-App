@@ -25,6 +25,17 @@ import {
   type IntegrationRunStatus,
 } from "@shared/schema";
 import { db } from "../db";
+import {
+  CONNECTOR_CREDENTIALS,
+  daysUntilExpiry,
+  expiryState,
+  parseExpiryDate,
+  readConfiguredExpiry,
+  type CredentialExpiryState,
+  type CredentialKind,
+} from "../lib/integration-credentials";
+import { getCircuitSnapshot, type CircuitState } from "../lib/http-resilience";
+import { getSecretExpiryFromVault } from "../secrets/vault";
 
 /** 25 hours — gives a nightly job one grace hour before going stale. */
 export const INTEGRATION_HEALTHY_WINDOW_MS = 25 * 60 * 60 * 1000;
@@ -179,6 +190,91 @@ export interface IntegrationHealthTile {
   lastErrorCode: string | null;
   lastErrorDetail: string | null;
   ageMs: number | null;
+  // ----- Credential / connection dimension (R1–R3) -----
+  /** Whether the connector holds a usable credential. Null when N/A (static API key). */
+  connected: boolean | null;
+  /** Kind of lapsing credential this connector carries. */
+  credentialKind: CredentialKind;
+  /** When the lapsing credential (refresh token / client secret) expires. */
+  secretExpiresAt: Date | null;
+  /** Whole days until that credential expires. Negative once expired. */
+  daysUntilSecretExpiry: number | null;
+  /** Banded expiry state: ok | expiring_soon | critical | expired | unknown. */
+  secretExpiryState: CredentialExpiryState;
+  /** True when a human must reconnect / re-authorise (revoked or expired). */
+  reconnectRequired: boolean;
+  /** Reconnect path (one-click for QB, admin/runbook anchor for secrets). Null when N/A. */
+  reconnectPath: string | null;
+  /** Circuit-breaker state for this connector's outbound calls, when one exists. */
+  circuitState: CircuitState | null;
+}
+
+/**
+ * Resolve the credential / connection dimension for a tile: token presence,
+ * the lapsing-credential expiry (QB refresh token from metadata; Azure/SharePoint
+ * client-secret expiry from the configured date or Key Vault), whether a
+ * reconnect is required, and the connector's circuit-breaker state.
+ */
+function resolveTileCredential(
+  integration: Integration,
+  lastErrorCode: string | null,
+  now: Date,
+): {
+  connected: boolean | null;
+  credentialKind: CredentialKind;
+  secretExpiresAt: Date | null;
+  daysUntilSecretExpiry: number | null;
+  secretExpiryState: CredentialExpiryState;
+  reconnectRequired: boolean;
+  reconnectPath: string | null;
+  circuitState: CircuitState | null;
+} {
+  const descriptor = CONNECTOR_CREDENTIALS[integration.name];
+  const circuitState = getCircuitSnapshot(integration.name)?.state ?? null;
+
+  if (!descriptor) {
+    return {
+      connected: null,
+      credentialKind: "none",
+      secretExpiresAt: null,
+      daysUntilSecretExpiry: null,
+      secretExpiryState: "unknown",
+      reconnectRequired: false,
+      reconnectPath: null,
+      circuitState,
+    };
+  }
+
+  const meta = (integration.metadata as Record<string, unknown> | null) ?? {};
+  let secretExpiresAt: Date | null = null;
+  let connected: boolean | null = null;
+
+  if (descriptor.kind === "oauth_refresh_token") {
+    // QuickBooks: refresh-token expiry + token presence live in metadata.
+    secretExpiresAt = parseExpiryDate(meta.refreshTokenExpiry as string | undefined);
+    connected = Boolean(meta.accessToken && meta.refreshToken && meta.realmId);
+  } else {
+    // Client secret: owner-configured expiry date, else Key Vault expiresOn.
+    secretExpiresAt =
+      readConfiguredExpiry(descriptor.expiryConfigEnvVar) ??
+      (descriptor.vaultExpiryKey ? getSecretExpiryFromVault(descriptor.vaultExpiryKey) : null);
+  }
+
+  const days = daysUntilExpiry(secretExpiresAt, now);
+  const secretExpiryState = expiryState(days);
+  const reconnectRequired =
+    lastErrorCode === "needs_reconnect" || secretExpiryState === "expired";
+
+  return {
+    connected,
+    credentialKind: descriptor.kind,
+    secretExpiresAt,
+    daysUntilSecretExpiry: days,
+    secretExpiryState,
+    reconnectRequired,
+    reconnectPath: descriptor.reconnectPath,
+    circuitState,
+  };
 }
 
 /**
@@ -256,6 +352,10 @@ export async function getIntegrationHealth(params: { now?: Date } = {}): Promise
     });
     counts[health] += 1;
 
+    const lastErrorCode =
+      (lastRun as IntegrationRunEvent | undefined)?.errorCode ?? null;
+    const credential = resolveTileCredential(integration, lastErrorCode, now);
+
     tiles.push({
       integration,
       health,
@@ -263,11 +363,11 @@ export async function getIntegrationHealth(params: { now?: Date } = {}): Promise
       lastRunStatus,
       lastSuccessAt,
       lastFailureAt,
-      lastErrorCode:
-        (lastRun as IntegrationRunEvent | undefined)?.errorCode ?? null,
+      lastErrorCode,
       lastErrorDetail:
         (lastRun as IntegrationRunEvent | undefined)?.errorDetail ?? null,
       ageMs: lastSuccessAt ? now.getTime() - lastSuccessAt.getTime() : null,
+      ...credential,
     });
   }
 
