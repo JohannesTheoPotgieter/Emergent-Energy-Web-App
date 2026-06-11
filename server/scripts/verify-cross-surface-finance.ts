@@ -206,7 +206,7 @@ export async function runCrossSurfaceFinanceVerification(
 
   // ── Cash cross-surface: ONE weekly-cash engine, consumed everywhere ─────────
   // Finance Home, the Cashflow grid and Weekly Close all read the single
-  // GET /api/cashflow-2026 series, whose availablePayment comes from the one
+  // GET /api/weekly-cashflow series, whose availablePayment comes from the one
   // engine (server/lib/finance/weekly-cashflow-engine.ts: opening + inflows −
   // outflows). A single handler + single engine is the structural guarantee
   // that "available this week" is ONE value within R1 on every surface — the
@@ -218,7 +218,7 @@ export async function runCrossSurfaceFinanceVerification(
   if (!opts.skipCompanyOverview) {
     const repoRoot = process.cwd();
     const financeRoutes = readFileSync(path.join(repoRoot, "server/departments/finance-routes.ts"), "utf8");
-    const bareGetHandlers = (financeRoutes.match(/router\.get\(\s*['"]\/api\/cashflow-2026['"]/g) ?? []).length;
+    const bareGetHandlers = (financeRoutes.match(/router\.get\(\s*['"]\/api\/weekly-cashflow['"]/g) ?? []).length;
     const deadDuplicateGone = existsSync(path.join(repoRoot, "server/routes/register-cashflow-2026-routes.ts")) ? 0 : 1;
     const usesEngine =
       /resolveWeeklyAvailablePayment\s*\(/.test(financeRoutes) && /weekly-cashflow-engine/.test(financeRoutes) ? 1 : 0;

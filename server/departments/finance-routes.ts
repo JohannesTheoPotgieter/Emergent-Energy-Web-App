@@ -363,9 +363,11 @@ import {
 import {
   getCurrentFinanceYear,
   getFinanceScopeMonthKeys,
+  getFinanceYearBounds,
   monthKeyInFinanceScope,
   resolveFinanceYearScope,
 } from '../lib/finance-year-scope';
+import { fiscalYearOfMonthKey } from '@shared/fiscal-year';
 import { buildFyeTracking } from '../lib/finance/fye-tracking/service';
 import { normalizeName } from '../lib/finance/fye-tracking/compute';
 
@@ -1103,16 +1105,11 @@ function safeNum(value: unknown): number {
 }
 
 function getFYRange(date: Date = new Date()): { start: string; end: string } {
-  // FY = September → August. Anchor to SAST so the boundary doesn't
-  // shift for the 2 hours after midnight UTC on 1 Sept (when local
-  // getMonth() still reports August). Server is UTC-naive in dev/CI.
-  const sast = new Date(date.getTime() + 120 * 60 * 1000);
-  const month0 = sast.getUTCMonth(); // 0-indexed; 8 = September
-  const year = month0 >= 8 ? sast.getUTCFullYear() : sast.getUTCFullYear() - 1;
-  return {
-    start: `${year}-09-01`,
-    end: `${year + 1}-08-31`,
-  };
+  // FY = September → August, derived from the single canonical FY source
+  // (shared/fiscal-year.ts via finance-year-scope). SAST-anchored so the
+  // boundary doesn't shift for the 2 hours after midnight UTC on 1 Sept.
+  const bounds = getFinanceYearBounds(getCurrentFinanceYear(date));
+  return { start: bounds.startDate, end: bounds.endDate };
 }
 
 // ==================== PROGRAM COS CONTROL ====================
@@ -1283,10 +1280,24 @@ router.get('/api/program/cos', requireAuth, requirePermission('cos', 'view'), as
   }
 });
 
-// ==================== CASHFLOW 2026 ====================
+// ==================== WEEKLY CASHFLOW ====================
+
+// Legacy alias. The weekly cashflow grid / detail / overrides were historically
+// served under the year-named `/api/cashflow-2026*`. They are now year-agnostic
+// `/api/weekly-cashflow*` (the route is FY-derived at runtime, never pinned to a
+// year). A 308 redirect (preserves method + body) keeps any cached client,
+// bookmark, or external caller on the old path working — nothing 404s. This also
+// covers the worklist endpoints (receivables / payables / missing-invoices),
+// which share the prefix and are renamed in cashflow-worklists.routes.ts.
+router.all(/^\/api\/cashflow-2026(\/.*)?$/, (req, res) => {
+  const suffix = req.path.slice('/api/cashflow-2026'.length);
+  const queryIndex = req.originalUrl.indexOf('?');
+  const queryString = queryIndex >= 0 ? req.originalUrl.slice(queryIndex) : '';
+  res.redirect(308, `/api/weekly-cashflow${suffix}${queryString}`);
+});
 
 router.get(
-  '/api/cashflow-2026',
+  '/api/weekly-cashflow',
   requireAuth,
   requirePermission('cashflow', 'view'),
   async (req, res) => {
@@ -1371,9 +1382,12 @@ router.get(
       for (const opex of opexWeeklyOverrides) addScopeDateCandidate(opex.weekStartDate);
 
       const sortedScopeDates = Array.from(new Set(scopeDateCandidates)).sort();
-      const scopeStart = fyScope.startDate ?? sortedScopeDates[0] ?? '2025-09-01';
+      // Last-resort fallback (no scope + no data) = the CURRENT FY window,
+      // derived dynamically so it rolls into FY27 and beyond with no edit.
+      const fallbackFyBounds = getFinanceYearBounds(getCurrentFinanceYear());
+      const scopeStart = fyScope.startDate ?? sortedScopeDates[0] ?? fallbackFyBounds.startDate;
       const scopeEnd =
-        fyScope.endDate ?? sortedScopeDates[sortedScopeDates.length - 1] ?? '2026-08-31';
+        fyScope.endDate ?? sortedScopeDates[sortedScopeDates.length - 1] ?? fallbackFyBounds.endDate;
       const fyStart = new Date(`${scopeStart.slice(0, 7)}-01T00:00:00Z`);
       const scopeEndDate = new Date(`${scopeEnd}T00:00:00Z`);
       const fyEnd = new Date(
@@ -1651,7 +1665,7 @@ router.get(
 );
 
 router.get(
-  '/api/cashflow-2026/detail',
+  '/api/weekly-cashflow/detail',
   requireAuth,
   requirePermission('cashflow', 'view'),
   async (req, res) => {
@@ -2015,7 +2029,7 @@ router.get(
 // ==================== ADMIN DATE OVERRIDE ENDPOINTS ====================
 
 router.post(
-  '/api/cashflow-2026/expense-date-override',
+  '/api/weekly-cashflow/expense-date-override',
   requireAuth,
   requirePermission('cashflow', 'edit'),
   validateBody(expenseDateOverrideSchema),
@@ -2162,7 +2176,7 @@ router.post(
 );
 
 router.post(
-  '/api/cashflow-2026/inflow-date-override',
+  '/api/weekly-cashflow/inflow-date-override',
   requireAuth,
   requirePermission('cashflow', 'edit'),
   validateBody(inflowDateOverrideSchema),
@@ -2305,7 +2319,7 @@ router.post(
 // ==================== MANUAL INPUT ENDPOINTS ====================
 
 router.post(
-  '/api/cashflow-2026/opening-balance',
+  '/api/weekly-cashflow/opening-balance',
   requireAuth,
   requirePermission('cashflow', 'edit'),
   validateBody(openingBalanceSchema),
@@ -2358,7 +2372,7 @@ router.post(
 );
 
 router.get(
-  '/api/cashflow-2026/balance-history',
+  '/api/weekly-cashflow/balance-history',
   requireAuth,
   requirePermission('cashflow', 'view'),
   async (req, res) => {
@@ -2378,7 +2392,7 @@ router.get(
 );
 
 router.delete(
-  '/api/cashflow-2026/opening-balance',
+  '/api/weekly-cashflow/opening-balance',
   requireAuth,
   requirePermission('cashflow', 'edit'),
   validateBody(deleteOpeningBalanceSchema),
@@ -2414,7 +2428,7 @@ router.delete(
 );
 
 router.post(
-  '/api/cashflow-2026/opex-budget',
+  '/api/weekly-cashflow/opex-budget',
   requireAuth,
   requirePermission('cashflow', 'edit'),
   validateBody(opexBudgetSchema),
@@ -2434,7 +2448,7 @@ router.post(
 );
 
 router.get(
-  '/api/cashflow-2026/opex-budget',
+  '/api/weekly-cashflow/opex-budget',
   requireAuth,
   requirePermission('cashflow', 'view'),
   async (req, res) => {
@@ -2449,7 +2463,7 @@ router.get(
 );
 
 router.post(
-  '/api/cashflow-2026/opex-weekly',
+  '/api/weekly-cashflow/opex-weekly',
   requireAuth,
   requirePermission('cashflow', 'edit'),
   validateBody(opexWeeklySchema),
@@ -2469,7 +2483,7 @@ router.post(
 );
 
 router.delete(
-  '/api/cashflow-2026/opex-weekly',
+  '/api/weekly-cashflow/opex-weekly',
   requireAuth,
   requirePermission('cashflow', 'edit'),
   validateBody(deleteOpexWeeklySchema),
@@ -4556,10 +4570,15 @@ router.get(
   async (req, res) => {
     try {
       const { monthKey } = req.query as { monthKey?: string };
+      // QB fetch window = the FY that contains the reconciled month (else the
+      // current FY), derived dynamically so prior-FY months and FY27+ resolve.
+      const reconBounds = getFinanceYearBounds(
+        monthKey ? fiscalYearOfMonthKey(monthKey) : getCurrentFinanceYear(),
+      );
       const [allCostLines, links, rawBills] = await Promise.all([
         financeExpenseRepository.listAllActiveCostLines(),
         qbLinksRepository.listActiveLinksByPair('cost_line', 'bill'),
-        getBills('2025-09-01', '2026-08-31').catch(() => ({ QueryResponse: { Bill: [] } })),
+        getBills(reconBounds.startDate, reconBounds.endDate).catch(() => ({ QueryResponse: { Bill: [] } })),
       ]);
 
       const bills = (rawBills?.QueryResponse?.Bill ?? []).map(billRawToSummary);
@@ -5356,7 +5375,9 @@ router.get(
       }
 
       const months: any[] = [];
-      const startMonth = new Date(Date.UTC(2025, 8, 1));
+      // FY start = 1 Sep of (currentFY − 1), derived dynamically so the 12-month
+      // window rolls into FY27 and beyond with no code change.
+      const startMonth = new Date(Date.UTC(getCurrentFinanceYear() - 1, 8, 1));
       let ytdCOS = 0,
         ytdRevenue = 0,
         ytdBudget = 0;
@@ -5965,10 +5986,15 @@ router.get(
   async (req, res) => {
     try {
       const { monthKey } = req.query as { monthKey?: string };
+      // QB fetch window = the FY that contains the reconciled month (else the
+      // current FY), derived dynamically so prior-FY months and FY27+ resolve.
+      const reconBounds = getFinanceYearBounds(
+        monthKey ? fiscalYearOfMonthKey(monthKey) : getCurrentFinanceYear(),
+      );
       const [revenueRows, links, qbInvoicesRaw] = await Promise.all([
         financeInflowsRepository.listAllActiveRevenueLines(),
         qbLinksRepository.listActiveLinksByPair('revenue_line', 'invoice'),
-        getInvoices('2025-09-01', '2026-08-31').catch(() => ({ QueryResponse: { Invoice: [] } })),
+        getInvoices(reconBounds.startDate, reconBounds.endDate).catch(() => ({ QueryResponse: { Invoice: [] } })),
       ]);
 
       const invoices = ((qbInvoicesRaw as any)?.QueryResponse?.Invoice ?? []).map(

@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/tooltip';
 import { apiRequest, fetchQueryFn, invalidateDashboardQueries } from '@/lib/queryClient';
 import { formatZar, formatZarAriaLabel, formatZarCompact } from '@/lib/currency';
+import { getFiscalYear, getFiscalYearBounds, fiscalYearLabel, fiscalYearOfMonthKey } from '@shared/fiscal-year';
 import { PageHero } from '@/components/finance/PageHero';
 import { KpiTile } from '@/components/finance/KpiTile';
 import { Money } from '@/components/ui/money';
@@ -1400,10 +1401,13 @@ export default function CosTracker() {
             {rows.map((row, rowIdx) => {
               const isYtd = row.group === 'ytd';
               const isExpanded = expandedRows.has(row.key);
-              // Monthly rows drill into a single month; YTD rows drill into
-              // the cumulative range from FY26 start (Sep 2025) through the
-              // clicked month so the drawer total matches the YTD figure.
-              const FY_START = '2025-09';
+              // Monthly rows drill into a single month; YTD rows drill into the
+              // cumulative range from the displayed FY's start month through the
+              // clicked month so the drawer total matches the YTD figure. Derived
+              // from the displayed data (falls back to the current FY) — never a
+              // hardcoded year, so it rolls into FY27 and beyond automatically.
+              const FY_START = months[0]?.monthKey ?? getFiscalYearBounds(getFiscalYear()).startMonthKey;
+              const fyLabel = fiscalYearLabel(fiscalYearOfMonthKey(FY_START));
               const isMonthlyDrill = [
                 'totalCOS',
                 'realisedCOS',
@@ -1522,7 +1526,7 @@ export default function CosTracker() {
                                   setDrawerMonth({
                                     monthKey: m.monthKey,
                                     monthLabel: isYtdDrill
-                                      ? `FY26-to-date through ${m.monthLabel}`
+                                      ? `${fyLabel}-to-date through ${m.monthLabel}`
                                       : m.monthLabel,
                                     defaultFilter: drillFilterForRow,
                                     fromMonthKey: isYtdDrill ? FY_START : undefined,

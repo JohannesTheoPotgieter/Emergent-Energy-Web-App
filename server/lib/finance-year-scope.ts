@@ -1,3 +1,5 @@
+import { getFiscalYear, getFiscalYearBounds } from '@shared/fiscal-year';
+
 export type FinanceYearScopeMode = 'fy' | 'all';
 
 export interface FinanceYearScope {
@@ -21,19 +23,20 @@ function firstQueryValue(value: unknown): string | null {
 }
 
 export function getCurrentFinanceYear(today = new Date()): number {
-  const year = today.getUTCFullYear();
-  const month = today.getUTCMonth() + 1;
-  return month >= 9 ? year + 1 : year;
+  // Delegates to the single canonical FY source (shared/fiscal-year.ts), which
+  // is SAST-anchored — matching server/lib/fy-window.ts and resolving the
+  // IMPORTER_AUDIT UTC-drift note (the boundary no longer flips ~2h early).
+  return getFiscalYear(today);
 }
 
 export function getFinanceYearBounds(fy: number) {
-  const startYear = fy - 1;
+  const bounds = getFiscalYearBounds(fy);
   return {
-    startDate: `${startYear}-09-01`,
-    endDate: `${fy}-08-31`,
-    startMonthKey: `${startYear}-09`,
-    endMonthKey: `${fy}-08`,
-    label: `FY${String(fy).slice(-2)}`,
+    startDate: bounds.startDate,
+    endDate: bounds.endDate,
+    startMonthKey: bounds.startMonthKey,
+    endMonthKey: bounds.endMonthKey,
+    label: bounds.label,
   };
 }
 

@@ -1,7 +1,7 @@
 /**
  * Cashflow drill-down — week ▸ line item ▸ invoice.
  *
- * Groups the per-week `/api/cashflow-2026/detail` leaves (produced by the
+ * Groups the per-week `/api/weekly-cashflow/detail` leaves (produced by the
  * FROZEN weekly cashflow engine, bucketed on the §3.4 cash-event date) into
  * line-item nodes that expand to invoice leaves. No cash number is computed
  * here — `sum(invoices) === line item === week total` by construction (see

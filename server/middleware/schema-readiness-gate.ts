@@ -30,6 +30,8 @@ export const FINANCE_SCHEMA_GATE_PREFIXES: string[] = [
   "/api/finance",
   "/api/reconciliation",
   "/api/cos-line-review",
+  "/api/weekly-cashflow",
+  // Legacy alias prefix — kept so the 308 redirect path is gated identically.
   "/api/cashflow-2026",
 ];
 

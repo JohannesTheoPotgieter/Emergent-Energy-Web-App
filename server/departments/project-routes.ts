@@ -27,6 +27,7 @@ import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-r
 import { parseIntParam } from "../lib/req-params";
 import { computeProjectProgress } from "../lib/kpi-formulas";
 import { computeAllProjectPlanPills } from "../services/plan-rollup-service";
+import { getCurrentFinanceYear } from "../lib/finance-year-scope";
 
 /**
  * Helper: derive the COS month-key (YYYY-MM, UTC anchor) for a cost line.
@@ -1344,7 +1345,9 @@ router.get("/api/program-dashboard", requireAuth, async (req, res) => {
 
     const nowDate = new Date();
     const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
-    const cosStartMonth = new Date(Date.UTC(2025, 8, 1));
+    // FY start = 1 Sep of (currentFY − 1), derived dynamically so the 12-month
+    // COS window rolls into FY27 and beyond with no code change.
+    const cosStartMonth = new Date(Date.UTC(getCurrentFinanceYear() - 1, 8, 1));
 
     let cosYtdTarget = 0;
     let cosYtdRealised = 0;

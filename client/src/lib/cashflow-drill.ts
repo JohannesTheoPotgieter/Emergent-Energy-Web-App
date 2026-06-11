@@ -1,8 +1,8 @@
 /**
  * Cashflow drill grouping — PURE, NO NEW CASH MATH.
  *
- * The cashflow series (`/api/cashflow-2026`) and its per-week leaf detail
- * (`/api/cashflow-2026/detail?week=`) are produced by the FROZEN weekly
+ * The cashflow series (`/api/weekly-cashflow`) and its per-week leaf detail
+ * (`/api/weekly-cashflow/detail?week=`) are produced by the FROZEN weekly
  * cashflow engine and bucketed on the §3.4 cash-event date. This helper only
  * GROUPS those existing leaves into the drill hierarchy:
  *

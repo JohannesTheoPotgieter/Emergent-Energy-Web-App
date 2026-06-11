@@ -166,7 +166,7 @@ export function invalidateDashboardQueries(qc: QueryClient) {
       return key.startsWith('/api/revenue-tracker') ||
              key.startsWith('/api/revenue-tab/') ||
              key.startsWith('/api/revenue-tracking/') ||
-             key.startsWith('/api/cashflow-2026') ||
+             key.startsWith('/api/weekly-cashflow') ||
              key.startsWith('/api/cashflow') ||
              key.startsWith('/api/expenditure-breakdown') ||
              key.startsWith('/api/cos-tracker') ||

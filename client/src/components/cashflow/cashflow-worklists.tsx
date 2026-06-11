@@ -33,7 +33,7 @@ import type { ExportColumn } from '@/lib/export-table';
 import { formatZar } from '@/lib/currency';
 import { Loader2, ArrowDownLeft, ArrowUpRight, FileWarning, type LucideIcon } from 'lucide-react';
 
-const API_BASE = '/api/cashflow-2026';
+const API_BASE = '/api/weekly-cashflow';
 
 type AgeBucket = '0-30' | '31-60' | '61-90' | '90+';
 const BUCKETS: AgeBucket[] = ['0-30', '31-60', '61-90', '90+'];
