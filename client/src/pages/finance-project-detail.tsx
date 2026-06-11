@@ -414,10 +414,10 @@ export function FinanceProjectDetailContent({ projectId }: { projectId: number }
             <Badge variant="outline" className="text-[10px]">{lines.length}</Badge>
           </CardTitle>
           <Link
-            href="/finance/reconciliation"
+            href="/finance/qb-reconciliation"
             className="inline-flex items-center gap-1 text-xs font-medium text-brand-green hover:underline"
           >
-            Reconciliation board <ChevronRight className="h-3 w-3" />
+            QB Reconciliation <ChevronRight className="h-3 w-3" />
           </Link>
         </CardHeader>
         <CardContent className="p-0">
@@ -662,10 +662,10 @@ export default function FinanceProjectDetailPage() {
     <div className="container mx-auto max-w-7xl space-y-5 py-6">
       <div>
         <Link
-          href="/finance/reconciliation"
+          href="/finance/qb-reconciliation"
           className="mb-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
         >
-          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> Reconciliation board
+          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> QB Reconciliation
         </Link>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Project Finance</h1>
         <p className="text-sm text-muted-foreground mt-0.5">

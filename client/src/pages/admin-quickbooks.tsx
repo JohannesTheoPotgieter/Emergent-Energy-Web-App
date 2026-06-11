@@ -110,10 +110,10 @@ export default function AdminQuickBooksPage() {
   // Task #30 — Page-level admin guard. Previously the page rendered for any
   // authenticated user and relied on individual button-level permission
   // checks (which were inconsistent). Now non-admins are redirected to the
-  // primary surface (Throughput) and never see admin-only OAuth controls.
+  // home page and never see admin-only OAuth controls.
   useEffect(() => {
     if (!authLoading && !isAdmin) {
-      setLocation("/finance/quickbooks");
+      setLocation("/");
     }
   }, [authLoading, isAdmin, setLocation]);
   const isUnauthorized = !authLoading && !isAdmin;

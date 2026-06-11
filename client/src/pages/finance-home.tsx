@@ -420,10 +420,10 @@ export default function FinanceHomePage() {
               <Badge variant="outline" className="text-[10px]">{healthRows.length}</Badge>
             </CardTitle>
             <Link
-              href="/finance/reconciliation"
+              href="/finance/qb-reconciliation"
               className="text-xs font-medium text-brand-green hover:underline inline-flex items-center gap-1"
             >
-              Reconciliation board <ArrowRight className="h-3 w-3" />
+              QB Reconciliation <ArrowRight className="h-3 w-3" />
             </Link>
           </CardHeader>
           <CardContent className="pt-0">

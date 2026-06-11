@@ -40,7 +40,7 @@ function getNotificationEntityPath(notification: Notification): string | null {
     case "approval":
       return `/pm/approvals?id=${encodeURIComponent(id)}`;
     case "invoice":
-      return `/finance/quickbooks?invoice=${encodeURIComponent(id)}`;
+      return `/finance/qb-reconciliation?invoice=${encodeURIComponent(id)}`;
     case "po":
       return `/po-approval-board?id=${encodeURIComponent(id)}`;
     case "project":

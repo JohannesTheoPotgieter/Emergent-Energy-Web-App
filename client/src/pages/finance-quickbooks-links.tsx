@@ -12,7 +12,6 @@ import { apiRequest } from "@/lib/queryClient";
 import { isApiError } from "@/lib/api-error";
 import { formatRand } from "@/lib/safeMoney";
 import { ReportTrustNotice } from "@/components/reports/ReportTrustNotice";
-import { FinanceLimitedBetaBanner } from "@/components/reports/FinanceLimitedBetaBanner";
 import { FieldHint } from "@/components/ui/field-hint";
 
 interface QbBillRaw {
@@ -182,11 +181,6 @@ export default function FinanceQuickBooksLinksPage() {
         eyebrow="Finance"
         title="QuickBooks Bill Linking"
         description="Link QuickBooks supplier bills to project cost lines across the portfolio"
-      />
-
-      <FinanceLimitedBetaBanner
-        title="Moved — use Finance → QuickBooks"
-        body="Bill linking now lives inside the consolidated QuickBooks page (tab: Link → Supplier bills). This standalone screen is kept for now as a fallback only and may be removed in a future release. Behaviour is unchanged: COS realisation is still NOT performed here — use the COS Tracker."
       />
 
       <ReportTrustNotice

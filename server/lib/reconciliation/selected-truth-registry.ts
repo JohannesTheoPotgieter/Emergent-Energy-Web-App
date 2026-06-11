@@ -263,7 +263,7 @@ export const KPI_REGISTRY: KpiRegistryEntry[] = [
     formulaOwner: "Finance Manager",
     updateFrequency: "daily",
     confidence: "medium",
-    drilldownRoute: "/finance/quickbooks",
+    drilldownRoute: "/finance/qb-reconciliation",
     canonicalTable: "normalized_cost_lines,quickbooks_invoice_links",
     resolvedField: null,
     hasKnownGaps: false,

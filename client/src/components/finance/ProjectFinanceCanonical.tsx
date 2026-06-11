@@ -162,10 +162,10 @@ export function ProjectFinanceCanonical({
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
           <CardTitle className="text-sm">{meta.label} — monthly (realised vs planned)</CardTitle>
           <Link
-            href="/finance/reconciliation"
+            href="/finance/qb-reconciliation"
             className="text-xs font-medium text-brand-green hover:underline inline-flex items-center gap-1"
           >
-            Reconciliation board <ArrowRight className="h-3 w-3" />
+            QB Reconciliation <ArrowRight className="h-3 w-3" />
           </Link>
         </CardHeader>
         <CardContent className="pt-0">
