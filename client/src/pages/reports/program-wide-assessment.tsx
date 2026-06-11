@@ -499,7 +499,7 @@ export default function ProgramWideAssessmentPage() {
               severity={(data.cards.unmatchedCostInvoices + data.cards.unmatchedRevenuePayments) > 0 ? "critical" : "ok"}
               subtitle="Cost + revenue"
               tooltip="Invoices in the app with no confirmed QuickBooks link."
-              href="/finance/quickbooks"
+              href="/finance/qb-reconciliation"
               testId="card-unmatched-qb"
             />
           </>

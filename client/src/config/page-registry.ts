@@ -103,9 +103,9 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "cooHome", path: "/coo", label: "COO Dashboard", iconKey: "Activity", navGroup: "REPORTS", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "CooHomePage" },
   { id: "settingsHome", path: "/settings", label: "Settings", iconKey: "SlidersHorizontal", navGroup: "SYSTEM", permissionEntity: "admin_roles", showInSidebar: false, routeComponentKey: "SettingsHomePage" },
   { id: "projectDocuments", path: "/projects/:projectId/documents", label: "Project Documents", permissionEntity: "projects", routeComponentKey: "ProjectDocumentsPage" },
-  // /quickbooks merged into the existing /finance/quickbooks (Throughput).
+  // /quickbooks now redirects to the QB Reconciliation page.
   // Kept as a redirect so any bookmarked link still lands in the right place.
-  { id: "quickbooksHomeRedirect", path: "/quickbooks", label: "QuickBooks (moved)", type: "alias", permissionEntity: "financials", redirectTo: "/finance/quickbooks" },
+  { id: "quickbooksHomeRedirect", path: "/quickbooks", label: "QuickBooks (moved)", type: "alias", permissionEntity: "financials", redirectTo: "/finance/qb-reconciliation" },
   // Visible to anyone with company_priorities:view since the template
   // LIST endpoint already filters by dept visibility (regular users
   // only see role-scope templates they could instantiate). The Create
@@ -143,11 +143,6 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // TF-9 follow-up (audit V3) — Audit Prep CSV bundles for external auditors.
   // Gated on financials:approve (CFO + COO/CEO admins).
   { id: "financeAuditPrep", path: "/finance/audit-prep", label: "Audit Prep", iconKey: "ShieldCheck", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceAuditPrepPage" },
-  // P2.2 — per-project app-vs-tracker reconciliation board. Gated on financials:view.
-  // Removed from the Finance sidebar (owner direction 2026-06-11 — only "QB
-  // Reconciliation" is wanted as a recon tab). Route kept reachable by URL /
-  // contextual links (Finance Home, QB Reconciliation page).
-  { id: "financeReconciliationBoard", path: "/finance/reconciliation", label: "Reconciliation", iconKey: "GitCompare", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: false, routeComponentKey: "FinanceReconciliationBoardPage" },
   { id: "financeQbReconciliation", path: "/finance/qb-reconciliation", label: "QB Reconciliation", iconKey: "GitCompare", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceQbReconciliationPage" },
   // Per-project Tracker replicas — read-only views that render the source
   // workbook 1:1 with font/fill fidelity. Not in the sidebar; reached from
@@ -165,10 +160,6 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "legacyRevenue", path: "/revenue", label: "Revenue (Legacy)", type: "alias", permissionEntity: "revenue_tracker", redirectTo: "/revenue-tracker" },
   { id: "legacyCosControl", path: "/cos-control", label: "COS Control (Legacy)", type: "alias", permissionEntity: "cos", redirectTo: "/cos" },
   { id: "legacyCashflowForecast", path: "/cashflow-forecast", label: "Cashflow Forecast (Legacy)", type: "alias", permissionEntity: "cashflow", redirectTo: "/cashflow" },
-  // QB Throughput — single source for all QuickBooks integration UI.
-  // Absorbs: QB Customer Mapping, QB Bill Linking, Counterparties,
-  // Subcontractor Dashboard, Invoice Patterns, Admin QB.
-  { id: "financeQuickBooksThroughput", path: "/finance/quickbooks", label: "QuickBooks", iconKey: "Plug", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: false, routeComponentKey: "FinanceQuickBooksThroughputPage" },
   { id: "priorities", path: "/priorities", label: "Priorities", iconKey: "Flag", navGroup: "PRIORITIES", permissionEntity: "company_priorities", accessPolicy: "ungated", showInSidebar: true, routeComponentKey: "PrioritiesPage" },
   // Lineage view MUST be listed BEFORE priorityDetail because wouter's
   // <Switch> matches in source order — the :id wildcard would otherwise

@@ -130,9 +130,6 @@ const FinanceQuickBooksLinksPage = lazyWithRetry(() => import("@/pages/finance-q
 const FinanceQuickBooksCustomerMappingPage = lazyWithRetry(
   () => import("@/pages/finance-quickbooks-customer-mapping"),
 );
-const FinanceQuickBooksThroughputPage = lazyWithRetry(
-  () => import("@/pages/finance-quickbooks-throughput"),
-);
 const AdminBackfillPage = lazyWithRetry(() => import("@/pages/admin-backfill"));
 const AdminWorkItemLinkagePage = lazyWithRetry(() => import("@/pages/admin-work-item-linkage"));
 const AdminWorkflowConfigPage = lazyWithRetry(() => import("@/pages/admin-workflow-config"));
@@ -155,7 +152,6 @@ const NcrLegacyRedirect = lazyWithRetry(() => import("@/pages/ncr-legacy-redirec
 const FinanceGpPage = lazyWithRetry(() => import("@/pages/finance-gp"));
 const FinanceGpCompanyPage = lazyWithRetry(() => import("@/pages/finance-gp-company"));
 const FinanceAuditPrepPage = lazyWithRetry(() => import("@/pages/finance-audit-prep"));
-const FinanceReconciliationBoardPage = lazyWithRetry(() => import("@/pages/finance-reconciliation-board"));
 const FinanceQbReconciliationPage = lazyWithRetry(() => import("@/pages/finance-qb-reconciliation"));
 const FinanceHomePage = lazyWithRetry(() => import("@/pages/finance-home"));
 const FinanceProjectDetailPage = lazyWithRetry(() => import("@/pages/finance-project-detail"));
@@ -282,11 +278,9 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   AdminQuickBooksPage,
   FinanceQuickBooksLinksPage,
   FinanceQuickBooksCustomerMappingPage,
-  FinanceQuickBooksThroughputPage,
   FinanceGpPage,
   FinanceGpCompanyPage,
   FinanceAuditPrepPage,
-  FinanceReconciliationBoardPage,
   FinanceQbReconciliationPage,
   FinanceHomePage,
   FinanceProjectDetailPage,

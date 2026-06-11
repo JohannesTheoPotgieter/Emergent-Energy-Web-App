@@ -61,7 +61,7 @@ export const COO_OPERATIONAL_ACCESS_MATRIX: DomainAccessSpec[] = [
     domain: "project_finance",
     entities: ["financials", "cashflow", "cos", "revenue_tracker", "pd_finance"],
     requiredActions: FULL_OPERATIONAL_ACTIONS,
-    discoverablePaths: ["/cashflow", "/cos", "/revenue-tracker", "/finance/quickbooks"],
+    discoverablePaths: ["/cashflow", "/cos", "/revenue-tracker", "/finance/qb-reconciliation"],
   },
   {
     domain: "hse_compliance",

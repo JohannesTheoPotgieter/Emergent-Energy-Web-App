@@ -19,7 +19,6 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "wouter";
 import {
   CheckCircle2,
   AlertTriangle,
@@ -605,12 +604,7 @@ export default function FinanceQbReconciliationPage() {
             )}
 
             <p className="text-xs text-brand-muted">
-              QB COS bills aren&apos;t project-tagged, so this reconciliation is company-wide (no project dimension). The
-              per-project app-vs-tracker check lives on the{" "}
-              <Link href="/finance/reconciliation" className="text-brand-green hover:underline">
-                Reconciliation board
-              </Link>
-              .
+              QB COS bills aren&apos;t project-tagged, so this reconciliation is company-wide (no project dimension).
             </p>
           </>
         )}

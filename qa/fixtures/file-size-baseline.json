@@ -173,10 +173,6 @@
       "loc": 1687
     },
     {
-      "file": "client/src/pages/finance-quickbooks-throughput.tsx",
-      "loc": 1649
-    },
-    {
       "file": "server/storage.ts",
       "loc": 1648
     },

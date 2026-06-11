@@ -11,8 +11,6 @@
  *
  * The app COMPARES and flags; it never adjusts a tracker (§ 3.4).
  */
-import fs from "node:fs";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { parsePnLCompanyTotals } from "../../../server/services/qb-pnl-totals";
@@ -106,19 +104,3 @@ describe("company tile composition — tie when tracker == QB, drift otherwise",
   });
 });
 
-describe("board no longer carries a per-project QB column (retired in feat/qb-recon-view)", () => {
-  const board = fs.readFileSync(
-    path.join(process.cwd(), "client/src/pages/finance-reconciliation-board.tsx"),
-    "utf8",
-  );
-
-  it("removed the per-project QB chip + delta cell (no 'Revenue vs QB' / qb-delta testid)", () => {
-    expect(board).not.toMatch(/Revenue vs QB/);
-    expect(board).not.toMatch(/recon-card-qb-delta/);
-  });
-
-  it("links to the company-wide QuickBooks Reconciliation view instead", () => {
-    expect(board).toMatch(/\/finance\/qb-reconciliation/);
-    expect(board).toMatch(/recon-open-qb/);
-  });
-});

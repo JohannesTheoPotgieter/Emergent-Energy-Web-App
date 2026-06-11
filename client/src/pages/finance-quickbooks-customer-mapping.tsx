@@ -6,8 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { PageSkeleton } from "@/components/ui/page-states";
-import { FinanceLimitedBetaBanner } from "@/components/reports/FinanceLimitedBetaBanner";
-import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Link2, Link2Off, Plug, Search, Users } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
@@ -160,20 +158,6 @@ export default function FinanceQuickBooksCustomerMappingPage() {
         eyebrow="Finance"
         title="QuickBooks Customer Mapping"
         description="Map each app project to its QuickBooks customer so invoices reconcile cleanly per project"
-      />
-
-      <FinanceLimitedBetaBanner
-        title="Moved — use Finance → QuickBooks"
-        body={
-          <>
-            Customer mapping now lives inside the consolidated QuickBooks page (tab: Setup → Customers → Projects),
-            with admin-only fuzzy <em>Suggest matches</em> + cascade. This standalone screen is kept as a fallback only.{" "}
-            <Link href="/finance/quickbooks" className="underline font-medium">
-              Open QuickBooks
-            </Link>
-            .
-          </>
-        }
       />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
