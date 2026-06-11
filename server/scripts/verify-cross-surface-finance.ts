@@ -213,7 +213,9 @@ export async function runCrossSurfaceFinanceVerification(
   // numeric identity is pinned by qa/tests/unit/weekly-cashflow-engine.test.ts.
   // This is the cash analog of the REV/COS/GP "one read path" check above and
   // would have caught the dual-handler defect (opening+inflows vs the engine).
-  {
+  // Whole-repo surface check — skipped on a hermetic scoped run (same gate as
+  // the company-overview block above).
+  if (!opts.skipCompanyOverview) {
     const repoRoot = process.cwd();
     const financeRoutes = readFileSync(path.join(repoRoot, "server/departments/finance-routes.ts"), "utf8");
     const bareGetHandlers = (financeRoutes.match(/router\.get\(\s*['"]\/api\/cashflow-2026['"]/g) ?? []).length;
@@ -237,7 +239,8 @@ export async function runCrossSurfaceFinanceVerification(
   // path the Finance pages and the Reconciliation board use — so a project
   // shows ONE REV/COS/GP everywhere. This guards the parallel-tab regression:
   // the five embedded tabs that each recomputed off a per-project endpoint.
-  {
+  // Whole-repo surface check — skipped on a hermetic scoped run.
+  if (!opts.skipCompanyOverview) {
     const repoRoot = process.cwd();
     const financeRoutes = readFileSync(path.join(repoRoot, "server/departments/finance-routes.ts"), "utf8");
     const canonicalView = existsSync(path.join(repoRoot, "client/src/components/finance/ProjectFinanceCanonical.tsx"))
