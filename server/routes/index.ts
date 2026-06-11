@@ -32,6 +32,7 @@ import { registerMyQueueRoutes } from './my-queue.routes';
 import { registerImportConfigRoutes } from './import-config.routes';
 import { registerSmartImportReviewRoutes } from './smart-import-review.routes';
 import { registerCosLineReviewRoutes } from './cos-line-review.routes';
+import { registerCashflowWorklistsRoutes } from './cashflow-worklists.routes';
 
 export async function registerRoutes(httpServer: Server, app: Express) {
   registerTemplateGovernanceRoutes(app);
@@ -39,6 +40,7 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerQuickBooksInvoiceMatchRoutes(app);
   registerFinanceTrustRoutes(app);
   registerFinanceLinesRoutes(app);
+  registerCashflowWorklistsRoutes(app);
   registerFinanceVoImpactRoutes(app);
   registerPdIntakeRoutes(app);
   // registerControlledDocumentRoutes(app); — retired in D6 Phase 5.

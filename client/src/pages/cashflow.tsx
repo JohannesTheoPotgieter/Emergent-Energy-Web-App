@@ -87,6 +87,7 @@ import { EditCellPopover } from '@/components/cashflow/EditCellPopover';
 import { OverrideChipMenu } from '@/components/cashflow/OverrideChipMenu';
 import { FindQbMatchesPanel } from '@/components/quickbooks/FindQbMatchesPanel';
 import { PaymentPlanner } from '@/components/cashflow/payment-planner';
+import { CashflowWorklists } from '@/components/cashflow/cashflow-worklists';
 
 interface OutflowByStatus {
   outOfBank: number;
@@ -2765,6 +2766,13 @@ export default function CashflowPage() {
               )}
             </div>
           </div>
+        </div>
+
+        {/* GP4 — Accounts Receivable / Accounts Payable / past-dated
+            missing-invoice worklists. Reporting views only (payment workflow
+            is parked). Reads the same canonical line population as the grid. */}
+        <div className="mt-4">
+          <CashflowWorklists projectParam={projectParam} />
         </div>
 
         <OpexBudgetModal
