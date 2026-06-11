@@ -4,6 +4,7 @@ import {
   qbReconIgnores,
   qbCustomerProjectOverrides,
   qbRevenueReconIgnores,
+  qbReconLineIgnores,
   auditEvents,
   fieldChanges,
 } from "@shared/schema";
@@ -204,6 +205,45 @@ export class QbReconciliationOverridesRepository {
       .update(qbRevenueReconIgnores)
       .set({ deletedAt: new Date() })
       .where(eq(qbRevenueReconIgnores.id, id));
+  }
+
+  // ── qb_recon_line_ignores (COMPANY-wide tracker-vs-QB worklist) ──
+  //
+  // Keyed on the recon line identity (stream + normalized invoice number).
+  // Distinct from the per-project tracker-gap ignores above, which key on a
+  // single QB Bill / Invoice id. Soft-deleted via deleted_at; an active row
+  // means "accepted difference — drop from the worklist, keep audited."
+
+  async listActiveLineIgnores(): Promise<Array<typeof qbReconLineIgnores.$inferSelect>> {
+    return this.dbInstance
+      .select()
+      .from(qbReconLineIgnores)
+      .where(isNull(qbReconLineIgnores.deletedAt));
+  }
+
+  async getLineIgnoreById(id: number): Promise<typeof qbReconLineIgnores.$inferSelect | null> {
+    const [row] = await this.dbInstance
+      .select()
+      .from(qbReconLineIgnores)
+      .where(eq(qbReconLineIgnores.id, id));
+    return row ?? null;
+  }
+
+  async createLineIgnore(
+    values: typeof qbReconLineIgnores.$inferInsert,
+  ): Promise<typeof qbReconLineIgnores.$inferSelect> {
+    const [created] = await this.dbInstance
+      .insert(qbReconLineIgnores)
+      .values(values)
+      .returning();
+    return created;
+  }
+
+  async softDeleteLineIgnore(id: number): Promise<void> {
+    await this.dbInstance
+      .update(qbReconLineIgnores)
+      .set({ deletedAt: new Date() })
+      .where(eq(qbReconLineIgnores.id, id));
   }
 
   // ── audit_events (read-only audit-history viewer) ──
