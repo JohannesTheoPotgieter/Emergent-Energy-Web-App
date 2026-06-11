@@ -1,0 +1,64 @@
+# CODEOWNERS — FINANCE FREEZE ENFORCEMENT
+#
+# Finance is FROZEN for the 6-month lock. See /FINANCE_FROZEN.md and
+# docs/finance-freeze-runbook.md. Every change under the paths below requires
+# review + approval from the owner before it can merge.
+#
+# This file only assigns owners on the finance surface — there is deliberately
+# NO global owner, so non-finance work is unaffected.
+#
+# ⚠️  CODEOWNERS only blocks merges when branch protection is configured:
+#     Settings → Branches → Branch protection rule for `main` →
+#       ✓ Require a pull request before merging
+#       ✓ Require review from Code Owners
+#       ✓ Do not allow bypassing the above settings
+#     See docs/finance-freeze-runbook.md § "Branch protection (one-time setup)".
+
+# ----------------------------------------------------------------------------
+# Frozen finance computation paths (the SOLE source of REV / COS / GP / cash)
+# ----------------------------------------------------------------------------
+/server/repositories/finance-*.ts                              @JohannesTheoPotgieter
+/server/lib/finance/                                           @JohannesTheoPotgieter
+/server/lib/finance-trust/                                     @JohannesTheoPotgieter
+/server/lib/fy-window.ts                                       @JohannesTheoPotgieter
+/server/lib/cashflow-helpers.ts                                @JohannesTheoPotgieter
+/server/lib/calculations/cashflow.ts                           @JohannesTheoPotgieter
+
+# ----------------------------------------------------------------------------
+# Finance services, gates, observability + the QuickBooks invoice matcher
+# ----------------------------------------------------------------------------
+/server/services/finance-*.ts                                  @JohannesTheoPotgieter
+/server/services/finance-observability/                        @JohannesTheoPotgieter
+/server/services/qb-project-match-service.ts                   @JohannesTheoPotgieter
+/server/services/quickbooks-invoice-match-service.ts           @JohannesTheoPotgieter
+/server/repositories/quickbooks-invoice-matches-repository.ts  @JohannesTheoPotgieter
+
+# ----------------------------------------------------------------------------
+# Finance schema
+# ----------------------------------------------------------------------------
+/shared/schema/finance.ts                                      @JohannesTheoPotgieter
+/shared/schema/finance-observability.ts                        @JohannesTheoPotgieter
+
+# ----------------------------------------------------------------------------
+# Finance client pages + components
+# ----------------------------------------------------------------------------
+/client/src/pages/finance-*.tsx                                @JohannesTheoPotgieter
+/client/src/pages/cashflow*.tsx                                @JohannesTheoPotgieter
+/client/src/components/finance/                                @JohannesTheoPotgieter
+/client/src/components/cashflow/                               @JohannesTheoPotgieter
+/client/src/components/reconciliation/                         @JohannesTheoPotgieter
+/client/src/lib/finance-trust.ts                               @JohannesTheoPotgieter
+/client/src/lib/finance-stale-policy.ts                        @JohannesTheoPotgieter
+/client/src/lib/finance/                                       @JohannesTheoPotgieter
+
+# ----------------------------------------------------------------------------
+# The freeze artifacts themselves (backups, runbook, ownership, schema source)
+# ----------------------------------------------------------------------------
+/FINANCE_FROZEN.md                                             @JohannesTheoPotgieter
+/docs/finance-freeze-runbook.md                                @JohannesTheoPotgieter
+/docs/finance-source-of-truth-audit.md                         @JohannesTheoPotgieter
+/.github/CODEOWNERS                                            @JohannesTheoPotgieter
+/.github/workflows/db-backup.yml                               @JohannesTheoPotgieter
+/scripts/backup-db.ts                                          @JohannesTheoPotgieter
+/scripts/verify-backup-restore.ts                              @JohannesTheoPotgieter
+/scripts/backup-restore-selftest.sh                            @JohannesTheoPotgieter
