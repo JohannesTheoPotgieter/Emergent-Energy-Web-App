@@ -70,3 +70,40 @@ export const qbReconSummary = pgTable("qb_recon_summary", {
 export const insertQbReconSummarySchema = createInsertSchema(qbReconSummary).omit({ id: true, effectiveFrom: true, effectiveTo: true } as any);
 export type InsertQbReconSummary = z.infer<typeof insertQbReconSummarySchema>;
 export type QbReconSummary = typeof qbReconSummary.$inferSelect;
+
+/**
+ * Recon-ignore annotations for the COMPANY-wide worklist (G4 — accepted
+ * difference suppression). Keyed on the recon line's stable identity
+ * (`stream` + normalized invoice number) because a company recon line has no
+ * single QB entity id to hang off (a normalized number can fold several raw
+ * docs). Distinct from `qb_recon_ignores` / `qb_revenue_recon_ignores` in
+ * integrations.ts, which suppress a single QB Bill/Invoice on the per-project
+ * tracker-gap surface.
+ *
+ * Annotation table (NOT a snapshot table): soft-deleted via `deleted_at`, no
+ * `effective_to`. An active row (deleted_at IS NULL) means "this difference is
+ * accepted — drop it out of the actionable worklist, but keep it visible and
+ * audited." The engine + amounts are never mutated; the snapshot the recon
+ * line came from is untouched. Every create/restore writes an `audit_events`
+ * row (actor + reason + timestamp) via `logAuditFromReq`.
+ */
+export const qbReconLineIgnores = pgTable("qb_recon_line_ignores", {
+  id: serial("id").primaryKey(),
+  stream: text("stream").notNull(), // 'COS' | 'REV'
+  invoiceNoNorm: text("invoice_no_norm").notNull(),
+  invoiceNoRaw: text("invoice_no_raw"),
+  trackerAmountExVat: decimal("tracker_amount_ex_vat", { precision: 15, scale: 2 }),
+  qbAmountExVat: decimal("qb_amount_ex_vat", { precision: 15, scale: 2 }),
+  reason: text("reason").notNull(),
+  ignoredByUserId: integer("ignored_by_user_id"),
+  ignoredByName: text("ignored_by_name"),
+  ignoredAt: timestamp("ignored_at").defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at"),
+}, (table) => ({
+  activeIdx: index("qb_recon_line_ignores_active_idx")
+    .on(table.stream, table.invoiceNoNorm)
+    .where(sql`${table.deletedAt} IS NULL`),
+}));
+export const insertQbReconLineIgnoreSchema = createInsertSchema(qbReconLineIgnores).omit({ id: true, ignoredAt: true, deletedAt: true } as any);
+export type InsertQbReconLineIgnore = z.infer<typeof insertQbReconLineIgnoreSchema>;
+export type QbReconLineIgnore = typeof qbReconLineIgnores.$inferSelect;

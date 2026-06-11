@@ -45,6 +45,7 @@ import {
 } from "@/components/finance/recon-status";
 import { fetchQueryFn } from "@/lib/queryClient";
 import { formatZarCompact } from "@/lib/currency";
+import { coveragePct, coverageLabel, LOW_COVERAGE_THRESHOLD } from "@/lib/finance/qb-recon-coverage";
 import { useFinancialYearScope } from "@/hooks/use-financial-year-scope";
 import {
   buildGpMonthSummaries,
@@ -89,6 +90,7 @@ interface QbReconRow {
   stream: "COS" | "REV";
   trackerTotal: number;
   qbTotal: number;
+  matchedTotal: number;
   varianceTotal: number;
 }
 interface QbReconPeriod {
@@ -217,7 +219,21 @@ export default function FinanceHomePage() {
     const rev = qbMetric(qbPeriod.rev?.trackerTotal ?? 0, qbPeriod.rev?.qbTotal ?? 0);
     const cos = qbMetric(qbPeriod.cos?.trackerTotal ?? 0, qbPeriod.cos?.qbTotal ?? 0);
     const gp = qbMetric(qbPeriod.gpTracker, qbPeriod.gpQb);
-    return { periodKey: qbPeriod.periodKey, rev, cos, gp, allTie: rev.tie && cos.tie && gp.tie };
+    // Match coverage = matched ex-VAT ÷ tracker-invoiced ex-VAT (company-wide).
+    // A low-coverage period is never shown as fully reconciled (S5).
+    const matched = (qbPeriod.rev?.matchedTotal ?? 0) + (qbPeriod.cos?.matchedTotal ?? 0);
+    const trackerInvoiced = (qbPeriod.rev?.trackerTotal ?? 0) + (qbPeriod.cos?.trackerTotal ?? 0);
+    const coverage = coveragePct(matched, trackerInvoiced);
+    const coverageLow = coverage != null && coverage < LOW_COVERAGE_THRESHOLD;
+    return {
+      periodKey: qbPeriod.periodKey,
+      rev,
+      cos,
+      gp,
+      allTie: rev.tie && cos.tie && gp.tie,
+      coverage,
+      coverageLow,
+    };
   }, [qbPeriod]);
 
   // Portfolio reconciliation posture — drives the trust badge on the
@@ -364,21 +380,23 @@ export default function FinanceHomePage() {
                 ? "…"
                 : cq
                   ? cq.allTie
-                    ? "Ties"
+                    ? cq.coverageLow
+                      ? "Ties · low cov"
+                      : "Ties"
                     : "Variance"
                   : noDataValue("Not run")
             }
-            tone={cq ? (cq.allTie ? "positive" : "warning") : "default"}
+            tone={cq ? (cq.allTie && !cq.coverageLow ? "positive" : "warning") : "default"}
             supporting={
               cq
-                ? `Rev ${cq.rev.text} · COS ${cq.cos.text} · GP ${cq.gp.text}`
+                ? `Rev ${cq.rev.text} · COS ${cq.cos.text} · GP ${cq.gp.text} · Cov ${coverageLabel(cq.coverage)}`
                 : qbReconQuery.isLoading
                   ? "Loading…"
                   : qbReconQuery.isError
                     ? "QB recon unavailable right now"
                     : "QB recon not run for this period"
             }
-            sourceBadge={cq ? <TrustBadge status={cq.allTie ? "ties" : "drift"} /> : undefined}
+            sourceBadge={cq ? <TrustBadge status={cq.allTie && !cq.coverageLow ? "ties" : "drift"} /> : undefined}
             href="/finance/qb-reconciliation"
           />
         </div>

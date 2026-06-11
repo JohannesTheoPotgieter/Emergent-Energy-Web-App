@@ -10,7 +10,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildWorklist,
+  buildSideWorklist,
   displayStatus,
+  matchState,
+  isCollision,
   periodKeyFor,
   isoWeekKey,
   type ReconLineLike,
@@ -81,5 +84,53 @@ describe("period bucketing", () => {
     expect(july).toHaveLength(1); // only the July variance
     expect(displayStatus(july[0])).toBe("amount_variance");
     expect(Number(july[0].trackerAmountExVat)).toBe(200);
+  });
+});
+
+describe("matchState — four worklist states (display mapping, no number change)", () => {
+  it("clean match → matched (timing is a matched sub-flag, not a state)", () => {
+    expect(matchState(line({ status: "matched" }))).toBe("matched");
+    expect(matchState(line({ status: "matched", timingFlag: true }))).toBe("matched");
+  });
+  it("amount_variance → ambiguous (number matched, amount disagrees)", () => {
+    expect(matchState(line({ status: "amount_variance" }))).toBe("ambiguous");
+  });
+  it("a normalised-number collision → ambiguous even when the status is matched", () => {
+    expect(isCollision(line({ invoiceNoRaw: "INV-1|INV-2" }))).toBe(true);
+    expect(matchState(line({ status: "matched", invoiceNoRaw: "INV-1|INV-2" }))).toBe("ambiguous");
+  });
+  it("tracker_only → unmatched_in_qb, qb_only → unmatched_in_tracker", () => {
+    expect(matchState(line({ status: "tracker_only" }))).toBe("unmatched_in_qb");
+    expect(matchState(line({ status: "qb_only" }))).toBe("unmatched_in_tracker");
+  });
+});
+
+describe("buildSideWorklist — split by stream, grouped into the four states", () => {
+  const SIDE: ReconLineLike[] = [
+    line({ stream: "REV", status: "matched", trackerAmountExVat: "1000", qbAmountExVat: "1000", trackerDate: "2026-06-10", invoiceNoRaw: "INV-1" }),
+    line({ stream: "REV", status: "amount_variance", trackerAmountExVat: "5000", qbAmountExVat: "4000", trackerDate: "2026-06-12", invoiceNoRaw: "INV-2" }),
+    line({ stream: "REV", status: "tracker_only", trackerAmountExVat: "800", trackerDate: "2026-06-15", invoiceNoRaw: "INV-3" }),
+    line({ stream: "REV", status: "qb_only", qbAmountExVat: "600", qbDate: "2026-06-18", invoiceNoRaw: "INV-4" }),
+    line({ stream: "COS", status: "tracker_only", trackerAmountExVat: "999", trackerDate: "2026-06-20", invoiceNoRaw: "BILL-9" }), // other stream
+    line({ stream: "REV", status: "amount_variance", trackerAmountExVat: "200", trackerDate: "2026-07-02", invoiceNoRaw: "INV-5" }), // other period
+  ];
+
+  it("keeps only the requested stream + period and buckets the four states", () => {
+    const rev = buildSideWorklist(SIDE, "2026-06", "month", "REV");
+    expect(rev.stream).toBe("REV");
+    expect(rev.matched.map((l) => l.invoiceNoRaw)).toEqual(["INV-1"]);
+    expect(rev.ambiguous.map((l) => l.invoiceNoRaw)).toEqual(["INV-2"]);
+    expect(rev.unmatchedInQb.map((l) => l.invoiceNoRaw)).toEqual(["INV-3"]);
+    expect(rev.unmatchedInTracker.map((l) => l.invoiceNoRaw)).toEqual(["INV-4"]);
+    // open = everything except clean matches
+    expect(rev.openCount).toBe(3);
+  });
+
+  it("excludes the other stream and other periods", () => {
+    const cos = buildSideWorklist(SIDE, "2026-06", "month", "COS");
+    expect(cos.unmatchedInQb.map((l) => l.invoiceNoRaw)).toEqual(["BILL-9"]);
+    expect(cos.openCount).toBe(1);
+    const july = buildSideWorklist(SIDE, "2026-07", "month", "REV");
+    expect(july.ambiguous.map((l) => l.invoiceNoRaw)).toEqual(["INV-5"]);
   });
 });

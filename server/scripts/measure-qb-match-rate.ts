@@ -36,6 +36,13 @@ import {
   type MatchRateResult,
   type Stream,
 } from "../lib/finance/qb-match-rate";
+import {
+  matchWithReasons,
+  DEFAULT_INVOICE_NORM_CONFIG,
+  HARDENED_INVOICE_NORM_CONFIG,
+  UNMATCHED_REASONS,
+  type MatchWithReasonsResult,
+} from "../lib/finance/invoice-normalization";
 
 const TOLERANCE = 1; // R1 — same tie tolerance the recon surfaces use.
 const REPORT_PATH = path.join(process.cwd(), "qa", "reports", "qb-match-rate.csv");
@@ -117,6 +124,19 @@ function printStream(stream: Stream, results: MatchRateResult[]): void {
   }
 }
 
+function printResiduals(
+  side: "tracker" | "qb",
+  before: MatchWithReasonsResult,
+  after: MatchWithReasonsResult,
+): void {
+  const b = side === "tracker" ? before.trackerResiduals : before.qbResiduals;
+  const a = side === "tracker" ? after.trackerResiduals : after.qbResiduals;
+  const parts = UNMATCHED_REASONS.filter((r) => b[r].count > 0 || a[r].count > 0).map(
+    (r) => `${r}: ${b[r].count}→${a[r].count} (${money(b[r].value)}→${money(a[r].value)})`,
+  );
+  if (parts.length > 0) console.log(`       ${side} residuals — ${parts.join("  ·  ")}`);
+}
+
 async function main(): Promise<void> {
   const url = process.env.DATABASE_URL;
   if (!url) {
@@ -167,6 +187,22 @@ async function main(): Promise<void> {
     for (const nm of near) {
       console.log(`     ${money(nm.trackerAmount).padStart(12)}  tracker=${nm.trackerRaw.join("|")}  qb=${nm.qbRaw.join("|")}  Δ${nm.amountDelta}`);
     }
+  }
+
+  // G7 — configurable canonicaliser: match rate BEFORE (live default key) vs
+  // AFTER (hardened candidate key), with residual-unmatched reasons so the
+  // coverage gap is explainable. READ-ONLY measurement — does not change the
+  // live engine key (that needs the real-example catalogue + owner sign-off).
+  for (const [stream, qb, tr] of [["COS", qbCos, trCos], ["REV", qbRev, trRev]] as const) {
+    const before = matchWithReasons(qb, tr, DEFAULT_INVOICE_NORM_CONFIG, TOLERANCE);
+    const after = matchWithReasons(qb, tr, HARDENED_INVOICE_NORM_CONFIG, TOLERANCE);
+    console.log(`\n   Normalisation before/after (${stream}) — tracker match rate by value:`);
+    console.log(
+      `     before (default key): ${before.matchRateByValue}%   after (hardened key): ${after.matchRateByValue}%   ` +
+        `Δ ${(after.matchRateByValue - before.matchRateByValue).toFixed(2)}pp`,
+    );
+    printResiduals("tracker", before, after);
+    printResiduals("qb", before, after);
   }
 
   writeCsv(start, end, [...cosResults, ...revResults], cosResults[0], revResults[0]);
