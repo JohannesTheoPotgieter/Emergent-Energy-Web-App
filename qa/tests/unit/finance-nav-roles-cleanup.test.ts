@@ -16,17 +16,16 @@ import {
  * view that path. These tests pin that behaviour with a canViewPath stub.
  */
 
-const NEW_FINANCE_LABELS = ["Finance Home", "Reconciliation", "Weekly Close"];
+const NEW_FINANCE_LABELS = ["Finance Home", "QB Reconciliation", "Weekly Close"];
 const ALL_FINANCE_PATHS = [
   "/finance",
   "/cashflow",
   "/cos",
   "/revenue-tracker",
   "/finance/gp/company",
-  "/finance/reconciliation",
+  "/finance/qb-reconciliation",
   "/finance/close",
   "/fye-revenue-tracking",
-  "/finance/quickbooks",
   "/payment-request-board",
   "/po-approval-board",
 ];
