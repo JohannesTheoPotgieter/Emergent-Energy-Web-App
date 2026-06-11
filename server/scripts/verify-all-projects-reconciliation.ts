@@ -376,15 +376,24 @@ export function formatVerificationCsv(
 }
 
 // ===========================================================================
-// main — wiring (read-only DB access)
+// Runner — read-only DB access. Exported so the weekly finance integrity guard
+// can run the SAME proof in-process and read its structured result, while the
+// CLI (main) renders the console report + CSV. Number-preserving split.
 // ===========================================================================
 
-async function main(): Promise<number> {
-  const dryRun = process.argv.includes("--dry-run");
-  console.log(
-    `verify:finance — READ-ONLY reconciliation proof (R1 = R${RECON_R1})${dryRun ? " · DRY RUN (no CSV)" : ""}\n`,
-  );
+export interface ReconciliationVerificationResult {
+  projectRows: ProjectPeriodRow[];
+  companyRows: CompanyPeriodCheck[];
+  lock: {
+    live: "blocked" | "no_locked_period" | "not_blocked";
+    logic: LockLogicProof;
+    probedPeriod: string | null;
+  };
+  counts: { projPass: number; projWarn: number; projFail: number; lockPass: boolean };
+  overallPass: boolean;
+}
 
+export async function runReconciliationVerification(): Promise<ReconciliationVerificationResult> {
   await initializeDatabase();
 
   // ---- Fiscal calendar (labels + period bucketing) ----
@@ -510,11 +519,36 @@ async function main(): Promise<number> {
   }));
   const company = reconcileCompanySnapshot(storedSummaries, recomputed);
 
-  // ---- Report ----
+  // ---- Roll-up ----
   const projPass = projectRows.filter((r) => r.pass).length;
   const projWarn = projectRows.filter((r) => r.warn).length;
   const projFail = projectRows.filter((r) => !r.pass && !r.warn).length;
   const lockPass = (live === "blocked" || live === "no_locked_period") && logic.pass;
+  const overallPass = projFail === 0 && lockPass && company.allPass;
+
+  return {
+    projectRows,
+    companyRows: company.rows,
+    lock: { live, logic, probedPeriod },
+    counts: { projPass, projWarn, projFail, lockPass },
+    overallPass,
+  };
+}
+
+// ===========================================================================
+// main — CLI: render the console report + CSV from the runner's result.
+// ===========================================================================
+
+async function main(): Promise<number> {
+  const dryRun = process.argv.includes("--dry-run");
+  console.log(
+    `verify:finance — READ-ONLY reconciliation proof (R1 = R${RECON_R1})${dryRun ? " · DRY RUN (no CSV)" : ""}\n`,
+  );
+
+  const { projectRows, companyRows, lock, counts, overallPass } =
+    await runReconciliationVerification();
+  const { live, logic, probedPeriod } = lock;
+  const { projPass, projWarn, projFail, lockPass } = counts;
 
   console.log("1) app == tracker (per project × fiscal period)");
   console.log("   ────────────────────────────────────────────");
@@ -542,15 +576,14 @@ async function main(): Promise<number> {
 
   console.log("\n3) tracker == QuickBooks (company-level, R2 engine)");
   console.log("   ────────────────────────────────────────────");
-  console.log(`   month×stream summaries: ${company.rows.length}`);
-  console.log(`   reconciles (≤ R${QB_RECON_TOLERANCE})    : ${company.rows.filter((r) => r.pass).length}`);
-  for (const c of company.rows.filter((r) => !r.pass)) {
+  console.log(`   month×stream summaries: ${companyRows.length}`);
+  console.log(`   reconciles (≤ R${QB_RECON_TOLERANCE})    : ${companyRows.filter((r) => r.pass).length}`);
+  for (const c of companyRows.filter((r) => !r.pass)) {
     console.log(
       `     ✗ ${c.periodKey} ${c.stream}: tracker=R${c.trackerTotal.toFixed(2)} qb=R${c.qbTotal.toFixed(2)} worstGap=R${c.worstFieldGap.toFixed(2)}`,
     );
   }
 
-  const overallPass = projFail === 0 && lockPass && company.allPass;
   console.log(`\nOVERALL: ${overallPass ? "PASS ✓" : "FAIL ✗"}\n`);
 
   if (!dryRun) {
@@ -559,7 +592,7 @@ async function main(): Promise<number> {
     const csvPath = path.join(reportDir, "reconciliation-verification.csv");
     fs.writeFileSync(
       csvPath,
-      formatVerificationCsv(projectRows, company.rows, { live, logic, probedPeriod }),
+      formatVerificationCsv(projectRows, companyRows, { live, logic, probedPeriod }),
       "utf8",
     );
     console.log(`Wrote ${csvPath}`);

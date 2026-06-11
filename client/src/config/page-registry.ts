@@ -143,6 +143,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // TF-9 follow-up (audit V3) — Audit Prep CSV bundles for external auditors.
   // Gated on financials:approve (CFO + COO/CEO admins).
   { id: "financeAuditPrep", path: "/finance/audit-prep", label: "Audit Prep", iconKey: "ShieldCheck", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceAuditPrepPage" },
+  { id: "financeHealth", path: "/finance/health", label: "Finance Health", iconKey: "Activity", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceHealthPage" },
   { id: "financeQbReconciliation", path: "/finance/qb-reconciliation", label: "QB Reconciliation", iconKey: "GitCompare", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceQbReconciliationPage" },
   // Per-project Tracker replicas — read-only views that render the source
   // workbook 1:1 with font/fill fidelity. Not in the sidebar; reached from

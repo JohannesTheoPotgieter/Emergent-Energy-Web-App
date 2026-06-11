@@ -736,6 +736,13 @@
       "when": 1781168588019,
       "tag": "0104_qb_recon_line_ignores",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1781194014790,
+      "tag": "0105_finance_observability",
+      "breakpoints": true
     }
   ]
 }
