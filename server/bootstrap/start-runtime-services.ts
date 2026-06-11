@@ -173,5 +173,28 @@ export async function startRuntimeServices(options: {
     log("Skipped credential-expiry sweep in SQLite mode.", "Startup:Runtime");
   }
 
+  // Finance observability — the freeze's monitoring. The watchdog runs the
+  // dead-man's-switch heartbeat sweep + data-freshness/drift sweep + error-rate
+  // check every ~30 min; the integrity guard runs verify:golden/verify:finance
+  // weekly (read-only) and the monthly digest. Both Postgres-only.
+  if (!isSqlite) {
+    try {
+      const { scheduleFinanceWatchdog } = await import("./finance-watchdog-scheduler");
+      scheduleFinanceWatchdog();
+      started.push("finance-watchdog-scheduler");
+    } catch (err) {
+      log(`[Finance Watchdog] Failed to start: ${err}`, "Startup:Runtime");
+    }
+    try {
+      const { scheduleFinanceIntegrityGuard } = await import("./finance-integrity-guard-scheduler");
+      scheduleFinanceIntegrityGuard();
+      started.push("finance-integrity-guard-scheduler");
+    } catch (err) {
+      log(`[Finance Integrity Guard] Failed to start: ${err}`, "Startup:Runtime");
+    }
+  } else {
+    log("Skipped finance observability schedulers in SQLite mode.", "Startup:Runtime");
+  }
+
   return started;
 }

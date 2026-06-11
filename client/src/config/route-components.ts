@@ -154,6 +154,7 @@ const FinanceGpCompanyPage = lazyWithRetry(() => import("@/pages/finance-gp-comp
 const FinanceAuditPrepPage = lazyWithRetry(() => import("@/pages/finance-audit-prep"));
 const FinanceQbReconciliationPage = lazyWithRetry(() => import("@/pages/finance-qb-reconciliation"));
 const FinanceHomePage = lazyWithRetry(() => import("@/pages/finance-home"));
+const FinanceHealthPage = lazyWithRetry(() => import("@/pages/finance-health"));
 const FinanceProjectDetailPage = lazyWithRetry(() => import("@/pages/finance-project-detail"));
 const FinanceWeeklyClosePage = lazyWithRetry(() => import("@/pages/finance-weekly-close"));
 // Phase-1 new pages — Engineering Doc Mgmt, Quality Task Board + Doc Mgmt,
@@ -283,6 +284,7 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   FinanceAuditPrepPage,
   FinanceQbReconciliationPage,
   FinanceHomePage,
+  FinanceHealthPage,
   FinanceProjectDetailPage,
   FinanceWeeklyClosePage,
   AdminBackfillPage,

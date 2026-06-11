@@ -26,6 +26,7 @@ export * from "./role-based-upgrade";
 export * from "./commissioning-source";
 export * from "./integrations";
 export * from "./dashboard-snapshots";
+export * from "./finance-observability";
 export * from "./task-reminders";
 export * from "./home";
 export * from "./documents";

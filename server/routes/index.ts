@@ -33,8 +33,13 @@ import { registerImportConfigRoutes } from './import-config.routes';
 import { registerSmartImportReviewRoutes } from './smart-import-review.routes';
 import { registerCosLineReviewRoutes } from './cos-line-review.routes';
 import { registerCashflowWorklistsRoutes } from './cashflow-worklists.routes';
+import { registerFinanceHealthRoutes } from './finance-health.routes';
+import { financeErrorTracker } from '../middleware/finance-error-tracker';
 
 export async function registerRoutes(httpServer: Server, app: Express) {
+  // Observe finance 5xx responses for the error-rate monitor (read-only).
+  app.use(financeErrorTracker);
+  registerFinanceHealthRoutes(app);
   registerTemplateGovernanceRoutes(app);
   registerQuickBooksRoutes(app);
   registerQuickBooksInvoiceMatchRoutes(app);
