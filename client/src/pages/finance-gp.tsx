@@ -19,6 +19,7 @@ import { DataTrustBadge } from "@/components/ui/data-trust-badge";
 import { useQuery } from "@tanstack/react-query";
 import { fetchQueryFn } from "@/lib/queryClient";
 import { formatZar } from "@/lib/currency";
+import { RevCosGpDrillView } from "@/components/finance/rev-cos-gp-drill-view";
 
 type Bucket = "planned" | "committed" | "unrealised" | "realised";
 
@@ -633,6 +634,10 @@ export default function FinanceGpPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto" data-testid="finance-gp-page">
+      {/* Invoice-level drill: FY ▸ month ▸ project ▸ line ▸ invoice, reading
+          the canonical drill endpoints (no recomputation). */}
+      <RevCosGpDrillView />
+
       {health && health.summary.missing + health.summary.partial > 0 && (
         <Card className="border-amber-300 bg-amber-50/40">
           <CardContent className="p-4 flex items-start gap-3">
