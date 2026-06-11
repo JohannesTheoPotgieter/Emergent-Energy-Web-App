@@ -130,8 +130,8 @@ export default function FinanceWeeklyClosePage() {
   const [arSortDesc, setArSortDesc] = useState(true);
 
   const cashflowQuery = useQuery<{ weeks: CashflowWeek[] }>({
-    queryKey: ["/api/cashflow-2026", "weekly-close"],
-    queryFn: fetchQueryFn("/api/cashflow-2026"),
+    queryKey: ["/api/weekly-cashflow", "weekly-close"],
+    queryFn: fetchQueryFn("/api/weekly-cashflow"),
     staleTime: 60_000,
   });
   const arQuery = useQuery<OverdueResponse>({

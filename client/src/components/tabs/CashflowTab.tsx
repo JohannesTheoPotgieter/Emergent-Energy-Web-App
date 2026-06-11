@@ -199,12 +199,12 @@ function WeekDetailPanel({
   if (filterParam) params.set("project", filterParam);
 
   const { data, isLoading } = useQuery<WeekDetail>({
-    queryKey: ["/api/cashflow-2026/detail", weekStart, filterParam],
+    queryKey: ["/api/weekly-cashflow/detail", weekStart, filterParam],
     queryFn: async () => {
       const token = localStorage.getItem("auth_token");
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch(`/api/cashflow-2026/detail?${params.toString()}`, {
+      const res = await fetch(`/api/weekly-cashflow/detail?${params.toString()}`, {
         credentials: "include",
         headers,
       });
@@ -218,17 +218,17 @@ function WeekDetailPanel({
       const token = localStorage.getItem("auth_token");
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch("/api/cashflow-2026/expense-date-override", {
+      const res = await fetch("/api/weekly-cashflow/expense-date-override", {
         method: "POST", credentials: "include", headers, body: JSON.stringify(d),
       });
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/weekly-cashflow"] });
       // Also refresh any open week-detail panel — its key is a sibling, not a
       // child, of the summary key, so the broad invalidate above misses it.
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026/detail"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/weekly-cashflow/detail"] });
       toast({ title: "Expense date override saved" });
     },
     onError: () => toast({ title: "Failed to save override", variant: "destructive" }),
@@ -239,15 +239,15 @@ function WeekDetailPanel({
       const token = localStorage.getItem("auth_token");
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch("/api/cashflow-2026/inflow-date-override", {
+      const res = await fetch("/api/weekly-cashflow/inflow-date-override", {
         method: "POST", credentials: "include", headers, body: JSON.stringify(d),
       });
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026/detail"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/weekly-cashflow"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/weekly-cashflow/detail"] });
       toast({ title: "Inflow date override saved" });
     },
     onError: () => toast({ title: "Failed to save override", variant: "destructive" }),
@@ -429,11 +429,11 @@ export function CashflowTab({ projectName, projectNames, title, canOverrideFinan
   }, [projectName, projectNames]);
 
   const { data: cashflowData = [], isLoading } = useQuery<CashflowWeek[]>({
-    queryKey: ["/api/cashflow-2026", filterParam],
+    queryKey: ["/api/weekly-cashflow", filterParam],
     queryFn: async () => {
       const url = filterParam
-        ? `/api/cashflow-2026?project=${encodeURIComponent(filterParam)}`
-        : "/api/cashflow-2026";
+        ? `/api/weekly-cashflow?project=${encodeURIComponent(filterParam)}`
+        : "/api/weekly-cashflow";
       const token = localStorage.getItem("auth_token");
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;

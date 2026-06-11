@@ -4,9 +4,9 @@
  * A what-if tool that lets Finance tentatively move expense PAYMENT dates in
  * local React state and watch weekly cash-outflow totals re-bucket, then Apply
  * the moves through the EXISTING date-override endpoint
- * (`POST /api/cashflow-2026/expense-date-override`). No finance calculation is
+ * (`POST /api/weekly-cashflow/expense-date-override`). No finance calculation is
  * re-implemented here: payables (and their effective payment date) come straight
- * from the canonical `/api/cashflow-2026/detail` endpoint, and persistence goes
+ * from the canonical `/api/weekly-cashflow/detail` endpoint, and persistence goes
  * only through the existing override route.
  *
  * Accessibility (HARD rule): status is never conveyed by colour alone — every
@@ -53,12 +53,12 @@ import { useToast } from '@/hooks/use-toast';
 import { formatZar, formatZarAriaLabel } from '@/lib/currency';
 import type { FinancialYearScope } from '@/hooks/use-financial-year-scope';
 
-const CASHFLOW_API_BASE = '/api/cashflow-2026';
+const CASHFLOW_API_BASE = '/api/weekly-cashflow';
 // How many ISO weeks (including the current one) the planner forecasts.
 const PLANNER_WEEKS = 8;
 
 /**
- * Outflow row shape returned by `/api/cashflow-2026/detail`. `expenseId` is the
+ * Outflow row shape returned by `/api/weekly-cashflow/detail`. `expenseId` is the
  * cost-line id used by the override endpoint; `expensePaymentDate` is the
  * EFFECTIVE payment date the server already resolves
  * (adminDateOverride ?? forecast ?? paid).

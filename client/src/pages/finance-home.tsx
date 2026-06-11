@@ -13,7 +13,7 @@
  *                                        Target is the planned-revenue proxy —
  *                                        rendered PROVISIONAL pending a board FY
  *                                        target (P4.4).
- *   3. Cash available this week       → /api/cashflow-2026 (current week
+ *   3. Cash available this week       → /api/weekly-cashflow (current week
  *                                        availablePayment).
  *   4. Tracker-vs-QB (COMPANY only)   → /api/finance/qb-recon/summary (current
  *                                        period REV/COS/GP, company grain). QB
@@ -164,8 +164,8 @@ export default function FinanceHomePage() {
 
   // Cash available this week — weekly cashflow series.
   const cashflowQuery = useQuery<{ weeks: CashflowWeek[] }>({
-    queryKey: ["/api/cashflow-2026"],
-    queryFn: fetchQueryFn("/api/cashflow-2026"),
+    queryKey: ["/api/weekly-cashflow"],
+    queryFn: fetchQueryFn("/api/weekly-cashflow"),
     staleTime: 60_000,
   });
 

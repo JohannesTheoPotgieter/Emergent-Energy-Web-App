@@ -119,7 +119,7 @@ export async function getFinanceRevalidationStatus(
       case "cashflow_weekly_manual":
       case "opex_budget_monthly":
       case "available_payment_overrides":
-        note("cashflow-2026", "Manual cashflow controls changed.", "warn", at);
+        note("weekly-cashflow", "Manual cashflow controls changed.", "warn", at);
         break;
       case "tracker_monthly_manual":
         note("gp-tracker", "Tracker monthly manual entries changed.", "warn", at);

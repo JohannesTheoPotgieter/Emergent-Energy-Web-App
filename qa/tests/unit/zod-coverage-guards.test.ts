@@ -32,11 +32,11 @@ describe("Zod coverage — finance write surface", () => {
   });
 
   const routes: Array<{ path: string; schema: string }> = [
-    { path: "/api/cashflow-2026/expense-date-override", schema: "expenseDateOverrideSchema" },
-    { path: "/api/cashflow-2026/inflow-date-override", schema: "inflowDateOverrideSchema" },
-    { path: "/api/cashflow-2026/opening-balance", schema: "openingBalanceSchema" },
-    { path: "/api/cashflow-2026/opex-budget", schema: "opexBudgetSchema" },
-    { path: "/api/cashflow-2026/opex-weekly", schema: "opexWeeklySchema" },
+    { path: "/api/weekly-cashflow/expense-date-override", schema: "expenseDateOverrideSchema" },
+    { path: "/api/weekly-cashflow/inflow-date-override", schema: "inflowDateOverrideSchema" },
+    { path: "/api/weekly-cashflow/opening-balance", schema: "openingBalanceSchema" },
+    { path: "/api/weekly-cashflow/opex-budget", schema: "opexBudgetSchema" },
+    { path: "/api/weekly-cashflow/opex-weekly", schema: "opexWeeklySchema" },
     { path: "/api/cos-periods/:yyyyMm/lock", schema: "cosPeriodLockSchema" },
     { path: "/api/cos-periods/:yyyyMm/unlock", schema: "cosPeriodLockSchema" },
     { path: "/api/cashflow/planning-overrides", schema: "planningOverridesSchema" },

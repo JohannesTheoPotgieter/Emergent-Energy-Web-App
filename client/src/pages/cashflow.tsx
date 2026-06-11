@@ -10,6 +10,7 @@ import { DrillReconciliationFooter } from '@/components/finance/DrillReconciliat
 import { StaleIndicator } from '@/components/finance/StaleIndicator';
 import { CashflowDrillView } from '@/components/finance/cashflow-drill-view';
 import { Money } from '@/components/ui/money';
+import { getFiscalYear } from '@shared/fiscal-year';
 import {
   Tooltip as UiTooltip,
   TooltipContent,
@@ -235,11 +236,9 @@ function safeFormatIso(iso: string): string {
  * e.g. in Mar 2026 -> FY2026 (Sep 2025 - Aug 2026)
  */
 function getCurrentFiscalYear(): number {
-  const now = new Date();
-  const month = now.getMonth(); // 0-indexed: 0=Jan, 8=Sep
-  const year = now.getFullYear();
-  // If Sep or later, we're in the next FY
-  return month >= 8 ? year + 1 : year;
+  // Delegates to the single canonical FY source (shared/fiscal-year.ts) so the
+  // client and server agree and roll into FY27 (and beyond) with no code change.
+  return getFiscalYear();
 }
 
 function generateFYMonths(fyYear: number): { key: string; label: string }[] {
@@ -270,7 +269,7 @@ function generateFYMonths(fyYear: number): { key: string; label: string }[] {
   return months;
 }
 
-const CASHFLOW_API_BASE = '/api/cashflow-2026';
+const CASHFLOW_API_BASE = '/api/weekly-cashflow';
 type QbMatchScope = 'cost' | 'revenue';
 type QbLinkContext = {
   scope: QbMatchScope;

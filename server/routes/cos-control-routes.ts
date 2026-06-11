@@ -20,6 +20,7 @@ import { classifyCosStatusFull } from "../lib/calculations/financeUtils";
 import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
 import { setFinanceTrustHeaders } from "../lib/finance-trust/envelope";
 import { getMergedExpensesAndInflows, resolveInflowEffectiveDates } from "../lib/cashflow-helpers";
+import { getCurrentFinanceYear, getFinanceYearBounds } from "../lib/finance-year-scope";
 
 // Unified realisation check: delegates to canonical isCanonicalCosRealised()
 // to stay aligned with COS Tracker, Company Overview, Dashboard Metrics, etc.
@@ -532,7 +533,7 @@ export function registerCosControlRoutes(app: Express) {
         });
       }
 
-      const startDate = new Date(2025, 8, 1);
+      const startDate = new Date(getCurrentFinanceYear() - 1, 8, 1); // FY start (Sep of currentFY-1) — rolls to FY27
       const weeks: string[] = [];
       for (let i = 0; i < 52; i++) {
         const wk = new Date(startDate);
@@ -549,7 +550,7 @@ export function registerCosControlRoutes(app: Express) {
           for (const proj of entry.projects) {
             if (!proj.start && !proj.end) continue;
             const ps = proj.start ? new Date(proj.start) : new Date(0);
-            const pe = proj.end ? new Date(proj.end) : new Date(2030, 0, 1);
+            const pe = proj.end ? new Date(proj.end) : new Date(new Date().getFullYear() + 100, 0, 1);
             if (ps < we && pe > ws) count++;
           }
           return count;
@@ -1221,14 +1222,15 @@ export function registerCosControlRoutes(app: Express) {
       const manualBalances = await storage.getAllCashflowWeeklyManual();
       const openingBalance = manualBalances.length > 0 ? parseFloat(manualBalances[0].openingBalance || '0') : 0;
 
+      const fyStartIso = getFinanceYearBounds(getCurrentFinanceYear()).startDate; // FY start — rolls to FY27
       const baseline = buildCashflowLines(expenseItems, allInflows);
-      const baselineWeeks = computeWeeklyCashflow(baseline.inflowLines, baseline.outflowLines, '2025-09-01', 52, openingBalance);
+      const baselineWeeks = computeWeeklyCashflow(baseline.inflowLines, baseline.outflowLines, fyStartIso, 52, openingBalance);
 
       let scenarioWeeks = baselineWeeks;
       if (scenarioId) {
         const overrideMap = new Map();
         const scenarioData = buildCashflowLines(expenseItems, allInflows, overrideMap);
-        scenarioWeeks = computeWeeklyCashflow(scenarioData.inflowLines, scenarioData.outflowLines, '2025-09-01', 52, openingBalance);
+        scenarioWeeks = computeWeeklyCashflow(scenarioData.inflowLines, scenarioData.outflowLines, fyStartIso, 52, openingBalance);
       }
 
       const weeklyData = scenarioWeeks.map((sw, i) => {
@@ -1425,7 +1427,7 @@ export function registerCosControlRoutes(app: Express) {
       }
 
       const weeklyDemand = new Map<string, { total: number; projects: string[] }>();
-      const startDate = new Date('2025-09-01');
+      const startDate = new Date(getFinanceYearBounds(getCurrentFinanceYear()).startDate); // FY start — rolls to FY27
 
       for (let w = 0; w < 52; w++) {
         const weekStart = new Date(startDate);

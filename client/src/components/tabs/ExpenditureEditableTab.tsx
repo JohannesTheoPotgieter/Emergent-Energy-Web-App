@@ -540,7 +540,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
           return key.startsWith('/api/cos-tracker') ||
                  key.startsWith('/api/cos-control') ||
                  key.startsWith('/api/cashflow-forecast') ||
-                 key.startsWith('/api/cashflow-2026') ||
+                 key.startsWith('/api/weekly-cashflow') ||
                  key.startsWith('/api/cashflow') ||
                  key.startsWith('/api/dashboard') ||
                  key.startsWith('/api/data-quality') ||

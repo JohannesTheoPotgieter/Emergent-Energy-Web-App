@@ -2,9 +2,9 @@
  * Cashflow worklist read endpoints — Accounts Receivable, Accounts Payable, and
  * the past-dated missing-invoice worklist (AGENT_GUARDRAILS § 3B / S3 — GP4).
  *
- *   GET /api/cashflow-2026/receivables       ?project=Name1,Name2
- *   GET /api/cashflow-2026/payables          ?project=Name1,Name2
- *   GET /api/cashflow-2026/missing-invoices  ?project=Name1,Name2
+ *   GET /api/weekly-cashflow/receivables       ?project=Name1,Name2
+ *   GET /api/weekly-cashflow/payables          ?project=Name1,Name2
+ *   GET /api/weekly-cashflow/missing-invoices  ?project=Name1,Name2
  *
  * Reporting / visibility only — there is no payment workflow here (procure-to-pay
  * is parked, S4). All three read the SAME canonical, snapshot-guarded line
@@ -41,7 +41,7 @@ export function registerCashflowWorklistsRoutes(app: Express): void {
   const repo = new FinanceWorklistRepository();
 
   app.get(
-    "/api/cashflow-2026/receivables",
+    "/api/weekly-cashflow/receivables",
     requireAuth,
     requirePermission("cashflow", "view"),
     async (req: Request, res: Response) => {
@@ -55,7 +55,7 @@ export function registerCashflowWorklistsRoutes(app: Express): void {
   );
 
   app.get(
-    "/api/cashflow-2026/payables",
+    "/api/weekly-cashflow/payables",
     requireAuth,
     requirePermission("cashflow", "view"),
     async (req: Request, res: Response) => {
@@ -69,7 +69,7 @@ export function registerCashflowWorklistsRoutes(app: Express): void {
   );
 
   app.get(
-    "/api/cashflow-2026/missing-invoices",
+    "/api/weekly-cashflow/missing-invoices",
     requireAuth,
     requirePermission("cashflow", "view"),
     async (req: Request, res: Response) => {
