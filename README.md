@@ -2,6 +2,11 @@
 
 This repository contains the Emergent Energy operations platform (web client, API server, and database migrations).
 
+> 🔒 **FINANCE FROZEN** — the finance feature is under a 6-month lock. Do **not**
+> change finance code. Break-glass procedures for the only human touches that
+> can be needed are in [`docs/finance-freeze-runbook.md`](docs/finance-freeze-runbook.md).
+> See [`FINANCE_FROZEN.md`](FINANCE_FROZEN.md).
+
 For current documentation, start here:
 
 - **Documentation index:** [`docs/README.md`](docs/README.md)

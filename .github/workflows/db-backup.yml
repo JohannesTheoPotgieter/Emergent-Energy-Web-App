@@ -1,0 +1,107 @@
+name: Daily DB Backup + Tested Restore
+
+# Finance-freeze step 1: automated, *tested* backups.
+#
+# Every day this workflow:
+#   1. dumps the production database with scripts/backup-db.ts (custom-format,
+#      compressed, TOC-validated),
+#   2. uploads the dump as a retained build artifact (the durable off-box copy),
+#   3. restores that dump into a throwaway postgres:16 service container and
+#      runs scripts/verify-backup-restore.ts to prove it restores to a WORKING
+#      finance DB (required tables present, core tables non-empty, finance
+#      fingerprint computes) — not merely that a file exists.
+#
+# A failed run = a backup that would not have restored. Treat a red check here
+# as a P1: see docs/finance-freeze-runbook.md § "Restore from backup".
+#
+# Secrets required (Settings → Secrets and variables → Actions):
+#   PROD_DATABASE_URL   read access to production Postgres (for pg_dump)
+
+on:
+  schedule:
+    # 00:30 UTC = 02:30 SAST daily — captures the day before the 02:00 UTC
+    # prod→dev sync, off-peak for South Africa.
+    - cron: '30 0 * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: daily-db-backup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backup-and-verify:
+    name: Dump prod, archive, and prove it restores
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    services:
+      restore-target:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: scratch_restore_pw
+          POSTGRES_DB: restore_drill
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight required secrets
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PROD_DATABASE_URL:-}" ]; then
+            echo "::error::Missing required secret: PROD_DATABASE_URL"
+            exit 1
+          fi
+
+      - name: Install PostgreSQL 16 client
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo apt-get install -y postgresql-client-16 || sudo apt-get install -y postgresql-client
+          pg_dump --version
+          pg_restore --version
+
+      - name: Install npm dependencies
+        run: npm ci --prefer-offline --no-audit
+
+      - name: Back up production database
+        env:
+          BACKUP_SOURCE_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          BACKUP_DIR: ${{ github.workspace }}/backups
+          BACKUP_RETENTION_DAYS: '30'
+        run: npm run db:backup
+
+      - name: Upload backup artifact (durable off-box copy)
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: backups/*.dump
+          # GitHub-side retention. For longer retention / true offsite, the
+          # operator additionally syncs this artifact to object storage — see
+          # the runbook. 30 days mirrors BACKUP_RETENTION_DAYS.
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Tested restore — prove the dump restores to a working finance DB
+        env:
+          RESTORE_TARGET_DATABASE_URL: postgresql://postgres:scratch_restore_pw@127.0.0.1:5432/restore_drill
+          BACKUP_DIR: ${{ github.workspace }}/backups
+        run: npm run db:restore:verify
