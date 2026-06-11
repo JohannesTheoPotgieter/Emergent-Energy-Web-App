@@ -13,15 +13,25 @@ function iso(daysAgo: number): string {
 }
 
 export function mockQuickBooksConnectionStatus() {
+  const now = Date.now();
   return {
     connected: true,
     realmId: "mock-realm-123",
     companyName: "Emergent Energy (Mock)",
-    lastRefreshedAt: new Date().toISOString(),
-    lastSuccessfulSyncAt: new Date().toISOString(),
-    tokenExpiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    tokenExpiry: new Date(now + 55 * 60 * 1000).toISOString(),
+    refreshTokenExpiry: new Date(now + 85 * 24 * 60 * 60 * 1000).toISOString(),
+    health: "healthy",
+    lastSuccessfulSyncAt: new Date(now - 10 * 60 * 1000).toISOString(),
+    lastFailedSyncAt: null,
+    lastFailureCode: null,
+    lastFailureReason: null,
     isStale: false,
-    classification: "ok",
+    ageMs: 10 * 60 * 1000,
+    staleAfterMs: 2 * 60 * 60 * 1000,
+    daysUntilRefreshTokenExpiry: 85,
+    refreshTokenExpiryState: "ok",
+    reconnectRequired: false,
+    reconnectPath: "/api/quickbooks/auth",
   };
 }
 

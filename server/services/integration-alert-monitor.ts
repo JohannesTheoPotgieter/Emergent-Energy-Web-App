@@ -26,6 +26,7 @@ import {
 import { db } from "../db";
 import { deriveIntegrationHealth } from "./integration-health-service";
 import { dispatchAlert } from "./alert-dispatcher-service";
+import { CONNECTOR_CREDENTIALS } from "../lib/integration-credentials";
 import {
   shouldAlertIntegrationTransition,
   type IntegrationAlertReason,
@@ -35,10 +36,27 @@ function buildAlertCopy(
   reason: NonNullable<IntegrationAlertReason>,
   integration: Integration,
   errorDetail: string | null,
+  errorCode: string | null,
 ): { eventType: string; title: string; body: string } {
   const display = integration.displayName || integration.name;
   switch (reason) {
-    case "now_failing":
+    case "now_failing": {
+      // A revoked / expired OAuth credential is a distinct, actionable failure:
+      // it will NOT self-heal and needs a human to re-authorise. Give it its own
+      // copy + the one-click reconnect path rather than the generic "failing".
+      if (errorCode === "needs_reconnect") {
+        const reconnectPath = CONNECTOR_CREDENTIALS[integration.name]?.reconnectPath;
+        const how = reconnectPath
+          ? ` Reconnect at ${reconnectPath}.`
+          : " Reconnect the integration from the admin console.";
+        return {
+          eventType: "integration_needs_reconnect",
+          title: `Reconnect required: ${display}`,
+          body: `${display} can no longer authenticate — its credential was revoked or expired, so syncing has stopped.${how}${
+            errorDetail ? ` (Last error: ${errorDetail})` : ""
+          }`,
+        };
+      }
       return {
         eventType: "integration_failing",
         title: `Integration failing: ${display}`,
@@ -46,6 +64,7 @@ function buildAlertCopy(
           ? `${display} just transitioned to FAILING. Last error: ${errorDetail}`
           : `${display} just transitioned to FAILING. Check the integration health dashboard.`,
       };
+    }
     case "now_stale_from_healthy":
       return {
         eventType: "integration_stale",
@@ -71,6 +90,7 @@ async function computeCurrentHealth(
 ): Promise<{
   health: IntegrationHealthState;
   lastError: string | null;
+  lastErrorCode: string | null;
 }> {
   const [lastRun] = await db
     .select()
@@ -104,6 +124,7 @@ async function computeCurrentHealth(
   return {
     health,
     lastError: (lastRun as IntegrationRunEvent | undefined)?.errorDetail ?? null,
+    lastErrorCode: (lastRun as IntegrationRunEvent | undefined)?.errorCode ?? null,
   };
 }
 
@@ -126,7 +147,7 @@ export async function checkAndDispatchIntegrationAlert(
     return { fired: false, reason: null, current: "unknown" };
   }
 
-  const { health, lastError } = await computeCurrentHealth(integrationId);
+  const { health, lastError, lastErrorCode } = await computeCurrentHealth(integrationId);
   const prev =
     ((integration as Integration).lastAlertState as
       | IntegrationHealthState
@@ -148,7 +169,7 @@ export async function checkAndDispatchIntegrationAlert(
     return { fired: false, reason: null, current: health };
   }
 
-  const copy = buildAlertCopy(reason, integration as Integration, lastError);
+  const copy = buildAlertCopy(reason, integration as Integration, lastError, lastErrorCode);
   await dispatchAlert({
     alertTarget: (integration as Integration).alertTarget ?? null,
     eventType: copy.eventType,

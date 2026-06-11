@@ -156,5 +156,22 @@ export async function startRuntimeServices(options: {
     log("Skipped QB tracker-reconcile scheduler in SQLite mode.", "Startup:Runtime");
   }
 
+  // Integration credential-expiry sweep: daily countdown of the QB refresh
+  // token + Azure/SharePoint client secrets, paging COO_ADMIN at 30/7/0 days
+  // so a credential never silently lapses during the freeze. Postgres-only.
+  if (!isSqlite) {
+    try {
+      const { scheduleCredentialExpirySweep } = await import(
+        "./integration-credential-expiry-scheduler"
+      );
+      scheduleCredentialExpirySweep();
+      started.push("integration-credential-expiry-scheduler");
+    } catch (err) {
+      log(`[Credential Expiry Sweep] Failed to start: ${err}`, "Startup:Runtime");
+    }
+  } else {
+    log("Skipped credential-expiry sweep in SQLite mode.", "Startup:Runtime");
+  }
+
   return started;
 }

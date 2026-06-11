@@ -38,6 +38,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatRelativeWithAbsoluteZA } from "@/lib/datetime";
 import { ConnectionsSection } from "./role-settings";
 import { DocumentManagementSharePointPanel } from "@/components/admin/document-management-sharepoint-panel";
+import { IntegrationConnectionHealth } from "@/components/admin/integration-connection-health";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -945,6 +946,7 @@ export default function AdminIntegrationsPage() {
         subtitle="Live connection state for every external system the app depends on. Run a manual Excel import, configure the SharePoint auto-import schedule, and verify the imported numbers against the source workbook."
       />
       <div className="space-y-6">
+        <IntegrationConnectionHealth />
         <SmartImportPanel />
         <SharePointAutoImportPanel />
         <DocumentManagementSharePointPanel />
