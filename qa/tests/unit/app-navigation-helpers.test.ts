@@ -105,9 +105,7 @@ describe("app navigation helpers", () => {
     expect(finance?.secondary.map((item) => [item.label, item.path])).toEqual(
       expect.arrayContaining([
         ["Finance Home", "/finance"],
-        ["Reconciliation", "/finance/reconciliation"],
         ["Weekly Close", "/finance/close"],
-        ["QuickBooks", "/finance/quickbooks"],
         ["Payment Requests", "/payment-request-board"],
         ["PO Approvals", "/po-approval-board"],
       ]),

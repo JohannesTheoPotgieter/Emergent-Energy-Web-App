@@ -144,7 +144,10 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // Gated on financials:approve (CFO + COO/CEO admins).
   { id: "financeAuditPrep", path: "/finance/audit-prep", label: "Audit Prep", iconKey: "ShieldCheck", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceAuditPrepPage" },
   // P2.2 — per-project app-vs-tracker reconciliation board. Gated on financials:view.
-  { id: "financeReconciliationBoard", path: "/finance/reconciliation", label: "Reconciliation", iconKey: "GitCompare", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceReconciliationBoardPage" },
+  // Removed from the Finance sidebar (owner direction 2026-06-11 — only "QB
+  // Reconciliation" is wanted as a recon tab). Route kept reachable by URL /
+  // contextual links (Finance Home, QB Reconciliation page).
+  { id: "financeReconciliationBoard", path: "/finance/reconciliation", label: "Reconciliation", iconKey: "GitCompare", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: false, routeComponentKey: "FinanceReconciliationBoardPage" },
   { id: "financeQbReconciliation", path: "/finance/qb-reconciliation", label: "QB Reconciliation", iconKey: "GitCompare", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceQbReconciliationPage" },
   // Per-project Tracker replicas — read-only views that render the source
   // workbook 1:1 with font/fill fidelity. Not in the sidebar; reached from
