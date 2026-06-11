@@ -123,26 +123,36 @@ export const FINANCE_ONLY_MODE = true;
 /**
  * Is the finance-only restriction actively enforced in THIS runtime?
  *
- * Enforced: production deploy (NODE_ENV=production) + unit tests
- * (vitest, NODE_ENV=test). NOT enforced: local dev and the
- * `script/run-with-app.ts` integration / e2e harness (server sets
- * API_TEST_MODE=true; client is served by `npm run dev` → NODE_ENV=development).
+ * Finance-only is a *deploy mode*. Enforced: the production deploy (the built
+ * client bundle in the browser + NODE_ENV=production on the server) and unit
+ * tests (vitest, node), which lock the behaviour. NOT enforced: local dev and
+ * the `script/run-with-app.ts` integration / e2e harness, so the existing
+ * full-app api + e2e suite keeps validating every module.
  *
- * `process.env.NODE_ENV` is statically inlined by Vite in the client bundle, so
- * this resolves correctly on the server, in vitest, and in the browser.
+ * Detection differs by runtime because `process.env.NODE_ENV` is NOT reliable
+ * in the Vite-dev-served browser bundle:
+ *   - BROWSER → use Vite's canonical `import.meta.env.PROD`, which is true ONLY
+ *     for a `vite build` (the production deploy) and false for the dev-served
+ *     client (`npm run dev`, including the run-with-app e2e harness).
+ *   - SERVER / vitest (node) → use `process.env`: not enforced in local dev
+ *     (NODE_ENV=development) or the harness (API_TEST_MODE=true); enforced
+ *     otherwise (production server + vitest's NODE_ENV=test).
  */
 export function isFinanceOnlyEnforced(): boolean {
   if (!FINANCE_ONLY_MODE) return false;
-  // Local dev + the run-with-app e2e client (served by `npm run dev`) → full app.
-  if (process.env.NODE_ENV === "development") return false;
-  // Server-only harness flag — run-with-app sets it for test:api / release:gate.
-  // Guarded so the lookup never runs in the browser bundle.
-  if (
-    typeof window === "undefined" &&
-    typeof process !== "undefined" &&
-    process.env.API_TEST_MODE === "true"
-  ) {
-    return false;
+
+  // BROWSER: only a production build enforces. `import.meta` is read defensively
+  // (the server tsconfig has no Vite env types; the server bundle never reaches
+  // this branch because `window` is undefined there).
+  if (typeof window !== "undefined") {
+    const meta = import.meta as unknown as { env?: { PROD?: boolean } };
+    return meta.env?.PROD === true;
+  }
+
+  // SERVER / vitest (node): enforce unless local dev or the run-with-app harness.
+  if (typeof process !== "undefined" && process.env) {
+    if (process.env.NODE_ENV === "development") return false;
+    if (process.env.API_TEST_MODE === "true") return false;
   }
   return true;
 }
