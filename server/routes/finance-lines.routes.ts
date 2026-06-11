@@ -36,6 +36,22 @@ import {
   type FinanceLine,
   type MonthlyReconRow,
 } from "../repositories/finance-line-level-repository";
+import {
+  FinanceProvenanceRepository,
+  resolveLeafProvenance,
+} from "../repositories/finance-provenance-repository";
+import {
+  buildRevCosGpTree,
+  buildInvoiceLeaf,
+  buildSourceCell,
+  findSumViolations,
+  summariseLines,
+  type DrillLineInput,
+  type DrillNode,
+} from "../lib/finance/finance-drilldown";
+import { getFyWindow } from "../lib/fy-window";
+import { ProjectInfoRepository } from "../repositories/project-info-repository";
+import logger from "../lib/logger";
 import { db } from "../db";
 import {
   categoryRevenueAllocations,
@@ -240,8 +256,62 @@ interface ReconGridMonth {
   byProject: ReconGridProjectRow[];
 }
 
+/** Coerce the `fy` query param to a calendar year (the FY's Aug-close year).
+ * Anything invalid → null, which `getFyWindow` resolves to the current FY
+ * (S8: FY is dynamic, never hardcoded). */
+function parseFy(raw: unknown): number | null {
+  if (raw === undefined || raw === null || raw === "") return null;
+  const n = Number(Array.isArray(raw) ? raw[0] : raw);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+function parseOptionalInt(raw: unknown): number | null {
+  if (raw === undefined || raw === null || raw === "") return null;
+  const n = Number(Array.isArray(raw) ? raw[0] : raw);
+  return Number.isInteger(n) ? n : null;
+}
+
+function parsePageInt(raw: unknown, def: number, max: number, field: string): number {
+  if (raw === undefined || raw === null || raw === "") return def;
+  const n = Number(Array.isArray(raw) ? raw[0] : raw);
+  if (!Number.isInteger(n) || n < 0) {
+    throw badRequest(`${field} must be a non-negative integer`, { [field]: String(raw) });
+  }
+  return Math.min(n, max);
+}
+
+function parseMonthKey(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const v = raw.trim();
+  if (!v) return null;
+  if (v === "unrecognised" || /^\d{4}-\d{2}$/.test(v)) return v;
+  throw badRequest("month must be YYYY-MM or 'unrecognised'", { month: v });
+}
+
+/**
+ * Resolve the project scope for a drill request. An explicit
+ * `projectIds=1,2,3` list scopes to those (active only); omitting it scopes
+ * to every active project. Returns both the id list and an id→name label map
+ * for the project nodes. Reads `project_info` via the repository layer only
+ * (no finance numbers).
+ */
+async function resolveProjectScope(
+  rawProjectIds: unknown,
+): Promise<{ projectIds: number[]; labels: Map<number, string> }> {
+  const explicit = parseProjectIdList(rawProjectIds);
+  const projectRepo = new ProjectInfoRepository();
+  const rows = await projectRepo.listActiveIdName(explicit.length > 0 ? explicit : undefined);
+  const labels = new Map<number, string>();
+  for (const r of rows) labels.set(r.id, r.projectName);
+  if (explicit.length > 0) {
+    return { projectIds: explicit.filter((id) => labels.has(id)), labels };
+  }
+  return { projectIds: rows.map((r) => r.id), labels };
+}
+
 export function registerFinanceLinesRoutes(app: Express): void {
   const repo = new FinanceLineLevelRepository();
+  const provenanceRepo = new FinanceProvenanceRepository();
 
   app.get(
     "/api/finance/lines/:projectId",
@@ -694,6 +764,161 @@ export function registerFinanceLinesRoutes(app: Express): void {
       } catch (err) {
         if (err instanceof ApiError) throw err;
         const wrapped = serverError("Failed to compute recon grid");
+        (wrapped as unknown as { cause?: unknown }).cause = err;
+        throw wrapped;
+      }
+    },
+  );
+
+  /**
+   * Drill-down tree — FY → month → project → category, aggregated.
+   *
+   *   GET /api/finance/drill/tree?fy=2026&projectIds=8,7,19
+   *
+   * Every node's REV / COS / GP (+ realised vs forecast split) is the SUM of
+   * the canonical per-line values from `getPortfolioFinanceLines` (§ 3.3.1).
+   * No number is computed here — this is a grouping view over the single read
+   * path. Invoice leaves are NOT inlined (lazy-loaded via /drill/invoices) so
+   * the response stays small on full production volume. The FY window is
+   * resolved dynamically (S8) via `getFyWindow`; omit `projectIds` to scope to
+   * every active project.
+   */
+  app.get(
+    "/api/finance/drill/tree",
+    requireAuth,
+    requirePermission("financials", "view"),
+    async (req: Request, res: Response) => {
+      try {
+        const fy = parseFy(req.query.fy);
+        const { projectIds, labels } = await resolveProjectScope(req.query.projectIds);
+        const fyWindow = getFyWindow({ fy });
+
+        const lines: FinanceLine[] = projectIds.length === 0
+          ? []
+          : await repo.getPortfolioFinanceLines(projectIds, {
+              fyStart: fyWindow.fyStartIso,
+              fyEnd: fyWindow.fyEndIso,
+            });
+
+        const tree = buildRevCosGpTree(lines as unknown as DrillLineInput[], {
+          fyLabel: fyWindow.fyLabel,
+          projectLabels: labels,
+          includeInvoices: false,
+        });
+
+        // Defensive read-path self-check: children must sum to parent within
+        // R1 at every level (the drill's core invariant). Logged, never thrown
+        // (§ 0A — the app records, it does not block a read).
+        const violations = findSumViolations(tree, 1);
+        if (violations.length > 0) {
+          logger.warn(
+            `[finance/drill/tree] sum(children)!=parent on ${violations.length} node(s) (fy=${fyWindow.fy})`,
+            { violations: violations.slice(0, 5) },
+          );
+        }
+
+        res.json({
+          fy: fyWindow.fy,
+          fyLabel: fyWindow.fyLabel,
+          fyStart: fyWindow.fyStartIso,
+          fyEnd: fyWindow.fyEndIso,
+          projectIds,
+          sumInvariantOk: violations.length === 0,
+          tree,
+        });
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        const wrapped = serverError("Failed to build finance drill tree");
+        (wrapped as unknown as { cause?: unknown }).cause = err;
+        throw wrapped;
+      }
+    },
+  );
+
+  /**
+   * Drill-down invoice leaves for one category node, paginated.
+   *
+   *   GET /api/finance/drill/invoices
+   *     ?fy=2026&projectId=8&categoryAllocationId=123&month=2026-06
+   *     &limit=100&offset=0
+   *
+   * Returns the canonical lines under a (project, month, category) node as
+   * invoice leaves — invoice no (col S), invoice-raised date (col T), COS
+   * (col Q), derived revenue, GP, realised/forecast flag, PO (col R) — each
+   * carrying its tracker SOURCE CELL (sheet ▸ row ▸ col) for traceability.
+   * The `subtotal` ties the page back to the parent category node. No number
+   * is computed — values come straight from `getProjectFinanceLines`.
+   */
+  app.get(
+    "/api/finance/drill/invoices",
+    requireAuth,
+    requirePermission("financials", "view"),
+    async (req: Request, res: Response) => {
+      try {
+        const projectId = parseProjectId(req.query.projectId);
+        const fy = parseFy(req.query.fy);
+        const fyWindow = getFyWindow({ fy });
+        const month = parseMonthKey(req.query.month);
+        const categoryAllocationId = parseOptionalInt(req.query.categoryAllocationId);
+        const categoryKey =
+          typeof req.query.categoryKey === "string" && req.query.categoryKey.trim()
+            ? req.query.categoryKey.trim().toLowerCase()
+            : null;
+        const limit = parsePageInt(req.query.limit, 100, 500, "limit");
+        const offset = parsePageInt(req.query.offset, 0, Number.MAX_SAFE_INTEGER, "offset");
+
+        const lines = await repo.getProjectFinanceLines(projectId, {
+          fyStart: fyWindow.fyStartIso,
+          fyEnd: fyWindow.fyEndIso,
+        });
+
+        const filtered = lines.filter((l) => {
+          if (month != null && (l.recognitionMonth ?? "unrecognised") !== month) return false;
+          if (categoryAllocationId != null) {
+            return l.categoryAllocationId === categoryAllocationId;
+          }
+          if (categoryKey != null) {
+            if (l.categoryAllocationId != null) return false;
+            return (l.categoryKey ?? "uncategorised").trim().toLowerCase() === categoryKey;
+          }
+          return true;
+        });
+
+        const subtotal = summariseLines(filtered as unknown as DrillLineInput[]);
+        const leaves: DrillNode[] = filtered
+          .map((l) => buildInvoiceLeaf(l as unknown as DrillLineInput))
+          .sort((a, b) => {
+            const da = a.invoiceRaisedDate ?? "";
+            const dbb = b.invoiceRaisedDate ?? "";
+            if (da !== dbb) return da.localeCompare(dbb);
+            return (a.parentLineId ?? 0) - (b.parentLineId ?? 0);
+          });
+
+        const page = leaves.slice(offset, offset + limit);
+        const provenance = await provenanceRepo.getProvenanceForProjects([projectId]);
+        for (const leaf of page) {
+          const p = resolveLeafProvenance(provenance, leaf.lineId ?? 0, leaf.parentLineId ?? 0);
+          leaf.sourceSheet = p.sourceSheet;
+          leaf.sourceRow = p.sourceRow;
+          leaf.sourceCell = buildSourceCell(p.sourceSheet, p.sourceRow, p.sourceCell);
+        }
+
+        res.json({
+          projectId,
+          fy: fyWindow.fy,
+          fyLabel: fyWindow.fyLabel,
+          month,
+          categoryAllocationId,
+          categoryKey,
+          subtotal,
+          total: leaves.length,
+          limit,
+          offset,
+          invoices: page,
+        });
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        const wrapped = serverError("Failed to load drill invoices");
         (wrapped as unknown as { cause?: unknown }).cause = err;
         throw wrapped;
       }

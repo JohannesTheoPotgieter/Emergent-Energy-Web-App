@@ -1,4 +1,4 @@
-import { eq, ilike, inArray } from "drizzle-orm";
+import { and, eq, ilike, inArray, isNull } from "drizzle-orm";
 import { projectInfo, projectExecutionState, type InsertProjectInfo, type ProjectInfo } from "@shared/schema";
 import { db } from "../db";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "../lib/project-info-sync";
@@ -105,6 +105,20 @@ export class ProjectInfoRepository {
       .from(projectInfo)
       .where(ilike(projectInfo.projectName, `%${filter}%`));
     return rows.map((r: { id: number }) => r.id);
+  }
+
+  /**
+   * Active (non-deleted) projects as `{ id, projectName }`. When `ids` is
+   * supplied, restricts to that set (still active-only). Used by the finance
+   * drill to scope and label project nodes without a full row read.
+   */
+  async listActiveIdName(ids?: number[]): Promise<Array<{ id: number; projectName: string }>> {
+    const conds = [isNull(projectInfo.deletedAt)];
+    if (ids && ids.length > 0) conds.push(inArray(projectInfo.id, ids));
+    return this.dbInstance
+      .select({ id: projectInfo.id, projectName: projectInfo.projectName })
+      .from(projectInfo)
+      .where(and(...conds));
   }
 
   /**

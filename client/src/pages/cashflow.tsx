@@ -8,6 +8,7 @@ import { PageHero } from '@/components/finance/PageHero';
 import { KpiTile } from '@/components/finance/KpiTile';
 import { DrillReconciliationFooter } from '@/components/finance/DrillReconciliationFooter';
 import { StaleIndicator } from '@/components/finance/StaleIndicator';
+import { CashflowDrillView } from '@/components/finance/cashflow-drill-view';
 import { Money } from '@/components/ui/money';
 import {
   Tooltip as UiTooltip,
@@ -605,6 +606,9 @@ function DetailRow({
               </span>
             </div>
           </div>
+          {/* Week ▸ line item ▸ invoice drill (groups the same detail leaves;
+              ties to the week series by construction). */}
+          <CashflowDrillView weekStart={weekStart} inflows={data.inflows} outflows={data.outflows} />
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <div className="rounded-lg border border-emerald-200/60 bg-card overflow-hidden">
               <div className="px-4 py-2.5 bg-emerald-50 border-b border-emerald-200/60">
