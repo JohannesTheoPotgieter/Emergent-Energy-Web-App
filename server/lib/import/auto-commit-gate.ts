@@ -23,6 +23,12 @@ import { normalizeAllocationConfidence } from "./utils";
  *  → park for a human. */
 export const OVER_WIPE_THRESHOLD = 0.8;
 
+/** A run auto-commits only if NO project's REV or COS would swing more than
+ *  this percent vs. its current value. A bigger swing (mass re-date, wrong
+ *  file, a sheet edited beyond a routine refresh) parks for a human. The
+ *  default is conservative; the scheduler may pass a project-tuned override. */
+export const NET_DELTA_PARK_THRESHOLD_PCT = 25;
+
 export interface AutoCommitGateSignals {
   /** Unresolved BLOCKER issues in the preview/normalization. */
   hasBlockers: boolean;
@@ -38,6 +44,14 @@ export interface AutoCommitGateSignals {
   hasResurrections: boolean;
   /** The existing scheduler conflict policy decided to park. */
   conflictPolicyParks: boolean;
+  /**
+   * A project's REV or COS would swing beyond the configured net-delta
+   * threshold vs. its current value. Optional — defaults to no swing so
+   * existing callers are unaffected. Compute with `detectNetDeltaExceeded`.
+   */
+  deltaExceeded?: boolean;
+  /** The project / metric / signed-percent that tripped `deltaExceeded`. */
+  deltaExceededDetail?: NetDeltaDetail | null;
 }
 
 export interface AutoCommitDecision {
@@ -67,6 +81,15 @@ export function decideSchedulerAutoCommit(s: AutoCommitGateSignals): AutoCommitD
     return {
       decision: "park",
       reason: `over-wipe: ${Math.round(s.softClosePct * 100)}% of existing rows would close`,
+    };
+  }
+  if (s.deltaExceeded) {
+    const d = s.deltaExceededDetail;
+    return {
+      decision: "park",
+      reason: d
+        ? `net delta: ${d.projectName} ${d.metric} swings ${d.pct > 0 ? "+" : ""}${Math.round(d.pct)}% vs current`
+        : "net delta exceeds threshold",
     };
   }
   if (s.hasResurrections) {
@@ -167,4 +190,64 @@ export function collectCommitLockDates(norm: unknown): Array<string | null | und
     dates.push(rl?.paidDate);
   }
   return dates;
+}
+
+// ---------------------------------------------------------------------------
+// Net-delta guard — park when a project's REV or COS swings beyond a threshold
+// vs. its current value (mass re-date / wrong file / a sheet edited beyond a
+// routine refresh). Pure: the caller supplies the per-project current-vs-next
+// REV/COS totals (the next-totals come from the parsed run; the current totals
+// are read through the canonical finance read path) and this decides.
+// ---------------------------------------------------------------------------
+
+export interface NetDeltaDetail {
+  projectName: string;
+  metric: "REV" | "COS";
+  /** Signed percent swing of the run's value vs. the current value. */
+  pct: number;
+}
+
+export interface ProjectMetricSwing {
+  projectName: string;
+  metric: "REV" | "COS";
+  /** Current (pre-commit) value for the project + metric. */
+  current: number;
+  /** Value this run would produce for the project + metric. */
+  next: number;
+}
+
+/**
+ * Signed percent swing of `next` vs. `current`.
+ *  - both 0            → 0 (no swing).
+ *  - current 0, next≠0 → +Infinity (a metric appearing from nothing is a
+ *    structural change → always over any finite threshold → park).
+ *  - otherwise         → (next − current) / |current| × 100.
+ */
+export function computeMetricSwingPct(current: number, next: number): number {
+  if (!Number.isFinite(current) || !Number.isFinite(next)) return Number.POSITIVE_INFINITY;
+  if (current === 0) return next === 0 ? 0 : Number.POSITIVE_INFINITY;
+  return ((next - current) / Math.abs(current)) * 100;
+}
+
+/**
+ * Decide the net-delta signal: does any project's REV or COS swing beyond
+ * `thresholdPct` (absolute)? Returns the WORST (largest absolute) swing as the
+ * surfaced detail. Empty / missing input → not exceeded (a baseline import with
+ * no prior totals does not trip this; the over-wipe guard covers wipes).
+ */
+export function detectNetDeltaExceeded(
+  swings: ProjectMetricSwing[] | null | undefined,
+  thresholdPct: number = NET_DELTA_PARK_THRESHOLD_PCT,
+): { exceeded: boolean; detail: NetDeltaDetail | null } {
+  if (!Array.isArray(swings) || swings.length === 0) return { exceeded: false, detail: null };
+  let worst: NetDeltaDetail | null = null;
+  for (const s of swings) {
+    const pct = computeMetricSwingPct(s.current, s.next);
+    if (Math.abs(pct) > thresholdPct) {
+      if (!worst || Math.abs(pct) > Math.abs(worst.pct)) {
+        worst = { projectName: s.projectName, metric: s.metric, pct };
+      }
+    }
+  }
+  return worst ? { exceeded: true, detail: worst } : { exceeded: false, detail: null };
 }

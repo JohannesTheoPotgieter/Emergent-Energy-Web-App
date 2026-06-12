@@ -13,7 +13,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Menu, Search, Plus, Calendar, Mail, MessageSquare, CalendarClock, ChevronRight, ChevronDown, Building2, UserCircle2, LogOut, X, Sun, Moon, Monitor, Home, MoreHorizontal, Smartphone, Laptop, MonitorSmartphone, BarChart3, LayoutGrid, Wrench, CheckCircle2, Settings, FolderOpen, ShieldCheck, FileText } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { buildVisibleTopSections, getBreadcrumbs, linkIsActive } from "@/config/app-navigation";
+import { buildVisibleTopSections, getBreadcrumbs, linkIsActive, filterSectionsByEnabledModules } from "@/config/app-navigation";
+import { isFinanceSearchType } from "@shared/config/enabled-modules";
 import { getAvailableQuickCreateActions } from "@/lib/action-access";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
 import { useNavPreferences } from "@/hooks/use-nav-preferences";
@@ -127,11 +128,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   );
 
   const visibleSections = useMemo(() => {
-    const sections = buildVisibleTopSections({
-      canViewPath,
-      companyRole: effectiveRole,
-      disabledSubPages: disabledSubPages,
-    });
+    // Finance-only module gate: drop top-nav sections whose module is disabled
+    // (no-op when FINANCE_ONLY_MODE is off). Applied on top of the role/
+    // permission filtering so re-enabling a module in the registry restores its
+    // nav for exactly the roles that already had it.
+    const sections = filterSectionsByEnabledModules(
+      buildVisibleTopSections({
+        canViewPath,
+        companyRole: effectiveRole,
+        disabledSubPages: disabledSubPages,
+      }),
+    );
 
     // Filter out any secondary nav items whose screen has been disabled by admin.
     const filtered = sections
@@ -249,7 +256,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       People: [],
     };
 
+    // Finance-only: drop any non-finance result types so tasks / people /
+    // engineering / documents never leak into the global search dropdown.
     for (const r of results) {
+      if (!isFinanceSearchType(r.type)) continue;
       if (r.type === "project") map.Projects.push(r);
       else if (["task", "engineering", "quality"].includes(r.type)) map["Work Items"].push(r);
       else if (["cost", "revenue", "po", "invoice"].includes(r.type)) map.Finance.push(r);
@@ -369,7 +379,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Escape") setSearchTerm(""); }}
-              placeholder={isMobile ? "Search..." : "Search projects, tasks, people..."}
+              placeholder={isMobile ? "Search..." : "Search projects, invoices, finance lines..."}
               className={cn(
                 "h-9 bg-muted/35 pl-9 pr-9 xl:pr-24 border-transparent hover:border-border focus-visible:border-border focus-visible:bg-background focus-visible:ring-ring/20 transition-colors",
                 searchTerm && "bg-background border-border pr-9",

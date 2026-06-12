@@ -18,6 +18,7 @@ import { registerInfoRoutes } from "./register-info-routes";
 import { registerSupportRoutes } from "./register-support-routes";
 import { registerExtractedRoutes } from "./route-registry";
 import { applyLegacyUrlAliases } from "../middleware/legacy-url-aliases";
+import { financeOnlyApiGate } from "../middleware/finance-only-gate";
 import {
   FINANCE_SCHEMA_GATE_PREFIXES,
   financeSchemaReadinessGate,
@@ -29,6 +30,13 @@ export async function registerAllRoutes(options: {
   log: (message: string, source?: string) => void;
 }) {
   const { app, httpServer, log } = options;
+
+  // Finance-only module gate. Mounted before any API route registers (and after
+  // the global jwtAuth middleware, so req.user is resolved) so authenticated
+  // requests from roles outside the finance allowlist are blocked at the API
+  // boundary. No-op when FINANCE_ONLY_MODE is off. See
+  // shared/config/enabled-modules.ts and docs/finance-freeze-runbook.md.
+  app.use(financeOnlyApiGate);
 
   // Schema-readiness gate for the finance surface. Mounted before any finance
   // route registers so that, when the DB is behind on migrations, finance

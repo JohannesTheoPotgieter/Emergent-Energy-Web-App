@@ -368,6 +368,77 @@ enabled. The owner sets this once:
 
 ---
 
+## F. Finance-only module — turning other modules back on
+
+During the freeze the app runs as a **finance-only module**: only Finance (plus
+the platform plumbing finance depends on) is reachable. Every other area is
+hidden from the nav AND hard-blocked + redirected to `/finance` on both client
+and server. Only management + finance roles can enter; all other roles get a
+branded "this area is being updated" landing.
+
+This is **presentation / access configuration only** — it changes **no finance
+number, formula, query, or schema**, so it is *not* part of the frozen finance
+code. You may change the module configuration without breaking the freeze.
+
+### The single source of truth
+
+Everything derives from one file:
+
+> **`shared/config/enabled-modules.ts`**
+
+| Knob | What it does |
+|---|---|
+| `FINANCE_ONLY_MODE` | Master switch. `false` lifts the whole restriction (every module + role back on). |
+| `FINANCE_ONLY_MODULE_CONFIG.navGroups` | Per-navGroup enablement: `{ mode: "full" }`, `{ mode: "disabled" }`, or `{ mode: "partial"; pageIds }`. |
+| `ENABLED_SYSTEM_PAGE_IDS` | The finance plumbing pages kept on inside the (otherwise disabled) SYSTEM group. |
+| `FINANCE_MODULE_ROLE_ALLOWLIST` | The 7 management + finance roles allowed into the module. |
+
+### Re-enable ONE module (one-line change)
+
+To bring a hidden module back (e.g. Engineering), flip its entry from
+`{ mode: "disabled" }` to `{ mode: "full" }`:
+
+```ts
+// shared/config/enabled-modules.ts → FINANCE_ONLY_MODULE_CONFIG.navGroups
+ENGINEERING: { mode: "full" },   // was: { mode: "disabled" }
+```
+
+That one line restores **both** its top-nav section AND its routes (deep-links
+stop redirecting to `/finance`), for exactly the roles that already had access
+in the role/permission model — no other code edits. The valid navGroup keys are
+the page-registry `navGroup` values: `MY_WORK, PORTFOLIO, PRIORITIES,
+PROJECT_DEVELOPMENT, PROJECTS, PROJECT_MANAGEMENT, GATES, FINANCE, ENGINEERING,
+QUALITY, HSE, REPORTS, KNOWLEDGE, SYSTEM`.
+
+To enable just *some* pages of a group, use `{ mode: "partial", pageIds: [...] }`
+with page-registry `id`s (this is how SYSTEM keeps only the finance plumbing).
+
+### Turn the whole thing off
+
+Set `FINANCE_ONLY_MODE = false`. Nav, routing, search scoping, the no-access
+gate and the server API gate all become no-ops and the app returns to its full
+multi-module behaviour.
+
+### Add / remove an allowed role
+
+Edit `FINANCE_MODULE_ROLE_ALLOWLIST` (values must be real `COMPANY_ROLES` from
+`shared/schema/users.ts`). Removing a role sends it to the no-access landing and
+blocks its non-auth API calls; adding one lets it into the finance module.
+
+### Proof + guardrails
+
+- `qa/tests/unit/finance-only-module.test.ts` locks the config and **proves
+  reversibility** (flipping a navGroup to `full` restores its routes + nav).
+- Client gate: `client/src/App.tsx` (`FinanceModuleGate` + per-route redirect),
+  nav filter in `client/src/config/app-navigation.ts`
+  (`filterSectionsByEnabledModules`).
+- Server gate: `server/middleware/finance-only-gate.ts` (mounted in
+  `server/routes/register-all-routes.ts`).
+
+After any change run `npm run check && npm run test && npm run build`.
+
+---
+
 ## Appendix — files referenced by this runbook
 
 | Purpose | Path |

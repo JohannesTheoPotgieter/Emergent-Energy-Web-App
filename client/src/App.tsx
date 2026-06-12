@@ -24,6 +24,13 @@ import { Button } from "@/components/ui/button";
 import { lazyWithRetry } from "@/lib/lazy-with-retry";
 import { ROUTE_COMPONENTS } from "@/config/route-components";
 import { useScreenAvailability } from "@/hooks/use-screen-availability";
+import { FinanceModuleNoAccess } from "@/components/FinanceModuleNoAccess";
+import {
+  isFinanceOnlyEnforced,
+  FINANCE_ONLY_LANDING_PATH,
+  isPageEnabled,
+  isRoleAllowedInFinanceModule,
+} from "@shared/config/enabled-modules";
 
 // Eagerly loaded pages (critical path — login, home, not-found)
 import LoginPage from "@/pages/login";
@@ -31,7 +38,15 @@ import HomePage from "@/pages/home";
 import NotFound from "@/pages/not-found";
 import MsCallbackPage from "@/pages/ms-callback";
 
-type RouteConfig = { path: string; component?: React.ComponentType<any>; redirectTo?: string };
+type RouteConfig = {
+  path: string;
+  component?: React.ComponentType<any>;
+  redirectTo?: string;
+  // Carried so the finance-only module gate can decide reachability per route
+  // (see shared/config/enabled-modules.ts). Absent on legacy redirects.
+  navGroup?: string;
+  pageId?: string;
+};
 
 const NAVIGATION_MODE = {
   desktop: "cockpit",
@@ -47,7 +62,7 @@ const APP_ROUTES: RouteConfig[] = [
     if (page.redirectTo) {
       routes.push({ path: page.path, redirectTo: page.redirectTo });
     } else if (page.routeComponentKey && ROUTE_COMPONENTS[page.routeComponentKey]) {
-      routes.push({ path: page.path, component: ROUTE_COMPONENTS[page.routeComponentKey] });
+      routes.push({ path: page.path, component: ROUTE_COMPONENTS[page.routeComponentKey], navGroup: page.navGroup, pageId: page.id });
     }
 
     for (const alias of page.aliases ?? []) {
@@ -55,7 +70,7 @@ const APP_ROUTES: RouteConfig[] = [
       // be redirected because the param names differ. Render the same component directly
       // — the page itself handles canonical-URL redirect once it resolves the identity.
       if (alias.includes(":") && page.routeComponentKey && ROUTE_COMPONENTS[page.routeComponentKey]) {
-        routes.push({ path: alias, component: ROUTE_COMPONENTS[page.routeComponentKey] });
+        routes.push({ path: alias, component: ROUTE_COMPONENTS[page.routeComponentKey], navGroup: page.navGroup, pageId: page.id });
       } else {
         routes.push({ path: alias, redirectTo: page.path });
       }
@@ -171,7 +186,9 @@ function ProtectedPages() {
       <Suspense fallback={<div className="space-y-6 p-6"><LoadingState variant="skeleton-card" cards={4} /><LoadingState variant="skeleton-table" rows={6} /></div>}>
       <div className="page-enter">
         <Switch>
-          <Route path="/" component={HomePage} />
+          <Route path="/">
+            {() => (isFinanceOnlyEnforced() ? <Redirect to={FINANCE_ONLY_LANDING_PATH} /> : <HomePage />)}
+          </Route>
           {APP_ROUTES.map((route) => {
             if (route.redirectTo) {
               return <Route key={route.path} path={route.path}>{() => <Redirect to={route.redirectTo!} />}</Route>;
@@ -181,6 +198,13 @@ function ProtectedPages() {
             return (
               <Route key={route.path} path={route.path}>
                 {() => {
+                  // Finance-only module gate: any route whose navGroup is
+                  // disabled is hard-blocked and redirected to /finance so a
+                  // disabled page is unreachable by deep-link. No-op when
+                  // FINANCE_ONLY_MODE is off. See shared/config/enabled-modules.ts.
+                  if (!isPageEnabled({ id: route.pageId, navGroup: route.navGroup })) {
+                    return <Redirect to={FINANCE_ONLY_LANDING_PATH} />;
+                  }
                   // Per COO spec (2026-05-11): disabled screens return 404, not
                   // a friendly "unavailable" page. Treat them as if they don't
                   // exist so bookmarks and deep links fail closed.
@@ -213,6 +237,24 @@ function ScreenAvailabilityWarning() {
   );
 }
 
+/**
+ * Finance-only role gate. Renders the branded no-access landing for any
+ * authenticated role outside the finance-module allowlist BEFORE ProtectedPages
+ * mounts — so the layout, lens context, permission matrix and screen-settings
+ * queries never fire for users who aren't permitted in (no data calls). No-op
+ * when FINANCE_ONLY_MODE is off. See shared/config/enabled-modules.ts.
+ */
+function FinanceModuleGate({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+  const effectiveRole = normalizeRoleForPermissions(user?.role || companyRole);
+
+  if (isFinanceOnlyEnforced() && effectiveRole && !isRoleAllowedInFinanceModule(effectiveRole)) {
+    return <FinanceModuleNoAccess />;
+  }
+  return <>{children}</>;
+}
+
 function Router() {
   return (
     <Switch>
@@ -221,7 +263,9 @@ function Router() {
       <Route path="/auth/ms-callback" component={MsCallbackPage} />
       <Route>
         <ProtectedRoute>
-          <ProtectedPages />
+          <FinanceModuleGate>
+            <ProtectedPages />
+          </FinanceModuleGate>
         </ProtectedRoute>
       </Route>
     </Switch>

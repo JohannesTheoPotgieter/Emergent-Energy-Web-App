@@ -22,8 +22,12 @@ import {
   detectErrorOnRev,
   detectMissingAllocationOnNewLines,
   collectCommitLockDates,
+  computeMetricSwingPct,
+  detectNetDeltaExceeded,
   OVER_WIPE_THRESHOLD,
+  NET_DELTA_PARK_THRESHOLD_PCT,
   type AutoCommitGateSignals,
+  type ProjectMetricSwing,
 } from "../../../server/lib/import/auto-commit-gate";
 
 const CLEAN: AutoCommitGateSignals = {
@@ -71,6 +75,69 @@ describe("auto-commit gate — decision", () => {
       softClosePct: 0.99,
     });
     expect(d.reason).toContain("locked period");
+  });
+
+  it("net-delta over threshold parks; the clean path is unchanged when absent", () => {
+    // Absent (optional) signal → still clean (no behaviour change for callers
+    // that don't yet compute the swing).
+    expect(decideSchedulerAutoCommit(CLEAN)).toEqual({ decision: "commit", reason: "clean" });
+    const d = decideSchedulerAutoCommit({
+      ...CLEAN,
+      deltaExceeded: true,
+      deltaExceededDetail: { projectName: "Solar Alpha", metric: "COS", pct: 42 },
+    });
+    expect(d.decision).toBe("park");
+    expect(d.reason).toContain("net delta");
+    expect(d.reason).toContain("Solar Alpha");
+    expect(d.reason).toContain("COS");
+    expect(d.reason).toContain("+42%");
+  });
+
+  it("over-wipe still wins over net-delta (worst-first ordering)", () => {
+    const d = decideSchedulerAutoCommit({
+      ...CLEAN,
+      softClosePct: 0.9,
+      deltaExceeded: true,
+      deltaExceededDetail: { projectName: "Solar Alpha", metric: "REV", pct: 80 },
+    });
+    expect(d.reason).toContain("over-wipe");
+  });
+});
+
+describe("auto-commit gate — net-delta guard (REV/COS swing)", () => {
+  it("computeMetricSwingPct handles zero / appearance / non-finite", () => {
+    expect(computeMetricSwingPct(0, 0)).toBe(0);
+    expect(computeMetricSwingPct(100, 125)).toBeCloseTo(25);
+    expect(computeMetricSwingPct(100, 50)).toBeCloseTo(-50);
+    // A metric appearing from nothing is a structural change → always parks.
+    expect(computeMetricSwingPct(0, 1)).toBe(Number.POSITIVE_INFINITY);
+    expect(computeMetricSwingPct(Number.NaN, 5)).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it("detectNetDeltaExceeded: within threshold commits, beyond parks with the WORST swing", () => {
+    const within: ProjectMetricSwing[] = [
+      { projectName: "A", metric: "REV", current: 100, next: 110 }, // +10%
+      { projectName: "B", metric: "COS", current: 200, next: 180 }, // -10%
+    ];
+    expect(detectNetDeltaExceeded(within).exceeded).toBe(false);
+
+    const beyond: ProjectMetricSwing[] = [
+      { projectName: "A", metric: "REV", current: 100, next: 130 }, // +30% (> 25)
+      { projectName: "B", metric: "COS", current: 200, next: 50 }, //  -75% (worst)
+    ];
+    const r = detectNetDeltaExceeded(beyond);
+    expect(r.exceeded).toBe(true);
+    expect(r.detail).toEqual({ projectName: "B", metric: "COS", pct: -75 });
+  });
+
+  it("honours a custom threshold and ignores baseline (empty) runs", () => {
+    const swings: ProjectMetricSwing[] = [{ projectName: "A", metric: "REV", current: 100, next: 120 }];
+    // 20% swing: parks at a 10% threshold, commits at the default 25%.
+    expect(detectNetDeltaExceeded(swings, 10).exceeded).toBe(true);
+    expect(detectNetDeltaExceeded(swings, NET_DELTA_PARK_THRESHOLD_PCT).exceeded).toBe(false);
+    // Baseline import — no prior totals to compare → never trips this guard.
+    expect(detectNetDeltaExceeded([]).exceeded).toBe(false);
+    expect(detectNetDeltaExceeded(null).exceeded).toBe(false);
   });
 });
 
