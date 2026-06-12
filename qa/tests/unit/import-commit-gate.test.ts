@@ -24,6 +24,7 @@ import {
   collectCommitLockDates,
   computeMetricSwingPct,
   detectNetDeltaExceeded,
+  buildProjectMetricSwings,
   OVER_WIPE_THRESHOLD,
   NET_DELTA_PARK_THRESHOLD_PCT,
   type AutoCommitGateSignals,
@@ -141,6 +142,49 @@ describe("auto-commit gate — net-delta guard (REV/COS swing)", () => {
   });
 });
 
+describe("auto-commit gate — buildProjectMetricSwings (current vs would-be)", () => {
+  it("returns an empty swing set for a baseline project (no current REV or COS)", () => {
+    // First-ever import: a metric appearing from nothing is not a "swing" — the
+    // over-wipe / allocation guards cover that case, not net-delta.
+    expect(buildProjectMetricSwings("A", [], [{ actualTotal: 100, revenueDerived: 200 }])).toEqual([]);
+    expect(
+      buildProjectMetricSwings("A", [{ actualTotal: 0, revenueDerived: 0 }], [{ actualTotal: 5, revenueDerived: 9 }]),
+    ).toEqual([]);
+  });
+
+  it("sums § 3.3 revenueDerived (REV) + actualTotal (COS) for current and next", () => {
+    const current = [
+      { actualTotal: 100, revenueDerived: 200 },
+      { actualTotal: 50, revenueDerived: 60 },
+    ];
+    const next = [{ actualTotal: 150, revenueDerived: 260 }];
+    expect(buildProjectMetricSwings("Solar Alpha", current, next)).toEqual([
+      { projectName: "Solar Alpha", metric: "REV", current: 260, next: 260 },
+      { projectName: "Solar Alpha", metric: "COS", current: 150, next: 150 },
+    ]);
+  });
+
+  it("feeds detectNetDeltaExceeded end-to-end (a >25% COS swing parks)", () => {
+    const swings = buildProjectMetricSwings(
+      "Solar Alpha",
+      [{ actualTotal: 100, revenueDerived: 200 }],
+      [{ actualTotal: 150, revenueDerived: 200 }], // COS 100 → 150 = +50%
+    );
+    const d = detectNetDeltaExceeded(swings, NET_DELTA_PARK_THRESHOLD_PCT);
+    expect(d.exceeded).toBe(true);
+    expect(d.detail).toEqual({ projectName: "Solar Alpha", metric: "COS", pct: 50 });
+  });
+
+  it("a routine refresh (small swing) does not trip the guard", () => {
+    const swings = buildProjectMetricSwings(
+      "Solar Alpha",
+      [{ actualTotal: 100, revenueDerived: 200 }],
+      [{ actualTotal: 105, revenueDerived: 205 }], // +5% COS, +2.5% REV
+    );
+    expect(detectNetDeltaExceeded(swings, NET_DELTA_PARK_THRESHOLD_PCT).exceeded).toBe(false);
+  });
+});
+
 describe("auto-commit gate — pure signal extractors", () => {
   it("computeSoftClosePct = Σ missing / Σ existing (0 when no existing rows)", () => {
     expect(
@@ -200,6 +244,26 @@ describe("commit-gate wiring + financial safety", () => {
     expect(schedulerSrc).toContain("decideSchedulerAutoCommit(");
     expect(schedulerSrc).toContain("enforceCosPeriodLock(");
     expect(schedulerSrc).toContain("autoCommitGate");
+  });
+
+  it("feeds the net-delta guard from the dry-run preview + canonical read, parks + notifies", () => {
+    // "Would-be" totals come from the dry-run preview (real commit, rolled back) —
+    // no parallel formula — and current totals from the canonical recon read.
+    expect(schedulerSrc).toContain("getReconciliationDetail(db");
+    expect(schedulerSrc).toContain("dryRun: true");
+    expect(schedulerSrc).toContain("buildProjectMetricSwings(");
+    expect(schedulerSrc).toContain("detectNetDeltaExceeded(");
+    // Parks (does NOT auto-commit) on a swing, before the real commit call.
+    expect(schedulerSrc).toContain("maybeParkOnNetDelta(");
+    expect(schedulerSrc).toMatch(/if \(parkedByDelta\) return \{ status: "parked"/);
+    const parkIdx = schedulerSrc.indexOf("maybeParkOnNetDelta({");
+    const realCommitIdx = schedulerSrc.indexOf("const commitResult = await commitSmartImportRunAsSystem(");
+    expect(parkIdx).toBeGreaterThan(-1);
+    expect(realCommitIdx).toBeGreaterThan(parkIdx); // guard runs BEFORE the real commit
+    // Notifies the finance reviewers in-app (Teams alert fires via the outcome path).
+    expect(schedulerSrc).toContain("notifyNetDeltaPark(");
+    expect(schedulerSrc).toContain('eventType: "import_net_delta_park"');
+    expect(schedulerSrc).toContain("NET_DELTA_NOTIFY_ROLES");
   });
 
   it("(c) the commit path is lock-aware and refreshes reconciliation after writing", () => {
