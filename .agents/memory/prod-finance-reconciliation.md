@@ -48,3 +48,20 @@ aggregation/derivation layer.
 
 **Why:** these distortions are what make the dashboard diverge from the trackers; the fix is
 in derivation/import logic and data hygiene, not in re-importing the raw numbers.
+
+## Two distinct prod RO paths (use the simpler one)
+- `CLAUDE_RO_DATABASE_URL` = privilege-filtered, base `public` denied → must read `claude_views.*`.
+- The database-skill `executeSql({ environment: "production" })` hits a prod read-REPLICA with
+  direct SELECT on base `public` tables (e.g. `normalized_cost_lines`, `project_revenue_summary`).
+  Same two filters still mandatory: `effective_to IS NULL` + FY window on parsed `invoice_date`.
+
+## Recurring: stored `cos_realised` is NOT as-at gated (re-confirmed after a re-import)
+The runtime gate `isCanonicalCosRealised()` excludes future MONTHS, but the persisted
+`normalized_cost_lines.cos_realised` column is set at import from font colour only. So any
+surface that sums the raw column (KPI tiles, some views) over-counts by the future block;
+the FYE dashboard (clamps Actual to last CALENDAR closed month = month before today) does NOT.
+A re-import re-introduced the future block: portfolio ungated realised ≈ 1.3× the
+month-before-today figure, and a single big multi-month project (Mondi) ≈ 2× (its future
+Jun–Aug lines ≈ its whole realised-to-date). Always source "realised" from the FYE pipeline /
+`isCanonicalCosRealised()`, never the stored flag. `project_revenue_summary.actual_revenue` is
+whole-life contract revenue (actual≈planned, stale snapshot), NOT FY realised — never compare it.
