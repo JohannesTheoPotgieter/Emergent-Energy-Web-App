@@ -1,2 +1,1 @@
-- [Claude read-only prod access](claude-ro-views.md) — CLAUDE_RO_DATABASE_URL exposes only `claude_views.*` snapshot-dated views, never base tables.
-- [Golden oracle finance reconciliation](golden-oracle-finance.md) — oracle realised REV is a prod-derived blend, not reproducible from one raw tracker surface; prod cost-line view inflates Mondi/Coega ~2×.
+- [dev DB topology](dev-db-topology.md) — database-skill `executeSql` hits a DIFFERENT Postgres than the app; mutate the real dev DB (`heliumdb`) via `process.env.DATABASE_URL` in a bash-run Node script.
