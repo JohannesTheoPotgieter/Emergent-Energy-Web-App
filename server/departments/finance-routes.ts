@@ -303,6 +303,7 @@ import { recordOverride } from '../lib/audit/diff-engine';
 // § 3.3 canonical revenue-recognition helper. All "Revenue" KPIs MUST come
 // from this — see docs/AGENT_GUARDRAILS.md § 3.3.
 import { FinanceLineLevelRepository } from '../repositories/finance-line-level-repository';
+import { canonicalRealisedByMonth } from '../lib/finance/canonical-realised-by-month';
 import { isWorkItemsEnabled, getWorkItemsAsOperationalTasks } from '../work-items-adapter';
 import { refreshProjectMetricsAsync } from '../services/dashboard-metrics';
 import { createNotification } from '../services/notification-service';
@@ -2667,30 +2668,23 @@ router.get('/api/cos-tracker', requireAuth, requirePermission('cos', 'view'), as
       if (!hasAmt && hasInvoice) cosNullCount += 1;
     }
 
-    // ── Single engine (owner decision 2026-06): realised/committed/planned COS
-    // come from the reconciled FYE engine — the curated (48-project),
-    // classifyFyeState, per-invoice lines the FYE Tracking Report and the
-    // reconciliation test use — so this tab matches the trackers. The
-    // app-only-pending QB-reconciliation drilldown below stays on the
-    // QB-link-aware app rows (FYE does not model QB links). Replaces the old
-    // per-handler COS classification for this tab.
+    // ── REALISED ← canonical § 3.3.2 single read path (read-map enforcement,
+    // fix/two-sheet-canonical-source). Realised COS now rolls up from the
+    // per-project Expenditure Breakdown ledger via canonicalRealisedByMonth
+    // (the (Q/X)×J formula + § 3.2 realisation gate on the col-T month),
+    // superseding the prior FYE-engine realised source so REV/COS/GP read from
+    // ONE path. COMMITTED / PLANNED stay on the reconciled FYE engine (forecast
+    // overlay), and the app-only-pending QB drilldown below stays on the
+    // QB-link-aware app rows (FYE does not model QB links).
     const fyeYear = fyScope.fy ?? getCurrentFinanceYear();
     const fye = await buildFyeTracking(fyeYear);
-    const fyeLastClosed = fye.dashboard.lastClosedMonthKey;
     const countedNames = new Set(
       fye.projectTable.rows.filter((r) => !r.excludedFromTotals).map((r) => r.project),
     );
     for (const ms of fye.monthlyStates) {
       if (!monthKeyInFinanceScope(ms.monthKey, fyScope)) continue;
-      // Realised clamped to last closed (mirrors the FYE "Actual" clamp) so
-      // YTD realised == the FYE Tracking Report's.
-      const isClosed = fyeLastClosed ? ms.monthKey <= fyeLastClosed : true;
-      if (isClosed && ms.cos.realised.total !== 0) {
-        realisedByMonth.set(ms.monthKey, {
-          total: ms.cos.realised.total,
-          projects: new Map(ms.cos.realised.projects),
-        });
-      }
+      // Realised is sourced from the canonical line repo below
+      // (canonicalRealisedByMonth). COMMITTED / PLANNED stay on the FYE engine.
       if (ms.cos.committed.total !== 0) {
         committedByMonth.set(ms.monthKey, {
           total: ms.cos.committed.total,
@@ -2704,6 +2698,19 @@ router.get('/api/cos-tracker', requireAuth, requirePermission('cos', 'view'), as
         ms.cos.unrealised.projects.forEach((v, k) => projects.set(k, (projects.get(k) ?? 0) + v));
         plannedByMonth.set(ms.monthKey, { total: plannedTotal, projects });
       }
+    }
+
+    // Realised COS ← canonical single read path (finance-line-level-repository),
+    // summed across every active project's ledger. This is the read-map
+    // enforcement seam; committed/planned above stay the FYE forecast overlay.
+    const canonicalCosRealised = await canonicalRealisedByMonth({
+      metric: 'cos',
+      fyStart: fyScope.startDate ?? undefined,
+      fyEnd: fyScope.endDate ?? undefined,
+    });
+    for (const [monthKey, entry] of canonicalCosRealised) {
+      if (!monthKeyInFinanceScope(monthKey, fyScope)) continue;
+      realisedByMonth.set(monthKey, entry);
     }
 
     // App-only pending QB-reconciliation drilldown: "invoice captured but date
@@ -5326,12 +5333,12 @@ router.get(
       // project-pooled formula and are now unused — per-line POC revenue is
       // read from the § 3.3.2 single read path (finance-line-level-repository).
 
-      // ── Single engine (owner decision 2026-06): GP = Revenue − COS, both
-      // sourced from the reconciled FYE engine (curated 48-project,
-      // classifyFyeState, per-invoice lines) so the GP tab matches the FYE
-      // Tracking Report + trackers. Replaces the recognition-bucketing path.
+      // ── REALISED GP ← canonical § 3.3.2 single read path (read-map
+      // enforcement, fix/two-sheet-canonical-source): realised REV/COS roll up
+      // from the per-project ledgers via canonicalRealisedByMonth, superseding
+      // the FYE-engine realised source so company GP reads from ONE path. The
+      // month TOTAL (all states) + per-project GP stay the FYE forecast overlay.
       const fye = await buildFyeTracking(getCurrentFinanceYear());
-      const fyeLastClosed = fye.dashboard.lastClosedMonthKey;
       // SAST month anchor — still used by the downstream month loop to mark the
       // current/closed boundary.
       const currentMonthKey = sastCurrentMonthKey();
@@ -5358,17 +5365,25 @@ router.get(
       for (const ms of fye.monthlyStates) {
         cosByMonth.set(ms.monthKey, sumStates(ms.cos));
         revByMonth.set(ms.monthKey, sumStates(ms.revenue));
-        // Realised clamped to last closed (mirrors the FYE "Actual" clamp).
-        const isClosed = fyeLastClosed ? ms.monthKey <= fyeLastClosed : true;
-        if (isClosed) {
-          realisedCosByMonth.set(ms.monthKey, ms.cos.realised.total);
-          realisedRevByMonth.set(ms.monthKey, ms.revenue.realised.total);
-        }
+        // Realised is sourced from the canonical line repo after this loop.
         for (const st of ['realised', 'committed', 'planned', 'unrealised'] as const) {
           ms.revenue[st].projects.forEach((v, name) => bumpPg(name, v, 0));
           ms.cos[st].projects.forEach((v, name) => bumpPg(name, 0, v));
         }
       }
+
+      // Realised REV/COS ← canonical single read path (finance-line-level-
+      // repository), summed across every active project's ledger (read-map
+      // enforcement). cosByMonth/revByMonth totals stay the FYE overlay.
+      const gpFyStart = `${getCurrentFinanceYear() - 1}-09-01`;
+      const gpFyEnd = `${getCurrentFinanceYear()}-08-31`;
+      const [canonGpCos, canonGpRev] = await Promise.all([
+        canonicalRealisedByMonth({ metric: 'cos', fyStart: gpFyStart, fyEnd: gpFyEnd }),
+        canonicalRealisedByMonth({ metric: 'revenue', fyStart: gpFyStart, fyEnd: gpFyEnd }),
+      ]);
+      for (const [mk, entry] of canonGpCos) realisedCosByMonth.set(mk, entry.total);
+      for (const [mk, entry] of canonGpRev) realisedRevByMonth.set(mk, entry.total);
+
       for (const pg of projectGpMap.values()) {
         pg.gp = pg.revenue - pg.cos;
         pg.gpPct = pg.revenue !== 0 ? (pg.gp / pg.revenue) * 100 : 0;
@@ -5627,36 +5642,40 @@ async function revenueTrackerHandler(req: Request, res: Response) {
       cosByProject.set(pName, (cosByProject.get(pName) || 0) + amount);
     }
 
-    // ── Single engine (owner decision 2026-06): Revenue states come from the
-    // reconciled FYE engine — the same curated (48-project), classified,
-    // per-invoice lines the FYE Tracking Report and the reconciliation test
-    // use — so this tab matches the trackers to the cent. (QuickBooks + manual
-    // budget below stay tab-specific.) Replaces the old per-handler
-    // recognition-bucketing path for this tab.
+    // ── REALISED ← canonical § 3.3.2 single read path (read-map enforcement,
+    // fix/two-sheet-canonical-source). Realised revenue now rolls up from the
+    // per-project Expenditure Breakdown ledger via canonicalRealisedByMonth
+    // (the (Q/X)×J formula + § 3.2 realisation gate on the col-T month),
+    // superseding the prior FYE-engine realised source so REV/COS/GP read from
+    // ONE path. The month TOTAL (all four states) stays on the reconciled FYE
+    // engine as the forecast overlay; QuickBooks + manual budget stay tab-specific.
     const fyeYear = fyScope.fy ?? getCurrentFinanceYear();
     const fye = await buildFyeTracking(fyeYear);
-    const fyeLastClosed = fye.dashboard.lastClosedMonthKey;
 
     const revByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
     const realisedByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
     for (const ms of fye.monthlyStates) {
       if (!monthKeyInFinanceScope(ms.monthKey, fyScope)) continue;
-      // Total recognised revenue for the month = all four states.
+      // Total recognised revenue for the month = all four states (FYE overlay).
       const total = { total: 0, projects: new Map<string, number>() };
       for (const st of [ms.revenue.realised, ms.revenue.committed, ms.revenue.planned, ms.revenue.unrealised]) {
         total.total += st.total;
         st.projects.forEach((v, k) => total.projects.set(k, (total.projects.get(k) ?? 0) + v));
       }
       revByMonth.set(ms.monthKey, total);
-      // Realised is clamped to the last CLOSED month (mirrors the FYE dashboard
-      // "Actual" clamp) so YTD realised == the FYE Tracking Report's.
-      const isClosed = fyeLastClosed ? ms.monthKey <= fyeLastClosed : true;
-      if (isClosed && ms.revenue.realised.total !== 0) {
-        realisedByMonth.set(ms.monthKey, {
-          total: ms.revenue.realised.total,
-          projects: new Map(ms.revenue.realised.projects),
-        });
-      }
+    }
+
+    // Realised revenue ← canonical single read path (finance-line-level-
+    // repository), summed across every active project's ledger. Read-map
+    // enforcement seam; revByMonth above stays the FYE forecast overlay.
+    const canonicalRevRealised = await canonicalRealisedByMonth({
+      metric: 'revenue',
+      fyStart: fyScope.startDate ?? undefined,
+      fyEnd: fyScope.endDate ?? undefined,
+    });
+    for (const [monthKey, entry] of canonicalRevRealised) {
+      if (!monthKeyInFinanceScope(monthKey, fyScope)) continue;
+      realisedByMonth.set(monthKey, entry);
     }
 
     const qbInvoices = ((qbInvoicesRaw as any)?.QueryResponse?.Invoice ?? []).map(

@@ -357,14 +357,15 @@ export function registerFinanceLinesRoutes(app: Express): void {
     requirePermission("financials", "view"),
     async (req: Request, res: Response) => {
       try {
-        const projectIds = parseProjectIdList(req.query.projectIds);
+        // Omitting projectIds scopes to EVERY active project (company-wide) —
+        // the canonical single read path for Finance Home / company GP after
+        // the legacy /api/cos-tracker + /api/revenue-tracker aggregates were
+        // retired (read-map enforcement). An explicit list still scopes to it.
+        const { projectIds } = await resolveProjectScope(req.query.projectIds);
         const fyStart = parseIsoDate(req.query.fyStart, "fyStart");
         const fyEnd = parseIsoDate(req.query.fyEnd, "fyEnd");
         if (fyStart && fyEnd && fyStart > fyEnd) {
           throw badRequest("fyStart must be on or before fyEnd", { fyStart, fyEnd });
-        }
-        if (projectIds.length === 0) {
-          throw badRequest("projectIds is required (comma-separated)", { projectIds: "" });
         }
 
         const [lines, budget] = await Promise.all([
