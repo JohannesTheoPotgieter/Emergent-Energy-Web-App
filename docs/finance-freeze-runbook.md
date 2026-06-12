@@ -425,10 +425,39 @@ Edit `FINANCE_MODULE_ROLE_ALLOWLIST` (values must be real `COMPANY_ROLES` from
 `shared/schema/users.ts`). Removing a role sends it to the no-access landing and
 blocks its non-auth API calls; adding one lets it into the finance module.
 
+### Verify the lockdown in development (opt-in)
+
+Finance-only is a **deploy mode**: it enforces in the production build but is
+**inert in local dev and the e2e harness** (so the full-app test suite keeps
+validating every module). That means the lockdown is invisible when you run
+`npm run dev` — nothing is hidden or redirected. To *see and test* the lockdown
+locally, turn on the opt-in dev override. It is strictly additive: it can only
+turn enforcement **on** in dev and **can never weaken production** (a prod build
+enforces before the override is ever consulted).
+
+| Where | How to turn it ON | How to turn it OFF |
+|---|---|---|
+| Server / API (`npm run dev`, vitest) | `FINANCE_ONLY_DEV=1 npm run dev` | unset `FINANCE_ONLY_DEV` (default) |
+| Browser (dev-served client) | append `?financeOnly=1` to the URL once (persists in `localStorage`), or build-time `VITE_FINANCE_ONLY_DEV=1` | append `?financeOnly=0` once, or clear `localStorage.financeOnlyDev` |
+
+With the override ON in dev you can confirm the full lockdown end-to-end:
+
+- a **disabled-navGroup deep link** (e.g. `/execution-board`) redirects to `/finance`;
+- a **non-allowlisted role** lands on `/no-access`; an allowlisted role lands on `/finance`;
+- non-finance sections disappear from the nav and the server API gate returns `403` for non-allowlisted roles.
+
+> Set BOTH (`FINANCE_ONLY_DEV=1` on the server AND `?financeOnly=1` in the
+> browser) to exercise the client redirect and the server API gate together.
+> The override is implemented as `isFinanceOnlyDevOverrideOn()` in
+> `shared/config/enabled-modules.ts` and is locked by the unit test below.
+
 ### Proof + guardrails
 
-- `qa/tests/unit/finance-only-module.test.ts` locks the config and **proves
-  reversibility** (flipping a navGroup to `full` restores its routes + nav).
+- `qa/tests/unit/finance-only-module.test.ts` locks the config, **proves
+  reversibility** (flipping a navGroup to `full` restores its routes + nav), and
+  pins the **dev override** (ON → disabled routes redirect to `/finance` + a
+  non-allowlisted role resolves to `/no-access`; OFF → unrestricted; prod is
+  never weakened).
 - Client gate: `client/src/App.tsx` (`FinanceModuleGate` + per-route redirect),
   nav filter in `client/src/config/app-navigation.ts`
   (`filterSectionsByEnabledModules`).

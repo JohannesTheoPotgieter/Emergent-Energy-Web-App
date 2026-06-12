@@ -137,24 +137,88 @@ export const FINANCE_ONLY_MODE = true;
  *   - SERVER / vitest (node) → use `process.env`: not enforced in local dev
  *     (NODE_ENV=development) or the harness (API_TEST_MODE=true); enforced
  *     otherwise (production server + vitest's NODE_ENV=test).
+ *
+ * DEV override: because the restriction is normally inert in dev, the lockdown
+ * is invisible locally. `isFinanceOnlyDevOverrideOn()` is an OPT-IN switch that
+ * turns enforcement ON in development for verification. It is strictly additive
+ * — it can only flip enforcement from off→on where the base logic would be off
+ * (dev / the harness); it can NEVER turn enforcement OFF in a production build,
+ * because the production branches below `return true` before it is consulted.
+ * See docs/finance-freeze-runbook.md § F.
  */
 export function isFinanceOnlyEnforced(): boolean {
   if (!FINANCE_ONLY_MODE) return false;
 
-  // BROWSER: only a production build enforces. `import.meta` is read defensively
-  // (the server tsconfig has no Vite env types; the server bundle never reaches
-  // this branch because `window` is undefined there).
+  // BROWSER: a production build ALWAYS enforces — checked first so no query
+  // param / flag can ever weaken prod. The dev-served client enforces only when
+  // the opt-in dev override is active. `import.meta` is read defensively (the
+  // server tsconfig has no Vite env types; the server bundle never reaches this
+  // branch because `window` is undefined there).
   if (typeof window !== "undefined") {
     const meta = import.meta as unknown as { env?: { PROD?: boolean } };
-    return meta.env?.PROD === true;
+    if (meta.env?.PROD === true) return true;
+    return isFinanceOnlyDevOverrideOn();
   }
 
-  // SERVER / vitest (node): enforce unless local dev or the run-with-app harness.
+  // SERVER / vitest (node): enforce unless local dev or the run-with-app
+  // harness — UNLESS the opt-in dev override turns it back on for testing.
   if (typeof process !== "undefined" && process.env) {
+    if (isFinanceOnlyDevOverrideOn()) return true;
     if (process.env.NODE_ENV === "development") return false;
     if (process.env.API_TEST_MODE === "true") return false;
   }
   return true;
+}
+
+/**
+ * Opt-in DEV override for `isFinanceOnlyEnforced()` — turn the finance-only
+ * lockdown ON in development so the nav hiding, route redirects, no-access
+ * landing and server API gate can be exercised and verified locally (the
+ * restriction is otherwise inert in dev). Never weakens production; it can only
+ * turn enforcement ON where it would otherwise be off.
+ *
+ * Activation (any of):
+ *   - SERVER / vitest (node): env `FINANCE_ONLY_DEV=1` (or `=true`). e.g.
+ *       `FINANCE_ONLY_DEV=1 npm run dev`
+ *   - BROWSER (dev-served): Vite env `VITE_FINANCE_ONLY_DEV=1`, the URL query
+ *       `?financeOnly=1` (persisted to `localStorage.financeOnlyDev` so it
+ *       survives client-side navigation), or a prior persisted flag.
+ *       `?financeOnly=0` clears the browser override.
+ *
+ * Best-effort and side-effect-light: it never throws (an enforcement check must
+ * not crash the app) and reads `localStorage` / `location` defensively.
+ */
+export function isFinanceOnlyDevOverrideOn(): boolean {
+  // SERVER / vitest (node)
+  if (typeof process !== "undefined" && process.env) {
+    const v = process.env.FINANCE_ONLY_DEV;
+    if (v === "1" || v === "true") return true;
+  }
+
+  // BROWSER (dev-served client)
+  if (typeof window !== "undefined") {
+    try {
+      const meta = import.meta as unknown as { env?: { VITE_FINANCE_ONLY_DEV?: string } };
+      const viteFlag = meta.env?.VITE_FINANCE_ONLY_DEV;
+      if (viteFlag === "1" || viteFlag === "true") return true;
+
+      const store: Storage | undefined = window.localStorage;
+      const q = new URLSearchParams(window.location.search).get("financeOnly");
+      if (q === "0" || q === "false") {
+        store?.removeItem("financeOnlyDev");
+        return false;
+      }
+      if (q === "1" || q === "true") {
+        store?.setItem("financeOnlyDev", "1");
+        return true;
+      }
+      if (store?.getItem("financeOnlyDev") === "1") return true;
+    } catch {
+      // Best-effort only — never throw from an enforcement check.
+    }
+  }
+
+  return false;
 }
 
 /** The config the production helpers read. */
