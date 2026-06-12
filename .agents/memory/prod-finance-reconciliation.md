@@ -65,3 +65,16 @@ month-before-today figure, and a single big multi-month project (Mondi) ≈ 2× 
 Jun–Aug lines ≈ its whole realised-to-date). Always source "realised" from the FYE pipeline /
 `isCanonicalCosRealised()`, never the stored flag. `project_revenue_summary.actual_revenue` is
 whole-life contract revenue (actual≈planned, stale snapshot), NOT FY realised — never compare it.
+
+## Full-population line recon (analysis workbook vs prod) is a SEPARATE lens from realised-overcount
+Comparing the user's FY26 analysis workbook ("Line Items" sheet, all states) line-by-line to
+prod `normalized_cost_lines` (all states, FY window) shows the OPPOSITE skew from the realised
+issue: the DB has slightly FEWER lines than the workbook. Gross totals tie closely (~238M vs
+~231M REV) and ~2,521 lines match exactly, but the gaps are (a) whole projects in the workbook
+absent from the DB FY26 set (e.g. Shoprite Mini Citrusdal, Blackheath Park, Westway BESS,
+Protea Point), (b) naming variants that look like orphans but are the same project (Life Changers
+≡ "Life Changers - Sporty"; Klein Karoo ≡ "Klein Karoo Phase 2"; Parklands ≡ "Parklands Junction")
+— always normalise names before counting orphans, and (c) a handful of extra per-line COS rows
+per project. So two truths coexist: the realised SUBSET is over-flagged (future-dated lines), while
+the TOTAL population is slightly under-imported. Match key that works: normalise project name
+(lower, strip non-alphanumeric), then invoice-no + round(COS), then COS+REV, then COS-only.

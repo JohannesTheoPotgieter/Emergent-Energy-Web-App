@@ -18,3 +18,9 @@ id = "VI5zcHmSJ0XGQprb303PP"
 uri = "file://tmp/fy26-cos-by-project-month-recognised.csv"
 type = "table"
 title = "FY26 COS by Project & Month — Realised + Committed (Production)"
+
+[[outputs]]
+id = "KGwqsGvMO3FENoi6oiXSR"
+uri = "file://qa/reports/excel-vs-db-lines.csv"
+type = "table"
+title = "Excel vs DB line-item reconciliation (FY26)"
