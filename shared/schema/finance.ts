@@ -613,6 +613,17 @@ export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   rowHashActiveIdx: index("normalized_revenue_lines_row_hash_active_idx")
     .on(table.projectId, table.rowHash)
     .where(sql`${table.effectiveTo} IS NULL`),
+  // Idempotency hard guarantee (fix/two-sheet-canonical-source): at most ONE
+  // live, non-deleted row per (project_id, row_hash). Makes duplicate
+  // milestone lines physically impossible — a re-import that re-derives the
+  // same hash can only UPDATE/soft-close+re-insert, never silently append a
+  // second copy. Predicate is tighter than the lookup index above (adds
+  // deleted_at) so a soft-deleted row and its re-imported successor don't
+  // false-collide. Identity is still the frozen § 3.5 business-key row_hash —
+  // this constraint enforces uniqueness, it does NOT change the hash inputs.
+  rowHashUniqueIdx: uniqueIndex("normalized_revenue_lines_row_hash_unique_idx")
+    .on(table.projectId, table.rowHash)
+    .where(sql`${table.effectiveTo} IS NULL AND ${table.deletedAt} IS NULL AND ${table.rowHash} IS NOT NULL`),
 }));
 export const insertNormalizedRevenueLineSchema = createInsertSchema(normalizedRevenueLines).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true, amountExVatLegacy: true, vatLegacy: true, deletedAt: true } as any);
 export type InsertNormalizedRevenueLine = z.infer<typeof insertNormalizedRevenueLineSchema>;
@@ -775,6 +786,11 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   rowHashActiveIdx: index("normalized_cost_lines_row_hash_active_idx")
     .on(table.projectId, table.rowHash)
     .where(sql`${table.effectiveTo} IS NULL`),
+  // Idempotency hard guarantee — see normalizedRevenueLines.rowHashUniqueIdx.
+  // At most ONE live, non-deleted cost line per (project_id, row_hash).
+  rowHashUniqueIdx: uniqueIndex("normalized_cost_lines_row_hash_unique_idx")
+    .on(table.projectId, table.rowHash)
+    .where(sql`${table.effectiveTo} IS NULL AND ${table.deletedAt} IS NULL AND ${table.rowHash} IS NOT NULL`),
 }));
 export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true, amountExVatLegacy: true, deletedAt: true } as any);
 export type InsertNormalizedCostLine = z.infer<typeof insertNormalizedCostLineSchema>;
@@ -867,6 +883,11 @@ export const normalizedCostLineActuals = pgTable("normalized_cost_line_actuals",
   rowHashActiveIdx: index("normalized_cost_line_actuals_row_hash_active_idx")
     .on(table.costLineId, table.rowHash)
     .where(sql`${table.effectiveTo} IS NULL`),
+  // Idempotency hard guarantee — see normalizedRevenueLines.rowHashUniqueIdx.
+  // At most ONE live, non-deleted actual per (cost_line_id, row_hash).
+  rowHashUniqueIdx: uniqueIndex("normalized_cost_line_actuals_row_hash_unique_idx")
+    .on(table.costLineId, table.rowHash)
+    .where(sql`${table.effectiveTo} IS NULL AND ${table.deletedAt} IS NULL AND ${table.rowHash} IS NOT NULL`),
 }));
 export const insertNormalizedCostLineActualSchema = createInsertSchema(normalizedCostLineActuals).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true, deletedAt: true } as any);
 export type InsertNormalizedCostLineActual = z.infer<typeof insertNormalizedCostLineActualSchema>;
