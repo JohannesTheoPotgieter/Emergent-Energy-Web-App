@@ -46,6 +46,23 @@ export async function runSmartImportPreview(
 
   const normalization = normalizeData(detection, mappings, workbook);
 
+  // FLAG, NEVER SKIP: if the Revenue Tracking / milestone block could not be
+  // located by header signature in any sheet, surface an explicit import flag
+  // so the operator does a one-time manual mapping. A silent skip would
+  // under-count cash inflows invisibly (Revenue Tracking is the cash/AR source).
+  if (detection.missingSections?.includes("REVENUE")) {
+    normalization.issues.push({
+      severity: "WARNING",
+      section: "REVENUE",
+      message: `Milestone block not found in "${fileName}" — the Revenue Tracking / milestone block (Milestone / Invoice / Date / Amount / Received) could not be located by header signature in any sheet. Map it manually before committing; it has NOT been skipped silently.`,
+      suggestedAction:
+        "Open the tracker and confirm a Revenue Tracking / milestone block exists, then map its sheet/columns. If this tracker genuinely has no milestone block, acknowledge the flag to proceed.",
+      issueType: "milestone_block_not_found",
+      issueFingerprint: `milestone_block_not_found:${fileName}`,
+      payloadJson: { fileName, missingSections: detection.missingSections },
+    });
+  }
+
   const hasBlockers = normalization.issues.some(i => i.severity === "BLOCKER");
   const lowConfidence = mappings.some(m => m.overallConfidence < 0.7);
   const needsReview = hasBlockers || lowConfidence || normalization.issues.length > 0;

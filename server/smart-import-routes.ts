@@ -53,11 +53,13 @@ import { matchRows, generateBusinessKey, type SectionType, type MatchedRow } fro
 import { runConflictEngine, type RowMergeResult } from "./lib/import/conflict-engine";
 import { loadCurrentPlanRows, loadCurrentRevenueRows, loadCurrentCostRows, loadBaselineForPlanner, detectImportMode, loadDeletedPlanRows, loadDeletedRevenueRows, loadDeletedCostRows } from "./lib/import/baseline";
 import { buildImportFailureEnvelope, persistFailedImportRun } from "./lib/import/failure-envelope";
+import { captureFinanceLineIds, readFinanceLineIds } from "./lib/import/pre-import-snapshot";
 import {
   smartImportRuns,
   importIssues,
   normalizedRevenueLines,
   normalizedCostLines,
+  normalizedCostLineActuals,
   normalizedExecutionPhases,
   counterparties,
   mappingRules,
@@ -2690,27 +2692,28 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
 
       const v2Decisions = v2ConflictResolutions || {};
 
-      // ── S11: Pre-import work_items snapshot ──
-      // Capture current work_items state BEFORE v2 overwrites them in-place.
-      // Required for state-restoring rollback (S21).
-      if (planRows.length > 0) {
-        try {
-          const snapshotRows = planRows.map((r: any) => ({
-            id: r.id, taskName: r.taskName, taskNo: r.taskNo, phase: r.phase,
-            startDate: r.startDate, endDate: r.endDate, durationDays: r.durationDays,
-            actualStartDate: r.actualStartDate, actualEndDate: r.actualEndDate,
-            actualDurationDays: r.actualDurationDays, owner: r.owner,
-            status: r.status, pctComplete: r.pctComplete,
-            expectedPctComplete: r.expectedPctComplete, comment: r.comment,
-            isMilestone: r.isMilestone, parentTaskNo: r.parentTaskNo,
-            subProjectName: r.subProjectName, importRunId: r.importRunId,
-          }));
-          await tx.update(smartImportRuns)
-            .set({ preImportSnapshot: snapshotRows })
-            .where(eq(smartImportRuns.id, runId));
-        } catch (snapErr: unknown) {
-          console.warn("[SmartImport] Pre-import snapshot failed (non-blocking):", (snapErr instanceof Error ? snapErr.message : String(snapErr)));
-        }
+      // ── S11: Pre-import snapshot — work_items + BOTH finance ledgers ──
+      // Capture current state BEFORE the writers overwrite it, so a committed
+      // import can be reverted to the prior per-project state across both
+      // tracker sheets (state-restoring rollback, S21). Captured even when the
+      // project has no plan rows (finance-only re-imports still need revert).
+      try {
+        const snapshotRows = planRows.map((r: any) => ({
+          id: r.id, taskName: r.taskName, taskNo: r.taskNo, phase: r.phase,
+          startDate: r.startDate, endDate: r.endDate, durationDays: r.durationDays,
+          actualStartDate: r.actualStartDate, actualEndDate: r.actualEndDate,
+          actualDurationDays: r.actualDurationDays, owner: r.owner,
+          status: r.status, pctComplete: r.pctComplete,
+          expectedPctComplete: r.expectedPctComplete, comment: r.comment,
+          isMilestone: r.isMilestone, parentTaskNo: r.parentTaskNo,
+          subProjectName: r.subProjectName, importRunId: r.importRunId,
+        }));
+        const financeLineIds = await captureFinanceLineIds(tx, projectId);
+        await tx.update(smartImportRuns)
+          .set({ preImportSnapshot: { workItems: snapshotRows, financeLineIds } })
+          .where(eq(smartImportRuns.id, runId));
+      } catch (snapErr: unknown) {
+        console.warn("[SmartImport] Pre-import snapshot failed (non-blocking):", (snapErr instanceof Error ? snapErr.message : String(snapErr)));
       }
 
       // Write PLAN incrementally
@@ -3399,8 +3402,34 @@ router.post("/api/smart-import/:runId/rollback", requireAuth, requireAdmin, asyn
     await db.transaction(async (tx: any) => {
       await tx.delete(invoicePatternMatches).where(eq(invoicePatternMatches.importRunId, runId));
 
+      // 1. Soft-close everything THIS run inserted across both tracker ledgers.
       await softCloseByImportRunId(tx, "normalized_revenue_lines", runId);
       await softCloseByImportRunId(tx, "normalized_cost_lines", runId);
+      await softCloseByImportRunId(tx, "normalized_cost_line_actuals", runId);
+
+      // 2. Re-open the pre-import active set (state-restoring revert, S21). With
+      //    this run's inserts already closed (step 1), re-opening the prior
+      //    versions restores exactly the pre-import state with at most one
+      //    active row per (key, row_hash) — the partial UNIQUE index holds.
+      const fids = readFinanceLineIds(run.preImportSnapshot);
+      if (fids) {
+        if (fids.revenueLines.length > 0) {
+          await tx.update(normalizedRevenueLines)
+            .set({ effectiveTo: null, deletedAt: null })
+            .where(inArray(normalizedRevenueLines.id, fids.revenueLines));
+        }
+        if (fids.costLines.length > 0) {
+          await tx.update(normalizedCostLines)
+            .set({ effectiveTo: null, deletedAt: null })
+            .where(inArray(normalizedCostLines.id, fids.costLines));
+        }
+        if (fids.costLineActuals.length > 0) {
+          await tx.update(normalizedCostLineActuals)
+            .set({ effectiveTo: null, deletedAt: null })
+            .where(inArray(normalizedCostLineActuals.id, fids.costLineActuals));
+        }
+      }
+
       await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.importRunId, runId));
 
       const rollbackWis = await tx

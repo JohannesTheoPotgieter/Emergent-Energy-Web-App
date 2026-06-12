@@ -44,6 +44,17 @@ export interface DetectionResult {
     isMultiProject: boolean;
     subProjects: string[];
   };
+  /**
+   * Section keys (PLAN / REVENUE / EXPENDITURE) whose block could NOT be
+   * located by header signature in ANY sheet. The Revenue Tracking / milestone
+   * block in particular moves around between trackers, so it is located by
+   * header signature wherever it sits (not a fixed position) — and when it
+   * cannot be confidently found it is FLAGGED here so the importer can surface
+   * "milestone block not found in <tracker>" for a one-time manual mapping.
+   * It must NEVER be silently skipped: a silent skip under-counts cash inflows
+   * invisibly (Revenue Tracking is the cash/AR source).
+   */
+  missingSections: string[];
 }
 
 function isExcludedSheet(sheetName: string): boolean {
@@ -862,6 +873,19 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
     console.log(`[Detector] Found ${poSheets.length} Purchase Order sheets: ${poNames}`);
   }
 
-  console.log(`[Detector] Final: ${sections.length} sections detected, ${unmatched.length} unmatched`);
-  return { sections, unmatched, projectInfo, multiProject };
+  // Flag any expected section whose block could not be located by header
+  // signature in ANY sheet. REVENUE (the milestone block) is the load-bearing
+  // case — it must be flagged, never silently skipped.
+  const detectedKeys = new Set(sections.map((s) => s.section));
+  const missingSections = Object.keys(SECTION_ANCHORS).filter(
+    (k) => !detectedKeys.has(k as DetectedSection["section"]),
+  );
+  if (missingSections.includes("REVENUE")) {
+    console.warn(
+      `[Detector] FLAG: Revenue Tracking / milestone block not found by header signature in any sheet — flagged for manual mapping (not skipped).`,
+    );
+  }
+
+  console.log(`[Detector] Final: ${sections.length} sections detected, ${unmatched.length} unmatched, ${missingSections.length} missing (${missingSections.join(", ") || "none"})`);
+  return { sections, unmatched, projectInfo, multiProject, missingSections };
 }
