@@ -33,7 +33,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { eq, inArray, isNull, and } from "drizzle-orm";
 
-const hasDb = !!process.env.DATABASE_URL;
+// Opt-in only: DB-mutating tests must NOT seed the live dev/prod DB on a normal build. Set RUN_DB_TESTS=1 to run (CI / dedicated DB).
+const hasDb = !!process.env.DATABASE_URL && process.env.RUN_DB_TESTS === "1";
 const d = hasDb ? describe : describe.skip;
 
 interface FixtureLine {

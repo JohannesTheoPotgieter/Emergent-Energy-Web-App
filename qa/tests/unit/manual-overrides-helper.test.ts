@@ -241,7 +241,8 @@ describe("manual-overrides helper — read-side overlay", () => {
 // 2. DB-backed integration (skipped without DATABASE_URL)
 // ---------------------------------------------------------------------------
 
-const hasDb = !!process.env.DATABASE_URL;
+// Opt-in only: DB-mutating tests must NOT seed the live dev/prod DB on a normal build. Set RUN_DB_TESTS=1 to run (CI / dedicated DB).
+const hasDb = !!process.env.DATABASE_URL && process.env.RUN_DB_TESTS === "1";
 const dbDescribe = hasDb ? describe : describe.skip;
 
 dbDescribe("manual-overrides helper — DB integration", () => {

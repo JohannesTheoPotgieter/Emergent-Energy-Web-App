@@ -9,7 +9,7 @@
     "tsconfig.client-check.json",
     ".env.example"
   ],
-  "globalEnv": ["NODE_ENV", "DATABASE_URL", "CI"],
+  "globalEnv": ["NODE_ENV", "DATABASE_URL", "CI", "RUN_DB_TESTS"],
   "tasks": {
     "check": {
       "inputs": [

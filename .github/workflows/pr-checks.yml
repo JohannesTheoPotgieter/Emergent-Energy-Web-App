@@ -65,6 +65,9 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://test:test@localhost:5432/emergent_test
+      # DB-mutating finance tests are opt-in (they must never seed a real dev/prod DB).
+      # Here DATABASE_URL is the throwaway emergent_test service, so enable them.
+      RUN_DB_TESTS: "1"
       TOKEN_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
       JWT_SECRET: ci-test-jwt-secret
       SESSION_SECRET: ci-test-session-secret

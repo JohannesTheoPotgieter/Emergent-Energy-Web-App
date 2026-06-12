@@ -28,6 +28,21 @@ print the connection string.
 `CLAUDE_RO_DATABASE_URL`). In the dev workspace, `DATABASE_URL` = dev (`heliumdb`);
 the deployment carries its own production `DATABASE_URL`.
 
-**Test side effect:** the test suite seeds golden projects (Coega Steels Ph2,
-De Drift, Mondi, Seshego Circle, Unitrans Brackenfell) plus `LinkTest Alpha/Ghost`
-rows into `heliumdb`. Re-running tests re-populates the dev DB after a clear.
+**Test side effect (now gated):** the `qa/tests/unit` finance DB tests seed real
+rows (golden projects: Coega Steels Ph2, De Drift, Mondi, Seshego Circle, Unitrans
+Brackenfell; plus `LinkTest Alpha/Ghost` and `MARKER` rows) into whatever
+`DATABASE_URL` points at. The Replit "Project" run button runs all four workflows
+(`Start application` → `check` → `test` → `build`), so a normal build used to seed
+these straight into the live dev DB; the golden seeder's cleanup fails on FK
+constraints, leaving the rows behind.
+
+**Decision — DB-mutating tests are opt-in.** They now gate on
+`!!process.env.DATABASE_URL && process.env.RUN_DB_TESTS === "1"`, so they SKIP on
+dev/local/build (no live-DB pollution) and run only when explicitly enabled.
+**Why:** tests must never seed the app's real dev/prod database.
+**How to apply:** CI's `test` job already points `DATABASE_URL` at a throwaway
+`emergent_test` Postgres service, so set `RUN_DB_TESTS: "1"` there (and keep
+`RUN_DB_TESTS` in `turbo.json` `globalEnv` so turbo passes it through). To run these
+tests locally, set `RUN_DB_TESTS=1` against a disposable DB — never the dev one.
+A cleaner long-term fix is a dedicated `TEST_DATABASE_URL` so tests can't even
+reach `DATABASE_URL`.
