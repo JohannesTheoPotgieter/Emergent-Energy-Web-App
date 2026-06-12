@@ -251,3 +251,43 @@ export function detectNetDeltaExceeded(
   }
   return worst ? { exceeded: true, detail: worst } : { exceeded: false, detail: null };
 }
+
+/** A finance recon line (the subset the swing builder reads). Mirrors
+ *  `ReconDetailLine` from reconciliation-service — COS is the actual cost amount,
+ *  revenue is the § 3.3 derived value. Both already canonical; this only sums them. */
+export interface ReconLineTotalsLike {
+  actualTotal?: number | null;
+  revenueDerived?: number | null;
+}
+
+const sumRevenue = (lines: ReconLineTotalsLike[]): number =>
+  lines.reduce((s, l) => s + (l.revenueDerived ?? 0), 0);
+const sumCos = (lines: ReconLineTotalsLike[]): number =>
+  lines.reduce((s, l) => s + (l.actualTotal ?? 0), 0);
+
+/**
+ * Build the per-project REV + COS swings for the net-delta guard from a
+ * project's CURRENT recon lines and the lines THIS run WOULD produce (the
+ * dry-run preview). Introduces NO calculation — it only sums the canonical
+ * per-line values (§ 3.3 `revenueDerived` for REV, `actualTotal` for COS).
+ *
+ * BASELINE rule: when the project has no current REV and no current COS, this
+ * returns an EMPTY array so the net-delta guard does not trip — a project's
+ * first-ever import (a metric appearing from nothing) is not a "swing"; the
+ * over-wipe and allocation guards cover that case. Once a project has any
+ * current total, both metrics are compared (a metric collapsing to/appearing
+ * from zero against an existing project IS a structural swing → parks).
+ */
+export function buildProjectMetricSwings(
+  projectName: string,
+  currentLines: ReconLineTotalsLike[],
+  nextLines: ReconLineTotalsLike[],
+): ProjectMetricSwing[] {
+  const currentRev = sumRevenue(currentLines);
+  const currentCos = sumCos(currentLines);
+  if (currentRev === 0 && currentCos === 0) return [];
+  return [
+    { projectName, metric: "REV", current: currentRev, next: sumRevenue(nextLines) },
+    { projectName, metric: "COS", current: currentCos, next: sumCos(nextLines) },
+  ];
+}

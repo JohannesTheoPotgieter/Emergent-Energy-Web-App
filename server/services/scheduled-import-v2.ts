@@ -57,7 +57,14 @@ import {
   detectErrorOnRev,
   detectMissingAllocationOnNewLines,
   collectCommitLockDates,
+  detectNetDeltaExceeded,
+  buildProjectMetricSwings,
+  NET_DELTA_PARK_THRESHOLD_PCT,
+  type AutoCommitGateSignals,
 } from "../lib/import/auto-commit-gate";
+import { getReconciliationDetail } from "./reconciliation-service";
+import { notifyUsers } from "./notification-service";
+import { UsersRepository } from "../repositories/users-repository";
 import { enforceCosPeriodLock } from "../lib/finance/period-lock";
 import { resolveSchedulerConflictPolicy } from "../imports/scheduler-conflict-policy";
 import { commitSmartImportRunAsSystem } from "./scheduler-commit";
@@ -105,6 +112,125 @@ function computeHash(buffer: Buffer): string {
 // conservative >=0.85 auto-map. Shared by processFileV2 and the dedupe
 // resolver so the two never drift.
 const AUTO_MATCH_THRESHOLD = IMPORT_FILE_ALWAYS_WINS ? 0.75 : 0.85;
+
+const usersRepository = new UsersRepository();
+
+/**
+ * Finance / management roles that own import review. They get the in-app
+ * notification when a scheduled run parks on a net-delta swing (the Teams alert
+ * fires separately via the orchestrator's `maybeSendImportAlert`). Excludes PMs/
+ * CMs, who can view but not commit imports (smart_import:approve = COO/CEO).
+ */
+const NET_DELTA_NOTIFY_ROLES = [
+  "COO_ADMIN",
+  "CEO_ADMIN",
+  "CFO",
+  "PROGRAM_FINANCE_MANAGER",
+];
+
+/** In-app notification (throttled) to the finance reviewers that a run parked on
+ *  a net-delta swing, with the reason + a deep link to the run via the
+ *  smart_import related entity. Non-blocking. */
+async function notifyNetDeltaPark(
+  runId: number,
+  projectName: string,
+  projectId: number,
+  reason: string,
+): Promise<void> {
+  try {
+    const recipients = await usersRepository.listByRoles(NET_DELTA_NOTIFY_ROLES);
+    if (recipients.length === 0) return;
+    await notifyUsers(
+      recipients.map((r) => r.id),
+      {
+        eventType: "import_net_delta_park",
+        title: `Import parked for review — ${projectName}`,
+        body: `Auto-import held: ${reason}. Open the import to check the swing and commit.`,
+        projectName,
+        projectId,
+        relatedEntityType: "smart_import",
+        relatedEntityId: runId,
+      },
+    );
+  } catch (notifyErr) {
+    console.warn(
+      `[ScheduledImportV2] net-delta in-app notification failed for run ${runId}:`,
+      notifyErr instanceof Error ? notifyErr.message : notifyErr,
+    );
+  }
+}
+
+/**
+ * NET-DELTA GUARD (owner-approved). Before an unattended commit, compare the
+ * project's CURRENT REV/COS to what THIS run WOULD produce. The "would" comes
+ * from the dry-run preview — the REAL commit path applied inside a transaction
+ * then rolled back — so there is no parallel formula; both sides are summed from
+ * the canonical recon lines (§ 3.3). If either metric swings beyond the
+ * threshold the run is parked (status `awaiting_review`, the net-delta reason
+ * stored on the run, finance reviewers notified in-app; the Teams alert fires via
+ * the outcome path). Reads the canonical finance path; changes NO reported number
+ * — only commit-vs-park routing. Returns true when it parked.
+ *
+ * Fail-safe: if the check itself errors, the run is parked rather than risk an
+ * unattended commit of a possibly-large swing.
+ */
+async function maybeParkOnNetDelta(opts: {
+  runId: number;
+  projectId: number;
+  projectName: string;
+  v2ConflictResolutions: Record<string, "keep_app" | "accept_file">;
+  gateSignals: AutoCommitGateSignals;
+  summaryJson: Record<string, unknown>;
+}): Promise<boolean> {
+  const { runId, projectId, projectName, v2ConflictResolutions, gateSignals, summaryJson } = opts;
+  try {
+    // Current totals (canonical read) + the totals this run WOULD produce
+    // (dry-run preview: real commit applied in a tx, then rolled back).
+    const currentRecon = await getReconciliationDetail(db, projectId);
+    const dry = await commitSmartImportRunAsSystem({ runId, v2ConflictResolutions, dryRun: true });
+    if (dry.status !== "dry_run_preview") return false;
+    const nextRecon = dry.recon;
+    if (!nextRecon) return false;
+
+    const swings = buildProjectMetricSwings(projectName, currentRecon.lines, nextRecon.lines);
+    const delta = detectNetDeltaExceeded(swings, NET_DELTA_PARK_THRESHOLD_PCT);
+    if (!delta.exceeded) return false;
+
+    const parkDecision = decideSchedulerAutoCommit({
+      ...gateSignals,
+      deltaExceeded: true,
+      deltaExceededDetail: delta.detail,
+    });
+    const sv2 = (summaryJson.schedulerV2 ?? {}) as Record<string, unknown>;
+    await db
+      .update(smartImportRuns)
+      .set({
+        status: "awaiting_review",
+        summaryJson: {
+          ...summaryJson,
+          schedulerV2: { ...sv2, autoCommitGate: { decision: "park", reason: parkDecision.reason } },
+        },
+      })
+      .where(and(eq(smartImportRuns.id, runId), inArray(smartImportRuns.status, ["preview", "awaiting_review"])));
+    console.warn(`[ScheduledImportV2] net-delta park for run ${runId}: ${parkDecision.reason}`);
+    await notifyNetDeltaPark(runId, projectName, projectId, parkDecision.reason);
+    return true;
+  } catch (deltaErr) {
+    console.warn(
+      `[ScheduledImportV2] net-delta check failed for run ${runId} (parking to be safe):`,
+      deltaErr instanceof Error ? deltaErr.message : deltaErr,
+    );
+    try {
+      await db
+        .update(smartImportRuns)
+        .set({ status: "awaiting_review" })
+        .where(and(eq(smartImportRuns.id, runId), inArray(smartImportRuns.status, ["preview", "awaiting_review"])));
+    } catch {
+      /* non-blocking */
+    }
+    return true;
+  }
+}
 
 /**
  * Build an ISO-keyed batch identifier for one scheduler tick.
@@ -260,7 +386,7 @@ async function processFileV2(
   // Tighten "clean" for unattended auto-commit: anything not provably clean
   // parks (with a reason) instead of forcing/erroring. Clean runs still
   // auto-commit silently — this adds no prompt to the clean path (owner #1012).
-  const gate = decideSchedulerAutoCommit({
+  const gateSignals: AutoCommitGateSignals = {
     hasBlockers: preview.hasBlockers,
     lockedPeriods,
     errorOnRev: detectErrorOnRev(preview.normalization.categoryAllocations),
@@ -271,7 +397,8 @@ async function processFileV2(
     softClosePct: computeSoftClosePct(plannerResult),
     hasResurrections,
     conflictPolicyParks: policyDecision.decision === "park",
-  });
+  };
+  const gate = decideSchedulerAutoCommit(gateSignals);
   const effectiveDecision: "commit" | "park" = gate.decision;
 
   const summaryJson = {
@@ -321,6 +448,19 @@ async function processFileV2(
   // clean commit leaves the run for human review.
   if (autoMappedProjectId && effectiveDecision === "commit") {
     try {
+      // Net-delta guard: park (don't auto-commit) when this run would swing the
+      // project's REV or COS beyond the threshold vs its current value. Uses the
+      // dry-run preview for the "would-be" totals (no parallel formula).
+      const parkedByDelta = await maybeParkOnNetDelta({
+        runId: run.id,
+        projectId: autoMappedProjectId,
+        projectName: resolvedProjectName,
+        v2ConflictResolutions: policyDecision.resolutions,
+        gateSignals,
+        summaryJson,
+      });
+      if (parkedByDelta) return { status: "parked", runId: run.id };
+
       const commitResult = await commitSmartImportRunAsSystem({
         runId: run.id,
         v2ConflictResolutions: policyDecision.resolutions,
