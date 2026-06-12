@@ -51,7 +51,10 @@ describe("nav cleanup — six-tab COO spec", () => {
     ]);
   });
 
-  it("Finance has the locked items and operations in spec order", () => {
+  it("Finance has exactly the seven finance-only items in spec order", () => {
+    // Finance-only module (2026-06-11): exactly 7 items. Weekly Close is
+    // scrapped (folded into Cashflow); Payment Requests + PO Approvals are
+    // parked (procure-to-pay deferred) and removed from the sidebar.
     const section = findTop("Finance");
     expect(section.secondary.map((item) => item.path)).toEqual([
       "/finance",
@@ -60,11 +63,16 @@ describe("nav cleanup — six-tab COO spec", () => {
       "/revenue-tracker",
       "/finance/gp/company",
       "/finance/qb-reconciliation",
-      "/finance/close",
       "/fye-revenue-tracking",
-      "/payment-request-board",
-      "/po-approval-board",
     ]);
+  });
+
+  it("Finance no longer surfaces Weekly Close / Payment Requests / PO Approvals", () => {
+    const section = findTop("Finance");
+    const paths = new Set(section.secondary.map((item) => item.path));
+    for (const removed of ["/finance/close", "/payment-request-board", "/po-approval-board"]) {
+      expect(paths.has(removed)).toBe(false);
+    }
   });
 
   it("Engineering has the four locked items in spec order", () => {

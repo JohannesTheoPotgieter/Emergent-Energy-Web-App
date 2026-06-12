@@ -4,6 +4,7 @@ import { CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, C
 import { PAGE_REGISTRY } from "@/config/page-registry";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
 import { getAvailableQuickCreateActions } from "@/lib/action-access";
+import { isFinanceOnlyEnforced, isPageEnabled, isFinanceSearchType } from "@shared/config/enabled-modules";
 import {
   Navigation, Search, Plus, ArrowRight, Zap,
   FileText, FolderOpen, Receipt, User, Briefcase, Hash,
@@ -49,7 +50,12 @@ function groupFor(type: string): string {
 }
 
 const NAV_ITEMS = PAGE_REGISTRY.filter(
-  (p) => p.showInSidebar && p.routeComponentKey && !p.redirectTo
+  (p) =>
+    p.showInSidebar &&
+    p.routeComponentKey &&
+    !p.redirectTo &&
+    // Finance-only: never surface a page whose module is disabled.
+    isPageEnabled({ id: p.id, navGroup: p.navGroup }),
 ).map((p) => ({
   path: p.path,
   label: p.label,
@@ -98,6 +104,8 @@ export function GlobalCommandPalette() {
   const groupedServerResults = useMemo(() => {
     const groups = new Map<string, ServerSearchResult[]>();
     for (const r of serverResults) {
+      // Finance-only: drop non-finance entity types (tasks / people / docs).
+      if (!isFinanceSearchType(r.type)) continue;
       const g = groupFor(r.type);
       if (!groups.has(g)) groups.set(g, []);
       groups.get(g)!.push(r);
@@ -106,7 +114,9 @@ export function GlobalCommandPalette() {
   }, [serverResults]);
 
   const quickActions = useMemo(() => {
-    if (!actionLaunchpadEnabled) return [];
+    // Finance-only: non-finance quick-actions (create PD ticket, engineering
+    // request, task, handover, PO) are disabled — see the finance-only module.
+    if (!actionLaunchpadEnabled || isFinanceOnlyEnforced()) return [];
     return getAvailableQuickCreateActions({ canAccessEntityAction, canViewPath });
   }, [actionLaunchpadEnabled, canAccessEntityAction, canViewPath]);
 

@@ -100,15 +100,17 @@ describe("app navigation helpers", () => {
     ]);
   });
 
-  it("makes finance operations discoverable from the Finance nav", () => {
+  it("makes the seven finance-only operations discoverable from the Finance nav", () => {
+    // Finance-only module: the sidebar is exactly these seven items.
     const finance = TOP_SECTIONS.find((section) => section.label === "Finance");
-    expect(finance?.secondary.map((item) => [item.label, item.path])).toEqual(
-      expect.arrayContaining([
-        ["Finance Home", "/finance"],
-        ["Weekly Close", "/finance/close"],
-        ["Payment Requests", "/payment-request-board"],
-        ["PO Approvals", "/po-approval-board"],
-      ]),
-    );
+    expect(finance?.secondary.map((item) => [item.label, item.path])).toEqual([
+      ["Finance Home", "/finance"],
+      ["Cashflow", "/cashflow"],
+      ["Cost of Sales", "/cos"],
+      ["Revenue", "/revenue-tracker"],
+      ["Gross Profit", "/finance/gp/company"],
+      ["QB Reconciliation", "/finance/qb-reconciliation"],
+      ["FYE Tracking Report", "/fye-revenue-tracking"],
+    ]);
   });
 });

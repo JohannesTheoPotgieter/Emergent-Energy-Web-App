@@ -4,6 +4,7 @@ import { setAuthToken } from "@/lib/api";
 import { Loader2 } from "lucide-react";
 import { ROLE_LANDING_PAGE } from "@/config/page-registry";
 import { normalizeRoleForPermissions } from "@shared/schema";
+import { resolveFinanceOnlyLanding } from "@shared/config/enabled-modules";
 
 export default function MsCallbackPage() {
   const [, setLocation] = useLocation();
@@ -28,7 +29,9 @@ export default function MsCallbackPage() {
         setAuthToken(data.token);
         localStorage.setItem("company_role", data.user.role);
         const role = normalizeRoleForPermissions(data.user.role);
-        const landing = role ? ROLE_LANDING_PAGE[role] : null;
+        // Finance-only: allowed roles land on /finance, others on the no-access
+        // landing. Falls back to the legacy role-landing map when the mode is off.
+        const landing = resolveFinanceOnlyLanding(role) ?? (role ? ROLE_LANDING_PAGE[role] : null);
         window.location.href = landing || "/";
       })
       .catch(() => {

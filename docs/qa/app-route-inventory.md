@@ -1,10 +1,10 @@
 # App Route Inventory
 
-**Generated** 2026-05-25T11:06:42.799Z by `script/test-routes.ts`. Do not hand-edit — regenerate with `npm run test:routes`.
+**Generated** 2026-06-11T19:30:04.057Z by `script/test-routes.ts`. Do not hand-edit — regenerate with `npm run test:routes`.
 
 Source: `client/src/config/page-registry.ts`
 
-Total registered paths: 184
+Total registered paths: 195
 
 | Path | Title | Nav group | Permission |
 |------|-------|-----------|------------|
@@ -22,12 +22,12 @@ Total registered paths: 184
 | `/admin/data-migration-status` | — | SYSTEM | admin |
 | `/admin/database-migration` | — | — | database_migration |
 | `/admin/document-management` | — | SYSTEM | documents_admin |
-| `/admin/document-types` | — | SYSTEM | admin_roles |
 | `/admin/email-linker-dev` | — | SYSTEM | admin_roles |
 | `/admin/eng-templates` | — | SYSTEM | admin |
 | `/admin/functionality` | — | SYSTEM | admin_roles |
 | `/admin/handover-health` | — | SYSTEM | handover |
 | `/admin/import-control-tower` | — | SYSTEM | admin |
+| `/admin/import-mappings` | — | SYSTEM | smart_import |
 | `/admin/integrations` | — | SYSTEM | admin_roles |
 | `/admin/kpi-traceability` | — | SYSTEM | admin |
 | `/admin/legacy-utilities` | — | — | — |
@@ -35,6 +35,7 @@ Total registered paths: 184
 | `/admin/my-tool-settings` | — | — | admin |
 | `/admin/phase-templates` | — | SYSTEM | admin |
 | `/admin/pipedrive` | — | SYSTEM | admin |
+| `/admin/priority-templates` | — | SYSTEM | company_priorities |
 | `/admin/quickbooks` | — | SYSTEM | admin |
 | `/admin/recovery` | — | SYSTEM | admin |
 | `/admin/roles` | — | SYSTEM | admin_roles |
@@ -66,6 +67,7 @@ Total registered paths: 184
 | `/cos/analysis` | — | FINANCE | cos |
 | `/counterparties` | — | FINANCE | counterparties |
 | `/dashboard` | — | — | — |
+| `/delivery-milestones` | — | PROJECT_MANAGEMENT | pd_delivery_milestones |
 | `/department-scores` | — | KNOWLEDGE | leaderboard |
 | `/documents` | — | KNOWLEDGE | ee_info |
 | `/ee-info` | — | KNOWLEDGE | ee_info |
@@ -82,9 +84,13 @@ Total registered paths: 184
 | `/execution-board/realisation` | — | — | execution_board |
 | `/execution-dashboard` | — | PROJECT_MANAGEMENT | execution_board |
 | `/feedback` | — | KNOWLEDGE | feedback |
+| `/finance` | — | FINANCE | financials |
+| `/finance/audit-prep` | — | FINANCE | financials |
+| `/finance/close` | — | — | cashflow |
 | `/finance/gp` | — | FINANCE | financials |
 | `/finance/gp/company` | — | FINANCE | financials |
-| `/finance/quickbooks` | — | FINANCE | financials |
+| `/finance/health` | — | FINANCE | financials |
+| `/finance/qb-reconciliation` | — | FINANCE | financials |
 | `/finance/quickbooks-customer-mapping` | — | FINANCE | financials |
 | `/finance/quickbooks-links` | — | FINANCE | financials |
 | `/fye-revenue-tracking` | — | FINANCE | fye_revenue_tracking |
@@ -107,6 +113,7 @@ Total registered paths: 184
 | `/leaderboard` | — | KNOWLEDGE | leaderboard |
 | `/lifecycle-board` | — | PORTFOLIO | lifecycle |
 | `/milestone-tracker` | — | PROJECT_MANAGEMENT | execution_board |
+| `/my-queue` | — | MY_WORK | execution_board |
 | `/my-tool` | — | — | — |
 | `/my-tool/backlog` | — | — | — |
 | `/my-tool/help` | — | — | — |
@@ -121,6 +128,7 @@ Total registered paths: 184
 | `/my-work/settings` | — | MY_WORK | home |
 | `/my-work/tasks` | — | MY_WORK | my_tool |
 | `/my-work/teams` | — | MY_WORK | teams_chat |
+| `/now` | — | PROJECT_MANAGEMENT | execution_board |
 | `/opportunities` | — | PROJECT_DEVELOPMENT | pd_dashboard |
 | `/payment-batch-manager` | — | FINANCE | procurement |
 | `/payment-request-board` | — | FINANCE | procurement |
@@ -139,10 +147,12 @@ Total registered paths: 184
 | `/pm/on-the-go` | — | PROJECT_MANAGEMENT | pm_on_the_go |
 | `/pm/on-the-go/project/:projectId` | — | — | pm_on_the_go |
 | `/po-approval-board` | — | PROJECT_MANAGEMENT | procurement |
+| `/portfolio` | — | PROJECTS | execution_board |
 | `/portfolios` | — | PROJECT_MANAGEMENT | portfolios |
 | `/portfolios/:id` | — | PROJECT_MANAGEMENT | portfolio_detail |
 | `/priorities` | — | PRIORITIES | company_priorities |
 | `/priorities/:id` | — | — | company_priorities |
+| `/priorities/lineage` | — | — | company_priorities |
 | `/procurement` | — | PROJECT_MANAGEMENT | execution_board |
 | `/program/excel-vs-app` | — | FINANCE | excel_vs_app |
 | `/project-create` | — | — | project_creation |
@@ -157,6 +167,7 @@ Total registered paths: 184
 | `/projects/:projectId/documents` | — | — | projects |
 | `/projects/:projectId/excel-vs-app` | — | FINANCE | excel_vs_app |
 | `/projects/:projectId/expenditure-breakdown` | — | FINANCE | cos |
+| `/projects/:projectId/finance` | — | FINANCE | financials |
 | `/projects/:projectId/manual-overrides` | — | FINANCE | revenue_tracker |
 | `/projects/:projectId/program-plan` | — | PROJECT_MANAGEMENT | work_items |
 | `/projects/:projectId/revenue-tracking` | — | FINANCE | revenue_tracker |

@@ -11,6 +11,7 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { requireAuth } from "../auth-context";
+import { isFinanceOnlyEnforced } from "@shared/config/enabled-modules";
 
 export function registerMiscExtractedRoutes(app: Express): void {
 
@@ -24,6 +25,20 @@ export function registerMiscExtractedRoutes(app: Express): void {
       const startsWithPattern = `${q}%`;
       const containsPattern = `%${q}%`;
 
+      // Finance-only: skip the work-items (task) query entirely so no
+      // non-finance results are computed or returned by global search.
+      const workItemQuery = isFinanceOnlyEnforced()
+        ? Promise.resolve({ rows: [] as unknown[] })
+        : db.execute(sql`
+            SELECT w.id, w.title, w.status, p.project_name, w.type as task_type, w.owner_name as assigned_to, w.percent_complete
+            FROM work_items w
+            LEFT JOIN project_info p ON w.project_id = p.id
+            WHERE LOWER(w.title) LIKE ${containsPattern}
+               OR LOWER(p.project_name) LIKE ${containsPattern}
+            ORDER BY CASE WHEN LOWER(w.title) LIKE ${startsWithPattern} THEN 0 ELSE 1 END, w.title
+            LIMIT ${lim}
+          `);
+
       const [projectRows, workItemRows, costRows, revenueRows] = await Promise.all([
         db.execute(sql`
           SELECT id, project_name, phase, pd, pm, size_kwp
@@ -33,15 +48,7 @@ export function registerMiscExtractedRoutes(app: Express): void {
           ORDER BY CASE WHEN LOWER(project_name) LIKE ${startsWithPattern} THEN 0 ELSE 1 END, project_name
           LIMIT ${lim}
         `),
-        db.execute(sql`
-          SELECT w.id, w.title, w.status, p.project_name, w.type as task_type, w.owner_name as assigned_to, w.percent_complete
-          FROM work_items w
-          LEFT JOIN project_info p ON w.project_id = p.id
-          WHERE LOWER(w.title) LIKE ${containsPattern}
-             OR LOWER(p.project_name) LIKE ${containsPattern}
-          ORDER BY CASE WHEN LOWER(w.title) LIKE ${startsWithPattern} THEN 0 ELSE 1 END, w.title
-          LIMIT ${lim}
-        `),
+        workItemQuery,
         db.execute(sql`
           SELECT id, description, project_name, cost_category as category, counterparty_name as supplier, amount_ex_vat as total_cost, cost_line_status as status, invoice_number, po_number
           FROM normalized_cost_lines

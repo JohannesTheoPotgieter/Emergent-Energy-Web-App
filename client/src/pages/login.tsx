@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Lock, User, Info, Zap, AlertCircle, KeyRound } from "lucide-react";
 import { ROLE_LANDING_PAGE } from "@/config/page-registry";
 import { normalizeRoleForPermissions } from "@shared/schema";
+import { resolveFinanceOnlyLanding } from "@shared/config/enabled-modules";
 
 const MS_ERROR_MESSAGES: Record<string, string> = {
   ms_auth_failed: "Microsoft sign-in failed. Please try again.",
@@ -87,7 +88,9 @@ export default function LoginPage() {
       const success = await login(username.toLowerCase(), password);
       if (success) {
         const role = normalizeRoleForPermissions(localStorage.getItem("company_role"));
-        const landing = role ? ROLE_LANDING_PAGE[role] : null;
+        // Finance-only: allowed roles land on /finance, others on the no-access
+        // landing. Falls back to the legacy role-landing map when the mode is off.
+        const landing = resolveFinanceOnlyLanding(role) ?? (role ? ROLE_LANDING_PAGE[role] : null);
         setLocation(landing || "/");
       } else {
         setError("Invalid username or password. Only administrators can use password login.");

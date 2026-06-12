@@ -16,7 +16,10 @@ import {
  * view that path. These tests pin that behaviour with a canViewPath stub.
  */
 
-const NEW_FINANCE_LABELS = ["Finance Home", "QB Reconciliation", "Weekly Close"];
+// Finance-only module: Weekly Close scrapped (folded into Cashflow); Payment
+// Requests + PO Approvals parked. The discoverable "new screens" are now
+// Finance Home + QB Reconciliation only.
+const NEW_FINANCE_LABELS = ["Finance Home", "QB Reconciliation"];
 const ALL_FINANCE_PATHS = [
   "/finance",
   "/cashflow",
@@ -24,10 +27,7 @@ const ALL_FINANCE_PATHS = [
   "/revenue-tracker",
   "/finance/gp/company",
   "/finance/qb-reconciliation",
-  "/finance/close",
   "/fye-revenue-tracking",
-  "/payment-request-board",
-  "/po-approval-board",
 ];
 
 function financeSecondaryLabels(viewablePaths: string[]): string[] {
@@ -41,7 +41,7 @@ function financeSecondaryLabels(viewablePaths: string[]): string[] {
 }
 
 describe("Finance nav — new screens are discoverable and role-gated", () => {
-  it("shows Finance Home, Reconciliation and Weekly Close for a permitted role", () => {
+  it("shows Finance Home and Reconciliation for a permitted role", () => {
     const labels = financeSecondaryLabels(ALL_FINANCE_PATHS);
     for (const label of NEW_FINANCE_LABELS) {
       expect(labels).toContain(label);
@@ -54,7 +54,7 @@ describe("Finance nav — new screens are discoverable and role-gated", () => {
 
   it("hides the new finance screens from a role that cannot view their paths", () => {
     // The role can see the section (via /cashflow) but not the finance-home /
-    // reconciliation / weekly-close paths.
+    // reconciliation paths.
     const labels = financeSecondaryLabels(["/cashflow"]);
     for (const label of NEW_FINANCE_LABELS) {
       expect(labels).not.toContain(label);
