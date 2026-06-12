@@ -26,8 +26,10 @@ import {
   FinancePageHeader,
   MoneyValue,
   StatusBadge,
+  DrillTable,
   FinanceLoading,
   FinanceError,
+  type DrillColumn,
 } from "@/components/finance/template";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { fetchQueryFn, apiRequest } from "@/lib/queryClient";
@@ -121,41 +123,96 @@ function ProjectsView({ apiQueryString }: { apiQueryString: string }) {
     if (k === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else { setSortKey(k); setSortDir(k === "project" || k === "type" ? "asc" : "desc"); }
   };
-  const Th = ({ k, label, num }: { k: SortKey; label: string; num?: boolean }) => (
-    <th className={`px-2 py-2 ${num ? "text-right" : "text-left"} cursor-pointer select-none whitespace-nowrap`} onClick={() => setSort(k)}>
-      <span className="inline-flex items-center gap-1">{label}<ArrowUpDown className="h-3 w-3 opacity-40" /></span>
-    </th>
+  const SortBtn = ({ k, label }: { k: SortKey; label: string }) => (
+    <Button
+      type="button"
+      size="sm"
+      variant={k === sortKey ? "default" : "outline"}
+      className="h-7 gap-1 text-xs"
+      onClick={() => setSort(k)}
+    >
+      {label}
+      <ArrowUpDown className="h-3 w-3 opacity-60" />
+      {k === sortKey && <span className="text-[10px]">{sortDir === "asc" ? "▲" : "▼"}</span>}
+    </Button>
   );
   const st = data.stateTotals;
+  const t = data.totals;
+
+  // 4-state portfolio reconciliation rows (Realised / Committed / Planned /
+  // Unrealised) + the Budget (all states) row rendered as a bold strip below.
+  type StateRow = { key: string; label: string; revenue: number; cos: number };
+  const stateRows: StateRow[] = (["realised", "committed", "planned", "unrealised"] as const).map((s) => ({
+    key: s, label: s, revenue: st[s].revenue, cos: st[s].cos,
+  }));
+  const stateColumns: DrillColumn<StateRow>[] = [
+    { key: "state", header: "State", cell: (r) => <span className="capitalize">{r.label}</span> },
+    { key: "revenue", header: "Revenue", numeric: true, cell: (r) => <MoneyValue value={r.revenue} /> },
+    { key: "cos", header: "COS", numeric: true, cell: (r) => <MoneyValue value={r.cos} /> },
+    { key: "gp", header: "GP", numeric: true, cell: (r) => <MoneyValue value={r.revenue - r.cos} /> },
+  ];
+
+  // Projects table columns. Row-level COS_NO_REVENUE / NON_STANDARD_TEMPLATE
+  // styling is reapplied per-cell (the Project cell carries the flag classes).
+  const rowAmber = (r: FyeProjectRow) => r.flags.includes("COS_NO_REVENUE");
+  const rowNonStd = (r: FyeProjectRow) => r.flags.includes("NON_STANDARD_TEMPLATE");
+  const projectColumns: DrillColumn<FyeProjectRow>[] = [
+    {
+      key: "project",
+      header: "Project",
+      cell: (r) => (
+        <span
+          className={`font-medium ${rowAmber(r) ? "text-amber-700" : ""} ${rowNonStd(r) ? "opacity-70 italic" : ""}`}
+          data-testid={`fye-project-row-${r.projectId}`}
+        >
+          {r.project}
+        </span>
+      ),
+    },
+    { key: "type", header: "Type", cell: (r) => r.type },
+    { key: "start", header: "Start", cell: (r) => <span className="whitespace-nowrap">{r.startDate ?? "—"}</span> },
+    { key: "endPc", header: "End (PC)", cell: (r) => <span className="whitespace-nowrap">{r.endDatePc ?? "—"}</span> },
+    { key: "budgetRevenue", header: "Budget Rev", numeric: true, cell: (r) => <MoneyValue value={r.budgetRevenue} /> },
+    { key: "budgetCos", header: "Budget COS", numeric: true, cell: (r) => <MoneyValue value={r.budgetCos} /> },
+    { key: "budgetGp", header: "Budget GP", numeric: true, cell: (r) => <MoneyValue value={r.budgetGp} /> },
+    { key: "budgetGpPct", header: "Bud GP%", numeric: true, cell: (r) => PCT(r.budgetGpPct) },
+    { key: "actualRevenue", header: "Actual Rev", numeric: true, cell: (r) => <MoneyValue value={r.actualRevenue} /> },
+    { key: "actualCos", header: "Actual COS", numeric: true, cell: (r) => <MoneyValue value={r.actualCos} /> },
+    { key: "actualGp", header: "Actual GP", numeric: true, cell: (r) => <MoneyValue value={r.actualGp} /> },
+    { key: "actualGpPct", header: "Act GP%", numeric: true, cell: (r) => PCT(r.actualGpPct) },
+    { key: "pctRealised", header: "% Real.", numeric: true, cell: (r) => PCT(r.pctRealised) },
+    {
+      key: "flag",
+      header: "Flag",
+      cell: (r) => (
+        <>
+          {rowAmber(r) && <StatusBadge tone="warning" label="COS, no revenue — check tracker" />}
+          {rowNonStd(r) && <StatusBadge tone="neutral" label="Non-standard template (excl. from totals)" />}
+        </>
+      ),
+    },
+  ];
 
   return (
     <div className="space-y-4">
       {/* 4-state portfolio reconciliation */}
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Portfolio recognition states (FY{String(data.fye).slice(-2)})</CardTitle></CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead><tr className="text-muted-foreground border-b"><th className="text-left px-2 py-1">State</th><th className="text-right px-2 py-1">Revenue</th><th className="text-right px-2 py-1">COS</th><th className="text-right px-2 py-1">GP</th></tr></thead>
-              <tbody className="font-mono">
-                {(["realised", "committed", "planned", "unrealised"] as const).map((s) => (
-                  <tr key={s} className="border-b border-border/40">
-                    <td className="px-2 py-1 capitalize font-sans">{s}</td>
-                    <td className="px-2 py-1 text-right"><MoneyValue value={st[s].revenue} /></td>
-                    <td className="px-2 py-1 text-right"><MoneyValue value={st[s].cos} /></td>
-                    <td className="px-2 py-1 text-right"><MoneyValue value={st[s].revenue - st[s].cos} /></td>
-                  </tr>
-                ))}
-                <tr className="font-bold border-t-2"><td className="px-2 py-1 font-sans">Budget (all states)</td>
-                  <td className="px-2 py-1 text-right"><MoneyValue value={st.budget.revenue} /></td>
-                  <td className="px-2 py-1 text-right"><MoneyValue value={st.budget.cos} /></td>
-                  <td className="px-2 py-1 text-right"><MoneyValue value={st.budget.revenue - st.budget.cos} /></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+      <div>
+        <h2 className="mb-2 text-sm font-semibold">Portfolio recognition states (FY{String(data.fye).slice(-2)})</h2>
+        <DrillTable
+          columns={stateColumns}
+          rows={stateRows}
+          rowKey={(r) => r.key}
+          stickyHeader={false}
+          caption="Portfolio revenue / COS / GP across the four recognition states."
+        />
+        {/* Budget (all states) — total strip (DrillTable has no footer). */}
+        <div className="mt-1 flex flex-wrap items-center justify-end gap-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold">
+          <span className="mr-auto">Budget (all states)</span>
+          <span>Rev <MoneyValue value={st.budget.revenue} align="left" /></span>
+          <span>COS <MoneyValue value={st.budget.cos} align="left" /></span>
+          <span>GP <MoneyValue value={st.budget.revenue - st.budget.cos} align="left" /></span>
+        </div>
+      </div>
 
       <div className="flex flex-wrap gap-2 items-center">
         <Input placeholder="Filter project…" value={filter} onChange={(e) => setFilter(e.target.value)} className="h-8 w-48" data-testid="fye-project-filter" />
@@ -163,65 +220,38 @@ function ProjectsView({ apiQueryString }: { apiQueryString: string }) {
           <option value="all">All types</option><option value="Active">Active</option><option value="Past">Past</option><option value="Compliance">Compliance</option>
         </select>
         <span className="text-xs text-muted-foreground">{data.projectCount} projects · {data.excluded.length} excluded</span>
+        <span className="ml-auto inline-flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Sort</span>
+          <SortBtn k="project" label="Project" />
+          <SortBtn k="type" label="Type" />
+          <SortBtn k="budgetRevenue" label="Budget Rev" />
+          <SortBtn k="actualRevenue" label="Actual Rev" />
+          <SortBtn k="actualGpPct" label="Act GP%" />
+          <SortBtn k="pctRealised" label="% Real." />
+        </span>
       </div>
 
-      <Card>
-        <CardContent className="p-0 overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-muted/60 border-b">
-              <tr>
-                <Th k="project" label="Project" /><Th k="type" label="Type" />
-                <th className="px-2 py-2 text-left whitespace-nowrap">Start</th><th className="px-2 py-2 text-left whitespace-nowrap">End (PC)</th>
-                <Th k="budgetRevenue" label="Budget Rev" num /><th className="px-2 py-2 text-right">Budget COS</th><th className="px-2 py-2 text-right">Budget GP</th><th className="px-2 py-2 text-right">Bud GP%</th>
-                <Th k="actualRevenue" label="Actual Rev" num /><th className="px-2 py-2 text-right">Actual COS</th><th className="px-2 py-2 text-right">Actual GP</th><Th k="actualGpPct" label="Act GP%" num /><Th k="pctRealised" label="% Real." num />
-                <th className="px-2 py-2 text-left">Flag</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => {
-                const amber = r.flags.includes("COS_NO_REVENUE");
-                const nonStd = r.flags.includes("NON_STANDARD_TEMPLATE");
-                return (
-                  <tr key={r.projectId} className={`border-b border-border/40 ${amber ? "bg-amber-50 dark:bg-amber-950/20" : ""} ${nonStd ? "opacity-70 italic" : ""}`} data-testid={`fye-project-row-${r.projectId}`}>
-                    <td className="px-2 py-1.5 font-medium">{r.project}</td>
-                    <td className="px-2 py-1.5">{r.type}</td>
-                    <td className="px-2 py-1.5 whitespace-nowrap">{r.startDate ?? "—"}</td>
-                    <td className="px-2 py-1.5 whitespace-nowrap">{r.endDatePc ?? "—"}</td>
-                    <td className="px-2 py-1.5 text-right font-mono"><MoneyValue value={r.budgetRevenue} /></td>
-                    <td className="px-2 py-1.5 text-right font-mono"><MoneyValue value={r.budgetCos} /></td>
-                    <td className="px-2 py-1.5 text-right font-mono"><MoneyValue value={r.budgetGp} /></td>
-                    <td className="px-2 py-1.5 text-right font-mono">{PCT(r.budgetGpPct)}</td>
-                    <td className="px-2 py-1.5 text-right font-mono"><MoneyValue value={r.actualRevenue} /></td>
-                    <td className="px-2 py-1.5 text-right font-mono"><MoneyValue value={r.actualCos} /></td>
-                    <td className="px-2 py-1.5 text-right font-mono"><MoneyValue value={r.actualGp} /></td>
-                    <td className="px-2 py-1.5 text-right font-mono">{PCT(r.actualGpPct)}</td>
-                    <td className="px-2 py-1.5 text-right font-mono">{PCT(r.pctRealised)}</td>
-                    <td className="px-2 py-1.5">
-                      {amber && <StatusBadge tone="warning" label="COS, no revenue — check tracker" />}
-                      {nonStd && <StatusBadge tone="neutral" label="Non-standard template (excl. from totals)" />}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr className="font-bold border-t-2 bg-muted/40">
-                <td className="px-2 py-2" colSpan={4}>TOTAL ({data.projectCount} projects)</td>
-                <td className="px-2 py-2 text-right font-mono"><MoneyValue value={data.totals.budgetRevenue} /></td>
-                <td className="px-2 py-2 text-right font-mono"><MoneyValue value={data.totals.budgetCos} /></td>
-                <td className="px-2 py-2 text-right font-mono"><MoneyValue value={data.totals.budgetGp} /></td>
-                <td className="px-2 py-2 text-right font-mono">{PCT(data.totals.budgetGpPct)}</td>
-                <td className="px-2 py-2 text-right font-mono"><MoneyValue value={data.totals.actualRevenue} /></td>
-                <td className="px-2 py-2 text-right font-mono"><MoneyValue value={data.totals.actualCos} /></td>
-                <td className="px-2 py-2 text-right font-mono"><MoneyValue value={data.totals.actualGp} /></td>
-                <td className="px-2 py-2 text-right font-mono">{PCT(data.totals.actualGpPct)}</td>
-                <td className="px-2 py-2 text-right font-mono">{PCT(data.totals.pctRealised)}</td>
-                <td />
-              </tr>
-            </tfoot>
-          </table>
-        </CardContent>
-      </Card>
+      <DrillTable
+        columns={projectColumns}
+        rows={rows}
+        rowKey={(r) => r.projectId}
+        maxBodyHeightClass="max-h-[60vh]"
+        caption="Budget vs actual revenue / COS / GP per project."
+      />
+
+      {/* TOTAL — bold strip after the table (DrillTable has no footer). */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold tabular-nums">
+        <span className="mr-auto">TOTAL ({data.projectCount} projects)</span>
+        <span>Budget Rev <MoneyValue value={t.budgetRevenue} align="left" /></span>
+        <span>Budget COS <MoneyValue value={t.budgetCos} align="left" /></span>
+        <span>Budget GP <MoneyValue value={t.budgetGp} align="left" /></span>
+        <span>Bud GP% {PCT(t.budgetGpPct)}</span>
+        <span>Actual Rev <MoneyValue value={t.actualRevenue} align="left" /></span>
+        <span>Actual COS <MoneyValue value={t.actualCos} align="left" /></span>
+        <span>Actual GP <MoneyValue value={t.actualGp} align="left" /></span>
+        <span>Act GP% {PCT(t.actualGpPct)}</span>
+        <span>% Real. {PCT(t.pctRealised)}</span>
+      </div>
 
       {data.excluded.length > 0 && (
         <details className="text-xs text-muted-foreground">
