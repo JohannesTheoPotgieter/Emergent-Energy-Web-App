@@ -9,8 +9,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { PageError, PageSkeleton } from "@/components/ui/page-states";
-import { PageHeader } from "@/components/ui/page-header";
+import {
+  FinancePageHeader,
+  StatusBadge,
+  FinanceLoading,
+  FinanceError,
+} from "@/components/finance/template";
 import { PageLayout } from "@/components/layout";
 import {
   FileSpreadsheet,
@@ -133,30 +137,30 @@ interface RunErrors {
 function statusBadge(status: string) {
   switch (status) {
     case "COMMITTED":
-      return <Badge data-testid="status-committed" className="bg-emerald-100 text-emerald-800"><CheckCircle2 className="h-3 w-3 mr-1" /> Committed</Badge>;
+      return <StatusBadge data-testid="status-committed" tone="positive" icon={CheckCircle2} label="Committed" />;
     case "PREVIEW":
-      return <Badge data-testid="status-preview" className="bg-blue-100 text-blue-800"><Clock className="h-3 w-3 mr-1" /> Preview</Badge>;
+      return <StatusBadge data-testid="status-preview" tone="info" icon={Clock} label="Preview" />;
     case "FAILED":
-      return <Badge data-testid="status-failed" className="bg-red-100 text-red-800"><XCircle className="h-3 w-3 mr-1" /> Failed</Badge>;
+      return <StatusBadge data-testid="status-failed" tone="critical" icon={XCircle} label="Failed" />;
     case "ROLLED_BACK":
-      return <Badge data-testid="status-rolled-back" className="bg-orange-100 text-orange-800"><RotateCcw className="h-3 w-3 mr-1" /> Rolled Back</Badge>;
+      return <StatusBadge data-testid="status-rolled-back" tone="warning" icon={RotateCcw} label="Rolled Back" />;
     case "SUPERSEDED":
-      return <Badge data-testid="status-superseded" className="bg-gray-100 text-gray-600">Superseded</Badge>;
+      return <StatusBadge data-testid="status-superseded" tone="neutral" label="Superseded" />;
     default:
-      return <Badge data-testid="status-unknown" variant="outline">{status}</Badge>;
+      return <StatusBadge data-testid="status-unknown" tone="neutral" label={status} />;
   }
 }
 
 function severityBadge(severity: string) {
   switch (severity) {
     case "BLOCKER":
-      return <Badge data-testid="severity-blocker" className="bg-red-100 text-red-800">Blocker</Badge>;
+      return <StatusBadge data-testid="severity-blocker" tone="critical" label="Blocker" />;
     case "WARNING":
-      return <Badge data-testid="severity-warning" className="bg-yellow-100 text-yellow-800">Warning</Badge>;
+      return <StatusBadge data-testid="severity-warning" tone="warning" label="Warning" />;
     case "INFO":
-      return <Badge data-testid="severity-info" className="bg-blue-100 text-blue-800">Info</Badge>;
+      return <StatusBadge data-testid="severity-info" tone="info" label="Info" />;
     default:
-      return <Badge variant="outline">{severity}</Badge>;
+      return <StatusBadge tone="neutral" label={severity} />;
   }
 }
 
@@ -172,9 +176,9 @@ function sectionBadge(section: string) {
 }
 
 function reconStatusBadge(status: "green" | "amber" | "red") {
-  if (status === "red") return <Badge data-testid="recon-status-red" className="bg-red-100 text-red-800">Red</Badge>;
-  if (status === "amber") return <Badge data-testid="recon-status-amber" className="bg-amber-100 text-amber-800">Amber</Badge>;
-  return <Badge data-testid="recon-status-green" className="bg-emerald-100 text-emerald-800">Green</Badge>;
+  if (status === "red") return <StatusBadge data-testid="recon-status-red" tone="critical" label="Red" />;
+  if (status === "amber") return <StatusBadge data-testid="recon-status-amber" tone="warning" label="Amber" />;
+  return <StatusBadge data-testid="recon-status-green" tone="positive" label="Green" />;
 }
 
 export default function ImportControlTowerPage() {
@@ -290,8 +294,8 @@ export default function ImportControlTowerPage() {
     },
   });
 
-  if (isLoading) return <PageSkeleton lines={5} />;
-  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load Import Control Tower" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
+  if (isLoading) return <FinanceLoading label="Loading Import Control Tower…" />;
+  if (isError) return <div className="p-4 md:p-6"><FinanceError title="Unable to load Import Control Tower" hint={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   const totalRuns = runs.length;
   const committedRuns = runs.filter(r => r.status === "COMMITTED").length;
@@ -304,9 +308,9 @@ export default function ImportControlTowerPage() {
     <PageLayout
       data-testid="import-control-tower-page"
       header={
-        <PageHeader
+        <FinancePageHeader
           title={batchRunIdFromUrl ? "Folder Import Batch" : "Import Control Tower"}
-          subtitle={
+          question={
             batchRunIdFromUrl
               ? `Files picked up in batch ${batchRunIdFromUrl}`
               : "Monitor, investigate, and retry all import operations"
