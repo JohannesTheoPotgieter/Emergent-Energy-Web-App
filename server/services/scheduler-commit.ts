@@ -71,6 +71,7 @@ import {
 } from "../lib/import/baseline";
 import { materializeDerivatives } from "../lib/import/derivative-materializer";
 import { relinkCategoryAllocationsForProject } from "../lib/import/allocation-relink";
+import { captureFinanceLineIds } from "../lib/import/pre-import-snapshot";
 import { syncProjectSplitTables } from "../lib/project-info-sync";
 import { recordImportChange } from "../lib/audit/diff-engine";
 import { logAudit } from "../audit-logger";
@@ -328,25 +329,24 @@ export async function commitSmartImportRunAsSystem(
 
       const v2Decisions = v2ConflictResolutions;
 
-      // Pre-import work_items snapshot for rollback
-      if (planRows.length > 0) {
-        try {
-          const snapshotRows = planRows.map((r: any) => ({
-            id: r.id, taskName: r.taskName, taskNo: r.taskNo, phase: r.phase,
-            startDate: r.startDate, endDate: r.endDate, durationDays: r.durationDays,
-            actualStartDate: r.actualStartDate, actualEndDate: r.actualEndDate,
-            actualDurationDays: r.actualDurationDays, owner: r.owner,
-            status: r.status, pctComplete: r.pctComplete,
-            expectedPctComplete: r.expectedPctComplete, comment: r.comment,
-            isMilestone: r.isMilestone, parentTaskNo: r.parentTaskNo,
-            subProjectName: r.subProjectName, importRunId: r.importRunId,
-          }));
-          await tx.update(smartImportRuns)
-            .set({ preImportSnapshot: snapshotRows })
-            .where(eq(smartImportRuns.id, runId));
-        } catch (snapErr) {
-          console.warn("[SchedulerCommit] Pre-import snapshot failed (non-blocking):", snapErr instanceof Error ? snapErr.message : String(snapErr));
-        }
+      // Pre-import snapshot — work_items + BOTH finance ledgers (S21 revert).
+      try {
+        const snapshotRows = planRows.map((r: any) => ({
+          id: r.id, taskName: r.taskName, taskNo: r.taskNo, phase: r.phase,
+          startDate: r.startDate, endDate: r.endDate, durationDays: r.durationDays,
+          actualStartDate: r.actualStartDate, actualEndDate: r.actualEndDate,
+          actualDurationDays: r.actualDurationDays, owner: r.owner,
+          status: r.status, pctComplete: r.pctComplete,
+          expectedPctComplete: r.expectedPctComplete, comment: r.comment,
+          isMilestone: r.isMilestone, parentTaskNo: r.parentTaskNo,
+          subProjectName: r.subProjectName, importRunId: r.importRunId,
+        }));
+        const financeLineIds = await captureFinanceLineIds(tx, projectId);
+        await tx.update(smartImportRuns)
+          .set({ preImportSnapshot: { workItems: snapshotRows, financeLineIds } })
+          .where(eq(smartImportRuns.id, runId));
+      } catch (snapErr) {
+        console.warn("[SchedulerCommit] Pre-import snapshot failed (non-blocking):", snapErr instanceof Error ? snapErr.message : String(snapErr));
       }
 
       // Per-section incremental writes
