@@ -23,9 +23,14 @@ import { fetchQueryFn } from "@/lib/queryClient";
 import { formatZar } from "@/lib/currency";
 import {
   FinancePageHeader,
+  KpiRow,
+  KpiTile,
   MoneyValue,
+  StatusBadge,
+  DrillTable,
   FinanceLoading,
   FinanceError,
+  type DrillColumn,
 } from "@/components/finance/template";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -247,36 +252,6 @@ function ColourStateBadge({ confirmed }: { confirmed: boolean | null }) {
   );
 }
 
-// ── Aggregate card ──────────────────────────────────────────────────────────────
-
-function AggregateCard({
-  label,
-  value,
-  tone,
-  trust,
-  sub,
-}: {
-  label: string;
-  value: number;
-  tone?: "default" | "positive" | "critical";
-  trust?: "ties" | "drift";
-  sub?: string;
-}) {
-  const toneClass = tone === "positive" ? "text-status-ties" : tone === "critical" ? "text-status-adverse" : "text-foreground";
-  return (
-    <div className="rounded-lg border border-border bg-card p-3">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</p>
-        {trust && <TrustBadge status={trust} />}
-      </div>
-      <p className={`mt-1 text-xl font-bold tabular-nums ${toneClass}`}>
-        <MoneyValue value={value} align="left" muteNegative={false} />
-      </p>
-      {sub && <p className="text-[11px] text-muted-foreground mt-0.5">{sub}</p>}
-    </div>
-  );
-}
-
 // ── Main content ────────────────────────────────────────────────────────────────
 
 export function FinanceProjectDetailContent({ projectId }: { projectId: number }) {
@@ -383,6 +358,137 @@ export function FinanceProjectDetailContent({ projectId }: { projectId: number }
   }
 
   const actionsAllowed = canEdit.allowed || canDelete.allowed;
+  const onOpenDrawer = (line: ReconDetailLine) => setDrawerException(lineToException(detail, line));
+  const onAction = (action: ActionKind, row: LineReviewRow) => setDialog({ action, row });
+
+  // Per-line columns shared by every category DrillTable. Preserves the exact
+  // fields, classes, per-row testids and gated actions of the original table.
+  const lineColumns: DrillColumn<ReconDetailLine>[] = [
+    {
+      key: "line",
+      header: "Line",
+      widthClass: "max-w-[260px]",
+      cell: (line) => (
+        <span data-testid={`finance-project-line-${line.lineId}`}>
+          <span className="block truncate text-foreground" title={line.description ?? undefined}>
+            {line.description ?? "—"}
+          </span>
+          <span className="block text-[10px] text-muted-foreground">
+            {line.recognitionMonth ?? "—"}
+            {line.invoiceNumber ? ` · ${line.invoiceNumber}` : ""}
+          </span>
+        </span>
+      ),
+    },
+    { key: "cos", header: "COS", numeric: true, cell: (line) => <MoneyValue align="right" muteNegative={false} value={line.actualTotal} /> },
+    { key: "revDerived", header: "Rev derived", numeric: true, cell: (line) => <MoneyValue align="right" muteNegative={false} value={line.revenueDerived} /> },
+    {
+      key: "revStored",
+      header: "Rev stored",
+      numeric: true,
+      className: "text-muted-foreground",
+      cell: (line) => (line.revenueStored != null ? <MoneyValue align="right" muteNegative={false} value={line.revenueStored} /> : "—"),
+    },
+    {
+      key: "reconDelta",
+      header: "Δ recon",
+      numeric: true,
+      cell: (line) => {
+        const tone =
+          line.reconDelta == null
+            ? "text-muted-foreground"
+            : Math.abs(line.reconDelta) <= 1
+              ? "text-muted-foreground"
+              : "text-status-drift";
+        return (
+          <span className={tone} data-testid={`line-recon-delta-${line.lineId}`}>
+            {line.reconDelta != null ? <MoneyValue align="right" muteNegative={false} value={line.reconDelta} /> : "—"}
+          </span>
+        );
+      },
+    },
+    {
+      key: "state",
+      header: "State",
+      cell: (line) => (
+        <Badge variant="outline" className={`text-[10px] capitalize ${BUCKET_BADGE[line.bucket]}`}>
+          {line.bucket}
+        </Badge>
+      ),
+    },
+    { key: "colour", header: "Colour", cell: (line) => <ColourStateBadge confirmed={line.invoiceDateConfirmed} /> },
+    {
+      key: "flags",
+      header: "Flags",
+      cell: (line) => {
+        const flags = flagsByLineId.get(line.lineId) ?? fallbackFlags(line.derivationWarning);
+        return <FlagBadges row={toLineReviewRow(line, projectId, detail.projectName, flags)} />;
+      },
+    },
+    {
+      key: "source",
+      header: "Source",
+      cell: (line) => (
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-[10px] font-mono text-muted-foreground hover:text-brand-green"
+          onClick={() => onOpenDrawer(line)}
+          data-testid={`line-source-proof-${line.lineId}`}
+          title={line.sourceFileHash ? `file ${line.sourceFileHash}` : "Open source proof"}
+        >
+          <Info className="h-3 w-3" aria-hidden="true" />
+          {line.sourceCell ?? "proof"}
+        </button>
+      ),
+    },
+    {
+      key: "actions",
+      header: <span className="sr-only">Actions</span>,
+      align: "right",
+      widthClass: "w-8",
+      cell: (line) => {
+        if (!actionsAllowed) return <span className="text-muted-foreground">—</span>;
+        const flags = flagsByLineId.get(line.lineId) ?? fallbackFlags(line.derivationWarning);
+        const row = toLineReviewRow(line, projectId, detail.projectName, flags);
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-7 w-7 p-0" aria-label="Line actions" data-testid={`line-actions-${line.lineId}`}>
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              {canEdit.allowed && (
+                <>
+                  <DropdownMenuItem onClick={() => onAction("move", row)} data-testid={`line-action-move-${line.lineId}`}>
+                    <CalendarDays className="mr-2 h-3.5 w-3.5" /> Move to month…
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onAction("invoiceDate", row)} data-testid={`line-action-invoice-${line.lineId}`}>
+                    <CalendarClock className="mr-2 h-3.5 w-3.5" /> Set invoice date…
+                  </DropdownMenuItem>
+                  {line.recognitionDateOverride && (
+                    <DropdownMenuItem onClick={() => onAction("clear", row)} data-testid={`line-action-clear-${line.lineId}`}>
+                      <RotateCcw className="mr-2 h-3.5 w-3.5" /> Undo move
+                    </DropdownMenuItem>
+                  )}
+                </>
+              )}
+              {canEdit.allowed && canDelete.allowed && <DropdownMenuSeparator />}
+              {canDelete.allowed && (
+                <DropdownMenuItem
+                  onClick={() => onAction("remove", row)}
+                  className="text-destructive focus:text-destructive"
+                  data-testid={`line-action-remove-${line.lineId}`}
+                >
+                  <Trash2 className="mr-2 h-3.5 w-3.5" /> Remove line
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
+      },
+    },
+  ];
 
   return (
     <div className="space-y-5" data-testid="finance-project-detail">
@@ -402,24 +508,28 @@ export function FinanceProjectDetailContent({ projectId }: { projectId: number }
         </CardContent>
       </Card>
 
-      {/* FY aggregate cards — reconciled to the lines below */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" data-testid="finance-project-aggregates">
-        <AggregateCard
+      {/* FY aggregate KPIs — reconciled to the lines below */}
+      <KpiRow data-testid="finance-project-aggregates">
+        <KpiTile
           label="App revenue (recognised)"
-          value={detail.appTotal}
-          trust={detail.status === "green" ? "ties" : "drift"}
+          value={<MoneyValue value={detail.appTotal} align="left" muteNegative={false} />}
+          sourceBadge={<TrustBadge status={detail.status === "green" ? "ties" : "drift"} />}
         />
-        <AggregateCard
+        <KpiTile
           label="Tracker (pasted)"
-          value={detail.trackerTotal}
-          trust={Math.abs(detail.appVsTrackerDelta) <= 1 ? "ties" : "drift"}
-          sub={`Δ ${formatZar(detail.appVsTrackerDelta)}`}
+          value={<MoneyValue value={detail.trackerTotal} align="left" muteNegative={false} />}
+          supporting={`Δ ${formatZar(detail.appVsTrackerDelta)}`}
+          sourceBadge={<TrustBadge status={Math.abs(detail.appVsTrackerDelta) <= 1 ? "ties" : "drift"} />}
         />
-        <AggregateCard label="COS" value={totals.cos} />
-        <AggregateCard label="GP" value={totals.gp} tone={totals.gp >= 0 ? "positive" : "critical"} />
-      </div>
+        <KpiTile label="COS" value={<MoneyValue value={totals.cos} align="left" muteNegative={false} />} />
+        <KpiTile
+          label="GP"
+          value={<MoneyValue value={totals.gp} align="left" muteNegative={false} />}
+          tone={totals.gp >= 0 ? "positive" : "critical"}
+        />
+      </KpiRow>
 
-      {/* Per-line tracker reproduction */}
+      {/* Per-line tracker reproduction — one heading + DrillTable per category */}
       <Card className="overflow-hidden">
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 border-b bg-muted/30 px-4 py-3">
           <CardTitle className="flex items-center gap-2 text-sm">
@@ -434,49 +544,44 @@ export function FinanceProjectDetailContent({ projectId }: { projectId: number }
             QB Reconciliation <ChevronRight className="h-3 w-3" />
           </Link>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent className="space-y-3 p-4">
           {lines.length === 0 ? (
-            <p className="px-4 py-8 text-center text-sm text-muted-foreground">No cost lines for this project.</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">No cost lines for this project.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs" data-testid="finance-project-line-table">
-                <thead className="bg-muted/40 text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-semibold">Line</th>
-                    <th className="px-3 py-2 text-right font-semibold">COS</th>
-                    <th className="px-3 py-2 text-right font-semibold">Rev derived</th>
-                    <th className="px-3 py-2 text-right font-semibold">Rev stored</th>
-                    <th className="px-3 py-2 text-right font-semibold">Δ recon</th>
-                    <th className="px-3 py-2 text-left font-semibold">State</th>
-                    <th className="px-3 py-2 text-left font-semibold">Colour</th>
-                    <th className="px-3 py-2 text-left font-semibold">Flags</th>
-                    <th className="px-3 py-2 text-left font-semibold">Source</th>
-                    <th className="px-3 py-2 text-right font-semibold w-8"><span className="sr-only">Actions</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {groups.map((g) => {
-                    const isCollapsed = collapsed.has(g.name);
-                    return (
-                      <CategoryGroup
-                        key={g.name}
-                        group={g}
-                        collapsed={isCollapsed}
-                        onToggle={() => toggleGroup(g.name)}
-                        projectId={projectId}
-                        projectName={detail.projectName}
-                        flagsByLineId={flagsByLineId}
-                        actionsAllowed={actionsAllowed}
-                        canEdit={canEdit.allowed}
-                        canDelete={canDelete.allowed}
-                        onOpenDrawer={(line) => setDrawerException(lineToException(detail, line))}
-                        onAction={(action, row) => setDialog({ action, row })}
-                      />
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            groups.map((g) => {
+              const isCollapsed = collapsed.has(g.name);
+              return (
+                <div key={g.name} data-testid={`finance-project-group-${g.name}`}>
+                  {/* Category heading — name + count + needs-review + group totals */}
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(g.name)}
+                    className="flex w-full flex-wrap items-center justify-between gap-2 rounded-t-lg border border-b-0 border-border bg-muted/30 px-3 py-2 text-left hover:bg-muted/50"
+                  >
+                    <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
+                      {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                      {g.name}
+                      <Badge variant="outline" className="ml-1 text-[10px]">{g.rows.length}</Badge>
+                      {g.hasOffending && <StatusBadge tone="critical" label="Needs review" />}
+                    </span>
+                    <span className="inline-flex items-center gap-3 text-xs text-muted-foreground">
+                      <span>COS <MoneyValue value={g.cos} align="left" muteNegative={false} /></span>
+                      <span>Rev <MoneyValue value={g.revDerived} align="left" muteNegative={false} /></span>
+                    </span>
+                  </button>
+                  {!isCollapsed && (
+                    <DrillTable
+                      columns={lineColumns}
+                      rows={g.rows}
+                      rowKey={(line) => line.lineId}
+                      stickyHeader={false}
+                      className="rounded-t-none"
+                      data-testid={`finance-project-line-table-${g.name}`}
+                    />
+                  )}
+                </div>
+              );
+            })
           )}
           {/* Drill reconciliation: the FY app-revenue total ties to the lines. */}
           <DrillReconciliationFooter
@@ -504,166 +609,6 @@ export function FinanceProjectDetailContent({ projectId }: { projectId: number }
         />
       )}
     </div>
-  );
-}
-
-// ── Category group + line rows ────────────────────────────────────────────────
-
-interface GroupShape {
-  name: string;
-  rows: ReconDetailLine[];
-  cos: number;
-  revDerived: number;
-  absDelta: number;
-  hasOffending: boolean;
-}
-
-function CategoryGroup({
-  group,
-  collapsed,
-  onToggle,
-  projectId,
-  projectName,
-  flagsByLineId,
-  actionsAllowed,
-  canEdit,
-  canDelete,
-  onOpenDrawer,
-  onAction,
-}: {
-  group: GroupShape;
-  collapsed: boolean;
-  onToggle: () => void;
-  projectId: number;
-  projectName: string | null;
-  flagsByLineId: Map<number, LineReviewFlags>;
-  actionsAllowed: boolean;
-  canEdit: boolean;
-  canDelete: boolean;
-  onOpenDrawer: (line: ReconDetailLine) => void;
-  onAction: (action: ActionKind, row: LineReviewRow) => void;
-}) {
-  return (
-    <>
-      <tr
-        className="border-t border-border bg-muted/20 hover:bg-muted/40 cursor-pointer"
-        onClick={onToggle}
-        data-testid={`finance-project-group-${group.name}`}
-      >
-        <td className="px-3 py-2 font-medium text-foreground">
-          <span className="inline-flex items-center gap-1.5">
-            {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            {group.name}
-            <Badge variant="outline" className="ml-1 text-[10px]">{group.rows.length}</Badge>
-            {group.hasOffending && (
-              <Badge variant="outline" className="text-[10px] border-status-adverse/40 bg-status-adverse/10 text-status-adverse">
-                Needs review
-              </Badge>
-            )}
-          </span>
-        </td>
-        <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground"><MoneyValue align="right" muteNegative={false} value={group.cos} /></td>
-        <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground"><MoneyValue align="right" muteNegative={false} value={group.revDerived} /></td>
-        <td colSpan={7} />
-      </tr>
-      {!collapsed &&
-        group.rows.map((line) => {
-          const flags = flagsByLineId.get(line.lineId) ?? fallbackFlags(line.derivationWarning);
-          const row = toLineReviewRow(line, projectId, projectName, flags);
-          const deltaTone =
-            line.reconDelta == null
-              ? "text-muted-foreground"
-              : Math.abs(line.reconDelta) <= 1
-                ? "text-muted-foreground"
-                : "text-status-drift";
-          return (
-            <tr
-              key={line.lineId}
-              className="border-t border-border/60 hover:bg-muted/20"
-              data-testid={`finance-project-line-${line.lineId}`}
-            >
-              <td className="px-3 py-2 max-w-[260px]">
-                <p className="truncate text-foreground" title={line.description ?? undefined}>
-                  {line.description ?? "—"}
-                </p>
-                <p className="text-[10px] text-muted-foreground">
-                  {line.recognitionMonth ?? "—"}
-                  {line.invoiceNumber ? ` · ${line.invoiceNumber}` : ""}
-                </p>
-              </td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums"><MoneyValue align="right" muteNegative={false} value={line.actualTotal} /></td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums"><MoneyValue align="right" muteNegative={false} value={line.revenueDerived} /></td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground">
-                {line.revenueStored != null ? <MoneyValue align="right" muteNegative={false} value={line.revenueStored} /> : "—"}
-              </td>
-              <td className={`px-3 py-2 text-right font-mono tabular-nums ${deltaTone}`} data-testid={`line-recon-delta-${line.lineId}`}>
-                {line.reconDelta != null ? <MoneyValue align="right" muteNegative={false} value={line.reconDelta} /> : "—"}
-              </td>
-              <td className="px-3 py-2">
-                <Badge variant="outline" className={`text-[10px] capitalize ${BUCKET_BADGE[line.bucket]}`}>
-                  {line.bucket}
-                </Badge>
-              </td>
-              <td className="px-3 py-2">
-                <ColourStateBadge confirmed={line.invoiceDateConfirmed} />
-              </td>
-              <td className="px-3 py-2"><FlagBadges row={row} /></td>
-              <td className="px-3 py-2">
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1 text-[10px] font-mono text-muted-foreground hover:text-brand-green"
-                  onClick={() => onOpenDrawer(line)}
-                  data-testid={`line-source-proof-${line.lineId}`}
-                  title={line.sourceFileHash ? `file ${line.sourceFileHash}` : "Open source proof"}
-                >
-                  <Info className="h-3 w-3" aria-hidden="true" />
-                  {line.sourceCell ?? "proof"}
-                </button>
-              </td>
-              <td className="px-3 py-2 text-right">
-                {actionsAllowed ? (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" aria-label="Line actions" data-testid={`line-actions-${line.lineId}`}>
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-44">
-                      {canEdit && (
-                        <>
-                          <DropdownMenuItem onClick={() => onAction("move", row)} data-testid={`line-action-move-${line.lineId}`}>
-                            <CalendarDays className="mr-2 h-3.5 w-3.5" /> Move to month…
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => onAction("invoiceDate", row)} data-testid={`line-action-invoice-${line.lineId}`}>
-                            <CalendarClock className="mr-2 h-3.5 w-3.5" /> Set invoice date…
-                          </DropdownMenuItem>
-                          {line.recognitionDateOverride && (
-                            <DropdownMenuItem onClick={() => onAction("clear", row)} data-testid={`line-action-clear-${line.lineId}`}>
-                              <RotateCcw className="mr-2 h-3.5 w-3.5" /> Undo move
-                            </DropdownMenuItem>
-                          )}
-                        </>
-                      )}
-                      {canEdit && canDelete && <DropdownMenuSeparator />}
-                      {canDelete && (
-                        <DropdownMenuItem
-                          onClick={() => onAction("remove", row)}
-                          className="text-destructive focus:text-destructive"
-                          data-testid={`line-action-remove-${line.lineId}`}
-                        >
-                          <Trash2 className="mr-2 h-3.5 w-3.5" /> Remove line
-                        </DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
-              </td>
-            </tr>
-          );
-        })}
-    </>
   );
 }
 

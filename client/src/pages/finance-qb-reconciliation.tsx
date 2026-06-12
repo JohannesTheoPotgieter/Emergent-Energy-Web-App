@@ -9,12 +9,11 @@
  *   - mark an accepted difference ignored (captures by-whom + why + when)
  *   - restore it. NEVER writes back to QuickBooks; never adjusts a tracker (§ 3.4).
  *
- * Three views: (1) a Day/Week/Month grain selector; (2) a MONTH COMPARISON
- * table — tracker vs QB REV/COS/GP + variance + match COVERAGE per period, with
- * low-coverage flagged (never presented as fully reconciled); (3) an INVOICE
- * WORKLIST drilled from a period, split REVENUE / COST (the documents differ),
- * each in the four states MATCHED / UNMATCHED-IN-QB / UNMATCHED-IN-TRACKER /
- * AMBIGUOUS. GP is never shown per invoice. Ex-VAT throughout.
+ * Compact finance template: header (+ grain selector) → KPI row (REV/COS/GP
+ * tracker-vs-QB for the selected period) → a DrillTable period comparison (the
+ * grouped trk·QB·Δ columns FLATTENED to numeric columns, kept in compact ZAR) →
+ * an invoice worklist split REVENUE / COST, each side rendered through DrillTables
+ * under collapsible four-state group headings. Presentation only — no figure changes.
  * Brand: centralised tokens; every state pairs an icon + word (colour-blind safe).
  */
 import { useEffect, useMemo, useState } from "react";
@@ -37,12 +36,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   FinancePageHeader,
+  KpiRow,
+  KpiTile,
   MoneyValue,
   StatusBadge,
+  DrillTable,
   FinanceLoading,
   FinanceEmpty,
   FinanceError,
   type StatusTone,
+  type DrillColumn,
 } from "@/components/finance/template";
 import {
   buildSideWorklist,
@@ -124,6 +127,7 @@ interface IgnoresResp {
 const TOLERANCE = 1;
 const num = (v: string | null): number => (v == null ? 0 : Number(v) || 0);
 const round2 = (n: number): number => Number(n.toFixed(2));
+/** Compact ZAR for the period table (intentionally compact, not whole-Rand). */
 const money = (v: number) => <span title={formatZar(v)}>{formatZarCompact(v)}</span>;
 
 const STATE_META: Record<MatchState, { label: string; icon: LucideIcon; tone: StatusTone }> = {
@@ -138,184 +142,122 @@ function StateChip({ state }: { state: MatchState }) {
   return <StatusBadge tone={m.tone} icon={m.icon} label={m.label} data-testid={`qb-recon-state-${state}`} />;
 }
 
-function MetricTile({ label, tracker, qb }: { label: string; tracker: number; qb: number }) {
-  const delta = round2(tracker - qb);
-  const tie = Math.abs(delta) <= TOLERANCE;
-  return (
-    <Card data-testid={`qb-recon-tile-${label.toLowerCase()}`}>
-      <CardHeader className="pb-1">
-        <CardTitle className="text-xs font-semibold uppercase tracking-wider text-brand-muted">{label}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-1">
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="font-mono text-lg font-semibold text-brand-text"><MoneyValue value={tracker} align="left" /></span>
-          {tie ? (
-            <StatusBadge tone="ties" label="Tie" />
-          ) : (
-            <StatusBadge tone="warning" label="Variance" />
-          )}
-        </div>
-        <p className="text-xs text-brand-muted">
-          tracker <MoneyValue value={tracker} align="left" /> · QB <MoneyValue value={qb} align="left" />
-        </p>
-        {!tie && (
-          <p className="font-mono text-sm font-semibold text-amber-700" data-testid={`qb-recon-tile-${label.toLowerCase()}-delta`}>
-            Δ <MoneyValue value={delta} align="left" />
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-/** Tracker / QB / Δ triple for one metric in the month table. */
-function MetricCells({ tracker, qb }: { tracker: number; qb: number }) {
+/** trk · QB · Δ for one metric, as a compact text triple for the KPI supporting line. */
+function tripleText(tracker: number, qb: number): string {
   const d = variance(tracker, qb);
   const tie = Math.abs(d) <= TOLERANCE;
-  return (
-    <>
-      <td className="px-3 py-2 text-right font-mono text-brand-text">{money(tracker)}</td>
-      <td className="px-3 py-2 text-right font-mono text-brand-muted">{money(qb)}</td>
-      <td className={`px-3 py-2 text-right font-mono ${tie ? "text-brand-muted" : "text-amber-700 font-semibold"}`}>
-        {tie ? "—" : <>Δ {money(d)}</>}
-      </td>
-    </>
-  );
+  return `tracker ${formatZarCompact(tracker)} · QB ${formatZarCompact(qb)}${tie ? "" : ` · Δ ${formatZarCompact(d)}`}`;
 }
 
-function MonthComparisonTable({
-  periods,
-  selected,
-  onSelect,
-  grain,
-}: {
-  periods: PeriodSummary[];
-  selected: string | null;
-  onSelect: (key: string) => void;
-  grain: Grain;
-}) {
-  const grainLabel = grain === "month" ? "Month" : grain === "week" ? "Week" : "Day";
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-semibold text-brand-text">
-          Tracker vs QuickBooks by {grainLabel.toLowerCase()} — REV / COS / GP + variance + match coverage
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="p-0">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm" data-testid="qb-recon-month-table">
-            <thead>
-              <tr className="border-b border-brand-muted/30 text-xs uppercase tracking-wider text-brand-muted">
-                <th className="px-3 py-2 text-left font-medium">{grainLabel}</th>
-                <th className="px-3 py-2 text-right font-medium" colSpan={3}>Revenue (trk · QB · Δ)</th>
-                <th className="px-3 py-2 text-right font-medium" colSpan={3}>COS (trk · QB · Δ)</th>
-                <th className="px-3 py-2 text-right font-medium" colSpan={3}>GP (trk · QB · Δ)</th>
-                <th className="px-3 py-2 text-right font-medium">Coverage</th>
-              </tr>
-            </thead>
-            <tbody>
-              {periods.map((p) => {
-                const cov = monthCoverage(p);
-                const isSel = p.periodKey === selected;
-                return (
-                  <tr
-                    key={p.periodKey}
-                    className={`cursor-pointer border-b border-brand-muted/15 hover:bg-brand-muted/5 ${isSel ? "bg-brand-green/5" : ""}`}
-                    onClick={() => onSelect(p.periodKey)}
-                    data-testid={`qb-recon-month-row-${p.periodKey}`}
-                    aria-selected={isSel}
-                  >
-                    <th scope="row" className="px-3 py-2 text-left font-medium text-brand-text">
-                      <span className="inline-flex items-center gap-1.5">
-                        {p.periodKey}
-                        {isSel && <span className="text-[10px] uppercase text-brand-green">▸ drill</span>}
-                      </span>
-                    </th>
-                    <MetricCells tracker={p.rev?.trackerTotal ?? 0} qb={p.rev?.qbTotal ?? 0} />
-                    <MetricCells tracker={p.cos?.trackerTotal ?? 0} qb={p.cos?.qbTotal ?? 0} />
-                    <MetricCells tracker={p.gpTracker} qb={p.gpQb} />
-                    <td className="px-3 py-2 text-right" data-testid={`qb-recon-coverage-${p.periodKey}`}>
-                      {cov.overall == null ? (
-                        <span className="text-brand-muted">—</span>
-                      ) : cov.low ? (
-                        <StatusBadge
-                          tone="warning"
-                          label={coverageLabel(cov.overall)}
-                          title={`Below ${LOW_COVERAGE_THRESHOLD}% — not fully reconciled`}
-                        />
-                      ) : (
-                        <span className="font-mono text-brand-text">{coverageLabel(cov.overall)}</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <p className="px-3 py-2 text-[11px] text-brand-muted">
-          Coverage = matched ex-VAT value ÷ tracker-invoiced value. A flagged month is{" "}
-          <span className="font-medium">not</span> fully reconciled — unmatched is the default, not an error.
-          Click a row to drill into its invoice worklist.
-        </p>
-      </CardContent>
-    </Card>
-  );
+// ── Period comparison — flattened numeric columns (compact ZAR) ────────────────
+// The DrillTable has no colSpan super-headers, so the grouped Rev/COS/GP triples
+// are flattened to individual numeric columns. Cells keep the LOCAL compact money()
+// renderer (the period table intentionally uses compact, not whole-Rand MoneyValue).
+
+/** One metric's Δ cell — em-dash on tie, amber compact Δ otherwise. */
+function deltaCell(tracker: number, qb: number) {
+  const d = variance(tracker, qb);
+  const tie = Math.abs(d) <= TOLERANCE;
+  return tie ? <span className="text-brand-muted">—</span> : <span className="text-amber-700 font-semibold">Δ {money(d)}</span>;
 }
 
-function WorklistRow({
-  line,
-  onIgnore,
-  ignoring,
-}: {
-  line: ReconLine;
-  onIgnore: (line: ReconLine) => void;
-  ignoring: boolean;
-}) {
-  const showIgnore = line.status !== "matched" || line.timingFlag;
-  return (
-    <tr className="border-b border-brand-muted/15" data-testid={`qb-recon-row-${line.id}`}>
-      <td className="px-3 py-2 font-mono">{line.invoiceNoRaw ?? line.invoiceNoNorm}</td>
-      <td className="px-3 py-2 text-right font-mono">{line.trackerAmountExVat == null ? "—" : <MoneyValue value={num(line.trackerAmountExVat)} />}</td>
-      <td className="px-3 py-2 text-right font-mono">{line.qbAmountExVat == null ? "—" : <MoneyValue value={num(line.qbAmountExVat)} />}</td>
-      <td className="px-3 py-2 text-right font-mono text-amber-700">{line.delta == null ? "—" : <MoneyValue value={num(line.delta)} muteNegative={false} />}</td>
-      <td className="px-3 py-2 text-xs text-brand-muted">{line.trackerDate ?? "—"}</td>
-      <td className="px-3 py-2 text-xs text-brand-muted">{line.qbDate ?? "—"}</td>
-      <td className="px-3 py-2">
-        {line.timingFlag && (
-          <StatusBadge tone="info" icon={Clock} label="Timing" className="mr-1" />
-        )}
-      </td>
-      <td className="px-3 py-2 text-right">
-        {showIgnore && (
+function periodColumns(grainLabel: string): DrillColumn<PeriodSummary>[] {
+  return [
+    {
+      key: "period",
+      header: grainLabel,
+      cell: (p) => (
+        <span className="font-medium text-brand-text" data-testid={`qb-recon-month-row-${p.periodKey}`}>
+          {p.periodKey}
+        </span>
+      ),
+    },
+    { key: "revTrk", header: "Rev trk", numeric: true, cell: (p) => money(p.rev?.trackerTotal ?? 0) },
+    { key: "revQb", header: "Rev QB", numeric: true, cell: (p) => <span className="text-brand-muted">{money(p.rev?.qbTotal ?? 0)}</span> },
+    { key: "revD", header: "Rev Δ", numeric: true, cell: (p) => deltaCell(p.rev?.trackerTotal ?? 0, p.rev?.qbTotal ?? 0) },
+    { key: "cosTrk", header: "COS trk", numeric: true, cell: (p) => money(p.cos?.trackerTotal ?? 0) },
+    { key: "cosQb", header: "COS QB", numeric: true, cell: (p) => <span className="text-brand-muted">{money(p.cos?.qbTotal ?? 0)}</span> },
+    { key: "cosD", header: "COS Δ", numeric: true, cell: (p) => deltaCell(p.cos?.trackerTotal ?? 0, p.cos?.qbTotal ?? 0) },
+    { key: "gpTrk", header: "GP trk", numeric: true, cell: (p) => money(p.gpTracker) },
+    { key: "gpQb", header: "GP QB", numeric: true, cell: (p) => <span className="text-brand-muted">{money(p.gpQb)}</span> },
+    { key: "gpD", header: "GP Δ", numeric: true, cell: (p) => deltaCell(p.gpTracker, p.gpQb) },
+    {
+      key: "coverage",
+      header: "Coverage",
+      align: "right",
+      cell: (p) => {
+        const cov = monthCoverage(p);
+        return (
+          <span data-testid={`qb-recon-coverage-${p.periodKey}`}>
+            {cov.overall == null ? (
+              <span className="text-brand-muted">—</span>
+            ) : cov.low ? (
+              <StatusBadge
+                tone="warning"
+                label={coverageLabel(cov.overall)}
+                title={`Below ${LOW_COVERAGE_THRESHOLD}% — not fully reconciled`}
+              />
+            ) : (
+              <span className="font-mono text-brand-text">{coverageLabel(cov.overall)}</span>
+            )}
+          </span>
+        );
+      },
+    },
+  ];
+}
+
+// ── Invoice worklist ──────────────────────────────────────────────────────────
+
+/** The four-state worklist columns for one side (REV or COS). */
+function worklistColumns(
+  onIgnore: (line: ReconLine) => void,
+  ignoring: boolean,
+): DrillColumn<ReconLine>[] {
+  return [
+    { key: "invoice", header: "Invoice #", cell: (l) => <span className="font-mono" data-testid={`qb-recon-row-${l.id}`}>{l.invoiceNoRaw ?? l.invoiceNoNorm}</span> },
+    { key: "tracker", header: "Tracker", numeric: true, cell: (l) => (l.trackerAmountExVat == null ? "—" : <MoneyValue value={num(l.trackerAmountExVat)} />) },
+    { key: "qb", header: "QB", numeric: true, cell: (l) => (l.qbAmountExVat == null ? "—" : <MoneyValue value={num(l.qbAmountExVat)} />) },
+    {
+      key: "delta",
+      header: "Δ",
+      numeric: true,
+      cell: (l) => <span className="text-amber-700">{l.delta == null ? "—" : <MoneyValue value={num(l.delta)} muteNegative={false} />}</span>,
+    },
+    { key: "trackerDate", header: "Tracker date", hideBelowMd: true, cell: (l) => <span className="text-xs text-brand-muted">{l.trackerDate ?? "—"}</span> },
+    { key: "qbDate", header: "QB date", hideBelowMd: true, cell: (l) => <span className="text-xs text-brand-muted">{l.qbDate ?? "—"}</span> },
+    { key: "timing", header: "", cell: (l) => (l.timingFlag ? <StatusBadge tone="info" icon={Clock} label="Timing" /> : null) },
+    {
+      key: "action",
+      header: "",
+      align: "right",
+      cell: (l) =>
+        l.status !== "matched" || l.timingFlag ? (
           <Button
             variant="ghost"
             size="sm"
             className="h-7 gap-1 text-xs text-brand-muted hover:text-brand-text"
-            onClick={() => onIgnore(line)}
+            onClick={() => onIgnore(l)}
             disabled={ignoring}
-            data-testid={`qb-recon-ignore-${line.id}`}
+            data-testid={`qb-recon-ignore-${l.id}`}
           >
             <EyeOff className="h-3.5 w-3.5" aria-hidden="true" /> Ignore
           </Button>
-        )}
-      </td>
-    </tr>
-  );
+        ) : null,
+    },
+  ];
 }
 
+/** One collapsible four-state group: heading (chip + count + total) → DrillTable. */
 function StateGroup({
   state,
   lines,
-  onIgnore,
-  ignoring,
+  columns,
   defaultOpen,
 }: {
   state: MatchState;
   lines: ReconLine[];
-  onIgnore: (l: ReconLine) => void;
-  ignoring: boolean;
+  columns: DrillColumn<ReconLine>[];
   defaultOpen: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -335,25 +277,14 @@ function StateGroup({
         <span className="text-xs text-brand-muted">{open ? "▾" : "▸"}</span>
       </button>
       {open && (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-brand-muted/30 text-left text-[11px] uppercase tracking-wider text-brand-muted">
-              <th className="px-3 py-1.5 font-medium">Invoice #</th>
-              <th className="px-3 py-1.5 text-right font-medium">Tracker</th>
-              <th className="px-3 py-1.5 text-right font-medium">QB</th>
-              <th className="px-3 py-1.5 text-right font-medium">Δ</th>
-              <th className="px-3 py-1.5 font-medium">Tracker date</th>
-              <th className="px-3 py-1.5 font-medium">QB date</th>
-              <th className="px-3 py-1.5 font-medium"></th>
-              <th className="px-3 py-1.5 font-medium"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {lines.map((l) => (
-              <WorklistRow key={`${l.stream}-${l.id}`} line={l} onIgnore={onIgnore} ignoring={ignoring} />
-            ))}
-          </tbody>
-        </table>
+        <DrillTable
+          columns={columns}
+          rows={lines}
+          rowKey={(l) => `${l.stream}-${l.id}`}
+          stickyHeader={false}
+          className="border-0"
+          data-testid={`qb-recon-group-table-${state}`}
+        />
       )}
     </div>
   );
@@ -370,6 +301,7 @@ function SideWorklistCard({
   onIgnore: (l: ReconLine) => void;
   ignoring: boolean;
 }) {
+  const columns = useMemo(() => worklistColumns(onIgnore, ignoring), [onIgnore, ignoring]);
   const empty =
     worklist.matched.length +
       worklist.ambiguous.length +
@@ -389,10 +321,10 @@ function SideWorklistCard({
         ) : (
           <div className="divide-y divide-brand-muted/15">
             {/* Differences first (expanded); clean matches last (collapsed). */}
-            <StateGroup state="ambiguous" lines={worklist.ambiguous} onIgnore={onIgnore} ignoring={ignoring} defaultOpen />
-            <StateGroup state="unmatched_in_qb" lines={worklist.unmatchedInQb} onIgnore={onIgnore} ignoring={ignoring} defaultOpen />
-            <StateGroup state="unmatched_in_tracker" lines={worklist.unmatchedInTracker} onIgnore={onIgnore} ignoring={ignoring} defaultOpen />
-            <StateGroup state="matched" lines={worklist.matched} onIgnore={onIgnore} ignoring={ignoring} defaultOpen={false} />
+            <StateGroup state="ambiguous" lines={worklist.ambiguous} columns={columns} defaultOpen />
+            <StateGroup state="unmatched_in_qb" lines={worklist.unmatchedInQb} columns={columns} defaultOpen />
+            <StateGroup state="unmatched_in_tracker" lines={worklist.unmatchedInTracker} columns={columns} defaultOpen />
+            <StateGroup state="matched" lines={worklist.matched} columns={columns} defaultOpen={false} />
           </div>
         )}
       </CardContent>
@@ -499,6 +431,37 @@ export default function FinanceQbReconciliationPage() {
 
   const ignores = ignoresQuery.data?.ignores ?? [];
 
+  const grainLabel = grain === "month" ? "Month" : grain === "week" ? "Week" : "Day";
+  const periodCols = useMemo(() => periodColumns(grainLabel), [grainLabel]);
+
+  // Selected-period REV / COS / GP triples for the KPI row.
+  const kpis = useMemo(() => {
+    const metric = (tracker: number, qb: number) => {
+      const delta = round2(tracker - qb);
+      const tie = Math.abs(delta) <= TOLERANCE;
+      return { tracker, qb, delta, tie };
+    };
+    return {
+      rev: metric(period?.rev?.trackerTotal ?? 0, period?.rev?.qbTotal ?? 0),
+      cos: metric(period?.cos?.trackerTotal ?? 0, period?.cos?.qbTotal ?? 0),
+      gp: metric(period?.gpTracker ?? 0, period?.gpQb ?? 0),
+    };
+  }, [period]);
+
+  const kpiTile = (label: string, key: "rev" | "cos" | "gp") => {
+    const m = kpis[key];
+    return (
+      <KpiTile
+        data-testid={`qb-recon-tile-${label.toLowerCase()}`}
+        label={label}
+        value={<MoneyValue value={m.tracker} align="left" muteNegative={false} />}
+        tone={m.tie ? "positive" : "warning"}
+        supporting={tripleText(m.tracker, m.qb)}
+        sourceBadge={<StatusBadge tone={m.tie ? "ties" : "warning"} label={m.tie ? "Tie" : "Variance"} />}
+      />
+    );
+  };
+
   return (
     <div className="min-h-full bg-brand-surface text-brand-text" data-testid="qb-reconciliation-view">
       <div className="mx-auto max-w-[1400px] space-y-5 px-6 py-6">
@@ -538,17 +501,36 @@ export default function FinanceQbReconciliationPage() {
           />
         ) : (
           <>
-            {/* View 2 — month comparison table (per period across the FY) */}
-            <MonthComparisonTable periods={periods} selected={period?.periodKey ?? null} onSelect={setSelectedPeriod} grain={grain} />
+            {/* Selected-period summary tiles (REV / COS / GP tracker-vs-QB) */}
+            <KpiRow>
+              {kpiTile("Revenue", "rev")}
+              {kpiTile("COS", "cos")}
+              {kpiTile("GP", "gp")}
+            </KpiRow>
 
-            {/* Selected-period summary tiles */}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <MetricTile label="Revenue" tracker={period?.rev?.trackerTotal ?? 0} qb={period?.rev?.qbTotal ?? 0} />
-              <MetricTile label="COS" tracker={period?.cos?.trackerTotal ?? 0} qb={period?.cos?.qbTotal ?? 0} />
-              <MetricTile label="GP" tracker={period?.gpTracker ?? 0} qb={period?.gpQb ?? 0} />
+            {/* Period comparison table — tracker vs QB REV/COS/GP + Δ + coverage.
+                Click a row to drill its invoice worklist below. */}
+            <div>
+              <h2 className="mb-2 text-sm font-semibold text-brand-text">
+                Tracker vs QuickBooks by {grainLabel.toLowerCase()} — REV / COS / GP + variance + match coverage
+              </h2>
+              <DrillTable
+                data-testid="qb-recon-month-table"
+                columns={periodCols}
+                rows={periods}
+                rowKey={(p) => p.periodKey}
+                onRowClick={(p) => setSelectedPeriod(p.periodKey)}
+                maxBodyHeightClass="max-h-[50vh]"
+                caption="Tracker vs QuickBooks per period with variance and match coverage."
+              />
+              <p className="px-1 py-2 text-[11px] text-brand-muted">
+                Coverage = matched ex-VAT value ÷ tracker-invoiced value. A flagged period is{" "}
+                <span className="font-medium">not</span> fully reconciled — unmatched is the default, not an error.
+                Click a row to drill into its invoice worklist.
+              </p>
             </div>
 
-            {/* View 3 — invoice worklist, drilled from the selected period, split
+            {/* Invoice worklist, drilled from the selected period, split
                 REVENUE vs COST (the documents differ); four states each; no GP/invoice. */}
             <div>
               <h2 className="mb-2 text-sm font-semibold text-brand-text">
@@ -564,8 +546,8 @@ export default function FinanceQbReconciliationPage() {
               </div>
             </div>
 
-            {/* View 4 — recon-ignores: accepted differences, excluded from the
-                worklist but kept visible + audited (who / why / when). */}
+            {/* Recon-ignores: accepted differences, excluded from the worklist
+                but kept visible + audited (who / why / when). Audit footer. */}
             {ignores.length > 0 && (
               <Card>
                 <CardHeader className="pb-2">
@@ -595,7 +577,7 @@ export default function FinanceQbReconciliationPage() {
                           <RotateCcw className="h-3 w-3" aria-hidden="true" /> Restore
                         </Button>
                       ) : (
-                        <span className="text-[11px] italic">(per-project — restore on the tracker-gap view)</span>
+                        <span className="text-[11px] italic">(per-project — restore on the per-project recon view)</span>
                       )}
                     </div>
                   ))}
