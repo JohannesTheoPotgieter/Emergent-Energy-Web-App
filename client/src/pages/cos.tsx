@@ -24,6 +24,7 @@ import {
 } from '@/components/finance/template';
 import { CosLineReviewPanel } from '@/components/cos/cos-line-review-panel';
 import { fetchQueryFn } from '@/lib/queryClient';
+import { FINANCE_QUERY_VOLATILE } from '@/lib/finance-stale-policy';
 import { useFinancialYearScope } from '@/hooks/use-financial-year-scope';
 import { ListChecks } from 'lucide-react';
 
@@ -75,7 +76,7 @@ export default function CosTrackerPage() {
   const { data, isLoading, isError, error, refetch } = useQuery<CosMonthData[]>({
     queryKey: cosTrackerQueryKey,
     queryFn: fetchQueryFn(`/api/cos-tracker?${qs}`),
-    staleTime: 30_000,
+    ...FINANCE_QUERY_VOLATILE,
   });
 
   const months = useMemo(() => data ?? [], [data]);

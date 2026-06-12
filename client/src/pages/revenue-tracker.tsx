@@ -9,10 +9,11 @@
  * comes from the canonical endpoints; no formula or number is computed here.
  */
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FinanceShell } from '@/components/layout/FinanceShell';
 import { FinancialYearScopeControl } from '@/components/finance/FinancialYearScopeControl';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import {
   FinancePageHeader,
   KpiRow,
@@ -28,7 +29,9 @@ import {
   RevenueMonthDetailDrawer,
   type RevenueDetailFilter,
 } from '@/components/finance/revenue-line-drawer';
-import { fetchQueryFn } from '@/lib/queryClient';
+import { fetchQueryFn, apiRequest, invalidateDashboardQueries } from '@/lib/queryClient';
+import { useApiMutation } from '@/hooks/use-api-mutation';
+import { usePermission } from '@/hooks/use-permissions';
 import { formatZarCompact } from '@/lib/currency';
 import { useFinancialYearScope } from '@/hooks/use-financial-year-scope';
 
@@ -44,10 +47,66 @@ interface MonthData {
   realisedRevenue: number;
   unrealisedRevenue: number;
   qbRevenueActual: number;
+  budget: number;
   revProjects: ProjectBreakdown[];
   realisedProjects: ProjectBreakdown[];
   unrealisedProjects: ProjectBreakdown[];
   qbRevenueProjects: ProjectBreakdown[];
+}
+
+/**
+ * Editable monthly budget cell — the one manual input on the page, gated by the
+ * revenue_tracker:edit permission (not an admin-role shortcut). Writes the
+ * manual budget via the existing /api/tracker-monthly endpoint; no finance
+ * formula is touched.
+ */
+function BudgetCell({
+  monthKey,
+  value,
+  canEdit,
+  onSave,
+}: {
+  monthKey: string;
+  value: number;
+  canEdit: boolean;
+  onSave: (budget: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(value ?? 0));
+  if (!canEdit) return <MoneyValue value={value} muteNegative={false} />;
+  if (editing) {
+    return (
+      <Input
+        type="number"
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          setEditing(false);
+          if (Number.isFinite(Number(draft)) && draft !== String(value ?? 0)) onSave(draft);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+          if (e.key === 'Escape') setEditing(false);
+        }}
+        className="h-7 w-24 text-right font-mono text-xs ml-auto"
+        data-testid={`input-budget-${monthKey}`}
+      />
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="tabular-nums hover:underline"
+      onClick={() => {
+        setDraft(String(value ?? 0));
+        setEditing(true);
+      }}
+      data-testid={`cell-budget-${monthKey}`}
+    >
+      <MoneyValue value={value} muteNegative={false} />
+    </button>
+  );
 }
 
 interface RevenueTrackerResponse {
@@ -94,12 +153,24 @@ function projectRows(m: MonthData) {
 export default function RevenueTrackerPage() {
   const fyScope = useFinancialYearScope();
   const qs = fyScope.apiQueryString;
+  const qc = useQueryClient();
+  const { allowed: canEditRevenueTracker } = usePermission('revenue_tracker', 'edit');
   const [drawer, setDrawer] = useState<DrawerState | null>(null);
 
   const { data, isLoading, isError, error, refetch } = useQuery<RevenueTrackerResponse>({
     queryKey: ['/api/revenue-tracker', qs],
     queryFn: fetchQueryFn(`/api/revenue-tracker?${qs}`),
     staleTime: 30_000,
+  });
+
+  const budgetMutation = useApiMutation<unknown, unknown, { monthKey: string; budget: string }>({
+    mutationFn: (body) =>
+      apiRequest('POST', '/api/tracker-monthly', { trackerType: 'REV', monthKey: body.monthKey, budget: body.budget }),
+    successToast: 'Budget updated',
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/api/revenue-tracker'] });
+      invalidateDashboardQueries(qc);
+    },
   });
 
   // Canonical FYTD recognised revenue — the SAME figure as Finance Home and the
@@ -141,6 +212,19 @@ export default function RevenueTrackerPage() {
   const columns: DrillColumn<MonthData>[] = [
     { key: 'month', header: 'Month', cell: (m) => <span className="font-medium text-foreground">{m.monthLabel}</span> },
     { key: 'planned', header: 'Planned', numeric: true, cell: (m) => moneyCell(m, m.totalRevenue, 'all') },
+    {
+      key: 'budget',
+      header: 'Budget',
+      numeric: true,
+      cell: (m) => (
+        <BudgetCell
+          monthKey={m.monthKey}
+          value={m.budget}
+          canEdit={canEditRevenueTracker}
+          onSave={(budget) => budgetMutation.mutate({ monthKey: m.monthKey, budget })}
+        />
+      ),
+    },
     { key: 'committed', header: 'Committed', numeric: true, cell: (m) => moneyCell(m, m.unrealisedRevenue, 'unrealised') },
     { key: 'realised', header: 'Realised', numeric: true, cell: (m) => moneyCell(m, m.realisedRevenue, 'realised') },
     { key: 'qb', header: 'QuickBooks', numeric: true, cell: (m) => moneyCell(m, m.qbRevenueActual, 'qb_actual') },
