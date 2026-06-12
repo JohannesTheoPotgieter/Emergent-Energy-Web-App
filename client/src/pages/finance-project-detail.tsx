@@ -56,6 +56,12 @@ import {
 } from "@/components/cos/cos-line-review-panel";
 import { usePermission } from "@/hooks/use-permissions";
 import { VoImpactPanel } from "@/components/finance/VoImpactPanel";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { ProgramPlanContent } from "@/pages/program-plan";
+import { ExpenditureBreakdownContent } from "@/pages/expenditure-breakdown";
+import { RevenueTrackingContent } from "@/pages/revenue-tracking";
+import { CashflowTab } from "@/components/tabs/CashflowTab";
+import { ProjectCosTrackerView } from "@/components/finance/ProjectCosTrackerView";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -666,6 +672,17 @@ function CategoryGroup({
 export default function FinanceProjectDetailPage() {
   const [, params] = useRoute("/projects/:projectId/finance");
   const projectId = Number(params?.projectId);
+  const enabled = Number.isFinite(projectId) && projectId > 0;
+
+  // Project name for the tabs that key on it (Cashflow + the COS tracker view).
+  // Same queryKey as FinanceProjectDetailContent, so React Query dedupes the read.
+  const detailQuery = useQuery<DetailResponse>({
+    queryKey: ["/api/finance/reconciliation/detail", projectId],
+    queryFn: fetchQueryFn(`/api/finance/reconciliation/${projectId}`),
+    enabled,
+  });
+  const projectName = detailQuery.data?.projectName ?? `Project ${projectId}`;
+
   return (
     <div className="container mx-auto max-w-7xl space-y-5 py-6">
       <div>
@@ -676,11 +693,47 @@ export default function FinanceProjectDetailPage() {
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> QB Reconciliation
         </Link>
         <FinancePageHeader
-          title="Project Finance"
-          question="Every number, traced to its line and source cell — app vs tracker."
+          title={`Project Finance — ${projectName}`}
+          question="The project tracker, tab-for-tab — every number traced to its line and source cell."
         />
       </div>
-      <FinanceProjectDetailContent projectId={projectId} />
+
+      {/* Owner-approved tabs: Milestone Tracker · Expenditure Breakdown (the Excel
+          cols B–X replica) · Cashflow · Cost of sales · Revenue. Each tab embeds
+          the existing canonical view for this project — no new finance figure. */}
+      <Tabs defaultValue="cost-of-sales" className="space-y-4">
+        <TabsList className="flex-wrap">
+          <TabsTrigger value="milestones" data-testid="tab-project-milestones">Milestone Tracker</TabsTrigger>
+          <TabsTrigger value="expenditure" data-testid="tab-project-expenditure">Expenditure Breakdown</TabsTrigger>
+          <TabsTrigger value="cashflow" data-testid="tab-project-cashflow">Cashflow</TabsTrigger>
+          <TabsTrigger value="cost-of-sales" data-testid="tab-project-cos">Cost of sales</TabsTrigger>
+          <TabsTrigger value="revenue" data-testid="tab-project-revenue">Revenue</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="milestones" className="mt-0">
+          <ProgramPlanContent projectId={projectId} />
+        </TabsContent>
+
+        <TabsContent value="expenditure" className="mt-0">
+          <ExpenditureBreakdownContent projectId={projectId} />
+        </TabsContent>
+
+        <TabsContent value="cashflow" className="mt-0">
+          <CashflowTab projectName={projectName} title={`Cashflow — ${projectName}`} />
+        </TabsContent>
+
+        <TabsContent value="cost-of-sales" className="mt-0 space-y-5">
+          {/* Project-scoped COS tracker (monthly realised/committed/planned) … */}
+          <ProjectCosTrackerView projectId={projectId} projectName={projectName} />
+          {/* … with the per-line app-vs-tracker reconciliation folded in beneath it. */}
+          <FinanceProjectDetailContent projectId={projectId} />
+        </TabsContent>
+
+        <TabsContent value="revenue" className="mt-0">
+          <RevenueTrackingContent projectId={projectId} />
+        </TabsContent>
+      </Tabs>
+
       <VoImpactPanel projectId={projectId} />
     </div>
   );
