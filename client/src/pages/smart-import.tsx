@@ -1,6 +1,15 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AdminPageShell, AdminQueryState } from "@/components/admin/admin-shell";
+import { PageShell } from "@/components/layout/page-shell";
+import {
+  FinancePageHeader,
+  KpiRow,
+  KpiTile,
+  StatusBadge,
+  FinanceLoading,
+  FinanceError,
+  FinanceEmpty,
+} from "@/components/finance/template";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -4429,13 +4438,7 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
     return (
       <Card className="bg-card rounded-xl shadow-sm">
         <CardContent className="py-6">
-          <AdminQueryState
-            isLoading={false}
-            error={loadError}
-            onRetry={() => { void loadPendingRuns(); }}
-          >
-            <div />
-          </AdminQueryState>
+          <FinanceError hint={loadError} onRetry={() => { void loadPendingRuns(); }} />
         </CardContent>
       </Card>
     );
@@ -4871,15 +4874,13 @@ export function SmartImportGovernancePanel({
           <div className="mt-3 pt-3 border-t border-border grid gap-4 xl:grid-cols-[minmax(0,1.1fr),minmax(0,0.9fr)]">
             <div>
               <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Pending Queue</h4>
-              <AdminQueryState
-                isLoading={pendingRunsLoading}
-                error={pendingRunsError}
-                onRetry={retryPendingRuns}
-                empty={pendingRuns.length === 0}
-                emptyTitle="No runs need review"
-                emptyDescription="New uploads appear here before commit."
-                loadingLabel="Loading..."
-              >
+              {pendingRunsLoading ? (
+                <FinanceLoading label="Loading…" />
+              ) : pendingRunsError ? (
+                <FinanceError hint={pendingRunsError} onRetry={retryPendingRuns} />
+              ) : pendingRuns.length === 0 ? (
+                <FinanceEmpty title="No runs need review" hint="New uploads appear here before commit." />
+              ) : (
                 <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
                   {pendingRuns.slice(0, 5).map((run) => (
                     <div key={run.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/70 p-2 text-xs">
@@ -4887,26 +4888,24 @@ export function SmartImportGovernancePanel({
                         <p className="font-medium truncate">{run.projectName}</p>
                         <p className="text-[10px] text-muted-foreground truncate">{run.sourceFileName}</p>
                       </div>
-                      {run.blockerCount > 0 ? <Badge className="bg-red-50 text-red-700 border-red-200 text-[10px] px-1.5 py-0">{run.blockerCount} blockers</Badge> :
-                       run.warningCount > 0 ? <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] px-1.5 py-0">{run.warningCount} warnings</Badge> :
-                       <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0">Ready</Badge>}
+                      {run.blockerCount > 0 ? <StatusBadge tone="critical" label={`${run.blockerCount} blockers`} /> :
+                       run.warningCount > 0 ? <StatusBadge tone="warning" label={`${run.warningCount} warnings`} /> :
+                       <StatusBadge tone="positive" label="Ready" />}
                     </div>
                   ))}
                 </div>
-              </AdminQueryState>
+              )}
             </div>
 
             <div>
               <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Recent History</h4>
-              <AdminQueryState
-                isLoading={recentRunsLoading}
-                error={recentRunsError}
-                onRetry={retryRecentRuns}
-                empty={recentRuns.length === 0}
-                emptyTitle="No history yet"
-                emptyDescription="Completed runs appear here."
-                loadingLabel="Loading..."
-              >
+              {recentRunsLoading ? (
+                <FinanceLoading label="Loading…" />
+              ) : recentRunsError ? (
+                <FinanceError hint={recentRunsError} onRetry={retryRecentRuns} />
+              ) : recentRuns.length === 0 ? (
+                <FinanceEmpty title="No history yet" hint="Completed runs appear here." />
+              ) : (
                 <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
                   {(recentAttentionRuns.length > 0 ? recentAttentionRuns : recentRuns.slice(0, 5)).map((run) => (
                     <div key={run.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/70 p-2 text-xs">
@@ -4914,13 +4913,14 @@ export function SmartImportGovernancePanel({
                         <p className="font-medium truncate">{run.projectName}</p>
                         <p className="text-[10px] text-muted-foreground">{new Date(run.uploadedAt).toLocaleDateString()} — {run.recordsSucceeded}/{run.recordsAttempted} rows</p>
                       </div>
-                      <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${run.status === "COMMITTED" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : run.status === "FAILED" ? "bg-red-50 text-red-700 border-red-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>
-                        {run.status.replace(/_/g, " ")}
-                      </Badge>
+                      <StatusBadge
+                        tone={run.status === "COMMITTED" ? "positive" : run.status === "FAILED" ? "critical" : "warning"}
+                        label={run.status.replace(/_/g, " ")}
+                      />
                     </div>
                   ))}
                 </div>
-              </AdminQueryState>
+              )}
             </div>
 
             {/* Import Health Dashboard */}
@@ -5005,7 +5005,7 @@ export default function SmartImportPage() {
   const shellStatuses = [
     pendingRuns.length > 0
       ? { label: `${pendingRuns.length} runs awaiting review`, tone: "warning" as const }
-      : { label: "Import queue clear", tone: "success" as const },
+      : { label: "Import queue clear", tone: "positive" as const },
     { label: "Excel governance surfaced here", tone: "info" as const },
   ];
 
@@ -5077,18 +5077,28 @@ export default function SmartImportPage() {
   };
 
   return (
-    <AdminPageShell
-      surfaceId="smart-import"
-      title="Smart Import"
-      description="Govern Excel tracker intake, review unresolved issues, and commit reconciled project data with clear operational visibility."
-      statuses={shellStatuses}
-      metrics={[
-        { label: "Pending Review", value: pendingRuns.length, helper: "Preview runs awaiting action" },
-        { label: "Committed Runs", value: recentCommittedRuns.length, helper: "Recent successful imports" },
-        { label: "Failed Runs", value: recentFailedRuns.length, helper: "Recent runs needing attention" },
-        { label: "Last Run", value: recentRuns[0]?.uploadedAt ? new Date(recentRuns[0].uploadedAt).toLocaleDateString() : "No data", helper: "Most recent upload" },
-      ]}
-    >
+    <PageShell className="space-y-5">
+      <FinancePageHeader
+        title="Smart Import"
+        question="Govern Excel tracker intake, review unresolved issues, and commit reconciled project data with clear operational visibility."
+      />
+      {shellStatuses.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {shellStatuses.map((s) => (
+            <StatusBadge key={s.label} tone={s.tone} label={s.label} />
+          ))}
+        </div>
+      )}
+      <KpiRow>
+        <KpiTile label="Pending Review" value={pendingRuns.length} supporting="Preview runs awaiting action" />
+        <KpiTile label="Committed Runs" value={recentCommittedRuns.length} supporting="Recent successful imports" />
+        <KpiTile label="Failed Runs" value={recentFailedRuns.length} supporting="Recent runs needing attention" />
+        <KpiTile
+          label="Last Run"
+          value={recentRuns[0]?.uploadedAt ? new Date(recentRuns[0].uploadedAt).toLocaleDateString() : "No data"}
+          supporting="Most recent upload"
+        />
+      </KpiRow>
     <div className="space-y-4 max-w-5xl" data-testid="smart-import-page">
       {(() => {
         // Folder-pickup context: when the operator navigated here from a
@@ -5195,13 +5205,7 @@ export default function SmartImportPage() {
       )}
 
       {!useV2 && runLoadError && !loadingRun && !bulkMode && (
-        <AdminQueryState
-          isLoading={false}
-          error={runLoadError}
-          onRetry={runId ? () => { void loadRunData(runId); } : undefined}
-        >
-          <div />
-        </AdminQueryState>
+        <FinanceError hint={runLoadError} onRetry={runId ? () => { void loadRunData(runId); } : undefined} />
       )}
 
       {bulkMode ? (
@@ -5276,6 +5280,6 @@ export default function SmartImportPage() {
         </>
       ) : null}
     </div>
-    </AdminPageShell>
+    </PageShell>
   );
 }
