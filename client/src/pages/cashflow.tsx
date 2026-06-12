@@ -9,7 +9,6 @@ import { KpiTile } from '@/components/finance/KpiTile';
 import { DrillReconciliationFooter } from '@/components/finance/DrillReconciliationFooter';
 import { StaleIndicator } from '@/components/finance/StaleIndicator';
 import { CashflowDrillView } from '@/components/finance/cashflow-drill-view';
-import { Money } from '@/components/ui/money';
 import { getFiscalYear } from '@shared/fiscal-year';
 import {
   Tooltip as UiTooltip,
@@ -66,7 +65,6 @@ import {
   X,
   Check,
   ChevronsUpDown,
-  Wallet,
   Pencil,
   Search,
   AlertCircle,
@@ -74,11 +72,15 @@ import {
   Link2,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
-import { PageShell, SectionHeader } from '@/components/layout/page-shell';
 import { ExportDropdown } from '@/components/ui/export-dropdown';
 import { FinanceShell } from '@/components/layout/FinanceShell';
 import { FinancialYearScopeControl } from '@/components/finance/FinancialYearScopeControl';
-import { PageError, PageSkeleton } from '@/components/ui/page-states';
+import {
+  FinancePageHeader,
+  MoneyValue,
+  FinanceLoading,
+  FinanceError,
+} from '@/components/finance/template';
 import { formatZar, formatZarAriaLabel, formatZarCompact } from '@/lib/currency';
 import { FINANCE_QUERY_STABLE } from '@/lib/finance-stale-policy';
 import { usePermission } from '@/hooks/use-permissions';
@@ -207,11 +209,9 @@ const formatRand = (val: number | null | undefined): string => formatZar(val);
  * number not a digit string.
  */
 function Rand({ value, className }: { value: number | null | undefined; className?: string }) {
-  return (
-    <span className={className} aria-label={formatZarAriaLabel(value)}>
-      {formatRand(value)}
-    </span>
-  );
+  // Shared template money renderer (same digits as formatRand; aria via Money).
+  // muteNegative=false so a caller-passed colour class is never overridden.
+  return <MoneyValue value={value} align="left" muteNegative={false} className={className} />;
 }
 
 function formatWeek(dateStr: string): string {
@@ -1737,14 +1737,14 @@ export default function CashflowPage() {
     return { totalInflows, totalOutflows, currentWeekOpeningBalance, forecastedEndOfFYPosition };
   }, [cashflowData]);
 
-  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isLoading) return <FinanceLoading label="Loading cashflow…" />;
   if (isError)
     return (
       <FinanceShell>
         <div className="p-4 md:p-6">
-          <PageError
+          <FinanceError
             title="Unable to load cashflow"
-            message={error instanceof Error ? error.message : 'Failed to fetch data'}
+            hint={error instanceof Error ? error.message : 'Failed to fetch data'}
             onRetry={() => refetch()}
           />
         </div>
@@ -1760,15 +1760,14 @@ export default function CashflowPage() {
           cashflowData={cashflowData}
           toast={toast}
         />
-        <SectionHeader
-          icon={<Wallet className="h-5 w-5" />}
+        <FinancePageHeader
           title={`Cashflow ${fyScope.label}`}
-          eyebrow={
+          source={
             fyScope.allData ? 'All data in system' : `${fyScope.startDate} – ${fyScope.endDate}`
           }
+          period={<FinancialYearScopeControl scope={fyScope} />}
           actions={
             <div className="flex items-center gap-2">
-              <FinancialYearScopeControl scope={fyScope} />
               <ExportDropdown
                 data={cashflowData}
                 columns={[
@@ -2085,13 +2084,13 @@ export default function CashflowPage() {
                   <PageHero
                     eyebrow="Finance · Cashflow"
                     label="Forecast end-of-FY bank position"
-                    value={<Money value={kpis.forecastedEndOfFYPosition} />}
+                    value={<MoneyValue value={kpis.forecastedEndOfFYPosition} align="left" />}
                     tone={kpis.forecastedEndOfFYPosition >= 0 ? 'positive' : 'critical'}
                     supporting={
                       <>
                         Lowest week ahead based on {cashflowData.length} weeks of forecast.
-                        Inflows YTD <Money value={kpis.totalInflows} /> · Outflows YTD{' '}
-                        <Money value={kpis.totalOutflows} />.
+                        Inflows YTD <MoneyValue value={kpis.totalInflows} align="left" /> · Outflows YTD{' '}
+                        <MoneyValue value={kpis.totalOutflows} align="left" />.
                       </>
                     }
                     trust={
@@ -2117,7 +2116,7 @@ export default function CashflowPage() {
                   >
                     <KpiTile
                       label="Total inflows YTD"
-                      value={<Money value={kpis.totalInflows} />}
+                      value={<MoneyValue value={kpis.totalInflows} align="left" />}
                       valueAriaLabel={formatZarAriaLabel(kpis.totalInflows)}
                       supporting={
                         cashflowTrust?.nullCount && cashflowTrust.nullCount > 0
@@ -2129,7 +2128,7 @@ export default function CashflowPage() {
                     />
                     <KpiTile
                       label="Total outflows YTD"
-                      value={<Money value={kpis.totalOutflows} />}
+                      value={<MoneyValue value={kpis.totalOutflows} align="left" />}
                       valueAriaLabel={formatZarAriaLabel(kpis.totalOutflows)}
                       supporting={
                         cashflowTrust?.nullCount && cashflowTrust.nullCount > 0
@@ -2141,7 +2140,7 @@ export default function CashflowPage() {
                     />
                     <KpiTile
                       label="Current week opening"
-                      value={<Money value={kpis.currentWeekOpeningBalance} />}
+                      value={<MoneyValue value={kpis.currentWeekOpeningBalance} align="left" />}
                       valueAriaLabel={formatZarAriaLabel(kpis.currentWeekOpeningBalance)}
                       supporting="bank position now"
                       tone={kpis.currentWeekOpeningBalance >= 0 ? 'positive' : 'critical'}
@@ -2150,8 +2149,9 @@ export default function CashflowPage() {
                     <KpiTile
                       label="Net this FY"
                       value={
-                        <Money
+                        <MoneyValue
                           value={kpis.totalInflows - kpis.totalOutflows}
+                          align="left"
                           showSign
                         />
                       }

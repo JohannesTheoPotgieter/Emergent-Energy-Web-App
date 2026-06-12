@@ -2,7 +2,12 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { FinanceShell } from '@/components/layout/FinanceShell';
 import { FinancialYearScopeControl } from '@/components/finance/FinancialYearScopeControl';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PageError, PageSkeleton } from '@/components/ui/page-states';
+import {
+  FinancePageHeader,
+  MoneyValue,
+  FinanceLoading,
+  FinanceError,
+} from '@/components/finance/template';
 import { useLocation } from 'wouter';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -10,7 +15,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { SectionHeader } from '@/components/layout/page-shell';
 import {
   Tooltip as UiTooltip,
   TooltipContent,
@@ -22,7 +26,6 @@ import { formatZar, formatZarAriaLabel, formatZarCompact } from '@/lib/currency'
 import { getFiscalYear, getFiscalYearBounds, fiscalYearLabel, fiscalYearOfMonthKey } from '@shared/fiscal-year';
 import { PageHero } from '@/components/finance/PageHero';
 import { KpiTile } from '@/components/finance/KpiTile';
-import { Money } from '@/components/ui/money';
 import { DirectionDelta } from '@/components/finance/DirectionDelta';
 import { DrillReconciliationFooter } from '@/components/finance/DrillReconciliationFooter';
 import { StaleIndicator } from '@/components/finance/StaleIndicator';
@@ -193,11 +196,9 @@ function formatRand(val: number | null | undefined): string {
  * "one million two hundred thousand rand" instead of "R one two three…".
  */
 function Rand({ value, className }: { value: number | null | undefined; className?: string }) {
-  return (
-    <span className={className} aria-label={formatZarAriaLabel(value)}>
-      {formatRand(value)}
-    </span>
-  );
+  // Shared template money renderer (same digits as formatRand; aria via Money).
+  // muteNegative=false so a caller-passed colour class is never overridden.
+  return <MoneyValue value={value} align="left" muteNegative={false} className={className} />;
 }
 
 type EditableField = 'budget';
@@ -1317,16 +1318,18 @@ export default function CosTracker() {
 
   const formatCell = (row: RowDef, val: number) => {
     if (row.key === 'variancePct' || row.key === 'ytdVariancePct') return `${val.toFixed(1)}%`;
-    return formatRand(val);
+    // muteNegative=false — the grid colours signs on the <td> (colorClass);
+    // MoneyValue keeps digits identical without overriding it.
+    return <MoneyValue value={val} align="right" muteNegative={false} />;
   };
 
-  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isLoading) return <FinanceLoading label="Loading COS Tracker…" />;
   if (isError)
     return (
       <div className="p-3 md:p-4">
-        <PageError
+        <FinanceError
           title="Unable to load COS Tracker"
-          message={error instanceof Error ? error.message : 'Failed to fetch data'}
+          hint={error instanceof Error ? error.message : 'Failed to fetch data'}
           onRetry={() => refetch()}
         />
       </div>
@@ -1874,17 +1877,16 @@ export default function CosTracker() {
   return (
     <FinanceShell>
       <div className="space-y-3">
-        <SectionHeader
-          icon={<Wallet className="h-5 w-5" />}
+        <FinancePageHeader
           title={`Cost of Sales ${fyScope.label}`}
-          eyebrow={
+          source={
             fyScope.allData
               ? 'All finance data in the system'
               : `${fyScope.startDate} to ${fyScope.endDate}`
           }
+          period={<FinancialYearScopeControl scope={fyScope} />}
           actions={
             <>
-              <FinancialYearScopeControl scope={fyScope} />
               <ExportDropdown
                 data={months}
                 columns={[
@@ -1949,12 +1951,12 @@ export default function CosTracker() {
         <PageHero
           eyebrow="Finance · Cost of Sales"
           label={`YTD COS realised${fyScope.label ? ` · ${fyScope.label}` : ''}`}
-          value={<Money value={ytdRealised} />}
+          value={<MoneyValue value={ytdRealised} align="left" />}
           tone={ytdRealised <= ytdPlanned ? 'default' : 'critical'}
           supporting={
             ytdPlanned > 0 ? (
               <>
-                vs. plan <Money value={ytdPlanned} /> ·{' '}
+                vs. plan <MoneyValue value={ytdPlanned} align="left" /> ·{' '}
                 <DirectionDelta
                   value={ytdRealised - ytdPlanned}
                   positiveIs="bad"
@@ -1967,7 +1969,7 @@ export default function CosTracker() {
             )
           }
           trust={[
-            { label: 'QB actual YTD', value: <Money value={ytdQbCos} /> },
+            { label: 'QB actual YTD', value: <MoneyValue value={ytdQbCos} align="left" /> },
           ]}
           data-testid="cos-page-hero"
         />

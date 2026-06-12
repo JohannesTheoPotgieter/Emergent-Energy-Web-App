@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   FINANCE_ONLY_MODE,
   isFinanceOnlyEnforced,
+  isFinanceOnlyDevOverrideOn,
   FINANCE_ONLY_MODULE_CONFIG,
   FINANCE_ONLY_LANDING_PATH,
   FINANCE_ONLY_NO_ACCESS_PATH,
@@ -72,6 +73,86 @@ describe("finance-only module — runtime enforcement (deploy-mode)", () => {
     expect(isRoleAllowedInFinanceModule("ENGINEER")).toBe(true);
     expect(resolveFinanceOnlyLanding("ENGINEER")).toBeNull();
     expect(isFinanceSearchType("task")).toBe(true);
+  });
+});
+
+describe("finance-only module — opt-in DEV override (verify the lockdown locally)", () => {
+  // The override turns enforcement ON in development for testing WITHOUT
+  // weakening production. These tests pin: (1) default dev stays unrestricted;
+  // (2) FINANCE_ONLY_DEV=1 makes dev enforce — disabled routes redirect to
+  // /finance and a non-allowlisted role resolves to /no-access; (3) the
+  // override can never turn enforcement OFF in production.
+  const origNodeEnv = process.env.NODE_ENV;
+  const origApiTestMode = process.env.API_TEST_MODE;
+  const origFinanceOnlyDev = process.env.FINANCE_ONLY_DEV;
+
+  afterEach(() => {
+    process.env.NODE_ENV = origNodeEnv;
+    if (origApiTestMode === undefined) delete process.env.API_TEST_MODE;
+    else process.env.API_TEST_MODE = origApiTestMode;
+    if (origFinanceOnlyDev === undefined) delete process.env.FINANCE_ONLY_DEV;
+    else process.env.FINANCE_ONLY_DEV = origFinanceOnlyDev;
+  });
+
+  it("is OFF by default in development (the app stays unrestricted)", () => {
+    process.env.NODE_ENV = "development";
+    delete process.env.API_TEST_MODE;
+    delete process.env.FINANCE_ONLY_DEV;
+    expect(isFinanceOnlyDevOverrideOn()).toBe(false);
+    expect(isFinanceOnlyEnforced()).toBe(false);
+    // Nothing blocked: a disabled module + a non-allowlisted role are both fine.
+    expect(isPageEnabled({ id: "engineering", navGroup: "ENGINEERING" })).toBe(true);
+    expect(isNavGroupEnabled("ENGINEERING")).toBe(true);
+    expect(resolveFinanceOnlyLanding("ENGINEER")).toBeNull();
+  });
+
+  it("FINANCE_ONLY_DEV=1 turns enforcement ON in development", () => {
+    process.env.NODE_ENV = "development";
+    delete process.env.API_TEST_MODE;
+    process.env.FINANCE_ONLY_DEV = "1";
+    expect(isFinanceOnlyDevOverrideOn()).toBe(true);
+    expect(isFinanceOnlyEnforced()).toBe(true);
+  });
+
+  it("with the override ON, a disabled-navGroup route redirects to /finance", () => {
+    process.env.NODE_ENV = "development";
+    process.env.FINANCE_ONLY_DEV = "1";
+    // App.tsx renders <Redirect to={FINANCE_ONLY_LANDING_PATH}/> for any page
+    // whose module is disabled (isPageEnabled === false).
+    const disabledPage = PAGE_REGISTRY.find((p) => p.navGroup === "ENGINEERING");
+    expect(disabledPage).toBeDefined();
+    expect(isPageEnabled({ id: disabledPage!.id, navGroup: disabledPage!.navGroup })).toBe(false);
+    expect(isNavGroupEnabled("ENGINEERING")).toBe(false);
+    expect(FINANCE_ONLY_LANDING_PATH).toBe("/finance");
+  });
+
+  it("with the override ON, a non-allowlisted role resolves to /no-access; finance roles to /finance", () => {
+    process.env.NODE_ENV = "development";
+    process.env.FINANCE_ONLY_DEV = "1";
+    expect(resolveFinanceOnlyLanding("ENGINEER")).toBe(FINANCE_ONLY_NO_ACCESS_PATH);
+    expect(resolveFinanceOnlyLanding("QUALITY_MANAGER")).toBe(FINANCE_ONLY_NO_ACCESS_PATH);
+    expect(resolveFinanceOnlyLanding("CFO")).toBe(FINANCE_ONLY_LANDING_PATH);
+    expect(resolveFinanceOnlyLanding("PROGRAM_MANAGER")).toBe(FINANCE_ONLY_LANDING_PATH);
+  });
+
+  it("accepts FINANCE_ONLY_DEV=true as well as =1, and ignores other values", () => {
+    process.env.NODE_ENV = "development";
+    process.env.FINANCE_ONLY_DEV = "true";
+    expect(isFinanceOnlyEnforced()).toBe(true);
+    process.env.FINANCE_ONLY_DEV = "0";
+    expect(isFinanceOnlyEnforced()).toBe(false);
+    process.env.FINANCE_ONLY_DEV = "yes-please";
+    expect(isFinanceOnlyEnforced()).toBe(false);
+  });
+
+  it("can never weaken production — prod enforces regardless of the override value", () => {
+    process.env.NODE_ENV = "production";
+    delete process.env.API_TEST_MODE;
+    // Even an explicit "off" value cannot disable enforcement in production.
+    process.env.FINANCE_ONLY_DEV = "0";
+    expect(isFinanceOnlyEnforced()).toBe(true);
+    delete process.env.FINANCE_ONLY_DEV;
+    expect(isFinanceOnlyEnforced()).toBe(true);
   });
 });
 

@@ -9,7 +9,7 @@
  */
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
-import { Loader2, ChevronRight, ChevronDown, AlertTriangle } from "lucide-react";
+import { ChevronRight, ChevronDown, AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,14 @@ import { useFinanceQuery } from "@/lib/finance-trust";
 import { DataTrustBadge } from "@/components/ui/data-trust-badge";
 import { useQuery } from "@tanstack/react-query";
 import { fetchQueryFn } from "@/lib/queryClient";
-import { formatZar } from "@/lib/currency";
+import {
+  FinancePageHeader,
+  MoneyValue,
+  StatusBadge,
+  FinanceLoading,
+  FinanceError,
+  type StatusTone,
+} from "@/components/finance/template";
 import { RevCosGpDrillView } from "@/components/finance/rev-cos-gp-drill-view";
 
 type Bucket = "planned" | "committed" | "unrealised" | "realised";
@@ -121,9 +128,11 @@ interface CategoryHealthResponse {
   projects: CategoryHealthEntry[];
 }
 
-// Canonical precise ZAR for all cells, panels and tooltips. Absent /
-// non-numeric → "—" (never "R 0").
-const money = (n: number | null | undefined): string => formatZar(n);
+// Canonical precise ZAR for all cells, panels and tooltips, rendered through the
+// shared <MoneyValue> (same digits as formatZar; absent / non-numeric → "—",
+// never "R 0"; muted-red negatives). Routing every money cell through this one
+// helper adopts the template renderer without changing any displayed figure.
+const money = (n: number | null | undefined) => <MoneyValue value={n} align="left" />;
 
 const pct = (n: number | null | undefined): string => {
   if (n == null || !Number.isFinite(n)) return "—";
@@ -137,16 +146,16 @@ const fmtMonth = (key: string): string => {
   return `${months[Number(m) - 1]} ${y}`;
 };
 
-const bucketBadge = (b: Bucket): { label: string; variant: "default" | "secondary" | "outline" | "destructive" } => {
+const bucketBadge = (b: Bucket): { label: string; tone: StatusTone } => {
   switch (b) {
     case "realised":
-      return { label: "Realised", variant: "default" };
+      return { label: "Realised", tone: "positive" };
     case "unrealised":
-      return { label: "Invoiced", variant: "secondary" };
+      return { label: "Invoiced", tone: "info" };
     case "committed":
-      return { label: "Committed", variant: "outline" };
+      return { label: "Committed", tone: "neutral" };
     case "planned":
-      return { label: "Planned", variant: "outline" };
+      return { label: "Planned", tone: "pending" };
   }
 };
 
@@ -264,9 +273,7 @@ function CategoryRow({
           {group.number ? `${group.number}. ` : ""}
           {group.name}
           {group.hasMissingAllocation && (
-            <Badge variant="destructive" className="ml-2 inline-flex items-center gap-1">
-              <AlertTriangle className="h-3 w-3" /> Allocation missing
-            </Badge>
+            <StatusBadge tone="critical" icon={AlertTriangle} label="Allocation missing" className="ml-2" />
           )}
         </TableCell>
         <TableCell className="text-right tabular-nums">{money(group.revenue)}</TableCell>
@@ -283,14 +290,12 @@ function CategoryRow({
             <TableCell className="pl-8">
               <div className="font-medium">{l.descriptionOfWork ?? `Line #${l.parentLineId}`}</div>
               <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-2">
-                <Badge variant={badge.variant}>{badge.label}</Badge>
+                <StatusBadge tone={badge.tone} label={badge.label} />
                 {l.recognitionMonth && <span>T: {l.recognitionMonth}</span>}
                 {l.poNumber && <span>PO: {l.poNumber}</span>}
                 {l.invoiceNumber && <span>INV: {l.invoiceNumber}</span>}
                 {l.derivationWarning && (
-                  <Badge variant="destructive" className="text-[10px]">
-                    {l.derivationWarning.replace(/_/g, " ")}
-                  </Badge>
+                  <StatusBadge tone="critical" label={l.derivationWarning.replace(/_/g, " ")} />
                 )}
               </div>
             </TableCell>
@@ -354,8 +359,8 @@ function PortfolioSummaryCard({ projectIds }: { projectIds: number[] }) {
         <CardHeader>
           <CardTitle className="text-base">Company-wide GP</CardTitle>
         </CardHeader>
-        <CardContent className="p-6 flex items-center text-muted-foreground">
-          <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Aggregating {projectIds.length} project(s)…
+        <CardContent>
+          <FinanceLoading label={`Aggregating ${projectIds.length} project(s)…`} />
         </CardContent>
       </Card>
     );
@@ -409,20 +414,14 @@ function ProjectGpView({ projectId, projectName }: { projectId: number; projectN
   const grouped = useMemo(() => (data ? groupByCategory(data.lines) : []), [data]);
 
   if (isLoading) {
-    return (
-      <div className="p-8 flex items-center text-muted-foreground">
-        <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Loading {projectName}…
-      </div>
-    );
+    return <FinanceLoading label={`Loading ${projectName}…`} />;
   }
   if (isError || !data) {
     return (
-      <Card>
-        <CardContent className="p-6 space-y-3">
-          <p className="text-sm text-muted-foreground">Could not load GP for {projectName}.</p>
-          <Button size="sm" onClick={() => refetch()}>Retry</Button>
-        </CardContent>
-      </Card>
+      <FinanceError
+        title={`Could not load GP for ${projectName}.`}
+        onRetry={() => void refetch()}
+      />
     );
   }
 
@@ -452,16 +451,11 @@ function ProjectGpView({ projectId, projectName }: { projectId: number; projectN
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">GP — {projectName}</h1>
-          <p className="text-sm text-muted-foreground">
-            Per-line POC (§ 3.3): Revenue = (Q / X) × J · grain = actuals child rows ·
-            recognition month from invoice raised date (col T).
-          </p>
-        </div>
-        <DataTrustBadge trust={trust} />
-      </header>
+      <FinancePageHeader
+        title={`GP — ${projectName}`}
+        question="Per-line POC (§ 3.3): Revenue = (Q / X) × J · grain = actuals child rows · recognition month from invoice raised date (col T)."
+        actions={<DataTrustBadge trust={trust} />}
+      />
 
       <DriftCard projectId={projectId} />
 
@@ -681,10 +675,10 @@ export default function FinanceGpPage() {
                 >
                   {p.project_name}
                   {h?.status === "missing" && (
-                    <Badge variant="destructive" className="ml-2 text-[10px]">missing J</Badge>
+                    <StatusBadge tone="critical" label="missing J" className="ml-2" />
                   )}
                   {h?.status === "partial" && (
-                    <Badge variant="secondary" className="ml-2 text-[10px]">partial</Badge>
+                    <StatusBadge tone="warning" label="partial" className="ml-2" />
                   )}
                 </Button>
               );

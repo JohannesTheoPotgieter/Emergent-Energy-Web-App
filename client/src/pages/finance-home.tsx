@@ -33,11 +33,19 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 
 import { PageShell } from "@/components/layout/page-shell";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Money } from "@/components/ui/money";
-import { KpiTile } from "@/components/finance/KpiTile";
-import { TrustBadge } from "@/components/finance/TrustBadge";
+import {
+  FinancePageHeader,
+  KpiRow,
+  KpiTile,
+  TrustBadge,
+  MoneyValue,
+  DrillTable,
+  FinanceLoading,
+  FinanceEmpty,
+  FinanceError,
+  type DrillColumn,
+} from "@/components/finance/template";
 import {
   ReconStatusChip,
   RECON_STATUS_RANK,
@@ -258,22 +266,61 @@ export default function FinanceHomePage() {
   const gpLoading = cosQuery.isLoading || revQuery.isLoading;
   const placeholder = (loading: boolean) => (loading ? "…" : "—");
 
+  // Per-project app-vs-tracker health, rendered through the shared DrillTable.
+  // The Δ keeps its EXACT current display (compact formatZarCompact) so no
+  // displayed figure changes; status keeps the canonical ReconStatusChip.
+  const healthColumns: DrillColumn<ReconProject>[] = [
+    {
+      key: "project",
+      header: "Project",
+      cell: (p) => (
+        <Link
+          href={`/projects/${p.projectId}/finance`}
+          className="font-medium text-foreground hover:underline"
+          data-testid={`finance-home-health-row-${p.projectId}`}
+        >
+          {p.projectName}
+        </Link>
+      ),
+    },
+    {
+      key: "delta",
+      header: "App vs tracker Δ",
+      numeric: true,
+      widthClass: "w-28",
+      cell: (p) => (
+        <span
+          className="font-mono text-xs text-muted-foreground"
+          title="App §3.3 revenue minus the pasted tracker value (app-vs-tracker delta)"
+        >
+          Δ {p.absDelta === 0 ? formatZarCompact(0) : formatZarCompact(p.appVsTrackerDelta)}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      align: "right",
+      widthClass: "w-32",
+      cell: (p) => <ReconStatusChip status={p.status} />,
+    },
+  ];
+
   return (
     <PageShell data-testid="finance-home-page">
-      {/* Header — title only; the Emergent logo lives in the global app
-          header (AppLayout), so the page must not render a second one. */}
-      <div className="mb-5">
-        <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground">
-          Finance Home
-        </h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          The four answers the weekly meeting asks — {fyScope.label}.
-        </p>
-      </div>
+      {/* Shared compact-template header — title + the question the page answers.
+          The Emergent logo lives in the global app header (AppLayout), so the
+          page must not render a second one. */}
+      <FinancePageHeader
+        data-testid="finance-home-header"
+        title="Finance Home"
+        question={`The four answers the weekly meeting asks — ${fyScope.label}.`}
+        source="Canonical trackers · ex-VAT"
+      />
 
       {/* The four answers */}
       <section className="mb-3" data-testid="finance-home-answers" aria-label="Headline finance answers">
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        <KpiRow>
           {/* 1 — GP this month vs budget */}
           <KpiTile
             data-testid="finance-home-gp"
@@ -283,7 +330,7 @@ export default function FinanceHomePage() {
               gpLoading
                 ? "…"
                 : gpRealised
-                  ? <Money value={gpRealised.realisedGP} />
+                  ? <MoneyValue value={gpRealised.realisedGP} align="left" />
                   : noDataValue("No data")
             }
             tone={
@@ -306,7 +353,7 @@ export default function FinanceHomePage() {
               gpRealised && gpRealised.budgetGP !== 0
                 ? {
                     label: "vs budget",
-                    priorValue: <Money value={gpRealised.budgetGP} />,
+                    priorValue: <MoneyValue value={gpRealised.budgetGP} align="left" />,
                     pct: variancePct(gpRealised.realisedGP, gpRealised.budgetGP),
                     positiveIs: "good",
                   }
@@ -321,7 +368,7 @@ export default function FinanceHomePage() {
             data-testid="finance-home-revenue"
             label="Revenue recognised"
             description="FYTD"
-            value={revVsTarget ? <Money value={revVsTarget.actual} /> : placeholder(overviewQuery.isLoading)}
+            value={revVsTarget ? <MoneyValue value={revVsTarget.actual} align="left" /> : placeholder(overviewQuery.isLoading)}
             tone="positive"
             progress={revVsTarget ? { pct: revVsTarget.pct, tone: "positive" } : undefined}
             supporting={
@@ -353,7 +400,7 @@ export default function FinanceHomePage() {
             data-testid="finance-home-cash"
             label="Cash available this week"
             description={currentWeek ? `Week of ${weekLabel(currentWeek.weekStart)}` : undefined}
-            value={currentWeek ? <Money value={currentWeek.availablePayment} /> : placeholder(cashflowQuery.isLoading)}
+            value={currentWeek ? <MoneyValue value={currentWeek.availablePayment} align="left" /> : placeholder(cashflowQuery.isLoading)}
             tone={currentWeek ? (currentWeek.availablePayment >= 0 ? "positive" : "critical") : "default"}
             supporting={
               currentWeek
@@ -399,7 +446,7 @@ export default function FinanceHomePage() {
             sourceBadge={cq ? <TrustBadge status={cq.allTie && !cq.coverageLow ? "ties" : "drift"} /> : undefined}
             href="/finance/qb-reconciliation"
           />
-        </div>
+        </KpiRow>
 
         <p className="mt-2 text-[11px] text-muted-foreground">
           Revenue target is <span className="font-medium">provisional</span> — the sum of planned
@@ -410,54 +457,41 @@ export default function FinanceHomePage() {
         </p>
       </section>
 
-      {/* Per-project app-vs-tracker reconciliation health (no per-project QB) */}
-      <section aria-label="Project reconciliation health">
-        <Card data-testid="finance-home-health">
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <GitCompare className="h-4 w-4 text-brand-green" />
-              Project reconciliation health
-              <Badge variant="outline" className="text-[10px]">{healthRows.length}</Badge>
-            </CardTitle>
-            <Link
-              href="/finance/qb-reconciliation"
-              className="text-xs font-medium text-brand-green hover:underline inline-flex items-center gap-1"
-            >
-              QB Reconciliation <ArrowRight className="h-3 w-3" />
-            </Link>
-          </CardHeader>
-          <CardContent className="pt-0">
-            {reconQuery.isLoading ? (
-              <p className="text-xs text-muted-foreground py-6 text-center">Loading project health…</p>
-            ) : reconQuery.isError ? (
-              <p className="text-xs text-red-700 py-6 text-center">Could not load reconciliation health.</p>
-            ) : healthRows.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-6 text-center">No active projects.</p>
-            ) : (
-              <ul className="divide-y divide-border/60">
-                {healthRows.map((p) => (
-                  <li key={p.projectId} className="py-2" data-testid={`finance-home-health-row-${p.projectId}`}>
-                    <Link
-                      href={`/projects/${p.projectId}/finance`}
-                      className="flex items-center justify-between gap-3 -mx-2 px-2 py-1 rounded hover:bg-[hsl(var(--surface-tint))] transition-colors"
-                    >
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-                        {p.projectName}
-                      </span>
-                      <span
-                        className="font-mono text-xs tabular-nums text-muted-foreground shrink-0 w-24 text-right"
-                        title="App §3.3 revenue minus the pasted tracker value (app-vs-tracker delta)"
-                      >
-                        Δ {p.absDelta === 0 ? formatZarCompact(0) : formatZarCompact(p.appVsTrackerDelta)}
-                      </span>
-                      <ReconStatusChip status={p.status} className="shrink-0" />
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+      {/* Per-project app-vs-tracker reconciliation health (no per-project QB).
+          Rendered through the shared DrillTable + loading/empty/error states. */}
+      <section aria-label="Project reconciliation health" data-testid="finance-home-health">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <h2 className="text-sm font-semibold flex items-center gap-2 text-foreground">
+            <GitCompare className="h-4 w-4 text-brand-green" />
+            Project reconciliation health
+            <Badge variant="outline" className="text-[10px]">{healthRows.length}</Badge>
+          </h2>
+          <Link
+            href="/finance/qb-reconciliation"
+            className="text-xs font-medium text-brand-green hover:underline inline-flex items-center gap-1"
+          >
+            QB Reconciliation <ArrowRight className="h-3 w-3" />
+          </Link>
+        </div>
+
+        {reconQuery.isLoading ? (
+          <FinanceLoading label="Loading project health…" />
+        ) : reconQuery.isError ? (
+          <FinanceError
+            title="Could not load reconciliation health."
+            onRetry={() => reconQuery.refetch()}
+          />
+        ) : healthRows.length === 0 ? (
+          <FinanceEmpty title="No active projects." />
+        ) : (
+          <DrillTable
+            columns={healthColumns}
+            rows={healthRows}
+            rowKey={(p) => p.projectId}
+            maxBodyHeightClass="max-h-[60vh]"
+            caption="Per-project app-vs-tracker reconciliation health"
+          />
+        )}
       </section>
     </PageShell>
   );

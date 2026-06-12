@@ -2,21 +2,24 @@ import React, { useState, useMemo, useCallback } from "react";
 import { useLocation } from "wouter";
 import { FinanceShell } from "@/components/layout/FinanceShell";
 import { useQuery } from "@tanstack/react-query";
-import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { SectionHeader } from "@/components/layout/page-shell";
 import { FinancialYearScopeControl } from "@/components/finance/FinancialYearScopeControl";
 import { useFinancialYearScope } from "@/hooks/use-financial-year-scope";
 import { fetchQueryFn } from "@/lib/queryClient";
 import { formatZar, formatZarCompact } from "@/lib/currency";
 import { PageHero } from "@/components/finance/PageHero";
 import { KpiTile } from "@/components/finance/KpiTile";
-import { Money } from "@/components/ui/money";
+import {
+  FinancePageHeader,
+  MoneyValue,
+  FinanceLoading,
+  FinanceError,
+} from "@/components/finance/template";
 import { DirectionDelta } from "@/components/finance/DirectionDelta";
 import { DrillReconciliationFooter } from "@/components/finance/DrillReconciliationFooter";
 import { StaleIndicator } from "@/components/finance/StaleIndicator";
@@ -38,7 +41,6 @@ import {
   ChevronRight,
   X,
   Search,
-  Loader2,
   ArrowDownRight,
   ArrowUpRight,
   CheckCircle2,
@@ -46,7 +48,6 @@ import {
   LineChart as LineChartIcon,
   Filter,
   Wallet,
-  BarChart3,
   PieChart,
 } from "lucide-react";
 
@@ -488,7 +489,9 @@ export default function FinanceGpCompanyPage() {
 
   const formatCell = (row: RowDef, val: number) => {
     if (row.isMarginPct) return `${val.toFixed(1)}%`;
-    return formatRand(val);
+    // muteNegative=false — the grid colours signs itself (gpCellColor / colorClass
+    // on the <td>); MoneyValue keeps the digits identical without overriding it.
+    return <MoneyValue value={val} align="right" muteNegative={false} />;
   };
 
   const chartData = useMemo(
@@ -505,13 +508,13 @@ export default function FinanceGpCompanyPage() {
     [months, isProjectFiltered],
   );
 
-  if (cosLoading || revLoading) return <PageSkeleton lines={5} />;
+  if (cosLoading || revLoading) return <FinanceLoading label="Loading GP Tracker…" />;
   if (cosError || revError) {
     return (
       <div className="p-4 md:p-6">
-        <PageError
+        <FinanceError
           title="Unable to load GP Tracker"
-          message="Failed to fetch COS or Revenue data"
+          hint="Failed to fetch COS or Revenue data."
           onRetry={() => { refetchCos(); refetchRev(); }}
         />
       </div>
@@ -587,7 +590,10 @@ export default function FinanceGpCompanyPage() {
   // component instead of a bespoke Card layout.
   const renderFyKpiCard = (key: FyCardKey) => {
     const meta = FY_CARD_META[key];
-    const fmt = meta.format ?? formatRand;
+    // Money cards render via the shared <MoneyValue>; the margin card keeps its
+    // own percent formatter. Same digits as before either way.
+    const renderVal = (v: number) =>
+      meta.format ? meta.format(v) : <MoneyValue value={v} align="left" />;
     const deltaAbs = meta.lastValue - meta.prevValue;
     const deltaPct = meta.prevValue !== 0 ? (deltaAbs / Math.abs(meta.prevValue)) * 100 : 0;
     return (
@@ -595,12 +601,12 @@ export default function FinanceGpCompanyPage() {
         key={key}
         data-testid={`text-fy-${key}-value`}
         label={meta.label}
-        value={fmt(meta.fyValue)}
+        value={renderVal(meta.fyValue)}
         delta={
           meta.prevValue !== 0
             ? {
                 label: "Last mo.",
-                priorValue: fmt(meta.lastValue),
+                priorValue: renderVal(meta.lastValue),
                 pct: deltaPct,
                 positiveIs: "good",
               }
@@ -712,7 +718,7 @@ export default function FinanceGpCompanyPage() {
                           className={`px-2 sm:px-4 py-1 sm:py-1.5 text-right font-mono text-[10px] sm:text-xs ${gpCellColor(val)}/70`}
                           data-testid={`cell-detail-${row.key}-${pName}-${m.monthKey}`}
                         >
-                          {val !== 0 ? formatRand(val) : ""}
+                          {val !== 0 ? <MoneyValue value={val} align="right" muteNegative={false} /> : ""}
                         </td>
                       );
                     })}
@@ -804,14 +810,11 @@ export default function FinanceGpCompanyPage() {
   return (
     <FinanceShell>
       <div className="space-y-3">
-        <SectionHeader
-          icon={<BarChart3 className="h-5 w-5" />}
+        <FinancePageHeader
           title={`Gross Profit ${fyScope.label}`}
-          eyebrow={
-            fyScope.allData ? "All data in system" : `${fyScope.startDate} - ${fyScope.endDate}`
-          }
-          description="GP = Revenue − COS using exact same pipeline numbers as the COS and Revenue pages."
-          actions={<FinancialYearScopeControl scope={fyScope} />}
+          question="GP = Revenue − COS using exact same pipeline numbers as the COS and Revenue pages."
+          source={fyScope.allData ? "All data in system" : `${fyScope.startDate} - ${fyScope.endDate}`}
+          period={<FinancialYearScopeControl scope={fyScope} />}
         />
 
         {/* Visual redesign — PageHero. YTD Realised GP is the single answer.
@@ -819,12 +822,12 @@ export default function FinanceGpCompanyPage() {
         <PageHero
           eyebrow="Finance · Gross Profit"
           label={`YTD GP realised${fyScope.label ? ` · ${fyScope.label}` : ''}`}
-          value={<Money value={ytdRealisedGP} />}
+          value={<MoneyValue value={ytdRealisedGP} align="left" />}
           tone={ytdRealisedGP >= ytdPlannedGP ? 'positive' : 'critical'}
           supporting={
             ytdPlannedGP !== 0 ? (
               <>
-                vs. plan <Money value={ytdPlannedGP} /> ·{' '}
+                vs. plan <MoneyValue value={ytdPlannedGP} align="left" /> ·{' '}
                 <DirectionDelta value={ytdRealisedGP - ytdPlannedGP} positiveIs="good" asMoney />
               </>
             ) : (
@@ -832,7 +835,7 @@ export default function FinanceGpCompanyPage() {
             )
           }
           trust={[
-            { label: 'Budget GP YTD', value: <Money value={ytdBudgetGP} /> },
+            { label: 'Budget GP YTD', value: <MoneyValue value={ytdBudgetGP} align="left" /> },
           ]}
           data-testid="gp-page-hero"
         />

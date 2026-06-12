@@ -14,7 +14,6 @@
 
 import { useEffect, useState } from "react";
 import { PageLayout } from "@/components/layout";
-import { PageHeader } from "@/components/ui/page-header";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
@@ -24,7 +23,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
+import {
+  FinancePageHeader,
+  StatusBadge,
+  FinanceLoading,
+  FinanceEmpty,
+} from "@/components/finance/template";
 import { Trash2, Save, FileSpreadsheet, Link2, Bell, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatRelativeWithAbsoluteZA } from "@/lib/datetime";
@@ -47,9 +51,9 @@ export default function AdminImportMappingsPage() {
   return (
     <PageLayout
       header={
-        <PageHeader
+        <FinancePageHeader
           title="Import setup"
-          subtitle="What Smart Import remembers — column mappings, project bindings, and alerts"
+          question="What Smart Import remembers — column mappings, project bindings, and alerts"
         />
       }
     >
@@ -108,11 +112,14 @@ function MappingsTab() {
         </CardHeader>
         <CardContent className="space-y-1">
           {isLoading ? (
-            <p className="text-xs text-muted-foreground">Loading…</p>
+            <FinanceLoading label="Loading templates…" />
           ) : profiles.length === 0 ? (
-            <p className="text-xs text-muted-foreground" data-testid="profiles-empty">
-              Nothing learned yet. Mappings appear here once you correct a column during an import.
-            </p>
+            <div data-testid="profiles-empty">
+              <FinanceEmpty
+                title="Nothing learned yet"
+                hint="Mappings appear here once you correct a column during an import."
+              />
+            </div>
           ) : (
             profiles.map((p) => (
               <button
@@ -172,8 +179,8 @@ function RulesTable({ profileId }: { profileId: number }) {
   const { data, isLoading } = useProfileRules(profileId);
   const rules = data?.rules ?? [];
 
-  if (isLoading) return <p className="text-xs text-muted-foreground">Loading rules…</p>;
-  if (rules.length === 0) return <p className="text-xs text-muted-foreground">No rules in this template.</p>;
+  if (isLoading) return <FinanceLoading label="Loading rules…" />;
+  if (rules.length === 0) return <FinanceEmpty title="No rules in this template." />;
 
   return (
     <Table data-testid="rules-table">
@@ -204,7 +211,7 @@ function RuleRow({ rule, profileId }: { rule: ImportRule; profileId: number }) {
   return (
     <TableRow data-testid={`rule-row-${rule.id}`}>
       <TableCell>
-        <Badge variant="outline" className="text-[10px]">{rule.section}</Badge>
+        <StatusBadge tone="neutral" label={rule.section} />
       </TableCell>
       <TableCell className="font-mono text-xs">{rule.sourceHeader}</TableCell>
       <TableCell>
@@ -273,11 +280,14 @@ function BindingsTab() {
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <p className="text-xs text-muted-foreground">Loading…</p>
+          <FinanceLoading label="Loading bindings…" />
         ) : bindings.length === 0 ? (
-          <p className="text-xs text-muted-foreground" data-testid="bindings-empty">
-            No bindings yet. They're created when you confirm a project for an import.
-          </p>
+          <div data-testid="bindings-empty">
+            <FinanceEmpty
+              title="No bindings yet"
+              hint="They're created when you confirm a project for an import."
+            />
+          </div>
         ) : (
           <Table data-testid="bindings-table">
             <TableHeader>
@@ -346,17 +356,16 @@ function AlertsTab() {
     if (data?.alerts) setForm(data.alerts);
   }, [data]);
 
-  if (isLoading) return <p className="text-xs text-muted-foreground">Loading…</p>;
+  if (isLoading) return <FinanceLoading label="Loading alert settings…" />;
 
   if (data && !data.configured) {
     return (
-      <Card>
-        <CardContent className="pt-6">
-          <p className="text-sm text-muted-foreground" data-testid="alerts-not-configured">
-            Configure the SharePoint import scheduler first — alert settings live alongside it.
-          </p>
-        </CardContent>
-      </Card>
+      <div data-testid="alerts-not-configured">
+        <FinanceEmpty
+          title="Alerts not configured yet"
+          hint="Configure the SharePoint import scheduler first — alert settings live alongside it."
+        />
+      </div>
     );
   }
 

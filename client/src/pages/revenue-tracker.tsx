@@ -10,8 +10,12 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { SectionHeader } from '@/components/layout/page-shell';
-import { PageError, PageSkeleton } from '@/components/ui/page-states';
+import {
+  FinancePageHeader,
+  MoneyValue,
+  FinanceLoading,
+  FinanceError,
+} from '@/components/finance/template';
 import {
   Tooltip as UiTooltip,
   TooltipContent,
@@ -22,7 +26,6 @@ import { fetchQueryFn, apiRequest, invalidateDashboardQueries } from '@/lib/quer
 import { formatZar, formatZarCompact } from '@/lib/currency';
 import { PageHero } from '@/components/finance/PageHero';
 import { KpiTile } from '@/components/finance/KpiTile';
-import { Money } from '@/components/ui/money';
 import { DirectionDelta } from '@/components/finance/DirectionDelta';
 import { DrillReconciliationFooter } from '@/components/finance/DrillReconciliationFooter';
 import { StaleIndicator } from '@/components/finance/StaleIndicator';
@@ -126,10 +129,14 @@ interface MonthDetailItem {
   matchStatus?: string;
 }
 
-// Canonical precise ZAR for all cells, panels and tooltips. Absent /
-// non-numeric → "—" (never "R 0"). Chart axes use formatZarCompact directly.
-function formatRand(val: number | null | undefined): string {
-  return formatZar(val);
+// Canonical precise ZAR for all cells + panels, rendered through the shared
+// <MoneyValue> (same digits as formatZar; absent / non-numeric → "—", never
+// "R 0"). muteNegative=false so a cell's own sign-colour class is never
+// overridden. Routing the one helper adopts the template renderer everywhere
+// without changing any displayed figure. Chart axes/tooltips use formatZar/
+// formatZarCompact directly (string context).
+function formatRand(val: number | null | undefined) {
+  return <MoneyValue value={val} align="left" muteNegative={false} />;
 }
 
 /**
@@ -1085,13 +1092,13 @@ export default function RevenueTrackerPage() {
     return formatRand(val);
   };
 
-  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isLoading) return <FinanceLoading label="Loading Revenue Tracker…" />;
   if (isError) {
     return (
       <div className="p-3 md:p-4">
-        <PageError
+        <FinanceError
           title="Unable to load Revenue Tracker"
-          message={error instanceof Error ? error.message : 'Failed to fetch data'}
+          hint={error instanceof Error ? error.message : 'Failed to fetch data'}
           onRetry={() => refetch()}
         />
       </div>
@@ -1260,7 +1267,7 @@ export default function RevenueTrackerPage() {
                 tickLine={false}
               />
               <Tooltip
-                formatter={(value: number) => formatRand(value)}
+                formatter={(value: number) => formatZar(value)}
                 contentStyle={{
                   borderRadius: '12px',
                   border: '1px solid #e2e8f0',
@@ -1508,17 +1515,16 @@ export default function RevenueTrackerPage() {
   return (
     <FinanceShell>
       <div className="space-y-3">
-        <SectionHeader
-          icon={<Wallet className="h-5 w-5" />}
+        <FinancePageHeader
           title={`Revenue Tracker ${fyScope.label}`}
-          eyebrow={
+          source={
             fyScope.allData
               ? 'All finance data in the system'
               : `${fyScope.startDate} to ${fyScope.endDate}`
           }
+          period={<FinancialYearScopeControl scope={fyScope} />}
           actions={
             <>
-              <FinancialYearScopeControl scope={fyScope} />
               <TooltipProvider delayDuration={200}>
                 <UiTooltip>
                   <TooltipTrigger asChild>
@@ -1559,12 +1565,12 @@ export default function RevenueTrackerPage() {
         <PageHero
           eyebrow="Finance · Revenue"
           label={`YTD revenue realised${fyScope.label ? ` · ${fyScope.label}` : ''}`}
-          value={<Money value={ytdRealised} />}
+          value={<MoneyValue value={ytdRealised} align="left" />}
           tone={ytdPlanned > 0 && ytdRealised >= ytdPlanned ? 'positive' : 'default'}
           supporting={
             ytdPlanned > 0 ? (
               <>
-                vs. plan <Money value={ytdPlanned} /> ·{' '}
+                vs. plan <MoneyValue value={ytdPlanned} align="left" /> ·{' '}
                 <DirectionDelta value={ytdRealised - ytdPlanned} positiveIs="good" asMoney /> ·{' '}
                 {realisationRate}% realisation
               </>
@@ -1573,7 +1579,7 @@ export default function RevenueTrackerPage() {
             )
           }
           trust={[
-            { label: 'In pipeline', value: <Money value={ytdCommitted} /> },
+            { label: 'In pipeline', value: <MoneyValue value={ytdCommitted} align="left" /> },
           ]}
           data-testid="revenue-page-hero"
         />

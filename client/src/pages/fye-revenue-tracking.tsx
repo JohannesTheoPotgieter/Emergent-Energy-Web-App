@@ -15,7 +15,6 @@
 
 import React, { useMemo, useState } from "react";
 import { FinanceShell } from "@/components/layout/FinanceShell";
-import { SectionHeader } from "@/components/layout/page-shell";
 import { FinancialYearScopeControl } from "@/components/finance/FinancialYearScopeControl";
 import { useFinancialYearScope } from "@/hooks/use-financial-year-scope";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -23,13 +22,17 @@ import { useApiMutation } from "@/hooks/use-api-mutation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import {
+  FinancePageHeader,
+  MoneyValue,
+  StatusBadge,
+  FinanceLoading,
+  FinanceError,
+} from "@/components/finance/template";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { fetchQueryFn, apiRequest } from "@/lib/queryClient";
-import { formatZar } from "@/lib/currency";
 import { usePermission } from "@/hooks/use-permissions";
-import { RefreshCw, AlertTriangle, BarChart3, Table2, ArrowUpDown } from "lucide-react";
+import { RefreshCw, BarChart3, Table2, ArrowUpDown } from "lucide-react";
 import {
   LineChart,
   Line,
@@ -89,7 +92,7 @@ const fmtM = (v: number | null): string => (v == null ? "—" : `R${toM(v)!.toLo
 type SortKey = "project" | "type" | "budgetRevenue" | "actualRevenue" | "actualGpPct" | "pctRealised";
 
 function ProjectsView({ apiQueryString }: { apiQueryString: string }) {
-  const { data, isLoading, isError, error } = useQuery<ProjectsResponse>({
+  const { data, isLoading, isError, error, refetch } = useQuery<ProjectsResponse>({
     queryKey: [`/api/fye-revenue-tracking/projects?${apiQueryString}`],
     queryFn: fetchQueryFn(`/api/fye-revenue-tracking/projects?${apiQueryString}`),
   });
@@ -110,8 +113,8 @@ function ProjectsView({ apiQueryString }: { apiQueryString: string }) {
     });
   }, [data, filter, typeFilter, sortKey, sortDir]);
 
-  if (isLoading) return <PageSkeleton />;
-  if (isError) return <PageError message={(error as Error)?.message} />;
+  if (isLoading) return <FinanceLoading />;
+  if (isError) return <FinanceError hint={(error as Error)?.message} onRetry={() => void refetch()} />;
   if (!data) return null;
 
   const setSort = (k: SortKey) => {
@@ -138,15 +141,15 @@ function ProjectsView({ apiQueryString }: { apiQueryString: string }) {
                 {(["realised", "committed", "planned", "unrealised"] as const).map((s) => (
                   <tr key={s} className="border-b border-border/40">
                     <td className="px-2 py-1 capitalize font-sans">{s}</td>
-                    <td className="px-2 py-1 text-right">{formatZar(st[s].revenue)}</td>
-                    <td className="px-2 py-1 text-right">{formatZar(st[s].cos)}</td>
-                    <td className="px-2 py-1 text-right">{formatZar(st[s].revenue - st[s].cos)}</td>
+                    <td className="px-2 py-1 text-right"><MoneyValue value={st[s].revenue} /></td>
+                    <td className="px-2 py-1 text-right"><MoneyValue value={st[s].cos} /></td>
+                    <td className="px-2 py-1 text-right"><MoneyValue value={st[s].revenue - st[s].cos} /></td>
                   </tr>
                 ))}
                 <tr className="font-bold border-t-2"><td className="px-2 py-1 font-sans">Budget (all states)</td>
-                  <td className="px-2 py-1 text-right">{formatZar(st.budget.revenue)}</td>
-                  <td className="px-2 py-1 text-right">{formatZar(st.budget.cos)}</td>
-                  <td className="px-2 py-1 text-right">{formatZar(st.budget.revenue - st.budget.cos)}</td>
+                  <td className="px-2 py-1 text-right"><MoneyValue value={st.budget.revenue} /></td>
+                  <td className="px-2 py-1 text-right"><MoneyValue value={st.budget.cos} /></td>
+                  <td className="px-2 py-1 text-right"><MoneyValue value={st.budget.revenue - st.budget.cos} /></td>
                 </tr>
               </tbody>
             </table>
@@ -184,18 +187,18 @@ function ProjectsView({ apiQueryString }: { apiQueryString: string }) {
                     <td className="px-2 py-1.5">{r.type}</td>
                     <td className="px-2 py-1.5 whitespace-nowrap">{r.startDate ?? "—"}</td>
                     <td className="px-2 py-1.5 whitespace-nowrap">{r.endDatePc ?? "—"}</td>
-                    <td className="px-2 py-1.5 text-right font-mono">{formatZar(r.budgetRevenue)}</td>
-                    <td className="px-2 py-1.5 text-right font-mono">{formatZar(r.budgetCos)}</td>
-                    <td className="px-2 py-1.5 text-right font-mono">{formatZar(r.budgetGp)}</td>
+                    <td className="px-2 py-1.5 text-right font-mono"><MoneyValue value={r.budgetRevenue} /></td>
+                    <td className="px-2 py-1.5 text-right font-mono"><MoneyValue value={r.budgetCos} /></td>
+                    <td className="px-2 py-1.5 text-right font-mono"><MoneyValue value={r.budgetGp} /></td>
                     <td className="px-2 py-1.5 text-right font-mono">{PCT(r.budgetGpPct)}</td>
-                    <td className="px-2 py-1.5 text-right font-mono">{formatZar(r.actualRevenue)}</td>
-                    <td className="px-2 py-1.5 text-right font-mono">{formatZar(r.actualCos)}</td>
-                    <td className="px-2 py-1.5 text-right font-mono">{formatZar(r.actualGp)}</td>
+                    <td className="px-2 py-1.5 text-right font-mono"><MoneyValue value={r.actualRevenue} /></td>
+                    <td className="px-2 py-1.5 text-right font-mono"><MoneyValue value={r.actualCos} /></td>
+                    <td className="px-2 py-1.5 text-right font-mono"><MoneyValue value={r.actualGp} /></td>
                     <td className="px-2 py-1.5 text-right font-mono">{PCT(r.actualGpPct)}</td>
                     <td className="px-2 py-1.5 text-right font-mono">{PCT(r.pctRealised)}</td>
                     <td className="px-2 py-1.5">
-                      {amber && <Badge variant="outline" className="border-amber-400 text-amber-700 gap-1 text-[10px]"><AlertTriangle className="h-3 w-3" />COS, no revenue — check tracker</Badge>}
-                      {nonStd && <Badge variant="outline" className="border-muted-foreground/40 text-[10px]">Non-standard template (excl. from totals)</Badge>}
+                      {amber && <StatusBadge tone="warning" label="COS, no revenue — check tracker" />}
+                      {nonStd && <StatusBadge tone="neutral" label="Non-standard template (excl. from totals)" />}
                     </td>
                   </tr>
                 );
@@ -204,13 +207,13 @@ function ProjectsView({ apiQueryString }: { apiQueryString: string }) {
             <tfoot>
               <tr className="font-bold border-t-2 bg-muted/40">
                 <td className="px-2 py-2" colSpan={4}>TOTAL ({data.projectCount} projects)</td>
-                <td className="px-2 py-2 text-right font-mono">{formatZar(data.totals.budgetRevenue)}</td>
-                <td className="px-2 py-2 text-right font-mono">{formatZar(data.totals.budgetCos)}</td>
-                <td className="px-2 py-2 text-right font-mono">{formatZar(data.totals.budgetGp)}</td>
+                <td className="px-2 py-2 text-right font-mono"><MoneyValue value={data.totals.budgetRevenue} /></td>
+                <td className="px-2 py-2 text-right font-mono"><MoneyValue value={data.totals.budgetCos} /></td>
+                <td className="px-2 py-2 text-right font-mono"><MoneyValue value={data.totals.budgetGp} /></td>
                 <td className="px-2 py-2 text-right font-mono">{PCT(data.totals.budgetGpPct)}</td>
-                <td className="px-2 py-2 text-right font-mono">{formatZar(data.totals.actualRevenue)}</td>
-                <td className="px-2 py-2 text-right font-mono">{formatZar(data.totals.actualCos)}</td>
-                <td className="px-2 py-2 text-right font-mono">{formatZar(data.totals.actualGp)}</td>
+                <td className="px-2 py-2 text-right font-mono"><MoneyValue value={data.totals.actualRevenue} /></td>
+                <td className="px-2 py-2 text-right font-mono"><MoneyValue value={data.totals.actualCos} /></td>
+                <td className="px-2 py-2 text-right font-mono"><MoneyValue value={data.totals.actualGp} /></td>
                 <td className="px-2 py-2 text-right font-mono">{PCT(data.totals.actualGpPct)}</td>
                 <td className="px-2 py-2 text-right font-mono">{PCT(data.totals.pctRealised)}</td>
                 <td />
@@ -314,12 +317,12 @@ function DashboardView({ apiQueryString, canEdit }: { apiQueryString: string; ca
   // overrides how far the Actual line runs (passed through as ?actualThrough).
   const [actualThrough, setActualThrough] = useState<string>("");
   const qs = actualThrough ? `${apiQueryString}&actualThrough=${actualThrough}` : apiQueryString;
-  const { data, isLoading, isError, error } = useQuery<DashboardResponse>({
+  const { data, isLoading, isError, error, refetch } = useQuery<DashboardResponse>({
     queryKey: [`/api/fye-revenue-tracking/dashboard?${qs}`],
     queryFn: fetchQueryFn(`/api/fye-revenue-tracking/dashboard?${qs}`),
   });
-  if (isLoading) return <PageSkeleton />;
-  if (isError) return <PageError message={(error as Error)?.message} />;
+  if (isLoading) return <FinanceLoading />;
+  if (isError) return <FinanceError hint={(error as Error)?.message} onRetry={() => void refetch()} />;
   if (!data) return null;
   const d = data.dashboard;
   const monthOptions = d.revenue.monthly.map((m) => ({ monthKey: m.monthKey, label: m.label }));
@@ -368,19 +371,22 @@ export default function FyeRevenueTrackingPage() {
 
   return (
     <FinanceShell>
-      <SectionHeader icon={<BarChart3 className="h-5 w-5" />} title="FYE Tracking" description="FY26 project tracking from the imported trackers — Budget vs Actual and the Revenue/COS/GP dashboard." />
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-        <FinancialYearScopeControl scope={fyScope} />
-        <div className="flex items-center gap-3">
-          {meta?.asAt && (
-            <span className="text-xs text-muted-foreground">
-              As at <span className="font-medium">{meta.asAt.date}</span>
-              {meta.asAt.sourceFileName && <> · last import <span className="font-mono">{meta.asAt.sourceFileName}</span></>}
-            </span>
-          )}
-          <Button size="sm" variant="outline" onClick={refresh} className="gap-1.5" data-testid="fye-refresh"><RefreshCw className="h-3.5 w-3.5" />Refresh from import</Button>
-        </div>
-      </div>
+      <FinancePageHeader
+        title="FYE Tracking"
+        question="FY26 project tracking from the imported trackers — Budget vs Actual and the Revenue/COS/GP dashboard."
+        period={<FinancialYearScopeControl scope={fyScope} />}
+        source={meta?.asAt ? <>As at <span className="font-medium">{meta.asAt.date}</span></> : undefined}
+        asOf={
+          meta?.asAt?.sourceFileName
+            ? <>last import <span className="font-mono">{meta.asAt.sourceFileName}</span></>
+            : undefined
+        }
+        actions={
+          <Button size="sm" variant="outline" onClick={refresh} className="gap-1.5" data-testid="fye-refresh">
+            <RefreshCw className="h-3.5 w-3.5" />Refresh from import
+          </Button>
+        }
+      />
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>

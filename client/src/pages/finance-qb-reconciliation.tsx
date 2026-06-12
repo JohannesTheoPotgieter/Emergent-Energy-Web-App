@@ -21,13 +21,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2,
-  AlertTriangle,
   FileMinus,
   FilePlus,
   HelpCircle,
   Clock,
   EyeOff,
   RotateCcw,
+  type LucideIcon,
 } from "lucide-react";
 
 import { fetchQueryFn, apiRequest } from "@/lib/queryClient";
@@ -35,8 +35,15 @@ import { useToast } from "@/hooks/use-toast";
 import { formatZar, formatZarCompact } from "@/lib/currency";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { LoadingState } from "@/components/ui/loading-state";
+import {
+  FinancePageHeader,
+  MoneyValue,
+  StatusBadge,
+  FinanceLoading,
+  FinanceEmpty,
+  FinanceError,
+  type StatusTone,
+} from "@/components/finance/template";
 import {
   buildSideWorklist,
   type Grain,
@@ -119,22 +126,16 @@ const num = (v: string | null): number => (v == null ? 0 : Number(v) || 0);
 const round2 = (n: number): number => Number(n.toFixed(2));
 const money = (v: number) => <span title={formatZar(v)}>{formatZarCompact(v)}</span>;
 
-const STATE_META: Record<MatchState, { label: string; icon: typeof CheckCircle2; chip: string }> = {
-  matched: { label: "Matched", icon: CheckCircle2, chip: "border-status-ties/30 bg-status-ties/10 text-status-ties" },
-  ambiguous: { label: "Ambiguous", icon: HelpCircle, chip: "border-amber-300 bg-amber-50 text-amber-800" },
-  unmatched_in_qb: { label: "Unmatched in QB", icon: FileMinus, chip: "border-slate-300 bg-slate-50 text-slate-700" },
-  unmatched_in_tracker: { label: "Unmatched in tracker", icon: FilePlus, chip: "border-slate-300 bg-slate-50 text-slate-700" },
+const STATE_META: Record<MatchState, { label: string; icon: LucideIcon; tone: StatusTone }> = {
+  matched: { label: "Matched", icon: CheckCircle2, tone: "ties" },
+  ambiguous: { label: "Ambiguous", icon: HelpCircle, tone: "warning" },
+  unmatched_in_qb: { label: "Unmatched in QB", icon: FileMinus, tone: "neutral" },
+  unmatched_in_tracker: { label: "Unmatched in tracker", icon: FilePlus, tone: "neutral" },
 };
 
 function StateChip({ state }: { state: MatchState }) {
   const m = STATE_META[state];
-  const Icon = m.icon;
-  return (
-    <Badge variant="outline" className={`gap-1 text-xs font-medium ${m.chip}`} data-testid={`qb-recon-state-${state}`}>
-      <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-      {m.label}
-    </Badge>
-  );
+  return <StatusBadge tone={m.tone} icon={m.icon} label={m.label} data-testid={`qb-recon-state-${state}`} />;
 }
 
 function MetricTile({ label, tracker, qb }: { label: string; tracker: number; qb: number }) {
@@ -147,23 +148,19 @@ function MetricTile({ label, tracker, qb }: { label: string; tracker: number; qb
       </CardHeader>
       <CardContent className="space-y-1">
         <div className="flex items-baseline justify-between gap-2">
-          <span className="font-mono text-lg font-semibold text-brand-text">{formatZar(tracker)}</span>
+          <span className="font-mono text-lg font-semibold text-brand-text"><MoneyValue value={tracker} align="left" /></span>
           {tie ? (
-            <Badge variant="outline" className="gap-1 border-status-ties/30 bg-status-ties/10 text-status-ties text-xs">
-              <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> Tie
-            </Badge>
+            <StatusBadge tone="ties" label="Tie" />
           ) : (
-            <Badge variant="outline" className="gap-1 border-amber-300 bg-amber-50 text-amber-800 text-xs">
-              <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" /> Variance
-            </Badge>
+            <StatusBadge tone="warning" label="Variance" />
           )}
         </div>
         <p className="text-xs text-brand-muted">
-          tracker {formatZar(tracker)} · QB {formatZar(qb)}
+          tracker <MoneyValue value={tracker} align="left" /> · QB <MoneyValue value={qb} align="left" />
         </p>
         {!tie && (
           <p className="font-mono text-sm font-semibold text-amber-700" data-testid={`qb-recon-tile-${label.toLowerCase()}-delta`}>
-            Δ {formatZar(delta)}
+            Δ <MoneyValue value={delta} align="left" />
           </p>
         )}
       </CardContent>
@@ -242,10 +239,11 @@ function MonthComparisonTable({
                       {cov.overall == null ? (
                         <span className="text-brand-muted">—</span>
                       ) : cov.low ? (
-                        <Badge variant="outline" className="gap-1 border-amber-300 bg-amber-50 text-amber-800 text-xs" title={`Below ${LOW_COVERAGE_THRESHOLD}% — not fully reconciled`}>
-                          <AlertTriangle className="h-3 w-3" aria-hidden="true" />
-                          {coverageLabel(cov.overall)}
-                        </Badge>
+                        <StatusBadge
+                          tone="warning"
+                          label={coverageLabel(cov.overall)}
+                          title={`Below ${LOW_COVERAGE_THRESHOLD}% — not fully reconciled`}
+                        />
                       ) : (
                         <span className="font-mono text-brand-text">{coverageLabel(cov.overall)}</span>
                       )}
@@ -279,16 +277,14 @@ function WorklistRow({
   return (
     <tr className="border-b border-brand-muted/15" data-testid={`qb-recon-row-${line.id}`}>
       <td className="px-3 py-2 font-mono">{line.invoiceNoRaw ?? line.invoiceNoNorm}</td>
-      <td className="px-3 py-2 text-right font-mono">{line.trackerAmountExVat == null ? "—" : formatZar(num(line.trackerAmountExVat))}</td>
-      <td className="px-3 py-2 text-right font-mono">{line.qbAmountExVat == null ? "—" : formatZar(num(line.qbAmountExVat))}</td>
-      <td className="px-3 py-2 text-right font-mono text-amber-700">{line.delta == null ? "—" : formatZar(num(line.delta))}</td>
+      <td className="px-3 py-2 text-right font-mono">{line.trackerAmountExVat == null ? "—" : <MoneyValue value={num(line.trackerAmountExVat)} />}</td>
+      <td className="px-3 py-2 text-right font-mono">{line.qbAmountExVat == null ? "—" : <MoneyValue value={num(line.qbAmountExVat)} />}</td>
+      <td className="px-3 py-2 text-right font-mono text-amber-700">{line.delta == null ? "—" : <MoneyValue value={num(line.delta)} muteNegative={false} />}</td>
       <td className="px-3 py-2 text-xs text-brand-muted">{line.trackerDate ?? "—"}</td>
       <td className="px-3 py-2 text-xs text-brand-muted">{line.qbDate ?? "—"}</td>
       <td className="px-3 py-2">
         {line.timingFlag && (
-          <Badge variant="outline" className="mr-1 gap-1 border-sky-300 bg-sky-50 text-sky-800 text-xs">
-            <Clock className="h-3 w-3" aria-hidden="true" /> Timing
-          </Badge>
+          <StatusBadge tone="info" icon={Clock} label="Timing" className="mr-1" />
         )}
       </td>
       <td className="px-3 py-2 text-right">
@@ -334,7 +330,7 @@ function StateGroup({
       >
         <span className="flex items-center gap-2">
           <StateChip state={state} />
-          <span className="text-xs text-brand-muted">{lines.length} · {formatZar(total)}</span>
+          <span className="text-xs text-brand-muted">{lines.length} · <MoneyValue value={total} align="left" /></span>
         </span>
         <span className="text-xs text-brand-muted">{open ? "▾" : "▸"}</span>
       </button>
@@ -389,7 +385,7 @@ function SideWorklistCard({
       </CardHeader>
       <CardContent className="p-0">
         {empty ? (
-          <p className="px-3 py-6 text-center text-sm text-brand-muted">No invoices in this period.</p>
+          <FinanceEmpty title="No invoices in this period." />
         ) : (
           <div className="divide-y divide-brand-muted/15">
             {/* Differences first (expanded); clean matches last (collapsed). */}
@@ -507,35 +503,39 @@ export default function FinanceQbReconciliationPage() {
     <div className="min-h-full bg-brand-surface text-brand-text" data-testid="qb-reconciliation-view">
       <div className="mx-auto max-w-[1400px] space-y-5 px-6 py-6">
         {/* Header + grain selector */}
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-brand-text">QuickBooks Reconciliation</h1>
-            <p className="text-sm text-brand-muted">
-              Company-wide tracker vs QuickBooks — matched on invoice number + ex-VAT amount. The app compares and flags;
-              it never adjusts a tracker or writes back to QuickBooks.
-            </p>
-          </div>
-          <div className="inline-flex overflow-hidden rounded-md border border-brand-muted/40" role="group" aria-label="Period grain">
-            {(["day", "week", "month"] as Grain[]).map((g) => (
-              <button
-                key={g}
-                type="button"
-                onClick={() => setGrain(g)}
-                className={`px-3 py-1.5 text-sm capitalize ${grain === g ? "bg-brand-green text-white" : "bg-white text-brand-text hover:bg-brand-muted/10"}`}
-                data-testid={`qb-recon-grain-${g}`}
-              >
-                {g}
-              </button>
-            ))}
-          </div>
-        </div>
+        <FinancePageHeader
+          title="QuickBooks Reconciliation"
+          question="Company-wide tracker vs QuickBooks — matched on invoice number + ex-VAT amount. The app compares and flags; it never adjusts a tracker or writes back to QuickBooks."
+          source="QB invoice-match engine · ex-VAT"
+          period={
+            <div className="inline-flex overflow-hidden rounded-md border border-brand-muted/40" role="group" aria-label="Period grain">
+              {(["day", "week", "month"] as Grain[]).map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => setGrain(g)}
+                  className={`px-3 py-1.5 text-sm capitalize ${grain === g ? "bg-brand-green text-white" : "bg-white text-brand-text hover:bg-brand-muted/10"}`}
+                  data-testid={`qb-recon-grain-${g}`}
+                >
+                  {g}
+                </button>
+              ))}
+            </div>
+          }
+        />
 
         {summaryQuery.isLoading ? (
-          <LoadingState variant="skeleton-card" cards={3} />
+          <FinanceLoading label="Loading reconciliation…" />
+        ) : summaryQuery.isError ? (
+          <FinanceError
+            hint={(summaryQuery.error as Error)?.message}
+            onRetry={() => void summaryQuery.refetch()}
+          />
         ) : periods.length === 0 ? (
-          <div className="rounded-md border border-brand-muted/40 bg-white px-4 py-8 text-center text-sm text-brand-muted">
-            No reconciliation computed yet. It refreshes daily (or trigger a refresh from the API).
-          </div>
+          <FinanceEmpty
+            title="No reconciliation computed yet"
+            hint="It refreshes daily (or trigger a refresh from the API)."
+          />
         ) : (
           <>
             {/* View 2 — month comparison table (per period across the FY) */}
@@ -580,7 +580,7 @@ export default function FinanceQbReconciliationPage() {
                       <span className="font-medium uppercase">{ig.side}</span>
                       <span className="font-mono text-brand-text">{ig.qbDocNumber ?? "—"}</span>
                       {ig.counterpartyName && <span>· {ig.counterpartyName}</span>}
-                      {ig.amountExVat != null && <span>· {formatZar(ig.amountExVat)}</span>}
+                      {ig.amountExVat != null && <span>· <MoneyValue value={ig.amountExVat} align="left" /></span>}
                       <span>· ignored by {ig.ignoredByName ?? "unknown"}, {ig.reason}</span>
                       {ig.ignoredAt && <span>· {ig.ignoredAt.slice(0, 10)}</span>}
                       {ig.source === "recon_line" && ig.id != null ? (

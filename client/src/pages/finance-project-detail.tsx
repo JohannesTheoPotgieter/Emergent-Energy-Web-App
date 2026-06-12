@@ -21,7 +21,12 @@ import { useRoute, Link } from "wouter";
 
 import { fetchQueryFn } from "@/lib/queryClient";
 import { formatZar } from "@/lib/currency";
-import { Money } from "@/components/ui/money";
+import {
+  FinancePageHeader,
+  MoneyValue,
+  FinanceLoading,
+  FinanceError,
+} from "@/components/finance/template";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -259,7 +264,7 @@ function AggregateCard({
         {trust && <TrustBadge status={trust} />}
       </div>
       <p className={`mt-1 text-xl font-bold tabular-nums ${toneClass}`}>
-        <Money value={value} />
+        <MoneyValue value={value} align="left" muteNegative={false} />
       </p>
       {sub && <p className="text-[11px] text-muted-foreground mt-0.5">{sub}</p>}
     </div>
@@ -358,12 +363,15 @@ export function FinanceProjectDetailContent({ projectId }: { projectId: number }
     return <p className="py-6 text-sm text-status-adverse">Invalid project id.</p>;
   }
   if (detailQuery.isLoading) {
-    return <p className="py-10 text-center text-sm text-muted-foreground" data-testid="finance-project-loading">Loading project finance…</p>;
+    return <div data-testid="finance-project-loading"><FinanceLoading label="Loading project finance…" /></div>;
   }
   if (detailQuery.isError || !detail) {
     return (
-      <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert" data-testid="finance-project-error">
-        Could not load this project's finance detail.
+      <div data-testid="finance-project-error">
+        <FinanceError
+          title="Could not load this project's finance detail."
+          onRetry={() => detailQuery.refetch()}
+        />
       </div>
     );
   }
@@ -548,8 +556,8 @@ function CategoryGroup({
             )}
           </span>
         </td>
-        <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground"><Money value={group.cos} /></td>
-        <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground"><Money value={group.revDerived} /></td>
+        <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground"><MoneyValue align="right" muteNegative={false} value={group.cos} /></td>
+        <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground"><MoneyValue align="right" muteNegative={false} value={group.revDerived} /></td>
         <td colSpan={7} />
       </tr>
       {!collapsed &&
@@ -577,13 +585,13 @@ function CategoryGroup({
                   {line.invoiceNumber ? ` · ${line.invoiceNumber}` : ""}
                 </p>
               </td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums"><Money value={line.actualTotal} /></td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums"><Money value={line.revenueDerived} /></td>
+              <td className="px-3 py-2 text-right font-mono tabular-nums"><MoneyValue align="right" muteNegative={false} value={line.actualTotal} /></td>
+              <td className="px-3 py-2 text-right font-mono tabular-nums"><MoneyValue align="right" muteNegative={false} value={line.revenueDerived} /></td>
               <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground">
-                {line.revenueStored != null ? <Money value={line.revenueStored} /> : "—"}
+                {line.revenueStored != null ? <MoneyValue align="right" muteNegative={false} value={line.revenueStored} /> : "—"}
               </td>
               <td className={`px-3 py-2 text-right font-mono tabular-nums ${deltaTone}`} data-testid={`line-recon-delta-${line.lineId}`}>
-                {line.reconDelta != null ? <Money value={line.reconDelta} /> : "—"}
+                {line.reconDelta != null ? <MoneyValue align="right" muteNegative={false} value={line.reconDelta} /> : "—"}
               </td>
               <td className="px-3 py-2">
                 <Badge variant="outline" className={`text-[10px] capitalize ${BUCKET_BADGE[line.bucket]}`}>
@@ -667,10 +675,10 @@ export default function FinanceProjectDetailPage() {
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> QB Reconciliation
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Project Finance</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          Every number, traced to its line and source cell — app vs tracker.
-        </p>
+        <FinancePageHeader
+          title="Project Finance"
+          question="Every number, traced to its line and source cell — app vs tracker."
+        />
       </div>
       <FinanceProjectDetailContent projectId={projectId} />
       <VoImpactPanel projectId={projectId} />
