@@ -1,10 +1,10 @@
 /**
  * Month drill drawer — the Month → Project → Invoice → tracker source-cell leg
- * of the Finance Home drill chain.
+ * of the Finance Home drill chain, read entirely from the canonical drill API.
  *
- * Opened from a revenue-by-month bar. Lists the month's projects (realised
- * revenue from the canonical revenue tracker), and on selecting one fetches the
- * canonical invoice leaves (/api/finance/drill/invoices) — each carrying its
+ * Opened from a revenue-by-month bar. Reads /api/finance/drill/tree to list the
+ * month's projects (with their realised revenue), and on selecting one fetches
+ * the canonical invoice leaves (/api/finance/drill/invoices) — each carrying its
  * tracker source cell, so a headline figure can always be traced to the cell it
  * came from. Read-only; no figure is computed here.
  */
@@ -22,50 +22,70 @@ import {
 } from "@/components/ui/sheet";
 import { MoneyValue, FinanceLoading, FinanceEmpty, FinanceError } from "@/components/finance/template";
 import { fetchQueryFn } from "@/lib/queryClient";
-import type { ProjectAmount } from "@/lib/finance/home-data";
+
+export interface MonthDrillTarget {
+  monthKey: string;
+  monthLabel: string;
+}
+
+interface DrillNode {
+  level: "fy" | "month" | "project" | "category" | "invoice";
+  key: string;
+  label: string;
+  month?: string | null;
+  projectId?: number | null;
+  revenue: number;
+  realised: { cos: number; revenue: number; gp: number };
+  children?: DrillNode[];
+}
+interface DrillTreeResponse {
+  fy: number;
+  tree: DrillNode;
+}
 
 interface DrillInvoiceLeaf {
   lineId: number | null;
-  parentLineId: number | null;
   invoiceNumber: string | null;
   invoiceRaisedDate: string | null;
   perLineRevenue: number;
-  perLineGp: number;
   bucket: string | null;
-  sourceSheet: string | null;
-  sourceRow: number | null;
   sourceCell: string | null;
 }
 interface DrillInvoicesResponse {
   projectId: number;
   invoices: DrillInvoiceLeaf[];
-  total: number;
-  subtotal: { revenue: number; cos: number; gp: number; count: number };
-}
-
-export interface MonthDrillTarget {
-  monthKey: string;
-  monthLabel: string;
-  projects: ProjectAmount[];
 }
 
 export function MonthDrillDrawer({
   target,
   fy,
-  nameById,
   onClose,
 }: {
   target: MonthDrillTarget | null;
   fy: number | null;
-  nameById: Map<string, number>;
   onClose: () => void;
 }) {
   const [selected, setSelected] = React.useState<{ id: number; name: string } | null>(null);
 
-  // Reset the selected project whenever the month changes.
   React.useEffect(() => {
     setSelected(null);
   }, [target?.monthKey]);
+
+  // FY drill tree → the month's project children (canonical Month→Project).
+  const treeQuery = useQuery<DrillTreeResponse>({
+    queryKey: ["/api/finance/drill/tree", fy],
+    queryFn: fetchQueryFn(`/api/finance/drill/tree?fy=${fy}`),
+    enabled: target != null && fy != null,
+    staleTime: 60_000,
+  });
+
+  const projects = React.useMemo(() => {
+    const monthNode = treeQuery.data?.tree.children?.find((n) => n.month === target?.monthKey);
+    const kids = monthNode?.children ?? [];
+    return [...kids]
+      .filter((n) => n.projectId != null)
+      .sort((a, b) => b.realised.revenue - a.realised.revenue);
+  }, [treeQuery.data, target?.monthKey]);
 
   const invoicesQuery = useQuery<DrillInvoicesResponse>({
     queryKey: ["/api/finance/drill/invoices", fy, selected?.id, target?.monthKey],
@@ -75,8 +95,6 @@ export function MonthDrillDrawer({
     enabled: selected != null && target != null && fy != null,
     staleTime: 60_000,
   });
-
-  const projects = [...(target?.projects ?? [])].sort((a, b) => b.amount - a.amount);
 
   return (
     <Sheet open={target != null} onOpenChange={(open) => !open && onClose()}>
@@ -92,32 +110,35 @@ export function MonthDrillDrawer({
         {/* Step 1 — projects in this month */}
         <div className="mt-4">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
-            Projects ({projects.length})
+            Projects
           </p>
-          {projects.length === 0 ? (
+          {treeQuery.isLoading ? (
+            <FinanceLoading label="Loading projects…" />
+          ) : treeQuery.isError ? (
+            <FinanceError title="Could not load the month." onRetry={() => treeQuery.refetch()} />
+          ) : projects.length === 0 ? (
             <FinanceEmpty title="No realised revenue this month." />
           ) : (
             <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
               {projects.map((p) => {
-                const id = nameById.get(p.projectName) ?? null;
+                const id = p.projectId as number;
                 const isSel = selected?.id === id;
                 return (
-                  <li key={p.projectName}>
+                  <li key={p.key}>
                     <button
                       type="button"
-                      disabled={id == null}
-                      onClick={() => id != null && setSelected({ id, name: p.projectName })}
+                      onClick={() => setSelected({ id, name: p.label })}
                       className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors ${
                         isSel ? "bg-emerald-50" : "hover:bg-slate-50"
-                      } ${id == null ? "cursor-not-allowed opacity-60" : ""}`}
+                      }`}
                     >
                       <span className="inline-flex items-center gap-1.5 min-w-0">
                         <ChevronRight
                           className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform ${isSel ? "rotate-90" : ""}`}
                         />
-                        <span className="truncate font-medium text-slate-700">{p.projectName}</span>
+                        <span className="truncate font-medium text-slate-700">{p.label}</span>
                       </span>
-                      <MoneyValue value={p.amount} className="text-sm" />
+                      <MoneyValue value={p.realised.revenue} className="text-sm" />
                     </button>
                   </li>
                 );
@@ -161,9 +182,7 @@ export function MonthDrillDrawer({
                     {invoicesQuery.data!.invoices.map((inv, i) => (
                       <tr key={inv.lineId ?? i} className="border-t border-slate-100">
                         <td className="px-2 py-1.5">
-                          <span className="font-medium text-slate-700">
-                            {inv.invoiceNumber || "—"}
-                          </span>
+                          <span className="font-medium text-slate-700">{inv.invoiceNumber || "—"}</span>
                           {inv.invoiceRaisedDate && (
                             <span className="ml-1 text-[11px] text-slate-400">{inv.invoiceRaisedDate}</span>
                           )}

@@ -1,51 +1,83 @@
 /**
  * Finance Home — response shapes + pure presentation transforms.
  *
- * Finance Home is a READER. Every figure on the page comes from a canonical
- * tracker endpoint (the §3.3 single read path) and is reshaped here for the
- * charts / KPIs WITHOUT any recalculation of a finance number:
+ * Finance Home is a READER with ONE underlying source for every REV/COS/GP
+ * figure: the canonical single read path, `/api/finance/lines` (which reads
+ * server/repositories/finance-line-level-repository.ts directly). The page
+ * never recalculates a finance number — it only groups / cumulates / sorts the
+ * canonical per-line totals the endpoint already produced:
  *
- *   GET /api/revenue-tracker?fy=<fy>   → { months: RevTrackerMonthRow[] }
- *   GET /api/cos-tracker?fy=<fy>       → CosTrackerMonthRow[]
- *   GET /api/weekly-cashflow?fy=<fy>   → { weeks: CashflowWeekRow[] }
- *   GET /api/finance/lines             → { byProject: ProjectLineRollup[] }
- *   GET /api/finance/reconciliation    → ReconPortfolioResponse
- *   GET /api/weekly-cashflow/{receivables,payables,missing-invoices}
+ *   GET /api/finance/lines?fyStart&fyEnd  — REV/COS/GP per project + per month,
+ *                                            split realised / planned, + budget
+ *   GET /api/finance/drill/tree?fy        — FY → Month → Project drill nodes
+ *   GET /api/finance/drill/invoices       — invoice leaves + tracker source cell
+ *   GET /api/weekly-cashflow?fy           — cash in/out + available, by week
+ *   GET /api/finance/reconciliation       — per-project app-vs-tracker trust
+ *   GET /api/weekly-cashflow/{receivables,payables}  — AR overdue / AP due
  *
- * These helpers only group / cumulate / sort the canonical figures — they never
- * derive REV/COS/GP themselves (GP comes from the locked gp-summary helper). No
- * pre-summarised / aggregate revenue rollup is read anywhere.
+ * The headline basis is REALISED (recognised), so the KPIs, the by-month charts,
+ * the per-project table and the breakdowns all read the SAME realised fields and
+ * reconcile with each other and with the GP / Revenue / COS pages (their realised
+ * totals trace to the same repository). No aggregate / pre-summarised rollup is
+ * read anywhere.
  */
 import type { ReconDisplayStatus } from "@/components/finance/recon-status";
-import { buildGpMonthSummaries, type GpMonthSummary } from "@/lib/finance/gp-summary";
 
-// ── Canonical response shapes (subset we consume) ─────────────────────────────
+// ── Canonical /api/finance/lines shapes ──────────────────────────────────────
 
-export interface RevTrackerMonthRow {
+/** Per-month canonical totals (aggregateLinesByMonth → MonthlyReconRow). */
+export interface MonthlyReconRow {
   monthKey: string;
-  monthLabel: string;
-  totalRevenue: number;
+  cos: number;
+  revenue: number;
+  gp: number;
+  gpPct: number | null;
+  count: number;
+  plannedCos: number;
+  plannedRevenue: number;
+  plannedGp: number;
+  plannedGpPct: number | null;
+  realisedCos: number;
   realisedRevenue: number;
-  unrealisedRevenue: number;
-  budget: number;
-  ytdRevenue: number;
-  ytdRealised: number;
-  ytdBudget: number;
-  realisedProjects: ProjectAmount[];
-  revProjects: ProjectAmount[];
-  unrealisedProjects: ProjectAmount[];
-}
-export interface RevTrackerResponse {
-  months: RevTrackerMonthRow[];
+  realisedGp: number;
+  realisedGpPct: number | null;
 }
 
-export interface CosTrackerMonthRow {
-  monthKey: string;
-  monthLabel: string;
-  budget: number;
-  realisedCOS: number;
-  realisedProjects: ProjectAmount[];
+/** Per-project canonical totals (summariseLinesByProject → ProjectTotals). */
+export interface ProjectTotals {
+  projectId: number;
+  cos: number;
+  revenue: number;
+  gp: number;
+  gpPct: number | null;
+  count: number;
+  plannedCos: number;
+  plannedRevenue: number;
+  plannedGp: number;
+  plannedGpPct: number | null;
+  realisedCos: number;
+  realisedRevenue: number;
+  realisedGp: number;
+  realisedGpPct: number | null;
 }
+
+/** Manual monthly budget (tracker_monthly_manual) — same rows the COS/REV tabs show. */
+export interface BudgetByMonth {
+  cos: Record<string, number>;
+  revenue: Record<string, number>;
+}
+
+export interface FinanceLinesResponse {
+  projectIds: number[];
+  fyStart: string | null;
+  fyEnd: string | null;
+  byProject: ProjectTotals[];
+  monthly: MonthlyReconRow[];
+  total: MonthlyReconRow;
+  budgetByMonth: BudgetByMonth;
+}
+
+// ── Other canonical reads ─────────────────────────────────────────────────────
 
 export interface CashflowWeekRow {
   weekStart: string;
@@ -59,27 +91,6 @@ export interface CashflowResponse {
   weeks: CashflowWeekRow[];
 }
 
-export interface ProjectAmount {
-  projectName: string;
-  amount: number;
-}
-
-/** /api/finance/lines byProject rollup (canonical §3.3 per-project totals). */
-export interface ProjectLineRollup {
-  projectId: number;
-  revenue: number;
-  gp: number;
-  gpPct: number | null;
-  realisedRevenue: number;
-  realisedGp: number;
-  realisedGpPct: number | null;
-  count: number;
-}
-export interface FinanceLinesResponse {
-  projectIds: number[];
-  byProject?: ProjectLineRollup[];
-}
-
 export interface ReconPortfolioProjectRow {
   projectId: number;
   projectName: string;
@@ -91,30 +102,232 @@ export interface ReconPortfolioProjectRow {
 }
 export interface ReconPortfolioResponse {
   projects: ReconPortfolioProjectRow[];
-  summary: {
-    total: number;
-    tie: number;
-    drift: number;
-    notCompared: number;
+  summary: { total: number; tie: number; drift: number; notCompared: number };
+}
+
+export interface AgedWorklist {
+  asOf: string;
+  rows: unknown[];
+  buckets: Record<string, { count: number; amount: number }> & {
+    total: { count: number; amount: number };
   };
 }
 
-export interface AgedWorklistRow {
-  lineId: number;
-  projectId: number | null;
-  projectName: string | null;
-  counterpartyName: string | null;
-  invoiceNumber: string | null;
-  invoiceDate: string | null;
-  amountExVat: number;
-  ageDays: number;
-  ageBucket: string;
-  source: { sourceSheet: string | null; sourceRow: number | null; sourceCell: string | null };
+// ── Month frame + labels ──────────────────────────────────────────────────────
+
+const MONTH_KEY_RE = /^\d{4}-\d{2}$/;
+
+export function monthLabelFromKey(monthKey: string): string {
+  const [y, m] = monthKey.split("-").map(Number);
+  if (!y || !m) return monthKey;
+  const d = new Date(Date.UTC(y, m - 1, 1));
+  return d.toLocaleString("en-US", { month: "short", year: "2-digit", timeZone: "UTC" });
 }
-export interface AgedWorklist {
-  asOf: string;
-  rows: AgedWorklistRow[];
-  buckets: Record<string, { count: number; amount: number }> & { total: { count: number; amount: number } };
+
+/**
+ * Ordered list of YYYY-MM keys for the FY frame. Prefers the FY bounds
+ * (so every FY month shows, even with no lines/budget); falls back to the
+ * sorted union of the months that actually carry data (all-data mode).
+ */
+export function fyMonthFrame(
+  monthly: MonthlyReconRow[],
+  budget: BudgetByMonth,
+  startMonthKey: string | null,
+  endMonthKey: string | null,
+): string[] {
+  if (startMonthKey && endMonthKey && MONTH_KEY_RE.test(startMonthKey) && MONTH_KEY_RE.test(endMonthKey)) {
+    const keys: string[] = [];
+    let [y, m] = startMonthKey.split("-").map(Number);
+    const [ey, em] = endMonthKey.split("-").map(Number);
+    // Guard against a malformed range running away.
+    for (let i = 0; i < 240 && (y < ey || (y === ey && m <= em)); i += 1) {
+      keys.push(`${y}-${String(m).padStart(2, "0")}`);
+      m += 1;
+      if (m > 12) { m = 1; y += 1; }
+    }
+    return keys;
+  }
+  const union = new Set<string>();
+  for (const r of monthly) if (MONTH_KEY_RE.test(r.monthKey)) union.add(r.monthKey);
+  for (const k of Object.keys(budget.revenue)) if (MONTH_KEY_RE.test(k)) union.add(k);
+  return Array.from(union).sort();
+}
+
+// ── FY headline totals (realised basis; FYTD incl. open month) ───────────────
+
+export interface FyHeadline {
+  realisedRevenue: number;
+  realisedCos: number;
+  realisedGp: number;
+  marginPct: number | null;
+  budgetRevenueFy: number;
+}
+
+export function fyHeadline(
+  total: MonthlyReconRow | undefined,
+  budget: BudgetByMonth,
+  frame: string[],
+): FyHeadline {
+  const realisedRevenue = total?.realisedRevenue ?? 0;
+  const realisedCos = total?.realisedCos ?? 0;
+  const realisedGp = total?.realisedGp ?? 0;
+  const budgetRevenueFy = frame.reduce((s, mk) => s + (budget.revenue[mk] ?? 0), 0);
+  return {
+    realisedRevenue,
+    realisedCos,
+    realisedGp,
+    marginPct: realisedRevenue !== 0 ? (realisedGp / realisedRevenue) * 100 : null,
+    budgetRevenueFy,
+  };
+}
+
+// ── Chart series (all from the canonical monthly rows + manual budget) ────────
+
+export interface MonthStatePoint {
+  monthKey: string;
+  monthLabel: string;
+  budget: number;
+  planned: number;
+  realised: number;
+}
+
+export function monthStatesSeries(
+  monthly: MonthlyReconRow[],
+  budget: BudgetByMonth,
+  frame: string[],
+): MonthStatePoint[] {
+  const byKey = new Map(monthly.map((m) => [m.monthKey, m]));
+  return frame.map((mk) => ({
+    monthKey: mk,
+    monthLabel: monthLabelFromKey(mk),
+    budget: budget.revenue[mk] ?? 0,
+    planned: byKey.get(mk)?.plannedRevenue ?? 0,
+    realised: byKey.get(mk)?.realisedRevenue ?? 0,
+  }));
+}
+
+export interface OnTrackPoint {
+  monthKey: string;
+  monthLabel: string;
+  cumRealised: number;
+  cumBudget: number;
+}
+
+export function onTrackSeries(
+  monthly: MonthlyReconRow[],
+  budget: BudgetByMonth,
+  frame: string[],
+): OnTrackPoint[] {
+  const byKey = new Map(monthly.map((m) => [m.monthKey, m]));
+  let cumRealised = 0;
+  let cumBudget = 0;
+  return frame.map((mk) => {
+    cumRealised += byKey.get(mk)?.realisedRevenue ?? 0;
+    cumBudget += budget.revenue[mk] ?? 0;
+    return { monthKey: mk, monthLabel: monthLabelFromKey(mk), cumRealised, cumBudget };
+  });
+}
+
+/** Ahead/behind = cumulative realised − cumulative budget at the current month. */
+export function onTrackGap(series: OnTrackPoint[], todayYyyyMm: string): number | null {
+  if (series.length === 0) return null;
+  let point: OnTrackPoint | null = null;
+  for (const p of series) if (p.monthKey <= todayYyyyMm) point = p;
+  const at = point ?? series[series.length - 1];
+  return at.cumRealised - at.cumBudget;
+}
+
+export interface GpMarginPoint {
+  monthKey: string;
+  monthLabel: string;
+  gp: number;
+  margin: number | null;
+}
+
+export function gpMarginSeries(monthly: MonthlyReconRow[], frame: string[]): GpMarginPoint[] {
+  const byKey = new Map(monthly.map((m) => [m.monthKey, m]));
+  return frame.map((mk) => {
+    const m = byKey.get(mk);
+    return {
+      monthKey: mk,
+      monthLabel: monthLabelFromKey(mk),
+      gp: m?.realisedGp ?? 0,
+      margin: m && m.realisedRevenue !== 0 ? (m.realisedGp / m.realisedRevenue) * 100 : null,
+    };
+  });
+}
+
+export interface CashWeekPoint {
+  weekStart: string;
+  label: string;
+  inflows: number;
+  outflows: number;
+  available: number;
+}
+
+export function cashByWeekSeries(weeks: CashflowWeekRow[]): CashWeekPoint[] {
+  return weeks.map((w) => ({
+    weekStart: w.weekStart,
+    label: weekLabel(w.weekStart),
+    inflows: w.projectInflows ?? 0,
+    outflows: w.projectOutflows ?? 0,
+    available: w.availablePayment ?? 0,
+  }));
+}
+
+export function weekLabel(weekStart: string): string {
+  const d = new Date(`${weekStart}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return weekStart;
+  return d.toLocaleDateString("en-ZA", { day: "numeric", month: "short" });
+}
+
+// ── Per-project breakdowns (realised basis) ──────────────────────────────────
+
+export interface ProjectGpRow {
+  projectId: number;
+  projectName: string;
+  revenue: number;
+  gp: number;
+  /** Margin as a percentage (e.g. 25.0), not a fraction. */
+  gpPct: number | null;
+}
+
+function pctFromFraction(frac: number | null): number | null {
+  return frac == null ? null : frac * 100;
+}
+
+function rollupToRows(byProject: ProjectTotals[], nameById: Map<number, string>): ProjectGpRow[] {
+  return byProject.map((p) => ({
+    projectId: p.projectId,
+    projectName: nameById.get(p.projectId) ?? `Project ${p.projectId}`,
+    revenue: p.realisedRevenue,
+    gp: p.realisedGp,
+    gpPct: pctFromFraction(p.realisedGpPct),
+  }));
+}
+
+/** Top N projects by realised GP (descending). */
+export function topProjectsByGp(
+  byProject: ProjectTotals[],
+  nameById: Map<number, string>,
+  n = 8,
+): ProjectGpRow[] {
+  return rollupToRows(byProject, nameById)
+    .filter((p) => p.revenue !== 0 || p.gp !== 0)
+    .sort((a, b) => b.gp - a.gp)
+    .slice(0, n);
+}
+
+/** Weakest N realised margins (ascending GP%), only projects with realised revenue. */
+export function weakestMargins(
+  byProject: ProjectTotals[],
+  nameById: Map<number, string>,
+  n = 8,
+): ProjectGpRow[] {
+  return rollupToRows(byProject, nameById)
+    .filter((p) => p.gpPct != null && p.revenue > 0)
+    .sort((a, b) => (a.gpPct ?? 0) - (b.gpPct ?? 0))
+    .slice(0, n);
 }
 
 // ── Trust posture (the "Match my trackers?" strip) ───────────────────────────
@@ -149,161 +362,4 @@ export function summariseTrust(projects: ReconPortfolioProjectRow[]): TrustCount
     else counts.notCompared += 1;
   }
   return counts;
-}
-
-// ── FY headline totals (FYTD, incl. open month — owner ruling) ───────────────
-
-export interface FyRevenueTotals {
-  /** Σ realised revenue across the FY months (FYTD incl. the open month). */
-  realisedFytd: number;
-  /** Σ monthly manual budget across the FY (the provisional FY26 target). */
-  budgetFy: number;
-}
-
-export function fyRevenueTotals(months: RevTrackerMonthRow[]): FyRevenueTotals {
-  let realisedFytd = 0;
-  let budgetFy = 0;
-  for (const m of months) {
-    realisedFytd += m.realisedRevenue ?? 0;
-    budgetFy += m.budget ?? 0;
-  }
-  return { realisedFytd, budgetFy };
-}
-
-export function fyRealisedCos(cosMonths: CosTrackerMonthRow[]): number {
-  return cosMonths.reduce((s, m) => s + (m.realisedCOS ?? 0), 0);
-}
-
-// ── Chart series ──────────────────────────────────────────────────────────────
-
-export interface MonthStatePoint {
-  monthKey: string;
-  monthLabel: string;
-  budget: number;
-  planned: number;
-  realised: number;
-}
-
-/** Revenue by month split by tracker state (budget / planned / realised). */
-export function monthStatesSeries(months: RevTrackerMonthRow[]): MonthStatePoint[] {
-  return months.map((m) => ({
-    monthKey: m.monthKey,
-    monthLabel: m.monthLabel,
-    budget: m.budget ?? 0,
-    // "planned" = the not-yet-realised (RED font) forecast portion.
-    planned: m.unrealisedRevenue ?? Math.max(0, (m.totalRevenue ?? 0) - (m.realisedRevenue ?? 0)),
-    realised: m.realisedRevenue ?? 0,
-  }));
-}
-
-export interface OnTrackPoint {
-  monthKey: string;
-  monthLabel: string;
-  cumRealised: number;
-  cumBudget: number;
-}
-
-/** Cumulative realised vs cumulative budget across the FY (the pace line). */
-export function onTrackSeries(months: RevTrackerMonthRow[]): OnTrackPoint[] {
-  let cumRealised = 0;
-  let cumBudget = 0;
-  return months.map((m) => {
-    cumRealised += m.realisedRevenue ?? 0;
-    cumBudget += m.budget ?? 0;
-    return { monthKey: m.monthKey, monthLabel: m.monthLabel, cumRealised, cumBudget };
-  });
-}
-
-/**
- * Ahead/behind = cumulative realised − cumulative budget at the current month
- * (the latest month on or before todayYyyyMm). Positive = ahead of plan.
- */
-export function onTrackGap(series: OnTrackPoint[], todayYyyyMm: string): number | null {
-  if (series.length === 0) return null;
-  let point: OnTrackPoint | null = null;
-  for (const p of series) {
-    if (p.monthKey <= todayYyyyMm) point = p;
-  }
-  const at = point ?? series[series.length - 1];
-  return at.cumRealised - at.cumBudget;
-}
-
-export interface CashWeekPoint {
-  weekStart: string;
-  label: string;
-  inflows: number;
-  outflows: number;
-  available: number;
-}
-
-export function cashByWeekSeries(weeks: CashflowWeekRow[]): CashWeekPoint[] {
-  return weeks.map((w) => ({
-    weekStart: w.weekStart,
-    label: weekLabel(w.weekStart),
-    inflows: w.projectInflows ?? 0,
-    outflows: w.projectOutflows ?? 0,
-    available: w.availablePayment ?? 0,
-  }));
-}
-
-export function weekLabel(weekStart: string): string {
-  const d = new Date(`${weekStart}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return weekStart;
-  return d.toLocaleDateString("en-ZA", { day: "numeric", month: "short" });
-}
-
-// ── Per-project breakdowns (Top GP / weakest margins) ────────────────────────
-
-export interface ProjectGpRow {
-  projectId: number;
-  projectName: string;
-  revenue: number;
-  gp: number;
-  gpPct: number | null;
-}
-
-function rollupToRows(
-  byProject: ProjectLineRollup[],
-  nameById: Map<number, string>,
-): ProjectGpRow[] {
-  return byProject.map((p) => ({
-    projectId: p.projectId,
-    projectName: nameById.get(p.projectId) ?? `Project ${p.projectId}`,
-    revenue: p.revenue,
-    gp: p.gp,
-    gpPct: p.gpPct,
-  }));
-}
-
-/** Top N projects by GP (descending). */
-export function topProjectsByGp(
-  byProject: ProjectLineRollup[],
-  nameById: Map<number, string>,
-  n = 8,
-): ProjectGpRow[] {
-  return rollupToRows(byProject, nameById)
-    .filter((p) => p.revenue !== 0 || p.gp !== 0)
-    .sort((a, b) => b.gp - a.gp)
-    .slice(0, n);
-}
-
-/** Weakest N margins (ascending GP%), only projects that have revenue. */
-export function weakestMargins(
-  byProject: ProjectLineRollup[],
-  nameById: Map<number, string>,
-  n = 8,
-): ProjectGpRow[] {
-  return rollupToRows(byProject, nameById)
-    .filter((p) => p.gpPct != null && p.revenue > 0)
-    .sort((a, b) => (a.gpPct ?? 0) - (b.gpPct ?? 0))
-    .slice(0, n);
-}
-
-// ── GP/margin by month (reuses the locked gp-summary derivation) ─────────────
-
-export function gpMarginSeries(
-  cosMonths: { monthKey: string; monthLabel: string; budget: number; realisedCOS: number }[],
-  revMonths: { monthKey: string; monthLabel: string; budget: number; realisedRevenue: number }[],
-): GpMonthSummary[] {
-  return buildGpMonthSummaries(cosMonths, revMonths);
 }
