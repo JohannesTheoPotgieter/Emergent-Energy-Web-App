@@ -1355,17 +1355,27 @@ export function extractCostLines(
   // Positional fallback: if "Total Revenue" synonym not matched, try the rightmost budget pane column.
   // This handles "ERROR on REV" or other broken headers where the column position is still correct.
   if (jCatCol < 0 && bm && bm.length > 0) {
-    // The rightmost budget pane column by position (highest colIndex) that we haven't already mapped.
-    const mappedBudgetCols = new Set(bm.map((m: any) => m.colIndex));
-    // Also check if there's a column to the right of the highest mapped column.
-    const maxMappedCol = Math.max(...bm.map((m: any) => m.colIndex));
-
-    // Look at the raw budget headers from the section detection for unmapped columns.
-    // The J_cat column is typically the rightmost populated budget-pane column.
-    // We check if the column right of "Total COS" (if found) has numeric data on row 2 (grand total).
-    if (xCatCol >= 0) {
-      // J_cat is expected to be the next column after "Total COS" or the one after that.
-      const candidateCol = xCatCol + 1;
+    // The J_cat ("Total Revenue") column sits immediately to the RIGHT of the
+    // "Total COS" (X_cat) column. On broken-header layouts the J header is
+    // corrupted (e.g. literally "ERROR on REV"), so the synonym match above
+    // fails and we recover it positionally.
+    //
+    // Anchor = the "Total COS" column. Its header synonym ("total cos") is
+    // shared between `category_cos_total` AND `actual_cos`, and the mapper can
+    // assign it to `actual_cos` (or `budget_cos`) in the budget pane — in which
+    // case `xCatCol` (category_cos_total) is -1 even though the column exists.
+    // Fall through those fields so the anchor is found regardless of which one
+    // "Total COS" mapped to; otherwise the fallback silently never fires and
+    // the whole project's revenue collapses to 0 (the ZERO_J class of bug).
+    const cosAnchor =
+      xCatCol >= 0
+        ? xCatCol
+        : getBudgetColIndex(bm, "actual_cos") >= 0
+          ? getBudgetColIndex(bm, "actual_cos")
+          : getBudgetColIndex(bm, "budget_cos");
+    if (cosAnchor >= 0) {
+      // J_cat is expected to be the next column after "Total COS".
+      const candidateCol = cosAnchor + 1;
       if (data.length > 1) {
         const r2val = data[1]?.[candidateCol]; // Row 2 (0-indexed row 1) has grand totals
         if (r2val != null && typeof r2val === "number" && r2val !== 0) {
@@ -1374,7 +1384,7 @@ export function extractCostLines(
           issues.push({
             severity: "WARNING",
             section: "EXPENDITURE",
-            message: `Revenue allocation column header not matched by synonym. Using positional detection (column ${candidateCol + 1}, adjacent to "Total COS"). Grand total value found: ${r2val.toLocaleString()}.`,
+            message: `Revenue allocation column header not matched by synonym (e.g. "ERROR on REV"). Using positional detection (column ${candidateCol + 1}, adjacent to "Total COS"). Grand total value found: ${r2val.toLocaleString()}.`,
             suggestedAction: "Verify the revenue allocation column is correct in the Expenditure Breakdown",
             issueType: "JCAT_POSITIONAL_FALLBACK",
             issueFingerprint: makeFingerprint("JCAT_POSITIONAL_FALLBACK", "EXPENDITURE", "positional"),
