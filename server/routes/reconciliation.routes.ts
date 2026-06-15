@@ -377,6 +377,13 @@ export function registerReconciliationRoutes(app: Express): void {
     async (_req: Request, res: Response) => {
       try {
         const projects = await getReconciliationPortfolio(db);
+        // Trust posture against the trackers (the Finance Home "Match my
+        // trackers?" strip). A `green` status only counts as a real
+        // tie-to-tracker when a tracker baseline was actually pasted; with no
+        // baseline it is "not compared yet", never a tie.
+        const tie = projects.filter((p) => p.status === "green" && p.trackerBaselinePresent).length;
+        const drift = projects.filter((p) => p.status === "amber" || p.status === "red").length;
+        const notCompared = projects.length - tie - drift;
         res.json({
           generatedAt: new Date().toISOString(),
           projects,
@@ -387,6 +394,10 @@ export function registerReconciliationRoutes(app: Express): void {
             amber: projects.filter((p) => p.status === "amber").length,
             green: projects.filter((p) => p.status === "green").length,
             unknown: projects.filter((p) => p.status === "unknown").length,
+            // Tracker trust posture (tie-to-tracker / drift / not compared yet).
+            tie,
+            drift,
+            notCompared,
           },
         });
       } catch (err) {

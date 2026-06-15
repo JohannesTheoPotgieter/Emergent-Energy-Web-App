@@ -20,7 +20,7 @@
  * tagged); company-level QB reconciliation lives in qb-tracker-reconcile.ts.
  */
 
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, isNotNull } from "drizzle-orm";
 
 import { financialReconciliation, fiscalPeriods } from "@shared/schema/finance";
 import { projectInfo } from "@shared/schema/projects";
@@ -348,6 +348,18 @@ export interface ReconPortfolioProject {
   amberPeriods: number;
   redPeriods: number;
   computedAt: string | null;
+  /**
+   * True when the project has at least one pasted tracker cross-check value
+   * (col-U `revenue_recognition_amount`) to reconcile against. A `green` status
+   * means two very different things depending on this flag:
+   *   - `true`  → the app genuinely TIES to the pasted tracker within R1.
+   *   - `false` → there is NO tracker baseline pasted; the app is only
+   *               internally consistent ("not compared yet"). Such a project
+   *               must NOT be reported as a tie-to-tracker.
+   * Derived at read time from the live actuals so it needs no schema change and
+   * touches no frozen finance computation path.
+   */
+  trackerBaselinePresent: boolean;
 }
 
 /**
@@ -394,6 +406,25 @@ export async function getReconciliationPortfolio(
     byProject.set(r.projectId, arr);
   }
 
+  // Tracker-baseline presence: which projects have ANY pasted col-U cross-check
+  // (`revenue_recognition_amount`) on a live actuals row. Lets the board tell a
+  // genuine tie-to-tracker apart from "no tracker pasted yet" — both of which
+  // otherwise compute to `green` with a zero delta. Read-only; mirrors the
+  // active-row guard (effective_to IS NULL AND deleted_at IS NULL). No finance
+  // figure is read or recomputed here.
+  const baselineRows = (await dbi
+    .select({ projectId: normalizedCostLineActuals.projectId })
+    .from(normalizedCostLineActuals)
+    .where(
+      and(
+        isNull(normalizedCostLineActuals.effectiveTo),
+        isNull(normalizedCostLineActuals.deletedAt),
+        isNotNull(normalizedCostLineActuals.revenueRecognitionAmount),
+      ),
+    )
+    .groupBy(normalizedCostLineActuals.projectId)) as Array<{ projectId: number }>;
+  const baselineSet = new Set(baselineRows.map((r) => r.projectId));
+
   const out: ReconPortfolioProject[] = projects.map((p) => {
     const periodRows = byProject.get(p.id) ?? [];
     const statuses = periodRows
@@ -421,6 +452,7 @@ export async function getReconciliationPortfolio(
       amberPeriods: periodRows.filter((r) => r.status === "amber").length,
       redPeriods: periodRows.filter((r) => r.status === "red").length,
       computedAt: computedAt ? computedAt.toISOString() : null,
+      trackerBaselinePresent: baselineSet.has(p.id),
     };
   });
 
