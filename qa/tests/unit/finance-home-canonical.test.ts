@@ -3,33 +3,32 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildGpMonthSummaries,
-  pickCurrentMonth,
   type CosTrackerMonth,
   type RevTrackerMonth,
 } from "@/lib/finance/gp-summary";
 
 /**
- * Finance Home is a pure READER (G1 "honest" pass). These tests pin two things
- * the acceptance criteria require:
+ * Finance Home is a pure READER. These tests pin the acceptance criteria for
+ * the rebuilt accountant dashboard:
  *
- *  1. Home derives its company REV / COS / GP from the SAME canonical endpoints
- *     the finance pages read (/api/cos-tracker + /api/revenue-tracker), with the
- *     SAME derivation the GP page applies — so Home can never show a figure the
- *     finance pages don't. Proven numerically within R1.
+ *  1. Home derives company REV / COS / GP from the SAME canonical endpoints the
+ *     finance pages read (/api/cos-tracker + /api/revenue-tracker), with the
+ *     SAME GP derivation the GP page applies — so Home can never show a figure
+ *     the finance pages don't. Proven numerically within R1.
  *
- *  2. There is no per-project QuickBooks surface on Home (QB cost bills aren't
- *     project-tagged → company-grain QB only), and "no data" is visually
- *     distinct from a real R0. Proven structurally + at the data level.
+ *  2. Every figure reads the canonical read path. No project_revenue_summary /
+ *     aggregate-PRS source, no /api/company-overview whole-life plan, and no
+ *     QuickBooks tile (QB lives only on /finance/qb-reconciliation).
+ *
+ *  3. The trust strip is the per-project app-vs-tracker reconciliation, where a
+ *     "tie" means tie-to-tracker and a project with no baseline reads
+ *     "not compared yet" — never a bare "Δ R0 / No data".
  */
 
-// Fixture COS + REV tracker payloads (the subset Home and the GP page consume).
-// Deliberately misaligned: a REV-only month (no COS frame) must be dropped by
-// both derivations, a COS-only month falls to rev 0, plus a real break-even
-// month (R0 GP with activity) and a genuinely-empty month (no realised lines).
 const COS: CosTrackerMonth[] = [
   { monthKey: "2025-09", monthLabel: "Sep 25", budget: 120, realisedCOS: 100 },
   { monthKey: "2025-10", monthLabel: "Oct 25", budget: 210, realisedCOS: 200 }, // break-even
-  { monthKey: "2025-11", monthLabel: "Nov 25", budget: 50, realisedCOS: 0 }, // no realised data
+  { monthKey: "2025-11", monthLabel: "Nov 25", budget: 50, realisedCOS: 0 },
   { monthKey: "2026-01", monthLabel: "Jan 26", budget: 60, realisedCOS: 50 }, // cos-only (rev missing)
 ];
 
@@ -40,12 +39,7 @@ const REV: RevTrackerMonth[] = [
   { monthKey: "2025-12", monthLabel: "Dec 25", budget: 90, realisedRevenue: 999 }, // rev-only → dropped
 ];
 
-/**
- * Mirror of the finance GP page's company-total derivation
- * (finance-gp-company.tsx:299-365 allMonths + 440-458 fyTotals): frame on the
- * COS months, look the REV month up by key, realised{Revenue,COS} default to 0,
- * realisedGP = realisedRevenue − realisedCOS, sum across the framed months.
- */
+/** Mirror of the GP page's company-total derivation: frame on COS months. */
 function financePageCompanyRealised(cos: CosTrackerMonth[], rev: RevTrackerMonth[]) {
   const revByKey = new Map(rev.map((m) => [m.monthKey, m]));
   let revenue = 0;
@@ -58,7 +52,7 @@ function financePageCompanyRealised(cos: CosTrackerMonth[], rev: RevTrackerMonth
   return { revenue, cos: costOfSales, gp: revenue - costOfSales };
 }
 
-/** Home's company totals straight off its real gp-summary helper. */
+/** Home's company totals straight off the locked gp-summary helper. */
 function homeCompanyRealised(cos: CosTrackerMonth[], rev: RevTrackerMonth[]) {
   const months = buildGpMonthSummaries(cos, rev);
   return months.reduce(
@@ -75,6 +69,7 @@ const R1 = 1;
 const readSrc = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), "utf8");
 const HOME_SRC = "client/src/pages/finance-home.tsx";
 const GP_SRC = "client/src/pages/finance-gp-company.tsx";
+const HOME_DATA_SRC = "client/src/lib/finance/home-data.ts";
 
 describe("Finance Home reads canonical endpoints — figures match the finance pages", () => {
   it("company REV / COS / GP equal the finance GP page within R1", () => {
@@ -93,47 +88,48 @@ describe("Finance Home reads canonical endpoints — figures match the finance p
     const home = homeCompanyRealised(COS, REV);
     expect(Math.abs(home.gp - (home.revenue - home.cos))).toBeLessThanOrEqual(R1);
   });
-
-  it("distinguishes a real break-even R0 month from a no-data month", () => {
-    const months = buildGpMonthSummaries(COS, REV);
-
-    // Oct: realised activity on both sides, GP nets to R0 — a REAL zero.
-    const breakEven = pickCurrentMonth(months, "2025-10").current;
-    expect(breakEven?.realisedGP).toBe(0);
-    const breakEvenHasData =
-      breakEven != null && (breakEven.realisedRevenue !== 0 || breakEven.realisedCOS !== 0);
-    expect(breakEvenHasData).toBe(true); // → renders "R 0"
-
-    // Nov: no realised lines at all — the explicit empty state, not "R 0".
-    const empty = pickCurrentMonth(months, "2025-11").current;
-    const emptyHasData =
-      empty != null && (empty.realisedRevenue !== 0 || empty.realisedCOS !== 0);
-    expect(emptyHasData).toBe(false); // → renders "No data"
-  });
 });
 
-describe("Finance Home — same endpoints as the finance pages, no per-project QB", () => {
+describe("Finance Home — canonical source path only", () => {
   it("Home and the GP page both read /api/cos-tracker and /api/revenue-tracker", () => {
-    const home = readSrc(HOME_SRC);
-    const gp = readSrc(GP_SRC);
-    for (const src of [home, gp]) {
+    for (const src of [readSrc(HOME_SRC), readSrc(GP_SRC)]) {
       expect(src).toContain("/api/cos-tracker");
       expect(src).toContain("/api/revenue-tracker");
     }
   });
 
-  it("Home exposes no per-project QuickBooks status (company-grain QB only)", () => {
-    const home = readSrc(HOME_SRC);
-    // qbStatus / qbDelta were the per-project QB fields the server never sent.
-    expect(home).not.toMatch(/\bqbStatus\b/);
-    expect(home).not.toMatch(/\bqbDelta\b/);
-    // The one QB surface stays — the company-level qb-recon summary tile.
-    expect(home).toContain("/api/finance/qb-recon/summary");
+  it("Home reads NO project_revenue_summary / aggregate-PRS source", () => {
+    const home = readSrc(HOME_SRC) + readSrc(HOME_DATA_SRC);
+    expect(home).not.toMatch(/project_revenue_summary/);
+    expect(home).not.toMatch(/projectRevenueSummary/);
+    expect(home).not.toMatch(/category_revenue_allocations\b/);
   });
 
-  it("Home renders explicit empty states (never a silent dash)", () => {
+  it("Home no longer reads the whole-life company-overview plan", () => {
+    expect(readSrc(HOME_SRC)).not.toContain("/api/company-overview");
+  });
+
+  it("Home has no QuickBooks tile (QB lives only on /finance/qb-reconciliation)", () => {
     const home = readSrc(HOME_SRC);
-    expect(home).toContain("QB recon not run for this period");
-    expect(home).toContain("No realised tracker data this month");
+    expect(home).not.toMatch(/qb-recon/);
+    expect(home).not.toMatch(/\bqbStatus\b/);
+    expect(home).not.toMatch(/\bqbDelta\b/);
+    expect(home).not.toMatch(/QuickBooks/i);
+  });
+});
+
+describe("Finance Home — trust strip is tie-to-tracker, never 'Δ R0 / No data'", () => {
+  it("reads the per-project reconciliation portfolio", () => {
+    expect(readSrc(HOME_SRC)).toContain("/api/finance/reconciliation");
+  });
+
+  it("surfaces 'not compared yet' for projects with no tracker baseline", () => {
+    expect(readSrc(HOME_SRC)).toContain("not compared yet");
+  });
+
+  it("never renders a bare 'Δ R0' or 'No data' delta on Home", () => {
+    const home = readSrc(HOME_SRC);
+    expect(home).not.toMatch(/Δ R0/);
+    expect(home).not.toMatch(/Δ\s*\{/); // no inline delta rendering
   });
 });
