@@ -557,9 +557,9 @@ function extractFontColorHex(fontColor: any): string | null {
   // (e.g. tint 0.35 = dark grey) are still "confirmed" — only explicit red is not.
   if (fontColor.theme != null && typeof fontColor.theme === "number") {
     if (fontColor.theme === 1 || fontColor.theme === 0) return "000000"; // black (window text) — resolvable
-    // fix/colour-default-not-realised: accent / other theme colours can't be
-    // resolved without the workbook theme XML. Return null so the caller
-    // classifies them as UNKNOWN rather than silently assuming black.
+    // Accent / other theme colours can't be resolved without the workbook theme
+    // XML. Return null; classifyFont then treats this unresolvable (non-red)
+    // colour as confirmed black per the owner's "only red is unconfirmed" rule.
     return null;
   }
   return null;
@@ -587,22 +587,27 @@ export type ColourSource = "read" | "defaulted";
  * Pure font → colour classification. Single source of truth for the §3.2 / §3.7
  * realisation colour signal.
  *
- * fix/colour-default-not-realised (owner-approved): when the font colour CANNOT
- * be resolved — no font, no colour, unresolvable hex, accent/other theme — we
- * return `unknown` (isBlack=false, source='defaulted') instead of silently
- * defaulting to black. The canonical COS gate (isCanonicalCosRealised) treats a
- * non-black colour as NOT confirmed, so an unreadable colour no longer realises
- * COS. An explicitly-resolved colour returns source='read'.
+ * Owner rule L1 (reaffirmed 2026-06): a date is "unconfirmed" ONLY when its font
+ * is EXPLICITLY red. Every other state — absent colour (default/automatic black,
+ * the normal confirmed case in the trackers), an unresolvable hex, an accent /
+ * other theme colour, or a malformed value — collapses to the CONFIRMED black
+ * signal. Finance paints ONLY the unconfirmed dates red and leaves confirmed
+ * dates in default formatting, so the canonical COS gate (isCanonicalCosRealised)
+ * must realise on any non-red signal. `source` still records whether the colour
+ * was explicitly read ('read') or defaulted ('defaulted') for provenance.
  */
 export function classifyFont(
   font: { color?: unknown } | null | undefined,
 ): { color: string; isBlack: boolean; source: ColourSource } {
   const colour = font && typeof font === "object" ? (font as { color?: unknown }).color : null;
-  if (!colour) return { color: "unknown", isBlack: false, source: "defaulted" };
+  // No explicit colour = default/automatic black = confirmed.
+  if (!colour) return { color: "black", isBlack: true, source: "defaulted" };
   const hex = extractFontColorHex(colour);
-  if (hex === null) return { color: "unknown", isBlack: false, source: "defaulted" };
+  // Unresolvable hex (accent / other theme) — not red, so confirmed.
+  if (hex === null) return { color: "black", isBlack: true, source: "defaulted" };
   const classified = classifyColorHex(hex);
-  if (classified.color === null) return { color: "unknown", isBlack: false, source: "defaulted" };
+  // Malformed hex — not red, so confirmed.
+  if (classified.color === null) return { color: "black", isBlack: true, source: "defaulted" };
   return { color: classified.color, isBlack: classified.isBlack, source: "read" };
 }
 
@@ -618,8 +623,9 @@ function getCellFontColor(
     if (!cell || !cell.value) return { color: null, isBlack: false, source: "read" };
     return classifyFont(cell.font);
   } catch {
-    // Extraction error → unreadable → UNKNOWN (never silently black).
-    return { color: "unknown", isBlack: false, source: "defaulted" };
+    // Extraction error → unreadable → not red → confirmed black per the
+    // "only red is unconfirmed" rule.
+    return { color: "black", isBlack: true, source: "defaulted" };
   }
 }
 
@@ -1519,19 +1525,6 @@ export function extractCostLines(
           const fc = getCellFontColor(ws, i, invoiceDateCol);
           orphanInvoiceDateFontColor = fc.color;
           orphanInvoiceDateConfirmed = fc.isBlack;
-          // fix/colour-default-not-realised: unreadable colour on an invoiced
-          // (multi-invoice) actual → NOT realised; flag the line.
-          if (fc.source === "defaulted" && isValidInvoiceNumber(orphanInvoiceNo)) {
-            issues.push({
-              severity: "WARNING",
-              section: "EXPENDITURE",
-              message: `Unreadable INVOICE RAISED DATE colour at ${sheetName} row ${i + 1} (invoice ${orphanInvoiceNo}). Treated as NOT realised — an unreadable colour is no longer assumed black/confirmed.`,
-              suggestedAction: "Set the invoice-date font colour explicitly in the tracker (black = confirmed, red = pending) and re-import.",
-              issueType: "COLOUR_DEFAULTED",
-              issueFingerprint: makeFingerprint("COLOUR_DEFAULTED", "EXPENDITURE", `orphan_${i + 1}`),
-              payloadJson: { row: i + 1, invoice: orphanInvoiceNo },
-            });
-          }
         }
 
         actualNoForCurrentParent += 1;
@@ -1726,20 +1719,6 @@ export function extractCostLines(
       const fc = getCellFontColor(ws, i, invoiceDateCol);
       invoiceDateFontColor = fc.color;
       invoiceDateConfirmed = fc.isBlack;
-      // fix/colour-default-not-realised: an unreadable invoice-date colour on an
-      // invoiced line is now treated as NOT realised (was silently black). Flag
-      // it so finance can set the colour explicitly.
-      if (fc.source === "defaulted" && isValidInvoiceNumber(invoiceNumber)) {
-        issues.push({
-          severity: "WARNING",
-          section: "EXPENDITURE",
-          message: `Unreadable INVOICE RAISED DATE colour at ${sheetName} row ${i + 1} (invoice ${invoiceNumber}). Treated as NOT realised — an unreadable colour is no longer assumed black/confirmed.`,
-          suggestedAction: "Set the invoice-date font colour explicitly in the tracker (black = confirmed, red = pending) and re-import.",
-          issueType: "COLOUR_DEFAULTED",
-          issueFingerprint: makeFingerprint("COLOUR_DEFAULTED", "EXPENDITURE", `R${i + 1}`),
-          payloadJson: { row: i + 1, invoice: invoiceNumber },
-        });
-      }
     }
     if (ws && paidDate) {
       const fc = getCellFontColor(ws, i, paidDateCol);

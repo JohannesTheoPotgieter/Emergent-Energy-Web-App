@@ -1,12 +1,18 @@
 /**
- * fix/colour-default-not-realised — an unreadable/defaulted invoice-date colour
- * must be treated as NOT realised (and flagged), never silently realised as
- * black (AGENT_GUARDRAILS §3.2 / §3.7; owner-approved change).
+ * Colour realisation signal (AGENT_GUARDRAILS §3.2 / §3.7, owner rule L1
+ * reaffirmed 2026-06): a date is "unconfirmed" ONLY when its font is EXPLICITLY
+ * red. Every other state — absent colour (default/automatic black, the normal
+ * confirmed case), an unresolvable hex, an accent/other theme colour — collapses
+ * to the CONFIRMED black signal. This reverts the earlier
+ * `fix/colour-default-not-realised` deviation that wrongly filed default-black
+ * (and unresolvable) dates as NOT realised, which booked confirmed lines as
+ * Committed and under-stated Realised across every finance surface.
  *
- *   - classifyFont: unresolvable colour → 'unknown' / isBlack=false /
- *     source='defaulted' (the import warning trigger); explicit black/red read.
- *   - isCanonicalCosRealised: 'unknown' colour → NOT realised; explicit black →
- *     realised; explicit red → NOT realised.
+ *   - classifyFont: absent/unresolvable/theme colour → 'black' / isBlack=true /
+ *     source='defaulted'; explicit black → 'black'/read; explicit red →
+ *     'red'/not black/read.
+ *   - isCanonicalCosRealised: default/unresolvable colour → realised; explicit
+ *     black → realised; explicit red → NOT realised.
  */
 
 import { describe, expect, it } from "vitest";
@@ -32,16 +38,16 @@ function cosLine(overrides: Partial<CosLineInput>): CosLineInput {
   };
 }
 
-describe("classifyFont — unreadable colour is UNKNOWN/defaulted, never silently black", () => {
-  it("no font → unknown / defaulted / not black", () => {
-    expect(classifyFont(undefined)).toEqual({ color: "unknown", isBlack: false, source: "defaulted" });
-    expect(classifyFont(null)).toEqual({ color: "unknown", isBlack: false, source: "defaulted" });
-    expect(classifyFont({})).toEqual({ color: "unknown", isBlack: false, source: "defaulted" });
-    expect(classifyFont({ color: undefined })).toEqual({ color: "unknown", isBlack: false, source: "defaulted" });
+describe("classifyFont — only explicit RED is unconfirmed; everything else is confirmed black", () => {
+  it("no font → confirmed black (source defaulted)", () => {
+    expect(classifyFont(undefined)).toEqual({ color: "black", isBlack: true, source: "defaulted" });
+    expect(classifyFont(null)).toEqual({ color: "black", isBlack: true, source: "defaulted" });
+    expect(classifyFont({})).toEqual({ color: "black", isBlack: true, source: "defaulted" });
+    expect(classifyFont({ color: undefined })).toEqual({ color: "black", isBlack: true, source: "defaulted" });
   });
 
-  it("unresolvable accent theme → unknown / defaulted (no longer assumed black)", () => {
-    expect(classifyFont({ color: { theme: 5 } })).toEqual({ color: "unknown", isBlack: false, source: "defaulted" });
+  it("unresolvable accent theme → confirmed black (not red, so confirmed)", () => {
+    expect(classifyFont({ color: { theme: 5 } })).toEqual({ color: "black", isBlack: true, source: "defaulted" });
   });
 
   it("explicit black (argb or window-text theme) → read / black", () => {
@@ -54,17 +60,17 @@ describe("classifyFont — unreadable colour is UNKNOWN/defaulted, never silentl
   });
 });
 
-describe("COS realisation respects the new colour signal", () => {
-  it("unreadable colour (unknown) → NOT realised", () => {
-    const f = classifyFont(undefined); // { color: 'unknown', isBlack: false, source: 'defaulted' }
-    expect(f.source).toBe("defaulted"); // → import warning is emitted for this line
+describe("COS realisation respects the colour signal", () => {
+  it("default/unreadable colour → realised (only red blocks realisation)", () => {
+    const f = classifyFont(undefined); // { color: 'black', isBlack: true, source: 'defaulted' }
+    expect(f.source).toBe("defaulted"); // provenance still recorded for diagnostics
     const realised = isCanonicalCosRealised(
       cosLine({ invoiceDateFontColor: f.color, invoiceDateConfirmed: f.isBlack }),
     );
-    expect(realised).toBe(false);
+    expect(realised).toBe(true);
   });
 
-  it("explicitly black colour → still realised", () => {
+  it("explicitly black colour → realised", () => {
     const f = classifyFont({ color: { argb: "FF000000" } });
     const realised = isCanonicalCosRealised(
       cosLine({ invoiceDateFontColor: f.color, invoiceDateConfirmed: f.isBlack }),
@@ -72,7 +78,7 @@ describe("COS realisation respects the new colour signal", () => {
     expect(realised).toBe(true);
   });
 
-  it("explicitly red colour → stays NOT realised", () => {
+  it("explicitly red colour → NOT realised", () => {
     const f = classifyFont({ color: { argb: "FFFF0000" } });
     const realised = isCanonicalCosRealised(
       cosLine({ invoiceDateFontColor: f.color, invoiceDateConfirmed: f.isBlack }),
