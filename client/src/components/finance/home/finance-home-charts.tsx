@@ -28,11 +28,11 @@ import { formatZar, formatZarCompact } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 import type {
   CashWeekPoint,
+  GpMarginPoint,
   MonthStatePoint,
   OnTrackPoint,
   ProjectGpRow,
 } from "@/lib/finance/home-data";
-import type { GpMonthSummary } from "@/lib/finance/gp-summary";
 
 // Brand-aligned series colours (emerald = realised/positive; slate = budget;
 // amber = planned/forecast; rose = outflow/negative).
@@ -168,11 +168,11 @@ export function OnTrackChart({ data }: { data: OnTrackPoint[] }) {
 }
 
 /** GP by month (bars) + realised margin % (line, right axis). */
-export function GpMarginChart({ data }: { data: GpMonthSummary[] }) {
+export function GpMarginChart({ data }: { data: GpMarginPoint[] }) {
   const rows = data.map((m) => ({
     monthLabel: m.monthLabel,
-    gp: m.realisedGP,
-    margin: m.realisedMarginPct,
+    gp: m.gp,
+    margin: m.margin,
   }));
   return (
     <ResponsiveContainer width="100%" height={240}>

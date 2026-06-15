@@ -1,25 +1,28 @@
 /**
  * Finance Home — the accountant's dashboard.
  *
- * A pure READER. Every figure on this page comes from the canonical tracker
- * read path (the §3.3 single source of truth), reshaped for display but NEVER
- * recalculated here:
+ * A pure READER with ONE underlying source for every REV/COS/GP figure: the
+ * canonical single read path `/api/finance/lines` (which reads
+ * server/repositories/finance-line-level-repository.ts directly). The KPIs, the
+ * by-month charts, the per-project table and the breakdowns all read the SAME
+ * realised fields off that one response, so they reconcile with each other and
+ * with the GP / Revenue / COS pages (whose realised totals trace to the same
+ * repository). Nothing is recalculated on the page.
  *
- *   GET /api/revenue-tracker?fy   — REV by month: budget / planned / realised
- *   GET /api/cos-tracker?fy       — COS realised by month (+ budget)
- *   GET /api/weekly-cashflow?fy   — cash in/out + available, by week
- *   GET /api/finance/lines        — canonical §3.3 REV/GP per project
- *   GET /api/finance/reconciliation — per-project app-vs-tracker trust posture
+ *   GET /api/finance/lines?fyStart&fyEnd  — REV/COS/GP per project + per month
+ *                                            (realised / planned) + manual budget
+ *   GET /api/finance/drill/{tree,invoices} — drill to the tracker source cell
+ *   GET /api/weekly-cashflow?fy            — cash in/out + available, by week
+ *   GET /api/finance/reconciliation        — per-project app-vs-tracker trust
  *   GET /api/weekly-cashflow/{receivables,payables} — AR overdue / AP due
- *   GET /api/finance/drill/{invoices} & /reconciliation/:id — drill to a cell
+ *   GET /api/smart-import/health-dashboard — "as at" last-import freshness
  *
  * FORBIDDEN here (and proven absent by qa/tests/unit/finance-home-canonical):
  * the pre-summarised per-project revenue rollup, the company-wide whole-life
- * plan, and the bookkeeping-system reconciliation tile (kept on its own page).
+ * plan, the per-month tracker aggregate endpoints, and the bookkeeping-system
+ * reconciliation tile (kept on its own page).
  *
- * GP = Revenue − COS via the locked gp-summary helper — the identical
- * derivation the GP page uses, so Home never shows a figure the finance pages
- * don't. Brand: centralised tokens + shared finance template components only.
+ * Brand: centralised tokens + shared finance template components only.
  */
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -59,9 +62,10 @@ import { formatZar, formatZarCompact } from "@/lib/currency";
 import { useFinancialYearScope } from "@/hooks/use-financial-year-scope";
 import {
   cashByWeekSeries,
-  fyRealisedCos,
-  fyRevenueTotals,
+  fyHeadline,
+  fyMonthFrame,
   gpMarginSeries,
+  monthLabelFromKey,
   monthStatesSeries,
   onTrackGap,
   onTrackSeries,
@@ -72,12 +76,9 @@ import {
   weekLabel,
   type AgedWorklist,
   type CashflowResponse,
-  type CosTrackerMonthRow,
   type FinanceLinesResponse,
   type ProjectGpRow,
-  type ProjectLineRollup,
   type ReconPortfolioResponse,
-  type RevTrackerResponse,
   type TieState,
 } from "@/lib/finance/home-data";
 
@@ -125,24 +126,16 @@ export default function FinanceHomePage() {
       : "";
 
   // ── Canonical reads ────────────────────────────────────────────────────────
-  const revQuery = useQuery<RevTrackerResponse>({
-    queryKey: ["/api/revenue-tracker", qs],
-    queryFn: fetchQueryFn(`/api/revenue-tracker?${qs}`),
-    staleTime: 60_000,
-  });
-  const cosQuery = useQuery<CosTrackerMonthRow[]>({
-    queryKey: ["/api/cos-tracker", qs],
-    queryFn: fetchQueryFn(`/api/cos-tracker?${qs}`),
+  // ONE source for REV/COS/GP: the §3.3 single read path. byProject + monthly +
+  // total + budgetByMonth all come from this single response.
+  const linesQuery = useQuery<FinanceLinesResponse>({
+    queryKey: ["/api/finance/lines", fyWindowQs],
+    queryFn: fetchQueryFn(`/api/finance/lines${fyWindowQs}`),
     staleTime: 60_000,
   });
   const cashQuery = useQuery<CashflowResponse>({
     queryKey: ["/api/weekly-cashflow", qs],
     queryFn: fetchQueryFn(`/api/weekly-cashflow?${qs}`),
-    staleTime: 60_000,
-  });
-  const linesQuery = useQuery<FinanceLinesResponse>({
-    queryKey: ["/api/finance/lines", fyWindowQs],
-    queryFn: fetchQueryFn(`/api/finance/lines${fyWindowQs}`),
     staleTime: 60_000,
   });
   const reconQuery = useQuery<ReconPortfolioResponse>({
@@ -160,7 +153,6 @@ export default function FinanceHomePage() {
     queryFn: fetchQueryFn("/api/weekly-cashflow/payables"),
     staleTime: 60_000,
   });
-  // Freshness: most recent committed import (best-effort — never blocks the page).
   const importHealthQuery = useQuery<ImportHealthRow[]>({
     queryKey: ["/api/smart-import/health-dashboard"],
     queryFn: fetchQueryFn("/api/smart-import/health-dashboard", { on401: "returnNull" }),
@@ -169,34 +161,45 @@ export default function FinanceHomePage() {
   });
 
   // ── Derived (grouping/sorting only — no figure recalculated) ────────────────
-  const revMonths = useMemo(() => revQuery.data?.months ?? [], [revQuery.data]);
-  const cosMonths = useMemo(() => cosQuery.data ?? [], [cosQuery.data]);
+  const linesData = linesQuery.data;
+  const monthly = useMemo(() => linesData?.monthly ?? [], [linesData]);
+  const byProject = useMemo(() => linesData?.byProject ?? [], [linesData]);
+  const budgetByMonth = useMemo(
+    () => linesData?.budgetByMonth ?? { cos: {}, revenue: {} },
+    [linesData],
+  );
   const weeks = useMemo(() => cashQuery.data?.weeks ?? [], [cashQuery.data]);
-  const byProject = useMemo<ProjectLineRollup[]>(() => linesQuery.data?.byProject ?? [], [linesQuery.data]);
   const reconProjects = useMemo(() => reconQuery.data?.projects ?? [], [reconQuery.data]);
 
-  const revTotals = useMemo(() => fyRevenueTotals(revMonths), [revMonths]);
-  const realisedCos = useMemo(() => fyRealisedCos(cosMonths), [cosMonths]);
-  const realisedRevenue = revTotals.realisedFytd;
-  const realisedGp = realisedRevenue - realisedCos;
-  const marginPct = realisedRevenue !== 0 ? (realisedGp / realisedRevenue) * 100 : null;
-  const budgetFy = revTotals.budgetFy;
-  const revVsTargetPct = budgetFy !== 0 ? Math.round((realisedRevenue / budgetFy) * 100) : 0;
+  const frame = useMemo(
+    () => fyMonthFrame(monthly, budgetByMonth, fyScope.startMonthKey, fyScope.endMonthKey),
+    [monthly, budgetByMonth, fyScope.startMonthKey, fyScope.endMonthKey],
+  );
 
-  const monthStates = useMemo(() => monthStatesSeries(revMonths), [revMonths]);
-  const onTrack = useMemo(() => onTrackSeries(revMonths), [revMonths]);
+  const headline = useMemo(
+    () => fyHeadline(linesData?.total, budgetByMonth, frame),
+    [linesData, budgetByMonth, frame],
+  );
+  const revVsTargetPct =
+    headline.budgetRevenueFy !== 0
+      ? Math.round((headline.realisedRevenue / headline.budgetRevenueFy) * 100)
+      : 0;
+
+  const monthStates = useMemo(
+    () => monthStatesSeries(monthly, budgetByMonth, frame),
+    [monthly, budgetByMonth, frame],
+  );
+  const onTrack = useMemo(
+    () => onTrackSeries(monthly, budgetByMonth, frame),
+    [monthly, budgetByMonth, frame],
+  );
   const onTrackGapValue = useMemo(() => onTrackGap(onTrack, currentYyyyMm), [onTrack]);
-  const gpMonths = useMemo(() => gpMarginSeries(cosMonths, revMonths), [cosMonths, revMonths]);
+  const gpMonths = useMemo(() => gpMarginSeries(monthly, frame), [monthly, frame]);
   const cashWeeks = useMemo(() => cashByWeekSeries(weeks), [weeks]);
 
   const nameById = useMemo(() => {
     const m = new Map<number, string>();
     for (const p of reconProjects) m.set(p.projectId, p.projectName);
-    return m;
-  }, [reconProjects]);
-  const idByName = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const p of reconProjects) m.set(p.projectName, p.projectId);
     return m;
   }, [reconProjects]);
 
@@ -245,9 +248,10 @@ export default function FinanceHomePage() {
       return {
         projectId: p.projectId,
         projectName: p.projectName,
-        revenue: m?.revenue ?? 0,
-        gp: m?.gp ?? 0,
-        gpPct: m?.gpPct ?? null,
+        // Realised basis — sums to the realised KPI headline.
+        revenue: m?.realisedRevenue ?? 0,
+        gp: m?.realisedGp ?? 0,
+        gpPct: m?.realisedGpPct != null ? m.realisedGpPct * 100 : null,
         tie: tieState(p.status, p.trackerBaselinePresent),
         absDelta: p.absDelta,
       };
@@ -256,9 +260,7 @@ export default function FinanceHomePage() {
 
   const sortedRows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const filtered = q
-      ? allRows.filter((r) => r.projectName.toLowerCase().includes(q))
-      : allRows;
+    const filtered = q ? allRows.filter((r) => r.projectName.toLowerCase().includes(q)) : allRows;
     const dir = sortDir === "asc" ? 1 : -1;
     const cmp = (a: AllProjectRow, b: AllProjectRow): number => {
       switch (sortKey) {
@@ -272,10 +274,7 @@ export default function FinanceHomePage() {
           return dir * ((a.gpPct ?? -Infinity) - (b.gpPct ?? -Infinity));
         case "tie":
         default:
-          // Drift-first by default, then by drift magnitude.
-          return (
-            dir * (TIE_RANK[a.tie] - TIE_RANK[b.tie]) || b.absDelta - a.absDelta
-          );
+          return dir * (TIE_RANK[a.tie] - TIE_RANK[b.tie]) || b.absDelta - a.absDelta;
       }
     };
     return [...filtered].sort(cmp);
@@ -341,15 +340,13 @@ export default function FinanceHomePage() {
 
   // ── Month drill ─────────────────────────────────────────────────────────────
   const [drill, setDrill] = useState<MonthDrillTarget | null>(null);
-  const openMonth = (monthKey: string) => {
-    const m = revMonths.find((x) => x.monthKey === monthKey);
-    if (!m) return;
-    setDrill({ monthKey: m.monthKey, monthLabel: m.monthLabel, projects: m.realisedProjects ?? [] });
-  };
+  const openMonth = (monthKey: string) =>
+    setDrill({ monthKey, monthLabel: monthLabelFromKey(monthKey) });
 
   const subtitle = `${fyScope.label} · every figure from your trackers, line-for-line${asOf ? ` · as at ${asOf}` : ""}`;
   const asAtTag = "FYTD · incl. open month";
   const trustReady = !reconQuery.isLoading && !reconQuery.isError;
+  const figuresLoading = linesQuery.isLoading;
 
   return (
     <PageShell data-testid="finance-home-page">
@@ -357,7 +354,7 @@ export default function FinanceHomePage() {
         data-testid="finance-home-header"
         title="Finance Home"
         question={subtitle}
-        source="Canonical trackers · ex-VAT"
+        source="Canonical line-level ledger · ex-VAT"
         period={<FinancialYearScopeControl scope={fyScope} />}
       />
 
@@ -395,20 +392,20 @@ export default function FinanceHomePage() {
         </Link>
       </section>
 
-      {/* KPI ROW — the four headline answers (FYTD, incl. open month) */}
+      {/* KPI ROW — the four headline answers (realised, FYTD incl. open month) */}
       <section className="mb-3" aria-label="Headline finance figures">
         <KpiRow>
           <KpiTile
             data-testid="finance-home-kpi-revenue"
             label="Revenue recognised"
             description={asAtTag}
-            value={revQuery.isLoading ? "…" : <MoneyValue value={realisedRevenue} align="left" />}
+            value={figuresLoading ? "…" : <MoneyValue value={headline.realisedRevenue} align="left" />}
             tone="positive"
-            progress={budgetFy !== 0 ? { pct: revVsTargetPct, tone: "positive" } : undefined}
+            progress={headline.budgetRevenueFy !== 0 ? { pct: revVsTargetPct, tone: "positive" } : undefined}
             supporting={
               <span className="inline-flex items-center gap-1.5">
                 <span>
-                  vs FY budget {formatZarCompact(budgetFy)} · {revVsTargetPct}%
+                  vs FY budget {formatZarCompact(headline.budgetRevenueFy)} · {revVsTargetPct}%
                 </span>
                 <Badge
                   variant="outline"
@@ -427,7 +424,7 @@ export default function FinanceHomePage() {
             data-testid="finance-home-kpi-cos"
             label="Cost of sales"
             description={asAtTag}
-            value={cosQuery.isLoading ? "…" : <MoneyValue value={realisedCos} align="left" />}
+            value={figuresLoading ? "…" : <MoneyValue value={headline.realisedCos} align="left" />}
             tone="default"
             supporting="Realised COS, line-for-line"
             sourceBadge={trustReady ? <TrustBadge status={trustBadge} /> : undefined}
@@ -438,9 +435,9 @@ export default function FinanceHomePage() {
             data-testid="finance-home-kpi-gp"
             label="Gross profit"
             description={asAtTag}
-            value={cosQuery.isLoading || revQuery.isLoading ? "…" : <MoneyValue value={realisedGp} align="left" />}
-            tone={realisedGp >= 0 ? "positive" : "critical"}
-            supporting={marginPct != null ? `Margin ${marginPct.toFixed(1)}%` : "No realised revenue yet"}
+            value={figuresLoading ? "…" : <MoneyValue value={headline.realisedGp} align="left" />}
+            tone={headline.realisedGp >= 0 ? "positive" : "critical"}
+            supporting={headline.marginPct != null ? `Margin ${headline.marginPct.toFixed(1)}%` : "No realised revenue yet"}
             sourceBadge={trustReady ? <TrustBadge status={trustBadge} /> : undefined}
             href="/finance/gp/company"
           />
@@ -485,13 +482,13 @@ export default function FinanceHomePage() {
       <section className="mb-3">
         <ChartCard
           title="Revenue — budget · planned · realised, by month"
-          hint="From the revenue tracker, by invoice-raised month. Click a month to drill in."
+          hint="From the line-level ledger, by invoice-raised month. Click a month to drill in."
           data-testid="finance-home-revenue-states"
         >
-          {revQuery.isLoading ? (
+          {figuresLoading ? (
             <FinanceLoading label="Loading revenue…" />
-          ) : revQuery.isError ? (
-            <FinanceError title="Could not load revenue." onRetry={() => revQuery.refetch()} />
+          ) : linesQuery.isError ? (
+            <FinanceError title="Could not load revenue." onRetry={() => linesQuery.refetch()} />
           ) : monthStates.length === 0 ? (
             <FinanceEmpty title="No revenue in this FY." />
           ) : (
@@ -521,7 +518,7 @@ export default function FinanceHomePage() {
           }
           data-testid="finance-home-on-track"
         >
-          {revQuery.isLoading ? (
+          {figuresLoading ? (
             <FinanceLoading label="Loading…" />
           ) : onTrack.length === 0 ? (
             <FinanceEmpty title="No revenue in this FY." />
@@ -534,7 +531,7 @@ export default function FinanceHomePage() {
       {/* SECTION 6 — GP & margin by month · Cash by week */}
       <section className="mb-3 grid gap-3 lg:grid-cols-2">
         <ChartCard title="GP & margin by month" data-testid="finance-home-gp-margin">
-          {cosQuery.isLoading || revQuery.isLoading ? (
+          {figuresLoading ? (
             <FinanceLoading label="Loading…" />
           ) : gpMonths.length === 0 ? (
             <FinanceEmpty title="No GP in this FY." />
@@ -556,15 +553,12 @@ export default function FinanceHomePage() {
       {/* SECTION 7 — Top projects by GP · Weakest margins / AR overdue + AP due */}
       <section className="mb-3 grid gap-3 lg:grid-cols-2">
         <ChartCard title="Top projects by GP" data-testid="finance-home-top-gp">
-          {linesQuery.isLoading ? (
+          {figuresLoading ? (
             <FinanceLoading label="Loading…" />
           ) : topGp.length === 0 ? (
             <FinanceEmpty title="No project GP yet." />
           ) : (
-            <TopProjectsGpChart
-              data={topGp}
-              onProjectClick={(id) => navigate(`/projects/${id}/finance`)}
-            />
+            <TopProjectsGpChart data={topGp} onProjectClick={(id) => navigate(`/projects/${id}/finance`)} />
           )}
         </ChartCard>
 
@@ -575,25 +569,19 @@ export default function FinanceHomePage() {
               <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-900">
                 {arQuery.isLoading ? "…" : formatZar(arQuery.data?.buckets.total.amount ?? 0)}
               </p>
-              <p className="text-[11px] text-slate-400">
-                {arQuery.data?.buckets.total.count ?? 0} invoices
-              </p>
+              <p className="text-[11px] text-slate-400">{arQuery.data?.buckets.total.count ?? 0} invoices</p>
             </div>
             <div className="rounded-md border border-slate-200 p-2">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-600">AP due</p>
               <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-900">
                 {apQuery.isLoading ? "…" : formatZar(apQuery.data?.buckets.total.amount ?? 0)}
               </p>
-              <p className="text-[11px] text-slate-400">
-                {apQuery.data?.buckets.total.count ?? 0} bills
-              </p>
+              <p className="text-[11px] text-slate-400">{apQuery.data?.buckets.total.count ?? 0} bills</p>
             </div>
           </div>
           <div className="mt-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
-              Weakest margins
-            </p>
-            {linesQuery.isLoading ? (
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Weakest margins</p>
+            {figuresLoading ? (
               <FinanceLoading label="Loading…" />
             ) : weakMargins.length === 0 ? (
               <p className="text-xs text-slate-400">No project margins yet.</p>
@@ -608,9 +596,7 @@ export default function FinanceHomePage() {
                       {p.projectName}
                     </Link>
                     <span
-                      className={`tabular-nums font-medium ${
-                        (p.gpPct ?? 0) < 0 ? "text-rose-600" : "text-slate-700"
-                      }`}
+                      className={`tabular-nums font-medium ${(p.gpPct ?? 0) < 0 ? "text-rose-600" : "text-slate-700"}`}
                     >
                       {p.gpPct != null ? `${p.gpPct.toFixed(1)}%` : "—"}
                     </span>
@@ -654,18 +640,13 @@ export default function FinanceHomePage() {
             rows={sortedRows}
             rowKey={(r) => r.projectId}
             maxBodyHeightClass="max-h-[60vh]"
-            caption="All projects — revenue, GP and tracker tie status"
+            caption="All projects — realised revenue, GP and tracker tie status"
             renderDetail={(r) => <ProjectDrillDetail projectId={r.projectId} />}
           />
         )}
       </section>
 
-      <MonthDrillDrawer
-        target={drill}
-        fy={fyScope.fy}
-        nameById={idByName}
-        onClose={() => setDrill(null)}
-      />
+      <MonthDrillDrawer target={drill} fy={fyScope.fy} onClose={() => setDrill(null)} />
     </PageShell>
   );
 }

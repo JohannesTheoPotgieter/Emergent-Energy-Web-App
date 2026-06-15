@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   cashByWeekSeries,
-  fyRealisedCos,
-  fyRevenueTotals,
+  fyHeadline,
+  fyMonthFrame,
+  gpMarginSeries,
   monthStatesSeries,
   onTrackGap,
   onTrackSeries,
@@ -10,26 +11,26 @@ import {
   tieState,
   topProjectsByGp,
   weakestMargins,
+  type BudgetByMonth,
   type CashflowWeekRow,
-  type CosTrackerMonthRow,
-  type ProjectLineRollup,
+  type MonthlyReconRow,
+  type ProjectTotals,
   type ReconPortfolioProjectRow,
-  type RevTrackerMonthRow,
 } from "@/lib/finance/home-data";
 
-const revMonth = (over: Partial<RevTrackerMonthRow>): RevTrackerMonthRow => ({
+const month = (over: Partial<MonthlyReconRow>): MonthlyReconRow => ({
   monthKey: "2025-09",
-  monthLabel: "Sep 25",
-  totalRevenue: 0,
-  realisedRevenue: 0,
-  unrealisedRevenue: 0,
-  budget: 0,
-  ytdRevenue: 0,
-  ytdRealised: 0,
-  ytdBudget: 0,
-  realisedProjects: [],
-  revProjects: [],
-  unrealisedProjects: [],
+  cos: 0, revenue: 0, gp: 0, gpPct: null, count: 0,
+  plannedCos: 0, plannedRevenue: 0, plannedGp: 0, plannedGpPct: null,
+  realisedCos: 0, realisedRevenue: 0, realisedGp: 0, realisedGpPct: null,
+  ...over,
+});
+
+const proj = (over: Partial<ProjectTotals>): ProjectTotals => ({
+  projectId: 1,
+  cos: 0, revenue: 0, gp: 0, gpPct: null, count: 0,
+  plannedCos: 0, plannedRevenue: 0, plannedGp: 0, plannedGpPct: null,
+  realisedCos: 0, realisedRevenue: 0, realisedGp: 0, realisedGpPct: null,
   ...over,
 });
 
@@ -43,77 +44,66 @@ const reconRow = (over: Partial<ReconPortfolioProjectRow>): ReconPortfolioProjec
   ...over,
 });
 
-describe("tieState — tie means tie-to-tracker, not internal consistency", () => {
-  it("green WITH a tracker baseline is a tie", () => {
-    expect(tieState("green", true)).toBe("tie");
+describe("fyMonthFrame", () => {
+  it("generates the full FY month sequence from bounds", () => {
+    const frame = fyMonthFrame([], { cos: {}, revenue: {} }, "2025-09", "2026-08");
+    expect(frame).toHaveLength(12);
+    expect(frame[0]).toBe("2025-09");
+    expect(frame[11]).toBe("2026-08");
   });
-  it("green WITHOUT a baseline is 'not compared yet', never a tie", () => {
-    expect(tieState("green", false)).toBe("not_compared");
-  });
-  it("amber / red are drift", () => {
-    expect(tieState("amber", true)).toBe("drift");
-    expect(tieState("red", true)).toBe("drift");
-  });
-  it("unlinked / unknown are not-compared (data not ready)", () => {
-    expect(tieState("unlinked", false)).toBe("not_compared");
-    expect(tieState("unknown", false)).toBe("not_compared");
+  it("falls back to the union of data months when bounds are absent", () => {
+    const frame = fyMonthFrame([month({ monthKey: "2025-10" })], { cos: {}, revenue: { "2025-09": 1 } }, null, null);
+    expect(frame).toEqual(["2025-09", "2025-10"]);
   });
 });
 
-describe("summariseTrust", () => {
-  it("counts tie / drift / not-compared correctly", () => {
-    const counts = summariseTrust([
-      reconRow({ projectId: 1, status: "green", trackerBaselinePresent: true }), // tie
-      reconRow({ projectId: 2, status: "green", trackerBaselinePresent: false }), // not compared
-      reconRow({ projectId: 3, status: "amber", trackerBaselinePresent: true }), // drift
-      reconRow({ projectId: 4, status: "red", trackerBaselinePresent: true }), // drift
-      reconRow({ projectId: 5, status: "unknown", trackerBaselinePresent: false }), // not compared
-    ]);
-    expect(counts).toEqual({ tie: 1, drift: 2, notCompared: 2 });
-  });
-});
-
-describe("FY headline totals (FYTD, incl. open month)", () => {
-  it("sums realised across months and budget across the FY", () => {
-    const months = [
-      revMonth({ monthKey: "2025-09", realisedRevenue: 100, budget: 120 }),
-      revMonth({ monthKey: "2025-10", realisedRevenue: 200, budget: 150 }),
-      revMonth({ monthKey: "2025-11", realisedRevenue: 0, budget: 130 }),
-    ];
-    expect(fyRevenueTotals(months)).toEqual({ realisedFytd: 300, budgetFy: 400 });
-  });
-
-  it("sums realised COS", () => {
-    const cos: CosTrackerMonthRow[] = [
-      { monthKey: "2025-09", monthLabel: "Sep", budget: 0, realisedCOS: 80, realisedProjects: [] },
-      { monthKey: "2025-10", monthLabel: "Oct", budget: 0, realisedCOS: 120, realisedProjects: [] },
-    ];
-    expect(fyRealisedCos(cos)).toBe(200);
+describe("fyHeadline — realised basis + FY budget target", () => {
+  it("uses realised totals and sums the FY budget over the frame", () => {
+    const total = month({ monthKey: "total", realisedRevenue: 300, realisedCos: 200, realisedGp: 100 });
+    const budget: BudgetByMonth = { cos: {}, revenue: { "2025-09": 120, "2025-10": 150, "2030-01": 999 } };
+    const h = fyHeadline(total, budget, ["2025-09", "2025-10"]);
+    expect(h.realisedRevenue).toBe(300);
+    expect(h.realisedCos).toBe(200);
+    expect(h.realisedGp).toBe(100);
+    expect(h.budgetRevenueFy).toBe(270); // out-of-frame 2030-01 excluded
+    expect(h.marginPct).toBeCloseTo(33.33, 1);
   });
 });
 
 describe("monthStatesSeries — budget · planned · realised", () => {
-  it("planned = unrealised forecast portion", () => {
-    const series = monthStatesSeries([
-      revMonth({ monthKey: "2025-09", budget: 120, realisedRevenue: 100, unrealisedRevenue: 40 }),
-    ]);
+  it("maps each FY month to its budget / planned / realised revenue", () => {
+    const monthly = [month({ monthKey: "2025-09", plannedRevenue: 40, realisedRevenue: 100 })];
+    const budget: BudgetByMonth = { cos: {}, revenue: { "2025-09": 120 } };
+    const series = monthStatesSeries(monthly, budget, ["2025-09", "2025-10"]);
     expect(series[0]).toMatchObject({ budget: 120, planned: 40, realised: 100 });
+    expect(series[1]).toMatchObject({ budget: 0, planned: 0, realised: 0 });
   });
 });
 
 describe("onTrackSeries + gap", () => {
-  const months = [
-    revMonth({ monthKey: "2025-09", realisedRevenue: 100, budget: 120 }),
-    revMonth({ monthKey: "2025-10", realisedRevenue: 150, budget: 100 }),
+  const monthly = [
+    month({ monthKey: "2025-09", realisedRevenue: 100 }),
+    month({ monthKey: "2025-10", realisedRevenue: 150 }),
   ];
+  const budget: BudgetByMonth = { cos: {}, revenue: { "2025-09": 120, "2025-10": 100 } };
+  const frame = ["2025-09", "2025-10"];
   it("accumulates realised and budget", () => {
-    const s = onTrackSeries(months);
+    const s = onTrackSeries(monthly, budget, frame);
     expect(s[1]).toMatchObject({ cumRealised: 250, cumBudget: 220 });
   });
   it("gap = cumulative realised − budget at the current month (ahead = positive)", () => {
-    const s = onTrackSeries(months);
+    const s = onTrackSeries(monthly, budget, frame);
     expect(onTrackGap(s, "2025-10")).toBe(30);
     expect(onTrackGap(s, "2025-09")).toBe(-20);
+  });
+});
+
+describe("gpMarginSeries — realised GP + margin %", () => {
+  it("derives margin % from realised GP / realised revenue", () => {
+    const monthly = [month({ monthKey: "2025-09", realisedGp: 25, realisedRevenue: 100 })];
+    const s = gpMarginSeries(monthly, ["2025-09"]);
+    expect(s[0].gp).toBe(25);
+    expect(s[0].margin).toBeCloseTo(25, 5);
   });
 });
 
@@ -133,18 +123,43 @@ describe("cashByWeekSeries", () => {
   });
 });
 
-describe("top GP / weakest margins", () => {
-  const byProject: ProjectLineRollup[] = [
-    { projectId: 1, revenue: 1000, gp: 300, gpPct: 30, realisedRevenue: 0, realisedGp: 0, realisedGpPct: null, count: 1 },
-    { projectId: 2, revenue: 1000, gp: 50, gpPct: 5, realisedRevenue: 0, realisedGp: 0, realisedGpPct: null, count: 1 },
-    { projectId: 3, revenue: 1000, gp: -100, gpPct: -10, realisedRevenue: 0, realisedGp: 0, realisedGpPct: null, count: 1 },
+describe("top GP / weakest margins — realised basis", () => {
+  const byProject: ProjectTotals[] = [
+    proj({ projectId: 1, realisedRevenue: 1000, realisedGp: 300, realisedGpPct: 0.3 }),
+    proj({ projectId: 2, realisedRevenue: 1000, realisedGp: 50, realisedGpPct: 0.05 }),
+    proj({ projectId: 3, realisedRevenue: 1000, realisedGp: -100, realisedGpPct: -0.1 }),
   ];
   const names = new Map([[1, "Alpha"], [2, "Beta"], [3, "Gamma"]]);
 
-  it("top GP is descending by GP", () => {
+  it("top GP is descending by realised GP", () => {
     expect(topProjectsByGp(byProject, names).map((p) => p.projectId)).toEqual([1, 2, 3]);
   });
-  it("weakest margins is ascending by GP%", () => {
-    expect(weakestMargins(byProject, names).map((p) => p.projectId)).toEqual([3, 2, 1]);
+  it("weakest margins is ascending by realised GP% (as a percentage)", () => {
+    const weak = weakestMargins(byProject, names);
+    expect(weak.map((p) => p.projectId)).toEqual([3, 2, 1]);
+    expect(weak[0].gpPct).toBeCloseTo(-10, 5); // fraction → percentage
+  });
+});
+
+describe("tieState / summariseTrust", () => {
+  it("green WITH a baseline is a tie; green WITHOUT is 'not compared yet'", () => {
+    expect(tieState("green", true)).toBe("tie");
+    expect(tieState("green", false)).toBe("not_compared");
+  });
+  it("amber / red are drift; unlinked / unknown are not-compared", () => {
+    expect(tieState("amber", true)).toBe("drift");
+    expect(tieState("red", true)).toBe("drift");
+    expect(tieState("unlinked", false)).toBe("not_compared");
+    expect(tieState("unknown", false)).toBe("not_compared");
+  });
+  it("summarises the portfolio into tie / drift / not-compared", () => {
+    const counts = summariseTrust([
+      reconRow({ projectId: 1, status: "green", trackerBaselinePresent: true }),
+      reconRow({ projectId: 2, status: "green", trackerBaselinePresent: false }),
+      reconRow({ projectId: 3, status: "amber", trackerBaselinePresent: true }),
+      reconRow({ projectId: 4, status: "red", trackerBaselinePresent: true }),
+      reconRow({ projectId: 5, status: "unknown", trackerBaselinePresent: false }),
+    ]);
+    expect(counts).toEqual({ tie: 1, drift: 2, notCompared: 2 });
   });
 });
