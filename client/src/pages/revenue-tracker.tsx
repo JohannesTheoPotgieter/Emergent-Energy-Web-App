@@ -31,6 +31,7 @@ import {
 } from '@/components/finance/revenue-line-drawer';
 import { fetchQueryFn, apiRequest, invalidateDashboardQueries } from '@/lib/queryClient';
 import { budgetDelta, budgetPctLabel } from '@/lib/finance/budget-variance';
+import { BudgetProgressCard } from '@/components/finance/BudgetProgressCard';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { usePermission } from '@/hooks/use-permissions';
 import { formatZarCompact } from '@/lib/currency';
@@ -192,8 +193,10 @@ export default function RevenueTrackerPage() {
 
   const fy = useMemo(
     () => ({
+      budget: months.reduce((s, m) => s + (m.budget ?? 0), 0),
       planned: months.reduce((s, m) => s + (m.totalRevenue ?? 0), 0),
       committed: months.reduce((s, m) => s + (m.unrealisedRevenue ?? 0), 0),
+      realised: months.reduce((s, m) => s + (m.realisedRevenue ?? 0), 0),
       quickbooks: months.reduce((s, m) => s + (m.qbRevenueActual ?? 0), 0),
     }),
     [months],
@@ -351,6 +354,18 @@ export default function RevenueTrackerPage() {
         Finance Home and the golden oracle. The monthly <span className="font-medium">Realised</span> column
         below is the tracker&apos;s per-month recognition in closed months, so its sum is lower than the headline.
       </p>
+
+      <div className="mb-3">
+        <BudgetProgressCard
+          data-testid="revenue-budget-progress"
+          budget={fy.budget}
+          overIsGood
+          rows={[
+            { label: 'Planned', value: fy.planned },
+            { label: 'Realised', value: fy.realised },
+          ]}
+        />
+      </div>
 
       <section aria-label="Revenue by month" data-testid="revenue-grid">
         {months.length === 0 ? (
