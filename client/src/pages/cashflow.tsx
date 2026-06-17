@@ -338,9 +338,11 @@ export default function CashflowPage() {
           {isCurrent(w) && <Badge variant="outline" className="text-[9px] border-emerald-300 text-emerald-700">NOW</Badge>}
         </span>
       ),
+      sortValue: (w) => w.weekStart,
+      exportValue: (w) => weekLabel(w.weekStart),
     },
-    { key: 'opening', header: 'Opening', numeric: true, cell: openingCell },
-    { key: 'inflows', header: 'Inflows', numeric: true, cell: (w) => <MoneyValue value={w.projectInflows} muteNegative={false} /> },
+    { key: 'opening', header: 'Opening', numeric: true, cell: openingCell, sortValue: (w) => w.openingBalance },
+    { key: 'inflows', header: 'Inflows', numeric: true, cell: (w) => <MoneyValue value={w.projectInflows} muteNegative={false} />, sortValue: (w) => w.projectInflows },
     {
       key: 'outflows',
       header: 'Outflows',
@@ -357,9 +359,10 @@ export default function CashflowPage() {
           </div>
         </div>
       ),
+      sortValue: (w) => w.opexOutflows + w.projectOutflows,
     },
-    { key: 'closing', header: 'Closing', numeric: true, cell: (w) => <MoneyValue value={w.closingBalance} muteNegative={false} /> },
-    { key: 'available', header: 'Available', numeric: true, cell: availCell },
+    { key: 'closing', header: 'Closing', numeric: true, cell: (w) => <MoneyValue value={w.closingBalance} muteNegative={false} />, sortValue: (w) => w.closingBalance },
+    { key: 'available', header: 'Available', numeric: true, cell: availCell, sortValue: (w) => w.availablePayment },
   ];
 
   if (isLoading) return <FinanceShell><FinanceLoading label="Loading Cashflow…" /></FinanceShell>;
@@ -431,6 +434,8 @@ export default function CashflowPage() {
             rowKey={(w) => w.weekStart}
             scrollToKey={kpis.currentWeekStart ?? undefined}
             renderDetail={(w) => <WeekLineDetail week={w} fyParam={fyScope.allData ? 'all' : 'fy'} />}
+            sortable
+            exportFilename={`cashflow-by-week-${fyScope.label.replace(/\s+/g, '-')}`}
             maxBodyHeightClass="max-h-[55vh]"
             caption="Weekly cashflow — opening, inflows, outflows, closing and available payment; expand a week for its lines."
           />

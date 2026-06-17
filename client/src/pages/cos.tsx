@@ -192,7 +192,7 @@ export default function CosTrackerPage() {
   );
 
   const columns: DrillColumn<CosMonthData>[] = [
-    { key: 'month', header: 'Month', cell: (m) => <span className="font-medium text-foreground">{m.monthLabel}</span> },
+    { key: 'month', header: 'Month', cell: (m) => <span className="font-medium text-foreground">{m.monthLabel}</span>, sortValue: (m) => m.monthKey, exportValue: (m) => m.monthLabel },
     {
       key: 'budget',
       header: 'Budget',
@@ -205,12 +205,13 @@ export default function CosTrackerPage() {
           onSave={(budget) => budgetMutation.mutate({ monthKey: m.monthKey, budget })}
         />
       ),
+      sortValue: (m) => m.budget,
     },
-    { key: 'planned', header: 'Planned', numeric: true, cell: (m) => <MoneyValue value={m.cosPlanned} muteNegative={false} /> },
-    { key: 'committed', header: 'Committed', numeric: true, cell: (m) => <MoneyValue value={m.committedCOS} muteNegative={false} /> },
-    { key: 'unrealised', header: 'Unrealised', numeric: true, cell: (m) => moneyCell(m, m.cosUnrealised, 'unrealised') },
-    { key: 'realised', header: 'Realised', numeric: true, cell: (m) => moneyCell(m, m.realisedCOS, 'realised') },
-    { key: 'qb', header: 'QuickBooks', numeric: true, hideBelowMd: true, cell: (m) => moneyCell(m, m.qbOnlyActual, 'qb_actual') },
+    { key: 'planned', header: 'Planned', numeric: true, cell: (m) => <MoneyValue value={m.cosPlanned} muteNegative={false} />, sortValue: (m) => m.cosPlanned },
+    { key: 'committed', header: 'Committed', numeric: true, cell: (m) => <MoneyValue value={m.committedCOS} muteNegative={false} />, sortValue: (m) => m.committedCOS },
+    { key: 'unrealised', header: 'Unrealised', numeric: true, cell: (m) => moneyCell(m, m.cosUnrealised, 'unrealised'), sortValue: (m) => m.cosUnrealised },
+    { key: 'realised', header: 'Realised', numeric: true, cell: (m) => moneyCell(m, m.realisedCOS, 'realised'), sortValue: (m) => m.realisedCOS },
+    { key: 'qb', header: 'QuickBooks', numeric: true, hideBelowMd: true, cell: (m) => moneyCell(m, m.qbOnlyActual, 'qb_actual'), sortValue: (m) => m.qbOnlyActual },
     {
       key: 'varRealised',
       header: 'Realised vs Budget',
@@ -221,6 +222,7 @@ export default function CosTrackerPage() {
           <span className="text-muted-foreground">({budgetPctLabel(m.realisedCOS, m.budget)})</span>
         </span>
       ),
+      sortValue: (m) => budgetDelta(m.realisedCOS, m.budget),
     },
     {
       key: 'varPlanned',
@@ -233,6 +235,7 @@ export default function CosTrackerPage() {
           <span className="text-muted-foreground">({budgetPctLabel(m.cosPlanned, m.budget)})</span>
         </span>
       ),
+      sortValue: (m) => budgetDelta(m.cosPlanned, m.budget),
     },
   ];
 
@@ -328,6 +331,8 @@ export default function CosTrackerPage() {
             rows={months}
             rowKey={(m) => m.monthKey}
             renderDetail={renderProjects}
+            sortable
+            exportFilename={`cost-of-sales-by-month-${fyScope.label.replace(/\s+/g, '-')}`}
             maxBodyHeightClass="max-h-[55vh]"
             caption="Cost of sales by month across the recognition pipeline; expand a row for the per-project breakdown."
           />

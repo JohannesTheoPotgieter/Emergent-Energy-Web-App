@@ -168,14 +168,14 @@ export default function FinanceGpCompanyPage() {
   }, [months]);
 
   const columns: DrillColumn<GpMonth>[] = [
-    { key: 'month', header: 'Month', cell: (m) => <span className="font-medium text-foreground">{m.monthLabel}</span> },
-    { key: 'budgetGP', header: 'Budget GP', numeric: true, cell: (m) => <MoneyValue value={m.budgetGP} muteNegative={false} /> },
-    { key: 'plannedGP', header: 'Planned GP', numeric: true, cell: (m) => <MoneyValue value={m.plannedGP} muteNegative={false} /> },
-    { key: 'committedGP', header: 'Committed GP', numeric: true, cell: (m) => <MoneyValue value={m.committedGP} muteNegative={false} /> },
-    { key: 'unrealisedGP', header: 'Unrealised GP', numeric: true, cell: (m) => <MoneyValue value={m.unrealisedGP} muteNegative={false} /> },
-    { key: 'realisedGP', header: 'Realised GP', numeric: true, cell: (m) => <MoneyValue value={m.realisedGP} muteNegative={false} /> },
-    { key: 'qbGP', header: 'QB GP', numeric: true, hideBelowMd: true, cell: (m) => <MoneyValue value={m.qbGP} muteNegative={false} /> },
-    { key: 'margin', header: 'Planned Margin', numeric: true, hideBelowMd: true, cell: (m) => <span className="tabular-nums">{m.plannedMarginPct.toFixed(1)}%</span> },
+    { key: 'month', header: 'Month', cell: (m) => <span className="font-medium text-foreground">{m.monthLabel}</span>, sortValue: (m) => m.monthKey, exportValue: (m) => m.monthLabel },
+    { key: 'budgetGP', header: 'Budget GP', numeric: true, cell: (m) => <MoneyValue value={m.budgetGP} muteNegative={false} />, sortValue: (m) => m.budgetGP },
+    { key: 'plannedGP', header: 'Planned GP', numeric: true, cell: (m) => <MoneyValue value={m.plannedGP} muteNegative={false} />, sortValue: (m) => m.plannedGP },
+    { key: 'committedGP', header: 'Committed GP', numeric: true, cell: (m) => <MoneyValue value={m.committedGP} muteNegative={false} />, sortValue: (m) => m.committedGP },
+    { key: 'unrealisedGP', header: 'Unrealised GP', numeric: true, cell: (m) => <MoneyValue value={m.unrealisedGP} muteNegative={false} />, sortValue: (m) => m.unrealisedGP },
+    { key: 'realisedGP', header: 'Realised GP', numeric: true, cell: (m) => <MoneyValue value={m.realisedGP} muteNegative={false} />, sortValue: (m) => m.realisedGP },
+    { key: 'qbGP', header: 'QB GP', numeric: true, hideBelowMd: true, cell: (m) => <MoneyValue value={m.qbGP} muteNegative={false} />, sortValue: (m) => m.qbGP },
+    { key: 'margin', header: 'Planned Margin', numeric: true, hideBelowMd: true, cell: (m) => <span className="tabular-nums">{m.plannedMarginPct.toFixed(1)}%</span>, sortValue: (m) => m.plannedMarginPct, exportValue: (m) => `${m.plannedMarginPct.toFixed(1)}%` },
     {
       key: 'varRealised',
       header: 'Realised vs Budget',
@@ -186,6 +186,7 @@ export default function FinanceGpCompanyPage() {
           <span className="text-muted-foreground">({budgetPctLabel(m.realisedGP, m.budgetGP)})</span>
         </span>
       ),
+      sortValue: (m) => budgetDelta(m.realisedGP, m.budgetGP),
     },
     {
       key: 'varPlanned',
@@ -198,6 +199,7 @@ export default function FinanceGpCompanyPage() {
           <span className="text-muted-foreground">({budgetPctLabel(m.plannedGP, m.budgetGP)})</span>
         </span>
       ),
+      sortValue: (m) => budgetDelta(m.plannedGP, m.budgetGP),
     },
   ];
 
@@ -312,6 +314,8 @@ export default function FinanceGpCompanyPage() {
             rows={months}
             rowKey={(m) => m.monthKey}
             renderDetail={renderProjects}
+            sortable
+            exportFilename={`gross-profit-by-month-${fyScope.label.replace(/\s+/g, '-')}`}
             maxBodyHeightClass="max-h-[60vh]"
             caption="Gross profit by month (Revenue − COS); expand a row for the per-project breakdown."
           />

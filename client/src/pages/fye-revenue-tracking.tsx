@@ -46,7 +46,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { fetchQueryFn, apiRequest } from "@/lib/queryClient";
 import { formatZarCompact } from "@/lib/currency";
 import { usePermission } from "@/hooks/use-permissions";
-import { RefreshCw, BarChart3, Table2, ArrowUpDown } from "lucide-react";
+import { RefreshCw, BarChart3, Table2 } from "lucide-react";
 import {
   LineChart,
   Line,
@@ -112,7 +112,6 @@ const SERIES = {
 } as const;
 
 // ─── View A — Projects ───────────────────────────────────────────────────────
-type SortKey = "project" | "type" | "budgetRevenue" | "actualRevenue" | "actualGpPct" | "pctRealised";
 
 // One recognition-state stat card (Realised / Committed / Planned / Unrealised).
 const STATE_STYLE: Record<
@@ -160,42 +159,18 @@ function ProjectsView({ apiQueryString }: { apiQueryString: string }) {
   });
   const [filter, setFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | FyeProjectType>("all");
-  const [sortKey, setSortKey] = useState<SortKey>("budgetRevenue");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const rows = useMemo(() => {
     let r = data?.rows ?? [];
     if (filter.trim()) r = r.filter((x) => x.project.toLowerCase().includes(filter.trim().toLowerCase()));
     if (typeFilter !== "all") r = r.filter((x) => x.type === typeFilter);
-    const dir = sortDir === "asc" ? 1 : -1;
-    return [...r].sort((a, b) => {
-      const av = a[sortKey]; const bv = b[sortKey];
-      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
-      return String(av ?? "").localeCompare(String(bv ?? "")) * dir;
-    });
-  }, [data, filter, typeFilter, sortKey, sortDir]);
+    return r;
+  }, [data, filter, typeFilter]);
 
   if (isLoading) return <FinanceLoading label="Loading project tracking…" />;
   if (isError) return <FinanceError hint={(error as Error)?.message} onRetry={() => void refetch()} />;
   if (!data) return null;
 
-  const setSort = (k: SortKey) => {
-    if (k === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortKey(k); setSortDir(k === "project" || k === "type" ? "asc" : "desc"); }
-  };
-  const SortBtn = ({ k, label }: { k: SortKey; label: string }) => (
-    <Button
-      type="button"
-      size="sm"
-      variant={k === sortKey ? "default" : "outline"}
-      className="h-7 gap-1 text-xs"
-      onClick={() => setSort(k)}
-    >
-      {label}
-      <ArrowUpDown className="h-3 w-3 opacity-60" />
-      {k === sortKey && <span className="text-[10px]">{sortDir === "asc" ? "▲" : "▼"}</span>}
-    </Button>
-  );
   const st = data.stateTotals;
   const t = data.totals;
 
@@ -215,28 +190,31 @@ function ProjectsView({ apiQueryString }: { apiQueryString: string }) {
           {r.project}
         </span>
       ),
+      sortValue: (r) => r.project,
     },
-    { key: "type", header: "Type", cell: (r) => r.type },
-    { key: "start", header: "Start", cell: (r) => <span className="whitespace-nowrap">{r.startDate ?? "—"}</span> },
-    { key: "endPc", header: "End (PC)", cell: (r) => <span className="whitespace-nowrap">{r.endDatePc ?? "—"}</span> },
-    { key: "budgetRevenue", header: "Budget Rev", numeric: true, cell: (r) => <MoneyValue value={r.budgetRevenue} /> },
-    { key: "budgetCos", header: "Budget COS", numeric: true, cell: (r) => <MoneyValue value={r.budgetCos} /> },
-    { key: "budgetGp", header: "Budget GP", numeric: true, cell: (r) => <MoneyValue value={r.budgetGp} /> },
-    { key: "budgetGpPct", header: "Bud GP%", numeric: true, cell: (r) => PCT(r.budgetGpPct) },
-    { key: "actualRevenue", header: "Actual Rev", numeric: true, cell: (r) => <MoneyValue value={r.actualRevenue} /> },
-    { key: "actualCos", header: "Actual COS", numeric: true, cell: (r) => <MoneyValue value={r.actualCos} /> },
-    { key: "actualGp", header: "Actual GP", numeric: true, cell: (r) => <MoneyValue value={r.actualGp} /> },
-    { key: "actualGpPct", header: "Act GP%", numeric: true, cell: (r) => PCT(r.actualGpPct) },
-    { key: "pctRealised", header: "% Real.", numeric: true, cell: (r) => PCT(r.pctRealised) },
+    { key: "type", header: "Type", cell: (r) => r.type, sortValue: (r) => r.type },
+    { key: "start", header: "Start", cell: (r) => <span className="whitespace-nowrap">{r.startDate ?? "—"}</span>, sortValue: (r) => r.startDate },
+    { key: "endPc", header: "End (PC)", cell: (r) => <span className="whitespace-nowrap">{r.endDatePc ?? "—"}</span>, sortValue: (r) => r.endDatePc },
+    { key: "budgetRevenue", header: "Budget Rev", numeric: true, cell: (r) => <MoneyValue value={r.budgetRevenue} />, sortValue: (r) => r.budgetRevenue },
+    { key: "budgetCos", header: "Budget COS", numeric: true, cell: (r) => <MoneyValue value={r.budgetCos} />, sortValue: (r) => r.budgetCos },
+    { key: "budgetGp", header: "Budget GP", numeric: true, cell: (r) => <MoneyValue value={r.budgetGp} />, sortValue: (r) => r.budgetGp },
+    { key: "budgetGpPct", header: "Bud GP%", numeric: true, cell: (r) => PCT(r.budgetGpPct), sortValue: (r) => r.budgetGpPct, exportValue: (r) => PCT(r.budgetGpPct) },
+    { key: "actualRevenue", header: "Actual Rev", numeric: true, cell: (r) => <MoneyValue value={r.actualRevenue} />, sortValue: (r) => r.actualRevenue },
+    { key: "actualCos", header: "Actual COS", numeric: true, cell: (r) => <MoneyValue value={r.actualCos} />, sortValue: (r) => r.actualCos },
+    { key: "actualGp", header: "Actual GP", numeric: true, cell: (r) => <MoneyValue value={r.actualGp} />, sortValue: (r) => r.actualGp },
+    { key: "actualGpPct", header: "Act GP%", numeric: true, cell: (r) => PCT(r.actualGpPct), sortValue: (r) => r.actualGpPct, exportValue: (r) => PCT(r.actualGpPct) },
+    { key: "pctRealised", header: "% Real.", numeric: true, cell: (r) => PCT(r.pctRealised), sortValue: (r) => r.pctRealised, exportValue: (r) => PCT(r.pctRealised) },
     {
       key: "flag",
       header: "Flag",
+      sortable: false,
       cell: (r) => (
         <>
           {rowAmber(r) && <StatusBadge tone="warning" label="COS, no revenue — check tracker" />}
           {rowNonStd(r) && <StatusBadge tone="neutral" label="Non-standard template (excl. from totals)" />}
         </>
       ),
+      exportValue: (r) => r.flags.join(" · "),
     },
   ];
 
@@ -263,21 +241,13 @@ function ProjectsView({ apiQueryString }: { apiQueryString: string }) {
         </div>
       </section>
 
-      {/* Filters + sort */}
+      {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
         <Input placeholder="Filter project…" value={filter} onChange={(e) => setFilter(e.target.value)} className="h-8 w-48" data-testid="fye-project-filter" />
         <select className="h-8 rounded-md border bg-background px-2 text-sm" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as typeof typeFilter)}>
           <option value="all">All types</option><option value="Active">Active</option><option value="Past">Past</option><option value="Compliance">Compliance</option>
         </select>
-        <span className="ml-auto inline-flex flex-wrap items-center gap-1.5">
-          <span className="text-[10px] uppercase tracking-wider text-slate-400">Sort</span>
-          <SortBtn k="project" label="Project" />
-          <SortBtn k="type" label="Type" />
-          <SortBtn k="budgetRevenue" label="Budget Rev" />
-          <SortBtn k="actualRevenue" label="Actual Rev" />
-          <SortBtn k="actualGpPct" label="Act GP%" />
-          <SortBtn k="pctRealised" label="% Real." />
-        </span>
+        <span className="ml-auto text-[11px] text-slate-400">Click any column header to sort · Export for the full list</span>
       </div>
 
       {rows.length === 0 ? (
@@ -287,6 +257,9 @@ function ProjectsView({ apiQueryString }: { apiQueryString: string }) {
           columns={projectColumns}
           rows={rows}
           rowKey={(r) => r.projectId}
+          sortable
+          defaultSort={{ key: "budgetRevenue", dir: "desc" }}
+          exportFilename={`fye-tracking-projects-${fyLabel(data.fye)}`}
           maxBodyHeightClass="max-h-[60vh]"
           caption="Budget vs actual revenue / COS / GP per project."
         />
