@@ -26,6 +26,7 @@ import { CosLineReviewPanel } from '@/components/cos/cos-line-review-panel';
 import { fetchQueryFn } from '@/lib/queryClient';
 import { FINANCE_QUERY_VOLATILE } from '@/lib/finance-stale-policy';
 import { useFinancialYearScope } from '@/hooks/use-financial-year-scope';
+import type { ReconPortfolioResponse } from '@/lib/finance/home-data';
 import { ListChecks } from 'lucide-react';
 
 interface ProjectBreakdown {
@@ -65,7 +66,9 @@ function projectRows(m: CosMonthData) {
   add(m.committedProjects, 'committed');
   add(m.realisedProjects, 'realised');
   add(m.qbOnlyProjects, 'qb');
-  return Array.from(byName.values()).sort((a, b) => b.realised - a.realised);
+  return Array.from(byName.values()).sort((a, b) =>
+    a.projectName.localeCompare(b.projectName),
+  );
 }
 
 export default function CosTrackerPage() {
@@ -80,6 +83,23 @@ export default function CosTrackerPage() {
   });
 
   const months = useMemo(() => data ?? [], [data]);
+
+  // Resolve project name → id so each row can deep-link to the finance-scoped
+  // project page (/projects/:id/finance). The legacy /project/:name route lives
+  // in the PROJECT_MANAGEMENT nav-group, which is disabled in finance-only mode
+  // and therefore redirects to the finance landing — see shared/config/
+  // enabled-modules.ts. The reconciliation portfolio is the same name↔id source
+  // Finance Home uses.
+  const reconQuery = useQuery<ReconPortfolioResponse>({
+    queryKey: ['/api/finance/reconciliation'],
+    queryFn: fetchQueryFn('/api/finance/reconciliation'),
+    staleTime: 60_000,
+  });
+  const projectIdByName = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const p of reconQuery.data?.projects ?? []) map.set(p.projectName, p.projectId);
+    return map;
+  }, [reconQuery.data]);
 
   const fy = useMemo(
     () => ({
@@ -114,22 +134,29 @@ export default function CosTrackerPage() {
           </tr>
         </thead>
         <tbody>
-          {rows.map((p) => (
+          {rows.map((p) => {
+            const projectId = projectIdByName.get(p.projectName);
+            return (
             <tr key={p.projectName} className="border-t border-slate-100">
               <td className="px-2 py-1">
-                <Link
-                  href={`/project/${encodeURIComponent(p.projectName)}?tab=expenditure`}
-                  className="text-emerald-700 hover:underline"
-                >
-                  {p.projectName}
-                </Link>
+                {projectId ? (
+                  <Link
+                    href={`/projects/${projectId}/finance`}
+                    className="text-emerald-700 hover:underline"
+                  >
+                    {p.projectName}
+                  </Link>
+                ) : (
+                  <span className="text-foreground">{p.projectName}</span>
+                )}
               </td>
               <td className="px-2 py-1 text-right tabular-nums"><MoneyValue value={p.planned} muteNegative={false} /></td>
               <td className="px-2 py-1 text-right tabular-nums"><MoneyValue value={p.committed} muteNegative={false} /></td>
               <td className="px-2 py-1 text-right tabular-nums"><MoneyValue value={p.realised} muteNegative={false} /></td>
               <td className="px-2 py-1 text-right tabular-nums"><MoneyValue value={p.qb} muteNegative={false} /></td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     );

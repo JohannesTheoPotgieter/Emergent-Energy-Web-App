@@ -147,7 +147,9 @@ function projectRows(m: MonthData) {
   add(m.unrealisedProjects, 'committed');
   add(m.realisedProjects, 'realised');
   add(m.qbRevenueProjects, 'qb');
-  return Array.from(byName.values()).sort((a, b) => b.realised - a.realised);
+  return Array.from(byName.values()).sort((a, b) =>
+    a.projectName.localeCompare(b.projectName),
+  );
 }
 
 export default function RevenueTrackerPage() {
