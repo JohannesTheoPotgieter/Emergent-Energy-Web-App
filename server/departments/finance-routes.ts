@@ -5923,6 +5923,12 @@ router.get(
         if (l.recognitionMonth !== monthKey) continue;
         // Keep revenue drill-down project-scoped — skip lines with no project.
         if (!l.projectName) continue;
+        // Honour the `project` filter so clicking a project in the per-project
+        // breakdown scopes the drawer to that project only (mirrors the COS
+        // month-detail route, which filters on projectName). `l.projectName` is
+        // already _Tracker-stripped in fye-tracking/service.ts, matching the
+        // name the client passes from the breakdown rows.
+        if (project && l.projectName !== project) continue;
         const isRealised =
           l.state === 'realised' &&
           (!fyeLastClosed || (l.recognitionMonth != null && l.recognitionMonth <= fyeLastClosed));
