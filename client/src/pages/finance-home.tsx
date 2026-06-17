@@ -133,8 +133,6 @@ interface AllProjectRow {
   absDelta: number;
 }
 
-type SortKey = "tie" | "project" | "revenue" | "gp" | "gpPct";
-
 export default function FinanceHomePage() {
   const [, navigate] = useLocation();
   const fyScope = useFinancialYearScope();
@@ -259,12 +257,10 @@ export default function FinanceHomePage() {
 
   // ── All-projects table ──────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
-  const [sortKey, setSortKey] = useState<SortKey>("tie");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   const allRows = useMemo<AllProjectRow[]>(() => {
     const metricsById = new Map(byProject.map((p) => [p.projectId, p]));
-    return reconProjects.map((p) => {
+    const built = reconProjects.map((p) => {
       const m = metricsById.get(p.projectId);
       return {
         projectId: p.projectId,
@@ -277,43 +273,21 @@ export default function FinanceHomePage() {
         absDelta: p.absDelta,
       };
     });
+    // Default ordering: drift-first (tie rank asc), biggest delta first within a
+    // tie state. DrillTable's stable sort preserves this as the secondary order.
+    return built.sort((a, b) => TIE_RANK[a.tie] - TIE_RANK[b.tie] || b.absDelta - a.absDelta);
   }, [reconProjects, byProject]);
 
-  const sortedRows = useMemo(() => {
+  const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const filtered = q ? allRows.filter((r) => r.projectName.toLowerCase().includes(q)) : allRows;
-    const dir = sortDir === "asc" ? 1 : -1;
-    const cmp = (a: AllProjectRow, b: AllProjectRow): number => {
-      switch (sortKey) {
-        case "project":
-          return dir * a.projectName.localeCompare(b.projectName);
-        case "revenue":
-          return dir * (a.revenue - b.revenue);
-        case "gp":
-          return dir * (a.gp - b.gp);
-        case "gpPct":
-          return dir * ((a.gpPct ?? -Infinity) - (b.gpPct ?? -Infinity));
-        case "tie":
-        default:
-          return dir * (TIE_RANK[a.tie] - TIE_RANK[b.tie]) || b.absDelta - a.absDelta;
-      }
-    };
-    return [...filtered].sort(cmp);
-  }, [allRows, search, sortKey, sortDir]);
-
-  const toggleSort = (key: SortKey) => {
-    if (key === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else {
-      setSortKey(key);
-      setSortDir(key === "tie" || key === "project" ? "asc" : "desc");
-    }
-  };
-  const sortIndicator = (key: SortKey) => (sortKey === key ? (sortDir === "asc" ? " ▲" : " ▼") : "");
+    return q ? allRows.filter((r) => r.projectName.toLowerCase().includes(q)) : allRows;
+  }, [allRows, search]);
 
   const allColumns: DrillColumn<AllProjectRow>[] = [
     {
       key: "project",
-      header: <button type="button" onClick={() => toggleSort("project")}>Project{sortIndicator("project")}</button>,
+      header: "Project",
+      sortValue: (r) => r.projectName,
       cell: (r) => (
         <Link
           href={`/projects/${r.projectId}/finance`}
@@ -326,21 +300,23 @@ export default function FinanceHomePage() {
     },
     {
       key: "revenue",
-      header: <button type="button" onClick={() => toggleSort("revenue")}>Revenue{sortIndicator("revenue")}</button>,
+      header: "Revenue",
       numeric: true,
       widthClass: "w-32",
       cell: (r) => <MoneyValue value={r.revenue} />,
+      sortValue: (r) => r.revenue,
     },
     {
       key: "gp",
-      header: <button type="button" onClick={() => toggleSort("gp")}>GP{sortIndicator("gp")}</button>,
+      header: "GP",
       numeric: true,
       widthClass: "w-32",
       cell: (r) => <MoneyValue value={r.gp} />,
+      sortValue: (r) => r.gp,
     },
     {
       key: "gpPct",
-      header: <button type="button" onClick={() => toggleSort("gpPct")}>GP %{sortIndicator("gpPct")}</button>,
+      header: "GP %",
       numeric: true,
       widthClass: "w-20",
       hideBelowMd: true,
@@ -349,13 +325,17 @@ export default function FinanceHomePage() {
           {r.gpPct != null ? `${r.gpPct.toFixed(1)}%` : "—"}
         </span>
       ),
+      sortValue: (r) => r.gpPct,
+      exportValue: (r) => (r.gpPct != null ? `${r.gpPct.toFixed(1)}%` : ""),
     },
     {
       key: "tie",
-      header: <button type="button" onClick={() => toggleSort("tie")}>Tie status{sortIndicator("tie")}</button>,
+      header: "Tie status",
       align: "right",
       widthClass: "w-40",
       cell: (r) => <StatusBadge tone={TIE_CHIP[r.tie].tone} label={TIE_CHIP[r.tie].label} />,
+      sortValue: (r) => TIE_RANK[r.tie],
+      exportValue: (r) => TIE_CHIP[r.tie].label,
     },
   ];
 
@@ -653,13 +633,16 @@ export default function FinanceHomePage() {
           <FinanceLoading label="Loading projects…" />
         ) : reconQuery.isError ? (
           <FinanceError title="Could not load projects." onRetry={() => reconQuery.refetch()} />
-        ) : sortedRows.length === 0 ? (
+        ) : filteredRows.length === 0 ? (
           <FinanceEmpty title="No projects match." />
         ) : (
           <DrillTable
             columns={allColumns}
-            rows={sortedRows}
+            rows={filteredRows}
             rowKey={(r) => r.projectId}
+            sortable
+            defaultSort={{ key: "tie", dir: "asc" }}
+            exportFilename={`finance-home-projects-${fyScope.label.replace(/\s+/g, "-")}`}
             maxBodyHeightClass="max-h-[60vh]"
             caption="All projects — realised revenue, GP and tracker tie status"
             renderDetail={(r) => <ProjectDrillDetail projectId={r.projectId} fyWindowQs={fyWindowQs} />}

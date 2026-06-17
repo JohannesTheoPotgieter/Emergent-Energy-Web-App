@@ -217,7 +217,7 @@ export default function RevenueTrackerPage() {
   );
 
   const columns: DrillColumn<MonthData>[] = [
-    { key: 'month', header: 'Month', cell: (m) => <span className="font-medium text-foreground">{m.monthLabel}</span> },
+    { key: 'month', header: 'Month', cell: (m) => <span className="font-medium text-foreground">{m.monthLabel}</span>, sortValue: (m) => m.monthKey, exportValue: (m) => m.monthLabel },
     {
       key: 'budget',
       header: 'Budget',
@@ -230,12 +230,13 @@ export default function RevenueTrackerPage() {
           onSave={(budget) => budgetMutation.mutate({ monthKey: m.monthKey, budget })}
         />
       ),
+      sortValue: (m) => m.budget,
     },
-    { key: 'planned', header: 'Planned', numeric: true, cell: (m) => moneyCell(m, m.totalRevenue, 'all') },
-    { key: 'committed', header: 'Committed', numeric: true, cell: (m) => <MoneyValue value={m.committedRevenue} muteNegative={false} /> },
-    { key: 'unrealised', header: 'Unrealised', numeric: true, cell: (m) => moneyCell(m, m.unrealisedRevenue, 'unrealised') },
-    { key: 'realised', header: 'Realised', numeric: true, cell: (m) => moneyCell(m, m.realisedRevenue, 'realised') },
-    { key: 'qb', header: 'QuickBooks', numeric: true, hideBelowMd: true, cell: (m) => moneyCell(m, m.qbRevenueActual, 'qb_actual') },
+    { key: 'planned', header: 'Planned', numeric: true, cell: (m) => moneyCell(m, m.totalRevenue, 'all'), sortValue: (m) => m.totalRevenue },
+    { key: 'committed', header: 'Committed', numeric: true, cell: (m) => <MoneyValue value={m.committedRevenue} muteNegative={false} />, sortValue: (m) => m.committedRevenue },
+    { key: 'unrealised', header: 'Unrealised', numeric: true, cell: (m) => moneyCell(m, m.unrealisedRevenue, 'unrealised'), sortValue: (m) => m.unrealisedRevenue },
+    { key: 'realised', header: 'Realised', numeric: true, cell: (m) => moneyCell(m, m.realisedRevenue, 'realised'), sortValue: (m) => m.realisedRevenue },
+    { key: 'qb', header: 'QuickBooks', numeric: true, hideBelowMd: true, cell: (m) => moneyCell(m, m.qbRevenueActual, 'qb_actual'), sortValue: (m) => m.qbRevenueActual },
     {
       key: 'varRealised',
       header: 'Realised vs Budget',
@@ -246,6 +247,7 @@ export default function RevenueTrackerPage() {
           <span className="text-muted-foreground">({budgetPctLabel(m.realisedRevenue, m.budget)})</span>
         </span>
       ),
+      sortValue: (m) => budgetDelta(m.realisedRevenue, m.budget),
     },
     {
       key: 'varPlanned',
@@ -258,6 +260,7 @@ export default function RevenueTrackerPage() {
           <span className="text-muted-foreground">({budgetPctLabel(m.totalRevenue, m.budget)})</span>
         </span>
       ),
+      sortValue: (m) => budgetDelta(m.totalRevenue, m.budget),
     },
   ];
 
@@ -364,6 +367,8 @@ export default function RevenueTrackerPage() {
             rows={months}
             rowKey={(m) => m.monthKey}
             renderDetail={renderProjects}
+            sortable
+            exportFilename={`revenue-by-month-${fyScope.label.replace(/\s+/g, '-')}`}
             maxBodyHeightClass="max-h-[62vh]"
             caption="Revenue by month across the recognition pipeline; expand a row for the per-project breakdown."
           />

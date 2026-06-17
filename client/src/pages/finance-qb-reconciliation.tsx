@@ -47,6 +47,8 @@ import {
   type StatusTone,
   type DrillColumn,
 } from "@/components/finance/template";
+import { ExportDropdown } from "@/components/ui/export-dropdown";
+import type { ExportColumn } from "@/lib/export-table";
 import {
   buildSideWorklist,
   type Grain,
@@ -171,20 +173,23 @@ function periodColumns(grainLabel: string): DrillColumn<PeriodSummary>[] {
           {p.periodKey}
         </span>
       ),
+      sortValue: (p) => p.periodKey,
     },
-    { key: "revTrk", header: "Rev trk", numeric: true, cell: (p) => money(p.rev?.trackerTotal ?? 0) },
-    { key: "revQb", header: "Rev QB", numeric: true, cell: (p) => <span className="text-brand-muted">{money(p.rev?.qbTotal ?? 0)}</span> },
-    { key: "revD", header: "Rev Δ", numeric: true, cell: (p) => deltaCell(p.rev?.trackerTotal ?? 0, p.rev?.qbTotal ?? 0) },
-    { key: "cosTrk", header: "COS trk", numeric: true, cell: (p) => money(p.cos?.trackerTotal ?? 0) },
-    { key: "cosQb", header: "COS QB", numeric: true, cell: (p) => <span className="text-brand-muted">{money(p.cos?.qbTotal ?? 0)}</span> },
-    { key: "cosD", header: "COS Δ", numeric: true, cell: (p) => deltaCell(p.cos?.trackerTotal ?? 0, p.cos?.qbTotal ?? 0) },
-    { key: "gpTrk", header: "GP trk", numeric: true, cell: (p) => money(p.gpTracker) },
-    { key: "gpQb", header: "GP QB", numeric: true, cell: (p) => <span className="text-brand-muted">{money(p.gpQb)}</span> },
-    { key: "gpD", header: "GP Δ", numeric: true, cell: (p) => deltaCell(p.gpTracker, p.gpQb) },
+    { key: "revTrk", header: "Rev trk", numeric: true, cell: (p) => money(p.rev?.trackerTotal ?? 0), sortValue: (p) => p.rev?.trackerTotal ?? 0 },
+    { key: "revQb", header: "Rev QB", numeric: true, cell: (p) => <span className="text-brand-muted">{money(p.rev?.qbTotal ?? 0)}</span>, sortValue: (p) => p.rev?.qbTotal ?? 0 },
+    { key: "revD", header: "Rev Δ", numeric: true, cell: (p) => deltaCell(p.rev?.trackerTotal ?? 0, p.rev?.qbTotal ?? 0), sortValue: (p) => variance(p.rev?.trackerTotal ?? 0, p.rev?.qbTotal ?? 0) },
+    { key: "cosTrk", header: "COS trk", numeric: true, cell: (p) => money(p.cos?.trackerTotal ?? 0), sortValue: (p) => p.cos?.trackerTotal ?? 0 },
+    { key: "cosQb", header: "COS QB", numeric: true, cell: (p) => <span className="text-brand-muted">{money(p.cos?.qbTotal ?? 0)}</span>, sortValue: (p) => p.cos?.qbTotal ?? 0 },
+    { key: "cosD", header: "COS Δ", numeric: true, cell: (p) => deltaCell(p.cos?.trackerTotal ?? 0, p.cos?.qbTotal ?? 0), sortValue: (p) => variance(p.cos?.trackerTotal ?? 0, p.cos?.qbTotal ?? 0) },
+    { key: "gpTrk", header: "GP trk", numeric: true, cell: (p) => money(p.gpTracker), sortValue: (p) => p.gpTracker },
+    { key: "gpQb", header: "GP QB", numeric: true, cell: (p) => <span className="text-brand-muted">{money(p.gpQb)}</span>, sortValue: (p) => p.gpQb },
+    { key: "gpD", header: "GP Δ", numeric: true, cell: (p) => deltaCell(p.gpTracker, p.gpQb), sortValue: (p) => variance(p.gpTracker, p.gpQb) },
     {
       key: "coverage",
       header: "Coverage",
       align: "right",
+      sortValue: (p) => monthCoverage(p).overall ?? -1,
+      exportValue: (p) => monthCoverage(p).overall ?? "",
       cell: (p) => {
         const cov = monthCoverage(p);
         return (
@@ -215,22 +220,25 @@ function worklistColumns(
   ignoring: boolean,
 ): DrillColumn<ReconLine>[] {
   return [
-    { key: "invoice", header: "Invoice #", cell: (l) => <span className="font-mono" data-testid={`qb-recon-row-${l.id}`}>{l.invoiceNoRaw ?? l.invoiceNoNorm}</span> },
-    { key: "tracker", header: "Tracker", numeric: true, cell: (l) => (l.trackerAmountExVat == null ? "—" : <MoneyValue value={num(l.trackerAmountExVat)} />) },
-    { key: "qb", header: "QB", numeric: true, cell: (l) => (l.qbAmountExVat == null ? "—" : <MoneyValue value={num(l.qbAmountExVat)} />) },
+    { key: "invoice", header: "Invoice #", cell: (l) => <span className="font-mono" data-testid={`qb-recon-row-${l.id}`}>{l.invoiceNoRaw ?? l.invoiceNoNorm}</span>, sortValue: (l) => l.invoiceNoRaw ?? l.invoiceNoNorm },
+    { key: "tracker", header: "Tracker", numeric: true, cell: (l) => (l.trackerAmountExVat == null ? "—" : <MoneyValue value={num(l.trackerAmountExVat)} />), sortValue: (l) => (l.trackerAmountExVat == null ? null : num(l.trackerAmountExVat)) },
+    { key: "qb", header: "QB", numeric: true, cell: (l) => (l.qbAmountExVat == null ? "—" : <MoneyValue value={num(l.qbAmountExVat)} />), sortValue: (l) => (l.qbAmountExVat == null ? null : num(l.qbAmountExVat)) },
     {
       key: "delta",
       header: "Δ",
       numeric: true,
       cell: (l) => <span className="text-amber-700">{l.delta == null ? "—" : <MoneyValue value={num(l.delta)} muteNegative={false} />}</span>,
+      sortValue: (l) => (l.delta == null ? null : num(l.delta)),
     },
-    { key: "trackerDate", header: "Tracker date", hideBelowMd: true, cell: (l) => <span className="text-xs text-brand-muted">{l.trackerDate ?? "—"}</span> },
-    { key: "qbDate", header: "QB date", hideBelowMd: true, cell: (l) => <span className="text-xs text-brand-muted">{l.qbDate ?? "—"}</span> },
-    { key: "timing", header: "", cell: (l) => (l.timingFlag ? <StatusBadge tone="info" icon={Clock} label="Timing" /> : null) },
+    { key: "trackerDate", header: "Tracker date", hideBelowMd: true, cell: (l) => <span className="text-xs text-brand-muted">{l.trackerDate ?? "—"}</span>, sortValue: (l) => l.trackerDate },
+    { key: "qbDate", header: "QB date", hideBelowMd: true, cell: (l) => <span className="text-xs text-brand-muted">{l.qbDate ?? "—"}</span>, sortValue: (l) => l.qbDate },
+    { key: "timing", header: "", sortable: false, cell: (l) => (l.timingFlag ? <StatusBadge tone="info" icon={Clock} label="Timing" /> : null), exportValue: (l) => (l.timingFlag ? "timing" : "") },
     {
       key: "action",
       header: "",
       align: "right",
+      sortable: false,
+      noExport: true,
       cell: (l) =>
         l.status !== "matched" || l.timingFlag ? (
           <Button
@@ -282,6 +290,7 @@ function StateGroup({
           rows={lines}
           rowKey={(l) => `${l.stream}-${l.id}`}
           stickyHeader={false}
+          sortable
           className="border-0"
           data-testid={`qb-recon-group-table-${state}`}
         />
@@ -289,6 +298,18 @@ function StateGroup({
     </div>
   );
 }
+
+/** Flat invoice export for one side (Revenue or Cost) — raw ex-VAT figures. */
+const WORKLIST_EXPORT_COLUMNS: ExportColumn[] = [
+  { key: "invoice", header: "Invoice #", value: (l) => l.invoiceNoRaw ?? l.invoiceNoNorm },
+  { key: "state", header: "State", value: (l) => l.status },
+  { key: "tracker", header: "Tracker (ex-VAT)", value: (l) => (l.trackerAmountExVat == null ? "" : num(l.trackerAmountExVat)) },
+  { key: "qb", header: "QB (ex-VAT)", value: (l) => (l.qbAmountExVat == null ? "" : num(l.qbAmountExVat)) },
+  { key: "delta", header: "Delta", value: (l) => (l.delta == null ? "" : num(l.delta)) },
+  { key: "trackerDate", header: "Tracker date", value: (l) => l.trackerDate ?? "" },
+  { key: "qbDate", header: "QB date", value: (l) => l.qbDate ?? "" },
+  { key: "timing", header: "Timing flag", value: (l) => (l.timingFlag ? "yes" : "no") },
+];
 
 function SideWorklistCard({
   title,
@@ -302,18 +323,32 @@ function SideWorklistCard({
   ignoring: boolean;
 }) {
   const columns = useMemo(() => worklistColumns(onIgnore, ignoring), [onIgnore, ignoring]);
-  const empty =
-    worklist.matched.length +
-      worklist.ambiguous.length +
-      worklist.unmatchedInQb.length +
-      worklist.unmatchedInTracker.length ===
-    0;
+  // Differences first, then clean matches — the same order the screen shows.
+  const allLines = useMemo(
+    () => [
+      ...worklist.ambiguous,
+      ...worklist.unmatchedInQb,
+      ...worklist.unmatchedInTracker,
+      ...worklist.matched,
+    ],
+    [worklist],
+  );
+  const empty = allLines.length === 0;
   return (
     <Card data-testid={`qb-recon-side-${worklist.stream}`}>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-semibold text-brand-text">
-          {title} — {worklist.openCount} to action
-        </CardTitle>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-sm font-semibold text-brand-text">
+            {title} — {worklist.openCount} to action
+          </CardTitle>
+          {!empty && (
+            <ExportDropdown
+              data={allLines}
+              columns={WORKLIST_EXPORT_COLUMNS}
+              filename={`qb-recon-${worklist.stream.toLowerCase()}-invoices`}
+            />
+          )}
+        </div>
       </CardHeader>
       <CardContent className="p-0">
         {empty ? (
@@ -520,6 +555,8 @@ export default function FinanceQbReconciliationPage() {
                 rows={periods}
                 rowKey={(p) => p.periodKey}
                 onRowClick={(p) => setSelectedPeriod(p.periodKey)}
+                sortable
+                exportFilename={`qb-reconciliation-by-${grain}`}
                 maxBodyHeightClass="max-h-[50vh]"
                 caption="Tracker vs QuickBooks per period with variance and match coverage."
               />

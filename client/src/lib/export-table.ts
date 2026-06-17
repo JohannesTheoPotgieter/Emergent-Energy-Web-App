@@ -6,6 +6,13 @@
 export interface ExportColumn {
   key: string;
   header: string;
+  /**
+   * Optional value accessor. When provided it overrides the dot-path lookup —
+   * use it for computed / formatted columns whose value isn't a plain field on
+   * the row (e.g. GP = revenue − cos, a percentage, a status label). Return a
+   * primitive; null / undefined export as an empty cell.
+   */
+  value?: (row: any) => string | number | boolean | null | undefined;
 }
 
 function getNestedValue(obj: any, key: string): string {
@@ -13,6 +20,16 @@ function getNestedValue(obj: any, key: string): string {
   if (val == null) return "";
   if (val instanceof Date) return val.toISOString().split("T")[0];
   return String(val);
+}
+
+/** Resolve a single cell to its export string — accessor first, dot-path otherwise. */
+function resolveCell(row: any, col: ExportColumn): string {
+  if (col.value) {
+    const val = col.value(row);
+    if (val == null) return "";
+    return String(val);
+  }
+  return getNestedValue(row, col.key);
 }
 
 function escapeCSV(val: string): string {
@@ -25,7 +42,7 @@ function escapeCSV(val: string): string {
 export function exportToCSV(data: any[], columns: ExportColumn[], filename: string) {
   const header = columns.map(c => escapeCSV(c.header)).join(",");
   const rows = data.map(row =>
-    columns.map(c => escapeCSV(getNestedValue(row, c.key))).join(",")
+    columns.map(c => escapeCSV(resolveCell(row, c))).join(",")
   );
   const csv = [header, ...rows].join("\n");
   const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
@@ -55,7 +72,7 @@ export async function exportToExcel(data: any[], columns: ExportColumn[], filena
   for (const item of data) {
     const rowData: Record<string, string> = {};
     for (const col of columns) {
-      rowData[col.key] = getNestedValue(item, col.key);
+      rowData[col.key] = resolveCell(item, col);
     }
     sheet.addRow(rowData);
   }

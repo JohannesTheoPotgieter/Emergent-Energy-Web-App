@@ -13,14 +13,7 @@ import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { DrillTable, type DrillColumn } from '@/components/finance/template';
 import {
   Tooltip as UiTooltip,
   TooltipContent,
@@ -161,6 +154,55 @@ const SOURCE_COLUMNS: ExportColumn[] = [
   { key: 'lineId', header: 'Line ID' },
 ];
 
+// Sortable on-screen columns (export stays on the header ExportDropdown above
+// each table, which carries the full source-cell columns).
+const ageCell = (r: AgedRow) => (
+  <Badge variant="outline" className={bucketTone(r.ageBucket)}>
+    {r.ageBucket} · {r.ageDays}d
+  </Badge>
+);
+
+const arDrillColumns: DrillColumn<AgedRow>[] = [
+  { key: 'projectName', header: 'Project', cell: (r) => r.projectName ?? '—', sortValue: (r) => r.projectName ?? '' },
+  { key: 'label', header: 'Milestone', cell: (r) => <span className="block max-w-[16rem] truncate">{r.label ?? '—'}</span>, sortValue: (r) => r.label ?? '' },
+  { key: 'invoiceNumber', header: 'Invoice no', cell: (r) => <span className="font-mono text-xs">{r.invoiceNumber ?? '—'}</span>, sortValue: (r) => r.invoiceNumber ?? '' },
+  { key: 'invoiceDate', header: 'Invoice date', cell: (r) => <span className="font-mono text-xs">{r.invoiceDate ?? '—'}</span>, sortValue: (r) => r.invoiceDate ?? '' },
+  { key: 'amountExVat', header: 'Amount (ex-VAT)', numeric: true, cell: (r) => <span className="font-mono tabular-nums">{formatZar(r.amountExVat)}</span>, sortValue: (r) => r.amountExVat },
+  { key: 'age', header: 'Age', cell: ageCell, sortValue: (r) => r.ageDays },
+  { key: 'source', header: 'Source', sortable: false, cell: (r) => <SourceCell row={r} /> },
+];
+
+const apDrillColumns: DrillColumn<AgedRow>[] = [
+  { key: 'projectName', header: 'Project', cell: (r) => r.projectName ?? '—', sortValue: (r) => r.projectName ?? '' },
+  { key: 'counterpartyName', header: 'Supplier', cell: (r) => <span className="block max-w-[12rem] truncate">{r.counterpartyName ?? '—'}</span>, sortValue: (r) => r.counterpartyName ?? '' },
+  { key: 'label', header: 'Line item', cell: (r) => <span className="block max-w-[14rem] truncate">{r.label ?? '—'}</span>, sortValue: (r) => r.label ?? '' },
+  { key: 'invoiceNumber', header: 'Invoice no', cell: (r) => <span className="font-mono text-xs">{r.invoiceNumber ?? '—'}</span>, sortValue: (r) => r.invoiceNumber ?? '' },
+  { key: 'invoiceDate', header: 'Invoice date', cell: (r) => <span className="font-mono text-xs">{r.invoiceDate ?? '—'}</span>, sortValue: (r) => r.invoiceDate ?? '' },
+  { key: 'amountExVat', header: 'Amount (ex-VAT)', numeric: true, cell: (r) => <span className="font-mono tabular-nums">{formatZar(r.amountExVat)}</span>, sortValue: (r) => r.amountExVat },
+  { key: 'age', header: 'Age', cell: ageCell, sortValue: (r) => r.ageDays },
+  { key: 'source', header: 'Source', sortable: false, cell: (r) => <SourceCell row={r} /> },
+];
+
+const missingDrillColumns: DrillColumn<MissingRow>[] = [
+  { key: 'side', header: 'Side', cell: (r) => <Badge variant={r.side === 'revenue' ? 'default' : 'secondary'}>{r.side === 'revenue' ? 'Revenue' : 'Cost'}</Badge>, sortValue: (r) => r.side },
+  { key: 'projectName', header: 'Project', cell: (r) => r.projectName ?? '—', sortValue: (r) => r.projectName ?? '' },
+  {
+    key: 'label',
+    header: 'Line',
+    cell: (r) => (
+      <span className="block max-w-[18rem] truncate">
+        {r.label ?? '—'}
+        {r.counterpartyName && r.side === 'cost' ? <span className="text-muted-foreground"> · {r.counterpartyName}</span> : null}
+      </span>
+    ),
+    sortValue: (r) => r.label ?? '',
+  },
+  { key: 'expectedInvoiceDate', header: 'Expected invoice date', cell: (r) => <span className="font-mono text-xs">{r.expectedInvoiceDate ?? '—'}</span>, sortValue: (r) => r.expectedInvoiceDate ?? '' },
+  { key: 'daysOverdue', header: 'Days overdue', numeric: true, cell: (r) => <span className={`font-mono tabular-nums ${r.daysOverdue > 60 ? 'text-red-600 font-semibold' : ''}`}>{r.daysOverdue}</span>, sortValue: (r) => r.daysOverdue },
+  { key: 'amountExVat', header: 'Amount (ex-VAT)', numeric: true, cell: (r) => <span className="font-mono tabular-nums">{formatZar(r.amountExVat)}</span>, sortValue: (r) => r.amountExVat },
+  { key: 'source', header: 'Source', sortable: false, cell: (r) => <SourceCell row={r} /> },
+];
+
 function StateWrap({
   isLoading,
   isError,
@@ -297,42 +339,14 @@ export function CashflowWorklists({ projectParam }: { projectParam?: string }) {
                     <BucketChips buckets={ar.data.buckets} />
                     <ExportDropdown data={ar.data.rows} columns={arColumns} filename="receivables-ar" />
                   </div>
-                  <div className="overflow-x-auto rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Project</TableHead>
-                          <TableHead>Milestone</TableHead>
-                          <TableHead>Invoice no</TableHead>
-                          <TableHead>Invoice date</TableHead>
-                          <TableHead className="text-right">Amount (ex-VAT)</TableHead>
-                          <TableHead>Age</TableHead>
-                          <TableHead>Source</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {ar.data.rows.map((row) => (
-                          <TableRow key={row.lineId} data-testid="ar-row">
-                            <TableCell>{row.projectName ?? '—'}</TableCell>
-                            <TableCell className="max-w-[16rem] truncate">{row.label ?? '—'}</TableCell>
-                            <TableCell className="font-mono text-xs">{row.invoiceNumber ?? '—'}</TableCell>
-                            <TableCell className="font-mono text-xs">{row.invoiceDate ?? '—'}</TableCell>
-                            <TableCell className="text-right font-mono tabular-nums">
-                              {formatZar(row.amountExVat)}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className={bucketTone(row.ageBucket)}>
-                                {row.ageBucket} · {row.ageDays}d
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <SourceCell row={row} />
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+                  <DrillTable
+                    columns={arDrillColumns}
+                    rows={ar.data.rows}
+                    rowKey={(r) => r.lineId}
+                    sortable
+                    maxBodyHeightClass="max-h-[60vh]"
+                    caption="Outstanding receivables, aged from the invoice-raised date."
+                  />
                 </>
               ) : null}
             </StateWrap>
@@ -353,44 +367,14 @@ export function CashflowWorklists({ projectParam }: { projectParam?: string }) {
                     <BucketChips buckets={ap.data.buckets} />
                     <ExportDropdown data={ap.data.rows} columns={apColumns} filename="payables-ap" />
                   </div>
-                  <div className="overflow-x-auto rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Project</TableHead>
-                          <TableHead>Supplier</TableHead>
-                          <TableHead>Line item</TableHead>
-                          <TableHead>Invoice no</TableHead>
-                          <TableHead>Invoice date</TableHead>
-                          <TableHead className="text-right">Amount (ex-VAT)</TableHead>
-                          <TableHead>Age</TableHead>
-                          <TableHead>Source</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {ap.data.rows.map((row) => (
-                          <TableRow key={row.lineId} data-testid="ap-row">
-                            <TableCell>{row.projectName ?? '—'}</TableCell>
-                            <TableCell className="max-w-[12rem] truncate">{row.counterpartyName ?? '—'}</TableCell>
-                            <TableCell className="max-w-[14rem] truncate">{row.label ?? '—'}</TableCell>
-                            <TableCell className="font-mono text-xs">{row.invoiceNumber ?? '—'}</TableCell>
-                            <TableCell className="font-mono text-xs">{row.invoiceDate ?? '—'}</TableCell>
-                            <TableCell className="text-right font-mono tabular-nums">
-                              {formatZar(row.amountExVat)}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className={bucketTone(row.ageBucket)}>
-                                {row.ageBucket} · {row.ageDays}d
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <SourceCell row={row} />
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+                  <DrillTable
+                    columns={apDrillColumns}
+                    rows={ap.data.rows}
+                    rowKey={(r) => r.lineId}
+                    sortable
+                    maxBodyHeightClass="max-h-[60vh]"
+                    caption="Outstanding payables, aged from the invoice-raised date."
+                  />
                 </>
               ) : null}
             </StateWrap>
@@ -427,51 +411,14 @@ export function CashflowWorklists({ projectParam }: { projectParam?: string }) {
                     </div>
                     <ExportDropdown data={missing.data.rows} columns={missingColumns} filename="missing-invoices" />
                   </div>
-                  <div className="overflow-x-auto rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Side</TableHead>
-                          <TableHead>Project</TableHead>
-                          <TableHead>Line</TableHead>
-                          <TableHead>Expected invoice date</TableHead>
-                          <TableHead className="text-right">Days overdue</TableHead>
-                          <TableHead className="text-right">Amount (ex-VAT)</TableHead>
-                          <TableHead>Source</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {missing.data.rows.map((row) => (
-                          <TableRow key={`${row.side}-${row.lineId}`} data-testid="missing-row">
-                            <TableCell>
-                              <Badge variant={row.side === 'revenue' ? 'default' : 'secondary'}>
-                                {row.side === 'revenue' ? 'Revenue' : 'Cost'}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>{row.projectName ?? '—'}</TableCell>
-                            <TableCell className="max-w-[18rem] truncate">
-                              {row.label ?? '—'}
-                              {row.counterpartyName && row.side === 'cost' ? (
-                                <span className="text-muted-foreground"> · {row.counterpartyName}</span>
-                              ) : null}
-                            </TableCell>
-                            <TableCell className="font-mono text-xs">{row.expectedInvoiceDate ?? '—'}</TableCell>
-                            <TableCell className="text-right font-mono tabular-nums">
-                              <span className={row.daysOverdue > 60 ? 'text-red-600 font-semibold' : ''}>
-                                {row.daysOverdue}
-                              </span>
-                            </TableCell>
-                            <TableCell className="text-right font-mono tabular-nums">
-                              {formatZar(row.amountExVat)}
-                            </TableCell>
-                            <TableCell>
-                              <SourceCell row={row} />
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+                  <DrillTable
+                    columns={missingDrillColumns}
+                    rows={missing.data.rows}
+                    rowKey={(r) => `${r.side}-${r.lineId}`}
+                    sortable
+                    maxBodyHeightClass="max-h-[60vh]"
+                    caption="Past-dated lines with a missing invoice (revenue to raise, or supplier bill to capture)."
+                  />
                 </>
               ) : null}
             </StateWrap>
