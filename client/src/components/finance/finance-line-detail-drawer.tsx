@@ -39,7 +39,7 @@ import {
 } from 'lucide-react';
 
 export type FinanceDetailVariant = 'revenue' | 'cos' | 'gp';
-export type FinanceDetailStateFilter = 'all' | 'realised' | 'unrealised' | 'qb_actual';
+export type FinanceDetailStateFilter = 'all' | 'realised' | 'committed' | 'unrealised' | 'qb_actual';
 
 /** Normalised line shape the drawer renders, regardless of source endpoint. */
 interface DrawerLine {
@@ -283,10 +283,17 @@ export function FinanceLineDetailDrawer({
   const stateParam = (() => {
     if (!isMonthVariant || stateFilter === 'all') return '';
     if (variant === 'revenue') {
-      const v = stateFilter === 'realised' ? 'Realised' : stateFilter === 'unrealised' ? 'Unrealised' : 'qb_actual';
+      const v =
+        stateFilter === 'realised'
+          ? 'Realised'
+          : stateFilter === 'committed'
+            ? 'Committed'
+            : stateFilter === 'unrealised'
+              ? 'Unrealised'
+              : 'qb_actual';
       return `&state=${v}`;
     }
-    return `&state=${stateFilter}`; // cos endpoint takes lowercase
+    return `&state=${stateFilter}`; // cos endpoint takes lowercase (realised/committed/unrealised/qb_actual)
   })();
   // Server-side project scope (month variants only).
   const projectParam =
@@ -329,6 +336,7 @@ export function FinanceLineDetailDrawer({
     if (variant !== 'gp') return allLines;
     return allLines.filter((l) => {
       if (stateFilter === 'realised' && !l.isRealised) return false;
+      if (stateFilter === 'committed' && l.status !== 'Committed') return false;
       if (stateFilter === 'unrealised' && l.isRealised) return false;
       if (scopeFilter !== 'all' && l.categoryKey !== scopeFilter) return false;
       return true;
@@ -491,8 +499,11 @@ export function FinanceLineDetailDrawer({
           >
             <option value="all">All States</option>
             <option value="realised">Realised Only</option>
+            <option value="committed">Committed Only</option>
             <option value="unrealised">Unrealised Only</option>
-            {variant !== 'gp' && <option value="qb_actual">QB Actual Only</option>}
+            {/* QB Actual is no longer a standard option; only surfaced when the
+                drawer was opened from a QuickBooks grid cell. */}
+            {stateFilter === 'qb_actual' && <option value="qb_actual">QB Actual Only</option>}
           </select>
           <SearchableSelect
             value={scopeFilter}

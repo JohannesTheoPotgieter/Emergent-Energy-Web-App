@@ -5939,10 +5939,20 @@ router.get(
         const isRealised =
           l.state === 'realised' &&
           (!fyeLastClosed || (l.recognitionMonth != null && l.recognitionMonth <= fyeLastClosed));
+        const isCommitted = !isRealised && l.state === 'committed';
         const exp = expById.get(l.parentLineId);
 
-        const revState = isRealised ? 'Realised' : 'Unrealised';
-        if (stateFilter && stateFilter.toLowerCase() !== revState.toLowerCase()) continue;
+        // Realised / Committed / Unrealised, mirroring the COS drill. Unrealised
+        // = everything not yet realised (committed + planned), so it stays a
+        // superset of Committed and the existing "Unrealised Only" total is
+        // unchanged.
+        const revState = isRealised ? 'Realised' : isCommitted ? 'Committed' : 'Unrealised';
+        if (stateFilter) {
+          const sf = stateFilter.toLowerCase();
+          if (sf === 'realised' && !isRealised) continue;
+          if (sf === 'committed' && !isCommitted) continue;
+          if (sf === 'unrealised' && isRealised) continue;
+        }
 
         items.push({
           id: l.lineId,
