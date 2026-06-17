@@ -522,6 +522,17 @@ export default function FyeRevenueTrackingPage() {
         />
       </KpiRow>
 
+      {/* Reconciliation note — ties these figures to the other finance tabs so a
+          reader never mistakes the curated-portfolio total for a disagreement. */}
+      <p className="mt-2 text-[11px] leading-relaxed text-slate-400" data-testid="fye-reconciliation-note">
+        <span className="font-medium text-slate-500">Actual = Realised</span> — the same line-for-line
+        figure the Revenue, COS and GP tabs show (one canonical source; they reconcile to the cent).
+        Totals are the curated FY portfolio
+        {meta && meta.excluded.length > 0
+          ? `: ${meta.excluded.length} tracker${meta.excluded.length === 1 ? "" : "s"} excluded (archived / duplicate / non-standard) — see Projects.`
+          : "."}
+      </p>
+
       <div className="mt-4">
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
