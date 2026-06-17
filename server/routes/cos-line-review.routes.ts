@@ -4,9 +4,8 @@
  *   GET  /api/cos-line-review
  *        ?projectIds=1,2&fyStart=YYYY-MM-DD&fyEnd=YYYY-MM-DD&flaggedOnly=true
  *        Read-only. Returns every § 3.3 cost line with computed-on-read
- *        integrity flags (R2 allocation-missing / R3 invoice↔PO mismatch /
- *        R4 >=8x category-median anomaly). Flags are advisory metadata — they
- *        change NO reported figure.
+ *        integrity flags (R2 allocation-missing / R4 >=8x category-median
+ *        anomaly). Flags are advisory metadata — they change NO reported figure.
  *
  *   POST /api/cos-line-review/:costLineId/move-period      { targetMonth, reason }
  *   POST /api/cos-line-review/:costLineId/set-invoice-date { invoiceDate, reason }
@@ -194,24 +193,20 @@ export function registerCosLineReviewRoutes(app: Express): void {
         if (projectIds.length === 0) {
           return res.json({
             lines: [],
-            summary: { total: 0, flagged: 0, allocationMissing: 0, poMismatch: 0, anomaly: 0 },
+            summary: { total: 0, flagged: 0, allocationMissing: 0, anomaly: 0 },
           });
         }
 
-        const [lines, poTotals] = await Promise.all([
-          financeLines.getPortfolioFinanceLines(projectIds, { fyStart, fyEnd }),
-          expenseRepo.listPurchaseOrderTotalsByProject(projectIds),
-        ]);
+        const lines = await financeLines.getPortfolioFinanceLines(projectIds, { fyStart, fyEnd });
 
         const flagInputs: CosLineFlagInput[] = lines.map((l) => ({
           lineId: l.lineId,
           projectId: l.projectId,
           categoryAllocationId: l.categoryAllocationId,
           actualTotal: l.actualTotal,
-          poNumber: l.poNumber,
           derivationWarning: l.derivationWarning,
         }));
-        const flags = computeCosLineFlags(flagInputs, poTotals);
+        const flags = computeCosLineFlags(flagInputs);
         const flagsByLineId = new Map(flags.map((f) => [f.lineId, f]));
 
         const rows = lines.map((l) => {
@@ -240,7 +235,6 @@ export function registerCosLineReviewRoutes(app: Express): void {
           total: rows.length,
           flagged: rows.filter((r) => r.flags.flagged).length,
           allocationMissing: rows.filter((r) => r.flags.allocationMissing).length,
-          poMismatch: rows.filter((r) => r.flags.poMismatch).length,
           anomaly: rows.filter((r) => r.flags.anomaly).length,
         };
         return res.json({ lines: result, summary });
