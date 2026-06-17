@@ -6,7 +6,7 @@
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
-      "loc": 9282
+      "loc": 9336
     },
     {
       "file": "client/src/pages/smart-import.tsx",
