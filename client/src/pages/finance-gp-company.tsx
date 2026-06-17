@@ -24,6 +24,7 @@ import {
 } from '@/components/finance/template';
 import { fetchQueryFn } from '@/lib/queryClient';
 import { useFinancialYearScope } from '@/hooks/use-financial-year-scope';
+import type { ReconPortfolioResponse } from '@/lib/finance/home-data';
 
 interface ProjBreak {
   projectName: string;
@@ -97,6 +98,21 @@ export default function FinanceGpCompanyPage() {
     staleTime: 30_000,
   });
 
+  // Project name → id so rows deep-link to the finance-scoped project page.
+  // The legacy /project/:name route is in the PROJECT_MANAGEMENT nav-group,
+  // disabled in finance-only mode (redirects to the finance landing) — see
+  // shared/config/enabled-modules.ts.
+  const reconQuery = useQuery<ReconPortfolioResponse>({
+    queryKey: ['/api/finance/reconciliation'],
+    queryFn: fetchQueryFn('/api/finance/reconciliation'),
+    staleTime: 60_000,
+  });
+  const projectIdByName = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const p of reconQuery.data?.projects ?? []) map.set(p.projectName, p.projectId);
+    return map;
+  }, [reconQuery.data]);
+
   const months = useMemo<GpMonth[]>(() => {
     const cosMonths = cosQuery.data ?? [];
     const revByKey = new Map((revQuery.data?.months ?? []).map((m) => [m.monthKey, m]));
@@ -160,21 +176,28 @@ export default function FinanceGpCompanyPage() {
           </tr>
         </thead>
         <tbody>
-          {rows.map((p) => (
+          {rows.map((p) => {
+            const projectId = projectIdByName.get(p.projectName);
+            return (
             <tr key={p.projectName} className="border-t border-slate-100">
               <td className="px-2 py-1">
-                <button
-                  type="button"
-                  className="text-emerald-700 hover:underline text-left"
-                  onClick={() => navigate(`/project/${encodeURIComponent(p.projectName)}?tab=revenue-tracking`)}
-                >
-                  {p.projectName}
-                </button>
+                {projectId ? (
+                  <button
+                    type="button"
+                    className="text-emerald-700 hover:underline text-left"
+                    onClick={() => navigate(`/projects/${projectId}/finance`)}
+                  >
+                    {p.projectName}
+                  </button>
+                ) : (
+                  <span className="text-foreground">{p.projectName}</span>
+                )}
               </td>
               <td className="px-2 py-1 text-right tabular-nums"><MoneyValue value={p.plannedGP} muteNegative={false} /></td>
               <td className="px-2 py-1 text-right tabular-nums"><MoneyValue value={p.realisedGP} muteNegative={false} /></td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     );
