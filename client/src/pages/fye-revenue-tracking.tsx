@@ -1,16 +1,24 @@
 /**
  * FYE Tracking — Finance tab.
  *
- * Reproduces the "FY26 Project Tracking (EE - from trackers)" workbook from the
- * imported tracker data:
- *   • View A (Projects): Budget vs Actual per project + a 4-state portfolio
- *     reconciliation (Realised / Committed / Planned / Unrealised) + amber
- *     flags + TOTAL row.
+ * Reproduces the "FY Project Tracking (EE - from trackers)" workbook from the
+ * imported tracker data, brought in line with the rest of the compact finance
+ * template (FinanceShell → FinancePageHeader → KpiRow → drill content), so it
+ * looks and behaves like Revenue / COS / GP / Cashflow:
+ *   • A headline KPI row (Budget Rev · Actual Rev · Actual COS · Actual GP) that
+ *     answers "where is the FY landing?" before any table.
+ *   • View A (Projects): the four recognition states (Realised / Committed /
+ *     Planned / Unrealised) as stat cards + Budget vs Actual per project + a
+ *     TOTAL strip + amber flags.
  *   • View B (Dashboard): Revenue / COS / GP, monthly + YTD-running, with three
- *     series — Revised Budget (manual, editable) / Actual / Plan-ahead.
+ *     series — Revised Budget (manual, editable) / Actual / Plan-ahead — drawn
+ *     with the shared ChartCard + brand palette.
  *
  * Everything except the Revised-Budget figures recomputes from the imported
- * tracker lines; "Refresh from import" re-pulls the latest snapshot.
+ * tracker lines; "Refresh from import" re-pulls the latest snapshot. The FY shown
+ * is always the one the server actually resolved (no hardcoded year), so the
+ * header never disagrees with the data. Presentation only — no figure is
+ * computed here.
  */
 
 import React, { useMemo, useState } from "react";
@@ -19,20 +27,24 @@ import { FinancialYearScopeControl } from "@/components/finance/FinancialYearSco
 import { useFinancialYearScope } from "@/hooks/use-financial-year-scope";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiMutation } from "@/hooks/use-api-mutation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   FinancePageHeader,
+  KpiRow,
+  KpiTile,
   MoneyValue,
   StatusBadge,
   DrillTable,
   FinanceLoading,
   FinanceError,
+  FinanceEmpty,
   type DrillColumn,
 } from "@/components/finance/template";
+import { ChartCard } from "@/components/finance/home/finance-home-charts";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { fetchQueryFn, apiRequest } from "@/lib/queryClient";
+import { formatZarCompact } from "@/lib/currency";
 import { usePermission } from "@/hooks/use-permissions";
 import { RefreshCw, BarChart3, Table2, ArrowUpDown } from "lucide-react";
 import {
@@ -89,9 +101,57 @@ interface DashboardResponse {
 const PCT = (v: number | null): string => (v == null ? "—" : `${(v * 100).toFixed(1)}%`);
 const toM = (v: number | null): number | null => (v == null ? null : Math.round((v / 1_000_000) * 100) / 100);
 const fmtM = (v: number | null): string => (v == null ? "—" : `R${toM(v)!.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}m`);
+const fyLabel = (fye: number): string => `FY${String(fye).slice(-2)}`;
+
+// Brand-aligned series colours — match the Finance Home charts so every finance
+// surface plots the same idea in the same colour.
+const SERIES = {
+  budget: "#94A3B8", // slate — the management target / reference
+  planAhead: "#F59E0B", // amber — forecast (committed + planned pipeline)
+  actual: "#16A34A", // emerald — realised actuals
+} as const;
 
 // ─── View A — Projects ───────────────────────────────────────────────────────
 type SortKey = "project" | "type" | "budgetRevenue" | "actualRevenue" | "actualGpPct" | "pctRealised";
+
+// One recognition-state stat card (Realised / Committed / Planned / Unrealised).
+const STATE_STYLE: Record<
+  "realised" | "committed" | "planned" | "unrealised",
+  { label: string; dot: string; accent: string; help: string }
+> = {
+  realised: { label: "Realised", dot: "bg-emerald-500", accent: "text-emerald-700", help: "Invoiced + confirmed" },
+  committed: { label: "Committed", dot: "bg-amber-500", accent: "text-amber-700", help: "PO / order placed" },
+  planned: { label: "Planned", dot: "bg-sky-500", accent: "text-sky-700", help: "Scheduled, not yet committed" },
+  unrealised: { label: "Unrealised", dot: "bg-slate-400", accent: "text-slate-600", help: "Budget not yet actioned" },
+};
+
+function StateCard({ stateKey, pair }: { stateKey: keyof typeof STATE_STYLE; pair: MoneyPair }) {
+  const s = STATE_STYLE[stateKey];
+  const gp = pair.revenue - pair.cos;
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-3" data-testid={`fye-state-card-${stateKey}`}>
+      <div className="flex items-center gap-2">
+        <span className={`h-2.5 w-2.5 rounded-full ${s.dot}`} aria-hidden="true" />
+        <span className="text-sm font-semibold text-slate-900">{s.label}</span>
+      </div>
+      <p className="mt-0.5 text-[10px] uppercase tracking-wider text-slate-400">{s.help}</p>
+      <dl className="mt-2 space-y-1 text-xs">
+        <div className="flex items-center justify-between gap-2">
+          <dt className="text-slate-500">Revenue</dt>
+          <dd className={`tabular-nums font-semibold ${s.accent}`}><MoneyValue value={pair.revenue} align="left" /></dd>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <dt className="text-slate-500">COS</dt>
+          <dd className="tabular-nums text-slate-700"><MoneyValue value={pair.cos} align="left" /></dd>
+        </div>
+        <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-1">
+          <dt className="text-slate-500">GP</dt>
+          <dd className="tabular-nums font-semibold text-slate-900"><MoneyValue value={gp} align="left" /></dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
 
 function ProjectsView({ apiQueryString }: { apiQueryString: string }) {
   const { data, isLoading, isError, error, refetch } = useQuery<ProjectsResponse>({
@@ -115,7 +175,7 @@ function ProjectsView({ apiQueryString }: { apiQueryString: string }) {
     });
   }, [data, filter, typeFilter, sortKey, sortDir]);
 
-  if (isLoading) return <FinanceLoading />;
+  if (isLoading) return <FinanceLoading label="Loading project tracking…" />;
   if (isError) return <FinanceError hint={(error as Error)?.message} onRetry={() => void refetch()} />;
   if (!data) return null;
 
@@ -138,19 +198,6 @@ function ProjectsView({ apiQueryString }: { apiQueryString: string }) {
   );
   const st = data.stateTotals;
   const t = data.totals;
-
-  // 4-state portfolio reconciliation rows (Realised / Committed / Planned /
-  // Unrealised) + the Budget (all states) row rendered as a bold strip below.
-  type StateRow = { key: string; label: string; revenue: number; cos: number };
-  const stateRows: StateRow[] = (["realised", "committed", "planned", "unrealised"] as const).map((s) => ({
-    key: s, label: s, revenue: st[s].revenue, cos: st[s].cos,
-  }));
-  const stateColumns: DrillColumn<StateRow>[] = [
-    { key: "state", header: "State", cell: (r) => <span className="capitalize">{r.label}</span> },
-    { key: "revenue", header: "Revenue", numeric: true, cell: (r) => <MoneyValue value={r.revenue} /> },
-    { key: "cos", header: "COS", numeric: true, cell: (r) => <MoneyValue value={r.cos} /> },
-    { key: "gp", header: "GP", numeric: true, cell: (r) => <MoneyValue value={r.revenue - r.cos} /> },
-  ];
 
   // Projects table columns. Row-level COS_NO_REVENUE / NON_STANDARD_TEMPLATE
   // styling is reapplied per-cell (the Project cell carries the flag classes).
@@ -194,34 +241,36 @@ function ProjectsView({ apiQueryString }: { apiQueryString: string }) {
   ];
 
   return (
-    <div className="space-y-4">
-      {/* 4-state portfolio reconciliation */}
-      <div>
-        <h2 className="mb-2 text-sm font-semibold">Portfolio recognition states (FY{String(data.fye).slice(-2)})</h2>
-        <DrillTable
-          columns={stateColumns}
-          rows={stateRows}
-          rowKey={(r) => r.key}
-          stickyHeader={false}
-          caption="Portfolio revenue / COS / GP across the four recognition states."
-        />
-        {/* Budget (all states) — total strip (DrillTable has no footer). */}
-        <div className="mt-1 flex flex-wrap items-center justify-end gap-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold">
-          <span className="mr-auto">Budget (all states)</span>
+    <div className="space-y-5">
+      {/* Four recognition states as stat cards (Realised / Committed / Planned / Unrealised). */}
+      <section aria-label="Portfolio recognition states">
+        <div className="mb-2 flex items-baseline justify-between gap-2">
+          <h2 className="text-sm font-semibold text-slate-900">Portfolio recognition states · {fyLabel(data.fye)}</h2>
+          <span className="text-[11px] text-slate-400">{data.projectCount} projects · {data.excluded.length} excluded</span>
+        </div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <StateCard stateKey="realised" pair={st.realised} />
+          <StateCard stateKey="committed" pair={st.committed} />
+          <StateCard stateKey="planned" pair={st.planned} />
+          <StateCard stateKey="unrealised" pair={st.unrealised} />
+        </div>
+        {/* Budget (all states) — total strip. */}
+        <div className="mt-2 flex flex-wrap items-center justify-end gap-x-5 gap-y-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold tabular-nums">
+          <span className="mr-auto text-slate-500">Budget · all states</span>
           <span>Rev <MoneyValue value={st.budget.revenue} align="left" /></span>
           <span>COS <MoneyValue value={st.budget.cos} align="left" /></span>
           <span>GP <MoneyValue value={st.budget.revenue - st.budget.cos} align="left" /></span>
         </div>
-      </div>
+      </section>
 
-      <div className="flex flex-wrap gap-2 items-center">
+      {/* Filters + sort */}
+      <div className="flex flex-wrap items-center gap-2">
         <Input placeholder="Filter project…" value={filter} onChange={(e) => setFilter(e.target.value)} className="h-8 w-48" data-testid="fye-project-filter" />
         <select className="h-8 rounded-md border bg-background px-2 text-sm" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as typeof typeFilter)}>
           <option value="all">All types</option><option value="Active">Active</option><option value="Past">Past</option><option value="Compliance">Compliance</option>
         </select>
-        <span className="text-xs text-muted-foreground">{data.projectCount} projects · {data.excluded.length} excluded</span>
         <span className="ml-auto inline-flex flex-wrap items-center gap-1.5">
-          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Sort</span>
+          <span className="text-[10px] uppercase tracking-wider text-slate-400">Sort</span>
           <SortBtn k="project" label="Project" />
           <SortBtn k="type" label="Type" />
           <SortBtn k="budgetRevenue" label="Budget Rev" />
@@ -231,13 +280,17 @@ function ProjectsView({ apiQueryString }: { apiQueryString: string }) {
         </span>
       </div>
 
-      <DrillTable
-        columns={projectColumns}
-        rows={rows}
-        rowKey={(r) => r.projectId}
-        maxBodyHeightClass="max-h-[60vh]"
-        caption="Budget vs actual revenue / COS / GP per project."
-      />
+      {rows.length === 0 ? (
+        <FinanceEmpty title="No projects match." hint="Clear the filter or widen the type selection." />
+      ) : (
+        <DrillTable
+          columns={projectColumns}
+          rows={rows}
+          rowKey={(r) => r.projectId}
+          maxBodyHeightClass="max-h-[60vh]"
+          caption="Budget vs actual revenue / COS / GP per project."
+        />
+      )}
 
       {/* TOTAL — bold strip after the table (DrillTable has no footer). */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold tabular-nums">
@@ -254,7 +307,7 @@ function ProjectsView({ apiQueryString }: { apiQueryString: string }) {
       </div>
 
       {data.excluded.length > 0 && (
-        <details className="text-xs text-muted-foreground">
+        <details className="text-xs text-slate-500">
           <summary className="cursor-pointer">Excluded / de-duplicated trackers ({data.excluded.length})</summary>
           <ul className="mt-2 space-y-1 pl-4 list-disc">
             {data.excluded.map((e) => <li key={`${e.projectId}-${e.project}`}><span className="font-medium">{e.project}</span> — {e.reason}</li>)}
@@ -295,50 +348,54 @@ function MetricBlock({ fye, block, canEdit }: { fye: number; block: MetricBlockD
     [block.ytd],
   );
   return (
-    <Card>
-      <CardHeader className="pb-2"><CardTitle className="text-sm">{METRIC_LABEL[block.metric]} — monthly, YTD & trend (R millions)</CardTitle></CardHeader>
-      <CardContent className="space-y-4">
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-              <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => `${v}m`} />
-              <Tooltip formatter={(value) => `R${Number(value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}m`} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line type="monotone" dataKey="Revised Budget" stroke="#f97316" strokeWidth={1.5} dot={false} connectNulls />
-              <Line type="monotone" dataKey="Plan ahead" stroke="#2563eb" strokeWidth={1.5} strokeDasharray="5 4" dot={false} connectNulls />
-              <Line type="monotone" dataKey="Actual" stroke="#16A34A" strokeWidth={2.5} dot={{ r: 3 }} connectNulls={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-[11px]">
-            <thead className="text-muted-foreground border-b">
-              <tr><th className="text-left px-1 py-1 sticky left-0 bg-card">Series \\ Month</th>{block.monthly.map((m) => <th key={m.monthKey} className="text-right px-1 py-1 whitespace-nowrap">{m.label}</th>)}</tr>
-            </thead>
-            <tbody>
-              <tr className="border-b border-border/40">
-                <td className="px-1 py-1 sticky left-0 bg-card text-orange-600 font-medium">Revised Budget</td>
-                {block.monthly.map((m) => <td key={m.monthKey} className="text-right px-1 py-0.5"><RevisedBudgetCell fye={fye} metric={block.metric} monthKey={m.monthKey} value={m.revisedBudget} canEdit={canEdit} /></td>)}
-              </tr>
-              <tr className="border-b border-border/40">
-                <td className="px-1 py-1 sticky left-0 bg-card text-emerald-700 font-semibold">Actual</td>
-                {block.monthly.map((m) => <td key={m.monthKey} className="text-right px-1 py-1 font-mono">{fmtM(m.actual)}</td>)}
-              </tr>
-              <tr>
-                <td className="px-1 py-1 sticky left-0 bg-card text-blue-600 font-medium">Plan ahead</td>
-                {block.monthly.map((m) => <td key={m.monthKey} className="text-right px-1 py-1 font-mono">{fmtM(m.planAhead)}</td>)}
-              </tr>
-              <tr className="border-t-2 text-muted-foreground">
-                <td className="px-1 py-1 sticky left-0 bg-card italic">Actual YTD</td>
-                {block.ytd.map((m) => <td key={m.monthKey} className="text-right px-1 py-1 font-mono">{fmtM(m.actual)}</td>)}
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </CardContent>
-    </Card>
+    <ChartCard
+      title={`${METRIC_LABEL[block.metric]} — monthly, YTD & trend`}
+      hint="R millions · Revised Budget (target) vs Actual vs Plan-ahead (forecast to year-end)"
+      data-testid={`fye-metric-${block.metric}`}
+    >
+      <div className="h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#64748b" }} />
+            <YAxis tick={{ fontSize: 10, fill: "#64748b" }} tickFormatter={(v: number) => `${v}m`} />
+            <Tooltip
+              contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", boxShadow: "0 4px 16px rgba(0,0,0,0.08)", fontSize: 12, padding: "6px 10px" }}
+              formatter={(value) => `R${Number(value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}m`}
+            />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Line type="monotone" dataKey="Revised Budget" stroke={SERIES.budget} strokeWidth={1.5} dot={false} connectNulls />
+            <Line type="monotone" dataKey="Plan ahead" stroke={SERIES.planAhead} strokeWidth={1.5} strokeDasharray="5 4" dot={false} connectNulls />
+            <Line type="monotone" dataKey="Actual" stroke={SERIES.actual} strokeWidth={2.5} dot={{ r: 3 }} connectNulls={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full text-[11px]">
+          <thead className="border-b text-slate-400">
+            <tr><th className="sticky left-0 bg-white px-1 py-1 text-left font-medium">Series \ Month</th>{block.monthly.map((m) => <th key={m.monthKey} className="whitespace-nowrap px-1 py-1 text-right font-medium">{m.label}</th>)}</tr>
+          </thead>
+          <tbody>
+            <tr className="border-b border-slate-100">
+              <td className="sticky left-0 bg-white px-1 py-1 font-medium text-slate-500">Revised Budget</td>
+              {block.monthly.map((m) => <td key={m.monthKey} className="px-1 py-0.5 text-right"><RevisedBudgetCell fye={fye} metric={block.metric} monthKey={m.monthKey} value={m.revisedBudget} canEdit={canEdit} /></td>)}
+            </tr>
+            <tr className="border-b border-slate-100">
+              <td className="sticky left-0 bg-white px-1 py-1 font-semibold text-emerald-700">Actual</td>
+              {block.monthly.map((m) => <td key={m.monthKey} className="px-1 py-1 text-right font-mono">{fmtM(m.actual)}</td>)}
+            </tr>
+            <tr>
+              <td className="sticky left-0 bg-white px-1 py-1 font-medium text-amber-600">Plan ahead</td>
+              {block.monthly.map((m) => <td key={m.monthKey} className="px-1 py-1 text-right font-mono">{fmtM(m.planAhead)}</td>)}
+            </tr>
+            <tr className="border-t-2 text-slate-400">
+              <td className="sticky left-0 bg-white px-1 py-1 italic">Actual YTD</td>
+              {block.ytd.map((m) => <td key={m.monthKey} className="px-1 py-1 text-right font-mono">{fmtM(m.actual)}</td>)}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </ChartCard>
   );
 }
 
@@ -351,18 +408,18 @@ function DashboardView({ apiQueryString, canEdit }: { apiQueryString: string; ca
     queryKey: [`/api/fye-revenue-tracking/dashboard?${qs}`],
     queryFn: fetchQueryFn(`/api/fye-revenue-tracking/dashboard?${qs}`),
   });
-  if (isLoading) return <FinanceLoading />;
+  if (isLoading) return <FinanceLoading label="Loading dashboard…" />;
   if (isError) return <FinanceError hint={(error as Error)?.message} onRetry={() => void refetch()} />;
   if (!data) return null;
   const d = data.dashboard;
   const monthOptions = d.revenue.monthly.map((m) => ({ monthKey: m.monthKey, label: m.label }));
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">
-          Actuals close to <span className="font-medium">{d.lastClosedMonthKey ?? "—"}</span>; Plan-ahead continues with Committed + Planned pipeline to year-end. Revised Budget is manual and editable.
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+        <p className="text-xs text-slate-500">
+          Actuals close to <span className="font-medium text-slate-700">{d.lastClosedMonthKey ?? "—"}</span>; Plan-ahead continues with the committed + planned pipeline to year-end. Revised Budget is manual and editable.
         </p>
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground whitespace-nowrap">
+        <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-slate-500">
           Actuals through
           <select
             className="h-8 rounded-md border bg-background px-2 text-sm"
@@ -391,19 +448,26 @@ export default function FyeRevenueTrackingPage() {
   const canEdit = usePermission("fye_revenue_tracking", "edit").allowed;
   const [tab, setTab] = useState("projects");
 
-  // "as at" banner — pulled from the projects response.
+  // Page-level projects read — feeds both the "as at" banner and the headline
+  // KPI row. Same query key as ProjectsView, so React Query dedupes the fetch.
   const { data: meta } = useQuery<ProjectsResponse>({
     queryKey: [`/api/fye-revenue-tracking/projects?${fyScope.apiQueryString}`],
     queryFn: fetchQueryFn(`/api/fye-revenue-tracking/projects?${fyScope.apiQueryString}`),
   });
+
+  // The FY actually resolved by the server (the page is single-FY by nature, so
+  // "All data" resolves to a concrete year — show that, never a hardcoded label).
+  const shownFy = meta ? fyLabel(meta.fye) : fyScope.label;
+  const t = meta?.totals;
+  const revVsBudgetPct = t && t.budgetRevenue > 0 ? Math.round((t.actualRevenue / t.budgetRevenue) * 100) : null;
 
   const refresh = () => { void qc.invalidateQueries({ predicate: (q) => String(q.queryKey[0] ?? "").includes("/api/fye-revenue-tracking") }); };
 
   return (
     <FinanceShell>
       <FinancePageHeader
-        title="FYE Tracking"
-        question="FY26 project tracking from the imported trackers — Budget vs Actual and the Revenue/COS/GP dashboard."
+        title={`FYE Tracking · ${shownFy}`}
+        question="Budget vs actual and the Revenue / COS / GP dashboard, reproduced line-for-line from your imported trackers."
         period={<FinancialYearScopeControl scope={fyScope} />}
         source={meta?.asAt ? <>As at <span className="font-medium">{meta.asAt.date}</span></> : undefined}
         asOf={
@@ -418,14 +482,56 @@ export default function FyeRevenueTrackingPage() {
         }
       />
 
-      <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
-          <TabsTrigger value="projects" className="gap-1.5" data-testid="tab-fye-projects"><Table2 className="h-4 w-4" />Projects</TabsTrigger>
-          <TabsTrigger value="dashboard" className="gap-1.5" data-testid="tab-fye-dashboard"><BarChart3 className="h-4 w-4" />Dashboard</TabsTrigger>
-        </TabsList>
-        <TabsContent value="projects" className="mt-3"><ProjectsView apiQueryString={fyScope.apiQueryString} /></TabsContent>
-        <TabsContent value="dashboard" className="mt-3"><DashboardView apiQueryString={fyScope.apiQueryString} canEdit={canEdit} /></TabsContent>
-      </Tabs>
+      {/* Headline KPI row — answers first, exactly like Revenue / COS / GP. */}
+      <KpiRow>
+        <KpiTile
+          data-testid="fye-kpi-budget-revenue"
+          label="Budget Revenue"
+          description={`${shownFy} · all projects`}
+          value={t ? <MoneyValue value={t.budgetRevenue} align="left" /> : "…"}
+        />
+        <KpiTile
+          data-testid="fye-kpi-actual-revenue"
+          label="Actual Revenue"
+          description={`${shownFy} · recognised`}
+          value={t ? <MoneyValue value={t.actualRevenue} align="left" /> : "…"}
+          tone="positive"
+          progress={revVsBudgetPct != null ? { pct: revVsBudgetPct, tone: "positive" } : undefined}
+          supporting={
+            t
+              ? revVsBudgetPct != null
+                ? `${revVsBudgetPct}% of budget · ${PCT(t.pctRealised)} realised`
+                : `${PCT(t.pctRealised)} realised`
+              : undefined
+          }
+        />
+        <KpiTile
+          data-testid="fye-kpi-actual-cos"
+          label="Actual COS"
+          description={`${shownFy} · recognised`}
+          value={t ? <MoneyValue value={t.actualCos} align="left" /> : "…"}
+          supporting={t ? `vs budget ${formatZarCompact(t.budgetCos)}` : undefined}
+        />
+        <KpiTile
+          data-testid="fye-kpi-actual-gp"
+          label="Actual GP"
+          description={`${shownFy} · recognised`}
+          value={t ? <MoneyValue value={t.actualGp} align="left" /> : "…"}
+          tone={t && t.actualGp >= 0 ? "positive" : "critical"}
+          supporting={t ? (t.actualGpPct != null ? `Margin ${PCT(t.actualGpPct)}` : "No realised revenue yet") : undefined}
+        />
+      </KpiRow>
+
+      <div className="mt-4">
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList>
+            <TabsTrigger value="projects" className="gap-1.5" data-testid="tab-fye-projects"><Table2 className="h-4 w-4" />Projects</TabsTrigger>
+            <TabsTrigger value="dashboard" className="gap-1.5" data-testid="tab-fye-dashboard"><BarChart3 className="h-4 w-4" />Dashboard</TabsTrigger>
+          </TabsList>
+          <TabsContent value="projects" className="mt-3"><ProjectsView apiQueryString={fyScope.apiQueryString} /></TabsContent>
+          <TabsContent value="dashboard" className="mt-3"><DashboardView apiQueryString={fyScope.apiQueryString} canEdit={canEdit} /></TabsContent>
+        </Tabs>
+      </div>
     </FinanceShell>
   );
 }
