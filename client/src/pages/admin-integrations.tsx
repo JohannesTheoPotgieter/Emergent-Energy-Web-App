@@ -16,8 +16,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { PageHeader } from "@/components/ui/page-header";
-import { PageLayout } from "@/components/layout";
+import { AdminPageShell } from "@/components/admin/admin-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -939,12 +938,78 @@ function SharePointAutoImportPanel() {
 // ── Page ───────────────────────────────────────────────────────────────────
 
 export default function AdminIntegrationsPage() {
+  // Page-level read-only summaries for the shell header. Both endpoints are
+  // already fetched by the panels below, so react-query dedupes — no extra
+  // load and no change to how anything works.
+  const healthQuery = useQuery<ImportHealthRow[]>({
+    queryKey: ["/api/smart-import/health-dashboard"],
+    queryFn: async () => {
+      const res = await fetch("/api/smart-import/health-dashboard", { credentials: "include" });
+      if (!res.ok) throw new Error(`Failed to load import health (${res.status})`);
+      return res.json();
+    },
+    staleTime: 30_000,
+  });
+  const spQuery = useQuery<SpSettings | null>({
+    queryKey: ["/api/admin/sp-settings"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/sp-settings", { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    staleTime: 30_000,
+  });
+
+  const health = healthQuery.data ?? [];
+  const counts = health.reduce(
+    (acc, row) => {
+      acc[row.staleness] = (acc[row.staleness] || 0) + 1;
+      return acc;
+    },
+    { fresh: 0, aging: 0, stale: 0, never: 0 } as Record<ImportHealthRow["staleness"], number>,
+  );
+
+  const sp = spQuery.data;
+  const spFailedLast = Boolean(
+    sp?.lastErrorAt &&
+      (!sp?.lastSuccessAt ||
+        new Date(sp.lastErrorAt).getTime() > new Date(sp.lastSuccessAt).getTime()),
+  );
+
+  const statuses: { label: string; tone: "neutral" | "success" | "warning" | "danger" | "info" }[] = [
+    !sp
+      ? { label: "SharePoint auto-import not configured", tone: "neutral" }
+      : spFailedLast
+        ? { label: `SharePoint auto-import error${sp.lastErrorCode ? ` — ${sp.lastErrorCode}` : ""}`, tone: "danger" }
+        : sp.enabled
+          ? { label: "SharePoint auto-import on", tone: "success" }
+          : { label: "SharePoint auto-import paused", tone: "warning" },
+    counts.stale > 0
+      ? { label: `${counts.stale} stale tracker${counts.stale === 1 ? "" : "s"}`, tone: "warning" }
+      : { label: "Trackers current", tone: "success" },
+  ];
+
   return (
-    <PageLayout>
-      <PageHeader
-        title="Integration Statuses"
-        subtitle="Live connection state for every external system the app depends on. Run a manual Excel import, configure the SharePoint auto-import schedule, and verify the imported numbers against the source workbook."
-      />
+    <AdminPageShell
+      surfaceId="integrations"
+      title="Integration Statuses"
+      description="Live connection state for every external system the app depends on. Run a manual Excel import, configure the SharePoint auto-import schedule, and verify the imported numbers against the source workbook."
+      statuses={statuses}
+      metrics={[
+        { label: "Tracked projects", value: health.length || "—", helper: "Projects with import history" },
+        { label: "Stale (> 14 days)", value: counts.stale, helper: "Trackers needing a refresh" },
+        {
+          label: "Auto-import",
+          value: sp ? (sp.enabled ? "On" : "Paused") : "Off",
+          helper: "SharePoint scheduled pull",
+        },
+        {
+          label: "Last auto-pull",
+          value: sp?.lastSuccessAt ? formatRelativeWithAbsoluteZA(sp.lastSuccessAt) : "—",
+          helper: "Most recent successful pull",
+        },
+      ]}
+    >
       <div className="space-y-6">
         <IntegrationConnectionHealth />
         <SmartImportPanel />
@@ -952,6 +1017,6 @@ export default function AdminIntegrationsPage() {
         <DocumentManagementSharePointPanel />
         <ConnectionsSection />
       </div>
-    </PageLayout>
+    </AdminPageShell>
   );
 }

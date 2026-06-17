@@ -1,10 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { PageShell } from "@/components/layout/page-shell";
+import { AdminPageShell } from "@/components/admin/admin-shell";
+import { formatRelativeWithAbsoluteZA } from "@/lib/datetime";
 import {
-  FinancePageHeader,
-  KpiRow,
-  KpiTile,
   StatusBadge,
   FinanceLoading,
   FinanceError,
@@ -4967,6 +4965,20 @@ export function SmartImportGovernancePanel({
   );
 }
 
+/** Shape of the AdminPageShell status chips (mirrors the shell's internal tone enum). */
+type AdminShellStatus = { label: string; tone: "neutral" | "success" | "warning" | "danger" | "info" };
+
+/** Minimal read-only view of the SharePoint auto-import settings row used to
+ *  derive the "auto-pull" status chip. Read from /api/admin/sp-settings; this
+ *  screen never writes it. */
+interface AutoPullStatus {
+  enabled?: boolean;
+  lastRunAt: string | null;
+  lastSuccessAt?: string | null;
+  lastErrorAt?: string | null;
+  lastErrorCode?: string | null;
+}
+
 export default function SmartImportPage() {
   const [useV2, setUseV2] = useState(true);
   const [step, setStep] = useState(1);
@@ -5000,13 +5012,41 @@ export default function SmartImportPage() {
   });
   const pendingRuns = pendingRunsQuery.data ?? [];
   const recentRuns = recentRunsQuery.data ?? [];
+  // Read-only: reflect the SharePoint scheduled "auto-pull" outcome so the
+  // import screen confirms at a glance that the last automated pull succeeded.
+  // This does not change how importing works — it only reads sp-settings.
+  const autoPullQuery = useQuery<AutoPullStatus | null, Error>({
+    queryKey: ["/api/admin/sp-settings"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/sp-settings", { headers: getAuthHeaders() });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    staleTime: 30000,
+  });
   const recentCommittedRuns = recentRuns.filter((run) => run.status === "COMMITTED");
   const recentFailedRuns = recentRuns.filter((run) => run.status === "FAILED");
-  const shellStatuses = [
+
+  // Derive the auto-pull (SharePoint scheduled import) status chip from sp-settings.
+  const sp = autoPullQuery.data;
+  const autoPullFailedLast = Boolean(
+    sp?.lastErrorAt &&
+      (!sp?.lastSuccessAt ||
+        new Date(sp.lastErrorAt).getTime() > new Date(sp.lastSuccessAt).getTime()),
+  );
+  const autoPullStatus: AdminShellStatus | null = !sp
+    ? null
+    : autoPullFailedLast
+      ? { label: `Auto-pull failed${sp.lastErrorCode ? ` — ${sp.lastErrorCode}` : ""}`, tone: "danger" }
+      : sp.lastSuccessAt
+        ? { label: `Auto-pull succeeded · ${formatRelativeWithAbsoluteZA(sp.lastSuccessAt)}`, tone: "success" }
+        : { label: "Auto-pull not yet run", tone: "neutral" };
+
+  const shellStatuses: AdminShellStatus[] = [
+    ...(autoPullStatus ? [autoPullStatus] : []),
     pendingRuns.length > 0
-      ? { label: `${pendingRuns.length} runs awaiting review`, tone: "warning" as const }
-      : { label: "Import queue clear", tone: "positive" as const },
-    { label: "Excel governance surfaced here", tone: "info" as const },
+      ? { label: `${pendingRuns.length} runs awaiting review`, tone: "warning" }
+      : { label: "Import queue clear", tone: "success" },
   ];
 
   const returnToBulkPanel = useCallback(() => {
@@ -5077,28 +5117,24 @@ export default function SmartImportPage() {
   };
 
   return (
-    <PageShell className="space-y-5">
-      <FinancePageHeader
-        title="Smart Import"
-        question="Govern Excel tracker intake, review unresolved issues, and commit reconciled project data with clear operational visibility."
-      />
-      {shellStatuses.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {shellStatuses.map((s) => (
-            <StatusBadge key={s.label} tone={s.tone} label={s.label} />
-          ))}
-        </div>
-      )}
-      <KpiRow>
-        <KpiTile label="Pending Review" value={pendingRuns.length} supporting="Preview runs awaiting action" />
-        <KpiTile label="Committed Runs" value={recentCommittedRuns.length} supporting="Recent successful imports" />
-        <KpiTile label="Failed Runs" value={recentFailedRuns.length} supporting="Recent runs needing attention" />
-        <KpiTile
-          label="Last Run"
-          value={recentRuns[0]?.uploadedAt ? new Date(recentRuns[0].uploadedAt).toLocaleDateString() : "No data"}
-          supporting="Most recent upload"
-        />
-      </KpiRow>
+    <AdminPageShell
+      surfaceId="smart-import"
+      title="Smart Import"
+      description="Govern Excel tracker intake, review unresolved issues, and commit reconciled project data with clear operational visibility."
+      statuses={shellStatuses}
+      metrics={[
+        { label: "Pending Review", value: pendingRuns.length, helper: "Preview runs awaiting action" },
+        { label: "Committed Runs", value: recentCommittedRuns.length, helper: "Recent successful imports" },
+        { label: "Failed Runs", value: recentFailedRuns.length, helper: "Recent runs needing attention" },
+        {
+          label: "Last Run",
+          value: recentRuns[0]?.uploadedAt
+            ? new Date(recentRuns[0].uploadedAt).toLocaleDateString()
+            : "No data",
+          helper: "Most recent upload",
+        },
+      ]}
+    >
     <div className="space-y-4 max-w-5xl" data-testid="smart-import-page">
       {(() => {
         // Folder-pickup context: when the operator navigated here from a
@@ -5130,11 +5166,6 @@ export default function SmartImportPage() {
           </div>
         );
       })()}
-      <div>
-        <h1 className="text-2xl font-bold" data-testid="text-smart-import-title">Smart Import Wizard</h1>
-        <p className="text-muted-foreground text-sm">Upload and review Excel tracker imports step by step</p>
-      </div>
-
       <SmartImportGovernancePanel
         pendingRuns={pendingRuns}
         pendingRunsLoading={pendingRunsQuery.isLoading}
@@ -5280,6 +5311,6 @@ export default function SmartImportPage() {
         </>
       ) : null}
     </div>
-    </PageShell>
+    </AdminPageShell>
   );
 }
