@@ -18,6 +18,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { ShieldCheck, History, Eye, ExternalLink, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AdminPageShell } from "@/components/admin/admin-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -134,35 +135,18 @@ export default function AdminRolesPage() {
   }, [mode, selected, usersQ.data]);
 
   return (
-    <div className="space-y-4 p-4 sm:p-6" data-testid="admin-roles-page">
-      {/* ── Header ───────────────────────────────────────────────────── */}
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-3 min-w-0">
-          <ShieldCheck className="h-7 w-7 shrink-0 text-emerald-600" />
-          <div className="min-w-0">
-            <h1 className="font-semibold leading-tight">Roles &amp; Permissions</h1>
-            <p className="text-sm text-slate-600">
-              Pick a person or a role on the left, edit on the right. Need to change who sees which workspaces or tickets? Use{" "}
-              <Link
-                href="/admin/settings?section=visibility"
-                className="text-emerald-700 underline-offset-2 hover:underline"
-                data-testid="link-visibility-settings"
-              >
-                Visibility settings
-              </Link>
-              .{" "}
-              <a
-                href="/docs/permissions"
-                className="text-emerald-700 underline-offset-2 hover:underline"
-                data-testid="link-docs-permissions"
-              >
-                Read the COO/CEO guide
-              </a>
-              .
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
+    <AdminPageShell
+      surfaceId="roles"
+      title="Roles & Permissions"
+      description="Pick a person or a role on the left, edit on the right — backend-aligned access, authority, and role assignment control."
+      metrics={[
+        { label: "People", value: usersQ.data?.length ?? "—", helper: "Accounts in the directory" },
+        { label: "Roles", value: rolesQ.data?.roles?.length ?? "—", helper: "Defined company roles" },
+        { label: "Departments", value: DEPARTMENTS.length, helper: "Organisational departments" },
+        { label: "Access model", value: "Backend-aligned", helper: "RBAC enforced server-side" },
+      ]}
+      actions={
+        <>
           <Link
             href="/admin/settings?section=visibility"
             className="inline-flex h-9 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -180,8 +164,29 @@ export default function AdminRolesPage() {
           >
             <History className="h-3.5 w-3.5" /> Audit log
           </Button>
-        </div>
-      </header>
+        </>
+      }
+    >
+      <div className="space-y-4" data-testid="admin-roles-page">
+        <p className="text-sm text-muted-foreground">
+          Need to change who sees which workspaces or tickets? Use{" "}
+          <Link
+            href="/admin/settings?section=visibility"
+            className="text-emerald-700 underline-offset-2 hover:underline"
+            data-testid="link-visibility-settings"
+          >
+            Visibility settings
+          </Link>
+          .{" "}
+          <a
+            href="/docs/permissions"
+            className="text-emerald-700 underline-offset-2 hover:underline"
+            data-testid="link-docs-permissions"
+          >
+            Read the COO/CEO guide
+          </a>
+          .
+        </p>
 
       {/* ── Two-column body (stacks on mobile, side-by-side on lg+) ──── */}
       <div className="flex flex-col lg:flex-row gap-4">
@@ -285,7 +290,8 @@ export default function AdminRolesPage() {
           toast({ title: "User created" });
         }}
       />
-    </div>
+      </div>
+    </AdminPageShell>
   );
 }
 

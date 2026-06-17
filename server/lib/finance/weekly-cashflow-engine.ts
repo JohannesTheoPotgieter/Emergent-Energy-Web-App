@@ -1,3 +1,12 @@
+/* ───────────────────────────────────────────────────────────────────────────
+ * FROZEN — finance computation path (CLAUDE.md FREEZE · AGENT_GUARDRAILS § 3B S10).
+ * Formula / number / calculation changes require explicit owner approval.
+ * Number-preserving refactors are allowed only while `npm run verify:finance`
+ * and the finance unit tests stay green. Do not re-litigate the cash formulas
+ * (§ 3.4) here.
+ * ───────────────────────────────────────────────────────────────────────────
+ */
+
 /**
  * Weekly cashflow engine — THE single source of the weekly cash numbers.
  *

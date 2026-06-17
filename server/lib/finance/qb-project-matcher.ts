@@ -1,3 +1,11 @@
+/* ───────────────────────────────────────────────────────────────────────────
+ * FROZEN — finance computation path (CLAUDE.md FREEZE · AGENT_GUARDRAILS § 3B S10).
+ * Formula / number / calculation / match-rule changes require explicit owner
+ * approval. Number-preserving refactors are allowed only while
+ * `npm run verify:finance` and the finance unit tests stay green.
+ * ───────────────────────────────────────────────────────────────────────────
+ */
+
 /**
  * Per-project QuickBooks attribution matcher — PURE logic (no DB, no QB, no app
  * state; safe to unit-test). The orchestration shell lives in

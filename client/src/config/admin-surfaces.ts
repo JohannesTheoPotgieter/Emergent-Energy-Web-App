@@ -22,6 +22,7 @@ import {
 export type AdminSurfaceId =
   | "control-center"
   | "smart-import"
+  | "integrations"
   | "roles"
   | "audit-log"
   | "import-control-tower"
@@ -82,6 +83,13 @@ export const ADMIN_SURFACES: AdminSurfaceMeta[] = [
     icon: ScrollText,
   },
   // --- Data & Integration ---
+  {
+    id: "integrations",
+    label: "Integration Statuses",
+    path: "/admin/integrations",
+    description: "Live connection health for Microsoft 365, SharePoint, QuickBooks, Pipedrive, and Excel Smart Import.",
+    icon: Plug,
+  },
   {
     id: "import-control-tower",
     label: "Import Control Tower",

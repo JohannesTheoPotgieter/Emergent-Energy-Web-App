@@ -1,3 +1,11 @@
+/* ───────────────────────────────────────────────────────────────────────────
+ * FROZEN — finance computation path (CLAUDE.md FREEZE · AGENT_GUARDRAILS § 3B S8/S10).
+ * FY is dynamic (Sep–Aug) and must stay computed here — no hardcoded fiscal year.
+ * Changes require explicit owner approval and must keep `npm run verify:finance`
+ * and the finance unit tests green.
+ * ───────────────────────────────────────────────────────────────────────────
+ */
+
 /**
  * Emergent Energy financial year window.
  *

@@ -1,3 +1,14 @@
+/* ───────────────────────────────────────────────────────────────────────────
+ * FROZEN — finance computation path (CLAUDE.md FREEZE · AGENT_GUARDRAILS § 3B S6/S10).
+ * This is the SOLE computation of per-line REV / COS / GP. Formula / number /
+ * calculation changes require explicit owner approval. Number-preserving refactors
+ * are allowed only while `npm run verify:finance` and the finance unit tests stay
+ * green. Do not re-implement the formula elsewhere or re-litigate it here.
+ * The packaged entrypoint that orchestrates this module is
+ * server/services/finance-model.ts (`computeFinanceModel`).
+ * ───────────────────────────────────────────────────────────────────────────
+ */
+
 /**
  * Line-level finance read API — single source of truth for per-line revenue,
  * COS, and GP. Implements the canonical formula in AGENT_GUARDRAILS § 3.3:
