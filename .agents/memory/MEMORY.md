@@ -1,1 +1,1 @@
-- [dev DB topology](dev-db-topology.md) — database-skill `executeSql` hits a DIFFERENT Postgres than the app; mutate the real dev DB (`heliumdb`) via `process.env.DATABASE_URL` in a bash-run Node script.
+- [Project deletion spine](project-data-deletion.md) — `project_info` is the real project spine (not the empty `projects` table); name-search alone undercounts linked rows.
