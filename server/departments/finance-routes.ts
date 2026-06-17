@@ -32,6 +32,7 @@ import * as schema from '@shared/schema';
 import { paramStr, parseIntParam } from '../lib/req-params';
 import { effectiveAllocatedAmountExVat } from '@shared/config/qb-allocations';
 import { requirePermission } from '../permission-middleware';
+import { requireRole } from '../middleware/requireRole';
 import { requireTrackerPermission } from '../lib/finance-route-access';
 import { isProjectAccessibleByName, resolveProjectScope } from '../services/project-access-service';
 import { sastCurrentMonthKey } from '../lib/finance/timezone-helpers';
@@ -2466,7 +2467,9 @@ router.get(
 router.post(
   '/api/weekly-cashflow/opex-weekly',
   requireAuth,
-  requirePermission('cashflow', 'edit'),
+  // OPEX is a CFO / COO-only lever (owner decision) — tighter than the general
+  // cashflow.edit gate, which also grants ACCOUNTANT / PROGRAM_FINANCE_MANAGER.
+  requireRole(['CFO', 'COO_ADMIN']),
   validateBody(opexWeeklySchema),
   async (req, res) => {
     try {
@@ -2486,7 +2489,8 @@ router.post(
 router.delete(
   '/api/weekly-cashflow/opex-weekly',
   requireAuth,
-  requirePermission('cashflow', 'edit'),
+  // CFO / COO only — mirrors the POST gate above.
+  requireRole(['CFO', 'COO_ADMIN']),
   validateBody(deleteOpexWeeklySchema),
   async (req, res) => {
     try {
