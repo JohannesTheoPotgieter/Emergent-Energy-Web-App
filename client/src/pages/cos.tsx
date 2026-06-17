@@ -8,7 +8,6 @@
  */
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'wouter';
 import { FinanceShell } from '@/components/layout/FinanceShell';
 import { FinancialYearScopeControl } from '@/components/finance/FinancialYearScopeControl';
 import {
@@ -30,8 +29,8 @@ import { useApiMutation } from '@/hooks/use-api-mutation';
 import { usePermission } from '@/hooks/use-permissions';
 import { FINANCE_QUERY_VOLATILE } from '@/lib/finance-stale-policy';
 import { useFinancialYearScope } from '@/hooks/use-financial-year-scope';
-import type { ReconPortfolioResponse } from '@/lib/finance/home-data';
 import { budgetDelta, budgetPctLabel } from '@/lib/finance/budget-variance';
+import { FinanceLineDetailDrawer, type FinanceDetailStateFilter } from '@/components/finance/finance-line-detail-drawer';
 import { ListChecks } from 'lucide-react';
 
 interface ProjectBreakdown {
@@ -160,22 +159,26 @@ export default function CosTrackerPage() {
 
   const months = useMemo(() => data ?? [], [data]);
 
-  // Resolve project name → id so each row can deep-link to the finance-scoped
-  // project page (/projects/:id/finance). The legacy /project/:name route lives
-  // in the PROJECT_MANAGEMENT nav-group, which is disabled in finance-only mode
-  // and therefore redirects to the finance landing — see shared/config/
-  // enabled-modules.ts. The reconciliation portfolio is the same name↔id source
-  // Finance Home uses.
-  const reconQuery = useQuery<ReconPortfolioResponse>({
-    queryKey: ['/api/finance/reconciliation'],
-    queryFn: fetchQueryFn('/api/finance/reconciliation'),
-    staleTime: 60_000,
-  });
-  const projectIdByName = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const p of reconQuery.data?.projects ?? []) map.set(p.projectName, p.projectId);
-    return map;
-  }, [reconQuery.data]);
+  const [drawer, setDrawer] = useState<{
+    monthKey: string;
+    monthLabel: string;
+    defaultFilter: FinanceDetailStateFilter;
+    defaultProject?: string;
+  } | null>(null);
+
+  const openDrawer = (m: CosMonthData, filter: FinanceDetailStateFilter, project?: string) =>
+    setDrawer({ monthKey: m.monthKey, monthLabel: m.monthLabel, defaultFilter: filter, defaultProject: project });
+
+  const moneyCell = (m: CosMonthData, value: number, filter: FinanceDetailStateFilter) => (
+    <button
+      type="button"
+      onClick={() => openDrawer(m, filter)}
+      className="w-full text-right tabular-nums hover:underline decoration-emerald-300 underline-offset-2"
+      data-testid={`cell-${filter}-${m.monthKey}`}
+    >
+      <MoneyValue value={value} muteNegative={false} />
+    </button>
+  );
 
   const fy = useMemo(
     () => ({
@@ -205,9 +208,9 @@ export default function CosTrackerPage() {
     },
     { key: 'planned', header: 'Planned', numeric: true, cell: (m) => <MoneyValue value={m.cosPlanned} muteNegative={false} /> },
     { key: 'committed', header: 'Committed', numeric: true, cell: (m) => <MoneyValue value={m.committedCOS} muteNegative={false} /> },
-    { key: 'unrealised', header: 'Unrealised', numeric: true, cell: (m) => <MoneyValue value={m.cosUnrealised} muteNegative={false} /> },
-    { key: 'realised', header: 'Realised', numeric: true, cell: (m) => <MoneyValue value={m.realisedCOS} muteNegative={false} /> },
-    { key: 'qb', header: 'QuickBooks', numeric: true, hideBelowMd: true, cell: (m) => <MoneyValue value={m.qbOnlyActual} muteNegative={false} /> },
+    { key: 'unrealised', header: 'Unrealised', numeric: true, cell: (m) => moneyCell(m, m.cosUnrealised, 'unrealised') },
+    { key: 'realised', header: 'Realised', numeric: true, cell: (m) => moneyCell(m, m.realisedCOS, 'realised') },
+    { key: 'qb', header: 'QuickBooks', numeric: true, hideBelowMd: true, cell: (m) => moneyCell(m, m.qbOnlyActual, 'qb_actual') },
     {
       key: 'varRealised',
       header: 'Realised vs Budget',
@@ -250,20 +253,16 @@ export default function CosTrackerPage() {
         </thead>
         <tbody>
           {rows.map((p) => {
-            const projectId = projectIdByName.get(p.projectName);
             return (
             <tr key={p.projectName} className="border-t border-slate-100">
               <td className="px-2 py-1">
-                {projectId ? (
-                  <Link
-                    href={`/projects/${projectId}/finance`}
-                    className="text-emerald-700 hover:underline"
-                  >
-                    {p.projectName}
-                  </Link>
-                ) : (
-                  <span className="text-foreground">{p.projectName}</span>
-                )}
+                <button
+                  type="button"
+                  className="text-emerald-700 hover:underline text-left"
+                  onClick={() => openDrawer(m, 'realised', p.projectName)}
+                >
+                  {p.projectName}
+                </button>
               </td>
               <td className="px-2 py-1 text-right tabular-nums"><MoneyValue value={p.planned} muteNegative={false} /></td>
               <td className="px-2 py-1 text-right tabular-nums"><MoneyValue value={p.committed} muteNegative={false} /></td>
@@ -342,6 +341,18 @@ export default function CosTrackerPage() {
         </h2>
         <CosLineReviewPanel cosTrackerQueryKey={cosTrackerQueryKey} />
       </section>
+
+      {drawer && (
+        <FinanceLineDetailDrawer
+          key={`${drawer.monthKey}-${drawer.defaultFilter}-${drawer.defaultProject ?? 'all'}`}
+          variant="cos"
+          title={drawer.monthLabel}
+          monthKey={drawer.monthKey}
+          defaultFilter={drawer.defaultFilter}
+          defaultProject={drawer.defaultProject}
+          onClose={() => setDrawer(null)}
+        />
+      )}
     </FinanceShell>
   );
 }

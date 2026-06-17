@@ -25,6 +25,7 @@ import {
   type DrillColumn,
 } from '@/components/finance/template';
 import { fetchQueryFn } from '@/lib/queryClient';
+import { FinanceLineDetailDrawer } from '@/components/finance/finance-line-detail-drawer';
 import { AlertTriangle, ArrowLeft } from 'lucide-react';
 
 type Bucket = 'planned' | 'committed' | 'unrealised' | 'realised';
@@ -141,6 +142,8 @@ function ProjectGpView({ projectId, projectName }: { projectId: number; projectN
 
   const groups = useMemo(() => groupByCategory(data?.lines ?? []), [data]);
 
+  const [drawerCategoryKey, setDrawerCategoryKey] = useState<string | null>(null);
+
   const totals = useMemo(() => {
     const lines = data?.lines ?? [];
     const reduce = (pred: (l: FinanceLine) => boolean) =>
@@ -162,11 +165,16 @@ function ProjectGpView({ projectId, projectName }: { projectId: number; projectN
       key: 'category',
       header: 'Category',
       cell: (g) => (
-        <span className="inline-flex items-center gap-2 font-medium text-foreground">
+        <button
+          type="button"
+          className="inline-flex items-center gap-2 font-medium text-emerald-700 hover:underline text-left"
+          onClick={(e) => { e.stopPropagation(); setDrawerCategoryKey(g.key); }}
+          data-testid={`gp-open-category-${g.key}`}
+        >
           {g.number ? `${g.number}. ` : ''}
           {g.name}
           {g.hasMissingAllocation && <StatusBadge tone="critical" icon={AlertTriangle} label="Allocation missing" />}
-        </span>
+        </button>
       ),
     },
     { key: 'revenue', header: 'Revenue', numeric: true, cell: (g) => <MoneyValue value={g.revenue} muteNegative={false} /> },
@@ -251,7 +259,18 @@ function ProjectGpView({ projectId, projectName }: { projectId: number; projectN
           rowKey={(g) => g.key}
           renderDetail={renderLines}
           maxBodyHeightClass="max-h-[58vh]"
-          caption="Per-project gross profit by category; expand a category for its line items."
+          caption="Per-project gross profit by category; click a category for its line-item detail."
+        />
+      )}
+
+      {drawerCategoryKey && (
+        <FinanceLineDetailDrawer
+          key={`gp-${projectId}-${drawerCategoryKey}`}
+          variant="gp"
+          title={projectName}
+          projectId={projectId}
+          defaultCategoryKey={drawerCategoryKey}
+          onClose={() => setDrawerCategoryKey(null)}
         />
       )}
     </div>

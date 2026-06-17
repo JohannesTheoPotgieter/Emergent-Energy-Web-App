@@ -2992,6 +2992,9 @@ router.get(
         qbTransactionDate: string | null;
         recognitionDate: string | null;
         syncSource: string | null;
+        /** Row-origin lineage (imported/manual/imported_edited) + admin-override flag for the Source badge. */
+        rowSource: string | null;
+        overridden: boolean;
         sourceTraceId: string | null;
         matchStatus: 'matched' | 'qb_only' | 'app_only';
         cosState: 'realised' | 'committed' | 'planned' | 'qb_actual';
@@ -3133,6 +3136,8 @@ router.get(
             ? String(row.recognitionDateOverride ?? row.invoiceDate)
             : (linkedBill?.txnDate ?? null),
           syncSource: linkedBill ? 'quickbooks' : 'app',
+          rowSource: (row as { source?: string | null }).source ?? null,
+          overridden: !!(row as { cosStatusOverride?: string | null }).cosStatusOverride,
           sourceTraceId: linkedBill ? `qb-bill:${linkedBill.id}` : `ncl:${row.id}`,
           matchStatus,
           cosState,
@@ -3176,6 +3181,8 @@ router.get(
             qbTransactionDate: bill.txnDate,
             recognitionDate: bill.txnDate,
             syncSource: 'quickbooks',
+            rowSource: null,
+            overridden: false,
             sourceTraceId: `qb-bill:${bill.id}`,
             matchStatus: 'qb_only',
             cosState: 'qb_actual',
@@ -5953,6 +5960,10 @@ router.get(
           noRevenueLinked: !!exp?.noRevenueLinked,
           revState,
           dataSource: 'app',
+          // Real row-origin lineage for the Source badge (the revenue line's
+          // origin is its underlying cost-line ledger row).
+          rowSource: (exp as { source?: string | null } | undefined)?.source ?? null,
+          overridden: !!(exp as { cosStatusOverride?: string | null } | undefined)?.cosStatusOverride,
           qbTransactionType: null,
           qbDocNumber: null,
           paymentReference: null,
@@ -5998,6 +6009,8 @@ router.get(
           noRevenueLinked: false,
           revState: 'QB Actual',
           dataSource: 'quickbooks',
+          rowSource: null,
+          overridden: false,
           dateSource,
           dateSourceLabel,
           qbTransactionType: 'Invoice',
