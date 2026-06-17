@@ -65,8 +65,6 @@ import {
 
 export interface LineReviewFlags {
   allocationMissing: boolean;
-  poMismatch: boolean;
-  poDelta: number | null;
   anomaly: boolean;
   anomalyFactor: number | null;
   flagged: boolean;
@@ -94,7 +92,6 @@ interface LineReviewSummary {
   total: number;
   flagged: number;
   allocationMissing: number;
-  poMismatch: number;
   anomaly: number;
 }
 
@@ -104,19 +101,13 @@ interface LineReviewResponse {
 }
 
 // Per-flag client-side filter chips.
-type FlagFilter = 'allocationMissing' | 'poMismatch' | 'anomaly';
+type FlagFilter = 'allocationMissing' | 'anomaly';
 
 // The four line actions, each backed by its own POST endpoint.
 export type ActionKind = 'move' | 'invoiceDate' | 'clear' | 'remove';
 
 function formatRand(val: number | null | undefined): string {
   return formatZar(val);
-}
-
-/** ZAR with an explicit +/- sign — used for the PO delta on the mismatch badge. */
-function formatSignedRand(val: number): string {
-  const sign = val > 0 ? '+' : '';
-  return `${sign}${formatZar(val)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -128,7 +119,6 @@ export function FlagBadges({ row }: { row: LineReviewRow }) {
   const { flags } = row;
   const hasAny =
     flags.allocationMissing ||
-    flags.poMismatch ||
     flags.anomaly ||
     !!row.recognitionDateOverride;
 
@@ -146,21 +136,6 @@ export function FlagBadges({ row }: { row: LineReviewRow }) {
         >
           <AlertTriangle className="h-3 w-3" />
           No allocation
-        </Badge>
-      )}
-      {flags.poMismatch && (
-        <Badge
-          variant="outline"
-          className="gap-1 text-[10px] font-medium border-orange-300 bg-orange-50 text-orange-700"
-          data-testid={`badge-po-mismatch-${row.costLineId}`}
-        >
-          <AlertCircle className="h-3 w-3" />
-          PO mismatch
-          {flags.poDelta != null && (
-            <span className="font-mono" aria-label={formatZarAriaLabel(flags.poDelta)}>
-              {formatSignedRand(flags.poDelta)}
-            </span>
-          )}
         </Badge>
       )}
       {flags.anomaly && (
@@ -541,7 +516,6 @@ export function CosLineReviewPanel({
       if (flagFilters.size > 0) {
         const matches =
           (flagFilters.has('allocationMissing') && r.flags.allocationMissing) ||
-          (flagFilters.has('poMismatch') && r.flags.poMismatch) ||
           (flagFilters.has('anomaly') && r.flags.anomaly);
         if (!matches) return false;
       }
@@ -618,15 +592,6 @@ export function CosLineReviewPanel({
                 count={summary.allocationMissing}
                 tone="amber"
                 testId="chip-allocation-missing"
-              />
-              <FlagFilterChip
-                active={flagFilters.has('poMismatch')}
-                onToggle={() => toggleFlag('poMismatch')}
-                icon={AlertCircle}
-                label="PO mismatch"
-                count={summary.poMismatch}
-                tone="orange"
-                testId="chip-po-mismatch"
               />
               <FlagFilterChip
                 active={flagFilters.has('anomaly')}

@@ -153,8 +153,6 @@ function fallbackFlags(warning: string | null): LineReviewFlags {
   const allocationMissing = warning != null && ALLOCATION_MISSING_WARNINGS.has(warning);
   return {
     allocationMissing,
-    poMismatch: false,
-    poDelta: null,
     anomaly: false,
     anomalyFactor: null,
     flagged: allocationMissing,
@@ -271,7 +269,7 @@ export function FinanceProjectDetailContent({ projectId }: { projectId: number }
     enabled,
   });
 
-  // Advisory Phase 3 flags (allocation-missing / PO mismatch / anomaly). Merged
+  // Advisory Phase 3 flags (allocation-missing / anomaly). Merged
   // by lineId; if the caller lacks cos:view this 403s and we fall back to the
   // structural flag derived from the § 3.3 warning.
   const flagsQuery = useQuery<LineReviewResponse>({
