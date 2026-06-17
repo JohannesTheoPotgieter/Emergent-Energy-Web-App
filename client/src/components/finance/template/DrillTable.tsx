@@ -58,6 +58,13 @@ export interface DrillTableProps<Row> {
   stickyHeader?: boolean;
   /** Cap body height before scrolling, e.g. "max-h-[60vh]". */
   maxBodyHeightClass?: string;
+  /**
+   * Scroll the row with this key to the top of the scroll body on mount (and
+   * whenever the key changes). Used to default a long week/period table to the
+   * current period instead of the first row. Scrolls only once per key value,
+   * so a data refetch won't yank the user's scroll position back.
+   */
+  scrollToKey?: React.Key;
   emptyLabel?: React.ReactNode;
   /** Accessible caption (visually hidden). */
   caption?: string;
@@ -79,6 +86,7 @@ export function DrillTable<Row>({
   onRowClick,
   stickyHeader = true,
   maxBodyHeightClass,
+  scrollToKey,
   emptyLabel = "No rows.",
   caption,
   className,
@@ -87,6 +95,23 @@ export function DrillTable<Row>({
   const [expanded, setExpanded] = React.useState<Set<React.Key>>(new Set());
   const expandable = typeof renderDetail === "function";
   const totalCols = columns.length + (expandable ? 1 : 0);
+
+  const scrollBodyRef = React.useRef<HTMLDivElement>(null);
+  const theadRef = React.useRef<HTMLTableSectionElement>(null);
+  const rowRefs = React.useRef(new Map<React.Key, HTMLTableRowElement>());
+  const lastScrolledKey = React.useRef<React.Key | null>(null);
+
+  React.useEffect(() => {
+    if (scrollToKey == null || lastScrolledKey.current === scrollToKey) return;
+    const container = scrollBodyRef.current;
+    const rowEl = rowRefs.current.get(scrollToKey);
+    if (!container || !rowEl) return;
+    // Land the target row just below the sticky header rather than behind it.
+    const headerH = theadRef.current?.offsetHeight ?? 0;
+    const delta = rowEl.getBoundingClientRect().top - container.getBoundingClientRect().top - headerH;
+    container.scrollTop += delta;
+    lastScrolledKey.current = scrollToKey;
+  }, [scrollToKey, rows]);
 
   const toggle = (key: React.Key) =>
     setExpanded((prev) => {
@@ -114,10 +139,10 @@ export function DrillTable<Row>({
         </nav>
       )}
 
-      <div className={cn("overflow-auto", maxBodyHeightClass)}>
+      <div ref={scrollBodyRef} className={cn("overflow-auto", maxBodyHeightClass)}>
         <table className="w-full border-collapse text-sm">
           {caption && <caption className="sr-only">{caption}</caption>}
-          <thead className={cn(stickyHeader && "sticky top-0 z-10", "bg-slate-50")}>
+          <thead ref={theadRef} className={cn(stickyHeader && "sticky top-0 z-10", "bg-slate-50")}>
             <tr className="border-b border-slate-200">
               {expandable && <th scope="col" className="w-8 px-2 py-2" aria-label="Expand" />}
               {columns.map((col) => (
@@ -151,6 +176,11 @@ export function DrillTable<Row>({
                 return (
                   <React.Fragment key={key}>
                     <tr
+                      ref={(el) => {
+                        const m = rowRefs.current;
+                        if (el) m.set(key, el);
+                        else m.delete(key);
+                      }}
                       className={cn(
                         "border-b border-slate-100 last:border-0 hover:bg-slate-50/70 transition-colors",
                         onRowClick && "cursor-pointer",
