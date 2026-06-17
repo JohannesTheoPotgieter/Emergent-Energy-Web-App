@@ -20,6 +20,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 
 import { fetchQueryFn } from "@/lib/queryClient";
+import { useFinanceQuery } from "@/lib/finance-trust";
 import { formatZar } from "@/lib/currency";
 import {
   FinancePageHeader,
@@ -286,6 +287,24 @@ export function FinanceProjectDetailContent({ projectId }: { projectId: number }
     return m;
   }, [flagsQuery.data]);
 
+  // Source-row order, read from the SAME endpoint the Expenditure Breakdown tab
+  // uses (ordered by tracker sourceRow). React Query dedupes on the shared key,
+  // so the line-by-line view below can present lines in the exact same order as
+  // that tab instead of the drift-ranked order the recon detail returns.
+  const expenditureQuery = useFinanceQuery<{ costLines: Array<{ id: number; sourceRow: number | null }> }>({
+    queryKey: [`/api/tracker-replica/${projectId}/expenditure-breakdown`],
+    url: `/api/tracker-replica/${projectId}/expenditure-breakdown`,
+    enabled,
+  });
+
+  const sourceRowByCostLineId = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const c of expenditureQuery.data?.costLines ?? []) {
+      if (c.sourceRow != null) m.set(c.id, c.sourceRow);
+    }
+    return m;
+  }, [expenditureQuery.data]);
+
   const detail = detailQuery.data;
   const lines = useMemo(() => detail?.lines ?? [], [detail]);
 
@@ -301,8 +320,13 @@ export function FinanceProjectDetailContent({ projectId }: { projectId: number }
     return { cos, revDerived, gp };
   }, [lines]);
 
-  // Group by category, attention-first (offending/flagged groups float up).
+  // Group by category, ordered to mirror the Expenditure Breakdown tab: lines
+  // within a category follow tracker sourceRow, and categories follow the row at
+  // which they first appear. Lines whose sourceRow can't be resolved fall to the
+  // end deterministically (by costLineId then lineId).
   const groups = useMemo(() => {
+    const orderOf = (l: ReconDetailLine) =>
+      sourceRowByCostLineId.get(l.costLineId) ?? Number.MAX_SAFE_INTEGER;
     const byCategory = new Map<string, ReconDetailLine[]>();
     for (const l of lines) {
       const key = l.categoryName ?? "Uncategorised";
@@ -311,19 +335,19 @@ export function FinanceProjectDetailContent({ projectId }: { projectId: number }
       byCategory.set(key, arr);
     }
     return Array.from(byCategory.entries())
-      .map(([name, rows]) => {
+      .map(([name, unsorted]) => {
+        const rows = [...unsorted].sort(
+          (a, b) => orderOf(a) - orderOf(b) || a.costLineId - b.costLineId || a.lineId - b.lineId,
+        );
         const cos = rows.reduce((s, r) => s + r.actualTotal, 0);
         const revDerived = rows.reduce((s, r) => s + r.revenueDerived, 0);
         const absDelta = rows.reduce((s, r) => s + Math.abs(r.reconDelta ?? 0), 0);
         const hasOffending = rows.some((r) => r.offending);
-        return { name, rows, cos, revDerived, absDelta, hasOffending };
+        const order = rows.length ? orderOf(rows[0]) : Number.MAX_SAFE_INTEGER;
+        return { name, rows, cos, revDerived, absDelta, hasOffending, order };
       })
-      .sort((a, b) => {
-        if (a.hasOffending !== b.hasOffending) return a.hasOffending ? -1 : 1;
-        if (b.absDelta !== a.absDelta) return b.absDelta - a.absDelta;
-        return a.name.localeCompare(b.name);
-      });
-  }, [lines]);
+      .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+  }, [lines, sourceRowByCostLineId]);
 
   const onActionSuccess = () => {
     qc.invalidateQueries({ queryKey: ["/api/finance/reconciliation/detail", projectId] });
@@ -537,12 +561,6 @@ export function FinanceProjectDetailContent({ projectId }: { projectId: number }
             Tracker, line by line
             <Badge variant="outline" className="text-[10px]">{lines.length}</Badge>
           </CardTitle>
-          <Link
-            href="/finance/qb-reconciliation"
-            className="inline-flex items-center gap-1 text-xs font-medium text-brand-green hover:underline"
-          >
-            QB Reconciliation <ChevronRight className="h-3 w-3" />
-          </Link>
         </CardHeader>
         <CardContent className="space-y-3 p-4">
           {lines.length === 0 ? (
@@ -632,10 +650,10 @@ export default function FinanceProjectDetailPage() {
     <div className="container mx-auto max-w-7xl space-y-5 py-6">
       <div>
         <Link
-          href="/finance/qb-reconciliation"
+          href="/cos"
           className="mb-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
         >
-          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> QB Reconciliation
+          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> Cost of Sales
         </Link>
         <FinancePageHeader
           title={`Project Finance — ${projectName}`}
