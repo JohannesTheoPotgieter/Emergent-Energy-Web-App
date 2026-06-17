@@ -65,7 +65,9 @@ function projectRows(m: CosMonthData) {
   add(m.committedProjects, 'committed');
   add(m.realisedProjects, 'realised');
   add(m.qbOnlyProjects, 'qb');
-  return Array.from(byName.values()).sort((a, b) => b.realised - a.realised);
+  return Array.from(byName.values()).sort((a, b) =>
+    a.projectName.localeCompare(b.projectName),
+  );
 }
 
 export default function CosTrackerPage() {
