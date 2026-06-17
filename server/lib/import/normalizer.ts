@@ -558,8 +558,9 @@ function extractFontColorHex(fontColor: any): string | null {
   if (fontColor.theme != null && typeof fontColor.theme === "number") {
     if (fontColor.theme === 1 || fontColor.theme === 0) return "000000"; // black (window text) — resolvable
     // Accent / other theme colours can't be resolved without the workbook theme
-    // XML. Return null; classifyFont then treats this unresolvable (non-red)
-    // colour as confirmed black per the owner's "only red is unconfirmed" rule.
+    // XML. Return null; classifyFont treats an unresolvable colour as default
+    // black = confirmed (we only flip a cell to unconfirmed on an explicitly-
+    // resolved non-black colour, never on one we could not read).
     return null;
   }
   return null;
@@ -571,13 +572,17 @@ function classifyColorHex(hex: string | null): { color: string | null; isBlack: 
   const g = parseInt(hex.substring(2, 4), 16);
   const b = parseInt(hex.substring(4, 6), 16);
   if (isNaN(r) || isNaN(g) || isNaN(b)) return { color: null, isBlack: false };
-  // Owner rule 2026-06 (L1): only RED is "not confirmed". EVERY other colour —
-  // black, blue, grey, green, default — counts as confirmed. We collapse all
-  // non-red colours to the "black" realisation signal so the downstream
-  // `=== 'black'` / isBlack gates treat them as confirmed uniformly.
-  const isRedish = r > 150 && g < 80 && b < 80;
-  if (isRedish) return { color: "red", isBlack: false };
-  return { color: "black", isBlack: true };
+  // Owner rule 2026-06 (revised): CONFIRMED iff the font is a SHADE OF BLACK —
+  // dark AND near-neutral. ANY other colour is unconfirmed, INCLUDING all shades
+  // of red (bright, maroon, pinkish) and blue/green/grey/etc. The realisation
+  // gate + FYE classifier are binary (=== 'black' ⇒ confirmed, anything else ⇒
+  // not), so we collapse every non-black colour to the existing "red" sentinel —
+  // here "red" means "a colour was applied", not necessarily literal red.
+  const maxC = Math.max(r, g, b);
+  const minC = Math.min(r, g, b);
+  const isShadeOfBlack = maxC <= 64 && maxC - minC <= 16;
+  if (isShadeOfBlack) return { color: "black", isBlack: true };
+  return { color: "red", isBlack: false };
 }
 
 /** Colour-resolution provenance for the invoice/paid-date cell colour signal. */
@@ -587,14 +592,14 @@ export type ColourSource = "read" | "defaulted";
  * Pure font → colour classification. Single source of truth for the §3.2 / §3.7
  * realisation colour signal.
  *
- * Owner rule L1 (reaffirmed 2026-06): a date is "unconfirmed" ONLY when its font
- * is EXPLICITLY red. Every other state — absent colour (default/automatic black,
- * the normal confirmed case in the trackers), an unresolvable hex, an accent /
- * other theme colour, or a malformed value — collapses to the CONFIRMED black
- * signal. Finance paints ONLY the unconfirmed dates red and leaves confirmed
- * dates in default formatting, so the canonical COS gate (isCanonicalCosRealised)
- * must realise on any non-red signal. `source` still records whether the colour
- * was explicitly read ('read') or defaulted ('defaulted') for provenance.
+ * Owner rule 2026-06 (revised): a date is CONFIRMED iff its font resolves to a
+ * shade of black, OR there is no explicit colour (default/automatic black — the
+ * normal confirmed case). ANY explicitly-resolved non-black colour — including
+ * all shades of red, and blue/green/grey/etc. — is UNCONFIRMED. Unresolvable
+ * colours (accent / other theme, malformed) and absent colours are treated as
+ * default black = CONFIRMED, so we never flip a default cell to unconfirmed on a
+ * colour we could not read. `source` still records whether the colour was
+ * explicitly read ('read') or defaulted ('defaulted') for provenance.
  */
 export function classifyFont(
   font: { color?: unknown } | null | undefined,
@@ -603,10 +608,10 @@ export function classifyFont(
   // No explicit colour = default/automatic black = confirmed.
   if (!colour) return { color: "black", isBlack: true, source: "defaulted" };
   const hex = extractFontColorHex(colour);
-  // Unresolvable hex (accent / other theme) — not red, so confirmed.
+  // Unresolvable hex (accent / other theme) — colour we can't read, treat as default black = confirmed.
   if (hex === null) return { color: "black", isBlack: true, source: "defaulted" };
   const classified = classifyColorHex(hex);
-  // Malformed hex — not red, so confirmed.
+  // Malformed hex — colour we can't read, treat as default black = confirmed.
   if (classified.color === null) return { color: "black", isBlack: true, source: "defaulted" };
   return { color: classified.color, isBlack: classified.isBlack, source: "read" };
 }
@@ -623,8 +628,7 @@ function getCellFontColor(
     if (!cell || !cell.value) return { color: null, isBlack: false, source: "read" };
     return classifyFont(cell.font);
   } catch {
-    // Extraction error → unreadable → not red → confirmed black per the
-    // "only red is unconfirmed" rule.
+    // Extraction error → colour we can't read → treat as default black = confirmed.
     return { color: "black", isBlack: true, source: "defaulted" };
   }
 }
