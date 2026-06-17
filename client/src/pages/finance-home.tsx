@@ -662,7 +662,7 @@ export default function FinanceHomePage() {
             rowKey={(r) => r.projectId}
             maxBodyHeightClass="max-h-[60vh]"
             caption="All projects — realised revenue, GP and tracker tie status"
-            renderDetail={(r) => <ProjectDrillDetail projectId={r.projectId} />}
+            renderDetail={(r) => <ProjectDrillDetail projectId={r.projectId} fyWindowQs={fyWindowQs} />}
           />
         )}
       </section>
