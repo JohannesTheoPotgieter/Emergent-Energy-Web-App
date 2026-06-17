@@ -3,22 +3,14 @@
  * AR/AP/missing-invoice worklists). Reads the canonical /api/weekly-cashflow
  * series; the two operationally-critical overrides (opening balance + available
  * payment) are kept via the existing <EditCellPopover>, and the per-week drill
- * keeps the QuickBooks match-and-link workflow. Presentation only — no figure or
+ * lists each line with its invoice number. Presentation only — no figure or
  * formula is computed here.
  */
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FinanceShell } from '@/components/layout/FinanceShell';
 import { FinancialYearScopeControl } from '@/components/finance/FinancialYearScopeControl';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
 import {
   FinancePageHeader,
   KpiRow,
@@ -32,13 +24,12 @@ import {
 } from '@/components/finance/template';
 import { EditCellPopover } from '@/components/cashflow/EditCellPopover';
 import { CashflowWorklists } from '@/components/cashflow/cashflow-worklists';
-import { FindQbMatchesPanel } from '@/components/quickbooks/FindQbMatchesPanel';
 import { fetchQueryFn, apiRequest, invalidateDashboardQueries } from '@/lib/queryClient';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { FINANCE_QUERY_STABLE } from '@/lib/finance-stale-policy';
 import { useFinancialYearScope } from '@/hooks/use-financial-year-scope';
 import { usePermission } from '@/hooks/use-permissions';
-import { Link2, ChevronDown } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 
 const CASHFLOW_API_BASE = '/api/weekly-cashflow';
 
@@ -65,8 +56,6 @@ interface DetailInflow {
   milestoneName: string;
   milestoneInvoiceNumber: string;
   milestoneAmount: number;
-  qbStatus?: 'confirmed' | 'unlinked';
-  qbDocNumber?: string | null;
 }
 interface DetailOutflow {
   expenseId: number;
@@ -74,20 +63,11 @@ interface DetailOutflow {
   expenseLineItem: string;
   expenseInvoiceNumber: string;
   expenseActualTotal: number;
-  qbStatus?: 'confirmed' | 'unlinked';
-  qbDocNumber?: string | null;
 }
 interface WeekDetail {
   inflows: DetailInflow[];
   outflows: DetailOutflow[];
 }
-
-type QbMatchScope = 'cost' | 'revenue';
-type QbLinkContext = {
-  scope: QbMatchScope;
-  initialSearch: string;
-  label: string;
-};
 
 const todayIso = new Date().toISOString().slice(0, 10);
 
@@ -98,18 +78,10 @@ function weekLabel(weekStart: string): string {
 }
 
 /**
- * Per-week line drill (FY → week → line) with the QuickBooks match-and-link
- * affordance preserved. Reads the canonical /api/weekly-cashflow/detail.
+ * Per-week line drill (FY → week → line). Lists each inflow and outflow with its
+ * invoice number. Reads the canonical /api/weekly-cashflow/detail.
  */
-function WeekQbDetail({
-  week,
-  fyParam,
-  onOpenQbLink,
-}: {
-  week: CashflowWeek;
-  fyParam: string;
-  onOpenQbLink: (ctx: QbLinkContext) => void;
-}) {
+function WeekLineDetail({ week, fyParam }: { week: CashflowWeek; fyParam: string }) {
   const { data, isLoading } = useQuery<WeekDetail>({
     queryKey: [`${CASHFLOW_API_BASE}/detail`, week.weekStart, fyParam],
     queryFn: fetchQueryFn(`${CASHFLOW_API_BASE}/detail?week=${week.weekStart}&fy=${fyParam}`),
@@ -127,35 +99,21 @@ function WeekQbDetail({
         {inflows.length === 0 ? (
           <p className="text-muted-foreground">None</p>
         ) : (
-          inflows.map((inf, i) => (
-            <div key={inf.inflowId} className="flex items-center justify-between gap-2 border-t border-slate-100 py-1">
-              <span className="truncate" title={`${inf.projectName} · ${inf.milestoneName}`}>
+          inflows.map((inf) => (
+            <div key={inf.inflowId} className="flex items-center gap-2 border-t border-slate-100 py-1">
+              <span className="min-w-0 flex-1 truncate" title={`${inf.projectName} · ${inf.milestoneName}`}>
                 {inf.projectName} · {inf.milestoneName}
               </span>
-              <span className="inline-flex shrink-0 items-center gap-2">
+              {inf.milestoneInvoiceNumber && (
+                <span
+                  className="shrink-0 font-mono text-[11px] text-muted-foreground"
+                  title={`Invoice ${inf.milestoneInvoiceNumber}`}
+                >
+                  {inf.milestoneInvoiceNumber}
+                </span>
+              )}
+              <span className="shrink-0">
                 <MoneyValue value={inf.milestoneAmount} />
-                {inf.qbStatus !== 'confirmed' && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="touch-compact h-4 px-1 text-[9px] text-amber-800 hover:text-amber-900"
-                    aria-label="Open QuickBooks match"
-                    title="Open QuickBooks match"
-                    data-testid={`button-qb-link-inflow-${week.weekStart}-${i}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenQbLink({
-                        scope: 'revenue',
-                        initialSearch: inf.milestoneInvoiceNumber?.trim() || inf.qbDocNumber?.trim() || inf.projectName,
-                        label: inf.milestoneInvoiceNumber || inf.projectName,
-                      });
-                    }}
-                  >
-                    <Link2 className="h-3 w-3" />
-                    Link
-                  </Button>
-                )}
               </span>
             </div>
           ))
@@ -166,35 +124,21 @@ function WeekQbDetail({
         {outflows.length === 0 ? (
           <p className="text-muted-foreground">None</p>
         ) : (
-          outflows.map((out, i) => (
-            <div key={out.expenseId} className="flex items-center justify-between gap-2 border-t border-slate-100 py-1">
-              <span className="truncate" title={`${out.projectName} · ${out.expenseLineItem}`}>
+          outflows.map((out) => (
+            <div key={out.expenseId} className="flex items-center gap-2 border-t border-slate-100 py-1">
+              <span className="min-w-0 flex-1 truncate" title={`${out.projectName} · ${out.expenseLineItem}`}>
                 {out.projectName} · {out.expenseLineItem}
               </span>
-              <span className="inline-flex shrink-0 items-center gap-2">
+              {out.expenseInvoiceNumber && (
+                <span
+                  className="shrink-0 font-mono text-[11px] text-muted-foreground"
+                  title={`Invoice ${out.expenseInvoiceNumber}`}
+                >
+                  {out.expenseInvoiceNumber}
+                </span>
+              )}
+              <span className="shrink-0">
                 <MoneyValue value={out.expenseActualTotal} />
-                {out.qbStatus !== 'confirmed' && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="touch-compact h-4 px-1 text-[9px] text-amber-800 hover:text-amber-900"
-                    aria-label="Open QuickBooks match"
-                    title="Open QuickBooks match"
-                    data-testid={`button-qb-link-outflow-${week.weekStart}-${i}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenQbLink({
-                        scope: 'cost',
-                        initialSearch: out.expenseInvoiceNumber?.trim() || out.qbDocNumber?.trim() || out.projectName,
-                        label: out.expenseInvoiceNumber || out.projectName,
-                      });
-                    }}
-                  >
-                    <Link2 className="h-3 w-3" />
-                    Link
-                  </Button>
-                )}
               </span>
             </div>
           ))
@@ -209,7 +153,6 @@ export default function CashflowPage() {
   const qs = fyScope.apiQueryString;
   const qc = useQueryClient();
   const { allowed: canEditCashflow } = usePermission('cashflow', 'edit');
-  const [qbLinkContext, setQbLinkContext] = useState<QbLinkContext | null>(null);
 
   const cashflowQueryKey = useMemo(() => [CASHFLOW_API_BASE, qs] as const, [qs]);
 
@@ -404,7 +347,7 @@ export default function CashflowPage() {
             columns={columns}
             rows={weeks}
             rowKey={(w) => w.weekStart}
-            renderDetail={(w) => <WeekQbDetail week={w} fyParam={fyScope.allData ? 'all' : 'fy'} onOpenQbLink={setQbLinkContext} />}
+            renderDetail={(w) => <WeekLineDetail week={w} fyParam={fyScope.allData ? 'all' : 'fy'} />}
             maxBodyHeightClass="max-h-[55vh]"
             caption="Weekly cashflow — opening, inflows, outflows, closing and available payment; expand a week for its lines."
           />
@@ -414,46 +357,6 @@ export default function CashflowPage() {
       <section aria-label="Worklists" data-testid="cashflow-worklists-section" className="mt-4">
         <CashflowWorklists projectParam={undefined} />
       </section>
-
-      <Dialog open={!!qbLinkContext} onOpenChange={(open) => !open && setQbLinkContext(null)}>
-        <DialogContent
-          style={{
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
-            right: 'auto',
-            bottom: 'auto',
-            transform: 'translate(-50%, -50%)',
-            width: 'min(calc(100vw - 1rem), 1280px)',
-            maxWidth: 'min(calc(100vw - 1rem), 1280px)',
-            height: 'min(92dvh, 920px)',
-            maxHeight: 'min(92dvh, 920px)',
-            zIndex: 60,
-          }}
-          className="z-[60] h-[min(92dvh,920px)] w-[min(1280px,calc(100vw-1rem))] max-w-none max-h-[min(92dvh,920px)] overflow-hidden p-0 sm:p-0"
-          data-wide-dialog=""
-          data-testid="dialog-cashflow-qb-match"
-        >
-          <div className="flex h-full max-h-[min(92dvh,920px)] min-h-0 flex-col">
-            <DialogHeader className="shrink-0 border-b border-border bg-background px-4 py-3 pr-12 sm:px-5 sm:py-4">
-              <DialogTitle className="text-base font-semibold">Open QuickBooks match</DialogTitle>
-              <DialogDescription className="text-xs sm:text-sm">
-                Search QuickBooks, link the app line, and review the live payment status without leaving cashflow.
-                {qbLinkContext?.label ? ` Seeded from ${qbLinkContext.label}.` : ''}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/60 px-3 py-3 sm:px-5 sm:py-4">
-              {qbLinkContext && (
-                <FindQbMatchesPanel
-                  key={`${qbLinkContext.scope}-${qbLinkContext.initialSearch}`}
-                  defaultScope={qbLinkContext.scope}
-                  initialSearch={qbLinkContext.initialSearch}
-                />
-              )}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </FinanceShell>
   );
 }

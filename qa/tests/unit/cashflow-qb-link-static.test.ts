@@ -18,28 +18,21 @@ const dialogComponent = readFileSync(
 );
 const indexCss = readFileSync(join(process.cwd(), 'client/src/index.css'), 'utf8');
 
-describe('cashflow QuickBooks link workflow', () => {
-  it('keeps the QuickBooks match-and-link workflow on the cashflow screen', () => {
-    expect(cashflowPage).toContain('FindQbMatchesPanel');
-    expect(cashflowPage).toContain('Open QuickBooks match');
-    expect(cashflowPage).toContain('initialSearch');
+describe('cashflow line detail (no QuickBooks link)', () => {
+  it('drops the QuickBooks match-and-link workflow from the cashflow screen', () => {
+    expect(cashflowPage).not.toContain('FindQbMatchesPanel');
+    expect(cashflowPage).not.toContain('Open QuickBooks match');
+    expect(cashflowPage).not.toContain('onOpenQbLink');
+    expect(cashflowPage).not.toContain('dialog-cashflow-qb-match');
   });
 
-  it('keeps the cashflow QuickBooks dialog visible, compact, and scroll-contained', () => {
-    expect(cashflowPage).toContain('type QbLinkContext');
-    expect(cashflowPage).toContain('onOpenQbLink={setQbLinkContext}');
-    expect(cashflowPage).toContain('onOpenQbLink: (ctx: QbLinkContext) => void');
-    expect(cashflowPage).toContain('data-testid="dialog-cashflow-qb-match"');
-    expect(cashflowPage).toContain('data-wide-dialog');
-    expect(cashflowPage).toContain('z-[60]');
-    expect(cashflowPage).toContain("width: 'min(calc(100vw - 1rem), 1280px)'");
-    expect(cashflowPage).toContain('zIndex: 60');
-    expect(cashflowPage).toContain('max-h-[min(92dvh,920px)]');
-    expect(cashflowPage).toContain('overflow-hidden');
-    expect(cashflowPage).toContain('touch-compact h-4');
-    expect(cashflowPage).toContain('stopPropagation()');
+  it('shows the invoice number on each cashflow line', () => {
+    expect(cashflowPage).toContain('milestoneInvoiceNumber');
+    expect(cashflowPage).toContain('expenseInvoiceNumber');
   });
+});
 
+describe('shared QuickBooks match dialog and panel', () => {
   it('keeps shared dialogs centered under tailwind-merge and layout-mode overrides', () => {
     expect(dialogComponent).toContain('sm:right-auto');
     expect(dialogComponent).not.toContain('sm:inset-x-auto');
