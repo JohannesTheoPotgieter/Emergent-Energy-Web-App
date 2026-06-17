@@ -27,6 +27,7 @@ import { fetchQueryFn } from '@/lib/queryClient';
 import { FINANCE_QUERY_VOLATILE } from '@/lib/finance-stale-policy';
 import { useFinancialYearScope } from '@/hooks/use-financial-year-scope';
 import type { ReconPortfolioResponse } from '@/lib/finance/home-data';
+import { budgetDelta, budgetPctLabel } from '@/lib/finance/budget-variance';
 import { ListChecks } from 'lucide-react';
 
 interface ProjectBreakdown {
@@ -38,11 +39,14 @@ interface CosMonthData {
   monthKey: string;
   monthLabel: string;
   cosPlanned: number;
+  cosUnrealised: number;
   realisedCOS: number;
   committedCOS: number;
+  budget: number;
   qbOnlyActual: number;
   cosPlannedProjects: ProjectBreakdown[];
   committedProjects: ProjectBreakdown[];
+  cosUnrealisedProjects: ProjectBreakdown[];
   realisedProjects: ProjectBreakdown[];
   qbOnlyProjects: ProjectBreakdown[];
 }
@@ -51,19 +55,20 @@ interface CosMonthData {
 function projectRows(m: CosMonthData) {
   const byName = new Map<
     string,
-    { projectName: string; planned: number; committed: number; realised: number; qb: number }
+    { projectName: string; planned: number; committed: number; unrealised: number; realised: number; qb: number }
   >();
-  const add = (arr: ProjectBreakdown[] | undefined, key: 'planned' | 'committed' | 'realised' | 'qb') => {
+  const add = (arr: ProjectBreakdown[] | undefined, key: 'planned' | 'committed' | 'unrealised' | 'realised' | 'qb') => {
     for (const p of arr ?? []) {
       const row =
         byName.get(p.projectName) ??
-        { projectName: p.projectName, planned: 0, committed: 0, realised: 0, qb: 0 };
+        { projectName: p.projectName, planned: 0, committed: 0, unrealised: 0, realised: 0, qb: 0 };
       row[key] += p.value ?? 0;
       byName.set(p.projectName, row);
     }
   };
   add(m.cosPlannedProjects, 'planned');
   add(m.committedProjects, 'committed');
+  add(m.cosUnrealisedProjects, 'unrealised');
   add(m.realisedProjects, 'realised');
   add(m.qbOnlyProjects, 'qb');
   return Array.from(byName.values()).sort((a, b) =>
@@ -113,10 +118,35 @@ export default function CosTrackerPage() {
 
   const columns: DrillColumn<CosMonthData>[] = [
     { key: 'month', header: 'Month', cell: (m) => <span className="font-medium text-foreground">{m.monthLabel}</span> },
+    { key: 'budget', header: 'Budget', numeric: true, cell: (m) => <MoneyValue value={m.budget} muteNegative={false} /> },
     { key: 'planned', header: 'Planned', numeric: true, cell: (m) => <MoneyValue value={m.cosPlanned} muteNegative={false} /> },
     { key: 'committed', header: 'Committed', numeric: true, cell: (m) => <MoneyValue value={m.committedCOS} muteNegative={false} /> },
+    { key: 'unrealised', header: 'Unrealised', numeric: true, cell: (m) => <MoneyValue value={m.cosUnrealised} muteNegative={false} /> },
     { key: 'realised', header: 'Realised', numeric: true, cell: (m) => <MoneyValue value={m.realisedCOS} muteNegative={false} /> },
-    { key: 'qb', header: 'QuickBooks', numeric: true, cell: (m) => <MoneyValue value={m.qbOnlyActual} muteNegative={false} /> },
+    { key: 'qb', header: 'QuickBooks', numeric: true, hideBelowMd: true, cell: (m) => <MoneyValue value={m.qbOnlyActual} muteNegative={false} /> },
+    {
+      key: 'varRealised',
+      header: 'Realised vs Budget',
+      numeric: true,
+      cell: (m) => (
+        <span className="tabular-nums">
+          <MoneyValue value={budgetDelta(m.realisedCOS, m.budget)} muteNegative={false} />{' '}
+          <span className="text-muted-foreground">({budgetPctLabel(m.realisedCOS, m.budget)})</span>
+        </span>
+      ),
+    },
+    {
+      key: 'varPlanned',
+      header: 'Planned vs Budget',
+      numeric: true,
+      hideBelowMd: true,
+      cell: (m) => (
+        <span className="tabular-nums">
+          <MoneyValue value={budgetDelta(m.cosPlanned, m.budget)} muteNegative={false} />{' '}
+          <span className="text-muted-foreground">({budgetPctLabel(m.cosPlanned, m.budget)})</span>
+        </span>
+      ),
+    },
   ];
 
   const renderProjects = (m: CosMonthData) => {
@@ -129,6 +159,7 @@ export default function CosTrackerPage() {
             <th className="text-left font-medium px-2 py-1">Project</th>
             <th className="text-right font-medium px-2 py-1">Planned</th>
             <th className="text-right font-medium px-2 py-1">Committed</th>
+            <th className="text-right font-medium px-2 py-1">Unrealised</th>
             <th className="text-right font-medium px-2 py-1">Realised</th>
             <th className="text-right font-medium px-2 py-1">QuickBooks</th>
           </tr>
@@ -152,6 +183,7 @@ export default function CosTrackerPage() {
               </td>
               <td className="px-2 py-1 text-right tabular-nums"><MoneyValue value={p.planned} muteNegative={false} /></td>
               <td className="px-2 py-1 text-right tabular-nums"><MoneyValue value={p.committed} muteNegative={false} /></td>
+              <td className="px-2 py-1 text-right tabular-nums"><MoneyValue value={p.unrealised} muteNegative={false} /></td>
               <td className="px-2 py-1 text-right tabular-nums"><MoneyValue value={p.realised} muteNegative={false} /></td>
               <td className="px-2 py-1 text-right tabular-nums"><MoneyValue value={p.qb} muteNegative={false} /></td>
             </tr>

@@ -30,6 +30,7 @@ import {
   type RevenueDetailFilter,
 } from '@/components/finance/revenue-line-drawer';
 import { fetchQueryFn, apiRequest, invalidateDashboardQueries } from '@/lib/queryClient';
+import { budgetDelta, budgetPctLabel } from '@/lib/finance/budget-variance';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { usePermission } from '@/hooks/use-permissions';
 import { formatZarCompact } from '@/lib/currency';
@@ -46,11 +47,13 @@ interface MonthData {
   totalRevenue: number;
   realisedRevenue: number;
   unrealisedRevenue: number;
+  committedRevenue: number;
   qbRevenueActual: number;
   budget: number;
   revProjects: ProjectBreakdown[];
   realisedProjects: ProjectBreakdown[];
   unrealisedProjects: ProjectBreakdown[];
+  committedProjects: ProjectBreakdown[];
   qbRevenueProjects: ProjectBreakdown[];
 }
 
@@ -132,19 +135,20 @@ type DrawerState = {
 function projectRows(m: MonthData) {
   const byName = new Map<
     string,
-    { projectName: string; planned: number; committed: number; realised: number; qb: number }
+    { projectName: string; planned: number; committed: number; unrealised: number; realised: number; qb: number }
   >();
-  const add = (arr: ProjectBreakdown[] | undefined, key: 'planned' | 'committed' | 'realised' | 'qb') => {
+  const add = (arr: ProjectBreakdown[] | undefined, key: 'planned' | 'committed' | 'unrealised' | 'realised' | 'qb') => {
     for (const p of arr ?? []) {
       const row =
         byName.get(p.projectName) ??
-        { projectName: p.projectName, planned: 0, committed: 0, realised: 0, qb: 0 };
+        { projectName: p.projectName, planned: 0, committed: 0, unrealised: 0, realised: 0, qb: 0 };
       row[key] += p.value ?? 0;
       byName.set(p.projectName, row);
     }
   };
   add(m.revProjects, 'planned');
-  add(m.unrealisedProjects, 'committed');
+  add(m.committedProjects, 'committed');
+  add(m.unrealisedProjects, 'unrealised');
   add(m.realisedProjects, 'realised');
   add(m.qbRevenueProjects, 'qb');
   return Array.from(byName.values()).sort((a, b) =>
@@ -213,7 +217,6 @@ export default function RevenueTrackerPage() {
 
   const columns: DrillColumn<MonthData>[] = [
     { key: 'month', header: 'Month', cell: (m) => <span className="font-medium text-foreground">{m.monthLabel}</span> },
-    { key: 'planned', header: 'Planned', numeric: true, cell: (m) => moneyCell(m, m.totalRevenue, 'all') },
     {
       key: 'budget',
       header: 'Budget',
@@ -227,9 +230,34 @@ export default function RevenueTrackerPage() {
         />
       ),
     },
-    { key: 'committed', header: 'Committed', numeric: true, cell: (m) => moneyCell(m, m.unrealisedRevenue, 'unrealised') },
+    { key: 'planned', header: 'Planned', numeric: true, cell: (m) => moneyCell(m, m.totalRevenue, 'all') },
+    { key: 'committed', header: 'Committed', numeric: true, cell: (m) => <MoneyValue value={m.committedRevenue} muteNegative={false} /> },
+    { key: 'unrealised', header: 'Unrealised', numeric: true, cell: (m) => moneyCell(m, m.unrealisedRevenue, 'unrealised') },
     { key: 'realised', header: 'Realised', numeric: true, cell: (m) => moneyCell(m, m.realisedRevenue, 'realised') },
-    { key: 'qb', header: 'QuickBooks', numeric: true, cell: (m) => moneyCell(m, m.qbRevenueActual, 'qb_actual') },
+    { key: 'qb', header: 'QuickBooks', numeric: true, hideBelowMd: true, cell: (m) => moneyCell(m, m.qbRevenueActual, 'qb_actual') },
+    {
+      key: 'varRealised',
+      header: 'Realised vs Budget',
+      numeric: true,
+      cell: (m) => (
+        <span className="tabular-nums">
+          <MoneyValue value={budgetDelta(m.realisedRevenue, m.budget)} muteNegative={false} />{' '}
+          <span className="text-muted-foreground">({budgetPctLabel(m.realisedRevenue, m.budget)})</span>
+        </span>
+      ),
+    },
+    {
+      key: 'varPlanned',
+      header: 'Planned vs Budget',
+      numeric: true,
+      hideBelowMd: true,
+      cell: (m) => (
+        <span className="tabular-nums">
+          <MoneyValue value={budgetDelta(m.totalRevenue, m.budget)} muteNegative={false} />{' '}
+          <span className="text-muted-foreground">({budgetPctLabel(m.totalRevenue, m.budget)})</span>
+        </span>
+      ),
+    },
   ];
 
   const renderProjects = (m: MonthData) => {
@@ -242,6 +270,7 @@ export default function RevenueTrackerPage() {
             <th className="text-left font-medium px-2 py-1">Project</th>
             <th className="text-right font-medium px-2 py-1">Planned</th>
             <th className="text-right font-medium px-2 py-1">Committed</th>
+            <th className="text-right font-medium px-2 py-1">Unrealised</th>
             <th className="text-right font-medium px-2 py-1">Realised</th>
             <th className="text-right font-medium px-2 py-1">QuickBooks</th>
           </tr>
@@ -260,6 +289,7 @@ export default function RevenueTrackerPage() {
               </td>
               <td className="px-2 py-1 text-right tabular-nums"><MoneyValue value={p.planned} muteNegative={false} /></td>
               <td className="px-2 py-1 text-right tabular-nums"><MoneyValue value={p.committed} muteNegative={false} /></td>
+              <td className="px-2 py-1 text-right tabular-nums"><MoneyValue value={p.unrealised} muteNegative={false} /></td>
               <td className="px-2 py-1 text-right tabular-nums"><MoneyValue value={p.realised} muteNegative={false} /></td>
               <td className="px-2 py-1 text-right tabular-nums"><MoneyValue value={p.qb} muteNegative={false} /></td>
             </tr>
