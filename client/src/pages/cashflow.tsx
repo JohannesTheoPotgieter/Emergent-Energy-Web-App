@@ -429,6 +429,7 @@ export default function CashflowPage() {
             columns={columns}
             rows={weeks}
             rowKey={(w) => w.weekStart}
+            scrollToKey={kpis.currentWeekStart ?? undefined}
             renderDetail={(w) => <WeekLineDetail week={w} fyParam={fyScope.allData ? 'all' : 'fy'} />}
             maxBodyHeightClass="max-h-[55vh]"
             caption="Weekly cashflow — opening, inflows, outflows, closing and available payment; expand a week for its lines."
