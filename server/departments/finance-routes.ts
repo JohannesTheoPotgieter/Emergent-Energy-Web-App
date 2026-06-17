@@ -5658,6 +5658,11 @@ async function revenueTrackerHandler(req: Request, res: Response) {
 
     const revByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
     const realisedByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
+    // Committed revenue = the §3.3 per-line derived revenue of the lines sitting
+    // in the COMMITTED bucket (symmetric with committed COS), read straight from
+    // the FYE engine's already-computed per-state revenue breakdown. Purely
+    // additive — no existing figure (total/realised/unrealised) changes.
+    const committedRevByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
     for (const ms of fye.monthlyStates) {
       if (!monthKeyInFinanceScope(ms.monthKey, fyScope)) continue;
       // Total recognised revenue for the month = all four states (FYE overlay).
@@ -5667,6 +5672,12 @@ async function revenueTrackerHandler(req: Request, res: Response) {
         st.projects.forEach((v, k) => total.projects.set(k, (total.projects.get(k) ?? 0) + v));
       }
       revByMonth.set(ms.monthKey, total);
+      if (ms.revenue.committed.total !== 0) {
+        committedRevByMonth.set(ms.monthKey, {
+          total: ms.revenue.committed.total,
+          projects: new Map(ms.revenue.committed.projects),
+        });
+      }
     }
 
     // Realised revenue ← canonical single read path (finance-line-level-
@@ -5781,6 +5792,7 @@ async function revenueTrackerHandler(req: Request, res: Response) {
         totalRevenue,
         realisedRevenue,
         unrealisedRevenue,
+        committedRevenue: committedRevByMonth.get(monthKey)?.total ?? 0,
         qbRevenueActual,
         qbVsAppVariance,
         qbVsAppVariancePct,
@@ -5796,6 +5808,7 @@ async function revenueTrackerHandler(req: Request, res: Response) {
         ytdVariancePct,
         revProjects: mapToSortedArray(bucket?.projects ?? new Map()),
         realisedProjects: mapToSortedArray(realisedBucket?.projects ?? new Map()),
+        committedProjects: mapToSortedArray(committedRevByMonth.get(monthKey)?.projects ?? new Map()),
         qbRevenueProjects: mapToSortedArray(qbRevenueBucket?.projects ?? new Map()),
         unrealisedProjects: (() => {
           const revPs = bucket?.projects ?? new Map<string, number>();

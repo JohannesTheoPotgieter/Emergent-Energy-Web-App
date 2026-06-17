@@ -25,6 +25,7 @@ import {
 import { fetchQueryFn } from '@/lib/queryClient';
 import { useFinancialYearScope } from '@/hooks/use-financial-year-scope';
 import type { ReconPortfolioResponse } from '@/lib/finance/home-data';
+import { budgetDelta, budgetPctLabel } from '@/lib/finance/budget-variance';
 
 interface ProjBreak {
   projectName: string;
@@ -35,10 +36,14 @@ interface CosMonthData {
   monthKey: string;
   monthLabel: string;
   cosPlanned: number;
+  committedCOS: number;
+  cosUnrealised: number;
   realisedCOS: number;
   budget: number;
   qbOnlyActual: number;
   cosPlannedProjects: ProjBreak[];
+  committedProjects: ProjBreak[];
+  cosUnrealisedProjects: ProjBreak[];
   realisedProjects: ProjBreak[];
 }
 
@@ -47,9 +52,13 @@ interface RevMonthData {
   monthLabel: string;
   totalRevenue: number;
   realisedRevenue: number;
+  committedRevenue: number;
+  unrealisedRevenue: number;
   budget: number;
   qbRevenueActual: number;
   revProjects: ProjBreak[];
+  committedProjects: ProjBreak[];
+  unrealisedProjects: ProjBreak[];
   realisedProjects: ProjBreak[];
 }
 
@@ -63,10 +72,14 @@ interface GpMonth {
   budgetGP: number;
   plannedRevenue: number;
   plannedGP: number;
+  committedGP: number;
+  unrealisedGP: number;
   realisedGP: number;
   qbGP: number;
   plannedMarginPct: number;
   gpPlannedProjects: ProjBreak[];
+  gpCommittedProjects: ProjBreak[];
+  gpUnrealisedProjects: ProjBreak[];
   gpRealisedProjects: ProjBreak[];
 }
 
@@ -121,6 +134,8 @@ export default function FinanceGpCompanyPage() {
       const plannedRevenue = rev?.totalRevenue ?? 0;
       const plannedCOS = cos.cosPlanned ?? 0;
       const plannedGP = plannedRevenue - plannedCOS;
+      const committedGP = (rev?.committedRevenue ?? 0) - (cos.committedCOS ?? 0);
+      const unrealisedGP = (rev?.unrealisedRevenue ?? 0) - (cos.cosUnrealised ?? 0);
       const realisedGP = (rev?.realisedRevenue ?? 0) - (cos.realisedCOS ?? 0);
       const budgetGP = (rev?.budget ?? 0) - (cos.budget ?? 0);
       const qbGP = (rev?.qbRevenueActual ?? 0) - (cos.qbOnlyActual ?? 0);
@@ -130,10 +145,14 @@ export default function FinanceGpCompanyPage() {
         budgetGP,
         plannedRevenue,
         plannedGP,
+        committedGP,
+        unrealisedGP,
         realisedGP,
         qbGP,
         plannedMarginPct: marginPct(plannedGP, plannedRevenue),
         gpPlannedProjects: mergeProjectGP(rev?.revProjects ?? [], cos.cosPlannedProjects ?? []),
+        gpCommittedProjects: mergeProjectGP(rev?.committedProjects ?? [], cos.committedProjects ?? []),
+        gpUnrealisedProjects: mergeProjectGP(rev?.unrealisedProjects ?? [], cos.cosUnrealisedProjects ?? []),
         gpRealisedProjects: mergeProjectGP(rev?.realisedProjects ?? [], cos.realisedProjects ?? []),
       };
     });
@@ -151,20 +170,54 @@ export default function FinanceGpCompanyPage() {
     { key: 'month', header: 'Month', cell: (m) => <span className="font-medium text-foreground">{m.monthLabel}</span> },
     { key: 'budgetGP', header: 'Budget GP', numeric: true, cell: (m) => <MoneyValue value={m.budgetGP} muteNegative={false} /> },
     { key: 'plannedGP', header: 'Planned GP', numeric: true, cell: (m) => <MoneyValue value={m.plannedGP} muteNegative={false} /> },
+    { key: 'committedGP', header: 'Committed GP', numeric: true, cell: (m) => <MoneyValue value={m.committedGP} muteNegative={false} /> },
+    { key: 'unrealisedGP', header: 'Unrealised GP', numeric: true, cell: (m) => <MoneyValue value={m.unrealisedGP} muteNegative={false} /> },
     { key: 'realisedGP', header: 'Realised GP', numeric: true, cell: (m) => <MoneyValue value={m.realisedGP} muteNegative={false} /> },
-    { key: 'qbGP', header: 'QB GP', numeric: true, cell: (m) => <MoneyValue value={m.qbGP} muteNegative={false} /> },
-    { key: 'margin', header: 'Planned Margin', numeric: true, cell: (m) => <span className="tabular-nums">{m.plannedMarginPct.toFixed(1)}%</span> },
+    { key: 'qbGP', header: 'QB GP', numeric: true, hideBelowMd: true, cell: (m) => <MoneyValue value={m.qbGP} muteNegative={false} /> },
+    { key: 'margin', header: 'Planned Margin', numeric: true, hideBelowMd: true, cell: (m) => <span className="tabular-nums">{m.plannedMarginPct.toFixed(1)}%</span> },
+    {
+      key: 'varRealised',
+      header: 'Realised vs Budget',
+      numeric: true,
+      cell: (m) => (
+        <span className="tabular-nums">
+          <MoneyValue value={budgetDelta(m.realisedGP, m.budgetGP)} muteNegative={false} />{' '}
+          <span className="text-muted-foreground">({budgetPctLabel(m.realisedGP, m.budgetGP)})</span>
+        </span>
+      ),
+    },
+    {
+      key: 'varPlanned',
+      header: 'Planned vs Budget',
+      numeric: true,
+      hideBelowMd: true,
+      cell: (m) => (
+        <span className="tabular-nums">
+          <MoneyValue value={budgetDelta(m.plannedGP, m.budgetGP)} muteNegative={false} />{' '}
+          <span className="text-muted-foreground">({budgetPctLabel(m.plannedGP, m.budgetGP)})</span>
+        </span>
+      ),
+    },
   ];
 
   const renderProjects = (m: GpMonth) => {
-    const byName = new Map<string, { projectName: string; plannedGP: number; realisedGP: number }>();
-    for (const p of m.gpPlannedProjects) byName.set(p.projectName, { projectName: p.projectName, plannedGP: p.value, realisedGP: 0 });
-    for (const p of m.gpRealisedProjects) {
-      const row = byName.get(p.projectName) ?? { projectName: p.projectName, plannedGP: 0, realisedGP: 0 };
-      row.realisedGP = p.value;
-      byName.set(p.projectName, row);
-    }
-    const rows = Array.from(byName.values()).sort((a, b) => b.realisedGP - a.realisedGP);
+    const byName = new Map<
+      string,
+      { projectName: string; plannedGP: number; committedGP: number; unrealisedGP: number; realisedGP: number }
+    >();
+    const blank = (projectName: string) => ({ projectName, plannedGP: 0, committedGP: 0, unrealisedGP: 0, realisedGP: 0 });
+    const merge = (arr: ProjBreak[], key: 'plannedGP' | 'committedGP' | 'unrealisedGP' | 'realisedGP') => {
+      for (const p of arr) {
+        const row = byName.get(p.projectName) ?? blank(p.projectName);
+        row[key] = p.value;
+        byName.set(p.projectName, row);
+      }
+    };
+    merge(m.gpPlannedProjects, 'plannedGP');
+    merge(m.gpCommittedProjects, 'committedGP');
+    merge(m.gpUnrealisedProjects, 'unrealisedGP');
+    merge(m.gpRealisedProjects, 'realisedGP');
+    const rows = Array.from(byName.values()).sort((a, b) => a.projectName.localeCompare(b.projectName));
     if (rows.length === 0) return <p className="text-xs text-muted-foreground px-2 py-1">No project breakdown for this month.</p>;
     return (
       <table className="w-full text-xs" data-testid={`gp-breakdown-${m.monthKey}`}>
@@ -172,6 +225,8 @@ export default function FinanceGpCompanyPage() {
           <tr className="text-[10px] uppercase tracking-wide text-muted-foreground">
             <th className="text-left font-medium px-2 py-1">Project</th>
             <th className="text-right font-medium px-2 py-1">Planned GP</th>
+            <th className="text-right font-medium px-2 py-1">Committed GP</th>
+            <th className="text-right font-medium px-2 py-1">Unrealised GP</th>
             <th className="text-right font-medium px-2 py-1">Realised GP</th>
           </tr>
         </thead>
@@ -194,6 +249,8 @@ export default function FinanceGpCompanyPage() {
                 )}
               </td>
               <td className="px-2 py-1 text-right tabular-nums"><MoneyValue value={p.plannedGP} muteNegative={false} /></td>
+              <td className="px-2 py-1 text-right tabular-nums"><MoneyValue value={p.committedGP} muteNegative={false} /></td>
+              <td className="px-2 py-1 text-right tabular-nums"><MoneyValue value={p.unrealisedGP} muteNegative={false} /></td>
               <td className="px-2 py-1 text-right tabular-nums"><MoneyValue value={p.realisedGP} muteNegative={false} /></td>
             </tr>
             );
