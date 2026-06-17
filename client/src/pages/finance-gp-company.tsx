@@ -26,6 +26,7 @@ import { fetchQueryFn } from '@/lib/queryClient';
 import { useFinancialYearScope } from '@/hooks/use-financial-year-scope';
 import type { ReconPortfolioResponse } from '@/lib/finance/home-data';
 import { budgetDelta, budgetPctLabel } from '@/lib/finance/budget-variance';
+import { BudgetProgressCard } from '@/components/finance/BudgetProgressCard';
 
 interface ProjBreak {
   projectName: string;
@@ -288,6 +289,18 @@ export default function FinanceGpCompanyPage() {
         <KpiTile data-testid="kpi-realised-gp" label="Realised GP" description="FY" value={<MoneyValue value={fy.realisedGP} align="left" />} tone="positive" />
         <KpiTile data-testid="kpi-planned-margin" label="Planned Margin" description="Planned GP / Revenue" value={<span className="tabular-nums">{fy.plannedMarginPct.toFixed(1)}%</span>} />
       </KpiRow>
+
+      <div className="mt-3">
+        <BudgetProgressCard
+          data-testid="gp-budget-progress"
+          budget={fy.budgetGP}
+          overIsGood
+          rows={[
+            { label: 'Planned', value: fy.plannedGP },
+            { label: 'Realised', value: fy.realisedGP },
+          ]}
+        />
+      </div>
 
       <section aria-label="Gross profit by month" data-testid="gp-grid" className="mt-3">
         {months.length === 0 ? (

@@ -6,8 +6,8 @@
  * the canonical <CosLineReviewPanel>. Presentation only — no figure is computed
  * here.
  */
-import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'wouter';
 import { FinanceShell } from '@/components/layout/FinanceShell';
 import { FinancialYearScopeControl } from '@/components/finance/FinancialYearScopeControl';
@@ -23,7 +23,11 @@ import {
   type DrillColumn,
 } from '@/components/finance/template';
 import { CosLineReviewPanel } from '@/components/cos/cos-line-review-panel';
-import { fetchQueryFn } from '@/lib/queryClient';
+import { BudgetProgressCard } from '@/components/finance/BudgetProgressCard';
+import { Input } from '@/components/ui/input';
+import { fetchQueryFn, apiRequest, invalidateDashboardQueries } from '@/lib/queryClient';
+import { useApiMutation } from '@/hooks/use-api-mutation';
+import { usePermission } from '@/hooks/use-permissions';
 import { FINANCE_QUERY_VOLATILE } from '@/lib/finance-stale-policy';
 import { useFinancialYearScope } from '@/hooks/use-financial-year-scope';
 import type { ReconPortfolioResponse } from '@/lib/finance/home-data';
@@ -76,10 +80,77 @@ function projectRows(m: CosMonthData) {
   );
 }
 
+/**
+ * Editable monthly COS budget cell — the manually-captured annual budget
+ * (revised at half-year). Gated by cos:edit (COO / CFO / PFM / Accountant /
+ * Construction Manager per the permission registry). Writes the manual budget
+ * via /api/tracker-monthly (trackerType COS); no finance formula is touched.
+ */
+function BudgetCell({
+  monthKey,
+  value,
+  canEdit,
+  onSave,
+}: {
+  monthKey: string;
+  value: number;
+  canEdit: boolean;
+  onSave: (budget: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(value ?? 0));
+  if (!canEdit) return <MoneyValue value={value} muteNegative={false} />;
+  if (editing) {
+    return (
+      <Input
+        type="number"
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          setEditing(false);
+          if (Number.isFinite(Number(draft)) && draft !== String(value ?? 0)) onSave(draft);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+          if (e.key === 'Escape') setEditing(false);
+        }}
+        className="h-7 w-28 text-right font-mono text-xs ml-auto"
+        data-testid={`input-cos-budget-${monthKey}`}
+      />
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="tabular-nums hover:underline"
+      onClick={() => {
+        setDraft(String(value ?? 0));
+        setEditing(true);
+      }}
+      data-testid={`cell-cos-budget-${monthKey}`}
+    >
+      <MoneyValue value={value} muteNegative={false} />
+    </button>
+  );
+}
+
 export default function CosTrackerPage() {
   const fyScope = useFinancialYearScope();
   const qs = fyScope.apiQueryString;
+  const qc = useQueryClient();
+  const { allowed: canEditCos } = usePermission('cos', 'edit');
   const cosTrackerQueryKey = useMemo(() => ['/api/cos-tracker', qs] as const, [qs]);
+
+  const budgetMutation = useApiMutation<unknown, unknown, { monthKey: string; budget: string }>({
+    mutationFn: (body) =>
+      apiRequest('POST', '/api/tracker-monthly', { trackerType: 'COS', monthKey: body.monthKey, budget: body.budget }),
+    successToast: 'COS budget updated',
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/api/cos-tracker'] });
+      invalidateDashboardQueries(qc);
+    },
+  });
 
   const { data, isLoading, isError, error, refetch } = useQuery<CosMonthData[]>({
     queryKey: cosTrackerQueryKey,
@@ -108,6 +179,7 @@ export default function CosTrackerPage() {
 
   const fy = useMemo(
     () => ({
+      budget: months.reduce((s, m) => s + (m.budget ?? 0), 0),
       planned: months.reduce((s, m) => s + (m.cosPlanned ?? 0), 0),
       committed: months.reduce((s, m) => s + (m.committedCOS ?? 0), 0),
       realised: months.reduce((s, m) => s + (m.realisedCOS ?? 0), 0),
@@ -118,7 +190,19 @@ export default function CosTrackerPage() {
 
   const columns: DrillColumn<CosMonthData>[] = [
     { key: 'month', header: 'Month', cell: (m) => <span className="font-medium text-foreground">{m.monthLabel}</span> },
-    { key: 'budget', header: 'Budget', numeric: true, cell: (m) => <MoneyValue value={m.budget} muteNegative={false} /> },
+    {
+      key: 'budget',
+      header: 'Budget',
+      numeric: true,
+      cell: (m) => (
+        <BudgetCell
+          monthKey={m.monthKey}
+          value={m.budget}
+          canEdit={canEditCos}
+          onSave={(budget) => budgetMutation.mutate({ monthKey: m.monthKey, budget })}
+        />
+      ),
+    },
     { key: 'planned', header: 'Planned', numeric: true, cell: (m) => <MoneyValue value={m.cosPlanned} muteNegative={false} /> },
     { key: 'committed', header: 'Committed', numeric: true, cell: (m) => <MoneyValue value={m.committedCOS} muteNegative={false} /> },
     { key: 'unrealised', header: 'Unrealised', numeric: true, cell: (m) => <MoneyValue value={m.cosUnrealised} muteNegative={false} /> },
@@ -223,6 +307,17 @@ export default function CosTrackerPage() {
         <KpiTile data-testid="kpi-realised" label="COS Realised" description="FY" value={<MoneyValue value={fy.realised} align="left" />} tone="critical" />
         <KpiTile data-testid="kpi-quickbooks" label="QuickBooks COS" description="FY" value={<MoneyValue value={fy.quickbooks} align="left" />} />
       </KpiRow>
+
+      <div className="mt-3">
+        <BudgetProgressCard
+          data-testid="cos-budget-progress"
+          budget={fy.budget}
+          rows={[
+            { label: 'Planned', value: fy.planned },
+            { label: 'Realised', value: fy.realised },
+          ]}
+        />
+      </div>
 
       <section aria-label="Cost of sales by month" data-testid="cos-grid" className="mt-3">
         {months.length === 0 ? (
