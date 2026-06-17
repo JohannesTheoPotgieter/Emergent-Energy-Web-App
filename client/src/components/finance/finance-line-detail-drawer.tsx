@@ -12,13 +12,13 @@
  *
  * The month variants (revenue / cos) filter by state + project SERVER-side
  * (refetch on change); the gp variant fetches a project's canonical lines once
- * and filters by state + category CLIENT-side. The row-origin <DataSourceBadge>
- * is fed the real line lineage (imported / manual / override) the endpoints now
- * pass, so the Source column is meaningful rather than a blanket "?".
+ * and filters by state + category CLIENT-side. Columns are uniform across all
+ * three: Project (month variants) ▸ Category ▸ Line Item ▸ Invoice # ▸ Status
+ * ▸ the variant's amount column(s).
  *
- * NOTE: the `month-detail` URL strings and <DataSourceBadge> intentionally live
- * in THIS component (not in any finance *page*), per the compact-template
- * conformance guard (qa/tests/unit/finance-template-conformance.test.ts).
+ * NOTE: the `month-detail` URL strings intentionally live in THIS component
+ * (not in any finance *page*), per the compact-template conformance guard
+ * (qa/tests/unit/finance-template-conformance.test.ts).
  */
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -27,7 +27,6 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { MoneyValue } from '@/components/finance/template';
 import { fetchQueryFn } from '@/lib/queryClient';
-import { DataSourceBadge } from '@/components/finance/DataSourceBadge';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { EmptyState } from '@/components/ui/empty-state';
 import {
@@ -144,12 +143,6 @@ function money(val: number | null | undefined) {
   return <MoneyValue value={val} align="left" muteNegative={false} />;
 }
 
-const VARIANT_SHORT: Record<FinanceDetailVariant, string> = {
-  revenue: 'rev',
-  cos: 'cos',
-  gp: 'gp',
-};
-
 interface NumericCol {
   key: 'cos' | 'revenue' | 'gp' | 'qb';
   header: string;
@@ -164,7 +157,6 @@ const NUMERIC_COLS: Record<FinanceDetailVariant, NumericCol[]> = {
   ],
   cos: [
     { key: 'cos', header: 'COS', get: (l) => l.cos, highlight: true },
-    { key: 'qb', header: 'QB', get: (l) => l.qb },
   ],
   gp: [
     { key: 'cos', header: 'COS', get: (l) => l.cos },
@@ -286,7 +278,6 @@ export function FinanceLineDetailDrawer({
   const [expandedId, setExpandedId] = useState<string | number | null>(null);
 
   const isMonthVariant = variant === 'revenue' || variant === 'cos';
-  const short = VARIANT_SHORT[variant];
 
   // Server-side state param (month variants only).
   const stateParam = (() => {
@@ -395,9 +386,10 @@ export function FinanceLineDetailDrawer({
   );
 
   const numericCols = NUMERIC_COLS[variant];
-  const showSource = variant !== 'gp';
   const showProjectCol = variant !== 'gp';
-  const colCount = 1 + (showProjectCol ? 1 : 0) + 2 + (showSource ? 1 : 0) + numericCols.length;
+  // Uniform across Revenue / COS / GP: no Source, no QB; an Invoice # column.
+  // colCount = chevron + project? + (category + line item + invoice + status) + numeric.
+  const colCount = 1 + (showProjectCol ? 1 : 0) + 4 + numericCols.length;
 
   const subtitleNoun = variant === 'cos' ? 'Cost line detail' : variant === 'gp' ? 'Line detail' : 'Revenue line-item detail';
 
@@ -560,10 +552,8 @@ export function FinanceLineDetailDrawer({
                   )}
                   <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Category</th>
                   <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Line Item</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Invoice #</th>
                   <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Status</th>
-                  {showSource && (
-                    <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Source</th>
-                  )}
                   {numericCols.map((c) => (
                     <th key={c.key} className="text-right px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">{c.header}</th>
                   ))}
@@ -604,16 +594,14 @@ export function FinanceLineDetailDrawer({
                       <td className="px-3 py-2.5 max-w-[200px] truncate text-foreground" title={item.lineItem || ''}>
                         {item.lineItem || '—'}
                       </td>
+                      <td className="px-3 py-2.5 font-mono text-[11px] text-foreground max-w-[140px] truncate" title={item.invoiceNumber || ''}>
+                        {item.invoiceNumber || '—'}
+                      </td>
                       <td className="px-3 py-2.5 text-center">
                         <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${stateBadgeColor(item.status)}`}>
                           {item.status}
                         </span>
                       </td>
-                      {showSource && (
-                        <td className="px-3 py-2.5 text-center">
-                          <DataSourceBadge source={item.rowSource} overridden={item.overridden} testId={`data-source-${short}-${item.id}`} />
-                        </td>
-                      )}
                       {numericCols.map((c) => {
                         const v = c.get(item);
                         const isNoRev = c.key === 'revenue' && item.noRevenueLinked;
@@ -634,11 +622,7 @@ export function FinanceLineDetailDrawer({
                     {expandedId === item.id && (
                       <tr className="bg-emerald-50/40">
                         <td colSpan={colCount} className="px-6 py-4">
-                          <div className="grid grid-cols-2 md:grid-cols-5 gap-x-6 gap-y-3 text-xs">
-                            <div>
-                              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">Invoice #</p>
-                              <p className="font-medium text-foreground">{item.invoiceNumber || '—'}</p>
-                            </div>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3 text-xs">
                             <div>
                               <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">Invoice Date</p>
                               <p className="font-medium text-foreground">{item.invoiceDate || '—'}</p>
