@@ -12,7 +12,6 @@ import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FinanceShell } from '@/components/layout/FinanceShell';
 import { FinancialYearScopeControl } from '@/components/finance/FinancialYearScopeControl';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import {
   FinancePageHeader,
@@ -34,7 +33,6 @@ import { budgetDelta, budgetPctLabel } from '@/lib/finance/budget-variance';
 import { BudgetProgressCard } from '@/components/finance/BudgetProgressCard';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { usePermission } from '@/hooks/use-permissions';
-import { formatZarCompact } from '@/lib/currency';
 import { useFinancialYearScope } from '@/hooks/use-financial-year-scope';
 
 interface ProjectBreakdown {
@@ -320,7 +318,7 @@ export default function RevenueTrackerPage() {
       <FinancePageHeader
         data-testid="revenue-header"
         title={`Revenue ${fyScope.label}`}
-        question="What have we recognised this FY vs plan?"
+        question="What revenue have we recognised this FY?"
         source={fyScope.allData ? 'Canonical tracker · ex-VAT' : `${fyScope.startDate} to ${fyScope.endDate} · ex-VAT`}
         period={<FinancialYearScopeControl scope={fyScope} />}
       />
@@ -332,17 +330,6 @@ export default function RevenueTrackerPage() {
           description="FYTD · canonical § 3.3"
           value={recognised ? <MoneyValue value={recognised.actual} align="left" /> : overviewQuery.isLoading ? '…' : '—'}
           tone="positive"
-          progress={recognised ? { pct: recognised.pct, tone: 'positive' } : undefined}
-          supporting={
-            recognised ? (
-              <span className="inline-flex items-center gap-1.5">
-                <span>vs FY plan {formatZarCompact(recognised.target)} · {recognised.pct}%</span>
-                <Badge variant="outline" className="text-[9px] border-status-drift/40 text-status-drift" title="Plan is the planned-revenue proxy, pending a board FY target (P4.4).">
-                  Provisional
-                </Badge>
-              </span>
-            ) : overviewQuery.isLoading ? 'Loading…' : 'No data'
-          }
         />
         <KpiTile data-testid="kpi-planned" label="Planned" description="FY" value={<MoneyValue value={fy.planned} align="left" />} />
         <KpiTile data-testid="kpi-committed" label="Committed" description="FY" value={<MoneyValue value={fy.committed} align="left" />} tone="warning" />
