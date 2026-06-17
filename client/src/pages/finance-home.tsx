@@ -431,7 +431,7 @@ export default function FinanceHomePage() {
                 <Badge
                   variant="outline"
                   className="text-[9px] border-status-drift/40 text-status-drift"
-                  title="FY26 manual monthly budget — provisional until a board FY revenue target is set."
+                  title={`${fyScope.label} manual monthly budget — provisional until a board FY revenue target is set.`}
                 >
                   Provisional
                 </Badge>

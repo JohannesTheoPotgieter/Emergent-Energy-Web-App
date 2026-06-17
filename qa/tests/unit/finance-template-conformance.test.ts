@@ -55,7 +55,7 @@ const PAGE_SPECS: PageSpec[] = [
   { file: "cashflow.tsx", requiresKpiRow: true },
   { file: "finance-gp-company.tsx", requiresKpiRow: true },
   { file: "finance-gp.tsx", requiresKpiRow: true },
-  { file: "fye-revenue-tracking.tsx", requiresKpiRow: false },
+  { file: "fye-revenue-tracking.tsx", requiresKpiRow: true },
   { file: "finance-qb-reconciliation.tsx", requiresKpiRow: true },
   { file: "finance-project-detail.tsx", requiresKpiRow: true, allowsReconFooter: true },
   // The reference implementation — guarded so the bar can never silently drop.
