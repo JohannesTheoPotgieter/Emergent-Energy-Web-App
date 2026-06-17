@@ -96,6 +96,25 @@ function fmtDate(iso: string | null | undefined): string | null {
   return d.toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" });
 }
 
+// AR "overdue" / AP "due" tiles show PAST-DUE only — lines aged beyond 30 days
+// from the invoice-raised date. The not-yet-due 0-30 bucket is excluded so the
+// figure matches the "overdue/due" label (the worklist `total` bucket is ALL
+// open AR/AP, including current). Assumes 30-day terms; widen the bucket list
+// here if terms change.
+const PAST_DUE_BUCKETS = ["31-60", "61-90", "90+"] as const;
+function pastDueTotal(w: AgedWorklist | undefined): { amount: number; count: number } {
+  const buckets = w?.buckets;
+  if (!buckets) return { amount: 0, count: 0 };
+  return PAST_DUE_BUCKETS.reduce(
+    (acc, key) => ({
+      amount: acc.amount + (buckets[key]?.amount ?? 0),
+      count: acc.count + (buckets[key]?.count ?? 0),
+    }),
+    { amount: 0, count: 0 },
+  );
+}
+
+
 // Trust posture → shared status chip.
 const TIE_CHIP: Record<TieState, { tone: StatusTone; label: string }> = {
   tie: { tone: "ties", label: "Ties" },
@@ -170,6 +189,8 @@ export default function FinanceHomePage() {
   );
   const weeks = useMemo(() => cashQuery.data?.weeks ?? [], [cashQuery.data]);
   const reconProjects = useMemo(() => reconQuery.data?.projects ?? [], [reconQuery.data]);
+  const arPastDue = useMemo(() => pastDueTotal(arQuery.data), [arQuery.data]);
+  const apPastDue = useMemo(() => pastDueTotal(apQuery.data), [apQuery.data]);
 
   const frame = useMemo(
     () => fyMonthFrame(monthly, budgetByMonth, fyScope.startMonthKey, fyScope.endMonthKey),
@@ -567,16 +588,16 @@ export default function FinanceHomePage() {
             <div className="rounded-md border border-slate-200 p-2">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-rose-600">AR overdue</p>
               <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-900">
-                {arQuery.isLoading ? "…" : formatZar(arQuery.data?.buckets.total.amount ?? 0)}
+                {arQuery.isLoading ? "…" : formatZar(arPastDue.amount)}
               </p>
-              <p className="text-[11px] text-slate-400">{arQuery.data?.buckets.total.count ?? 0} invoices</p>
+              <p className="text-[11px] text-slate-400">{arPastDue.count} invoices · 30+ days</p>
             </div>
             <div className="rounded-md border border-slate-200 p-2">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-600">AP due</p>
               <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-900">
-                {apQuery.isLoading ? "…" : formatZar(apQuery.data?.buckets.total.amount ?? 0)}
+                {apQuery.isLoading ? "…" : formatZar(apPastDue.amount)}
               </p>
-              <p className="text-[11px] text-slate-400">{apQuery.data?.buckets.total.count ?? 0} bills</p>
+              <p className="text-[11px] text-slate-400">{apPastDue.count} bills · 30+ days</p>
             </div>
           </div>
           <div className="mt-2">
