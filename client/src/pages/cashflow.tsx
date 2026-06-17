@@ -29,7 +29,9 @@ import { useApiMutation } from '@/hooks/use-api-mutation';
 import { FINANCE_QUERY_STABLE } from '@/lib/finance-stale-policy';
 import { useFinancialYearScope } from '@/hooks/use-financial-year-scope';
 import { usePermission } from '@/hooks/use-permissions';
-import { ChevronDown } from 'lucide-react';
+import { useAuth } from '@/hooks/use-auth';
+import { normalizeRoleForPermissions } from '@shared/schema';
+import { ChevronDown, Pencil } from 'lucide-react';
 
 const CASHFLOW_API_BASE = '/api/weekly-cashflow';
 
@@ -42,6 +44,8 @@ interface CashflowWeek {
   balanceDelta: number;
   projectInflows: number;
   opexOutflows: number;
+  computedOpex: number;
+  hasOpexOverride: boolean;
   projectOutflows: number;
   closingBalance: number;
   availablePayment: number;
@@ -153,6 +157,12 @@ export default function CashflowPage() {
   const qs = fyScope.apiQueryString;
   const qc = useQueryClient();
   const { allowed: canEditCashflow } = usePermission('cashflow', 'edit');
+  const { user } = useAuth();
+  // OPEX is a CFO / COO-only lever (owner decision): a tighter gate than
+  // cashflow.edit, which also grants ACCOUNTANT / PROGRAM_FINANCE_MANAGER. The
+  // server enforces the same gate on /api/weekly-cashflow/opex-weekly.
+  const normalizedRole = normalizeRoleForPermissions(user?.role);
+  const canEditOpex = normalizedRole === 'CFO' || normalizedRole === 'COO_ADMIN';
 
   const cashflowQueryKey = useMemo(() => [CASHFLOW_API_BASE, qs] as const, [qs]);
 
@@ -187,6 +197,16 @@ export default function CashflowPage() {
   const resetOpening = useApiMutation<unknown, unknown, string>({
     mutationFn: (weekStartDate) => apiRequest('DELETE', `${CASHFLOW_API_BASE}/opening-balance`, { weekStartDate }),
     successToast: 'Override cleared',
+    onSuccess: invalidate,
+  });
+  const saveOpex = useApiMutation<unknown, unknown, { weekStartDate: string; opexAmount: number }>({
+    mutationFn: (a) => apiRequest('POST', `${CASHFLOW_API_BASE}/opex-weekly`, a),
+    successToast: 'Weekly OPEX updated',
+    onSuccess: invalidate,
+  });
+  const resetOpex = useApiMutation<unknown, unknown, string>({
+    mutationFn: (weekStartDate) => apiRequest('DELETE', `${CASHFLOW_API_BASE}/opex-weekly`, { weekStartDate }),
+    successToast: 'OPEX override cleared',
     onSuccess: invalidate,
   });
   const saveAvail = useApiMutation<unknown, unknown, { weekStartDate: string; overrideValue: number; reason: string; computedValue: number }>({
@@ -262,6 +282,52 @@ export default function CashflowPage() {
     );
   };
 
+  // Weekly OPEX — shown as a breakdown line under the total Outflows on every
+  // week (including the current "NOW" week). Editable only by CFO / COO; read
+  // only for everyone else, with an "override" badge when a manual value is set.
+  const opexCell = (w: CashflowWeek) => {
+    const value = <MoneyValue value={w.opexOutflows} muteNegative={false} className="text-[10px]" />;
+    if (!canEditOpex) {
+      return w.hasOpexOverride ? (
+        <span className="inline-flex items-center gap-0.5">
+          {value}
+          <Badge variant="outline" className="text-[8px] px-1 py-0 border-amber-200 text-amber-700">ovr</Badge>
+        </span>
+      ) : (
+        value
+      );
+    }
+    return (
+      <EditCellPopover
+        trigger={
+          <button
+            type="button"
+            className="inline-flex items-center gap-0.5 tabular-nums hover:underline decoration-dashed underline-offset-2"
+            data-testid={`opex-trigger-${w.weekStart}`}
+          >
+            {value}
+            {w.hasOpexOverride && (
+              <Badge variant="outline" className="text-[8px] px-1 py-0 border-amber-200 text-amber-700">ovr</Badge>
+            )}
+            <Pencil className="h-2.5 w-2.5 text-muted-foreground/60" />
+          </button>
+        }
+        weekLabel={weekLabel(w.weekStart)}
+        fieldLabel="OPEX (weekly)"
+        currentValue={w.opexOutflows}
+        computedValue={w.computedOpex}
+        hasOverride={w.hasOpexOverride}
+        requireReason={false}
+        onSave={({ value: amount }) => saveOpex.mutate({ weekStartDate: w.weekStart, opexAmount: amount })}
+        onResetToComputed={() => resetOpex.mutate(w.weekStart)}
+        isSaving={saveOpex.isPending}
+        isResetting={resetOpex.isPending}
+        testIdPrefix={`opex-${w.weekStart}`}
+        helperText="Reset reverts to the monthly costed split. CFO / COO only."
+      />
+    );
+  };
+
   const columns: DrillColumn<CashflowWeek>[] = [
     {
       key: 'week',
@@ -275,7 +341,23 @@ export default function CashflowPage() {
     },
     { key: 'opening', header: 'Opening', numeric: true, cell: openingCell },
     { key: 'inflows', header: 'Inflows', numeric: true, cell: (w) => <MoneyValue value={w.projectInflows} muteNegative={false} /> },
-    { key: 'outflows', header: 'Outflows', numeric: true, cell: (w) => <MoneyValue value={w.opexOutflows + w.projectOutflows} muteNegative={false} /> },
+    {
+      key: 'outflows',
+      header: 'Outflows',
+      numeric: true,
+      cell: (w) => (
+        <div className="flex flex-col items-end gap-0.5">
+          <MoneyValue value={w.opexOutflows + w.projectOutflows} muteNegative={false} />
+          <div className="flex items-center justify-end gap-1 text-[10px] text-muted-foreground">
+            <span>OPEX</span>
+            {opexCell(w)}
+            <span className="text-muted-foreground/50">·</span>
+            <span>Proj</span>
+            <MoneyValue value={w.projectOutflows} muteNegative={false} className="text-[10px]" />
+          </div>
+        </div>
+      ),
+    },
     { key: 'closing', header: 'Closing', numeric: true, cell: (w) => <MoneyValue value={w.closingBalance} muteNegative={false} /> },
     { key: 'available', header: 'Available', numeric: true, cell: availCell },
   ];
