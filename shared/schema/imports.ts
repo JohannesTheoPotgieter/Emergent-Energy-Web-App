@@ -23,6 +23,15 @@ export const spSettings = pgTable("sp_settings", {
   folderPath: text("folder_path"),
   intervalMinutes: integer("interval_minutes").notNull().default(30),
   enabled: boolean("enabled").notNull().default(false),
+  /**
+   * Owner switch: when true the scheduled importer auto-commits EVERY pull,
+   * bypassing the review gate (blockers / ERROR-on-REV / missing-allocation /
+   * conflicts) AND the wrong-file guards (over-wipe / net-delta swing). Default
+   * off. With this on, a truncated or wrong tracker file can overwrite finance
+   * data with no pause — it is a deliberate "the tracker is always the truth"
+   * switch, kept as a column so it is auditable and one-click reversible.
+   */
+  autoCommitAll: boolean("auto_commit_all").notNull().default(false),
   lastRunAt: timestamp("last_run_at"),
   /**
    * Last tick that completed without a thrown error. The scheduler's

@@ -1,0 +1,1 @@
+ALTER TABLE "sp_settings" ADD COLUMN "auto_commit_all" boolean DEFAULT false NOT NULL;

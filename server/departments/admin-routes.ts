@@ -41,6 +41,9 @@ const SP_SETTINGS_BODY = z.object({
   folderPath: z.string().trim().nullable().optional(),
   intervalMinutes: z.number().int().min(1).max(1440).default(30),
   enabled: z.boolean().default(false),
+  // Owner switch — when true the scheduler auto-commits every pull, bypassing
+  // the review gate AND the wrong-file guards. Default false.
+  autoCommitAll: z.boolean().default(false),
 }).strict();
 
 const SP_TEST_BODY = z.object({
@@ -513,6 +516,7 @@ router.post("/api/admin/sp-settings", requireAuth, requireAdmin, async (req, res
     folderPath: normalizeSharePointFolderPath(body.folderPath) ?? null,
     intervalMinutes: body.intervalMinutes,
     enabled: body.enabled,
+    autoCommitAll: body.autoCommitAll,
     updatedBy: userId,
   });
   logAuditFromReq(req, {
@@ -524,6 +528,7 @@ router.post("/api/admin/sp-settings", requireAuth, requireAdmin, async (req, res
       driveId: body.driveId,
       intervalMinutes: body.intervalMinutes,
       enabled: body.enabled,
+      autoCommitAll: body.autoCommitAll,
     },
   });
   res.json(settings);

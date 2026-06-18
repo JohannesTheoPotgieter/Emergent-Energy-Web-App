@@ -750,6 +750,13 @@
       "when": 1781263509561,
       "tag": "0106_two_sheet_idempotency_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1781786563305,
+      "tag": "0107_sp_settings_auto_commit_all",
+      "breakpoints": true
     }
   ]
 }
