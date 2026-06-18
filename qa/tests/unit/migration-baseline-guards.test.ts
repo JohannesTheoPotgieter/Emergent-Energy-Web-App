@@ -129,7 +129,6 @@ describe("schema-drift guard script", () => {
 
 describe("CI workflows run db:check", () => {
   const CI_FILES = [
-    ".github/workflows/ci.yml",
     ".github/workflows/pr-checks.yml",
   ];
   for (const file of CI_FILES) {

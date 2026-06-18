@@ -48,7 +48,6 @@ describe("ci:compile is the single canonical compile command", () => {
 
 describe("GitHub workflows invoke npm run ci:compile", () => {
   const WORKFLOW_FILES = [
-    ".github/workflows/ci.yml",
     ".github/workflows/pr-checks.yml",
   ];
   for (const file of WORKFLOW_FILES) {
@@ -64,7 +63,6 @@ describe("GitHub workflows invoke npm run ci:compile", () => {
 
 describe("GitHub workflows do not couple to Turbo Remote Cache secrets", () => {
   const WORKFLOW_FILES = [
-    ".github/workflows/ci.yml",
     ".github/workflows/pr-checks.yml",
   ];
   for (const file of WORKFLOW_FILES) {

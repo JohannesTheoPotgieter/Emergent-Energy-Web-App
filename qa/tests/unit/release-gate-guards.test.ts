@@ -13,7 +13,7 @@
  *      Previously this limiter blocked test:api and any local dev flow that
  *      logged in >20 times in 15 minutes.
  *
- *   3. Both CI workflows (ci.yml + pr-checks.yml) run `npm run test` as a
+ *   3. The PR CI workflow (pr-checks.yml) runs `npm run test` as a
  *      required step in the compile job. Unit-test regressions now block
  *      merges; they don't ship silently.
  *
@@ -83,7 +83,6 @@ describe("auth rate-limiter — non-prod loopback exempt (Phase 4)", () => {
 
 describe("CI workflows — unit-test job wired as required (Phase 4)", () => {
   const CI_FILES = [
-    ".github/workflows/ci.yml",
     ".github/workflows/pr-checks.yml",
   ];
   for (const file of CI_FILES) {
