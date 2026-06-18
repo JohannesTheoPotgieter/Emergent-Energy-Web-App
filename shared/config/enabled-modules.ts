@@ -151,12 +151,18 @@ export function isFinanceOnlyEnforced(): boolean {
 
   // BROWSER: a production build ALWAYS enforces — checked first so no query
   // param / flag can ever weaken prod. The dev-served client enforces only when
-  // the opt-in dev override is active. `import.meta` is read defensively (the
-  // server tsconfig has no Vite env types; the server bundle never reaches this
-  // branch because `window` is undefined there).
+  // the opt-in dev override is active.
+  //
+  // `import.meta.env.PROD` MUST be read as a direct member expression: Vite only
+  // statically replaces this exact syntax (→ `true` in a production build,
+  // `false` in dev). Reading it indirectly (a local alias or a cast over
+  // `import.meta`) is NOT replaced and resolves to `undefined` in the browser,
+  // which silently disables enforcement in production — the exact bug this
+  // shape avoids. `import.meta.env` is typed for the server tsconfig (which has
+  // no Vite types) by server/types/import-meta-env.d.ts; the server bundle
+  // never reaches this branch because `window` is undefined there.
   if (typeof window !== "undefined") {
-    const meta = import.meta as unknown as { env?: { PROD?: boolean } };
-    if (meta.env?.PROD === true) return true;
+    if (import.meta.env.PROD === true) return true;
     return isFinanceOnlyDevOverrideOn();
   }
 
@@ -198,8 +204,10 @@ export function isFinanceOnlyDevOverrideOn(): boolean {
   // BROWSER (dev-served client)
   if (typeof window !== "undefined") {
     try {
-      const meta = import.meta as unknown as { env?: { VITE_FINANCE_ONLY_DEV?: string } };
-      const viteFlag = meta.env?.VITE_FINANCE_ONLY_DEV;
+      // Direct member access so Vite statically replaces it (see the note in
+      // isFinanceOnlyEnforced). Unset in a normal build → replaced with
+      // `undefined`, so the override stays off unless explicitly provided.
+      const viteFlag = import.meta.env.VITE_FINANCE_ONLY_DEV;
       if (viteFlag === "1" || viteFlag === "true") return true;
 
       const store: Storage | undefined = window.localStorage;
