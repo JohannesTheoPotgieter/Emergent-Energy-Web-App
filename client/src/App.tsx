@@ -166,16 +166,23 @@ function usePageTitle(location: string) {
   }, [location]);
 }
 
-// Map each route path to its PAGE_REGISTRY id, for screen-availability checks.
-const PATH_TO_SCREEN_ID = new Map<string, string>(
-  PAGE_REGISTRY.filter((p) => p.id && p.path).map((p) => [p.path, p.id]),
-);
-
 function ProtectedPages() {
   const [location] = useLocation();
   useScrollRestoration(location);
   usePageTitle(location);
-  const { isScreenEnabled, isDegraded } = useScreenAvailability();
+  const { isScreenEnabled, isDegraded, isLoading } = useScreenAvailability();
+
+  // Fail-safe gating defaults every screen to HIDDEN until it has loaded. Hold
+  // the first paint behind a loader so a signed-off screen never flashes a 404
+  // for the moment between mount and the screen-settings response. Cached for
+  // 5 min, so this only happens on a cold load / hard refresh.
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-6" data-testid="screen-availability-loading">
+        <LoadingState variant="skeleton-card" cards={1} />
+      </div>
+    );
+  }
 
   return (
     <LensProvider>
@@ -194,7 +201,12 @@ function ProtectedPages() {
               return <Route key={route.path} path={route.path}>{() => <Redirect to={route.redirectTo!} />}</Route>;
             }
             const PageComponent = route.component!;
-            const screenId = PATH_TO_SCREEN_ID.get(route.path);
+            // Gate by the route's registry pageId — NOT a path lookup. Parametric
+            // alias routes (e.g. /project/:name) carry the same pageId as their
+            // canonical page but a different path, so a path-keyed map would miss
+            // them and let an un-signed-off screen be reached via its alias. Per
+            // COO: "if it is not signed off it cannot be navigated to."
+            const screenId = route.pageId;
             return (
               <Route key={route.path} path={route.path}>
                 {() => {
@@ -232,7 +244,7 @@ function ScreenAvailabilityWarning() {
       className="mx-auto mb-3 max-w-[1400px] rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
       data-testid="screen-availability-degraded"
     >
-      Functionality Control status is temporarily unavailable. Screen visibility may be stale until the service recovers.
+      Functionality Control couldn't be loaded. Screens stay hidden until it recovers — refresh to try again.
     </div>
   );
 }
