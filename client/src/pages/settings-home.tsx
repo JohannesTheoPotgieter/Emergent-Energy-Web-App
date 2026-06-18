@@ -4,7 +4,7 @@ import { PageLayout } from "@/components/layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  Shield, ScrollText, ToggleLeft, AlertTriangle, ArrowRight,
+  Shield, ScrollText, AlertTriangle, ArrowRight,
   Plug,
 } from "lucide-react";
 import { isSuperAdmin } from "@/lib/access-control";
@@ -40,28 +40,20 @@ interface SettingsGroupDef {
 const GROUPS: SettingsGroupDef[] = [
   {
     title: "Core Settings",
-    description: "The four supported administration surfaces.",
+    description: "The supported administration surfaces.",
     cards: [
       {
         key: "roles",
         title: "Roles & Permissions",
-        description: "Assign users to roles, link Microsoft identities, and configure which pages each role sees.",
+        description: "Assign users to roles, link Microsoft identities, and configure each role's finance permissions.",
         href: "/admin/roles",
         icon: Shield,
         status: "ready",
       },
       {
-        key: "functionality",
-        title: "Functionality Control",
-        description: "Enable or hide app screens for each role without sending users through older settings pages.",
-        href: "/admin/functionality",
-        icon: ToggleLeft,
-        status: "ready",
-      },
-      {
         key: "integrations",
         title: "Integration Statuses",
-        description: "Check connector health and operational status for external systems.",
+        description: "Check QuickBooks, Microsoft 365 and Smart Import connection health, and run the tracker import.",
         href: "/admin/integrations",
         icon: Plug,
         status: "ready",

@@ -151,11 +151,13 @@ describe("D6 Phase 3.1 — admin UI + webUrl", () => {
 });
 
 describe("D6 Phase 3.2 — Integration Statuses document setup", () => {
-  it("Integration Statuses mounts the document-management SharePoint setup panel", () => {
-    expect(adminIntegrationsPage).toMatch(/DocumentManagementSharePointPanel/);
-    expect(adminIntegrationsPage).toMatch(
-      /@\/components\/admin\/document-management-sharepoint-panel/,
-    );
+  // Finance-only scope (2026-06-18, owner): Integration Statuses surfaces only
+  // QuickBooks, Microsoft 365 and Smart Import. The document-management
+  // SharePoint setup panel was intentionally removed from this page (document
+  // management is a disabled module in finance-only mode). The panel component
+  // itself still exists and is covered by the tests below.
+  it("Integration Statuses does NOT mount the document-management SharePoint setup panel (finance-only)", () => {
+    expect(adminIntegrationsPage).not.toMatch(/DocumentManagementSharePointPanel/);
   });
 
   it("document setup panel exposes Engineering and Quality document status cards", () => {

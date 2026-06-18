@@ -33,11 +33,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Upload, FileSpreadsheet, ExternalLink, RefreshCw, CheckCircle2, AlertTriangle, Clock, Eye, Play, Cloud, Save, Zap, ChevronDown, ChevronRight } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatRelativeWithAbsoluteZA } from "@/lib/datetime";
-import { ConnectionsSection } from "./role-settings";
-import { DocumentManagementSharePointPanel } from "@/components/admin/document-management-sharepoint-panel";
 import { IntegrationConnectionHealth } from "@/components/admin/integration-connection-health";
+
+// Finance-only Integration Statuses surfaces exactly three connectors:
+// QuickBooks, Microsoft 365 (incl. the SharePoint tracker auto-pull) and Smart
+// Import. Connection-health tiles are filtered to these connector names.
+const FINANCE_CONNECTOR_NAMES = ["quickbooks", "microsoft_365"];
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -440,15 +442,6 @@ function normalizeFolderPath(folderPath: string | null | undefined): string | nu
   return normalized || null;
 }
 
-function sharePointConfigKey(form: Pick<SpSettings, "siteId" | "driveId" | "folderItemId" | "folderPath">): string {
-  return JSON.stringify({
-    siteId: form.siteId.trim(),
-    driveId: form.driveId.trim(),
-    folderItemId: form.folderItemId?.trim() || null,
-    folderPath: normalizeFolderPath(form.folderPath),
-  });
-}
-
 function nextRunEstimate(lastRunAt: string | null, intervalMinutes: number): string {
   if (!lastRunAt) return "as soon as scheduler ticks (≤60 s)";
   const nextMs = new Date(lastRunAt).getTime() + intervalMinutes * 60_000;
@@ -493,9 +486,6 @@ function SharePointAutoImportPanel() {
   const [testing, setTesting] = useState(false);
   const [running, setRunning] = useState(false);
   const [testResult, setTestResult] = useState<TestConnectionResult | null>(null);
-  const [lastPassedTestKey, setLastPassedTestKey] = useState<string | null>(null);
-  // UI/UX audit X6 — turning auto-commit ON is gated behind a confirmation.
-  const [confirmEnableOpen, setConfirmEnableOpen] = useState(false);
   // Connection settings are tucked behind a collapsible so the panel leads with
   // status + actions; opened automatically until the connection is configured.
   const [showSettings, setShowSettings] = useState(false);
@@ -516,7 +506,6 @@ function SharePointAutoImportPanel() {
     setForm((prev) => ({ ...prev, [key]: value }));
     if (key === "siteId" || key === "driveId" || key === "folderItemId" || key === "folderPath") {
       setTestResult(null);
-      setLastPassedTestKey(null);
     }
     setDirty(true);
   }
@@ -526,14 +515,6 @@ function SharePointAutoImportPanel() {
       toast({
         title: "Site ID and Drive ID are required",
         description: "Paste them from SharePoint or use Test Connection to verify before saving.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (form.enabled && lastPassedTestKey !== sharePointConfigKey(form)) {
-      toast({
-        title: "Test Connection must pass first",
-        description: "Run Test Connection successfully for this Site ID, Drive ID and folder before enabling scheduled imports.",
         variant: "destructive",
       });
       return;
@@ -595,15 +576,11 @@ function SharePointAutoImportPanel() {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         setTestResult({ ok: false, message: body?.message || body?.error || `HTTP ${res.status}`, nextAction: body?.nextAction });
-        setLastPassedTestKey(null);
       } else {
-        const result = body as TestConnectionResult;
-        setTestResult(result);
-        setLastPassedTestKey(result.ok ? sharePointConfigKey(form) : null);
+        setTestResult(body as TestConnectionResult);
       }
     } catch (err) {
       setTestResult({ ok: false, message: err instanceof Error ? err.message : "Unknown error" });
-      setLastPassedTestKey(null);
     } finally {
       setTesting(false);
     }
@@ -642,7 +619,6 @@ function SharePointAutoImportPanel() {
 
   const configured = !!settingsQuery.data;
   const enabled = form.enabled;
-  const hasPassingTestForCurrentConfig = lastPassedTestKey === sharePointConfigKey(form);
 
   return (
     <Card data-testid="sharepoint-autoimport-panel">
@@ -681,21 +657,6 @@ function SharePointAutoImportPanel() {
             Every <span className="font-medium text-foreground">{form.intervalMinutes} min</span>
           </span>
         </div>
-
-        {/* Concise failure line — only when the last tick failed with no later success. */}
-        {settingsQuery.data?.lastErrorAt &&
-          (!settingsQuery.data.lastSuccessAt ||
-            new Date(settingsQuery.data.lastErrorAt).getTime() >
-              new Date(settingsQuery.data.lastSuccessAt).getTime()) && (
-            <p className="text-xs text-red-700 break-words flex items-start gap-1.5" role="alert" data-testid="sp-import-last-error">
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-              <span>
-                Last run failed{settingsQuery.data.lastErrorCode ? ` — ${settingsQuery.data.lastErrorCode}` : ""}
-                {settingsQuery.data.lastErrorMessage ? `: ${settingsQuery.data.lastErrorMessage}` : ""}{" "}
-                <span className="text-red-600/80">({formatRelativeWithAbsoluteZA(settingsQuery.data.lastErrorAt)}{settingsQuery.data.lastSuccessAt ? "" : " · no successful runs yet"})</span>
-              </span>
-            </p>
-          )}
 
         {/* Connection settings — technical config tucked behind a collapsible so
             the panel leads with status + actions. Stays open until configured. */}
@@ -773,44 +734,10 @@ function SharePointAutoImportPanel() {
           </div>
           <Switch
             checked={enabled}
-            onCheckedChange={(v) => {
-              // Pausing (off) is safe and immediate; enabling auto-commit of
-              // financial data requires explicit confirmation + justification.
-              if (v) setConfirmEnableOpen(true);
-              else patch("enabled", false);
-            }}
+            onCheckedChange={(v) => patch("enabled", v)}
             data-testid="switch-sp-enabled"
           />
         </div>
-
-        <ConfirmDialog
-          open={confirmEnableOpen}
-          onOpenChange={setConfirmEnableOpen}
-          title="Enable automatic financial commits?"
-          description={`The scheduler will poll the tracker workbook every ${form.intervalMinutes} minute(s) and commit financial data with NO human review. Committed numbers flow straight into finance reporting.`}
-          confirmLabel="Enable auto-commit"
-          variant="destructive"
-          impact={
-            <p>
-              This turns on <strong>unattended commits of financial data</strong> on a{" "}
-              {form.intervalMinutes}-minute cycle. You can pause it at any time without losing
-              configuration.
-            </p>
-          }
-          requireReason
-          reasonLabel="Reason (recorded for audit)"
-          onConfirm={() => {
-            if (!hasPassingTestForCurrentConfig) {
-              toast({
-                title: "Test Connection must pass first",
-                description: "Run Test Connection successfully for this exact SharePoint configuration before enabling scheduled imports.",
-                variant: "destructive",
-              });
-              return;
-            }
-            patch("enabled", true);
-          }}
-        />
 
         {/* Test connection result */}
         {testResult && (
@@ -961,43 +888,26 @@ export default function AdminIntegrationsPage() {
   });
 
   const health = healthQuery.data ?? [];
-  const counts = health.reduce(
-    (acc, row) => {
-      acc[row.staleness] = (acc[row.staleness] || 0) + 1;
-      return acc;
-    },
-    { fresh: 0, aging: 0, stale: 0, never: 0 } as Record<ImportHealthRow["staleness"], number>,
-  );
-
   const sp = spQuery.data;
-  const spFailedLast = Boolean(
-    sp?.lastErrorAt &&
-      (!sp?.lastSuccessAt ||
-        new Date(sp.lastErrorAt).getTime() > new Date(sp.lastSuccessAt).getTime()),
-  );
 
+  // Calm, non-alarming status line — connection state only, no warning/error
+  // tones (per owner: "no more warnings/blockers").
   const statuses: { label: string; tone: "neutral" | "success" | "warning" | "danger" | "info" }[] = [
     !sp
       ? { label: "SharePoint auto-import not configured", tone: "neutral" }
-      : spFailedLast
-        ? { label: `SharePoint auto-import error${sp.lastErrorCode ? ` — ${sp.lastErrorCode}` : ""}`, tone: "danger" }
-        : sp.enabled
-          ? { label: "SharePoint auto-import on", tone: "success" }
-          : { label: "SharePoint auto-import paused", tone: "warning" },
-    counts.stale > 0
-      ? { label: `${counts.stale} stale tracker${counts.stale === 1 ? "" : "s"}`, tone: "warning" }
-      : { label: "Trackers current", tone: "success" },
+      : sp.enabled
+        ? { label: "SharePoint auto-import on", tone: "success" }
+        : { label: "SharePoint auto-import paused", tone: "neutral" },
   ];
 
   return (
     <AdminPageShell
       surfaceId="integrations"
       title="Integration Statuses"
-      description="Live connection state for every external system the app depends on. Run a manual Excel import, configure the SharePoint auto-import schedule, and verify the imported numbers against the source workbook."
+      description="QuickBooks, Microsoft 365 and Smart Import — connection state plus the tracker import. Run a manual Excel import or let the SharePoint auto-import pull the active tracker on a schedule."
       statuses={statuses}
       metrics={[
         { label: "Tracked projects", value: health.length || "—", helper: "Projects with import history" },
-        { label: "Stale (> 14 days)", value: counts.stale, helper: "Trackers needing a refresh" },
         {
           label: "Auto-import",
           value: sp ? (sp.enabled ? "On" : "Paused") : "Off",
@@ -1011,11 +921,9 @@ export default function AdminIntegrationsPage() {
       ]}
     >
       <div className="space-y-6">
-        <IntegrationConnectionHealth />
+        <IntegrationConnectionHealth includeNames={FINANCE_CONNECTOR_NAMES} />
         <SmartImportPanel />
         <SharePointAutoImportPanel />
-        <DocumentManagementSharePointPanel />
-        <ConnectionsSection />
       </div>
     </AdminPageShell>
   );
