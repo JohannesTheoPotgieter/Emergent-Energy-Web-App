@@ -213,7 +213,16 @@ function ConnectionTile({ tile }: { tile: HealthTile }) {
   );
 }
 
-export function IntegrationConnectionHealth() {
+interface IntegrationConnectionHealthProps {
+  /**
+   * When provided, only connectors whose `integration.name` is in this list are
+   * shown. Used by the finance-only Integration Statuses page to surface just
+   * QuickBooks + Microsoft 365 and drop CRM/other connectors.
+   */
+  includeNames?: string[];
+}
+
+export function IntegrationConnectionHealth({ includeNames }: IntegrationConnectionHealthProps = {}) {
   const query = useQuery<HealthResponse>({
     queryKey: ["/api/integrations"],
     queryFn: async () => {
@@ -225,7 +234,10 @@ export function IntegrationConnectionHealth() {
     refetchInterval: 60_000,
   });
 
-  const tiles = query.data?.tiles ?? [];
+  const allowed = includeNames ? new Set(includeNames) : null;
+  const tiles = (query.data?.tiles ?? []).filter(
+    (t) => !allowed || allowed.has(t.integration.name),
+  );
   // Lead with the connectors that carry a lapsing credential (QB / MS / SharePoint),
   // then the rest. Within that, surface anything needing attention first.
   const ordered = [...tiles].sort((a, b) => {

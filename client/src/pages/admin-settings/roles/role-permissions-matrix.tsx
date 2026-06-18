@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -17,6 +17,11 @@ interface RolePermissionsMatrixProps {
   enabledNavSections: string[];
   /** Permission entities corresponding to disabled screens — filtered out of the matrix. */
   disabledEntityIds?: Set<string>;
+  /**
+   * When provided, ONLY these entities are shown (finance-only mode scopes the
+   * matrix to the finance-function permission categories). Undefined = show all.
+   */
+  allowedEntityIds?: Set<string>;
   /**
    * UI/UX audit X6 — called with the audit justification the admin entered
    * when confirming a bulk Grant-All / Revoke-All flip. The parent threads
@@ -67,7 +72,7 @@ function getPermissionState(
   return { allowed: false, source: "none" };
 }
 
-export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRoles, enabledNavSections, disabledEntityIds, onBulkAuditReason }: RolePermissionsMatrixProps) {
+export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRoles, enabledNavSections, disabledEntityIds, allowedEntityIds, onBulkAuditReason }: RolePermissionsMatrixProps) {
   const [permSearch, setPermSearch] = useState("");
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   // UI/UX audit X6 — bulk flips are gated behind a confirm + justification.
@@ -76,7 +81,14 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
   const effectiveRole = { ...role, ...draft } as RoleSummary;
   const currentEp = (effectiveRole.entityPermissions || {}) as Record<string, Record<string, boolean>>;
   const normalizedRole = effectiveRole.role || "";
-  const allEntities = Object.values(ENTITY_CATEGORIES).flatMap((c) => c.entities).sort();
+  // An entity is visible when it's in the allow-list (if one is set) AND not in
+  // the disabled set. allEntities (drives global Grant/Revoke All) respects the
+  // same scope so a bulk flip never touches a hidden entity.
+  const isEntityVisible = useCallback(
+    (e: string) => (!allowedEntityIds || allowedEntityIds.has(e)) && !disabledEntityIds?.has(e),
+    [allowedEntityIds, disabledEntityIds],
+  );
+  const allEntities = Object.values(ENTITY_CATEGORIES).flatMap((c) => c.entities).filter(isEntityVisible).sort();
 
   const updateEp = (entity: string, action: string, value: boolean) => {
     const next = { ...currentEp, [entity]: { ...(currentEp[entity] || {}), [action]: value } };
@@ -131,16 +143,14 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
     const assigned = new Set<string>();
     const result: { key: string; label: string; entities: string[] }[] = [];
     Object.entries(ENTITY_CATEGORIES).forEach(([key, cat]) => {
-      const entities = disabledEntityIds
-        ? cat.entities.filter((e) => !disabledEntityIds.has(e))
-        : cat.entities;
+      const entities = cat.entities.filter(isEntityVisible);
       entities.forEach((e) => assigned.add(e));
       if (entities.length > 0) result.push({ key, label: cat.label, entities });
     });
-    const uncategorized = allKnownEntities.filter((e) => !assigned.has(e) && !(disabledEntityIds?.has(e)));
+    const uncategorized = allKnownEntities.filter((e) => !assigned.has(e) && isEntityVisible(e));
     if (uncategorized.length > 0) result.push({ key: "uncategorized", label: "Other Permissions", entities: uncategorized });
     return result;
-  }, [allKnownEntities, disabledEntityIds]);
+  }, [allKnownEntities, isEntityVisible]);
 
   const filteredCategories = useMemo(() => {
     if (!permSearch) return categorizedEntities;

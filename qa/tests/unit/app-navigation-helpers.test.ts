@@ -89,12 +89,11 @@ describe("app navigation helpers", () => {
     expect(settings?.path).toBe("/settings");
   });
 
-  it("keeps Settings as a landing page with four named admin destinations", () => {
+  it("keeps Settings as a landing page with the finance admin destinations", () => {
     const settings = TOP_SECTIONS.find((section) => section.label === "Settings");
     expect(settings?.path).toBe("/settings");
     expect(settings?.secondary.map((item) => [item.label, item.path])).toEqual([
       ["Roles & Permissions", "/admin/roles"],
-      ["Functionality Control", "/admin/functionality"],
       ["Integration Statuses", "/admin/integrations"],
       ["Audit Log", "/admin/activity-log"],
     ]);

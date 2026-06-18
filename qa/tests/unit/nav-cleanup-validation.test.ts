@@ -94,11 +94,13 @@ describe("nav cleanup — six-tab COO spec", () => {
     ]);
   });
 
-  it("Settings has the four locked items in spec order", () => {
+  it("Settings has the locked finance items in spec order", () => {
+    // Finance-only Settings (2026-06-18, owner): Roles & Permissions,
+    // Integration Statuses, Audit Log. Functionality Control was removed from
+    // the menu (screen gating defaults to open).
     const section = findTop("Settings");
     expect(section.secondary.map((item) => item.path)).toEqual([
       "/admin/roles",
-      "/admin/functionality",
       "/admin/integrations",
       "/admin/activity-log",
     ]);

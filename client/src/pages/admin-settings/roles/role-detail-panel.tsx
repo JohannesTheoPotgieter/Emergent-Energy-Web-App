@@ -11,8 +11,16 @@ import { RolePermissionsMatrix } from "./role-permissions-matrix";
 import { RoleAuthorityConfig } from "./role-authority-config";
 import { ENTITY_PERMISSION_DEFAULTS } from "@shared/schema";
 import { PAGE_REGISTRY } from "@/config/page-registry";
+import { FINANCE_ONLY_MODE } from "@shared/config/enabled-modules";
 import { useScreenAvailability } from "@/hooks/use-screen-availability";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+
+// When the app runs finance-only, the role permission matrix is scoped to the
+// finance function: only the Finance and Admin permission categories are shown
+// (Cashflow, COS, Revenue, GP, FYE, Smart Import, integrations, roles, audit …);
+// every operational-module category is hidden. Reverts automatically if
+// FINANCE_ONLY_MODE is turned off. Keys match ENTITY_CATEGORIES in settings-types.
+const FINANCE_FUNCTION_ENTITY_CATEGORIES = ["finance", "admin"] as const;
 
 interface RoleDetailPanelProps {
   role: RoleSummary;
@@ -72,9 +80,23 @@ export function RoleDetailPanel({
     return entities.size > 0 ? entities : undefined;
   }, [disabledScreenIds]);
 
+  // Finance-only: restrict the matrix to the finance-function permission
+  // categories. Undefined (= show everything) when finance-only mode is off.
+  const allowedEntityIds = useMemo(() => {
+    if (!FINANCE_ONLY_MODE) return undefined;
+    const entities = new Set<string>();
+    for (const key of FINANCE_FUNCTION_ENTITY_CATEGORIES) {
+      const cat = ENTITY_CATEGORIES[key];
+      if (cat) cat.entities.forEach((e) => entities.add(e));
+    }
+    return entities;
+  }, []);
+
   // Compute permission stats for header
   const permStats = useMemo(() => {
-    const allEntities = Object.values(ENTITY_CATEGORIES).flatMap((c) => c.entities);
+    const allEntities = Object.values(ENTITY_CATEGORIES)
+      .flatMap((c) => c.entities)
+      .filter((e) => !allowedEntityIds || allowedEntityIds.has(e));
     const ep = ((draft.entityPermissions ?? role.entityPermissions) || {}) as Record<string, Record<string, boolean>>;
     const total = allEntities.length * ACTIONS.length;
     let granted = 0;
@@ -91,7 +113,7 @@ export function RoleDetailPanel({
       }
     }
     return { granted, total, pct: total > 0 ? Math.round((granted / total) * 100) : 0 };
-  }, [role, draft]);
+  }, [role, draft, allowedEntityIds]);
 
   const navCount = ((draft.sections ?? role.sections) || []).filter((s) => !s.startsWith("!")).length;
 
@@ -262,7 +284,7 @@ export function RoleDetailPanel({
                   <RoleNavAccess role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} />
                 )}
                 {section.key === "permissions" && (
-                  <RolePermissionsMatrix role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} enabledNavSections={(draft.sections ?? role.sections) || []} disabledEntityIds={disabledEntityIds} onBulkAuditReason={setBulkReason} />
+                  <RolePermissionsMatrix role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} enabledNavSections={(draft.sections ?? role.sections) || []} disabledEntityIds={disabledEntityIds} allowedEntityIds={allowedEntityIds} onBulkAuditReason={setBulkReason} />
                 )}
                 {section.key === "authority" && (
                   <RoleAuthorityConfig role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} />
