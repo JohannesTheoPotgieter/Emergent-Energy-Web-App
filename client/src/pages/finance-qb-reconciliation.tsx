@@ -26,6 +26,7 @@ import {
   Clock,
   EyeOff,
   RotateCcw,
+  RefreshCw,
   type LucideIcon,
 } from "lucide-react";
 
@@ -439,6 +440,45 @@ export default function FinanceQbReconciliationPage() {
     },
   });
 
+  // On-demand recompute (the daily scheduler does this automatically). Surfaced
+  // as a button so an operator can populate the page right after (re)connecting
+  // QuickBooks instead of waiting for the nightly run.
+  const refreshMutation = useMutation({
+    mutationFn: async () => apiRequest("POST", "/api/finance/qb-recon/refresh"),
+    onSuccess: () => {
+      toast({
+        title: "Reconciliation refreshed",
+        description: "Recomputed the company-wide tracker-vs-QuickBooks match.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/finance/qb-recon/summary"] });
+      invalidateAll();
+    },
+    onError: (e: unknown) => {
+      toast({
+        title: "Refresh failed",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const refreshButton = (
+    <Button
+      variant="outline"
+      size="sm"
+      className="gap-1.5"
+      onClick={() => refreshMutation.mutate()}
+      disabled={refreshMutation.isPending}
+      data-testid="qb-recon-refresh"
+    >
+      <RefreshCw
+        className={`h-4 w-4 ${refreshMutation.isPending ? "animate-spin" : ""}`}
+        aria-hidden="true"
+      />
+      {refreshMutation.isPending ? "Refreshing…" : "Refresh from QuickBooks"}
+    </Button>
+  );
+
   const periods = useMemo(() => summaryQuery.data?.periods ?? [], [summaryQuery.data]);
 
   // Default to the most recent period; keep selection valid when grain changes.
@@ -505,6 +545,7 @@ export default function FinanceQbReconciliationPage() {
           title="QuickBooks Reconciliation"
           question="Company-wide tracker vs QuickBooks — matched on invoice number + ex-VAT amount. The app compares and flags; it never adjusts a tracker or writes back to QuickBooks."
           source="QB invoice-match engine · ex-VAT"
+          actions={refreshButton}
           period={
             <div className="inline-flex overflow-hidden rounded-md border border-brand-muted/40" role="group" aria-label="Period grain">
               {(["day", "week", "month"] as Grain[]).map((g) => (
@@ -532,7 +573,7 @@ export default function FinanceQbReconciliationPage() {
         ) : periods.length === 0 ? (
           <FinanceEmpty
             title="No reconciliation computed yet"
-            hint="It refreshes daily (or trigger a refresh from the API)."
+            hint='It refreshes daily. Click "Refresh from QuickBooks" above to compute it now.'
           />
         ) : (
           <>
