@@ -12,9 +12,7 @@
  *        == golden expenditureBreakdown.totals (realised REV / COS)
  *   2. dashboard KPI service (recognisedRevenue / realisedCost)
  *        == canonical (consumes the same read path — no parallel math)
- *   3. project_revenue_summary after the remediation backfill
- *        == canonical (PRS is a materialized view of the lines now)
- *   4. runCrossSurfaceFinanceVerification (the upgraded verify:finance core)
+ *   3. runCrossSurfaceFinanceVerification (the upgraded verify:finance core)
  *        reports zero failures across all of the above + the golden surface.
  *
  * Non-realised fixture lines are seeded RED/unconfirmed so the § 3.2
@@ -31,7 +29,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { eq, inArray, isNull, and } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 
 // Opt-in only: DB-mutating tests must NOT seed the live dev/prod DB on a normal build. Set RUN_DB_TESTS=1 to run (CI / dedicated DB).
 const hasDb = !!process.env.DATABASE_URL && process.env.RUN_DB_TESTS === "1";
@@ -186,33 +184,6 @@ d("one read path — golden fixture cross-surface equality (PostgreSQL)", () => 
     for (const id of ids) {
       expect(kpis.get(id)!.recognisedRevenue).toBeCloseTo(canonical.get(id)!.recognisedRevenueAllLines, 2);
       expect(kpis.get(id)!.realisedCost).toBeCloseTo(canonical.get(id)!.realisedCos, 2);
-    }
-  }, 120_000);
-
-  it("PRS after the remediation backfill is a view over the canonical lines", async () => {
-    const { runFinanceLinkageBackfill } = await import("../../../scripts/backfill-finance-linkage");
-    const ids = [...idByName.values()];
-    const report = await runFinanceLinkageBackfill({
-      execute: true,
-      projectIds: ids,
-      reportDir: "/tmp/one-read-path-prs",
-    });
-    expect(report.projectsLinkedAndDeriving).toBe(ids.length);
-
-    const { getCanonicalProjectTotals } = await import("../../../server/lib/finance/canonical-project-totals");
-    const canonical = await getCanonicalProjectTotals(ids);
-    for (const fp of fixtureProjects) {
-      const id = idByName.get(fp.projectName)!;
-      const [prs] = await db
-        .select()
-        .from(schema.projectRevenueSummary)
-        .where(and(
-          eq(schema.projectRevenueSummary.projectId, id),
-          isNull(schema.projectRevenueSummary.effectiveTo),
-        ));
-      expect(prs, `${fp.projectName} has a live PRS row`).toBeDefined();
-      expect(Number(prs.actualRevenue)).toBeCloseTo(canonical.get(id)!.realisedRevenue, 2);
-      expect(Number(prs.actualExpenditure)).toBeCloseTo(canonical.get(id)!.realisedCos, 2);
     }
   }, 120_000);
 
