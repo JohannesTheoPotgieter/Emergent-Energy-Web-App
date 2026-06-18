@@ -52,6 +52,7 @@ import { matchRows, generateBusinessKey, type SectionType, type MatchedRow } fro
 import { runConflictEngine, type RowMergeResult } from "./lib/import/conflict-engine";
 import { loadCurrentPlanRows, loadCurrentRevenueRows, loadCurrentCostRows, loadBaselineForPlanner, detectImportMode, loadDeletedPlanRows, loadDeletedRevenueRows, loadDeletedCostRows } from "./lib/import/baseline";
 import { buildImportFailureEnvelope, persistFailedImportRun } from "./lib/import/failure-envelope";
+import { summarizeLastAutoPull } from "./lib/import/last-auto-pull-summary";
 import { captureFinanceLineIds, readFinanceLineIds } from "./lib/import/pre-import-snapshot";
 import {
   smartImportRuns,
@@ -324,6 +325,29 @@ router.get("/api/smart-import/runs", requireAuth, requirePermission("smart_impor
     res.status(500).json({ error: "Failed to list import runs" });
   }
 });
+
+// GET /api/smart-import/last-auto-pull — RESULTS of the most recent automatic
+// (scheduler) tracker pull for Settings → Integration Statuses. Aggregation
+// lives in ./lib/import/last-auto-pull-summary (pure + unit-tested); reading
+// recent rows and grouping in JS keeps it dialect-safe for the SQLite dev path.
+router.get(
+  "/api/smart-import/last-auto-pull",
+  requireAuth,
+  requirePermission("smart_import", "view"),
+  async (_req: Request, res: Response) => {
+    try {
+      const rows = await db
+        .select()
+        .from(smartImportRuns)
+        .orderBy(desc(smartImportRuns.uploadedAt))
+        .limit(200);
+      res.json({ batch: summarizeLastAutoPull(rows) });
+    } catch (err: unknown) {
+      console.error("[SmartImport] last-auto-pull error:", err);
+      res.status(500).json({ error: "Failed to load last auto-pull results" });
+    }
+  },
+);
 
 // POST /api/smart-import/upload
 router.post("/api/smart-import/upload", requireAuth, requirePermission("smart_import", "edit"), (req: Request, res: Response, next: NextFunction) => {
