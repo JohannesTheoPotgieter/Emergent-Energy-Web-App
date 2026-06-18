@@ -15,15 +15,16 @@
  *
  *   After: `npm run db:push` calls `drizzle-kit push --force`, which
  *   reads shared/schema.ts directly and applies every missing schema
- *   element against the target DB. The two legacy SQL scripts are
- *   retained at `npm run db:push:legacy` for back-compat only, and both
- *   carry a deprecation header so nobody extends them thinking they're
+ *   element against the target DB. The `db:push:legacy` alias has since
+ *   been REMOVED — the guard below fails CI if it is reintroduced. The two
+ *   legacy SQL files remain only because `script/build.ts` copies them into
+ *   dist; both still carry a deprecation header so nobody treats them as
  *   canonical.
  *
  * These assertions are source-text level: the failure mode is a silent
  * regression of the npm script back to the legacy path, or a new SQL
  * statement added to the deprecated files as if they were authoritative.
- * A grep catches that the moment it hits main.
+ * A guard catches that the moment it hits a PR.
  */
 
 import { describe, expect, it } from "vitest";
@@ -62,13 +63,11 @@ describe("db:push uses drizzle-kit, not the legacy SQL files", () => {
     ).toMatch(/drizzle-kit\s+push/);
   });
 
-  it("legacy psql path is still reachable via db:push:legacy (back-compat)", () => {
+  it("the db:push:legacy alias has been removed and must not return", () => {
     expect(
       scripts["db:push:legacy"],
-      "Keep the legacy psql-based path under a :legacy suffix so someone debugging the historical flow can still reach it without resurrecting the old db:push.",
-    ).toBeDefined();
-    expect(scripts["db:push:legacy"]).toMatch(/pre-push-enums\.sql/);
-    expect(scripts["db:push:legacy"]).toMatch(/full-schema-alignment\.sql/);
+      "db:push:legacy was removed. If it is reintroduced this guard fails CI on purpose — the canonical schema path is `drizzle-kit push` via db:push.",
+    ).toBeUndefined();
   });
 });
 

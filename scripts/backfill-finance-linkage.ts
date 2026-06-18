@@ -38,8 +38,8 @@
  *     the post-fix canonical realised REV/COS for the five golden projects
  *     is compared against the embedded dashboard oracle within R1.
  *
- * Run:   npm run remediate:finance-linkage            (dry-run)
- *        npm run remediate:finance-linkage -- --execute
+ * Run:   tsx scripts/backfill-finance-linkage.ts            (dry-run)
+ *        tsx scripts/backfill-finance-linkage.ts --execute
  * Report: qa/reports/finance-linkage-remediation.json + .csv
  */
 
