@@ -31,7 +31,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Upload, FileSpreadsheet, ExternalLink, RefreshCw, CheckCircle2, AlertTriangle, Clock, Eye, Play, Cloud, Save, Zap, ChevronDown, ChevronRight } from "lucide-react";
+import { Upload, FileSpreadsheet, ExternalLink, RefreshCw, CheckCircle2, AlertTriangle, Clock, Eye, Play, Cloud, Save, Zap, ChevronDown, ChevronRight, ListChecks } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { formatRelativeWithAbsoluteZA } from "@/lib/datetime";
 import { IntegrationConnectionHealth } from "@/components/admin/integration-connection-health";
@@ -862,6 +862,182 @@ function SharePointAutoImportPanel() {
   );
 }
 
+// ── Last automatic tracker pull — results ──────────────────────────────────
+
+interface LastAutoPullFile {
+  runId: number;
+  projectId: number | null;
+  projectName: string | null;
+  fileName: string | null;
+  status: string;
+  committedAt: string | null;
+  uploadedAt: string | null;
+  matchSource: string | null;
+  sections: string[];
+  changeCounts: { plan: number; revenue: number; expenditure: number };
+  reason: string | null;
+}
+
+interface LastAutoPull {
+  batchRunId: string;
+  ranAt: string | null;
+  counts: { total: number; committed: number; needsReview: number; failed: number; inProgress: number };
+  files: LastAutoPullFile[];
+}
+
+interface LastAutoPullResponse {
+  batch: LastAutoPull | null;
+}
+
+function outcomeBadge(status: string) {
+  const s = (status || "").toLowerCase();
+  if (s === "committed") return <Badge className="bg-emerald-600">Committed</Badge>;
+  if (s === "awaiting_review")
+    return <Badge variant="outline" className="bg-amber-100 text-amber-700 border-amber-200">Needs review</Badge>;
+  if (s === "failed" || s === "rejected" || s === "rolled_back")
+    return <Badge variant="destructive">Failed</Badge>;
+  return <Badge variant="secondary">In progress</Badge>;
+}
+
+function changeSummary(f: LastAutoPullFile): string {
+  const parts: string[] = [];
+  if (f.changeCounts.revenue > 0) parts.push(`Revenue ${f.changeCounts.revenue}`);
+  if (f.changeCounts.expenditure > 0) parts.push(`Expenditure ${f.changeCounts.expenditure}`);
+  if (f.changeCounts.plan > 0) parts.push(`Plan ${f.changeCounts.plan}`);
+  return parts.length ? parts.join(" · ") : "—";
+}
+
+/**
+ * Shows the RESULTS of the most recent scheduled (automatic) SharePoint
+ * tracker pull — per tracker: the project it updated, the outcome, which
+ * sections moved, and the reason for any hold/failure. Reads
+ * /api/smart-import/last-auto-pull (the most recent scheduler batch).
+ */
+function LastAutoPullResults() {
+  const q = useQuery<LastAutoPullResponse>({
+    queryKey: ["/api/smart-import/last-auto-pull"],
+    queryFn: async () => {
+      const res = await fetch("/api/smart-import/last-auto-pull", { credentials: "include" });
+      if (!res.ok) throw new Error(`Failed to load last auto-pull (${res.status})`);
+      return res.json();
+    },
+    staleTime: 30_000,
+  });
+
+  const batch = q.data?.batch ?? null;
+
+  return (
+    <Card data-testid="last-auto-pull-panel">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <ListChecks className="h-5 w-5 text-sky-600" />
+              Last automatic tracker pull — results
+            </CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              What the most recent scheduled SharePoint pull changed — per tracker, the
+              project it updated, the sections it moved, and why anything was held.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => void q.refetch()}
+            aria-label="Refresh last auto-pull results"
+            data-testid="btn-refresh-auto-pull"
+          >
+            <RefreshCw className={`h-4 w-4 ${q.isFetching ? "animate-spin" : ""}`} />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {q.isLoading ? (
+          <div className="text-sm text-muted-foreground p-3">Loading last auto-pull…</div>
+        ) : q.error ? (
+          <div className="text-sm text-red-600 p-3 bg-red-50/40 rounded">
+            Couldn't load last auto-pull: {q.error instanceof Error ? q.error.message : "Unknown error"}
+          </div>
+        ) : !batch ? (
+          <div className="text-sm text-muted-foreground p-3" data-testid="text-auto-pull-empty">
+            No automatic tracker pulls have run yet. The SharePoint auto-import will record its
+            results here after its next scheduled run.
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+              <span className="text-muted-foreground">
+                Ran{" "}
+                <span className="font-medium text-foreground" data-testid="text-auto-pull-when">
+                  {batch.ranAt ? formatRelativeWithAbsoluteZA(batch.ranAt) : "—"}
+                </span>
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
+                <span className="font-medium">{batch.counts.total}</span> tracker
+                {batch.counts.total === 1 ? "" : "s"}
+              </span>
+              <Badge className="bg-emerald-600" data-testid="badge-auto-pull-committed">
+                {batch.counts.committed} committed
+              </Badge>
+              {batch.counts.needsReview > 0 && (
+                <Badge variant="outline" className="bg-amber-100 text-amber-700 border-amber-200" data-testid="badge-auto-pull-review">
+                  {batch.counts.needsReview} need review
+                </Badge>
+              )}
+              {batch.counts.failed > 0 && (
+                <Badge variant="destructive" data-testid="badge-auto-pull-failed">
+                  {batch.counts.failed} failed
+                </Badge>
+              )}
+              {batch.counts.inProgress > 0 && (
+                <Badge variant="secondary">{batch.counts.inProgress} in progress</Badge>
+              )}
+            </div>
+
+            <div className="border rounded-lg overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Tracker file</TableHead>
+                    <TableHead>Project</TableHead>
+                    <TableHead>Outcome</TableHead>
+                    <TableHead>Changed</TableHead>
+                    <TableHead>Reason / note</TableHead>
+                    <TableHead className="text-right">View</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {batch.files.map((f) => (
+                    <TableRow key={f.runId} data-testid={`row-auto-pull-${f.runId}`}>
+                      <TableCell className="font-mono text-xs max-w-[240px] truncate" title={f.fileName ?? ""}>
+                        {f.fileName || "—"}
+                      </TableCell>
+                      <TableCell className="text-sm">{f.projectName || "—"}</TableCell>
+                      <TableCell>{outcomeBadge(f.status)}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{changeSummary(f)}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground max-w-[260px] truncate" title={f.reason ?? ""}>
+                        {f.reason || "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Link href={`/admin/smart-import?runId=${f.runId}`}>
+                          <Button size="sm" variant="ghost" className="gap-1.5" data-testid={`btn-view-auto-pull-${f.runId}`}>
+                            <Eye className="h-4 w-4" /> View
+                          </Button>
+                        </Link>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────
 
 export default function AdminIntegrationsPage() {
@@ -924,6 +1100,7 @@ export default function AdminIntegrationsPage() {
         <IntegrationConnectionHealth includeNames={FINANCE_CONNECTOR_NAMES} />
         <SmartImportPanel />
         <SharePointAutoImportPanel />
+        <LastAutoPullResults />
       </div>
     </AdminPageShell>
   );
