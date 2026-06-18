@@ -33,6 +33,12 @@ import { requireAuth, getEffectiveUser } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
 import { findEntityRegistry } from "@shared/permissions/registry";
 import { evaluateQbMappingLockDecision } from "./lib/quickbooks-mapping-lock-eval";
+import {
+  clearQbOAuthStateCookie,
+  readQbOAuthStateCookie,
+  setQbOAuthStateCookie,
+  statesMatch,
+} from "./lib/quickbooks-oauth-state";
 
 // Lock-policy: once a mapping is locked (by an admin via the
 // "Suggest matches" cascade or the unlock-then-relock flow), only an
@@ -203,6 +209,11 @@ export function registerQuickBooksRoutes(app: Express): void {
         }
       });
 
+      // Dedicated cross-site-safe state cookie (see QB_OAUTH_STATE_COOKIE note);
+      // complements the session-stored qbState so the callback can verify even
+      // when the SameSite=Lax session cookie isn't sent on the Intuit redirect.
+      setQbOAuthStateCookie(res, state);
+
       const url = getAuthorizationUrl(state);
       res.redirect(url);
     } catch (err) {
@@ -244,30 +255,45 @@ export function registerQuickBooksRoutes(app: Express): void {
         return;
       }
 
-      const expectedState = (req.session as SessionWithQbState)?.qbState;
+      const sessionState = (req.session as SessionWithQbState)?.qbState;
+      const cookieState = readQbOAuthStateCookie(req);
 
-      // Diagnostic: understand why CSRF state check fails
+      // Verify against EITHER the session (Lax) or the dedicated cross-site
+      // cookie (None) — whichever the browser sent back. The cookie is the
+      // robust path: the session cookie is frequently dropped on the cross-site
+      // Intuit redirect, which used to fail every reconnect as "Invalid CSRF
+      // state" even though auth-start saved the state correctly.
+      const matchedSession = statesMatch(state, sessionState);
+      const matchedCookie = statesMatch(state, cookieState);
+      const valid = matchedSession || matchedCookie;
+
+      // Diagnostic: understand why a CSRF state check fails (no secrets logged).
       console.log(`[QuickBooks callback] Session ID: ${req.sessionID ?? "NONE"}`);
-      console.log(`[QuickBooks callback] Session exists: ${!!req.session}`);
-      console.log(`[QuickBooks callback] qbState on session: ${expectedState ? `"${expectedState.slice(0, 8)}..."` : "UNDEFINED"}`);
-      console.log(`[QuickBooks callback] state from query:   ${state ? `"${state.slice(0, 8)}..."` : "EMPTY"}`);
-      console.log(`[QuickBooks callback] Match: ${expectedState === state}`);
-      console.log(`[QuickBooks callback] Session keys: ${Object.keys(req.session ?? {}).join(", ")}`);
+      console.log(`[QuickBooks callback] qbState on session: ${sessionState ? "present" : "UNDEFINED"} · state cookie: ${cookieState ? "present" : "UNDEFINED"} · query state: ${state ? "present" : "EMPTY"}`);
+      console.log(`[QuickBooks callback] Match — session: ${matchedSession}, cookie: ${matchedCookie}`);
 
-      if (!expectedState || expectedState !== state) {
+      if (!valid) {
         logAuditFromReq(req, {
           entityType: "quickbooks_integration",
           entityId: "quickbooks",
           action: "quickbooks.oauth.failed",
           source: "SETTINGS",
-          changesJson: { reason: "csrf_mismatch", hadSession: !!req.session, hadState: !!expectedState, stateFromQuery: !!state },
+          changesJson: {
+            reason: "csrf_mismatch",
+            hadSession: !!req.session,
+            hadSessionState: !!sessionState,
+            hadCookieState: !!cookieState,
+            stateFromQuery: !!state,
+          },
         });
+        clearQbOAuthStateCookie(res);
         res.redirect(`/admin/quickbooks?quickbooks=error&message=${encodeURIComponent("Invalid CSRF state")}`);
         return;
       }
 
-      // One-shot: clear the state once verified.
+      // One-shot: clear the state (session + cookie) once verified.
       delete (req.session as SessionWithQbState).qbState;
+      clearQbOAuthStateCookie(res);
 
       await exchangeCodeForTokens(code, realmId);
 
