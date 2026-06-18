@@ -52,6 +52,7 @@ import { matchRows, generateBusinessKey, type SectionType, type MatchedRow } fro
 import { runConflictEngine, type RowMergeResult } from "./lib/import/conflict-engine";
 import { loadCurrentPlanRows, loadCurrentRevenueRows, loadCurrentCostRows, loadBaselineForPlanner, detectImportMode, loadDeletedPlanRows, loadDeletedRevenueRows, loadDeletedCostRows } from "./lib/import/baseline";
 import { buildImportFailureEnvelope, persistFailedImportRun } from "./lib/import/failure-envelope";
+import { summarizeLastAutoPull } from "./lib/import/last-auto-pull-summary";
 import { captureFinanceLineIds, readFinanceLineIds } from "./lib/import/pre-import-snapshot";
 import {
   smartImportRuns,
@@ -325,20 +326,10 @@ router.get("/api/smart-import/runs", requireAuth, requirePermission("smart_impor
   }
 });
 
-// GET /api/smart-import/last-auto-pull
-//
-// Surfaces the RESULTS of the most recent *automatic* (scheduler) tracker pull
-// so Settings → Integration Statuses can show what the last unattended import
-// actually changed: per-tracker outcome (committed / needs review / failed),
-// the project it updated, which tracker sections moved, and the reason for any
-// hold/failure.
-//
-// "Auto pull" = a Scheduled Import v2 batch — every file processed in one
-// scheduler tick is stamped with the same summaryJson.schedulerV2.batchRunId
-// (see server/services/scheduled-import-v2.ts). We read recent smart_import_runs
-// and group the most recent batch in JS (no jsonb-path SQL, so it stays
-// dialect-safe for the SQLite dev fallback), mirroring the Control Tower
-// history handler below.
+// GET /api/smart-import/last-auto-pull — RESULTS of the most recent automatic
+// (scheduler) tracker pull for Settings → Integration Statuses. Aggregation
+// lives in ./lib/import/last-auto-pull-summary (pure + unit-tested); reading
+// recent rows and grouping in JS keeps it dialect-safe for the SQLite dev path.
 router.get(
   "/api/smart-import/last-auto-pull",
   requireAuth,
@@ -350,100 +341,7 @@ router.get(
         .from(smartImportRuns)
         .orderBy(desc(smartImportRuns.uploadedAt))
         .limit(200);
-
-      // Keep only scheduler-produced runs (those carrying a batchRunId).
-      const schedulerRuns = rows.filter((r: any) => {
-        const sched = (r.summaryJson as any)?.schedulerV2;
-        return typeof sched?.batchRunId === "string" && sched.batchRunId.length > 0;
-      });
-
-      if (schedulerRuns.length === 0) {
-        res.json({ batch: null });
-        return;
-      }
-
-      // Rows are sorted newest-first, so the first scheduler run carries the
-      // most recent batch id.
-      const latestBatchId = (schedulerRuns[0].summaryJson as any).schedulerV2
-        .batchRunId as string;
-      const batchRuns = schedulerRuns.filter(
-        (r: any) => (r.summaryJson as any)?.schedulerV2?.batchRunId === latestBatchId,
-      );
-
-      const files = batchRuns.map((run: any) => {
-        const summary = (run.summaryJson as any) ?? {};
-        const sched = summary.schedulerV2 ?? {};
-        const norm = summary.normalization ?? {};
-
-        // Which parts of the tracker this file moved (or would move) — the
-        // substance of "what changed". Counts come from the preview
-        // normalization that the scheduler stored on the run.
-        const changeCounts = {
-          plan: Array.isArray(norm.planTasks) ? norm.planTasks.length : 0,
-          revenue: Array.isArray(norm.revenueLines) ? norm.revenueLines.length : 0,
-          expenditure: Array.isArray(norm.costLines) ? norm.costLines.length : 0,
-        };
-        const sections: string[] = [];
-        if (changeCounts.plan > 0) sections.push("Plan");
-        if (changeCounts.revenue > 0) sections.push("Revenue");
-        if (changeCounts.expenditure > 0) sections.push("Expenditure");
-
-        // Human-readable reason for a hold / failure (commit error envelope
-        // wins, then a quarantine reason, then the auto-commit-gate park reason).
-        let reason: string | null = null;
-        if (summary.error && typeof summary.error.message === "string") {
-          reason = summary.error.message;
-        } else if (sched.quarantine && typeof sched.quarantine.reason === "string") {
-          const kind = sched.quarantine.kind === "older_revision" ? "Older revision" : "Duplicate";
-          reason = `${kind}: ${sched.quarantine.reason}`;
-        } else if (
-          sched.autoCommitGate?.decision === "park" &&
-          typeof sched.autoCommitGate.reason === "string"
-        ) {
-          reason = sched.autoCommitGate.reason;
-        }
-
-        return {
-          runId: run.id,
-          projectId: run.projectId ?? null,
-          projectName: run.projectName ?? null,
-          fileName: run.sourceFileName ?? null,
-          status: String(run.status ?? ""),
-          committedAt: run.committedAt ?? null,
-          uploadedAt: run.uploadedAt ?? null,
-          matchSource: typeof sched.matchSource === "string" ? sched.matchSource : null,
-          sections,
-          changeCounts,
-          reason,
-        };
-      });
-
-      const counts = files.reduce(
-        (
-          acc: { total: number; committed: number; needsReview: number; failed: number; inProgress: number },
-          f: { status: string },
-        ) => {
-          acc.total++;
-          const s = f.status.toLowerCase();
-          if (s === "committed") acc.committed++;
-          else if (s === "failed" || s === "rejected" || s === "rolled_back") acc.failed++;
-          else if (s === "awaiting_review") acc.needsReview++;
-          else acc.inProgress++; // 'preview' and any transient state
-          return acc;
-        },
-        { total: 0, committed: 0, needsReview: 0, failed: 0, inProgress: 0 },
-      );
-
-      res.json({
-        batch: {
-          batchRunId: latestBatchId,
-          // Scheduler stamps uploadedAt at row insert during the tick, so the
-          // newest run's uploadedAt is when this pull ran.
-          ranAt: batchRuns[0]?.uploadedAt ?? null,
-          counts,
-          files,
-        },
-      });
+      res.json({ batch: summarizeLastAutoPull(rows) });
     } catch (err: unknown) {
       console.error("[SmartImport] last-auto-pull error:", err);
       res.status(500).json({ error: "Failed to load last auto-pull results" });
