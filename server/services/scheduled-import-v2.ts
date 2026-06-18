@@ -255,6 +255,12 @@ async function processFileV2(
   },
   triggeredBy: string,
   batchRunId: string,
+  /**
+   * Owner "always commit" switch (sp_settings.autoCommitAll). When true, a
+   * matched file commits regardless of the auto-commit gate AND the net-delta
+   * guard — the operator has accepted that the tracker is always the truth.
+   */
+  forceCommit: boolean,
 ): Promise<FileOutcome> {
   const fileName = file.name;
   const extraSummary = {
@@ -379,7 +385,12 @@ async function processFileV2(
     conflictPolicyParks: policyDecision.decision === "park",
   };
   const gate = decideSchedulerAutoCommit(gateSignals);
-  const effectiveDecision: "commit" | "park" = gate.decision;
+  // Owner "always commit" switch: commit whenever a project is resolved,
+  // bypassing the gate's review + wrong-file guards. We can only commit to a
+  // known project, so an unmatched file still parks for a human to map it.
+  const forcedCommit = forceCommit && !!autoMappedProjectId && gate.decision === "park";
+  const effectiveDecision: "commit" | "park" =
+    forceCommit && autoMappedProjectId ? "commit" : gate.decision;
 
   const summaryJson = {
     ...(preview as unknown as Record<string, unknown>),
@@ -398,7 +409,11 @@ async function processFileV2(
       policyReason: policyDecision.reason,
       autoResolvedConflictCount: Object.keys(policyDecision.resolutions).length,
       // Tightened auto-commit gate: why this run auto-committed or parked.
-      autoCommitGate: { decision: gate.decision, reason: gate.reason },
+      // When the owner's auto-commit-all switch overrides a park, record the
+      // effective decision plus the gate reason it bypassed (kept for audit).
+      autoCommitGate: forcedCommit
+        ? { decision: "commit", reason: `owner auto-commit-all (gate would park: ${gate.reason})`, forced: true }
+        : { decision: gate.decision, reason: gate.reason },
     },
   };
 
@@ -429,16 +444,19 @@ async function processFileV2(
     try {
       // Net-delta guard: park (don't auto-commit) when this run would swing the
       // project's REV or COS beyond the threshold vs its current value. Uses the
-      // dry-run preview for the "would-be" totals (no parallel formula).
-      const parkedByDelta = await maybeParkOnNetDelta({
-        runId: run.id,
-        projectId: autoMappedProjectId,
-        projectName: resolvedProjectName,
-        v2ConflictResolutions: policyDecision.resolutions,
-        gateSignals,
-        summaryJson,
-      });
-      if (parkedByDelta) return { status: "parked", runId: run.id };
+      // dry-run preview for the "would-be" totals (no parallel formula). Skipped
+      // entirely under the owner's auto-commit-all switch ("no guards").
+      if (!forceCommit) {
+        const parkedByDelta = await maybeParkOnNetDelta({
+          runId: run.id,
+          projectId: autoMappedProjectId,
+          projectName: resolvedProjectName,
+          v2ConflictResolutions: policyDecision.resolutions,
+          gateSignals,
+          summaryJson,
+        });
+        if (parkedByDelta) return { status: "parked", runId: run.id };
+      }
 
       const commitResult = await commitSmartImportRunAsSystem({
         runId: run.id,
@@ -589,6 +607,9 @@ export async function runScheduledImportV2(opts: {
   if (!settings) {
     throw new Error("SharePoint settings not configured");
   }
+  // Owner "always commit" switch — every matched file commits, bypassing the
+  // review gate and the net-delta guard (sp_settings.autoCommitAll).
+  const forceCommit = settings.autoCommitAll === true;
 
   const result: ScheduledImportV2Result = {
     triggerType: opts.triggerType,
@@ -712,6 +733,7 @@ export async function runScheduledImportV2(opts: {
           { id: child.id, name: child.name, driveId: settings.driveId },
           opts.triggeredBy,
           batchRunId,
+          forceCommit,
         );
         if (outcome.status === "committed") {
           result.filesCommitted++;

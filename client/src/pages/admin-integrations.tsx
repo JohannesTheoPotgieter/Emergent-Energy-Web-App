@@ -401,6 +401,7 @@ interface SpSettings {
   folderPath: string | null;
   intervalMinutes: number;
   enabled: boolean;
+  autoCommitAll?: boolean;
   lastRunAt: string | null;
   lastSuccessAt?: string | null;
   lastErrorAt?: string | null;
@@ -479,6 +480,7 @@ function SharePointAutoImportPanel() {
     folderPath: null,
     intervalMinutes: 30,
     enabled: false,
+    autoCommitAll: false,
     lastRunAt: null,
   });
   const [dirty, setDirty] = useState(false);
@@ -499,6 +501,7 @@ function SharePointAutoImportPanel() {
       folderItemId: settingsQuery.data.folderItemId ?? null,
       folderPath: settingsQuery.data.folderPath ?? null,
       intervalMinutes: settingsQuery.data.intervalMinutes ?? 30,
+      autoCommitAll: settingsQuery.data.autoCommitAll ?? false,
     });
   }, [settingsQuery.data, dirty]);
 
@@ -532,6 +535,7 @@ function SharePointAutoImportPanel() {
           folderPath: normalizeFolderPath(form.folderPath),
           intervalMinutes: form.intervalMinutes,
           enabled: form.enabled,
+          autoCommitAll: form.autoCommitAll ?? false,
         }),
       });
       if (!res.ok) {
@@ -736,6 +740,25 @@ function SharePointAutoImportPanel() {
             checked={enabled}
             onCheckedChange={(v) => patch("enabled", v)}
             data-testid="switch-sp-enabled"
+          />
+        </div>
+
+        {/* Always auto-commit (skip review) — owner switch. */}
+        <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50/50 dark:bg-amber-950/10 px-3 py-2">
+          <div className="pr-3">
+            <div className="font-medium">Always auto-commit (skip review)</div>
+            <p className="text-xs text-muted-foreground">
+              Commit every scheduled pull even when the importer flags issues
+              (ERROR&nbsp;on&nbsp;REV, missing allocation, blockers, conflicts), and
+              skip the wrong-file guards. The tracker becomes the unconditional
+              source of truth — a truncated or wrong file will overwrite finance
+              data with no pause. Turn off to restore the review gate.
+            </p>
+          </div>
+          <Switch
+            checked={form.autoCommitAll ?? false}
+            onCheckedChange={(v) => patch("autoCommitAll", v)}
+            data-testid="switch-sp-auto-commit-all"
           />
         </div>
 
