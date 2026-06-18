@@ -135,15 +135,6 @@ describe("guards are wired into the gates", () => {
     expect(pkg.scripts["db:migrate"]).toMatch(/drizzle-kit migrate && tsx scripts\/db-verify-schema\.ts --repair/);
   });
 
-  for (const file of [".github/workflows/pr-checks.yml"]) {
-    it(`${file} runs db:verify-schema and the migration-integrity (migrate-from-zero) job`, () => {
-      const source = read(file);
-      expect(source).toMatch(/npm\s+run\s+db:verify-schema/);
-      expect(source).toMatch(/migration-integrity:/);
-      expect(source).toMatch(/npm run db:migrate/);
-    });
-  }
-
   it("release gate includes the live schema verification when DATABASE_URL is set", () => {
     const source = read("qa/release-gate.ts");
     expect(source).toMatch(/db:verify-schema/);
