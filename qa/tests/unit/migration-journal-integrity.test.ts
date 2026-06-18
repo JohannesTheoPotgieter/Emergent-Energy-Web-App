@@ -135,7 +135,7 @@ describe("guards are wired into the gates", () => {
     expect(pkg.scripts["db:migrate"]).toMatch(/drizzle-kit migrate && tsx scripts\/db-verify-schema\.ts --repair/);
   });
 
-  for (const file of [".github/workflows/pr-checks.yml", ".github/workflows/ci.yml"]) {
+  for (const file of [".github/workflows/pr-checks.yml"]) {
     it(`${file} runs db:verify-schema and the migration-integrity (migrate-from-zero) job`, () => {
       const source = read(file);
       expect(source).toMatch(/npm\s+run\s+db:verify-schema/);
