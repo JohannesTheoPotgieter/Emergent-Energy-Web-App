@@ -56,7 +56,6 @@ import {
   computeSoftClosePct,
   detectErrorOnRev,
   detectMissingAllocationOnNewLines,
-  collectCommitLockDates,
   detectNetDeltaExceeded,
   buildProjectMetricSwings,
   NET_DELTA_PARK_THRESHOLD_PCT,
@@ -65,7 +64,6 @@ import {
 import { getReconciliationDetail } from "./reconciliation-service";
 import { notifyUsers } from "./notification-service";
 import { UsersRepository } from "../repositories/users-repository";
-import { enforceCosPeriodLock } from "../lib/finance/period-lock";
 import { resolveSchedulerConflictPolicy } from "../imports/scheduler-conflict-policy";
 import { commitSmartImportRunAsSystem } from "./scheduler-commit";
 import { IMPORT_FILE_ALWAYS_WINS } from "../imports/import-conflict-policy";
@@ -362,33 +360,15 @@ async function processFileV2(
     : { decision: "park" as const, reason: "no_planner_result", resolutions: {} };
   const hasResurrections = (plannerResult?.resurrections?.length ?? 0) > 0;
 
-  // Locked-period check — replicate the HTTP commit's effective-date set and
-  // resolve it against the COS period locks with NO actor (the scheduler can't
-  // override). A locked period parks gracefully with a reason instead of
-  // erroring at commit time; a human commits later via the lock-aware review.
-  let lockedPeriods: string[] = [];
-  try {
-    const lockEnforcement = await enforceCosPeriodLock({
-      effectiveDates: collectCommitLockDates(preview.normalization),
-      role: undefined,
-    });
-    lockedPeriods = lockEnforcement.lockedPeriods;
-  } catch (lockErr) {
-    // Fail safe: if the lock check itself errors, park rather than risk an
-    // unattended write into a possibly-locked period.
-    console.warn(
-      `[ScheduledImportV2] period-lock check failed for ${fileName} (parking to be safe):`,
-      lockErr instanceof Error ? lockErr.message : lockErr,
-    );
-    lockedPeriods = ["unknown"];
-  }
+  // COS period-lock enforcement was removed from the import path by owner
+  // decision (2026-06-18): scheduled imports no longer park on a locked COS
+  // period. Other finance write paths keep their period-lock guards.
 
   // Tighten "clean" for unattended auto-commit: anything not provably clean
   // parks (with a reason) instead of forcing/erroring. Clean runs still
   // auto-commit silently — this adds no prompt to the clean path (owner #1012).
   const gateSignals: AutoCommitGateSignals = {
     hasBlockers: preview.hasBlockers,
-    lockedPeriods,
     errorOnRev: detectErrorOnRev(preview.normalization.categoryAllocations),
     missingAllocationOnNewLines: detectMissingAllocationOnNewLines(
       plannerResult,
@@ -419,7 +399,6 @@ async function processFileV2(
       autoResolvedConflictCount: Object.keys(policyDecision.resolutions).length,
       // Tightened auto-commit gate: why this run auto-committed or parked.
       autoCommitGate: { decision: gate.decision, reason: gate.reason },
-      lockedPeriods,
     },
   };
 

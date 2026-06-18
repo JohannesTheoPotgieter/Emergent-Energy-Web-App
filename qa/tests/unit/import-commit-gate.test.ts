@@ -21,7 +21,6 @@ import {
   computeSoftClosePct,
   detectErrorOnRev,
   detectMissingAllocationOnNewLines,
-  collectCommitLockDates,
   computeMetricSwingPct,
   detectNetDeltaExceeded,
   buildProjectMetricSwings,
@@ -33,7 +32,6 @@ import {
 
 const CLEAN: AutoCommitGateSignals = {
   hasBlockers: false,
-  lockedPeriods: [],
   errorOnRev: false,
   missingAllocationOnNewLines: false,
   softClosePct: 0,
@@ -44,13 +42,6 @@ const CLEAN: AutoCommitGateSignals = {
 describe("auto-commit gate — decision", () => {
   it("(e) a clean run still auto-commits (no prompt added to the clean path)", () => {
     expect(decideSchedulerAutoCommit(CLEAN)).toEqual({ decision: "commit", reason: "clean" });
-  });
-
-  it("(a) a locked period parks with the period named in the reason", () => {
-    const d = decideSchedulerAutoCommit({ ...CLEAN, lockedPeriods: ["2026-03-01"] });
-    expect(d.decision).toBe("park");
-    expect(d.reason).toContain("locked period");
-    expect(d.reason).toContain("2026-03-01");
   });
 
   it("(b) over-wipe parks above the threshold but commits at/below it", () => {
@@ -66,16 +57,6 @@ describe("auto-commit gate — decision", () => {
     expect(decideSchedulerAutoCommit({ ...CLEAN, missingAllocationOnNewLines: true }).reason).toContain("allocation");
     expect(decideSchedulerAutoCommit({ ...CLEAN, hasResurrections: true }).decision).toBe("park");
     expect(decideSchedulerAutoCommit({ ...CLEAN, conflictPolicyParks: true }).decision).toBe("park");
-  });
-
-  it("locked period wins over other park reasons (worst-first ordering)", () => {
-    const d = decideSchedulerAutoCommit({
-      ...CLEAN,
-      lockedPeriods: ["2026-03-01"],
-      hasBlockers: true,
-      softClosePct: 0.99,
-    });
-    expect(d.reason).toContain("locked period");
   });
 
   it("net-delta over threshold parks; the clean path is unchanged when absent", () => {
@@ -216,16 +197,6 @@ describe("auto-commit gate — pure signal extractors", () => {
     ).toBe(false);
   });
 
-  it("collectCommitLockDates gathers cost/actual invoice + revenue invoice/paid dates", () => {
-    expect(
-      collectCommitLockDates({
-        costLines: [{ invoiceDate: "2026-03-10" }],
-        actualLineRows: [{ invoiceDate: "2026-04-01" }],
-        revenueLines: [{ invoiceDate: "2026-03-20", paidDate: "2026-05-02" }],
-      }),
-    ).toEqual(["2026-03-10", "2026-04-01", "2026-03-20", "2026-05-02"]);
-    expect(collectCommitLockDates(null)).toEqual([]);
-  });
 });
 
 // Source-level invariants (mirrors scheduled-import-error-surface.test.ts):
@@ -242,8 +213,10 @@ describe("commit-gate wiring + financial safety", () => {
   it("scheduler routes the auto-commit decision through the tightened gate", () => {
     expect(schedulerSrc).toContain('from "../lib/import/auto-commit-gate"');
     expect(schedulerSrc).toContain("decideSchedulerAutoCommit(");
-    expect(schedulerSrc).toContain("enforceCosPeriodLock(");
     expect(schedulerSrc).toContain("autoCommitGate");
+    // COS period-lock enforcement was removed from the import path (owner
+    // decision 2026-06-18): the scheduler no longer checks period locks.
+    expect(schedulerSrc).not.toContain("enforceCosPeriodLock(");
   });
 
   it("feeds the net-delta guard from the dry-run preview + canonical read, parks + notifies", () => {
@@ -266,11 +239,12 @@ describe("commit-gate wiring + financial safety", () => {
     expect(schedulerSrc).toContain("NET_DELTA_NOTIFY_ROLES");
   });
 
-  it("(c) the commit path is lock-aware and refreshes reconciliation after writing", () => {
-    // Commit-from-review uses the existing lock-aware HTTP commit handler …
-    expect(httpSrc).toContain("guardCosPeriodLock");
-    // … and the scheduler commit transaction refreshes reconciliation.
+  it("(c) the commit path refreshes reconciliation after writing", () => {
+    // The scheduler commit transaction refreshes reconciliation.
     expect(commitSrc).toContain("refreshReconciliationForProjects");
+    // COS period-lock enforcement was removed from the import commit path
+    // (owner decision 2026-06-18): the HTTP commit no longer guards on it.
+    expect(httpSrc).not.toContain("guardCosPeriodLock");
   });
 
   it("(d-preview) dry-run computes reconciliation then ROLLS BACK before marking committed", () => {

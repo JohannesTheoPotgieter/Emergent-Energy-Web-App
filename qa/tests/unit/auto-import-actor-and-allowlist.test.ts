@@ -69,22 +69,20 @@ describe("M3 auto-import — manual commit is allowlisted (PMs/CMs cannot commit
   });
 });
 
-describe("M3 auto-import — COS period locks are never auto-overridden", () => {
+describe("M3 auto-import — scheduler parks unclean runs for review", () => {
   const schedulerSrc = read("server/services/scheduled-import-v2.ts");
 
-  it("the scheduler's lock check passes NO role (cannot override the lock)", () => {
-    // enforceCosPeriodLock is called with role: undefined — the scheduler has
-    // no override authority, so a locked period yields lockedPeriods → park.
-    expect(schedulerSrc).toContain("enforceCosPeriodLock(");
-    expect(schedulerSrc).toMatch(/enforceCosPeriodLock\(\{[\s\S]*?role:\s*undefined/);
-  });
-
-  it("a locked period is fed into the auto-commit gate (→ park, not force)", () => {
-    expect(schedulerSrc).toContain("lockedPeriods");
+  it("the scheduler routes the commit/park decision through the auto-commit gate", () => {
     expect(schedulerSrc).toContain("decideSchedulerAutoCommit(");
   });
 
-  it("a guard trip parks as awaiting_review AND raises a review alert", () => {
+  it("COS period-lock enforcement is removed from the import path (owner 2026-06-18)", () => {
+    // Imports no longer park on a locked COS period; other finance write paths
+    // keep their period-lock guards.
+    expect(schedulerSrc).not.toContain("enforceCosPeriodLock(");
+  });
+
+  it("a parked run is awaiting_review AND raises a review alert", () => {
     expect(schedulerSrc).toContain('"awaiting_review"');
     expect(schedulerSrc).toContain('maybeSendImportAlert("needs_review"');
   });

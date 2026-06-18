@@ -8,9 +8,7 @@
  * it only moves not-provably-clean runs off the auto-commit path.
  *
  * The decision is a pure function fed cheap, pre-computed signals so it is
- * unit-testable without a database. The one signal that needs the DB — the
- * locked-period check — is resolved by the caller (via the existing
- * `enforceCosPeriodLock`) and passed in as `lockedPeriods`.
+ * unit-testable without a database.
  *
  * Nothing here changes a calculation or a reported number; it only routes a
  * run to commit vs. review.
@@ -32,8 +30,6 @@ export const NET_DELTA_PARK_THRESHOLD_PCT = 25;
 export interface AutoCommitGateSignals {
   /** Unresolved BLOCKER issues in the preview/normalization. */
   hasBlockers: boolean;
-  /** Locked fiscal period(s) any row in the commit touches (YYYY-MM-01). */
-  lockedPeriods: string[];
   /** Tracker revenue-allocation header was broken (J4 = "ERROR on REV"). */
   errorOnRev: boolean;
   /** New/changed cost lines exist while a category allocation is missing. */
@@ -65,9 +61,6 @@ export interface AutoCommitDecision {
  * Order is worst-first so the surfaced reason is the most material one.
  */
 export function decideSchedulerAutoCommit(s: AutoCommitGateSignals): AutoCommitDecision {
-  if (s.lockedPeriods.length > 0) {
-    return { decision: "park", reason: `locked period ${[...s.lockedPeriods].sort().join(", ")}` };
-  }
   if (s.hasBlockers) {
     return { decision: "park", reason: "unresolved blocker issues" };
   }
@@ -171,25 +164,6 @@ export function detectMissingAllocationOnNewLines(
   if (expenditureChurn(planner) <= 0) return false;
   if (!Array.isArray(allocs)) return false;
   return allocs.some((a) => a.revenueAllocation == null);
-}
-
-/** Every periodised effective date a commit would touch, for the locked-period
- *  check — mirrors the HTTP commit's `commitLockDates` (smart-import-routes.ts).
- *  Pure: returns the dates; the caller runs `enforceCosPeriodLock`. */
-export function collectCommitLockDates(norm: unknown): Array<string | null | undefined> {
-  const n = (norm ?? {}) as {
-    costLines?: Array<{ invoiceDate?: string | null }>;
-    actualLineRows?: Array<{ invoiceDate?: string | null }>;
-    revenueLines?: Array<{ invoiceDate?: string | null; paidDate?: string | null }>;
-  };
-  const dates: Array<string | null | undefined> = [];
-  for (const cl of n.costLines ?? []) dates.push(cl?.invoiceDate);
-  for (const a of n.actualLineRows ?? []) dates.push(a?.invoiceDate);
-  for (const rl of n.revenueLines ?? []) {
-    dates.push(rl?.invoiceDate);
-    dates.push(rl?.paidDate);
-  }
-  return dates;
 }
 
 // ---------------------------------------------------------------------------

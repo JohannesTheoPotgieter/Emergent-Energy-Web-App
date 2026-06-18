@@ -7,7 +7,6 @@ import crypto from "crypto";
 import { z } from "zod";
 import { validateBody } from "./middleware/validateBody";
 import { logAuditFromReq } from "./audit-logger";
-import { guardCosPeriodLock } from "./lib/finance/period-lock-guard";
 import { parseIntParam } from "./lib/req-params";
 
 // Zod schemas for smart-import write surface.
@@ -2321,17 +2320,10 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
     let projectId = run.projectId;
     const userId = (req as any).user?.id || null;
 
-    // fix/period-lock-all-write-paths (PRIMARY): block the WHOLE commit if ANY
-    // row targets a locked COS period — no partial commit. The 423 lists the
-    // locked period(s); a COO/CFO/CEO override with a reason is audited.
-    const commitLockDates: Array<string | null | undefined> = [];
-    for (const cl of ((norm as any)?.costLines ?? [])) commitLockDates.push(cl?.invoiceDate);
-    for (const a of ((norm as any)?.actualLineRows ?? [])) commitLockDates.push(a?.invoiceDate);
-    for (const rl of ((norm as any)?.revenueLines ?? [])) {
-      commitLockDates.push(rl?.invoiceDate);
-      commitLockDates.push(rl?.paidDate);
-    }
-    if (await guardCosPeriodLock(req, res, { effectiveDates: commitLockDates, surface: "Smart Import commit", entityType: "smart_import_run", entityId: String(runId), projectName })) return;
+    // COS period-lock enforcement was removed from the Smart Import commit path
+    // by owner decision (2026-06-18): imports no longer block on a locked COS
+    // period. Other finance write paths (COS tracker, line review, QuickBooks)
+    // keep their period-lock guards.
 
     // Notifications feature removed - planEditNotifications governance check disabled
     // Previously blocked import commits when unresolved front-end plan edits existed.

@@ -1,1 +1,2 @@
 - [Project deletion spine](project-data-deletion.md) — `project_info` is the real project spine (not the empty `projects` table); name-search alone undercounts linked rows.
+- [Import tool period-lock removed](import-period-lock-removed.md) — Smart Import commit paths intentionally NO LONGER enforce COS period locks (owner 2026-06-18); don't "restore" the guard — other finance lock paths stay.
