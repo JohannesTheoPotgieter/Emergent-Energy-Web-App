@@ -9,7 +9,7 @@
 
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { integrations, integrationRunEvents, quickbooksInvoiceLinks } from '@shared/schema';
-import { db } from '../db';
+import { db, getDbMode } from '../db';
 import {
   deriveIntegrationHealth,
   recordIntegrationRun,
@@ -53,6 +53,27 @@ export const QB_REDIRECT_URI =
 
 // QuickBooks access tokens last 1 hour. We refresh a bit early.
 const ACCESS_TOKEN_EARLY_REFRESH_MS = 5 * 60 * 1000;
+
+/**
+ * Cross-process advisory-lock key for QuickBooks token refresh ("QBTK").
+ *
+ * The deploy target is Replit **autoscale** → multiple server instances run
+ * concurrently. Intuit rotates the refresh token on every refresh, so if two
+ * instances refresh in parallel they each spend the same refresh token and
+ * Intuit invalidates the loser's rotated token. The next cycle then fails with
+ * `invalid_grant` ("Incorrect or invalid refresh token") → needs_reconnect.
+ *
+ * The in-process `refreshInFlight` mutex below only serializes callers within a
+ * single process; this Postgres advisory lock (held for the duration of the
+ * refresh transaction) serializes refreshes across ALL instances. It is the
+ * same primitive used by client-id generation and the Pipedrive sync. Random
+ * 32-bit int — changing it breaks serialization between old and new code, so
+ * do not change it lightly.
+ */
+const QB_TOKEN_REFRESH_ADVISORY_LOCK = 0x5142_544b; // "QBTK"
+
+/** A db handle or an in-transaction handle — both expose select/insert/update. */
+type QbDbExecutor = typeof db;
 
 export type QuickBooksTokenMetadata = {
   realmId?: string;
@@ -107,8 +128,8 @@ function basicAuthHeader(): string {
 
 // ===================== STORAGE HELPERS =====================
 
-async function loadQuickBooksIntegrationRow() {
-  const rows = await db
+async function loadQuickBooksIntegrationRow(exec: QbDbExecutor = db) {
+  const rows = await exec
     .select()
     .from(integrations)
     .where(and(eq(integrations.name, QB_INTEGRATION_NAME), isNull(integrations.deletedAt)))
@@ -138,18 +159,23 @@ function decryptStoredTokens(metadata: QuickBooksTokenMetadata): QuickBooksToken
   return out;
 }
 
-export async function loadQuickBooksMetadata(): Promise<QuickBooksTokenMetadata> {
-  const row = await loadQuickBooksIntegrationRow();
+export async function loadQuickBooksMetadata(
+  exec: QbDbExecutor = db,
+): Promise<QuickBooksTokenMetadata> {
+  const row = await loadQuickBooksIntegrationRow(exec);
   const metadata = (row?.metadata as QuickBooksTokenMetadata | null) ?? {};
   return decryptStoredTokens(metadata ?? {});
 }
 
-async function saveQuickBooksMetadata(metadata: QuickBooksTokenMetadata): Promise<void> {
-  const row = await loadQuickBooksIntegrationRow();
+async function saveQuickBooksMetadata(
+  metadata: QuickBooksTokenMetadata,
+  exec: QbDbExecutor = db,
+): Promise<void> {
+  const row = await loadQuickBooksIntegrationRow(exec);
   const encrypted = encryptStoredTokens(metadata);
   if (!row) {
     // Seed row is expected to be created at boot; fall back to insert.
-    await db.insert(integrations).values({
+    await exec.insert(integrations).values({
       name: QB_INTEGRATION_NAME,
       displayName: 'QuickBooks Online',
       description:
@@ -164,7 +190,7 @@ async function saveQuickBooksMetadata(metadata: QuickBooksTokenMetadata): Promis
     return;
   }
 
-  await db
+  await exec
     .update(integrations)
     .set({ metadata: encrypted, updatedAt: new Date() } as any)
     .where(eq(integrations.id, row.id));
@@ -306,43 +332,79 @@ export async function exchangeCodeForTokens(
   }
 }
 
-export async function refreshAccessToken(): Promise<QuickBooksTokenMetadata> {
-  const startedAt = new Date();
-  const existing = await loadQuickBooksMetadata();
-  if (!existing.refreshToken) {
-    const err = new Error('QuickBooks is not connected: no refresh token stored.');
-    await recordQbRun({
-      runType: 'oauth:refresh',
-      startedAt,
-      ok: false,
-      errorCode: 'not_connected',
-      errorDetail: err.message,
+/**
+ * Run the token-refresh critical section under the cross-process advisory
+ * lock. On Postgres the read → Intuit-refresh → persist sequence runs inside a
+ * single transaction holding `pg_advisory_xact_lock`, so no other instance can
+ * refresh concurrently (the lock releases automatically on commit/rollback).
+ * On the SQLite dev/test path there is no advisory-lock primitive and QB is
+ * mocked, so we fall back to the unlocked path (the in-process mutex suffices).
+ */
+async function withTokenRefreshLock(
+  fn: (exec: QbDbExecutor) => Promise<QuickBooksTokenMetadata>,
+): Promise<QuickBooksTokenMetadata> {
+  if (getDbMode() === 'postgres') {
+    return db.transaction(async (tx: QbDbExecutor) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${QB_TOKEN_REFRESH_ADVISORY_LOCK})`);
+      return fn(tx);
     });
-    throw err;
+  }
+  return fn(db);
+}
+
+/**
+ * The actual refresh, executed while the advisory lock is held. `exec` is the
+ * locked transaction handle so the re-read and the persist are serialized
+ * with the network refresh and cannot interleave with another instance.
+ */
+async function doTokenRefresh(exec: QbDbExecutor): Promise<QuickBooksTokenMetadata> {
+  const existing = await loadQuickBooksMetadata(exec);
+  if (!existing.refreshToken) {
+    throw new Error('QuickBooks is not connected: no refresh token stored.');
   }
 
+  // Double-checked locking: another autoscale instance may have refreshed
+  // while we were blocked on the advisory lock. If the stored access token is
+  // now valid comfortably beyond the early-refresh window, reuse it instead of
+  // spending the (already rotated) refresh token a second time — a double
+  // spend is exactly what produces invalid_grant / needs_reconnect.
+  const expiresAt = existing.tokenExpiry ? Date.parse(existing.tokenExpiry) : 0;
+  if (
+    existing.accessToken &&
+    expiresAt &&
+    expiresAt - Date.now() > ACCESS_TOKEN_EARLY_REFRESH_MS
+  ) {
+    return existing;
+  }
+
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: existing.refreshToken,
+  });
+
+  const tokenResponse = await postToTokenEndpoint(body);
+
+  const now = Date.now();
+  const metadata: QuickBooksTokenMetadata = {
+    ...existing,
+    accessToken: tokenResponse.access_token,
+    // Intuit rotates refresh tokens periodically; fall back to the existing one when absent.
+    refreshToken: tokenResponse.refresh_token || existing.refreshToken,
+    tokenExpiry: new Date(now + (tokenResponse.expires_in ?? 3600) * 1000).toISOString(),
+    refreshTokenExpiry: tokenResponse.x_refresh_token_expires_in
+      ? new Date(now + tokenResponse.x_refresh_token_expires_in * 1000).toISOString()
+      : existing.refreshTokenExpiry,
+    updatedAt: new Date(now).toISOString(),
+  };
+
+  await saveQuickBooksMetadata(metadata, exec);
+  return metadata;
+}
+
+export async function refreshAccessToken(): Promise<QuickBooksTokenMetadata> {
+  const startedAt = new Date();
   try {
-    const body = new URLSearchParams({
-      grant_type: 'refresh_token',
-      refresh_token: existing.refreshToken,
-    });
-
-    const tokenResponse = await postToTokenEndpoint(body);
-
-    const now = Date.now();
-    const metadata: QuickBooksTokenMetadata = {
-      ...existing,
-      accessToken: tokenResponse.access_token,
-      // Intuit rotates refresh tokens periodically; fall back to the existing one when absent.
-      refreshToken: tokenResponse.refresh_token || existing.refreshToken,
-      tokenExpiry: new Date(now + (tokenResponse.expires_in ?? 3600) * 1000).toISOString(),
-      refreshTokenExpiry: tokenResponse.x_refresh_token_expires_in
-        ? new Date(now + tokenResponse.x_refresh_token_expires_in * 1000).toISOString()
-        : existing.refreshTokenExpiry,
-      updatedAt: new Date(now).toISOString(),
-    };
-
-    await saveQuickBooksMetadata(metadata);
+    const metadata = await withTokenRefreshLock(doTokenRefresh);
     await recordQbRun({
       runType: 'oauth:refresh',
       startedAt,
@@ -364,11 +426,13 @@ export async function refreshAccessToken(): Promise<QuickBooksTokenMetadata> {
 
 // In-process mutex so concurrent requests near the expiry window don't
 // each fire their own refresh. Intuit rotates the refresh token on
-// every call (see refreshAccessToken comment about
+// every call (see doTokenRefresh comment about
 // `tokenResponse.refresh_token || existing.refreshToken`), so two
 // parallel refreshes invalidate each other and the next cycle ends in
-// `needs_reconnect`. The mutex collapses concurrent callers onto one
-// in-flight refresh promise.
+// `needs_reconnect`. The mutex collapses concurrent callers in THIS process
+// onto one in-flight refresh promise; refreshAccessToken additionally takes a
+// Postgres advisory lock so refreshes are serialized across autoscale
+// instances too.
 let refreshInFlight: Promise<{ accessToken: string; realmId: string }> | null = null;
 
 export async function getValidAccessToken(): Promise<{ accessToken: string; realmId: string }> {
