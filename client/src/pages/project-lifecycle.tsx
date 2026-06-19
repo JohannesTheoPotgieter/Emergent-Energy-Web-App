@@ -53,7 +53,7 @@ type WorkspaceSection = "overview" | "stage-gates" | "latest-updates" | "client-
 
 const SECTION_LINKS: Array<{ key: string; label: string; path: string }> = [
   { key: "lifecycle", label: "Lifecycle", path: "/lifecycle-board" },
-  { key: "project-list", label: "Project List", path: "/projects" },
+  { key: "project-list", label: "Project List", path: "/execution" },
   { key: "stage-gates", label: "Stage Gates", path: "/project-lifecycle/stage-gates" },
   { key: "latest-updates", label: "Latest Updates", path: "/project-lifecycle/latest-updates" },
   { key: "clients", label: "Clients", path: "/clients" },
@@ -1220,7 +1220,7 @@ export function ProjectLifecyclePage() {
               />
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={() => setLocation("/projects")} data-testid="button-open-project-list">
+              <Button variant="outline" size="sm" onClick={() => setLocation("/execution")} data-testid="button-open-project-list">
                 <FolderKanban className="mr-1 h-4 w-4" />
                 Project List
               </Button>
@@ -1285,7 +1285,7 @@ export function ProjectLifecyclePage() {
               title="Project List"
               description="Open the full portfolio directory without dropping lifecycle context."
               icon={<FolderKanban className="h-5 w-5" />}
-              onClick={() => setLocation("/projects")}
+              onClick={() => setLocation("/execution")}
               testId="project-lifecycle-quick-project-list"
             />
             <QuickLinkCard

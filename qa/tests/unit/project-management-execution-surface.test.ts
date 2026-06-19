@@ -35,4 +35,17 @@ describe("project management execution surfaces", () => {
     expect(entry!.redirectTo).toBe("/pm/approvals");
     expect(entry!.permissionEntity).toBe("deliverables");
   });
+
+  it("retired /projects route is kept (for the redirect) but hidden from the sidebar", () => {
+    // The "All Projects" list was retired — its PM-assignment, escalation,
+    // Edit-Project-Info and CSV-export features were migrated into the
+    // Execution board. The route entry is kept so /projects resolves to a
+    // redirect (ProjectsSummary → projects-redirect.tsx), but it must never
+    // re-appear in the sidebar.
+    const entry = PAGE_REGISTRY.find((p) => p.id === "projects");
+    expect(entry).toBeDefined();
+    expect(entry!.path).toBe("/projects");
+    expect(entry!.showInSidebar).toBe(false);
+    expect(entry!.routeComponentKey).toBe("ProjectsSummary");
+  });
 });

@@ -98,6 +98,13 @@ export interface BoardRow {
   engineering: EngineeringSummary;
   quality: QualitySummary;
   flags: ExecutionItemCounts;
+  // Editable fields surfaced for the board's inline editors (migrated from the
+  // retired /projects page): escalation cell + Edit Project Info modal.
+  escalationLevel: string | null;
+  constructionStartDate: string | null;
+  commissioningDate: string | null;
+  omHandoverDate: string | null;
+  clientHandoverDate: string | null;
 }
 
 export interface BoardHeader {
@@ -197,6 +204,11 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
       engineering: eng,
       quality,
       flags,
+      escalationLevel: p.escalationLevel,
+      constructionStartDate: p.constructionStartDate,
+      commissioningDate: p.commissioningDate,
+      omHandoverDate: p.omHandoverDate,
+      clientHandoverDate: p.clientHandoverDate,
     });
   }
 
