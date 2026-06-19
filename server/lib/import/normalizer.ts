@@ -821,6 +821,31 @@ function parsePredecessors(raw: string | null): ParsedPredecessor[] {
   return out;
 }
 
+/**
+ * Detects the header row of the bottom "Milestone" rollup/summary table that
+ * some trackers append below the WBS programme (header:
+ * `Milestone | Start Date | Duration | End Date | Progress`). That block is a
+ * high-level rollup of the plan — it is NOT part of the project plan and must
+ * never be imported as plan tasks (its rows carry dates but no WBS number, so
+ * they would otherwise leak in as phantom tasks).
+ *
+ * Detection is deliberately strict — a cell that is exactly "Milestone" PLUS at
+ * least two of the summary column markers — so a real WBS task whose name merely
+ * contains the word "milestone" is never mistaken for the summary header.
+ */
+function isMilestoneSummaryHeaderRow(row: any[]): boolean {
+  if (!Array.isArray(row)) return false;
+  const cells = row.map((c) => String(c ?? "").toLowerCase().trim());
+  const hasMilestoneLabel = cells.some((c) => c === "milestone" || c === "milestones");
+  if (!hasMilestoneLabel) return false;
+  const markers = new Set(["start date", "end date", "duration", "progress"]);
+  let hits = 0;
+  for (const c of cells) {
+    if (markers.has(c)) hits += 1;
+  }
+  return hits >= 2;
+}
+
 function extractPlanTasks(
   data: any[][],
   mapping: MappingResult,
@@ -888,16 +913,34 @@ function extractPlanTasks(
 
   let currentPhase: string | null = null;
   let currentSubProject: string | null = null;
+  let inMilestoneSummary = false;
   const subProjectPattern = /^project\s+activit(?:y|ies)\s*[-–—:]\s*(.+)/i;
 
   for (let i = startRow; i < Math.min(endRow, data.length); i++) {
     const row = data[i];
     if (!row) continue;
 
+    // The bottom "Milestone" rollup/summary table is NOT part of the project
+    // plan. Once we hit its header, skip it and every row that follows — unless
+    // a genuine WBS-numbered task reappears (multi-project trackers can repeat
+    // the programme), which ends the rollup block.
+    if (isMilestoneSummaryHeaderRow(row)) {
+      inMilestoneSummary = true;
+      continue;
+    }
+
     const taskName = cellStr(row, taskNameCol);
     let taskNo = cellStr(row, taskNoCol);
 
     if (!taskName && !taskNo) continue;
+
+    if (inMilestoneSummary) {
+      if (taskNo && taskNo.trim()) {
+        inMilestoneSummary = false;
+      } else {
+        continue;
+      }
+    }
 
     if (taskNo && (taskNo.toLowerCase() === "no." || taskNo.toLowerCase() === "no")) continue;
     if (taskName && (taskName.toLowerCase() === "high level programme" || taskName.toLowerCase() === "high level program")) continue;
