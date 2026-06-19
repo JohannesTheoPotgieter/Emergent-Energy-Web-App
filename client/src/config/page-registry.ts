@@ -346,7 +346,9 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // The page surfaces billing-side milestones (invoiced / in bank), not
   // site delivery progress. Label and description updated to avoid
   // confusion with delivery milestones.
-  { id: "milestoneTracker", path: "/milestone-tracker", label: "Revenue Milestones", iconKey: "Milestone", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "MilestoneTrackerPage" },
+  // Retired surface — kept only so /milestone-tracker resolves to a redirect to
+  // the Execution board. Hidden from the sidebar.
+  { id: "milestoneTracker", path: "/milestone-tracker", label: "Revenue Milestones", iconKey: "Milestone", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "MilestoneTrackerPage" },
   // Wave-4 audit (2026-05-26) — site delivery milestones split out of
   // the billing tracker. Permission `pd_delivery_milestones` is in the
   // registry; this page lists all active projects with their delivery
