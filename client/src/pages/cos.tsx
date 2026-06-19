@@ -305,7 +305,7 @@ export default function CosTrackerPage() {
 
       <KpiRow>
         <KpiTile data-testid="kpi-planned" label="COS Planned" description="FY · P + C + R" value={<MoneyValue value={fy.planned} align="left" />} />
-        <KpiTile data-testid="kpi-committed" label="COS Committed" description="FY" value={<MoneyValue value={fy.committed} align="left" />} tone="warning" />
+        <KpiTile data-testid="kpi-committed" label="COS Committed" description="FY" value={<MoneyValue value={fy.committed} align="left" />} supporting="POs placed, not yet invoiced" />
         <KpiTile data-testid="kpi-realised" label="COS Realised" description="FY" value={<MoneyValue value={fy.realised} align="left" />} tone="critical" />
         <KpiTile data-testid="kpi-quickbooks" label="QuickBooks COS" description="FY" value={<MoneyValue value={fy.quickbooks} align="left" />} />
       </KpiRow>

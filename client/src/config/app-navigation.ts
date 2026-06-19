@@ -106,7 +106,12 @@ export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Finance",
     key: "FINANCE",
-    path: "/cashflow",
+    // Finance landing = Finance Home (/finance), the accountant's dashboard.
+    // The section root drives the top-nav "Finance" link AND the "Finance"
+    // breadcrumb crumb; both must resolve to /finance, not /cashflow. Roles that
+    // cannot view /finance fall back to their first visible finance item in
+    // buildVisibleTopSections (e.g. /cashflow), so this is safe.
+    path: "/finance",
     match: (pathname) => startsWithAny(pathname, [
       "/cashflow", "/cos", "/revenue-tracker", "/finance", "/fye-revenue-tracking",
       "/payment-request-board", "/po-approval-board", "/payment-batch-manager",
@@ -188,7 +193,7 @@ export type DisplayTopNavItem = {
 export const DISPLAY_TOP_NAV: DisplayTopNavItem[] = [
   { label: "Home", path: "/", requiredSectionKey: "HOME", sectionKeys: ["HOME"] },
   { label: "Project Delivery", path: "/execution-board", requiredSectionKey: "PROJECT_DELIVERY", sectionKeys: ["PROJECT_DELIVERY"] },
-  { label: "Finance", path: "/cashflow", requiredSectionKey: "FINANCE", sectionKeys: ["FINANCE"] },
+  { label: "Finance", path: "/finance", requiredSectionKey: "FINANCE", sectionKeys: ["FINANCE"] },
   { label: "Engineering", path: "/engineering", requiredSectionKey: "ENGINEERING", sectionKeys: ["ENGINEERING"] },
   { label: "Quality Management", path: "/quality", requiredSectionKey: "QUALITY", sectionKeys: ["QUALITY"] },
   { label: "Settings", path: "/settings", requiredSectionKey: "ADMIN", sectionKeys: ["ADMIN"] },

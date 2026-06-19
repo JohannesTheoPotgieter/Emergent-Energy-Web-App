@@ -45,7 +45,13 @@ describe("Finance Home — one canonical underlying source", () => {
 
   it("has no QuickBooks tile (QB lives only on its own reconciliation page)", () => {
     const home = readSrc(HOME_SRC);
-    expect(home).not.toMatch(/qb-recon/);
+    // A navigational LINK to /finance/qb-reconciliation is allowed (and expected
+    // — the trust strip + Drift badges point there). What's forbidden is
+    // embedding QB-recon DATA or a QB tile on Home: the /api/finance/qb-recon
+    // endpoints and the qb-recon-* tile markers. (The page route
+    // "qb-reconciliation" is NOT "qb-recon/" or "qb-recon-", so it's permitted.)
+    expect(home).not.toContain("/api/finance/qb-recon");
+    expect(home).not.toContain("qb-recon-");
     expect(home).not.toMatch(/\bqbStatus\b/);
     expect(home).not.toMatch(/\bqbDelta\b/);
     expect(home).not.toMatch(/QuickBooks/i);

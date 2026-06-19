@@ -106,28 +106,40 @@ export function RevenueStatesChart({
     const key = (state as BarClickState)?.activePayload?.[0]?.payload?.monthKey;
     if (key) onMonthClick?.(key);
   };
+  // A future month with no manual budget captured renders a zero-height (so
+  // visually absent) budget bar. Footnote that absence rather than leaving the
+  // viewer to wonder why Jul/Aug show only a Planned bar.
+  const currentMonthKey = new Date().toISOString().slice(0, 7);
+  const hasFutureBudgetGap = data.some((d) => !d.budgetSet && d.monthKey > currentMonthKey);
   return (
-    <ResponsiveContainer width="100%" height={240}>
-      <BarChart
-        data={data}
-        margin={{ top: 4, right: 8, left: 4, bottom: 4 }}
-        onClick={handleClick}
-        className={onMonthClick ? "cursor-pointer" : undefined}
-      >
-        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eef2f6" />
-        <XAxis dataKey="monthLabel" tick={axisTick} tickLine={false} axisLine={false} />
-        <YAxis tick={axisTick} tickLine={false} axisLine={false} tickFormatter={zarAxis} width={56} />
-        <Tooltip
-          formatter={(v: number, name: string) => [formatZar(v), name]}
-          contentStyle={tooltipStyle}
-          cursor={{ fill: "rgba(148,163,184,0.12)" }}
-        />
-        <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
-        <Bar dataKey="budget" name="Budget" fill={C.budget} radius={[2, 2, 0, 0]} />
-        <Bar dataKey="planned" name="Planned" fill={C.planned} radius={[2, 2, 0, 0]} />
-        <Bar dataKey="realised" name="Realised" fill={C.realised} radius={[2, 2, 0, 0]} />
-      </BarChart>
-    </ResponsiveContainer>
+    <div>
+      <ResponsiveContainer width="100%" height={240}>
+        <BarChart
+          data={data}
+          margin={{ top: 4, right: 8, left: 4, bottom: 4 }}
+          onClick={handleClick}
+          className={onMonthClick ? "cursor-pointer" : undefined}
+        >
+          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eef2f6" />
+          <XAxis dataKey="monthLabel" tick={axisTick} tickLine={false} axisLine={false} />
+          <YAxis tick={axisTick} tickLine={false} axisLine={false} tickFormatter={zarAxis} width={56} />
+          <Tooltip
+            formatter={(v: number, name: string) => [formatZar(v), name]}
+            contentStyle={tooltipStyle}
+            cursor={{ fill: "rgba(148,163,184,0.12)" }}
+          />
+          <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
+          <Bar dataKey="budget" name="Budget" fill={C.budget} radius={[2, 2, 0, 0]} />
+          <Bar dataKey="planned" name="Planned" fill={C.planned} radius={[2, 2, 0, 0]} />
+          <Bar dataKey="realised" name="Realised" fill={C.realised} radius={[2, 2, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+      {hasFutureBudgetGap && (
+        <p className="mt-1 text-[10px] text-slate-400" data-testid="revenue-budget-future-note">
+          * Budget not set for future months
+        </p>
+      )}
+    </div>
   );
 }
 
