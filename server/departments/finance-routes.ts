@@ -5670,6 +5670,14 @@ async function revenueTrackerHandler(req: Request, res: Response) {
     // the FYE engine's already-computed per-state revenue breakdown. Purely
     // additive — no existing figure (total/realised/unrealised) changes.
     const committedRevByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
+    // Planned revenue = the FYE engine's PLANNED + UNREALISED states combined,
+    // symmetric with the COS tab's "Planned" column (finance-routes.ts COS
+    // handler: plannedByMonth = ms.cos.planned + ms.cos.unrealised). Surfaced so
+    // the project Revenue view can mirror Cost of Sales tab-for-tab with a real
+    // Planned column (Planned = Planned) instead of a catch-all unrealised.
+    // Purely additive — reads already-computed FYE figures; no existing number
+    // or formula changes.
+    const plannedRevByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
     for (const ms of fye.monthlyStates) {
       if (!monthKeyInFinanceScope(ms.monthKey, fyScope)) continue;
       // Total recognised revenue for the month = all four states (FYE overlay).
@@ -5684,6 +5692,13 @@ async function revenueTrackerHandler(req: Request, res: Response) {
           total: ms.revenue.committed.total,
           projects: new Map(ms.revenue.committed.projects),
         });
+      }
+      // PLANNED = planned + unrealised (identical to the COS tab's definition).
+      const plannedTotal = ms.revenue.planned.total + ms.revenue.unrealised.total;
+      if (plannedTotal !== 0) {
+        const projects = new Map<string, number>(ms.revenue.planned.projects);
+        ms.revenue.unrealised.projects.forEach((v, k) => projects.set(k, (projects.get(k) ?? 0) + v));
+        plannedRevByMonth.set(ms.monthKey, { total: plannedTotal, projects });
       }
     }
 
@@ -5816,6 +5831,10 @@ async function revenueTrackerHandler(req: Request, res: Response) {
         revProjects: mapToSortedArray(bucket?.projects ?? new Map()),
         realisedProjects: mapToSortedArray(realisedBucket?.projects ?? new Map()),
         committedProjects: mapToSortedArray(committedRevByMonth.get(monthKey)?.projects ?? new Map()),
+        // PLANNED per-project breakdown (planned + unrealised) — mirrors the COS
+        // tab's plannedProjects so the project Revenue view shows a real
+        // Realised / Committed / Planned / Total split.
+        plannedProjects: mapToSortedArray(plannedRevByMonth.get(monthKey)?.projects ?? new Map()),
         qbRevenueProjects: mapToSortedArray(qbRevenueBucket?.projects ?? new Map()),
         unrealisedProjects: (() => {
           const revPs = bucket?.projects ?? new Map<string, number>();

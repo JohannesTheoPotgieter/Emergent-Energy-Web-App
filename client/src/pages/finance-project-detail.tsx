@@ -57,11 +57,11 @@ import {
 import { usePermission } from "@/hooks/use-permissions";
 import { VoImpactPanel } from "@/components/finance/VoImpactPanel";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { ProgramPlanContent } from "@/pages/program-plan";
 import { ExpenditureBreakdownContent } from "@/pages/expenditure-breakdown";
 import { RevenueTrackingContent } from "@/pages/revenue-tracking";
 import { CashflowTab } from "@/components/tabs/CashflowTab";
 import { ProjectCosTrackerView } from "@/components/finance/ProjectCosTrackerView";
+import { ProjectRevenueTrackerView } from "@/components/finance/ProjectRevenueTrackerView";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -609,9 +609,14 @@ export default function FinanceProjectDetailPage() {
         />
       </div>
 
-      {/* Owner-approved tabs: Milestone Tracker · Expenditure Breakdown (the Excel
-          cols B–X replica) · Cashflow · Cost of sales · Revenue. Each tab embeds
-          the existing canonical view for this project — no new finance figure. */}
+      {/* Owner-approved tabs (finance only — every tab is a financial view):
+          Milestone Tracker (the Revenue Milestone sheet replica: summary +
+          contract payment-milestone schedule) · Expenditure Breakdown (the Excel
+          cols B–X replica) · Cashflow · Cost of sales · Revenue (monthly
+          recognised revenue by state, mirroring the Cost of sales tab). Each tab
+          embeds an existing canonical view for this project — no new finance
+          figure. The delivery/programme Gantt is NOT a financial artifact and
+          lives on the engineering project detail, not here. */}
       <Tabs defaultValue="cost-of-sales" className="space-y-4">
         <TabsList className="flex-wrap">
           <TabsTrigger value="milestones" data-testid="tab-project-milestones">Milestone Tracker</TabsTrigger>
@@ -622,7 +627,9 @@ export default function FinanceProjectDetailPage() {
         </TabsList>
 
         <TabsContent value="milestones" className="mt-0">
-          <ProgramPlanContent projectId={projectId} />
+          {/* Revenue Milestone sheet replica — high-level revenue summary +
+              the contract payment-milestone schedule (normalized_revenue_lines). */}
+          <RevenueTrackingContent projectId={projectId} />
         </TabsContent>
 
         <TabsContent value="expenditure" className="mt-0">
@@ -641,7 +648,9 @@ export default function FinanceProjectDetailPage() {
         </TabsContent>
 
         <TabsContent value="revenue" className="mt-0">
-          <RevenueTrackingContent projectId={projectId} />
+          {/* Monthly recognised revenue by state (realised/committed/planned),
+              sliced to this project — mirrors the Cost of sales tab. */}
+          <ProjectRevenueTrackerView projectId={projectId} projectName={projectName} />
         </TabsContent>
       </Tabs>
 

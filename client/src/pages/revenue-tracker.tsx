@@ -53,6 +53,7 @@ interface MonthData {
   realisedProjects: ProjectBreakdown[];
   unrealisedProjects: ProjectBreakdown[];
   committedProjects: ProjectBreakdown[];
+  plannedProjects: ProjectBreakdown[];
   qbRevenueProjects: ProjectBreakdown[];
 }
 
