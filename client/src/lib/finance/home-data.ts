@@ -189,6 +189,8 @@ export interface MonthStatePoint {
   budget: number;
   planned: number;
   realised: number;
+  /** QuickBooks realised (accrual P&L Income), same figure as the Revenue screen's QuickBooks column. */
+  qb: number;
   /**
    * True when a manual budget was actually captured for this month. Future
    * months typically have no budget set yet, so `budget` collapses to 0 and the
@@ -210,7 +212,45 @@ export function monthStatesSeries(
     budget: budget.revenue[mk] ?? 0,
     planned: byKey.get(mk)?.plannedRevenue ?? 0,
     realised: byKey.get(mk)?.realisedRevenue ?? 0,
+    qb: 0,
     budgetSet: budget.revenue[mk] !== undefined,
+  }));
+}
+
+// ── Revenue-by-month chart, sourced from the Revenue screen's endpoint ────────
+// The Finance Home revenue-by-month chart must tie cell-for-cell to the Revenue
+// screen (budget · planned · realised · QuickBooks). Both surfaces therefore read
+// the SAME `/api/revenue-tracker` rows — PLANNED there comes from the FYE engine
+// and QuickBooks from the accrual P&L, neither of which /api/finance/lines carries.
+
+/** A single month row from GET /api/revenue-tracker (the fields the chart plots). */
+export interface RevenueTrackerMonthRow {
+  monthKey: string;
+  budget: number;
+  /** PLANNED column on the Revenue screen. */
+  totalRevenue: number;
+  realisedRevenue: number;
+  /** QUICKBOOKS column on the Revenue screen. */
+  qbRevenueActual: number;
+}
+
+export interface RevenueTrackerResponse {
+  months: RevenueTrackerMonthRow[];
+}
+
+/**
+ * Build the revenue-by-month chart series from the Revenue-screen endpoint so
+ * every bar matches that table exactly. Months arrive already FY-ordered.
+ */
+export function revenueMonthStates(months: RevenueTrackerMonthRow[]): MonthStatePoint[] {
+  return months.map((m) => ({
+    monthKey: m.monthKey,
+    monthLabel: monthLabelFromKey(m.monthKey),
+    budget: m.budget ?? 0,
+    planned: m.totalRevenue ?? 0,
+    realised: m.realisedRevenue ?? 0,
+    qb: m.qbRevenueActual ?? 0,
+    budgetSet: (m.budget ?? 0) > 0,
   }));
 }
 

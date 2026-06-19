@@ -66,9 +66,9 @@ import {
   fyMonthFrame,
   gpMarginSeries,
   monthLabelFromKey,
-  monthStatesSeries,
   onTrackGap,
   onTrackSeries,
+  revenueMonthStates,
   summariseTrust,
   tieState,
   topProjectsByGp,
@@ -79,6 +79,7 @@ import {
   type FinanceLinesResponse,
   type ProjectGpRow,
   type ReconPortfolioResponse,
+  type RevenueTrackerResponse,
   type TieState,
 } from "@/lib/finance/home-data";
 
@@ -164,6 +165,13 @@ export default function FinanceHomePage() {
     queryFn: fetchQueryFn(`/api/finance/lines${fyWindowQs}`),
     staleTime: 60_000,
   });
+  // The revenue-by-month chart reads the SAME endpoint as the Revenue screen so
+  // its budget / planned / realised / QuickBooks bars tie to that table exactly.
+  const revTrackerQuery = useQuery<RevenueTrackerResponse>({
+    queryKey: ["/api/revenue-tracker", fyWindowQs],
+    queryFn: fetchQueryFn(`/api/revenue-tracker${fyWindowQs}`),
+    staleTime: 60_000,
+  });
   const cashQuery = useQuery<CashflowResponse>({
     queryKey: ["/api/weekly-cashflow", qs],
     queryFn: fetchQueryFn(`/api/weekly-cashflow?${qs}`),
@@ -219,8 +227,8 @@ export default function FinanceHomePage() {
       : 0;
 
   const monthStates = useMemo(
-    () => monthStatesSeries(monthly, budgetByMonth, frame),
-    [monthly, budgetByMonth, frame],
+    () => revenueMonthStates(revTrackerQuery.data?.months ?? []),
+    [revTrackerQuery.data],
   );
   const onTrack = useMemo(
     () => onTrackSeries(monthly, budgetByMonth, frame),
@@ -550,14 +558,14 @@ export default function FinanceHomePage() {
       {/* SECTION 4 — Revenue by month: budget · planned · realised (click a month) */}
       <section className="mb-3">
         <ChartCard
-          title="Revenue — budget · planned · realised, by month"
-          hint="From the line-level ledger, by invoice-raised month. Click a month to drill in."
+          title="Revenue — budget · planned · realised · QB, by month"
+          hint="Same figures as the Revenue screen, by invoice-raised month. Click a month to drill in."
           data-testid="finance-home-revenue-states"
         >
-          {figuresLoading ? (
+          {revTrackerQuery.isLoading ? (
             <FinanceLoading label="Loading revenue…" />
-          ) : linesQuery.isError ? (
-            <FinanceError title="Could not load revenue." onRetry={() => linesQuery.refetch()} />
+          ) : revTrackerQuery.isError ? (
+            <FinanceError title="Could not load revenue." onRetry={() => revTrackerQuery.refetch()} />
           ) : monthStates.length === 0 ? (
             <FinanceEmpty title="No revenue in this FY." />
           ) : (

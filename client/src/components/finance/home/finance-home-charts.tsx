@@ -40,6 +40,7 @@ const C = {
   realised: "#16A34A",
   budget: "#94A3B8",
   planned: "#F59E0B",
+  quickbooks: "#6366F1",
   inflow: "#16A34A",
   outflow: "#E11D48",
   available: "#0EA5E9",
@@ -132,6 +133,7 @@ export function RevenueStatesChart({
           <Bar dataKey="budget" name="Budget" fill={C.budget} radius={[2, 2, 0, 0]} />
           <Bar dataKey="planned" name="Planned" fill={C.planned} radius={[2, 2, 0, 0]} />
           <Bar dataKey="realised" name="Realised" fill={C.realised} radius={[2, 2, 0, 0]} />
+          <Bar dataKey="qb" name="QB realised" fill={C.quickbooks} radius={[2, 2, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
       {hasFutureBudgetGap && (
