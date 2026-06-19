@@ -24,10 +24,10 @@
  *
  * Brand: centralised tokens + shared finance template components only.
  */
-import { useMemo, useState } from "react";
+import { useMemo, useState, type SyntheticEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { ArrowRight, GitCompare, Search } from "lucide-react";
+import { ArrowRight, GitCompare, Info, Search } from "lucide-react";
 
 import { PageShell } from "@/components/layout/page-shell";
 import { Badge } from "@/components/ui/badge";
@@ -122,6 +122,20 @@ const TIE_CHIP: Record<TieState, { tone: StatusTone; label: string }> = {
   not_compared: { tone: "neutral", label: "Not compared yet" },
 };
 const TIE_RANK: Record<TieState, number> = { drift: 0, not_compared: 1, tie: 2 };
+
+// Per-state hover guidance for the Tie status badges (a11y: every badge carries
+// a plain-language explanation, and Drift links to the place to investigate).
+const TIE_TITLE: Record<TieState, string> = {
+  tie: "Ties exactly to the project's Excel tracker.",
+  drift:
+    "This project's figures differ from its Excel tracker. Click to investigate in QB Reconciliation.",
+  not_compared: "No Excel tracker linked yet — nothing to compare against.",
+};
+// Portfolio-level drift guidance for the headline KPI cards.
+const DRIFT_TOOLTIP_PORTFOLIO =
+  "Some projects' figures differ from their Excel trackers. Click to investigate in QB Reconciliation.";
+// Legend for the Tie status column header help icon.
+const TIE_STATUS_HELP = "Tie = exact match | Drift = figures differ | Not compared = tracker not linked";
 
 interface AllProjectRow {
   projectId: number;
@@ -330,10 +344,33 @@ export default function FinanceHomePage() {
     },
     {
       key: "tie",
-      header: "Tie status",
+      header: (
+        <span className="inline-flex items-center gap-1" title={TIE_STATUS_HELP}>
+          Tie status
+          <Info className="h-3 w-3 shrink-0 text-slate-400" aria-label={TIE_STATUS_HELP} />
+        </span>
+      ),
+      exportHeader: "Tie status",
       align: "right",
       widthClass: "w-40",
-      cell: (r) => <StatusBadge tone={TIE_CHIP[r.tie].tone} label={TIE_CHIP[r.tie].label} />,
+      cell: (r) =>
+        r.tie === "drift" ? (
+          <Link
+            href="/finance/qb-reconciliation"
+            title={TIE_TITLE.drift}
+            className="inline-flex"
+            data-testid={`finance-home-drift-link-${r.projectId}`}
+          >
+            <StatusBadge
+              tone={TIE_CHIP.drift.tone}
+              label={TIE_CHIP.drift.label}
+              title={TIE_TITLE.drift}
+              className="cursor-pointer hover:underline"
+            />
+          </Link>
+        ) : (
+          <StatusBadge tone={TIE_CHIP[r.tie].tone} label={TIE_CHIP[r.tie].label} title={TIE_TITLE[r.tie]} />
+        ),
       sortValue: (r) => TIE_RANK[r.tie],
       exportValue: (r) => TIE_CHIP[r.tie].label,
     },
@@ -348,6 +385,37 @@ export default function FinanceHomePage() {
   const asAtTag = "FYTD · incl. open month";
   const trustReady = !reconQuery.isLoading && !reconQuery.isError;
   const figuresLoading = linesQuery.isLoading;
+
+  // Headline trust badge. When the portfolio is in drift, the badge becomes a
+  // shortcut into QB Reconciliation (the place to investigate) with hover
+  // guidance — the surrounding tile keeps its own destination, so we navigate
+  // imperatively and stop the tile's link from firing.
+  const goToReconciliation = (e: SyntheticEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    navigate("/finance/qb-reconciliation");
+  };
+  const trustSourceBadge = (() => {
+    if (!trustReady) return undefined;
+    if (trustBadge === "drift") {
+      return (
+        <span
+          role="link"
+          tabIndex={0}
+          title={DRIFT_TOOLTIP_PORTFOLIO}
+          onClick={goToReconciliation}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") goToReconciliation(e);
+          }}
+          className="cursor-pointer"
+          data-testid="finance-home-kpi-drift-link"
+        >
+          <TrustBadge status="drift" title={DRIFT_TOOLTIP_PORTFOLIO} />
+        </span>
+      );
+    }
+    return <TrustBadge status={trustBadge} />;
+  })();
 
   return (
     <PageShell data-testid="finance-home-page">
@@ -386,7 +454,7 @@ export default function FinanceHomePage() {
           </>
         )}
         <Link
-          href="/program/excel-vs-app"
+          href="/finance/qb-reconciliation"
           className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-brand-green hover:underline"
         >
           Reconciliation <ArrowRight className="h-3 w-3" />
@@ -417,7 +485,7 @@ export default function FinanceHomePage() {
                 </Badge>
               </span>
             }
-            sourceBadge={trustReady ? <TrustBadge status={trustBadge} /> : undefined}
+            sourceBadge={trustSourceBadge}
             href="/revenue-tracker"
           />
 
@@ -428,7 +496,7 @@ export default function FinanceHomePage() {
             value={figuresLoading ? "…" : <MoneyValue value={headline.realisedCos} align="left" />}
             tone="default"
             supporting="Realised COS, line-for-line"
-            sourceBadge={trustReady ? <TrustBadge status={trustBadge} /> : undefined}
+            sourceBadge={trustSourceBadge}
             href="/cos"
           />
 
@@ -439,7 +507,7 @@ export default function FinanceHomePage() {
             value={figuresLoading ? "…" : <MoneyValue value={headline.realisedGp} align="left" />}
             tone={headline.realisedGp >= 0 ? "positive" : "critical"}
             supporting={headline.marginPct != null ? `Margin ${headline.marginPct.toFixed(1)}%` : "No realised revenue yet"}
-            sourceBadge={trustReady ? <TrustBadge status={trustBadge} /> : undefined}
+            sourceBadge={trustSourceBadge}
             href="/finance/gp/company"
           />
 

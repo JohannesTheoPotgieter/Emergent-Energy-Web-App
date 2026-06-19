@@ -189,6 +189,13 @@ export interface MonthStatePoint {
   budget: number;
   planned: number;
   realised: number;
+  /**
+   * True when a manual budget was actually captured for this month. Future
+   * months typically have no budget set yet, so `budget` collapses to 0 and the
+   * budget bar renders zero-height (visually "absent"). The chart uses this flag
+   * to footnote that absence instead of leaving it unexplained.
+   */
+  budgetSet: boolean;
 }
 
 export function monthStatesSeries(
@@ -203,6 +210,7 @@ export function monthStatesSeries(
     budget: budget.revenue[mk] ?? 0,
     planned: byKey.get(mk)?.plannedRevenue ?? 0,
     realised: byKey.get(mk)?.realisedRevenue ?? 0,
+    budgetSet: budget.revenue[mk] !== undefined,
   }));
 }
 
