@@ -13,7 +13,7 @@
 // 2026-06-19).
 // ============================================================
 
-import { and, asc, desc, eq, inArray, isNull, notInArray, count } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, notInArray, count } from "drizzle-orm";
 import { db } from "../db";
 import {
   projectInfo,
@@ -27,12 +27,11 @@ import {
   projectEngTasks,
   snags,
   qcPlanLink,
-  normalizedPlanTasks,
-  smartImportRuns,
+  workItems,
   users,
-  type NormalizedPlanTask,
   type ProjectDeliveryMilestone,
 } from "@shared/schema";
+import type { PlanTask } from "../services/execution-board-math";
 
 export interface ActiveProjectRow {
   id: number;
@@ -79,11 +78,11 @@ export interface SnagRow {
   dueDate: string | null;
 }
 
-/** Plan tasks + the import-run provenance they were read from. */
+/** Plan tasks + an approximate "as imported" date. */
 export interface ProjectPlanTasks {
   runId: number | null;
   importedAt: Date | null;
-  tasks: NormalizedPlanTask[];
+  tasks: PlanTask[];
 }
 
 export class ExecutionBoardRepository {
@@ -143,65 +142,89 @@ export class ExecutionBoardRepository {
     return row;
   }
 
-  /** Map of projectId → latest smart-import run id (by uploadedAt). */
-  async getLatestRunIdsByProjects(projectIds: number[]): Promise<Map<number, { runId: number; uploadedAt: Date | null }>> {
-    const out = new Map<number, { runId: number; uploadedAt: Date | null }>();
-    if (projectIds.length === 0) return out;
-    const rows = await this.dbInstance
-      .select({
-        id: smartImportRuns.id,
-        projectId: smartImportRuns.projectId,
-        uploadedAt: smartImportRuns.uploadedAt,
-        status: smartImportRuns.status,
-      })
-      .from(smartImportRuns)
-      .where(inArray(smartImportRuns.projectId, projectIds))
-      .orderBy(desc(smartImportRuns.uploadedAt));
-
-    // Prefer the latest COMMITTED import (the published plan), but fall back to
-    // the latest non-failed run so a project whose imports were never formally
-    // committed still shows its plan instead of a blank schedule.
-    const BAD_STATUSES = new Set(["failed", "rolled_back", "rejected"]);
-    const committed = new Map<number, { runId: number; uploadedAt: Date | null }>();
-    const fallback = new Map<number, { runId: number; uploadedAt: Date | null }>();
-    for (const row of rows) {
-      if (row.projectId == null) continue;
-      const pick = { runId: row.id, uploadedAt: row.uploadedAt ?? null };
-      if (row.status === "committed" && !committed.has(row.projectId)) {
-        committed.set(row.projectId, pick);
-      }
-      if (!BAD_STATUSES.has(row.status ?? "") && !fallback.has(row.projectId)) {
-        fallback.set(row.projectId, pick);
-      }
-    }
-    for (const pid of projectIds) {
-      const pick = committed.get(pid) ?? fallback.get(pid);
-      if (pick) out.set(pid, pick);
-    }
-    return out;
-  }
-
-  /** All plan tasks for a set of run ids (one query). */
-  async getPlanTasksByRunIds(runIds: number[]): Promise<NormalizedPlanTask[]> {
-    if (runIds.length === 0) return [];
+  // ── Program plan, read from work_items (the canonical Plan-tab table) ──
+  // The imported program plan lives in work_items (PM/ENG/QUALITY workstreams),
+  // NOT in the dead normalized_plan_tasks table. The filter mirrors the Plan
+  // tab's per-project fetch so the board's row set matches what the Plan tab
+  // shows. (We compute our own duration-weighted % — not plan-rollup pills.)
+  private async fetchPlanWorkItems(projectIds: number[]) {
     return this.dbInstance
-      .select()
-      .from(normalizedPlanTasks)
-      .where(inArray(normalizedPlanTasks.importRunId, runIds))
-      .orderBy(asc(normalizedPlanTasks.taskNo));
+      .select({
+        id: workItems.id,
+        projectId: workItems.projectId,
+        wbsCode: workItems.wbsCode,
+        outlineNumber: workItems.outlineNumber,
+        title: workItems.title,
+        phase: workItems.phase,
+        startDate: workItems.startDate,
+        endDate: workItems.endDate,
+        actualStart: workItems.actualStart,
+        actualEnd: workItems.actualEnd,
+        duration: workItems.duration,
+        percentComplete: workItems.percentComplete,
+        expectedPctComplete: workItems.expectedPctComplete,
+        isMilestone: workItems.isMilestone,
+        parentId: workItems.parentId,
+        description: workItems.description,
+        updatedAt: workItems.updatedAt,
+      })
+      .from(workItems)
+      .where(
+        and(
+          inArray(workItems.workstream, ["PM", "ENG", "QUALITY"]),
+          isNull(workItems.deletedAt),
+          inArray(workItems.projectId, projectIds),
+        ),
+      )
+      .orderBy(asc(workItems.projectId), asc(workItems.sortOrder), asc(workItems.sourceRow), asc(workItems.id));
   }
 
-  /** Verbatim WBS for one project, from its latest import run. */
+  private toPlanTasksByProject(
+    rows: Awaited<ReturnType<ExecutionBoardRepository["fetchPlanWorkItems"]>>,
+  ): Map<number, PlanTask[]> {
+    const idToTaskNo = new Map<number, string>();
+    for (const r of rows) idToTaskNo.set(r.id, r.wbsCode || r.outlineNumber || `#${r.id}`);
+    const byProject = new Map<number, PlanTask[]>();
+    for (const r of rows) {
+      if (r.projectId == null) continue;
+      const task: PlanTask = {
+        taskNo: r.wbsCode || r.outlineNumber || `#${r.id}`,
+        taskName: r.title,
+        phase: r.phase ?? null,
+        startDate: r.startDate ?? null,
+        endDate: r.endDate ?? null,
+        actualStartDate: r.actualStart ?? null,
+        actualEndDate: r.actualEnd ?? null,
+        durationDays: r.duration ?? null,
+        pctComplete: r.percentComplete ?? null,
+        expectedPctComplete: r.expectedPctComplete ?? null,
+        isMilestone: Boolean(r.isMilestone),
+        parentTaskNo: r.parentId != null ? (idToTaskNo.get(r.parentId) ?? null) : null,
+        comment: r.description ?? null,
+      };
+      const arr = byProject.get(r.projectId) ?? [];
+      arr.push(task);
+      byProject.set(r.projectId, arr);
+    }
+    return byProject;
+  }
+
+  /** Program-plan tasks for a set of projects (batched, one query). */
+  async getPlanTasksForProjects(projectIds: number[]): Promise<Map<number, PlanTask[]>> {
+    if (projectIds.length === 0) return new Map();
+    const rows = await this.fetchPlanWorkItems(projectIds);
+    return this.toPlanTasksByProject(rows);
+  }
+
+  /** Program-plan tasks for one project + an approximate "as imported" date. */
   async getPlanTasksForProject(projectId: number): Promise<ProjectPlanTasks> {
-    const latest = await this.getLatestRunIdsByProjects([projectId]);
-    const meta = latest.get(projectId);
-    if (!meta) return { runId: null, importedAt: null, tasks: [] };
-    const tasks = await this.dbInstance
-      .select()
-      .from(normalizedPlanTasks)
-      .where(eq(normalizedPlanTasks.importRunId, meta.runId))
-      .orderBy(asc(normalizedPlanTasks.taskNo));
-    return { runId: meta.runId, importedAt: meta.uploadedAt, tasks };
+    const rows = await this.fetchPlanWorkItems([projectId]);
+    const tasks = this.toPlanTasksByProject(rows).get(projectId) ?? [];
+    let importedAt: Date | null = null;
+    for (const r of rows) {
+      if (r.updatedAt && (!importedAt || r.updatedAt > importedAt)) importedAt = r.updatedAt;
+    }
+    return { runId: null, importedAt, tasks };
   }
 
   /** Active subcontractor/supplier assignments for a set of projects. */

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { NormalizedPlanTask, ProjectDeliveryMilestone } from "@shared/schema";
+import type { ProjectDeliveryMilestone } from "@shared/schema";
 import type {
   EngStageRow,
   SnagRow,
@@ -15,11 +15,12 @@ import {
   computeCriticalPath,
   parsePlanDate,
   startOfDay,
+  type PlanTask,
 } from "../../../server/services/execution-board-math";
 
 const TODAY = startOfDay(new Date(2026, 5, 15)); // 2026-06-15
 
-function task(o: Partial<NormalizedPlanTask>): NormalizedPlanTask {
+function task(o: Partial<PlanTask>): PlanTask {
   return {
     taskNo: null,
     taskName: "Task",
@@ -34,9 +35,8 @@ function task(o: Partial<NormalizedPlanTask>): NormalizedPlanTask {
     comment: null,
     isMilestone: false,
     parentTaskNo: null,
-    importRunId: 100,
     ...o,
-  } as NormalizedPlanTask;
+  };
 }
 
 function milestone(o: Partial<ProjectDeliveryMilestone>): ProjectDeliveryMilestone {
