@@ -152,22 +152,31 @@ export class ExecutionBoardRepository {
         id: smartImportRuns.id,
         projectId: smartImportRuns.projectId,
         uploadedAt: smartImportRuns.uploadedAt,
+        status: smartImportRuns.status,
       })
       .from(smartImportRuns)
-      .where(
-        and(
-          inArray(smartImportRuns.projectId, projectIds),
-          // Only the latest COMMITTED import is the canonical published plan —
-          // never surface a preview / failed / superseded / rejected run.
-          eq(smartImportRuns.status, "committed"),
-        ),
-      )
+      .where(inArray(smartImportRuns.projectId, projectIds))
       .orderBy(desc(smartImportRuns.uploadedAt));
+
+    // Prefer the latest COMMITTED import (the published plan), but fall back to
+    // the latest non-failed run so a project whose imports were never formally
+    // committed still shows its plan instead of a blank schedule.
+    const BAD_STATUSES = new Set(["failed", "rolled_back", "rejected"]);
+    const committed = new Map<number, { runId: number; uploadedAt: Date | null }>();
+    const fallback = new Map<number, { runId: number; uploadedAt: Date | null }>();
     for (const row of rows) {
       if (row.projectId == null) continue;
-      if (!out.has(row.projectId)) {
-        out.set(row.projectId, { runId: row.id, uploadedAt: row.uploadedAt ?? null });
+      const pick = { runId: row.id, uploadedAt: row.uploadedAt ?? null };
+      if (row.status === "committed" && !committed.has(row.projectId)) {
+        committed.set(row.projectId, pick);
       }
+      if (!BAD_STATUSES.has(row.status ?? "") && !fallback.has(row.projectId)) {
+        fallback.set(row.projectId, pick);
+      }
+    }
+    for (const pid of projectIds) {
+      const pick = committed.get(pid) ?? fallback.get(pid);
+      if (pick) out.set(pid, pick);
     }
     return out;
   }
