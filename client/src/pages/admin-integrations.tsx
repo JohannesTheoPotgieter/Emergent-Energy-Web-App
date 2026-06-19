@@ -36,7 +36,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { formatRelativeWithAbsoluteZA } from "@/lib/datetime";
 import { IntegrationConnectionHealth } from "@/components/admin/integration-connection-health";
 
-// Finance-only Integration Statuses surfaces exactly three connectors:
+// Live-Ready Integration Statuses surfaces exactly three connectors:
 // QuickBooks, Microsoft 365 (incl. the SharePoint tracker auto-pull) and Smart
 // Import. Connection-health tiles are filtered to these connector names.
 const FINANCE_CONNECTOR_NAMES = ["quickbooks", "microsoft_365"];

@@ -2712,7 +2712,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       // Capture current state BEFORE the writers overwrite it, so a committed
       // import can be reverted to the prior per-project state across both
       // tracker sheets (state-restoring rollback, S21). Captured even when the
-      // project has no plan rows (finance-only re-imports still need revert).
+      // project has no plan rows (live-ready re-imports still need revert).
       try {
         const snapshotRows = planRows.map((r: any) => ({
           id: r.id, taskName: r.taskName, taskNo: r.taskNo, phase: r.phase,

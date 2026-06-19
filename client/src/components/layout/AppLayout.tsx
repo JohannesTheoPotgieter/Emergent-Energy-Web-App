@@ -128,8 +128,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   );
 
   const visibleSections = useMemo(() => {
-    // Finance-only module gate: drop top-nav sections whose module is disabled
-    // (no-op when FINANCE_ONLY_MODE is off). Applied on top of the role/
+    // Live-Ready module gate: drop top-nav sections whose module is disabled
+    // (no-op when LIVE_READY_MODE is off). Applied on top of the role/
     // permission filtering so re-enabling a module in the registry restores its
     // nav for exactly the roles that already had it.
     const sections = filterSectionsByEnabledModules(
@@ -256,7 +256,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       People: [],
     };
 
-    // Finance-only: drop any non-finance result types so tasks / people /
+    // Live-Ready: drop any non-finance result types so tasks / people /
     // engineering / documents never leak into the global search dropdown.
     for (const r of results) {
       if (!isFinanceSearchType(r.type)) continue;

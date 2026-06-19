@@ -11,15 +11,15 @@ import { RolePermissionsMatrix } from "./role-permissions-matrix";
 import { RoleAuthorityConfig } from "./role-authority-config";
 import { ENTITY_PERMISSION_DEFAULTS } from "@shared/schema";
 import { PAGE_REGISTRY } from "@/config/page-registry";
-import { FINANCE_ONLY_MODE } from "@shared/config/enabled-modules";
+import { LIVE_READY_MODE } from "@shared/config/enabled-modules";
 import { useScreenAvailability } from "@/hooks/use-screen-availability";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
-// When the app runs finance-only, the role permission matrix is scoped to the
+// When the app runs live-ready, the role permission matrix is scoped to the
 // finance function: only the Finance and Admin permission categories are shown
 // (Cashflow, COS, Revenue, GP, FYE, Smart Import, integrations, roles, audit …);
 // every operational-module category is hidden. Reverts automatically if
-// FINANCE_ONLY_MODE is turned off. Keys match ENTITY_CATEGORIES in settings-types.
+// LIVE_READY_MODE is turned off. Keys match ENTITY_CATEGORIES in settings-types.
 const FINANCE_FUNCTION_ENTITY_CATEGORIES = ["finance", "admin"] as const;
 
 interface RoleDetailPanelProps {
@@ -80,10 +80,10 @@ export function RoleDetailPanel({
     return entities.size > 0 ? entities : undefined;
   }, [disabledScreenIds]);
 
-  // Finance-only: restrict the matrix to the finance-function permission
-  // categories. Undefined (= show everything) when finance-only mode is off.
+  // Live-Ready: restrict the matrix to the finance-function permission
+  // categories. Undefined (= show everything) when live-ready mode is off.
   const allowedEntityIds = useMemo(() => {
-    if (!FINANCE_ONLY_MODE) return undefined;
+    if (!LIVE_READY_MODE) return undefined;
     const entities = new Set<string>();
     for (const key of FINANCE_FUNCTION_ENTITY_CATEGORIES) {
       const cat = ENTITY_CATEGORIES[key];

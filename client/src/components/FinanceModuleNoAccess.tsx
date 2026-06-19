@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 
 /**
  * Branded "no access" landing shown to any role outside the finance-module
- * allowlist (see shared/config/enabled-modules.ts → FINANCE_MODULE_ROLE_ALLOWLIST).
+ * allowlist (see shared/config/enabled-modules.ts → LIVE_READY_ROLE_ALLOWLIST).
  *
  * Rendered standalone — NOT inside AppLayout / LensProvider — so it shows no
  * navigation and fires no data calls for users who aren't permitted in.
@@ -15,7 +15,7 @@ export function FinanceModuleNoAccess() {
   return (
     <div
       className="min-h-[100dvh] flex flex-col items-center justify-center bg-gradient-to-br from-background via-background to-muted/40 p-4"
-      data-testid="finance-only-no-access"
+      data-testid="live-ready-no-access"
     >
       <div className="w-full max-w-[420px] space-y-6 text-center">
         <div className="flex justify-center">

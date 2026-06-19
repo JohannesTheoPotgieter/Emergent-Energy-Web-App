@@ -505,7 +505,7 @@ All dates can be blank at charter creation — they are filled during the handov
 - PM waiting on Procurement for price confirmations
 
 ### Collaboration rule:
-- Financial review should create actions for other teams directly rather than becoming a separate finance-only conversation. Review actions flow outward to PM, Engineering, Procurement. Bypass allowed with admin override + reason.
+- Financial review should create actions for other teams directly rather than becoming a separate live-ready conversation. Review actions flow outward to PM, Engineering, Procurement. Bypass allowed with admin override + reason.
 
 ### Actions:
 - Save review

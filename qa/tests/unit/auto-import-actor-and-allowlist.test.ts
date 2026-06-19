@@ -59,7 +59,7 @@ describe("M3 auto-import — manual commit is allowlisted (PMs/CMs cannot commit
     const smartImport = ENTITY_REGISTRY.find((e) => e.entity === "smart_import");
     expect(smartImport, "smart_import must be a registered permission entity").toBeDefined();
     const approvers = smartImport!.approve_roles ?? [];
-    // PMs / CMs may ENTER the finance module (FINANCE_MODULE_ROLE_ALLOWLIST) but
+    // PMs / CMs may ENTER the finance module (LIVE_READY_ROLE_ALLOWLIST) but
     // must NOT be able to commit an import.
     expect(approvers).not.toContain("PROGRAM_MANAGER");
     expect(approvers).not.toContain("CONSTRUCTION_MANAGER");

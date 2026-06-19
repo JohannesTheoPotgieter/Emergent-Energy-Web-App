@@ -16,7 +16,7 @@ import {
  * view that path. These tests pin that behaviour with a canViewPath stub.
  */
 
-// Finance-only module: Weekly Close scrapped (folded into Cashflow); Payment
+// Live-Ready module: Weekly Close scrapped (folded into Cashflow); Payment
 // Requests + PO Approvals parked. The discoverable "new screens" are now
 // Finance Home + QB Reconciliation only.
 const NEW_FINANCE_LABELS = ["Finance Home", "QB Reconciliation"];

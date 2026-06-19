@@ -142,7 +142,7 @@ export function Stage5FinancialReview({ projectId, isAdmin }: Stage5Props) {
               </CardHeader>
               <CardContent>
                 <p className="text-xs text-muted-foreground">
-                  Financial review should create actions for other teams directly rather than becoming a separate finance-only conversation.
+                  Financial review should create actions for other teams directly rather than becoming a separate live-ready conversation.
                   Review actions flow outward to PM, Engineering, Procurement. Bypass allowed with admin override + reason.
                 </p>
               </CardContent>

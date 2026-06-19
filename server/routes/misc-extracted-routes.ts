@@ -11,7 +11,7 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { requireAuth } from "../auth-context";
-import { isFinanceOnlyEnforced } from "@shared/config/enabled-modules";
+import { isLiveReadyEnforced } from "@shared/config/enabled-modules";
 
 export function registerMiscExtractedRoutes(app: Express): void {
 
@@ -25,9 +25,9 @@ export function registerMiscExtractedRoutes(app: Express): void {
       const startsWithPattern = `${q}%`;
       const containsPattern = `%${q}%`;
 
-      // Finance-only: skip the work-items (task) query entirely so no
+      // Live-Ready: skip the work-items (task) query entirely so no
       // non-finance results are computed or returned by global search.
-      const workItemQuery = isFinanceOnlyEnforced()
+      const workItemQuery = isLiveReadyEnforced()
         ? Promise.resolve({ rows: [] as unknown[] })
         : db.execute(sql`
             SELECT w.id, w.title, w.status, p.project_name, w.type as task_type, w.owner_name as assigned_to, w.percent_complete

@@ -18,7 +18,7 @@ interface RolePermissionsMatrixProps {
   /** Permission entities corresponding to disabled screens — filtered out of the matrix. */
   disabledEntityIds?: Set<string>;
   /**
-   * When provided, ONLY these entities are shown (finance-only mode scopes the
+   * When provided, ONLY these entities are shown (live-ready mode scopes the
    * matrix to the finance-function permission categories). Undefined = show all.
    */
   allowedEntityIds?: Set<string>;

@@ -1,17 +1,17 @@
 import type { NextFunction, Request, Response } from "express";
 import { normalizeRoleForPermissions } from "@shared/schema";
 import {
-  isFinanceOnlyEnforced,
+  isLiveReadyEnforced,
   isAlwaysAllowedApiPath,
-  isRoleAllowedInFinanceModule,
+  isRoleAllowedInLiveReady,
 } from "@shared/config/enabled-modules";
 import { getEffectiveUser } from "../auth-context";
 
 /**
- * Finance-only module gate (server side).
+ * Live-Ready module gate (server side).
  *
  * Mounted after the global `jwtAuth` middleware (server/index.ts) so `req.user`
- * is already resolved. When the app is running in finance-only mode, any
+ * is already resolved. When the app is running in live-ready mode, any
  * AUTHENTICATED request from a role outside the finance-module allowlist is
  * blocked at the API boundary with 403 — so no non-finance data calls succeed
  * for those users (defence-in-depth behind the client no-access landing).
@@ -26,10 +26,10 @@ import { getEffectiveUser } from "../auth-context";
  * the route redirect; admins retain their normal API access. No finance number,
  * formula or schema is touched.
  *
- * Reversibility: no-op when FINANCE_ONLY_MODE is false.
+ * Reversibility: no-op when LIVE_READY_MODE is false.
  */
-export function financeOnlyApiGate(req: Request, res: Response, next: NextFunction): void {
-  if (!isFinanceOnlyEnforced()) {
+export function liveReadyApiGate(req: Request, res: Response, next: NextFunction): void {
+  if (!isLiveReadyEnforced()) {
     next();
     return;
   }
@@ -54,14 +54,14 @@ export function financeOnlyApiGate(req: Request, res: Response, next: NextFuncti
   }
 
   const role = normalizeRoleForPermissions(user.role);
-  if (isRoleAllowedInFinanceModule(role)) {
+  if (isRoleAllowedInLiveReady(role)) {
     next();
     return;
   }
 
   res.status(403).json({
     error: "forbidden",
-    reason: "finance_only_module",
+    reason: "live_ready_module",
     message: "This area is being updated and is not currently available for your role.",
   });
 }

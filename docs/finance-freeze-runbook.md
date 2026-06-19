@@ -368,9 +368,9 @@ enabled. The owner sets this once:
 
 ---
 
-## F. Finance-only module — turning other modules back on
+## F. Live-Ready module — turning other modules back on
 
-During the freeze the app runs as a **finance-only module**: only Finance (plus
+During the freeze the app runs as a **live-ready module**: only Finance (plus
 the platform plumbing finance depends on) is reachable. Every other area is
 hidden from the nav AND hard-blocked + redirected to `/finance` on both client
 and server. Only management + finance roles can enter; all other roles get a
@@ -388,10 +388,10 @@ Everything derives from one file:
 
 | Knob | What it does |
 |---|---|
-| `FINANCE_ONLY_MODE` | Master switch. `false` lifts the whole restriction (every module + role back on). |
-| `FINANCE_ONLY_MODULE_CONFIG.navGroups` | Per-navGroup enablement: `{ mode: "full" }`, `{ mode: "disabled" }`, or `{ mode: "partial"; pageIds }`. |
+| `LIVE_READY_MODE` | Master switch. `false` lifts the whole restriction (every module + role back on). |
+| `LIVE_READY_MODULE_CONFIG.navGroups` | Per-navGroup enablement: `{ mode: "full" }`, `{ mode: "disabled" }`, or `{ mode: "partial"; pageIds }`. |
 | `ENABLED_SYSTEM_PAGE_IDS` | The finance plumbing pages kept on inside the (otherwise disabled) SYSTEM group. |
-| `FINANCE_MODULE_ROLE_ALLOWLIST` | The 7 management + finance roles allowed into the module. |
+| `LIVE_READY_ROLE_ALLOWLIST` | The 7 management + finance roles allowed into the module. |
 
 ### Re-enable ONE module (one-line change)
 
@@ -399,7 +399,7 @@ To bring a hidden module back (e.g. Engineering), flip its entry from
 `{ mode: "disabled" }` to `{ mode: "full" }`:
 
 ```ts
-// shared/config/enabled-modules.ts → FINANCE_ONLY_MODULE_CONFIG.navGroups
+// shared/config/enabled-modules.ts → LIVE_READY_MODULE_CONFIG.navGroups
 ENGINEERING: { mode: "full" },   // was: { mode: "disabled" }
 ```
 
@@ -415,19 +415,19 @@ with page-registry `id`s (this is how SYSTEM keeps only the finance plumbing).
 
 ### Turn the whole thing off
 
-Set `FINANCE_ONLY_MODE = false`. Nav, routing, search scoping, the no-access
+Set `LIVE_READY_MODE = false`. Nav, routing, search scoping, the no-access
 gate and the server API gate all become no-ops and the app returns to its full
 multi-module behaviour.
 
 ### Add / remove an allowed role
 
-Edit `FINANCE_MODULE_ROLE_ALLOWLIST` (values must be real `COMPANY_ROLES` from
+Edit `LIVE_READY_ROLE_ALLOWLIST` (values must be real `COMPANY_ROLES` from
 `shared/schema/users.ts`). Removing a role sends it to the no-access landing and
 blocks its non-auth API calls; adding one lets it into the finance module.
 
 ### Verify the lockdown in development (opt-in)
 
-Finance-only is a **deploy mode**: it enforces in the production build but is
+Live-Ready is a **deploy mode**: it enforces in the production build but is
 **inert in local dev and the e2e harness** (so the full-app test suite keeps
 validating every module). That means the lockdown is invisible when you run
 `npm run dev` — nothing is hidden or redirected. To *see and test* the lockdown
@@ -437,8 +437,8 @@ enforces before the override is ever consulted).
 
 | Where | How to turn it ON | How to turn it OFF |
 |---|---|---|
-| Server / API (`npm run dev`, vitest) | `FINANCE_ONLY_DEV=1 npm run dev` | unset `FINANCE_ONLY_DEV` (default) |
-| Browser (dev-served client) | append `?financeOnly=1` to the URL once (persists in `localStorage`), or build-time `VITE_FINANCE_ONLY_DEV=1` | append `?financeOnly=0` once, or clear `localStorage.financeOnlyDev` |
+| Server / API (`npm run dev`, vitest) | `LIVE_READY_DEV=1 npm run dev` | unset `LIVE_READY_DEV` (default) |
+| Browser (dev-served client) | append `?liveReady=1` to the URL once (persists in `localStorage`), or build-time `VITE_LIVE_READY_DEV=1` | append `?liveReady=0` once, or clear `localStorage.liveReadyDev` |
 
 With the override ON in dev you can confirm the full lockdown end-to-end:
 
@@ -446,14 +446,14 @@ With the override ON in dev you can confirm the full lockdown end-to-end:
 - a **non-allowlisted role** lands on `/no-access`; an allowlisted role lands on `/finance`;
 - non-finance sections disappear from the nav and the server API gate returns `403` for non-allowlisted roles.
 
-> Set BOTH (`FINANCE_ONLY_DEV=1` on the server AND `?financeOnly=1` in the
+> Set BOTH (`LIVE_READY_DEV=1` on the server AND `?liveReady=1` in the
 > browser) to exercise the client redirect and the server API gate together.
-> The override is implemented as `isFinanceOnlyDevOverrideOn()` in
+> The override is implemented as `isLiveReadyDevOverrideOn()` in
 > `shared/config/enabled-modules.ts` and is locked by the unit test below.
 
 ### Proof + guardrails
 
-- `qa/tests/unit/finance-only-module.test.ts` locks the config, **proves
+- `qa/tests/unit/live-ready-module.test.ts` locks the config, **proves
   reversibility** (flipping a navGroup to `full` restores its routes + nav), and
   pins the **dev override** (ON → disabled routes redirect to `/finance` + a
   non-allowlisted role resolves to `/no-access`; OFF → unrestricted; prod is
@@ -461,7 +461,7 @@ With the override ON in dev you can confirm the full lockdown end-to-end:
 - Client gate: `client/src/App.tsx` (`FinanceModuleGate` + per-route redirect),
   nav filter in `client/src/config/app-navigation.ts`
   (`filterSectionsByEnabledModules`).
-- Server gate: `server/middleware/finance-only-gate.ts` (mounted in
+- Server gate: `server/middleware/live-ready-gate.ts` (mounted in
   `server/routes/register-all-routes.ts`).
 
 After any change run `npm run check && npm run test && npm run build`.
