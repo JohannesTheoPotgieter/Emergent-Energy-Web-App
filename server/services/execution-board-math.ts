@@ -8,12 +8,34 @@
 // ============================================================
 
 import { pctTo100, scheduleRagFromVariance, type ScheduleRag } from "../lib/kpi-formulas";
-import type { NormalizedPlanTask, ProjectDeliveryMilestone } from "@shared/schema";
+import type { ProjectDeliveryMilestone } from "@shared/schema";
 import type {
   EngStageRow,
   SnagRow,
   ProcurementDeliveryRow,
 } from "../repositories/execution-board-repository";
+
+/**
+ * Normalized plan-task shape the schedule/critical-path math operates on.
+ * Sourced from `work_items` (the canonical Plan-tab table) — the imported
+ * program plan lives there, not in the dead `normalized_plan_tasks` table.
+ */
+export interface PlanTask {
+  taskNo: string | null;
+  taskName: string;
+  phase: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  actualStartDate: string | null;
+  actualEndDate: string | null;
+  durationDays: number | null;
+  pctComplete: number | null;
+  expectedPctComplete: number | null;
+  isMilestone: boolean;
+  parentTaskNo: string | null;
+  comment: string | null;
+}
+
 
 export function startOfDay(d: Date): Date {
   const x = new Date(d);
@@ -47,7 +69,7 @@ export interface ScheduleSnapshot {
   hasPlan: boolean;
 }
 
-function leafTasks(tasks: NormalizedPlanTask[]): NormalizedPlanTask[] {
+function leafTasks(tasks: PlanTask[]): PlanTask[] {
   const parentSet = new Set(
     tasks.map((t) => t.parentTaskNo).filter((p): p is string => Boolean(p)),
   );
@@ -60,7 +82,7 @@ function leafTasks(tasks: NormalizedPlanTask[]): NormalizedPlanTask[] {
  * mirrors the Excel top-row rollup. A "leaf" is a task whose task_no is not
  * the parent of any other task in the same run.
  */
-export function computeScheduleSnapshot(tasks: NormalizedPlanTask[]): ScheduleSnapshot {
+export function computeScheduleSnapshot(tasks: PlanTask[]): ScheduleSnapshot {
   if (!tasks.length) {
     return { actualPct: null, expectedPct: null, variance: null, rag: null, leafCount: 0, hasPlan: false };
   }
@@ -98,7 +120,7 @@ export interface NextTask {
 
 /** Earliest incomplete leaf task starting within [today, today+daysOut]. */
 export function selectNextTask(
-  tasks: NormalizedPlanTask[],
+  tasks: PlanTask[],
   today: Date,
   daysOut = 14,
 ): NextTask | null {
@@ -107,7 +129,7 @@ export function selectNextTask(
   const parentSet = new Set(
     tasks.map((t) => t.parentTaskNo).filter((p): p is string => Boolean(p)),
   );
-  let best: { task: NormalizedPlanTask; date: Date } | null = null;
+  let best: { task: PlanTask; date: Date } | null = null;
   for (const t of tasks) {
     if (t.taskNo != null && parentSet.has(t.taskNo)) continue; // parents excluded
     if ((pctTo100(t.pctComplete) ?? 0) >= 100) continue; // complete
@@ -297,7 +319,7 @@ export interface CriticalPathResult {
  * Uses PLANNED dates (start_date/end_date), falling back to actual dates when
  * a planned date is missing. Parents/summary rows are excluded (leaves only).
  */
-export function computeCriticalPath(tasks: NormalizedPlanTask[]): CriticalPathResult {
+export function computeCriticalPath(tasks: PlanTask[]): CriticalPathResult {
   const parentSet = new Set(
     tasks.map((t) => t.parentTaskNo).filter((p): p is string => Boolean(p)),
   );

@@ -32,6 +32,7 @@ import {
   summarizeEngineering,
   summarizeQuality,
   computeCriticalPath,
+  type PlanTask,
   type ScheduleSnapshot,
   type NextTask,
   type NextDelivery,
@@ -129,16 +130,11 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
   const active = await executionBoardRepository.getActiveProjects();
   const ids = active.map((p) => p.id);
 
-  const latestRuns = await safe(
-    executionBoardRepository.getLatestRunIdsByProjects(ids),
-    new Map<number, { runId: number; uploadedAt: Date | null }>(),
-    "latest-runs",
+  const tasksByProject = await safe(
+    executionBoardRepository.getPlanTasksForProjects(ids),
+    new Map<number, PlanTask[]>(),
+    "plan-tasks",
   );
-  const runIds = [...latestRuns.values()].map((v) => v.runId);
-  const runToProject = new Map<number, number>();
-  for (const [projectId, meta] of latestRuns) runToProject.set(meta.runId, projectId);
-  const allTasks = await safe(executionBoardRepository.getPlanTasksByRunIds(runIds), [], "plan-tasks");
-  const tasksByProject = groupBy(allTasks, (t) => (t.importRunId != null ? runToProject.get(t.importRunId) : undefined));
 
   const [installers, milestones, procurement, engStages, engOpenTasks, snagRows, qcSet, itemCounts] =
     await Promise.all([
@@ -168,7 +164,6 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
   for (const p of active) {
     const tasks = tasksByProject.get(p.id) ?? [];
     const schedule = computeScheduleSnapshot(tasks);
-    const importedAt = latestRuns.get(p.id)?.uploadedAt ?? null;
     const deliveries = selectNextDelivery(milestonesByProject.get(p.id) ?? [], procurementByProject.get(p.id) ?? [], today);
     const eng = summarizeEngineering(engByProject.get(p.id) ?? [], engOpenTasks.get(p.id) ?? 0);
     const quality = summarizeQuality(snagsByProject.get(p.id) ?? [], qcSet.has(p.id), today);
@@ -191,7 +186,7 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
       phase: p.phase,
       sizeKwp: p.sizeKwp,
       contractValue: p.contractValue,
-      schedule: { ...schedule, importedAt: importedAt ? importedAt.toISOString() : null },
+      schedule: { ...schedule, importedAt: null },
       nextTask: selectNextTask(tasks, today, 14),
       nextDelivery: deliveries.next,
       installers: installerSummary(installersByProject.get(p.id) ?? []),
@@ -388,12 +383,7 @@ export async function getUpcomingProgram(daysOut = 14, now: Date = new Date()): 
   const today = startOfDay(now);
   const active = await executionBoardRepository.getActiveProjects();
   const ids = active.map((p) => p.id);
-  const latestRuns = await executionBoardRepository.getLatestRunIdsByProjects(ids);
-  const runIds = [...latestRuns.values()].map((v) => v.runId);
-  const runToProject = new Map<number, number>();
-  for (const [projectId, meta] of latestRuns) runToProject.set(meta.runId, projectId);
-  const allTasks = await executionBoardRepository.getPlanTasksByRunIds(runIds);
-  const tasksByProject = groupBy(allTasks, (t) => (t.importRunId != null ? runToProject.get(t.importRunId) : undefined));
+  const tasksByProject = await executionBoardRepository.getPlanTasksForProjects(ids);
   const nameById = new Map(active.map((p) => [p.id, p.projectName]));
 
   const horizon = new Date(today);
