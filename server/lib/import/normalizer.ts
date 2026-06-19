@@ -835,15 +835,24 @@ function parsePredecessors(raw: string | null): ParsedPredecessor[] {
  */
 function isMilestoneSummaryHeaderRow(row: any[]): boolean {
   if (!Array.isArray(row)) return false;
-  const cells = row.map((c) => String(c ?? "").toLowerCase().trim());
-  const hasMilestoneLabel = cells.some((c) => c === "milestone" || c === "milestones");
+  const cells = row
+    .map((c) => String(c ?? "").toLowerCase().trim())
+    .filter((c) => c.length > 0);
+  // A short, header-style "Milestone(s)" label — not a real task whose name
+  // merely contains the word (e.g. "1.3 Energisation milestone").
+  const milestoneHeaderRe =
+    /^(key |project |high[- ]?level |summary )?milestones?( summary| overview| schedule| plan| table| rollup)?$/;
+  const hasMilestoneLabel = cells.some((c) => milestoneHeaderRe.test(c));
   if (!hasMilestoneLabel) return false;
-  const markers = new Set(["start date", "end date", "duration", "progress"]);
-  let hits = 0;
-  for (const c of cells) {
-    if (markers.has(c)) hits += 1;
-  }
-  return hits >= 2;
+  // Count the OTHER cells that read like column headers. Substring matching so
+  // template variants all count — "Start Date"/"Planned Start", "End Date",
+  // "Duration", "Progress"/"% Complete". A data row's cells are date/number
+  // VALUES (not these words), so this only fires on the summary header.
+  const markerRe = /(start|end|finish|duration|progress|complete|%|\bdate\b)/;
+  const markerCells = cells.filter(
+    (c) => !milestoneHeaderRe.test(c) && markerRe.test(c),
+  );
+  return markerCells.length >= 2;
 }
 
 function extractPlanTasks(
