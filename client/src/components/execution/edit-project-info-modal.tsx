@@ -13,15 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { apiRequest } from "@/lib/queryClient";
-import { CANONICAL_LIFECYCLE_PHASES, TERMINAL_LIFECYCLE_PHASES } from "@shared/schema";
 import type { BoardRow } from "@/lib/execution-types";
-
-// Execution-phase options — sourced from the canonical lifecycle so the UI
-// cannot drift from the model. Mirrors the retired /projects modal.
-const EXECUTION_PHASES: readonly string[] = [
-  ...CANONICAL_LIFECYCLE_PHASES,
-  ...TERMINAL_LIFECYCLE_PHASES,
-];
 
 type PmUser = { id: number; name: string };
 
@@ -31,11 +23,11 @@ function dateValue(v: string | null): string {
 }
 
 /**
- * Edit Project Info modal — migrated from the retired /projects page (#15).
- * Writes through the existing admin-gated `PATCH /api/project-info/:id`
- * endpoint (which routes the execution-state fields — phase + key dates — to
- * project_execution_state via the split-table sync). On success it invalidates
- * the board query so the row reflects the change.
+ * Edit Project Info modal — name, PD, PM, size, and the key dates. Writes
+ * through the existing admin-gated `PATCH /api/project-info/:id` endpoint (the
+ * split-table sync routes the key dates to project_execution_state). Phase is
+ * NOT edited here — it is the canonical lifecycle phase, edited inline on the
+ * board (and the lifecycle board) so it correlates through every lens.
  */
 export function EditProjectInfoModal({
   row,
@@ -56,7 +48,6 @@ export function EditProjectInfoModal({
 
   const [form, setForm] = useState(() => ({
     projectName: row?.projectName ?? "",
-    phase: row?.phase ?? "",
     pd: row?.pdName ?? "",
     pm: row?.pmName ?? "",
     sizeKwp: row?.sizeKwp != null ? String(row.sizeKwp) : "",
@@ -71,7 +62,6 @@ export function EditProjectInfoModal({
     if (!row) return;
     setForm({
       projectName: row.projectName,
-      phase: row.phase ?? "",
       pd: row.pdName ?? "",
       pm: row.pmName ?? "",
       sizeKwp: row.sizeKwp != null ? String(row.sizeKwp) : "",
@@ -88,10 +78,8 @@ export function EditProjectInfoModal({
   const mutation = useApiMutation({
     mutationFn: async () => {
       if (!row) return;
-      const phaseVal = form.phase && form.phase !== "__blank" ? form.phase : null;
       await apiRequest("PATCH", `/api/project-info/${row.projectId}`, {
         projectName: form.projectName.trim() || row.projectName,
-        executionPhase: phaseVal,
         pd: form.pd.trim() || null,
         pm: form.pm.trim() || null,
         sizeKwp: form.sizeKwp.trim() ? String(Number(form.sizeKwp)) : null,
@@ -119,19 +107,6 @@ export function EditProjectInfoModal({
           <div className="col-span-1 sm:col-span-2">
             <Label className="text-xs font-medium text-muted-foreground mb-1 block">Project Name</Label>
             <Input value={form.projectName} onChange={(e) => set("projectName", e.target.value)} data-testid="input-edit-project-name" />
-          </div>
-          <div>
-            <Label className="text-xs font-medium text-muted-foreground mb-1 block">Execution Phase</Label>
-            <SearchableSelect
-              value={form.phase}
-              onValueChange={(v) => set("phase", v)}
-              placeholder="Select execution phase"
-              data-testid="select-edit-phase"
-              options={[
-                { value: "__blank", label: "(blank)" },
-                ...EXECUTION_PHASES.map((p) => ({ value: p, label: p })),
-              ]}
-            />
           </div>
           <div>
             <Label className="text-xs font-medium text-muted-foreground mb-1 block">Size kWp</Label>

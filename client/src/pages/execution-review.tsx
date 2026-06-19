@@ -18,8 +18,10 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Select, SelectTrigger, SelectContent, SelectItem, SelectValue,
 } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
+import { CANONICAL_LIFECYCLE_PHASES, TERMINAL_LIFECYCLE_PHASES } from "@shared/schema";
 import { EditProjectInfoModal } from "@/components/execution/edit-project-info-modal";
 import type { BoardResult, BoardRow, Rag, EngineeringSummary, QualitySummary } from "@/lib/execution-types";
 import { fmtPct, fmtDate } from "@/lib/execution-types";
@@ -39,35 +41,106 @@ const RAG_COLORS: Record<string, string> = { green: "#16A34A", amber: "#F59E0B",
 
 type PmUser = { id: number; name: string };
 
-// Inline escalation editor (migrated from /projects, #13). "None" is sent as
-// null so the stored level stays clean.
-const ESCALATION_LEVELS = ["None", "Low", "Medium", "High", "Highest"] as const;
-const ESCALATION_STYLE: Record<string, string> = {
-  None: "bg-muted text-muted-foreground border-border",
-  Low: "bg-blue-50 text-blue-600 border-blue-200",
-  Medium: "bg-amber-50 text-amber-600 border-amber-200",
-  High: "bg-orange-50 text-orange-600 border-orange-200",
-  Highest: "bg-red-50 text-red-700 border-red-300",
+// Canonical lifecycle phases — the SAME list the company lifecycle board uses.
+// Editing a phase here writes the canonical project_execution_state.phase via
+// /api/lifecycle-board/projects/:id/phase, so the phase correlates through
+// every lens (board, lifecycle board, project detail).
+const LIFECYCLE_PHASES: string[] = [...CANONICAL_LIFECYCLE_PHASES, ...TERMINAL_LIFECYCLE_PHASES];
+
+// Canonical lifecycle RAG status (GREEN / AMBER / RED) — the same ragStatus the
+// company lifecycle board sets (a comment is required for the audit trail).
+const RAG_STATUS_OPTIONS = ["GREEN", "AMBER", "RED"] as const;
+const RAG_STATUS_STYLE: Record<string, { dot: string; text: string; bg: string }> = {
+  GREEN: { dot: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50 border-emerald-200" },
+  AMBER: { dot: "bg-amber-500", text: "text-amber-700", bg: "bg-amber-50 border-amber-200" },
+  RED: { dot: "bg-red-500", text: "text-red-700", bg: "bg-red-50 border-red-200" },
 };
 
-function EscalationCell({
-  row, isAdmin, onSet,
-}: { row: BoardRow; isAdmin: boolean; onSet: (row: BoardRow, level: string) => void }) {
-  const level = row.escalationLevel || "None";
-  const style = ESCALATION_STYLE[level] ?? ESCALATION_STYLE.None;
-  if (!isAdmin) {
-    return <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${style}`}>{level}</span>;
-  }
+function PhaseCell({
+  row, isAdmin, onSetPhase,
+}: { row: BoardRow; isAdmin: boolean; onSetPhase: (row: BoardRow, phase: string) => void }) {
+  const current = row.phase ?? "";
+  if (!isAdmin) return <span className="text-muted-foreground">{current || "—"}</span>;
+  // Include a legacy value not in the canonical list so the select still shows it.
+  const options = !current || LIFECYCLE_PHASES.includes(current) ? LIFECYCLE_PHASES : [current, ...LIFECYCLE_PHASES];
   return (
-    <select
-      value={level}
-      onClick={(e) => e.stopPropagation()}
-      onChange={(e) => onSet(row, e.target.value)}
-      className={`text-[11px] font-semibold rounded-md border px-1 py-0.5 cursor-pointer outline-none ${style}`}
-      data-testid={`select-escalation-${row.projectId}`}
-    >
-      {ESCALATION_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
-    </select>
+    <span data-interactive="true" onClick={(e) => e.stopPropagation()}>
+      <SearchableSelect
+        value={current}
+        onValueChange={(v) => { if (v && v !== current) onSetPhase(row, v); }}
+        placeholder="Set phase"
+        triggerClassName="h-7 w-[150px] text-xs border-0 bg-transparent hover:bg-muted px-1 shadow-none"
+        data-testid={`select-phase-${row.projectId}`}
+        options={options.map((p) => ({ value: p, label: p }))}
+      />
+    </span>
+  );
+}
+
+function RagStatusCell({
+  row, isAdmin, onSetRag,
+}: { row: BoardRow; isAdmin: boolean; onSetRag: (row: BoardRow, rag: string, comment: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [rag, setRag] = useState("");
+  const [comment, setComment] = useState("");
+  const current = row.ragStatus ? row.ragStatus.toUpperCase() : null;
+  const style = current ? RAG_STATUS_STYLE[current] : null;
+
+  const badge = current && style ? (
+    <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${style.bg} ${style.text}`}>
+      <span className={`w-2 h-2 rounded-full ${style.dot}`} />{current}
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 text-muted-foreground text-[11px]">
+      <span className="w-2 h-2 rounded-full bg-slate-300" />Not set
+    </span>
+  );
+
+  if (!isAdmin) return badge;
+
+  return (
+    <Popover open={open} onOpenChange={(v) => { setOpen(v); if (v) { setRag(current ?? ""); setComment(""); } }}>
+      <PopoverTrigger asChild>
+        <button data-interactive="true" onClick={(e) => e.stopPropagation()} className="hover:opacity-80" data-testid={`btn-rag-${row.projectId}`}>{badge}</button>
+      </PopoverTrigger>
+      <PopoverContent data-interactive="true" onClick={(e) => e.stopPropagation()} className="w-64 p-3 space-y-2" align="start">
+        <div className="text-xs font-semibold">Set RAG status</div>
+        <div className="flex gap-1.5">
+          {RAG_STATUS_OPTIONS.map((r) => {
+            const s = RAG_STATUS_STYLE[r];
+            return (
+              <button
+                key={r}
+                onClick={() => setRag(r)}
+                className={`flex-1 inline-flex items-center justify-center gap-1 rounded-md border px-1.5 py-1 text-[11px] font-semibold ${rag === r ? `${s.bg} ${s.text} ring-1 ring-emerald-400` : "bg-card text-muted-foreground border-border"}`}
+                data-testid={`rag-opt-${r}-${row.projectId}`}
+              >
+                <span className={`w-2 h-2 rounded-full ${s.dot}`} />{r}
+              </button>
+            );
+          })}
+        </div>
+        <textarea
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          placeholder="Reason (required, min 5 chars)…"
+          className="w-full h-16 text-xs border rounded p-1.5 resize-none"
+          data-testid={`input-rag-comment-${row.projectId}`}
+        />
+        <div className="flex justify-end gap-1.5">
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button
+            size="sm"
+            className="h-7 text-xs"
+            disabled={!rag || comment.trim().length < 5}
+            onClick={() => { onSetRag(row, rag, comment.trim()); setOpen(false); }}
+            data-testid={`btn-save-rag-${row.projectId}`}
+          >
+            Save
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -116,23 +189,28 @@ interface RowProps {
   isAdmin: boolean;
   pmUsers: PmUser[];
   onAssignPm: (row: BoardRow, name: string | null) => void;
-  onSetEscalation: (row: BoardRow, level: string) => void;
+  onSetPhase: (row: BoardRow, phase: string) => void;
+  onSetRag: (row: BoardRow, rag: string, comment: string) => void;
   onEdit: (row: BoardRow) => void;
 }
 
-function Row({ row, onOpen, isAdmin, pmUsers, onAssignPm, onSetEscalation, onEdit }: RowProps) {
+// Only navigate to detail when the click/keypress is on the row itself — never
+// when it lands on an inline editor (PM, phase, RAG, edit, or any form control).
+const INTERACTIVE = '[data-interactive="true"], button, a, input, select, textarea, [role="combobox"], [role="option"], [role="dialog"]';
+
+function Row({ row, onOpen, isAdmin, pmUsers, onAssignPm, onSetPhase, onSetRag, onEdit }: RowProps) {
   return (
     <tr
       className="border-b hover:bg-muted/40 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-      onClick={() => onOpen(row.projectId)}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(row.projectId); } }}
+      onClick={(e) => { if ((e.target as HTMLElement).closest(INTERACTIVE)) return; onOpen(row.projectId); }}
+      onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) { e.preventDefault(); onOpen(row.projectId); } }}
       role="button"
       tabIndex={0}
       aria-label={`Open ${row.projectName}`}
       data-testid={`execution-row-${row.projectId}`}
     >
       <td className="py-2 pr-3 font-medium">{row.projectName}</td>
-      <td className="py-2 pr-3 text-muted-foreground">{row.phase ?? "—"}</td>
+      <td className="py-2 pr-3"><PhaseCell row={row} isAdmin={isAdmin} onSetPhase={onSetPhase} /></td>
       <td className="py-2 pr-3"><ScheduleCell row={row} /></td>
       <td className="py-2 pr-3">
         {row.nextTask ? <span className="whitespace-nowrap">{row.nextTask.taskName} · {fmtDate(row.nextTask.date)}</span> : <span className="text-muted-foreground">—</span>}
@@ -151,7 +229,7 @@ function Row({ row, onOpen, isAdmin, pmUsers, onAssignPm, onSetEscalation, onEdi
       </td>
       <td className="py-2 pr-3">
         {isAdmin ? (
-          <span onClick={(e) => e.stopPropagation()}>
+          <span data-interactive="true" onClick={(e) => e.stopPropagation()}>
             <SearchableSelect
               value={row.pmName || "__unassigned"}
               onValueChange={(val) => onAssignPm(row, val === "__unassigned" ? null : val)}
@@ -163,12 +241,12 @@ function Row({ row, onOpen, isAdmin, pmUsers, onAssignPm, onSetEscalation, onEdi
           </span>
         ) : (row.pmName ?? <span className="text-muted-foreground">—</span>)}
       </td>
-      <td className="py-2 pr-3"><EscalationCell row={row} isAdmin={isAdmin} onSet={onSetEscalation} /></td>
+      <td className="py-2 pr-3"><RagStatusCell row={row} isAdmin={isAdmin} onSetRag={onSetRag} /></td>
       <td className="py-2 pr-3"><MiniRag rag={row.engineering.rag} value={engValue(row.engineering)} /></td>
       <td className="py-2 pr-3"><MiniRag rag={row.quality.rag} value={qaValue(row.quality)} /></td>
       <td className="py-2 pr-1 tabular-nums">{row.flags.open + row.flags.flagged}/{row.flags.actioned}</td>
       {isAdmin && (
-        <td className="py-2 pr-1" onClick={(e) => e.stopPropagation()}>
+        <td className="py-2 pr-1" data-interactive="true" onClick={(e) => e.stopPropagation()}>
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(row)} aria-label={`Edit ${row.projectName}`} data-testid={`btn-edit-project-${row.projectId}`}>
             <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
           </Button>
@@ -178,7 +256,7 @@ function Row({ row, onOpen, isAdmin, pmUsers, onAssignPm, onSetEscalation, onEdi
   );
 }
 
-const BASE_HEAD = ["Site", "Phase", "Sched", "Next task ·14d", "Next delivery", "Installer", "PM", "Esc", "Eng", "QA", "Flags"];
+const BASE_HEAD = ["Site", "Phase", "Sched", "Next task ·14d", "Next delivery", "Installer", "PM", "RAG", "Eng", "QA", "Flags"];
 
 export default function ExecutionReviewBoard() {
   const [, navigate] = useLocation();
@@ -195,6 +273,8 @@ export default function ExecutionReviewBoard() {
   });
   const [editProject, setEditProject] = useState<BoardRow | null>(null);
 
+  const invalidateBoard = () => qc.invalidateQueries({ queryKey: ["/api/execution-review/board"] });
+
   const assignPm = useApiMutation({
     mutationFn: async ({ projectId, name }: { projectId: number; name: string | null }) => {
       const matched = pmUsers.find((u) => u.name === name);
@@ -204,17 +284,29 @@ export default function ExecutionReviewBoard() {
       });
     },
     errorToast: "Could not reassign PM",
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/execution-review/board"] }),
+    onSuccess: invalidateBoard,
   });
 
-  const setEscalation = useApiMutation({
-    mutationFn: async ({ projectId, level }: { projectId: number; level: string }) => {
-      await apiRequest("PATCH", `/api/projects-summary/${projectId}/escalation`, {
-        escalationLevel: level === "None" ? null : level,
-      });
+  // Phase + RAG write the CANONICAL lifecycle fields via the same endpoints the
+  // company lifecycle board uses, so they correlate through every lens. The
+  // phase endpoint enforces stage gates (it 409s on a blocked transition — the
+  // error toast surfaces the reason; overrides live on the lifecycle board).
+  const setPhase = useApiMutation({
+    mutationFn: async ({ projectId, phase }: { projectId: number; phase: string }) => {
+      await apiRequest("PATCH", `/api/lifecycle-board/projects/${projectId}/phase`, { phase });
     },
-    errorToast: "Could not update escalation",
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/execution-review/board"] }),
+    successToast: "Phase updated",
+    errorToast: "Could not change phase",
+    onSuccess: invalidateBoard,
+  });
+
+  const setRag = useApiMutation({
+    mutationFn: async ({ projectId, rag, comment }: { projectId: number; rag: string; comment: string }) => {
+      await apiRequest("POST", `/api/lifecycle-board/projects/${projectId}/rag`, { rag, comment });
+    },
+    successToast: "RAG status updated",
+    errorToast: "Could not update RAG status",
+    onSuccess: invalidateBoard,
   });
 
   const handleExport = () => { window.location.href = "/api/export/projects-summary"; };
@@ -234,7 +326,8 @@ export default function ExecutionReviewBoard() {
     isAdmin,
     pmUsers,
     onAssignPm: (row: BoardRow, name: string | null) => assignPm.mutate({ projectId: row.projectId, name }),
-    onSetEscalation: (row: BoardRow, level: string) => setEscalation.mutate({ projectId: row.projectId, level }),
+    onSetPhase: (row: BoardRow, phase: string) => setPhase.mutate({ projectId: row.projectId, phase }),
+    onSetRag: (row: BoardRow, rag: string, comment: string) => setRag.mutate({ projectId: row.projectId, rag, comment }),
     onEdit: (row: BoardRow) => setEditProject(row),
   };
 
