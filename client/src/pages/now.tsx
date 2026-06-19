@@ -283,7 +283,7 @@ function NowPageInner() {
       {/* Footer — link to the legacy 5-tab dashboard so existing bookmarks still work. */}
       <div className="text-center pt-4">
         <Button variant="ghost" size="sm" asChild className="text-xs text-muted-foreground">
-          <a href="/execution-board">Open full execution dashboard →</a>
+          <a href="/execution">Open the Execution control tower →</a>
         </Button>
       </div>
     </div>

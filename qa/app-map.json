@@ -31,7 +31,7 @@
     { "path": "/engineering/sync", "component": "EngineeringSyncPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
     { "path": "/project-create", "component": "ProjectCreatePage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
     { "path": "/lifecycle-board", "component": "LifecycleBoardPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
-    { "path": "/execution-board", "component": "ExecutionBoardPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/execution", "component": "ExecutionReviewBoardPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
     { "path": "/smart-import", "component": "SmartImportPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
     { "path": "/project-normalized/:projectName", "component": "ProjectNormalizedViewPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
     { "path": "/invoice-patterns", "component": "InvoicePatternsPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },

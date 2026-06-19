@@ -18,6 +18,7 @@ import { db } from "../db";
 import {
   projectInfo,
   projectExecutionState,
+  projectEditableFields,
   projectSubcontractorAssignments,
   projectDeliveryMilestones,
   procurementItems,
@@ -300,6 +301,25 @@ export class ExecutionBoardRepository {
       .groupBy(qcPlanLink.projectId);
     for (const row of rows) if (row.projectId != null) out.add(row.projectId);
     return out;
+  }
+
+  /**
+   * The free-text "latest update" note for a project (construction manager's
+   * running status). Keyed by projectName — the same key the PATCH
+   * /api/projects-summary/:projectName/latest-update endpoint upserts on.
+   */
+  async getLatestUpdate(
+    projectName: string,
+  ): Promise<{ latestUpdate: string | null; latestUpdateBy: string | null; latestUpdateAt: Date | null } | undefined> {
+    const [row] = await this.dbInstance
+      .select({
+        latestUpdate: projectEditableFields.latestUpdate,
+        latestUpdateBy: projectEditableFields.latestUpdateBy,
+        latestUpdateAt: projectEditableFields.latestUpdateAt,
+      })
+      .from(projectEditableFields)
+      .where(eq(projectEditableFields.projectName, projectName));
+    return row;
   }
 
   /** Resolve user display names for a set of user ids. */

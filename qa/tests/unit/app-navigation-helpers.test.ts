@@ -30,7 +30,7 @@ describe("app navigation helpers", () => {
     const delivery = sections.find((section) => section.key === "PROJECT_DELIVERY");
     expect(delivery).toBeTruthy();
     expect(delivery?.secondary.some((item) => item.path === "/projects")).toBe(false);
-    expect(delivery?.secondary.some((item) => item.path === "/execution-board")).toBe(true);
+    expect(delivery?.secondary.some((item) => item.path === "/execution")).toBe(true);
   });
 
   it("linkIsActive handles nested routes and query-param routes", () => {
@@ -46,7 +46,7 @@ describe("app navigation helpers", () => {
     expect(projectDelivery).toBeTruthy();
 
     const crumbs = getBreadcrumbs("/project/Solar%20Alpha", projectDelivery!);
-    expect(crumbs[0]?.label).toBe("Project Delivery");
+    expect(crumbs[0]?.label).toBe("Execution");
     // The leaf segment is decoded so business names survive in the breadcrumb.
     expect(crumbs[crumbs.length - 1]?.label).toBe("Solar Alpha");
   });
@@ -76,7 +76,7 @@ describe("app navigation helpers", () => {
     const labels = DISPLAY_TOP_NAV.map((item) => item.label);
     expect(labels).toEqual([
       "Home",
-      "Project Delivery",
+      "Execution",
       "Finance",
       "Engineering",
       "Quality Management",

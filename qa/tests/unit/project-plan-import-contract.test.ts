@@ -78,15 +78,12 @@ describe("Project plan import contract", () => {
   });
 
   it("execution dashboard does not mark missing schedule data as on schedule", () => {
-    const overview = read("client/src/pages/execution-dashboard/OverviewPage.tsx");
+    // The legacy execution-dashboard OverviewPage was removed when the
+    // Execution control tower replaced it; the schedule-data guard now lives
+    // in the shared data provider (still used by /now) and the server.
     const provider = read("client/src/pages/execution-dashboard/use-execution-data.ts");
     const server = read("server/lifecycle-routes.ts");
 
-    expect(overview).not.toContain("const onSchedule = !p.behindPlan");
-    expect(overview).toContain(
-      "const hasScheduleData = p.actualProgressPct != null && p.expectedProgressPct != null",
-    );
-    expect(overview).toContain("No Schedule Data");
     expect(provider).toContain("const scheduleMeasuredProjects = fp.filter");
     expect(provider).not.toContain("fp.filter((p) => !p.behindPlan).length / fp.length");
     expect(server).toContain("const scheduleMeasuredRows = projectRows.filter");

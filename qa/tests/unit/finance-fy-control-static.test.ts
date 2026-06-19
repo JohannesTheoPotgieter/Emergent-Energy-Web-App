@@ -3,7 +3,6 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const focusedScreens = [
-  'client/src/pages/execution-dashboard/FinancePage.tsx',
   'client/src/pages/cashflow.tsx',
   'client/src/pages/cos.tsx',
   'client/src/pages/revenue-tracker.tsx',

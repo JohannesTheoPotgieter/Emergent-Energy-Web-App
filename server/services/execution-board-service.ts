@@ -244,6 +244,9 @@ export interface ProjectDetail {
     pmName: string | null;
     pdUserId: number | null;
     pdName: string | null;
+    latestUpdate: string | null;
+    latestUpdateBy: string | null;
+    latestUpdateAt: string | null;
   };
   schedule: ScheduleSnapshot & { importedAt: string | null; runId: number | null };
   planTasks: PlanTaskView[];
@@ -274,9 +277,12 @@ export async function getProjectDetail(projectId: number, now: Date = new Date()
     executionBoardRepository.getQcLinkedProjectIds([projectId]),
   ]);
 
-  const userNames = await executionBoardRepository.getUserNamesByIds(
-    [header.pmUserId, header.pdUserId].filter((x): x is number => typeof x === "number"),
-  );
+  const [userNames, latest] = await Promise.all([
+    executionBoardRepository.getUserNamesByIds(
+      [header.pmUserId, header.pdUserId].filter((x): x is number => typeof x === "number"),
+    ),
+    executionBoardRepository.getLatestUpdate(header.projectName),
+  ]);
   const schedule = computeScheduleSnapshot(plan.tasks);
   const deliveries = selectNextDelivery(milestones, procurement, today);
 
@@ -307,6 +313,9 @@ export async function getProjectDetail(projectId: number, now: Date = new Date()
       pmName: (header.pmUserId != null ? userNames.get(header.pmUserId) : null) ?? header.pmText ?? null,
       pdUserId: header.pdUserId,
       pdName: (header.pdUserId != null ? userNames.get(header.pdUserId) : null) ?? header.pdText ?? null,
+      latestUpdate: latest?.latestUpdate ?? null,
+      latestUpdateBy: latest?.latestUpdateBy ?? null,
+      latestUpdateAt: latest?.latestUpdateAt ? latest.latestUpdateAt.toISOString() : null,
     },
     schedule: { ...schedule, importedAt: plan.importedAt ? plan.importedAt.toISOString() : null, runId: plan.runId },
     planTasks,

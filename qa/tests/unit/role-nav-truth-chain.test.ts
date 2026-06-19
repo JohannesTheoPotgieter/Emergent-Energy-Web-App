@@ -35,31 +35,31 @@ import { ADMIN_ROLES, ENTITY_REGISTRY, type CompanyRole } from "@shared/schema";
 // Mirrors §3 of docs/roles-permissions-navigation-audit-2026-05-05.md.
 // ---------------------------------------------------------------------------
 
-type TopNavLabel = "Home" | "Project Delivery" | "Finance" | "Engineering" | "Quality Management" | "Settings";
+type TopNavLabel = "Home" | "Execution" | "Finance" | "Engineering" | "Quality Management" | "Settings";
 
 /**
  * Locked role × top-nav visibility per COO spec (2026-05-11):
  *
- *   Home · Project Delivery · Finance · Engineering · Quality Management · Settings
+ *   Home · Execution · Finance · Engineering · Quality Management · Settings
  *
  * Hidden tabs (Projects/Portfolio, Gates, Project Development, HSE, Reports,
  * the legacy Admin grid) sit behind Functionality Control and don't render
  * in the top bar regardless of the role. Settings is COO/CEO only.
  */
 const EXPECTED_VISIBILITY: Record<CompanyRole, TopNavLabel[]> = {
-  COO_ADMIN:               ["Home", "Project Delivery", "Finance", "Engineering", "Quality Management", "Settings"],
-  CEO_ADMIN:               ["Home", "Project Delivery", "Finance", "Settings"],
+  COO_ADMIN:               ["Home", "Execution", "Finance", "Engineering", "Quality Management", "Settings"],
+  CEO_ADMIN:               ["Home", "Execution", "Finance", "Settings"],
   CCO:                     ["Home", "Finance"],
   KEY_ACCOUNTS_MANAGER:    ["Home", "Finance"],
-  PROGRAM_MANAGER:         ["Home", "Project Delivery", "Finance", "Quality Management"],
-  PROGRAM_FINANCE_MANAGER: ["Home", "Project Delivery", "Finance"],
-  PROJECT_MANAGER_SITE:    ["Home", "Project Delivery", "Finance", "Quality Management"],
-  CONSTRUCTION_MANAGER:    ["Home", "Project Delivery", "Finance", "Quality Management"],
-  ENGINEERING_MANAGER:     ["Home", "Project Delivery", "Engineering", "Quality Management"],
-  QUALITY_MANAGER:         ["Home", "Project Delivery", "Quality Management"],
-  HSE_MANAGER:             ["Home", "Project Delivery"],
-  SSEG_MANAGER:            ["Home", "Project Delivery", "Engineering", "Quality Management"],
-  CFO:                     ["Home", "Project Delivery", "Finance"],
+  PROGRAM_MANAGER:         ["Home", "Execution", "Finance", "Quality Management"],
+  PROGRAM_FINANCE_MANAGER: ["Home", "Execution", "Finance"],
+  PROJECT_MANAGER_SITE:    ["Home", "Execution", "Finance", "Quality Management"],
+  CONSTRUCTION_MANAGER:    ["Home", "Execution", "Finance", "Quality Management"],
+  ENGINEERING_MANAGER:     ["Home", "Execution", "Engineering", "Quality Management"],
+  QUALITY_MANAGER:         ["Home", "Execution", "Quality Management"],
+  HSE_MANAGER:             ["Home", "Execution"],
+  SSEG_MANAGER:            ["Home", "Execution", "Engineering", "Quality Management"],
+  CFO:                     ["Home", "Execution", "Finance"],
   ACCOUNTANT:              ["Home", "Finance"],
   ENGINEER:                ["Home", "Engineering", "Quality Management"],
   PROJECT_DEVELOPER:       ["Home", "Finance"],

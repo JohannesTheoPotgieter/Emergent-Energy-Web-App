@@ -57,7 +57,7 @@ export const LEGACY_REDIRECTS: Array<{ path: string; redirectTo: string }> = [
   // executive landing), so bookmarks that say "open the dashboard" land on
   // something that actually looks like one. /gates remains reachable from
   // the sidebar for stage-gate workflows.
-  { path: "/dashboard", redirectTo: "/execution-board" },
+  { path: "/dashboard", redirectTo: "/execution" },
   { path: "/revenue", redirectTo: "/revenue-tracker" },
   { path: "/my-tool", redirectTo: "/" },
   { path: "/my-tool/week", redirectTo: "/my-work/calendar" },
@@ -207,11 +207,12 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // trackers. The legacy /projects stays for one cycle so anyone
   // who needs the wide-column drill-down still has it.
   { id: "portfolio", path: "/portfolio", label: "Portfolio", iconKey: "LayoutGrid", navGroup: "PROJECTS", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "PortfolioPage" },
-  { id: "executionBoard", path: "/execution-board", label: "Execution Board (legacy)", iconKey: "LayoutDashboard", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "ExecutionBoardPage", aliases: ["/execution-dashboard"], matchSubRoutes: true },
-  { id: "executionBoardProgram", path: "/execution-board/program", label: "Program View", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "ExecutionBoardPage" },
-  { id: "executionBoardConstruction", path: "/execution-board/construction", label: "Construction View", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "ExecutionBoardPage" },
-  { id: "executionBoardFinance", path: "/execution-board/finance", label: "Program Finance", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "ExecutionBoardPage" },
-  { id: "executionBoardRealisation", path: "/execution-board/realisation", label: "Realisation KPIs", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "ExecutionBoardPage" },
+  // Execution control tower (replaces the legacy 5-tab /execution-board).
+  { id: "executionReview", path: "/execution", label: "Execution", iconKey: "LayoutDashboard", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_review", showInSidebar: true, routeComponentKey: "ExecutionReviewBoardPage" },
+  { id: "executionUpcoming", path: "/execution/upcoming", label: "This fortnight", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_review", showInSidebar: false, routeComponentKey: "ExecutionUpcomingPage" },
+  { id: "executionDeliveries", path: "/execution/deliveries", label: "Deliveries", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_review", showInSidebar: false, routeComponentKey: "ExecutionDeliveriesPage" },
+  { id: "executionAllocations", path: "/execution/allocations", label: "Allocations", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_review", showInSidebar: false, routeComponentKey: "ExecutionAllocationsPage" },
+  { id: "executionSite", path: "/execution/site/:projectId", label: "Site Detail", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_review", showInSidebar: false, routeComponentKey: "ExecutionReviewDetailPage" },
   { id: "smartImport", path: "/admin/smart-import", label: "Smart Import", iconKey: "FileSpreadsheet", navGroup: "SYSTEM", permissionEntity: "smart_import", showInSidebar: false, routeComponentKey: "SmartImportPage" },
   { id: "adminImportMappings", path: "/admin/import-mappings", label: "Import setup", iconKey: "FileSpreadsheet", navGroup: "SYSTEM", permissionEntity: "smart_import", showInSidebar: true, routeComponentKey: "AdminImportMappingsPage" },
   // Absorbed into QB Throughput > Suppliers tab — hidden from nav.
@@ -247,7 +248,6 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "collaboration", path: "/collaboration", label: "Collaboration Hub", type: "alias", permissionEntity: "collaboration_hub", redirectTo: "/my-work" },
   { id: "collabEmail", path: "/collaboration/email", label: "Collaboration Email", type: "alias", permissionEntity: "collaboration_hub", redirectTo: "/my-work/email" },
   { id: "collabTeams", path: "/collaboration/teams", label: "Collaboration Teams", type: "alias", permissionEntity: "teams_chat", redirectTo: "/my-work/teams" },
-  { id: "dashboard", path: "/execution-dashboard", label: "Execution Dashboard", iconKey: "LayoutDashboard", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "ExecutionBoardPage" },
   { id: "pmDashboard", path: "/pm-dashboard", label: "PM Dashboard", iconKey: "User", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "pm_dashboard", showInSidebar: false, routeComponentKey: "PMDashboard" },
   { id: "pmOnTheGo", path: "/pm/on-the-go", label: "PM On-The-Go", iconKey: "Smartphone", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "pm_on_the_go", showInSidebar: false, routeComponentKey: "PMOnTheGoHome" },
   { id: "pmOnTheGoProject", path: "/pm/on-the-go/project/:projectId", label: "On-The-Go Project", permissionEntity: "pm_on_the_go", routeComponentKey: "PMOnTheGoProject" },
@@ -308,7 +308,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // New entity pages (Phase B)
   { id: "sites", path: "/sites", label: "Sites", iconKey: "MapPin", navGroup: "PROJECTS", permissionEntity: "projects", showInSidebar: false, routeComponentKey: "SitesPage" },
   { id: "opportunities", path: "/opportunities", label: "Opportunities", iconKey: "TrendingUp", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: false, routeComponentKey: "OpportunitiesPage" },
-  { id: "procurementDashboard", path: "/procurement", label: "Procurement", type: "alias", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: false, redirectTo: "/execution-board" },
+  { id: "procurementDashboard", path: "/procurement", label: "Procurement", type: "alias", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: false, redirectTo: "/execution" },
   // EPC Workflow Phase 1
   { id: "poApprovalBoard", path: "/po-approval-board", label: "PO Approvals", iconKey: "FileText", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "procurement", showInSidebar: false, routeComponentKey: "POApprovalBoardPage" },
   { id: "paymentRequestBoard", path: "/payment-request-board", label: "Payment Requests", iconKey: "CreditCard", navGroup: "FINANCE", permissionEntity: "procurement", showInSidebar: false, routeComponentKey: "PaymentRequestBoardPage" },

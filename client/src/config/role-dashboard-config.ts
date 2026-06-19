@@ -34,13 +34,13 @@ const COO_CEO_CONFIG: RoleDashboardConfig = {
   ],
   attentionPriority: ["exceptions", "gate_failures", "handover_bottlenecks", "budget_deviation"],
   quickActions: [
-    { label: "Execution Board", path: "/execution-board", iconKey: "LayoutDashboard" },
+    { label: "Execution", path: "/execution", iconKey: "LayoutDashboard" },
     { label: "Exceptions", path: "/gates/exceptions", iconKey: "AlertTriangle" },
     { label: "Gate Pipeline", path: "/gates", iconKey: "Milestone" },
     { label: "Reports", path: "/reports/center", iconKey: "FileText" },
     { label: "Settings", path: "/settings", iconKey: "Gauge" },
   ],
-  cockpitPath: "/execution-board",
+  cockpitPath: "/execution",
   cockpitLabel: "Execution Board",
 };
 
@@ -55,12 +55,12 @@ const PROGRAM_MANAGER_CONFIG: RoleDashboardConfig = {
   quickActions: [
     { label: "Gates Pipeline", path: "/gates", iconKey: "Milestone" },
     { label: "Weekly Reviews", path: "/weekly-reviews", iconKey: "CalendarCheck" },
-    { label: "Execution Board", path: "/execution-board", iconKey: "LayoutDashboard" },
+    { label: "Execution", path: "/execution", iconKey: "LayoutDashboard" },
     { label: "All Projects", path: "/projects", iconKey: "FileSpreadsheet" },
     { label: "Programme Reports", path: "/reports/programme", iconKey: "FileText" },
     { label: "Exceptions", path: "/gates/exceptions", iconKey: "AlertTriangle" },
   ],
-  cockpitPath: "/execution-board",
+  cockpitPath: "/execution",
   cockpitLabel: "Execution Board",
 };
 
@@ -79,7 +79,7 @@ const PM_CONFIG: RoleDashboardConfig = {
     { label: "Weekly Reviews", path: "/weekly-reviews", iconKey: "CalendarCheck" },
     { label: "Gates Pipeline", path: "/gates", iconKey: "Milestone" },
   ],
-  cockpitPath: "/execution-board",
+  cockpitPath: "/execution",
   cockpitLabel: "Execution Board",
 };
 
@@ -171,13 +171,13 @@ const CONSTRUCTION_CONFIG: RoleDashboardConfig = {
   ],
   attentionPriority: ["material_delays", "inspection_failures", "critical_snags", "safety_incidents"],
   quickActions: [
-    { label: "Execution Board", path: "/execution-board", iconKey: "LayoutDashboard" },
+    { label: "Execution", path: "/execution", iconKey: "LayoutDashboard" },
     { label: "All Projects", path: "/projects", iconKey: "FileSpreadsheet" },
     { label: "Quality", path: "/quality", iconKey: "ShieldCheck" },
     { label: "Gates Pipeline", path: "/gates", iconKey: "Milestone" },
     { label: "My Tasks", path: "/priorities?tab=my", iconKey: "ListChecks" },
   ],
-  cockpitPath: "/execution-board",
+  cockpitPath: "/execution",
   cockpitLabel: "Execution Board",
 };
 
@@ -193,7 +193,7 @@ const DEFAULT_CONFIG: RoleDashboardConfig = {
     { label: "My Tasks", path: "/my-work", iconKey: "ListChecks" },
     { label: "All Projects", path: "/projects", iconKey: "FileSpreadsheet" },
   ],
-  cockpitPath: "/execution-board",
+  cockpitPath: "/execution",
   cockpitLabel: "Execution Board",
 };
 

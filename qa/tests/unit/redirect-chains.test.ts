@@ -67,13 +67,13 @@ describe("redirect chain elimination", () => {
 
   // ── Specific known redirects ──
 
-  it("/dashboard redirects to /execution-board (canonical company surface)", () => {
+  it("/dashboard redirects to /execution (canonical delivery surface)", () => {
     // Updated 2026-05-06 (EE-QA-014): /dashboard previously redirected to /gates,
     // which surprised users who expected a dashboard. /gates remains reachable
     // from the sidebar — only the legacy redirect target moved.
     const entry = LEGACY_REDIRECTS.find((r) => r.path === "/dashboard");
     expect(entry).toBeDefined();
-    expect(entry!.redirectTo).toBe("/execution-board");
+    expect(entry!.redirectTo).toBe("/execution");
   });
 
   // ── Structural invariants ──

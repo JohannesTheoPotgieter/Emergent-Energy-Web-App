@@ -232,7 +232,7 @@ function FinanceKpiStrip({ kpis, loading }: { kpis: ExecDashboardPayload["kpis"]
             label="Gross profit (planned)"
             primary={formatZAR(kpis.grossProfitFy)}
             sub={kpis.grossMarginPctFy != null ? `Margin ${kpis.grossMarginPctFy}%` : undefined}
-            to="/execution-board/finance"
+            to="/finance/gp/company"
           />
           <KpiTile
             label="Cashflow 30-day"
@@ -469,7 +469,7 @@ function FinancialPulseColumn() {
         <PulseLink to="/cos" label="CoS realisation" icon={<Zap className="h-3.5 w-3.5" />} sub="Planned vs actual" />
         <PulseLink to="/revenue-tracker" label="Revenue" icon={<TrendingUp className="h-3.5 w-3.5" />} sub="Forecast vs received" />
         <PulseLink to="/cashflow" label="Cashflow 30-day" icon={<DollarSign className="h-3.5 w-3.5" />} sub="Projected position" />
-        <PulseLink to="/execution-board/finance" label="Margin pulse" icon={<AlertCircle className="h-3.5 w-3.5" />} sub="Top deteriorating" />
+        <PulseLink to="/finance/gp/company" label="Margin pulse" icon={<AlertCircle className="h-3.5 w-3.5" />} sub="Top deteriorating" />
       </CardContent>
     </Card>
   );
