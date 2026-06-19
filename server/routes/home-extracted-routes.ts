@@ -373,7 +373,11 @@ export function registerHomeExtractedRoutes(app: Express): void {
       const daysSinceMonday = (dow + 6) % 7;
       startDate.setDate(startDate.getDate() - daysSinceMonday);
       const endDate = new Date(startDate);
-      endDate.setDate(endDate.getDate() + 27);
+      // Additive: callers may narrow/widen the window with ?daysOut=N (clamped
+      // 1..90). Default preserves the existing 28-day (4-week) grid span.
+      const daysOutRaw = Number(req.query.daysOut);
+      const spanDays = Number.isFinite(daysOutRaw) ? Math.min(Math.max(Math.trunc(daysOutRaw), 1), 90) : 28;
+      endDate.setDate(endDate.getDate() + (spanDays - 1));
       // Use local-date formatting (NOT toISOString) so a server in UTC+2 doesn't
       // shift local-midnight Monday into the previous UTC Sunday.
       const fmtLocal = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
