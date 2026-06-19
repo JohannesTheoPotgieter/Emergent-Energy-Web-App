@@ -530,9 +530,7 @@ export default function FinanceQbReconciliationPage() {
         data-testid={`qb-recon-tile-${label.toLowerCase()}`}
         label={label}
         value={<MoneyValue value={m.tracker} align="left" muteNegative={false} />}
-        tone={m.tie ? "positive" : "warning"}
         supporting={tripleText(m.tracker, m.qb)}
-        sourceBadge={<StatusBadge tone={m.tie ? "ties" : "warning"} label={m.tie ? "Tie" : "Variance"} />}
       />
     );
   };
