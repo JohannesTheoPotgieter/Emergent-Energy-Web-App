@@ -26,10 +26,10 @@ import { ROUTE_COMPONENTS } from "@/config/route-components";
 import { useScreenAvailability } from "@/hooks/use-screen-availability";
 import { FinanceModuleNoAccess } from "@/components/FinanceModuleNoAccess";
 import {
-  isFinanceOnlyEnforced,
-  FINANCE_ONLY_LANDING_PATH,
+  isLiveReadyEnforced,
+  LIVE_READY_LANDING_PATH,
   isPageEnabled,
-  isRoleAllowedInFinanceModule,
+  isRoleAllowedInLiveReady,
 } from "@shared/config/enabled-modules";
 
 // Eagerly loaded pages (critical path — login, home, not-found)
@@ -42,7 +42,7 @@ type RouteConfig = {
   path: string;
   component?: React.ComponentType<any>;
   redirectTo?: string;
-  // Carried so the finance-only module gate can decide reachability per route
+  // Carried so the live-ready module gate can decide reachability per route
   // (see shared/config/enabled-modules.ts). Absent on legacy redirects.
   navGroup?: string;
   pageId?: string;
@@ -187,7 +187,7 @@ function ProtectedPages() {
       <div className="page-enter">
         <Switch>
           <Route path="/">
-            {() => (isFinanceOnlyEnforced() ? <Redirect to={FINANCE_ONLY_LANDING_PATH} /> : <HomePage />)}
+            {() => (isLiveReadyEnforced() ? <Redirect to={LIVE_READY_LANDING_PATH} /> : <HomePage />)}
           </Route>
           {APP_ROUTES.map((route) => {
             if (route.redirectTo) {
@@ -198,12 +198,12 @@ function ProtectedPages() {
             return (
               <Route key={route.path} path={route.path}>
                 {() => {
-                  // Finance-only module gate: any route whose navGroup is
+                  // Live-Ready module gate: any route whose navGroup is
                   // disabled is hard-blocked and redirected to /finance so a
                   // disabled page is unreachable by deep-link. No-op when
-                  // FINANCE_ONLY_MODE is off. See shared/config/enabled-modules.ts.
+                  // LIVE_READY_MODE is off. See shared/config/enabled-modules.ts.
                   if (!isPageEnabled({ id: route.pageId, navGroup: route.navGroup })) {
-                    return <Redirect to={FINANCE_ONLY_LANDING_PATH} />;
+                    return <Redirect to={LIVE_READY_LANDING_PATH} />;
                   }
                   // Per COO spec (2026-05-11): disabled screens return 404, not
                   // a friendly "unavailable" page. Treat them as if they don't
@@ -238,18 +238,18 @@ function ScreenAvailabilityWarning() {
 }
 
 /**
- * Finance-only role gate. Renders the branded no-access landing for any
+ * Live-Ready role gate. Renders the branded no-access landing for any
  * authenticated role outside the finance-module allowlist BEFORE ProtectedPages
  * mounts — so the layout, lens context, permission matrix and screen-settings
  * queries never fire for users who aren't permitted in (no data calls). No-op
- * when FINANCE_ONLY_MODE is off. See shared/config/enabled-modules.ts.
+ * when LIVE_READY_MODE is off. See shared/config/enabled-modules.ts.
  */
 function FinanceModuleGate({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
   const effectiveRole = normalizeRoleForPermissions(user?.role || companyRole);
 
-  if (isFinanceOnlyEnforced() && effectiveRole && !isRoleAllowedInFinanceModule(effectiveRole)) {
+  if (isLiveReadyEnforced() && effectiveRole && !isRoleAllowedInLiveReady(effectiveRole)) {
     return <FinanceModuleNoAccess />;
   }
   return <>{children}</>;

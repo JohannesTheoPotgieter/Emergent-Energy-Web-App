@@ -670,7 +670,7 @@ One paragraph per role. Read: "what this role is primarily trying to accomplish 
 
 10. **KEY_ACCOUNTS_MANAGER** — Client relationship manager. Primary flows: PD Dashboard (landing), Opportunities, Clients (edit), Portfolios (view). Phase 2 priority: **medium**.
 
-11. **ACCOUNTANT** — Finance operations. Primary flows: Cashflow (landing), COS, Revenue, Counterparties (view), Subcontractors (view), Financial Linking. Narrow scope — finance-only. Phase 2 priority: **medium**.
+11. **ACCOUNTANT** — Finance operations. Primary flows: Cashflow (landing), COS, Revenue, Counterparties (view), Subcontractors (view), Financial Linking. Narrow scope — live-ready. Phase 2 priority: **medium**.
 
 12. **ENGINEER** — Engineering execution. Primary flows: Engineering (landing), Task Board, Standups, My Work. Narrowest edit scope after Admin specialists. Phase 2 priority: **high** — concurrent user count is large in the engineering team.
 

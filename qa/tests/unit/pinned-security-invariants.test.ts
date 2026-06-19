@@ -45,7 +45,7 @@ function windowAfter(haystack: string, needle: string, chars = 600): string {
 describe("subcontractor bank-detail RBAC — subcontractor-routes.ts", () => {
   const source = read("server/subcontractor-routes.ts");
 
-  it("declares a finance-only allowlist for bank-detail access", () => {
+  it("declares a live-ready allowlist for bank-detail access", () => {
     expect(
       source,
       "BANK_DETAIL_ROLES set must list the finance roles that may see decrypted bank fields",

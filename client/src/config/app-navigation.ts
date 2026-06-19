@@ -129,7 +129,7 @@ export const TOP_SECTIONS: TopSection[] = [
     // requiredPathPermissions: ["financials:view"] — that field is evaluated
     // as a PATH (canViewPath), and an "entity:action" string is an unknown
     // path → denied for everyone. That mis-gate was hiding Reconciliation.
-    // Finance-only module sidebar — exactly 7 items (2026-06-11). Weekly Close
+    // Live-Ready module sidebar — exactly 7 items (2026-06-11). Weekly Close
     // is SCRAPPED (its AR + missing-invoice worklists moved into Cashflow;
     // /finance/close now redirects to /cashflow). Payment Requests + PO
     // Approvals are PARKED (procure-to-pay deferred — see AGENT_GUARDRAILS § 3B
@@ -394,7 +394,7 @@ export function buildVisibleTopSections(options: {
 }
 
 /**
- * Module-enablement layer (finance-only) — orthogonal to the role/permission
+ * Module-enablement layer (live-ready) — orthogonal to the role/permission
  * model in buildVisibleTopSections. A top-nav section maps to one or more
  * page-registry nav-groups; the section is shown only when at least one of
  * those nav-groups is enabled in shared/config/enabled-modules.ts.
@@ -424,7 +424,7 @@ export function isSectionModuleEnabled(sectionKey: SectionKey): boolean {
   return groups.some((group) => isNavGroupEnabled(group));
 }
 
-/** Drop any top-nav sections whose module is disabled (finance-only gate). */
+/** Drop any top-nav sections whose module is disabled (live-ready gate). */
 export function filterSectionsByEnabledModules<T extends { key: SectionKey }>(sections: T[]): T[] {
   return sections.filter((section) => isSectionModuleEnabled(section.key));
 }

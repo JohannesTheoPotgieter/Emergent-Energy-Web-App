@@ -114,7 +114,7 @@ export default function FinanceGpCompanyPage() {
 
   // Project name → id so rows deep-link to the finance-scoped project page.
   // The legacy /project/:name route is in the PROJECT_MANAGEMENT nav-group,
-  // disabled in finance-only mode (redirects to the finance landing) — see
+  // disabled in live-ready mode (redirects to the finance landing) — see
   // shared/config/enabled-modules.ts.
   const reconQuery = useQuery<ReconPortfolioResponse>({
     queryKey: ['/api/finance/reconciliation'],

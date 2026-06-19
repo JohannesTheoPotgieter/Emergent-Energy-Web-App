@@ -99,8 +99,8 @@ describe("app navigation helpers", () => {
     ]);
   });
 
-  it("makes the seven finance-only operations discoverable from the Finance nav", () => {
-    // Finance-only module: the sidebar is exactly these seven items.
+  it("makes the seven live-ready operations discoverable from the Finance nav", () => {
+    // Live-Ready module: the sidebar is exactly these seven items.
     const finance = TOP_SECTIONS.find((section) => section.label === "Finance");
     expect(finance?.secondary.map((item) => [item.label, item.path])).toEqual([
       ["Finance Home", "/finance"],

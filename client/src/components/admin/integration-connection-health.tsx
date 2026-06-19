@@ -216,7 +216,7 @@ function ConnectionTile({ tile }: { tile: HealthTile }) {
 interface IntegrationConnectionHealthProps {
   /**
    * When provided, only connectors whose `integration.name` is in this list are
-   * shown. Used by the finance-only Integration Statuses page to surface just
+   * shown. Used by the live-ready Integration Statuses page to surface just
    * QuickBooks + Microsoft 365 and drop CRM/other connectors.
    */
   includeNames?: string[];

@@ -714,7 +714,7 @@ Full specialisation table for checkpoint 5 (W7 Lens-switching).
 
 Same AppShell, three different lenses. This is the proof that "role-based lens" in this codebase means **sidebar + landing + Today's focus vary; chrome does not.**
 
-Shown: `PROGRAM_MANAGER`, `ENGINEER`, `CFO`. The three are chosen because they're the extremes — PM is cross-cutting (Tier 1), Engineer is narrow-depth (Tier 2), CFO is narrow-horizontal-finance-only (Tier 1).
+Shown: `PROGRAM_MANAGER`, `ENGINEER`, `CFO`. The three are chosen because they're the extremes — PM is cross-cutting (Tier 1), Engineer is narrow-depth (Tier 2), CFO is narrow-horizontal-live-ready (Tier 1).
 
 ### Sidebar comparison
 

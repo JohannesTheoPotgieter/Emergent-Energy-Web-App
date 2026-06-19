@@ -1,21 +1,22 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  FINANCE_ONLY_MODE,
-  isFinanceOnlyEnforced,
-  isFinanceOnlyDevOverrideOn,
-  FINANCE_ONLY_MODULE_CONFIG,
-  FINANCE_ONLY_LANDING_PATH,
-  FINANCE_ONLY_NO_ACCESS_PATH,
-  FINANCE_MODULE_ROLE_ALLOWLIST,
+  LIVE_READY_MODE,
+  isLiveReadyEnforced,
+  isLiveReadyDevOverrideOn,
+  LIVE_READY_MODULE_CONFIG,
+  LIVE_READY_LANDING_PATH,
+  LIVE_READY_NO_ACCESS_PATH,
+  LIVE_READY_ROLE_ALLOWLIST,
   ENABLED_SYSTEM_PAGE_IDS,
+  ENABLED_EXECUTION_PAGE_IDS,
   ACTIVE_MODULE_CONFIG,
   type ModuleRegistryConfig,
   isNavGroupEnabledIn,
   isPageEnabledIn,
   isNavGroupEnabled,
   isPageEnabled,
-  isRoleAllowedInFinanceModule,
-  resolveFinanceOnlyLanding,
+  isRoleAllowedInLiveReady,
+  resolveLiveReadyLanding,
   isAlwaysAllowedApiPath,
   isFinanceSearchType,
 } from "@shared/config/enabled-modules";
@@ -24,16 +25,16 @@ import { isSectionModuleEnabled, filterSectionsByEnabledModules } from "@/config
 import { COMPANY_ROLES } from "@shared/schema/users";
 
 /**
- * Finance-only module contract + REVERSIBILITY proof (task GP7).
+ * Live-Ready module contract + REVERSIBILITY proof (task GP7).
  *
- * These tests lock the finance-only configuration AND prove that re-enabling a
+ * These tests lock the live-ready configuration AND prove that re-enabling a
  * module is a one-line registry change: flipping a navGroup to { mode: "full" }
  * restores its routes (isPageEnabledIn) and its nav (isNavGroupEnabledIn →
  * section gate), while disabled routes redirect to /finance.
  */
 
-describe("finance-only module — runtime enforcement (deploy-mode)", () => {
-  // Finance-only is a deploy mode: enforced in production + unit tests, but
+describe("live-ready module — runtime enforcement (deploy-mode)", () => {
+  // Live-Ready is a deploy mode: enforced in production + unit tests, but
   // inert in the run-with-app integration/e2e harness (server API_TEST_MODE,
   // client served by `npm run dev`) and local dev, so the existing full-app
   // api/e2e suite keeps validating every module. This guards that contract —
@@ -49,116 +50,116 @@ describe("finance-only module — runtime enforcement (deploy-mode)", () => {
   it("enforces by default (vitest / production-like)", () => {
     delete process.env.API_TEST_MODE;
     process.env.NODE_ENV = "test";
-    expect(isFinanceOnlyEnforced()).toBe(true);
+    expect(isLiveReadyEnforced()).toBe(true);
     process.env.NODE_ENV = "production";
-    expect(isFinanceOnlyEnforced()).toBe(true);
+    expect(isLiveReadyEnforced()).toBe(true);
   });
 
   it("is INERT in the integration/e2e harness (API_TEST_MODE=true)", () => {
     process.env.NODE_ENV = "test";
     process.env.API_TEST_MODE = "true";
-    expect(isFinanceOnlyEnforced()).toBe(false);
+    expect(isLiveReadyEnforced()).toBe(false);
   });
 
   it("is INERT in development (local dev + run-with-app e2e client)", () => {
     delete process.env.API_TEST_MODE;
     process.env.NODE_ENV = "development";
-    expect(isFinanceOnlyEnforced()).toBe(false);
+    expect(isLiveReadyEnforced()).toBe(false);
   });
 
   it("when inert, the wrappers behave as full-app (nothing blocked)", () => {
     process.env.NODE_ENV = "development";
     expect(isNavGroupEnabled("ENGINEERING")).toBe(true);
     expect(isPageEnabled({ id: "engineering", navGroup: "ENGINEERING" })).toBe(true);
-    expect(isRoleAllowedInFinanceModule("ENGINEER")).toBe(true);
-    expect(resolveFinanceOnlyLanding("ENGINEER")).toBeNull();
+    expect(isRoleAllowedInLiveReady("ENGINEER")).toBe(true);
+    expect(resolveLiveReadyLanding("ENGINEER")).toBeNull();
     expect(isFinanceSearchType("task")).toBe(true);
   });
 });
 
-describe("finance-only module — opt-in DEV override (verify the lockdown locally)", () => {
+describe("live-ready module — opt-in DEV override (verify the lockdown locally)", () => {
   // The override turns enforcement ON in development for testing WITHOUT
   // weakening production. These tests pin: (1) default dev stays unrestricted;
-  // (2) FINANCE_ONLY_DEV=1 makes dev enforce — disabled routes redirect to
+  // (2) LIVE_READY_DEV=1 makes dev enforce — disabled routes redirect to
   // /finance and a non-allowlisted role resolves to /no-access; (3) the
   // override can never turn enforcement OFF in production.
   const origNodeEnv = process.env.NODE_ENV;
   const origApiTestMode = process.env.API_TEST_MODE;
-  const origFinanceOnlyDev = process.env.FINANCE_ONLY_DEV;
+  const origLiveReadyDev = process.env.LIVE_READY_DEV;
 
   afterEach(() => {
     process.env.NODE_ENV = origNodeEnv;
     if (origApiTestMode === undefined) delete process.env.API_TEST_MODE;
     else process.env.API_TEST_MODE = origApiTestMode;
-    if (origFinanceOnlyDev === undefined) delete process.env.FINANCE_ONLY_DEV;
-    else process.env.FINANCE_ONLY_DEV = origFinanceOnlyDev;
+    if (origLiveReadyDev === undefined) delete process.env.LIVE_READY_DEV;
+    else process.env.LIVE_READY_DEV = origLiveReadyDev;
   });
 
   it("is OFF by default in development (the app stays unrestricted)", () => {
     process.env.NODE_ENV = "development";
     delete process.env.API_TEST_MODE;
-    delete process.env.FINANCE_ONLY_DEV;
-    expect(isFinanceOnlyDevOverrideOn()).toBe(false);
-    expect(isFinanceOnlyEnforced()).toBe(false);
+    delete process.env.LIVE_READY_DEV;
+    expect(isLiveReadyDevOverrideOn()).toBe(false);
+    expect(isLiveReadyEnforced()).toBe(false);
     // Nothing blocked: a disabled module + a non-allowlisted role are both fine.
     expect(isPageEnabled({ id: "engineering", navGroup: "ENGINEERING" })).toBe(true);
     expect(isNavGroupEnabled("ENGINEERING")).toBe(true);
-    expect(resolveFinanceOnlyLanding("ENGINEER")).toBeNull();
+    expect(resolveLiveReadyLanding("ENGINEER")).toBeNull();
   });
 
-  it("FINANCE_ONLY_DEV=1 turns enforcement ON in development", () => {
+  it("LIVE_READY_DEV=1 turns enforcement ON in development", () => {
     process.env.NODE_ENV = "development";
     delete process.env.API_TEST_MODE;
-    process.env.FINANCE_ONLY_DEV = "1";
-    expect(isFinanceOnlyDevOverrideOn()).toBe(true);
-    expect(isFinanceOnlyEnforced()).toBe(true);
+    process.env.LIVE_READY_DEV = "1";
+    expect(isLiveReadyDevOverrideOn()).toBe(true);
+    expect(isLiveReadyEnforced()).toBe(true);
   });
 
   it("with the override ON, a disabled-navGroup route redirects to /finance", () => {
     process.env.NODE_ENV = "development";
-    process.env.FINANCE_ONLY_DEV = "1";
-    // App.tsx renders <Redirect to={FINANCE_ONLY_LANDING_PATH}/> for any page
+    process.env.LIVE_READY_DEV = "1";
+    // App.tsx renders <Redirect to={LIVE_READY_LANDING_PATH}/> for any page
     // whose module is disabled (isPageEnabled === false).
     const disabledPage = PAGE_REGISTRY.find((p) => p.navGroup === "ENGINEERING");
     expect(disabledPage).toBeDefined();
     expect(isPageEnabled({ id: disabledPage!.id, navGroup: disabledPage!.navGroup })).toBe(false);
     expect(isNavGroupEnabled("ENGINEERING")).toBe(false);
-    expect(FINANCE_ONLY_LANDING_PATH).toBe("/finance");
+    expect(LIVE_READY_LANDING_PATH).toBe("/finance");
   });
 
   it("with the override ON, a non-allowlisted role resolves to /no-access; finance roles to /finance", () => {
     process.env.NODE_ENV = "development";
-    process.env.FINANCE_ONLY_DEV = "1";
-    expect(resolveFinanceOnlyLanding("ENGINEER")).toBe(FINANCE_ONLY_NO_ACCESS_PATH);
-    expect(resolveFinanceOnlyLanding("QUALITY_MANAGER")).toBe(FINANCE_ONLY_NO_ACCESS_PATH);
-    expect(resolveFinanceOnlyLanding("CFO")).toBe(FINANCE_ONLY_LANDING_PATH);
-    expect(resolveFinanceOnlyLanding("PROGRAM_MANAGER")).toBe(FINANCE_ONLY_LANDING_PATH);
+    process.env.LIVE_READY_DEV = "1";
+    expect(resolveLiveReadyLanding("ENGINEER")).toBe(LIVE_READY_NO_ACCESS_PATH);
+    expect(resolveLiveReadyLanding("QUALITY_MANAGER")).toBe(LIVE_READY_NO_ACCESS_PATH);
+    expect(resolveLiveReadyLanding("CFO")).toBe(LIVE_READY_LANDING_PATH);
+    expect(resolveLiveReadyLanding("PROGRAM_MANAGER")).toBe(LIVE_READY_LANDING_PATH);
   });
 
-  it("accepts FINANCE_ONLY_DEV=true as well as =1, and ignores other values", () => {
+  it("accepts LIVE_READY_DEV=true as well as =1, and ignores other values", () => {
     process.env.NODE_ENV = "development";
-    process.env.FINANCE_ONLY_DEV = "true";
-    expect(isFinanceOnlyEnforced()).toBe(true);
-    process.env.FINANCE_ONLY_DEV = "0";
-    expect(isFinanceOnlyEnforced()).toBe(false);
-    process.env.FINANCE_ONLY_DEV = "yes-please";
-    expect(isFinanceOnlyEnforced()).toBe(false);
+    process.env.LIVE_READY_DEV = "true";
+    expect(isLiveReadyEnforced()).toBe(true);
+    process.env.LIVE_READY_DEV = "0";
+    expect(isLiveReadyEnforced()).toBe(false);
+    process.env.LIVE_READY_DEV = "yes-please";
+    expect(isLiveReadyEnforced()).toBe(false);
   });
 
   it("can never weaken production — prod enforces regardless of the override value", () => {
     process.env.NODE_ENV = "production";
     delete process.env.API_TEST_MODE;
     // Even an explicit "off" value cannot disable enforcement in production.
-    process.env.FINANCE_ONLY_DEV = "0";
-    expect(isFinanceOnlyEnforced()).toBe(true);
-    delete process.env.FINANCE_ONLY_DEV;
-    expect(isFinanceOnlyEnforced()).toBe(true);
+    process.env.LIVE_READY_DEV = "0";
+    expect(isLiveReadyEnforced()).toBe(true);
+    delete process.env.LIVE_READY_DEV;
+    expect(isLiveReadyEnforced()).toBe(true);
   });
 });
 
-describe("finance-only module — role allowlist", () => {
+describe("live-ready module — role allowlist", () => {
   it("is exactly the seven locked management + finance roles", () => {
-    expect([...FINANCE_MODULE_ROLE_ALLOWLIST].sort()).toEqual(
+    expect([...LIVE_READY_ROLE_ALLOWLIST].sort()).toEqual(
       [
         "ACCOUNTANT",
         "CEO_ADMIN",
@@ -172,30 +173,33 @@ describe("finance-only module — role allowlist", () => {
   });
 
   it("every allowlisted role is a real COMPANY_ROLE", () => {
-    for (const role of FINANCE_MODULE_ROLE_ALLOWLIST) {
+    for (const role of LIVE_READY_ROLE_ALLOWLIST) {
       expect(COMPANY_ROLES).toContain(role);
     }
   });
 
   it("allows the allowlisted roles and blocks everyone else", () => {
-    expect(isRoleAllowedInFinanceModule("CFO")).toBe(true);
-    expect(isRoleAllowedInFinanceModule("ACCOUNTANT")).toBe(true);
-    expect(isRoleAllowedInFinanceModule("CONSTRUCTION_MANAGER")).toBe(true);
+    expect(isRoleAllowedInLiveReady("CFO")).toBe(true);
+    expect(isRoleAllowedInLiveReady("ACCOUNTANT")).toBe(true);
+    expect(isRoleAllowedInLiveReady("CONSTRUCTION_MANAGER")).toBe(true);
     for (const blocked of ["ENGINEER", "QUALITY_MANAGER", "HSE_MANAGER", "PROJECT_DEVELOPER", "CCO", "KEY_ACCOUNTS_MANAGER"]) {
-      expect(isRoleAllowedInFinanceModule(blocked), `${blocked} must be blocked`).toBe(false);
+      expect(isRoleAllowedInLiveReady(blocked), `${blocked} must be blocked`).toBe(false);
     }
-    expect(isRoleAllowedInFinanceModule(null)).toBe(false);
+    expect(isRoleAllowedInLiveReady(null)).toBe(false);
   });
 });
 
-describe("finance-only module — enabled module set", () => {
-  it("enables FINANCE (full) and SYSTEM (partial); disables every other navGroup", () => {
-    const groups = FINANCE_ONLY_MODULE_CONFIG.navGroups;
+describe("live-ready module — enabled module set", () => {
+  it("enables FINANCE (full), EXECUTION (PROJECT_MANAGEMENT partial) + SYSTEM (partial); disables every other navGroup", () => {
+    const groups = LIVE_READY_MODULE_CONFIG.navGroups;
     expect(groups.FINANCE).toEqual({ mode: "full" });
     expect(groups.SYSTEM.mode).toBe("partial");
+    // Execution control tower is the second Live-Ready module, ring-fenced to
+    // its own pages within PROJECT_MANAGEMENT.
+    expect(groups.PROJECT_MANAGEMENT.mode).toBe("partial");
     const disabled = [
       "MY_WORK", "PORTFOLIO", "PRIORITIES", "PROJECT_DEVELOPMENT", "PROJECTS",
-      "PROJECT_MANAGEMENT", "GATES", "ENGINEERING", "QUALITY", "HSE", "REPORTS", "KNOWLEDGE",
+      "GATES", "ENGINEERING", "QUALITY", "HSE", "REPORTS", "KNOWLEDGE",
     ] as const;
     for (const g of disabled) {
       expect(groups[g], `${g} must be disabled`).toEqual({ mode: "disabled" });
@@ -211,15 +215,34 @@ describe("finance-only module — enabled module set", () => {
       ].sort(),
     );
   });
+
+  it("EXECUTION allowlist is exactly the ring-fenced control-tower pages", () => {
+    expect([...ENABLED_EXECUTION_PAGE_IDS].sort()).toEqual(
+      [
+        "executionReview", "executionUpcoming", "executionDeliveries",
+        "executionAllocations", "executionSite",
+      ].sort(),
+    );
+  });
 });
 
-describe("finance-only module — page reachability", () => {
+describe("live-ready module — page reachability", () => {
   it("FINANCE pages are reachable, non-finance pages are not", () => {
     expect(isPageEnabled({ id: "financeHome", navGroup: "FINANCE" })).toBe(true);
     expect(isPageEnabled({ id: "cashflow", navGroup: "FINANCE" })).toBe(true);
     expect(isPageEnabled({ id: "engineering", navGroup: "ENGINEERING" })).toBe(false);
     expect(isPageEnabled({ id: "portfolio", navGroup: "PROJECTS" })).toBe(false);
     expect(isPageEnabled({ id: "quality", navGroup: "QUALITY" })).toBe(false);
+  });
+
+  it("EXECUTION control-tower pages are reachable; the rest of PROJECT_MANAGEMENT is not (ring fence)", () => {
+    for (const id of ["executionReview", "executionUpcoming", "executionDeliveries", "executionAllocations", "executionSite"]) {
+      expect(isPageEnabled({ id, navGroup: "PROJECT_MANAGEMENT" }), `${id} must be reachable`).toBe(true);
+    }
+    // Other PROJECT_MANAGEMENT pages stay blocked — Execution is ring-fenced.
+    for (const id of ["projects", "milestoneTracker", "projectDetail", "now"]) {
+      expect(isPageEnabled({ id, navGroup: "PROJECT_MANAGEMENT" }), `${id} must stay blocked`).toBe(false);
+    }
   });
 
   it("SYSTEM plumbing pages are reachable, non-plumbing SYSTEM pages are not", () => {
@@ -232,7 +255,7 @@ describe("finance-only module — page reachability", () => {
     expect(isPageEnabled({ id: "phaseTemplates", navGroup: "SYSTEM" })).toBe(false);
   });
 
-  it("pages with no navGroup are not reachable in finance-only mode", () => {
+  it("pages with no navGroup are not reachable in live-ready mode", () => {
     expect(isPageEnabled({ id: "projectDetail", navGroup: undefined })).toBe(false);
   });
 
@@ -245,11 +268,13 @@ describe("finance-only module — page reachability", () => {
   });
 });
 
-describe("finance-only module — nav section gate", () => {
-  it("shows only Finance + Settings(ADMIN) sections; hides the rest", () => {
+describe("live-ready module — nav section gate", () => {
+  it("shows Finance + Execution(PROJECT_DELIVERY) + Settings(ADMIN); hides the rest", () => {
     expect(isSectionModuleEnabled("FINANCE")).toBe(true);
     expect(isSectionModuleEnabled("ADMIN")).toBe(true);
-    for (const hidden of ["HOME", "PORTFOLIO", "PRIORITIES", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "ENGINEERING", "QUALITY", "HSE", "REPORTS"] as const) {
+    // Execution control tower surfaces the PROJECT_DELIVERY top tab.
+    expect(isSectionModuleEnabled("PROJECT_DELIVERY")).toBe(true);
+    for (const hidden of ["HOME", "PORTFOLIO", "PRIORITIES", "PROJECT_DEVELOPMENT", "ENGINEERING", "QUALITY", "HSE", "REPORTS"] as const) {
       expect(isSectionModuleEnabled(hidden), `${hidden} must be hidden`).toBe(false);
     }
   });
@@ -265,17 +290,17 @@ describe("finance-only module — nav section gate", () => {
   });
 });
 
-describe("finance-only module — landing + redirect targets", () => {
+describe("live-ready module — landing + redirect targets", () => {
   it("allowed roles land on /finance, others on the no-access landing", () => {
-    expect(FINANCE_ONLY_LANDING_PATH).toBe("/finance");
-    expect(resolveFinanceOnlyLanding("CFO")).toBe("/finance");
-    expect(resolveFinanceOnlyLanding("COO_ADMIN")).toBe("/finance");
-    expect(resolveFinanceOnlyLanding("ENGINEER")).toBe(FINANCE_ONLY_NO_ACCESS_PATH);
-    expect(resolveFinanceOnlyLanding("QUALITY_MANAGER")).toBe(FINANCE_ONLY_NO_ACCESS_PATH);
+    expect(LIVE_READY_LANDING_PATH).toBe("/finance");
+    expect(resolveLiveReadyLanding("CFO")).toBe("/finance");
+    expect(resolveLiveReadyLanding("COO_ADMIN")).toBe("/finance");
+    expect(resolveLiveReadyLanding("ENGINEER")).toBe(LIVE_READY_NO_ACCESS_PATH);
+    expect(resolveLiveReadyLanding("QUALITY_MANAGER")).toBe(LIVE_READY_NO_ACCESS_PATH);
   });
 });
 
-describe("finance-only module — search + server gate scoping", () => {
+describe("live-ready module — search + server gate scoping", () => {
   it("scopes search to finance entity types only", () => {
     for (const t of ["project", "cost", "revenue", "invoice", "po", "client"]) {
       expect(isFinanceSearchType(t)).toBe(true);
@@ -299,11 +324,11 @@ describe("finance-only module — search + server gate scoping", () => {
  * Proven against the pure *In(config, …) helpers so we can flip a navGroup
  * without mutating the production config.
  */
-describe("finance-only module — reversibility (one-line re-enable)", () => {
+describe("live-ready module — reversibility (one-line re-enable)", () => {
   it("ENGINEERING is disabled under the production config", () => {
     expect(isNavGroupEnabled("ENGINEERING")).toBe(false);
     expect(isPageEnabled({ id: "engineering", navGroup: "ENGINEERING" })).toBe(false);
-    expect(FINANCE_ONLY_MODE).toBe(true);
+    expect(LIVE_READY_MODE).toBe(true);
   });
 
   it("flipping ENGINEERING to { mode: 'full' } restores its routes AND nav", () => {
@@ -324,11 +349,11 @@ describe("finance-only module — reversibility (one-line re-enable)", () => {
   });
 
   it("a disabled route redirects to /finance (no deep-link bypass)", () => {
-    // App.tsx renders <Redirect to={FINANCE_ONLY_LANDING_PATH}/> for any page
+    // App.tsx renders <Redirect to={LIVE_READY_LANDING_PATH}/> for any page
     // whose module is disabled; this pins the redirect target.
     const disabledPage = PAGE_REGISTRY.find((p) => p.navGroup === "ENGINEERING");
     expect(disabledPage).toBeDefined();
     expect(isPageEnabled({ id: disabledPage!.id, navGroup: disabledPage!.navGroup })).toBe(false);
-    expect(FINANCE_ONLY_LANDING_PATH).toBe("/finance");
+    expect(LIVE_READY_LANDING_PATH).toBe("/finance");
   });
 });

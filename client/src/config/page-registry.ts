@@ -128,7 +128,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // (GP vs budget, revenue recognised vs FY target, cash this week, tracker-vs-QB)
   // then the per-project reconciliation health list. Reads canonical endpoints only.
   { id: "financeHome", path: "/finance", label: "Finance Home", iconKey: "LayoutDashboard", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceHomePage" },
-  // Weekly Close SCRAPPED in the finance-only module (2026-06-11): its AR
+  // Weekly Close SCRAPPED in the live-ready module (2026-06-11): its AR
   // schedule + past-dated missing-invoice worklists now live in Cashflow.
   // Kept as a redirect so bookmarks / deep links to /finance/close don't 404.
   // The FinanceWeeklyClosePage component remains on disk (frozen finance code,

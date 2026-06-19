@@ -54,8 +54,8 @@ describe("nav cleanup — six-tab COO spec", () => {
     ]);
   });
 
-  it("Finance has exactly the seven finance-only items in spec order", () => {
-    // Finance-only module (2026-06-11): exactly 7 items. Weekly Close is
+  it("Finance has exactly the seven live-ready items in spec order", () => {
+    // Live-Ready module (2026-06-11): exactly 7 items. Weekly Close is
     // scrapped (folded into Cashflow); Payment Requests + PO Approvals are
     // parked (procure-to-pay deferred) and removed from the sidebar.
     const section = findTop("Finance");
@@ -98,7 +98,7 @@ describe("nav cleanup — six-tab COO spec", () => {
   });
 
   it("Settings has the locked finance items in spec order", () => {
-    // Finance-only Settings (2026-06-18, owner): Roles & Permissions,
+    // Live-Ready Settings (2026-06-18, owner): Roles & Permissions,
     // Integration Statuses, Audit Log. Functionality Control was removed from
     // the menu (screen gating defaults to open).
     const section = findTop("Settings");

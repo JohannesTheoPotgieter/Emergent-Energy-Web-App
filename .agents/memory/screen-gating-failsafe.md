@@ -1,5 +1,5 @@
 ---
-name: Screen-availability gating is default-OPEN (finance-only mode is the lockdown)
+name: Screen-availability gating is default-OPEN (live-ready mode is the lockdown)
 description: How the client screen-signoff gate actually works, and why the "default-hidden until signed off" experiment was reverted.
 ---
 
@@ -17,7 +17,7 @@ Functionality Control UI default (`settingsMap.get(id) ?? true`).
 isScreenEnabled = (id) => !disabledScreenIds.has(id)   // visible unless a false-row exists
 ```
 
-## The real production lockdown is finance-only mode — NOT this gate
+## The real production lockdown is live-ready mode — NOT this gate
 
 `shared/config/enabled-modules.ts` (`isPageEnabled` / `isNavGroupEnabled`)
 restricts the production deploy to the **Finance** nav-group (full) plus the
