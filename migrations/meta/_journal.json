@@ -757,6 +757,13 @@
       "when": 1781786563305,
       "tag": "0107_sp_settings_auto_commit_all",
       "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1781854757851,
+      "tag": "0108_execution_review_items",
+      "breakpoints": true
     }
   ]
 }

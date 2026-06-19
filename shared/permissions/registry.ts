@@ -643,6 +643,18 @@ export const ENTITY_REGISTRY: EntityRegistryEntry[] = [
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
+    entity: 'execution_review',
+    title: "Execution Review",
+    description: "Execution — program-wide delivery control tower & flagged items",
+    category: 'DELIVERY',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT', 'HSE_MANAGER', 'SSEG_MANAGER'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROJECT_MANAGER_SITE', 'CONSTRUCTION_MANAGER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROJECT_MANAGER_SITE', 'CONSTRUCTION_MANAGER'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
+  },
+  {
     entity: 'leaderboard',
     title: "Leaderboard",
     description: "Leaderboard — team & department scores",
