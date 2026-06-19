@@ -1,25 +1,30 @@
 /**
  * Finance Home — response shapes + pure presentation transforms.
  *
- * Finance Home is a READER with ONE underlying source for every REV/COS/GP
- * figure: the canonical single read path, `/api/finance/lines` (which reads
- * server/repositories/finance-line-level-repository.ts directly). The page
- * never recalculates a finance number — it only groups / cumulates / sorts the
- * canonical per-line totals the endpoint already produced:
+ * Finance Home is a READER. COS/GP, the per-project table and the trust strip
+ * read the canonical single read path `/api/finance/lines` (which reads
+ * server/repositories/finance-line-level-repository.ts directly). REVENUE — the
+ * revenue KPI and the revenue-by-month chart — reads `/api/revenue-tracker`
+ * (owner decision 2026-06-19) so its budget · planned · realised · QuickBooks
+ * bars tie cell-for-cell to the Revenue screen, which reads the same endpoint.
+ * The page never recalculates a finance number — it only groups / cumulates /
+ * sorts the totals each endpoint already produced:
  *
  *   GET /api/finance/lines?fyStart&fyEnd  — REV/COS/GP per project + per month,
  *                                            split realised / planned, + budget
+ *   GET /api/revenue-tracker?fyStart&fyEnd — revenue by month: budget, planned
+ *                                            (FYE engine), realised, QuickBooks
  *   GET /api/finance/drill/tree?fy        — FY → Month → Project drill nodes
  *   GET /api/finance/drill/invoices       — invoice leaves + tracker source cell
  *   GET /api/weekly-cashflow?fy           — cash in/out + available, by week
  *   GET /api/finance/reconciliation       — per-project app-vs-tracker trust
  *   GET /api/weekly-cashflow/{receivables,payables}  — AR overdue / AP due
  *
- * The headline basis is REALISED (recognised), so the KPIs, the by-month charts,
- * the per-project table and the breakdowns all read the SAME realised fields and
- * reconcile with each other and with the GP / Revenue / COS pages (their realised
- * totals trace to the same repository). No aggregate / pre-summarised rollup is
- * read anywhere.
+ * The headline basis is REALISED (recognised). Realised revenue is the SAME
+ * canonical source on both endpoints (canonicalRealisedByMonth → the line-level
+ * repository), so the revenue KPI ties to its chart and to the GP / Revenue /
+ * COS pages; GP is recomputed on Home as (tracker revenue − line COS) so
+ * REV − COS = GP holds exactly. No aggregate / pre-summarised rollup is read.
  */
 import type { ReconDisplayStatus } from "@/components/finance/recon-status";
 

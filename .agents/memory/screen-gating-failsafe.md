@@ -29,7 +29,7 @@ turning off an individual screen; it is not the security boundary.
 
 ## Why "default-HIDDEN until signed off" was reverted (2026-06-18)
 
-Commit `b4e2e52` flipped this gate to default-HIDDEN ("visible only if an
+An experiment flipped this gate to default-HIDDEN ("visible only if an
 `isEnabled = true` sign-off row exists, plus a 3-page bootstrap allow-list").
 It bricked production: nothing ever backfills `isEnabled = true` rows (no seed,
 no migration — `migrations/0016` only creates the table), and the admin UI +

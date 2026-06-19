@@ -221,10 +221,32 @@ export default function FinanceHomePage() {
     () => fyHeadline(linesData?.total, budgetByMonth, frame),
     [linesData, budgetByMonth, frame],
   );
+  // Revenue figures (realised + manual budget) read the SAME /api/revenue-tracker
+  // rows the chart and the Revenue screen plot, so the revenue KPI ties
+  // cell-for-cell to both. COS stays on the canonical line path; GP is recomputed
+  // as (tracker revenue − line COS) so REV − COS = GP holds exactly on the strip.
+  const revTotals = useMemo(() => {
+    const months = revTrackerQuery.data?.months ?? [];
+    let realised = 0;
+    let budget = 0;
+    for (const m of months) {
+      realised += m.realisedRevenue ?? 0;
+      budget += m.budget ?? 0;
+    }
+    return { realised, budget };
+  }, [revTrackerQuery.data]);
+  const revenueRecognised = revTotals.realised;
+  const revenueBudgetFy = revTotals.budget;
+  const grossProfit = revenueRecognised - headline.realisedCos;
+  const marginPct = revenueRecognised !== 0 ? (grossProfit / revenueRecognised) * 100 : null;
   const revVsTargetPct =
-    headline.budgetRevenueFy !== 0
-      ? Math.round((headline.realisedRevenue / headline.budgetRevenueFy) * 100)
-      : 0;
+    revenueBudgetFy !== 0 ? Math.round((revenueRecognised / revenueBudgetFy) * 100) : 0;
+  const revFiguresLoading = linesQuery.isLoading || revTrackerQuery.isLoading;
+  // Fail loud: never show a fabricated R0 / negative GP when a source errored.
+  // Revenue rides the tracker; GP also needs line-level COS, so it errors if
+  // either source is down.
+  const revFiguresError = revTrackerQuery.isError;
+  const gpFiguresError = revTrackerQuery.isError || linesQuery.isError;
 
   const monthStates = useMemo(
     () => revenueMonthStates(revTrackerQuery.data?.months ?? []),
@@ -476,13 +498,15 @@ export default function FinanceHomePage() {
             data-testid="finance-home-kpi-revenue"
             label="Revenue recognised"
             description={asAtTag}
-            value={figuresLoading ? "…" : <MoneyValue value={headline.realisedRevenue} align="left" />}
+            value={revFiguresLoading ? "…" : revFiguresError ? "—" : <MoneyValue value={revenueRecognised} align="left" />}
             tone="positive"
-            progress={headline.budgetRevenueFy !== 0 ? { pct: revVsTargetPct, tone: "positive" } : undefined}
+            progress={!revFiguresError && revenueBudgetFy !== 0 ? { pct: revVsTargetPct, tone: "positive" } : undefined}
             supporting={
               <span className="inline-flex items-center gap-1.5">
                 <span>
-                  vs FY budget {formatZarCompact(headline.budgetRevenueFy)} · {revVsTargetPct}%
+                  {revFiguresError
+                    ? "Revenue source unavailable"
+                    : `vs FY budget ${formatZarCompact(revenueBudgetFy)} · ${revVsTargetPct}%`}
                 </span>
                 <Badge
                   variant="outline"
@@ -512,9 +536,15 @@ export default function FinanceHomePage() {
             data-testid="finance-home-kpi-gp"
             label="Gross profit"
             description={asAtTag}
-            value={figuresLoading ? "…" : <MoneyValue value={headline.realisedGp} align="left" />}
-            tone={headline.realisedGp >= 0 ? "positive" : "critical"}
-            supporting={headline.marginPct != null ? `Margin ${headline.marginPct.toFixed(1)}%` : "No realised revenue yet"}
+            value={revFiguresLoading ? "…" : gpFiguresError ? "—" : <MoneyValue value={grossProfit} align="left" />}
+            tone={gpFiguresError ? "default" : grossProfit >= 0 ? "positive" : "critical"}
+            supporting={
+              gpFiguresError
+                ? "Source unavailable"
+                : marginPct != null
+                  ? `Margin ${marginPct.toFixed(1)}%`
+                  : "No realised revenue yet"
+            }
             sourceBadge={trustSourceBadge}
             href="/finance/gp/company"
           />
