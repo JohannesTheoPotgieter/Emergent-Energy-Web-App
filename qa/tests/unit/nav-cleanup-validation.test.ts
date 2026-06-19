@@ -13,8 +13,8 @@ import {
  *   Home · Execution · Finance · Engineering · Quality Management · Settings
  *
  * Execution (formerly Project Delivery) has Board · This fortnight · Deliveries ·
- * Allocations · Milestone Tracker (the legacy "All Projects" list was retired —
- * its features were migrated into the board). Finance has five: Cashflow · Cost of Sales · Revenue ·
+ * Allocations (the legacy "All Projects" list and "Milestone Tracker" were
+ * retired — All Projects' features were migrated into the board). Finance has five: Cashflow · Cost of Sales · Revenue ·
  * Gross Profit · FYE Tracking Report. Engineering has four: Dashboard · Task
  * Board · Document Management · Standup. Quality has three: Dashboard · Task
  * Board · Document Management. Settings has four: Roles & Permissions ·
@@ -50,7 +50,6 @@ describe("nav cleanup — six-tab COO spec", () => {
       "/execution/upcoming",
       "/execution/deliveries",
       "/execution/allocations",
-      "/milestone-tracker",
     ]);
   });
 

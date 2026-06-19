@@ -141,7 +141,9 @@ const AdminWorkflowConfigPage = lazyWithRetry(() => import("@/pages/admin-workfl
 
 const CommissioningDashboardPage = lazyWithRetry(() => import("@/pages/commissioning-dashboard"));
 
-const MilestoneTrackerPage = lazyWithRetry(() => import("@/pages/milestone-tracker"));
+// "Milestone Tracker" (/milestone-tracker, Revenue Milestones) retired — the
+// route now redirects to the Execution board (see milestone-tracker-redirect.tsx).
+const MilestoneTrackerPage = lazyWithRetry(() => import("@/pages/milestone-tracker-redirect"));
 const DeliveryMilestonesPage = lazyWithRetry(() => import("@/pages/delivery-milestones"));
 
 const GatesPipelinePage = lazyWithRetry(() => import("@/pages/gates/gates-pipeline"));
