@@ -44,9 +44,9 @@ export interface ActiveProjectRow {
   sizeKwp: string | null;
   contractValue: string | null;
   // Editable project-info fields surfaced for the board's inline editors
-  // (escalation cell + Edit Project Info modal). escalationLevel + the planned
-  // key dates live on projectExecutionState; pd/pm/sizeKwp on projectInfo.
-  escalationLevel: string | null;
+  // (RAG status + Edit Project Info modal). ragStatus + the planned key dates
+  // live on projectExecutionState; pd/pm/sizeKwp on projectInfo.
+  ragStatus: string | null;
   constructionStartDate: string | null;
   commissioningDate: string | null;
   omHandoverDate: string | null;
@@ -117,7 +117,7 @@ export class ExecutionBoardRepository {
         pdText: projectInfo.pd,
         sizeKwp: projectInfo.sizeKwp,
         contractValue: projectInfo.contractValue,
-        escalationLevel: projectExecutionState.escalationLevel,
+        ragStatus: projectExecutionState.ragStatus,
         constructionStartDate: projectExecutionState.constructionStartDate,
         commissioningDate: projectExecutionState.commissioningDate,
         omHandoverDate: projectExecutionState.omHandoverDate,
@@ -148,7 +148,7 @@ export class ExecutionBoardRepository {
         pdText: projectInfo.pd,
         sizeKwp: projectInfo.sizeKwp,
         contractValue: projectInfo.contractValue,
-        escalationLevel: projectExecutionState.escalationLevel,
+        ragStatus: projectExecutionState.ragStatus,
         constructionStartDate: projectExecutionState.constructionStartDate,
         commissioningDate: projectExecutionState.commissioningDate,
         omHandoverDate: projectExecutionState.omHandoverDate,

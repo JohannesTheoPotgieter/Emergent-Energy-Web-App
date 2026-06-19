@@ -79,9 +79,9 @@ export interface BoardRow {
   engineering: EngineeringSummary;
   quality: QualitySummary;
   flags: ItemCounts;
-  // Editable fields for the board's inline editors (PM assign, escalation,
-  // Edit Project Info) migrated from the retired /projects page.
-  escalationLevel: string | null;
+  // Editable fields for the board's inline editors (PM assign, RAG status,
+  // phase, Edit Project Info). ragStatus is the canonical lifecycle RAG.
+  ragStatus: string | null;
   constructionStartDate: string | null;
   commissioningDate: string | null;
   omHandoverDate: string | null;

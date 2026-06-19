@@ -98,9 +98,9 @@ export interface BoardRow {
   engineering: EngineeringSummary;
   quality: QualitySummary;
   flags: ExecutionItemCounts;
-  // Editable fields surfaced for the board's inline editors (migrated from the
-  // retired /projects page): escalation cell + Edit Project Info modal.
-  escalationLevel: string | null;
+  // Editable fields surfaced for the board's inline editors: RAG status
+  // (canonical lifecycle RAG) + Edit Project Info modal.
+  ragStatus: string | null;
   constructionStartDate: string | null;
   commissioningDate: string | null;
   omHandoverDate: string | null;
@@ -204,7 +204,7 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
       engineering: eng,
       quality,
       flags,
-      escalationLevel: p.escalationLevel,
+      ragStatus: p.ragStatus,
       constructionStartDate: p.constructionStartDate,
       commissioningDate: p.commissioningDate,
       omHandoverDate: p.omHandoverDate,
