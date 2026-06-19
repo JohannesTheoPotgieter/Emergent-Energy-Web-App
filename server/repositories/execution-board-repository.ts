@@ -43,6 +43,14 @@ export interface ActiveProjectRow {
   pdText: string | null;
   sizeKwp: string | null;
   contractValue: string | null;
+  // Editable project-info fields surfaced for the board's inline editors
+  // (escalation cell + Edit Project Info modal). escalationLevel + the planned
+  // key dates live on projectExecutionState; pd/pm/sizeKwp on projectInfo.
+  escalationLevel: string | null;
+  constructionStartDate: string | null;
+  commissioningDate: string | null;
+  omHandoverDate: string | null;
+  clientHandoverDate: string | null;
 }
 
 export interface InstallerRow {
@@ -109,6 +117,11 @@ export class ExecutionBoardRepository {
         pdText: projectInfo.pd,
         sizeKwp: projectInfo.sizeKwp,
         contractValue: projectInfo.contractValue,
+        escalationLevel: projectExecutionState.escalationLevel,
+        constructionStartDate: projectExecutionState.constructionStartDate,
+        commissioningDate: projectExecutionState.commissioningDate,
+        omHandoverDate: projectExecutionState.omHandoverDate,
+        clientHandoverDate: projectExecutionState.clientHandoverDate,
       })
       .from(projectInfo)
       .innerJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
@@ -135,6 +148,11 @@ export class ExecutionBoardRepository {
         pdText: projectInfo.pd,
         sizeKwp: projectInfo.sizeKwp,
         contractValue: projectInfo.contractValue,
+        escalationLevel: projectExecutionState.escalationLevel,
+        constructionStartDate: projectExecutionState.constructionStartDate,
+        commissioningDate: projectExecutionState.commissioningDate,
+        omHandoverDate: projectExecutionState.omHandoverDate,
+        clientHandoverDate: projectExecutionState.clientHandoverDate,
       })
       .from(projectInfo)
       .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))

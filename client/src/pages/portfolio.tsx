@@ -249,7 +249,7 @@ export default function PortfolioPage() {
       </Card>
 
       <p className="text-[11px] text-muted-foreground text-center">
-        The legacy 50-column view stays at <a href="/projects" className="underline">/projects</a>.
+        Full project delivery detail lives on the <a href="/execution" className="underline">Execution board</a>.
       </p>
     </div>
   );

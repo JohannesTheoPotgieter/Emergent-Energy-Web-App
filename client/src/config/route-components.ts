@@ -16,7 +16,9 @@ const AdminEmailLinkerDevPage = lazyWithRetry(() => import("@/pages/admin-email-
 const AdminPriorityTemplatesPage = lazyWithRetry(() => import("@/pages/admin-priority-templates"));
 const HandoverLivePage = lazyWithRetry(() => import("@/pages/handover-live"));
 const ProjectLifecyclePage = lazyWithRetry(() => import("@/pages/project-lifecycle"));
-const ProjectsSummary = lazyWithRetry(() => import("@/pages/projects"));
+// "All Projects" (/projects) retired — its features were migrated into the
+// Execution board. The route now redirects there (see projects-redirect.tsx).
+const ProjectsSummary = lazyWithRetry(() => import("@/pages/projects-redirect"));
 const CashflowPage = lazyWithRetry(() => import("@/pages/cashflow"));
 const CashflowAnalysisPage = lazyWithRetry(() => import("@/pages/cashflow-analysis"));
 const RevenueTrackerPage = lazyWithRetry(() => import("@/pages/revenue-tracker"));

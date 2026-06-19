@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { Download, Pencil } from "lucide-react";
+import { useApiMutation } from "@/hooks/use-api-mutation";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell,
 } from "recharts";
@@ -12,9 +14,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RagBadge } from "@/components/ui/status-badge";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Select, SelectTrigger, SelectContent, SelectItem, SelectValue,
 } from "@/components/ui/select";
+import { useAuth } from "@/hooks/use-auth";
+import { apiRequest } from "@/lib/queryClient";
+import { EditProjectInfoModal } from "@/components/execution/edit-project-info-modal";
 import type { BoardResult, BoardRow, Rag, EngineeringSummary, QualitySummary } from "@/lib/execution-types";
 import { fmtPct, fmtDate } from "@/lib/execution-types";
 
@@ -30,6 +36,40 @@ const LS_KEY = "execution-board-filters";
 const LS_GROUP = "execution-board-group-by-pm";
 
 const RAG_COLORS: Record<string, string> = { green: "#16A34A", amber: "#F59E0B", red: "#DC2626", none: "#CBD5E1" };
+
+type PmUser = { id: number; name: string };
+
+// Inline escalation editor (migrated from /projects, #13). "None" is sent as
+// null so the stored level stays clean.
+const ESCALATION_LEVELS = ["None", "Low", "Medium", "High", "Highest"] as const;
+const ESCALATION_STYLE: Record<string, string> = {
+  None: "bg-muted text-muted-foreground border-border",
+  Low: "bg-blue-50 text-blue-600 border-blue-200",
+  Medium: "bg-amber-50 text-amber-600 border-amber-200",
+  High: "bg-orange-50 text-orange-600 border-orange-200",
+  Highest: "bg-red-50 text-red-700 border-red-300",
+};
+
+function EscalationCell({
+  row, isAdmin, onSet,
+}: { row: BoardRow; isAdmin: boolean; onSet: (row: BoardRow, level: string) => void }) {
+  const level = row.escalationLevel || "None";
+  const style = ESCALATION_STYLE[level] ?? ESCALATION_STYLE.None;
+  if (!isAdmin) {
+    return <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${style}`}>{level}</span>;
+  }
+  return (
+    <select
+      value={level}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => onSet(row, e.target.value)}
+      className={`text-[11px] font-semibold rounded-md border px-1 py-0.5 cursor-pointer outline-none ${style}`}
+      data-testid={`select-escalation-${row.projectId}`}
+    >
+      {ESCALATION_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+    </select>
+  );
+}
 
 function Kpi({ label, value, tone, onClick, active }: { label: string; value: string | number; tone?: string; onClick?: () => void; active?: boolean }) {
   return (
@@ -70,7 +110,17 @@ function MiniRag({ rag, value }: { rag: Rag; value: string }) {
 const engValue = (e: EngineeringSummary): string => (e.blocked > 0 ? `${e.blocked} blkd` : `${e.complete}/${e.total}`);
 const qaValue = (q: QualitySummary): string => (q.critical > 0 ? `${q.critical} crit` : `${q.openTotal}`);
 
-function Row({ row, onOpen }: { row: BoardRow; onOpen: (id: number) => void }) {
+interface RowProps {
+  row: BoardRow;
+  onOpen: (id: number) => void;
+  isAdmin: boolean;
+  pmUsers: PmUser[];
+  onAssignPm: (row: BoardRow, name: string | null) => void;
+  onSetEscalation: (row: BoardRow, level: string) => void;
+  onEdit: (row: BoardRow) => void;
+}
+
+function Row({ row, onOpen, isAdmin, pmUsers, onAssignPm, onSetEscalation, onEdit }: RowProps) {
   return (
     <tr
       className="border-b hover:bg-muted/40 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
@@ -99,19 +149,75 @@ function Row({ row, onOpen }: { row: BoardRow; onOpen: (id: number) => void }) {
           <span title={row.installers.list.map((i) => i.name).join(", ")}>{row.installers.primary}{row.installers.count > 1 ? ` +${row.installers.count - 1}` : ""}</span>
         ) : <span className="text-muted-foreground">—</span>}
       </td>
-      <td className="py-2 pr-3">{row.pmName ?? <span className="text-muted-foreground">—</span>}</td>
+      <td className="py-2 pr-3">
+        {isAdmin ? (
+          <span onClick={(e) => e.stopPropagation()}>
+            <SearchableSelect
+              value={row.pmName || "__unassigned"}
+              onValueChange={(val) => onAssignPm(row, val === "__unassigned" ? null : val)}
+              placeholder="No PM"
+              triggerClassName={`h-7 w-[130px] text-xs border-0 bg-transparent hover:bg-muted px-1 shadow-none ${!row.pmName ? "text-red-500 font-medium" : ""}`}
+              data-testid={`select-pm-${row.projectId}`}
+              options={[{ value: "__unassigned", label: "Unassigned" }, ...pmUsers.map((u) => ({ value: u.name, label: u.name }))]}
+            />
+          </span>
+        ) : (row.pmName ?? <span className="text-muted-foreground">—</span>)}
+      </td>
+      <td className="py-2 pr-3"><EscalationCell row={row} isAdmin={isAdmin} onSet={onSetEscalation} /></td>
       <td className="py-2 pr-3"><MiniRag rag={row.engineering.rag} value={engValue(row.engineering)} /></td>
       <td className="py-2 pr-3"><MiniRag rag={row.quality.rag} value={qaValue(row.quality)} /></td>
       <td className="py-2 pr-1 tabular-nums">{row.flags.open + row.flags.flagged}/{row.flags.actioned}</td>
+      {isAdmin && (
+        <td className="py-2 pr-1" onClick={(e) => e.stopPropagation()}>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(row)} aria-label={`Edit ${row.projectName}`} data-testid={`btn-edit-project-${row.projectId}`}>
+            <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+          </Button>
+        </td>
+      )}
     </tr>
   );
 }
 
-const HEAD = ["Site", "Phase", "Sched", "Next task ·14d", "Next delivery", "Installer", "PM", "Eng", "QA", "Flags"];
+const BASE_HEAD = ["Site", "Phase", "Sched", "Next task ·14d", "Next delivery", "Installer", "PM", "Esc", "Eng", "QA", "Flags"];
 
 export default function ExecutionReviewBoard() {
   const [, navigate] = useLocation();
+  const { isAdmin } = useAuth();
+  const qc = useQueryClient();
   const { data, isLoading, isError, refetch } = useQuery<BoardResult>({ queryKey: ["/api/execution-review/board"] });
+
+  // Assignable PMs + inline editors (migrated from /projects, #12/#13/#15) —
+  // admin only, mirroring the retired page's gating.
+  const { data: pmUsers = [] } = useQuery<PmUser[]>({
+    queryKey: ["/api/pm-assignable-users"],
+    enabled: isAdmin,
+    staleTime: 60_000,
+  });
+  const [editProject, setEditProject] = useState<BoardRow | null>(null);
+
+  const assignPm = useApiMutation({
+    mutationFn: async ({ projectId, name }: { projectId: number; name: string | null }) => {
+      const matched = pmUsers.find((u) => u.name === name);
+      await apiRequest("PATCH", `/api/project-info/${projectId}/assign-pm`, {
+        pm: name ?? "",
+        pmUserId: matched?.id ?? null,
+      });
+    },
+    errorToast: "Could not reassign PM",
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/execution-review/board"] }),
+  });
+
+  const setEscalation = useApiMutation({
+    mutationFn: async ({ projectId, level }: { projectId: number; level: string }) => {
+      await apiRequest("PATCH", `/api/projects-summary/${projectId}/escalation`, {
+        escalationLevel: level === "None" ? null : level,
+      });
+    },
+    errorToast: "Could not update escalation",
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/execution-review/board"] }),
+  });
+
+  const handleExport = () => { window.location.href = "/api/export/projects-summary"; };
 
   const [filters, setFilters] = useState<Filters>(() => {
     try {
@@ -122,6 +228,15 @@ export default function ExecutionReviewBoard() {
   const [groupByPm, setGroupByPm] = useState<boolean>(() => localStorage.getItem(LS_GROUP) === "1");
   useEffect(() => { localStorage.setItem(LS_KEY, JSON.stringify(filters)); }, [filters]);
   useEffect(() => { localStorage.setItem(LS_GROUP, groupByPm ? "1" : "0"); }, [groupByPm]);
+
+  const head = useMemo(() => (isAdmin ? [...BASE_HEAD, ""] : BASE_HEAD), [isAdmin]);
+  const rowProps = {
+    isAdmin,
+    pmUsers,
+    onAssignPm: (row: BoardRow, name: string | null) => assignPm.mutate({ projectId: row.projectId, name }),
+    onSetEscalation: (row: BoardRow, level: string) => setEscalation.mutate({ projectId: row.projectId, level }),
+    onEdit: (row: BoardRow) => setEditProject(row),
+  };
 
   const rows = useMemo(() => data?.rows ?? [], [data]);
   const phases = useMemo(() => [...new Set(rows.map((r) => r.phase).filter(Boolean))] as string[], [rows]);
@@ -266,6 +381,9 @@ export default function ExecutionReviewBoard() {
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-muted-foreground">{filtered.length} of {rows.length}</span>
           <Button variant={groupByPm ? "default" : "outline"} size="sm" onClick={() => setGroupByPm((v) => !v)} data-testid="execution-group-by-pm">Group by PM</Button>
+          <Button variant="outline" size="sm" onClick={handleExport} data-testid="execution-export" className="gap-1.5">
+            <Download className="w-4 h-4" /><span className="hidden sm:inline">Export</span>
+          </Button>
         </div>
       </div>
 
@@ -280,16 +398,16 @@ export default function ExecutionReviewBoard() {
             <div className="p-8 text-center text-sm text-muted-foreground" data-testid="execution-board-empty">No active sites match these filters.</div>
           ) : (
             <table className="w-full text-sm">
-              <thead><tr className="border-b text-left text-xs text-muted-foreground">{HEAD.map((hd) => <th key={hd} className="py-2 pr-3 font-medium">{hd}</th>)}</tr></thead>
+              <thead><tr className="border-b text-left text-xs text-muted-foreground">{head.map((hd, i) => <th key={hd || `col-${i}`} className="py-2 pr-3 font-medium">{hd}</th>)}</tr></thead>
               <tbody>
                 {groupByPm
                   ? byPm.map(([pm, prs]) => (
                       <Fragment key={`g-${pm}`}>
-                        <tr className="bg-muted/30"><td colSpan={HEAD.length} className="py-1.5 px-2 text-xs font-medium">{pm} — {prs.length} active · {prs.filter((r) => r.schedule.rag === "red").length} behind</td></tr>
-                        {prs.map((r) => <Row key={r.projectId} row={r} onOpen={open} />)}
+                        <tr className="bg-muted/30"><td colSpan={head.length} className="py-1.5 px-2 text-xs font-medium">{pm} — {prs.length} active · {prs.filter((r) => r.schedule.rag === "red").length} behind</td></tr>
+                        {prs.map((r) => <Row key={r.projectId} row={r} onOpen={open} {...rowProps} />)}
                       </Fragment>
                     ))
-                  : filtered.map((r) => <Row key={r.projectId} row={r} onOpen={open} />)}
+                  : filtered.map((r) => <Row key={r.projectId} row={r} onOpen={open} {...rowProps} />)}
               </tbody>
             </table>
           )}
@@ -299,6 +417,12 @@ export default function ExecutionReviewBoard() {
         <Badge variant="outline" className="mr-1">as imported</Badge>
         Schedule = actual%/expected%, duration-weighted from the latest tracker import. Flags = open/actioned.
       </p>
+
+      <EditProjectInfoModal
+        row={editProject}
+        open={!!editProject}
+        onOpenChange={(o) => { if (!o) setEditProject(null); }}
+      />
     </PageShell>
   );
 }

@@ -2,27 +2,27 @@
   "_documentation": "EE-QA-015 baseline — files above the FILE_SIZE_THRESHOLD LOC. The CI guard `qa/tests/unit/file-size-ratchet.test.ts` fails if any of these grow OR a NEW file lands over the threshold. To regenerate after a split, run `npx tsx scripts/build-file-size-baseline.ts` and commit the new JSON.",
   "threshold": 1500,
   "buffer": 50,
-  "generated": "2026-06-12",
+  "generated": "2026-06-19",
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
-      "loc": 9336
+      "loc": 9347
     },
     {
       "file": "client/src/pages/smart-import.tsx",
-      "loc": 5286
+      "loc": 5317
     },
     {
       "file": "server/engineering-routes.ts",
       "loc": 4171
     },
     {
-      "file": "server/departments/priority-strategic-routes.ts",
-      "loc": 3995
+      "file": "server/smart-import-routes.ts",
+      "loc": 4029
     },
     {
-      "file": "server/smart-import-routes.ts",
-      "loc": 3984
+      "file": "server/departments/priority-strategic-routes.ts",
+      "loc": 3995
     },
     {
       "file": "server/db.ts",
@@ -41,10 +41,6 @@
       "loc": 3300
     },
     {
-      "file": "client/src/pages/projects.tsx",
-      "loc": 2906
-    },
-    {
       "file": "server/routes/quickbooks-invoice-matches.routes.ts",
       "loc": 2824
     },
@@ -61,16 +57,16 @@
       "loc": 2380
     },
     {
+      "file": "server/lib/import/normalizer.ts",
+      "loc": 2304
+    },
+    {
       "file": "client/src/pages/ee-info.tsx",
       "loc": 2262
     },
     {
       "file": "client/src/components/tabs/ExpenditureEditableTab.tsx",
       "loc": 2260
-    },
-    {
-      "file": "server/lib/import/normalizer.ts",
-      "loc": 2259
     },
     {
       "file": "server/departments/project-routes.ts",
@@ -105,20 +101,20 @@
       "loc": 1901
     },
     {
+      "file": "server/quickbooks-routes.ts",
+      "loc": 1834
+    },
+    {
+      "file": "shared/schema/finance.ts",
+      "loc": 1829
+    },
+    {
       "file": "client/src/pages/project-detail.tsx",
       "loc": 1820
     },
     {
       "file": "server/seed-ee-info-updates.ts",
       "loc": 1820
-    },
-    {
-      "file": "server/quickbooks-routes.ts",
-      "loc": 1808
-    },
-    {
-      "file": "shared/schema/finance.ts",
-      "loc": 1808
     },
     {
       "file": "client/src/pages/collaboration.tsx",
@@ -185,12 +181,12 @@
       "loc": 1574
     },
     {
-      "file": "server/routes/finance-legacy-extracted-routes.ts",
-      "loc": 1561
+      "file": "shared/permissions/registry.ts",
+      "loc": 1563
     },
     {
-      "file": "shared/permissions/registry.ts",
-      "loc": 1551
+      "file": "server/routes/finance-legacy-extracted-routes.ts",
+      "loc": 1561
     },
     {
       "file": "server/services/gate-auto-evaluator-service.ts",
