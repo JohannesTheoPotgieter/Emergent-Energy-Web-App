@@ -154,7 +154,14 @@ export class ExecutionBoardRepository {
         uploadedAt: smartImportRuns.uploadedAt,
       })
       .from(smartImportRuns)
-      .where(inArray(smartImportRuns.projectId, projectIds))
+      .where(
+        and(
+          inArray(smartImportRuns.projectId, projectIds),
+          // Only the latest COMMITTED import is the canonical published plan —
+          // never surface a preview / failed / superseded / rejected run.
+          eq(smartImportRuns.status, "committed"),
+        ),
+      )
       .orderBy(desc(smartImportRuns.uploadedAt));
     for (const row of rows) {
       if (row.projectId == null) continue;

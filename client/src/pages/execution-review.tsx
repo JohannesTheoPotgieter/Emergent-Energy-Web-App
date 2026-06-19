@@ -16,7 +16,7 @@ import {
   SelectItem,
   SelectValue,
 } from "@/components/ui/select";
-import type { BoardResult, BoardRow } from "@/lib/execution-types";
+import type { BoardResult, BoardRow, Rag, EngineeringSummary, QualitySummary } from "@/lib/execution-types";
 import { fmtPct, fmtDate } from "@/lib/execution-types";
 
 interface Filters {
@@ -53,11 +53,34 @@ function ScheduleCell({ row }: { row: BoardRow }) {
   );
 }
 
+// RAG paired with a value (never colour-only); muted dash when there's no data.
+function MiniRag({ rag, value }: { rag: Rag; value: string }) {
+  if (!rag) return <span className="text-muted-foreground" aria-label="no data">—</span>;
+  return (
+    <span className="inline-flex items-center gap-1.5" aria-label={`${rag} ${value}`} title={rag}>
+      <RagBadge rag={rag} dotOnly showLabel={false} />
+      <span className="text-xs tabular-nums">{value}</span>
+    </span>
+  );
+}
+function engValue(e: EngineeringSummary): string {
+  return e.blocked > 0 ? `${e.blocked} blkd` : `${e.complete}/${e.total}`;
+}
+function qaValue(q: QualitySummary): string {
+  return q.critical > 0 ? `${q.critical} crit` : `${q.openTotal}`;
+}
+
 function Row({ row, onOpen }: { row: BoardRow; onOpen: (id: number) => void }) {
   return (
     <tr
-      className="border-b hover:bg-muted/40 cursor-pointer"
+      className="border-b hover:bg-muted/40 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
       onClick={() => onOpen(row.projectId)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(row.projectId); }
+      }}
+      role="button"
+      tabIndex={0}
+      aria-label={`Open ${row.projectName}`}
       data-testid={`execution-row-${row.projectId}`}
     >
       <td className="py-2 pr-3 font-medium">{row.projectName}</td>
@@ -84,8 +107,8 @@ function Row({ row, onOpen }: { row: BoardRow; onOpen: (id: number) => void }) {
         ) : <span className="text-muted-foreground">—</span>}
       </td>
       <td className="py-2 pr-3">{row.pmName ?? <span className="text-muted-foreground">—</span>}</td>
-      <td className="py-2 pr-3"><RagBadge rag={row.engineering.rag} dotOnly showLabel={false} /></td>
-      <td className="py-2 pr-3"><RagBadge rag={row.quality.rag} dotOnly showLabel={false} /></td>
+      <td className="py-2 pr-3"><MiniRag rag={row.engineering.rag} value={engValue(row.engineering)} /></td>
+      <td className="py-2 pr-3"><MiniRag rag={row.quality.rag} value={qaValue(row.quality)} /></td>
       <td className="py-2 pr-1 tabular-nums">
         {row.flags.open + row.flags.flagged}/{row.flags.actioned}
       </td>
@@ -193,11 +216,17 @@ export default function ExecutionReviewBoard() {
           variant={filters.hasFlags ? "default" : "outline"}
           size="sm"
           onClick={() => setFilters((f) => ({ ...f, hasFlags: !f.hasFlags }))}
+          data-testid="execution-filter-flags"
         >
           Has flags
         </Button>
         <div className="ml-auto flex items-center gap-2">
-          <Button variant={groupByPm ? "default" : "outline"} size="sm" onClick={() => setGroupByPm((v) => !v)}>
+          <Button
+            variant={groupByPm ? "default" : "outline"}
+            size="sm"
+            onClick={() => setGroupByPm((v) => !v)}
+            data-testid="execution-group-by-pm"
+          >
             Group by PM
           </Button>
         </div>

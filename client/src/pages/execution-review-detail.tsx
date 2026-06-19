@@ -130,7 +130,7 @@ export default function ExecutionReviewDetail() {
         <span className="text-sm text-muted-foreground">{p.sizeKwp ? `${p.sizeKwp} kWp` : ""} {p.contractValue ? `· ${fmtMoney(p.contractValue)}` : ""}</span>
         <div className="ml-auto flex items-center gap-2">
           <Badge variant="secondary">PM: {p.pmName ?? "Unassigned"}</Badge>
-          <Button size="sm" variant="outline" onClick={() => setPmOpen(true)}>Assign PM</Button>
+          <Button size="sm" variant="outline" onClick={() => setPmOpen(true)} data-testid="execution-assign-pm">Assign PM</Button>
         </div>
       </div>
 
@@ -150,13 +150,13 @@ export default function ExecutionReviewDetail() {
 
       <Tabs defaultValue="schedule" className="mt-4">
         <TabsList className="flex-wrap h-auto">
-          <TabsTrigger value="schedule">Schedule</TabsTrigger>
-          <TabsTrigger value="upcoming">Upcoming</TabsTrigger>
-          <TabsTrigger value="installers">Installers & suppliers</TabsTrigger>
-          <TabsTrigger value="deliveries">Deliveries</TabsTrigger>
-          <TabsTrigger value="engineering">Engineering ↗</TabsTrigger>
-          <TabsTrigger value="quality">Quality ↗</TabsTrigger>
-          <TabsTrigger value="flags">Flags{items.data?.length ? ` (${items.data.length})` : ""}</TabsTrigger>
+          <TabsTrigger value="schedule" data-testid="execution-tab-schedule">Schedule</TabsTrigger>
+          <TabsTrigger value="upcoming" data-testid="execution-tab-upcoming">Upcoming</TabsTrigger>
+          <TabsTrigger value="installers" data-testid="execution-tab-installers">Installers & suppliers</TabsTrigger>
+          <TabsTrigger value="deliveries" data-testid="execution-tab-deliveries">Deliveries</TabsTrigger>
+          <TabsTrigger value="engineering" data-testid="execution-tab-engineering">Engineering ↗</TabsTrigger>
+          <TabsTrigger value="quality" data-testid="execution-tab-quality">Quality ↗</TabsTrigger>
+          <TabsTrigger value="flags" data-testid="execution-tab-flags">Flags{items.data?.length ? ` (${items.data.length})` : ""}</TabsTrigger>
         </TabsList>
 
         {/* T1 Schedule */}
@@ -206,7 +206,7 @@ export default function ExecutionReviewDetail() {
         {/* T3 Installers */}
         <TabsContent value="installers">
           <div className="flex justify-end mb-2">
-            <Button size="sm" onClick={() => { setEditAlloc(null); setAllocOpen(true); }}>
+            <Button size="sm" onClick={() => { setEditAlloc(null); setAllocOpen(true); }} data-testid="execution-allocate">
               <Plus className="h-3.5 w-3.5 mr-1" /> Allocate
             </Button>
           </div>
@@ -297,7 +297,7 @@ export default function ExecutionReviewDetail() {
         {/* T7 Flags */}
         <TabsContent value="flags">
           <div className="flex justify-end mb-2">
-            <Button size="sm" onClick={() => { setEditItem(null); setFlagOpen(true); }}>
+            <Button size="sm" onClick={() => { setEditItem(null); setFlagOpen(true); }} data-testid="execution-add-flag">
               <Plus className="h-3.5 w-3.5 mr-1" /> Add item
             </Button>
           </div>

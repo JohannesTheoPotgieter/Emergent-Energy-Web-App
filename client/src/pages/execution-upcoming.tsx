@@ -14,7 +14,9 @@ export default function ExecutionUpcoming() {
   const [, navigate] = useLocation();
   const [days, setDays] = useState(14);
   const { data, isLoading, isError, refetch } = useQuery<UpcomingProgramRow[]>({
-    queryKey: ["/api/execution-review/program/upcoming", `?daysOut=${days}`],
+    // Single-string key so the default queryFn (queryKey.join("/")) builds a
+    // clean URL with the query string, not ".../upcoming/?daysOut=14".
+    queryKey: [`/api/execution-review/program/upcoming?daysOut=${days}`],
   });
 
   const byDay = useMemo(() => {

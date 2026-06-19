@@ -86,7 +86,6 @@ export function FlagDialog({
 
   const save = useMutation({
     mutationFn: async () => {
-      const linked = planTasks.find((t) => t.taskNo === planTaskNo);
       const body = {
         category: category.trim() || "general",
         title: title.trim(),
@@ -97,7 +96,6 @@ export function FlagDialog({
         ownerUserId: ownerUserId ? Number(ownerUserId) : null,
         dueDate: dueDate || null,
         planTaskNo: planTaskNo || null,
-        planWorkItemId: linked && planTaskNo ? null : null,
       };
       if (isEdit && item) {
         await apiRequest("PATCH", `/api/execution-review/items/${item.id}`, body);
@@ -191,7 +189,7 @@ export function FlagDialog({
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => save.mutate()} disabled={!title.trim() || save.isPending}>
+          <Button onClick={() => save.mutate()} disabled={!title.trim() || save.isPending} data-testid="flag-save">
             {isEdit ? "Save" : "Add flag"}
           </Button>
         </DialogFooter>
@@ -319,6 +317,7 @@ export function AllocateDialog({
           <Button
             onClick={() => save.mutate()}
             disabled={save.isPending || (!isEdit && !counterpartyId)}
+            data-testid="allocate-save"
           >
             {isEdit ? "Save" : "Allocate"}
           </Button>
@@ -384,7 +383,7 @@ export function AssignPmDialog({
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => save.mutate()} disabled={!userId || save.isPending}>Assign</Button>
+          <Button onClick={() => save.mutate()} disabled={!userId || save.isPending} data-testid="assign-pm-save">Assign</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

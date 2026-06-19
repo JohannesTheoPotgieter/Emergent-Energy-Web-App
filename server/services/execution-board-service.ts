@@ -19,6 +19,7 @@ import {
   type ExecutionItemCounts,
 } from "../repositories/execution-review-repository";
 import { pctTo100, type ScheduleRag } from "../lib/kpi-formulas";
+import logger from "../lib/logger";
 import type { ProjectDeliveryMilestone } from "@shared/schema";
 import {
   startOfDay,
@@ -51,6 +52,22 @@ function groupBy<T>(rows: T[], key: (r: T) => number | null | undefined): Map<nu
 
 function emptyCounts(): ExecutionItemCounts {
   return { open: 0, flagged: 0, actioned: 0, closed: 0, total: 0 };
+}
+
+/**
+ * Resolve a capability fetch, degrading to a fallback on error so one failing
+ * domain greys out a column instead of blanking the whole board (the board is
+ * a radar — partial data beats no data).
+ */
+async function safe<T>(p: Promise<T>, fallback: T, label: string): Promise<T> {
+  try {
+    return await p;
+  } catch (err) {
+    logger.error(`[execution-board] ${label} failed`, {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return fallback;
+  }
 }
 
 // ──────────────────────────────── board ─────────────────────────────────────
@@ -110,23 +127,27 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
   const active = await executionBoardRepository.getActiveProjects();
   const ids = active.map((p) => p.id);
 
-  const latestRuns = await executionBoardRepository.getLatestRunIdsByProjects(ids);
+  const latestRuns = await safe(
+    executionBoardRepository.getLatestRunIdsByProjects(ids),
+    new Map<number, { runId: number; uploadedAt: Date | null }>(),
+    "latest-runs",
+  );
   const runIds = [...latestRuns.values()].map((v) => v.runId);
   const runToProject = new Map<number, number>();
   for (const [projectId, meta] of latestRuns) runToProject.set(meta.runId, projectId);
-  const allTasks = await executionBoardRepository.getPlanTasksByRunIds(runIds);
+  const allTasks = await safe(executionBoardRepository.getPlanTasksByRunIds(runIds), [], "plan-tasks");
   const tasksByProject = groupBy(allTasks, (t) => (t.importRunId != null ? runToProject.get(t.importRunId) : undefined));
 
   const [installers, milestones, procurement, engStages, engOpenTasks, snagRows, qcSet, itemCounts] =
     await Promise.all([
-      executionBoardRepository.getInstallersForProjects(ids),
-      executionBoardRepository.getDeliveryMilestonesForProjects(ids),
-      executionBoardRepository.getOpenProcurementForProjects(ids),
-      executionBoardRepository.getEngStagesForProjects(ids),
-      executionBoardRepository.getOpenEngTaskCounts(ids),
-      executionBoardRepository.getSnagsForProjects(ids),
-      executionBoardRepository.getQcLinkedProjectIds(ids),
-      executionReviewRepository.getCountsByProjects(ids),
+      safe(executionBoardRepository.getInstallersForProjects(ids), [], "installers"),
+      safe(executionBoardRepository.getDeliveryMilestonesForProjects(ids), [], "milestones"),
+      safe(executionBoardRepository.getOpenProcurementForProjects(ids), [], "procurement"),
+      safe(executionBoardRepository.getEngStagesForProjects(ids), [], "eng-stages"),
+      safe(executionBoardRepository.getOpenEngTaskCounts(ids), new Map<number, number>(), "eng-tasks"),
+      safe(executionBoardRepository.getSnagsForProjects(ids), [], "snags"),
+      safe(executionBoardRepository.getQcLinkedProjectIds(ids), new Set<number>(), "qc-links"),
+      safe(executionReviewRepository.getCountsByProjects(ids), new Map<number, ExecutionItemCounts>(), "item-counts"),
     ]);
 
   const installersByProject = groupBy(installers, (r) => r.projectId);
