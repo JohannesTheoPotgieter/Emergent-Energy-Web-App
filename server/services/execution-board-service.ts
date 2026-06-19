@@ -31,11 +31,13 @@ import {
   selectNextDelivery,
   summarizeEngineering,
   summarizeQuality,
+  computeCriticalPath,
   type ScheduleSnapshot,
   type NextTask,
   type NextDelivery,
   type EngineeringSummary,
   type QualitySummary,
+  type CriticalPathResult,
 } from "./execution-board-math";
 
 function groupBy<T>(rows: T[], key: (r: T) => number | null | undefined): Map<number, T[]> {
@@ -241,6 +243,7 @@ export interface PlanTaskView {
   pctComplete: number | null;
   expectedPctComplete: number | null;
   slipDays: number | null;
+  onCriticalPath: boolean;
   comment: string | null;
 }
 
@@ -270,6 +273,7 @@ export interface ProjectDetail {
     latestUpdateAt: string | null;
   };
   schedule: ScheduleSnapshot & { importedAt: string | null; runId: number | null };
+  criticalPath: CriticalPathResult;
   planTasks: PlanTaskView[];
   installers: InstallerRow[];
   deliveries: {
@@ -305,6 +309,8 @@ export async function getProjectDetail(projectId: number, now: Date = new Date()
     executionBoardRepository.getLatestUpdate(header.projectName),
   ]);
   const schedule = computeScheduleSnapshot(plan.tasks);
+  const criticalPath = computeCriticalPath(plan.tasks);
+  const criticalSet = new Set(criticalPath.criticalTaskNos);
   const deliveries = selectNextDelivery(milestones, procurement, today);
 
   const planTasks: PlanTaskView[] = plan.tasks.map((t) => ({
@@ -320,6 +326,7 @@ export async function getProjectDetail(projectId: number, now: Date = new Date()
     pctComplete: pctTo100(t.pctComplete),
     expectedPctComplete: pctTo100(t.expectedPctComplete),
     slipDays: computeSlip(t.endDate ?? null, t.actualEndDate ?? null, t.startDate ?? null, t.actualStartDate ?? null),
+    onCriticalPath: t.taskNo != null && criticalSet.has(t.taskNo),
     comment: t.comment ?? null,
   }));
 
@@ -339,6 +346,7 @@ export async function getProjectDetail(projectId: number, now: Date = new Date()
       latestUpdateAt: latest?.latestUpdateAt ? latest.latestUpdateAt.toISOString() : null,
     },
     schedule: { ...schedule, importedAt: plan.importedAt ? plan.importedAt.toISOString() : null, runId: plan.runId },
+    criticalPath,
     planTasks,
     installers,
     deliveries: { milestones, procurement, next: deliveries.next, overdueCount: deliveries.overdueCount },

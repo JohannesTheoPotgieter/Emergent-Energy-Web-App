@@ -16,6 +16,7 @@ import LatestUpdateEditor from "@/components/LatestUpdateEditor";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { FlagDialog, AllocateDialog, AssignPmDialog } from "@/components/execution/execution-dialogs";
+import { CriticalPathViewer } from "@/components/execution/critical-path";
 import type {
   ProjectDetail, ExecutionReviewItem, ExecItemStatus, InstallerRow, PlanTaskView,
 } from "@/lib/execution-types";
@@ -151,6 +152,7 @@ export default function ExecutionReviewDetail() {
       <Tabs defaultValue="schedule" className="mt-4">
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="schedule" data-testid="execution-tab-schedule">Schedule</TabsTrigger>
+          <TabsTrigger value="critical-path" data-testid="execution-tab-critical-path">Critical path</TabsTrigger>
           <TabsTrigger value="upcoming" data-testid="execution-tab-upcoming">Upcoming</TabsTrigger>
           <TabsTrigger value="installers" data-testid="execution-tab-installers">Installers & suppliers</TabsTrigger>
           <TabsTrigger value="deliveries" data-testid="execution-tab-deliveries">Deliveries</TabsTrigger>
@@ -180,6 +182,11 @@ export default function ExecutionReviewDetail() {
               </table>
             </CardContent></Card>
           )}
+        </TabsContent>
+
+        {/* Critical path */}
+        <TabsContent value="critical-path">
+          <CriticalPathViewer criticalPath={data.criticalPath} planTasks={data.planTasks} />
         </TabsContent>
 
         {/* T2 Upcoming */}
@@ -369,7 +376,11 @@ function PlanRow({ t }: { t: PlanTaskView }) {
   return (
     <tr className="border-b">
       <td className="py-1.5 px-3 text-muted-foreground tabular-nums">{t.taskNo}</td>
-      <td className={`py-1.5 px-3 ${indent}`}>{t.taskName}{t.isMilestone ? <Badge variant="outline" className="ml-2">◆</Badge> : null}</td>
+      <td className={`py-1.5 px-3 ${indent}`}>
+        {t.taskName}
+        {t.isMilestone ? <Badge variant="outline" className="ml-2">◆</Badge> : null}
+        {t.onCriticalPath ? <Badge variant="destructive" className="ml-2">critical</Badge> : null}
+      </td>
       <td className="py-1.5 px-3 whitespace-nowrap text-xs">{fmtDate(t.plannedStart)} – {fmtDate(t.plannedEnd)}</td>
       <td className="py-1.5 px-3 whitespace-nowrap text-xs">{fmtDate(t.actualStart)} – {fmtDate(t.actualEnd)}</td>
       <td className="py-1.5 px-3 tabular-nums">{fmtPct(t.pctComplete)}</td>

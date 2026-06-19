@@ -256,3 +256,125 @@ export function summarizeQuality(rows: SnagRow[], hasQcp: boolean, today: Date):
   }
   return { openTotal: open.length, critical, major, minor, observation, overdue, hasQcp, rag };
 }
+
+// ──────────────────────────── critical path (date-driven) ────────────────────
+
+function isoDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Inclusive whole-day span between two midnight-aligned dates (min 1). */
+function spanDaysInclusive(start: Date, end: Date): number {
+  return Math.max(1, Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1);
+}
+
+export interface CriticalPathTask {
+  taskNo: string;
+  taskName: string;
+  start: string | null;
+  end: string | null;
+  durationDays: number;
+}
+
+export interface CriticalPathResult {
+  /** task_no of every task on the critical path. */
+  criticalTaskNos: string[];
+  /** Ordered start→finish chain. */
+  chain: CriticalPathTask[];
+  projectStart: string | null;
+  projectFinish: string | null;
+  spanDays: number | null;
+  /** Number of dated leaf tasks considered. */
+  datedTaskCount: number;
+}
+
+/**
+ * Critical path derived purely from dates (the import has no explicit
+ * predecessor links). A task may precede another when it finishes at/before
+ * the other starts; the critical path is the maximum total-duration chain of
+ * such non-overlapping leaf tasks that ends at the project's finish date.
+ *
+ * Uses PLANNED dates (start_date/end_date), falling back to actual dates when
+ * a planned date is missing. Parents/summary rows are excluded (leaves only).
+ */
+export function computeCriticalPath(tasks: NormalizedPlanTask[]): CriticalPathResult {
+  const parentSet = new Set(
+    tasks.map((t) => t.parentTaskNo).filter((p): p is string => Boolean(p)),
+  );
+
+  interface Node {
+    taskNo: string;
+    taskName: string;
+    startRaw: string | null;
+    endRaw: string | null;
+    start: Date;
+    end: Date;
+    dur: number;
+  }
+  const nodes: Node[] = [];
+  for (const t of tasks) {
+    if (t.taskNo == null || parentSet.has(t.taskNo)) continue; // leaves only
+    const startRaw = t.startDate ?? t.actualStartDate ?? null;
+    const endRaw = t.endDate ?? t.actualEndDate ?? null;
+    const start = parsePlanDate(startRaw);
+    const end = parsePlanDate(endRaw);
+    if (!start || !end || end < start) continue;
+    nodes.push({ taskNo: t.taskNo, taskName: t.taskName, startRaw, endRaw, start, end, dur: spanDaysInclusive(start, end) });
+  }
+
+  if (nodes.length === 0) {
+    return { criticalTaskNos: [], chain: [], projectStart: null, projectFinish: null, spanDays: null, datedTaskCount: 0 };
+  }
+
+  // Sort by end asc (then start asc) so every predecessor is processed first.
+  nodes.sort((a, b) => a.end.getTime() - b.end.getTime() || a.start.getTime() - b.start.getTime());
+  const n = nodes.length;
+  const longest = new Array<number>(n).fill(0);
+  const prev = new Array<number>(n).fill(-1);
+  for (let i = 0; i < n; i++) {
+    let best = 0;
+    let bestPrev = -1;
+    for (let j = 0; j < i; j++) {
+      if (nodes[j].end.getTime() <= nodes[i].start.getTime() && longest[j] > best) {
+        best = longest[j];
+        bestPrev = j;
+      }
+    }
+    longest[i] = best + nodes[i].dur;
+    prev[i] = bestPrev;
+  }
+
+  // The critical path ends at the project finish (latest end date); break ties
+  // toward the longer accumulated chain.
+  let finishIdx = 0;
+  for (let i = 1; i < n; i++) {
+    const better =
+      nodes[i].end.getTime() > nodes[finishIdx].end.getTime() ||
+      (nodes[i].end.getTime() === nodes[finishIdx].end.getTime() && longest[i] > longest[finishIdx]);
+    if (better) finishIdx = i;
+  }
+
+  const chainIdx: number[] = [];
+  for (let k = finishIdx; k !== -1; k = prev[k]) chainIdx.push(k);
+  chainIdx.reverse();
+
+  const chain: CriticalPathTask[] = chainIdx.map((idx) => ({
+    taskNo: nodes[idx].taskNo,
+    taskName: nodes[idx].taskName,
+    start: nodes[idx].startRaw,
+    end: nodes[idx].endRaw,
+    durationDays: nodes[idx].dur,
+  }));
+
+  const projectStart = nodes.reduce((min, x) => (x.start < min ? x.start : min), nodes[0].start);
+  const projectFinish = nodes[finishIdx].end;
+
+  return {
+    criticalTaskNos: chain.map((c) => c.taskNo),
+    chain,
+    projectStart: isoDate(projectStart),
+    projectFinish: isoDate(projectFinish),
+    spanDays: spanDaysInclusive(projectStart, projectFinish),
+    datedTaskCount: n,
+  };
+}

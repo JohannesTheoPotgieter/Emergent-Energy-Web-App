@@ -12,6 +12,7 @@ import {
   deliveryRag,
   summarizeEngineering,
   summarizeQuality,
+  computeCriticalPath,
   parsePlanDate,
   startOfDay,
 } from "../../../server/services/execution-board-math";
@@ -199,6 +200,43 @@ describe("summarizeQuality", () => {
   });
   it("is null when there are no snags and no QCP", () => {
     expect(summarizeQuality([], false, TODAY).rag).toBeNull();
+  });
+});
+
+describe("computeCriticalPath", () => {
+  it("returns an empty path when there are no dated leaf tasks", () => {
+    const r = computeCriticalPath([task({ taskNo: "1" })]); // no dates
+    expect(r.criticalTaskNos).toEqual([]);
+    expect(r.projectFinish).toBeNull();
+    expect(r.datedTaskCount).toBe(0);
+  });
+
+  it("picks the longest-duration date chain ending at the project finish, excluding parents", () => {
+    const tasks = [
+      task({ taskNo: "0", startDate: "2026-01-01", endDate: "2026-01-25" }), // summary parent (excluded)
+      task({ taskNo: "A", parentTaskNo: "0", startDate: "2026-01-01", endDate: "2026-01-10" }),
+      task({ taskNo: "B", parentTaskNo: "0", startDate: "2026-01-11", endDate: "2026-01-20" }),
+      task({ taskNo: "C", parentTaskNo: "0", startDate: "2026-01-01", endDate: "2026-01-05" }),
+      task({ taskNo: "D", parentTaskNo: "0", startDate: "2026-01-21", endDate: "2026-01-25" }),
+      task({ taskNo: "E", parentTaskNo: "0", startDate: "2026-01-06", endDate: "2026-01-09" }),
+    ];
+    const r = computeCriticalPath(tasks);
+    expect(r.criticalTaskNos).toEqual(["A", "B", "D"]);
+    expect(r.criticalTaskNos).not.toContain("0"); // parent excluded
+    expect(r.projectStart).toBe("2026-01-01");
+    expect(r.projectFinish).toBe("2026-01-25");
+    expect(r.spanDays).toBe(25);
+    expect(r.datedTaskCount).toBe(5);
+    expect(r.chain[0].taskNo).toBe("A");
+    expect(r.chain[r.chain.length - 1].taskNo).toBe("D");
+  });
+
+  it("falls back to actual dates when planned dates are missing", () => {
+    const r = computeCriticalPath([
+      task({ taskNo: "X", actualStartDate: "2026-02-01", actualEndDate: "2026-02-05" }),
+    ]);
+    expect(r.criticalTaskNos).toEqual(["X"]);
+    expect(r.spanDays).toBe(5);
   });
 });
 

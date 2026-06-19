@@ -111,7 +111,25 @@ export interface PlanTaskView {
   pctComplete: number | null;
   expectedPctComplete: number | null;
   slipDays: number | null;
+  onCriticalPath: boolean;
   comment: string | null;
+}
+
+export interface CriticalPathTask {
+  taskNo: string;
+  taskName: string;
+  start: string | null;
+  end: string | null;
+  durationDays: number;
+}
+
+export interface CriticalPathResult {
+  criticalTaskNos: string[];
+  chain: CriticalPathTask[];
+  projectStart: string | null;
+  projectFinish: string | null;
+  spanDays: number | null;
+  datedTaskCount: number;
 }
 
 export interface InstallerRow {
@@ -161,6 +179,7 @@ export interface ProjectDetail {
     latestUpdateAt: string | null;
   };
   schedule: ScheduleSnapshot & { importedAt: string | null; runId: number | null };
+  criticalPath: CriticalPathResult;
   planTasks: PlanTaskView[];
   installers: InstallerRow[];
   deliveries: {
@@ -241,10 +260,23 @@ export function fmtPct(v: number | null | undefined): string {
   return v == null ? "—" : `${Math.round(v)}%`;
 }
 
+/** Tolerant parser for the text dates from the import (ISO or dd/mm/yyyy). */
+export function parseExecDate(s: string | null | undefined): Date | null {
+  if (!s) return null;
+  const t = String(s).trim();
+  if (!t) return null;
+  const iso = t.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (iso) return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+  const dmy = t.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  if (dmy) return new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]));
+  const d = new Date(t);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 export function fmtDate(s: string | null | undefined): string {
   if (!s) return "—";
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return String(s);
+  const d = parseExecDate(s);
+  if (!d) return String(s);
   return d.toLocaleDateString("en-ZA", { day: "2-digit", month: "short", year: "2-digit" });
 }
 
