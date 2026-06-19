@@ -416,8 +416,9 @@ export interface DeliveryProgramRow {
   label: string;
   date: string | null;
   rag: ScheduleRag | null;
-  source: "milestone" | "procurement";
+  source: "milestone" | "procurement" | "task";
   overdue: boolean;
+  complete: boolean;
 }
 
 export async function getDeliveriesProgram(now: Date = new Date()): Promise<DeliveryProgramRow[]> {
@@ -425,23 +426,26 @@ export async function getDeliveriesProgram(now: Date = new Date()): Promise<Deli
   const active = await executionBoardRepository.getActiveProjects();
   const ids = active.map((p) => p.id);
   const nameById = new Map(active.map((p) => [p.id, p.projectName]));
-  const [milestones, procurement] = await Promise.all([
+  const [milestones, procurement, tasksByProject] = await Promise.all([
     executionBoardRepository.getDeliveryMilestonesForProjects(ids),
     executionBoardRepository.getOpenProcurementForProjects(ids),
+    executionBoardRepository.getPlanTasksForProjects(ids),
   ]);
   const out: DeliveryProgramRow[] = [];
+
   for (const m of milestones) {
-    const done = m.status === "complete" || Boolean(m.actualDate);
-    if (done) continue;
-    const d = parsePlanDate(m.plannedDate);
+    const complete = m.status === "complete" || Boolean(m.actualDate);
+    const raw = m.actualDate ?? m.plannedDate ?? null;
+    const d = parsePlanDate(raw);
     out.push({
       projectId: m.projectId,
       projectName: nameById.get(m.projectId) ?? "",
       label: m.milestoneName,
-      date: m.plannedDate ?? null,
-      rag: deliveryRag(d, today, false),
+      date: raw,
+      rag: deliveryRag(d, today, complete),
       source: "milestone",
-      overdue: d != null && diffDays(d, today) < 0,
+      overdue: !complete && d != null && diffDays(d, today) < 0,
+      complete,
     });
   }
   for (const p of procurement) {
@@ -454,7 +458,28 @@ export async function getDeliveriesProgram(now: Date = new Date()): Promise<Deli
       rag: deliveryRag(d, today, false),
       source: "procurement",
       overdue: d != null && diffDays(d, today) < 0,
+      complete: false,
     });
+  }
+  // Plan tasks whose name mentions "delivery" — the imported tracker's delivery
+  // lines (where most projects actually track deliveries).
+  for (const [projectId, tasks] of tasksByProject) {
+    for (const t of tasks) {
+      if (!t.taskName.toLowerCase().includes("delivery")) continue;
+      const complete = (pctTo100(t.pctComplete) ?? 0) >= 100;
+      const raw = t.endDate ?? t.actualEndDate ?? t.startDate ?? t.actualStartDate ?? null;
+      const d = parsePlanDate(raw);
+      out.push({
+        projectId,
+        projectName: nameById.get(projectId) ?? "",
+        label: t.taskName,
+        date: raw,
+        rag: deliveryRag(d, today, complete),
+        source: "task",
+        overdue: !complete && d != null && diffDays(d, today) < 0,
+        complete,
+      });
+    }
   }
   out.sort((a, b) => (parsePlanDate(a.date)?.getTime() ?? Infinity) - (parsePlanDate(b.date)?.getTime() ?? Infinity));
   return out;
