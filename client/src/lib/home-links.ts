@@ -1,13 +1,13 @@
 export const HOME_KPI_HREF: Record<string, string> = {
   "Active Projects": "/projects",
   "Total Projects": "/projects",
-  "Red RAG": "/execution-board?rag=Red",
-  "Red RAG Projects": "/execution-board?rag=Red",
-  "Behind Plan": "/execution-board?behindPlanOnly=true",
-  "Projects Behind Plan": "/execution-board?behindPlanOnly=true",
-  "Avg Progress": "/execution-board",
-  "Eng. Blockers": "/execution-board?engineeringBlockersOnly=true",
-  "Quality Warnings": "/execution-board?qualityIssuesOnly=true",
+  "Red RAG": "/execution?rag=Red",
+  "Red RAG Projects": "/execution?rag=Red",
+  "Behind Plan": "/execution?behindPlanOnly=true",
+  "Projects Behind Plan": "/execution?behindPlanOnly=true",
+  "Avg Progress": "/execution",
+  "Eng. Blockers": "/execution?engineeringBlockersOnly=true",
+  "Quality Warnings": "/execution?qualityIssuesOnly=true",
   "Pending Approvals": "/pm/approvals",
   "Approvals Due": "/pm/approvals",
   "Inflow (FY)": "/cashflow",
@@ -24,13 +24,13 @@ export const HOME_KPI_HREF: Record<string, string> = {
   "Revenue Outstanding": "/revenue-tracker",
   "COS Outstanding": "/cos",
   "Overdue Outflow": "/cos",
-  "Open Incidents": "/execution-board",
-  "Corrective Actions Due": "/execution-board",
-  "Safety Compliance": "/execution-board",
-  "Inspections Overdue": "/execution-board",
-  "Applications Pending": "/execution-board",
-  "Queries Outstanding": "/execution-board",
-  "Rejections Open": "/execution-board",
+  "Open Incidents": "/execution",
+  "Corrective Actions Due": "/execution",
+  "Safety Compliance": "/execution",
+  "Inspections Overdue": "/execution",
+  "Applications Pending": "/execution",
+  "Queries Outstanding": "/execution",
+  "Rejections Open": "/execution",
 };
 
 export function getHomeKpiHref(label: string): string | undefined {
@@ -40,5 +40,5 @@ export function getHomeKpiHref(label: string): string | undefined {
 export function getHomeProjectHref(projectId?: number | null): string {
   return typeof projectId === "number" && Number.isFinite(projectId) && projectId > 0
     ? `/project/id/${projectId}`
-    : "/execution-board";
+    : "/execution";
 }

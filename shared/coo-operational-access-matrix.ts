@@ -25,7 +25,7 @@ export const COO_OPERATIONAL_ACCESS_MATRIX: DomainAccessSpec[] = [
     domain: "projects",
     entities: ["projects", "lifecycle", "execution_board", "portfolios"],
     requiredActions: FULL_OPERATIONAL_ACTIONS,
-    discoverablePaths: ["/projects", "/lifecycle-board", "/execution-board", "/portfolios"],
+    discoverablePaths: ["/projects", "/lifecycle-board", "/execution", "/portfolios"],
   },
   {
     domain: "project_development",

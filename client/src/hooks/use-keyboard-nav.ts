@@ -35,7 +35,7 @@ const SHORTCUTS: Record<string, { path: string; label: string }> = {
   f: { path: "/cashflow", label: "Cashflow" },
   c: { path: "/clients", label: "Clients" },
   i: { path: "/priorities", label: "Priorities" },
-  e: { path: "/execution-board", label: "Execution board" },
+  e: { path: "/execution", label: "Execution" },
   g: { path: "/gates/pipeline", label: "Gates pipeline" },
 };
 

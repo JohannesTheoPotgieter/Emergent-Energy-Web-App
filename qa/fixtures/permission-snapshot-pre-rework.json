@@ -288,6 +288,14 @@
       "override": false,
       "delete": false
     },
+    "execution_review": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "feedback": {
       "view": true,
       "create": true,
@@ -1235,6 +1243,14 @@
       "delete": false
     },
     "execution_board": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "execution_review": {
       "view": true,
       "create": false,
       "edit": false,
@@ -2196,6 +2212,14 @@
       "override": true,
       "delete": true
     },
+    "execution_review": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": true,
+      "delete": true
+    },
     "feedback": {
       "view": true,
       "create": true,
@@ -3143,6 +3167,14 @@
       "delete": false
     },
     "execution_board": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "execution_review": {
       "view": true,
       "create": false,
       "edit": false,
@@ -4104,6 +4136,14 @@
       "override": false,
       "delete": false
     },
+    "execution_review": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "feedback": {
       "view": true,
       "create": true,
@@ -5051,6 +5091,14 @@
       "delete": true
     },
     "execution_board": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": true,
+      "delete": true
+    },
+    "execution_review": {
       "view": true,
       "create": true,
       "edit": true,
@@ -6012,6 +6060,14 @@
       "override": false,
       "delete": false
     },
+    "execution_review": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "feedback": {
       "view": true,
       "create": true,
@@ -6959,6 +7015,14 @@
       "delete": false
     },
     "execution_board": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "execution_review": {
       "view": true,
       "create": false,
       "edit": false,
@@ -7920,6 +7984,14 @@
       "override": false,
       "delete": false
     },
+    "execution_review": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "feedback": {
       "view": true,
       "create": true,
@@ -8867,6 +8939,14 @@
       "delete": false
     },
     "execution_board": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "execution_review": {
       "view": true,
       "create": false,
       "edit": false,
@@ -9828,6 +9908,14 @@
       "override": false,
       "delete": false
     },
+    "execution_review": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "feedback": {
       "view": true,
       "create": true,
@@ -10782,6 +10870,14 @@
       "override": false,
       "delete": false
     },
+    "execution_review": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": false,
+      "delete": true
+    },
     "feedback": {
       "view": true,
       "create": true,
@@ -11729,6 +11825,14 @@
       "delete": false
     },
     "execution_board": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "execution_review": {
       "view": true,
       "create": false,
       "edit": false,
@@ -12690,6 +12794,14 @@
       "override": false,
       "delete": false
     },
+    "execution_review": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "feedback": {
       "view": true,
       "create": true,
@@ -13644,6 +13756,14 @@
       "override": false,
       "delete": false
     },
+    "execution_review": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "feedback": {
       "view": true,
       "create": true,
@@ -14591,6 +14711,14 @@
       "delete": false
     },
     "execution_board": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "execution_review": {
       "view": true,
       "create": false,
       "edit": false,

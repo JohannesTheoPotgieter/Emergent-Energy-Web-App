@@ -25,7 +25,7 @@ const roleQuickActions: Record<string, QuickAction[]> = {
     { label: "Project Board", description: "Review portfolio execution and status.", path: "/projects" },
     { label: "Approvals", description: "Clear pending approvals and unblock delivery.", path: "/my-work/approvals" },
     { label: "PM Handover Review", description: "Progress handover decisions.", path: "/pm/handover-review" },
-    { label: "Execution Board", description: "Prioritize tasks and risks for today.", path: "/execution-board" },
+    { label: "Execution", description: "Program-wide delivery control tower.", path: "/execution" },
   ],
   engineering: [
     { label: "Engineering Requests", description: "Triage new requests and assignments.", path: "/engineering/tasks" },

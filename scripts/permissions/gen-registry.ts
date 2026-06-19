@@ -35,6 +35,7 @@ const DESCRIPTIONS: Record<string, string> = {
   pd_tickets: "Project Development — opportunity workflow & tracking",
   projects: "Project List — all projects summary table",
   execution_board: "Execution Dashboard — delivery KPIs & cards",
+  execution_review: "Execution — program-wide delivery control tower & flagged items",
   deliverables: "Deliverables tracker across projects",
   pm_dashboard: "Project Manager Dashboard",
   pm_on_the_go: "PM On-The-Go mobile site management",
@@ -165,7 +166,7 @@ const CATEGORY_BY_ENTITY: Record<string, CategoryKey> = {
   handover: "PD", project_charter: "PD", client_update: "PD",
   opportunities: "PD",
 
-  projects: "DELIVERY", execution_board: "DELIVERY", deliverables: "DELIVERY",
+  projects: "DELIVERY", execution_board: "DELIVERY", execution_review: "DELIVERY", deliverables: "DELIVERY",
   pm_dashboard: "DELIVERY", pm_on_the_go: "DELIVERY", approvals: "DELIVERY",
   weekly_reviews: "DELIVERY", weekly_review_wizard: "DELIVERY",
   portfolios: "DELIVERY", portfolio_detail: "DELIVERY", tr_register: "DELIVERY",

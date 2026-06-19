@@ -1211,7 +1211,7 @@ const ROLE_SIMULATIONS: RoleSimConfig[] = [
       { role: "Legal", when: "Contract disputes or compliance issues" },
     ],
     dashboards: [
-      { label: "Execution Dashboard", path: "/execution-board" },
+      { label: "Execution", path: "/execution" },
       { label: "Engineering Dashboard", path: "/engineering" },
       { label: "COS Tracker", path: "/cos" },
       { label: "Lifecycle Board", path: "/lifecycle-board" },
@@ -1318,7 +1318,7 @@ const ROLE_SIMULATIONS: RoleSimConfig[] = [
       { role: "Engineering Manager", when: "Technical issues blocking construction" },
     ],
     dashboards: [
-      { label: "Execution Dashboard", path: "/execution-board" },
+      { label: "Execution", path: "/execution" },
       { label: "Projects", path: "/projects" },
       { label: "Smart Import", path: "/admin/smart-import" },
       { label: "Portfolios", path: "/portfolios" },
@@ -1474,7 +1474,7 @@ const ROLE_SIMULATIONS: RoleSimConfig[] = [
       { role: "Procurement", when: "Material shortages or delivery failures" },
     ],
     dashboards: [
-      { label: "Execution Dashboard", path: "/execution-board" },
+      { label: "Execution", path: "/execution" },
       { label: "Projects", path: "/projects" },
       { label: "Engineering Tasks", path: "/engineering/tasks" },
       { label: "Subcontractor Dashboard", path: "/subcontractor-dashboard" },
@@ -1674,7 +1674,7 @@ const ROLE_SIMULATIONS: RoleSimConfig[] = [
     dashboards: [
       { label: "Portfolios", path: "/portfolios" },
       { label: "Projects", path: "/projects" },
-      { label: "Execution Dashboard", path: "/execution-board" },
+      { label: "Execution", path: "/execution" },
       { label: "Collaboration Hub", path: "/my-work" },
     ],
     topActions: [

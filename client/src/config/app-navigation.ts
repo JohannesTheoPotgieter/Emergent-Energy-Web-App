@@ -91,14 +91,20 @@ export const TOP_SECTIONS: TopSection[] = [
     ],
   },
   {
-    label: "Project Delivery",
+    // Section key stays PROJECT_DELIVERY (role visibility + lens mapping carry
+    // over); the user-facing tab is now "Execution" — the program-wide control
+    // tower that replaced the legacy /execution-board dashboard.
+    label: "Execution",
     key: "PROJECT_DELIVERY",
-    path: "/execution-board",
+    path: "/execution",
     match: (pathname) => startsWithAny(pathname, [
-      "/execution-board", "/projects", "/project", "/milestone-tracker",
+      "/execution", "/projects", "/project", "/milestone-tracker",
     ]),
     secondary: [
-      { label: "Execution Dashboard", path: "/execution-board" },
+      { label: "Board", path: "/execution" },
+      { label: "This fortnight", path: "/execution/upcoming" },
+      { label: "Deliveries", path: "/execution/deliveries" },
+      { label: "Allocations", path: "/execution/allocations" },
       { label: "All Projects", path: "/projects" },
       { label: "Milestone Tracker", path: "/milestone-tracker" },
     ],
@@ -177,7 +183,7 @@ export const TOP_SECTIONS: TopSection[] = [
 ];
 
 export type DisplayTopNavItem = {
-  label: "Home" | "Project Delivery" | "Finance" | "Engineering" | "Quality Management" | "Settings";
+  label: "Home" | "Execution" | "Finance" | "Engineering" | "Quality Management" | "Settings";
   path: string;
   requiredSectionKey?: SectionKey;
   requiredAnySectionKeys?: SectionKey[];
@@ -192,7 +198,7 @@ export type DisplayTopNavItem = {
  */
 export const DISPLAY_TOP_NAV: DisplayTopNavItem[] = [
   { label: "Home", path: "/", requiredSectionKey: "HOME", sectionKeys: ["HOME"] },
-  { label: "Project Delivery", path: "/execution-board", requiredSectionKey: "PROJECT_DELIVERY", sectionKeys: ["PROJECT_DELIVERY"] },
+  { label: "Execution", path: "/execution", requiredSectionKey: "PROJECT_DELIVERY", sectionKeys: ["PROJECT_DELIVERY"] },
   { label: "Finance", path: "/finance", requiredSectionKey: "FINANCE", sectionKeys: ["FINANCE"] },
   { label: "Engineering", path: "/engineering", requiredSectionKey: "ENGINEERING", sectionKeys: ["ENGINEERING"] },
   { label: "Quality Management", path: "/quality", requiredSectionKey: "QUALITY", sectionKeys: ["QUALITY"] },
@@ -469,21 +475,21 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
   if (projectFinancialMatch) {
     const name = decodeURIComponent(projectFinancialMatch[1]);
     return [
-      { label: "Project Delivery", path: "/projects" },
+      { label: "Execution", path: "/execution" },
       { label: name, path: `/project/${projectFinancialMatch[1]}` },
       { label: "Financial Linking" },
     ];
   }
   const projectMatch = pathname.match(/^\/project\/([^/]+)$/);
   if (projectMatch) return [
-    { label: "Project Delivery", path: "/projects" },
+    { label: "Execution", path: "/execution" },
     { label: decodeURIComponent(projectMatch[1]) },
   ];
 
   // --- Portfolio detail ---
   const portfolioMatch = pathname.match(/^\/portfolios\/([^/]+)$/);
   if (portfolioMatch) return [
-    { label: "Projects", path: "/execution-board" },
+    { label: "Projects", path: "/execution" },
     { label: decodeURIComponent(portfolioMatch[1]) },
   ];
 

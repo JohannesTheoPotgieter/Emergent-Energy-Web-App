@@ -21,8 +21,8 @@ const DASHBOARD_ROLES: CompanyRole[] = [
 describe("home route links", () => {
   it("uses canonical project identity links from Home", () => {
     expect(getHomeProjectHref(42)).toBe("/project/id/42");
-    expect(getHomeProjectHref(null)).toBe("/execution-board");
-    expect(getHomeProjectHref(undefined)).toBe("/execution-board");
+    expect(getHomeProjectHref(null)).toBe("/execution");
+    expect(getHomeProjectHref(undefined)).toBe("/execution");
   });
 
   it("routes Home finance KPI drilldowns to finance source-of-truth pages", () => {

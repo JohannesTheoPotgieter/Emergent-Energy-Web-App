@@ -40,9 +40,12 @@ const EngineeringTasksPage = lazyWithRetry(() => import("@/pages/engineering-tas
 const EngineeringAuditPage = lazyWithRetry(() => import("@/pages/engineering-audit"));
 const RoleSettingsPage = lazyWithRetry(() => import("@/pages/role-settings"));
 const LifecycleBoardPage = lazyWithRetry(() => import("@/pages/lifecycle-board"));
-const ExecutionBoardPage = lazyWithRetry(() => import("@/pages/execution-board"));
-// PR-B redesign (2026-05-27) — /now replaces /execution-board as the
-// canonical landing surface. Legacy route kept for one cycle.
+// Execution control tower — replaces the legacy /execution-board surface.
+const ExecutionReviewBoardPage = lazyWithRetry(() => import("@/pages/execution-review"));
+const ExecutionReviewDetailPage = lazyWithRetry(() => import("@/pages/execution-review-detail"));
+const ExecutionUpcomingPage = lazyWithRetry(() => import("@/pages/execution-upcoming"));
+const ExecutionDeliveriesPage = lazyWithRetry(() => import("@/pages/execution-deliveries"));
+const ExecutionAllocationsPage = lazyWithRetry(() => import("@/pages/execution-allocations"));
 const NowPage = lazyWithRetry(() => import("@/pages/now"));
 // PR-C redesign (2026-05-27) — /my-queue consolidates POs + payment
 // requests + change requests + stage exceptions into one screen.
@@ -198,7 +201,11 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   EngineeringTasksPage,
   EngineeringAuditPage,
   LifecycleBoardPage,
-  ExecutionBoardPage,
+  ExecutionReviewBoardPage,
+  ExecutionReviewDetailPage,
+  ExecutionUpcomingPage,
+  ExecutionDeliveriesPage,
+  ExecutionAllocationsPage,
   NowPage,
   MyQueuePage,
   PortfolioPage,

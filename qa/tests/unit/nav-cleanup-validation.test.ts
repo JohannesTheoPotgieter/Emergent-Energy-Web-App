@@ -10,10 +10,10 @@ import {
 /**
  * Nav cleanup validation — locks the COO-spec six-tab nav (2026-05-11):
  *
- *   Home · Project Delivery · Finance · Engineering · Quality Management · Settings
+ *   Home · Execution · Finance · Engineering · Quality Management · Settings
  *
- * Project Delivery has exactly three items: Execution Dashboard · All Projects ·
- * Milestone Tracker. Finance has five: Cashflow · Cost of Sales · Revenue ·
+ * Execution (formerly Project Delivery) has Board · This fortnight · Deliveries ·
+ * Allocations · All Projects · Milestone Tracker. Finance has five: Cashflow · Cost of Sales · Revenue ·
  * Gross Profit · FYE Tracking Report. Engineering has four: Dashboard · Task
  * Board · Document Management · Standup. Quality has three: Dashboard · Task
  * Board · Document Management. Settings has four: Roles & Permissions ·
@@ -23,7 +23,7 @@ import {
 
 const EXPECTED_TOP_LABELS = [
   "Home",
-  "Project Delivery",
+  "Execution",
   "Finance",
   "Engineering",
   "Quality Management",
@@ -42,10 +42,13 @@ describe("nav cleanup — six-tab COO spec", () => {
     expect(labels).toEqual(EXPECTED_TOP_LABELS);
   });
 
-  it("Project Delivery has the three locked items", () => {
-    const section = findTop("Project Delivery");
+  it("Execution has the locked items in spec order", () => {
+    const section = findTop("Execution");
     expect(section.secondary.map((item) => item.path)).toEqual([
-      "/execution-board",
+      "/execution",
+      "/execution/upcoming",
+      "/execution/deliveries",
+      "/execution/allocations",
       "/projects",
       "/milestone-tracker",
     ]);

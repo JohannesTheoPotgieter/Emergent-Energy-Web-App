@@ -2351,7 +2351,7 @@ export default function ProjectsSummary() {
         actions={
           <>
             <Button asChild variant="outline" size="sm">
-              <Link href="/execution-board">Execution Board</Link>
+              <Link href="/execution">Execution</Link>
             </Button>
           </>
         }

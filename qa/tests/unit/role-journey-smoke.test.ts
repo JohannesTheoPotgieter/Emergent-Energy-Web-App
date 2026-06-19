@@ -38,7 +38,7 @@ const JOURNEYS: Array<{ role: JourneyRole; expectedSections: SectionKey[]; route
   { role: "CFO", expectedSections: ["FINANCE", "PROJECT_DELIVERY"], routes: ["/cashflow", "/cashflow/analysis", "/cos", "/cos/analysis", "/revenue-tracker"] },
   { role: "PROGRAM_FINANCE_MANAGER", expectedSections: ["FINANCE", "PROJECT_DELIVERY"], routes: ["/cashflow", "/cashflow/analysis", "/cos", "/cos/analysis", "/revenue-tracker"] },
   { role: "ACCOUNTANT", expectedSections: ["FINANCE"], routes: ["/cashflow", "/cashflow/analysis", "/cos", "/cos/analysis", "/revenue-tracker"] },
-  { role: "PROGRAM_MANAGER", expectedSections: ["PROJECT_DELIVERY", "FINANCE", "QUALITY"], routes: ["/execution-board", "/gates", "/projects", "/pm/approvals"] },
+  { role: "PROGRAM_MANAGER", expectedSections: ["PROJECT_DELIVERY", "FINANCE", "QUALITY"], routes: ["/execution", "/gates", "/projects", "/pm/approvals"] },
   { role: "PROJECT_MANAGER_SITE", expectedSections: ["PROJECT_DELIVERY", "FINANCE", "QUALITY"], routes: ["/pm-dashboard", "/pm/on-the-go", "/pm/approvals", "/handover"] },
   // PROJECT_DEVELOPER: PROJECT_DEVELOPMENT was retired as a top tab; their
   // daily surfaces (Pipeline / Opportunities / Clients) sit behind Functionality
@@ -101,7 +101,7 @@ describe("cross-role journey smoke coverage", () => {
   });
 
   it("legacy aliases for core journeys remain intact", () => {
-    expect(legacyAliases.get("/dashboard")).toBe("/execution-board");
+    expect(legacyAliases.get("/dashboard")).toBe("/execution");
     expect(legacyAliases.get("/company-priorities")).toBe("/priorities");
 
     const pmApprovalAlias = PAGE_REGISTRY.find((page) => page.path === "/my-work/approvals");
