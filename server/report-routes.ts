@@ -11,6 +11,7 @@ import { getProgrammeDrilldownRows, writeDrilldownExcel } from "./services/repor
 import { requireAuth } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
 import { effectiveRagBucket, computeEffectiveRag } from "@shared/utils/effective-rag";
+import { isMilestoneWbs } from "@shared/lib/milestone-wbs";
 import { ProjectInfoRepository } from "./repositories/project-info-repository";
 import { FinanceExpenseEngineRepository } from "./repositories/finance-expense-engine-repository";
 import { WorkManagementRepository } from "./repositories/work-management-repository";
@@ -573,7 +574,7 @@ export function registerReportRoutes(app: Express) {
           status: t.status,
           percentComplete: t.percentComplete,
           expectedPctComplete: t.expectedPctComplete,
-          isMilestone: t.isMilestone,
+          isMilestone: isMilestoneWbs(t.wbsCode),
           // Smart Import v2 tracker columns surfaced from work_items.
           lead: t.lead ?? null,
           resource1: t.resource1 ?? null,

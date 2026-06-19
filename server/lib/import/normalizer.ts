@@ -2,6 +2,7 @@ import type ExcelJS from "exceljs";
 import type { DetectionResult } from "./detector";
 import type { MappingResult } from "./mapper";
 import { worksheetToArray, parseDate, parseNumber, parsePercent, parseStatus, daysBetween } from "./utils";
+import { isMilestoneWbs } from "@shared/lib/milestone-wbs";
 
 /**
  * Per-cell formatting captured from the source workbook, keyed by canonical
@@ -1079,16 +1080,11 @@ function extractPlanTasks(
   }
 
   const allTaskNos = new Set<string>();
-  const childPrefixes = new Set<string>();
   for (const t of rawTasks) {
     if (t.taskNo) {
       allTaskNos.add(t.taskNo);
-      const parent = deriveParentTaskNo(t.taskNo);
-      if (parent) childPrefixes.add(parent);
     }
   }
-
-  const milestoneKeywords = ["milestone", "commissioning", "practical completion", "site establishment", "handover", "energisation", "cod"];
 
   const tasks: NormalizationResult["planTasks"] = rawTasks.map(t => {
     const taskNo = t.taskNo;
@@ -1100,25 +1096,11 @@ function extractPlanTasks(
       indentLevel = deriveIndentLevel(taskNo);
     }
 
-    // A task that has children is a SUMMARY / rollup — it is NEVER a milestone
-    // (the previous rule flagged every parent-with-children as a milestone,
-    // which is backwards). Milestone detection only applies to LEAF tasks, and
-    // at ANY level (a milestone is commonly a numbered leaf like "1.3 Energisation").
-    const isSummary = !!taskNo && childPrefixes.has(taskNo);
-    let isMilestone = false;
-    if (!isSummary) {
-      const nameLower = (t.taskName || "").toLowerCase();
-      for (const kw of milestoneKeywords) {
-        if (nameLower.includes(kw)) {
-          isMilestone = true;
-          break;
-        }
-      }
-      // A zero-length leaf (same start & end date) is a milestone.
-      if (!isMilestone && t.startDate && t.endDate && t.startDate === t.endDate) {
-        isMilestone = true;
-      }
-    }
+    // Canonical milestone rule (owner 2026-06-19): a milestone is a
+    // top-level INTEGER WBS row ("1", "2", "3", …) and never a decimal
+    // sub-row ("1.1", "5.3", …). This replaces the old keyword / zero-
+    // duration leaf heuristic, which mis-flagged decimal sub-tasks.
+    const isMilestone = isMilestoneWbs(taskNo);
 
     if (parentTaskNo && !allTaskNos.has(parentTaskNo)) {
       parentTaskNo = null;

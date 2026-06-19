@@ -41,6 +41,7 @@
 import { eq, and, isNull, inArray, asc, sql } from "drizzle-orm";
 import { workItems } from "@shared/schema/tasks";
 import { projectInfo } from "@shared/schema/projects";
+import { isMilestoneWbs } from "@shared/lib/milestone-wbs";
 import { db } from "../db";
 import { computeProjectProgress, expectedPctFromDates } from "../lib/kpi-formulas";
 import { getAllWorkItemsForPlanTab } from "../work-items-adapter";
@@ -256,10 +257,12 @@ export function buildPlanRollupTasksFromCanonical(
     }
   }
 
-  // Parents auto-marked as milestones (planning-tasks-routes.ts:630-635).
-  for (const [parentId] of childrenMap) {
-    const parentTask = taskMap.get(parentId);
-    if (parentTask && !parentTask.isMilestone) parentTask.isMilestone = true;
+  // Canonical milestone rule (owner 2026-06-19): a milestone is a
+  // top-level INTEGER WBS row ("1", "2", …), never a decimal sub-row.
+  // This replaces the previous "every parent-with-children is a milestone"
+  // behaviour, which mis-marked decimal parent rows.
+  for (const t of taskMap.values()) {
+    t.isMilestone = isMilestoneWbs(t.taskNumber);
   }
 
   // Date-derived expected % (planning-tasks-routes.ts:637-657).
@@ -618,7 +621,7 @@ export async function computeAllProjectPlanPills(opts: {
       pctComplete: oPctComplete,
       expectedPctComplete: oExpectedPct,
       comment: wi.description,
-      isMilestone: wi.isMilestone === true || wi.type === "milestone",
+      isMilestone: isMilestoneWbs(wi.wbsCode),
       parentTaskNo: wi.parentId ? (parentIdToWbs.get(wi.parentId) || null) : null,
       parentWorkItemId: wi.parentId || null,
       indentLevel,

@@ -4,6 +4,7 @@ import { workItems, workItemAssignments, projectInfo, TASK_STATUSES, engineering
 import { normalizeEngineeringTicketStatus } from "@shared/engineering-ticket-status";
 import { getFeatureFlag } from "./lib/feature-flags";
 import { queryWorkItems, getAssignmentsByWorkItemIds } from "./lib/work-item-queries";
+import { isMilestoneWbs } from "@shared/lib/milestone-wbs";
 import type { UnifiedTask } from "@shared/types/unified-task";
 import { fromWorkItem, toOperationalTaskShape } from "@shared/types/unified-task";
 
@@ -159,7 +160,7 @@ function mapWorkItemsToNormalizedFormat(items: WorkItem[], projectName: string, 
       pctComplete: wi.percentComplete != null ? wi.percentComplete : null,
       expectedPctComplete: null,
       comment: wi.description,
-      isMilestone: wi.isMilestone === true || wi.type === "milestone",
+      isMilestone: isMilestoneWbs(wi.wbsCode),
       parentTaskNo,
       parentWorkItemId: wi.parentId || null,
       parentTaskTitle: wi.parentId ? (parentIdToTitle.get(wi.parentId) || null) : null,
@@ -483,7 +484,7 @@ export async function getAllWorkItemsForProgress(): Promise<any[]> {
     const hasPlannedEnd = !!wi.endDate;
     const hasActualStart = !!wi.actualStart;
     const hasActualEnd = !!wi.actualEnd;
-    if (wi.isMilestone && hasWbs) return true;
+    if (isMilestoneWbs(wi.wbsCode) && hasWbs) return true;
     if (!hasWbs) return false;
     if (!hasPlannedStart && !hasPlannedEnd && !hasActualStart && !hasActualEnd) return false;
     return true;
@@ -536,7 +537,7 @@ export async function getAllWorkItemsForProgress(): Promise<any[]> {
       actualPctComplete: wi.percentComplete,
       expectedPctComplete: wi.expectedPctComplete,
       durationDays: wi.duration,
-      isMilestone: wi.isMilestone === true || wi.type === "milestone",
+      isMilestone: isMilestoneWbs(wi.wbsCode),
       workstream: wi.workstream,
     };
   });
@@ -605,7 +606,7 @@ export async function getAllPMWorkItemsAsProjectPlan(): Promise<any[]> {
       actualPctComplete: wi.percentComplete,
       expectedPctComplete: null,
       durationDays: wi.duration,
-      isMilestone: wi.isMilestone === true || wi.type === "milestone",
+      isMilestone: isMilestoneWbs(wi.wbsCode),
     };
   });
 }
