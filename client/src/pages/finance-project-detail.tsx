@@ -2,13 +2,12 @@
  * Project Finance Detail (D4) — make every number on a project defensible.
  *
  * Reuses the reconciliation service (the EXTENDED /api/finance/reconciliation/:id
- * detail), the ReconciliationDrawer, the DrillReconciliationFooter, and the
- * Phase 3 line-review actions (move-period / set-invoice-date / undo / remove).
+ * detail), the ReconciliationDrawer, and the Phase 3 line-review actions
+ * (move-period / set-invoice-date / undo / remove).
  * It changes NO figure: every value is read from a canonical endpoint and the
  * GP shown is Revenue − COS line-for-line (§ 3.3).
  *
- *   • Header: app-vs-tracker + tracker-vs-QuickBooks status + headline deltas.
- *   • FY aggregate cards reconciled to the lines via DrillReconciliationFooter.
+ *   • FY aggregate cards reconciled to the lines (App revenue / Tracker / COS / GP).
  *   • The tracker reproduced per line: COS (actualTotal), revenue_derived,
  *     revenue_stored, recon_delta, realised/committed, colour state (read vs
  *     defaulted), the Phase 3 integrity flags, and source_cell + source_file_hash.
@@ -43,12 +42,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  ReconStatusChip,
-  type ReconDisplayStatus,
-} from "@/components/finance/recon-status";
-import { TrustBadge } from "@/components/finance/TrustBadge";
-import { DrillReconciliationFooter } from "@/components/finance/DrillReconciliationFooter";
+import type { ReconDisplayStatus } from "@/components/finance/recon-status";
 import {
   ReconciliationDrawer,
   type ReconciliationException,
@@ -412,24 +406,6 @@ export function FinanceProjectDetailContent({ projectId }: { projectId: number }
       cell: (line) => (line.revenueStored != null ? <MoneyValue align="right" muteNegative={false} value={line.revenueStored} /> : "—"),
     },
     {
-      key: "reconDelta",
-      header: "Δ recon",
-      numeric: true,
-      cell: (line) => {
-        const tone =
-          line.reconDelta == null
-            ? "text-muted-foreground"
-            : Math.abs(line.reconDelta) <= 1
-              ? "text-muted-foreground"
-              : "text-status-drift";
-        return (
-          <span className={tone} data-testid={`line-recon-delta-${line.lineId}`}>
-            {line.reconDelta != null ? <MoneyValue align="right" muteNegative={false} value={line.reconDelta} /> : "—"}
-          </span>
-        );
-      },
-    },
-    {
       key: "state",
       header: "State",
       cell: (line) => (
@@ -514,34 +490,15 @@ export function FinanceProjectDetailContent({ projectId }: { projectId: number }
 
   return (
     <div className="space-y-5" data-testid="finance-project-detail">
-      {/* Header status */}
-      <Card>
-        <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2" title="App vs the project's pasted tracker">
-              <span className="text-[10px] font-medium uppercase text-muted-foreground">App vs tracker</span>
-              <ReconStatusChip status={detail.status} />
-              <span className="font-mono text-sm tabular-nums text-foreground" data-testid="header-app-vs-tracker-delta">
-                {formatZar(detail.appVsTrackerDelta)}
-              </span>
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground max-w-md">{detail.reason}</p>
-        </CardContent>
-      </Card>
-
       {/* FY aggregate KPIs — reconciled to the lines below */}
       <KpiRow data-testid="finance-project-aggregates">
         <KpiTile
           label="App revenue (recognised)"
           value={<MoneyValue value={detail.appTotal} align="left" muteNegative={false} />}
-          sourceBadge={<TrustBadge status={detail.status === "green" ? "ties" : "drift"} />}
         />
         <KpiTile
           label="Tracker (pasted)"
           value={<MoneyValue value={detail.trackerTotal} align="left" muteNegative={false} />}
-          supporting={`Δ ${formatZar(detail.appVsTrackerDelta)}`}
-          sourceBadge={<TrustBadge status={Math.abs(detail.appVsTrackerDelta) <= 1 ? "ties" : "drift"} />}
         />
         <KpiTile label="COS" value={<MoneyValue value={totals.cos} align="left" muteNegative={false} />} />
         <KpiTile
@@ -599,13 +556,6 @@ export function FinanceProjectDetailContent({ projectId }: { projectId: number }
               );
             })
           )}
-          {/* Drill reconciliation: the FY app-revenue total ties to the lines. */}
-          <DrillReconciliationFooter
-            sourceLabel="App revenue (recognised)"
-            sourceValue={detail.appTotal}
-            drilldownLabel={`Sum across ${lines.length} line${lines.length === 1 ? "" : "s"}`}
-            drilldownValue={totals.revDerived}
-          />
         </CardContent>
       </Card>
 

@@ -15,9 +15,10 @@ describe("high-risk finance screens pass projectId into canonical project endpoi
 
   it("ProjectFinanceCanonical reads ONLY the canonical per-project read path", () => {
     const src = read("client/src/components/finance/ProjectFinanceCanonical.tsx");
-    // The § 3.3.2 single read path + the canonical reconciliation status.
+    // The § 3.3.2 single read path. The drift/tie reconciliation status read was
+    // removed with its status chip (Task #163, owner 2026-06-19).
     expect(src).toContain("/api/finance/lines/${projectId}");
-    expect(src).toContain("/api/finance/reconciliation/${projectId}");
+    expect(src).not.toContain("/api/finance/reconciliation/${projectId}");
     // It must NOT reach for any of the retired parallel per-project endpoints.
     expect(src).not.toMatch(/cos-tracker\/project|revenue-tracker\/project|gp-tracker\/project|revenue-tab/);
   });

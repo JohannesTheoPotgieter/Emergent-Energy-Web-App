@@ -513,7 +513,6 @@ export function CashflowTab({ projectName, projectNames, title, canOverrideFinan
         quickBooksLinkStatus="partial"
         readOnly={!canOverrideFinance}
         metrics={[
-          { label: "Unresolved drift", value: "Unknown / not yet measured", href: "/excel-vs-app", tone: "warning", testId: "trust-drift-badge" },
           { label: "Manual overrides", value: "Unknown / not yet measured", href: "/manual-overrides" },
           { label: "Missing PO", value: "Unknown / not yet measured", href: "/project-financial-management", testId: "trust-missing-po-badge" },
         ]}

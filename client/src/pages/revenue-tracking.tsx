@@ -21,7 +21,6 @@ import { Badge } from "@/components/ui/badge";
 import { styleForCell } from "@/lib/tracker-cell-format";
 import { Loader2 } from "lucide-react";
 import { useFinanceQuery } from "@/lib/finance-trust";
-import { DataTrustBadge } from "@/components/ui/data-trust-badge";
 import { formatZar } from "@/lib/currency";
 import { ExportDropdown } from "@/components/ui/export-dropdown";
 
@@ -70,7 +69,7 @@ function fmtDate(v: string | null): string {
 }
 
 export function RevenueTrackingContent({ projectId }: { projectId: number }) {
-  const { data, trust, isLoading, isError } = useFinanceQuery<RevenueTrackingResponse>({
+  const { data, isLoading, isError } = useFinanceQuery<RevenueTrackingResponse>({
     queryKey: [`/api/tracker-replica/${projectId}/revenue-tracking`],
     url: `/api/tracker-replica/${projectId}/revenue-tracking`,
     enabled: Number.isFinite(projectId),
@@ -93,11 +92,6 @@ export function RevenueTrackingContent({ projectId }: { projectId: number }) {
 
   return (
     <div className="space-y-6" data-testid="revenue-tracking-content">
-      {trust && (
-        <div className="flex justify-end">
-          <DataTrustBadge trust={trust} />
-        </div>
-      )}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">High-level Project Revenue Tracking</CardTitle>

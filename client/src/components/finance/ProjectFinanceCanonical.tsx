@@ -2,9 +2,8 @@
  * ProjectFinanceCanonical — the ONE per-project finance view.
  *
  * Reads ONLY the canonical § 3.3.2 single read path
- * (`GET /api/finance/lines/:projectId`, backed by finance-line-level-repository)
- * plus the canonical reconciliation status
- * (`GET /api/finance/reconciliation/:projectId`). These are the exact figures
+ * (`GET /api/finance/lines/:projectId`, backed by finance-line-level-repository).
+ * These are the exact figures
  * the Finance pages (Revenue / COS / GP) and the Reconciliation board render,
  * so a project shows ONE REV / COS / GP everywhere.
  *
@@ -22,10 +21,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Money } from "@/components/ui/money";
 import { KpiTile } from "@/components/finance/KpiTile";
-import {
-  ReconStatusChip,
-  type ReconDisplayStatus,
-} from "@/components/finance/recon-status";
 import { fetchQueryFn } from "@/lib/queryClient";
 import { formatZar } from "@/lib/currency";
 import { useFinancialYearScope } from "@/hooks/use-financial-year-scope";
@@ -54,11 +49,6 @@ interface FinanceLinesResponse {
   total: ReconRow;
   monthly: ReconRow[];
 }
-interface ReconDetailResponse {
-  status: ReconDisplayStatus;
-  reason: string;
-}
-
 const FOCUS_META: Record<FinanceFocus, { label: string; realised: keyof ReconRow; planned: keyof ReconRow; tone: "positive" | "default" }> = {
   revenue: { label: "Revenue", realised: "realisedRevenue", planned: "plannedRevenue", tone: "positive" },
   cos: { label: "Cost of Sales", realised: "realisedCos", planned: "plannedCos", tone: "default" },
@@ -88,13 +78,6 @@ export function ProjectFinanceCanonical({
     queryFn: fetchQueryFn(`/api/finance/lines/${projectId}${fyQs}`),
     staleTime: 60_000,
   });
-  const reconQuery = useQuery<ReconDetailResponse>({
-    enabled: projectId != null,
-    queryKey: ["/api/finance/reconciliation", projectId],
-    queryFn: fetchQueryFn(`/api/finance/reconciliation/${projectId}`),
-    staleTime: 60_000,
-  });
-
   const total = linesQuery.data?.total ?? null;
   const meta = FOCUS_META[focus];
 
@@ -113,7 +96,6 @@ export function ProjectFinanceCanonical({
     return <p className="text-sm text-red-700 py-8 text-center">Could not load canonical finance for this project.</p>;
   }
 
-  const reconStatus: ReconDisplayStatus = reconQuery.data?.status ?? "unknown";
   const num = (row: ReconRow, key: keyof ReconRow) => (row[key] as number) ?? 0;
 
   return (
@@ -123,10 +105,6 @@ export function ProjectFinanceCanonical({
         <span className="inline-flex items-center gap-1.5 text-xs text-emerald-800">
           <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
           Canonical finance — the single §3.3.2 read path. Identical to the Finance pages and the Reconciliation board.
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="text-[10px] font-medium uppercase text-muted-foreground">Recon</span>
-          <ReconStatusChip status={reconStatus} />
         </span>
       </div>
 

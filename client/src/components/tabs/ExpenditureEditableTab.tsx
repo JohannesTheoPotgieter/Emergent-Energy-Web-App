@@ -1538,7 +1538,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
         </Card>
       )}
 
-      <FinanceTrustStrip source="App actuals + Excel import" lastImportDate={new Date().toISOString()} quickBooksLinkStatus="partial" readOnly={!canAccessEntityAction("financials", "edit")} metrics={[{ label: "Unresolved drift", value: riskSignals.filter(s => s.key.includes("variance")).length, href: `/excel-vs-app/project/${projectId ?? 0}`, tone: "warning", testId: "trust-drift-badge" }, { label: "Manual overrides", value: overridesData.length, href: "/manual-overrides" }, { label: "Missing PO", value: items.filter((e) => !!e.expenseInvoiceNumber && !e.expensePoNumber).length, href: `/project-financial-management?projectId=${projectId ?? 0}`, tone: "critical", testId: "trust-missing-po-badge" }]} />
+      <FinanceTrustStrip source="App actuals + Excel import" lastImportDate={new Date().toISOString()} quickBooksLinkStatus="partial" readOnly={!canAccessEntityAction("financials", "edit")} metrics={[{ label: "Manual overrides", value: overridesData.length, href: "/manual-overrides" }, { label: "Missing PO", value: items.filter((e) => !!e.expenseInvoiceNumber && !e.expensePoNumber).length, href: `/project-financial-management?projectId=${projectId ?? 0}`, tone: "critical", testId: "trust-missing-po-badge" }]} />
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3" data-testid="kpi-summary-strip">
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 sm:p-4 hover:shadow-md transition-shadow">
           <div className="flex items-start gap-3">

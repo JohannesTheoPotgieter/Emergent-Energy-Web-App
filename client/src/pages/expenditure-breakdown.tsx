@@ -28,7 +28,6 @@ import { styleForCell } from "@/lib/tracker-cell-format";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { useFinanceQuery } from "@/lib/finance-trust";
-import { DataTrustBadge } from "@/components/ui/data-trust-badge";
 
 interface ExpenditureBreakdownResponse {
   projectId: number;
@@ -97,7 +96,7 @@ function fmtDate(v: string | null): string {
 }
 
 export function ExpenditureBreakdownContent({ projectId }: { projectId: number }) {
-  const { data, trust, isLoading, isError } = useFinanceQuery<ExpenditureBreakdownResponse>({
+  const { data, isLoading, isError } = useFinanceQuery<ExpenditureBreakdownResponse>({
     queryKey: [`/api/tracker-replica/${projectId}/expenditure-breakdown`],
     url: `/api/tracker-replica/${projectId}/expenditure-breakdown`,
     enabled: Number.isFinite(projectId),
@@ -122,11 +121,6 @@ export function ExpenditureBreakdownContent({ projectId }: { projectId: number }
 
   return (
     <div className="space-y-6" data-testid="expenditure-breakdown-content">
-      {trust && (
-        <div className="flex justify-end">
-          <DataTrustBadge trust={trust} />
-        </div>
-      )}
       <Card>
         <CardContent className="p-4 grid grid-cols-2 gap-6 text-sm">
           <div>
