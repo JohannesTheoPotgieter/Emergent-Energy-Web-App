@@ -21,7 +21,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
-import { CANONICAL_LIFECYCLE_PHASES, TERMINAL_LIFECYCLE_PHASES } from "@shared/schema";
+import { PHASE_LABELS } from "@shared/phases";
 import { EditProjectInfoModal } from "@/components/execution/edit-project-info-modal";
 import type { BoardResult, BoardRow, Rag, EngineeringSummary, QualitySummary } from "@/lib/execution-types";
 import { fmtPct, fmtDate } from "@/lib/execution-types";
@@ -41,11 +41,19 @@ const RAG_COLORS: Record<string, string> = { green: "#16A34A", amber: "#F59E0B",
 
 type PmUser = { id: number; name: string };
 
-// Canonical lifecycle phases — the SAME list the company lifecycle board uses.
-// Editing a phase here writes the canonical project_execution_state.phase via
-// /api/lifecycle-board/projects/:id/phase, so the phase correlates through
-// every lens (board, lifecycle board, project detail).
-const LIFECYCLE_PHASES: string[] = [...CANONICAL_LIFECYCLE_PHASES, ...TERMINAL_LIFECYCLE_PHASES];
+// Canonical lifecycle phases — driven from the SAME source the server validates
+// against (shared/phases PHASE_LABELS, e.g. "Commissioning & QA"), so an inline
+// edit writes a value the /phase endpoint accepts. Editing writes the canonical
+// project_execution_state.phase via /api/lifecycle-board/projects/:id/phase, so
+// the phase correlates through every lens (board, lifecycle board, detail).
+const LIFECYCLE_PHASES: string[] = [...PHASE_LABELS];
+
+/** Map a stored phase (possibly legacy-cased, e.g. "PLANNING") to its canonical label. */
+function canonicalPhaseLabel(phase: string | null): string {
+  if (!phase) return "";
+  const lc = phase.trim().toLowerCase();
+  return LIFECYCLE_PHASES.find((p) => p.toLowerCase() === lc) ?? phase;
+}
 
 // Canonical lifecycle RAG status (GREEN / AMBER / RED) — the same ragStatus the
 // company lifecycle board sets (a comment is required for the audit trail).
@@ -59,9 +67,11 @@ const RAG_STATUS_STYLE: Record<string, { dot: string; text: string; bg: string }
 function PhaseCell({
   row, isAdmin, onSetPhase,
 }: { row: BoardRow; isAdmin: boolean; onSetPhase: (row: BoardRow, phase: string) => void }) {
-  const current = row.phase ?? "";
+  // Normalise the stored value (e.g. legacy "PLANNING") to its canonical label
+  // so the select shows the matching option and never sends a rejected value.
+  const current = canonicalPhaseLabel(row.phase);
   if (!isAdmin) return <span className="text-muted-foreground">{current || "—"}</span>;
-  // Include a legacy value not in the canonical list so the select still shows it.
+  // Include a truly-unknown value as an extra option so the select still shows it.
   const options = !current || LIFECYCLE_PHASES.includes(current) ? LIFECYCLE_PHASES : [current, ...LIFECYCLE_PHASES];
   return (
     <span data-interactive="true" onClick={(e) => e.stopPropagation()}>
