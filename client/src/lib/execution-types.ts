@@ -229,8 +229,9 @@ export interface DeliveryProgramRow {
   label: string;
   date: string | null;
   rag: Rag;
-  source: "milestone" | "procurement";
+  source: "milestone" | "procurement" | "task";
   overdue: boolean;
+  complete: boolean;
 }
 
 export interface AllocationProgramRow {
