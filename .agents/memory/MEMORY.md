@@ -4,3 +4,4 @@
 - [Finance Home revenue source](finance-home-revenue-source.md) — revenue KPI+chart read `/api/revenue-tracker` (ties to Revenue screen, has QB bar); COS/GP stay on `/api/finance/lines`; fail loud on tracker error.
 - [Milestone = integer WBS](milestone-wbs-rule.md) — a plan milestone is ALWAYS a top-level integer WBS ("1","2"); derive at read via shared `isMilestoneWbs`, never trust stored `is_milestone`.
 - [Dev DB is Postgres](dev-db-is-postgres.md) — dev runs PostgreSQL (host helium), NOT SQLite as replit.md claims; assume Postgres in dev.
+- [Drizzle migrate bootstrap probes](drizzle-migrate-bootstrap-probes.md) — every new migration needs a probe in drizzle-bootstrap.ts or its DDL silently never runs on prod; fix drift with a guarded re-assert migration.
