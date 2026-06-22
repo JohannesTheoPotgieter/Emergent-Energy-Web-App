@@ -7,11 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { useToast } from "@/hooks/use-toast";
-import { type AssignableDirectoryEntry, fetchAssignables, getAssigneeBadgeLabel, getAuthHeaders as authHeaders } from "@/lib/assignables";
+import UserPicker from "@/components/UserPicker";
+import { type AssigneeType, getAuthHeaders as authHeaders } from "@/lib/assignables";
 import {
   Upload, FileText, Package, DollarSign, ListChecks,
   ChevronRight, Check, ChevronsUpDown, Loader2,
@@ -91,7 +91,8 @@ function CaptureDeliverableInner({
   const [description, setDescription] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [deliverableType, setDeliverableType] = useState("project_document");
-  const [ownerAssigneeType, setOwnerAssigneeType] = useState<"internal" | "external">("internal");
+  // Owner is stored as a compound "assigneeType:assigneeId" key (internal user
+  // or external counterparty/contact), selected via UserPicker.
   const [ownerAssigneeValue, setOwnerAssigneeValue] = useState<string>("");
   const [itemSearch, setItemSearch] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -110,7 +111,6 @@ function CaptureDeliverableInner({
       setDescription("");
       setFile(null);
       setDeliverableType("project_document");
-      setOwnerAssigneeType("internal");
       setOwnerAssigneeValue("");
       setItemSearch("");
     }
@@ -145,13 +145,6 @@ function CaptureDeliverableInner({
     staleTime: 30_000,
   });
 
-  const { data: assignables = [] } = useQuery<AssignableDirectoryEntry[]>({
-    queryKey: ["deliverable-assignables"],
-    queryFn: async () => fetchAssignables("deliverable"),
-    enabled: open,
-    staleTime: 60_000,
-  });
-
   const { data: linkedFolder } = useQuery<{ folderName?: string; folderPath?: string } | null>({
     queryKey: ["user-project-folder", selectedProjectName],
     queryFn: async () => {
@@ -174,10 +167,10 @@ function CaptureDeliverableInner({
       formData.append("title", title);
       formData.append("deliverableType", deliverableType);
       if (ownerAssigneeValue) {
-        const selectedAssignee = assignables.find((entry) => `${entry.assigneeType}:${entry.assigneeId}` === ownerAssigneeValue);
-        if (selectedAssignee) {
-          formData.append("ownerAssigneeType", selectedAssignee.assigneeType);
-          formData.append("ownerAssigneeId", String(selectedAssignee.assigneeId));
+        const [aType, aId] = ownerAssigneeValue.split(":");
+        if (aType && aId) {
+          formData.append("ownerAssigneeType", aType);
+          formData.append("ownerAssigneeId", aId);
         }
       }
       if (description) formData.append("description", description);
@@ -267,12 +260,6 @@ function CaptureDeliverableInner({
   );
 
   const canSubmit = !!selectedProjectId && !!title && !!file;
-  const ownerAssignableOptions = assignables
-    .filter((entry) => ownerAssigneeType === "internal" ? entry.assigneeType === "internal_user" : entry.assigneeType !== "internal_user")
-    .map((entry) => ({
-      value: `${entry.assigneeType}:${entry.assigneeId}`,
-      label: `${entry.displayLabel}${entry.secondaryLabel ? ` | ${entry.secondaryLabel}` : ""} | ${getAssigneeBadgeLabel(entry.assigneeType)}`,
-    }));
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -631,39 +618,14 @@ function CaptureDeliverableInner({
               </div>
               <div>
                 <Label className="text-xs">Assign To</Label>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-1">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={ownerAssigneeType === "internal" ? "default" : "outline"}
-                      className="h-7 text-xs"
-                      onClick={() => {
-                        setOwnerAssigneeType("internal");
-                        setOwnerAssigneeValue("");
-                      }}
-                    >
-                      Internal
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={ownerAssigneeType === "external" ? "default" : "outline"}
-                      className="h-7 text-xs"
-                      onClick={() => {
-                        setOwnerAssigneeType("external");
-                        setOwnerAssigneeValue("");
-                      }}
-                    >
-                      External
-                    </Button>
-                  </div>
-                  <SearchableSelect
-                    value={ownerAssigneeValue}
-                    onValueChange={setOwnerAssigneeValue}
-                    placeholder={ownerAssigneeType === "internal" ? "Select internal owner..." : "Select counterparty or contact..."}
+                <div className="mt-1">
+                  <UserPicker
+                    value={ownerAssigneeValue ? Number(ownerAssigneeValue.split(":")[1]) : null}
+                    valueType={(ownerAssigneeValue.split(":")[0] || "internal_user") as AssigneeType}
+                    onValueChange={(id, _name, type) => setOwnerAssigneeValue(id != null ? `${type ?? "internal_user"}:${id}` : "")}
+                    placeholder="Select owner…"
+                    label="Assign to"
                     data-testid="select-owner-user"
-                    options={ownerAssignableOptions}
                   />
                 </div>
               </div>
