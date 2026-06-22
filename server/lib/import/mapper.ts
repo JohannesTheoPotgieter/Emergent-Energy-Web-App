@@ -236,3 +236,16 @@ export function mapColumns(
     layoutVariant: detectedSection.layoutVariant,
   };
 }
+
+/**
+ * True when a PLAN section captured the expected-% column but NOT the actual-%
+ * ("Status" / `pct_complete`) column. That asymmetry silently imports every
+ * task at 0% actual (pct_complete defaults to 0) while expected % looks fine —
+ * the exact footgun behind a real schedule rendering as "no progress". Used to
+ * raise a FLAG-NEVER-SKIP warning so the operator maps the Status column.
+ */
+export function planActualPctGap(planMapping: MappingResult | undefined): boolean {
+  if (!planMapping || planMapping.section !== "PLAN") return false;
+  const has = (field: string) => planMapping.mappings.some((m) => m.canonicalField === field);
+  return has("expected_pct") && !has("pct_complete");
+}
