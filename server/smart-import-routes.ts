@@ -273,20 +273,6 @@ async function pruneOldImportRuns(projectName: string, currentRunId: number): Pr
   }
 }
 
-function formatImportIssueForCommit(issue: any) {
-  const payload = issue?.payloadJson && typeof issue.payloadJson === "object" ? issue.payloadJson as Record<string, any> : {};
-  return {
-    id: issue.id,
-    section: issue.section,
-    message: issue.message,
-    issueType: issue.issueType || null,
-    rowReference: payload.rowNumber ?? payload.row ?? payload.sourceRow ?? payload.lineNumber ?? null,
-    field: payload.field ?? payload.column ?? payload.canonicalField ?? payload.header ?? null,
-    reason: payload.reason ?? payload.errorReason ?? issue.suggestedAction ?? null,
-    expected: payload.expected ?? payload.expectedType ?? payload.expectedValue ?? null,
-  };
-}
-
 const router = Router();
 
 const upload = multer({
@@ -2326,13 +2312,27 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       .from(importIssues)
       .where(eq(importIssues.importRunId, runId));
 
-    const unresolvedBlockers = issues.filter((i: any) => i.severity === "BLOCKER" && !i.resolved);
-    if (unresolvedBlockers.length > 0) {
-      return res.status(400).json({
-        error: "unresolved_blockers",
-        message: "Unresolved blocker issues must be resolved before committing.",
-        unresolvedBlockers: unresolvedBlockers.map((issue: any) => formatImportIssueForCommit(issue)),
-      });
+    // Owner decision 2026-06-22: import the workbook AS IS — the commit is NEVER
+    // gated on blocker issues. New imports no longer emit blockers (the former
+    // missing-amount / missing-invoice-date blockers are advisory warnings now),
+    // but a legacy/stale BLOCKER row from an older upload of the same run would
+    // still trip the old gate. Auto-clear any such rows so they neither block
+    // the commit nor linger on the confirm screen, then proceed.
+    const staleBlockerIds = issues
+      .filter((i: any) => i.severity === "BLOCKER" && !i.resolved)
+      .map((i: any) => i.id);
+    if (staleBlockerIds.length > 0) {
+      await db
+        .update(importIssues)
+        .set({
+          resolved: true,
+          resolution: "ALLOW_ALL",
+          resolutionNote: "Auto-cleared — import-as-is (owner decision 2026-06-22); blockers are non-gating.",
+          resolvedBy: (req as any).user?.id || null,
+          resolvedAt: new Date(),
+          autoResolved: true,
+        })
+        .where(inArray(importIssues.id, staleBlockerIds));
     }
 
     const summary = run.summaryJson as any;
@@ -3676,9 +3676,8 @@ router.post("/api/smart-import/bulk-commit", requireAuth, requirePermission("sma
           continue;
         }
 
-        // Auto-resolve unresolved non-blocker issues by ignoring them
+        // Auto-resolve every unresolved issue (import-as-is) by ignoring it.
         const allIssues = await db.select().from(importIssues).where(eq(importIssues.importRunId, run.id));
-        const unresolvedBlockers = allIssues.filter((i: any) => i.severity === "BLOCKER" && !i.resolved);
 
         // Auto-apply prior resolutions to unresolved issues
         const unresolvedIssues = allIssues.filter((i: any) => !i.resolved);
@@ -3709,12 +3708,16 @@ router.post("/api/smart-import/bulk-commit", requireAuth, requirePermission("sma
                   matchedRuleId: rule.id,
                 })
                 .where(eq(importIssues.id, issue.id));
-            } else if (issue.severity !== "BLOCKER") {
+            } else {
+              // Owner decision 2026-06-22: import the workbook AS IS — auto-allow
+              // EVERY remaining issue, including any legacy/stale blocker, so a
+              // bulk ("folder") commit is never gated. New imports no longer emit
+              // blockers; this clears older ones too.
               await db.update(importIssues)
                 .set({
                   resolved: true,
                   resolution: "ALLOW_ALL",
-                  resolutionNote: "Auto-allowed during bulk commit",
+                  resolutionNote: "Auto-allowed during bulk commit (import-as-is, owner decision 2026-06-22)",
                   resolvedBy: userId,
                   resolvedAt: new Date(),
                   autoResolved: true,
@@ -3724,20 +3727,9 @@ router.post("/api/smart-import/bulk-commit", requireAuth, requirePermission("sma
           }
         }
 
-        // Re-check for unresolved blockers after auto-resolution
-        const remainingIssues = await db.select().from(importIssues)
-          .where(and(eq(importIssues.importRunId, run.id), eq(importIssues.resolved, false)));
-        const remainingBlockers = remainingIssues.filter((i: any) => i.severity === "BLOCKER");
-
-        if (remainingBlockers.length > 0) {
-          results.push({
-            runId: run.id,
-            projectName: run.projectName,
-            status: "skipped",
-            error: `${remainingBlockers.length} unresolved blocker issue(s)`,
-          });
-          continue;
-        }
+        // Import-as-is (owner decision 2026-06-22): the bulk commit is never
+        // gated on blocker issues — every issue was auto-allowed above, so we
+        // proceed straight to the commit.
 
         const commitHeaders: Record<string, string> = { "Content-Type": "application/json" };
         if (req.headers.authorization) commitHeaders["Authorization"] = req.headers.authorization as string;
