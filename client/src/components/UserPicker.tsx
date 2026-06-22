@@ -45,6 +45,12 @@ interface UserPickerProps {
   label?: string;
   className?: string;
   "data-testid"?: string;
+  /**
+   * Lock the picker to one directory and hide the Team/External toggle.
+   * Use "internal" for fields that store a user id (FK to users), and
+   * "external" for fields that store a counterparty id. Omit to show both.
+   */
+  restrictTo?: "internal" | "external";
 }
 
 /**
@@ -62,10 +68,11 @@ export default function UserPicker({
   label,
   className,
   "data-testid": testId,
+  restrictTo,
 }: UserPickerProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [directoryMode, setDirectoryMode] = useState<"internal" | "external">("internal");
+  const [directoryMode, setDirectoryMode] = useState<"internal" | "external">(restrictTo ?? "internal");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { data: assignables = [] } = useQuery<AssignableDirectoryEntry[]>({
@@ -160,14 +167,16 @@ export default function UserPicker({
         <PopoverContent className="w-80 p-0" align="start" side="bottom">
           <div className="px-3 pt-3 pb-2 border-b border-border/60">
             <p className="text-xs font-semibold text-foreground mb-2">{label || "Select user"}</p>
-            <div className="flex items-center gap-1 mb-2">
-              <Button size="sm" variant={directoryMode === "internal" ? "default" : "outline"} className="h-7 text-xs flex-1" onClick={() => setDirectoryMode("internal")}>
-                <User className="h-3 w-3 mr-1" />Team
-              </Button>
-              <Button size="sm" variant={directoryMode === "external" ? "default" : "outline"} className="h-7 text-xs flex-1" onClick={() => setDirectoryMode("external")}>
-                <Building2 className="h-3 w-3 mr-1" />External
-              </Button>
-            </div>
+            {!restrictTo && (
+              <div className="flex items-center gap-1 mb-2">
+                <Button size="sm" variant={directoryMode === "internal" ? "default" : "outline"} className="h-7 text-xs flex-1" onClick={() => setDirectoryMode("internal")}>
+                  <User className="h-3 w-3 mr-1" />Team
+                </Button>
+                <Button size="sm" variant={directoryMode === "external" ? "default" : "outline"} className="h-7 text-xs flex-1" onClick={() => setDirectoryMode("external")}>
+                  <Building2 className="h-3 w-3 mr-1" />External
+                </Button>
+              </div>
+            )}
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
               <Input

@@ -266,6 +266,7 @@ export function AllocateDialog({
                 <UserPicker
                   value={counterpartyId ? Number(counterpartyId) : null}
                   valueType="external_counterparty"
+                  restrictTo="external"
                   onValueChange={(id) => setCounterpartyId(id != null ? String(id) : "")}
                   placeholder="Select counterparty…"
                   label="Allocate to"
