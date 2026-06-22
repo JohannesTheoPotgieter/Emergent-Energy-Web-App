@@ -161,6 +161,17 @@ function todayIso(now: Date): string {
 const PAID_REVENUE = new Set(["paid", "in_bank", "realised"]);
 const FLAGGED_REVENUE = new Set(["disputed", "written_off"]);
 
+// An inflow (revenue milestone) is "open" until it is settled — paid / in bank /
+// realised — or written off. A "disputed" line is still open (money expected).
+const SETTLED_REVENUE = new Set(["paid", "in_bank", "realised", "written_off"]);
+// An outflow (cost line) is "open" until it is paid.
+function hasOpenInflow(rows: RevenueMilestoneRow[]): boolean {
+  return rows.some((r) => !SETTLED_REVENUE.has(r.status));
+}
+function hasOpenOutflow(rows: CostLineRow[]): boolean {
+  return rows.some((r) => r.status !== "paid");
+}
+
 /** Inflow state from the revenue-line status + expected payment date. */
 function inflowState(status: string, expectedDate: string | null, today: string): FlowState {
   if (FLAGGED_REVENUE.has(status)) return "flagged";
@@ -428,6 +439,9 @@ export async function getMilestoneProgram(now: Date = new Date()): Promise<Miles
       tcLinks: tcByP.get(p.id) ?? [],
     };
     if (bundle.milestones.length === 0) continue; // no revenue milestones → not on the tracker
+    // Only surface projects that still have open (unsettled / non-black) money —
+    // an open inflow to collect or an open outflow to pay.
+    if (!hasOpenInflow(bundle.milestones) && !hasOpenOutflow(bundle.costs)) continue;
     const views = buildMilestones(p.id, p.projectName, bundle, today);
 
     const inflowTotal = views.reduce((s, m) => s + (m.amount ?? 0), 0);

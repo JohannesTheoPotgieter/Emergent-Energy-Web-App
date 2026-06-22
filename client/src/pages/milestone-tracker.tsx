@@ -8,9 +8,6 @@ import {
   ArrowLeft, AlertTriangle, TrendingUp, TrendingDown, CheckCircle2,
   ChevronLeft, ChevronRight, ListChecks, X,
 } from "lucide-react";
-import {
-  ResponsiveContainer, ComposedChart, Bar, XAxis, YAxis, Tooltip as RTooltip, ReferenceLine,
-} from "recharts";
 import { PageShell } from "@/components/layout/page-shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,7 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useApiMutation } from "@/hooks/use-api-mutation";
 import { apiRequest } from "@/lib/queryClient";
-import { fmtDate } from "@/lib/execution-types";
+import { fmtDate, parseExecDate } from "@/lib/execution-types";
 import {
   type MilestoneProgram, type ProjectMilestoneDetail, type MilestoneView,
   type LinkedTaskView, type CalendarEvent, type FlowState, type TaskState,
@@ -60,71 +57,6 @@ function Kpi({ label, value, tone, accent }: { label: string; value: string | nu
         <div className={`text-xl font-semibold tabular-nums ${tone ?? ""}`}>{value}</div>
       </CardContent>
     </Card>
-  );
-}
-
-// ──────────────────────────── cashflow timeline + GP ─────────────────────────
-
-const abbr = (v: number): string => {
-  const a = Math.abs(v);
-  if (a >= 1e6) return `${(v / 1e6).toFixed(1)}m`;
-  if (a >= 1e3) return `${Math.round(v / 1e3)}k`;
-  return String(Math.round(v));
-};
-
-function CashflowTimeline({ calendar, inflowTotal, outflowTotal }: { calendar: CalendarEvent[]; inflowTotal: number; outflowTotal: number }) {
-  const gp = inflowTotal - outflowTotal;
-  const gpPct = inflowTotal > 0 ? (gp / inflowTotal) * 100 : null;
-  const monthly = useMemo(() => {
-    const m = new Map<string, { in: number; out: number }>();
-    for (const e of calendar) {
-      if (e.kind === "task" || e.amount == null) continue;
-      const month = e.date.slice(0, 7); // yyyy-mm
-      const b = m.get(month) ?? { in: 0, out: 0 };
-      if (e.kind === "inflow") b.in += e.amount; else b.out += e.amount;
-      m.set(month, b);
-    }
-    return [...m.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([month, v]) => ({
-        month: format(new Date(`${month}-01T00:00:00`), "MMM yy"),
-        in: Math.round(v.in),
-        out: -Math.round(v.out), // negative → draws below the zero line
-      }));
-  }, [calendar]);
-
-  return (
-    <Card data-testid="cashflow-timeline"><CardContent className="p-3">
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
-        <div className="shrink-0 sm:w-44">
-          <div className="text-xs text-muted-foreground">Gross profit · inflow − outflow</div>
-          <div className={`text-2xl font-semibold tabular-nums ${gp >= 0 ? "text-emerald-600" : "text-red-600"}`} data-testid="cashflow-gp">{money(gp)}</div>
-          <div className="text-[11px] text-muted-foreground">
-            <span className="text-emerald-600">{money(inflowTotal)} in</span> · <span className="text-red-600">{money(outflowTotal)} out</span>
-            {gpPct != null ? <> · {Math.round(gpPct)}% GP</> : null}
-          </div>
-        </div>
-        <div className="flex-1 h-[120px] min-w-0 w-full">
-          {monthly.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-xs text-muted-foreground">No dated cashflow yet</div>
-          ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={monthly} margin={{ top: 6, right: 4, left: -10, bottom: 0 }}>
-                <XAxis dataKey="month" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval={0} />
-                <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={34} tickFormatter={abbr} />
-                <ReferenceLine y={0} stroke="#cbd5e1" />
-                <RTooltip
-                  cursor={{ fill: "rgba(0,0,0,0.04)" }}
-                  formatter={(value: number | string, name: string) => [money(Math.abs(Number(value))), name]}
-                />
-                <Bar dataKey="in" name="Money in" fill="#16A34A" radius={[2, 2, 0, 0]} />
-                <Bar dataKey="out" name="Money out" fill="#DC2626" radius={[0, 0, 2, 2]} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </div>
-    </CardContent></Card>
   );
 }
 
@@ -256,6 +188,68 @@ function TaskRow({ m, t, detail, h }: { m: MilestoneView; t: LinkedTaskView; det
   );
 }
 
+/**
+ * Per-milestone money KPI: GP = connected inflow − connected outflows, plus the
+ * payment-timing gap. Timing is the amount-weighted average outflow payment
+ * date minus the inflow payment date, in days: a PLUS means the inflow lands
+ * first (cash-positive), a MINUS means the outflows are paid before the inflow
+ * (you fund the work first).
+ */
+function MilestoneGp({ m }: { m: MilestoneView }) {
+  const inflow = m.amount ?? 0;
+  const outflow = m.outflowTotal;
+  const gp = inflow - outflow;
+  const gpPct = inflow > 0 ? (gp / inflow) * 100 : null;
+
+  const timingDays = useMemo(() => {
+    const inD = parseExecDate(m.expectedPaymentDate ?? m.paidDate);
+    if (!inD) return null;
+    let wsum = 0, dsum = 0;
+    for (const o of m.outflows) {
+      const d = parseExecDate(o.forecastPaymentDate ?? o.paidDate ?? o.invoiceDate);
+      const amt = o.amount ?? 0;
+      if (d && amt > 0) { wsum += amt; dsum += d.getTime() * amt; }
+    }
+    if (wsum === 0) return null;
+    return Math.round((dsum / wsum - inD.getTime()) / 86_400_000);
+  }, [m]);
+
+  const outW = inflow > 0 ? Math.min(100, Math.max(0, (outflow / inflow) * 100)) : (outflow > 0 ? 100 : 0);
+
+  return (
+    <div className="rounded-md border bg-muted/20 px-2.5 py-2 space-y-1.5 text-left" data-testid={`milestone-gp-${m.rowHash}`}>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-[11px] text-muted-foreground">Gross profit</span>
+        <span>
+          <span className={`text-sm font-semibold tabular-nums ${gp >= 0 ? "text-emerald-600" : "text-red-600"}`} data-testid={`gp-amount-${m.rowHash}`}>{money(gp)}</span>
+          {gpPct != null && <span className="text-[11px] text-muted-foreground"> · {Math.round(gpPct)}%</span>}
+        </span>
+      </div>
+      <div className="h-1.5 rounded-full bg-muted overflow-hidden flex" title={`${money(inflow)} in · ${money(outflow)} out`}>
+        <div className="h-full bg-red-500" style={{ width: `${outW}%` }} />
+        <div className="h-full bg-emerald-500" style={{ width: `${100 - outW}%` }} />
+      </div>
+      <div className="flex items-center justify-between text-[10px]">
+        <span className="text-emerald-600">{money(inflow)} in</span>
+        <span className="text-red-600">{money(outflow)} out</span>
+      </div>
+      {timingDays != null && (
+        <div className="flex items-center justify-between gap-2 pt-1 border-t">
+          <span className="text-[11px] text-muted-foreground">Payment timing</span>
+          <span
+            className={`inline-flex items-baseline gap-1 text-xs font-semibold tabular-nums ${timingDays >= 0 ? "text-emerald-600" : "text-red-600"}`}
+            title={timingDays >= 0 ? "Inflow lands before the outflows (cash-positive)" : "Outflows are paid before the inflow (you fund the work first)"}
+            data-testid={`gp-timing-${m.rowHash}`}
+          >
+            {timingDays >= 0 ? `+${timingDays}d` : `${timingDays}d`}
+            <span className="text-[10px] font-normal text-muted-foreground">{timingDays >= 0 ? "in first" : "out first"}</span>
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MilestoneCard({ m, detail, h }: { m: MilestoneView; detail: ProjectMilestoneDetail; h: LinkHandlers }) {
   const linkedTaskIds = new Set(m.tasks.map((t) => t.id));
   const taskOptions = detail.availableTasks
@@ -274,9 +268,9 @@ function MilestoneCard({ m, detail, h }: { m: MilestoneView; detail: ProjectMile
               Expected payment {fmtDate(m.expectedPaymentDate)}{m.invoiceNumber ? ` · inv ${m.invoiceNumber}` : ""}
             </div>
           </div>
-          <div className="ml-auto text-right">
-            <div className="text-sm font-semibold tabular-nums">{money(m.amount)}</div>
-            <div className="text-[11px] text-muted-foreground">outflow {money(m.outflowTotal)}</div>
+          <div className="ml-auto w-full sm:w-60 shrink-0 space-y-1.5">
+            <div className="text-right text-sm font-semibold tabular-nums">{money(m.amount)}</div>
+            <MilestoneGp m={m} />
           </div>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -376,10 +370,6 @@ function ProjectWorkspace({ projectId, onBack }: { projectId: number; onBack: ()
             <Kpi label="Gaps" value={data.summary.gapCount} tone={data.summary.gapCount > 0 ? "text-amber-600" : ""} accent="bg-amber-500" />
           </div>
 
-          <div className="mt-3">
-            <CashflowTimeline calendar={data.calendar} inflowTotal={data.summary.inflowTotal} outflowTotal={data.summary.outflowTotal} />
-          </div>
-
           <div className="flex items-center gap-2 mt-4">
             <Button size="sm" variant={view === "list" ? "default" : "outline"} onClick={() => setView("list")} data-testid="milestone-view-list">Milestones</Button>
             <Button size="sm" variant={view === "calendar" ? "default" : "outline"} onClick={() => setView("calendar")} data-testid="milestone-view-calendar">Calendar</Button>
@@ -431,10 +421,6 @@ function ProgramOverview({ onOpen }: { onOpen: (id: number) => void }) {
             <Kpi label="Linked outflow" value={money(data.header.outflowTotal)} accent="bg-red-500" />
             <Kpi label="Ready to invoice" value={data.header.readyToInvoiceCount} tone={data.header.readyToInvoiceCount > 0 ? "text-emerald-600" : ""} accent="bg-emerald-500" />
             <Kpi label="Gaps" value={data.header.gapCount} tone={data.header.gapCount > 0 ? "text-amber-600" : ""} accent="bg-amber-500" />
-          </div>
-
-          <div className="mt-3">
-            <CashflowTimeline calendar={data.calendar} inflowTotal={data.header.inflowTotal} outflowTotal={data.header.outflowTotal} />
           </div>
 
           <div className="flex items-center gap-2 mt-4">
