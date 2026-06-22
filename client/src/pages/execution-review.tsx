@@ -1,10 +1,10 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { ArrowDown, ArrowUp, ArrowUpDown, Download, Pencil } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronsUpDown, Download, ListFilter, Pencil } from "lucide-react";
 import { useApiMutation } from "@/hooks/use-api-mutation";
 import {
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell,
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, LabelList,
 } from "recharts";
 import { PageShell } from "@/components/layout/page-shell";
 import { PageHeader } from "@/components/ui/page-header";
@@ -29,12 +29,27 @@ import { fmtPct, fmtDate, parseExecDate } from "@/lib/execution-types";
 
 interface Filters {
   search: string;
-  phase: string;
+  phases: string[];
   rag: string;
   pm: string;
   hasFlags: boolean;
 }
-const DEFAULT_FILTERS: Filters = { search: "", phase: "all", rag: "all", pm: "all", hasFlags: false };
+const DEFAULT_FILTERS: Filters = { search: "", phases: [], rag: "all", pm: "all", hasFlags: false };
+
+/** Load persisted filters, tolerating the pre-multiselect `phase: string` shape. */
+function loadFilters(): Filters {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    const merged = { ...DEFAULT_FILTERS, ...(raw ? JSON.parse(raw) : {}) } as Filters & { phase?: string };
+    if (!Array.isArray(merged.phases)) merged.phases = [];
+    // Migrate a single legacy `phase` value (anything but the old "all" sentinel).
+    if (merged.phase && merged.phase !== "all" && merged.phases.length === 0) merged.phases = [merged.phase];
+    delete merged.phase;
+    return merged;
+  } catch {
+    return { ...DEFAULT_FILTERS };
+  }
+}
 const LS_KEY = "execution-board-filters";
 const LS_GROUP = "execution-board-group-by-pm";
 
@@ -153,16 +168,17 @@ function RagStatusCell({
   );
 }
 
-function Kpi({ label, value, tone, onClick, active }: { label: string; value: string | number; tone?: string; onClick?: () => void; active?: boolean }) {
+function Kpi({ label, value, tone, onClick, active, accent }: { label: string; value: string | number; tone?: string; onClick?: () => void; active?: boolean; accent?: string }) {
   return (
     <Card
-      className={`${onClick ? "cursor-pointer hover:border-emerald-400" : ""} ${active ? "border-emerald-500 ring-1 ring-emerald-500" : ""}`}
+      className={`relative overflow-hidden transition-colors ${onClick ? "cursor-pointer hover:border-emerald-400 hover:shadow-sm" : ""} ${active ? "border-emerald-500 ring-1 ring-emerald-500" : ""}`}
       onClick={onClick}
       data-testid={`execution-kpi-${label.toLowerCase().replace(/[^a-z]+/g, "-")}`}
     >
-      <CardContent className="p-3">
+      {accent && <span className={`absolute left-0 top-0 h-full w-1 ${accent}`} aria-hidden />}
+      <CardContent className="p-3 pl-4">
         <div className="text-xs text-muted-foreground">{label}</div>
-        <div className={`text-2xl font-semibold ${tone ?? ""}`}>{value}</div>
+        <div className={`text-2xl font-semibold tabular-nums ${tone ?? ""}`}>{value}</div>
       </CardContent>
     </Card>
   );
@@ -266,6 +282,74 @@ function TableRow({ row, columns, onOpen }: { row: BoardRow; columns: Col[]; onO
   );
 }
 
+/** Multi-select phase filter — checkbox popover with search. Empty = all phases. */
+function PhaseMultiSelect({ options, selected, onChange }: {
+  options: string[]; selected: string[]; onChange: (next: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const matches = options.filter((o) => o.toLowerCase().includes(q.toLowerCase()));
+  const toggle = (p: string) => onChange(selected.includes(p) ? selected.filter((x) => x !== p) : [...selected, p]);
+  const label = selected.length === 0 ? "All phases" : selected.length === 1 ? selected[0] : `${selected.length} phases`;
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className="w-44 h-9 justify-between font-normal" data-testid="execution-phase-filter">
+          <span className="inline-flex items-center gap-1.5 truncate">
+            <ListFilter className="h-3.5 w-3.5 shrink-0 opacity-60" />
+            <span className="truncate">{label}</span>
+          </span>
+          <span className="inline-flex items-center gap-1 shrink-0">
+            {selected.length > 0 && <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">{selected.length}</Badge>}
+            <ChevronsUpDown className="h-3.5 w-3.5 opacity-50" />
+          </span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-60 p-0" align="start">
+        <div className="p-2 border-b">
+          <Input className="h-8 text-xs" placeholder="Search phases…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="execution-phase-search" />
+        </div>
+        <div className="max-h-64 overflow-y-auto p-1">
+          <button
+            className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs hover:bg-muted/60 text-muted-foreground"
+            onClick={() => onChange([])}
+            data-testid="execution-phase-all"
+          >
+            <span className={`flex items-center justify-center w-4 h-4 rounded border ${selected.length === 0 ? "bg-emerald-600 border-emerald-600 text-white" : "border-input"}`}>
+              {selected.length === 0 && <Check className="h-3 w-3" />}
+            </span>
+            All phases
+          </button>
+          {matches.map((p) => {
+            const on = selected.includes(p);
+            return (
+              <button
+                key={p}
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs hover:bg-muted/60 text-left"
+                onClick={() => toggle(p)}
+                data-testid={`execution-phase-opt-${p}`}
+              >
+                <span className={`flex items-center justify-center w-4 h-4 shrink-0 rounded border ${on ? "bg-emerald-600 border-emerald-600 text-white" : "border-input"}`}>
+                  {on && <Check className="h-3 w-3" />}
+                </span>
+                <span className="truncate">{p}</span>
+              </button>
+            );
+          })}
+          {matches.length === 0 && <p className="px-2 py-3 text-xs text-muted-foreground text-center">No phases found</p>}
+        </div>
+        {selected.length > 0 && (
+          <div className="p-1 border-t">
+            <button className="w-full text-xs text-muted-foreground hover:text-foreground py-1.5 rounded hover:bg-muted/60" onClick={() => onChange([])} data-testid="execution-phase-clear">
+              Clear selection
+            </button>
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export default function ExecutionReviewBoard() {
   const [, navigate] = useLocation();
   const { isAdmin } = useAuth();
@@ -308,12 +392,7 @@ export default function ExecutionReviewBoard() {
 
   const handleExport = () => { window.location.href = "/api/export/projects-summary"; };
 
-  const [filters, setFilters] = useState<Filters>(() => {
-    try {
-      const raw = localStorage.getItem(LS_KEY);
-      return raw ? { ...DEFAULT_FILTERS, ...JSON.parse(raw) } : DEFAULT_FILTERS;
-    } catch { return DEFAULT_FILTERS; }
-  });
+  const [filters, setFilters] = useState<Filters>(loadFilters);
   const [groupByPm, setGroupByPm] = useState<boolean>(() => localStorage.getItem(LS_GROUP) === "1");
   useEffect(() => { localStorage.setItem(LS_KEY, JSON.stringify(filters)); }, [filters]);
   useEffect(() => { localStorage.setItem(LS_GROUP, groupByPm ? "1" : "0"); }, [groupByPm]);
@@ -405,15 +484,21 @@ export default function ExecutionReviewBoard() {
       { key: "none", name: "No plan", value: none },
     ];
   }, [data, rows.length]);
+  const ragTotal = useMemo(() => ragData.reduce((s, d) => s + d.value, 0), [ragData]);
 
   const filtered = useMemo(() => rows.filter((r) => {
     if (filters.search && !r.projectName.toLowerCase().includes(filters.search.toLowerCase())) return false;
-    if (filters.phase !== "all" && r.phase !== filters.phase) return false;
+    if (filters.phases.length > 0 && !filters.phases.includes(r.phase ?? "—")) return false;
     if (filters.rag !== "all" && r.schedule.rag !== filters.rag) return false;
     if (filters.pm !== "all" && r.pmName !== filters.pm) return false;
     if (filters.hasFlags && r.flags.open + r.flags.flagged === 0) return false;
     return true;
   }), [rows, filters]);
+
+  const togglePhase = (p: string) =>
+    setFilters((f) => ({ ...f, phases: f.phases.includes(p) ? f.phases.filter((x) => x !== p) : [...f.phases, p] }));
+  const toggleSchedRag = (rag: string) =>
+    setFilters((f) => ({ ...f, rag: f.rag === rag ? "all" : rag }));
 
   const sorted = useMemo(() => {
     if (!sort.key) return filtered;
@@ -442,14 +527,14 @@ export default function ExecutionReviewBoard() {
       {/* KPI strip — clickable tiles cross-filter the table */}
       {h && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
-          <Kpi label="Active sites" value={h.activeCount} onClick={() => setFilters({ ...DEFAULT_FILTERS })} />
-          <Kpi label="Behind (red)" value={h.ragRed} tone={h.ragRed > 0 ? "text-red-600" : ""} active={filters.rag === "red"}
+          <Kpi label="Active sites" value={h.activeCount} accent="bg-emerald-500" onClick={() => setFilters({ ...DEFAULT_FILTERS })} />
+          <Kpi label="Behind (red)" value={h.ragRed} tone={h.ragRed > 0 ? "text-red-600" : ""} accent="bg-red-500" active={filters.rag === "red"}
             onClick={() => setFilters((f) => ({ ...f, rag: f.rag === "red" ? "all" : "red" }))} />
-          <Kpi label="Overdue deliveries" value={h.overdueDeliveries} tone={h.overdueDeliveries > 0 ? "text-amber-600" : ""}
+          <Kpi label="Overdue deliveries" value={h.overdueDeliveries} tone={h.overdueDeliveries > 0 ? "text-amber-600" : ""} accent="bg-amber-500"
             onClick={() => navigate("/execution/deliveries")} />
-          <Kpi label="Open flags" value={h.openFlags} active={filters.hasFlags}
+          <Kpi label="Open flags" value={h.openFlags} accent="bg-slate-400" active={filters.hasFlags}
             onClick={() => setFilters((f) => ({ ...f, hasFlags: !f.hasFlags }))} />
-          <Kpi label="Prog actual/exp" value={`${fmtPct(h.weightedActual)}/${fmtPct(h.weightedExpected)}`} />
+          <Kpi label="Prog actual/exp" value={`${fmtPct(h.weightedActual)}/${fmtPct(h.weightedExpected)}`} accent="bg-emerald-500" />
         </div>
       )}
 
@@ -457,37 +542,83 @@ export default function ExecutionReviewBoard() {
       {!isLoading && !isError && rows.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mt-3">
           <Card>
-            <CardHeader className="pb-1"><CardTitle className="text-sm">Sites by phase</CardTitle></CardHeader>
+            <CardHeader className="pb-1 flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-sm">Sites by phase</CardTitle>
+              <span className="text-[10px] text-muted-foreground">click a bar to filter</span>
+            </CardHeader>
             <CardContent className="h-[200px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={byPhaseData} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+                <BarChart data={byPhaseData} margin={{ top: 14, right: 8, left: -16, bottom: 0 }}>
                   <XAxis dataKey="phase" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval={0} angle={-20} textAnchor="end" height={48} />
                   <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} allowDecimals={false} width={28} />
                   <Tooltip cursor={{ fill: "rgba(0,0,0,0.04)" }} />
-                  <Bar dataKey="count" name="Sites" fill="#16A34A" radius={[3, 3, 0, 0]} />
+                  <Bar
+                    dataKey="count"
+                    name="Sites"
+                    radius={[3, 3, 0, 0]}
+                    cursor="pointer"
+                    onClick={(d) => { const p = (d as { phase?: string }).phase; if (p) togglePhase(p); }}
+                  >
+                    {byPhaseData.map((d) => {
+                      const active = filters.phases.length === 0 || filters.phases.includes(d.phase);
+                      return <Cell key={d.phase} fill={active ? "#16A34A" : "#D1FAE5"} />;
+                    })}
+                    <LabelList dataKey="count" position="top" fontSize={10} fill="#64748b" />
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader className="pb-1"><CardTitle className="text-sm">Schedule RAG</CardTitle></CardHeader>
-            <CardContent className="h-[200px] flex items-center">
-              <ResponsiveContainer width="60%" height="100%">
-                <PieChart>
-                  <Pie data={ragData} dataKey="value" nameKey="name" innerRadius={42} outerRadius={70} paddingAngle={2}>
-                    {ragData.map((d) => <Cell key={d.key} fill={RAG_COLORS[d.key]} />)}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-              <ul className="text-xs space-y-1 flex-1">
-                {ragData.map((d) => (
-                  <li key={d.key} className="flex items-center gap-1.5">
-                    <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: RAG_COLORS[d.key] }} />
-                    {d.name} <span className="ml-auto tabular-nums font-medium">{d.value}</span>
-                  </li>
-                ))}
+            <CardHeader className="pb-1 flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-sm">Schedule RAG</CardTitle>
+              <span className="text-[10px] text-muted-foreground">click to filter</span>
+            </CardHeader>
+            <CardContent className="h-[200px] flex items-center gap-2">
+              <div className="relative h-full" style={{ width: "55%" }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={ragData}
+                      dataKey="value"
+                      nameKey="name"
+                      innerRadius={46}
+                      outerRadius={72}
+                      paddingAngle={2}
+                      stroke="none"
+                      cursor="pointer"
+                      onClick={(d) => { const k = (d as { key?: string }).key; if (k) toggleSchedRag(k === "none" ? "all" : k); }}
+                    >
+                      {ragData.map((d) => (
+                        <Cell key={d.key} fill={RAG_COLORS[d.key]} opacity={filters.rag === "all" || filters.rag === d.key ? 1 : 0.3} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <span className="text-xl font-semibold tabular-nums leading-none">{ragTotal}</span>
+                  <span className="text-[10px] text-muted-foreground">sites</span>
+                </div>
+              </div>
+              <ul className="text-xs space-y-0.5 flex-1">
+                {ragData.map((d) => {
+                  const active = filters.rag === d.key;
+                  return (
+                    <li key={d.key}>
+                      <button
+                        className={`w-full flex items-center gap-1.5 rounded px-1.5 py-1 hover:bg-muted/60 ${active ? "bg-muted ring-1 ring-emerald-300" : ""}`}
+                        onClick={() => toggleSchedRag(d.key === "none" ? "all" : d.key)}
+                        data-testid={`execution-rag-legend-${d.key}`}
+                      >
+                        <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ background: RAG_COLORS[d.key] }} />
+                        <span className="truncate">{d.name}</span>
+                        <span className="ml-auto tabular-nums font-medium">{d.value}</span>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             </CardContent>
           </Card>
@@ -519,10 +650,21 @@ export default function ExecutionReviewBoard() {
       <div className="flex flex-wrap items-center gap-2 mt-4">
         <Input className="w-48" placeholder="Search site…" value={filters.search}
           onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))} data-testid="execution-search" />
-        <Select value={filters.phase} onValueChange={(v) => setFilters((f) => ({ ...f, phase: v }))}>
-          <SelectTrigger className="w-40"><SelectValue placeholder="Phase" /></SelectTrigger>
-          <SelectContent><SelectItem value="all">All phases</SelectItem>{phases.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
-        </Select>
+        <PhaseMultiSelect options={phases} selected={filters.phases} onChange={(v) => setFilters((f) => ({ ...f, phases: v }))} />
+        {filters.phases.length > 0 && (
+          <div className="flex items-center gap-1 flex-wrap">
+            {filters.phases.map((p) => (
+              <button
+                key={p}
+                onClick={() => togglePhase(p)}
+                className="inline-flex items-center gap-1 rounded-full border bg-emerald-50 border-emerald-200 text-emerald-700 px-2 py-0.5 text-xs hover:bg-emerald-100"
+                data-testid={`execution-phase-chip-${p}`}
+              >
+                {p}<span aria-hidden className="text-emerald-500">×</span>
+              </button>
+            ))}
+          </div>
+        )}
         <Select value={filters.rag} onValueChange={(v) => setFilters((f) => ({ ...f, rag: v }))}>
           <SelectTrigger className="w-36"><SelectValue placeholder="Schedule RAG" /></SelectTrigger>
           <SelectContent>
