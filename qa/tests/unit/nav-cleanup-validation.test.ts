@@ -47,7 +47,7 @@ describe("nav cleanup — six-tab COO spec", () => {
     const section = findTop("Execution");
     expect(section.secondary.map((item) => item.path)).toEqual([
       "/execution",
-      "/execution/upcoming",
+      "/execution/milestones",
       "/execution/deliveries",
       "/execution/allocations",
     ]);

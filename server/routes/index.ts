@@ -35,6 +35,7 @@ import { registerCosLineReviewRoutes } from './cos-line-review.routes';
 import { registerCashflowWorklistsRoutes } from './cashflow-worklists.routes';
 import { registerFinanceHealthRoutes } from './finance-health.routes';
 import { registerExecutionBoardRoutes } from './execution-board.routes';
+import { registerMilestoneTrackerRoutes } from './milestone-tracker.routes';
 import { financeErrorTracker } from '../middleware/finance-error-tracker';
 
 export async function registerRoutes(httpServer: Server, app: Express) {
@@ -42,6 +43,7 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   app.use(financeErrorTracker);
   registerFinanceHealthRoutes(app);
   registerExecutionBoardRoutes(app);
+  registerMilestoneTrackerRoutes(app);
   registerTemplateGovernanceRoutes(app);
   registerQuickBooksRoutes(app);
   registerQuickBooksInvoiceMatchRoutes(app);

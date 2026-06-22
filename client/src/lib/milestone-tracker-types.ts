@@ -1,0 +1,144 @@
+// Client-side shapes for the Milestone Tracker. Mirror the payloads returned by
+// server/services/milestone-tracker-service.ts (kept in sync by the API tests).
+
+export type FlowState = "paid" | "invoiced" | "outstanding" | "overdue" | "flagged";
+export type TaskState = "done" | "due" | "overdue";
+
+export interface OutflowView {
+  rowHash: string;
+  description: string | null;
+  costCategory: string | null;
+  counterpartyName: string | null;
+  amount: number | null;
+  forecastPaymentDate: string | null;
+  invoiceDate: string | null;
+  paidDate: string | null;
+  status: string;
+  state: FlowState;
+}
+
+export interface LinkedTaskView {
+  id: number;
+  taskNo: string | null;
+  title: string;
+  workstream: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  percentComplete: number | null;
+  complete: boolean;
+  state: TaskState;
+  outflows: OutflowView[];
+  noOutflow: boolean;
+}
+
+export interface MilestoneGaps {
+  noTasks: boolean;
+  noOutflow: boolean;
+  overdue: boolean;
+}
+
+export interface MilestoneView {
+  rowHash: string;
+  milestoneNo: string | null;
+  milestoneName: string | null;
+  milestonePercent: number | null;
+  amount: number | null;
+  invoiceNumber: string | null;
+  invoiceDate: string | null;
+  expectedPaymentDate: string | null;
+  paidDate: string | null;
+  status: string;
+  state: FlowState;
+  notes: string | null;
+  tasks: LinkedTaskView[];
+  outflows: OutflowView[];
+  outflowTotal: number;
+  tasksTotal: number;
+  tasksComplete: number;
+  readyToInvoice: boolean;
+  gaps: MilestoneGaps;
+}
+
+export interface TaskPick {
+  id: number;
+  taskNo: string | null;
+  title: string;
+  workstream: string | null;
+  endDate: string | null;
+  percentComplete: number | null;
+}
+
+export type CalendarKind = "inflow" | "outflow" | "task";
+
+export interface CalendarEvent {
+  kind: CalendarKind;
+  date: string;
+  label: string;
+  amount: number | null;
+  state: FlowState | TaskState;
+  projectId: number;
+  projectName: string;
+  rowHash?: string;
+  taskId?: number;
+}
+
+export interface ProjectMilestoneDetail {
+  project: { id: number; projectName: string };
+  milestones: MilestoneView[];
+  availableTasks: TaskPick[];
+  availableCostLines: OutflowView[];
+  calendar: CalendarEvent[];
+  summary: {
+    milestoneCount: number;
+    inflowTotal: number;
+    inflowOutstanding: number;
+    outflowTotal: number;
+    gapCount: number;
+    readyToInvoiceCount: number;
+  };
+}
+
+export interface MilestoneProgramRow {
+  projectId: number;
+  projectName: string;
+  milestoneCount: number;
+  linkedMilestoneCount: number;
+  inflowTotal: number;
+  inflowOutstanding: number;
+  outflowTotal: number;
+  gapCount: number;
+  readyToInvoiceCount: number;
+  nextInflowDate: string | null;
+}
+
+export interface MilestoneProgram {
+  rows: MilestoneProgramRow[];
+  header: {
+    projectCount: number;
+    milestoneCount: number;
+    inflowTotal: number;
+    inflowOutstanding: number;
+    outflowTotal: number;
+    gapCount: number;
+    readyToInvoiceCount: number;
+  };
+  calendar: CalendarEvent[];
+}
+
+// ── shared display helpers ──
+export const money = (n: number | null | undefined): string =>
+  n == null ? "—" : `R${Math.round(n).toLocaleString("en-ZA")}`;
+
+export const FLOW_STATE_STYLE: Record<FlowState, { label: string; cls: string; dot: string }> = {
+  paid: { label: "Paid", cls: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-500" },
+  invoiced: { label: "Invoiced", cls: "bg-blue-50 text-blue-700 border-blue-200", dot: "bg-blue-500" },
+  outstanding: { label: "Outstanding", cls: "bg-slate-50 text-slate-600 border-slate-200", dot: "bg-slate-400" },
+  overdue: { label: "Overdue", cls: "bg-red-50 text-red-700 border-red-200", dot: "bg-red-500" },
+  flagged: { label: "Flagged", cls: "bg-amber-50 text-amber-700 border-amber-200", dot: "bg-amber-500" },
+};
+
+export const TASK_STATE_STYLE: Record<TaskState, { label: string; cls: string; dot: string }> = {
+  done: { label: "Done", cls: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-500" },
+  due: { label: "Due", cls: "bg-slate-50 text-slate-600 border-slate-200", dot: "bg-slate-400" },
+  overdue: { label: "Overdue", cls: "bg-red-50 text-red-700 border-red-200", dot: "bg-red-500" },
+};
