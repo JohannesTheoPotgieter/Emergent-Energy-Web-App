@@ -71,7 +71,10 @@ function nextDeliveryFromPlan(tasks: PlanTask[], today: Date): NextDelivery | nu
   for (const t of tasks) {
     if (!t.taskName || !t.taskName.toLowerCase().includes("delivery")) continue;
     if ((pctTo100(t.pctComplete) ?? 0) >= 100) continue;
-    const raw = t.startDate ?? t.actualStartDate ?? null;
+    // A "delivery" is the task's completion, so key off the END date (with the
+    // same actual/planned fallback chain as deliveryTaskRows) — the board's
+    // Next-delivery column and the Deliveries page must agree on the date.
+    const raw = t.endDate ?? t.actualEndDate ?? t.startDate ?? t.actualStartDate ?? null;
     const d = parsePlanDate(raw);
     if (!d) continue;
     if (!best || d < best.d) best = { d, raw: raw as string, label: t.taskName };
