@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RagBadge } from "@/components/ui/status-badge";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import UserPicker from "@/components/UserPicker";
 import {
   Select, SelectTrigger, SelectContent, SelectItem, SelectValue,
 } from "@/components/ui/select";
@@ -38,8 +39,6 @@ const LS_KEY = "execution-board-filters";
 const LS_GROUP = "execution-board-group-by-pm";
 
 const RAG_COLORS: Record<string, string> = { green: "#16A34A", amber: "#F59E0B", red: "#DC2626", none: "#CBD5E1" };
-
-type PmUser = { id: number; name: string };
 
 // Canonical lifecycle phases — driven from the SAME source the server validates
 // against (shared/phases PHASE_LABELS, e.g. "Commissioning & QA"), so an inline
@@ -273,24 +272,13 @@ export default function ExecutionReviewBoard() {
   const qc = useQueryClient();
   const { data, isLoading, isError, refetch } = useQuery<BoardResult>({ queryKey: ["/api/execution-review/board"] });
 
-  // Assignable PMs + inline editors (migrated from /projects, #12/#13/#15) —
-  // admin only, mirroring the retired page's gating.
-  const { data: pmUsers = [] } = useQuery<PmUser[]>({
-    queryKey: ["/api/pm-assignable-users"],
-    enabled: isAdmin,
-    staleTime: 60_000,
-  });
   const [editProject, setEditProject] = useState<BoardRow | null>(null);
 
   const invalidateBoard = () => qc.invalidateQueries({ queryKey: ["/api/execution-review/board"] });
 
   const assignPm = useApiMutation({
-    mutationFn: async ({ projectId, name }: { projectId: number; name: string | null }) => {
-      const matched = pmUsers.find((u) => u.name === name);
-      await apiRequest("PATCH", `/api/project-info/${projectId}/assign-pm`, {
-        pm: name ?? "",
-        pmUserId: matched?.id ?? null,
-      });
+    mutationFn: async ({ projectId, pm, pmUserId }: { projectId: number; pm: string; pmUserId: number | null }) => {
+      await apiRequest("PATCH", `/api/project-info/${projectId}/assign-pm`, { pm, pmUserId });
     },
     errorToast: "Could not reassign PM",
     onSuccess: invalidateBoard,
@@ -345,7 +333,8 @@ export default function ExecutionReviewBoard() {
   const toggleSort = (key: string) =>
     setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
 
-  const onAssignPm = (row: BoardRow, name: string | null) => assignPm.mutate({ projectId: row.projectId, name });
+  const onAssignPm = (row: BoardRow, id: number | null, name: string | null) =>
+    assignPm.mutate({ projectId: row.projectId, pm: name ?? "", pmUserId: id });
   const onSetPhase = (row: BoardRow, phase: string) => setPhase.mutate({ projectId: row.projectId, phase });
   const onSetRag = (row: BoardRow, rag: string, comment: string) => setRag.mutate({ projectId: row.projectId, rag, comment });
 
@@ -356,12 +345,17 @@ export default function ExecutionReviewBoard() {
     { key: "nextTask", header: "Next task ·14d", width: 165, sortable: true, cell: (r) => r.nextTask ? <Trunc title={`${r.nextTask.taskName} · ${fmtDate(r.nextTask.date)}`}>{r.nextTask.taskName} · {fmtDate(r.nextTask.date)}</Trunc> : <span className="text-muted-foreground">—</span> },
     { key: "nextDelivery", header: "Next delivery", width: 165, sortable: true, cell: (r) => r.nextDelivery ? <Trunc title={`${r.nextDelivery.label} · ${fmtDate(r.nextDelivery.date)}`}><span className="inline-flex items-center gap-1.5"><RagBadge rag={r.nextDelivery.rag} dotOnly showLabel={false} />{r.nextDelivery.label} · {fmtDate(r.nextDelivery.date)}</span></Trunc> : <span className="text-muted-foreground">—</span> },
     { key: "installer", header: "Installer", width: 110, sortable: true, cell: (r) => r.installers.count > 0 ? <Trunc title={r.installers.list.map((i) => i.name).join(", ")}>{r.installers.primary}{r.installers.count > 1 ? ` +${r.installers.count - 1}` : ""}</Trunc> : <span className="text-muted-foreground">—</span> },
-    { key: "pm", header: "PM", width: 140, sortable: true, cell: (r) => isAdmin ? (
+    { key: "pm", header: "PM", width: 150, sortable: true, cell: (r) => isAdmin ? (
       <span data-interactive="true" onClick={(e) => e.stopPropagation()}>
-        <SearchableSelect value={r.pmName || "__unassigned"} onValueChange={(val) => onAssignPm(r, val === "__unassigned" ? null : val)} placeholder="No PM"
-          triggerClassName={`h-7 w-full text-xs border-0 bg-transparent hover:bg-muted px-1 shadow-none ${!r.pmName ? "text-red-500 font-medium" : ""}`}
+        <UserPicker
+          value={r.pmUserId}
+          valueType="internal_user"
+          restrictTo="internal"
+          onValueChange={(id, name) => onAssignPm(r, id, name)}
+          placeholder={r.pmName || "No PM"}
+          label="Assign PM"
           data-testid={`select-pm-${r.projectId}`}
-          options={[{ value: "__unassigned", label: "Unassigned" }, ...pmUsers.map((u) => ({ value: u.name, label: u.name }))]} />
+        />
       </span>
     ) : (r.pmName ? <Trunc title={r.pmName}>{r.pmName}</Trunc> : <span className="text-muted-foreground">—</span>) },
     { key: "rag", header: "RAG", width: 95, sortable: true, cell: (r) => <RagStatusCell row={r} isAdmin={isAdmin} onSetRag={onSetRag} /> },

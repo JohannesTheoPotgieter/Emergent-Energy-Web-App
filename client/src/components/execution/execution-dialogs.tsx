@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -25,7 +25,6 @@ import type {
   ExecItemSeverity,
   ExecItemStatus,
   PlanTaskView,
-  AssignableUser,
   InstallerRow,
 } from "@/lib/execution-types";
 
@@ -60,7 +59,6 @@ export function FlagDialog({
   const [planTaskNo, setPlanTaskNo] = useState<string>("");
   const [taskFilter, setTaskFilter] = useState("");
 
-  const owners = useQuery<AssignableUser[]>({ queryKey: ["/api/pm-assignable-users"], enabled: open });
   const [ownerUserId, setOwnerUserId] = useState<string>("");
 
   useEffect(() => {
@@ -153,12 +151,17 @@ export function FlagDialog({
             </label>
             <label className="text-sm">
               <span className="text-muted-foreground">Owner</span>
-              <Select value={ownerUserId} onValueChange={setOwnerUserId}>
-                <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
-                <SelectContent>
-                  {(owners.data ?? []).map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <div className="mt-1">
+                <UserPicker
+                  value={ownerUserId ? Number(ownerUserId) : null}
+                  valueType="internal_user"
+                  restrictTo="internal"
+                  onValueChange={(id) => setOwnerUserId(id != null ? String(id) : "")}
+                  placeholder="Unassigned"
+                  label="Owner"
+                  data-testid="flag-owner"
+                />
+              </div>
             </label>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -328,19 +331,18 @@ export function AssignPmDialog({
 }) {
   const { toast } = useToast();
   const [userId, setUserId] = useState<string>("");
-  const pms = useQuery<AssignableUser[]>({ queryKey: ["/api/pm-assignable-users"], enabled: open });
+  const [userName, setUserName] = useState<string>("");
 
   useEffect(() => {
-    if (open) setUserId("");
+    if (open) { setUserId(""); setUserName(""); }
   }, [open]);
 
   const save = useMutation({
     mutationFn: async () => {
-      const user = (pms.data ?? []).find((u) => String(u.id) === userId);
-      if (!user) return;
+      if (!userId) return;
       await apiRequest("PATCH", `/api/project-info/${projectId}/assign-pm`, {
-        pm: user.name,
-        pmUserId: user.id,
+        pm: userName,
+        pmUserId: Number(userId),
       });
     },
     onSuccess: () => {
@@ -359,12 +361,15 @@ export function AssignPmDialog({
         </DialogHeader>
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground">Current: {currentPmName ?? "Unassigned"}</p>
-          <Select value={userId} onValueChange={setUserId}>
-            <SelectTrigger><SelectValue placeholder="Select PM…" /></SelectTrigger>
-            <SelectContent>
-              {(pms.data ?? []).map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <UserPicker
+            value={userId ? Number(userId) : null}
+            valueType="internal_user"
+            restrictTo="internal"
+            onValueChange={(id, name) => { setUserId(id != null ? String(id) : ""); setUserName(name ?? ""); }}
+            placeholder="Select PM…"
+            label="Assign PM"
+            data-testid="assign-pm-select"
+          />
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>

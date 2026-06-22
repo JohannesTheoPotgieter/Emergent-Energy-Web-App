@@ -12,6 +12,28 @@ export type AssignableDirectoryEntry = {
   roleTags: string[];
 };
 
+/**
+ * Map a simple internal-user list ({ id, name, role? }) into directory entries
+ * for `<UserPicker entries={...} restrictTo="internal" />` — lets constrained
+ * pickers (eligible approvers, team members, PMs) use the standard picker UI
+ * while keeping their own pre-filtered set.
+ */
+export function internalUserEntries(
+  users: Array<{ id: number; name: string; role?: string | null; username?: string | null }>,
+): AssignableDirectoryEntry[] {
+  return users.map((u) => ({
+    assigneeType: "internal_user",
+    assigneeId: u.id,
+    displayLabel: u.name,
+    secondaryLabel: u.role ?? u.username ?? null,
+    sourceLabel: "Team",
+    counterpartyId: null,
+    contactId: null,
+    isActive: true,
+    roleTags: u.role ? [u.role] : [],
+  }));
+}
+
 export type CanonicalAssignment = {
   id: number | null;
   entityType: string;

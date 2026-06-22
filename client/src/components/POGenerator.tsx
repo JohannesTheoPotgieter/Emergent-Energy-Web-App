@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import UserPicker from "@/components/UserPicker";
+import { internalUserEntries } from "@/lib/assignables";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertCircle,
@@ -770,21 +771,19 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
           </DialogHeader>
           <div className="space-y-3 py-2">
             <Label className="text-xs">Assigned approver</Label>
-            <Select value={selectedApproverId} onValueChange={setSelectedApproverId}>
-              <SelectTrigger data-testid="select-po-approver">
-                <SelectValue placeholder={loadingApprovers ? "Loading…" : "Choose an approver"} />
-              </SelectTrigger>
-              <SelectContent>
-                {eligibleApprovers.length === 0 && !loadingApprovers && (
-                  <div className="px-3 py-2 text-xs text-muted-foreground">No eligible approvers found.</div>
-                )}
-                {eligibleApprovers.map((a: any) => (
-                  <SelectItem key={a.id} value={String(a.id)} data-testid={`option-approver-${a.id}`}>
-                    {a.name}{a.role ? ` — ${String(a.role).replace(/_/g, " ")}` : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <UserPicker
+              value={selectedApproverId ? Number(selectedApproverId) : null}
+              valueType="internal_user"
+              restrictTo="internal"
+              entries={internalUserEntries(eligibleApprovers)}
+              onValueChange={(id) => setSelectedApproverId(id ? String(id) : "")}
+              placeholder={loadingApprovers ? "Loading…" : "Choose an approver"}
+              label="Assigned approver"
+              data-testid="select-po-approver"
+            />
+            {eligibleApprovers.length === 0 && !loadingApprovers && (
+              <p className="px-1 py-1 text-xs text-muted-foreground">No eligible approvers found.</p>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setSubmitForPoId(null); setSelectedApproverId(""); }} data-testid="btn-cancel-submit-po">Cancel</Button>
