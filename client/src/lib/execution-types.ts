@@ -28,24 +28,21 @@ export interface NextDelivery {
   blocker?: string | null;
 }
 
-export interface EngineeringSummary {
+/**
+ * Eng/QA roll-up read from the program plan's ENG / QUALITY workstreams
+ * (work_items) — the board's Eng and QA columns reflect the plan until the
+ * dedicated Engineering / Quality modules come online.
+ */
+export interface WorkstreamSummary {
   total: number;
-  blocked: number;
-  inProgress: number;
   complete: number;
-  openTasks: number;
+  inProgress: number;
+  notStarted: number;
+  actualPct: number | null;
+  expectedPct: number | null;
+  variance: number | null;
   rag: Rag;
-}
-
-export interface QualitySummary {
-  openTotal: number;
-  critical: number;
-  major: number;
-  minor: number;
-  observation: number;
-  overdue: number;
-  hasQcp: boolean;
-  rag: Rag;
+  hasPlan: boolean;
 }
 
 export interface ItemCounts {
@@ -76,8 +73,8 @@ export interface BoardRow {
   pmName: string | null;
   pdUserId: number | null;
   pdName: string | null;
-  engineering: EngineeringSummary;
-  quality: QualitySummary;
+  engineering: WorkstreamSummary;
+  quality: WorkstreamSummary;
   flags: ItemCounts;
   // Editable fields for the board's inline editors (PM assign, RAG status,
   // phase, Edit Project Info). ragStatus is the canonical lifecycle RAG.
@@ -196,8 +193,8 @@ export interface ProjectDetail {
     next: NextDelivery | null;
     overdueCount: number;
   };
-  engineering: EngineeringSummary;
-  quality: QualitySummary;
+  engineering: WorkstreamSummary;
+  quality: WorkstreamSummary;
 }
 
 export type ExecItemStatus = "open" | "flagged" | "actioned" | "closed";

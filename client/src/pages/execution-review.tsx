@@ -24,7 +24,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { PHASE_LABELS } from "@shared/phases";
 import { EditProjectInfoModal } from "@/components/execution/edit-project-info-modal";
-import type { BoardResult, BoardRow, Rag, EngineeringSummary, QualitySummary } from "@/lib/execution-types";
+import type { BoardResult, BoardRow, Rag, WorkstreamSummary } from "@/lib/execution-types";
 import { fmtPct, fmtDate, parseExecDate } from "@/lib/execution-types";
 
 interface Filters {
@@ -196,17 +196,20 @@ function ScheduleCell({ row }: { row: BoardRow }) {
   );
 }
 
-function MiniRag({ rag, value }: { rag: Rag; value: string }) {
-  if (!rag) return <span className="text-muted-foreground" aria-label="no data">—</span>;
+function MiniRag({ rag, value, title }: { rag: Rag; value: string; title?: string }) {
+  if (!rag) return <span className="text-muted-foreground" aria-label="no data" title={title}>—</span>;
   return (
-    <span className="inline-flex items-center gap-1.5" aria-label={`${rag} ${value}`} title={rag}>
+    <span className="inline-flex items-center gap-1.5" aria-label={`${rag} ${value}`} title={title ?? rag}>
       <RagBadge rag={rag} dotOnly showLabel={false} />
       <span className="text-xs tabular-nums">{value}</span>
     </span>
   );
 }
-const engValue = (e: EngineeringSummary): string => (e.blocked > 0 ? `${e.blocked} blkd` : `${e.complete}/${e.total}`);
-const qaValue = (q: QualitySummary): string => (q.critical > 0 ? `${q.critical} crit` : `${q.openTotal}`);
+// Eng/QA now roll up the plan's ENG / QUALITY workstreams — show completed/total
+// leaf tasks, with the schedule-variance RAG dot ("—" when the plan has none).
+const wsValue = (s: WorkstreamSummary): string => (s.hasPlan ? `${s.complete}/${s.total}` : "—");
+const wsTitle = (s: WorkstreamSummary): string =>
+  s.hasPlan ? `${s.complete}/${s.total} done · ${s.inProgress} in progress · actual ${fmtPct(s.actualPct)} / expected ${fmtPct(s.expectedPct)}` : "No items in the plan";
 
 const LS_SORT = "execution-board-sort";
 const LS_COLW = "execution-board-colwidths";
@@ -438,8 +441,8 @@ export default function ExecutionReviewBoard() {
       </span>
     ) : (r.pmName ? <Trunc title={r.pmName}>{r.pmName}</Trunc> : <span className="text-muted-foreground">—</span>) },
     { key: "rag", header: "RAG", width: 95, sortable: true, cell: (r) => <RagStatusCell row={r} isAdmin={isAdmin} onSetRag={onSetRag} /> },
-    { key: "eng", header: "Eng", width: 75, sortable: true, cell: (r) => <MiniRag rag={r.engineering.rag} value={engValue(r.engineering)} /> },
-    { key: "qa", header: "QA", width: 65, sortable: true, cell: (r) => <MiniRag rag={r.quality.rag} value={qaValue(r.quality)} /> },
+    { key: "eng", header: "Eng", width: 75, sortable: true, cell: (r) => <MiniRag rag={r.engineering.rag} value={wsValue(r.engineering)} title={wsTitle(r.engineering)} /> },
+    { key: "qa", header: "QA", width: 65, sortable: true, cell: (r) => <MiniRag rag={r.quality.rag} value={wsValue(r.quality)} title={wsTitle(r.quality)} /> },
     { key: "flags", header: "Flags", width: 70, align: "right", sortable: true, cell: (r) => <span className="tabular-nums">{r.flags.open + r.flags.flagged}/{r.flags.actioned}</span> },
     ...(isAdmin ? ([{ key: "actions", header: "", width: 46, cell: (r: BoardRow) => (
       <span data-interactive="true" onClick={(e) => e.stopPropagation()}>

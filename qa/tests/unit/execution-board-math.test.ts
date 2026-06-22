@@ -12,6 +12,7 @@ import {
   deliveryRag,
   summarizeEngineering,
   summarizeQuality,
+  summarizeWorkstream,
   computeCriticalPath,
   parsePlanDate,
   startOfDay,
@@ -25,6 +26,7 @@ function task(o: Partial<PlanTask>): PlanTask {
     taskNo: null,
     taskName: "Task",
     phase: null,
+    workstream: null,
     startDate: null,
     endDate: null,
     durationDays: null,
@@ -200,6 +202,32 @@ describe("summarizeQuality", () => {
   });
   it("is null when there are no snags and no QCP", () => {
     expect(summarizeQuality([], false, TODAY).rag).toBeNull();
+  });
+});
+
+describe("summarizeWorkstream", () => {
+  it("has no plan when there are no tasks", () => {
+    const s = summarizeWorkstream([]);
+    expect(s.hasPlan).toBe(false);
+    expect(s.total).toBe(0);
+    expect(s.rag).toBeNull();
+  });
+  it("counts leaf tasks by completion and excludes summary parents", () => {
+    const s = summarizeWorkstream([
+      task({ taskNo: "1", durationDays: 999, pctComplete: 100, expectedPctComplete: 100 }), // parent (excluded)
+      task({ taskNo: "1.1", parentTaskNo: "1", durationDays: 10, pctComplete: 100, expectedPctComplete: 100 }),
+      task({ taskNo: "1.2", parentTaskNo: "1", durationDays: 10, pctComplete: 40, expectedPctComplete: 50 }),
+      task({ taskNo: "1.3", parentTaskNo: "1", durationDays: 10, pctComplete: 0, expectedPctComplete: 20 }),
+    ]);
+    expect(s.total).toBe(3);
+    expect(s.complete).toBe(1);
+    expect(s.inProgress).toBe(1);
+    expect(s.notStarted).toBe(1);
+    expect(s.hasPlan).toBe(true);
+  });
+  it("derives the RAG from schedule variance (behind plan → red)", () => {
+    const s = summarizeWorkstream([task({ taskNo: "1", pctComplete: 10, expectedPctComplete: 90 })]);
+    expect(s.rag).toBe("red");
   });
 });
 
