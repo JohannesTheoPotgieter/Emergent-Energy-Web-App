@@ -903,6 +903,11 @@ function extractPlanTasks(
   const actualDurationCol = getColIndex(mapping, "actual_duration");
   const pctCompleteCol = getColIndex(mapping, "pct_complete");
   const expectedPctCol = getColIndex(mapping, "expected_pct");
+  // Single-date-source plans (e.g. the MONDI_LEGACY layout: START/END only, no
+  // separate Actual columns) carry one schedule. Treat it as the ACTUAL dates
+  // too, so the board reads real progress dates and slip resolves to 0 instead
+  // of blank. Only when NO actual-date column exists at all.
+  const singleDateSource = actualStartCol < 0 && actualEndCol < 0 && (startDateCol >= 0 || endDateCol >= 0);
   const ownerCol = getColIndex(mapping, "owner");
   // 2026-05-18 — phase removed from Excel import. We deliberately ignore
   // any "Phase" column in the file so it cannot leak free-text phase labels
@@ -978,8 +983,8 @@ function extractPlanTasks(
 
     const startDate = startDateCol >= 0 ? parseDate(row[startDateCol]) : null;
     const endDate = endDateCol >= 0 ? parseDate(row[endDateCol]) : null;
-    const actualStartDate = actualStartCol >= 0 ? parseDate(row[actualStartCol]) : null;
-    const actualEndDate = actualEndCol >= 0 ? parseDate(row[actualEndCol]) : null;
+    const actualStartDate = singleDateSource ? startDate : (actualStartCol >= 0 ? parseDate(row[actualStartCol]) : null);
+    const actualEndDate = singleDateSource ? endDate : (actualEndCol >= 0 ? parseDate(row[actualEndCol]) : null);
 
     const hasWbs = !!(taskNo && taskNo.trim());
     const hasPlanOrActualDate = !!(startDate || endDate || actualStartDate || actualEndDate);

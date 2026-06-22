@@ -26,7 +26,7 @@ async function previewWorkbook(relPath: string, fileName: string) {
 }
 
 describe("Project plan import contract", () => {
-  it("imports Mondi planned-only PLAN rows instead of dropping them for blank actual dates", async () => {
+  it("maps Mondi single-date-source PLAN rows onto the actual dates too", async () => {
     const preview = await previewWorkbook(
       "attached_assets/Mondi_Tracker_Rev02_1778768350564.xlsm",
       "Mondi_Tracker_Rev02.xlsm",
@@ -41,8 +41,12 @@ describe("Project plan import contract", () => {
       startDate: "2025-02-07",
       endDate: "2026-05-07",
     });
-    expect(firstTask?.actualStartDate).toBeNull();
-    expect(firstTask?.actualEndDate).toBeNull();
+    // Owner decision 2026-06 — supersedes the prior "actual stays null for
+    // single-source plans" contract. A plan with one date source (START/END,
+    // no separate Actual columns) maps that schedule onto the actual dates too,
+    // so the board reads real progress dates and slip resolves to 0 not blank.
+    expect(firstTask?.actualStartDate).toBe("2025-02-07");
+    expect(firstTask?.actualEndDate).toBe("2026-05-07");
     expect(firstTask?.pctComplete).toBe(1);
     expect(firstTask?.expectedPctComplete).toBe(1);
   });
