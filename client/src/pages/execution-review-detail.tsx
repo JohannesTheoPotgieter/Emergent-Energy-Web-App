@@ -174,7 +174,7 @@ export default function ExecutionReviewDetail() {
             <Card><CardContent className="p-0 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="border-b text-left text-xs text-muted-foreground">
-                  {["WBS", "Task", "Planned", "Actual", "%", "Slip"].map((h) => <th key={h} className="py-2 px-3 font-medium">{h}</th>)}
+                  {["WBS", "Task", "Planned", "Actual", "Act %", "Exp %", "Slip"].map((h) => <th key={h} className="py-2 px-3 font-medium">{h}</th>)}
                 </tr></thead>
                 <tbody>
                   {data.planTasks.map((t, i) => <PlanRow key={`${t.taskNo}-${i}`} t={t} />)}
@@ -403,7 +403,8 @@ function PlanRow({ t }: { t: PlanTaskView }) {
       </td>
       <td className="py-1.5 px-3 whitespace-nowrap text-xs">{fmtDate(t.plannedStart)} – {fmtDate(t.plannedEnd)}</td>
       <td className="py-1.5 px-3 whitespace-nowrap text-xs">{fmtDate(t.actualStart)} – {fmtDate(t.actualEnd)}</td>
-      <td className="py-1.5 px-3 tabular-nums">{fmtPct(t.pctComplete)}</td>
+      <td className={`py-1.5 px-3 tabular-nums ${t.expectedPctComplete != null && (t.pctComplete ?? 0) < t.expectedPctComplete ? "text-red-600" : ""}`}>{fmtPct(t.pctComplete)}</td>
+      <td className="py-1.5 px-3 tabular-nums text-muted-foreground">{fmtPct(t.expectedPctComplete)}</td>
       <td className={`py-1.5 px-3 tabular-nums ${t.slipDays != null && t.slipDays > 0 ? "text-amber-600" : ""}`}>
         {t.slipDays == null ? "—" : `${t.slipDays > 0 ? "+" : ""}${t.slipDays}d`}
       </td>
