@@ -8,6 +8,9 @@ import {
   ArrowLeft, AlertTriangle, TrendingUp, TrendingDown, CheckCircle2,
   ChevronLeft, ChevronRight, ListChecks, X,
 } from "lucide-react";
+import {
+  ResponsiveContainer, ComposedChart, Bar, XAxis, YAxis, Tooltip as RTooltip, ReferenceLine,
+} from "recharts";
 import { PageShell } from "@/components/layout/page-shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -57,6 +60,71 @@ function Kpi({ label, value, tone, accent }: { label: string; value: string | nu
         <div className={`text-xl font-semibold tabular-nums ${tone ?? ""}`}>{value}</div>
       </CardContent>
     </Card>
+  );
+}
+
+// ──────────────────────────── cashflow timeline + GP ─────────────────────────
+
+const abbr = (v: number): string => {
+  const a = Math.abs(v);
+  if (a >= 1e6) return `${(v / 1e6).toFixed(1)}m`;
+  if (a >= 1e3) return `${Math.round(v / 1e3)}k`;
+  return String(Math.round(v));
+};
+
+function CashflowTimeline({ calendar, inflowTotal, outflowTotal }: { calendar: CalendarEvent[]; inflowTotal: number; outflowTotal: number }) {
+  const gp = inflowTotal - outflowTotal;
+  const gpPct = inflowTotal > 0 ? (gp / inflowTotal) * 100 : null;
+  const monthly = useMemo(() => {
+    const m = new Map<string, { in: number; out: number }>();
+    for (const e of calendar) {
+      if (e.kind === "task" || e.amount == null) continue;
+      const month = e.date.slice(0, 7); // yyyy-mm
+      const b = m.get(month) ?? { in: 0, out: 0 };
+      if (e.kind === "inflow") b.in += e.amount; else b.out += e.amount;
+      m.set(month, b);
+    }
+    return [...m.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([month, v]) => ({
+        month: format(new Date(`${month}-01T00:00:00`), "MMM yy"),
+        in: Math.round(v.in),
+        out: -Math.round(v.out), // negative → draws below the zero line
+      }));
+  }, [calendar]);
+
+  return (
+    <Card data-testid="cashflow-timeline"><CardContent className="p-3">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+        <div className="shrink-0 sm:w-44">
+          <div className="text-xs text-muted-foreground">Gross profit · inflow − outflow</div>
+          <div className={`text-2xl font-semibold tabular-nums ${gp >= 0 ? "text-emerald-600" : "text-red-600"}`} data-testid="cashflow-gp">{money(gp)}</div>
+          <div className="text-[11px] text-muted-foreground">
+            <span className="text-emerald-600">{money(inflowTotal)} in</span> · <span className="text-red-600">{money(outflowTotal)} out</span>
+            {gpPct != null ? <> · {Math.round(gpPct)}% GP</> : null}
+          </div>
+        </div>
+        <div className="flex-1 h-[120px] min-w-0 w-full">
+          {monthly.length === 0 ? (
+            <div className="h-full flex items-center justify-center text-xs text-muted-foreground">No dated cashflow yet</div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={monthly} margin={{ top: 6, right: 4, left: -10, bottom: 0 }}>
+                <XAxis dataKey="month" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval={0} />
+                <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={34} tickFormatter={abbr} />
+                <ReferenceLine y={0} stroke="#cbd5e1" />
+                <RTooltip
+                  cursor={{ fill: "rgba(0,0,0,0.04)" }}
+                  formatter={(value: number | string, name: string) => [money(Math.abs(Number(value))), name]}
+                />
+                <Bar dataKey="in" name="Money in" fill="#16A34A" radius={[2, 2, 0, 0]} />
+                <Bar dataKey="out" name="Money out" fill="#DC2626" radius={[0, 0, 2, 2]} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+    </CardContent></Card>
   );
 }
 
@@ -308,6 +376,10 @@ function ProjectWorkspace({ projectId, onBack }: { projectId: number; onBack: ()
             <Kpi label="Gaps" value={data.summary.gapCount} tone={data.summary.gapCount > 0 ? "text-amber-600" : ""} accent="bg-amber-500" />
           </div>
 
+          <div className="mt-3">
+            <CashflowTimeline calendar={data.calendar} inflowTotal={data.summary.inflowTotal} outflowTotal={data.summary.outflowTotal} />
+          </div>
+
           <div className="flex items-center gap-2 mt-4">
             <Button size="sm" variant={view === "list" ? "default" : "outline"} onClick={() => setView("list")} data-testid="milestone-view-list">Milestones</Button>
             <Button size="sm" variant={view === "calendar" ? "default" : "outline"} onClick={() => setView("calendar")} data-testid="milestone-view-calendar">Calendar</Button>
@@ -359,6 +431,10 @@ function ProgramOverview({ onOpen }: { onOpen: (id: number) => void }) {
             <Kpi label="Linked outflow" value={money(data.header.outflowTotal)} accent="bg-red-500" />
             <Kpi label="Ready to invoice" value={data.header.readyToInvoiceCount} tone={data.header.readyToInvoiceCount > 0 ? "text-emerald-600" : ""} accent="bg-emerald-500" />
             <Kpi label="Gaps" value={data.header.gapCount} tone={data.header.gapCount > 0 ? "text-amber-600" : ""} accent="bg-amber-500" />
+          </div>
+
+          <div className="mt-3">
+            <CashflowTimeline calendar={data.calendar} inflowTotal={data.header.inflowTotal} outflowTotal={data.header.outflowTotal} />
           </div>
 
           <div className="flex items-center gap-2 mt-4">
