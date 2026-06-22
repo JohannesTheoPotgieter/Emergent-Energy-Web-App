@@ -33,6 +33,28 @@ describe("plan import — Status (actual %) column binding", () => {
     expect(planActualPctGap(result)).toBe(false);
   });
 
+  it("a stale learned mapping cannot override exact headers (12 Nourse corruption)", () => {
+    const section = planSection([
+      "No.", "High Level Programme", "Planned Start", "Duration", "Planned End",
+      "Actual Start", "Duration", "Actual End", "Status", "Expected Status", "Comment",
+    ]);
+    // A corrupt learned mapping that previously bound planned dates to the
+    // actual columns and Status to the wrong field.
+    const learned = [
+      { section: "PLAN", sourceHeader: "Planned Start", canonicalField: "actual_start", confidenceWeight: 1 },
+      { section: "PLAN", sourceHeader: "Planned End", canonicalField: "actual_end", confidenceWeight: 1 },
+      { section: "PLAN", sourceHeader: "Status", canonicalField: "owner", confidenceWeight: 1 },
+    ];
+    const result = mapColumns(section, new ExcelJS.Workbook(), learned);
+    const byField = new Map(result.mappings.map((m) => [m.canonicalField, m.rawHeader]));
+    expect(byField.get("start_date"), "Planned Start stays planned").toBe("Planned Start");
+    expect(byField.get("end_date"), "Planned End stays planned").toBe("Planned End");
+    expect(byField.get("actual_start")).toBe("Actual Start");
+    expect(byField.get("actual_end")).toBe("Actual End");
+    expect(byField.get("pct_complete"), "Status stays actual %").toBe("Status");
+    expect(byField.get("expected_pct")).toBe("Expected Status");
+  });
+
   it("recovers actual-% when a stale learned mapping sends 'Status' to the wrong field", () => {
     const section = planSection([
       "No.", "High Level Programme", "Planned Start", "Duration", "Planned End",
