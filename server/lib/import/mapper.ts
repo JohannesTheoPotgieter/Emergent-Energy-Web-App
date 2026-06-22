@@ -108,6 +108,24 @@ export function mapColumns(
   );
 
   for (const header of detectedSection.detectedHeaders) {
+    const synonymMatch = findBestMatch(header.normalizedHeader, synonymMap);
+
+    // An EXACT synonym match is canonical and unambiguous — e.g. "Planned End",
+    // "Actual End", "Status". A remembered (possibly stale) learned mapping must
+    // NOT override it: stale learned mappings overriding exact headers were the
+    // cause of planned dates binding to the actual columns and "Status" not
+    // reading actual %. Learned mappings still win for non-exact (renamed /
+    // fuzzy / unmatched) headers, where they add value.
+    if (synonymMatch && synonymMatch.matchType === "exact") {
+      headerMatches.push({
+        colIndex: header.colIndex,
+        rawHeader: header.rawHeader,
+        normalizedHeader: header.normalizedHeader,
+        ...synonymMatch,
+      });
+      continue;
+    }
+
     const learnedMatch = sectionLearnedMappings.find(
       lm => lm.sourceHeader.toLowerCase().trim() === header.normalizedHeader ||
             lm.sourceHeader.toLowerCase().trim() === header.rawHeader.toLowerCase().trim()
@@ -125,13 +143,12 @@ export function mapColumns(
       continue;
     }
 
-    const match = findBestMatch(header.normalizedHeader, synonymMap);
-    if (match) {
+    if (synonymMatch) {
       headerMatches.push({
         colIndex: header.colIndex,
         rawHeader: header.rawHeader,
         normalizedHeader: header.normalizedHeader,
-        ...match,
+        ...synonymMatch,
       });
     }
   }
