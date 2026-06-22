@@ -127,6 +127,10 @@ export interface MilestoneProgramRow {
   inflowTotal: number;
   inflowOutstanding: number;
   outflowTotal: number;
+  openInflowCount: number;
+  openInflowAmount: number;
+  openOutflowCount: number;
+  openOutflowAmount: number;
   gapCount: number;
   readyToInvoiceCount: number;
   nextInflowDate: string | null;
@@ -458,6 +462,14 @@ export async function getMilestoneProgram(now: Date = new Date()): Promise<Miles
     );
     const readyToInvoiceCount = views.filter((m) => m.readyToInvoice).length;
     const linkedMilestoneCount = views.filter((m) => m.tasks.length > 0).length;
+    // Open (unsettled / non-black) line items per project: inflows still to
+    // collect, outflows still to pay.
+    const openInflows = bundle.milestones.filter((m) => !SETTLED_REVENUE.has(m.status));
+    const openInflowCount = openInflows.length;
+    const openInflowAmount = openInflows.reduce((s, m) => s + (num(m.amountExVat) ?? 0), 0);
+    const openOutflows = bundle.costs.filter((c) => c.status !== "paid");
+    const openOutflowCount = openOutflows.length;
+    const openOutflowAmount = openOutflows.reduce((s, c) => s + (num(c.amountExVat) ?? 0), 0);
     const upcoming = views
       .map((m) => m.expectedPaymentDate)
       .filter((d): d is string => !!d && d >= today)
@@ -471,6 +483,10 @@ export async function getMilestoneProgram(now: Date = new Date()): Promise<Miles
       inflowTotal,
       inflowOutstanding,
       outflowTotal,
+      openInflowCount,
+      openInflowAmount,
+      openOutflowCount,
+      openOutflowAmount,
       gapCount,
       readyToInvoiceCount,
       nextInflowDate: upcoming[0] ?? null,

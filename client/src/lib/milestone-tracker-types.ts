@@ -106,6 +106,10 @@ export interface MilestoneProgramRow {
   inflowTotal: number;
   inflowOutstanding: number;
   outflowTotal: number;
+  openInflowCount: number;
+  openInflowAmount: number;
+  openOutflowCount: number;
+  openOutflowAmount: number;
   gapCount: number;
   readyToInvoiceCount: number;
   nextInflowDate: string | null;
