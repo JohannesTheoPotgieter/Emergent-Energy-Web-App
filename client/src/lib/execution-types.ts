@@ -192,6 +192,7 @@ export interface ProjectDetail {
   deliveries: {
     milestones: DeliveryMilestone[];
     procurement: ProcurementDelivery[];
+    tasks: DeliveryProgramRow[];
     next: NextDelivery | null;
     overdueCount: number;
   };
