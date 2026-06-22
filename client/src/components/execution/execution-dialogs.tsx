@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import UserPicker from "@/components/UserPicker";
 import {
   Dialog,
   DialogContent,
@@ -25,7 +26,6 @@ import type {
   ExecItemStatus,
   PlanTaskView,
   AssignableUser,
-  SupplierListRow,
   InstallerRow,
 } from "@/lib/execution-types";
 
@@ -214,27 +214,18 @@ export function AllocateDialog({
 }) {
   const { toast } = useToast();
   const isEdit = Boolean(assignment);
-  const [type, setType] = useState<"INSTALLER" | "SUPPLIER">("INSTALLER");
   const [counterpartyId, setCounterpartyId] = useState<string>("");
   const [workPackage, setWorkPackage] = useState("");
   const [scope, setScope] = useState("");
   const [status, setStatus] = useState("active");
 
-  const suppliers = useQuery<SupplierListRow[]>({ queryKey: ["/api/subcontractor-dashboard/supplier-list"], enabled: open });
-
   useEffect(() => {
     if (!open) return;
-    setType("INSTALLER");
     setCounterpartyId(assignment ? String(assignment.counterpartyId) : "");
     setWorkPackage(assignment?.workPackage ?? "");
     setScope(assignment?.scopeDescription ?? "");
     setStatus(assignment?.status ?? "active");
   }, [open, assignment]);
-
-  const filteredSuppliers = useMemo(() => {
-    const rows = suppliers.data ?? [];
-    return rows.filter((r) => (r.type_default ?? "").toUpperCase() === type || type === "INSTALLER");
-  }, [suppliers.data, type]);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -269,26 +260,19 @@ export function AllocateDialog({
         </DialogHeader>
         <div className="space-y-3">
           {!isEdit && (
-            <>
-              <div className="flex gap-2">
-                {(["INSTALLER", "SUPPLIER"] as const).map((t) => (
-                  <Button key={t} size="sm" variant={type === t ? "default" : "outline"} onClick={() => setType(t)}>
-                    {t === "INSTALLER" ? "Subcontractor" : "Supplier"}
-                  </Button>
-                ))}
+            <label className="text-sm block">
+              <span className="text-muted-foreground">Counterparty</span>
+              <div className="mt-1">
+                <UserPicker
+                  value={counterpartyId ? Number(counterpartyId) : null}
+                  valueType="external_counterparty"
+                  onValueChange={(id) => setCounterpartyId(id != null ? String(id) : "")}
+                  placeholder="Select counterparty…"
+                  label="Allocate to"
+                  data-testid="allocate-counterparty"
+                />
               </div>
-              <label className="text-sm block">
-                <span className="text-muted-foreground">Counterparty</span>
-                <Select value={counterpartyId} onValueChange={setCounterpartyId}>
-                  <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
-                  <SelectContent>
-                    {filteredSuppliers.map((s) => (
-                      <SelectItem key={s.id} value={String(s.id)}>{s.name_canonical}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </label>
-            </>
+            </label>
           )}
           <label className="text-sm block">
             <span className="text-muted-foreground">Work package</span>
