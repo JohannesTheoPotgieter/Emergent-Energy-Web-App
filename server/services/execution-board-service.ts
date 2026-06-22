@@ -31,6 +31,7 @@ import {
   selectNextDelivery,
   summarizeEngineering,
   summarizeQuality,
+  summarizeWorkstream,
   computeCriticalPath,
   type PlanTask,
   type ScheduleSnapshot,
@@ -38,6 +39,7 @@ import {
   type NextDelivery,
   type EngineeringSummary,
   type QualitySummary,
+  type WorkstreamSummary,
   type CriticalPathResult,
 } from "./execution-board-math";
 
@@ -115,8 +117,8 @@ export interface BoardRow {
   pmName: string | null;
   pdUserId: number | null;
   pdName: string | null;
-  engineering: EngineeringSummary;
-  quality: QualitySummary;
+  engineering: WorkstreamSummary;
+  quality: WorkstreamSummary;
   flags: ExecutionItemCounts;
   // Editable fields surfaced for the board's inline editors: RAG status
   // (canonical lifecycle RAG) + Edit Project Info modal.
@@ -163,23 +165,17 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
     "plan-tasks",
   );
 
-  const [installers, milestones, procurement, engStages, engOpenTasks, snagRows, qcSet, itemCounts] =
+  const [installers, milestones, procurement, itemCounts] =
     await Promise.all([
       safe(executionBoardRepository.getInstallersForProjects(ids), [], "installers"),
       safe(executionBoardRepository.getDeliveryMilestonesForProjects(ids), [], "milestones"),
       safe(executionBoardRepository.getOpenProcurementForProjects(ids), [], "procurement"),
-      safe(executionBoardRepository.getEngStagesForProjects(ids), [], "eng-stages"),
-      safe(executionBoardRepository.getOpenEngTaskCounts(ids), new Map<number, number>(), "eng-tasks"),
-      safe(executionBoardRepository.getSnagsForProjects(ids), [], "snags"),
-      safe(executionBoardRepository.getQcLinkedProjectIds(ids), new Set<number>(), "qc-links"),
       safe(executionReviewRepository.getCountsByProjects(ids), new Map<number, ExecutionItemCounts>(), "item-counts"),
     ]);
 
   const installersByProject = groupBy(installers, (r) => r.projectId);
   const milestonesByProject = groupBy(milestones, (r) => r.projectId);
   const procurementByProject = groupBy(procurement, (r) => r.projectId);
-  const engByProject = groupBy(engStages, (r) => r.projectId);
-  const snagsByProject = groupBy(snagRows, (r) => r.projectId);
 
   const userIds = active.flatMap((p) => [p.pmUserId, p.pdUserId]).filter((x): x is number => typeof x === "number");
   const userNames = await executionBoardRepository.getUserNamesByIds(userIds);
@@ -195,8 +191,10 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
     // Fall back to a plan task named "delivery" when there's no milestone/procurement record.
     const planDelivery = deliveries.next ? null : nextDeliveryFromPlan(tasks, today);
     const nextDelivery = deliveries.next ?? planDelivery;
-    const eng = summarizeEngineering(engByProject.get(p.id) ?? [], engOpenTasks.get(p.id) ?? 0);
-    const quality = summarizeQuality(snagsByProject.get(p.id) ?? [], qcSet.has(p.id), today);
+    // Eng/QA roll up the plan's ENG / QUALITY workstreams (work_items) — the
+    // dedicated modules aren't built yet, so the plan is the source of truth.
+    const eng = summarizeWorkstream(tasks.filter((t) => t.workstream === "ENG"));
+    const quality = summarizeWorkstream(tasks.filter((t) => t.workstream === "QUALITY"));
     const flags = itemCounts.get(p.id) ?? emptyCounts();
 
     if (schedule.rag === "red") ragRed += 1;
@@ -314,8 +312,8 @@ export interface ProjectDetail {
     next: NextDelivery | null;
     overdueCount: number;
   };
-  engineering: EngineeringSummary;
-  quality: QualitySummary;
+  engineering: WorkstreamSummary;
+  quality: WorkstreamSummary;
 }
 
 export async function getProjectDetail(projectId: number, now: Date = new Date()): Promise<ProjectDetail | null> {
@@ -323,15 +321,11 @@ export async function getProjectDetail(projectId: number, now: Date = new Date()
   const header = await executionBoardRepository.getProjectHeader(projectId);
   if (!header) return null;
 
-  const [plan, installers, milestones, procurement, engStages, engOpen, snagRows, qcSet] = await Promise.all([
+  const [plan, installers, milestones, procurement] = await Promise.all([
     executionBoardRepository.getPlanTasksForProject(projectId),
     executionBoardRepository.getInstallersForProjects([projectId]),
     executionBoardRepository.getDeliveryMilestonesForProjects([projectId]),
     executionBoardRepository.getOpenProcurementForProjects([projectId]),
-    executionBoardRepository.getEngStagesForProjects([projectId]),
-    executionBoardRepository.getOpenEngTaskCounts([projectId]),
-    executionBoardRepository.getSnagsForProjects([projectId]),
-    executionBoardRepository.getQcLinkedProjectIds([projectId]),
   ]);
 
   const [userNames, latest] = await Promise.all([
@@ -390,8 +384,10 @@ export async function getProjectDetail(projectId: number, now: Date = new Date()
       next: deliveries.next,
       overdueCount: deliveries.overdueCount,
     },
-    engineering: summarizeEngineering(engStages, engOpen.get(projectId) ?? 0),
-    quality: summarizeQuality(snagRows, qcSet.has(projectId), today),
+    // Eng/QA read the plan's ENG / QUALITY workstreams (work_items) — same as
+    // the board — until the dedicated modules come online.
+    engineering: summarizeWorkstream(plan.tasks.filter((t) => t.workstream === "ENG")),
+    quality: summarizeWorkstream(plan.tasks.filter((t) => t.workstream === "QUALITY")),
   };
 }
 

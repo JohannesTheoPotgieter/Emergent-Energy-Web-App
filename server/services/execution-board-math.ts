@@ -24,6 +24,7 @@ export interface PlanTask {
   taskNo: string | null;
   taskName: string;
   phase: string | null;
+  workstream: string | null;
   startDate: string | null;
   endDate: string | null;
   actualStartDate: string | null;
@@ -221,6 +222,49 @@ export function selectNextDelivery(
       }
     : null;
   return { next, overdueCount };
+}
+
+/**
+ * Roll-up of a single plan workstream (ENG or QUALITY) read straight from the
+ * imported program plan (work_items). Used by the board's Eng/QA columns until
+ * the dedicated Engineering / Quality modules come online — so the columns
+ * reflect the plan rather than empty module tables. Counts are over leaf tasks;
+ * actual/expected are the same duration-weighted % as the schedule column,
+ * scoped to the workstream, and the RAG is schedule-variance based.
+ */
+export interface WorkstreamSummary {
+  total: number;
+  complete: number;
+  inProgress: number;
+  notStarted: number;
+  actualPct: number | null;
+  expectedPct: number | null;
+  variance: number | null;
+  rag: ScheduleRag | null;
+  hasPlan: boolean;
+}
+
+export function summarizeWorkstream(tasks: PlanTask[]): WorkstreamSummary {
+  const snap = computeScheduleSnapshot(tasks);
+  const leaves = leafTasks(tasks);
+  let complete = 0, inProgress = 0, notStarted = 0;
+  for (const t of leaves) {
+    const pct = pctTo100(t.pctComplete) ?? 0;
+    if (pct >= 100) complete += 1;
+    else if (pct > 0) inProgress += 1;
+    else notStarted += 1;
+  }
+  return {
+    total: snap.hasPlan ? leaves.length : 0,
+    complete,
+    inProgress,
+    notStarted,
+    actualPct: snap.actualPct,
+    expectedPct: snap.expectedPct,
+    variance: snap.variance,
+    rag: snap.rag,
+    hasPlan: snap.hasPlan,
+  };
 }
 
 export interface EngineeringSummary {

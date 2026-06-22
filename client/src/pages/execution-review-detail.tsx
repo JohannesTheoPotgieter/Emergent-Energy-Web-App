@@ -283,26 +283,38 @@ export default function ExecutionReviewDetail() {
           )}
         </TabsContent>
 
-        {/* T5 Engineering */}
+        {/* T5 Engineering — rolled up from the plan's ENG workstream */}
         <TabsContent value="engineering">
           <Card><CardContent className="p-4 space-y-2">
-            <div className="flex items-center gap-3"><RagBadge rag={data.engineering.rag} />
-              <span className="text-sm">{data.engineering.complete}/{data.engineering.total} stages complete · {data.engineering.blocked} blocked · {data.engineering.openTasks} open tasks</span>
-            </div>
+            {data.engineering.hasPlan ? (
+              <div className="flex items-center gap-3"><RagBadge rag={data.engineering.rag} />
+                <span className="text-sm">
+                  {data.engineering.complete}/{data.engineering.total} items complete · {data.engineering.inProgress} in progress · actual {fmtPct(data.engineering.actualPct)} / expected {fmtPct(data.engineering.expectedPct)}
+                </span>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No engineering items in the program plan.</p>
+            )}
+            <p className="text-xs text-muted-foreground">Read from the plan's ENG workstream until the Engineering module is wired in.</p>
             <Link href="/engineering" className="text-sm text-emerald-600 inline-flex items-center gap-1">
               Open engineering <ExternalLink className="h-3.5 w-3.5" />
             </Link>
           </CardContent></Card>
         </TabsContent>
 
-        {/* T6 Quality */}
+        {/* T6 Quality — rolled up from the plan's QUALITY workstream */}
         <TabsContent value="quality">
           <Card><CardContent className="p-4 space-y-2">
-            <div className="flex items-center gap-3"><RagBadge rag={data.quality.rag} />
-              <span className="text-sm">
-                {data.quality.openTotal} open snags · {data.quality.critical} critical · {data.quality.major} major · {data.quality.overdue} overdue · QCP {data.quality.hasQcp ? "in place" : "missing"}
-              </span>
-            </div>
+            {data.quality.hasPlan ? (
+              <div className="flex items-center gap-3"><RagBadge rag={data.quality.rag} />
+                <span className="text-sm">
+                  {data.quality.complete}/{data.quality.total} items complete · {data.quality.inProgress} in progress · actual {fmtPct(data.quality.actualPct)} / expected {fmtPct(data.quality.expectedPct)}
+                </span>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No quality items in the program plan.</p>
+            )}
+            <p className="text-xs text-muted-foreground">Read from the plan's QUALITY workstream until the Quality module is wired in.</p>
             <Link href="/quality" className="text-sm text-emerald-600 inline-flex items-center gap-1">
               Open quality <ExternalLink className="h-3.5 w-3.5" />
             </Link>
