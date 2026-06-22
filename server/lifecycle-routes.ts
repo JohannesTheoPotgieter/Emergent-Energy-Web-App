@@ -695,7 +695,11 @@ export function registerLifecycleRoutes(app: Express) {
             ragUpdatedAt: new Date(),
             ragUpdatedByUserId: userId,
           };
-          await tx.update(projectInfo).set(ragFields).where(eq(projectInfo.id, projectId));
+          // RAG lives on project_execution_state (NOT project_info — it has no
+          // rag columns, which made the old project_info UPDATE emit an empty
+          // SET and 500). syncProjectSplitTables routes the rag fields to
+          // project_execution_state; just bump project_info.updatedAt here.
+          await tx.update(projectInfo).set({ updatedAt: new Date() }).where(eq(projectInfo.id, projectId));
           await syncProjectSplitTables(projectId, ragFields, tx);
 
           await tx.insert(projectRagAudit).values({
