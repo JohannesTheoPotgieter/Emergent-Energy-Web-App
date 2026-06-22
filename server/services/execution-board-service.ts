@@ -58,6 +58,26 @@ function emptyCounts(): ExecutionItemCounts {
 }
 
 /**
+ * Fallback Next-delivery from the program plan — the earliest open task whose
+ * name mentions "delivery" (the imported tracker's delivery line). Used when a
+ * project has no delivery-milestone / procurement record, so the board's
+ * Next-delivery column reflects the plan the same way the Deliveries page does.
+ */
+function nextDeliveryFromPlan(tasks: PlanTask[], today: Date): NextDelivery | null {
+  let best: { d: Date; raw: string; label: string } | null = null;
+  for (const t of tasks) {
+    if (!t.taskName || !t.taskName.toLowerCase().includes("delivery")) continue;
+    if ((pctTo100(t.pctComplete) ?? 0) >= 100) continue;
+    const raw = t.startDate ?? t.actualStartDate ?? null;
+    const d = parsePlanDate(raw);
+    if (!d) continue;
+    if (!best || d < best.d) best = { d, raw: raw as string, label: t.taskName };
+  }
+  if (!best) return null;
+  return { label: best.label, date: best.raw, rag: deliveryRag(best.d, today, false), source: "task" };
+}
+
+/**
  * Resolve a capability fetch, degrading to a fallback on error so one failing
  * domain greys out a column instead of blanking the whole board (the board is
  * a radar — partial data beats no data).
@@ -172,6 +192,9 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
     const tasks = tasksByProject.get(p.id) ?? [];
     const schedule = computeScheduleSnapshot(tasks);
     const deliveries = selectNextDelivery(milestonesByProject.get(p.id) ?? [], procurementByProject.get(p.id) ?? [], today);
+    // Fall back to a plan task named "delivery" when there's no milestone/procurement record.
+    const planDelivery = deliveries.next ? null : nextDeliveryFromPlan(tasks, today);
+    const nextDelivery = deliveries.next ?? planDelivery;
     const eng = summarizeEngineering(engByProject.get(p.id) ?? [], engOpenTasks.get(p.id) ?? 0);
     const quality = summarizeQuality(snagsByProject.get(p.id) ?? [], qcSet.has(p.id), today);
     const flags = itemCounts.get(p.id) ?? emptyCounts();
@@ -186,6 +209,7 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
     }
     openFlags += flags.open + flags.flagged;
     overdueDeliveries += deliveries.overdueCount;
+    if (planDelivery?.rag === "red") overdueDeliveries += 1;
 
     rows.push({
       projectId: p.id,
@@ -195,7 +219,7 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
       contractValue: p.contractValue,
       schedule: { ...schedule, importedAt: null },
       nextTask: selectNextTask(tasks, today, 14),
-      nextDelivery: deliveries.next,
+      nextDelivery,
       installers: installerSummary(installersByProject.get(p.id) ?? []),
       pmUserId: p.pmUserId,
       pmName: (p.pmUserId != null ? userNames.get(p.pmUserId) : null) ?? p.pmText ?? null,

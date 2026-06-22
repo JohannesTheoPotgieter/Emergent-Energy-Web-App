@@ -24,7 +24,7 @@ export interface NextDelivery {
   label: string;
   date: string | null;
   rag: Rag;
-  source: "milestone" | "procurement";
+  source: "milestone" | "procurement" | "task";
   blocker?: string | null;
 }
 
