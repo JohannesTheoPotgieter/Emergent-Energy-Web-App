@@ -19,7 +19,7 @@ import {
   type ExecutionItemCounts,
 } from "../repositories/execution-review-repository";
 import { pctTo100, type ScheduleRag } from "../lib/kpi-formulas";
-import { resolveCanonicalPhase } from "@shared/phases";
+import { PHASES, resolveCanonicalPhase } from "@shared/phases";
 import logger from "../lib/logger";
 import type { ProjectDeliveryMilestone } from "@shared/schema";
 import {
@@ -147,14 +147,20 @@ export interface BoardResult {
   rows: BoardRow[];
 }
 
-// Phases auto-excluded from the active Execution board (KPIs + rows): the final
-// post-handover review and the completed/terminal phases. Keeps the control
-// tower focused on live delivery instead of closed-out sites.
-const EXCLUDED_BOARD_PHASE_LABELS = new Set(["3 Months Post HO Review", "Completed", "Done"]);
-function isExcludedBoardPhase(phase: string | null): boolean {
+// The Execution board shows mid-to-late delivery only: canonical phases from
+// Financial Close (display position 3) forward, EXCEPT the final 3-month
+// post-handover review and the terminal Hold/Done phases. Earlier phases
+// (assessment / design) and unrecognised phases are hidden, so the control
+// tower tracks active delivery. Derived from the canonical phase list.
+const BOARD_VISIBLE_PHASE_LABELS = new Set(
+  PHASES
+    .filter((p) => p.displayNumber != null && p.displayNumber >= 3 && p.label !== "3 Months Post HO Review")
+    .map((p) => p.label),
+);
+function isBoardVisiblePhase(phase: string | null): boolean {
   if (!phase) return false;
   const label = resolveCanonicalPhase(phase)?.label ?? phase;
-  return EXCLUDED_BOARD_PHASE_LABELS.has(label);
+  return BOARD_VISIBLE_PHASE_LABELS.has(label);
 }
 
 function installerSummary(rows: InstallerRow[]): InstallerSummary {
@@ -167,9 +173,10 @@ function installerSummary(rows: InstallerRow[]): InstallerSummary {
 
 export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
   const today = startOfDay(now);
-  // Auto-exclude post-handover-review and completed sites from the board KPIs
-  // and rows — the control tower tracks live delivery, not closed-out sites.
-  const active = (await executionBoardRepository.getActiveProjects()).filter((p) => !isExcludedBoardPhase(p.phase));
+  // Show only Financial-Close-forward delivery on the board (KPIs + rows) —
+  // earlier assessment/design phases, the 3-month post-handover review and the
+  // completed/on-hold terminals are hidden, keeping the tower on live delivery.
+  const active = (await executionBoardRepository.getActiveProjects()).filter((p) => isBoardVisiblePhase(p.phase));
   const ids = active.map((p) => p.id);
 
   const tasksByProject = await safe(
