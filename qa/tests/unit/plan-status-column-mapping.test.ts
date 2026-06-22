@@ -32,6 +32,21 @@ describe("plan import — Status (actual %) column binding", () => {
     // Standard layout binds both → no silent-zero gap.
     expect(planActualPctGap(result)).toBe(false);
   });
+
+  it("recovers actual-% when a stale learned mapping sends 'Status' to the wrong field", () => {
+    const section = planSection([
+      "No.", "High Level Programme", "Planned Start", "Duration", "Planned End",
+      "Actual Start", "Duration", "Actual End", "Status", "Expected Status", "Comment",
+    ]);
+    // Simulate a bad remembered mapping for this template binding Status → owner.
+    const learned = [{ section: "PLAN", sourceHeader: "Status", canonicalField: "owner", confidenceWeight: 1 }];
+    const result = mapColumns(section, new ExcelJS.Workbook(), learned);
+    const byField = new Map(result.mappings.map((m) => [m.canonicalField, m.rawHeader]));
+    expect(byField.get("pct_complete"), "Status reclaimed for actual %").toBe("Status");
+    expect(byField.get("expected_pct")).toBe("Expected Status");
+    expect(byField.get("owner"), "Status no longer mis-bound to owner").toBeUndefined();
+    expect(planActualPctGap(result)).toBe(false);
+  });
 });
 
 describe("planActualPctGap — silent-zero footgun guard", () => {

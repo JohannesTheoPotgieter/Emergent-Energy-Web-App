@@ -213,6 +213,35 @@ export function mapColumns(
     }
   }
 
+  // PLAN actual-% recovery. "Status" / "% complete" / "progress" have no other
+  // valid meaning in a plan section, yet a stale learned mapping (these override
+  // synonyms and are keyed per file) or claim order can leave `pct_complete`
+  // unclaimed — silently importing every task at 0% actual. If it went
+  // unclaimed but a header EXACTLY matches a pct_complete synonym, reclaim that
+  // column for actual % (detaching it from any field it was mis-assigned to).
+  // Exact-match only, so "expected status" is never grabbed for actual %.
+  if (detectedSection.section === "PLAN" && !claimedFields.has("pct_complete")) {
+    const pctSynonyms = (synonymMap["pct_complete"] ?? []).map((s) => s.toLowerCase().trim());
+    const recover = detectedSection.detectedHeaders.find((h) => pctSynonyms.includes(h.normalizedHeader));
+    if (recover) {
+      const mappedIdx = mappings.findIndex((m) => m.colIndex === recover.colIndex);
+      if (mappedIdx >= 0) {
+        claimedFields.delete(mappings[mappedIdx].canonicalField);
+        mappings.splice(mappedIdx, 1);
+      }
+      const unmappedIdx = unmappedHeaders.findIndex((u) => u.colIndex === recover.colIndex);
+      if (unmappedIdx >= 0) unmappedHeaders.splice(unmappedIdx, 1);
+      claimedFields.add("pct_complete");
+      mappings.push({
+        colIndex: recover.colIndex,
+        rawHeader: recover.rawHeader,
+        canonicalField: "pct_complete",
+        confidence: 1.0,
+        matchType: "exact",
+      });
+    }
+  }
+
   const missingRequired: string[] = [];
   if (anchor) {
     for (const reqField of anchor.requiredFields) {
