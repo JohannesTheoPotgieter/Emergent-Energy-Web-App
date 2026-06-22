@@ -1,7 +1,7 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { Download, Pencil } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Download, Pencil } from "lucide-react";
 import { useApiMutation } from "@/hooks/use-api-mutation";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell,
@@ -24,7 +24,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { PHASE_LABELS } from "@shared/phases";
 import { EditProjectInfoModal } from "@/components/execution/edit-project-info-modal";
 import type { BoardResult, BoardRow, Rag, EngineeringSummary, QualitySummary } from "@/lib/execution-types";
-import { fmtPct, fmtDate } from "@/lib/execution-types";
+import { fmtPct, fmtDate, parseExecDate } from "@/lib/execution-types";
 
 interface Filters {
   search: string;
@@ -193,22 +193,61 @@ function MiniRag({ rag, value }: { rag: Rag; value: string }) {
 const engValue = (e: EngineeringSummary): string => (e.blocked > 0 ? `${e.blocked} blkd` : `${e.complete}/${e.total}`);
 const qaValue = (q: QualitySummary): string => (q.critical > 0 ? `${q.critical} crit` : `${q.openTotal}`);
 
-interface RowProps {
-  row: BoardRow;
-  onOpen: (id: number) => void;
-  isAdmin: boolean;
-  pmUsers: PmUser[];
-  onAssignPm: (row: BoardRow, name: string | null) => void;
-  onSetPhase: (row: BoardRow, phase: string) => void;
-  onSetRag: (row: BoardRow, rag: string, comment: string) => void;
-  onEdit: (row: BoardRow) => void;
+const LS_SORT = "execution-board-sort";
+const LS_COLW = "execution-board-colwidths";
+
+// Sort helpers — worst-first for RAG-style columns, lifecycle order for phase.
+const ragRank = (rag: Rag): number => (rag === "red" ? 0 : rag === "amber" ? 1 : rag === "green" ? 2 : 3);
+const ragStatusRank = (s: string | null): number =>
+  s ? ({ RED: 0, AMBER: 1, GREEN: 2 } as Record<string, number>)[s.toUpperCase()] ?? 4 : 4;
+const phaseRank = (phase: string | null): number => {
+  const i = LIFECYCLE_PHASES.indexOf(canonicalPhaseLabel(phase));
+  return i === -1 ? LIFECYCLE_PHASES.length : i;
+};
+const dateRank = (d: string | null): number => parseExecDate(d)?.getTime() ?? Number.POSITIVE_INFINITY;
+
+/** Per-column sort value, keyed by column key (kept module-level so sorting is stable). */
+function sortValue(r: BoardRow, key: string): string | number {
+  switch (key) {
+    case "site": return r.projectName.toLowerCase();
+    case "phase": return phaseRank(r.phase);
+    case "sched": return r.schedule.variance ?? Number.POSITIVE_INFINITY;
+    case "nextTask": return dateRank(r.nextTask?.date ?? null);
+    case "nextDelivery": return dateRank(r.nextDelivery?.date ?? null);
+    case "installer": return (r.installers.primary ?? "").toLowerCase();
+    case "pm": return (r.pmName ?? "~").toLowerCase();
+    case "rag": return ragStatusRank(r.ragStatus);
+    case "eng": return ragRank(r.engineering.rag);
+    case "qa": return ragRank(r.quality.rag);
+    case "flags": return r.flags.open + r.flags.flagged;
+    default: return 0;
+  }
+}
+
+/** Truncating cell content — keeps long values (e.g. delivery names) inside the column. */
+function Trunc({ children, title }: { children: ReactNode; title?: string }) {
+  return <span className="block truncate" title={title}>{children}</span>;
+}
+
+function SortIcon({ active, dir }: { active: boolean; dir: "asc" | "desc" }) {
+  if (!active) return <ArrowUpDown className="w-3 h-3 opacity-30 shrink-0" />;
+  return dir === "asc" ? <ArrowUp className="w-3 h-3 text-emerald-600 shrink-0" /> : <ArrowDown className="w-3 h-3 text-emerald-600 shrink-0" />;
+}
+
+interface Col {
+  key: string;
+  header: string;
+  width: number;
+  align?: "right";
+  sortable?: boolean;
+  cell: (r: BoardRow) => ReactNode;
 }
 
 // Only navigate to detail when the click/keypress is on the row itself — never
 // when it lands on an inline editor (PM, phase, RAG, edit, or any form control).
 const INTERACTIVE = '[data-interactive="true"], button, a, input, select, textarea, [role="combobox"], [role="option"], [role="dialog"]';
 
-function Row({ row, onOpen, isAdmin, pmUsers, onAssignPm, onSetPhase, onSetRag, onEdit }: RowProps) {
+function TableRow({ row, columns, onOpen }: { row: BoardRow; columns: Col[]; onOpen: (id: number) => void }) {
   return (
     <tr
       className="border-b hover:bg-muted/40 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
@@ -219,54 +258,14 @@ function Row({ row, onOpen, isAdmin, pmUsers, onAssignPm, onSetPhase, onSetRag, 
       aria-label={`Open ${row.projectName}`}
       data-testid={`execution-row-${row.projectId}`}
     >
-      <td className="py-2 pr-3 font-medium">{row.projectName}</td>
-      <td className="py-2 pr-3"><PhaseCell row={row} isAdmin={isAdmin} onSetPhase={onSetPhase} /></td>
-      <td className="py-2 pr-3"><ScheduleCell row={row} /></td>
-      <td className="py-2 pr-3">
-        {row.nextTask ? <span className="whitespace-nowrap">{row.nextTask.taskName} · {fmtDate(row.nextTask.date)}</span> : <span className="text-muted-foreground">—</span>}
-      </td>
-      <td className="py-2 pr-3">
-        {row.nextDelivery ? (
-          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-            <RagBadge rag={row.nextDelivery.rag} dotOnly showLabel={false} />{row.nextDelivery.label} · {fmtDate(row.nextDelivery.date)}
-          </span>
-        ) : <span className="text-muted-foreground">—</span>}
-      </td>
-      <td className="py-2 pr-3">
-        {row.installers.count > 0 ? (
-          <span title={row.installers.list.map((i) => i.name).join(", ")}>{row.installers.primary}{row.installers.count > 1 ? ` +${row.installers.count - 1}` : ""}</span>
-        ) : <span className="text-muted-foreground">—</span>}
-      </td>
-      <td className="py-2 pr-3">
-        {isAdmin ? (
-          <span data-interactive="true" onClick={(e) => e.stopPropagation()}>
-            <SearchableSelect
-              value={row.pmName || "__unassigned"}
-              onValueChange={(val) => onAssignPm(row, val === "__unassigned" ? null : val)}
-              placeholder="No PM"
-              triggerClassName={`h-7 w-[130px] text-xs border-0 bg-transparent hover:bg-muted px-1 shadow-none ${!row.pmName ? "text-red-500 font-medium" : ""}`}
-              data-testid={`select-pm-${row.projectId}`}
-              options={[{ value: "__unassigned", label: "Unassigned" }, ...pmUsers.map((u) => ({ value: u.name, label: u.name }))]}
-            />
-          </span>
-        ) : (row.pmName ?? <span className="text-muted-foreground">—</span>)}
-      </td>
-      <td className="py-2 pr-3"><RagStatusCell row={row} isAdmin={isAdmin} onSetRag={onSetRag} /></td>
-      <td className="py-2 pr-3"><MiniRag rag={row.engineering.rag} value={engValue(row.engineering)} /></td>
-      <td className="py-2 pr-3"><MiniRag rag={row.quality.rag} value={qaValue(row.quality)} /></td>
-      <td className="py-2 pr-1 tabular-nums">{row.flags.open + row.flags.flagged}/{row.flags.actioned}</td>
-      {isAdmin && (
-        <td className="py-2 pr-1" data-interactive="true" onClick={(e) => e.stopPropagation()}>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(row)} aria-label={`Edit ${row.projectName}`} data-testid={`btn-edit-project-${row.projectId}`}>
-            <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-          </Button>
+      {columns.map((c) => (
+        <td key={c.key} className={`py-2 px-2 overflow-hidden align-middle ${c.align === "right" ? "text-right" : ""}`}>
+          {c.cell(row)}
         </td>
-      )}
+      ))}
     </tr>
   );
 }
-
-const BASE_HEAD = ["Site", "Phase", "Sched", "Next task ·14d", "Next delivery", "Installer", "PM", "RAG", "Eng", "QA", "Flags"];
 
 export default function ExecutionReviewBoard() {
   const [, navigate] = useLocation();
@@ -331,14 +330,64 @@ export default function ExecutionReviewBoard() {
   useEffect(() => { localStorage.setItem(LS_KEY, JSON.stringify(filters)); }, [filters]);
   useEffect(() => { localStorage.setItem(LS_GROUP, groupByPm ? "1" : "0"); }, [groupByPm]);
 
-  const head = useMemo(() => (isAdmin ? [...BASE_HEAD, ""] : BASE_HEAD), [isAdmin]);
-  const rowProps = {
-    isAdmin,
-    pmUsers,
-    onAssignPm: (row: BoardRow, name: string | null) => assignPm.mutate({ projectId: row.projectId, name }),
-    onSetPhase: (row: BoardRow, phase: string) => setPhase.mutate({ projectId: row.projectId, phase }),
-    onSetRag: (row: BoardRow, rag: string, comment: string) => setRag.mutate({ projectId: row.projectId, rag, comment }),
-    onEdit: (row: BoardRow) => setEditProject(row),
+  // Sort + resizable column widths (both persisted to localStorage).
+  const [sort, setSort] = useState<{ key: string | null; dir: "asc" | "desc" }>(() => {
+    try { const s = JSON.parse(localStorage.getItem(LS_SORT) || "null"); return s?.key ? s : { key: null, dir: "asc" }; }
+    catch { return { key: null, dir: "asc" }; }
+  });
+  const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
+    try { return JSON.parse(localStorage.getItem(LS_COLW) || "{}"); } catch { return {}; }
+  });
+  useEffect(() => { localStorage.setItem(LS_SORT, JSON.stringify(sort)); }, [sort]);
+  useEffect(() => { localStorage.setItem(LS_COLW, JSON.stringify(colWidths)); }, [colWidths]);
+  const resizing = useRef<{ key: string; startX: number; startW: number } | null>(null);
+
+  const toggleSort = (key: string) =>
+    setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
+
+  const onAssignPm = (row: BoardRow, name: string | null) => assignPm.mutate({ projectId: row.projectId, name });
+  const onSetPhase = (row: BoardRow, phase: string) => setPhase.mutate({ projectId: row.projectId, phase });
+  const onSetRag = (row: BoardRow, rag: string, comment: string) => setRag.mutate({ projectId: row.projectId, rag, comment });
+
+  const columns: Col[] = [
+    { key: "site", header: "Site", width: 140, sortable: true, cell: (r) => <Trunc title={r.projectName}><span className="font-medium">{r.projectName}</span></Trunc> },
+    { key: "phase", header: "Phase", width: 145, sortable: true, cell: (r) => <PhaseCell row={r} isAdmin={isAdmin} onSetPhase={onSetPhase} /> },
+    { key: "sched", header: "Sched", width: 95, sortable: true, cell: (r) => <ScheduleCell row={r} /> },
+    { key: "nextTask", header: "Next task ·14d", width: 165, sortable: true, cell: (r) => r.nextTask ? <Trunc title={`${r.nextTask.taskName} · ${fmtDate(r.nextTask.date)}`}>{r.nextTask.taskName} · {fmtDate(r.nextTask.date)}</Trunc> : <span className="text-muted-foreground">—</span> },
+    { key: "nextDelivery", header: "Next delivery", width: 165, sortable: true, cell: (r) => r.nextDelivery ? <Trunc title={`${r.nextDelivery.label} · ${fmtDate(r.nextDelivery.date)}`}><span className="inline-flex items-center gap-1.5"><RagBadge rag={r.nextDelivery.rag} dotOnly showLabel={false} />{r.nextDelivery.label} · {fmtDate(r.nextDelivery.date)}</span></Trunc> : <span className="text-muted-foreground">—</span> },
+    { key: "installer", header: "Installer", width: 110, sortable: true, cell: (r) => r.installers.count > 0 ? <Trunc title={r.installers.list.map((i) => i.name).join(", ")}>{r.installers.primary}{r.installers.count > 1 ? ` +${r.installers.count - 1}` : ""}</Trunc> : <span className="text-muted-foreground">—</span> },
+    { key: "pm", header: "PM", width: 140, sortable: true, cell: (r) => isAdmin ? (
+      <span data-interactive="true" onClick={(e) => e.stopPropagation()}>
+        <SearchableSelect value={r.pmName || "__unassigned"} onValueChange={(val) => onAssignPm(r, val === "__unassigned" ? null : val)} placeholder="No PM"
+          triggerClassName={`h-7 w-full text-xs border-0 bg-transparent hover:bg-muted px-1 shadow-none ${!r.pmName ? "text-red-500 font-medium" : ""}`}
+          data-testid={`select-pm-${r.projectId}`}
+          options={[{ value: "__unassigned", label: "Unassigned" }, ...pmUsers.map((u) => ({ value: u.name, label: u.name }))]} />
+      </span>
+    ) : (r.pmName ? <Trunc title={r.pmName}>{r.pmName}</Trunc> : <span className="text-muted-foreground">—</span>) },
+    { key: "rag", header: "RAG", width: 95, sortable: true, cell: (r) => <RagStatusCell row={r} isAdmin={isAdmin} onSetRag={onSetRag} /> },
+    { key: "eng", header: "Eng", width: 75, sortable: true, cell: (r) => <MiniRag rag={r.engineering.rag} value={engValue(r.engineering)} /> },
+    { key: "qa", header: "QA", width: 65, sortable: true, cell: (r) => <MiniRag rag={r.quality.rag} value={qaValue(r.quality)} /> },
+    { key: "flags", header: "Flags", width: 70, align: "right", sortable: true, cell: (r) => <span className="tabular-nums">{r.flags.open + r.flags.flagged}/{r.flags.actioned}</span> },
+    ...(isAdmin ? ([{ key: "actions", header: "", width: 46, cell: (r: BoardRow) => (
+      <span data-interactive="true" onClick={(e) => e.stopPropagation()}>
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditProject(r)} aria-label={`Edit ${r.projectName}`} data-testid={`btn-edit-project-${r.projectId}`}>
+          <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+        </Button>
+      </span>
+    ) }] as Col[]) : []),
+  ];
+
+  const colW = (c: Col) => colWidths[c.key] ?? c.width;
+  const startResize = (e: React.MouseEvent, key: string, startW: number) => {
+    e.preventDefault(); e.stopPropagation();
+    resizing.current = { key, startX: e.clientX, startW };
+    const move = (ev: MouseEvent) => {
+      if (!resizing.current) return;
+      const w = Math.max(48, resizing.current.startW + (ev.clientX - resizing.current.startX));
+      setColWidths((prev) => ({ ...prev, [resizing.current!.key]: w }));
+    };
+    const up = () => { resizing.current = null; document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); };
+    document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
   };
 
   const rows = useMemo(() => data?.rows ?? [], [data]);
@@ -372,11 +421,22 @@ export default function ExecutionReviewBoard() {
     return true;
   }), [rows, filters]);
 
+  const sorted = useMemo(() => {
+    if (!sort.key) return filtered;
+    const dir = sort.dir === "asc" ? 1 : -1;
+    const key = sort.key;
+    return [...filtered].sort((a, b) => {
+      const av = sortValue(a, key), bv = sortValue(b, key);
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+  }, [filtered, sort]);
+
   const byPm = useMemo(() => {
     const m = new Map<string, BoardRow[]>();
-    for (const r of filtered) { const k = r.pmName ?? "Unassigned"; const a = m.get(k) ?? []; a.push(r); m.set(k, a); }
+    for (const r of sorted) { const k = r.pmName ?? "Unassigned"; const a = m.get(k) ?? []; a.push(r); m.set(k, a); }
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [filtered]);
+  }, [sorted]);
 
   const open = (id: number) => navigate(`/execution/site/${id}`);
   const h = data?.header;
@@ -500,17 +560,40 @@ export default function ExecutionReviewBoard() {
           ) : filtered.length === 0 ? (
             <div className="p-8 text-center text-sm text-muted-foreground" data-testid="execution-board-empty">No active sites match these filters.</div>
           ) : (
-            <table className="w-full text-sm">
-              <thead><tr className="border-b text-left text-xs text-muted-foreground">{head.map((hd, i) => <th key={hd || `col-${i}`} className="py-2 pr-3 font-medium">{hd}</th>)}</tr></thead>
+            <table className="text-sm border-collapse" style={{ tableLayout: "fixed", width: columns.reduce((s, c) => s + colW(c), 0) }}>
+              <colgroup>{columns.map((c) => <col key={c.key} style={{ width: colW(c) }} />)}</colgroup>
+              <thead>
+                <tr className="border-b text-left text-xs text-muted-foreground">
+                  {columns.map((c) => (
+                    <th
+                      key={c.key}
+                      className={`relative py-2 px-2 font-medium select-none whitespace-nowrap ${c.align === "right" ? "text-right" : ""} ${c.sortable ? "cursor-pointer hover:text-foreground" : ""}`}
+                      onClick={c.sortable ? () => toggleSort(c.key) : undefined}
+                      data-testid={`execution-col-${c.key}`}
+                    >
+                      <span className={`inline-flex items-center gap-0.5 ${c.align === "right" ? "justify-end w-full" : ""}`}>
+                        <span className="truncate">{c.header}</span>
+                        {c.sortable && <SortIcon active={sort.key === c.key} dir={sort.dir} />}
+                      </span>
+                      <span
+                        className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-emerald-400/60"
+                        onMouseDown={(e) => startResize(e, c.key, colW(c))}
+                        onClick={(e) => e.stopPropagation()}
+                        data-testid={`execution-resize-${c.key}`}
+                      />
+                    </th>
+                  ))}
+                </tr>
+              </thead>
               <tbody>
                 {groupByPm
                   ? byPm.map(([pm, prs]) => (
                       <Fragment key={`g-${pm}`}>
-                        <tr className="bg-muted/30"><td colSpan={head.length} className="py-1.5 px-2 text-xs font-medium">{pm} — {prs.length} active · {prs.filter((r) => r.schedule.rag === "red").length} behind</td></tr>
-                        {prs.map((r) => <Row key={r.projectId} row={r} onOpen={open} {...rowProps} />)}
+                        <tr className="bg-muted/30"><td colSpan={columns.length} className="py-1.5 px-2 text-xs font-medium">{pm} — {prs.length} active · {prs.filter((r) => r.schedule.rag === "red").length} behind</td></tr>
+                        {prs.map((r) => <TableRow key={r.projectId} row={r} columns={columns} onOpen={open} />)}
                       </Fragment>
                     ))
-                  : filtered.map((r) => <Row key={r.projectId} row={r} onOpen={open} {...rowProps} />)}
+                  : sorted.map((r) => <TableRow key={r.projectId} row={r} columns={columns} onOpen={open} />)}
               </tbody>
             </table>
           )}
