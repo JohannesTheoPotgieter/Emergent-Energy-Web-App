@@ -37,7 +37,7 @@ const MyWorkAdminSettingsPage = lazyWithRetry(() => import("@/pages/my-work-admi
 const MyWorkMeetingsPage = lazyWithRetry(() => import("@/pages/my-work-meetings"));
 const MyWorkSettingsPage = lazyWithRetry(() => import("@/pages/my-work-settings"));
 const QmDashboardPage = lazyWithRetry(() => import("@/pages/qm-dashboard"));
-const EngineeringDashboardPage = lazyWithRetry(() => import("@/pages/engineering-dashboard"));
+const EngineeringHomePage = lazyWithRetry(() => import("@/pages/engineering/EngineeringHomePage"));
 const EngineeringTasksPage = lazyWithRetry(() => import("@/pages/engineering-tasks"));
 const EngineeringAuditPage = lazyWithRetry(() => import("@/pages/engineering-audit"));
 const RoleSettingsPage = lazyWithRetry(() => import("@/pages/role-settings"));
@@ -201,7 +201,7 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   ExcelVsAppProjectPage,
   MyWorkAdminSettingsPage,
   QmDashboardPage,
-  EngineeringDashboardPage,
+  EngineeringHomePage,
   EngineeringTasksPage,
   EngineeringAuditPage,
   LifecycleBoardPage,

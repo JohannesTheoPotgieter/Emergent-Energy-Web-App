@@ -186,7 +186,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // NCR detail deep links: forward to /quality with the id preserved
   // as ?ncr=<id> so external bookmarks/email/Teams links don't lose context.
   { id: "qualityNcrDetail", path: "/quality/ncr/:id", label: "NCR Detail (redirects)", permissionEntity: "quality", showInSidebar: false, routeComponentKey: "NcrLegacyRedirect" },
-  { id: "engineering", path: "/engineering", label: "Engineering", iconKey: "Wrench", navGroup: "ENGINEERING", permissionEntity: "engineering", showInSidebar: true, routeComponentKey: "EngineeringDashboardPage", roleLandingEligibility: ["ENGINEERING_MANAGER", "ENGINEER"] },
+  { id: "engineering", path: "/engineering", label: "Engineering", iconKey: "Wrench", navGroup: "ENGINEERING", permissionEntity: "engineering", showInSidebar: true, routeComponentKey: "EngineeringHomePage", roleLandingEligibility: ["ENGINEERING_MANAGER", "ENGINEER"] },
   { id: "engineeringTasks", path: "/engineering/tasks", label: "Engineering Task Board", iconKey: "ListTodo", navGroup: "ENGINEERING", permissionEntity: "eng_tasks", showInSidebar: true, routeComponentKey: "EngineeringTasksPage" },
   { id: "engineeringDocuments", path: "/engineering/documents", label: "Engineering Document Management", iconKey: "FolderTree", navGroup: "ENGINEERING", permissionEntity: "engineering", showInSidebar: true, routeComponentKey: "EngineeringDocumentsPage" },
   { id: "engineeringStandup", path: "/engineering/standup", label: "Engineering Standup", iconKey: "Users", navGroup: "ENGINEERING", permissionEntity: "standups", showInSidebar: true, routeComponentKey: "EngineeringStandupPage" },
