@@ -51,6 +51,12 @@ interface UserPickerProps {
    * "external" for fields that store a counterparty id. Omit to show both.
    */
   restrictTo?: "internal" | "external";
+  /**
+   * Optional pre-filtered directory to render instead of fetching the full
+   * assignable list — use for constrained pickers (eligible approvers, team
+   * members, etc.) so the standard UI keeps each field's allowed set.
+   */
+  entries?: AssignableDirectoryEntry[];
 }
 
 /**
@@ -69,18 +75,23 @@ export default function UserPicker({
   className,
   "data-testid": testId,
   restrictTo,
+  entries,
 }: UserPickerProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [directoryMode, setDirectoryMode] = useState<"internal" | "external">(restrictTo ?? "internal");
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const { data: assignables = [] } = useQuery<AssignableDirectoryEntry[]>({
+  // When `entries` is provided the caller supplies a pre-filtered directory
+  // (e.g. eligible approvers, team members) — render those and skip the fetch.
+  const { data: fetchedAssignables = [] } = useQuery<AssignableDirectoryEntry[]>({
     queryKey: ["/api/assignables", "user-picker"],
     queryFn: async () => fetchAssignables(),
     staleTime: 30000,
     refetchOnWindowFocus: true,
+    enabled: !entries,
   });
+  const assignables = entries ?? fetchedAssignables;
 
   const internalUsers = useMemo(
     () => assignables.filter((entry) => entry.assigneeType === "internal_user"),

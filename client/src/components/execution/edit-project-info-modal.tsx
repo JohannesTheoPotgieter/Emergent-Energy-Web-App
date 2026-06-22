@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { useApiMutation } from "@/hooks/use-api-mutation";
 import {
@@ -11,11 +11,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import UserPicker from "@/components/UserPicker";
 import { apiRequest } from "@/lib/queryClient";
 import type { BoardRow } from "@/lib/execution-types";
-
-type PmUser = { id: number; name: string };
 
 /** Trim a date string to YYYY-MM-DD for <input type="date">. */
 function dateValue(v: string | null): string {
@@ -40,11 +38,7 @@ export function EditProjectInfoModal({
 }) {
   const qc = useQueryClient();
 
-  const { data: pmUsers = [] } = useQuery<PmUser[]>({
-    queryKey: ["/api/pm-assignable-users"],
-    enabled: open,
-    staleTime: 60_000,
-  });
+  const [pmUserId, setPmUserId] = useState<number | null>(row?.pmUserId ?? null);
 
   const [form, setForm] = useState(() => ({
     projectName: row?.projectName ?? "",
@@ -60,6 +54,7 @@ export function EditProjectInfoModal({
   // Re-seed the form whenever a different project is opened.
   useEffect(() => {
     if (!row) return;
+    setPmUserId(row.pmUserId ?? null);
     setForm({
       projectName: row.projectName,
       pd: row.pdName ?? "",
@@ -81,12 +76,18 @@ export function EditProjectInfoModal({
       await apiRequest("PATCH", `/api/project-info/${row.projectId}`, {
         projectName: form.projectName.trim() || row.projectName,
         pd: form.pd.trim() || null,
-        pm: form.pm.trim() || null,
         sizeKwp: form.sizeKwp.trim() ? String(Number(form.sizeKwp)) : null,
         constructionStartDate: form.constructionStartDate || null,
         commissioningDate: form.commissioningDate || null,
         omHandoverDate: form.omHandoverDate || null,
         clientHandoverDate: form.clientHandoverDate || null,
+      });
+      // PM is linked via the dedicated assign-pm endpoint — the project-info
+      // PATCH schema carries the `pm` text but cannot set `pmUserId` (the FK to
+      // users). assign-pm writes both, keeping the PM link canonical.
+      await apiRequest("PATCH", `/api/project-info/${row.projectId}/assign-pm`, {
+        pm: form.pm.trim(),
+        pmUserId,
       });
     },
     successToast: "Project updated",
@@ -118,15 +119,17 @@ export function EditProjectInfoModal({
           </div>
           <div>
             <Label className="text-xs font-medium text-muted-foreground mb-1 block">PM</Label>
-            <SearchableSelect
-              value={form.pm || "__unassigned"}
-              onValueChange={(val) => set("pm", val === "__unassigned" ? "" : val)}
+            <UserPicker
+              value={pmUserId}
+              valueType="internal_user"
+              restrictTo="internal"
+              onValueChange={(id, name) => {
+                setPmUserId(id);
+                set("pm", name ?? "");
+              }}
               placeholder="Select PM..."
+              label="Assign PM"
               data-testid="select-edit-pm"
-              options={[
-                { value: "__unassigned", label: "Unassigned" },
-                ...pmUsers.map((u) => ({ value: u.name, label: u.name })),
-              ]}
             />
           </div>
           <div>

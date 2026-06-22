@@ -20,9 +20,8 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+import UserPicker from "@/components/UserPicker";
+import { internalUserEntries } from "@/lib/assignables";
 import { statusBadgeClasses } from "@/lib/design-tokens";
 
 interface POReviewer { id: number; reviewerUserId: number; reviewerRole: string; decision: string; decidedAt: string | null; reviewerName: string; notes?: string | null; }
@@ -96,7 +95,7 @@ function RowActions({ po, onRefresh, eligibleApprovers, canDelegate }: { po: Pur
 
     <Dialog open={reviewOpen} onOpenChange={setReviewOpen}><DialogContent><DialogHeader><DialogTitle>Review {po.po_ref}</DialogTitle><DialogDescription>{po.project_name} · {fmtZAR(po.total)}</DialogDescription></DialogHeader><Textarea placeholder="Decision notes (required for Reject / Request Info)" value={notes} onChange={(e) => setNotes(e.target.value)} /><DialogFooter className="gap-2 flex-wrap"><Button variant="outline" onClick={() => actMut.mutate("requires_info")} disabled={actMut.isPending}>Request Info</Button><Button variant="destructive" onClick={() => actMut.mutate("blocked")} disabled={actMut.isPending} title="Sets status to Blocked — equivalent to Reject; the PO is no longer in the active review queue.">Reject</Button><Button onClick={() => actMut.mutate("approved")} disabled={actMut.isPending}>{actMut.isPending && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}Approve</Button></DialogFooter></DialogContent></Dialog>
 
-    <Dialog open={delegateOpen} onOpenChange={setDelegateOpen}><DialogContent><DialogHeader><DialogTitle>Delegate {po.po_ref}</DialogTitle><DialogDescription>Delegate to an eligible approver per backend rules.</DialogDescription></DialogHeader><Select value={toUserId} onValueChange={setToUserId}><SelectTrigger><SelectValue placeholder="Select approver" /></SelectTrigger><SelectContent>{eligibleApprovers.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name} ({a.role})</SelectItem>)}</SelectContent></Select><DialogFooter><Button onClick={() => delegateMut.mutate()} disabled={!toUserId || delegateMut.isPending}>Confirm Delegate</Button></DialogFooter></DialogContent></Dialog>
+    <Dialog open={delegateOpen} onOpenChange={setDelegateOpen}><DialogContent><DialogHeader><DialogTitle>Delegate {po.po_ref}</DialogTitle><DialogDescription>Delegate to an eligible approver per backend rules.</DialogDescription></DialogHeader><UserPicker value={toUserId ? Number(toUserId) : null} valueType="internal_user" restrictTo="internal" entries={internalUserEntries(eligibleApprovers)} onValueChange={(id) => setToUserId(id ? String(id) : "")} placeholder="Select approver" label="Delegate to" data-testid="select-delegate-approver" /><DialogFooter><Button onClick={() => delegateMut.mutate()} disabled={!toUserId || delegateMut.isPending}>Confirm Delegate</Button></DialogFooter></DialogContent></Dialog>
   </>;
 }
 

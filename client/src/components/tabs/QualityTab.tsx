@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import UserPicker from "@/components/UserPicker";
+import { internalUserEntries } from "@/lib/assignables";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -1392,14 +1394,18 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
                 Select a reviewer for all selected items. Items with missing required evidence will be skipped.
               </p>
               <div className="flex items-center gap-2 flex-wrap">
-                <SearchableSelect
-                  value={bulkApprover}
-                  onValueChange={setBulkApprover}
-                  placeholder="Select reviewer..."
-                  triggerClassName="h-8 text-xs flex-1 min-w-[200px]"
-                  data-testid="select-bulk-approver"
-                  options={teamMembers.map((m: any) => ({ value: String(m.id), label: m.name }))}
-                />
+                <div className="flex-1 min-w-[200px]">
+                  <UserPicker
+                    value={bulkApprover ? Number(bulkApprover) : null}
+                    valueType="internal_user"
+                    restrictTo="internal"
+                    entries={internalUserEntries(teamMembers)}
+                    onValueChange={(id) => setBulkApprover(id ? String(id) : "")}
+                    placeholder="Select reviewer..."
+                    label="Select reviewer"
+                    data-testid="select-bulk-approver"
+                  />
+                </div>
                 <Button
                   size="sm"
                   className="h-8 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700"
@@ -1791,14 +1797,18 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
                                         {sendForApprovalItem === instance.id ? (
                                           <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                                             <Send className="w-4 h-4 text-amber-600 shrink-0" />
-                                            <SearchableSelect
-                                              value={sfaApprover}
-                                              onValueChange={setSfaApprover}
-                                              placeholder="Select reviewer..."
-                                              triggerClassName="h-8 text-xs flex-1"
-                                              data-testid={`select-approver-${instance.id}`}
-                                              options={teamMembers.map((m: any) => ({ value: String(m.id), label: m.name }))}
-                                            />
+                                            <div className="flex-1">
+                                              <UserPicker
+                                                value={sfaApprover ? Number(sfaApprover) : null}
+                                                valueType="internal_user"
+                                                restrictTo="internal"
+                                                entries={internalUserEntries(teamMembers)}
+                                                onValueChange={(id) => setSfaApprover(id ? String(id) : "")}
+                                                placeholder="Select reviewer..."
+                                                label="Select reviewer"
+                                                data-testid={`select-approver-${instance.id}`}
+                                              />
+                                            </div>
                                             <Button
                                               size="sm"
                                               className="h-8 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700"
