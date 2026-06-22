@@ -244,7 +244,7 @@ export default function ExecutionReviewDetail() {
               Open procurement <ExternalLink className="h-3.5 w-3.5" />
             </Link>
           </div>
-          {data.deliveries.milestones.length === 0 && data.deliveries.procurement.length === 0 ? (
+          {data.deliveries.milestones.length === 0 && data.deliveries.procurement.length === 0 && data.deliveries.tasks.length === 0 ? (
             <p className="text-sm text-muted-foreground p-4">No deliveries scheduled.</p>
           ) : (
             <Card><CardContent className="p-0 overflow-x-auto">
@@ -267,6 +267,14 @@ export default function ExecutionReviewDetail() {
                       <td className="py-2 px-3 text-muted-foreground">procurement</td>
                       <td className={`py-2 px-3 whitespace-nowrap ${isOverdue(pr.requiredDate) ? "text-red-600" : ""}`}>{fmtDate(pr.requiredDate)}</td>
                       <td className="py-2 px-3">{pr.status}</td>
+                    </tr>
+                  ))}
+                  {data.deliveries.tasks.map((t, i) => (
+                    <tr key={`t-${i}`} className="border-b">
+                      <td className="py-2 px-3">{t.label}</td>
+                      <td className="py-2 px-3 text-muted-foreground">plan task</td>
+                      <td className={`py-2 px-3 whitespace-nowrap ${t.overdue ? "text-red-600" : ""}`}>{fmtDate(t.date)}</td>
+                      <td className="py-2 px-3">{t.complete ? "complete" : t.overdue ? "overdue" : "scheduled"}</td>
                     </tr>
                   ))}
                 </tbody>

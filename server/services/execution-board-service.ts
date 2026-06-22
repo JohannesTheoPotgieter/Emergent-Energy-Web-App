@@ -310,6 +310,7 @@ export interface ProjectDetail {
   deliveries: {
     milestones: ProjectDeliveryMilestone[];
     procurement: ProcurementDeliveryRow[];
+    tasks: DeliveryProgramRow[];
     next: NextDelivery | null;
     overdueCount: number;
   };
@@ -380,7 +381,15 @@ export async function getProjectDetail(projectId: number, now: Date = new Date()
     criticalPath,
     planTasks,
     installers,
-    deliveries: { milestones, procurement, next: deliveries.next, overdueCount: deliveries.overdueCount },
+    deliveries: {
+      milestones,
+      procurement,
+      // Plan tasks named "delivery" — the same source the program Deliveries
+      // list uses, so deliveries correlate through every lens.
+      tasks: deliveryTaskRows(projectId, header.projectName, plan.tasks, today),
+      next: deliveries.next,
+      overdueCount: deliveries.overdueCount,
+    },
     engineering: summarizeEngineering(engStages, engOpen.get(projectId) ?? 0),
     quality: summarizeQuality(snagRows, qcSet.has(projectId), today),
   };
@@ -457,6 +466,39 @@ export interface DeliveryProgramRow {
   complete: boolean;
 }
 
+/**
+ * Build delivery rows from plan tasks whose name mentions "delivery" — the
+ * imported tracker's delivery lines, where most projects actually track
+ * deliveries. Shared by the program Deliveries list and the per-project detail
+ * so both read deliveries from exactly the same source.
+ */
+function deliveryTaskRows(
+  projectId: number,
+  projectName: string,
+  tasks: PlanTask[],
+  today: Date,
+): DeliveryProgramRow[] {
+  const rows: DeliveryProgramRow[] = [];
+  for (const t of tasks) {
+    if (!t.taskName?.toLowerCase().includes("delivery")) continue;
+    const complete = (pctTo100(t.pctComplete) ?? 0) >= 100;
+    const raw = t.endDate ?? t.actualEndDate ?? t.startDate ?? t.actualStartDate ?? null;
+    const d = parsePlanDate(raw);
+    rows.push({
+      projectId,
+      projectName,
+      label: t.taskName,
+      date: raw,
+      rag: deliveryRag(d, today, complete),
+      source: "task",
+      overdue: !complete && d != null && diffDays(d, today) < 0,
+      complete,
+    });
+  }
+  rows.sort((a, b) => (parsePlanDate(a.date)?.getTime() ?? Infinity) - (parsePlanDate(b.date)?.getTime() ?? Infinity));
+  return rows;
+}
+
 export async function getDeliveriesProgram(now: Date = new Date()): Promise<DeliveryProgramRow[]> {
   const today = startOfDay(now);
   const active = await executionBoardRepository.getActiveProjects();
@@ -500,22 +542,7 @@ export async function getDeliveriesProgram(now: Date = new Date()): Promise<Deli
   // Plan tasks whose name mentions "delivery" — the imported tracker's delivery
   // lines (where most projects actually track deliveries).
   for (const [projectId, tasks] of tasksByProject) {
-    for (const t of tasks) {
-      if (!t.taskName.toLowerCase().includes("delivery")) continue;
-      const complete = (pctTo100(t.pctComplete) ?? 0) >= 100;
-      const raw = t.endDate ?? t.actualEndDate ?? t.startDate ?? t.actualStartDate ?? null;
-      const d = parsePlanDate(raw);
-      out.push({
-        projectId,
-        projectName: nameById.get(projectId) ?? "",
-        label: t.taskName,
-        date: raw,
-        rag: deliveryRag(d, today, complete),
-        source: "task",
-        overdue: !complete && d != null && diffDays(d, today) < 0,
-        complete,
-      });
-    }
+    out.push(...deliveryTaskRows(projectId, nameById.get(projectId) ?? "", tasks, today));
   }
   out.sort((a, b) => (parsePlanDate(a.date)?.getTime() ?? Infinity) - (parsePlanDate(b.date)?.getTime() ?? Infinity));
   return out;
