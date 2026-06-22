@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import { detectSections, type DetectionResult } from "./detector";
-import { mapColumns, type MappingResult } from "./mapper";
+import { mapColumns, planActualPctGap, type MappingResult } from "./mapper";
 import { normalizeData, type NormalizationResult } from "./normalizer";
 
 export interface SmartImportPreview {
@@ -60,6 +60,25 @@ export async function runSmartImportPreview(
       issueType: "milestone_block_not_found",
       issueFingerprint: `milestone_block_not_found:${fileName}`,
       payloadJson: { fileName, missingSections: detection.missingSections },
+    });
+  }
+
+  // FLAG, NEVER SKIP: a plan that captured the expected-% column but NOT the
+  // actual-% ("Status") column would silently import every task at 0% actual
+  // (pct_complete defaults to 0), making a real schedule look like no progress.
+  // A stale learned mapping or an unrecognised "Status" header can cause this
+  // (pct_complete is not a required field, so it slips through). Surface it so
+  // the operator maps the Status column instead of shipping zeros.
+  const planMappingIdx = detection.sections.findIndex(s => s.section === "PLAN");
+  if (planMappingIdx >= 0 && planActualPctGap(mappings[planMappingIdx])) {
+    normalization.issues.push({
+      severity: "WARNING",
+      section: "PLAN",
+      message: `Actual-progress column not mapped in "${fileName}" — the plan's "Status" (% complete) column was not recognised, so every task would import at 0% actual while the expected % imported fine. Map the actual-% / "Status" column before committing.`,
+      suggestedAction: `In the column-mapping step map the plan's "Status" (or actual %) column to "% complete". A previously-learned mapping for this file may be binding "Status" to the wrong field — re-mapping here corrects it for future imports too.`,
+      issueType: "plan_actual_pct_not_mapped",
+      issueFingerprint: `plan_actual_pct_not_mapped:${fileName}`,
+      payloadJson: { fileName, mappedFields: mappings[planMappingIdx].mappings.map(m => m.canonicalField) },
     });
   }
 
