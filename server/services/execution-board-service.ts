@@ -19,6 +19,7 @@ import {
   type ExecutionItemCounts,
 } from "../repositories/execution-review-repository";
 import { pctTo100, type ScheduleRag } from "../lib/kpi-formulas";
+import { resolveCanonicalPhase } from "@shared/phases";
 import logger from "../lib/logger";
 import type { ProjectDeliveryMilestone } from "@shared/schema";
 import {
@@ -146,6 +147,16 @@ export interface BoardResult {
   rows: BoardRow[];
 }
 
+// Phases auto-excluded from the active Execution board (KPIs + rows): the final
+// post-handover review and the completed/terminal phases. Keeps the control
+// tower focused on live delivery instead of closed-out sites.
+const EXCLUDED_BOARD_PHASE_LABELS = new Set(["3 Months Post HO Review", "Completed", "Done"]);
+function isExcludedBoardPhase(phase: string | null): boolean {
+  if (!phase) return false;
+  const label = resolveCanonicalPhase(phase)?.label ?? phase;
+  return EXCLUDED_BOARD_PHASE_LABELS.has(label);
+}
+
 function installerSummary(rows: InstallerRow[]): InstallerSummary {
   return {
     count: rows.length,
@@ -156,7 +167,9 @@ function installerSummary(rows: InstallerRow[]): InstallerSummary {
 
 export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
   const today = startOfDay(now);
-  const active = await executionBoardRepository.getActiveProjects();
+  // Auto-exclude post-handover-review and completed sites from the board KPIs
+  // and rows — the control tower tracks live delivery, not closed-out sites.
+  const active = (await executionBoardRepository.getActiveProjects()).filter((p) => !isExcludedBoardPhase(p.phase));
   const ids = active.map((p) => p.id);
 
   const tasksByProject = await safe(
