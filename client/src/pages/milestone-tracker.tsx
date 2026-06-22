@@ -6,19 +6,21 @@ import {
 } from "date-fns";
 import {
   ArrowLeft, AlertTriangle, TrendingUp, TrendingDown, CheckCircle2,
-  ChevronLeft, ChevronRight, ListChecks, X,
+  ChevronLeft, ChevronRight, ListChecks, X, Download,
 } from "lucide-react";
 import { PageShell } from "@/components/layout/page-shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useApiMutation } from "@/hooks/use-api-mutation";
 import { apiRequest } from "@/lib/queryClient";
 import { fmtDate, parseExecDate } from "@/lib/execution-types";
+import { useTableSort, SortHeader, downloadCsv } from "@/lib/table-utils";
 import {
-  type MilestoneProgram, type ProjectMilestoneDetail, type MilestoneView,
+  type MilestoneProgram, type MilestoneProgramRow, type ProjectMilestoneDetail, type MilestoneView,
   type LinkedTaskView, type CalendarEvent, type FlowState, type TaskState,
   money, FLOW_STATE_STYLE, TASK_STATE_STYLE,
 } from "@/lib/milestone-tracker-types";
@@ -453,11 +455,40 @@ function ProjectWorkspace({ projectId, onBack }: { projectId: number; onBack: ()
 
 // ──────────────────────────────── program overview ───────────────────────────
 
+function programSortValue(r: MilestoneProgramRow, key: string): string | number | null {
+  switch (key) {
+    case "site": return r.projectName.toLowerCase();
+    case "milestones": return r.linkedMilestoneCount;
+    case "inflow": return r.inflowTotal;
+    case "openIn": return r.openInflowAmount;
+    case "linkedOut": return r.outflowTotal;
+    case "openOut": return r.openOutflowAmount;
+    case "ready": return r.readyToInvoiceCount;
+    case "gaps": return r.gapCount;
+    case "nextInflow": return r.nextInflowDate; // yyyy-mm-dd sorts lexicographically
+    default: return null;
+  }
+}
+
 function ProgramOverview({ onOpen }: { onOpen: (id: number) => void }) {
   const [view, setView] = useState<"list" | "calendar">("list");
+  const [search, setSearch] = useState("");
   const { data, isLoading, isError, refetch } = useQuery<MilestoneProgram>({
     queryKey: ["/api/milestone-tracker/program"],
   });
+
+  const rows = useMemo(() => data?.rows ?? [], [data]);
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return q ? rows.filter((r) => r.projectName.toLowerCase().includes(q)) : rows;
+  }, [rows, search]);
+  const { sorted, sort, toggle } = useTableSort(filtered, programSortValue);
+
+  const exportCsv = () => downloadCsv(
+    "milestone-tracker",
+    ["Site", "Milestones linked", "Milestones total", "Inflow total", "Open inflow #", "Open inflow R", "Linked outflow R", "Open outflow #", "Open outflow R", "Ready to invoice", "Gaps", "Next inflow"],
+    sorted.map((r) => [r.projectName, r.linkedMilestoneCount, r.milestoneCount, Math.round(r.inflowTotal), r.openInflowCount, Math.round(r.openInflowAmount), Math.round(r.outflowTotal), r.openOutflowCount, Math.round(r.openOutflowAmount), r.readyToInvoiceCount, r.gapCount, r.nextInflowDate ?? ""]),
+  );
 
   return (
     <PageShell className="max-w-6xl p-4 md:p-6" data-testid="milestone-tracker-page">
@@ -477,23 +508,43 @@ function ProgramOverview({ onOpen }: { onOpen: (id: number) => void }) {
             <Kpi label="Gaps" value={data.header.gapCount} tone={data.header.gapCount > 0 ? "text-amber-600" : ""} accent="bg-amber-500" />
           </div>
 
-          <div className="flex items-center gap-2 mt-4">
+          <div className="flex flex-wrap items-center gap-2 mt-4">
             <Button size="sm" variant={view === "list" ? "default" : "outline"} onClick={() => setView("list")} data-testid="program-view-list">By project</Button>
             <Button size="sm" variant={view === "calendar" ? "default" : "outline"} onClick={() => setView("calendar")} data-testid="program-view-calendar">Calendar</Button>
-            <span className="ml-auto text-xs text-muted-foreground">{data.rows.length} sites · {data.header.milestoneCount} milestones</span>
+            {view === "list" && (
+              <Input className="w-48 h-8" placeholder="Search site…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid="milestone-search" />
+            )}
+            <div className="ml-auto flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">{filtered.length} of {rows.length} sites · {data.header.milestoneCount} milestones</span>
+              {view === "list" && (
+                <Button size="sm" variant="outline" className="gap-1.5" onClick={exportCsv} data-testid="milestone-export">
+                  <Download className="w-4 h-4" /><span className="hidden sm:inline">Export</span>
+                </Button>
+              )}
+            </div>
           </div>
 
           {view === "list" ? (
             <Card className="mt-3"><CardContent className="p-0 overflow-x-auto">
-              {data.rows.length === 0 ? (
+              {rows.length === 0 ? (
                 <p className="p-8 text-center text-sm text-muted-foreground">No projects have revenue-tracker milestones yet.</p>
+              ) : filtered.length === 0 ? (
+                <p className="p-8 text-center text-sm text-muted-foreground">No sites match your search.</p>
               ) : (
                 <table className="w-full text-sm">
                   <thead><tr className="border-b text-left text-xs text-muted-foreground">
-                    {["Site", "Milestones", "Inflow", "Open inflows", "Linked outflow", "Open outflows", "Ready", "Gaps", "Next inflow"].map((hh) => <th key={hh} className="py-2 px-3 font-medium whitespace-nowrap">{hh}</th>)}
+                    <SortHeader label="Site" sortKey="site" sort={sort} onSort={toggle} />
+                    <SortHeader label="Milestones" sortKey="milestones" sort={sort} onSort={toggle} />
+                    <SortHeader label="Inflow" sortKey="inflow" sort={sort} onSort={toggle} />
+                    <SortHeader label="Open inflows" sortKey="openIn" sort={sort} onSort={toggle} />
+                    <SortHeader label="Linked outflow" sortKey="linkedOut" sort={sort} onSort={toggle} />
+                    <SortHeader label="Open outflows" sortKey="openOut" sort={sort} onSort={toggle} />
+                    <SortHeader label="Ready" sortKey="ready" sort={sort} onSort={toggle} />
+                    <SortHeader label="Gaps" sortKey="gaps" sort={sort} onSort={toggle} />
+                    <SortHeader label="Next inflow" sortKey="nextInflow" sort={sort} onSort={toggle} />
                   </tr></thead>
                   <tbody>
-                    {data.rows.map((r) => (
+                    {sorted.map((r) => (
                       <tr key={r.projectId} className="border-b hover:bg-muted/40 cursor-pointer" onClick={() => onOpen(r.projectId)} data-testid={`program-row-${r.projectId}`}>
                         <td className="py-2 px-3 font-medium">{r.projectName}</td>
                         <td className="py-2 px-3 tabular-nums">{r.linkedMilestoneCount}/{r.milestoneCount} linked</td>
