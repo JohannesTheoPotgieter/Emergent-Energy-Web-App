@@ -102,7 +102,7 @@ export const TOP_SECTIONS: TopSection[] = [
     ]),
     secondary: [
       { label: "Board", path: "/execution" },
-      { label: "This fortnight", path: "/execution/upcoming" },
+      { label: "Milestone Tracker", path: "/execution/milestones" },
       { label: "Deliveries", path: "/execution/deliveries" },
       { label: "Allocations", path: "/execution/allocations" },
     ],

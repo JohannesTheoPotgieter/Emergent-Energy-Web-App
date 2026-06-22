@@ -219,7 +219,7 @@ describe("live-ready module — enabled module set", () => {
   it("EXECUTION allowlist is exactly the ring-fenced control-tower pages", () => {
     expect([...ENABLED_EXECUTION_PAGE_IDS].sort()).toEqual(
       [
-        "executionReview", "executionUpcoming", "executionDeliveries",
+        "executionReview", "executionMilestones", "executionDeliveries",
         "executionAllocations", "executionSite",
       ].sort(),
     );
@@ -236,7 +236,7 @@ describe("live-ready module — page reachability", () => {
   });
 
   it("EXECUTION control-tower pages are reachable; the rest of PROJECT_MANAGEMENT is not (ring fence)", () => {
-    for (const id of ["executionReview", "executionUpcoming", "executionDeliveries", "executionAllocations", "executionSite"]) {
+    for (const id of ["executionReview", "executionMilestones", "executionDeliveries", "executionAllocations", "executionSite"]) {
       expect(isPageEnabled({ id, navGroup: "PROJECT_MANAGEMENT" }), `${id} must be reachable`).toBe(true);
     }
     // Other PROJECT_MANAGEMENT pages stay blocked — Execution is ring-fenced.

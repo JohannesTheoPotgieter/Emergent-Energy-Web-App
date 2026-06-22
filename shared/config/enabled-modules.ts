@@ -96,7 +96,7 @@ export const ENABLED_SYSTEM_PAGE_IDS = [
  */
 export const ENABLED_EXECUTION_PAGE_IDS = [
   "executionReview",       // /execution                    — control-tower board
-  "executionUpcoming",     // /execution/upcoming           — this fortnight
+  "executionMilestones",   // /execution/milestones         — payment milestone tracker
   "executionDeliveries",   // /execution/deliveries         — program deliveries
   "executionAllocations",  // /execution/allocations        — installer/supplier allocation
   "executionSite",         // /execution/site/:projectId    — per-site detail (+ critical path)

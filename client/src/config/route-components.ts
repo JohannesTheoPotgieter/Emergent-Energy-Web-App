@@ -45,7 +45,7 @@ const LifecycleBoardPage = lazyWithRetry(() => import("@/pages/lifecycle-board")
 // Execution control tower — replaces the legacy /execution-board surface.
 const ExecutionReviewBoardPage = lazyWithRetry(() => import("@/pages/execution-review"));
 const ExecutionReviewDetailPage = lazyWithRetry(() => import("@/pages/execution-review-detail"));
-const ExecutionUpcomingPage = lazyWithRetry(() => import("@/pages/execution-upcoming"));
+const ExecutionMilestonesPage = lazyWithRetry(() => import("@/pages/milestone-tracker"));
 const ExecutionDeliveriesPage = lazyWithRetry(() => import("@/pages/execution-deliveries"));
 const ExecutionAllocationsPage = lazyWithRetry(() => import("@/pages/execution-allocations"));
 const NowPage = lazyWithRetry(() => import("@/pages/now"));
@@ -207,7 +207,7 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   LifecycleBoardPage,
   ExecutionReviewBoardPage,
   ExecutionReviewDetailPage,
-  ExecutionUpcomingPage,
+  ExecutionMilestonesPage,
   ExecutionDeliveriesPage,
   ExecutionAllocationsPage,
   NowPage,
