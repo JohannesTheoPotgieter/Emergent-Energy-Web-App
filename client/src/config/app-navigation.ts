@@ -108,6 +108,18 @@ export const TOP_SECTIONS: TopSection[] = [
     ],
   },
   {
+    label: "Engineering",
+    key: "ENGINEERING",
+    path: "/engineering",
+    match: (pathname) => startsWithAny(pathname, ["/engineering"]),
+    // Ring-fenced to the Engineering Home landing for now; Task Manager and
+    // Document Management are added as the delivery rebuild promotes them into
+    // the Live-Ready set (shared/config/enabled-modules.ts). Standup removed.
+    secondary: [
+      { label: "Home", path: "/engineering" },
+    ],
+  },
+  {
     label: "Finance",
     key: "FINANCE",
     // Finance landing = Finance Home (/finance), the accountant's dashboard.
@@ -140,18 +152,6 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Gross Profit", path: "/finance/gp/company" },
       { label: "QB Reconciliation", path: "/finance/qb-reconciliation" },
       { label: "FYE Tracking Report", path: "/fye-revenue-tracking" },
-    ],
-  },
-  {
-    label: "Engineering",
-    key: "ENGINEERING",
-    path: "/engineering",
-    match: (pathname) => startsWithAny(pathname, ["/engineering"]),
-    secondary: [
-      { label: "Engineering Dashboard", path: "/engineering" },
-      { label: "Engineering Task Board", path: "/engineering/tasks" },
-      { label: "Engineering Document Management", path: "/engineering/documents" },
-      { label: "Standup", path: "/engineering/standup" },
     ],
   },
   {
@@ -197,8 +197,8 @@ export type DisplayTopNavItem = {
 export const DISPLAY_TOP_NAV: DisplayTopNavItem[] = [
   { label: "Home", path: "/", requiredSectionKey: "HOME", sectionKeys: ["HOME"] },
   { label: "Execution", path: "/execution", requiredSectionKey: "PROJECT_DELIVERY", sectionKeys: ["PROJECT_DELIVERY"] },
-  { label: "Finance", path: "/finance", requiredSectionKey: "FINANCE", sectionKeys: ["FINANCE"] },
   { label: "Engineering", path: "/engineering", requiredSectionKey: "ENGINEERING", sectionKeys: ["ENGINEERING"] },
+  { label: "Finance", path: "/finance", requiredSectionKey: "FINANCE", sectionKeys: ["FINANCE"] },
   { label: "Quality Management", path: "/quality", requiredSectionKey: "QUALITY", sectionKeys: ["QUALITY"] },
   { label: "Settings", path: "/settings", requiredSectionKey: "ADMIN", sectionKeys: ["ADMIN"] },
 ];

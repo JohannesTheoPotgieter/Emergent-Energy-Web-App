@@ -10,13 +10,13 @@ import {
 /**
  * Nav cleanup validation — locks the COO-spec six-tab nav (2026-05-11):
  *
- *   Home · Execution · Finance · Engineering · Quality Management · Settings
+ *   Home · Execution · Engineering · Finance · Quality Management · Settings
  *
  * Execution (formerly Project Delivery) has Board · This fortnight · Deliveries ·
  * Allocations (the legacy "All Projects" list and "Milestone Tracker" were
  * retired — All Projects' features were migrated into the board). Finance has five: Cashflow · Cost of Sales · Revenue ·
- * Gross Profit · FYE Tracking Report. Engineering has four: Dashboard · Task
- * Board · Document Management · Standup. Quality has three: Dashboard · Task
+ * Gross Profit · FYE Tracking Report. Engineering (Live-Ready 2026-06-22) is
+ * ring-fenced to its Home landing while the delivery rebuild lands. Quality has three: Dashboard · Task
  * Board · Document Management. Settings has four: Roles & Permissions ·
  * Functionality Control · Integration Statuses · Audit Log. Everything else
  * is hidden by default and surfaced via Functionality Control.
@@ -25,8 +25,8 @@ import {
 const EXPECTED_TOP_LABELS = [
   "Home",
   "Execution",
-  "Finance",
   "Engineering",
+  "Finance",
   "Quality Management",
   "Settings",
 ];
@@ -77,13 +77,14 @@ describe("nav cleanup — six-tab COO spec", () => {
     }
   });
 
-  it("Engineering has the four locked items in spec order", () => {
+  it("Engineering is ring-fenced to the Home landing while the delivery rebuild lands", () => {
+    // Live-Ready (2026-06-22): Engineering is enabled as the third module,
+    // ring-fenced to its Home page and placed between Execution and Finance.
+    // Task Manager + Document Management are re-added to the secondary as the
+    // delivery rebuild promotes them; Standup is removed from the engineering nav.
     const section = findTop("Engineering");
     expect(section.secondary.map((item) => item.path)).toEqual([
       "/engineering",
-      "/engineering/tasks",
-      "/engineering/documents",
-      "/engineering/standup",
     ]);
   });
 
