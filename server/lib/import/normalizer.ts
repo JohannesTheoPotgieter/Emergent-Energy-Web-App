@@ -1262,8 +1262,12 @@ function extractRevenueLines(
     }
 
     if (!amountExVat && status !== "PLANNED") {
+      // Owner decision 2026-06-22: import the workbook AS IS — this is an
+      // advisory WARNING, not a gating BLOCKER. A revenue line with no amount
+      // contributes 0 (no number impact); flag it for follow-up but never stop
+      // the commit on it.
       issues.push({
-        severity: "BLOCKER",
+        severity: "WARNING",
         section: "REVENUE",
         message: `Missing amount on revenue line "${milestoneName}" (row ${i + 1})`,
         suggestedAction: "Add the financial amount for this milestone",
@@ -1552,11 +1556,15 @@ export function extractCostLines(
       if (orphanHasData) {
         // Owner rule 2026-06: an amount-bearing actual line must carry an
         // INVOICE RAISED DATE. Flag (do not guess) when it is missing.
+        // Owner decision 2026-06-22: import AS IS — advisory WARNING, not a
+        // gating BLOCKER. The line still imports; the frozen monthly-recognition
+        // path correctly excludes a dateless line until the date is supplied, so
+        // no number is affected — but the commit is never blocked on it.
         if (orphanActualTotal != null && Number(orphanActualTotal) !== 0 && !orphanInvoiceDateResolved) {
           issues.push({
-            severity: "BLOCKER",
+            severity: "WARNING",
             section: "EXPENDITURE",
-            message: `Actual invoice line on row ${i + 1} has an amount but no INVOICE RAISED DATE — it cannot be recognised in a month until this is fixed.`,
+            message: `Actual invoice line on row ${i + 1} has an amount but no INVOICE RAISED DATE — it will not be recognised in a month until this is added.`,
             suggestedAction: "Enter the INVOICE RAISED DATE (col T) for this line in the tracker.",
             issueType: "MISSING_INVOICE_DATE",
             issueFingerprint: makeFingerprint("MISSING_INVOICE_DATE", "EXPENDITURE", `orphan_${i + 1}`),
@@ -1721,11 +1729,15 @@ export function extractCostLines(
     // Owner rule 2026-06: an actual cost amount MUST carry an INVOICE RAISED
     // DATE. Without it the line cannot be recognised in a month, so flag it for
     // correction rather than guessing (or silently dropping) the period.
+    // Owner decision 2026-06-22: import AS IS — advisory WARNING, not a gating
+    // BLOCKER. The line still imports; the frozen monthly-recognition path
+    // excludes a dateless line until the date is supplied (no number impact),
+    // but the commit is never blocked on it.
     if (!invoiceDate) {
       issues.push({
-        severity: "BLOCKER",
+        severity: "WARNING",
         section: "EXPENDITURE",
-        message: `Cost line on row ${i + 1} has an actual amount but no INVOICE RAISED DATE — it cannot be recognised in a month until this is fixed.`,
+        message: `Cost line on row ${i + 1} has an actual amount but no INVOICE RAISED DATE — it will not be recognised in a month until this is added.`,
         suggestedAction: "Enter the INVOICE RAISED DATE (col T) for this line in the tracker (recalculate/save so the formula caches).",
         issueType: "MISSING_INVOICE_DATE",
         issueFingerprint: makeFingerprint("MISSING_INVOICE_DATE", "EXPENDITURE", `${categoryKey ?? category ?? "row"}_${i + 1}`),
