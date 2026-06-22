@@ -305,6 +305,58 @@ function MilestoneCard({ m, detail, h }: { m: MilestoneView; detail: ProjectMile
 
 // ──────────────────────────────── project workspace ──────────────────────────
 
+/** Drill-down detail: the project's still-open inflow and outflow line items. */
+function OpenItemsBlock({ detail }: { detail: ProjectMilestoneDetail }) {
+  const openIn = detail.milestones.filter((m) => m.state !== "paid" && m.status !== "written_off");
+  const openOut = detail.availableCostLines.filter((o) => o.state !== "paid");
+  const inAmt = openIn.reduce((s, m) => s + (m.amount ?? 0), 0);
+  const outAmt = openOut.reduce((s, o) => s + (o.amount ?? 0), 0);
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3" data-testid="open-items-block">
+      <Card><CardContent className="p-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-semibold inline-flex items-center gap-1.5"><TrendingUp className="w-4 h-4 text-emerald-600" />Open inflows to collect</span>
+          <span className="text-xs text-muted-foreground tabular-nums">{openIn.length} · {money(inAmt)}</span>
+        </div>
+        {openIn.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-2">All inflows settled.</p>
+        ) : (
+          <div className="space-y-1 max-h-60 overflow-y-auto">
+            {openIn.map((m) => (
+              <div key={m.rowHash} className="flex items-center gap-2 text-xs">
+                <span className="truncate flex-1">{m.milestoneNo ? `${m.milestoneNo}. ` : ""}{m.milestoneName || "Milestone"}</span>
+                <span className="text-muted-foreground whitespace-nowrap">{fmtDate(m.expectedPaymentDate)}</span>
+                <span className="tabular-nums whitespace-nowrap">{money(m.amount)}</span>
+                <FlowBadge state={m.state} />
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent></Card>
+      <Card><CardContent className="p-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-semibold inline-flex items-center gap-1.5"><TrendingDown className="w-4 h-4 text-red-600" />Open outflows to pay</span>
+          <span className="text-xs text-muted-foreground tabular-nums">{openOut.length} · {money(outAmt)}</span>
+        </div>
+        {openOut.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-2">All outflows paid.</p>
+        ) : (
+          <div className="space-y-1 max-h-60 overflow-y-auto">
+            {openOut.map((o) => (
+              <div key={o.rowHash} className="flex items-center gap-2 text-xs">
+                <span className="truncate flex-1">{o.description || o.costCategory || "Cost"}{o.counterpartyName ? <span className="text-muted-foreground"> · {o.counterpartyName}</span> : null}</span>
+                <span className="text-muted-foreground whitespace-nowrap">{fmtDate(o.forecastPaymentDate ?? o.invoiceDate)}</span>
+                <span className="tabular-nums whitespace-nowrap">{money(o.amount)}</span>
+                <FlowBadge state={o.state} />
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent></Card>
+    </div>
+  );
+}
+
 function ProjectWorkspace({ projectId, onBack }: { projectId: number; onBack: () => void }) {
   const qc = useQueryClient();
   const [view, setView] = useState<"list" | "calendar">("list");
@@ -369,6 +421,8 @@ function ProjectWorkspace({ projectId, onBack }: { projectId: number; onBack: ()
             <Kpi label="Linked outflow" value={money(data.summary.outflowTotal)} accent="bg-red-500" />
             <Kpi label="Gaps" value={data.summary.gapCount} tone={data.summary.gapCount > 0 ? "text-amber-600" : ""} accent="bg-amber-500" />
           </div>
+
+          <OpenItemsBlock detail={data} />
 
           <div className="flex items-center gap-2 mt-4">
             <Button size="sm" variant={view === "list" ? "default" : "outline"} onClick={() => setView("list")} data-testid="milestone-view-list">Milestones</Button>
@@ -436,7 +490,7 @@ function ProgramOverview({ onOpen }: { onOpen: (id: number) => void }) {
               ) : (
                 <table className="w-full text-sm">
                   <thead><tr className="border-b text-left text-xs text-muted-foreground">
-                    {["Site", "Milestones", "Inflow", "Outstanding", "Linked outflow", "Ready", "Gaps", "Next inflow"].map((hh) => <th key={hh} className="py-2 px-3 font-medium whitespace-nowrap">{hh}</th>)}
+                    {["Site", "Milestones", "Inflow", "Open inflows", "Linked outflow", "Open outflows", "Ready", "Gaps", "Next inflow"].map((hh) => <th key={hh} className="py-2 px-3 font-medium whitespace-nowrap">{hh}</th>)}
                   </tr></thead>
                   <tbody>
                     {data.rows.map((r) => (
@@ -444,8 +498,19 @@ function ProgramOverview({ onOpen }: { onOpen: (id: number) => void }) {
                         <td className="py-2 px-3 font-medium">{r.projectName}</td>
                         <td className="py-2 px-3 tabular-nums">{r.linkedMilestoneCount}/{r.milestoneCount} linked</td>
                         <td className="py-2 px-3 tabular-nums whitespace-nowrap">{money(r.inflowTotal)}</td>
-                        <td className={`py-2 px-3 tabular-nums whitespace-nowrap ${r.inflowOutstanding > 0 ? "text-amber-600" : ""}`}>{money(r.inflowOutstanding)}</td>
+                        <td className="py-2 px-3 whitespace-nowrap" data-testid={`open-inflows-${r.projectId}`}>
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className={`tabular-nums font-medium ${r.openInflowCount > 0 ? "text-amber-600" : "text-muted-foreground"}`}>{r.openInflowCount}</span>
+                            <span className="text-xs text-muted-foreground tabular-nums">{money(r.openInflowAmount)}</span>
+                          </span>
+                        </td>
                         <td className="py-2 px-3 tabular-nums whitespace-nowrap">{money(r.outflowTotal)}</td>
+                        <td className="py-2 px-3 whitespace-nowrap" data-testid={`open-outflows-${r.projectId}`}>
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className={`tabular-nums font-medium ${r.openOutflowCount > 0 ? "text-red-600" : "text-muted-foreground"}`}>{r.openOutflowCount}</span>
+                            <span className="text-xs text-muted-foreground tabular-nums">{money(r.openOutflowAmount)}</span>
+                          </span>
+                        </td>
                         <td className="py-2 px-3 tabular-nums">{r.readyToInvoiceCount > 0 ? <span className="text-emerald-600">{r.readyToInvoiceCount}</span> : "—"}</td>
                         <td className="py-2 px-3">{r.gapCount > 0 ? <GapBadge label={String(r.gapCount)} /> : <span className="text-muted-foreground">—</span>}</td>
                         <td className="py-2 px-3 whitespace-nowrap">{fmtDate(r.nextInflowDate)}</td>
