@@ -10,12 +10,18 @@ import { V2_STEP_LABELS } from "./labels";
 interface StepIndicatorProps {
   currentStep: number;
   onStepClick?: (step: number) => void;
+  /**
+   * Optional replacement set of step labels. Defaults to the full five-step
+   * vocabulary; the simplified manual flow passes a shorter set
+   * (Upload → [Your decisions] → Review & import).
+   */
+  labels?: readonly string[];
 }
 
-export function SmartImportStepIndicator({ currentStep, onStepClick }: StepIndicatorProps) {
+export function SmartImportStepIndicator({ currentStep, onStepClick, labels = V2_STEP_LABELS }: StepIndicatorProps) {
   return (
     <div className="flex items-center gap-1 mb-6" data-testid="v2-step-indicator">
-      {V2_STEP_LABELS.map((label, idx) => {
+      {labels.map((label, idx) => {
         const stepNum = idx + 1;
         const isActive = stepNum === currentStep;
         const isComplete = stepNum < currentStep;

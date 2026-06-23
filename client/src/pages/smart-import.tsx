@@ -158,8 +158,14 @@ export function UploadStep({
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
   const [pendingCount, setPendingCount] = useState(0);
   // UX-1: explicit file-vs-folder path choice at the top of the step.
-  // Defaults to "single" because that's the dominant flow today.
-  const [uploadMode, setUploadMode] = useState<"single" | "folder">("single");
+  // Defaults to "single" because that's the dominant flow today, but honours a
+  // `?mode=folder` deep-link (e.g. the "Import a folder" launch on Integration
+  // Statuses) so the operator lands ready to pick a folder. Presentation only —
+  // the user can still switch modes via the path chooser.
+  const [uploadMode, setUploadMode] = useState<"single" | "folder">(() => {
+    if (typeof window === "undefined") return "single";
+    return new URLSearchParams(window.location.search).get("mode") === "folder" ? "folder" : "single";
+  });
   const inputRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
