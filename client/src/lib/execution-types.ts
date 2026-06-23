@@ -68,6 +68,9 @@ export interface BoardRow {
   schedule: ScheduleSnapshot & { importedAt: string | null };
   nextTask: NextTask | null;
   nextDelivery: NextDelivery | null;
+  /** Per-project overdue-delivery count — used to recompute the Overdue KPI
+   *  for the currently filtered subset. */
+  overdueDeliveryCount: number;
   installers: InstallerSummary;
   pmUserId: number | null;
   pmName: string | null;

@@ -117,6 +117,9 @@ export interface BoardRow {
   schedule: ScheduleSnapshot & { importedAt: string | null };
   nextTask: NextTask | null;
   nextDelivery: NextDelivery | null;
+  /** Per-project count of overdue deliveries — lets the client recompute the
+   *  Overdue-deliveries KPI for the currently filtered (e.g. by-phase) subset. */
+  overdueDeliveryCount: number;
   installers: InstallerSummary;
   pmUserId: number | null;
   pmName: string | null;
@@ -232,8 +235,8 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
       planned += 1;
     }
     openFlags += flags.open + flags.flagged;
-    overdueDeliveries += deliveries.overdueCount;
-    if (planDelivery?.rag === "red") overdueDeliveries += 1;
+    const rowOverdueDeliveries = deliveries.overdueCount + (planDelivery?.rag === "red" ? 1 : 0);
+    overdueDeliveries += rowOverdueDeliveries;
 
     rows.push({
       projectId: p.id,
@@ -244,6 +247,7 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
       schedule: { ...schedule, importedAt: null },
       nextTask: selectNextTask(tasks, today, 14),
       nextDelivery,
+      overdueDeliveryCount: rowOverdueDeliveries,
       installers: installerSummary(installersByProject.get(p.id) ?? []),
       pmUserId: p.pmUserId,
       pmName: (p.pmUserId != null ? userNames.get(p.pmUserId) : null) ?? p.pmText ?? null,

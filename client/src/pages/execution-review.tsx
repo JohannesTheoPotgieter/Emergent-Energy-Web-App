@@ -22,7 +22,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
-import { PHASE_LABELS } from "@shared/phases";
+import { PHASE_LABELS, PHASES } from "@shared/phases";
 import { EditProjectInfoModal } from "@/components/execution/edit-project-info-modal";
 import type { BoardResult, BoardRow, Rag, WorkstreamSummary } from "@/lib/execution-types";
 import { fmtPct, fmtDate, parseExecDate } from "@/lib/execution-types";
@@ -61,6 +61,14 @@ const RAG_COLORS: Record<string, string> = { green: "#16A34A", amber: "#F59E0B",
 // project_execution_state.phase via /api/lifecycle-board/projects/:id/phase, so
 // the phase correlates through every lens (board, lifecycle board, detail).
 const LIFECYCLE_PHASES: string[] = [...PHASE_LABELS];
+
+// Phases the board actually DISPLAYS — Financial Close (displayNumber 3) forward,
+// excluding the auto-excluded "3 Months Post HO Review" and the terminal
+// Hold/Done. MUST mirror isBoardVisiblePhase in execution-board-service.ts, so
+// the phase filter only offers phases that can appear (no dead/empty options).
+const BOARD_VISIBLE_PHASES: string[] = PHASES
+  .filter((p) => p.displayNumber != null && p.displayNumber >= 3 && p.label !== "3 Months Post HO Review")
+  .map((p) => p.label);
 
 /** Map a stored phase (possibly legacy-cased, e.g. "PLANNING") to its canonical label. */
 function canonicalPhaseLabel(phase: string | null): string {
@@ -468,34 +476,60 @@ export default function ExecutionReviewBoard() {
 
   const rows = useMemo(() => data?.rows ?? [], [data]);
   const phases = useMemo(() => {
-    // Mirror the inline phase editor: offer the full canonical lifecycle phase
-    // list (PHASE_LABELS) so every phase is filterable — not just the ones
-    // currently present on the board — plus any non-canonical phase actually on
-    // a project so it stays filterable. Matching canonicalises the row value.
+    // Offer the canonical phases the board can actually SHOW (board-visible set),
+    // so the filter never lists a structurally-excluded phase like "3 Months
+    // Post HO Review" that would always return zero rows. Include any phase
+    // actually present on a project too, so nothing becomes unfilterable.
     const extras = rows
       .map((r) => canonicalPhaseLabel(r.phase))
-      .filter((p) => p && !LIFECYCLE_PHASES.includes(p));
-    return [...LIFECYCLE_PHASES, ...new Set(extras)];
+      .filter((p) => p && !BOARD_VISIBLE_PHASES.includes(p));
+    return [...BOARD_VISIBLE_PHASES, ...new Set(extras)];
   }, [rows]);
   const pms = useMemo(() => [...new Set(rows.map((r) => r.pmName).filter(Boolean))] as string[], [rows]);
 
+  // Headline KPIs reflect the current SCOPE filters (search + phase + PM) but
+  // NOT the rag / has-flags toggles (those tiles ARE the toggles), so selecting
+  // a phase updates every headline number — tiles, RAG donut and Needs-attention
+  // — to that phase's subset.
+  const kpiRows = useMemo(() => rows.filter((r) => {
+    if (filters.search && !r.projectName.toLowerCase().includes(filters.search.toLowerCase())) return false;
+    if (filters.phases.length > 0 && !filters.phases.includes(canonicalPhaseLabel(r.phase) || "—")) return false;
+    if (filters.pm !== "all" && r.pmName !== filters.pm) return false;
+    return true;
+  }), [rows, filters.search, filters.phases, filters.pm]);
+
+  const kpis = useMemo(() => {
+    const ragCount = (v: string) => kpiRows.filter((r) => r.schedule.rag === v).length;
+    const planned = kpiRows.filter((r) => r.schedule.actualPct != null && r.schedule.expectedPct != null);
+    const avg = (sel: (r: BoardRow) => number) =>
+      planned.length ? Math.round((planned.reduce((s, r) => s + sel(r), 0) / planned.length) * 10) / 10 : null;
+    return {
+      activeCount: kpiRows.length,
+      ragGreen: ragCount("green"),
+      ragAmber: ragCount("amber"),
+      ragRed: ragCount("red"),
+      ragNone: kpiRows.filter((r) => !r.schedule.rag).length,
+      openFlags: kpiRows.reduce((s, r) => s + r.flags.open + r.flags.flagged, 0),
+      overdueDeliveries: kpiRows.reduce((s, r) => s + (r.overdueDeliveryCount ?? 0), 0),
+      weightedActual: avg((r) => r.schedule.actualPct ?? 0),
+      weightedExpected: avg((r) => r.schedule.expectedPct ?? 0),
+    };
+  }, [kpiRows]);
+
   // ── dashboard aggregates ──
+  // "Sites by phase" stays the full distribution (it's the cross-filter selector).
   const byPhaseData = useMemo(() => {
     const m = new Map<string, number>();
     for (const r of rows) { const k = canonicalPhaseLabel(r.phase) || "—"; m.set(k, (m.get(k) ?? 0) + 1); }
     return [...m.entries()].map(([phase, count]) => ({ phase, count })).sort((a, b) => b.count - a.count);
   }, [rows]);
-  const ragData = useMemo(() => {
-    const h = data?.header;
-    const green = h?.ragGreen ?? 0, amber = h?.ragAmber ?? 0, red = h?.ragRed ?? 0;
-    const none = Math.max((h?.activeCount ?? rows.length) - green - amber - red, 0);
-    return [
-      { key: "green", name: "On / ahead", value: green },
-      { key: "amber", name: "Slipping", value: amber },
-      { key: "red", name: "Behind", value: red },
-      { key: "none", name: "No plan", value: none },
-    ];
-  }, [data, rows.length]);
+  // RAG donut reflects the scope filters, in step with the KPI tiles.
+  const ragData = useMemo(() => [
+    { key: "green", name: "On / ahead", value: kpis.ragGreen },
+    { key: "amber", name: "Slipping", value: kpis.ragAmber },
+    { key: "red", name: "Behind", value: kpis.ragRed },
+    { key: "none", name: "No plan", value: kpis.ragNone },
+  ], [kpis]);
   const ragTotal = useMemo(() => ragData.reduce((s, d) => s + d.value, 0), [ragData]);
 
   const filtered = useMemo(() => rows.filter((r) => {
@@ -536,17 +570,17 @@ export default function ExecutionReviewBoard() {
     <PageShell className="max-w-7xl p-4 md:p-6" data-testid="execution-board-page">
       <PageHeader title="Execution" subtitle="Program-wide delivery control tower · schedule read verbatim from the latest imported program plan" />
 
-      {/* KPI strip — clickable tiles cross-filter the table */}
+      {/* KPI strip — reflects the active scope (phase/search/PM) filters; tiles cross-filter the table */}
       {h && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
-          <Kpi label="Active sites" value={h.activeCount} accent="bg-emerald-500" onClick={() => setFilters({ ...DEFAULT_FILTERS })} />
-          <Kpi label="Behind (red)" value={h.ragRed} tone={h.ragRed > 0 ? "text-red-600" : ""} accent="bg-red-500" active={filters.rag === "red"}
+          <Kpi label="Active sites" value={kpis.activeCount} accent="bg-emerald-500" onClick={() => setFilters({ ...DEFAULT_FILTERS })} />
+          <Kpi label="Behind (red)" value={kpis.ragRed} tone={kpis.ragRed > 0 ? "text-red-600" : ""} accent="bg-red-500" active={filters.rag === "red"}
             onClick={() => setFilters((f) => ({ ...f, rag: f.rag === "red" ? "all" : "red" }))} />
-          <Kpi label="Overdue deliveries" value={h.overdueDeliveries} tone={h.overdueDeliveries > 0 ? "text-amber-600" : ""} accent="bg-amber-500"
+          <Kpi label="Overdue deliveries" value={kpis.overdueDeliveries} tone={kpis.overdueDeliveries > 0 ? "text-amber-600" : ""} accent="bg-amber-500"
             onClick={() => navigate("/execution/deliveries")} />
-          <Kpi label="Open flags" value={h.openFlags} accent="bg-slate-400" active={filters.hasFlags}
+          <Kpi label="Open flags" value={kpis.openFlags} accent="bg-slate-400" active={filters.hasFlags}
             onClick={() => setFilters((f) => ({ ...f, hasFlags: !f.hasFlags }))} />
-          <Kpi label="Prog actual/exp" value={`${fmtPct(h.weightedActual)}/${fmtPct(h.weightedExpected)}`} accent="bg-emerald-500" />
+          <Kpi label="Prog actual/exp" value={`${fmtPct(kpis.weightedActual)}/${fmtPct(kpis.weightedExpected)}`} accent="bg-emerald-500" />
         </div>
       )}
 
@@ -641,17 +675,17 @@ export default function ExecutionReviewBoard() {
               <button className="w-full flex items-center justify-between rounded-md border px-3 py-2 hover:bg-muted/50"
                 onClick={() => setFilters((f) => ({ ...f, rag: "red" }))} data-testid="attention-behind">
                 <span className="inline-flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-red-600" /> Behind plan</span>
-                <Badge variant={h && h.ragRed > 0 ? "destructive" : "secondary"}>{h?.ragRed ?? 0}</Badge>
+                <Badge variant={kpis.ragRed > 0 ? "destructive" : "secondary"}>{kpis.ragRed}</Badge>
               </button>
               <button className="w-full flex items-center justify-between rounded-md border px-3 py-2 hover:bg-muted/50"
                 onClick={() => navigate("/execution/deliveries")} data-testid="attention-deliveries">
                 <span className="inline-flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Overdue deliveries</span>
-                <Badge variant="secondary">{h?.overdueDeliveries ?? 0}</Badge>
+                <Badge variant="secondary">{kpis.overdueDeliveries}</Badge>
               </button>
               <button className="w-full flex items-center justify-between rounded-md border px-3 py-2 hover:bg-muted/50"
                 onClick={() => setFilters((f) => ({ ...f, hasFlags: true }))} data-testid="attention-flags">
                 <span className="inline-flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-slate-400" /> Open flags</span>
-                <Badge variant="secondary">{h?.openFlags ?? 0}</Badge>
+                <Badge variant="secondary">{kpis.openFlags}</Badge>
               </button>
             </CardContent>
           </Card>
