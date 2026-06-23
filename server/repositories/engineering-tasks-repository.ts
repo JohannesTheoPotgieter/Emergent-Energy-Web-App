@@ -263,8 +263,8 @@ export async function linkDocumentToTask(
   taskId: number,
   input: { managedDocumentId?: number | null; projectDocumentLinkId?: number | null; linkRole?: string },
   actorId: number,
-): Promise<WorkItemDocumentLinkRow> {
-  const [row] = await db
+): Promise<WorkItemDocumentLinkRow | null> {
+  const rows = await db
     .insert(workItemDocumentLinks)
     .values({
       workItemId: taskId,
@@ -273,7 +273,12 @@ export async function linkDocumentToTask(
       linkRole: input.linkRole ?? "output",
       createdByUserId: actorId,
     })
+    .onConflictDoNothing()
     .returning();
+  // Unique (workItemId, managedDocumentId): an empty result means this document
+  // is already linked to the task — signal the route to return 409, not 500.
+  if (rows.length === 0) return null;
+  const row = rows[0];
   await recordAudit({
     userId: actorId,
     entityType: "work_item",

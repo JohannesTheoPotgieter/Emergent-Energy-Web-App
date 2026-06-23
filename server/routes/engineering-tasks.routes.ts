@@ -12,9 +12,11 @@ import { z } from "zod";
 import { requireAuth, getEffectiveUser } from "../auth-context";
 import { requirePermission } from "../permission-middleware";
 import { validateBody } from "../middleware/validateBody";
-import { ApiError, badRequest, notFound, serverError, unauthorized } from "../lib/api-error";
+import { ApiError, badRequest, conflict, notFound, serverError, unauthorized, logApiError } from "../lib/api-error";
 import { TaskWorkflowGuardError } from "../lib/task-workflow-guard";
-import { TASK_STATUSES, TASK_PRIORITIES } from "@shared/schema";
+import { requireEngTaskOwnership } from "../middleware/requireEngTaskOwnership";
+import { getEffectiveWorkstreamVisibility } from "../workstream-visibility-middleware";
+import { TASK_STATUSES, TASK_PRIORITIES, normalizeRoleForPermissions } from "@shared/schema";
 import {
   engineeringDeliveryTaskTypeTagSchema,
   engineeringSeamTaskTypeTagSchema,
@@ -82,8 +84,10 @@ function actorId(req: Request): number {
 function handleError(scope: string, err: unknown): never {
   if (err instanceof TaskWorkflowGuardError) throw badRequest(err.message);
   if (err instanceof ApiError) throw err;
-  console.error(`[engineering-tasks] ${scope} error:`, err);
-  throw serverError(err instanceof Error ? err.message : "Engineering tasks request failed");
+  // Log the raw cause server-side; never surface raw DB/Drizzle text to the
+  // client (AGENT_GUARDRAILS § 5A).
+  logApiError(`engineering-tasks:${scope}`, err);
+  throw serverError("Engineering tasks request failed. Please retry.");
 }
 
 export function registerEngineeringTasksRoutes(app: Express): void {
@@ -94,8 +98,14 @@ export function registerEngineeringTasksRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       const parsed = listQuerySchema.safeParse(req.query);
       if (!parsed.success) throw badRequest("Invalid filters");
+      const user = getEffectiveUser(req);
+      if (!user) throw unauthorized();
       try {
-        res.json({ tasks: await tasksRepo.listEngineeringTasks(parsed.data) });
+        const visibility = await getEffectiveWorkstreamVisibility(user.id, normalizeRoleForPermissions(user.role) ?? "");
+        const filters = { ...parsed.data };
+        // Scope-'own' roles (e.g. ENGINEER) see only the tasks they own.
+        if (visibility.scope === "own") filters.ownerUserId = user.id;
+        res.json({ tasks: await tasksRepo.listEngineeringTasks(filters) });
       } catch (err) {
         handleError("list", err);
       }
@@ -151,6 +161,7 @@ export function registerEngineeringTasksRoutes(app: Express): void {
     "/api/engineering/tasks/:id/status",
     requireAuth,
     requirePermission("eng_tasks", "edit"),
+    requireEngTaskOwnership,
     validateBody(statusSchema),
     async (req: Request, res: Response) => {
       const parsedId = idParam.safeParse(req.params.id);
@@ -172,6 +183,7 @@ export function registerEngineeringTasksRoutes(app: Express): void {
     "/api/engineering/tasks/:id/documents",
     requireAuth,
     requirePermission("eng_tasks", "view"),
+    requireEngTaskOwnership,
     async (req: Request, res: Response) => {
       const parsedId = idParam.safeParse(req.params.id);
       if (!parsedId.success) throw badRequest("Invalid task id");
@@ -187,6 +199,7 @@ export function registerEngineeringTasksRoutes(app: Express): void {
     "/api/engineering/tasks/:id/document-candidates",
     requireAuth,
     requirePermission("eng_tasks", "view"),
+    requireEngTaskOwnership,
     async (req: Request, res: Response) => {
       const parsedId = idParam.safeParse(req.params.id);
       if (!parsedId.success) throw badRequest("Invalid task id");
@@ -202,6 +215,7 @@ export function registerEngineeringTasksRoutes(app: Express): void {
     "/api/engineering/tasks/:id/documents",
     requireAuth,
     requirePermission("eng_tasks", "edit"),
+    requireEngTaskOwnership,
     validateBody(linkDocSchema),
     async (req: Request, res: Response) => {
       const parsedId = idParam.safeParse(req.params.id);
@@ -210,7 +224,15 @@ export function registerEngineeringTasksRoutes(app: Express): void {
       try {
         const task = await tasksRepo.getEngineeringTask(parsedId.data);
         if (!task) throw notFound("Task");
+        // Only allow linking a managed document that lives on the task's project.
+        if (body.managedDocumentId != null) {
+          const candidates = await tasksRepo.getDocumentCandidatesForTask(parsedId.data);
+          if (!candidates.some((c) => c.id === body.managedDocumentId)) {
+            throw badRequest("That document isn't available on this task's project.");
+          }
+        }
         const link = await tasksRepo.linkDocumentToTask(parsedId.data, body, actorId(req));
+        if (!link) throw conflict("This document is already linked to the task.");
         res.status(201).json({ link });
       } catch (err) {
         handleError("link-document", err);
@@ -222,6 +244,7 @@ export function registerEngineeringTasksRoutes(app: Express): void {
     "/api/engineering/tasks/:id/documents/:linkId",
     requireAuth,
     requirePermission("eng_tasks", "edit"),
+    requireEngTaskOwnership,
     async (req: Request, res: Response) => {
       const parsedId = idParam.safeParse(req.params.id);
       const parsedLinkId = idParam.safeParse(req.params.linkId);

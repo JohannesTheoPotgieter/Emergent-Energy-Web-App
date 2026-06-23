@@ -12,7 +12,7 @@
 import type { Express, Request, Response } from "express";
 import { requireAuth, getEffectiveUser } from "../auth-context";
 import { requirePermission } from "../permission-middleware";
-import { ApiError, serverError, unauthorized } from "../lib/api-error";
+import { ApiError, serverError, unauthorized, logApiError } from "../lib/api-error";
 import { getEngineeringHome } from "../repositories/engineering-home-repository";
 
 export function registerEngineeringHomeRoutes(app: Express): void {
@@ -28,8 +28,8 @@ export function registerEngineeringHomeRoutes(app: Express): void {
         res.json(result);
       } catch (err) {
         if (err instanceof ApiError) throw err;
-        console.error("[engineering-home] error:", err);
-        throw serverError(err instanceof Error ? err.message : "Engineering home failed");
+        logApiError("engineering-home", err);
+        throw serverError("Engineering home failed. Please retry.");
       }
     },
   );
