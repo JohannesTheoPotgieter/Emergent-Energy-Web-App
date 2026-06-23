@@ -503,7 +503,7 @@ function ProgramOverview({ onOpen }: { onOpen: (id: number) => void }) {
 
   return (
     <PageShell className="max-w-6xl p-4 md:p-6" data-testid="milestone-tracker-page">
-      <PageHeader title="Milestone Tracker" subtitle="Payment milestones (from the revenue tracker) linked to the plan tasks that make them invoiceable, and the outflows those tasks incur" />
+      <PageHeader title="Activity Planning" subtitle="Plan the money in, the work that earns it, and the money out — link inflow milestones, plan tasks and outflow line items, and track completion and dependencies" />
 
       {isLoading ? (
         <div className="mt-4 space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
