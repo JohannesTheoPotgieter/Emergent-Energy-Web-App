@@ -102,6 +102,19 @@ export function registerEngineeringTasksRoutes(app: Express): void {
     },
   );
 
+  app.get(
+    "/api/engineering/options",
+    requireAuth,
+    requirePermission("eng_tasks", "view"),
+    async (_req: Request, res: Response) => {
+      try {
+        res.json(await tasksRepo.getEngineeringOptions());
+      } catch (err) {
+        handleError("options", err);
+      }
+    },
+  );
+
   app.post(
     "/api/engineering/tasks",
     requireAuth,

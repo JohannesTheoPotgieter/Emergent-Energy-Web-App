@@ -77,14 +77,14 @@ describe("nav cleanup — six-tab COO spec", () => {
     }
   });
 
-  it("Engineering is ring-fenced to the Home landing while the delivery rebuild lands", () => {
-    // Live-Ready (2026-06-22): Engineering is enabled as the third module,
-    // ring-fenced to its Home page and placed between Execution and Finance.
-    // Task Manager + Document Management are re-added to the secondary as the
-    // delivery rebuild promotes them; Standup is removed from the engineering nav.
+  it("Engineering is ring-fenced to the delivery pages while the rebuild lands", () => {
+    // Live-Ready: Engineering is the third module, between Execution and Finance.
+    // Home + Task Manager are live; Document Management is re-added in Phase 3.
+    // Standup + registers are removed from the engineering nav.
     const section = findTop("Engineering");
     expect(section.secondary.map((item) => item.path)).toEqual([
       "/engineering",
+      "/engineering/tasks",
     ]);
   });
 

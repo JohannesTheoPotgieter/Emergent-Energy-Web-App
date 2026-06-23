@@ -112,11 +112,12 @@ export const TOP_SECTIONS: TopSection[] = [
     key: "ENGINEERING",
     path: "/engineering",
     match: (pathname) => startsWithAny(pathname, ["/engineering"]),
-    // Ring-fenced to the Engineering Home landing for now; Task Manager and
-    // Document Management are added as the delivery rebuild promotes them into
-    // the Live-Ready set (shared/config/enabled-modules.ts). Standup removed.
+    // Ring-fenced to the delivery pages promoted into the Live-Ready set
+    // (shared/config/enabled-modules.ts). Document Management is added as the
+    // rebuild promotes it. Standup removed.
     secondary: [
       { label: "Home", path: "/engineering" },
+      { label: "Task Manager", path: "/engineering/tasks" },
     ],
   },
   {

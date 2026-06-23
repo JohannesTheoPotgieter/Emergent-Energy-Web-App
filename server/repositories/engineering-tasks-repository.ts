@@ -8,7 +8,7 @@
  * notifications use the canonical spine tables/services.
  */
 
-import { and, eq, isNull, desc, lte } from "drizzle-orm";
+import { and, eq, isNull, desc, lte, inArray, count } from "drizzle-orm";
 import { db } from "../db";
 import {
   workItems,
@@ -16,6 +16,8 @@ import {
   workItemStatusHistory,
   workItemDependencies,
   workItemDocumentLinks,
+  projectInfo,
+  users,
 } from "@shared/schema";
 import {
   buildEngineeringTaskInsert,
@@ -46,14 +48,93 @@ export interface EngineeringTaskFilters {
   dueBefore?: string;
 }
 
-export async function listEngineeringTasks(filters: EngineeringTaskFilters = {}): Promise<WorkItemRow[]> {
+/** Enriched list row — names resolved server-side so the UI needs no
+ *  cross-module calls under the Live-Ready ring fence. */
+export interface EngineeringTaskListItem {
+  id: number;
+  title: string;
+  projectId: number | null;
+  projectName: string | null;
+  taskTypeTag: string | null;
+  status: string;
+  priority: string | null;
+  endDate: string | null;
+  ownerUserId: number | null;
+  ownerName: string | null;
+  documentCount: number;
+}
+
+export async function listEngineeringTasks(filters: EngineeringTaskFilters = {}): Promise<EngineeringTaskListItem[]> {
   const conds = [eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)];
   if (filters.projectId != null) conds.push(eq(workItems.projectId, filters.projectId));
   if (filters.ownerUserId != null) conds.push(eq(workItems.ownerUserId, filters.ownerUserId));
   if (filters.status) conds.push(eq(workItems.status, filters.status));
   if (filters.taskTypeTag) conds.push(eq(workItems.taskTypeTag, filters.taskTypeTag));
   if (filters.dueBefore) conds.push(lte(workItems.endDate, filters.dueBefore));
-  return db.select().from(workItems).where(and(...conds)).orderBy(desc(workItems.updatedAt));
+
+  const rows = await db
+    .select({
+      id: workItems.id,
+      title: workItems.title,
+      projectId: workItems.projectId,
+      projectName: projectInfo.projectName,
+      taskTypeTag: workItems.taskTypeTag,
+      status: workItems.status,
+      priority: workItems.priority,
+      endDate: workItems.endDate,
+      ownerUserId: workItems.ownerUserId,
+      ownerName: users.name,
+    })
+    .from(workItems)
+    .leftJoin(projectInfo, eq(projectInfo.id, workItems.projectId))
+    .leftJoin(users, eq(users.id, workItems.ownerUserId))
+    .where(and(...conds))
+    .orderBy(desc(workItems.updatedAt));
+
+  const ids = rows.map((r: (typeof rows)[number]) => r.id);
+  const docCounts = new Map<number, number>();
+  if (ids.length > 0) {
+    const counts = await db
+      .select({ workItemId: workItemDocumentLinks.workItemId, c: count() })
+      .from(workItemDocumentLinks)
+      .where(inArray(workItemDocumentLinks.workItemId, ids))
+      .groupBy(workItemDocumentLinks.workItemId);
+    for (const row of counts) docCounts.set(row.workItemId, Number(row.c));
+  }
+
+  return rows.map((r: (typeof rows)[number]) => ({
+    id: r.id,
+    title: r.title,
+    projectId: r.projectId ?? null,
+    projectName: r.projectName ?? null,
+    taskTypeTag: r.taskTypeTag ?? null,
+    status: r.status,
+    priority: r.priority ?? null,
+    endDate: r.endDate ?? null,
+    ownerUserId: r.ownerUserId ?? null,
+    ownerName: r.ownerName ?? null,
+    documentCount: docCounts.get(r.id) ?? 0,
+  }));
+}
+
+export interface EngineeringOptions {
+  projects: { id: number; name: string }[];
+  users: { id: number; name: string }[];
+}
+
+/** Assignment dropdown data (projects + users) for the Task Manager forms. */
+export async function getEngineeringOptions(): Promise<EngineeringOptions> {
+  const projects = await db
+    .select({ id: projectInfo.id, name: projectInfo.projectName })
+    .from(projectInfo)
+    .where(isNull(projectInfo.deletedAt))
+    .orderBy(projectInfo.projectName);
+  const userRows = await db
+    .select({ id: users.id, name: users.name })
+    .from(users)
+    .where(isNull(users.deletedAt))
+    .orderBy(users.name);
+  return { projects, users: userRows };
 }
 
 export async function getEngineeringTask(taskId: number): Promise<WorkItemRow | null> {

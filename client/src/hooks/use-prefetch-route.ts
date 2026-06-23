@@ -13,7 +13,7 @@ const PREFETCH_MAP: Record<string, () => Promise<unknown>> = {
   "/cashflow": () => import("@/pages/cashflow"),
   "/revenue-tracker": () => import("@/pages/revenue-tracker"),
   "/cos": () => import("@/pages/cos"),
-  "/engineering-tasks": () => import("@/pages/engineering-tasks"),
+  "/engineering/tasks": () => import("@/pages/engineering/EngineeringTaskManagerPage"),
   "/engineering": () => import("@/pages/engineering/EngineeringHomePage"),
   "/pm-dashboard": () => import("@/pages/pm-dashboard"),
   "/execution": () => import("@/pages/execution-review"),
