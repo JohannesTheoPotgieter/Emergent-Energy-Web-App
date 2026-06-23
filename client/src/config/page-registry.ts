@@ -211,7 +211,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "portfolio", path: "/portfolio", label: "Portfolio", iconKey: "LayoutGrid", navGroup: "PROJECTS", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "PortfolioPage" },
   // Execution control tower (replaces the legacy 5-tab /execution-board).
   { id: "executionReview", path: "/execution", label: "Execution", iconKey: "LayoutDashboard", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_review", showInSidebar: true, routeComponentKey: "ExecutionReviewBoardPage" },
-  { id: "executionMilestones", path: "/execution/milestones", label: "Milestone Tracker", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_review", showInSidebar: false, routeComponentKey: "ExecutionMilestonesPage" },
+  { id: "executionMilestones", path: "/execution/milestones", label: "Activity Planning", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_review", showInSidebar: false, routeComponentKey: "ExecutionMilestonesPage" },
   { id: "executionDeliveries", path: "/execution/deliveries", label: "Deliveries", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_review", showInSidebar: false, routeComponentKey: "ExecutionDeliveriesPage" },
   { id: "executionAllocations", path: "/execution/allocations", label: "Allocations", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_review", showInSidebar: false, routeComponentKey: "ExecutionAllocationsPage" },
   { id: "executionSite", path: "/execution/site/:projectId", label: "Site Detail", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_review", showInSidebar: false, routeComponentKey: "ExecutionReviewDetailPage" },
