@@ -95,7 +95,6 @@ export const PROJECT_DETAIL_LEGACY_TAB_MAP: Record<string, { dept: ProjectDetail
   "expenditure-replica": { dept: "excel", sub: "exp-replica" },
   "program-plan-replica": { dept: "excel", sub: "plan-replica" },
   "manual-overrides": { dept: "excel", sub: "edit-log" },
-  "excel-vs-app": { dept: "excel", sub: "drift" },
 };
 
 export const PROJECT_DETAIL_DEPT_SUBTABS: Record<ProjectDetailDeptKey, ProjectDetailSubTabKey[]> = {

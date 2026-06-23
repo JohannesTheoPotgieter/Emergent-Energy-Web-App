@@ -157,8 +157,6 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "trackerReplicaExpenditure", path: "/projects/:projectId/expenditure-breakdown", label: "Expenditure Breakdown (Replica)", iconKey: "TrendingDown", navGroup: "FINANCE", permissionEntity: "cos", showInSidebar: false, routeComponentKey: "ExpenditureBreakdownReplicaPage" },
   { id: "trackerReplicaPlan", path: "/projects/:projectId/program-plan", label: "Program Plan (Replica)", iconKey: "Calendar", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "work_items", showInSidebar: false, routeComponentKey: "ProgramPlanReplicaPage" },
   { id: "manualOverrides", path: "/projects/:projectId/manual-overrides", label: "Manual Edit Log", iconKey: "History", navGroup: "FINANCE", permissionEntity: "revenue_tracker", showInSidebar: false, routeComponentKey: "ManualOverridesPage" },
-  { id: "excelVsAppProgram", path: "/program/excel-vs-app", label: "Excel vs App", iconKey: "GitCompare", navGroup: "FINANCE", permissionEntity: "excel_vs_app", showInSidebar: false, routeComponentKey: "ExcelVsAppProgramPage" },
-  { id: "excelVsAppProject", path: "/projects/:projectId/excel-vs-app", label: "Excel vs App (Project)", iconKey: "GitCompare", navGroup: "FINANCE", permissionEntity: "excel_vs_app", showInSidebar: false, routeComponentKey: "ExcelVsAppProjectPage" },
   // D4 — per-project finance detail: drill any total to its lines to its source
   // cell. Reached from the reconciliation board / finance home; not in the sidebar.
   { id: "financeProjectDetail", path: "/projects/:projectId/finance", label: "Project Finance", iconKey: "GitCompare", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: false, routeComponentKey: "FinanceProjectDetailPage" },
