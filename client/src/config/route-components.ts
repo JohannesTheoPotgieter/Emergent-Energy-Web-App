@@ -115,7 +115,6 @@ const EngMonthlyReportComparePage = lazyWithRetry(() => import("@/pages/engineer
 const EngMonthlyReportProjectPage = lazyWithRetry(() => import("@/pages/engineering-monthly-report-project"));
 const ReportCenterPage = lazyWithRetry(() => import("@/pages/reports/report-center"));
 const PerformancePage = lazyWithRetry(() => import("@/pages/reports/performance"));
-const ProgramWideAssessmentPage = lazyWithRetry(() => import("@/pages/reports/program-wide-assessment"));
 const EngineeringStandupPage = lazyWithRetry(() => import("@/pages/engineering/standup"));
 const POApprovalBoardPage = lazyWithRetry(() => import("@/pages/po-approval-board"));
 const PaymentRequestBoardPage = lazyWithRetry(() => import("@/pages/payment-request-board"));
@@ -270,7 +269,6 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   EngMonthlyReportProjectPage,
   ReportCenterPage,
   PerformancePage,
-  ProgramWideAssessmentPage,
   EngineeringStandupPage,
   POApprovalBoardPage,
   PaymentRequestBoardPage,

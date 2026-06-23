@@ -215,24 +215,6 @@ export const KPI_REGISTRY: KpiRegistryEntry[] = [
 
   // ── Tracker / Reconciliation ──────────────────────────────────────────────
   {
-    kpiKey: "tracker_vs_app_drift",
-    displayName: "Tracker vs App Drift (Unverified)",
-    businessDefinition:
-      "Number of field-level differences between the last imported tracker workbook and current app values that have not been verified (accepted or kept).",
-    formula:
-      "COUNT drift rows WHERE drift = 'unverified' across work_items, normalized_cost_lines, normalized_revenue_lines",
-    selectedTruthSource: "excel_import",
-    fallbackSource: "canonical",
-    dataOwner: "Programme Manager",
-    formulaOwner: "Programme Manager",
-    updateFrequency: "on_import",
-    confidence: "high",
-    drilldownRoute: "/program/excel-vs-app",
-    canonicalTable: "normalized_cost_lines,normalized_revenue_lines,work_items",
-    resolvedField: "manual_overrides",
-    hasKnownGaps: false,
-  },
-  {
     kpiKey: "invoice_without_po",
     displayName: "Invoices Without PO",
     businessDefinition:
@@ -245,7 +227,7 @@ export const KPI_REGISTRY: KpiRegistryEntry[] = [
     formulaOwner: "Finance Manager",
     updateFrequency: "real_time",
     confidence: "high",
-    drilldownRoute: "/reports/program-wide-assessment",
+    drilldownRoute: "/cos",
     canonicalTable: "normalized_cost_lines",
     resolvedField: "po_number",
     hasKnownGaps: false,
