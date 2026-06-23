@@ -183,6 +183,21 @@ export function registerEngineeringTasksRoutes(app: Express): void {
     },
   );
 
+  app.get(
+    "/api/engineering/tasks/:id/document-candidates",
+    requireAuth,
+    requirePermission("eng_tasks", "view"),
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      if (!parsedId.success) throw badRequest("Invalid task id");
+      try {
+        res.json({ candidates: await tasksRepo.getDocumentCandidatesForTask(parsedId.data) });
+      } catch (err) {
+        handleError("document-candidates", err);
+      }
+    },
+  );
+
   app.post(
     "/api/engineering/tasks/:id/documents",
     requireAuth,

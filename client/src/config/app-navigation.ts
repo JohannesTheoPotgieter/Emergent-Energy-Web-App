@@ -113,11 +113,11 @@ export const TOP_SECTIONS: TopSection[] = [
     path: "/engineering",
     match: (pathname) => startsWithAny(pathname, ["/engineering"]),
     // Ring-fenced to the delivery pages promoted into the Live-Ready set
-    // (shared/config/enabled-modules.ts). Document Management is added as the
-    // rebuild promotes it. Standup removed.
+    // (shared/config/enabled-modules.ts). Standup + registers removed.
     secondary: [
       { label: "Home", path: "/engineering" },
       { label: "Task Manager", path: "/engineering/tasks" },
+      { label: "Document Manager", path: "/engineering/documents" },
     ],
   },
   {

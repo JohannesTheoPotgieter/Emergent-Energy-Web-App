@@ -231,10 +231,9 @@ describe("live-ready module — enabled module set", () => {
   });
 
   it("ENGINEERING allowlist is exactly the ring-fenced delivery pages", () => {
-    // Delivery rebuild promotes pages into this set as they land. Document
-    // Manager joins when Phase 3 lands; Home + Task Manager are live now.
+    // Home + Task Manager + Document Manager are live in the ring fence.
     expect([...ENABLED_ENGINEERING_PAGE_IDS].sort()).toEqual(
-      ["engineering", "engineeringTasks"].sort(),
+      ["engineering", "engineeringTasks", "engineeringDocuments"].sort(),
     );
   });
 });
@@ -260,14 +259,12 @@ describe("live-ready module — page reachability", () => {
     }
   });
 
-  it("ENGINEERING Home + Task Manager are reachable; the rest of ENGINEERING is not (ring fence)", () => {
-    expect(isPageEnabled({ id: "engineering", navGroup: "ENGINEERING" })).toBe(true);
-    expect(isPageEnabled({ id: "engineeringTasks", navGroup: "ENGINEERING" })).toBe(true);
-    // Document management and standup stay blocked until the rebuild promotes
-    // them into the ring fence.
-    for (const id of ["engineeringDocuments", "engineeringStandup"]) {
-      expect(isPageEnabled({ id, navGroup: "ENGINEERING" }), `${id} must stay blocked`).toBe(false);
+  it("ENGINEERING delivery pages are reachable; standup stays out of the ring fence", () => {
+    for (const id of ["engineering", "engineeringTasks", "engineeringDocuments"]) {
+      expect(isPageEnabled({ id, navGroup: "ENGINEERING" }), `${id} must be reachable`).toBe(true);
     }
+    // Standup stays blocked — retired from the delivery scope.
+    expect(isPageEnabled({ id: "engineeringStandup", navGroup: "ENGINEERING" })).toBe(false);
   });
 
   it("SYSTEM plumbing pages are reachable, non-plumbing SYSTEM pages are not", () => {

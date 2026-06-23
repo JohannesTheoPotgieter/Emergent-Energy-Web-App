@@ -73,6 +73,12 @@ interface DocLink {
   createdAt: string;
 }
 
+interface DocumentCandidate {
+  id: number;
+  name: string;
+  path: string;
+}
+
 interface Options {
   projects: { id: number; name: string }[];
   users: { id: number; name: string }[];
@@ -405,6 +411,13 @@ function TaskDrawer({
   const links = docsQuery.data?.links ?? [];
   const docGated = task != null && requiresDocumentLink(task.taskTypeTag) && links.length === 0;
 
+  const candidatesQuery = useQuery<{ candidates: DocumentCandidate[] }>({
+    queryKey: ["/api/engineering/tasks", taskId, "document-candidates"],
+    enabled: open,
+  });
+  const linkedDocIds = new Set(links.map((l) => l.managedDocumentId).filter((x): x is number => x != null));
+  const availableCandidates = (candidatesQuery.data?.candidates ?? []).filter((c) => !linkedDocIds.has(c.id));
+
   const [docId, setDocId] = useState("");
   const [seamType, setSeamType] = useState<EngineeringSeamTaskTypeTag>(ENGINEERING_SEAM_TASK_TYPE_TAGS[0]);
   const [seamOwner, setSeamOwner] = useState<string>(NONE);
@@ -412,6 +425,7 @@ function TaskDrawer({
 
   function invalidateDocs() {
     qc.invalidateQueries({ queryKey: ["/api/engineering/tasks", taskId, "documents"] });
+    qc.invalidateQueries({ queryKey: ["/api/engineering/tasks", taskId, "document-candidates"] });
     onChanged();
   }
 
@@ -505,18 +519,21 @@ function TaskDrawer({
                   <p className="text-xs text-muted-foreground">No documents linked.</p>
                 )}
                 <div className="flex items-center gap-2">
-                  <Input
-                    value={docId}
-                    onChange={(e) => setDocId(e.target.value)}
-                    placeholder="Managed document ID"
-                    className="h-8"
-                    inputMode="numeric"
-                  />
+                  <Select value={docId} onValueChange={setDocId}>
+                    <SelectTrigger className="h-8" data-testid="doc-candidate-select">
+                      <SelectValue placeholder={availableCandidates.length ? "Choose a document…" : "No documents on this project"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableCandidates.map((c) => (
+                        <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Button size="sm" variant="outline" disabled={!docId || linkMutation.isPending} onClick={() => linkMutation.mutate()}>
                     <Link2 className="h-3.5 w-3.5" />Link
                   </Button>
                 </div>
-                <p className="text-[11px] text-muted-foreground">A document picker arrives with the Document Manager (Phase 3).</p>
+                <p className="text-[11px] text-muted-foreground">Documents come from this project's SharePoint folders (Document Manager).</p>
               </div>
 
               {/* Seam handoff */}

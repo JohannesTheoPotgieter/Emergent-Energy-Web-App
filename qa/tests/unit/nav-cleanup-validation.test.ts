@@ -85,6 +85,7 @@ describe("nav cleanup — six-tab COO spec", () => {
     expect(section.secondary.map((item) => item.path)).toEqual([
       "/engineering",
       "/engineering/tasks",
+      "/engineering/documents",
     ]);
   });
 

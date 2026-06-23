@@ -35,6 +35,7 @@ import {
 } from "../lib/task-workflow-guard";
 import { recordAudit } from "../api/v2/services/audit-service";
 import { createNotification } from "../services/notification-service";
+import { listManagedDocumentsByProject } from "./managed-documents-repository";
 import { isTaskComplete } from "@shared/task-status";
 
 export type WorkItemRow = typeof workItems.$inferSelect;
@@ -241,6 +242,21 @@ export async function listTaskDocumentLinks(taskId: number): Promise<WorkItemDoc
     .from(workItemDocumentLinks)
     .where(eq(workItemDocumentLinks.workItemId, taskId))
     .orderBy(desc(workItemDocumentLinks.createdAt));
+}
+
+export interface DocumentCandidate {
+  id: number;
+  name: string;
+  path: string;
+}
+
+/** Managed documents on the task's project, offered as link candidates for
+ *  the Task Manager drawer picker (powers the Done-gate). */
+export async function getDocumentCandidatesForTask(taskId: number): Promise<DocumentCandidate[]> {
+  const task = await getEngineeringTask(taskId);
+  if (!task || task.projectId == null) return [];
+  const docs = await listManagedDocumentsByProject(task.projectId);
+  return docs.map((d) => ({ id: d.id, name: d.name, path: d.path }));
 }
 
 export async function linkDocumentToTask(

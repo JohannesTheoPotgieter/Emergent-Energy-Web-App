@@ -114,6 +114,7 @@ export const ENABLED_EXECUTION_PAGE_IDS = [
 export const ENABLED_ENGINEERING_PAGE_IDS = [
   "engineering",           // /engineering — Engineering Home (delivery landing)
   "engineeringTasks",      // /engineering/tasks — Task Manager
+  "engineeringDocuments",  // /engineering/documents — Document Manager
 ] as const;
 
 /**
