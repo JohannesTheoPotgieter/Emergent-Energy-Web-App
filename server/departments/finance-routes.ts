@@ -5572,6 +5572,10 @@ router.get(
           invoiceNumber: l.invoiceNumber,
           poNumber: l.poNumber,
           invoiceDate: l.invoiceDate,
+          // §3.7 invoice-date colour signal, from the underlying canonical cost
+          // line (additive — no figure changes). Lets the drill-down drawer red
+          // an unconfirmed invoice date the same way the tracker does.
+          invoiceDateConfirmed: (exp as { invoiceDateConfirmed?: boolean | null } | undefined)?.invoiceDateConfirmed ?? null,
           supplier: exp?.supplierName ?? null,
           isRealised,
           noRevenueLinked: !!exp?.noRevenueLinked,
@@ -5984,6 +5988,10 @@ router.get(
           invoiceNumber: l.invoiceNumber,
           poNumber: l.poNumber,
           invoiceDate: l.invoiceDate,
+          // §3.7 invoice-date colour signal, from the underlying canonical cost
+          // line (additive — no figure changes). Lets the drill-down drawer red
+          // an unconfirmed invoice date the same way the tracker does.
+          invoiceDateConfirmed: (exp as { invoiceDateConfirmed?: boolean | null } | undefined)?.invoiceDateConfirmed ?? null,
           supplier: exp?.supplierName ?? null,
           isRealised,
           noRevenueLinked: !!exp?.noRevenueLinked,

@@ -77,6 +77,7 @@ interface RevenueRaw {
   invoiceNumber: string | null;
   poNumber: string | null;
   invoiceDate: string | null;
+  invoiceDateConfirmed?: boolean | null;
   supplier: string | null;
   isRealised: boolean;
   noRevenueLinked: boolean;
@@ -122,6 +123,7 @@ interface GpRaw {
   invoiceNumber: string | null;
   poNumber: string | null;
   invoiceRaisedDate: string | null;
+  invoiceDateConfirmed?: boolean | null;
   bucket: 'planned' | 'committed' | 'unrealised' | 'realised';
   recognitionMonth: string | null;
 }
@@ -190,7 +192,7 @@ function normaliseRevenue(rows: RevenueRaw[]): DrawerLine[] {
     isRealised: r.isRealised,
     invoiceNumber: r.invoiceNumber,
     invoiceDate: r.invoiceDate,
-    invoiceDateConfirmed: null,
+    invoiceDateConfirmed: r.invoiceDateConfirmed ?? null,
     poNumber: r.poNumber,
     supplier: r.supplier,
     rowSource: r.rowSource ?? null,
@@ -240,7 +242,7 @@ function normaliseGp(rows: GpRaw[]): DrawerLine[] {
     isRealised: r.bucket === 'realised',
     invoiceNumber: r.invoiceNumber,
     invoiceDate: r.invoiceRaisedDate,
-    invoiceDateConfirmed: null,
+    invoiceDateConfirmed: r.invoiceDateConfirmed ?? null,
     poNumber: r.poNumber,
     supplier: null,
     rowSource: null,
