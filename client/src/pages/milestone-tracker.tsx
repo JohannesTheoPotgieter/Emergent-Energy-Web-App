@@ -311,27 +311,30 @@ function MilestoneCard({ m, detail, h }: { m: MilestoneView; detail: ProjectMile
 
 // ──────────────────────────────── project workspace ──────────────────────────
 
-/** Drill-down detail: the project's still-open inflow and outflow line items. */
+/**
+ * Drill-down worklist: what still needs LINKING. Activity Planning's job is to
+ * wire money to work, so the two panels surface the unlinked line items —
+ * inflow milestones with no plan task, and outflow cost lines incurred by no
+ * task — regardless of payment status. (This is why a far-along project shows
+ * far more than just its still-unpaid outflows here.)
+ */
 function OpenItemsBlock({ detail }: { detail: ProjectMilestoneDetail }) {
-  // Still to collect: not actually collected (paid) and not written off / disputed.
-  // A future/forecast "Payment Received Date" is NOT paid (see inflowState), so
-  // those milestones correctly surface here.
-  const openIn = detail.milestones.filter((m) => m.state !== "paid" && m.status !== "written_off" && m.status !== "disputed");
-  const openOut = detail.availableCostLines.filter((o) => o.state !== "paid");
-  const inAmt = openIn.reduce((s, m) => s + (m.amount ?? 0), 0);
-  const outAmt = openOut.reduce((s, o) => s + (o.amount ?? 0), 0);
+  const unlinkedIn = detail.milestones.filter((m) => m.tasks.length === 0);
+  const unlinkedOut = detail.outflowItems.filter((o) => o.linkedTaskIds.length === 0);
+  const inAmt = unlinkedIn.reduce((s, m) => s + (m.amount ?? 0), 0);
+  const outAmt = unlinkedOut.reduce((s, o) => s + (o.amount ?? 0), 0);
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3" data-testid="open-items-block">
       <Card><CardContent className="p-3">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-semibold inline-flex items-center gap-1.5"><TrendingUp className="w-4 h-4 text-emerald-600" />Open inflows to collect</span>
-          <span className="text-xs text-muted-foreground tabular-nums">{openIn.length} · {money(inAmt)}</span>
+          <span className="text-sm font-semibold inline-flex items-center gap-1.5"><TrendingUp className="w-4 h-4 text-emerald-600" />Inflows not linked</span>
+          <span className="text-xs text-muted-foreground tabular-nums">{unlinkedIn.length} · {money(inAmt)}</span>
         </div>
-        {openIn.length === 0 ? (
-          <p className="text-xs text-muted-foreground py-2">All inflows settled.</p>
+        {unlinkedIn.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-2">Every inflow milestone is linked to a task.</p>
         ) : (
           <div className="space-y-1 max-h-60 overflow-y-auto">
-            {openIn.map((m) => (
+            {unlinkedIn.map((m) => (
               <div key={m.rowHash} className="flex items-center gap-2 text-xs">
                 <span className="truncate flex-1">{m.milestoneNo ? `${m.milestoneNo}. ` : ""}{m.milestoneName || "Milestone"}</span>
                 <span className="text-muted-foreground whitespace-nowrap">{fmtDate(m.expectedPaymentDate)}</span>
@@ -344,14 +347,14 @@ function OpenItemsBlock({ detail }: { detail: ProjectMilestoneDetail }) {
       </CardContent></Card>
       <Card><CardContent className="p-3">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-semibold inline-flex items-center gap-1.5"><TrendingDown className="w-4 h-4 text-red-600" />Open outflows to pay</span>
-          <span className="text-xs text-muted-foreground tabular-nums">{openOut.length} · {money(outAmt)}</span>
+          <span className="text-sm font-semibold inline-flex items-center gap-1.5"><TrendingDown className="w-4 h-4 text-red-600" />Outflows not linked</span>
+          <span className="text-xs text-muted-foreground tabular-nums">{unlinkedOut.length} · {money(outAmt)}</span>
         </div>
-        {openOut.length === 0 ? (
-          <p className="text-xs text-muted-foreground py-2">All outflows paid.</p>
+        {unlinkedOut.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-2">Every outflow cost line is linked to a task.</p>
         ) : (
           <div className="space-y-1 max-h-60 overflow-y-auto">
-            {openOut.map((o) => (
+            {unlinkedOut.map((o) => (
               <div key={o.rowHash} className="flex items-center gap-2 text-xs">
                 <span className="truncate flex-1">{o.description || o.costCategory || "Cost"}{o.counterpartyName ? <span className="text-muted-foreground"> · {o.counterpartyName}</span> : null}</span>
                 <span className="text-muted-foreground whitespace-nowrap">{fmtDate(o.forecastPaymentDate ?? o.invoiceDate)}</span>
