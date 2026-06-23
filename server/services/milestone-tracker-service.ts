@@ -122,18 +122,38 @@ export interface OutflowItemView extends OutflowView {
   linkedTaskIds: number[];
 }
 
-export type CalendarKind = "inflow" | "outflow" | "task";
-
-export interface CalendarEvent {
-  kind: CalendarKind;
-  date: string; // yyyy-mm-dd anchor
-  label: string;
+/** A money-movement marker on a built activity's timeline. `realised` = actual
+ *  (paid) movement; otherwise a forecast/expected date. */
+export interface TimelineMarker {
+  date: string; // yyyy-mm-dd
   amount: number | null;
-  state: FlowState | TaskState;
+  realised: boolean;
+}
+
+export type AxisState = "positive" | "negative" | "unknown";
+
+/** One fully-built activity: an inflow milestone wired to plan task(s) and the
+ *  outflows those tasks incur, with the work span + money dates and the two
+ *  precomputed axes (schedule = work on time; cashflow = money-in before out). */
+export interface TimelineActivity {
   projectId: number;
   projectName: string;
-  rowHash?: string;
-  taskId?: number;
+  milestoneRowHash: string;
+  title: string;
+  amount: number | null;
+  state: FlowState;
+  taskStart: string | null;
+  taskEnd: string | null;
+  tasksTotal: number;
+  tasksComplete: number;
+  overdueTaskCount: number;
+  invoiceDate: string | null;
+  inflow: TimelineMarker | null;
+  outflows: TimelineMarker[];
+  outflowTotal: number;
+  scheduleState: AxisState;
+  cashflowDays: number | null;
+  cashflowState: AxisState;
 }
 
 export interface ProjectMilestoneDetail {
@@ -145,7 +165,8 @@ export interface ProjectMilestoneDetail {
   outflowItems: OutflowItemView[];
   availableTasks: TaskPick[];
   availableCostLines: OutflowView[];
-  calendar: CalendarEvent[];
+  /** Fully-built activities (milestone → task[ → outflow]) for the Timeline tab. */
+  activities: TimelineActivity[];
   summary: {
     milestoneCount: number;
     inflowTotal: number;
@@ -185,7 +206,8 @@ export interface MilestoneProgram {
     gapCount: number;
     readyToInvoiceCount: number;
   };
-  calendar: CalendarEvent[];
+  /** Every fully-built activity across projects, for the monthly overlay. */
+  activities: TimelineActivity[];
 }
 
 // ──────────────────────────────── helpers ────────────────────────────────────
@@ -420,39 +442,88 @@ function buildMilestones(projectId: number, projectName: string, b: ProjectBundl
   });
 }
 
-function calendarFor(projectId: number, projectName: string, milestones: MilestoneView[], today: string): CalendarEvent[] {
-  const events: CalendarEvent[] = [];
-  const seenOutflow = new Set<string>();
-  const seenTask = new Set<number>();
+/** The money-out date of an outflow (payment, not invoice): forecast → paid →
+ *  invoice, mirroring the per-milestone GP timing in the client. */
+function outflowMoneyDate(o: OutflowView): string | null {
+  return o.forecastPaymentDate ?? o.paidDate ?? o.invoiceDate;
+}
+
+/**
+ * Build the fully-built activities for a project's already-computed milestone
+ * views. A built activity is a milestone with at least one linked task; the
+ * outflows its tasks incur are carried as money-out markers. Both axes reuse
+ * the existing logic — SCHEDULE = no linked task overdue (the task done/due/
+ * overdue state already on the view); CASHFLOW = amount-weighted money-out date
+ * minus the money-in date (+ve ⇒ cash lands first), the same timing the
+ * milestone GP card shows.
+ */
+function buildActivities(projectId: number, projectName: string, milestones: MilestoneView[]): TimelineActivity[] {
+  const out: TimelineActivity[] = [];
   for (const m of milestones) {
-    const inDate = m.expectedPaymentDate ?? m.invoiceDate;
+    if (m.tasks.length === 0) continue; // not built yet — no work wired
+
+    // work span across the linked tasks
+    const starts = m.tasks.map((t) => t.startDate ?? t.endDate).filter((d): d is string => !!d);
+    const ends = m.tasks.map((t) => t.endDate ?? t.startDate).filter((d): d is string => !!d);
+    const taskStart = starts.length ? starts.reduce((a, b) => (a < b ? a : b)) : null;
+    const taskEnd = ends.length ? ends.reduce((a, b) => (a > b ? a : b)) : null;
+    const overdueTaskCount = m.tasks.filter((t) => t.state === "overdue").length;
+    const tasksComplete = m.tasks.filter((t) => t.complete).length;
+    const scheduleState: AxisState = overdueTaskCount > 0 ? "negative" : "positive";
+
+    // money-in marker (expected/received)
+    const inDate = m.expectedPaymentDate ?? m.paidDate ?? m.invoiceDate;
+    const inflow: TimelineMarker | null = inDate
+      ? { date: inDate, amount: m.amount, realised: m.state === "paid" }
+      : null;
+
+    // money-out markers (distinct outflows incurred by the activity's tasks)
+    const outflows: TimelineMarker[] = [];
+    let outflowTotal = 0;
+    for (const o of m.outflows) {
+      outflowTotal += o.amount ?? 0;
+      const d = outflowMoneyDate(o);
+      if (d) outflows.push({ date: d, amount: o.amount, realised: o.state === "paid" });
+    }
+
+    // cashflow timing: amount-weighted money-out date − money-in date, in days
+    let cashflowDays: number | null = null;
     if (inDate) {
-      events.push({
-        kind: "inflow", date: inDate, label: m.milestoneName || m.milestoneNo || "Milestone",
-        amount: m.amount, state: m.state, projectId, projectName, rowHash: m.rowHash,
-      });
-    }
-    for (const t of m.tasks) {
-      if (!seenTask.has(t.id) && t.endDate) {
-        seenTask.add(t.id);
-        events.push({
-          kind: "task", date: t.endDate, label: `${t.taskNo ? t.taskNo + " · " : ""}${t.title}`,
-          amount: null, state: t.state, projectId, projectName, taskId: t.id,
-        });
+      const inMs = Date.parse(inDate);
+      let wsum = 0, dsum = 0;
+      for (const o of m.outflows) {
+        const d = outflowMoneyDate(o);
+        const amt = o.amount ?? 0;
+        const ms = d ? Date.parse(d) : NaN;
+        if (Number.isFinite(ms) && amt > 0) { wsum += amt; dsum += ms * amt; }
       }
-      for (const o of t.outflows) {
-        const d = o.forecastPaymentDate ?? o.invoiceDate ?? o.paidDate;
-        if (d && !seenOutflow.has(o.rowHash)) {
-          seenOutflow.add(o.rowHash);
-          events.push({
-            kind: "outflow", date: d, label: o.description || o.costCategory || "Cost",
-            amount: o.amount, state: o.state, projectId, projectName, rowHash: o.rowHash,
-          });
-        }
-      }
+      if (wsum > 0 && Number.isFinite(inMs)) cashflowDays = Math.round((dsum / wsum - inMs) / 86_400_000);
     }
+    const cashflowState: AxisState = cashflowDays == null ? "unknown" : cashflowDays >= 0 ? "positive" : "negative";
+
+    out.push({
+      projectId,
+      projectName,
+      milestoneRowHash: m.rowHash,
+      title: m.milestoneName || m.milestoneNo || "Milestone",
+      amount: m.amount,
+      state: m.state,
+      taskStart,
+      taskEnd,
+      tasksTotal: m.tasks.length,
+      tasksComplete,
+      overdueTaskCount,
+      invoiceDate: m.invoiceDate,
+      inflow,
+      outflows,
+      outflowTotal,
+      scheduleState,
+      cashflowDays,
+      cashflowState,
+    });
   }
-  return events.sort((a, b) => a.date.localeCompare(b.date));
+  // earliest money-in first; activities without a money-in date sort last
+  return out.sort((a, b) => (a.inflow?.date ?? "9999").localeCompare(b.inflow?.date ?? "9999"));
 }
 
 async function fetchBundle(projectId: number): Promise<ProjectBundle> {
@@ -557,7 +628,7 @@ export async function getProjectMilestones(projectId: number, now: Date = new Da
       endDate: t.endDate, percentComplete: pctTo100(t.percentComplete),
     })),
     availableCostLines: b.costs.map((c) => toOutflowView(c, today)),
-    calendar: calendarFor(projectId, header.projectName, milestones, today),
+    activities: buildActivities(projectId, header.projectName, milestones),
     summary: { milestoneCount: milestones.length, inflowTotal, inflowOutstanding, outflowTotal, gapCount, readyToInvoiceCount },
   };
 }
@@ -570,7 +641,6 @@ export async function getMilestoneProgram(now: Date = new Date()): Promise<Miles
   // every project in a phase (incl. completed/archived ones with open money).
   const active = await executionBoardRepository.getActiveProjects(true);
   const ids = active.map((p) => p.id);
-  const nameById = new Map(active.map((p) => [p.id, p.projectName]));
 
   const [milestones, costs, tasks, rmLinks, tcLinks] = await Promise.all([
     milestoneTrackerRepository.getRevenueMilestonesForProjects(ids),
@@ -607,7 +677,7 @@ export async function getMilestoneProgram(now: Date = new Date()): Promise<Miles
   const tcByP = group(tcLinks);
 
   const rows: MilestoneProgramRow[] = [];
-  const calendar: CalendarEvent[] = [];
+  const activities: TimelineActivity[] = [];
   let H_inflow = 0, H_outstanding = 0, H_outflow = 0, H_gaps = 0, H_ready = 0, H_ms = 0;
 
   for (const p of active) {
@@ -668,7 +738,7 @@ export async function getMilestoneProgram(now: Date = new Date()): Promise<Miles
       readyToInvoiceCount,
       nextInflowDate: upcoming[0] ?? null,
     });
-    calendar.push(...calendarFor(p.id, p.projectName, views, today));
+    activities.push(...buildActivities(p.id, p.projectName, views));
 
     H_inflow += inflowTotal;
     H_outstanding += inflowOutstanding;
@@ -680,7 +750,7 @@ export async function getMilestoneProgram(now: Date = new Date()): Promise<Miles
 
   // Worst-first: most gaps, then most outstanding inflow.
   rows.sort((a, b) => (b.gapCount - a.gapCount) || (b.inflowOutstanding - a.inflowOutstanding));
-  calendar.sort((a, b) => a.date.localeCompare(b.date));
+  activities.sort((a, b) => (a.inflow?.date ?? "9999").localeCompare(b.inflow?.date ?? "9999"));
 
   return {
     rows,
@@ -693,7 +763,7 @@ export async function getMilestoneProgram(now: Date = new Date()): Promise<Miles
       gapCount: H_gaps,
       readyToInvoiceCount: H_ready,
     },
-    calendar,
+    activities,
   };
 }
 

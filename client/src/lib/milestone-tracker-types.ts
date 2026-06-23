@@ -95,18 +95,45 @@ export interface OutflowItemView extends OutflowView {
   linkedTaskIds: number[];
 }
 
-export type CalendarKind = "inflow" | "outflow" | "task";
-
-export interface CalendarEvent {
-  kind: CalendarKind;
-  date: string;
-  label: string;
+/** A money-movement marker on a built activity's timeline row. `realised` = it
+ *  is an ACTUAL movement (paid), otherwise a forecast/expected date. */
+export interface TimelineMarker {
+  date: string; // yyyy-mm-dd
   amount: number | null;
-  state: FlowState | TaskState;
+  realised: boolean;
+}
+
+export type AxisState = "positive" | "negative" | "unknown";
+
+/**
+ * One fully-built activity = an inflow milestone wired to plan task(s) (and the
+ * outflows those tasks incur). It carries the work span + the money dates so a
+ * timeline / monthly overlay can show, at a glance, whether it is SCHEDULE
+ * positive (work on time) and CASHFLOW positive (money-in lands before money-out).
+ */
+export interface TimelineActivity {
   projectId: number;
   projectName: string;
-  rowHash?: string;
-  taskId?: number;
+  milestoneRowHash: string;
+  title: string;
+  amount: number | null; // inflow (money-in) amount
+  state: FlowState; // inflow state
+  // the work span (plan tasks)
+  taskStart: string | null;
+  taskEnd: string | null;
+  tasksTotal: number;
+  tasksComplete: number;
+  overdueTaskCount: number;
+  // money-in
+  invoiceDate: string | null;
+  inflow: TimelineMarker | null; // expected/received money-in
+  // money-out (the outflows incurred by the activity's tasks)
+  outflows: TimelineMarker[];
+  outflowTotal: number;
+  // axes (precomputed server-side from the existing task + timing logic)
+  scheduleState: AxisState; // work on time?
+  cashflowDays: number | null; // +ve = money-in before money-out
+  cashflowState: AxisState;
 }
 
 export interface ProjectMilestoneDetail {
@@ -116,7 +143,8 @@ export interface ProjectMilestoneDetail {
   outflowItems: OutflowItemView[];
   availableTasks: TaskPick[];
   availableCostLines: OutflowView[];
-  calendar: CalendarEvent[];
+  /** Fully-built activities (milestone → task[ → outflow]) for the Timeline tab. */
+  activities: TimelineActivity[];
   summary: {
     milestoneCount: number;
     inflowTotal: number;
@@ -156,7 +184,8 @@ export interface MilestoneProgram {
     gapCount: number;
     readyToInvoiceCount: number;
   };
-  calendar: CalendarEvent[];
+  /** Every fully-built activity across projects, for the monthly overlay. */
+  activities: TimelineActivity[];
 }
 
 // ── shared display helpers ──
