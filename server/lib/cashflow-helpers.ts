@@ -2,18 +2,17 @@
  * Shared helper functions for cashflow and financial route calculations.
  * Extracted from server/routes.ts to enable reuse across domain route modules.
  */
+import { isDateColourConfirmed } from "@shared/finance/date-confirmation";
 
 /**
- * Check whether a date field is "confirmed" (black font = confirmed, red = unconfirmed).
+ * Check whether a date field is "confirmed" (black font = confirmed, red =
+ * unconfirmed). Delegates to the canonical §3.7 helper — do not inline the rule.
  */
 export function isDateConfirmedCheck(
   confirmed: boolean | null | undefined,
   fontColor: string | null | undefined
 ): boolean {
-  if (fontColor === 'red') return false;
-  if (fontColor === 'black') return true;
-  if (confirmed === true) return true;
-  return false;
+  return isDateColourConfirmed(confirmed, fontColor);
 }
 
 /**
