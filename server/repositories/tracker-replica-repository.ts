@@ -35,6 +35,7 @@ import { workItems, workItemDependencies, type WorkItem } from "@shared/schema/t
 import { projectInfo } from "@shared/schema/projects";
 import { smartImportRuns } from "@shared/schema/imports";
 import { users } from "@shared/schema/users";
+import { resolveCellFormatEntry } from "@shared/tracker-cell-format-keys";
 import { db } from "../db";
 
 export class TrackerReplicaRepository {
@@ -444,9 +445,12 @@ export class TrackerReplicaRepository {
           overrideEditor: hasOverride ? (overrideEntry.editedBy ?? null) : null,
           overrideEditedAt: hasOverride ? (overrideEntry.editedAt ?? null) : null,
           overrideReason: hasOverride ? (overrideEntry.note ?? null) : null,
-          cellFormat: cellFormat && typeof cellFormat === "object" && (cellFormat as any)[f]
-            ? (cellFormat as any)[f]
-            : null,
+          // Resolve via the shared canonical ↔ source-sheet bridge: the
+          // importer keys cell_format in snake_case / column-label form
+          // (invoice_date, payment_received_date, payment_date) while the
+          // tracked fields here are canonical camelCase (invoiceDate, paidDate),
+          // so a raw lookup would drop the imported colour on the diff view.
+          cellFormat: resolveCellFormatEntry(cellFormat, f),
           drift: driftClass,
         });
       }

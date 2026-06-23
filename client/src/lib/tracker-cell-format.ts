@@ -27,6 +27,8 @@
  * If `cell_format` is null (legacy row imported before PR2C), every lookup
  * returns an empty style — no error.
  */
+import { resolveCellFormatEntry } from "@shared/tracker-cell-format-keys";
+
 export type CellFormat = {
   font?: string | null;
   fill?: string | null;
@@ -35,18 +37,14 @@ export type CellFormat = {
 
 export type CellFormatMap = Record<string, CellFormat | undefined>;
 
-/** Convert "milestone_notes" / "milestoneNotes" → both lookups so callers
- *  can pass either form without worrying which the importer wrote. */
-function snakeToCamel(s: string): string {
-  return s.replace(/_([a-z])/g, (_m, c: string) => c.toUpperCase());
-}
-function camelToSnake(s: string): string {
-  return s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
-}
-
 /**
  * Read raw `cell_format` (which may be null / unknown JSON shape) and look
- * up the entry for `field`, accepting either snake_case or camelCase keys.
+ * up the entry for `field`, accepting either snake_case or camelCase keys —
+ * and the known source-sheet synonyms (e.g. `paidDate` also matches the
+ * importer's `payment_received_date` / `payment_date`). The canonical ↔
+ * source-sheet bridge lives in the shared `tracker-cell-format-keys` module so
+ * the client renderer and the server diff resolve colour identically.
+ *
  * Returns null when no entry is present so the caller can fall back to
  * default styling without conditional spread.
  */
@@ -54,21 +52,7 @@ export function getCellFormat(
   rawMap: unknown,
   field: string,
 ): CellFormat | null {
-  if (rawMap == null || typeof rawMap !== "object") return null;
-  const map = rawMap as Record<string, unknown>;
-  const candidates = [field, snakeToCamel(field), camelToSnake(field)];
-  for (const key of candidates) {
-    const entry = map[key];
-    if (entry && typeof entry === "object") {
-      const e = entry as Record<string, unknown>;
-      const out: CellFormat = {};
-      if (typeof e.font === "string") out.font = e.font;
-      if (typeof e.fill === "string") out.fill = e.fill;
-      if (typeof e.bold === "boolean") out.bold = e.bold;
-      return out;
-    }
-  }
-  return null;
+  return resolveCellFormatEntry(rawMap, field);
 }
 
 /**
