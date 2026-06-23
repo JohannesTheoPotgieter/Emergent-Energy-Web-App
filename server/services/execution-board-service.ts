@@ -154,20 +154,21 @@ export interface BoardResult {
   rows: BoardRow[];
 }
 
-// The Execution board shows mid-to-late delivery only: canonical phases from
-// Financial Close (display position 3) forward, EXCEPT the final 3-month
-// post-handover review and the terminal Hold/Done phases. Earlier phases
-// (assessment / design) and unrecognised phases are hidden, so the control
-// tower tracks active delivery. Derived from the canonical phase list.
-const BOARD_VISIBLE_PHASE_LABELS = new Set(
+// The Execution board's UNIVERSE — every project the board can show: canonical
+// phases from Financial Close (display position 3) through Compliance Handover,
+// PLUS the terminal Hold/Done branches. Earlier phases (assessment / design)
+// and unrecognised phases are excluded. The board defaults to Financial Close →
+// Client Handover on the CLIENT (so later phases / Hold / Done are present but
+// only shown when explicitly filtered to). Derived from the canonical phase list.
+const BOARD_UNIVERSE_PHASE_LABELS = new Set(
   PHASES
-    .filter((p) => p.displayNumber != null && p.displayNumber >= 3 && p.label !== "3 Months Post HO Review")
+    .filter((p) => (p.displayNumber != null && p.displayNumber >= 3) || p.isTerminal)
     .map((p) => p.label),
 );
-function isBoardVisiblePhase(phase: string | null): boolean {
+function isBoardUniversePhase(phase: string | null): boolean {
   if (!phase) return false;
   const label = resolveCanonicalPhase(phase)?.label ?? phase;
-  return BOARD_VISIBLE_PHASE_LABELS.has(label);
+  return BOARD_UNIVERSE_PHASE_LABELS.has(label);
 }
 
 function installerSummary(rows: InstallerRow[]): InstallerSummary {
@@ -180,10 +181,12 @@ function installerSummary(rows: InstallerRow[]): InstallerSummary {
 
 export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
   const today = startOfDay(now);
-  // Show only Financial-Close-forward delivery on the board (KPIs + rows) —
-  // earlier assessment/design phases, the 3-month post-handover review and the
-  // completed/on-hold terminals are hidden, keeping the tower on live delivery.
-  const active = (await executionBoardRepository.getActiveProjects()).filter((p) => isBoardVisiblePhase(p.phase));
+  // Return the full board UNIVERSE — Financial Close forward + terminal
+  // Hold/Done — so later-phase / on-hold / completed projects are available to
+  // the board and appear when explicitly filtered to. The client defaults the
+  // view to Financial Close → Client Handover. Earlier (assessment/design)
+  // phases stay excluded.
+  const active = (await executionBoardRepository.getActiveProjects()).filter((p) => isBoardUniversePhase(p.phase));
   const ids = active.map((p) => p.id);
 
   const tasksByProject = await safe(
