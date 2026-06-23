@@ -1046,7 +1046,10 @@ router.get("/api/smart-import/:runId/qb-protections", requireAuth, requirePermis
       const { quickbooksInvoiceLinks } = await import("@shared/schema");
       const { sql: sqlTag } = await import("drizzle-orm");
 
-      const [costRow] = await db.execute(sqlTag`
+      // NOTE: db.execute() returns a QueryResult ({ rows }) on Postgres and an
+      // array on the SQLite dev fallback — never array-destructure it directly
+      // (`const [x] = await db.execute(...)` throws "not iterable" on Postgres).
+      const costRes = await db.execute(sqlTag`
         SELECT COUNT(DISTINCT ncl.id)::int AS n
         FROM ${normalizedCostLines} ncl
         INNER JOIN ${quickbooksInvoiceLinks} ql
@@ -1057,9 +1060,10 @@ router.get("/api/smart-import/:runId/qb-protections", requireAuth, requirePermis
           AND ncl.effective_to IS NULL
           AND ncl.deleted_at IS NULL
       `) as any;
-      costLinkedCount = Number(costRow?.n ?? costRow?.rows?.[0]?.n ?? 0);
+      const costRowR = Array.isArray(costRes) ? costRes[0] : costRes?.rows?.[0];
+      costLinkedCount = Number(costRowR?.n ?? 0);
 
-      const [revRow] = await db.execute(sqlTag`
+      const revRes = await db.execute(sqlTag`
         SELECT COUNT(DISTINCT nrl.id)::int AS n
         FROM ${normalizedRevenueLines} nrl
         INNER JOIN ${quickbooksInvoiceLinks} ql
@@ -1070,7 +1074,8 @@ router.get("/api/smart-import/:runId/qb-protections", requireAuth, requirePermis
           AND nrl.effective_to IS NULL
           AND nrl.deleted_at IS NULL
       `) as any;
-      revenueLinkedCount = Number(revRow?.n ?? revRow?.rows?.[0]?.n ?? 0);
+      const revRowR = Array.isArray(revRes) ? revRes[0] : revRes?.rows?.[0];
+      revenueLinkedCount = Number(revRowR?.n ?? 0);
     }
 
     res.json({
