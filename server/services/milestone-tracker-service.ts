@@ -89,6 +89,39 @@ export interface TaskPick {
   percentComplete: number | null;
 }
 
+/** A predecessor of a plan task. `source` is "MANUAL" (Activity-Planning-owned,
+ *  removable here) or "SMART_IMPORT" (from the workbook, read-only here). */
+export interface TaskPredecessor {
+  workItemId: number;
+  source: string;
+  complete: boolean;
+}
+
+/** A plan task in the Project Plan tab — the hub: the inflow milestones it
+ *  unlocks, the outflow line items it incurs, and its dependency predecessors. */
+export interface ActivityTaskNode {
+  id: number;
+  taskNo: string | null;
+  title: string;
+  workstream: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  percentComplete: number | null; // 0..100
+  complete: boolean;
+  isMilestone: boolean;
+  state: TaskState;
+  predecessors: TaskPredecessor[];
+  /** All predecessors (transitively) complete — the task is unblocked. */
+  predecessorsComplete: boolean;
+  linkedMilestoneHashes: string[];
+  linkedCostHashes: string[];
+}
+
+/** A cost line in the Outflow line items tab, with the tasks that incur it. */
+export interface OutflowItemView extends OutflowView {
+  linkedTaskIds: number[];
+}
+
 export type CalendarKind = "inflow" | "outflow" | "task";
 
 export interface CalendarEvent {
@@ -106,6 +139,10 @@ export interface CalendarEvent {
 export interface ProjectMilestoneDetail {
   project: { id: number; projectName: string };
   milestones: MilestoneView[];
+  /** Project Plan tab — every plan task (the hub) with links + dependencies. */
+  planTasks: ActivityTaskNode[];
+  /** Outflow line items tab — every cost line with the tasks that incur it. */
+  outflowItems: OutflowItemView[];
   availableTasks: TaskPick[];
   availableCostLines: OutflowView[];
   calendar: CalendarEvent[];
@@ -250,12 +287,46 @@ interface ProjectBundle {
   tasks: MtPlanTaskRow[];
   rmLinks: Array<{ revenueRowHash: string; workItemId: number }>;
   tcLinks: Array<{ workItemId: number; costRowHash: string }>;
+  deps: Array<{ predecessorId: number; successorId: number; source: string }>;
+}
+
+/** Map of task id → "chain complete": the task is 100% AND every predecessor
+ *  (transitively) is chain-complete. Cycle-guarded. Drives the dependency-aware
+ *  "ready to invoice" and the unblocked/blocked status in the Project Plan tab. */
+export function buildChainComplete(tasks: MtPlanTaskRow[], deps: ProjectBundle["deps"]): Map<number, boolean> {
+  const complete = new Map<number, boolean>();
+  for (const t of tasks) complete.set(t.id, (pctTo100(t.percentComplete) ?? 0) >= 100);
+  const predsBySucc = new Map<number, number[]>();
+  for (const d of deps) {
+    const arr = predsBySucc.get(d.successorId) ?? [];
+    arr.push(d.predecessorId);
+    predsBySucc.set(d.successorId, arr);
+  }
+  const memo = new Map<number, boolean>();
+  const chain = (id: number, seen: Set<number>): boolean => {
+    if (memo.has(id)) return memo.get(id)!;
+    if (seen.has(id)) return complete.get(id) ?? false; // cycle guard
+    seen.add(id);
+    let ok = complete.get(id) ?? false;
+    if (ok) {
+      for (const p of predsBySucc.get(id) ?? []) {
+        if (!chain(p, seen)) { ok = false; break; }
+      }
+    }
+    seen.delete(id);
+    memo.set(id, ok);
+    return ok;
+  };
+  const out = new Map<number, boolean>();
+  for (const t of tasks) out.set(t.id, chain(t.id, new Set()));
+  return out;
 }
 
 /** Build the milestone views for one project from its already-fetched bundle. */
 function buildMilestones(projectId: number, projectName: string, b: ProjectBundle, today: string): MilestoneView[] {
   const taskById = new Map(b.tasks.map((t) => [t.id, t]));
   const costByHash = new Map(b.costs.map((c) => [c.rowHash, c]));
+  const chainComplete = buildChainComplete(b.tasks, b.deps);
 
   // task id -> linked cost rowHashes
   const costsByTask = new Map<number, string[]>();
@@ -312,7 +383,14 @@ function buildMilestones(projectId: number, projectName: string, b: ProjectBundl
     const outflowTotal = outflows.reduce((s, o) => s + (o.amount ?? 0), 0);
     const tasksComplete = tasks.filter((t) => t.complete).length;
     const state = inflowState(m, today);
-    const readyToInvoice = tasks.length > 0 && tasksComplete === tasks.length && m.status === "planned";
+    // Chain-aware "ready to invoice": every linked task AND its whole predecessor
+    // chain is complete, the milestone is still to collect, and no invoice has
+    // been raised yet.
+    const readyToInvoice =
+      taskIds.length > 0 &&
+      taskIds.every((id) => chainComplete.get(id) === true) &&
+      !m.invoiceNumber && !m.invoiceDate &&
+      inflowOpen({ state, status: m.status });
     const overdueGap = state === "overdue";
     return {
       rowHash: m.rowHash,
@@ -385,7 +463,65 @@ async function fetchBundle(projectId: number): Promise<ProjectBundle> {
     milestoneTrackerRepository.getMilestoneTaskLinksForProjects([projectId]),
     milestoneTrackerRepository.getTaskCostLinksForProjects([projectId]),
   ]);
-  return { milestones, costs, tasks, rmLinks, tcLinks };
+  const deps = await milestoneTrackerRepository.getDependenciesByWorkItemIds(tasks.map((t) => t.id));
+  return { milestones, costs, tasks, rmLinks, tcLinks, deps };
+}
+
+/** Build the Project Plan tab (every task with its links + dependencies) and the
+ *  Outflow line items tab (every cost line with the tasks that incur it). */
+function buildPlanAndOutflows(b: ProjectBundle, today: string): { planTasks: ActivityTaskNode[]; outflowItems: OutflowItemView[] } {
+  const completeById = new Map(b.tasks.map((t) => [t.id, (pctTo100(t.percentComplete) ?? 0) >= 100]));
+  const chainComplete = buildChainComplete(b.tasks, b.deps);
+  // task id -> predecessors
+  const predsByTask = new Map<number, TaskPredecessor[]>();
+  for (const d of b.deps) {
+    const arr = predsByTask.get(d.successorId) ?? [];
+    arr.push({ workItemId: d.predecessorId, source: d.source, complete: completeById.get(d.predecessorId) ?? false });
+    predsByTask.set(d.successorId, arr);
+  }
+  // task id -> linked milestone hashes / cost hashes
+  const msByTask = new Map<number, string[]>();
+  for (const l of b.rmLinks) {
+    const arr = msByTask.get(l.workItemId) ?? [];
+    arr.push(l.revenueRowHash);
+    msByTask.set(l.workItemId, arr);
+  }
+  const costByTask = new Map<number, string[]>();
+  const tasksByCost = new Map<string, number[]>();
+  for (const l of b.tcLinks) {
+    (costByTask.get(l.workItemId) ?? costByTask.set(l.workItemId, []).get(l.workItemId)!).push(l.costRowHash);
+    (tasksByCost.get(l.costRowHash) ?? tasksByCost.set(l.costRowHash, []).get(l.costRowHash)!).push(l.workItemId);
+  }
+
+  const planTasks: ActivityTaskNode[] = b.tasks
+    .slice()
+    .sort((a, z) => (a.taskNo ?? "").localeCompare(z.taskNo ?? "", undefined, { numeric: true }))
+    .map((t) => {
+      const preds = predsByTask.get(t.id) ?? [];
+      return {
+        id: t.id,
+        taskNo: t.taskNo,
+        title: t.title,
+        workstream: t.workstream,
+        startDate: t.startDate,
+        endDate: t.endDate,
+        percentComplete: pctTo100(t.percentComplete),
+        complete: completeById.get(t.id) ?? false,
+        isMilestone: t.isMilestone,
+        state: taskState(pctTo100(t.percentComplete), t.endDate, today),
+        predecessors: preds,
+        predecessorsComplete: preds.every((p) => chainComplete.get(p.workItemId) === true),
+        linkedMilestoneHashes: msByTask.get(t.id) ?? [],
+        linkedCostHashes: costByTask.get(t.id) ?? [],
+      };
+    });
+
+  const outflowItems: OutflowItemView[] = b.costs.map((c) => ({
+    ...toOutflowView(c, today),
+    linkedTaskIds: tasksByCost.get(c.rowHash) ?? [],
+  }));
+
+  return { planTasks, outflowItems };
 }
 
 export async function getProjectMilestones(projectId: number, now: Date = new Date()): Promise<ProjectMilestoneDetail | null> {
@@ -409,10 +545,13 @@ export async function getProjectMilestones(projectId: number, now: Date = new Da
     0,
   );
   const readyToInvoiceCount = milestones.filter((m) => m.readyToInvoice).length;
+  const { planTasks, outflowItems } = buildPlanAndOutflows(b, today);
 
   return {
     project: { id: header.id, projectName: header.projectName },
     milestones,
+    planTasks,
+    outflowItems,
     availableTasks: b.tasks.map((t) => ({
       id: t.id, taskNo: t.taskNo, title: t.title, workstream: t.workstream,
       endDate: t.endDate, percentComplete: pctTo100(t.percentComplete),
@@ -440,6 +579,17 @@ export async function getMilestoneProgram(now: Date = new Date()): Promise<Miles
     milestoneTrackerRepository.getMilestoneTaskLinksForProjects(ids),
     milestoneTrackerRepository.getTaskCostLinksForProjects(ids),
   ]);
+  // Dependencies across all projects' tasks (for chain-aware ready-to-invoice).
+  const allDeps = await milestoneTrackerRepository.getDependenciesByWorkItemIds(tasks.map((t) => t.id));
+  const taskProjectById = new Map(tasks.map((t) => [t.id, t.projectId]));
+  const depsByProject = new Map<number, ProjectBundle["deps"]>();
+  for (const d of allDeps) {
+    const pid = taskProjectById.get(d.successorId);
+    if (pid == null) continue;
+    const arr = depsByProject.get(pid) ?? [];
+    arr.push({ predecessorId: d.predecessorId, successorId: d.successorId, source: d.source });
+    depsByProject.set(pid, arr);
+  }
 
   const group = <T extends { projectId: number }>(rows: T[]) => {
     const m = new Map<number, T[]>();
@@ -467,6 +617,7 @@ export async function getMilestoneProgram(now: Date = new Date()): Promise<Miles
       tasks: tByP.get(p.id) ?? [],
       rmLinks: rmByP.get(p.id) ?? [],
       tcLinks: tcByP.get(p.id) ?? [],
+      deps: depsByProject.get(p.id) ?? [],
     };
     if (bundle.milestones.length === 0) continue; // no revenue milestones → not on the tracker
     const views = buildMilestones(p.id, p.projectName, bundle, today);
@@ -576,4 +727,51 @@ export async function linkTaskCost(projectId: number, workItemId: number, costRo
 
 export async function unlinkTaskCost(projectId: number, workItemId: number, costRowHash: string): Promise<void> {
   await milestoneTrackerRepository.removeTaskCostLink({ projectId, workItemId, costRowHash });
+}
+
+// ──────────────────────── task dependencies (MANUAL overlay) ──────────────────
+
+export async function linkTaskDependency(projectId: number, predecessorId: number, successorId: number, userId: number | null): Promise<void> {
+  if (predecessorId === successorId) throw new MilestoneLinkError("A task can't depend on itself");
+  const [predOk, succOk] = await Promise.all([
+    milestoneTrackerRepository.taskBelongsToProject(projectId, predecessorId),
+    milestoneTrackerRepository.taskBelongsToProject(projectId, successorId),
+  ]);
+  if (!predOk || !succOk) throw new MilestoneLinkError("Task not found for this project");
+
+  // Cycle guard: adding predecessor→successor must not close a loop, i.e. the
+  // predecessor must not already (transitively) depend on the successor.
+  const tasks = await milestoneTrackerRepository.getPlanTasksForProjects([projectId]);
+  const deps = await milestoneTrackerRepository.getDependenciesByWorkItemIds(tasks.map((t) => t.id));
+  const predsBySucc = new Map<number, number[]>();
+  for (const d of deps) {
+    const arr = predsBySucc.get(d.successorId) ?? [];
+    arr.push(d.predecessorId);
+    predsBySucc.set(d.successorId, arr);
+  }
+  const reaches = (from: number, target: number): boolean => {
+    const seen = new Set<number>();
+    const stack = [from];
+    while (stack.length) {
+      const cur = stack.pop()!;
+      if (cur === target) return true;
+      if (seen.has(cur)) continue;
+      seen.add(cur);
+      for (const p of predsBySucc.get(cur) ?? []) stack.push(p);
+    }
+    return false;
+  };
+  if (reaches(predecessorId, successorId)) throw new MilestoneLinkError("That dependency would create a cycle");
+
+  await milestoneTrackerRepository.addManualDependency({ predecessorId, successorId, createdBy: userId });
+}
+
+export async function unlinkTaskDependency(projectId: number, predecessorId: number, successorId: number): Promise<void> {
+  // Only MANUAL edges are removable here — imported edges are owned by the workbook.
+  const [predOk, succOk] = await Promise.all([
+    milestoneTrackerRepository.taskBelongsToProject(projectId, predecessorId),
+    milestoneTrackerRepository.taskBelongsToProject(projectId, successorId),
+  ]);
+  if (!predOk || !succOk) throw new MilestoneLinkError("Task not found for this project");
+  await milestoneTrackerRepository.removeManualDependency({ predecessorId, successorId });
 }

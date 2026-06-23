@@ -68,6 +68,33 @@ export interface TaskPick {
   percentComplete: number | null;
 }
 
+export interface TaskPredecessor {
+  workItemId: number;
+  source: string; // "MANUAL" (removable) | "SMART_IMPORT" (from the workbook)
+  complete: boolean;
+}
+
+export interface ActivityTaskNode {
+  id: number;
+  taskNo: string | null;
+  title: string;
+  workstream: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  percentComplete: number | null; // 0..100
+  complete: boolean;
+  isMilestone: boolean;
+  state: TaskState;
+  predecessors: TaskPredecessor[];
+  predecessorsComplete: boolean;
+  linkedMilestoneHashes: string[];
+  linkedCostHashes: string[];
+}
+
+export interface OutflowItemView extends OutflowView {
+  linkedTaskIds: number[];
+}
+
 export type CalendarKind = "inflow" | "outflow" | "task";
 
 export interface CalendarEvent {
@@ -85,6 +112,8 @@ export interface CalendarEvent {
 export interface ProjectMilestoneDetail {
   project: { id: number; projectName: string };
   milestones: MilestoneView[];
+  planTasks: ActivityTaskNode[];
+  outflowItems: OutflowItemView[];
   availableTasks: TaskPick[];
   availableCostLines: OutflowView[];
   calendar: CalendarEvent[];
