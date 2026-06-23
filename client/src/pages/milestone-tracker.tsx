@@ -310,7 +310,10 @@ function MilestoneCard({ m, detail, h }: { m: MilestoneView; detail: ProjectMile
 
 /** Drill-down detail: the project's still-open inflow and outflow line items. */
 function OpenItemsBlock({ detail }: { detail: ProjectMilestoneDetail }) {
-  const openIn = detail.milestones.filter((m) => m.state !== "paid" && m.status !== "written_off");
+  // Still to collect: not actually collected (paid) and not written off / disputed.
+  // A future/forecast "Payment Received Date" is NOT paid (see inflowState), so
+  // those milestones correctly surface here.
+  const openIn = detail.milestones.filter((m) => m.state !== "paid" && m.status !== "written_off" && m.status !== "disputed");
   const openOut = detail.availableCostLines.filter((o) => o.state !== "paid");
   const inAmt = openIn.reduce((s, m) => s + (m.amount ?? 0), 0);
   const outAmt = openOut.reduce((s, o) => s + (o.amount ?? 0), 0);
