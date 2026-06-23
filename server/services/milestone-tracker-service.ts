@@ -122,6 +122,7 @@ export interface ProjectMilestoneDetail {
 export interface MilestoneProgramRow {
   projectId: number;
   projectName: string;
+  phase: string | null;
   milestoneCount: number;
   linkedMilestoneCount: number;
   inflowTotal: number;
@@ -403,7 +404,9 @@ export async function getProjectMilestones(projectId: number, now: Date = new Da
 
 export async function getMilestoneProgram(now: Date = new Date()): Promise<MilestoneProgram> {
   const today = todayIso(now);
-  const active = await executionBoardRepository.getActiveProjects();
+  // includeArchived — same universe as the board, so the phase filter can reach
+  // every project in a phase (incl. completed/archived ones with open money).
+  const active = await executionBoardRepository.getActiveProjects(true);
   const ids = active.map((p) => p.id);
   const nameById = new Map(active.map((p) => [p.id, p.projectName]));
 
@@ -478,6 +481,7 @@ export async function getMilestoneProgram(now: Date = new Date()): Promise<Miles
     rows.push({
       projectId: p.id,
       projectName: p.projectName,
+      phase: p.phase,
       milestoneCount: views.length,
       linkedMilestoneCount,
       inflowTotal,

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronsUpDown, Download, ListFilter, Pencil } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Download, Pencil } from "lucide-react";
 import { useApiMutation } from "@/hooks/use-api-mutation";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, LabelList,
@@ -22,7 +22,9 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
-import { PHASE_LABELS, PHASES } from "@shared/phases";
+import {
+  LIFECYCLE_PHASES, BOARD_FILTER_PHASES, DEFAULT_BOARD_PHASES, canonicalPhaseLabel, PhaseMultiSelect,
+} from "@/components/execution/phase-filter";
 import { EditProjectInfoModal } from "@/components/execution/edit-project-info-modal";
 import type { BoardResult, BoardRow, Rag, WorkstreamSummary } from "@/lib/execution-types";
 import { fmtPct, fmtDate, parseExecDate } from "@/lib/execution-types";
@@ -54,36 +56,6 @@ const LS_KEY = "execution-board-filters";
 const LS_GROUP = "execution-board-group-by-pm";
 
 const RAG_COLORS: Record<string, string> = { green: "#16A34A", amber: "#F59E0B", red: "#DC2626", none: "#CBD5E1" };
-
-// Canonical lifecycle phases — driven from the SAME source the server validates
-// against (shared/phases PHASE_LABELS, e.g. "Commissioning & QA"), so an inline
-// edit writes a value the /phase endpoint accepts. Editing writes the canonical
-// project_execution_state.phase via /api/lifecycle-board/projects/:id/phase, so
-// the phase correlates through every lens (board, lifecycle board, detail).
-const LIFECYCLE_PHASES: string[] = [...PHASE_LABELS];
-
-// Full phase range the board can show / filter to — Financial Close
-// (displayNumber 3) through Compliance Handover, plus the terminal Hold/Done.
-// MUST mirror isBoardUniversePhase in execution-board-service.ts (the server
-// returns exactly these). The dropdown offers all of them so any can be drilled
-// into; the board only SHOWS the default scope below until a phase is selected.
-const BOARD_FILTER_PHASES: string[] = PHASES
-  .filter((p) => (p.displayNumber != null && p.displayNumber >= 3) || p.isTerminal)
-  .map((p) => p.label);
-
-// Default board scope when NO phase is explicitly selected — Financial Close
-// (3) → Client Handover (8). Later phases (3-month review, Compliance Handover)
-// and the terminal Hold/Done are present but hidden until filtered to.
-const DEFAULT_BOARD_PHASES: string[] = PHASES
-  .filter((p) => p.displayNumber != null && p.displayNumber >= 3 && p.displayNumber <= 8)
-  .map((p) => p.label);
-
-/** Map a stored phase (possibly legacy-cased, e.g. "PLANNING") to its canonical label. */
-function canonicalPhaseLabel(phase: string | null): string {
-  if (!phase) return "";
-  const lc = phase.trim().toLowerCase();
-  return LIFECYCLE_PHASES.find((p) => p.toLowerCase() === lc) ?? phase;
-}
 
 // Canonical lifecycle RAG status (GREEN / AMBER / RED) — the same ragStatus the
 // company lifecycle board sets (a comment is required for the audit trail).
@@ -298,75 +270,6 @@ function TableRow({ row, columns, onOpen }: { row: BoardRow; columns: Col[]; onO
         </td>
       ))}
     </tr>
-  );
-}
-
-/** Multi-select phase filter — checkbox popover with search. Empty = the board's
- *  default scope (Financial Close → Client Handover); select phases to override. */
-function PhaseMultiSelect({ options, selected, onChange }: {
-  options: string[]; selected: string[]; onChange: (next: string[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const matches = options.filter((o) => o.toLowerCase().includes(q.toLowerCase()));
-  const toggle = (p: string) => onChange(selected.includes(p) ? selected.filter((x) => x !== p) : [...selected, p]);
-  const label = selected.length === 0 ? "Default phases" : selected.length === 1 ? selected[0] : `${selected.length} phases`;
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="w-44 h-9 justify-between font-normal" data-testid="execution-phase-filter">
-          <span className="inline-flex items-center gap-1.5 truncate">
-            <ListFilter className="h-3.5 w-3.5 shrink-0 opacity-60" />
-            <span className="truncate">{label}</span>
-          </span>
-          <span className="inline-flex items-center gap-1 shrink-0">
-            {selected.length > 0 && <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">{selected.length}</Badge>}
-            <ChevronsUpDown className="h-3.5 w-3.5 opacity-50" />
-          </span>
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-60 p-0" align="start">
-        <div className="p-2 border-b">
-          <Input className="h-8 text-xs" placeholder="Search phases…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="execution-phase-search" />
-        </div>
-        <div className="max-h-64 overflow-y-auto p-1">
-          <button
-            className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs hover:bg-muted/60 text-muted-foreground"
-            onClick={() => onChange([])}
-            data-testid="execution-phase-all"
-          >
-            <span className={`flex items-center justify-center w-4 h-4 rounded border ${selected.length === 0 ? "bg-emerald-600 border-emerald-600 text-white" : "border-input"}`}>
-              {selected.length === 0 && <Check className="h-3 w-3" />}
-            </span>
-            Default (Financial Close → Client Handover)
-          </button>
-          {matches.map((p) => {
-            const on = selected.includes(p);
-            return (
-              <button
-                key={p}
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs hover:bg-muted/60 text-left"
-                onClick={() => toggle(p)}
-                data-testid={`execution-phase-opt-${p}`}
-              >
-                <span className={`flex items-center justify-center w-4 h-4 shrink-0 rounded border ${on ? "bg-emerald-600 border-emerald-600 text-white" : "border-input"}`}>
-                  {on && <Check className="h-3 w-3" />}
-                </span>
-                <span className="truncate">{p}</span>
-              </button>
-            );
-          })}
-          {matches.length === 0 && <p className="px-2 py-3 text-xs text-muted-foreground text-center">No phases found</p>}
-        </div>
-        {selected.length > 0 && (
-          <div className="p-1 border-t">
-            <button className="w-full text-xs text-muted-foreground hover:text-foreground py-1.5 rounded hover:bg-muted/60" onClick={() => onChange([])} data-testid="execution-phase-clear">
-              Clear selection
-            </button>
-          </div>
-        )}
-      </PopoverContent>
-    </Popover>
   );
 }
 
