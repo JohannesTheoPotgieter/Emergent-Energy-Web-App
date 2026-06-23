@@ -186,7 +186,20 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
   // the board and appear when explicitly filtered to. The client defaults the
   // view to Financial Close → Client Handover. Earlier (assessment/design)
   // phases stay excluded.
-  const active = (await executionBoardRepository.getActiveProjects()).filter((p) => isBoardUniversePhase(p.phase));
+  const allActive = await executionBoardRepository.getActiveProjects();
+  const active = allActive.filter((p) => isBoardUniversePhase(p.phase));
+
+  // Diagnostic — phase distribution of ALL active projects so an empty by-phase
+  // filter is explainable from the environment (which phases actually have
+  // active projects, and how many reach the board universe). One line per load.
+  try {
+    const dist: Record<string, number> = {};
+    for (const p of allActive) {
+      const label = p.phase ? (resolveCanonicalPhase(p.phase)?.label ?? p.phase) : "(none)";
+      dist[label] = (dist[label] ?? 0) + 1;
+    }
+    console.log(`[execution-board][phase-diag] activeTotal=${allActive.length} onBoard=${active.length} byPhase=${JSON.stringify(dist)}`);
+  } catch { /* diagnostics must never break the board */ }
   const ids = active.map((p) => p.id);
 
   const tasksByProject = await safe(
