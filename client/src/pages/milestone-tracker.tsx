@@ -767,7 +767,7 @@ function ProjectWorkspace({ projectId, onBack }: { projectId: number; onBack: ()
 
             <TabsContent value="plan"><PlanTab detail={data} h={handlers} /></TabsContent>
             <TabsContent value="outflows"><OutflowItemsTab detail={data} h={handlers} /></TabsContent>
-            <TabsContent value="timeline"><ActivityTimeline activities={data.activities} /></TabsContent>
+            <TabsContent value="timeline"><ActivityTimeline activities={data.activities ?? []} /></TabsContent>
           </Tabs>
         </>
       )}
@@ -920,7 +920,7 @@ function ProgramOverview({ onOpen }: { onOpen: (id: number) => void }) {
               )}
             </CardContent></Card>
           ) : (
-            <ProgramMonthlyOverlay activities={data.activities} onOpen={onOpen} />
+            <ProgramMonthlyOverlay activities={data.activities ?? []} onOpen={onOpen} />
           )}
         </>
       )}
