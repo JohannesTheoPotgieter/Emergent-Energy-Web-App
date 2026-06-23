@@ -273,6 +273,7 @@ const financeCosOverridesSchema = expenditureOverridesSchema;
 
 import { applyManualOverride, manualOverridesEnabled } from '../lib/manual-overrides';
 import { EXPENDITURE_TRACKED_FIELDS, REVENUE_TRACKED_FIELDS } from '@shared/excel-vs-app/contract';
+import { isDateColourConfirmed } from '@shared/finance/date-confirmation';
 import { approvals, changeSets, msObjects, OVERRIDE_CATEGORIES, projectInfo } from '@shared/schema';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { FinanceExpenseEngineRepository } from '../repositories/finance-expense-engine-repository';
@@ -480,14 +481,13 @@ async function createPendingEditRequest(
 
 const router = Router();
 
+// Canonical §3.7 colour-confirmation rule (number-preserving extraction) —
+// see shared/finance/date-confirmation.ts. Do not inline the colour check.
 function isDateConfirmed(
   confirmed: boolean | null | undefined,
   fontColor: string | null | undefined,
 ): boolean {
-  if (fontColor === 'red') return false;
-  if (fontColor === 'black') return true;
-  if (confirmed === true) return true;
-  return false;
+  return isDateColourConfirmed(confirmed, fontColor);
 }
 
 // Delegates to shared canonical invoice-only rule in financeUtils.ts.

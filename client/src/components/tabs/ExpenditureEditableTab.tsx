@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { isDateColourConfirmed } from "@shared/finance/date-confirmation";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invalidateDashboardQueries } from "@/lib/queryClient";
@@ -791,9 +792,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
         const dueDate = e.expensePaymentDate || e.forecastPaymentDate || e.computedForecastPaymentDate || e.expenseInvoicedDate;
         if (!dueDate || !String(dueDate).trim()) return false;
         const hasPaymentDate = !!(e.expensePaymentDate && String(e.expensePaymentDate).trim());
-        const paymentDateConfirmed = e.paymentDateFontColor === 'red'
-          ? false
-          : (e.paymentDateFontColor === 'black' ? true : e.paymentDateConfirmed === true);
+        const paymentDateConfirmed = isDateColourConfirmed(e.paymentDateConfirmed, e.paymentDateFontColor);
         if (hasPaymentDate && paymentDateConfirmed) return false;
         return String(dueDate).substring(0, 10) < today;
       });

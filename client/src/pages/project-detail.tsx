@@ -57,6 +57,7 @@ import { Milestone } from "lucide-react";
 import { PageShell } from "@/components/layout/page-shell";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PROJECT_PHASE_LABELS, TASK_STATUSES, type ProjectPhase, checkPermission } from "@shared/schema";
+import { isDateColourConfirmed } from "@shared/finance/date-confirmation";
 import { computeScheduleRag, computeCostRag, computeQualityRag, computeOverallRag } from "@shared/kpi-definitions";
 import { usePermission } from "@/hooks/use-permissions";
 import { formatZar } from "@/lib/currency";
@@ -984,7 +985,7 @@ export default function ProjectDetailPage() {
     const hasPaymentDate = !!(e.expensePaymentDate && String(e.expensePaymentDate).trim());
     const hasInvoiceNumber = !!(e.expenseInvoiceNumber && String(e.expenseInvoiceNumber).trim());
     if (!hasInvoiceNumber || !hasPaymentDate) return false;
-    const paymentDateConfirmed = e.paymentDateFontColor === 'red' ? false : (e.paymentDateFontColor === 'black' ? true : e.paymentDateConfirmed === true);
+    const paymentDateConfirmed = isDateColourConfirmed(e.paymentDateConfirmed, e.paymentDateFontColor);
     return paymentDateConfirmed;
   };
 
