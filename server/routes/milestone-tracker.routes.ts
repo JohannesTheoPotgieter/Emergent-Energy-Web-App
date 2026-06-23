@@ -24,6 +24,8 @@ import {
   unlinkMilestoneTask,
   linkTaskCost,
   unlinkTaskCost,
+  linkTaskDependency,
+  unlinkTaskDependency,
   MilestoneLinkError,
 } from "../services/milestone-tracker-service";
 
@@ -37,6 +39,12 @@ const taskCostSchema = z.object({
   projectId: z.number().int().positive(),
   workItemId: z.number().int().positive(),
   costRowHash: z.string().min(1).max(128),
+});
+
+const taskDependencySchema = z.object({
+  projectId: z.number().int().positive(),
+  predecessorId: z.number().int().positive(),
+  successorId: z.number().int().positive(),
 });
 
 export function registerMilestoneTrackerRoutes(app: Express) {
@@ -124,6 +132,43 @@ export function registerMilestoneTrackerRoutes(app: Express) {
     async (req: Request, res: Response) => {
       const body = taskCostSchema.parse(req.body);
       await unlinkTaskCost(body.projectId, body.workItemId, body.costRowHash);
+      res.json({ ok: true });
+    },
+  );
+
+  // ── Task → task dependencies (MANUAL overlay; reuses work_item_dependencies) ──
+  app.post(
+    "/api/milestone-tracker/task-dependencies",
+    jwtAuth,
+    requireAuth,
+    requirePermission("execution_review", "create"),
+    validateBody(taskDependencySchema),
+    async (req: Request, res: Response) => {
+      const body = taskDependencySchema.parse(req.body);
+      try {
+        await linkTaskDependency(body.projectId, body.predecessorId, body.successorId, getEffectiveUser(req)?.id ?? null);
+      } catch (e) {
+        if (e instanceof MilestoneLinkError) throw badRequest(e.message);
+        throw e;
+      }
+      res.status(201).json({ ok: true });
+    },
+  );
+
+  app.delete(
+    "/api/milestone-tracker/task-dependencies",
+    jwtAuth,
+    requireAuth,
+    requirePermission("execution_review", "delete"),
+    validateBody(taskDependencySchema),
+    async (req: Request, res: Response) => {
+      const body = taskDependencySchema.parse(req.body);
+      try {
+        await unlinkTaskDependency(body.projectId, body.predecessorId, body.successorId);
+      } catch (e) {
+        if (e instanceof MilestoneLinkError) throw badRequest(e.message);
+        throw e;
+      }
       res.json({ ok: true });
     },
   );

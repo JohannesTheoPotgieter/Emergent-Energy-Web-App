@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useApiMutation } from "@/hooks/use-api-mutation";
 import { apiRequest } from "@/lib/queryClient";
 import { fmtDate, parseExecDate } from "@/lib/execution-types";
@@ -22,7 +23,7 @@ import { useTableSort, SortHeader, downloadCsv } from "@/lib/table-utils";
 import { PhaseMultiSelect, buildPhaseOptions, canonicalPhaseLabel, phaseInScope } from "@/components/execution/phase-filter";
 import {
   type MilestoneProgram, type MilestoneProgramRow, type ProjectMilestoneDetail, type MilestoneView,
-  type LinkedTaskView, type CalendarEvent, type FlowState, type TaskState,
+  type LinkedTaskView, type CalendarEvent, type FlowState, type TaskState, type ActivityTaskNode,
   money, FLOW_STATE_STYLE, TASK_STATE_STYLE,
 } from "@/lib/milestone-tracker-types";
 
@@ -144,6 +145,8 @@ interface LinkHandlers {
   onUnlinkTask: (revenueRowHash: string, workItemId: number) => void;
   onLinkCost: (workItemId: number, costRowHash: string) => void;
   onUnlinkCost: (workItemId: number, costRowHash: string) => void;
+  onLinkDep: (predecessorId: number, successorId: number) => void;
+  onUnlinkDep: (predecessorId: number, successorId: number) => void;
 }
 
 function TaskRow({ m, t, detail, h }: { m: MilestoneView; t: LinkedTaskView; detail: ProjectMilestoneDetail; h: LinkHandlers }) {
@@ -363,9 +366,123 @@ function OpenItemsBlock({ detail }: { detail: ProjectMilestoneDetail }) {
   );
 }
 
+// ──────────────────────────────── Project Plan tab ───────────────────────────
+
+function PlanTaskRow({ t, detail, h }: { t: ActivityTaskNode; detail: ProjectMilestoneDetail; h: LinkHandlers }) {
+  const taskByNo = new Map(detail.planTasks.map((x) => [x.id, x]));
+  const predIds = new Set(t.predecessors.map((p) => p.workItemId));
+  const predOptions = detail.planTasks
+    .filter((o) => o.id !== t.id && !predIds.has(o.id))
+    .map((o) => ({ value: String(o.id), label: `${o.taskNo ?? ""} ${o.title}`.trim() }));
+  const msOptions = detail.milestones
+    .filter((m) => !t.linkedMilestoneHashes.includes(m.rowHash))
+    .map((m) => ({ value: m.rowHash, label: `${m.milestoneNo ?? ""} ${m.milestoneName ?? ""}`.trim() || m.rowHash }));
+  const costOptions = detail.availableCostLines
+    .filter((c) => !t.linkedCostHashes.includes(c.rowHash))
+    .map((c) => ({ value: c.rowHash, label: `${c.description ?? c.costCategory ?? "Cost"} · ${money(c.amount)}` }));
+
+  return (
+    <Card data-testid={`plan-task-${t.id}`}>
+      <CardContent className="p-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-muted-foreground tabular-nums">{t.taskNo}</span>
+          <span className="font-medium text-sm">{t.title}</span>
+          {t.isMilestone && <span className="text-emerald-600" title="Milestone">◆</span>}
+          <TaskBadge state={t.state} />
+          {t.predecessors.length > 0 && (t.predecessorsComplete
+            ? <span className="text-[11px] text-emerald-700">unblocked</span>
+            : <span className="inline-flex items-center gap-1 text-[11px] text-amber-700"><AlertTriangle className="w-3 h-3" />blocked</span>)}
+          <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+            {fmtDate(t.startDate)} – {fmtDate(t.endDate)} · {t.percentComplete == null ? "—" : `${Math.round(t.percentComplete)}%`}
+          </span>
+        </div>
+
+        <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+          <span className="text-[11px] text-muted-foreground">Depends on:</span>
+          {t.predecessors.length === 0 && <span className="text-[11px] text-muted-foreground">none</span>}
+          {t.predecessors.map((p) => (
+            <span key={p.workItemId}
+              className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] ${p.complete ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-amber-50 border-amber-200 text-amber-700"}`}>
+              {p.complete ? "✓" : "⏳"} {taskByNo.get(p.workItemId)?.taskNo ?? `#${p.workItemId}`}
+              {p.source === "MANUAL"
+                ? <button onClick={() => h.onUnlinkDep(p.workItemId, t.id)} className="text-muted-foreground hover:text-foreground" title="Remove dependency" data-testid={`dep-remove-${t.id}-${p.workItemId}`}>×</button>
+                : <span title="From the imported plan" className="opacity-50">·</span>}
+            </span>
+          ))}
+          <SearchableSelect value="" onValueChange={(v) => { if (v) h.onLinkDep(Number(v), t.id); }}
+            placeholder="+ predecessor" triggerClassName="h-7 w-44 text-xs" options={predOptions} data-testid={`dep-add-${t.id}`} />
+        </div>
+
+        <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700"><span aria-hidden>↑</span>{t.linkedMilestoneHashes.length} inflow</span>
+          <SearchableSelect value="" onValueChange={(v) => { if (v) h.onLinkTask(v, t.id); }}
+            placeholder="+ inflow" triggerClassName="h-7 w-40 text-xs" options={msOptions} data-testid={`task-inflow-${t.id}`} />
+          <span className="inline-flex items-center gap-1 text-[11px] text-red-700 ml-2"><span aria-hidden>↓</span>{t.linkedCostHashes.length} outflow</span>
+          <SearchableSelect value="" onValueChange={(v) => { if (v) h.onLinkCost(t.id, v); }}
+            placeholder="+ outflow" triggerClassName="h-7 w-40 text-xs" options={costOptions} data-testid={`task-outflow-${t.id}`} />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PlanTab({ detail, h }: { detail: ProjectMilestoneDetail; h: LinkHandlers }) {
+  if (detail.planTasks.length === 0) {
+    return <p className="p-8 text-center text-sm text-muted-foreground">No plan tasks imported for this project.</p>;
+  }
+  return (
+    <div className="space-y-2 mt-3" data-testid="plan-tab">
+      {detail.planTasks.map((t) => <PlanTaskRow key={t.id} t={t} detail={detail} h={h} />)}
+    </div>
+  );
+}
+
+// ──────────────────────────────── Outflow line items tab ─────────────────────
+
+function OutflowItemsTab({ detail, h }: { detail: ProjectMilestoneDetail; h: LinkHandlers }) {
+  const taskById = new Map(detail.planTasks.map((t) => [t.id, t]));
+  if (detail.outflowItems.length === 0) {
+    return <p className="p-8 text-center text-sm text-muted-foreground">No outflow cost lines for this project.</p>;
+  }
+  return (
+    <div className="space-y-2 mt-3" data-testid="outflow-tab">
+      {detail.outflowItems.map((o) => {
+        const linkedIds = new Set(o.linkedTaskIds);
+        const taskOptions = detail.planTasks
+          .filter((t) => !linkedIds.has(t.id))
+          .map((t) => ({ value: String(t.id), label: `${t.taskNo ?? ""} ${t.title}`.trim() }));
+        return (
+          <Card key={o.rowHash} data-testid={`outflow-item-${o.rowHash}`}>
+            <CardContent className="p-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-medium text-sm">{o.description || o.costCategory || "Cost line"}</span>
+                {o.costCategory && <span className="text-[11px] text-muted-foreground">{o.costCategory}</span>}
+                {o.counterpartyName && <span className="text-[11px] text-muted-foreground">· {o.counterpartyName}</span>}
+                <FlowBadge state={o.state} />
+                <span className="ml-auto text-sm tabular-nums">{money(o.amount)}</span>
+              </div>
+              <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] text-muted-foreground">Incurred by:</span>
+                {o.linkedTaskIds.length === 0 && <GapBadge label="No task linked" />}
+                {o.linkedTaskIds.map((tid) => (
+                  <span key={tid} className="inline-flex items-center gap-1 rounded-full border bg-slate-50 border-slate-200 text-slate-600 px-1.5 py-0.5 text-[11px]">
+                    {taskById.get(tid)?.taskNo ?? `#${tid}`}
+                    <button onClick={() => h.onUnlinkCost(tid, o.rowHash)} className="text-muted-foreground hover:text-foreground" title="Unlink" data-testid={`outflow-unlink-${o.rowHash}-${tid}`}>×</button>
+                  </span>
+                ))}
+                <SearchableSelect value="" onValueChange={(v) => { if (v) h.onLinkCost(Number(v), o.rowHash); }}
+                  placeholder="+ link task" triggerClassName="h-7 w-44 text-xs" options={taskOptions} data-testid={`outflow-link-${o.rowHash}`} />
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
 function ProjectWorkspace({ projectId, onBack }: { projectId: number; onBack: () => void }) {
   const qc = useQueryClient();
-  const [view, setView] = useState<"list" | "calendar">("list");
   const { data, isLoading, isError, refetch } = useQuery<ProjectMilestoneDetail>({
     queryKey: ["/api/milestone-tracker/projects", projectId],
   });
@@ -399,12 +516,26 @@ function ProjectWorkspace({ projectId, onBack }: { projectId: number; onBack: ()
     },
     successToast: "Outflow unlinked", errorToast: "Could not unlink outflow", onSuccess: invalidate,
   });
+  const linkDep = useApiMutation({
+    mutationFn: async (v: { predecessorId: number; successorId: number }) => {
+      await apiRequest("POST", "/api/milestone-tracker/task-dependencies", { projectId, ...v });
+    },
+    successToast: "Dependency added", errorToast: "Could not add dependency", onSuccess: invalidate,
+  });
+  const unlinkDep = useApiMutation({
+    mutationFn: async (v: { predecessorId: number; successorId: number }) => {
+      await apiRequest("DELETE", "/api/milestone-tracker/task-dependencies", { projectId, ...v });
+    },
+    successToast: "Dependency removed", errorToast: "Could not remove dependency", onSuccess: invalidate,
+  });
 
   const handlers: LinkHandlers = {
     onLinkTask: (revenueRowHash, workItemId) => linkTask.mutate({ revenueRowHash, workItemId }),
     onUnlinkTask: (revenueRowHash, workItemId) => unlinkTask.mutate({ revenueRowHash, workItemId }),
     onLinkCost: (workItemId, costRowHash) => linkCost.mutate({ workItemId, costRowHash }),
     onUnlinkCost: (workItemId, costRowHash) => unlinkCost.mutate({ workItemId, costRowHash }),
+    onLinkDep: (predecessorId, successorId) => linkDep.mutate({ predecessorId, successorId }),
+    onUnlinkDep: (predecessorId, successorId) => unlinkDep.mutate({ predecessorId, successorId }),
   };
 
   return (
@@ -412,7 +543,7 @@ function ProjectWorkspace({ projectId, onBack }: { projectId: number; onBack: ()
       <Button variant="ghost" size="sm" className="mb-2 -ml-2 gap-1" onClick={onBack} data-testid="milestone-back">
         <ArrowLeft className="w-4 h-4" /> All projects
       </Button>
-      <PageHeader title={data?.project.projectName ?? "Project"} subtitle="Payment milestones → the plan tasks that make them invoiceable → the outflow cost lines those tasks incur" />
+      <PageHeader title={data?.project.projectName ?? "Project"} subtitle="Inflow milestones · Project Plan · Outflow line items — wire money-in to the work to money-out, and track completion + dependencies" />
 
       {isLoading ? (
         <div className="mt-4 space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}</div>
@@ -430,27 +561,34 @@ function ProjectWorkspace({ projectId, onBack }: { projectId: number; onBack: ()
 
           <OpenItemsBlock detail={data} />
 
-          <div className="flex items-center gap-2 mt-4">
-            <Button size="sm" variant={view === "list" ? "default" : "outline"} onClick={() => setView("list")} data-testid="milestone-view-list">Milestones</Button>
-            <Button size="sm" variant={view === "calendar" ? "default" : "outline"} onClick={() => setView("calendar")} data-testid="milestone-view-calendar">Calendar</Button>
-            {data.summary.readyToInvoiceCount > 0 && (
-              <span className="ml-auto inline-flex items-center gap-1 text-xs text-emerald-700">
-                <CheckCircle2 className="w-4 h-4" />{data.summary.readyToInvoiceCount} ready to invoice
-              </span>
-            )}
-          </div>
-
-          {view === "list" ? (
-            data.milestones.length === 0 ? (
-              <p className="p-8 text-center text-sm text-muted-foreground mt-3">No payment milestones in the revenue tracker for this project.</p>
-            ) : (
-              <div className="space-y-3 mt-3">
-                {data.milestones.map((m) => <MilestoneCard key={m.rowHash} m={m} detail={data} h={handlers} />)}
-              </div>
-            )
-          ) : (
-            <div className="mt-3"><MonthCalendar events={data.calendar} /></div>
+          {data.summary.readyToInvoiceCount > 0 && (
+            <div className="mt-3 inline-flex items-center gap-1 text-xs text-emerald-700">
+              <CheckCircle2 className="w-4 h-4" />{data.summary.readyToInvoiceCount} ready to invoice (work + dependencies complete)
+            </div>
           )}
+
+          <Tabs defaultValue="inflows" className="mt-3">
+            <TabsList className="flex-wrap h-auto">
+              <TabsTrigger value="inflows" data-testid="ap-tab-inflows">Inflow milestones</TabsTrigger>
+              <TabsTrigger value="plan" data-testid="ap-tab-plan">Project Plan</TabsTrigger>
+              <TabsTrigger value="outflows" data-testid="ap-tab-outflows">Outflow line items</TabsTrigger>
+              <TabsTrigger value="calendar" data-testid="ap-tab-calendar">Calendar</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="inflows">
+              {data.milestones.length === 0 ? (
+                <p className="p-8 text-center text-sm text-muted-foreground mt-3">No payment milestones in the revenue tracker for this project.</p>
+              ) : (
+                <div className="space-y-3 mt-3">
+                  {data.milestones.map((m) => <MilestoneCard key={m.rowHash} m={m} detail={data} h={handlers} />)}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="plan"><PlanTab detail={data} h={handlers} /></TabsContent>
+            <TabsContent value="outflows"><OutflowItemsTab detail={data} h={handlers} /></TabsContent>
+            <TabsContent value="calendar"><div className="mt-3"><MonthCalendar events={data.calendar} /></div></TabsContent>
+          </Tabs>
         </>
       )}
     </PageShell>
