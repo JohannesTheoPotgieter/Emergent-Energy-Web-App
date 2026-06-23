@@ -61,6 +61,53 @@ export function diffDays(a: Date, b: Date): number {
   return Math.floor((a.getTime() - b.getTime()) / 86_400_000);
 }
 
+/**
+ * Expected progress as of `today`, derived from the PLANNED schedule — the
+ * live, deterministic replacement for the Excel "Expected Status" column.
+ *
+ * The tracker's Expected Status is a volatile (TODAY-based) formula; Excel
+ * caches only its last-saved result, so an import reads a stale value while the
+ * open workbook recalculates to today's. We compute it ourselves instead:
+ * linear fraction of the planned start→end span elapsed, clamped to [0,1].
+ * Returns null when planned dates are missing so the caller can fall back.
+ *
+ *   today <= plannedStart            → 0
+ *   today >= plannedEnd              → 1
+ *   otherwise (today - start)/(end - start)
+ */
+export function expectedProgressFromDates(
+  plannedStart: string | null,
+  plannedEnd: string | null,
+  today: Date,
+): number | null {
+  const s = parsePlanDate(plannedStart);
+  const e = parsePlanDate(plannedEnd);
+  if (!s || !e) return null;
+  const t = today.getTime();
+  // Completion check first so a same-day milestone (start == end == today)
+  // reads as 100% expected rather than 0%.
+  if (t >= e.getTime()) return 1;
+  if (t <= s.getTime()) return 0;
+  const span = e.getTime() - s.getTime();
+  if (span <= 0) return 1;
+  return (t - s.getTime()) / span;
+}
+
+/**
+ * Return the tasks with `expectedPctComplete` replaced by the date-derived
+ * expected progress (0–1) so every downstream read — schedule snapshot, RAG,
+ * workstream summaries and the detail EXP% column — is live and never depends
+ * on the Excel formula cache. When a task has no planned dates we keep the
+ * imported value so nothing is lost.
+ */
+export function withComputedExpected(tasks: PlanTask[], today: Date): PlanTask[] {
+  return tasks.map((t) => {
+    const computed = expectedProgressFromDates(t.startDate, t.endDate, today);
+    return computed == null ? t : { ...t, expectedPctComplete: computed };
+  });
+}
+
+
 export interface ScheduleSnapshot {
   actualPct: number | null;
   expectedPct: number | null;

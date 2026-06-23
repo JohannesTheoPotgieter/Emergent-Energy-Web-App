@@ -34,6 +34,7 @@ import {
   summarizeQuality,
   summarizeWorkstream,
   computeCriticalPath,
+  withComputedExpected,
   type PlanTask,
   type ScheduleSnapshot,
   type NextTask,
@@ -208,7 +209,9 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
   let actualSum = 0, expectedSum = 0, planned = 0;
 
   for (const p of active) {
-    const tasks = tasksByProject.get(p.id) ?? [];
+    // EXP% is computed live from the planned dates (not the stale Excel
+    // "Expected Status" formula cache) — see withComputedExpected.
+    const tasks = withComputedExpected(tasksByProject.get(p.id) ?? [], today);
     const schedule = computeScheduleSnapshot(tasks);
     const deliveries = selectNextDelivery(milestonesByProject.get(p.id) ?? [], procurementByProject.get(p.id) ?? [], today);
     // Fall back to a plan task named "delivery" when there's no milestone/procurement record.
@@ -357,12 +360,15 @@ export async function getProjectDetail(projectId: number, now: Date = new Date()
     ),
     executionBoardRepository.getLatestUpdate(header.projectName),
   ]);
-  const schedule = computeScheduleSnapshot(plan.tasks);
-  const criticalPath = computeCriticalPath(plan.tasks);
+  // EXP% is computed live from the planned dates (not the stale Excel
+  // "Expected Status" formula cache) — see withComputedExpected.
+  const tasks = withComputedExpected(plan.tasks, today);
+  const schedule = computeScheduleSnapshot(tasks);
+  const criticalPath = computeCriticalPath(tasks);
   const criticalSet = new Set(criticalPath.criticalTaskNos);
   const deliveries = selectNextDelivery(milestones, procurement, today);
 
-  const planTasks: PlanTaskView[] = plan.tasks.map((t) => ({
+  const planTasks: PlanTaskView[] = tasks.map((t) => ({
     taskNo: t.taskNo ?? null,
     taskName: t.taskName,
     phase: t.phase ?? null,
@@ -403,14 +409,14 @@ export async function getProjectDetail(projectId: number, now: Date = new Date()
       procurement,
       // Plan tasks named "delivery" — the same source the program Deliveries
       // list uses, so deliveries correlate through every lens.
-      tasks: deliveryTaskRows(projectId, header.projectName, plan.tasks, today),
+      tasks: deliveryTaskRows(projectId, header.projectName, tasks, today),
       next: deliveries.next,
       overdueCount: deliveries.overdueCount,
     },
     // Eng/QA read the plan's ENG / QUALITY workstreams (work_items) — same as
     // the board — until the dedicated modules come online.
-    engineering: summarizeWorkstream(plan.tasks.filter((t) => t.workstream === "ENG")),
-    quality: summarizeWorkstream(plan.tasks.filter((t) => t.workstream === "QUALITY")),
+    engineering: summarizeWorkstream(tasks.filter((t) => t.workstream === "ENG")),
+    quality: summarizeWorkstream(tasks.filter((t) => t.workstream === "QUALITY")),
   };
 }
 
