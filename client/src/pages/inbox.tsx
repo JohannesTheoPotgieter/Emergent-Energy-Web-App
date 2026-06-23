@@ -136,9 +136,7 @@ export default function InboxPage() {
 
   const handleClick = useCallback((n: Notification) => {
     if (!n.isRead) markRead(n.id);
-    if (n.eventType?.startsWith("standup.")) {
-      navigate("/engineering/standup");
-    } else if (n.linkedTaskId) {
+    if (n.linkedTaskId) {
       navigate(`/engineering/tasks?taskId=${n.linkedTaskId}`);
     } else if (n.linkedDeliverableId) {
       navigate(`/engineering/tasks?deliverableId=${n.linkedDeliverableId}`);

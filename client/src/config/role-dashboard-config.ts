@@ -93,7 +93,6 @@ const ENGINEER_CONFIG: RoleDashboardConfig = {
   attentionPriority: ["my_overdue_deliverables", "ncrs_assigned", "reviews_pending", "my_overdue"],
   quickActions: [
     { label: "Engineering Tasks", path: "/engineering/tasks", iconKey: "ListTodo" },
-    { label: "Standup", path: "/engineering/standup", iconKey: "Users" },
     { label: "My Tasks", path: "/priorities?tab=my", iconKey: "ListChecks" },
     { label: "Engineering Overview", path: "/engineering", iconKey: "Wrench" },
     { label: "Quality", path: "/quality", iconKey: "ShieldCheck" },

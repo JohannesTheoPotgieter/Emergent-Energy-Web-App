@@ -88,9 +88,6 @@ describe('domain runtime route smoke proof (engineering / quality / commissionin
 
     expect(pageRegistry).toContain('{ id: "qualityNcrList", path: "/quality/ncrs"');
     expect(pageRegistry).toContain('{ id: "qualityNcrDetail", path: "/quality/ncr/:id"');
-
-    expect(pageRegistry).toContain('{ id: "standups", path: "/standups"');
-    expect(pageRegistry).toContain('redirectTo: "/engineering/standup"');
   });
 
   it('keeps placeholder extracted route files unmounted', () => {
