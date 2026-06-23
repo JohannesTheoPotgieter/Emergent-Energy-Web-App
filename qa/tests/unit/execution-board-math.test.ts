@@ -128,20 +128,28 @@ describe("expectedProgressFromDates", () => {
 });
 
 describe("withComputedExpected", () => {
-  it("replaces expectedPctComplete with the live date-derived value (ignoring the stale import)", () => {
+  it("replaces expectedPctComplete from the ACTUAL dates (ignoring the stale import)", () => {
     const [t] = withComputedExpected(
-      [task({ taskNo: "1", startDate: plusDays(-10), endDate: plusDays(10), expectedPctComplete: 0.99 })],
+      [task({ taskNo: "1", actualStartDate: plusDays(-10), actualEndDate: plusDays(10), expectedPctComplete: 0.99 })],
       TODAY,
     );
     expect(t.expectedPctComplete).toBeCloseTo(0.5, 5); // not the imported 0.99
   });
-  it("keeps the imported value when the task has no planned dates", () => {
+  it("ignores planned dates — only the actual timeline drives expected", () => {
+    // Planned dates fully elapsed, but no ACTUAL dates → keep the imported value.
+    const [t] = withComputedExpected(
+      [task({ taskNo: "1", startDate: plusDays(-20), endDate: plusDays(-10), expectedPctComplete: 0.42 })],
+      TODAY,
+    );
+    expect(t.expectedPctComplete).toBe(0.42);
+  });
+  it("keeps the imported value when the task has no actual dates", () => {
     const [t] = withComputedExpected([task({ taskNo: "1", expectedPctComplete: 0.42 })], TODAY);
     expect(t.expectedPctComplete).toBe(0.42);
   });
-  it("does not touch pctComplete (actuals stay from the import)", () => {
+  it("does not touch pctComplete (actuals stay verbatim from the import)", () => {
     const [t] = withComputedExpected(
-      [task({ taskNo: "1", startDate: plusDays(-10), endDate: plusDays(10), pctComplete: 0.2 })],
+      [task({ taskNo: "1", actualStartDate: plusDays(-10), actualEndDate: plusDays(10), pctComplete: 0.2 })],
       TODAY,
     );
     expect(t.pctComplete).toBe(0.2);
