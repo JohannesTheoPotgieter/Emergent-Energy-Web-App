@@ -33,6 +33,9 @@ export interface RevenueMilestoneRow {
   invoiceDate: string | null;
   expectedPaymentDate: string | null;
   paidDate: string | null;
+  /** Font colour of the "Payment Received Date" cell: true = black (confirmed /
+   *  actual receipt), false = red (forecast), null = unknown. */
+  paidDateConfirmed: boolean | null;
   inBankDate: string | null;
   status: string;
   milestoneNotes: string | null;
@@ -111,6 +114,7 @@ export class MilestoneTrackerRepository {
         invoiceDate: normalizedRevenueLines.invoiceDate,
         expectedPaymentDate: normalizedRevenueLines.expectedPaymentDate,
         paidDate: normalizedRevenueLines.paidDate,
+        paidDateConfirmed: normalizedRevenueLines.paidDateConfirmed,
         inBankDate: normalizedRevenueLines.inBankDate,
         status: normalizedRevenueLines.status,
         milestoneNotes: normalizedRevenueLines.milestoneNotes,
