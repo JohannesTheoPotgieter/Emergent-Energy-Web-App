@@ -467,13 +467,22 @@ export default function ExecutionReviewBoard() {
   };
 
   const rows = useMemo(() => data?.rows ?? [], [data]);
-  const phases = useMemo(() => [...new Set(rows.map((r) => r.phase).filter(Boolean))] as string[], [rows]);
+  const phases = useMemo(() => {
+    // Mirror the inline phase editor: offer the full canonical lifecycle phase
+    // list (PHASE_LABELS) so every phase is filterable — not just the ones
+    // currently present on the board — plus any non-canonical phase actually on
+    // a project so it stays filterable. Matching canonicalises the row value.
+    const extras = rows
+      .map((r) => canonicalPhaseLabel(r.phase))
+      .filter((p) => p && !LIFECYCLE_PHASES.includes(p));
+    return [...LIFECYCLE_PHASES, ...new Set(extras)];
+  }, [rows]);
   const pms = useMemo(() => [...new Set(rows.map((r) => r.pmName).filter(Boolean))] as string[], [rows]);
 
   // ── dashboard aggregates ──
   const byPhaseData = useMemo(() => {
     const m = new Map<string, number>();
-    for (const r of rows) { const k = r.phase ?? "—"; m.set(k, (m.get(k) ?? 0) + 1); }
+    for (const r of rows) { const k = canonicalPhaseLabel(r.phase) || "—"; m.set(k, (m.get(k) ?? 0) + 1); }
     return [...m.entries()].map(([phase, count]) => ({ phase, count })).sort((a, b) => b.count - a.count);
   }, [rows]);
   const ragData = useMemo(() => {
@@ -491,7 +500,7 @@ export default function ExecutionReviewBoard() {
 
   const filtered = useMemo(() => rows.filter((r) => {
     if (filters.search && !r.projectName.toLowerCase().includes(filters.search.toLowerCase())) return false;
-    if (filters.phases.length > 0 && !filters.phases.includes(r.phase ?? "—")) return false;
+    if (filters.phases.length > 0 && !filters.phases.includes(canonicalPhaseLabel(r.phase) || "—")) return false;
     if (filters.rag !== "all" && r.schedule.rag !== filters.rag) return false;
     if (filters.pm !== "all" && r.pmName !== filters.pm) return false;
     if (filters.hasFlags && r.flags.open + r.flags.flagged === 0) return false;
