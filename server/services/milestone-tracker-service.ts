@@ -122,6 +122,7 @@ export interface ProjectMilestoneDetail {
 export interface MilestoneProgramRow {
   projectId: number;
   projectName: string;
+  phase: string | null;
   milestoneCount: number;
   linkedMilestoneCount: number;
   inflowTotal: number;
@@ -162,28 +163,53 @@ function todayIso(now: Date): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
-const PAID_REVENUE = new Set(["paid", "in_bank", "realised"]);
 const FLAGGED_REVENUE = new Set(["disputed", "written_off"]);
 
-// An inflow (revenue milestone) is "open" until it is settled — paid / in bank /
-// realised — or written off. A "disputed" line is still open (money expected).
-const SETTLED_REVENUE = new Set(["paid", "in_bank", "realised", "written_off"]);
 // An outflow (cost line) is "open" until it is paid.
-function hasOpenInflow(rows: RevenueMilestoneRow[]): boolean {
-  return rows.some((r) => !SETTLED_REVENUE.has(r.status));
-}
 function hasOpenOutflow(rows: CostLineRow[]): boolean {
   return rows.some((r) => r.status !== "paid");
 }
 
-/** Inflow state from the revenue-line status + expected payment date. */
-function inflowState(status: string, expectedDate: string | null, today: string): FlowState {
-  if (FLAGGED_REVENUE.has(status)) return "flagged";
-  if (PAID_REVENUE.has(status)) return "paid";
-  const overdue = !!expectedDate && expectedDate < today;
-  if (status === "invoiced") return overdue ? "overdue" : "invoiced";
-  // planned
+/**
+ * Inflow state from the milestone's "Payment Received Date", read by the
+ * tracker's FONT-COLOUR convention (black = confirmed actual receipt, red =
+ * forecast — owner rule 2026-06):
+ *   black + today/past → paid (realised)    black + future → flagged ("paid" in
+ *                                                              the future can't be)
+ *   red + future       → not yet paid        red + past     → overdue (forecast lapsed)
+ * With no received date it falls back to the invoice (invoiced / outstanding,
+ * overdue once the expected payment date passes). written_off / disputed → flagged.
+ * NOTE: this is the Milestone-Tracker view only — the frozen finance/cash paths
+ * are unchanged; they still use the imported date to forecast the inflow.
+ */
+export function inflowState(m: {
+  status: string;
+  paidDate: string | null;
+  paidDateConfirmed: boolean | null;
+  inBankDate: string | null;
+  invoiceNumber: string | null;
+  invoiceDate: string | null;
+  expectedPaymentDate: string | null;
+}, today: string): FlowState {
+  if (FLAGGED_REVENUE.has(m.status)) return "flagged";
+  // Receipt signal: the colour-coded "Payment Received Date", or an in-bank date
+  // (no colour captured → treated as confirmed/actual).
+  const receipt = m.paidDate ?? m.inBankDate;
+  if (receipt) {
+    const confirmed = m.paidDate ? m.paidDateConfirmed === true : true; // black = actual
+    const future = receipt > today;
+    if (confirmed) return future ? "flagged" : "paid";
+    if (future) return m.invoiceNumber || m.invoiceDate ? "invoiced" : "outstanding";
+    return "overdue";
+  }
+  const overdue = !!m.expectedPaymentDate && m.expectedPaymentDate < today;
+  if (m.status === "invoiced" || m.invoiceNumber || m.invoiceDate) return overdue ? "overdue" : "invoiced";
   return overdue ? "overdue" : "outstanding";
+}
+
+/** Still to collect: not actually collected (paid) and not written off / disputed. */
+function inflowOpen(m: { state: FlowState; status: string }): boolean {
+  return m.state !== "paid" && !FLAGGED_REVENUE.has(m.status);
 }
 
 /** Outflow state from the cost-line status + forecast payment date. */
@@ -285,11 +311,9 @@ function buildMilestones(projectId: number, projectName: string, b: ProjectBundl
     }
     const outflowTotal = outflows.reduce((s, o) => s + (o.amount ?? 0), 0);
     const tasksComplete = tasks.filter((t) => t.complete).length;
-    const state = inflowState(m.status, m.expectedPaymentDate, today);
+    const state = inflowState(m, today);
     const readyToInvoice = tasks.length > 0 && tasksComplete === tasks.length && m.status === "planned";
-    const overdueGap =
-      !PAID_REVENUE.has(m.status) && !FLAGGED_REVENUE.has(m.status) &&
-      (!m.expectedPaymentDate || m.expectedPaymentDate < today);
+    const overdueGap = state === "overdue";
     return {
       rowHash: m.rowHash,
       milestoneNo: m.milestoneNo,
@@ -373,7 +397,7 @@ export async function getProjectMilestones(projectId: number, now: Date = new Da
 
   const inflowTotal = milestones.reduce((s, m) => s + (m.amount ?? 0), 0);
   const inflowOutstanding = milestones
-    .filter((m) => !PAID_REVENUE.has(m.status) && !FLAGGED_REVENUE.has(m.status))
+    .filter(inflowOpen)
     .reduce((s, m) => s + (m.amount ?? 0), 0);
   // distinct linked outflows across the whole project
   const linkedCostHashes = new Set<string>();
@@ -403,7 +427,9 @@ export async function getProjectMilestones(projectId: number, now: Date = new Da
 
 export async function getMilestoneProgram(now: Date = new Date()): Promise<MilestoneProgram> {
   const today = todayIso(now);
-  const active = await executionBoardRepository.getActiveProjects();
+  // includeArchived — same universe as the board, so the phase filter can reach
+  // every project in a phase (incl. completed/archived ones with open money).
+  const active = await executionBoardRepository.getActiveProjects(true);
   const ids = active.map((p) => p.id);
   const nameById = new Map(active.map((p) => [p.id, p.projectName]));
 
@@ -443,15 +469,15 @@ export async function getMilestoneProgram(now: Date = new Date()): Promise<Miles
       tcLinks: tcByP.get(p.id) ?? [],
     };
     if (bundle.milestones.length === 0) continue; // no revenue milestones → not on the tracker
-    // Only surface projects that still have open (unsettled / non-black) money —
-    // an open inflow to collect or an open outflow to pay.
-    if (!hasOpenInflow(bundle.milestones) && !hasOpenOutflow(bundle.costs)) continue;
     const views = buildMilestones(p.id, p.projectName, bundle, today);
+    const openInflowViews = views.filter(inflowOpen);
+    // Only surface projects that still have open money — an inflow still to
+    // collect (colour-aware: a future/forecast receipt date is NOT collected) or
+    // an outflow still to pay.
+    if (openInflowViews.length === 0 && !hasOpenOutflow(bundle.costs)) continue;
 
     const inflowTotal = views.reduce((s, m) => s + (m.amount ?? 0), 0);
-    const inflowOutstanding = views
-      .filter((m) => !PAID_REVENUE.has(m.status) && !FLAGGED_REVENUE.has(m.status))
-      .reduce((s, m) => s + (m.amount ?? 0), 0);
+    const inflowOutstanding = openInflowViews.reduce((s, m) => s + (m.amount ?? 0), 0);
     const linkedCostHashes = new Set<string>();
     for (const m of views) for (const o of m.outflows) linkedCostHashes.add(o.rowHash);
     const costByHash = new Map(bundle.costs.map((c) => [c.rowHash, c]));
@@ -462,11 +488,10 @@ export async function getMilestoneProgram(now: Date = new Date()): Promise<Miles
     );
     const readyToInvoiceCount = views.filter((m) => m.readyToInvoice).length;
     const linkedMilestoneCount = views.filter((m) => m.tasks.length > 0).length;
-    // Open (unsettled / non-black) line items per project: inflows still to
-    // collect, outflows still to pay.
-    const openInflows = bundle.milestones.filter((m) => !SETTLED_REVENUE.has(m.status));
-    const openInflowCount = openInflows.length;
-    const openInflowAmount = openInflows.reduce((s, m) => s + (num(m.amountExVat) ?? 0), 0);
+    // Open line items per project: inflows still to collect (colour-aware — a
+    // future/forecast receipt date is NOT collected), outflows still to pay.
+    const openInflowCount = openInflowViews.length;
+    const openInflowAmount = openInflowViews.reduce((s, m) => s + (m.amount ?? 0), 0);
     const openOutflows = bundle.costs.filter((c) => c.status !== "paid");
     const openOutflowCount = openOutflows.length;
     const openOutflowAmount = openOutflows.reduce((s, c) => s + (num(c.amountExVat) ?? 0), 0);
@@ -478,6 +503,7 @@ export async function getMilestoneProgram(now: Date = new Date()): Promise<Miles
     rows.push({
       projectId: p.id,
       projectName: p.projectName,
+      phase: p.phase,
       milestoneCount: views.length,
       linkedMilestoneCount,
       inflowTotal,

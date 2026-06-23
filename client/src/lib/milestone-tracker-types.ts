@@ -101,6 +101,7 @@ export interface ProjectMilestoneDetail {
 export interface MilestoneProgramRow {
   projectId: number;
   projectName: string;
+  phase: string | null;
   milestoneCount: number;
   linkedMilestoneCount: number;
   inflowTotal: number;

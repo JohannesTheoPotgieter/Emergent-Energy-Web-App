@@ -19,6 +19,7 @@ import { useApiMutation } from "@/hooks/use-api-mutation";
 import { apiRequest } from "@/lib/queryClient";
 import { fmtDate, parseExecDate } from "@/lib/execution-types";
 import { useTableSort, SortHeader, downloadCsv } from "@/lib/table-utils";
+import { PhaseMultiSelect, buildPhaseOptions, canonicalPhaseLabel, phaseInScope } from "@/components/execution/phase-filter";
 import {
   type MilestoneProgram, type MilestoneProgramRow, type ProjectMilestoneDetail, type MilestoneView,
   type LinkedTaskView, type CalendarEvent, type FlowState, type TaskState,
@@ -309,7 +310,10 @@ function MilestoneCard({ m, detail, h }: { m: MilestoneView; detail: ProjectMile
 
 /** Drill-down detail: the project's still-open inflow and outflow line items. */
 function OpenItemsBlock({ detail }: { detail: ProjectMilestoneDetail }) {
-  const openIn = detail.milestones.filter((m) => m.state !== "paid" && m.status !== "written_off");
+  // Still to collect: not actually collected (paid) and not written off / disputed.
+  // A future/forecast "Payment Received Date" is NOT paid (see inflowState), so
+  // those milestones correctly surface here.
+  const openIn = detail.milestones.filter((m) => m.state !== "paid" && m.status !== "written_off" && m.status !== "disputed");
   const openOut = detail.availableCostLines.filter((o) => o.state !== "paid");
   const inAmt = openIn.reduce((s, m) => s + (m.amount ?? 0), 0);
   const outAmt = openOut.reduce((s, o) => s + (o.amount ?? 0), 0);
@@ -458,6 +462,7 @@ function ProjectWorkspace({ projectId, onBack }: { projectId: number; onBack: ()
 function programSortValue(r: MilestoneProgramRow, key: string): string | number | null {
   switch (key) {
     case "site": return r.projectName.toLowerCase();
+    case "phase": return canonicalPhaseLabel(r.phase).toLowerCase();
     case "milestones": return r.linkedMilestoneCount;
     case "inflow": return r.inflowTotal;
     case "openIn": return r.openInflowAmount;
@@ -477,22 +482,28 @@ function ProgramOverview({ onOpen }: { onOpen: (id: number) => void }) {
     queryKey: ["/api/milestone-tracker/program"],
   });
 
+  const [phases, setPhases] = useState<string[]>([]);
   const rows = useMemo(() => data?.rows ?? [], [data]);
+  // Phase filter options — the same board range; empty selection = the default
+  // Financial Close → Client Handover scope (see phaseInScope).
+  const phaseOptions = useMemo(() => buildPhaseOptions(rows.map((r) => r.phase)), [rows]);
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return q ? rows.filter((r) => r.projectName.toLowerCase().includes(q)) : rows;
-  }, [rows, search]);
+    return rows.filter((r) =>
+      (!q || r.projectName.toLowerCase().includes(q)) && phaseInScope(r.phase, phases),
+    );
+  }, [rows, search, phases]);
   const { sorted, sort, toggle } = useTableSort(filtered, programSortValue);
 
   const exportCsv = () => downloadCsv(
     "milestone-tracker",
-    ["Site", "Milestones linked", "Milestones total", "Inflow total", "Open inflow #", "Open inflow R", "Linked outflow R", "Open outflow #", "Open outflow R", "Ready to invoice", "Gaps", "Next inflow"],
-    sorted.map((r) => [r.projectName, r.linkedMilestoneCount, r.milestoneCount, Math.round(r.inflowTotal), r.openInflowCount, Math.round(r.openInflowAmount), Math.round(r.outflowTotal), r.openOutflowCount, Math.round(r.openOutflowAmount), r.readyToInvoiceCount, r.gapCount, r.nextInflowDate ?? ""]),
+    ["Site", "Phase", "Milestones linked", "Milestones total", "Inflow total", "Open inflow #", "Open inflow R", "Linked outflow R", "Open outflow #", "Open outflow R", "Ready to invoice", "Gaps", "Next inflow"],
+    sorted.map((r) => [r.projectName, canonicalPhaseLabel(r.phase), r.linkedMilestoneCount, r.milestoneCount, Math.round(r.inflowTotal), r.openInflowCount, Math.round(r.openInflowAmount), Math.round(r.outflowTotal), r.openOutflowCount, Math.round(r.openOutflowAmount), r.readyToInvoiceCount, r.gapCount, r.nextInflowDate ?? ""]),
   );
 
   return (
     <PageShell className="max-w-6xl p-4 md:p-6" data-testid="milestone-tracker-page">
-      <PageHeader title="Milestone Tracker" subtitle="Payment milestones (from the revenue tracker) linked to the plan tasks that make them invoiceable, and the outflows those tasks incur" />
+      <PageHeader title="Activity Planning" subtitle="Plan the money in, the work that earns it, and the money out — link inflow milestones, plan tasks and outflow line items, and track completion and dependencies" />
 
       {isLoading ? (
         <div className="mt-4 space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
@@ -512,7 +523,24 @@ function ProgramOverview({ onOpen }: { onOpen: (id: number) => void }) {
             <Button size="sm" variant={view === "list" ? "default" : "outline"} onClick={() => setView("list")} data-testid="program-view-list">By project</Button>
             <Button size="sm" variant={view === "calendar" ? "default" : "outline"} onClick={() => setView("calendar")} data-testid="program-view-calendar">Calendar</Button>
             {view === "list" && (
-              <Input className="w-48 h-8" placeholder="Search site…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid="milestone-search" />
+              <>
+                <Input className="w-48 h-8" placeholder="Search site…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid="milestone-search" />
+                <PhaseMultiSelect options={phaseOptions} selected={phases} onChange={setPhases} />
+                {phases.length > 0 && (
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {phases.map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => setPhases((cur) => cur.filter((x) => x !== p))}
+                        className="inline-flex items-center gap-1 rounded-full border bg-emerald-50 border-emerald-200 text-emerald-700 px-2 py-0.5 text-xs hover:bg-emerald-100"
+                        data-testid={`milestone-phase-chip-${p}`}
+                      >
+                        {p}<span aria-hidden className="text-emerald-500">×</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
             <div className="ml-auto flex items-center gap-2">
               <span className="text-xs text-muted-foreground">{filtered.length} of {rows.length} sites · {data.header.milestoneCount} milestones</span>
@@ -529,11 +557,12 @@ function ProgramOverview({ onOpen }: { onOpen: (id: number) => void }) {
               {rows.length === 0 ? (
                 <p className="p-8 text-center text-sm text-muted-foreground">No projects have revenue-tracker milestones yet.</p>
               ) : filtered.length === 0 ? (
-                <p className="p-8 text-center text-sm text-muted-foreground">No sites match your search.</p>
+                <p className="p-8 text-center text-sm text-muted-foreground">No sites match these filters.</p>
               ) : (
                 <table className="w-full text-sm">
                   <thead><tr className="border-b text-left text-xs text-muted-foreground">
                     <SortHeader label="Site" sortKey="site" sort={sort} onSort={toggle} />
+                    <SortHeader label="Phase" sortKey="phase" sort={sort} onSort={toggle} />
                     <SortHeader label="Milestones" sortKey="milestones" sort={sort} onSort={toggle} />
                     <SortHeader label="Inflow" sortKey="inflow" sort={sort} onSort={toggle} />
                     <SortHeader label="Open inflows" sortKey="openIn" sort={sort} onSort={toggle} />
@@ -547,6 +576,7 @@ function ProgramOverview({ onOpen }: { onOpen: (id: number) => void }) {
                     {sorted.map((r) => (
                       <tr key={r.projectId} className="border-b hover:bg-muted/40 cursor-pointer" onClick={() => onOpen(r.projectId)} data-testid={`program-row-${r.projectId}`}>
                         <td className="py-2 px-3 font-medium">{r.projectName}</td>
+                        <td className="py-2 px-3 whitespace-nowrap text-xs text-muted-foreground">{canonicalPhaseLabel(r.phase) || "—"}</td>
                         <td className="py-2 px-3 tabular-nums">{r.linkedMilestoneCount}/{r.milestoneCount} linked</td>
                         <td className="py-2 px-3 tabular-nums whitespace-nowrap">{money(r.inflowTotal)}</td>
                         <td className="py-2 px-3 whitespace-nowrap" data-testid={`open-inflows-${r.projectId}`}>
