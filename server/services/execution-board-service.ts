@@ -209,7 +209,7 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
   let actualSum = 0, expectedSum = 0, planned = 0;
 
   for (const p of active) {
-    // EXP% is computed live from the planned dates (not the stale Excel
+    // EXP% is computed live from each task's ACTUAL dates (not the stale Excel
     // "Expected Status" formula cache) — see withComputedExpected.
     const tasks = withComputedExpected(tasksByProject.get(p.id) ?? [], today);
     const schedule = computeScheduleSnapshot(tasks);
@@ -360,7 +360,7 @@ export async function getProjectDetail(projectId: number, now: Date = new Date()
     ),
     executionBoardRepository.getLatestUpdate(header.projectName),
   ]);
-  // EXP% is computed live from the planned dates (not the stale Excel
+  // EXP% is computed live from each task's ACTUAL dates (not the stale Excel
   // "Expected Status" formula cache) — see withComputedExpected.
   const tasks = withComputedExpected(plan.tasks, today);
   const schedule = computeScheduleSnapshot(tasks);
