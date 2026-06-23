@@ -1736,6 +1736,9 @@ router.get(
             expenseLineItem: e.expenseLineItem,
             expenseInvoiceNumber: e.expenseInvoiceNumber,
             expensePaymentDate: effectiveDate,
+            // §3.7 colour signals (additive — no cashflow figure changes).
+            paidDateConfirmed: (e as any).paidDateConfirmed ?? null,
+            invoiceDateConfirmed: (e as any).invoiceDateConfirmed ?? null,
             originalDate,
             hasAdminOverride: !!(e as any).adminDateOverride,
             adminDateOverride: (e as any).adminDateOverride || null,
@@ -1785,6 +1788,10 @@ router.get(
             milestoneName: inf.milestoneName,
             milestoneInvoiceNumber: inf.milestoneInvoiceNumber,
             paymentReceivedDate: inf.effectiveDate,
+            // §3.7 colour signals (additive — no cashflow figure changes). Let
+            // the week-detail row show whether the receipt/invoice is confirmed.
+            paidDateConfirmed: (inf as any).paidDateConfirmed ?? null,
+            invoiceDateConfirmed: (inf as any).invoiceDateConfirmed ?? null,
             originalDate: inf.adminDateOverride
               ? inf.paymentReceivedDate || inf.plannedPaymentDate || null
               : null,
@@ -5572,6 +5579,10 @@ router.get(
           invoiceNumber: l.invoiceNumber,
           poNumber: l.poNumber,
           invoiceDate: l.invoiceDate,
+          // §3.7 invoice-date colour signal, from the underlying canonical cost
+          // line (additive — no figure changes). Lets the drill-down drawer red
+          // an unconfirmed invoice date the same way the tracker does.
+          invoiceDateConfirmed: (exp as { invoiceDateConfirmed?: boolean | null } | undefined)?.invoiceDateConfirmed ?? null,
           supplier: exp?.supplierName ?? null,
           isRealised,
           noRevenueLinked: !!exp?.noRevenueLinked,
@@ -5984,6 +5995,10 @@ router.get(
           invoiceNumber: l.invoiceNumber,
           poNumber: l.poNumber,
           invoiceDate: l.invoiceDate,
+          // §3.7 invoice-date colour signal, from the underlying canonical cost
+          // line (additive — no figure changes). Lets the drill-down drawer red
+          // an unconfirmed invoice date the same way the tracker does.
+          invoiceDateConfirmed: (exp as { invoiceDateConfirmed?: boolean | null } | undefined)?.invoiceDateConfirmed ?? null,
           supplier: exp?.supplierName ?? null,
           isRealised,
           noRevenueLinked: !!exp?.noRevenueLinked,

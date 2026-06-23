@@ -50,7 +50,6 @@ import { RevenueTrackingContent } from "@/pages/revenue-tracking";
 import { ExpenditureBreakdownContent } from "@/pages/expenditure-breakdown";
 import { ProgramPlanContent } from "@/pages/program-plan";
 import { ManualOverridesContent } from "@/pages/manual-overrides";
-import { ExcelVsAppProjectContent } from "@/pages/excel-vs-app-project";
 import { CriticalControlPanel } from "@/components/stage-lifecycle/CriticalControlPanel";
 import { StageTimeline } from "@/components/stage-lifecycle/StageTimeline";
 import { useProjectStages } from "@/hooks/use-stage-lifecycle";
@@ -1790,7 +1789,6 @@ export default function ProjectDetailPage() {
               { key: "exp-replica", label: "Expenditure Breakdown", icon: CreditCard, visible: true },
               { key: "plan-replica", label: "Program Plan", icon: CalendarDays, visible: true },
               { key: "edit-log", label: "Manual Edit Log", icon: History, visible: true },
-              { key: "drift", label: "Excel vs App", icon: AlertTriangle, visible: true },
             ].filter(st => st.visible).map(st => (
               <Button key={st.key} size="sm" variant={activeSubTab === st.key ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => navigateToSubTab(st.key)} data-testid={`subtab-${st.key}`}>
                 <st.icon className="h-3 w-3 mr-1" /> {st.label}
@@ -1802,7 +1800,6 @@ export default function ProjectDetailPage() {
           {activeSubTab === "exp-replica" && projectInfoId && <ExpenditureBreakdownContent projectId={projectInfoId} />}
           {activeSubTab === "plan-replica" && projectInfoId && <ProgramPlanContent projectId={projectInfoId} />}
           {activeSubTab === "edit-log" && projectInfoId && <ManualOverridesContent projectId={projectInfoId} />}
-          {activeSubTab === "drift" && projectInfoId && <ExcelVsAppProjectContent projectId={projectInfoId} />}
         </div>
       )}
 

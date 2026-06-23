@@ -47,6 +47,7 @@ interface DrillInvoiceLeaf {
   lineId: number | null;
   invoiceNumber: string | null;
   invoiceRaisedDate: string | null;
+  invoiceDateConfirmed: boolean | null;
   perLineRevenue: number;
   bucket: string | null;
   sourceCell: string | null;
@@ -184,7 +185,12 @@ export function MonthDrillDrawer({
                         <td className="px-2 py-1.5">
                           <span className="font-medium text-slate-700">{inv.invoiceNumber || "—"}</span>
                           {inv.invoiceRaisedDate && (
-                            <span className="ml-1 text-[11px] text-slate-400">{inv.invoiceRaisedDate}</span>
+                            <span
+                              className={`ml-1 text-[11px] ${inv.invoiceDateConfirmed === false ? "text-red-600" : "text-slate-400"}`}
+                              title={inv.invoiceDateConfirmed === false ? "Invoice date is RED in the tracker — not yet confirmed (§3.7)." : undefined}
+                            >
+                              {inv.invoiceRaisedDate}{inv.invoiceDateConfirmed === false ? " · unconfirmed" : ""}
+                            </span>
                           )}
                         </td>
                         <td className="px-2 py-1.5 text-right">

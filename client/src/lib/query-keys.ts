@@ -5,9 +5,6 @@
  * duplicated. Changing a key here updates every call site automatically.
  */
 export const QUERY_KEYS = {
-  reconciliationProgramAssessment: ["reconciliation-program-assessment"] as const,
-  excelVsAppProject: (projectId: number) =>
-    ["excel-vs-app-project", projectId] as const,
   financialEditRequests: (projectName: string, status: string) =>
     ["financial-edit-requests", projectName, status] as const,
 } as const;

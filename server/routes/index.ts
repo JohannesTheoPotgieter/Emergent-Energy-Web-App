@@ -21,7 +21,6 @@ import { registerManagedDocumentApprovalRoutes } from './managed-document-approv
 import { registerDocumentReadinessRoutes } from './document-readiness.routes';
 import { registerProjectDocumentRegisterRoutes } from './project-document-register.routes';
 import { registerTrackerReplicaRoutes } from './tracker-replica.routes';
-import { registerExcelVsAppRoutes } from './excel-vs-app.routes';
 import { registerReconciliationRoutes } from './reconciliation.routes';
 import { registerQbReconRoutes } from './qb-recon.routes';
 import { registerQbProjectMatchRoutes } from './qb-project-match.routes';
@@ -66,7 +65,6 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerDocumentReadinessRoutes(app);
   registerProjectDocumentRegisterRoutes(app);
   registerTrackerReplicaRoutes(app);
-  registerExcelVsAppRoutes(app);
   registerReconciliationRoutes(app);
   registerQbReconRoutes(app);
   registerQbProjectMatchRoutes(app);

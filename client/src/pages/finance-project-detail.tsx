@@ -197,7 +197,7 @@ function lineToException(detail: DetailResponse, line: ReconDetailLine): Reconci
     suggestedOwner: "Programme Finance Manager",
     status: "open",
     lastUpdated: detail.generatedAt ?? null,
-    drilldownUrl: `/projects/${detail.projectId}/excel-vs-app`,
+    drilldownUrl: `/projects/${detail.projectId}/finance`,
     businessImpact: structural
       ? "Revenue cannot be recognised for this line until its category allocation is fixed in the tracker."
       : "The canonical §3.3 figure the app reports for this line, traced to its source cell.",

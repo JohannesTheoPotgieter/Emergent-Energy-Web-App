@@ -77,11 +77,6 @@ describe("finance imported invoice/payment date colour", () => {
       expect(page).toMatch(/styleForCell\([^,]+,\s*"financePaymentDate"\)/);
     });
 
-    it("Excel-vs-App diff resolves cell colour via the shared bridge (not a raw lookup)", () => {
-      const repo = read("server/repositories/tracker-replica-repository.ts");
-      expect(repo).toContain("resolveCellFormatEntry(cellFormat, f)");
-      expect(repo).not.toMatch(/cellFormat as any\)\[f\]/);
-    });
   });
 
   describe("the importer captures invoice + payment date colour at source", () => {

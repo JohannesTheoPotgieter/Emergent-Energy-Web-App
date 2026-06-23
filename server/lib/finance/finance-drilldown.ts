@@ -47,6 +47,8 @@ export interface DrillLineInput {
   invoiceNumber: string | null;
   /** Excel col T — invoice raised date (recognition date). */
   invoiceRaisedDate: string | null;
+  /** §3.7 invoice-date colour signal: false = RED/unconfirmed, true/null = confirmed. */
+  invoiceDateConfirmed: boolean | null;
   poNumber: string | null;
   /** YYYY-MM key derived from the invoice-raised date; null = no T date. */
   recognitionMonth: string | null;
@@ -90,6 +92,8 @@ export interface DrillNode extends DrillTotals {
   parentLineId?: number;
   invoiceNumber?: string | null;
   invoiceRaisedDate?: string | null;
+  /** §3.7 invoice-date colour signal: false = RED/unconfirmed, true/null = confirmed. */
+  invoiceDateConfirmed?: boolean | null;
   poNumber?: string | null;
   bucket?: DrillBucket;
   /** Set to true when the leaf's invoice date colour is RED (forecast). */
@@ -243,6 +247,7 @@ export function buildInvoiceLeaf(line: DrillLineInput): DrillNode {
     parentLineId: line.parentLineId,
     invoiceNumber: line.invoiceNumber,
     invoiceRaisedDate: line.invoiceRaisedDate,
+    invoiceDateConfirmed: line.invoiceDateConfirmed,
     poNumber: line.poNumber,
     bucket: line.bucket,
     isForecast: !isRealised(line.bucket),
