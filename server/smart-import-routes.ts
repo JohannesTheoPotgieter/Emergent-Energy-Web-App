@@ -83,6 +83,7 @@ import {
   categoryRevenueAllocations,
 } from "@shared/schema";
 import { normalizeCategoryKey } from "./lib/import/normalizer";
+import { isMilestoneWbs } from "@shared/lib/milestone-wbs";
 import { normalizeCostLineStatus, normalizeAllocationConfidence } from "./lib/import/utils";
 import { materializeDerivatives } from "./lib/import/derivative-materializer";
 import { relinkCategoryAllocationsForProject } from "./lib/import/allocation-relink";
@@ -3576,7 +3577,7 @@ router.get("/api/smart-import/normalized/:projectName/plan", requireAuth, async 
       status: wi.status,
       pctComplete: wi.percentComplete,
       expectedPctComplete: wi.expectedPctComplete,
-      isMilestone: wi.isMilestone,
+      isMilestone: isMilestoneWbs(wi.wbsCode),
       indentLevel: wi.indentLevel,
       sourceSheet: wi.sourceSheet,
       sourceRow: wi.sourceRow,

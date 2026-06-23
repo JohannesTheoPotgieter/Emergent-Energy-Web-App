@@ -25,10 +25,10 @@ import { useParams } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { styleForCell } from "@/lib/tracker-cell-format";
+import { SettlementStatusBadge } from "@/components/finance/SettlementStatusBadge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { useFinanceQuery } from "@/lib/finance-trust";
-import { DataTrustBadge } from "@/components/ui/data-trust-badge";
 
 interface ExpenditureBreakdownResponse {
   projectId: number;
@@ -49,9 +49,13 @@ interface ExpenditureBreakdownResponse {
     poNumber: string | null;
     invoiceNumber: string | null;
     invoiceDate: string | null;
+    invoiceDateConfirmed: boolean | null;
+    invoiceDateFontColor: string | null;
     revenueRecognitionAmount: string | null;
     checkFlag: string | null;
     paidDate: string | null;
+    paidDateConfirmed: boolean | null;
+    paidDateFontColor: string | null;
     savingOverrun: string | null;
     comments: string | null;
     cellFormat: unknown;
@@ -67,6 +71,8 @@ interface ExpenditureBreakdownResponse {
     poNumber: string | null;
     invoiceNumber: string | null;
     invoiceDate: string | null;
+    invoiceDateConfirmed: boolean | null;
+    invoiceDateFontColor: string | null;
     revenueRecognitionAmount: string | null;
     financePaymentDate: string | null;
     checkFlag: string | null;
@@ -97,7 +103,7 @@ function fmtDate(v: string | null): string {
 }
 
 export function ExpenditureBreakdownContent({ projectId }: { projectId: number }) {
-  const { data, trust, isLoading, isError } = useFinanceQuery<ExpenditureBreakdownResponse>({
+  const { data, isLoading, isError } = useFinanceQuery<ExpenditureBreakdownResponse>({
     queryKey: [`/api/tracker-replica/${projectId}/expenditure-breakdown`],
     url: `/api/tracker-replica/${projectId}/expenditure-breakdown`,
     enabled: Number.isFinite(projectId),
@@ -122,11 +128,6 @@ export function ExpenditureBreakdownContent({ projectId }: { projectId: number }
 
   return (
     <div className="space-y-6" data-testid="expenditure-breakdown-content">
-      {trust && (
-        <div className="flex justify-end">
-          <DataTrustBadge trust={trust} />
-        </div>
-      )}
       <Card>
         <CardContent className="p-4 grid grid-cols-2 gap-6 text-sm">
           <div>
@@ -226,7 +227,12 @@ export function ExpenditureBreakdownContent({ projectId }: { projectId: number }
                           <td className="border p-1" style={styleForCell(c.cellFormat, "invoiceDate")}>{fmtDate(c.invoiceDate)}</td>
                           <td className="border p-1 text-right" style={styleForCell(c.cellFormat, "revenueRecognitionAmount")}>{money(c.revenueRecognitionAmount)}</td>
                           <td className="border p-1 text-center" style={styleForCell(c.cellFormat, "checkFlag")}>{c.checkFlag ?? "—"}</td>
-                          <td className="border p-1" style={styleForCell(c.cellFormat, "paidDate")}>{fmtDate(c.paidDate)}</td>
+                          <td className="border p-1" style={styleForCell(c.cellFormat, "paidDate")}>
+                            <div className="flex items-center gap-1.5">
+                              <span>{fmtDate(c.paidDate)}</span>
+                              <SettlementStatusBadge line={{ invoiceNumber: c.invoiceNumber, invoiceDate: c.invoiceDate, invoiceDateConfirmed: c.invoiceDateConfirmed, invoiceDateFontColor: c.invoiceDateFontColor, paidDate: c.paidDate, paidDateConfirmed: c.paidDateConfirmed, paidDateFontColor: c.paidDateFontColor }} />
+                            </div>
+                          </td>
                           <td className="border p-1 text-right" style={styleForCell(c.cellFormat, "savingOverrun")}>{money(c.savingOverrun)}</td>
                           <td className="border p-1 max-w-xs truncate" style={styleForCell(c.cellFormat, "comments")}>{c.comments ?? "—"}</td>
                         </>
@@ -264,7 +270,12 @@ export function ExpenditureBreakdownContent({ projectId }: { projectId: number }
                           <td className="border p-1" style={styleForCell(batches[0].cellFormat, "invoiceDate")}>{fmtDate(batches[0].invoiceDate)}</td>
                           <td className="border p-1 text-right" style={styleForCell(batches[0].cellFormat, "revenueRecognitionAmount")}>{money(batches[0].revenueRecognitionAmount)}</td>
                           <td className="border p-1 text-center" style={styleForCell(batches[0].cellFormat, "checkFlag")}>{batches[0].checkFlag ?? "—"}</td>
-                          <td className="border p-1" style={styleForCell(batches[0].cellFormat, "financePaymentDate")}>{fmtDate(batches[0].financePaymentDate)}</td>
+                          <td className="border p-1" style={styleForCell(batches[0].cellFormat, "financePaymentDate")}>
+                            <div className="flex items-center gap-1.5">
+                              <span>{fmtDate(batches[0].financePaymentDate)}</span>
+                              <SettlementStatusBadge line={{ invoiceNumber: batches[0].invoiceNumber, invoiceDate: batches[0].invoiceDate, invoiceDateConfirmed: batches[0].invoiceDateConfirmed, invoiceDateFontColor: batches[0].invoiceDateFontColor, paidDate: batches[0].financePaymentDate }} />
+                            </div>
+                          </td>
                           <td className="border p-1 text-right" style={styleForCell(batches[0].cellFormat, "savingOverrun")}>{money(batches[0].savingOverrun)}</td>
                           <td className="border p-1 max-w-xs truncate" style={styleForCell(batches[0].cellFormat, "comments")}>{batches[0].comments ?? "—"}</td>
                         </>
@@ -304,7 +315,12 @@ export function ExpenditureBreakdownContent({ projectId }: { projectId: number }
                         <td className="border p-1" style={styleForCell(b.cellFormat, "invoiceDate")}>{fmtDate(b.invoiceDate)}</td>
                         <td className="border p-1 text-right" style={styleForCell(b.cellFormat, "revenueRecognitionAmount")}>{money(b.revenueRecognitionAmount)}</td>
                         <td className="border p-1 text-center" style={styleForCell(b.cellFormat, "checkFlag")}>{b.checkFlag ?? "—"}</td>
-                        <td className="border p-1" style={styleForCell(b.cellFormat, "financePaymentDate")}>{fmtDate(b.financePaymentDate)}</td>
+                        <td className="border p-1" style={styleForCell(b.cellFormat, "financePaymentDate")}>
+                          <div className="flex items-center gap-1.5">
+                            <span>{fmtDate(b.financePaymentDate)}</span>
+                            <SettlementStatusBadge line={{ invoiceNumber: b.invoiceNumber, invoiceDate: b.invoiceDate, invoiceDateConfirmed: b.invoiceDateConfirmed, invoiceDateFontColor: b.invoiceDateFontColor, paidDate: b.financePaymentDate }} />
+                          </div>
+                        </td>
                         <td className="border p-1 text-right" style={styleForCell(b.cellFormat, "savingOverrun")}>{money(b.savingOverrun)}</td>
                         <td className="border p-1 max-w-xs truncate" style={styleForCell(b.cellFormat, "comments")}>{b.comments ?? "—"}</td>
                       </tr>

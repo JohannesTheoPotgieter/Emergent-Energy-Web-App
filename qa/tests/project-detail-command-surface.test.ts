@@ -37,10 +37,6 @@ describe("Project Detail command surface routing", () => {
       dept: "history",
       sub: "approvals",
     });
-    expect(normalizeProjectDetailDeepLink("?tab=excel-vs-app")).toEqual({
-      dept: "excel",
-      sub: "drift",
-    });
     expect(normalizeProjectDetailDeepLink("?tab=sharepoint")).toEqual({
       dept: "documents",
       sub: "controlled-docs",

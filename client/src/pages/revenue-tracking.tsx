@@ -19,9 +19,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { styleForCell } from "@/lib/tracker-cell-format";
+import { SettlementStatusBadge } from "@/components/finance/SettlementStatusBadge";
 import { Loader2 } from "lucide-react";
 import { useFinanceQuery } from "@/lib/finance-trust";
-import { DataTrustBadge } from "@/components/ui/data-trust-badge";
 import { formatZar } from "@/lib/currency";
 import { ExportDropdown } from "@/components/ui/export-dropdown";
 
@@ -47,7 +47,11 @@ interface RevenueTrackingResponse {
     expectedPaymentDate: string | null;
     invoiceNumber: string | null;
     invoiceDate: string | null;
+    invoiceDateConfirmed: boolean | null;
+    invoiceDateFontColor: string | null;
     paidDate: string | null;
+    paidDateConfirmed: boolean | null;
+    paidDateFontColor: string | null;
     milestoneNotes: string | null;
     cellFormat: unknown;
   }>;
@@ -70,7 +74,7 @@ function fmtDate(v: string | null): string {
 }
 
 export function RevenueTrackingContent({ projectId }: { projectId: number }) {
-  const { data, trust, isLoading, isError } = useFinanceQuery<RevenueTrackingResponse>({
+  const { data, isLoading, isError } = useFinanceQuery<RevenueTrackingResponse>({
     queryKey: [`/api/tracker-replica/${projectId}/revenue-tracking`],
     url: `/api/tracker-replica/${projectId}/revenue-tracking`,
     enabled: Number.isFinite(projectId),
@@ -93,11 +97,6 @@ export function RevenueTrackingContent({ projectId }: { projectId: number }) {
 
   return (
     <div className="space-y-6" data-testid="revenue-tracking-content">
-      {trust && (
-        <div className="flex justify-end">
-          <DataTrustBadge trust={trust} />
-        </div>
-      )}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">High-level Project Revenue Tracking</CardTitle>
@@ -156,6 +155,7 @@ export function RevenueTrackingContent({ projectId }: { projectId: number }) {
                 <TableHead>Invoice Number</TableHead>
                 <TableHead>Invoice Raised Date</TableHead>
                 <TableHead>Payment Received Date</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead>Milestone Notes &amp; Comments</TableHead>
               </TableRow>
             </TableHeader>
@@ -170,11 +170,12 @@ export function RevenueTrackingContent({ projectId }: { projectId: number }) {
                   <TableCell style={styleForCell(m.cellFormat, "invoiceNumber")}>{m.invoiceNumber ?? "—"}</TableCell>
                   <TableCell style={styleForCell(m.cellFormat, "invoiceDate")}>{fmtDate(m.invoiceDate)}</TableCell>
                   <TableCell style={styleForCell(m.cellFormat, "paidDate")}>{fmtDate(m.paidDate)}</TableCell>
+                  <TableCell><SettlementStatusBadge line={m} /></TableCell>
                   <TableCell style={styleForCell(m.cellFormat, "milestoneNotes")} className="max-w-xs truncate">{m.milestoneNotes ?? "—"}</TableCell>
                 </TableRow>
               ))}
               {data.milestones.length === 0 && (
-                <TableRow><TableCell colSpan={9} className="text-center text-sm text-muted-foreground">No milestones yet.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center text-sm text-muted-foreground">No milestones yet.</TableCell></TableRow>
               )}
             </TableBody>
           </Table>

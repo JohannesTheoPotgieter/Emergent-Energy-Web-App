@@ -18,9 +18,9 @@ import { describe, expect, it } from "vitest";
  *  3. No pre-summarised rollup, no company-overview whole-life plan, no QB-recon
  *     DATA tile (QB *reconciliation* lives only on its own page), and NOT the
  *     /api/cos-tracker aggregate.
- *  4. The trust strip is the per-project app-vs-tracker reconciliation, where a
- *     "tie" means tie-to-tracker and a project with no baseline reads
- *     "not compared yet" — never a bare "Δ R0 / No data".
+ *  4. Finance Home shows NO tie/drift reconciliation status surfaces (Task #163,
+ *     owner 2026-06-19): no "Match my trackers?" trust strip, no per-KPI tie
+ *     badges, no "Tie status" column. Reconciliation lives only on its own page.
  */
 
 const readSrc = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), "utf8");
@@ -67,13 +67,16 @@ describe("Finance Home — canonical underlying sources", () => {
   });
 });
 
-describe("Finance Home — trust strip is tie-to-tracker, never 'Δ R0 / No data'", () => {
-  it("reads the per-project reconciliation portfolio", () => {
+describe("Finance Home — no tie/drift reconciliation status surfaces (Task #163)", () => {
+  it("still reads the per-project reconciliation portfolio for the project list + names", () => {
     expect(readSrc(HOME_SRC)).toContain("/api/finance/reconciliation");
   });
 
-  it("surfaces 'not compared yet' for projects with no tracker baseline", () => {
-    expect(readSrc(HOME_SRC)).toContain("not compared yet");
+  it("does not render the 'Match my trackers?' trust strip or a 'Tie status' column", () => {
+    const home = readSrc(HOME_SRC);
+    expect(home).not.toContain("Match my trackers?");
+    expect(home).not.toContain("Tie status");
+    expect(home).not.toContain("not compared yet");
   });
 
   it("never renders a bare 'Δ R0' or inline delta on Home", () => {

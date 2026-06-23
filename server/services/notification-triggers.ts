@@ -15,7 +15,6 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { createNotification } from "./notification-service";
-import { notifyHighUnverifiedDrift } from "./notification-triggers-excel-vs-app";
 
 export interface NotificationTriggerResult {
   trigger: string;
@@ -37,9 +36,6 @@ export async function checkAllNotificationTriggers(): Promise<NotificationTrigge
     { name: "inspection_due", fn: notifyUpcomingInspections },
     { name: "procurement_delivery_late", fn: notifyLateProcurementDeliveries },
     { name: "handover_stalled", fn: notifyStalledHandovers },
-    // Excel-vs-App daily digest. Hourly trigger but the function's
-    // 22h-throttle ensures one notification per recipient per day.
-    { name: "excel_vs_app_daily_digest", fn: notifyHighUnverifiedDrift },
   ];
 
   for (const trigger of triggers) {

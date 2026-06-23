@@ -260,6 +260,24 @@ const MODERN_MIGRATION_PROBES: Record<
       c,
       "change_requests_approver_user_id_users_id_fk",
     )),
+  // 0110 re-asserts 0108_execution_review_items + 0109_milestone_tracker_links,
+  // both of which were recorded as applied while their DDL never ran: they
+  // shipped without a probe here, so the bootstrap presumed them applied and
+  // drizzle-kit migrate skipped them. db:verify-schema --repair then failed
+  // creating execution_review_items because its enum type never existed
+  // (planAdditiveRepair does not create TYPEs). Multi-artifact canary spanning
+  // the enum type + all three tables so a partial apply replays rather than
+  // being presumed complete.
+  "0110_execution_review_milestone_links_drift_repair": async (c) =>
+    (await enumValueExists(c, "execution_review_status", "open")) &&
+    (await tableExists(c, "execution_review_items")) &&
+    (await constraintExists(
+      c,
+      "execution_review_items_created_by_users_id_fk",
+    )) &&
+    (await tableExists(c, "revenue_milestone_task_links")) &&
+    (await tableExists(c, "task_cost_line_links")) &&
+    (await indexExists(c, "task_cost_line_links_task_idx")),
 };
 
 async function tableExists(client: Client, table: string): Promise<boolean> {

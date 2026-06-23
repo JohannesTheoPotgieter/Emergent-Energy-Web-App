@@ -31,7 +31,6 @@ export const FINANCE_PATH_PREFIXES = [
   "/api/gp-tracker",
   "/api/cos-line-review",
   "/api/tracker-replica",
-  "/api/excel-vs-app",
   "/api/smart-import",
 ] as const;
 

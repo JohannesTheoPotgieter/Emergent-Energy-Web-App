@@ -2573,7 +2573,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                               {isCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                             </button>
                           )}
-                          {isMilestone && !hasChildren && <Diamond className="h-3 w-3 text-amber-500 flex-shrink-0" />}
+                          {isMilestone && <Diamond className="h-3 w-3 text-amber-500 flex-shrink-0" />}
                           <span className={`truncate ${isMilestone ? "font-medium text-amber-800" : hasChildren ? "text-foreground" : ""}`} title={task.title}>
                             {task.title}
                           </span>

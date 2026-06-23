@@ -12,6 +12,7 @@ import { requirePermission } from "./permission-middleware";
 import { attachWorkstreamVisibility, type WorkstreamVisibility } from "./workstream-visibility-middleware";
 import { blockInProduction } from "./middleware/production-safety";
 import { parseIntParam } from "./lib/req-params";
+import { isMilestoneWbs } from "@shared/lib/milestone-wbs";
 
 type AppUser = { id: number; email: string; name: string; role: string };
 
@@ -101,6 +102,7 @@ export function registerTaskManagementRoutes(app: Express) {
           ownerName: workItems.ownerName,
           estimateMinutes: workItems.estimateMinutes,
           taskCategory: workItems.taskCategory,
+          wbsCode: workItems.wbsCode,
           isMilestone: workItems.isMilestone,
           phase: workItems.phase,
           scheduledDate: workItems.scheduledDate,
@@ -162,6 +164,7 @@ export function registerTaskManagementRoutes(app: Express) {
       res.json({
         items: filteredItems.map((item: any) => ({
           ...item,
+          isMilestone: isMilestoneWbs(item.wbsCode),
           tags: tagsByItem[item.id] || [],
         })),
         total: totalResult.count,

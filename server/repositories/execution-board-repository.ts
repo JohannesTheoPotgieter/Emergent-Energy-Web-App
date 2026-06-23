@@ -14,6 +14,7 @@
 // ============================================================
 
 import { and, asc, eq, inArray, isNull, notInArray, count } from "drizzle-orm";
+import { isMilestoneWbs } from "@shared/lib/milestone-wbs";
 import { db } from "../db";
 import {
   projectInfo,
@@ -226,7 +227,7 @@ export class ExecutionBoardRepository {
         durationDays: r.duration ?? null,
         pctComplete: r.percentComplete ?? null,
         expectedPctComplete: r.expectedPctComplete ?? null,
-        isMilestone: Boolean(r.isMilestone),
+        isMilestone: isMilestoneWbs(r.wbsCode),
         parentTaskNo: r.parentId != null ? (idToTaskNo.get(r.parentId) ?? null) : null,
         comment: r.description ?? null,
       };

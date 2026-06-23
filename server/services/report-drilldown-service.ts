@@ -17,6 +17,7 @@ import {
   projectEngApprovals,
 } from "@shared/schema";
 import { db } from "../db";
+import { isMilestoneWbs } from "@shared/lib/milestone-wbs";
 
 const INACTIVE_STATUSES = ["Cancelled", "Archived", "Complete", "Closed", "Handover Complete", "Completed"];
 
@@ -135,7 +136,7 @@ export async function getPmDrilldownRows(filters: DrillFilters) {
       startDate: t.startDate,
       endDate: t.endDate,
       completedAt: t.completedAt ? new Date(t.completedAt).toISOString().substring(0, 10) : null,
-      isMilestone: t.isMilestone,
+      isMilestone: isMilestoneWbs(t.wbsCode),
       agingDays: t.endDate ? Math.max(0, Math.floor((Date.now() - new Date(`${t.endDate}T00:00:00Z`).getTime()) / (1000 * 60 * 60 * 24))) : 0,
       sourceRow: t.sourceRow,
       sourceFileName: t.sourceFileName,

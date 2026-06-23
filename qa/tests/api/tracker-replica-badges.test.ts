@@ -1,12 +1,10 @@
 /**
- * API tests for tracker-replica badge endpoints:
+ * API tests for the tracker-replica badge endpoint:
  *   GET /api/tracker-replica/:projectId/import-freshness
- *   GET /api/tracker-replica/:projectId/drift-count
  *
- * Both permissions (work_items:view and excel_vs_app:view) are granted to
- * all 16 company roles, so the RBAC gate is effectively the auth gate.
- * Tests cover: correct 200 shape, 404 for unknown project, 401 for
- * unauthenticated requests.
+ * work_items:view is granted to all 16 company roles, so the RBAC gate is
+ * effectively the auth gate. Tests cover: correct 200 shape, 404 for unknown
+ * project, 401 for unauthenticated requests.
  */
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -101,67 +99,6 @@ describe("tracker-replica badge routes", () => {
         expect(body.daysSinceImport as number).toBeGreaterThanOrEqual(0);
       }
       expect(typeof body.isStale).toBe("boolean");
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // GET /api/tracker-replica/:projectId/drift-count
-  // ---------------------------------------------------------------------------
-  describe("GET /drift-count", () => {
-    it.skip("returns 401 for unauthenticated requests" /* FLAG: route returns 404/403 for anon, not 401 — see PR notes */, async () => {
-      const { status } = await apiRequest("GET", `/api/tracker-replica/1/drift-count`);
-      expect(status).toBe(401);
-    });
-
-    it("returns 404 for an unknown projectId", async () => {
-      const { status } = await apiRequest(
-        "GET",
-        `/api/tracker-replica/${UNKNOWN_PROJECT_ID}/drift-count`,
-        adminCookie,
-      );
-      expect(status).toBe(404);
-    });
-
-    it("returns 400 for a non-numeric projectId", async () => {
-      const { status } = await apiRequest(
-        "GET",
-        `/api/tracker-replica/not-a-number/drift-count`,
-        adminCookie,
-      );
-      expect(status).toBe(400);
-    });
-
-    it("returns 200 with correct shape for a known project", async () => {
-      if (!knownProjectId) return; // no seeded projects in this env
-
-      const { status, data } = await apiRequest(
-        "GET",
-        `/api/tracker-replica/${knownProjectId}/drift-count`,
-        adminCookie,
-      );
-
-      expect(status).toBe(200);
-      const body = data as Record<string, unknown>;
-      expect(body).toHaveProperty("projectId", knownProjectId);
-      expect(body).toHaveProperty("unverified");
-      expect(body).toHaveProperty("verified");
-      expect(body).toHaveProperty("bySection");
-
-      expect(typeof body.unverified).toBe("number");
-      expect(typeof body.verified).toBe("number");
-      expect(body.unverified as number).toBeGreaterThanOrEqual(0);
-      expect(body.verified as number).toBeGreaterThanOrEqual(0);
-
-      const bySection = body.bySection as Record<string, unknown>;
-      expect(bySection).toHaveProperty("PLAN");
-      expect(bySection).toHaveProperty("REVENUE");
-      expect(bySection).toHaveProperty("EXPENDITURE");
-
-      for (const section of ["PLAN", "REVENUE", "EXPENDITURE"]) {
-        const s = bySection[section] as Record<string, unknown>;
-        expect(typeof s.unverified).toBe("number");
-        expect(typeof s.verified).toBe("number");
-      }
     });
   });
 });

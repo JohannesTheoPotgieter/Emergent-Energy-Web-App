@@ -196,6 +196,43 @@ export const UPLOAD_LABELS = {
   guideLink: "Watch a 90-second guide",
 } as const;
 
+// Review & import labels (UX-6). The manual flow now collapses "What we
+// found", "What changed" and "Confirm" into a single Review screen that opens
+// with an at-a-glance change summary. Copy lives here so it can be tuned by a
+// non-engineer in one place.
+export const REVIEW_LABELS = {
+  title: "Review & import",
+  subtitle: "Here's everything this file will change. Nothing is saved until you press Confirm import.",
+  glanceTitle: "At a glance",
+  new: "new",
+  updated: "updated",
+  removed: "removed",
+  noChanges: "No changes to import — your spreadsheet matches the app.",
+  whatsChanging: "What's changing",
+  whatsChangingEmpty: "Everything in this file is brand new — it will all be added.",
+  showAllChanges: "Show every changed row",
+  moreFields: "more",
+  moreItems: "more",
+  sectionDetails: "Section details",
+  decisionsNeededSuffix: "need your decision before you can import",
+  resolveDecisions: "Resolve decisions",
+  moneyTitle: "Money impact",
+  checksTitle: "Invoice & PO checks",
+  whoSeesTitle: "Who will see this",
+  fileDetailsTitle: "More about this file",
+  sheetsNotUsed: "Sheets not used",
+  keyDates: "Key dates",
+} as const;
+
+// Short step labels for the simplified 2/3-stop manual flow (Upload →
+// [Your decisions] → Review & import). The longer V2_STEP_LABELS above are
+// kept for the operator guide / docs vocabulary.
+export const FLOW_STEP_LABELS = {
+  upload: "Upload",
+  decisions: "Your decisions",
+  review: "Review & import",
+} as const;
+
 // Bulk / folder journey labels (UX-5). Copy for the multi-file bulk
 // commit panel, the bulk intro narrative, and the bulk post-commit
 // result screen. Phrasing mirrors UX-3's single-file "what happens
