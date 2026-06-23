@@ -186,7 +186,10 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
   // the board and appear when explicitly filtered to. The client defaults the
   // view to Financial Close → Client Handover. Earlier (assessment/design)
   // phases stay excluded.
-  const allActive = await executionBoardRepository.getActiveProjects();
+  // includeArchived: the board shows the full phase universe, so a by-phase
+  // filter (e.g. 3 Months Post HO Review / Hold / Done) returns every project in
+  // that phase, including completed/archived ones — not just active-delivery rows.
+  const allActive = await executionBoardRepository.getActiveProjects(true);
   const active = allActive.filter((p) => isBoardUniversePhase(p.phase));
 
   // Diagnostic — phase distribution of ALL active projects so an empty by-phase

@@ -105,7 +105,21 @@ export class ExecutionBoardRepository {
   }
 
   /** Every active, non-archived project (one row each). */
-  async getActiveProjects(): Promise<ActiveProjectRow[]> {
+  /**
+   * Projects for the execution lenses. By default only ACTIVE (non-archived)
+   * projects — the active-delivery lists. Pass `includeArchived` for the board,
+   * which shows the full phase universe so a by-phase filter returns EVERY
+   * project in that phase, including completed/archived ones. Deleted rows are
+   * always excluded.
+   */
+  async getActiveProjects(includeArchived = false): Promise<ActiveProjectRow[]> {
+    const conditions = [
+      isNull(projectExecutionState.deletedAt),
+      isNull(projectInfo.deletedAt),
+    ];
+    if (!includeArchived) {
+      conditions.push(eq(projectExecutionState.archivedStatus, "ACTIVE"));
+    }
     return this.dbInstance
       .select({
         id: projectInfo.id,
@@ -125,13 +139,7 @@ export class ExecutionBoardRepository {
       })
       .from(projectInfo)
       .innerJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
-      .where(
-        and(
-          eq(projectExecutionState.archivedStatus, "ACTIVE"),
-          isNull(projectExecutionState.deletedAt),
-          isNull(projectInfo.deletedAt),
-        ),
-      )
+      .where(and(...conditions))
       .orderBy(asc(projectInfo.projectName));
   }
 
