@@ -16,6 +16,8 @@ import {
   computeCriticalPath,
   parsePlanDate,
   startOfDay,
+  expectedProgressFromDates,
+  withComputedExpected,
   type PlanTask,
 } from "../../../server/services/execution-board-math";
 
@@ -101,6 +103,48 @@ describe("computeScheduleSnapshot", () => {
     const s = computeScheduleSnapshot([task({ taskNo: "1", pctComplete: 50, expectedPctComplete: 60 })]);
     expect(s.variance).toBe(-10);
     expect(s.rag).toBe("amber");
+  });
+});
+
+describe("expectedProgressFromDates", () => {
+  it("is 0 before the planned start", () => {
+    expect(expectedProgressFromDates(plusDays(2), plusDays(10), TODAY)).toBe(0);
+  });
+  it("is 1 on/after the planned end", () => {
+    expect(expectedProgressFromDates(plusDays(-10), plusDays(-1), TODAY)).toBe(1);
+    expect(expectedProgressFromDates(plusDays(-10), iso(TODAY), TODAY)).toBe(1);
+  });
+  it("is the elapsed fraction of the planned span mid-task", () => {
+    // start 10 days ago, end 10 days out → half elapsed.
+    expect(expectedProgressFromDates(plusDays(-10), plusDays(10), TODAY)).toBeCloseTo(0.5, 5);
+  });
+  it("returns null when a planned date is missing (caller falls back)", () => {
+    expect(expectedProgressFromDates(null, plusDays(10), TODAY)).toBeNull();
+    expect(expectedProgressFromDates(plusDays(-10), null, TODAY)).toBeNull();
+  });
+  it("treats a zero/negative span as complete", () => {
+    expect(expectedProgressFromDates(iso(TODAY), iso(TODAY), TODAY)).toBe(1);
+  });
+});
+
+describe("withComputedExpected", () => {
+  it("replaces expectedPctComplete with the live date-derived value (ignoring the stale import)", () => {
+    const [t] = withComputedExpected(
+      [task({ taskNo: "1", startDate: plusDays(-10), endDate: plusDays(10), expectedPctComplete: 0.99 })],
+      TODAY,
+    );
+    expect(t.expectedPctComplete).toBeCloseTo(0.5, 5); // not the imported 0.99
+  });
+  it("keeps the imported value when the task has no planned dates", () => {
+    const [t] = withComputedExpected([task({ taskNo: "1", expectedPctComplete: 0.42 })], TODAY);
+    expect(t.expectedPctComplete).toBe(0.42);
+  });
+  it("does not touch pctComplete (actuals stay from the import)", () => {
+    const [t] = withComputedExpected(
+      [task({ taskNo: "1", startDate: plusDays(-10), endDate: plusDays(10), pctComplete: 0.2 })],
+      TODAY,
+    );
+    expect(t.pctComplete).toBe(0.2);
   });
 });
 
