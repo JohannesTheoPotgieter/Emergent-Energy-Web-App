@@ -62,12 +62,20 @@ const RAG_COLORS: Record<string, string> = { green: "#16A34A", amber: "#F59E0B",
 // the phase correlates through every lens (board, lifecycle board, detail).
 const LIFECYCLE_PHASES: string[] = [...PHASE_LABELS];
 
-// Phases the board actually DISPLAYS — Financial Close (displayNumber 3) forward,
-// excluding the auto-excluded "3 Months Post HO Review" and the terminal
-// Hold/Done. MUST mirror isBoardVisiblePhase in execution-board-service.ts, so
-// the phase filter only offers phases that can appear (no dead/empty options).
-const BOARD_VISIBLE_PHASES: string[] = PHASES
-  .filter((p) => p.displayNumber != null && p.displayNumber >= 3 && p.label !== "3 Months Post HO Review")
+// Full phase range the board can show / filter to — Financial Close
+// (displayNumber 3) through Compliance Handover, plus the terminal Hold/Done.
+// MUST mirror isBoardUniversePhase in execution-board-service.ts (the server
+// returns exactly these). The dropdown offers all of them so any can be drilled
+// into; the board only SHOWS the default scope below until a phase is selected.
+const BOARD_FILTER_PHASES: string[] = PHASES
+  .filter((p) => (p.displayNumber != null && p.displayNumber >= 3) || p.isTerminal)
+  .map((p) => p.label);
+
+// Default board scope when NO phase is explicitly selected — Financial Close
+// (3) → Client Handover (8). Later phases (3-month review, Compliance Handover)
+// and the terminal Hold/Done are present but hidden until filtered to.
+const DEFAULT_BOARD_PHASES: string[] = PHASES
+  .filter((p) => p.displayNumber != null && p.displayNumber >= 3 && p.displayNumber <= 8)
   .map((p) => p.label);
 
 /** Map a stored phase (possibly legacy-cased, e.g. "PLANNING") to its canonical label. */
@@ -293,7 +301,8 @@ function TableRow({ row, columns, onOpen }: { row: BoardRow; columns: Col[]; onO
   );
 }
 
-/** Multi-select phase filter — checkbox popover with search. Empty = all phases. */
+/** Multi-select phase filter — checkbox popover with search. Empty = the board's
+ *  default scope (Financial Close → Client Handover); select phases to override. */
 function PhaseMultiSelect({ options, selected, onChange }: {
   options: string[]; selected: string[]; onChange: (next: string[]) => void;
 }) {
@@ -301,7 +310,7 @@ function PhaseMultiSelect({ options, selected, onChange }: {
   const [q, setQ] = useState("");
   const matches = options.filter((o) => o.toLowerCase().includes(q.toLowerCase()));
   const toggle = (p: string) => onChange(selected.includes(p) ? selected.filter((x) => x !== p) : [...selected, p]);
-  const label = selected.length === 0 ? "All phases" : selected.length === 1 ? selected[0] : `${selected.length} phases`;
+  const label = selected.length === 0 ? "Default phases" : selected.length === 1 ? selected[0] : `${selected.length} phases`;
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -329,7 +338,7 @@ function PhaseMultiSelect({ options, selected, onChange }: {
             <span className={`flex items-center justify-center w-4 h-4 rounded border ${selected.length === 0 ? "bg-emerald-600 border-emerald-600 text-white" : "border-input"}`}>
               {selected.length === 0 && <Check className="h-3 w-3" />}
             </span>
-            All phases
+            Default (Financial Close → Client Handover)
           </button>
           {matches.map((p) => {
             const on = selected.includes(p);
@@ -476,15 +485,21 @@ export default function ExecutionReviewBoard() {
 
   const rows = useMemo(() => data?.rows ?? [], [data]);
   const phases = useMemo(() => {
-    // Offer the canonical phases the board can actually SHOW (board-visible set),
-    // so the filter never lists a structurally-excluded phase like "3 Months
-    // Post HO Review" that would always return zero rows. Include any phase
-    // actually present on a project too, so nothing becomes unfilterable.
+    // Offer the full board range (Financial Close → Hold/Done) so any phase can
+    // be drilled into, plus any non-canonical phase actually on a project so
+    // nothing is unfilterable.
     const extras = rows
       .map((r) => canonicalPhaseLabel(r.phase))
-      .filter((p) => p && !BOARD_VISIBLE_PHASES.includes(p));
-    return [...BOARD_VISIBLE_PHASES, ...new Set(extras)];
+      .filter((p) => p && !BOARD_FILTER_PHASES.includes(p));
+    return [...BOARD_FILTER_PHASES, ...new Set(extras)];
   }, [rows]);
+
+  // The phases actually in view: the explicit selection, or the default scope
+  // (Financial Close → Client Handover) when nothing is selected.
+  const effectivePhases = useMemo(
+    () => (filters.phases.length > 0 ? filters.phases : DEFAULT_BOARD_PHASES),
+    [filters.phases],
+  );
   const pms = useMemo(() => [...new Set(rows.map((r) => r.pmName).filter(Boolean))] as string[], [rows]);
 
   // Headline KPIs reflect the current SCOPE filters (search + phase + PM) but
@@ -493,10 +508,10 @@ export default function ExecutionReviewBoard() {
   // — to that phase's subset.
   const kpiRows = useMemo(() => rows.filter((r) => {
     if (filters.search && !r.projectName.toLowerCase().includes(filters.search.toLowerCase())) return false;
-    if (filters.phases.length > 0 && !filters.phases.includes(canonicalPhaseLabel(r.phase) || "—")) return false;
+    if (!effectivePhases.includes(canonicalPhaseLabel(r.phase) || "—")) return false;
     if (filters.pm !== "all" && r.pmName !== filters.pm) return false;
     return true;
-  }), [rows, filters.search, filters.phases, filters.pm]);
+  }), [rows, filters.search, effectivePhases, filters.pm]);
 
   const kpis = useMemo(() => {
     const ragCount = (v: string) => kpiRows.filter((r) => r.schedule.rag === v).length;
@@ -534,12 +549,12 @@ export default function ExecutionReviewBoard() {
 
   const filtered = useMemo(() => rows.filter((r) => {
     if (filters.search && !r.projectName.toLowerCase().includes(filters.search.toLowerCase())) return false;
-    if (filters.phases.length > 0 && !filters.phases.includes(canonicalPhaseLabel(r.phase) || "—")) return false;
+    if (!effectivePhases.includes(canonicalPhaseLabel(r.phase) || "—")) return false;
     if (filters.rag !== "all" && r.schedule.rag !== filters.rag) return false;
     if (filters.pm !== "all" && r.pmName !== filters.pm) return false;
     if (filters.hasFlags && r.flags.open + r.flags.flagged === 0) return false;
     return true;
-  }), [rows, filters]);
+  }), [rows, filters, effectivePhases]);
 
   const togglePhase = (p: string) =>
     setFilters((f) => ({ ...f, phases: f.phases.includes(p) ? f.phases.filter((x) => x !== p) : [...f.phases, p] }));
@@ -606,7 +621,7 @@ export default function ExecutionReviewBoard() {
                     onClick={(d) => { const p = (d as { phase?: string }).phase; if (p) togglePhase(p); }}
                   >
                     {byPhaseData.map((d) => {
-                      const active = filters.phases.length === 0 || filters.phases.includes(d.phase);
+                      const active = effectivePhases.includes(d.phase);
                       return <Cell key={d.phase} fill={active ? "#16A34A" : "#D1FAE5"} />;
                     })}
                     <LabelList dataKey="count" position="top" fontSize={10} fill="#64748b" />
