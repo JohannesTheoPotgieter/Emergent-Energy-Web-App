@@ -33,6 +33,7 @@ import { registerImportConfigRoutes } from './import-config.routes';
 import { registerSmartImportReviewRoutes } from './smart-import-review.routes';
 import { registerCosLineReviewRoutes } from './cos-line-review.routes';
 import { registerEngineeringHomeRoutes } from './engineering-home.routes';
+import { registerEngineeringTasksRoutes } from './engineering-tasks.routes';
 import { registerCashflowWorklistsRoutes } from './cashflow-worklists.routes';
 import { registerFinanceHealthRoutes } from './finance-health.routes';
 import { registerExecutionBoardRoutes } from './execution-board.routes';
@@ -79,5 +80,6 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerSmartImportReviewRoutes(app);
   registerCosLineReviewRoutes(app);
   registerEngineeringHomeRoutes(app);
+  registerEngineeringTasksRoutes(app);
   return registerLegacyRoutes(httpServer, app);
 }
