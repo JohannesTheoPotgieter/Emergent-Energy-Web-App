@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   ArrowLeft, AlertTriangle, TrendingUp, TrendingDown, CheckCircle2,
-  X, Download,
+  ChevronRight, X, Download,
 } from "lucide-react";
 import { PageShell } from "@/components/layout/page-shell";
 import { PageHeader } from "@/components/ui/page-header";
@@ -633,7 +633,9 @@ function OpenItemsBlock({ detail }: { detail: ProjectMilestoneDetail }) {
 
 // ──────────────────────────────── Project Plan tab ───────────────────────────
 
-function PlanTaskRow({ t, detail, h }: { t: ActivityTaskNode; detail: ProjectMilestoneDetail; h: LinkHandlers }) {
+function PlanTaskRow({ t, detail, h, open, onToggle }: {
+  t: ActivityTaskNode; detail: ProjectMilestoneDetail; h: LinkHandlers; open: boolean; onToggle: () => void;
+}) {
   const taskByNo = new Map(detail.planTasks.map((x) => [x.id, x]));
   const predIds = new Set(t.predecessors.map((p) => p.workItemId));
   const predOptions = detail.planTasks
@@ -646,58 +648,88 @@ function PlanTaskRow({ t, detail, h }: { t: ActivityTaskNode; detail: ProjectMil
     .filter((c) => !t.linkedCostHashes.includes(c.rowHash))
     .map((c) => ({ value: c.rowHash, label: `${c.description ?? c.costCategory ?? "Cost"} · ${money(c.amount)}` }));
 
+  const depth = Math.max(0, (t.taskNo?.split(".").length ?? 1) - 1);
+  const pct = t.percentComplete == null ? null : Math.round(t.percentComplete);
+  const barColor = t.state === "overdue" ? "bg-red-400" : t.complete ? "bg-emerald-500" : "bg-emerald-400";
+  const dotColor = t.state === "done" ? "bg-emerald-500" : t.state === "overdue" ? "bg-red-500" : "bg-slate-300";
+  const blocked = t.predecessors.length > 0 && !t.predecessorsComplete;
+
   return (
-    <Card data-testid={`plan-task-${t.id}`}>
-      <CardContent className="p-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-muted-foreground tabular-nums">{t.taskNo}</span>
-          <span className="font-medium text-sm">{t.title}</span>
-          {t.isMilestone && <span className="text-emerald-600" title="Milestone">◆</span>}
-          <TaskBadge state={t.state} />
-          {t.predecessors.length > 0 && (t.predecessorsComplete
-            ? <span className="text-[11px] text-emerald-700">unblocked</span>
-            : <span className="inline-flex items-center gap-1 text-[11px] text-amber-700"><AlertTriangle className="w-3 h-3" />blocked</span>)}
-          <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-            {fmtDate(t.startDate)} – {fmtDate(t.endDate)} · {t.percentComplete == null ? "—" : `${Math.round(t.percentComplete)}%`}
-          </span>
+    <div data-testid={`plan-task-${t.id}`}>
+      {/* compact one-line row */}
+      <button type="button" onClick={onToggle}
+        className="w-full flex items-center gap-2 py-1.5 pr-3 hover:bg-muted/30 text-left"
+        style={{ paddingLeft: `${8 + depth * 14}px` }} data-testid={`plan-task-toggle-${t.id}`}>
+        <ChevronRight className={`w-3.5 h-3.5 text-muted-foreground shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
+        <span className="text-[11px] text-muted-foreground tabular-nums w-9 shrink-0">{t.taskNo}</span>
+        <span className="text-xs font-medium truncate flex-1 min-w-0">
+          {t.title}{t.isMilestone && <span className="ml-1 text-emerald-600" title="Milestone">◆</span>}
+        </span>
+        {blocked && <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" aria-label="Blocked" />}
+        <span className="flex items-center gap-1.5 text-[10px] tabular-nums shrink-0">
+          {t.predecessors.length > 0 && <span className="text-muted-foreground" title="dependencies">⛓{t.predecessors.length}</span>}
+          <span className={t.linkedMilestoneHashes.length ? "text-emerald-700 font-medium" : "text-muted-foreground/40"} title="inflow milestones linked">↑{t.linkedMilestoneHashes.length}</span>
+          <span className={t.linkedCostHashes.length ? "text-red-700 font-medium" : "text-muted-foreground/40"} title="outflow cost lines linked">↓{t.linkedCostHashes.length}</span>
+        </span>
+        <div className="w-20 shrink-0 hidden sm:block" title={`${pct ?? 0}% complete`}>
+          <div className="h-1.5 rounded-full bg-muted overflow-hidden"><div className={`h-full ${barColor}`} style={{ width: `${pct ?? 0}%` }} /></div>
         </div>
+        <span className="text-[11px] tabular-nums w-8 text-right shrink-0">{pct == null ? "—" : `${pct}%`}</span>
+        <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} title={t.state} />
+        <span className="text-[10px] text-muted-foreground tabular-nums w-24 text-right shrink-0 hidden md:block">{fmtDate(t.startDate)} – {fmtDate(t.endDate)}</span>
+      </button>
 
-        <div className="mt-2 flex items-center gap-1.5 flex-wrap">
-          <span className="text-[11px] text-muted-foreground">Depends on:</span>
-          {t.predecessors.length === 0 && <span className="text-[11px] text-muted-foreground">none</span>}
-          {t.predecessors.map((p) => (
-            <span key={p.workItemId}
-              className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] ${p.complete ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-amber-50 border-amber-200 text-amber-700"}`}>
-              {p.complete ? "✓" : "⏳"} {taskByNo.get(p.workItemId)?.taskNo ?? `#${p.workItemId}`}
-              {p.source === "MANUAL"
-                ? <button onClick={() => h.onUnlinkDep(p.workItemId, t.id)} className="text-muted-foreground hover:text-foreground" title="Remove dependency" data-testid={`dep-remove-${t.id}-${p.workItemId}`}>×</button>
-                : <span title="From the imported plan" className="opacity-50">·</span>}
-            </span>
-          ))}
-          <SearchableSelect value="" onValueChange={(v) => { if (v) h.onLinkDep(Number(v), t.id); }}
-            placeholder="+ predecessor" triggerClassName="h-7 w-44 text-xs" options={predOptions} data-testid={`dep-add-${t.id}`} />
+      {/* expanded editors — dependencies + inflow/outflow linking */}
+      {open && (
+        <div className="pr-3 pb-2.5 pt-1 space-y-2 bg-muted/20" style={{ paddingLeft: `${26 + depth * 14}px` }}>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] text-muted-foreground">Depends on:</span>
+            {t.predecessors.length === 0 && <span className="text-[11px] text-muted-foreground">none</span>}
+            {t.predecessors.map((p) => (
+              <span key={p.workItemId}
+                className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] ${p.complete ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-amber-50 border-amber-200 text-amber-700"}`}>
+                {p.complete ? "✓" : "⏳"} {taskByNo.get(p.workItemId)?.taskNo ?? `#${p.workItemId}`}
+                {p.source === "MANUAL"
+                  ? <button onClick={() => h.onUnlinkDep(p.workItemId, t.id)} className="text-muted-foreground hover:text-foreground" title="Remove dependency" data-testid={`dep-remove-${t.id}-${p.workItemId}`}>×</button>
+                  : <span title="From the imported plan" className="opacity-50">·</span>}
+              </span>
+            ))}
+            <SearchableSelect value="" onValueChange={(v) => { if (v) h.onLinkDep(Number(v), t.id); }}
+              placeholder="+ predecessor" triggerClassName="h-7 w-44 text-xs" options={predOptions} data-testid={`dep-add-${t.id}`} />
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700"><span aria-hidden>↑</span>{t.linkedMilestoneHashes.length} inflow</span>
+            <SearchableSelect value="" onValueChange={(v) => { if (v) h.onLinkTask(v, t.id); }}
+              placeholder="+ inflow" triggerClassName="h-7 w-40 text-xs" options={msOptions} data-testid={`task-inflow-${t.id}`} />
+            <span className="inline-flex items-center gap-1 text-[11px] text-red-700 ml-2"><span aria-hidden>↓</span>{t.linkedCostHashes.length} outflow</span>
+            <SearchableSelect value="" onValueChange={(v) => { if (v) h.onLinkCost(t.id, v); }}
+              placeholder="+ outflow" triggerClassName="h-7 w-40 text-xs" options={costOptions} data-testid={`task-outflow-${t.id}`} />
+          </div>
         </div>
-
-        <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-          <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700"><span aria-hidden>↑</span>{t.linkedMilestoneHashes.length} inflow</span>
-          <SearchableSelect value="" onValueChange={(v) => { if (v) h.onLinkTask(v, t.id); }}
-            placeholder="+ inflow" triggerClassName="h-7 w-40 text-xs" options={msOptions} data-testid={`task-inflow-${t.id}`} />
-          <span className="inline-flex items-center gap-1 text-[11px] text-red-700 ml-2"><span aria-hidden>↓</span>{t.linkedCostHashes.length} outflow</span>
-          <SearchableSelect value="" onValueChange={(v) => { if (v) h.onLinkCost(t.id, v); }}
-            placeholder="+ outflow" triggerClassName="h-7 w-40 text-xs" options={costOptions} data-testid={`task-outflow-${t.id}`} />
-        </div>
-      </CardContent>
-    </Card>
+      )}
+    </div>
   );
 }
 
 function PlanTab({ detail, h }: { detail: ProjectMilestoneDetail; h: LinkHandlers }) {
-  if (detail.planTasks.length === 0) {
+  const tasks = detail.planTasks;
+  const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
+  if (tasks.length === 0) {
     return <p className="p-8 text-center text-sm text-muted-foreground">No plan tasks imported for this project.</p>;
   }
+  const done = tasks.filter((t) => t.complete).length;
+  const allOpen = expanded.size === tasks.length;
+  const toggle = (id: number) => setExpanded((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const toggleAll = () => setExpanded(allOpen ? new Set() : new Set(tasks.map((t) => t.id)));
   return (
-    <div className="space-y-2 mt-3" data-testid="plan-tab">
-      {detail.planTasks.map((t) => <PlanTaskRow key={t.id} t={t} detail={detail} h={h} />)}
+    <div className="mt-3" data-testid="plan-tab">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs text-muted-foreground tabular-nums">{tasks.length} tasks · {done} done · {tasks.length - done} open</div>
+        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={toggleAll} data-testid="plan-toggle-all">{allOpen ? "Collapse all" : "Expand all"}</Button>
+      </div>
+      <Card><CardContent className="p-0 divide-y">
+        {tasks.map((t) => <PlanTaskRow key={t.id} t={t} detail={detail} h={h} open={expanded.has(t.id)} onToggle={() => toggle(t.id)} />)}
+      </CardContent></Card>
     </div>
   );
 }
