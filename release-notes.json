@@ -1,8 +1,7 @@
 {
   "version": "1.5.0",
-  "buildNumber": "260624.1108",
-  "buildTime": "2026-06-24T11:08:00.468Z",
-
+  "buildNumber": "260624.1256",
+  "buildTime": "2026-06-24T12:56:56.852Z",
   "notes": [
     {
       "title": "V1.5.0 — The Production Hardening Update",
