@@ -88,7 +88,7 @@ function ScheduleBadge({ a }: { a: TimelineActivity }) {
 }
 function CashBadge({ a }: { a: TimelineActivity }) {
   const s = AXIS_STYLE[a.cashflowState];
-  const label = a.cashflowDays == null ? "Cash —" : a.cashflowDays >= 0 ? `Cash +${a.cashflowDays}d` : `Cash ${a.cashflowDays}d`;
+  const label = cashLabel(a.cashflowDays);
   const title = a.cashflowState === "positive" ? "Money in lands before money out (cash-positive)"
     : a.cashflowState === "negative" ? "Money out before money in (you fund the work first)"
     : "No outflow dates to compare yet";
@@ -97,6 +97,19 @@ function CashBadge({ a }: { a: TimelineActivity }) {
       <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />{label}
     </span>
   );
+}
+
+function AxisBadge({ state, label, title }: { state: AxisState; label: string; title?: string }) {
+  const s = AXIS_STYLE[state];
+  return (
+    <span title={title} className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${s.cls}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />{label}
+    </span>
+  );
+}
+
+function cashLabel(days: number | null): string {
+  return days == null ? "Cash —" : days >= 0 ? `Cash +${days}d` : `Cash ${days}d`;
 }
 
 function activityDates(a: TimelineActivity): string[] {
@@ -174,18 +187,51 @@ function ActivityTimeline({ activities, onOpenProject, showProject }: {
     return { min: min - span * 0.04, max: max + span * 0.04 };
   }, [activities]);
 
+  // Project overall — roll up every built activity into one band: the full work
+  // span, total money in/out/net, whether the whole project is on schedule (no
+  // task behind), and the project-level cash timing (amount-weighted money-out
+  // date minus amount-weighted money-in date).
+  const overall = useMemo(() => {
+    if (activities.length === 0) return null;
+    let start: string | null = null, end: string | null = null;
+    let moneyIn = 0, moneyOut = 0, overdue = 0;
+    let inW = 0, inD = 0, outW = 0, outD = 0;
+    for (const a of activities) {
+      if (a.taskStart && (start == null || a.taskStart < start)) start = a.taskStart;
+      if (a.taskEnd && (end == null || a.taskEnd > end)) end = a.taskEnd;
+      moneyIn += a.amount ?? 0;
+      moneyOut += a.outflowTotal;
+      overdue += a.overdueTaskCount;
+      const inMs = a.inflow ? parseExecDate(a.inflow.date)?.getTime() : undefined;
+      const inAmt = a.amount ?? 0;
+      if (inMs != null && inAmt > 0) { inW += inAmt; inD += inMs * inAmt; }
+      for (const o of a.outflows) {
+        const oMs = parseExecDate(o.date)?.getTime();
+        const amt = o.amount ?? 0;
+        if (oMs != null && amt > 0) { outW += amt; outD += oMs * amt; }
+      }
+    }
+    const wIn = inW > 0 ? inD / inW : null;
+    const wOut = outW > 0 ? outD / outW : null;
+    const cashflowDays = wIn != null && wOut != null ? Math.round((wOut - wIn) / 86_400_000) : null;
+    return {
+      start, end, moneyIn, moneyOut, net: moneyIn - moneyOut, overdue,
+      scheduleState: (overdue > 0 ? "negative" : "positive") as AxisState,
+      cashflowDays,
+      cashflowState: (cashflowDays == null ? "unknown" : cashflowDays >= 0 ? "positive" : "negative") as AxisState,
+      wIn, wOut,
+    };
+  }, [activities]);
+
   if (activities.length === 0) {
     return <p className="p-8 text-center text-sm text-muted-foreground">No fully-built activities yet — link an inflow milestone to a plan task to see it on the timeline.</p>;
   }
   if (!bounds) {
     return <p className="p-8 text-center text-sm text-muted-foreground">Built activities have no dates to plot yet.</p>;
   }
-  const pct = (d: string | null): number | null => {
-    if (!d) return null;
-    const t = parseExecDate(d)?.getTime();
-    if (t == null) return null;
-    return ((t - bounds.min) / (bounds.max - bounds.min)) * 100;
-  };
+  const pctMs = (t: number | null | undefined): number | null =>
+    t == null ? null : ((t - bounds.min) / (bounds.max - bounds.min)) * 100;
+  const pct = (d: string | null): number | null => (d ? pctMs(parseExecDate(d)?.getTime()) : null);
   const todayPct = pct(format(new Date(), "yyyy-MM-dd"));
   // month ticks across the axis
   const ticks: { label: string; left: number }[] = [];
@@ -209,6 +255,45 @@ function ActivityTimeline({ activities, onOpenProject, showProject }: {
             ))}
           </div>
         </div>
+        {overall && (() => {
+          const s = pct(overall.start), e = pct(overall.end);
+          const barLeft = s != null && e != null ? Math.min(s, e) : null;
+          const barWidth = s != null && e != null ? Math.max(Math.abs(e - s), 1.2) : null;
+          const inPct = pctMs(overall.wIn), outPct = pctMs(overall.wOut);
+          return (
+            <div className="flex items-center rounded-md border bg-muted/40" data-testid="timeline-overall">
+              <div className="w-56 shrink-0 pl-2 pr-2 py-1.5">
+                <div className="text-xs font-semibold">Project overall</div>
+                <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                  <AxisBadge state={overall.scheduleState} title="Overall schedule — is any task behind?"
+                    label={overall.scheduleState === "negative" ? `Behind · ${overall.overdue} late` : "On schedule"} />
+                  <AxisBadge state={overall.cashflowState} title="Overall money-in vs money-out timing across the project" label={cashLabel(overall.cashflowDays)} />
+                </div>
+                <div className="text-[10px] mt-0.5">
+                  <span className="text-emerald-600 tabular-nums">{money(overall.moneyIn)} in</span>
+                  <span className="text-muted-foreground"> · </span>
+                  <span className="text-red-600 tabular-nums">{money(overall.moneyOut)} out</span>
+                  <span className="text-muted-foreground"> · </span>
+                  <span className={`tabular-nums font-medium ${overall.net >= 0 ? "text-emerald-700" : "text-red-700"}`}>{overall.net >= 0 ? "+" : ""}{money(overall.net)}</span>
+                </div>
+              </div>
+              <div className="relative flex-1 h-10">
+                <div className="absolute inset-x-0 top-1/2 border-t border-dashed border-border/50" />
+                {todayPct != null && todayPct >= 0 && todayPct <= 100 && <div className="absolute top-0 bottom-0 w-px bg-emerald-400/70" style={{ left: `${todayPct}%` }} title="Today" />}
+                {barLeft != null && barWidth != null && (
+                  <div className={`absolute top-1/2 -translate-y-1/2 h-3 rounded ${overall.scheduleState === "negative" ? "bg-red-500" : "bg-emerald-500"}`}
+                    style={{ left: `${barLeft}%`, width: `${barWidth}%` }} title={`Project span ${fmtDate(overall.start)} – ${fmtDate(overall.end)}`} />
+                )}
+                {inPct != null && (
+                  <span className="absolute top-0 -translate-x-1/2 text-emerald-700" style={{ left: `${inPct}%` }} title="Weighted money-in date"><TrendingUp className="w-3.5 h-3.5" /></span>
+                )}
+                {outPct != null && (
+                  <span className="absolute bottom-0 -translate-x-1/2 text-red-700" style={{ left: `${outPct}%` }} title="Weighted money-out date"><TrendingDown className="w-3.5 h-3.5" /></span>
+                )}
+              </div>
+            </div>
+          );
+        })()}
         <div className="space-y-1">
           {activities.map((a) => (
             <TimelineRow key={a.projectId + a.milestoneRowHash} a={a} pct={pct} todayPct={todayPct} onOpenProject={onOpenProject} showProject={showProject} />
