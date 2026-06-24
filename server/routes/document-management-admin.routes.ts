@@ -301,10 +301,13 @@ export function registerDocumentManagementAdminRoutes(app: Express): void {
           issues: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
         });
       }
-      // Verify the referenced taxonomy key exists before insert — the FK
-      // catches it but a 400 here gives a friendlier error message.
-      const parent = await getTaxonomyByKey(parsed.data.taxonomyKey);
-      if (!parent) throw badRequest(`Taxonomy key '${parsed.data.taxonomyKey}' does not exist`);
+      // Verify the referenced taxonomy key exists before insert (legacy basis
+      // only — discipline-based requirements have no taxonomyKey). The FK
+      // catches it too, but a 400 here gives a friendlier error message.
+      if (parsed.data.taxonomyKey) {
+        const parent = await getTaxonomyByKey(parsed.data.taxonomyKey);
+        if (!parent) throw badRequest(`Taxonomy key '${parsed.data.taxonomyKey}' does not exist`);
+      }
       try {
         const row = await createRequirement(parsed.data);
         logAuditFromReq(req, {
@@ -334,8 +337,8 @@ export function registerDocumentManagementAdminRoutes(app: Express): void {
           issues: parsedBody.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
         });
       }
-      // If taxonomyKey changed, verify the new key exists.
-      if (parsedBody.data.taxonomyKey !== undefined) {
+      // If a (non-null) taxonomyKey was supplied, verify the new key exists.
+      if (parsedBody.data.taxonomyKey) {
         const parent = await getTaxonomyByKey(parsedBody.data.taxonomyKey);
         if (!parent) throw badRequest(`Taxonomy key '${parsedBody.data.taxonomyKey}' does not exist`);
       }

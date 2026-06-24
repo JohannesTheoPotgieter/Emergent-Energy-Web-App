@@ -80,6 +80,17 @@ export async function listManagedDocumentsByProject(
   }
 }
 
+/** Tag a tracked document with the discipline folder it lives under (browse-and-bind). */
+export async function setDisciplineFolderId(
+  documentId: number,
+  disciplineFolderId: number | null,
+): Promise<void> {
+  await db
+    .update(managedDocuments)
+    .set({ disciplineFolderId, updatedAt: new Date() })
+    .where(eq(managedDocuments.id, documentId));
+}
+
 export async function listManagedDocumentsByCompanyRoot(
   companyRootId: number,
 ): Promise<ManagedDocument[]> {

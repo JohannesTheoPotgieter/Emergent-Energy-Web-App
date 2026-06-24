@@ -10,7 +10,7 @@
 
 import { getDisciplineFolder } from "../repositories/project-discipline-folders-repository";
 import { listChildren } from "../services/sharepoint-document-service";
-import { listManagedDocumentsByProject } from "../repositories/managed-documents-repository";
+import { listManagedDocumentsByProject, setDisciplineFolderId } from "../repositories/managed-documents-repository";
 
 export interface BoundFolderItem {
   itemId: string;
@@ -69,6 +69,22 @@ export async function listBoundFolderDocuments(
 
   // Folders first, then files, each alphabetical.
   items.sort((a, b) => (a.isFolder === b.isFolder ? a.name.localeCompare(b.name) : a.isFolder ? -1 : 1));
+
+  // Backfill: tag tracked files under this bound folder with disciplineFolderId.
+  // These are children of the binding by construction, so this is the reliable
+  // association point that lets the approval engine resolve discipline-scoped
+  // rules. Best-effort — a tagging failure must never break the listing.
+  try {
+    await Promise.all(
+      children
+        .filter((c) => !c.isFolder)
+        .map((c) => byItem.get(c.id))
+        .filter((d): d is NonNullable<typeof d> => !!d && d.disciplineFolderId !== binding.id)
+        .map((d) => setDisciplineFolderId(d.id, binding.id)),
+    );
+  } catch (err) {
+    console.error("[discipline-folder-documents] disciplineFolderId backfill failed:", err);
+  }
 
   return {
     bound: true,

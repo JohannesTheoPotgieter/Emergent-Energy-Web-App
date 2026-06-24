@@ -95,11 +95,17 @@ async function loadActiveTaxonomy(): Promise<FolderTaxonomy[]> {
   return db.select().from(folderTaxonomy).where(eq(folderTaxonomy.active, true));
 }
 
-async function loadActiveRequirements(): Promise<DocumentApprovalRequirement[]> {
-  return db
+/** A requirement on the legacy taxonomy basis (taxonomyKey guaranteed present). */
+type TaxonomyRequirement = DocumentApprovalRequirement & { taxonomyKey: string };
+
+async function loadActiveRequirements(): Promise<TaxonomyRequirement[]> {
+  const rows = await db
     .select()
     .from(documentApprovalRequirements)
     .where(eq(documentApprovalRequirements.active, true));
+  // This readiness rollup is taxonomy-based; browse-and-bind (discipline)
+  // requirements have a null taxonomyKey and are scoped elsewhere.
+  return rows.filter((r: DocumentApprovalRequirement): r is TaxonomyRequirement => r.taxonomyKey != null);
 }
 
 async function loadProjectFolders(projectId: number): Promise<ProjectFolder[]> {
@@ -147,7 +153,7 @@ function compileFilenameMatcher(pattern: string | null | undefined): RegExp | nu
 }
 
 function classifyRequirement(
-  req: DocumentApprovalRequirement,
+  req: TaxonomyRequirement,
   taxonomyByKey: Map<string, FolderTaxonomy>,
   folderByTaxonomyKey: Map<string, ProjectFolder>,
   documentsByFolderId: Map<number, ManagedDocument[]>,
@@ -220,10 +226,10 @@ function classifyRequirement(
  * scope — we don't pretend to know the schedule.
  */
 function filterRequirementsByStage(
-  requirements: DocumentApprovalRequirement[],
+  requirements: TaxonomyRequirement[],
   taxonomyByKey: Map<string, FolderTaxonomy>,
   currentStageCode: string | null,
-): DocumentApprovalRequirement[] {
+): TaxonomyRequirement[] {
   if (!currentStageCode) return requirements;
   const orderIdx = (s: string | null | undefined) =>
     s == null ? -1 : SEQUENTIAL_STAGE_CODES.indexOf(s as (typeof SEQUENTIAL_STAGE_CODES)[number]);
@@ -258,7 +264,7 @@ function indexFoldersByTaxonomyKey(folders: ProjectFolder[]): Map<string, Projec
 
 function buildDisciplineReadiness(
   taxonomy: FolderTaxonomy[],
-  requirements: DocumentApprovalRequirement[],
+  requirements: TaxonomyRequirement[],
   folderByTaxonomyKey: Map<string, ProjectFolder>,
   documentsByFolderId: Map<number, ManagedDocument[]>,
 ): DisciplineReadiness[] {

@@ -45,6 +45,16 @@ export async function getDisciplineFolder(
   return row ?? null;
 }
 
+/** Single binding lookup by id (used by the approval engine to resolve discipline). */
+export async function getDisciplineFolderById(id: number): Promise<ProjectDisciplineFolder | null> {
+  const [row] = await db
+    .select()
+    .from(projectDisciplineFolders)
+    .where(eq(projectDisciplineFolders.id, id))
+    .limit(1);
+  return row ?? null;
+}
+
 // =========================================================================
 // Writes
 // =========================================================================

@@ -141,6 +141,13 @@ export const managedDocuments = pgTable("managed_documents", {
    * forward reference; `projectFolders` is defined later in this file.
    */
   parentFolderId: integer("parent_folder_id").references((): AnyPgColumn => projectFolders.id, { onDelete: "set null" }),
+  /**
+   * Browse-and-bind linkage — set when the file lives under a discipline
+   * folder bound via project_discipline_folders. Drives discipline-scoped
+   * approval requirements. Null for files not under a bound folder. FK is
+   * declared lazily (forward reference; the table is defined later).
+   */
+  disciplineFolderId: integer("discipline_folder_id").references((): AnyPgColumn => projectDisciplineFolders.id, { onDelete: "set null" }),
   driveId: text("drive_id").notNull(),
   driveItemId: text("drive_item_id").notNull(),
   name: text("name").notNull(),
@@ -161,6 +168,7 @@ export const managedDocuments = pgTable("managed_documents", {
   companyRootIdx: index("managed_documents_company_root_idx").on(t.companyRootId),
   ownerIdx: index("managed_documents_owner_idx").on(t.ownerUserId),
   parentFolderIdx: index("managed_documents_parent_folder_idx").on(t.parentFolderId),
+  disciplineFolderIdx: index("managed_documents_discipline_folder_idx").on(t.disciplineFolderId),
 }));
 
 export const insertManagedDocumentSchema = createInsertSchema(managedDocuments)
@@ -563,8 +571,20 @@ export type ProjectDisciplineFolder = typeof projectDisciplineFolders.$inferSele
 
 export const documentApprovalRequirements = pgTable("document_approval_requirements", {
   id: serial("id").primaryKey(),
-  /** Folder this requirement targets. */
-  taxonomyKey: text("taxonomy_key").notNull().references(() => folderTaxonomy.internalKey),
+  /**
+   * Legacy taxonomy basis — the provisioned folder this requirement targets.
+   * Nullable now that browse-and-bind requirements instead target a
+   * discipline (+ optional subfolder). A row has EITHER taxonomyKey OR
+   * discipline (enforced in the repository).
+   */
+  taxonomyKey: text("taxonomy_key").references(() => folderTaxonomy.internalKey),
+  /** Browse-and-bind basis: LIFECYCLE_DEPARTMENTS code this rule targets. */
+  discipline: text("discipline"),
+  /**
+   * Optional case-insensitive regex on the path UNDER the bound discipline
+   * folder (e.g. '^IFC'). Null = applies anywhere in the bound folder.
+   */
+  subfolderPattern: text("subfolder_pattern"),
   /**
    * Optional case-insensitive regex narrowing. Null means every file in
    * the folder requires this approval. Example: '^costing.*\\.xlsx$'.
@@ -598,6 +618,7 @@ export const documentApprovalRequirements = pgTable("document_approval_requireme
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => ({
   taxonomyIdx: index("doc_approval_req_taxonomy_idx").on(t.taxonomyKey),
+  disciplineIdx: index("doc_approval_req_discipline_idx").on(t.discipline),
   activeIdx: index("doc_approval_req_active_idx").on(t.active),
 }));
 
@@ -623,7 +644,11 @@ const fileNameRegexSchema = z
   );
 
 export const insertDocumentApprovalRequirementSchema = z.object({
-  taxonomyKey: z.string().min(1).max(128),
+  // A row targets EITHER a taxonomyKey (legacy) OR a discipline (browse-and-bind);
+  // the repository enforces that exactly one basis is present.
+  taxonomyKey: z.string().min(1).max(128).nullish(),
+  discipline: disciplineEnum.nullish(),
+  subfolderPattern: fileNameRegexSchema,
   fileNamePattern: fileNameRegexSchema,
   displayName: z.string().min(1).max(256),
   description: z.string().max(2048).nullable().optional(),
