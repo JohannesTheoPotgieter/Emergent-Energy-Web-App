@@ -508,6 +508,50 @@ export type InsertProjectFolder = z.infer<typeof insertProjectFolderSchema>;
 export type ProjectFolder = typeof projectFolders.$inferSelect;
 
 // =====================================================================
+// project_discipline_folders — browse-and-bind instance rows. One stable
+// row per (projectId, discipline): instead of generating a folder tree from
+// folder_taxonomy, the user browses SharePoint and binds an EXISTING folder
+// per discipline. The DM machinery (managed documents, revisions, comments,
+// approvals, task links) then operates on whatever lives under that folder.
+//
+// Rebinding UPDATES the same row (the pair is unique), so downstream
+// references stay valid; "unbind" is a soft delete (deletedAt) for the same
+// reason. SharePoint refs (driveId/itemId/webUrl) are Graph pointers only —
+// no file bytes, per CLAUDE.md §5A.
+// =====================================================================
+
+export const projectDisciplineFolders = pgTable("project_discipline_folders", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  /** LIFECYCLE_DEPARTMENTS code this binding is for, e.g. ENGINEERING / CONSTRUCTION. */
+  discipline: text("discipline").notNull(),
+  // SharePoint folder the user browsed to and bound for this discipline.
+  driveId: text("drive_id"),
+  itemId: text("item_id"),
+  sharepointPath: text("sharepoint_path"),
+  /** Browser-openable SharePoint URL (Graph driveItem.webUrl). */
+  webUrl: text("web_url"),
+  // Binding audit
+  boundByUserId: integer("bound_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  boundAt: timestamp("bound_at"),
+  // Reconciliation — last time we verified the folder still exists on Graph.
+  lastVerifiedAt: timestamp("last_verified_at"),
+  verifyError: text("verify_error"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  /** Soft unbind — the row persists so downstream references stay valid across rebinds. */
+  deletedAt: timestamp("deleted_at"),
+}, (t) => ({
+  projectDisciplineUq: uniqueIndex("project_discipline_folders_project_discipline_uq").on(t.projectId, t.discipline),
+  projectIdx: index("project_discipline_folders_project_idx").on(t.projectId),
+}));
+
+export const insertProjectDisciplineFolderSchema = createInsertSchema(projectDisciplineFolders)
+  .omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertProjectDisciplineFolder = z.infer<typeof insertProjectDisciplineFolderSchema>;
+export type ProjectDisciplineFolder = typeof projectDisciplineFolders.$inferSelect;
+
+// =====================================================================
 // document_approval_requirements — admin-editable list of files/folders
 // that need formal approval (replaces controlled_document_types).
 //
