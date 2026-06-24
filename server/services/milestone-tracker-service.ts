@@ -89,26 +89,84 @@ export interface TaskPick {
   percentComplete: number | null;
 }
 
-export type CalendarKind = "inflow" | "outflow" | "task";
+/** A predecessor of a plan task. `source` is "MANUAL" (Activity-Planning-owned,
+ *  removable here) or "SMART_IMPORT" (from the workbook, read-only here). */
+export interface TaskPredecessor {
+  workItemId: number;
+  source: string;
+  complete: boolean;
+}
 
-export interface CalendarEvent {
-  kind: CalendarKind;
-  date: string; // yyyy-mm-dd anchor
-  label: string;
+/** A plan task in the Project Plan tab — the hub: the inflow milestones it
+ *  unlocks, the outflow line items it incurs, and its dependency predecessors. */
+export interface ActivityTaskNode {
+  id: number;
+  taskNo: string | null;
+  title: string;
+  workstream: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  percentComplete: number | null; // 0..100
+  complete: boolean;
+  isMilestone: boolean;
+  state: TaskState;
+  predecessors: TaskPredecessor[];
+  /** All predecessors (transitively) complete — the task is unblocked. */
+  predecessorsComplete: boolean;
+  linkedMilestoneHashes: string[];
+  linkedCostHashes: string[];
+}
+
+/** A cost line in the Outflow line items tab, with the tasks that incur it. */
+export interface OutflowItemView extends OutflowView {
+  linkedTaskIds: number[];
+}
+
+/** A money-movement marker on a built activity's timeline. `realised` = actual
+ *  (paid) movement; otherwise a forecast/expected date. */
+export interface TimelineMarker {
+  date: string; // yyyy-mm-dd
   amount: number | null;
-  state: FlowState | TaskState;
+  realised: boolean;
+}
+
+export type AxisState = "positive" | "negative" | "unknown";
+
+/** One fully-built activity: an inflow milestone wired to plan task(s) and the
+ *  outflows those tasks incur, with the work span + money dates and the two
+ *  precomputed axes (schedule = work on time; cashflow = money-in before out). */
+export interface TimelineActivity {
   projectId: number;
   projectName: string;
-  rowHash?: string;
-  taskId?: number;
+  milestoneRowHash: string;
+  title: string;
+  amount: number | null;
+  state: FlowState;
+  taskStart: string | null;
+  taskEnd: string | null;
+  tasksTotal: number;
+  tasksComplete: number;
+  overdueTaskCount: number;
+  invoiceDate: string | null;
+  inflow: TimelineMarker | null;
+  outflows: TimelineMarker[];
+  outflowTotal: number;
+  scheduleState: AxisState;
+  cashflowDays: number | null;
+  cashflowState: AxisState;
 }
 
 export interface ProjectMilestoneDetail {
   project: { id: number; projectName: string };
   milestones: MilestoneView[];
+  /** Project Plan tab — every plan task (the hub) with links + dependencies. */
+  planTasks: ActivityTaskNode[];
+  /** Outflow line items tab — every cost line with the tasks that incur it. */
+  outflowItems: OutflowItemView[];
   availableTasks: TaskPick[];
   availableCostLines: OutflowView[];
-  calendar: CalendarEvent[];
+  /** Fully-built activities (milestone → task[ → outflow]) for the Timeline tab. */
+  activities: TimelineActivity[];
   summary: {
     milestoneCount: number;
     inflowTotal: number;
@@ -122,6 +180,7 @@ export interface ProjectMilestoneDetail {
 export interface MilestoneProgramRow {
   projectId: number;
   projectName: string;
+  phase: string | null;
   milestoneCount: number;
   linkedMilestoneCount: number;
   inflowTotal: number;
@@ -147,7 +206,8 @@ export interface MilestoneProgram {
     gapCount: number;
     readyToInvoiceCount: number;
   };
-  calendar: CalendarEvent[];
+  /** Every fully-built activity across projects, for the monthly overlay. */
+  activities: TimelineActivity[];
 }
 
 // ──────────────────────────────── helpers ────────────────────────────────────
@@ -162,28 +222,53 @@ function todayIso(now: Date): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
-const PAID_REVENUE = new Set(["paid", "in_bank", "realised"]);
 const FLAGGED_REVENUE = new Set(["disputed", "written_off"]);
 
-// An inflow (revenue milestone) is "open" until it is settled — paid / in bank /
-// realised — or written off. A "disputed" line is still open (money expected).
-const SETTLED_REVENUE = new Set(["paid", "in_bank", "realised", "written_off"]);
 // An outflow (cost line) is "open" until it is paid.
-function hasOpenInflow(rows: RevenueMilestoneRow[]): boolean {
-  return rows.some((r) => !SETTLED_REVENUE.has(r.status));
-}
 function hasOpenOutflow(rows: CostLineRow[]): boolean {
   return rows.some((r) => r.status !== "paid");
 }
 
-/** Inflow state from the revenue-line status + expected payment date. */
-function inflowState(status: string, expectedDate: string | null, today: string): FlowState {
-  if (FLAGGED_REVENUE.has(status)) return "flagged";
-  if (PAID_REVENUE.has(status)) return "paid";
-  const overdue = !!expectedDate && expectedDate < today;
-  if (status === "invoiced") return overdue ? "overdue" : "invoiced";
-  // planned
+/**
+ * Inflow state from the milestone's "Payment Received Date", read by the
+ * tracker's FONT-COLOUR convention (black = confirmed actual receipt, red =
+ * forecast — owner rule 2026-06):
+ *   black + today/past → paid (realised)    black + future → flagged ("paid" in
+ *                                                              the future can't be)
+ *   red + future       → not yet paid        red + past     → overdue (forecast lapsed)
+ * With no received date it falls back to the invoice (invoiced / outstanding,
+ * overdue once the expected payment date passes). written_off / disputed → flagged.
+ * NOTE: this is the Milestone-Tracker view only — the frozen finance/cash paths
+ * are unchanged; they still use the imported date to forecast the inflow.
+ */
+export function inflowState(m: {
+  status: string;
+  paidDate: string | null;
+  paidDateConfirmed: boolean | null;
+  inBankDate: string | null;
+  invoiceNumber: string | null;
+  invoiceDate: string | null;
+  expectedPaymentDate: string | null;
+}, today: string): FlowState {
+  if (FLAGGED_REVENUE.has(m.status)) return "flagged";
+  // Receipt signal: the colour-coded "Payment Received Date", or an in-bank date
+  // (no colour captured → treated as confirmed/actual).
+  const receipt = m.paidDate ?? m.inBankDate;
+  if (receipt) {
+    const confirmed = m.paidDate ? m.paidDateConfirmed === true : true; // black = actual
+    const future = receipt > today;
+    if (confirmed) return future ? "flagged" : "paid";
+    if (future) return m.invoiceNumber || m.invoiceDate ? "invoiced" : "outstanding";
+    return "overdue";
+  }
+  const overdue = !!m.expectedPaymentDate && m.expectedPaymentDate < today;
+  if (m.status === "invoiced" || m.invoiceNumber || m.invoiceDate) return overdue ? "overdue" : "invoiced";
   return overdue ? "overdue" : "outstanding";
+}
+
+/** Still to collect: not actually collected (paid) and not written off / disputed. */
+function inflowOpen(m: { state: FlowState; status: string }): boolean {
+  return m.state !== "paid" && !FLAGGED_REVENUE.has(m.status);
 }
 
 /** Outflow state from the cost-line status + forecast payment date. */
@@ -224,12 +309,46 @@ interface ProjectBundle {
   tasks: MtPlanTaskRow[];
   rmLinks: Array<{ revenueRowHash: string; workItemId: number }>;
   tcLinks: Array<{ workItemId: number; costRowHash: string }>;
+  deps: Array<{ predecessorId: number; successorId: number; source: string }>;
+}
+
+/** Map of task id → "chain complete": the task is 100% AND every predecessor
+ *  (transitively) is chain-complete. Cycle-guarded. Drives the dependency-aware
+ *  "ready to invoice" and the unblocked/blocked status in the Project Plan tab. */
+export function buildChainComplete(tasks: MtPlanTaskRow[], deps: ProjectBundle["deps"]): Map<number, boolean> {
+  const complete = new Map<number, boolean>();
+  for (const t of tasks) complete.set(t.id, (pctTo100(t.percentComplete) ?? 0) >= 100);
+  const predsBySucc = new Map<number, number[]>();
+  for (const d of deps) {
+    const arr = predsBySucc.get(d.successorId) ?? [];
+    arr.push(d.predecessorId);
+    predsBySucc.set(d.successorId, arr);
+  }
+  const memo = new Map<number, boolean>();
+  const chain = (id: number, seen: Set<number>): boolean => {
+    if (memo.has(id)) return memo.get(id)!;
+    if (seen.has(id)) return complete.get(id) ?? false; // cycle guard
+    seen.add(id);
+    let ok = complete.get(id) ?? false;
+    if (ok) {
+      for (const p of predsBySucc.get(id) ?? []) {
+        if (!chain(p, seen)) { ok = false; break; }
+      }
+    }
+    seen.delete(id);
+    memo.set(id, ok);
+    return ok;
+  };
+  const out = new Map<number, boolean>();
+  for (const t of tasks) out.set(t.id, chain(t.id, new Set()));
+  return out;
 }
 
 /** Build the milestone views for one project from its already-fetched bundle. */
 function buildMilestones(projectId: number, projectName: string, b: ProjectBundle, today: string): MilestoneView[] {
   const taskById = new Map(b.tasks.map((t) => [t.id, t]));
   const costByHash = new Map(b.costs.map((c) => [c.rowHash, c]));
+  const chainComplete = buildChainComplete(b.tasks, b.deps);
 
   // task id -> linked cost rowHashes
   const costsByTask = new Map<number, string[]>();
@@ -285,11 +404,16 @@ function buildMilestones(projectId: number, projectName: string, b: ProjectBundl
     }
     const outflowTotal = outflows.reduce((s, o) => s + (o.amount ?? 0), 0);
     const tasksComplete = tasks.filter((t) => t.complete).length;
-    const state = inflowState(m.status, m.expectedPaymentDate, today);
-    const readyToInvoice = tasks.length > 0 && tasksComplete === tasks.length && m.status === "planned";
-    const overdueGap =
-      !PAID_REVENUE.has(m.status) && !FLAGGED_REVENUE.has(m.status) &&
-      (!m.expectedPaymentDate || m.expectedPaymentDate < today);
+    const state = inflowState(m, today);
+    // Chain-aware "ready to invoice": every linked task AND its whole predecessor
+    // chain is complete, the milestone is still to collect, and no invoice has
+    // been raised yet.
+    const readyToInvoice =
+      taskIds.length > 0 &&
+      taskIds.every((id) => chainComplete.get(id) === true) &&
+      !m.invoiceNumber && !m.invoiceDate &&
+      inflowOpen({ state, status: m.status });
+    const overdueGap = state === "overdue";
     return {
       rowHash: m.rowHash,
       milestoneNo: m.milestoneNo,
@@ -318,39 +442,88 @@ function buildMilestones(projectId: number, projectName: string, b: ProjectBundl
   });
 }
 
-function calendarFor(projectId: number, projectName: string, milestones: MilestoneView[], today: string): CalendarEvent[] {
-  const events: CalendarEvent[] = [];
-  const seenOutflow = new Set<string>();
-  const seenTask = new Set<number>();
+/** The money-out date of an outflow (payment, not invoice): forecast → paid →
+ *  invoice, mirroring the per-milestone GP timing in the client. */
+function outflowMoneyDate(o: OutflowView): string | null {
+  return o.forecastPaymentDate ?? o.paidDate ?? o.invoiceDate;
+}
+
+/**
+ * Build the fully-built activities for a project's already-computed milestone
+ * views. A built activity is a milestone with at least one linked task; the
+ * outflows its tasks incur are carried as money-out markers. Both axes reuse
+ * the existing logic — SCHEDULE = no linked task overdue (the task done/due/
+ * overdue state already on the view); CASHFLOW = amount-weighted money-out date
+ * minus the money-in date (+ve ⇒ cash lands first), the same timing the
+ * milestone GP card shows.
+ */
+function buildActivities(projectId: number, projectName: string, milestones: MilestoneView[]): TimelineActivity[] {
+  const out: TimelineActivity[] = [];
   for (const m of milestones) {
-    const inDate = m.expectedPaymentDate ?? m.invoiceDate;
+    if (m.tasks.length === 0) continue; // not built yet — no work wired
+
+    // work span across the linked tasks
+    const starts = m.tasks.map((t) => t.startDate ?? t.endDate).filter((d): d is string => !!d);
+    const ends = m.tasks.map((t) => t.endDate ?? t.startDate).filter((d): d is string => !!d);
+    const taskStart = starts.length ? starts.reduce((a, b) => (a < b ? a : b)) : null;
+    const taskEnd = ends.length ? ends.reduce((a, b) => (a > b ? a : b)) : null;
+    const overdueTaskCount = m.tasks.filter((t) => t.state === "overdue").length;
+    const tasksComplete = m.tasks.filter((t) => t.complete).length;
+    const scheduleState: AxisState = overdueTaskCount > 0 ? "negative" : "positive";
+
+    // money-in marker (expected/received)
+    const inDate = m.expectedPaymentDate ?? m.paidDate ?? m.invoiceDate;
+    const inflow: TimelineMarker | null = inDate
+      ? { date: inDate, amount: m.amount, realised: m.state === "paid" }
+      : null;
+
+    // money-out markers (distinct outflows incurred by the activity's tasks)
+    const outflows: TimelineMarker[] = [];
+    let outflowTotal = 0;
+    for (const o of m.outflows) {
+      outflowTotal += o.amount ?? 0;
+      const d = outflowMoneyDate(o);
+      if (d) outflows.push({ date: d, amount: o.amount, realised: o.state === "paid" });
+    }
+
+    // cashflow timing: amount-weighted money-out date − money-in date, in days
+    let cashflowDays: number | null = null;
     if (inDate) {
-      events.push({
-        kind: "inflow", date: inDate, label: m.milestoneName || m.milestoneNo || "Milestone",
-        amount: m.amount, state: m.state, projectId, projectName, rowHash: m.rowHash,
-      });
-    }
-    for (const t of m.tasks) {
-      if (!seenTask.has(t.id) && t.endDate) {
-        seenTask.add(t.id);
-        events.push({
-          kind: "task", date: t.endDate, label: `${t.taskNo ? t.taskNo + " · " : ""}${t.title}`,
-          amount: null, state: t.state, projectId, projectName, taskId: t.id,
-        });
+      const inMs = Date.parse(inDate);
+      let wsum = 0, dsum = 0;
+      for (const o of m.outflows) {
+        const d = outflowMoneyDate(o);
+        const amt = o.amount ?? 0;
+        const ms = d ? Date.parse(d) : NaN;
+        if (Number.isFinite(ms) && amt > 0) { wsum += amt; dsum += ms * amt; }
       }
-      for (const o of t.outflows) {
-        const d = o.forecastPaymentDate ?? o.invoiceDate ?? o.paidDate;
-        if (d && !seenOutflow.has(o.rowHash)) {
-          seenOutflow.add(o.rowHash);
-          events.push({
-            kind: "outflow", date: d, label: o.description || o.costCategory || "Cost",
-            amount: o.amount, state: o.state, projectId, projectName, rowHash: o.rowHash,
-          });
-        }
-      }
+      if (wsum > 0 && Number.isFinite(inMs)) cashflowDays = Math.round((dsum / wsum - inMs) / 86_400_000);
     }
+    const cashflowState: AxisState = cashflowDays == null ? "unknown" : cashflowDays >= 0 ? "positive" : "negative";
+
+    out.push({
+      projectId,
+      projectName,
+      milestoneRowHash: m.rowHash,
+      title: m.milestoneName || m.milestoneNo || "Milestone",
+      amount: m.amount,
+      state: m.state,
+      taskStart,
+      taskEnd,
+      tasksTotal: m.tasks.length,
+      tasksComplete,
+      overdueTaskCount,
+      invoiceDate: m.invoiceDate,
+      inflow,
+      outflows,
+      outflowTotal,
+      scheduleState,
+      cashflowDays,
+      cashflowState,
+    });
   }
-  return events.sort((a, b) => a.date.localeCompare(b.date));
+  // earliest money-in first; activities without a money-in date sort last
+  return out.sort((a, b) => (a.inflow?.date ?? "9999").localeCompare(b.inflow?.date ?? "9999"));
 }
 
 async function fetchBundle(projectId: number): Promise<ProjectBundle> {
@@ -361,7 +534,65 @@ async function fetchBundle(projectId: number): Promise<ProjectBundle> {
     milestoneTrackerRepository.getMilestoneTaskLinksForProjects([projectId]),
     milestoneTrackerRepository.getTaskCostLinksForProjects([projectId]),
   ]);
-  return { milestones, costs, tasks, rmLinks, tcLinks };
+  const deps = await milestoneTrackerRepository.getDependenciesByWorkItemIds(tasks.map((t) => t.id));
+  return { milestones, costs, tasks, rmLinks, tcLinks, deps };
+}
+
+/** Build the Project Plan tab (every task with its links + dependencies) and the
+ *  Outflow line items tab (every cost line with the tasks that incur it). */
+function buildPlanAndOutflows(b: ProjectBundle, today: string): { planTasks: ActivityTaskNode[]; outflowItems: OutflowItemView[] } {
+  const completeById = new Map(b.tasks.map((t) => [t.id, (pctTo100(t.percentComplete) ?? 0) >= 100]));
+  const chainComplete = buildChainComplete(b.tasks, b.deps);
+  // task id -> predecessors
+  const predsByTask = new Map<number, TaskPredecessor[]>();
+  for (const d of b.deps) {
+    const arr = predsByTask.get(d.successorId) ?? [];
+    arr.push({ workItemId: d.predecessorId, source: d.source, complete: completeById.get(d.predecessorId) ?? false });
+    predsByTask.set(d.successorId, arr);
+  }
+  // task id -> linked milestone hashes / cost hashes
+  const msByTask = new Map<number, string[]>();
+  for (const l of b.rmLinks) {
+    const arr = msByTask.get(l.workItemId) ?? [];
+    arr.push(l.revenueRowHash);
+    msByTask.set(l.workItemId, arr);
+  }
+  const costByTask = new Map<number, string[]>();
+  const tasksByCost = new Map<string, number[]>();
+  for (const l of b.tcLinks) {
+    (costByTask.get(l.workItemId) ?? costByTask.set(l.workItemId, []).get(l.workItemId)!).push(l.costRowHash);
+    (tasksByCost.get(l.costRowHash) ?? tasksByCost.set(l.costRowHash, []).get(l.costRowHash)!).push(l.workItemId);
+  }
+
+  const planTasks: ActivityTaskNode[] = b.tasks
+    .slice()
+    .sort((a, z) => (a.taskNo ?? "").localeCompare(z.taskNo ?? "", undefined, { numeric: true }))
+    .map((t) => {
+      const preds = predsByTask.get(t.id) ?? [];
+      return {
+        id: t.id,
+        taskNo: t.taskNo,
+        title: t.title,
+        workstream: t.workstream,
+        startDate: t.startDate,
+        endDate: t.endDate,
+        percentComplete: pctTo100(t.percentComplete),
+        complete: completeById.get(t.id) ?? false,
+        isMilestone: t.isMilestone,
+        state: taskState(pctTo100(t.percentComplete), t.endDate, today),
+        predecessors: preds,
+        predecessorsComplete: preds.every((p) => chainComplete.get(p.workItemId) === true),
+        linkedMilestoneHashes: msByTask.get(t.id) ?? [],
+        linkedCostHashes: costByTask.get(t.id) ?? [],
+      };
+    });
+
+  const outflowItems: OutflowItemView[] = b.costs.map((c) => ({
+    ...toOutflowView(c, today),
+    linkedTaskIds: tasksByCost.get(c.rowHash) ?? [],
+  }));
+
+  return { planTasks, outflowItems };
 }
 
 export async function getProjectMilestones(projectId: number, now: Date = new Date()): Promise<ProjectMilestoneDetail | null> {
@@ -373,7 +604,7 @@ export async function getProjectMilestones(projectId: number, now: Date = new Da
 
   const inflowTotal = milestones.reduce((s, m) => s + (m.amount ?? 0), 0);
   const inflowOutstanding = milestones
-    .filter((m) => !PAID_REVENUE.has(m.status) && !FLAGGED_REVENUE.has(m.status))
+    .filter(inflowOpen)
     .reduce((s, m) => s + (m.amount ?? 0), 0);
   // distinct linked outflows across the whole project
   const linkedCostHashes = new Set<string>();
@@ -385,16 +616,19 @@ export async function getProjectMilestones(projectId: number, now: Date = new Da
     0,
   );
   const readyToInvoiceCount = milestones.filter((m) => m.readyToInvoice).length;
+  const { planTasks, outflowItems } = buildPlanAndOutflows(b, today);
 
   return {
     project: { id: header.id, projectName: header.projectName },
     milestones,
+    planTasks,
+    outflowItems,
     availableTasks: b.tasks.map((t) => ({
       id: t.id, taskNo: t.taskNo, title: t.title, workstream: t.workstream,
       endDate: t.endDate, percentComplete: pctTo100(t.percentComplete),
     })),
     availableCostLines: b.costs.map((c) => toOutflowView(c, today)),
-    calendar: calendarFor(projectId, header.projectName, milestones, today),
+    activities: buildActivities(projectId, header.projectName, milestones),
     summary: { milestoneCount: milestones.length, inflowTotal, inflowOutstanding, outflowTotal, gapCount, readyToInvoiceCount },
   };
 }
@@ -403,9 +637,10 @@ export async function getProjectMilestones(projectId: number, now: Date = new Da
 
 export async function getMilestoneProgram(now: Date = new Date()): Promise<MilestoneProgram> {
   const today = todayIso(now);
-  const active = await executionBoardRepository.getActiveProjects();
+  // includeArchived — same universe as the board, so the phase filter can reach
+  // every project in a phase (incl. completed/archived ones with open money).
+  const active = await executionBoardRepository.getActiveProjects(true);
   const ids = active.map((p) => p.id);
-  const nameById = new Map(active.map((p) => [p.id, p.projectName]));
 
   const [milestones, costs, tasks, rmLinks, tcLinks] = await Promise.all([
     milestoneTrackerRepository.getRevenueMilestonesForProjects(ids),
@@ -414,6 +649,17 @@ export async function getMilestoneProgram(now: Date = new Date()): Promise<Miles
     milestoneTrackerRepository.getMilestoneTaskLinksForProjects(ids),
     milestoneTrackerRepository.getTaskCostLinksForProjects(ids),
   ]);
+  // Dependencies across all projects' tasks (for chain-aware ready-to-invoice).
+  const allDeps = await milestoneTrackerRepository.getDependenciesByWorkItemIds(tasks.map((t) => t.id));
+  const taskProjectById = new Map(tasks.map((t) => [t.id, t.projectId]));
+  const depsByProject = new Map<number, ProjectBundle["deps"]>();
+  for (const d of allDeps) {
+    const pid = taskProjectById.get(d.successorId);
+    if (pid == null) continue;
+    const arr = depsByProject.get(pid) ?? [];
+    arr.push({ predecessorId: d.predecessorId, successorId: d.successorId, source: d.source });
+    depsByProject.set(pid, arr);
+  }
 
   const group = <T extends { projectId: number }>(rows: T[]) => {
     const m = new Map<number, T[]>();
@@ -431,7 +677,7 @@ export async function getMilestoneProgram(now: Date = new Date()): Promise<Miles
   const tcByP = group(tcLinks);
 
   const rows: MilestoneProgramRow[] = [];
-  const calendar: CalendarEvent[] = [];
+  const activities: TimelineActivity[] = [];
   let H_inflow = 0, H_outstanding = 0, H_outflow = 0, H_gaps = 0, H_ready = 0, H_ms = 0;
 
   for (const p of active) {
@@ -441,17 +687,18 @@ export async function getMilestoneProgram(now: Date = new Date()): Promise<Miles
       tasks: tByP.get(p.id) ?? [],
       rmLinks: rmByP.get(p.id) ?? [],
       tcLinks: tcByP.get(p.id) ?? [],
+      deps: depsByProject.get(p.id) ?? [],
     };
     if (bundle.milestones.length === 0) continue; // no revenue milestones → not on the tracker
-    // Only surface projects that still have open (unsettled / non-black) money —
-    // an open inflow to collect or an open outflow to pay.
-    if (!hasOpenInflow(bundle.milestones) && !hasOpenOutflow(bundle.costs)) continue;
     const views = buildMilestones(p.id, p.projectName, bundle, today);
+    const openInflowViews = views.filter(inflowOpen);
+    // Only surface projects that still have open money — an inflow still to
+    // collect (colour-aware: a future/forecast receipt date is NOT collected) or
+    // an outflow still to pay.
+    if (openInflowViews.length === 0 && !hasOpenOutflow(bundle.costs)) continue;
 
     const inflowTotal = views.reduce((s, m) => s + (m.amount ?? 0), 0);
-    const inflowOutstanding = views
-      .filter((m) => !PAID_REVENUE.has(m.status) && !FLAGGED_REVENUE.has(m.status))
-      .reduce((s, m) => s + (m.amount ?? 0), 0);
+    const inflowOutstanding = openInflowViews.reduce((s, m) => s + (m.amount ?? 0), 0);
     const linkedCostHashes = new Set<string>();
     for (const m of views) for (const o of m.outflows) linkedCostHashes.add(o.rowHash);
     const costByHash = new Map(bundle.costs.map((c) => [c.rowHash, c]));
@@ -462,11 +709,10 @@ export async function getMilestoneProgram(now: Date = new Date()): Promise<Miles
     );
     const readyToInvoiceCount = views.filter((m) => m.readyToInvoice).length;
     const linkedMilestoneCount = views.filter((m) => m.tasks.length > 0).length;
-    // Open (unsettled / non-black) line items per project: inflows still to
-    // collect, outflows still to pay.
-    const openInflows = bundle.milestones.filter((m) => !SETTLED_REVENUE.has(m.status));
-    const openInflowCount = openInflows.length;
-    const openInflowAmount = openInflows.reduce((s, m) => s + (num(m.amountExVat) ?? 0), 0);
+    // Open line items per project: inflows still to collect (colour-aware — a
+    // future/forecast receipt date is NOT collected), outflows still to pay.
+    const openInflowCount = openInflowViews.length;
+    const openInflowAmount = openInflowViews.reduce((s, m) => s + (m.amount ?? 0), 0);
     const openOutflows = bundle.costs.filter((c) => c.status !== "paid");
     const openOutflowCount = openOutflows.length;
     const openOutflowAmount = openOutflows.reduce((s, c) => s + (num(c.amountExVat) ?? 0), 0);
@@ -478,6 +724,7 @@ export async function getMilestoneProgram(now: Date = new Date()): Promise<Miles
     rows.push({
       projectId: p.id,
       projectName: p.projectName,
+      phase: p.phase,
       milestoneCount: views.length,
       linkedMilestoneCount,
       inflowTotal,
@@ -491,7 +738,7 @@ export async function getMilestoneProgram(now: Date = new Date()): Promise<Miles
       readyToInvoiceCount,
       nextInflowDate: upcoming[0] ?? null,
     });
-    calendar.push(...calendarFor(p.id, p.projectName, views, today));
+    activities.push(...buildActivities(p.id, p.projectName, views));
 
     H_inflow += inflowTotal;
     H_outstanding += inflowOutstanding;
@@ -503,7 +750,7 @@ export async function getMilestoneProgram(now: Date = new Date()): Promise<Miles
 
   // Worst-first: most gaps, then most outstanding inflow.
   rows.sort((a, b) => (b.gapCount - a.gapCount) || (b.inflowOutstanding - a.inflowOutstanding));
-  calendar.sort((a, b) => a.date.localeCompare(b.date));
+  activities.sort((a, b) => (a.inflow?.date ?? "9999").localeCompare(b.inflow?.date ?? "9999"));
 
   return {
     rows,
@@ -516,7 +763,7 @@ export async function getMilestoneProgram(now: Date = new Date()): Promise<Miles
       gapCount: H_gaps,
       readyToInvoiceCount: H_ready,
     },
-    calendar,
+    activities,
   };
 }
 
@@ -550,4 +797,51 @@ export async function linkTaskCost(projectId: number, workItemId: number, costRo
 
 export async function unlinkTaskCost(projectId: number, workItemId: number, costRowHash: string): Promise<void> {
   await milestoneTrackerRepository.removeTaskCostLink({ projectId, workItemId, costRowHash });
+}
+
+// ──────────────────────── task dependencies (MANUAL overlay) ──────────────────
+
+export async function linkTaskDependency(projectId: number, predecessorId: number, successorId: number, userId: number | null): Promise<void> {
+  if (predecessorId === successorId) throw new MilestoneLinkError("A task can't depend on itself");
+  const [predOk, succOk] = await Promise.all([
+    milestoneTrackerRepository.taskBelongsToProject(projectId, predecessorId),
+    milestoneTrackerRepository.taskBelongsToProject(projectId, successorId),
+  ]);
+  if (!predOk || !succOk) throw new MilestoneLinkError("Task not found for this project");
+
+  // Cycle guard: adding predecessor→successor must not close a loop, i.e. the
+  // predecessor must not already (transitively) depend on the successor.
+  const tasks = await milestoneTrackerRepository.getPlanTasksForProjects([projectId]);
+  const deps = await milestoneTrackerRepository.getDependenciesByWorkItemIds(tasks.map((t) => t.id));
+  const predsBySucc = new Map<number, number[]>();
+  for (const d of deps) {
+    const arr = predsBySucc.get(d.successorId) ?? [];
+    arr.push(d.predecessorId);
+    predsBySucc.set(d.successorId, arr);
+  }
+  const reaches = (from: number, target: number): boolean => {
+    const seen = new Set<number>();
+    const stack = [from];
+    while (stack.length) {
+      const cur = stack.pop()!;
+      if (cur === target) return true;
+      if (seen.has(cur)) continue;
+      seen.add(cur);
+      for (const p of predsBySucc.get(cur) ?? []) stack.push(p);
+    }
+    return false;
+  };
+  if (reaches(predecessorId, successorId)) throw new MilestoneLinkError("That dependency would create a cycle");
+
+  await milestoneTrackerRepository.addManualDependency({ predecessorId, successorId, createdBy: userId });
+}
+
+export async function unlinkTaskDependency(projectId: number, predecessorId: number, successorId: number): Promise<void> {
+  // Only MANUAL edges are removable here — imported edges are owned by the workbook.
+  const [predOk, succOk] = await Promise.all([
+    milestoneTrackerRepository.taskBelongsToProject(projectId, predecessorId),
+    milestoneTrackerRepository.taskBelongsToProject(projectId, successorId),
+  ]);
+  if (!predOk || !succOk) throw new MilestoneLinkError("Task not found for this project");
+  await milestoneTrackerRepository.removeManualDependency({ predecessorId, successorId });
 }

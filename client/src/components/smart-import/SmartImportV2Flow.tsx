@@ -1,26 +1,27 @@
 /**
  * Smart Import v2 — Main flow orchestrator
  *
- * Replaces the v1 5-step wizard (Upload → Sections → Mapping → Issues → Commit)
- * with a plain-language 5-step flow:
- *   1. Upload
- *   2. What we found
- *   3. What changed
- *   4. Needs your decision
- *   5. Confirm import
+ * The manual flow is intentionally short so the operator can see what they're
+ * about to import at a glance:
  *
- * Reuses the existing UploadStep from v1 for file/folder upload parity.
- * Steps 2-5 use new v2 components driven by planner/conflict data.
+ *   1. Upload
+ *   2. Your decisions   (only when the planner finds genuine conflicts)
+ *   3. Review & import  (one consolidated screen: at-a-glance counts, the
+ *                        actual changed rows, schedule + money impact, commit)
+ *
+ * Reuses the existing UploadStep from v1 for file/folder upload parity. The
+ * heavy "What we found" / "What changed" screens are folded into the Review
+ * step. This only reorganises presentation — the plan / money / commit
+ * endpoints and conflict-decision handling are unchanged.
  */
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { Loader2 } from "lucide-react";
 import { getAuthHeaders, UploadStep, type FileUploadResult } from "@/pages/smart-import";
 import { SmartImportStepIndicator } from "./SmartImportStepIndicator";
-import { SmartImportFoundStep } from "./SmartImportFoundStep";
-import { SmartImportChangesStep } from "./SmartImportChangesStep";
 import { SmartImportDecisionStep } from "./SmartImportDecisionStep";
 import { SmartImportConfirmStep } from "./SmartImportConfirmStep";
+import { FLOW_STEP_LABELS } from "./labels";
 
 interface V2FlowProps {
   /** Called when the user enters bulk mode (multiple files uploaded) */
@@ -33,8 +34,13 @@ interface V2FlowProps {
   onRunIdChange?: (runId: number | null) => void;
 }
 
+// Step constants for the simplified flow.
+const STEP_UPLOAD = 1;
+const STEP_DECIDE = 2;
+const STEP_REVIEW = 3;
+
 export function SmartImportV2Flow({ onBulkMode, initialRunId, onBack, onRunIdChange }: V2FlowProps) {
-  const [step, setStep] = useState(initialRunId ? 2 : 1);
+  const [step, setStep] = useState(initialRunId ? STEP_REVIEW : STEP_UPLOAD);
   const [runId, setRunId] = useState<number | null>(initialRunId || null);
   const [preview, setPreview] = useState<any>(null);
   const [planning, setPlanning] = useState<any>(null);
@@ -82,12 +88,12 @@ export function SmartImportV2Flow({ onBulkMode, initialRunId, onBack, onRunIdCha
     }
   }, [initialRunId, loadPlannerData, onRunIdChange]);
 
-  // Handle single file upload completion
+  // Handle single file upload completion — land straight on the review screen.
   const handleUploaded = useCallback((newRunId: number, newPreview: any) => {
     setRunId(newRunId);
     setPreview(newPreview);
     setDecisions({});
-    setStep(2);
+    setStep(STEP_REVIEW);
     loadPlannerData(newRunId);
     onRunIdChange?.(newRunId);
   }, [loadPlannerData, onRunIdChange]);
@@ -122,12 +128,25 @@ export function SmartImportV2Flow({ onBulkMode, initialRunId, onBack, onRunIdCha
     setDecisions(newDecisions);
   }, [planning]);
 
-  // Determine if we should skip the decision step (no conflicts)
+  // Required conflict decisions + how many are still outstanding.
+  const requiredDecisionKeys = useMemo(() => {
+    const keys: string[] = [];
+    const allRows = planning?.conflicts?.allRows ?? [];
+    for (const r of allRows) {
+      if (r.conflictStatus !== "HAS_CONFLICTS") continue;
+      for (const f of (r.fields ?? [])) {
+        if (f.requiresDecision) keys.push(`${r.rowKey}::${f.fieldName}`);
+      }
+    }
+    return keys;
+  }, [planning]);
+
   const hasConflicts = planning?.conflicts?.hasBlockingConflicts === true;
+  const unresolvedConflictCount = requiredDecisionKeys.filter((k) => !decisions[k]).length;
 
   // Reset the entire flow for a new import
   const handleStartNew = useCallback(() => {
-    setStep(1);
+    setStep(STEP_UPLOAD);
     setRunId(null);
     setPreview(null);
     setPlanning(null);
@@ -136,15 +155,25 @@ export function SmartImportV2Flow({ onBulkMode, initialRunId, onBack, onRunIdCha
     onRunIdChange?.(null);
   }, [onRunIdChange]);
 
+  // Indicator: 2 stops normally, 3 when conflicts need a decision step.
+  const indicatorLabels = hasConflicts
+    ? [FLOW_STEP_LABELS.upload, FLOW_STEP_LABELS.decisions, FLOW_STEP_LABELS.review]
+    : [FLOW_STEP_LABELS.upload, FLOW_STEP_LABELS.review];
+  const indicatorStep = hasConflicts ? step : (step <= STEP_UPLOAD ? 1 : 2);
+
   return (
     <div className="space-y-4" data-testid="v2-flow">
       <SmartImportStepIndicator
-        currentStep={step}
-        onStepClick={(s) => { if (s < step) setStep(s); }}
+        currentStep={indicatorStep}
+        labels={indicatorLabels}
+        onStepClick={(s) => {
+          if (s === 1) setStep(STEP_UPLOAD);
+          else if (hasConflicts && s === 2) setStep(STEP_DECIDE);
+        }}
       />
 
       {/* Step 1: Upload (skipped when initialRunId is provided) */}
-      {step === 1 && !initialRunId && (
+      {step === STEP_UPLOAD && !initialRunId && (
         <UploadStep
           onUploaded={handleUploaded}
           onBatchUploaded={handleBatchUploaded}
@@ -152,58 +181,60 @@ export function SmartImportV2Flow({ onBulkMode, initialRunId, onBack, onRunIdCha
         />
       )}
 
-      {/* Loading state between steps */}
-      {loadingPlan && step > 1 && (
+      {/* Loading state while the plan is fetched */}
+      {loadingPlan && step > STEP_UPLOAD && (
         <div className="flex items-center justify-center py-8" data-testid="v2-loading">
           <Loader2 className="w-5 h-5 animate-spin text-blue-500 mr-2" />
           <span className="text-sm text-muted-foreground">Analyzing your spreadsheet...</span>
         </div>
       )}
 
-      {/* Step 2: What we found */}
-      {step === 2 && !loadingPlan && preview && (
-        <SmartImportFoundStep
-          preview={preview}
-          planning={planning}
-          runId={runId}
-          onContinue={() => setStep(3)}
-          onBack={() => onBack ? onBack() : setStep(1)}
-        />
+      {/* Plan load error */}
+      {planError && !loadingPlan && step > STEP_UPLOAD && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" data-testid="v2-plan-error">
+          <p className="font-medium">We couldn't read this file's changes.</p>
+          <p className="text-xs mt-0.5">{planError}</p>
+          <div className="flex gap-2 mt-2">
+            <button
+              type="button"
+              className="text-xs font-medium text-red-700 underline"
+              onClick={() => runId && loadPlannerData(runId)}
+            >
+              Try again
+            </button>
+            <button
+              type="button"
+              className="text-xs font-medium text-slate-600 underline"
+              onClick={() => (onBack ? onBack() : setStep(STEP_UPLOAD))}
+            >
+              Back
+            </button>
+          </div>
+        </div>
       )}
 
-      {/* Step 3: What changed */}
-      {step === 3 && !loadingPlan && (
-        <SmartImportChangesStep
-          planning={planning}
-          planError={planError}
-          loadingPlan={loadingPlan}
-          runId={runId}
-          onRetryPlan={runId ? () => loadPlannerData(runId) : undefined}
-          onContinue={() => setStep(hasConflicts ? 4 : 5)}
-          onBack={() => setStep(2)}
-        />
-      )}
-
-      {/* Step 4: Needs your decision (skip if no conflicts) */}
-      {step === 4 && !loadingPlan && (
+      {/* Step 2: Your decisions (only when there are conflicts to resolve) */}
+      {step === STEP_DECIDE && !loadingPlan && (
         <SmartImportDecisionStep
           planning={planning}
           decisions={decisions}
           onDecision={handleDecision}
           onBulkDecision={handleBulkDecision}
-          onContinue={() => setStep(5)}
-          onBack={() => setStep(3)}
+          onContinue={() => setStep(STEP_REVIEW)}
+          onBack={() => setStep(STEP_REVIEW)}
         />
       )}
 
-      {/* Step 5: Confirm import */}
-      {step === 5 && runId && !loadingPlan && (
+      {/* Step 3: Review & import — the consolidated review screen */}
+      {step === STEP_REVIEW && runId && !loadingPlan && !planError && (
         <SmartImportConfirmStep
           runId={runId}
           planning={planning}
           preview={preview}
           decisions={decisions}
-          onBack={() => setStep(hasConflicts ? 4 : 3)}
+          unresolvedConflictCount={unresolvedConflictCount}
+          onResolveConflicts={() => setStep(STEP_DECIDE)}
+          onBack={() => (onBack ? onBack() : setStep(STEP_UPLOAD))}
           onStartNew={handleStartNew}
         />
       )}

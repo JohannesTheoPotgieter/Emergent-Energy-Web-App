@@ -92,7 +92,11 @@ export default function ExecutionReviewDetail() {
     return tasks.filter((t) => {
       if (t.taskNo && parents.has(t.taskNo)) return false;
       if ((t.pctComplete ?? 0) >= 100) return false;
-      const start = t.plannedStart ? new Date(t.plannedStart).getTime() : NaN;
+      // Match the server's start resolution (startDate ?? actualStartDate) so
+      // single-date-source plans (one schedule mapped onto the actual columns)
+      // still surface here instead of falling out for a blank planned start.
+      const startRaw = t.plannedStart ?? t.actualStart;
+      const start = startRaw ? new Date(startRaw).getTime() : NaN;
       return Number.isFinite(start) && start >= Date.now() - 86_400_000 && start <= horizon;
     });
   }, [data]);

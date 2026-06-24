@@ -273,6 +273,7 @@ const financeCosOverridesSchema = expenditureOverridesSchema;
 
 import { applyManualOverride, manualOverridesEnabled } from '../lib/manual-overrides';
 import { EXPENDITURE_TRACKED_FIELDS, REVENUE_TRACKED_FIELDS } from '@shared/excel-vs-app/contract';
+import { isDateColourConfirmed } from '@shared/finance/date-confirmation';
 import { approvals, changeSets, msObjects, OVERRIDE_CATEGORIES, projectInfo } from '@shared/schema';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { FinanceExpenseEngineRepository } from '../repositories/finance-expense-engine-repository';
@@ -480,14 +481,13 @@ async function createPendingEditRequest(
 
 const router = Router();
 
+// Canonical §3.7 colour-confirmation rule (number-preserving extraction) —
+// see shared/finance/date-confirmation.ts. Do not inline the colour check.
 function isDateConfirmed(
   confirmed: boolean | null | undefined,
   fontColor: string | null | undefined,
 ): boolean {
-  if (fontColor === 'red') return false;
-  if (fontColor === 'black') return true;
-  if (confirmed === true) return true;
-  return false;
+  return isDateColourConfirmed(confirmed, fontColor);
 }
 
 // Delegates to shared canonical invoice-only rule in financeUtils.ts.
@@ -1736,6 +1736,9 @@ router.get(
             expenseLineItem: e.expenseLineItem,
             expenseInvoiceNumber: e.expenseInvoiceNumber,
             expensePaymentDate: effectiveDate,
+            // §3.7 colour signals (additive — no cashflow figure changes).
+            paidDateConfirmed: (e as any).paidDateConfirmed ?? null,
+            invoiceDateConfirmed: (e as any).invoiceDateConfirmed ?? null,
             originalDate,
             hasAdminOverride: !!(e as any).adminDateOverride,
             adminDateOverride: (e as any).adminDateOverride || null,
@@ -1785,6 +1788,10 @@ router.get(
             milestoneName: inf.milestoneName,
             milestoneInvoiceNumber: inf.milestoneInvoiceNumber,
             paymentReceivedDate: inf.effectiveDate,
+            // §3.7 colour signals (additive — no cashflow figure changes). Let
+            // the week-detail row show whether the receipt/invoice is confirmed.
+            paidDateConfirmed: (inf as any).paidDateConfirmed ?? null,
+            invoiceDateConfirmed: (inf as any).invoiceDateConfirmed ?? null,
             originalDate: inf.adminDateOverride
               ? inf.paymentReceivedDate || inf.plannedPaymentDate || null
               : null,
@@ -5572,6 +5579,10 @@ router.get(
           invoiceNumber: l.invoiceNumber,
           poNumber: l.poNumber,
           invoiceDate: l.invoiceDate,
+          // §3.7 invoice-date colour signal, from the underlying canonical cost
+          // line (additive — no figure changes). Lets the drill-down drawer red
+          // an unconfirmed invoice date the same way the tracker does.
+          invoiceDateConfirmed: (exp as { invoiceDateConfirmed?: boolean | null } | undefined)?.invoiceDateConfirmed ?? null,
           supplier: exp?.supplierName ?? null,
           isRealised,
           noRevenueLinked: !!exp?.noRevenueLinked,
@@ -5984,6 +5995,10 @@ router.get(
           invoiceNumber: l.invoiceNumber,
           poNumber: l.poNumber,
           invoiceDate: l.invoiceDate,
+          // §3.7 invoice-date colour signal, from the underlying canonical cost
+          // line (additive — no figure changes). Lets the drill-down drawer red
+          // an unconfirmed invoice date the same way the tracker does.
+          invoiceDateConfirmed: (exp as { invoiceDateConfirmed?: boolean | null } | undefined)?.invoiceDateConfirmed ?? null,
           supplier: exp?.supplierName ?? null,
           isRealised,
           noRevenueLinked: !!exp?.noRevenueLinked,

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronsUpDown, Download, ListFilter, Pencil } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Download, Pencil } from "lucide-react";
 import { useApiMutation } from "@/hooks/use-api-mutation";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, LabelList,
@@ -22,7 +22,9 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
-import { PHASE_LABELS } from "@shared/phases";
+import {
+  LIFECYCLE_PHASES, BOARD_FILTER_PHASES, DEFAULT_BOARD_PHASES, canonicalPhaseLabel, PhaseMultiSelect,
+} from "@/components/execution/phase-filter";
 import { EditProjectInfoModal } from "@/components/execution/edit-project-info-modal";
 import type { BoardResult, BoardRow, Rag, WorkstreamSummary } from "@/lib/execution-types";
 import { fmtPct, fmtDate, parseExecDate } from "@/lib/execution-types";
@@ -54,20 +56,6 @@ const LS_KEY = "execution-board-filters";
 const LS_GROUP = "execution-board-group-by-pm";
 
 const RAG_COLORS: Record<string, string> = { green: "#16A34A", amber: "#F59E0B", red: "#DC2626", none: "#CBD5E1" };
-
-// Canonical lifecycle phases — driven from the SAME source the server validates
-// against (shared/phases PHASE_LABELS, e.g. "Commissioning & QA"), so an inline
-// edit writes a value the /phase endpoint accepts. Editing writes the canonical
-// project_execution_state.phase via /api/lifecycle-board/projects/:id/phase, so
-// the phase correlates through every lens (board, lifecycle board, detail).
-const LIFECYCLE_PHASES: string[] = [...PHASE_LABELS];
-
-/** Map a stored phase (possibly legacy-cased, e.g. "PLANNING") to its canonical label. */
-function canonicalPhaseLabel(phase: string | null): string {
-  if (!phase) return "";
-  const lc = phase.trim().toLowerCase();
-  return LIFECYCLE_PHASES.find((p) => p.toLowerCase() === lc) ?? phase;
-}
 
 // Canonical lifecycle RAG status (GREEN / AMBER / RED) — the same ragStatus the
 // company lifecycle board sets (a comment is required for the audit trail).
@@ -285,74 +273,6 @@ function TableRow({ row, columns, onOpen }: { row: BoardRow; columns: Col[]; onO
   );
 }
 
-/** Multi-select phase filter — checkbox popover with search. Empty = all phases. */
-function PhaseMultiSelect({ options, selected, onChange }: {
-  options: string[]; selected: string[]; onChange: (next: string[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const matches = options.filter((o) => o.toLowerCase().includes(q.toLowerCase()));
-  const toggle = (p: string) => onChange(selected.includes(p) ? selected.filter((x) => x !== p) : [...selected, p]);
-  const label = selected.length === 0 ? "All phases" : selected.length === 1 ? selected[0] : `${selected.length} phases`;
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="w-44 h-9 justify-between font-normal" data-testid="execution-phase-filter">
-          <span className="inline-flex items-center gap-1.5 truncate">
-            <ListFilter className="h-3.5 w-3.5 shrink-0 opacity-60" />
-            <span className="truncate">{label}</span>
-          </span>
-          <span className="inline-flex items-center gap-1 shrink-0">
-            {selected.length > 0 && <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">{selected.length}</Badge>}
-            <ChevronsUpDown className="h-3.5 w-3.5 opacity-50" />
-          </span>
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-60 p-0" align="start">
-        <div className="p-2 border-b">
-          <Input className="h-8 text-xs" placeholder="Search phases…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="execution-phase-search" />
-        </div>
-        <div className="max-h-64 overflow-y-auto p-1">
-          <button
-            className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs hover:bg-muted/60 text-muted-foreground"
-            onClick={() => onChange([])}
-            data-testid="execution-phase-all"
-          >
-            <span className={`flex items-center justify-center w-4 h-4 rounded border ${selected.length === 0 ? "bg-emerald-600 border-emerald-600 text-white" : "border-input"}`}>
-              {selected.length === 0 && <Check className="h-3 w-3" />}
-            </span>
-            All phases
-          </button>
-          {matches.map((p) => {
-            const on = selected.includes(p);
-            return (
-              <button
-                key={p}
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs hover:bg-muted/60 text-left"
-                onClick={() => toggle(p)}
-                data-testid={`execution-phase-opt-${p}`}
-              >
-                <span className={`flex items-center justify-center w-4 h-4 shrink-0 rounded border ${on ? "bg-emerald-600 border-emerald-600 text-white" : "border-input"}`}>
-                  {on && <Check className="h-3 w-3" />}
-                </span>
-                <span className="truncate">{p}</span>
-              </button>
-            );
-          })}
-          {matches.length === 0 && <p className="px-2 py-3 text-xs text-muted-foreground text-center">No phases found</p>}
-        </div>
-        {selected.length > 0 && (
-          <div className="p-1 border-t">
-            <button className="w-full text-xs text-muted-foreground hover:text-foreground py-1.5 rounded hover:bg-muted/60" onClick={() => onChange([])} data-testid="execution-phase-clear">
-              Clear selection
-            </button>
-          </div>
-        )}
-      </PopoverContent>
-    </Popover>
-  );
-}
-
 export default function ExecutionReviewBoard() {
   const [, navigate] = useLocation();
   const { isAdmin } = useAuth();
@@ -467,36 +387,77 @@ export default function ExecutionReviewBoard() {
   };
 
   const rows = useMemo(() => data?.rows ?? [], [data]);
-  const phases = useMemo(() => [...new Set(rows.map((r) => r.phase).filter(Boolean))] as string[], [rows]);
+  const phases = useMemo(() => {
+    // Offer the full board range (Financial Close → Hold/Done) so any phase can
+    // be drilled into, plus any non-canonical phase actually on a project so
+    // nothing is unfilterable.
+    const extras = rows
+      .map((r) => canonicalPhaseLabel(r.phase))
+      .filter((p) => p && !BOARD_FILTER_PHASES.includes(p));
+    return [...BOARD_FILTER_PHASES, ...new Set(extras)];
+  }, [rows]);
+
+  // The phases actually in view: the explicit selection, or the default scope
+  // (Financial Close → Client Handover) when nothing is selected.
+  const effectivePhases = useMemo(
+    () => (filters.phases.length > 0 ? filters.phases : DEFAULT_BOARD_PHASES),
+    [filters.phases],
+  );
   const pms = useMemo(() => [...new Set(rows.map((r) => r.pmName).filter(Boolean))] as string[], [rows]);
 
+  // Headline KPIs reflect the current SCOPE filters (search + phase + PM) but
+  // NOT the rag / has-flags toggles (those tiles ARE the toggles), so selecting
+  // a phase updates every headline number — tiles, RAG donut and Needs-attention
+  // — to that phase's subset.
+  const kpiRows = useMemo(() => rows.filter((r) => {
+    if (filters.search && !r.projectName.toLowerCase().includes(filters.search.toLowerCase())) return false;
+    if (!effectivePhases.includes(canonicalPhaseLabel(r.phase) || "—")) return false;
+    if (filters.pm !== "all" && r.pmName !== filters.pm) return false;
+    return true;
+  }), [rows, filters.search, effectivePhases, filters.pm]);
+
+  const kpis = useMemo(() => {
+    const ragCount = (v: string) => kpiRows.filter((r) => r.schedule.rag === v).length;
+    const planned = kpiRows.filter((r) => r.schedule.actualPct != null && r.schedule.expectedPct != null);
+    const avg = (sel: (r: BoardRow) => number) =>
+      planned.length ? Math.round((planned.reduce((s, r) => s + sel(r), 0) / planned.length) * 10) / 10 : null;
+    return {
+      activeCount: kpiRows.length,
+      ragGreen: ragCount("green"),
+      ragAmber: ragCount("amber"),
+      ragRed: ragCount("red"),
+      ragNone: kpiRows.filter((r) => !r.schedule.rag).length,
+      openFlags: kpiRows.reduce((s, r) => s + r.flags.open + r.flags.flagged, 0),
+      overdueDeliveries: kpiRows.reduce((s, r) => s + (r.overdueDeliveryCount ?? 0), 0),
+      weightedActual: avg((r) => r.schedule.actualPct ?? 0),
+      weightedExpected: avg((r) => r.schedule.expectedPct ?? 0),
+    };
+  }, [kpiRows]);
+
   // ── dashboard aggregates ──
+  // "Sites by phase" stays the full distribution (it's the cross-filter selector).
   const byPhaseData = useMemo(() => {
     const m = new Map<string, number>();
-    for (const r of rows) { const k = r.phase ?? "—"; m.set(k, (m.get(k) ?? 0) + 1); }
+    for (const r of rows) { const k = canonicalPhaseLabel(r.phase) || "—"; m.set(k, (m.get(k) ?? 0) + 1); }
     return [...m.entries()].map(([phase, count]) => ({ phase, count })).sort((a, b) => b.count - a.count);
   }, [rows]);
-  const ragData = useMemo(() => {
-    const h = data?.header;
-    const green = h?.ragGreen ?? 0, amber = h?.ragAmber ?? 0, red = h?.ragRed ?? 0;
-    const none = Math.max((h?.activeCount ?? rows.length) - green - amber - red, 0);
-    return [
-      { key: "green", name: "On / ahead", value: green },
-      { key: "amber", name: "Slipping", value: amber },
-      { key: "red", name: "Behind", value: red },
-      { key: "none", name: "No plan", value: none },
-    ];
-  }, [data, rows.length]);
+  // RAG donut reflects the scope filters, in step with the KPI tiles.
+  const ragData = useMemo(() => [
+    { key: "green", name: "On / ahead", value: kpis.ragGreen },
+    { key: "amber", name: "Slipping", value: kpis.ragAmber },
+    { key: "red", name: "Behind", value: kpis.ragRed },
+    { key: "none", name: "No plan", value: kpis.ragNone },
+  ], [kpis]);
   const ragTotal = useMemo(() => ragData.reduce((s, d) => s + d.value, 0), [ragData]);
 
   const filtered = useMemo(() => rows.filter((r) => {
     if (filters.search && !r.projectName.toLowerCase().includes(filters.search.toLowerCase())) return false;
-    if (filters.phases.length > 0 && !filters.phases.includes(r.phase ?? "—")) return false;
+    if (!effectivePhases.includes(canonicalPhaseLabel(r.phase) || "—")) return false;
     if (filters.rag !== "all" && r.schedule.rag !== filters.rag) return false;
     if (filters.pm !== "all" && r.pmName !== filters.pm) return false;
     if (filters.hasFlags && r.flags.open + r.flags.flagged === 0) return false;
     return true;
-  }), [rows, filters]);
+  }), [rows, filters, effectivePhases]);
 
   const togglePhase = (p: string) =>
     setFilters((f) => ({ ...f, phases: f.phases.includes(p) ? f.phases.filter((x) => x !== p) : [...f.phases, p] }));
@@ -527,17 +488,17 @@ export default function ExecutionReviewBoard() {
     <PageShell className="max-w-7xl p-4 md:p-6" data-testid="execution-board-page">
       <PageHeader title="Execution" subtitle="Program-wide delivery control tower · schedule read verbatim from the latest imported program plan" />
 
-      {/* KPI strip — clickable tiles cross-filter the table */}
+      {/* KPI strip — reflects the active scope (phase/search/PM) filters; tiles cross-filter the table */}
       {h && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
-          <Kpi label="Active sites" value={h.activeCount} accent="bg-emerald-500" onClick={() => setFilters({ ...DEFAULT_FILTERS })} />
-          <Kpi label="Behind (red)" value={h.ragRed} tone={h.ragRed > 0 ? "text-red-600" : ""} accent="bg-red-500" active={filters.rag === "red"}
+          <Kpi label="Active sites" value={kpis.activeCount} accent="bg-emerald-500" onClick={() => setFilters({ ...DEFAULT_FILTERS })} />
+          <Kpi label="Behind (red)" value={kpis.ragRed} tone={kpis.ragRed > 0 ? "text-red-600" : ""} accent="bg-red-500" active={filters.rag === "red"}
             onClick={() => setFilters((f) => ({ ...f, rag: f.rag === "red" ? "all" : "red" }))} />
-          <Kpi label="Overdue deliveries" value={h.overdueDeliveries} tone={h.overdueDeliveries > 0 ? "text-amber-600" : ""} accent="bg-amber-500"
+          <Kpi label="Overdue deliveries" value={kpis.overdueDeliveries} tone={kpis.overdueDeliveries > 0 ? "text-amber-600" : ""} accent="bg-amber-500"
             onClick={() => navigate("/execution/deliveries")} />
-          <Kpi label="Open flags" value={h.openFlags} accent="bg-slate-400" active={filters.hasFlags}
+          <Kpi label="Open flags" value={kpis.openFlags} accent="bg-slate-400" active={filters.hasFlags}
             onClick={() => setFilters((f) => ({ ...f, hasFlags: !f.hasFlags }))} />
-          <Kpi label="Prog actual/exp" value={`${fmtPct(h.weightedActual)}/${fmtPct(h.weightedExpected)}`} accent="bg-emerald-500" />
+          <Kpi label="Prog actual/exp" value={`${fmtPct(kpis.weightedActual)}/${fmtPct(kpis.weightedExpected)}`} accent="bg-emerald-500" />
         </div>
       )}
 
@@ -563,7 +524,7 @@ export default function ExecutionReviewBoard() {
                     onClick={(d) => { const p = (d as { phase?: string }).phase; if (p) togglePhase(p); }}
                   >
                     {byPhaseData.map((d) => {
-                      const active = filters.phases.length === 0 || filters.phases.includes(d.phase);
+                      const active = effectivePhases.includes(d.phase);
                       return <Cell key={d.phase} fill={active ? "#16A34A" : "#D1FAE5"} />;
                     })}
                     <LabelList dataKey="count" position="top" fontSize={10} fill="#64748b" />
@@ -632,17 +593,17 @@ export default function ExecutionReviewBoard() {
               <button className="w-full flex items-center justify-between rounded-md border px-3 py-2 hover:bg-muted/50"
                 onClick={() => setFilters((f) => ({ ...f, rag: "red" }))} data-testid="attention-behind">
                 <span className="inline-flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-red-600" /> Behind plan</span>
-                <Badge variant={h && h.ragRed > 0 ? "destructive" : "secondary"}>{h?.ragRed ?? 0}</Badge>
+                <Badge variant={kpis.ragRed > 0 ? "destructive" : "secondary"}>{kpis.ragRed}</Badge>
               </button>
               <button className="w-full flex items-center justify-between rounded-md border px-3 py-2 hover:bg-muted/50"
                 onClick={() => navigate("/execution/deliveries")} data-testid="attention-deliveries">
                 <span className="inline-flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Overdue deliveries</span>
-                <Badge variant="secondary">{h?.overdueDeliveries ?? 0}</Badge>
+                <Badge variant="secondary">{kpis.overdueDeliveries}</Badge>
               </button>
               <button className="w-full flex items-center justify-between rounded-md border px-3 py-2 hover:bg-muted/50"
                 onClick={() => setFilters((f) => ({ ...f, hasFlags: true }))} data-testid="attention-flags">
                 <span className="inline-flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-slate-400" /> Open flags</span>
-                <Badge variant="secondary">{h?.openFlags ?? 0}</Badge>
+                <Badge variant="secondary">{kpis.openFlags}</Badge>
               </button>
             </CardContent>
           </Card>

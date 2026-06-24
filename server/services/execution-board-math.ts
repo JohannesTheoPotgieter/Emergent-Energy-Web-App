@@ -61,6 +61,57 @@ export function diffDays(a: Date, b: Date): number {
   return Math.floor((a.getTime() - b.getTime()) / 86_400_000);
 }
 
+/**
+ * Expected progress as of `today`, derived from a task's ACTUAL start→end
+ * dates — the live, deterministic replacement for the Excel "Expected Status"
+ * column.
+ *
+ * Owner decision 2026-06-23: expected progress is measured against the ACTUAL
+ * timeline (when the task really started / is due to finish), not the original
+ * plan. The tracker's Expected Status is a volatile (TODAY-based) formula whose
+ * Excel cache goes stale on save; we compute it ourselves instead — the linear
+ * fraction of the actual start→end span elapsed, clamped to [0,1]. Returns null
+ * when the actual dates are missing so the caller can fall back.
+ *
+ *   today >= end                     → 1   (completion checked first so a
+ *                                            same-day milestone reads 100%)
+ *   today <= start                   → 0
+ *   otherwise (today - start)/(end - start)
+ */
+export function expectedProgressFromDates(
+  start: string | null,
+  end: string | null,
+  today: Date,
+): number | null {
+  const s = parsePlanDate(start);
+  const e = parsePlanDate(end);
+  if (!s || !e) return null;
+  const t = today.getTime();
+  // Completion check first so a same-day milestone (start == end == today)
+  // reads as 100% expected rather than 0%.
+  if (t >= e.getTime()) return 1;
+  if (t <= s.getTime()) return 0;
+  const span = e.getTime() - s.getTime();
+  if (span <= 0) return 1;
+  return (t - s.getTime()) / span;
+}
+
+/**
+ * Return the tasks with `expectedPctComplete` replaced by the date-derived
+ * expected progress (0–1), computed from each task's ACTUAL start→end dates, so
+ * every downstream read — schedule snapshot, RAG, workstream summaries and the
+ * detail EXP% column — is live and never depends on the Excel formula cache.
+ * When a task has no actual dates we keep the imported value so nothing is lost.
+ * ACT% (pct_complete) is never touched — it stays verbatim from the tracker.
+ */
+export function withComputedExpected(tasks: PlanTask[], today: Date): PlanTask[] {
+  return tasks.map((t) => {
+    const computed = expectedProgressFromDates(t.actualStartDate, t.actualEndDate, today);
+    return computed == null ? t : { ...t, expectedPctComplete: computed };
+  });
+}
+
+
 export interface ScheduleSnapshot {
   actualPct: number | null;
   expectedPct: number | null;

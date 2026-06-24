@@ -12,13 +12,17 @@ function workbook(relPath: string): Buffer {
   return fs.readFileSync(path.join(process.cwd(), relPath));
 }
 
-async function previewWorkbook(relPath: string, fileName: string) {
+async function previewWorkbook(
+  relPath: string,
+  fileName: string,
+  learnedMappings?: { section: string; sourceHeader: string; canonicalField: string; confidenceWeight: number }[],
+) {
   const originalLog = console.log;
   const originalWarn = console.warn;
   console.log = () => undefined;
   console.warn = () => undefined;
   try {
-    return await runSmartImportPreview(workbook(relPath), fileName);
+    return await runSmartImportPreview(workbook(relPath), fileName, learnedMappings);
   } finally {
     console.log = originalLog;
     console.warn = originalWarn;
@@ -26,7 +30,7 @@ async function previewWorkbook(relPath: string, fileName: string) {
 }
 
 describe("Project plan import contract", () => {
-  it("imports Mondi planned-only PLAN rows instead of dropping them for blank actual dates", async () => {
+  it("maps Mondi single-date-source PLAN rows onto the actual dates too", async () => {
     const preview = await previewWorkbook(
       "attached_assets/Mondi_Tracker_Rev02_1778768350564.xlsm",
       "Mondi_Tracker_Rev02.xlsm",
@@ -41,8 +45,12 @@ describe("Project plan import contract", () => {
       startDate: "2025-02-07",
       endDate: "2026-05-07",
     });
-    expect(firstTask?.actualStartDate).toBeNull();
-    expect(firstTask?.actualEndDate).toBeNull();
+    // Owner decision 2026-06 — supersedes the prior "actual stays null for
+    // single-source plans" contract. A plan with one date source (START/END,
+    // no separate Actual columns) maps that schedule onto the actual dates too,
+    // so the board reads real progress dates and slip resolves to 0 not blank.
+    expect(firstTask?.actualStartDate).toBe("2025-02-07");
+    expect(firstTask?.actualEndDate).toBe("2026-05-07");
     expect(firstTask?.pctComplete).toBe(1);
     expect(firstTask?.expectedPctComplete).toBe(1);
   });
@@ -88,5 +96,60 @@ describe("Project plan import contract", () => {
     expect(provider).not.toContain("fp.filter((p) => !p.behindPlan).length / fp.length");
     expect(server).toContain("const scheduleMeasuredRows = projectRows.filter");
     expect(server).not.toContain("const onScheduleCount = projectRows.filter((p) => !p.behindPlan).length");
+  });
+});
+
+describe("Re-import is self-healing for ANY project — stale learned mappings cannot corrupt actual %", () => {
+  // The 12 Nourse production bug: a STALE learned column-mapping (remembered
+  // from an earlier import) hijacked the "Status" column, so actual % imported
+  // wrong and stayed wrong on re-import. The fix is that EXACT-header matches
+  // always beat a remembered mapping, which makes a re-import self-healing for
+  // every project. These tests prove it on BOTH layout families by feeding a
+  // deliberately corrupt learned mapping and asserting the actual-% column and
+  // its imported values are identical to a clean import.
+  const CORRUPT_LEARNED = [
+    { section: "PLAN", sourceHeader: "Status", canonicalField: "owner", confidenceWeight: 1 },
+    { section: "PLAN", sourceHeader: "Expected Status", canonicalField: "pct_complete", confidenceWeight: 1 },
+    { section: "PLAN", sourceHeader: "% DONE", canonicalField: "owner", confidenceWeight: 1 },
+    { section: "PLAN", sourceHeader: "% Forecasted", canonicalField: "pct_complete", confidenceWeight: 1 },
+    { section: "PLAN", sourceHeader: "Planned Start", canonicalField: "actual_start", confidenceWeight: 1 },
+    { section: "PLAN", sourceHeader: "Planned End", canonicalField: "actual_end", confidenceWeight: 1 },
+  ];
+
+  const pctFingerprint = (tasks: Array<{ taskNo: string | null; pctComplete: number | null }>) =>
+    tasks
+      .filter((t) => typeof t.pctComplete === "number")
+      .map((t) => `${t.taskNo}=${t.pctComplete}`)
+      .join("|");
+
+  it("EE_STANDARD (Coega): actual % stays on the Status column under a stale learned mapping", async () => {
+    const rel = "attached_assets/Coega_Steels_Ph2_Tracker_1776431576865.xlsx";
+    const clean = await previewWorkbook(rel, "Coega_Steels_Ph2_Tracker.xlsx");
+    const dirty = await previewWorkbook(rel, "Coega_Steels_Ph2_Tracker.xlsx", CORRUPT_LEARNED);
+
+    const cleanPlan = clean.mappings.find((m) => m.section === "PLAN");
+    const dirtyPlan = dirty.mappings.find((m) => m.section === "PLAN");
+    const pctHeader = (m: typeof cleanPlan) => m?.mappings.find((x) => x.canonicalField === "pct_complete")?.rawHeader;
+    expect(pctHeader(cleanPlan)).toBe("Status");
+    expect(pctHeader(dirtyPlan)).toBe("Status"); // not hijacked to "Expected Status"
+
+    // Imported actual-% values are byte-for-byte identical with/without the stale mapping.
+    expect(pctFingerprint(dirty.normalization.planTasks)).toBe(pctFingerprint(clean.normalization.planTasks));
+    expect(clean.normalization.planTasks.some((t) => (t.pctComplete ?? 0) > 0)).toBe(true);
+  });
+
+  it("MONDI_LEGACY (Mondi): actual % stays on the '% DONE' column under a stale learned mapping", async () => {
+    const rel = "attached_assets/Mondi_Tracker_Rev02_1778768350564.xlsm";
+    const clean = await previewWorkbook(rel, "Mondi_Tracker_Rev02.xlsm");
+    const dirty = await previewWorkbook(rel, "Mondi_Tracker_Rev02.xlsm", CORRUPT_LEARNED);
+
+    const cleanPlan = clean.mappings.find((m) => m.section === "PLAN");
+    const dirtyPlan = dirty.mappings.find((m) => m.section === "PLAN");
+    const pctHeader = (m: typeof cleanPlan) => m?.mappings.find((x) => x.canonicalField === "pct_complete")?.rawHeader;
+    expect(pctHeader(cleanPlan)).toBe("% DONE");
+    expect(pctHeader(dirtyPlan)).toBe("% DONE");
+
+    expect(pctFingerprint(dirty.normalization.planTasks)).toBe(pctFingerprint(clean.normalization.planTasks));
+    expect(clean.normalization.planTasks.some((t) => (t.pctComplete ?? 0) > 0)).toBe(true);
   });
 });

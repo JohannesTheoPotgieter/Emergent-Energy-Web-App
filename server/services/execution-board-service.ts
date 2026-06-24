@@ -34,6 +34,7 @@ import {
   summarizeQuality,
   summarizeWorkstream,
   computeCriticalPath,
+  withComputedExpected,
   type PlanTask,
   type ScheduleSnapshot,
   type NextTask,
@@ -71,7 +72,10 @@ function nextDeliveryFromPlan(tasks: PlanTask[], today: Date): NextDelivery | nu
   for (const t of tasks) {
     if (!t.taskName || !t.taskName.toLowerCase().includes("delivery")) continue;
     if ((pctTo100(t.pctComplete) ?? 0) >= 100) continue;
-    const raw = t.startDate ?? t.actualStartDate ?? null;
+    // A "delivery" is the task's completion, so key off the END date (with the
+    // same actual/planned fallback chain as deliveryTaskRows) — the board's
+    // Next-delivery column and the Deliveries page must agree on the date.
+    const raw = t.endDate ?? t.actualEndDate ?? t.startDate ?? t.actualStartDate ?? null;
     const d = parsePlanDate(raw);
     if (!d) continue;
     if (!best || d < best.d) best = { d, raw: raw as string, label: t.taskName };
@@ -113,6 +117,9 @@ export interface BoardRow {
   schedule: ScheduleSnapshot & { importedAt: string | null };
   nextTask: NextTask | null;
   nextDelivery: NextDelivery | null;
+  /** Per-project count of overdue deliveries — lets the client recompute the
+   *  Overdue-deliveries KPI for the currently filtered (e.g. by-phase) subset. */
+  overdueDeliveryCount: number;
   installers: InstallerSummary;
   pmUserId: number | null;
   pmName: string | null;
@@ -147,20 +154,21 @@ export interface BoardResult {
   rows: BoardRow[];
 }
 
-// The Execution board shows mid-to-late delivery only: canonical phases from
-// Financial Close (display position 3) forward, EXCEPT the final 3-month
-// post-handover review and the terminal Hold/Done phases. Earlier phases
-// (assessment / design) and unrecognised phases are hidden, so the control
-// tower tracks active delivery. Derived from the canonical phase list.
-const BOARD_VISIBLE_PHASE_LABELS = new Set(
+// The Execution board's UNIVERSE — every project the board can show: canonical
+// phases from Financial Close (display position 3) through Compliance Handover,
+// PLUS the terminal Hold/Done branches. Earlier phases (assessment / design)
+// and unrecognised phases are excluded. The board defaults to Financial Close →
+// Client Handover on the CLIENT (so later phases / Hold / Done are present but
+// only shown when explicitly filtered to). Derived from the canonical phase list.
+const BOARD_UNIVERSE_PHASE_LABELS = new Set(
   PHASES
-    .filter((p) => p.displayNumber != null && p.displayNumber >= 3 && p.label !== "3 Months Post HO Review")
+    .filter((p) => (p.displayNumber != null && p.displayNumber >= 3) || p.isTerminal)
     .map((p) => p.label),
 );
-function isBoardVisiblePhase(phase: string | null): boolean {
+function isBoardUniversePhase(phase: string | null): boolean {
   if (!phase) return false;
   const label = resolveCanonicalPhase(phase)?.label ?? phase;
-  return BOARD_VISIBLE_PHASE_LABELS.has(label);
+  return BOARD_UNIVERSE_PHASE_LABELS.has(label);
 }
 
 function installerSummary(rows: InstallerRow[]): InstallerSummary {
@@ -173,10 +181,28 @@ function installerSummary(rows: InstallerRow[]): InstallerSummary {
 
 export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
   const today = startOfDay(now);
-  // Show only Financial-Close-forward delivery on the board (KPIs + rows) —
-  // earlier assessment/design phases, the 3-month post-handover review and the
-  // completed/on-hold terminals are hidden, keeping the tower on live delivery.
-  const active = (await executionBoardRepository.getActiveProjects()).filter((p) => isBoardVisiblePhase(p.phase));
+  // Return the full board UNIVERSE — Financial Close forward + terminal
+  // Hold/Done — so later-phase / on-hold / completed projects are available to
+  // the board and appear when explicitly filtered to. The client defaults the
+  // view to Financial Close → Client Handover. Earlier (assessment/design)
+  // phases stay excluded.
+  // includeArchived: the board shows the full phase universe, so a by-phase
+  // filter (e.g. 3 Months Post HO Review / Hold / Done) returns every project in
+  // that phase, including completed/archived ones — not just active-delivery rows.
+  const allActive = await executionBoardRepository.getActiveProjects(true);
+  const active = allActive.filter((p) => isBoardUniversePhase(p.phase));
+
+  // Diagnostic — phase distribution of ALL active projects so an empty by-phase
+  // filter is explainable from the environment (which phases actually have
+  // active projects, and how many reach the board universe). One line per load.
+  try {
+    const dist: Record<string, number> = {};
+    for (const p of allActive) {
+      const label = p.phase ? (resolveCanonicalPhase(p.phase)?.label ?? p.phase) : "(none)";
+      dist[label] = (dist[label] ?? 0) + 1;
+    }
+    console.log(`[execution-board][phase-diag] activeTotal=${allActive.length} onBoard=${active.length} byPhase=${JSON.stringify(dist)}`);
+  } catch { /* diagnostics must never break the board */ }
   const ids = active.map((p) => p.id);
 
   const tasksByProject = await safe(
@@ -205,7 +231,9 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
   let actualSum = 0, expectedSum = 0, planned = 0;
 
   for (const p of active) {
-    const tasks = tasksByProject.get(p.id) ?? [];
+    // EXP% is computed live from each task's ACTUAL dates (not the stale Excel
+    // "Expected Status" formula cache) — see withComputedExpected.
+    const tasks = withComputedExpected(tasksByProject.get(p.id) ?? [], today);
     const schedule = computeScheduleSnapshot(tasks);
     const deliveries = selectNextDelivery(milestonesByProject.get(p.id) ?? [], procurementByProject.get(p.id) ?? [], today);
     // Fall back to a plan task named "delivery" when there's no milestone/procurement record.
@@ -226,8 +254,8 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
       planned += 1;
     }
     openFlags += flags.open + flags.flagged;
-    overdueDeliveries += deliveries.overdueCount;
-    if (planDelivery?.rag === "red") overdueDeliveries += 1;
+    const rowOverdueDeliveries = deliveries.overdueCount + (planDelivery?.rag === "red" ? 1 : 0);
+    overdueDeliveries += rowOverdueDeliveries;
 
     rows.push({
       projectId: p.id,
@@ -238,6 +266,7 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
       schedule: { ...schedule, importedAt: null },
       nextTask: selectNextTask(tasks, today, 14),
       nextDelivery,
+      overdueDeliveryCount: rowOverdueDeliveries,
       installers: installerSummary(installersByProject.get(p.id) ?? []),
       pmUserId: p.pmUserId,
       pmName: (p.pmUserId != null ? userNames.get(p.pmUserId) : null) ?? p.pmText ?? null,
@@ -354,12 +383,15 @@ export async function getProjectDetail(projectId: number, now: Date = new Date()
     ),
     executionBoardRepository.getLatestUpdate(header.projectName),
   ]);
-  const schedule = computeScheduleSnapshot(plan.tasks);
-  const criticalPath = computeCriticalPath(plan.tasks);
+  // EXP% is computed live from each task's ACTUAL dates (not the stale Excel
+  // "Expected Status" formula cache) — see withComputedExpected.
+  const tasks = withComputedExpected(plan.tasks, today);
+  const schedule = computeScheduleSnapshot(tasks);
+  const criticalPath = computeCriticalPath(tasks);
   const criticalSet = new Set(criticalPath.criticalTaskNos);
   const deliveries = selectNextDelivery(milestones, procurement, today);
 
-  const planTasks: PlanTaskView[] = plan.tasks.map((t) => ({
+  const planTasks: PlanTaskView[] = tasks.map((t) => ({
     taskNo: t.taskNo ?? null,
     taskName: t.taskName,
     phase: t.phase ?? null,
@@ -400,14 +432,14 @@ export async function getProjectDetail(projectId: number, now: Date = new Date()
       procurement,
       // Plan tasks named "delivery" — the same source the program Deliveries
       // list uses, so deliveries correlate through every lens.
-      tasks: deliveryTaskRows(projectId, header.projectName, plan.tasks, today),
+      tasks: deliveryTaskRows(projectId, header.projectName, tasks, today),
       next: deliveries.next,
       overdueCount: deliveries.overdueCount,
     },
     // Eng/QA read the plan's ENG / QUALITY workstreams (work_items) — same as
     // the board — until the dedicated modules come online.
-    engineering: summarizeWorkstream(plan.tasks.filter((t) => t.workstream === "ENG")),
-    quality: summarizeWorkstream(plan.tasks.filter((t) => t.workstream === "QUALITY")),
+    engineering: summarizeWorkstream(tasks.filter((t) => t.workstream === "ENG")),
+    quality: summarizeWorkstream(tasks.filter((t) => t.workstream === "QUALITY")),
   };
 }
 

@@ -1,3 +1,5 @@
+import { isDateColourConfirmed } from "@shared/finance/date-confirmation";
+
 export type ExpenseState = 'Planned' | 'Committed' | 'Invoiced' | 'Paid';
 export type CosStatus = 'Planned' | 'COS Realised' | 'Committed';
 export type CashflowStatus = 'Planned' | 'Outstanding' | 'Out of Bank' | 'Risk';
@@ -15,10 +17,9 @@ export interface ExpenseLineInput {
 }
 
 export function isDateBlack(confirmed: boolean | null | undefined, fontColor: string | null | undefined): boolean {
-  if (fontColor === 'red') return false;
-  if (fontColor === 'black') return true;
-  if (confirmed === true) return true;
-  return false;
+  // Canonical §3.7 colour-confirmation rule — do not inline; see
+  // shared/finance/date-confirmation.ts.
+  return isDateColourConfirmed(confirmed, fontColor);
 }
 
 export function classifyExpenseState(line: ExpenseLineInput): ExpenseState {

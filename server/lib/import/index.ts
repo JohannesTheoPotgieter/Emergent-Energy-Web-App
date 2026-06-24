@@ -86,6 +86,23 @@ export async function runSmartImportPreview(
   const lowConfidence = mappings.some(m => m.overallConfidence < 0.7);
   const needsReview = hasBlockers || lowConfidence || normalization.issues.length > 0;
 
+  // Import diagnostic — make the actual-% mapping visible in the server console
+  // so a stale-process / stale-mapping problem is provable from the environment
+  // (which column "Status"/actual % bound to + the first values it read). One
+  // concise line per upload; safe to leave on.
+  try {
+    const planDiag = mappings.find((m) => m.section === "PLAN");
+    if (planDiag) {
+      const pctHeader = planDiag.mappings.find((m) => m.canonicalField === "pct_complete")?.rawHeader ?? "(UNMAPPED)";
+      const samples = normalization.planTasks
+        .filter((t) => t.taskNo && t.pctComplete != null)
+        .slice(0, 8)
+        .map((t) => `${t.taskNo}=${t.pctComplete}`)
+        .join(" ");
+      console.log(`[smart-import][plan-diag] file="${fileName}" actual%<-"${pctHeader}" layout=${planDiag.layoutVariant ?? "?"} | ${samples}`);
+    }
+  } catch { /* diagnostics must never break an import */ }
+
   return { detection, mappings, normalization, hasBlockers, needsReview };
 }
 

@@ -27,8 +27,6 @@ const RevenueTrackingReplicaPage = lazyWithRetry(() => import("@/pages/revenue-t
 const ExpenditureBreakdownReplicaPage = lazyWithRetry(() => import("@/pages/expenditure-breakdown"));
 const ProgramPlanReplicaPage = lazyWithRetry(() => import("@/pages/program-plan"));
 const ManualOverridesPage = lazyWithRetry(() => import("@/pages/manual-overrides"));
-const ExcelVsAppProgramPage = lazyWithRetry(() => import("@/pages/excel-vs-app"));
-const ExcelVsAppProjectPage = lazyWithRetry(() => import("@/pages/excel-vs-app-project"));
 const CostTracker = lazyWithRetry(() => import("@/pages/cos"));
 const CosAnalysisPage = lazyWithRetry(() => import("@/pages/cos-analysis"));
 const ProjectDetailPage = lazyWithRetry(() => import("@/pages/project-detail"));
@@ -117,7 +115,6 @@ const EngMonthlyReportComparePage = lazyWithRetry(() => import("@/pages/engineer
 const EngMonthlyReportProjectPage = lazyWithRetry(() => import("@/pages/engineering-monthly-report-project"));
 const ReportCenterPage = lazyWithRetry(() => import("@/pages/reports/report-center"));
 const PerformancePage = lazyWithRetry(() => import("@/pages/reports/performance"));
-const ProgramWideAssessmentPage = lazyWithRetry(() => import("@/pages/reports/program-wide-assessment"));
 const POApprovalBoardPage = lazyWithRetry(() => import("@/pages/po-approval-board"));
 const PaymentRequestBoardPage = lazyWithRetry(() => import("@/pages/payment-request-board"));
 const PaymentBatchManagerPage = lazyWithRetry(() => import("@/pages/payment-batch-manager"));
@@ -196,8 +193,6 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   ExpenditureBreakdownReplicaPage,
   ProgramPlanReplicaPage,
   ManualOverridesPage,
-  ExcelVsAppProgramPage,
-  ExcelVsAppProjectPage,
   MyWorkAdminSettingsPage,
   QmDashboardPage,
   EngineeringHomePage,
@@ -273,7 +268,6 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   EngMonthlyReportProjectPage,
   ReportCenterPage,
   PerformancePage,
-  ProgramWideAssessmentPage,
   POApprovalBoardPage,
   PaymentRequestBoardPage,
   PaymentBatchManagerPage,

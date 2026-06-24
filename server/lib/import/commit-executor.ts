@@ -1004,6 +1004,13 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
         // conflict-wizard noise. Structure (title, WBS, hierarchy, milestone,
         // ordering) stays workbook-owned below.
         wiUpdates.type = fileRow.isMilestone ? "milestone" : "task";
+        // Owner decision 2026-06-23 (supersedes the earlier app-owned HYBRID for
+        // actual %): a re-import MUST refresh percentComplete (actual %) from the
+        // workbook so the board matches the tracker exactly — "Excel wins" for
+        // progress, consistent with the file-wins PLAN policy above. Trade-off:
+        // an in-app progress edit no longer survives a re-import (the workbook is
+        // the source of truth for actual %). `status` stays app-owned.
+        wiUpdates.percentComplete = clampPercent(fileRow.pctComplete) ?? 0;
         wiUpdates.expectedPctComplete = clampPercent(fileRow.expectedPctComplete);
         wiUpdates.wbsCode = incomingWbsCode;
         wiUpdates.outlineNumber = incomingWbsCode;

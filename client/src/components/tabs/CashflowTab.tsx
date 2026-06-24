@@ -13,6 +13,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { FinanceTrustStrip } from "@/components/finance/FinanceTrustStrip";
+import { SettlementStatusBadge } from "@/components/finance/SettlementStatusBadge";
 import {
   Loader2,
   DollarSign,
@@ -51,6 +52,8 @@ interface DetailInflow {
   milestoneName: string;
   milestoneInvoiceNumber: string;
   paymentReceivedDate: string;
+  paidDateConfirmed: boolean | null;
+  invoiceDateConfirmed: boolean | null;
   originalDate: string | null;
   hasAdminOverride: boolean;
   adminDateOverride: string | null;
@@ -76,6 +79,8 @@ interface DetailOutflow {
   expenseLineItem: string;
   expenseInvoiceNumber: string;
   expensePaymentDate: string;
+  paidDateConfirmed: boolean | null;
+  invoiceDateConfirmed: boolean | null;
   originalDate: string | null;
   hasAdminOverride: boolean;
   adminDateOverride: string | null;
@@ -332,6 +337,9 @@ function WeekDetailPanel({
                         disabled={!canOverride}
                         testId={`proj-date-inflow-${weekStart}-${i}`}
                       />
+                      <div className="mt-1">
+                        <SettlementStatusBadge line={{ invoiceNumber: inf.milestoneInvoiceNumber, invoiceDate: inf.invoiceRaisedDate, invoiceDateConfirmed: inf.invoiceDateConfirmed, paidDate: inf.paymentReceivedDate, paidDateConfirmed: inf.paidDateConfirmed }} />
+                      </div>
                     </td>
                     <td className="px-2 py-1 text-right font-mono text-emerald-700"><RandValue value={inf.milestoneAmount} /></td>
                   </tr>
@@ -402,6 +410,9 @@ function WeekDetailPanel({
                         disabled={!canOverride}
                         testId={`proj-date-outflow-${weekStart}-${i}`}
                       />
+                      <div className="mt-1">
+                        <SettlementStatusBadge line={{ invoiceNumber: out.expenseInvoiceNumber, invoiceDate: null, invoiceDateConfirmed: out.invoiceDateConfirmed, paidDate: out.expensePaymentDate, paidDateConfirmed: out.paidDateConfirmed }} />
+                      </div>
                     </td>
                     <td className="px-2 py-1 text-right font-mono text-red-700"><RandValue value={out.expenseActualTotal} /></td>
                   </tr>

@@ -157,8 +157,6 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "trackerReplicaExpenditure", path: "/projects/:projectId/expenditure-breakdown", label: "Expenditure Breakdown (Replica)", iconKey: "TrendingDown", navGroup: "FINANCE", permissionEntity: "cos", showInSidebar: false, routeComponentKey: "ExpenditureBreakdownReplicaPage" },
   { id: "trackerReplicaPlan", path: "/projects/:projectId/program-plan", label: "Program Plan (Replica)", iconKey: "Calendar", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "work_items", showInSidebar: false, routeComponentKey: "ProgramPlanReplicaPage" },
   { id: "manualOverrides", path: "/projects/:projectId/manual-overrides", label: "Manual Edit Log", iconKey: "History", navGroup: "FINANCE", permissionEntity: "revenue_tracker", showInSidebar: false, routeComponentKey: "ManualOverridesPage" },
-  { id: "excelVsAppProgram", path: "/program/excel-vs-app", label: "Excel vs App", iconKey: "GitCompare", navGroup: "FINANCE", permissionEntity: "excel_vs_app", showInSidebar: false, routeComponentKey: "ExcelVsAppProgramPage" },
-  { id: "excelVsAppProject", path: "/projects/:projectId/excel-vs-app", label: "Excel vs App (Project)", iconKey: "GitCompare", navGroup: "FINANCE", permissionEntity: "excel_vs_app", showInSidebar: false, routeComponentKey: "ExcelVsAppProjectPage" },
   // D4 — per-project finance detail: drill any total to its lines to its source
   // cell. Reached from the reconciliation board / finance home; not in the sidebar.
   { id: "financeProjectDetail", path: "/projects/:projectId/finance", label: "Project Finance", iconKey: "GitCompare", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: false, routeComponentKey: "FinanceProjectDetailPage" },
@@ -209,7 +207,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "portfolio", path: "/portfolio", label: "Portfolio", iconKey: "LayoutGrid", navGroup: "PROJECTS", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "PortfolioPage" },
   // Execution control tower (replaces the legacy 5-tab /execution-board).
   { id: "executionReview", path: "/execution", label: "Execution", iconKey: "LayoutDashboard", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_review", showInSidebar: true, routeComponentKey: "ExecutionReviewBoardPage" },
-  { id: "executionMilestones", path: "/execution/milestones", label: "Milestone Tracker", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_review", showInSidebar: false, routeComponentKey: "ExecutionMilestonesPage" },
+  { id: "executionMilestones", path: "/execution/milestones", label: "Activity Planning", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_review", showInSidebar: false, routeComponentKey: "ExecutionMilestonesPage" },
   { id: "executionDeliveries", path: "/execution/deliveries", label: "Deliveries", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_review", showInSidebar: false, routeComponentKey: "ExecutionDeliveriesPage" },
   { id: "executionAllocations", path: "/execution/allocations", label: "Allocations", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_review", showInSidebar: false, routeComponentKey: "ExecutionAllocationsPage" },
   { id: "executionSite", path: "/execution/site/:projectId", label: "Site Detail", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_review", showInSidebar: false, routeComponentKey: "ExecutionReviewDetailPage" },
@@ -270,7 +268,6 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "adminDatabaseMigration", path: "/admin/database-migration", label: "Database Migration", permissionEntity: "database_migration", routeComponentKey: "DatabaseMigrationPage" },
   { id: "adminKpiTraceability", path: "/admin/kpi-traceability", label: "KPI Traceability", iconKey: "Activity", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "KpiTraceabilityPage" },
   { id: "adminImportControlTower", path: "/admin/import-control-tower", label: "Import Control Tower", iconKey: "FileSpreadsheet", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "ImportControlTowerPage" },
-  { id: "programWideAssessment", path: "/reports/program-wide-assessment", label: "Program-wide Assessment", iconKey: "GitCompare", navGroup: "REPORTS", permissionEntity: "excel_vs_app", showInSidebar: false, routeComponentKey: "ProgramWideAssessmentPage" },
   { id: "programmeReports", path: "/reports/programme", label: "Programme Reports", iconKey: "FileSpreadsheet", navGroup: "REPORTS", permissionEntity: "reports", showInSidebar: false, routeComponentKey: "ProgrammeReportsPage" },
   { id: "reportCenter", path: "/reports/center", label: "Report Center", iconKey: "FileText", navGroup: "REPORTS", permissionEntity: "reports", showInSidebar: false, routeComponentKey: "ReportCenterPage" },
   { id: "performanceDashboard", path: "/reports/performance", label: "Performance", iconKey: "BarChart3", navGroup: "REPORTS", permissionEntity: "performance", showInSidebar: false, routeComponentKey: "PerformancePage" },

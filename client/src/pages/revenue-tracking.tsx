@@ -19,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { styleForCell } from "@/lib/tracker-cell-format";
+import { SettlementStatusBadge } from "@/components/finance/SettlementStatusBadge";
 import { Loader2 } from "lucide-react";
 import { useFinanceQuery } from "@/lib/finance-trust";
 import { formatZar } from "@/lib/currency";
@@ -46,7 +47,11 @@ interface RevenueTrackingResponse {
     expectedPaymentDate: string | null;
     invoiceNumber: string | null;
     invoiceDate: string | null;
+    invoiceDateConfirmed: boolean | null;
+    invoiceDateFontColor: string | null;
     paidDate: string | null;
+    paidDateConfirmed: boolean | null;
+    paidDateFontColor: string | null;
     milestoneNotes: string | null;
     cellFormat: unknown;
   }>;
@@ -66,27 +71,6 @@ function pct(v: string | null): string {
 import { formatDateZA } from "@/lib/datetime";
 function fmtDate(v: string | null): string {
   return formatDateZA(v);
-}
-
-/**
- * Resolve a cell's imported colour across naming variants.
- *
- * The Smart Import pipeline keys each revenue line's `cell_format` by the
- * SOURCE-SHEET column label — `planned_payment_date` / `payment_received_date`
- * (server/lib/import/normalizer.ts) — while the rest of the app refers to these
- * columns by their canonical field names (`expectedPaymentDate` / `paidDate`).
- * `styleForCell` only normalises camel/snake of a single name, so a lookup by
- * the canonical name never matches the importer's column-label key and the
- * payment-date colour (red = unconfirmed, black/green = paid/confirmed) is
- * silently dropped. Try every alias so the imported colour renders regardless
- * of which key the importer wrote — no re-import required.
- */
-function styleForCellAny(cellFormat: unknown, ...fields: string[]): ReturnType<typeof styleForCell> {
-  for (const f of fields) {
-    const s = styleForCell(cellFormat, f);
-    if (s && Object.keys(s).length > 0) return s;
-  }
-  return {};
 }
 
 export function RevenueTrackingContent({ projectId }: { projectId: number }) {
@@ -171,6 +155,7 @@ export function RevenueTrackingContent({ projectId }: { projectId: number }) {
                 <TableHead>Invoice Number</TableHead>
                 <TableHead>Invoice Raised Date</TableHead>
                 <TableHead>Payment Received Date</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead>Milestone Notes &amp; Comments</TableHead>
               </TableRow>
             </TableHeader>
@@ -181,15 +166,16 @@ export function RevenueTrackingContent({ projectId }: { projectId: number }) {
                   <TableCell style={styleForCell(m.cellFormat, "milestoneName")}>{m.milestoneName ?? "—"}</TableCell>
                   <TableCell style={styleForCell(m.cellFormat, "milestonePercent")}>{pct(m.milestonePercent)}</TableCell>
                   <TableCell style={styleForCell(m.cellFormat, "amountExVat")}>{money(m.amountExVat)}</TableCell>
-                  <TableCell style={styleForCellAny(m.cellFormat, "expectedPaymentDate", "planned_payment_date")}>{fmtDate(m.expectedPaymentDate)}</TableCell>
+                  <TableCell style={styleForCell(m.cellFormat, "expectedPaymentDate")}>{fmtDate(m.expectedPaymentDate)}</TableCell>
                   <TableCell style={styleForCell(m.cellFormat, "invoiceNumber")}>{m.invoiceNumber ?? "—"}</TableCell>
-                  <TableCell style={styleForCellAny(m.cellFormat, "invoiceDate")}>{fmtDate(m.invoiceDate)}</TableCell>
-                  <TableCell style={styleForCellAny(m.cellFormat, "paidDate", "payment_received_date")}>{fmtDate(m.paidDate)}</TableCell>
+                  <TableCell style={styleForCell(m.cellFormat, "invoiceDate")}>{fmtDate(m.invoiceDate)}</TableCell>
+                  <TableCell style={styleForCell(m.cellFormat, "paidDate")}>{fmtDate(m.paidDate)}</TableCell>
+                  <TableCell><SettlementStatusBadge line={m} /></TableCell>
                   <TableCell style={styleForCell(m.cellFormat, "milestoneNotes")} className="max-w-xs truncate">{m.milestoneNotes ?? "—"}</TableCell>
                 </TableRow>
               ))}
               {data.milestones.length === 0 && (
-                <TableRow><TableCell colSpan={9} className="text-center text-sm text-muted-foreground">No milestones yet.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center text-sm text-muted-foreground">No milestones yet.</TableCell></TableRow>
               )}
             </TableBody>
           </Table>

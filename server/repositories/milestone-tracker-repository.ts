@@ -18,6 +18,7 @@ import {
   normalizedRevenueLines,
   normalizedCostLines,
   workItems,
+  workItemDependencies,
   revenueMilestoneTaskLinks,
   taskCostLineLinks,
 } from "@shared/schema";
@@ -33,6 +34,9 @@ export interface RevenueMilestoneRow {
   invoiceDate: string | null;
   expectedPaymentDate: string | null;
   paidDate: string | null;
+  /** Font colour of the "Payment Received Date" cell: true = black (confirmed /
+   *  actual receipt), false = red (forecast), null = unknown. */
+  paidDateConfirmed: boolean | null;
   inBankDate: string | null;
   status: string;
   milestoneNotes: string | null;
@@ -83,6 +87,15 @@ export interface TaskCostLinkRow {
   costRowHash: string;
 }
 
+export interface TaskDependencyRow {
+  id: number;
+  predecessorId: number;
+  successorId: number;
+  /** "SMART_IMPORT" = derived from the workbook (read-only here); "MANUAL" =
+   *  created in Activity Planning (editable, never touched by re-import). */
+  source: string;
+}
+
 export class MilestoneTrackerRepository {
   private _dbInstance?: typeof db;
 
@@ -111,6 +124,7 @@ export class MilestoneTrackerRepository {
         invoiceDate: normalizedRevenueLines.invoiceDate,
         expectedPaymentDate: normalizedRevenueLines.expectedPaymentDate,
         paidDate: normalizedRevenueLines.paidDate,
+        paidDateConfirmed: normalizedRevenueLines.paidDateConfirmed,
         inBankDate: normalizedRevenueLines.inBankDate,
         status: normalizedRevenueLines.status,
         milestoneNotes: normalizedRevenueLines.milestoneNotes,
@@ -224,6 +238,60 @@ export class MilestoneTrackerRepository {
       })
       .from(taskCostLineLinks)
       .where(inArray(taskCostLineLinks.projectId, projectIds)) as Promise<TaskCostLinkRow[]>;
+  }
+
+  // ── Task dependencies (reuse work_item_dependencies; MANUAL = Activity-Planning-owned) ──
+
+  /** Active dependency edges whose successor is one of the given work items —
+   *  i.e. every intra-project edge (both SMART_IMPORT and MANUAL). */
+  async getDependenciesByWorkItemIds(workItemIds: number[]): Promise<TaskDependencyRow[]> {
+    if (workItemIds.length === 0) return [];
+    return this.dbInstance
+      .select({
+        id: workItemDependencies.id,
+        predecessorId: workItemDependencies.predecessorId,
+        successorId: workItemDependencies.successorId,
+        source: workItemDependencies.source,
+      })
+      .from(workItemDependencies)
+      .where(and(
+        inArray(workItemDependencies.successorId, workItemIds),
+        isNull(workItemDependencies.deletedAt),
+      )) as Promise<TaskDependencyRow[]>;
+  }
+
+  /** Add a MANUAL (Activity-Planning) dependency. Idempotent: skips if any active
+   *  edge already exists for the same pair (so it never duplicates an imported one). */
+  async addManualDependency(input: { predecessorId: number; successorId: number; createdBy: number | null }): Promise<void> {
+    const [existing] = await this.dbInstance
+      .select({ id: workItemDependencies.id })
+      .from(workItemDependencies)
+      .where(and(
+        eq(workItemDependencies.predecessorId, input.predecessorId),
+        eq(workItemDependencies.successorId, input.successorId),
+        isNull(workItemDependencies.deletedAt),
+      ))
+      .limit(1);
+    if (existing) return;
+    await this.dbInstance.insert(workItemDependencies).values({
+      predecessorId: input.predecessorId,
+      successorId: input.successorId,
+      depType: "FS",
+      lagDays: 0,
+      source: "MANUAL",
+    });
+  }
+
+  /** Remove a dependency — only MANUAL edges can be deleted here (imported edges
+   *  are owned by the workbook). */
+  async removeManualDependency(input: { predecessorId: number; successorId: number }): Promise<void> {
+    await this.dbInstance
+      .delete(workItemDependencies)
+      .where(and(
+        eq(workItemDependencies.predecessorId, input.predecessorId),
+        eq(workItemDependencies.successorId, input.successorId),
+        eq(workItemDependencies.source, "MANUAL"),
+      ));
   }
 
   // ── Validation helpers (links must point at live rows in the same project) ──

@@ -56,6 +56,8 @@ interface DrawerLine {
   isRealised: boolean;
   invoiceNumber: string | null;
   invoiceDate: string | null;
+  /** Invoice-date colour signal (§3.7): false = RED/unconfirmed, true/null = confirmed. */
+  invoiceDateConfirmed: boolean | null;
   poNumber: string | null;
   supplier: string | null;
   rowSource: string | null;
@@ -75,6 +77,7 @@ interface RevenueRaw {
   invoiceNumber: string | null;
   poNumber: string | null;
   invoiceDate: string | null;
+  invoiceDateConfirmed?: boolean | null;
   supplier: string | null;
   isRealised: boolean;
   noRevenueLinked: boolean;
@@ -95,6 +98,7 @@ interface CosRaw {
   invoiceNumber: string | null;
   qbBillNumber: string | null;
   invoiceDate: string | null;
+  invoiceDateConfirmed?: boolean | null;
   supplier: string | null;
   poNumber: string | null;
   cosState: 'realised' | 'committed' | 'planned' | 'qb_actual';
@@ -119,6 +123,7 @@ interface GpRaw {
   invoiceNumber: string | null;
   poNumber: string | null;
   invoiceRaisedDate: string | null;
+  invoiceDateConfirmed?: boolean | null;
   bucket: 'planned' | 'committed' | 'unrealised' | 'realised';
   recognitionMonth: string | null;
 }
@@ -187,6 +192,7 @@ function normaliseRevenue(rows: RevenueRaw[]): DrawerLine[] {
     isRealised: r.isRealised,
     invoiceNumber: r.invoiceNumber,
     invoiceDate: r.invoiceDate,
+    invoiceDateConfirmed: r.invoiceDateConfirmed ?? null,
     poNumber: r.poNumber,
     supplier: r.supplier,
     rowSource: r.rowSource ?? null,
@@ -211,6 +217,7 @@ function normaliseCos(rows: CosRaw[]): DrawerLine[] {
     isRealised: r.cosState === 'realised',
     invoiceNumber: r.invoiceNumber,
     invoiceDate: r.invoiceDate,
+    invoiceDateConfirmed: r.invoiceDateConfirmed ?? null,
     poNumber: r.poNumber,
     supplier: r.supplier,
     rowSource: r.rowSource ?? null,
@@ -235,6 +242,7 @@ function normaliseGp(rows: GpRaw[]): DrawerLine[] {
     isRealised: r.bucket === 'realised',
     invoiceNumber: r.invoiceNumber,
     invoiceDate: r.invoiceRaisedDate,
+    invoiceDateConfirmed: r.invoiceDateConfirmed ?? null,
     poNumber: r.poNumber,
     supplier: null,
     rowSource: null,
@@ -636,7 +644,17 @@ export function FinanceLineDetailDrawer({
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3 text-xs">
                             <div>
                               <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">Invoice Date</p>
-                              <p className="font-medium text-foreground">{item.invoiceDate || '—'}</p>
+                              <p
+                                className={`font-medium ${item.invoiceDateConfirmed === false ? 'text-red-600' : 'text-foreground'}`}
+                                title={
+                                  item.invoiceDateConfirmed === false
+                                    ? 'Invoice date is RED in the tracker — captured but not yet confirmed (§3.7).'
+                                    : undefined
+                                }
+                              >
+                                {item.invoiceDate || '—'}
+                                {item.invoiceDateConfirmed === false && ' · unconfirmed'}
+                              </p>
                             </div>
                             <div>
                               <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">PO #</p>
