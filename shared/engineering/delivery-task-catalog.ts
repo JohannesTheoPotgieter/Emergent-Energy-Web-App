@@ -1,0 +1,81 @@
+import { z } from "zod";
+
+/**
+ * Controlled vocabulary for Engineering **delivery-scope** task types.
+ *
+ * Modelled as a shared constant + Zod (not a pg enum) because `work_items`
+ * `task_type_tag` is a shared free-text column across workstreams; an enum
+ * migration would be invasive and cross-domain. Validation happens at the
+ * engineering route boundary. Additive and reversible.
+ */
+
+/** Delivery deliverable/work task types (financial close → handover). */
+export const ENGINEERING_DELIVERY_TASK_TYPE_TAGS = [
+  "ifc_pack",
+  "as_built",
+  "rfi",
+  "substitution",
+  "commissioning_review",
+  "eng_snag",
+  "handover_pack",
+] as const;
+export type EngineeringDeliveryTaskTypeTag = (typeof ENGINEERING_DELIVERY_TASK_TYPE_TAGS)[number];
+
+/** Seam handoff task types — tracked items handed across a discipline seam. */
+export const ENGINEERING_SEAM_TASK_TYPE_TAGS = [
+  "compliance_input", // → Keith / SSEG (SSEG/NERSA/PTI/Grid input)
+  "construction_snag", // ↔ Construction Manager
+] as const;
+export type EngineeringSeamTaskTypeTag = (typeof ENGINEERING_SEAM_TASK_TYPE_TAGS)[number];
+
+/** Every controlled engineering task type tag (delivery + seam). */
+export const ENGINEERING_TASK_TYPE_TAGS = [
+  ...ENGINEERING_DELIVERY_TASK_TYPE_TAGS,
+  ...ENGINEERING_SEAM_TASK_TYPE_TAGS,
+] as const;
+export type EngineeringTaskTypeTag = (typeof ENGINEERING_TASK_TYPE_TAGS)[number];
+
+/**
+ * Task types whose output IS a document — a task of this type cannot move to
+ * Done without a linked document. Enforced at the single status chokepoint
+ * (`server/lib/task-workflow-guard.ts`).
+ */
+export const DOCUMENT_OUTPUT_TASK_TYPE_TAGS = [
+  "ifc_pack",
+  "as_built",
+  "handover_pack",
+  "commissioning_review",
+] as const satisfies readonly EngineeringDeliveryTaskTypeTag[];
+
+const DOCUMENT_OUTPUT_SET: ReadonlySet<string> = new Set(DOCUMENT_OUTPUT_TASK_TYPE_TAGS);
+
+export function isEngineeringTaskTypeTag(v: string | null | undefined): v is EngineeringTaskTypeTag {
+  return v != null && (ENGINEERING_TASK_TYPE_TAGS as readonly string[]).includes(v);
+}
+
+export function isSeamTaskTypeTag(v: string | null | undefined): v is EngineeringSeamTaskTypeTag {
+  return v != null && (ENGINEERING_SEAM_TASK_TYPE_TAGS as readonly string[]).includes(v);
+}
+
+/** True when a task of this type must have a linked document to reach Done. */
+export function requiresDocumentLink(taskTypeTag: string | null | undefined): boolean {
+  return taskTypeTag != null && DOCUMENT_OUTPUT_SET.has(taskTypeTag);
+}
+
+// Zod schemas for route validation.
+export const engineeringDeliveryTaskTypeTagSchema = z.enum(ENGINEERING_DELIVERY_TASK_TYPE_TAGS);
+export const engineeringSeamTaskTypeTagSchema = z.enum(ENGINEERING_SEAM_TASK_TYPE_TAGS);
+export const engineeringTaskTypeTagSchema = z.enum(ENGINEERING_TASK_TYPE_TAGS);
+
+/** Human labels for UI. */
+export const ENGINEERING_TASK_TYPE_LABELS: Record<EngineeringTaskTypeTag, string> = {
+  ifc_pack: "IFC Pack",
+  as_built: "As-Built",
+  rfi: "RFI",
+  substitution: "Substitution",
+  commissioning_review: "Commissioning Review",
+  eng_snag: "Engineering Snag",
+  handover_pack: "Handover Pack",
+  compliance_input: "Compliance Input",
+  construction_snag: "Construction Snag",
+};

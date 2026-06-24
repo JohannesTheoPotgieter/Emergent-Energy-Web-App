@@ -86,8 +86,8 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     id: 'ENGINEERING',
     label: 'Engineering',
     iconKey: 'Wrench',
-    description: 'Engineering — tasks, stages, standups, deliverables',
-    pageIds: ['engineering', 'engineeringTasks', 'engineeringStandup', 'engineeringAudit'],
+    description: 'Engineering — tasks, documents, deliverables',
+    pageIds: ['engineering', 'engineeringTasks', 'engineeringDocuments', 'engineeringAudit'],
     primaryPath: '/engineering',
   },
   {

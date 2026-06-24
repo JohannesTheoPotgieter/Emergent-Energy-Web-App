@@ -40,14 +40,14 @@ type TopNavLabel = "Home" | "Execution" | "Finance" | "Engineering" | "Quality M
 /**
  * Locked role × top-nav visibility per COO spec (2026-05-11):
  *
- *   Home · Execution · Finance · Engineering · Quality Management · Settings
+ *   Home · Execution · Engineering · Finance · Quality Management · Settings
  *
  * Hidden tabs (Projects/Portfolio, Gates, Project Development, HSE, Reports,
  * the legacy Admin grid) sit behind Functionality Control and don't render
  * in the top bar regardless of the role. Settings is COO/CEO only.
  */
 const EXPECTED_VISIBILITY: Record<CompanyRole, TopNavLabel[]> = {
-  COO_ADMIN:               ["Home", "Execution", "Finance", "Engineering", "Quality Management", "Settings"],
+  COO_ADMIN:               ["Home", "Execution", "Engineering", "Finance", "Quality Management", "Settings"],
   CEO_ADMIN:               ["Home", "Execution", "Finance", "Settings"],
   CCO:                     ["Home", "Finance"],
   KEY_ACCOUNTS_MANAGER:    ["Home", "Finance"],

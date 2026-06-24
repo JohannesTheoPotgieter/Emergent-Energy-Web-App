@@ -98,9 +98,7 @@ export function NotificationBell() {
   const handleClick = useCallback((n: Notification) => {
     if (!n.isRead) markRead(n.id);
     setOpen(false);
-    if (n.eventType?.startsWith("standup.")) {
-      setLocation("/engineering/standup");
-    } else if (n.linkedTaskId) {
+    if (n.linkedTaskId) {
       setLocation(`/engineering/tasks?taskId=${n.linkedTaskId}`);
     } else if (n.linkedDeliverableId) {
       setLocation(`/engineering/tasks?deliverableId=${n.linkedDeliverableId}`);

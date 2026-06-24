@@ -12,7 +12,7 @@ import {
 /**
  * Navigation helpers — locked to the COO-spec six-tab nav (2026-05-11):
  *
- *   Home · Project Delivery · Finance · Engineering · Quality Management · Settings
+ *   Home · Execution · Engineering · Finance · Quality Management · Settings
  *
  * Hidden modules (Gates, Project Development, Portfolio, HSE, Reports,
  * legacy Admin grid) are kept in TOP_SECTIONS for path-matching but never
@@ -77,8 +77,8 @@ describe("app navigation helpers", () => {
     expect(labels).toEqual([
       "Home",
       "Execution",
-      "Finance",
       "Engineering",
+      "Finance",
       "Quality Management",
       "Settings",
     ]);

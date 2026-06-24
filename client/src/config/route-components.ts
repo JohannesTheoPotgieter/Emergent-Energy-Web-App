@@ -35,8 +35,8 @@ const MyWorkAdminSettingsPage = lazyWithRetry(() => import("@/pages/my-work-admi
 const MyWorkMeetingsPage = lazyWithRetry(() => import("@/pages/my-work-meetings"));
 const MyWorkSettingsPage = lazyWithRetry(() => import("@/pages/my-work-settings"));
 const QmDashboardPage = lazyWithRetry(() => import("@/pages/qm-dashboard"));
-const EngineeringDashboardPage = lazyWithRetry(() => import("@/pages/engineering-dashboard"));
-const EngineeringTasksPage = lazyWithRetry(() => import("@/pages/engineering-tasks"));
+const EngineeringHomePage = lazyWithRetry(() => import("@/pages/engineering/EngineeringHomePage"));
+const EngineeringTasksPage = lazyWithRetry(() => import("@/pages/engineering/EngineeringTaskManagerPage"));
 const EngineeringAuditPage = lazyWithRetry(() => import("@/pages/engineering-audit"));
 const RoleSettingsPage = lazyWithRetry(() => import("@/pages/role-settings"));
 const LifecycleBoardPage = lazyWithRetry(() => import("@/pages/lifecycle-board"));
@@ -115,7 +115,6 @@ const EngMonthlyReportComparePage = lazyWithRetry(() => import("@/pages/engineer
 const EngMonthlyReportProjectPage = lazyWithRetry(() => import("@/pages/engineering-monthly-report-project"));
 const ReportCenterPage = lazyWithRetry(() => import("@/pages/reports/report-center"));
 const PerformancePage = lazyWithRetry(() => import("@/pages/reports/performance"));
-const EngineeringStandupPage = lazyWithRetry(() => import("@/pages/engineering/standup"));
 const POApprovalBoardPage = lazyWithRetry(() => import("@/pages/po-approval-board"));
 const PaymentRequestBoardPage = lazyWithRetry(() => import("@/pages/payment-request-board"));
 const PaymentBatchManagerPage = lazyWithRetry(() => import("@/pages/payment-batch-manager"));
@@ -196,7 +195,7 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   ManualOverridesPage,
   MyWorkAdminSettingsPage,
   QmDashboardPage,
-  EngineeringDashboardPage,
+  EngineeringHomePage,
   EngineeringTasksPage,
   EngineeringAuditPage,
   LifecycleBoardPage,
@@ -269,7 +268,6 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   EngMonthlyReportProjectPage,
   ReportCenterPage,
   PerformancePage,
-  EngineeringStandupPage,
   POApprovalBoardPage,
   PaymentRequestBoardPage,
   PaymentBatchManagerPage,

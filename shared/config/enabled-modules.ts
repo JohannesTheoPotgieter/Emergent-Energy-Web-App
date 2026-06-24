@@ -103,6 +103,21 @@ export const ENABLED_EXECUTION_PAGE_IDS = [
 ] as const;
 
 /**
+ * Engineering delivery pages inside the ENGINEERING nav-group that are
+ * Live-Ready. The Engineering function is being rebuilt for delivery scope
+ * (Home · Task Manager · Document Manager); page IDs are added here as each is
+ * promoted into the ring fence. Standup, the drawing/transmittal registers and
+ * the engineering audit log stay OUT of the Live-Ready set.
+ *
+ * Page IDs match `PageRegistryEntry.id` in client/src/config/page-registry.ts.
+ */
+export const ENABLED_ENGINEERING_PAGE_IDS = [
+  "engineering",           // /engineering — Engineering Home (delivery landing)
+  "engineeringTasks",      // /engineering/tasks — Task Manager
+  "engineeringDocuments",  // /engineering/documents — Document Manager
+] as const;
+
+/**
  * THE registry. Re-enabling a module = change its entry to `{ mode: "full" }`
  * (or `{ mode: "partial", pageIds: [...] }` to ring-fence specific pages).
  */
@@ -115,6 +130,11 @@ export const LIVE_READY_MODULE_CONFIG: ModuleRegistryConfig = {
     // section). Added 2026-06-19 as the second Live-Ready module.
     PROJECT_MANAGEMENT: { mode: "partial", pageIds: ENABLED_EXECUTION_PAGE_IDS },
     SYSTEM: { mode: "partial", pageIds: ENABLED_SYSTEM_PAGE_IDS },
+    // Engineering (delivery scope) — third Live-Ready module, ring-fenced to
+    // its delivery pages (Home now; Task Manager + Document Manager added as
+    // they are rebuilt). Surfaces the "Engineering" top tab between Execution
+    // and Finance. Added 2026-06-22.
+    ENGINEERING: { mode: "partial", pageIds: ENABLED_ENGINEERING_PAGE_IDS },
     // ── Disabled (re-enable by flipping to { mode: "full" }) ──────────────
     MY_WORK: { mode: "disabled" },
     PORTFOLIO: { mode: "disabled" },
@@ -122,7 +142,6 @@ export const LIVE_READY_MODULE_CONFIG: ModuleRegistryConfig = {
     PROJECT_DEVELOPMENT: { mode: "disabled" },
     PROJECTS: { mode: "disabled" },
     GATES: { mode: "disabled" },
-    ENGINEERING: { mode: "disabled" },
     QUALITY: { mode: "disabled" },
     HSE: { mode: "disabled" },
     REPORTS: { mode: "disabled" },

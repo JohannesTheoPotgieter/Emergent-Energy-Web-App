@@ -9,6 +9,7 @@ import {
   LIVE_READY_ROLE_ALLOWLIST,
   ENABLED_SYSTEM_PAGE_IDS,
   ENABLED_EXECUTION_PAGE_IDS,
+  ENABLED_ENGINEERING_PAGE_IDS,
   ACTIVE_MODULE_CONFIG,
   type ModuleRegistryConfig,
   isNavGroupEnabledIn,
@@ -119,11 +120,12 @@ describe("live-ready module — opt-in DEV override (verify the lockdown locally
     process.env.NODE_ENV = "development";
     process.env.LIVE_READY_DEV = "1";
     // App.tsx renders <Redirect to={LIVE_READY_LANDING_PATH}/> for any page
-    // whose module is disabled (isPageEnabled === false).
-    const disabledPage = PAGE_REGISTRY.find((p) => p.navGroup === "ENGINEERING");
+    // whose module is disabled (isPageEnabled === false). QUALITY is a still-
+    // disabled module (ENGINEERING is now partially enabled).
+    const disabledPage = PAGE_REGISTRY.find((p) => p.navGroup === "QUALITY");
     expect(disabledPage).toBeDefined();
     expect(isPageEnabled({ id: disabledPage!.id, navGroup: disabledPage!.navGroup })).toBe(false);
-    expect(isNavGroupEnabled("ENGINEERING")).toBe(false);
+    expect(isNavGroupEnabled("QUALITY")).toBe(false);
     expect(LIVE_READY_LANDING_PATH).toBe("/finance");
   });
 
@@ -190,16 +192,19 @@ describe("live-ready module — role allowlist", () => {
 });
 
 describe("live-ready module — enabled module set", () => {
-  it("enables FINANCE (full), EXECUTION (PROJECT_MANAGEMENT partial) + SYSTEM (partial); disables every other navGroup", () => {
+  it("enables FINANCE (full), EXECUTION + ENGINEERING (partial) + SYSTEM (partial); disables every other navGroup", () => {
     const groups = LIVE_READY_MODULE_CONFIG.navGroups;
     expect(groups.FINANCE).toEqual({ mode: "full" });
     expect(groups.SYSTEM.mode).toBe("partial");
     // Execution control tower is the second Live-Ready module, ring-fenced to
     // its own pages within PROJECT_MANAGEMENT.
     expect(groups.PROJECT_MANAGEMENT.mode).toBe("partial");
+    // Engineering (delivery scope) is the third Live-Ready module, ring-fenced
+    // to its delivery pages within the ENGINEERING nav-group.
+    expect(groups.ENGINEERING.mode).toBe("partial");
     const disabled = [
       "MY_WORK", "PORTFOLIO", "PRIORITIES", "PROJECT_DEVELOPMENT", "PROJECTS",
-      "GATES", "ENGINEERING", "QUALITY", "HSE", "REPORTS", "KNOWLEDGE",
+      "GATES", "QUALITY", "HSE", "REPORTS", "KNOWLEDGE",
     ] as const;
     for (const g of disabled) {
       expect(groups[g], `${g} must be disabled`).toEqual({ mode: "disabled" });
@@ -224,13 +229,22 @@ describe("live-ready module — enabled module set", () => {
       ].sort(),
     );
   });
+
+  it("ENGINEERING allowlist is exactly the ring-fenced delivery pages", () => {
+    // Home + Task Manager + Document Manager are live in the ring fence.
+    expect([...ENABLED_ENGINEERING_PAGE_IDS].sort()).toEqual(
+      ["engineering", "engineeringTasks", "engineeringDocuments"].sort(),
+    );
+  });
 });
 
 describe("live-ready module — page reachability", () => {
   it("FINANCE pages are reachable, non-finance pages are not", () => {
     expect(isPageEnabled({ id: "financeHome", navGroup: "FINANCE" })).toBe(true);
     expect(isPageEnabled({ id: "cashflow", navGroup: "FINANCE" })).toBe(true);
-    expect(isPageEnabled({ id: "engineering", navGroup: "ENGINEERING" })).toBe(false);
+    // engineeringStandup is OUTSIDE the Engineering ring fence (only the Home
+    // page is enabled), so it stays unreachable.
+    expect(isPageEnabled({ id: "engineeringStandup", navGroup: "ENGINEERING" })).toBe(false);
     expect(isPageEnabled({ id: "portfolio", navGroup: "PROJECTS" })).toBe(false);
     expect(isPageEnabled({ id: "quality", navGroup: "QUALITY" })).toBe(false);
   });
@@ -243,6 +257,14 @@ describe("live-ready module — page reachability", () => {
     for (const id of ["projects", "milestoneTracker", "projectDetail", "now"]) {
       expect(isPageEnabled({ id, navGroup: "PROJECT_MANAGEMENT" }), `${id} must stay blocked`).toBe(false);
     }
+  });
+
+  it("ENGINEERING delivery pages are reachable; standup stays out of the ring fence", () => {
+    for (const id of ["engineering", "engineeringTasks", "engineeringDocuments"]) {
+      expect(isPageEnabled({ id, navGroup: "ENGINEERING" }), `${id} must be reachable`).toBe(true);
+    }
+    // Standup stays blocked — retired from the delivery scope.
+    expect(isPageEnabled({ id: "engineeringStandup", navGroup: "ENGINEERING" })).toBe(false);
   });
 
   it("SYSTEM plumbing pages are reachable, non-plumbing SYSTEM pages are not", () => {
@@ -269,12 +291,14 @@ describe("live-ready module — page reachability", () => {
 });
 
 describe("live-ready module — nav section gate", () => {
-  it("shows Finance + Execution(PROJECT_DELIVERY) + Settings(ADMIN); hides the rest", () => {
+  it("shows Finance + Execution(PROJECT_DELIVERY) + Engineering + Settings(ADMIN); hides the rest", () => {
     expect(isSectionModuleEnabled("FINANCE")).toBe(true);
     expect(isSectionModuleEnabled("ADMIN")).toBe(true);
     // Execution control tower surfaces the PROJECT_DELIVERY top tab.
     expect(isSectionModuleEnabled("PROJECT_DELIVERY")).toBe(true);
-    for (const hidden of ["HOME", "PORTFOLIO", "PRIORITIES", "PROJECT_DEVELOPMENT", "ENGINEERING", "QUALITY", "HSE", "REPORTS"] as const) {
+    // Engineering (delivery scope) is the third Live-Ready section.
+    expect(isSectionModuleEnabled("ENGINEERING")).toBe(true);
+    for (const hidden of ["HOME", "PORTFOLIO", "PRIORITIES", "PROJECT_DEVELOPMENT", "QUALITY", "HSE", "REPORTS"] as const) {
       expect(isSectionModuleEnabled(hidden), `${hidden} must be hidden`).toBe(false);
     }
   });
@@ -284,9 +308,10 @@ describe("live-ready module — nav section gate", () => {
       { key: "HOME" as const },
       { key: "FINANCE" as const },
       { key: "ENGINEERING" as const },
+      { key: "QUALITY" as const },
       { key: "ADMIN" as const },
     ];
-    expect(filterSectionsByEnabledModules(sections).map((s) => s.key)).toEqual(["FINANCE", "ADMIN"]);
+    expect(filterSectionsByEnabledModules(sections).map((s) => s.key)).toEqual(["FINANCE", "ENGINEERING", "ADMIN"]);
   });
 });
 
@@ -325,33 +350,34 @@ describe("live-ready module — search + server gate scoping", () => {
  * without mutating the production config.
  */
 describe("live-ready module — reversibility (one-line re-enable)", () => {
-  it("ENGINEERING is disabled under the production config", () => {
-    expect(isNavGroupEnabled("ENGINEERING")).toBe(false);
-    expect(isPageEnabled({ id: "engineering", navGroup: "ENGINEERING" })).toBe(false);
+  it("QUALITY is disabled under the production config", () => {
+    expect(isNavGroupEnabled("QUALITY")).toBe(false);
+    expect(isPageEnabled({ id: "quality", navGroup: "QUALITY" })).toBe(false);
     expect(LIVE_READY_MODE).toBe(true);
   });
 
-  it("flipping ENGINEERING to { mode: 'full' } restores its routes AND nav", () => {
+  it("flipping QUALITY to { mode: 'full' } restores its routes AND nav", () => {
     // The exact one-line change documented in docs/finance-freeze-runbook.md.
     const reEnabled: ModuleRegistryConfig = {
-      navGroups: { ...ACTIVE_MODULE_CONFIG.navGroups, ENGINEERING: { mode: "full" } },
+      navGroups: { ...ACTIVE_MODULE_CONFIG.navGroups, QUALITY: { mode: "full" } },
     };
 
-    // Route gate: engineering pages become reachable again.
-    expect(isPageEnabledIn(reEnabled, { id: "engineering", navGroup: "ENGINEERING" })).toBe(true);
-    expect(isPageEnabledIn(reEnabled, { id: "engineeringTasks", navGroup: "ENGINEERING" })).toBe(true);
+    // Route gate: quality pages become reachable again.
+    expect(isPageEnabledIn(reEnabled, { id: "quality", navGroup: "QUALITY" })).toBe(true);
+    expect(isPageEnabledIn(reEnabled, { id: "qualityTasks", navGroup: "QUALITY" })).toBe(true);
     // Nav gate (section visibility derives from navGroup enablement).
-    expect(isNavGroupEnabledIn(reEnabled, "ENGINEERING")).toBe(true);
+    expect(isNavGroupEnabledIn(reEnabled, "QUALITY")).toBe(true);
 
     // Other modules stay exactly as configured — only the flipped one changed.
-    expect(isNavGroupEnabledIn(reEnabled, "QUALITY")).toBe(false);
+    expect(isNavGroupEnabledIn(reEnabled, "HSE")).toBe(false);
     expect(isPageEnabledIn(reEnabled, { id: "financeHome", navGroup: "FINANCE" })).toBe(true);
   });
 
   it("a disabled route redirects to /finance (no deep-link bypass)", () => {
     // App.tsx renders <Redirect to={LIVE_READY_LANDING_PATH}/> for any page
-    // whose module is disabled; this pins the redirect target.
-    const disabledPage = PAGE_REGISTRY.find((p) => p.navGroup === "ENGINEERING");
+    // whose module is disabled; this pins the redirect target. QUALITY is a
+    // still-disabled module (ENGINEERING is now partially enabled).
+    const disabledPage = PAGE_REGISTRY.find((p) => p.navGroup === "QUALITY");
     expect(disabledPage).toBeDefined();
     expect(isPageEnabled({ id: disabledPage!.id, navGroup: disabledPage!.navGroup })).toBe(false);
     expect(LIVE_READY_LANDING_PATH).toBe("/finance");

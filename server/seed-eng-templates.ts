@@ -195,6 +195,13 @@ const STAGE_DEFS: StageDef[] = [
   },
 ];
 
+/**
+ * Delivery-scope stages (financial close → handover). First Assessment and
+ * Cost Proposal are pre-financial-close and are OUT of the engineering delivery
+ * scope — they are not seeded. The defs above are retained for reference/history.
+ */
+const DELIVERY_SCOPE_STAGE_NAMES = new Set(["IFC Planning", "Construction Support", "Handover Pack"]);
+
 export async function seedEngStageTemplates() {
   try {
     const existing = await db.select({ id: engStageTemplates.id }).from(engStageTemplates).limit(1);
@@ -203,7 +210,12 @@ export async function seedEngStageTemplates() {
       return;
     }
 
+    let seededCount = 0;
     for (const stage of STAGE_DEFS) {
+      // Pre-financial-close stages (First Assessment, Cost Proposal) are out of
+      // the delivery scope and are not seeded.
+      if (!DELIVERY_SCOPE_STAGE_NAMES.has(stage.name)) continue;
+      seededCount += 1;
       const [template] = await db.insert(engStageTemplates).values({
         name: stage.name,
         purpose: stage.purpose,
@@ -240,7 +252,7 @@ export async function seedEngStageTemplates() {
       }
     }
 
-    console.log(`[Seed] Engineering stage templates seeded: ${STAGE_DEFS.length} stages`);
+    console.log(`[Seed] Engineering stage templates seeded: ${seededCount} delivery stages`);
   } catch (error) {
     console.error("[Seed] Engineering stage templates error:", error);
   }

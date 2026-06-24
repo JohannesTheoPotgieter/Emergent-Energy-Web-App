@@ -29,7 +29,7 @@ export default function EngineeringDocumentsPage() {
       <SectionHeader
         icon={<FolderTree className="h-5 w-5" />}
         eyebrow="Engineering"
-        title="Engineering Document Management"
+        title="Document Manager"
         description="Drawings, specs, NCR evidence and calibration certificates. Approvals waiting on you appear first; pick a project to see its engineering folders and SharePoint connection."
       />
       <ManagedDocumentApprovalQueue title="Engineering approvals waiting on me" />

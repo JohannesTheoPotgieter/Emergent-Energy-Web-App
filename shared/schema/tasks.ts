@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { users } from "./users";
 import { projectInfo, clients, engineeringTickets } from "./projects";
+import { managedDocuments, projectDocumentLinks } from "./documents";
 
 // ===================== TASK CONSTANTS =====================
 
@@ -415,6 +416,31 @@ export const workItemStatusHistory = pgTable("work_item_status_history", {
 export const insertWorkItemStatusHistorySchema = createInsertSchema(workItemStatusHistory).omit({ id: true, changedAt: true } as any);
 export type InsertWorkItemStatusHistory = z.infer<typeof insertWorkItemStatusHistorySchema>;
 export type WorkItemStatusHistory = typeof workItemStatusHistory.$inferSelect;
+
+// ===================== WORK ITEM ↔ DOCUMENT LINKS =====================
+// Engineering delivery rebuild (Phase 2): a work item's output document(s).
+// Many-to-many — a task can output several documents and a document can
+// satisfy several tasks. Powers the "no Done without a linked document"
+// gate and the task ↔ document surfacing both ways. References the canonical
+// document spine (managed_documents / project_document_links) — metadata
+// only, never file bodies.
+export const workItemDocumentLinks = pgTable("work_item_document_links", {
+  id: serial("id").primaryKey(),
+  workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
+  managedDocumentId: integer("managed_document_id").references(() => managedDocuments.id, { onDelete: "set null" }),
+  projectDocumentLinkId: integer("project_document_link_id").references(() => projectDocumentLinks.id, { onDelete: "set null" }),
+  /** 'output' (the task produces it) | 'evidence' | 'reference'. */
+  linkRole: text("link_role").notNull().default("output"),
+  createdByUserId: integer("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  workItemIdx: index("work_item_document_links_work_item_idx").on(table.workItemId),
+  managedDocumentIdx: index("work_item_document_links_managed_document_idx").on(table.managedDocumentId),
+  uqWorkItemManagedDoc: unique("uq_work_item_document_link").on(table.workItemId, table.managedDocumentId),
+}));
+export const insertWorkItemDocumentLinkSchema = createInsertSchema(workItemDocumentLinks).omit({ id: true, createdAt: true } as any);
+export type InsertWorkItemDocumentLink = z.infer<typeof insertWorkItemDocumentLinkSchema>;
+export type WorkItemDocumentLink = typeof workItemDocumentLinks.$inferSelect;
 
 // ── Task Tags & Time Entries ─────────────────────────────────────────
 

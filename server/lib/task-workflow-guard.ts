@@ -1,7 +1,8 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { hasDeliverableRequirementFlag } from "@shared/task-deliverable-requirement";
+import { requiresDocumentLink } from "@shared/engineering/delivery-task-catalog";
 import { db } from "../db";
-import { workItems, taskDeliverables } from "@shared/schema";
+import { workItems, taskDeliverables, workItemDocumentLinks } from "@shared/schema";
 
 export type TaskWorkflowMutationSource = "status_update" | "bulk_status_update" | "send_for_approval" | "send_deliverable" | "approval_action";
 
@@ -12,6 +13,7 @@ const DELIVERABLE_REQUIRED_MESSAGE = "This task requires a deliverable. Use Send
 const APPROVAL_REQUIRED_MESSAGE = "This task requires approval. Use Send for Approval.";
 const DELIVERABLE_BEFORE_APPROVAL_MESSAGE = "Approval cannot start until deliverable is sent.";
 const COMPLETE_BLOCKED_MESSAGE = "Complete is blocked until deliverable is sent.";
+const DOCUMENT_LINK_REQUIRED_MESSAGE = "This task can't be marked done until a document is linked.";
 
 export type TaskWorkflowContext = {
   taskId: number;
@@ -19,6 +21,14 @@ export type TaskWorkflowContext = {
   approvalRequired: boolean;
   deliverableRequired: boolean;
   deliverableSent: boolean;
+  /**
+   * Engineering Done-gate (Phase 2): when the task's type produces a document
+   * (catalog `requiresDocumentLink`), it cannot move to Done without a linked
+   * document. Optional so non-engineering callers/tests are unaffected
+   * (undefined → no requirement).
+   */
+  documentLinkRequired?: boolean;
+  documentLinked?: boolean;
 };
 
 export class TaskWorkflowGuardError extends Error {
@@ -44,6 +54,11 @@ export async function buildTaskWorkflowContext(taskId: number, fallbackCurrentSt
     .where(eq(taskDeliverables.workItemId, taskId))
     .limit(1);
 
+  const [documentLink] = await db.select({ id: workItemDocumentLinks.id })
+    .from(workItemDocumentLinks)
+    .where(eq(workItemDocumentLinks.workItemId, taskId))
+    .limit(1);
+
   const deliverableRequired = hasDeliverableRequirementFlag(task || {});
 
   return {
@@ -52,6 +67,8 @@ export async function buildTaskWorkflowContext(taskId: number, fallbackCurrentSt
     approvalRequired: !!task?.approvalRequired,
     deliverableRequired,
     deliverableSent: !!deliverable,
+    documentLinkRequired: requiresDocumentLink(task?.taskTypeTag),
+    documentLinked: !!documentLink,
   };
 }
 
@@ -77,7 +94,12 @@ export async function buildTaskWorkflowContextsForIds(taskIds: number[]): Promis
     .from(taskDeliverables)
     .where(inArray(taskDeliverables.workItemId, taskIds));
 
+  const documentLinks = await db.select({ workItemId: workItemDocumentLinks.workItemId })
+    .from(workItemDocumentLinks)
+    .where(inArray(workItemDocumentLinks.workItemId, taskIds));
+
   const hasDeliverable = new Set<number>(deliverables.map((d: { workItemId: number }) => d.workItemId));
+  const hasDocumentLink = new Set<number>(documentLinks.map((d: { workItemId: number }) => d.workItemId));
 
   for (const task of tasks) {
     result.set(task.id, {
@@ -86,6 +108,8 @@ export async function buildTaskWorkflowContextsForIds(taskIds: number[]): Promis
       approvalRequired: !!task.approvalRequired,
       deliverableRequired: hasDeliverableRequirementFlag(task),
       deliverableSent: hasDeliverable.has(task.id),
+      documentLinkRequired: requiresDocumentLink(task.taskTypeTag),
+      documentLinked: hasDocumentLink.has(task.id),
     });
   }
 
@@ -116,6 +140,12 @@ export function assertTaskWorkflowTransition(
 
   if (context.deliverableRequired && movingToComplete) {
     throw new TaskWorkflowGuardError(source === "status_update" || source === "bulk_status_update" ? DELIVERABLE_REQUIRED_MESSAGE : COMPLETE_BLOCKED_MESSAGE);
+  }
+
+  // Engineering Done-gate: a document-output task cannot reach Done without a
+  // linked document. Single chokepoint for "no Done without a linked document".
+  if (context.documentLinkRequired && movingToComplete && !context.documentLinked) {
+    throw new TaskWorkflowGuardError(DOCUMENT_LINK_REQUIRED_MESSAGE);
   }
 
   if (context.approvalRequired && movingToApproval && !currentlyInApprovalFlow) {

@@ -44,8 +44,8 @@ const JOURNEYS: Array<{ role: JourneyRole; expectedSections: SectionKey[]; route
   // daily surfaces (Pipeline / Opportunities / Clients) sit behind Functionality
   // Control. Home + Finance are the must-have tabs in the new spec.
   { role: "PROJECT_DEVELOPER", expectedSections: ["FINANCE"], routes: ["/pd", "/opportunities", "/clients", "/handover-control"] },
-  { role: "ENGINEER", expectedSections: ["ENGINEERING", "QUALITY"], routes: ["/engineering", "/engineering/tasks", "/engineering/standup"] },
-  { role: "ENGINEERING_MANAGER", expectedSections: ["ENGINEERING", "QUALITY", "PROJECT_DELIVERY"], routes: ["/engineering", "/engineering/tasks", "/engineering/standup"] },
+  { role: "ENGINEER", expectedSections: ["ENGINEERING", "QUALITY"], routes: ["/engineering", "/engineering/tasks", "/engineering/documents"] },
+  { role: "ENGINEERING_MANAGER", expectedSections: ["ENGINEERING", "QUALITY", "PROJECT_DELIVERY"], routes: ["/engineering", "/engineering/tasks", "/engineering/documents"] },
   { role: "QUALITY_MANAGER", expectedSections: ["QUALITY", "PROJECT_DELIVERY"], routes: ["/quality", "/commissioning-dashboard", "/hse"] },
   // HSE no longer surfaces as its own top-level tab in the six-tab spec —
   // HSE_MANAGER's must-have is Project Delivery for the operational surfaces.
