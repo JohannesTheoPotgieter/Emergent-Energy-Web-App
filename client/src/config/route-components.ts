@@ -64,7 +64,6 @@ const WeeklyReviewsPage = lazyWithRetry(() => import("@/pages/weekly-reviews"));
 // (no tabs). Retired the tabbed admin-roles-shell.tsx and the 2638-line
 // admin-roles.tsx — both deleted in this task.
 const AdminRolesPage = lazyWithRetry(() => import("@/pages/admin-roles/index"));
-const AdminSettingsPage = lazyWithRetry(() => import("@/pages/admin-settings"));
 const LeaderboardPage = lazyWithRetry(() => import("@/pages/leaderboard"));
 const FeedbackPage = lazyWithRetry(() => import("@/pages/feedback"));
 const EeInfoPage = lazyWithRetry(() => import("@/pages/ee-info"));
@@ -218,7 +217,6 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   SystemActivityLogPage,
   WeeklyReviewsPage,
   AdminRolesPage,
-  AdminSettingsPage,
   LeaderboardPage,
   FeedbackPage,
   EeInfoPage,

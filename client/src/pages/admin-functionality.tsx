@@ -1,9 +1,11 @@
 /**
  * Functionality Control — COO/CEO surface that enables or disables individual
  * screens (and, with route gating, makes disabled screens 404 even via direct
- * URL). Promoted from the legacy /admin/settings tabbed page so the four-item
- * Settings nav (Roles & Permissions · Functionality Control · Integration
- * Statuses · Audit Log) can land on a dedicated page each.
+ * URL). Promoted out of the legacy /admin/settings tabbed page onto its own
+ * route. NOTE: removed from the Settings menu on 2026-06-18 (screen gating
+ * defaults to open), so it is no longer one of the three Settings sub-sections
+ * (Roles & Permissions · Integration Statuses · Audit Log). This page stays
+ * live and is reachable directly at /admin/functionality.
  *
  * Backend: GET/PUT /api/admin/screen-settings (admin-screen-settings.routes.ts).
  * Hook: client/src/hooks/use-screen-availability.ts (consumed by ProtectedRoute).
