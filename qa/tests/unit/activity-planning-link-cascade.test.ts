@@ -48,7 +48,7 @@ function cost(): CostLineRow {
   return {
     projectId: 1, rowHash: "c1", costCategory: "1. Panels", counterpartyName: "Jinko",
     description: "MSA - Jinko 625W", amountExVat: "40000", invoiceNumber: null,
-    invoiceDate: null, approvedDate: null, paidDate: "2026-06-15",
+    invoiceDate: null, approvedDate: null, paidDate: "2026-06-15", paidDateConfirmed: true,
     forecastPaymentDate: null, poNumber: null, status: "paid",
   };
 }
