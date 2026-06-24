@@ -227,16 +227,25 @@ describe("D6 Phase 2.1 — admin UI deactivate confirmation", () => {
     path.join(repoRoot, "client", "src", "pages", "admin-document-management.tsx"),
     "utf8",
   );
+  // The requirement editor was extracted into its own module (file-size split,
+  // EE-QA-015); its deactivate confirm lives there now.
+  const requirementDialogFile = fs.readFileSync(
+    path.join(repoRoot, "client", "src", "components", "documents", "RequirementDialog.tsx"),
+    "utf8",
+  );
 
   it("imports AlertDialog primitives from the shared component library", () => {
     expect(pageFile).toMatch(
+      /import\s*\{[\s\S]*?AlertDialog[\s\S]*?\}\s*from\s*["']@\/components\/ui\/alert-dialog["']/,
+    );
+    expect(requirementDialogFile).toMatch(
       /import\s*\{[\s\S]*?AlertDialog[\s\S]*?\}\s*from\s*["']@\/components\/ui\/alert-dialog["']/,
     );
   });
 
   it("uses an AlertDialog confirm step before each deactivate (taxonomy + requirement)", () => {
     expect(pageFile).toMatch(/data-testid="btn-taxonomy-deactivate-confirm"/);
-    expect(pageFile).toMatch(/data-testid="btn-requirement-deactivate-confirm"/);
+    expect(requirementDialogFile).toMatch(/data-testid="btn-requirement-deactivate-confirm"/);
   });
 
   it("references audit-logging in the confirm copy so users know the action is tracked", () => {

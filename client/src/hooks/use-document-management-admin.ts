@@ -150,7 +150,12 @@ export function useApprovalRequirements(enabled = true) {
 }
 
 export interface CreateRequirementPayload {
-  taxonomyKey: string;
+  /** Legacy basis. Provide this OR `discipline`. */
+  taxonomyKey?: string | null;
+  /** Browse-and-bind basis: a LIFECYCLE_DEPARTMENTS code. Provide this OR `taxonomyKey`. */
+  discipline?: string | null;
+  /** Optional regex on the path under the bound folder (discipline basis). */
+  subfolderPattern?: string | null;
   fileNamePattern?: string | null;
   displayName: string;
   description?: string | null;
