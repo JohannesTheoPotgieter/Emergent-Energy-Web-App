@@ -21,6 +21,7 @@ import { PhaseMultiSelect, buildPhaseOptions, canonicalPhaseLabel, phaseInScope 
 import {
   type MilestoneProgram, type MilestoneProgramRow, type ProjectMilestoneDetail, type MilestoneView,
   type LinkedTaskView, type TimelineActivity, type AxisState, type FlowState, type TaskState, type ActivityTaskNode,
+  type OutflowItemView,
   money, FLOW_STATE_STYLE, TASK_STATE_STYLE,
 } from "@/lib/milestone-tracker-types";
 
@@ -736,44 +737,90 @@ function PlanTab({ detail, h }: { detail: ProjectMilestoneDetail; h: LinkHandler
 
 // ──────────────────────────────── Outflow line items tab ─────────────────────
 
+/** Group cost lines by expenditure-breakdown category, ordered by the category's
+ *  numeric prefix ("1. Panels" … "10. Site Logistics") to mirror the workbook. */
+function groupOutflowsByCategory(items: OutflowItemView[]) {
+  const map = new Map<string, OutflowItemView[]>();
+  for (const o of items) {
+    const key = o.costCategory?.trim() || "Uncategorised";
+    (map.get(key) ?? map.set(key, []).get(key)!).push(o);
+  }
+  const catNum = (s: string) => { const m = s.match(/^\s*(\d+)/); return m ? parseInt(m[1], 10) : Number.POSITIVE_INFINITY; };
+  return [...map.entries()]
+    .map(([key, list]) => ({
+      key, label: key, items: list,
+      total: list.reduce((s, o) => s + (o.amount ?? 0), 0),
+      unlinked: list.filter((o) => o.linkedTaskIds.length === 0).length,
+    }))
+    .sort((a, b) => (catNum(a.key) - catNum(b.key)) || a.key.localeCompare(b.key));
+}
+
+function OutflowRow({ o, taskById, detail, h }: {
+  o: OutflowItemView; taskById: Map<number, ActivityTaskNode>; detail: ProjectMilestoneDetail; h: LinkHandlers;
+}) {
+  const linkedIds = new Set(o.linkedTaskIds);
+  const taskOptions = detail.planTasks
+    .filter((t) => !linkedIds.has(t.id))
+    .map((t) => ({ value: String(t.id), label: `${t.taskNo ?? ""} ${t.title}`.trim() }));
+  const payDate = o.paidDate ?? o.forecastPaymentDate ?? o.invoiceDate;
+  return (
+    <div className="flex items-start gap-2 px-3 py-1.5 text-xs hover:bg-muted/30" data-testid={`outflow-item-${o.rowHash}`}>
+      <FlowBadge state={o.state} />
+      <div className="min-w-0 flex-1">
+        <div className="font-medium truncate">
+          {o.description || o.costCategory || "Cost line"}
+          {o.counterpartyName && <span className="text-muted-foreground font-normal"> · {o.counterpartyName}</span>}
+        </div>
+        <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+          {o.linkedTaskIds.length === 0 && (
+            <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-600"><AlertTriangle className="w-2.5 h-2.5" />no task</span>
+          )}
+          {o.linkedTaskIds.map((tid) => (
+            <span key={tid} className="inline-flex items-center gap-0.5 rounded-full border bg-slate-50 border-slate-200 text-slate-600 px-1.5 py-0 text-[10px]">
+              {taskById.get(tid)?.taskNo ?? `#${tid}`}
+              <button onClick={() => h.onUnlinkCost(tid, o.rowHash)} className="text-muted-foreground hover:text-foreground" title="Unlink" data-testid={`outflow-unlink-${o.rowHash}-${tid}`}>×</button>
+            </span>
+          ))}
+          <SearchableSelect value="" onValueChange={(v) => { if (v) h.onLinkCost(Number(v), o.rowHash); }}
+            placeholder="+ task" triggerClassName="h-6 w-28 text-[11px]" options={taskOptions} data-testid={`outflow-link-${o.rowHash}`} />
+        </div>
+      </div>
+      <span className="text-[11px] text-muted-foreground tabular-nums w-20 text-right shrink-0 pt-0.5"
+        title={`Invoice ${fmtDate(o.invoiceDate)} · Forecast ${fmtDate(o.forecastPaymentDate)} · Paid ${fmtDate(o.paidDate)}`}>
+        {fmtDate(payDate)}
+      </span>
+      <span className="font-medium tabular-nums w-24 text-right shrink-0 pt-0.5">{money(o.amount)}</span>
+    </div>
+  );
+}
+
 function OutflowItemsTab({ detail, h }: { detail: ProjectMilestoneDetail; h: LinkHandlers }) {
-  const taskById = new Map(detail.planTasks.map((t) => [t.id, t]));
+  const taskById = new Map<number, ActivityTaskNode>(detail.planTasks.map((t) => [t.id, t]));
   if (detail.outflowItems.length === 0) {
     return <p className="p-8 text-center text-sm text-muted-foreground">No outflow cost lines for this project.</p>;
   }
+  const groups = groupOutflowsByCategory(detail.outflowItems);
+  const total = detail.outflowItems.reduce((s, o) => s + (o.amount ?? 0), 0);
+  const unlinked = detail.outflowItems.filter((o) => o.linkedTaskIds.length === 0).length;
   return (
-    <div className="space-y-2 mt-3" data-testid="outflow-tab">
-      {detail.outflowItems.map((o) => {
-        const linkedIds = new Set(o.linkedTaskIds);
-        const taskOptions = detail.planTasks
-          .filter((t) => !linkedIds.has(t.id))
-          .map((t) => ({ value: String(t.id), label: `${t.taskNo ?? ""} ${t.title}`.trim() }));
-        return (
-          <Card key={o.rowHash} data-testid={`outflow-item-${o.rowHash}`}>
-            <CardContent className="p-3">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-medium text-sm">{o.description || o.costCategory || "Cost line"}</span>
-                {o.costCategory && <span className="text-[11px] text-muted-foreground">{o.costCategory}</span>}
-                {o.counterpartyName && <span className="text-[11px] text-muted-foreground">· {o.counterpartyName}</span>}
-                <FlowBadge state={o.state} />
-                <span className="ml-auto text-sm tabular-nums">{money(o.amount)}</span>
-              </div>
-              <div className="mt-2 flex items-center gap-1.5 flex-wrap">
-                <span className="text-[11px] text-muted-foreground">Incurred by:</span>
-                {o.linkedTaskIds.length === 0 && <GapBadge label="No task linked" />}
-                {o.linkedTaskIds.map((tid) => (
-                  <span key={tid} className="inline-flex items-center gap-1 rounded-full border bg-slate-50 border-slate-200 text-slate-600 px-1.5 py-0.5 text-[11px]">
-                    {taskById.get(tid)?.taskNo ?? `#${tid}`}
-                    <button onClick={() => h.onUnlinkCost(tid, o.rowHash)} className="text-muted-foreground hover:text-foreground" title="Unlink" data-testid={`outflow-unlink-${o.rowHash}-${tid}`}>×</button>
-                  </span>
-                ))}
-                <SearchableSelect value="" onValueChange={(v) => { if (v) h.onLinkCost(Number(v), o.rowHash); }}
-                  placeholder="+ link task" triggerClassName="h-7 w-44 text-xs" options={taskOptions} data-testid={`outflow-link-${o.rowHash}`} />
-              </div>
-            </CardContent>
-          </Card>
-        );
-      })}
+    <div className="mt-3 space-y-3" data-testid="outflow-tab">
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span className="tabular-nums">{detail.outflowItems.length} cost lines · {unlinked} not linked · {groups.length} categories</span>
+        <span className="tabular-nums">Total {money(total)}</span>
+      </div>
+      {groups.map((g) => (
+        <Card key={g.key} data-testid={`outflow-cat-${g.key}`}><CardContent className="p-0">
+          <div className="flex items-center justify-between px-3 py-1.5 bg-muted/40 border-b">
+            <span className="text-xs font-semibold truncate">{g.label}</span>
+            <span className="text-[11px] text-muted-foreground tabular-nums shrink-0 ml-2">
+              {g.unlinked > 0 && <span className="text-amber-600">{g.unlinked} unlinked · </span>}{g.items.length} · {money(g.total)}
+            </span>
+          </div>
+          <div className="divide-y">
+            {g.items.map((o) => <OutflowRow key={o.rowHash} o={o} taskById={taskById} detail={detail} h={h} />)}
+          </div>
+        </CardContent></Card>
+      ))}
     </div>
   );
 }
