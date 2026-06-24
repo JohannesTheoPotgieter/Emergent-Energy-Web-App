@@ -860,6 +860,97 @@ function ProjectWorkspace({ projectId, onBack }: { projectId: number; onBack: ()
   );
 }
 
+// ──────────────────── program consolidated monthly timeline ──────────────────
+
+interface MonthSeriesPoint {
+  key: string; label: string; moneyIn: number; moneyOut: number; net: number; cumNet: number;
+  scheduleNeg: number; cashNeg: number; count: number;
+}
+
+/** Continuous month series (gaps filled) across the whole program, with a
+ *  running cumulative net so the program's cash trajectory reads left-to-right. */
+function buildMonthSeries(activities: TimelineActivity[]): MonthSeriesPoint[] {
+  const buckets = groupByMonth(activities).filter((m) => m.key !== "—");
+  if (buckets.length === 0) return [];
+  const byKey = new Map(buckets.map((m) => [m.key, m]));
+  const [fy, fm] = buckets[0].key.split("-").map(Number);
+  const [ly, lm] = buckets[buckets.length - 1].key.split("-").map(Number);
+  const out: MonthSeriesPoint[] = [];
+  let y = fy, mo = fm, cum = 0, guard = 0;
+  while ((y < ly || (y === ly && mo <= lm)) && guard++ < 240) {
+    const key = `${y}-${String(mo).padStart(2, "0")}`;
+    const b = byKey.get(key);
+    const moneyIn = b?.moneyIn ?? 0;
+    const moneyOut = b?.moneyOut ?? 0;
+    const net = moneyIn - moneyOut;
+    cum += net;
+    out.push({
+      key,
+      label: format(parseExecDate(`${key}-01`) ?? new Date(`${key}-01`), "MMM ''yy"),
+      moneyIn, moneyOut, net, cumNet: cum,
+      scheduleNeg: b?.scheduleNeg ?? 0, cashNeg: b?.cashNeg ?? 0, count: b?.list.length ?? 0,
+    });
+    mo++; if (mo > 12) { mo = 1; y++; }
+  }
+  return out;
+}
+
+/** Consolidated, program-wide monthly timeline: one diverging in/out bar per
+ *  month across a continuous axis, with running cumulative net cash and the
+ *  month's schedule + cash health — the whole program at a glance, month by month. */
+function ProgramMonthlyTimeline({ activities }: { activities: TimelineActivity[] }) {
+  const series = useMemo(() => buildMonthSeries(activities), [activities]);
+  if (activities.length === 0) {
+    return <p className="p-8 text-center text-sm text-muted-foreground">No fully-built activities across the program yet — link inflow milestones to plan tasks to populate the schedule.</p>;
+  }
+  if (series.length === 0) {
+    return <p className="p-8 text-center text-sm text-muted-foreground">Built activities have no money-in month to plot yet.</p>;
+  }
+  const maxFlow = Math.max(1, ...series.map((m) => Math.max(m.moneyIn, m.moneyOut)));
+  const totalIn = series.reduce((s, m) => s + m.moneyIn, 0);
+  const totalOut = series.reduce((s, m) => s + m.moneyOut, 0);
+  const endCum = series[series.length - 1].cumNet;
+  return (
+    <div className="mt-3" data-testid="program-monthly-timeline">
+      <Card><CardContent className="p-3 space-y-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+          <span className="text-emerald-600 tabular-nums">{money(totalIn)} in</span>
+          <span className="text-red-600 tabular-nums">{money(totalOut)} out</span>
+          <span className={`font-medium tabular-nums ${endCum >= 0 ? "text-emerald-700" : "text-red-700"}`}>Net {endCum >= 0 ? "+" : ""}{money(endCum)}</span>
+          <span className="text-muted-foreground">across {series.length} months</span>
+        </div>
+        <div className="flex gap-1 overflow-x-auto pb-2">
+          {series.map((m) => (
+            <div key={m.key} className="flex flex-col items-center w-20 shrink-0" data-testid={`pmt-${m.key}`}>
+              <div className="h-20 w-full flex flex-col justify-end items-center" title={`${money(m.moneyIn)} in`}>
+                <div className="w-7 bg-emerald-400 rounded-t" style={{ height: `${(m.moneyIn / maxFlow) * 100}%` }} />
+              </div>
+              <div className="w-full border-t border-border" />
+              <div className="h-20 w-full flex flex-col justify-start items-center" title={`${money(m.moneyOut)} out`}>
+                <div className="w-7 bg-red-400 rounded-b" style={{ height: `${(m.moneyOut / maxFlow) * 100}%` }} />
+              </div>
+              <div className="text-[10px] font-medium mt-1 whitespace-nowrap">{m.label}</div>
+              <div className={`text-[10px] tabular-nums ${m.net >= 0 ? "text-emerald-700" : "text-red-700"}`} title="Month net">{m.net >= 0 ? "+" : ""}{money(m.net)}</div>
+              <div className="text-[9px] text-muted-foreground tabular-nums" title="Cumulative net cash to end of month">Σ {money(m.cumNet)}</div>
+              <div className="flex items-center gap-1 mt-0.5">
+                <span className={`w-1.5 h-1.5 rounded-full ${m.scheduleNeg > 0 ? "bg-red-500" : "bg-emerald-500"}`} title={m.scheduleNeg > 0 ? `${m.scheduleNeg} behind` : "on schedule"} />
+                <span className={`w-1.5 h-1.5 rounded-full ${m.cashNeg > 0 ? "bg-red-500" : "bg-emerald-500"}`} title={m.cashNeg > 0 ? `${m.cashNeg} cash-negative` : "cash-positive"} />
+                {m.count > 0 && <span className="text-[9px] text-muted-foreground tabular-nums">{m.count}</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-3 pt-2 border-t text-[11px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1"><span className="w-3 h-2 rounded-sm bg-emerald-400" /> Money in</span>
+          <span className="inline-flex items-center gap-1"><span className="w-3 h-2 rounded-sm bg-red-400" /> Money out</span>
+          <span>Σ = cumulative net cash</span>
+          <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> / <span className="w-1.5 h-1.5 rounded-full bg-red-500" /> schedule · cash health</span>
+        </div>
+      </CardContent></Card>
+    </div>
+  );
+}
+
 // ──────────────────────────────── program overview ───────────────────────────
 
 function programSortValue(r: MilestoneProgramRow, key: string): string | number | null {
@@ -879,7 +970,7 @@ function programSortValue(r: MilestoneProgramRow, key: string): string | number 
 }
 
 function ProgramOverview({ onOpen }: { onOpen: (id: number) => void }) {
-  const [view, setView] = useState<"list" | "timeline">("list");
+  const [view, setView] = useState<"list" | "timeline" | "consolidated">("list");
   const [search, setSearch] = useState("");
   const { data, isLoading, isError, refetch } = useQuery<MilestoneProgram>({
     queryKey: ["/api/milestone-tracker/program"],
@@ -924,7 +1015,8 @@ function ProgramOverview({ onOpen }: { onOpen: (id: number) => void }) {
 
           <div className="flex flex-wrap items-center gap-2 mt-4">
             <Button size="sm" variant={view === "list" ? "default" : "outline"} onClick={() => setView("list")} data-testid="program-view-list">By project</Button>
-            <Button size="sm" variant={view === "timeline" ? "default" : "outline"} onClick={() => setView("timeline")} data-testid="program-view-timeline">Timeline</Button>
+            <Button size="sm" variant={view === "timeline" ? "default" : "outline"} onClick={() => setView("timeline")} data-testid="program-view-timeline">By month</Button>
+            <Button size="sm" variant={view === "consolidated" ? "default" : "outline"} onClick={() => setView("consolidated")} data-testid="program-view-consolidated">Consolidated</Button>
             {view === "list" && (
               <>
                 <Input className="w-48 h-8" placeholder="Search site…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid="milestone-search" />
@@ -1004,8 +1096,10 @@ function ProgramOverview({ onOpen }: { onOpen: (id: number) => void }) {
                 </table>
               )}
             </CardContent></Card>
-          ) : (
+          ) : view === "timeline" ? (
             <ProgramMonthlyOverlay activities={data.activities ?? []} onOpen={onOpen} />
+          ) : (
+            <ProgramMonthlyTimeline activities={data.activities ?? []} />
           )}
         </>
       )}
