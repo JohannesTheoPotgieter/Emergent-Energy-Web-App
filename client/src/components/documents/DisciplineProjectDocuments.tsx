@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { ProjectDocumentsView } from "@/components/documents/ProjectDocumentsView";
+import { DisciplineFolderBinder } from "@/components/documents/DisciplineFolderBinder";
 
 export function DisciplineProjectDocuments({ discipline }: { discipline: string }) {
   const { projectsSummary, isLoading } = useProjectsSummary();
@@ -53,11 +54,14 @@ export function DisciplineProjectDocuments({ discipline }: { discipline: string 
       </Card>
 
       {projectId ? (
-        <ProjectDocumentsView
-          projectId={projectId}
-          discipline={discipline}
-          showApprovals={false}
-        />
+        <>
+          <DisciplineFolderBinder projectId={projectId} discipline={discipline} />
+          <ProjectDocumentsView
+            projectId={projectId}
+            discipline={discipline}
+            showApprovals={false}
+          />
+        </>
       ) : (
         <Card>
           <CardContent className="py-8 text-sm text-muted-foreground text-center">
