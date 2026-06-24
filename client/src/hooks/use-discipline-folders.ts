@@ -19,6 +19,44 @@ function listKey(projectId: number | null) {
   return [`/api/projects/${projectId ?? 0}/discipline-folders`] as const;
 }
 
+export interface BoundFolderItem {
+  itemId: string;
+  name: string;
+  path: string;
+  isFolder: boolean;
+  size?: number;
+  webUrl?: string;
+  lastModifiedDateTime?: string;
+  managedDocumentId: number | null;
+  state: string | null;
+}
+
+export interface BoundFolderDocuments {
+  bound: boolean;
+  folder: { discipline: string; sharepointPath: string | null; webUrl: string | null } | null;
+  items: BoundFolderItem[];
+}
+
+/** Live contents of a project's bound discipline folder (read-only). */
+export function useDisciplineFolderDocuments(
+  projectId: number | null,
+  discipline: string,
+  enabled: boolean,
+) {
+  return useQuery<BoundFolderDocuments>({
+    queryKey: [`/api/projects/${projectId ?? 0}/discipline-folders/${discipline}/documents`],
+    queryFn: async () => {
+      const res = await apiRequest(
+        "GET",
+        `/api/projects/${projectId}/discipline-folders/${encodeURIComponent(discipline)}/documents`,
+      );
+      return res.json();
+    },
+    enabled: !!projectId && enabled,
+    staleTime: 30_000,
+  });
+}
+
 /** Active discipline-folder bindings for a project. */
 export function useDisciplineFolders(projectId: number | null) {
   return useQuery<{ folders: ProjectDisciplineFolder[] }>({

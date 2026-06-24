@@ -9,13 +9,15 @@ import { useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  AlertTriangle, ExternalLink, FolderSymlink, FolderTree, Link2, Loader2, Unlink,
+  AlertTriangle, ExternalLink, File, Folder, FolderSymlink, FolderTree, Link2, Loader2, Unlink,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { SharepointRootPicker, type PickedRoot } from "@/components/admin/SharepointRootPicker";
 import { usePermission } from "@/hooks/use-permissions";
 import { toast } from "@/hooks/use-toast";
 import {
-  useDisciplineFolders, useBindDisciplineFolder, useUnbindDisciplineFolder,
+  useDisciplineFolders, useDisciplineFolderDocuments,
+  useBindDisciplineFolder, useUnbindDisciplineFolder,
 } from "@/hooks/use-discipline-folders";
 
 export function DisciplineFolderBinder({
@@ -36,6 +38,8 @@ export function DisciplineFolderBinder({
     () => (foldersQuery.data?.folders ?? []).find((f) => f.discipline === discipline) ?? null,
     [foldersQuery.data, discipline],
   );
+
+  const docsQuery = useDisciplineFolderDocuments(projectId, discipline, !!current);
 
   function handlePicked(picked: PickedRoot) {
     if (!picked.rootItemId) {
@@ -127,6 +131,51 @@ export function DisciplineFolderBinder({
           </Button>
         )}
       </CardContent>
+
+      {current ? (
+        <div className="border-t">
+          {docsQuery.isLoading ? (
+            <div className="flex items-center gap-2 px-4 py-3 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" /> Loading folder contents…
+            </div>
+          ) : docsQuery.isError ? (
+            <div className="px-4 py-3 text-xs text-destructive">Couldn’t load this folder’s contents.</div>
+          ) : (docsQuery.data?.items ?? []).length === 0 ? (
+            <div className="px-4 py-3 text-xs text-muted-foreground">This folder is empty.</div>
+          ) : (
+            <ul className="divide-y" data-testid={`folder-contents-${discipline}`}>
+              {(docsQuery.data?.items ?? []).map((item) => (
+                <li key={item.itemId} className="flex items-center gap-2 px-4 py-2 text-sm">
+                  {item.isFolder ? (
+                    <Folder className="h-4 w-4 shrink-0 text-amber-500" />
+                  ) : (
+                    <File className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  )}
+                  <span className="flex-1 truncate" title={item.name}>{item.name}</span>
+                  {item.state ? (
+                    <Badge variant="outline" className="text-[10px] capitalize">
+                      {item.state.replace(/_/g, " ")}
+                    </Badge>
+                  ) : !item.isFolder ? (
+                    <Badge variant="outline" className="text-[10px] text-muted-foreground">untracked</Badge>
+                  ) : null}
+                  {item.webUrl ? (
+                    <a
+                      href={item.webUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-muted-foreground hover:text-emerald-700"
+                      title="Open in SharePoint"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
 
       <SharepointRootPicker open={pickerOpen} onOpenChange={setPickerOpen} onSelect={handlePicked} />
     </Card>

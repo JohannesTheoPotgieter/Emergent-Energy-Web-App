@@ -16,6 +16,7 @@ import { validateBody } from "../middleware/validateBody";
 import { ApiError, badRequest, notFound, serverError, unauthorized, logApiError } from "../lib/api-error";
 import { LIFECYCLE_DEPARTMENTS } from "@shared/schema";
 import * as repo from "../repositories/project-discipline-folders-repository";
+import { listBoundFolderDocuments } from "../services/discipline-folder-documents-service";
 
 const projectIdParam = z.coerce.number().int().positive();
 const disciplineSchema = z.enum(LIFECYCLE_DEPARTMENTS);
@@ -53,6 +54,25 @@ export function registerProjectDisciplineFoldersRoutes(app: Express): void {
         res.json({ folders: await repo.listDisciplineFoldersForProject(parsed.data) });
       } catch (err) {
         handleError("list", err);
+      }
+    },
+  );
+
+  // List the live contents of a project's bound discipline folder (read-only,
+  // with tracked-document overlay).
+  app.get(
+    "/api/projects/:projectId/discipline-folders/:discipline/documents",
+    requireAuth,
+    requirePermission("documents", "view"),
+    async (req: Request, res: Response) => {
+      const parsed = projectIdParam.safeParse(req.params.projectId);
+      const disc = disciplineSchema.safeParse(req.params.discipline);
+      if (!parsed.success) throw badRequest("Invalid project id");
+      if (!disc.success) throw badRequest("Invalid discipline");
+      try {
+        res.json(await listBoundFolderDocuments(parsed.data, disc.data));
+      } catch (err) {
+        handleError("documents", err);
       }
     },
   );
