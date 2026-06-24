@@ -37,7 +37,7 @@ function cost(over: Partial<CostLineRow> = {}): CostLineRow {
   return {
     projectId: 1, rowHash: "c1", costCategory: "1. Panels", counterpartyName: "Jinko",
     description: "MSA - Jinko 625W", amountExVat: "40000", invoiceNumber: null,
-    invoiceDate: null, approvedDate: null, paidDate: null,
+    invoiceDate: null, approvedDate: null, paidDate: null, paidDateConfirmed: null,
     forecastPaymentDate: "2026-09-01", poNumber: null, status: "planned", ...over,
   };
 }
@@ -96,10 +96,10 @@ describe("Activity timeline builder", () => {
 
   it("realised flags follow paid status (solid vs forecast marker)", async () => {
     mtRepo.getRevenueMilestonesForProjects.mockResolvedValue([milestone({ paidDate: "2026-06-20", paidDateConfirmed: true })]);
-    mtRepo.getCostLinesForProjects.mockResolvedValue([cost({ status: "paid", paidDate: "2026-06-10" })]);
+    mtRepo.getCostLinesForProjects.mockResolvedValue([cost({ status: "paid", paidDate: "2026-06-10", paidDateConfirmed: true })]);
     const detail = await getProjectMilestones(1, TODAY);
     const a = detail!.activities[0];
     expect(a.inflow?.realised).toBe(true);       // black/confirmed receipt → realised
-    expect(a.outflows[0].realised).toBe(true);   // paid cost line → realised
+    expect(a.outflows[0].realised).toBe(true);   // black/confirmed paid cost line → realised
   });
 });

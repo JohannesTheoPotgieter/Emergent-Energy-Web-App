@@ -53,6 +53,9 @@ export interface CostLineRow {
   invoiceDate: string | null;
   approvedDate: string | null;
   paidDate: string | null;
+  /** Font colour of the "Paid date" cell: true = black (confirmed/actual
+   *  payment), false = red (forecast), null = unknown. */
+  paidDateConfirmed: boolean | null;
   forecastPaymentDate: string | null;
   poNumber: string | null;
   status: string;
@@ -155,6 +158,7 @@ export class MilestoneTrackerRepository {
         invoiceDate: normalizedCostLines.invoiceDate,
         approvedDate: normalizedCostLines.approvedDate,
         paidDate: normalizedCostLines.paidDate,
+        paidDateConfirmed: normalizedCostLines.paidDateConfirmed,
         forecastPaymentDate: normalizedCostLines.forecastPaymentDate,
         poNumber: normalizedCostLines.poNumber,
         status: normalizedCostLines.status,

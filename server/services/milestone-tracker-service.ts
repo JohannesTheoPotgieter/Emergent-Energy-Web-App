@@ -271,12 +271,35 @@ function inflowOpen(m: { state: FlowState; status: string }): boolean {
   return m.state !== "paid" && !FLAGGED_REVENUE.has(m.status);
 }
 
-/** Outflow state from the cost-line status + forecast payment date. */
-function outflowState(status: string, forecastDate: string | null, today: string): FlowState {
-  if (status === "disputed") return "flagged";
-  if (status === "paid") return "paid";
-  const overdue = !!forecastDate && forecastDate < today;
-  if (status === "invoiced" || status === "approved") return overdue ? "overdue" : "invoiced";
+/**
+ * Outflow (money-out) state for the Activity-Planning view, read by the
+ * tracker's FONT-COLOUR convention on the "Paid date" cell (black = actual
+ * payment, red = forecast — same owner rule as the inflow side):
+ *   black + today/past → paid       black + future → flagged ("paid" ahead of time can't be)
+ *   red   + future     → outstanding red   + past   → overdue (forecast lapsed, unpaid)
+ * With no paid date it falls back to the cost-line status / forecast timing.
+ * NOTE: this is the Activity-Planning view ONLY. The imported cost-line status
+ * and the frozen finance/cash paths are unchanged — they still treat the
+ * imported paid date as the cash event. The importer marks a line PAID whenever
+ * a paid date exists (even a red forecast), which is why this view must re-read
+ * the colour to avoid showing forecast/future payments as "Paid".
+ */
+export function outflowState(c: {
+  status: string;
+  paidDate: string | null;
+  paidDateConfirmed: boolean | null;
+  forecastPaymentDate: string | null;
+}, today: string): FlowState {
+  if (c.status === "disputed") return "flagged";
+  if (c.paidDate) {
+    const confirmed = c.paidDateConfirmed === true; // black = actual payment
+    const future = c.paidDate > today;
+    if (confirmed) return future ? "flagged" : "paid";
+    // red / forecast paid date — NOT actually paid
+    return future ? "outstanding" : "overdue";
+  }
+  const overdue = !!c.forecastPaymentDate && c.forecastPaymentDate < today;
+  if (c.status === "invoiced" || c.status === "approved") return overdue ? "overdue" : "invoiced";
   return overdue ? "overdue" : "outstanding";
 }
 
@@ -297,7 +320,7 @@ function toOutflowView(c: CostLineRow, today: string): OutflowView {
     invoiceDate: c.invoiceDate,
     paidDate: c.paidDate,
     status: c.status,
-    state: outflowState(c.status, c.forecastPaymentDate, today),
+    state: outflowState(c, today),
   };
 }
 
