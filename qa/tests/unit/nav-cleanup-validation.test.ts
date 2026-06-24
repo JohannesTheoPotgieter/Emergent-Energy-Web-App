@@ -17,9 +17,10 @@ import {
  * retired — All Projects' features were migrated into the board). Finance has five: Cashflow · Cost of Sales · Revenue ·
  * Gross Profit · FYE Tracking Report. Engineering (Live-Ready 2026-06-22) is
  * ring-fenced to its Home landing while the delivery rebuild lands. Quality has three: Dashboard · Task
- * Board · Document Management. Settings has four: Roles & Permissions ·
- * Functionality Control · Integration Statuses · Audit Log. Everything else
- * is hidden by default and surfaced via Functionality Control.
+ * Board · Document Management. Settings has three: Roles & Permissions ·
+ * Integration Statuses · Audit Log (Functionality Control was removed from the
+ * menu on 2026-06-18 — screen gating defaults to open — but stays reachable at
+ * /admin/functionality). Everything else is hidden by default.
  */
 
 const EXPECTED_TOP_LABELS = [

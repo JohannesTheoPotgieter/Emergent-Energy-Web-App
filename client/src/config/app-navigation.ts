@@ -70,7 +70,9 @@ function startsWithAny(pathname: string, prefixes: string[]) {
  *
  * Anything not in this list (Gates, Portfolio, Project Development, HSE,
  * Reports, Knowledge, all of the legacy Admin sub-grid) is hidden from the
- * sidebar by default and surfaced only via Settings → Functionality Control.
+ * sidebar by default. Screen availability is controlled by the Functionality
+ * Control admin page (/admin/functionality) — a direct-URL page that was
+ * removed from the Settings menu on 2026-06-18 (screen gating defaults to open).
  */
 export const TOP_SECTIONS: TopSection[] = [
   {
@@ -193,7 +195,8 @@ export type DisplayTopNavItem = {
 /**
  * Canonical six-tab top navigation per COO spec (2026-05-11).
  * Hidden modules (Project Development, Gates, HSE, Reports, Portfolio, Knowledge,
- * legacy Admin grid) are reachable only via Settings → Functionality Control.
+ * legacy Admin grid) are gated by the Functionality Control admin page
+ * (/admin/functionality), which was removed from the Settings menu on 2026-06-18.
  */
 export const DISPLAY_TOP_NAV: DisplayTopNavItem[] = [
   { label: "Home", path: "/", requiredSectionKey: "HOME", sectionKeys: ["HOME"] },
