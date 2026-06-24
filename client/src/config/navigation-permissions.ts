@@ -15,18 +15,25 @@ export type NavigationPermissionItem = {
   supportsEdit: boolean;
 };
 
+// Friendly one-line summary shown under each section heading in the role
+// nav-access editor. Keep the rendered entries in step with the live sub-pages
+// in app-navigation.ts (TOP_SECTIONS). Only keys that appear in TOP_SECTIONS —
+// the live six-tab nav — are rendered; the remaining keys are legacy
+// data-scope sections kept for role storage and are not shown.
 const SECTION_HELP_TEXT: Partial<Record<SectionKey, string>> = {
-  HOME: "Dashboard, My Tasks, Approvals, Calendar, Meetings, Inbox",
+  // Rendered — live six-tab nav (must mirror TOP_SECTIONS sub-pages):
+  HOME: "My Dashboard, Priorities, Calendar, Meetings, Inbox",
+  PROJECT_DELIVERY: "Board, Activity Planning, Deliveries, Allocations",
+  ENGINEERING: "Home, Task Manager, Document Manager",
+  FINANCE: "Finance Home, Cashflow, Cost of Sales, Revenue, Gross Profit, QB Reconciliation, FYE Tracking Report",
+  QUALITY: "Quality Dashboard, Quality Task Board, Quality Document Management",
+  ADMIN: "Roles & Permissions, Integration Statuses, Audit Log",
+  // Legacy data-scope sections — not in the live nav, not rendered today:
   PORTFOLIO: "Company Overview, Lifecycle Board, Gate Tracker, Blocked Gates, Exceptions",
   PRIORITIES: "Department, Company",
   PROJECT_DEVELOPMENT: "Project Development Dashboard, Pipeline / Opportunities, Clients, Handover Queue, Project Development Reports",
-  PROJECT_DELIVERY: "Execution Dashboard, PM Dashboard, Portfolio Dashboard, All Projects, PM On-The-Go, Handover & Closeout, and delivery controls",
-  FINANCE: "Cashflow, COS, Revenue, QuickBooks",
-  ENGINEERING: "Engineering Dashboard, Task Board, Standup",
   HSE: "HSE Dashboard",
-  QUALITY: "Quality Dashboard, Commissioning",
   REPORTS: "Report Center, Programme Reports, PM Monthly, Engineering Monthly, Performance, CEO Dashboard, COO Dashboard",
-  ADMIN: "General: Settings, Roles & Permissions, Smart Import, Audit Log, Phase Templates, Recovery, Pending Approvals. System: Workflow Config, Stage Lifecycle, Import Control, Data Migration, Engineering Audit Log, and more. Integrations: Pipedrive, QuickBooks, SharePoint. Knowledge: Processes & SOPs, Documents, Training, Leaderboard",
 };
 
 function basePath(path: string) {

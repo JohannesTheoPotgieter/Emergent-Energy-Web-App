@@ -11,6 +11,7 @@ import { RolePermissionsMatrix } from "./role-permissions-matrix";
 import { RoleAuthorityConfig } from "./role-authority-config";
 import { ENTITY_PERMISSION_DEFAULTS } from "@shared/schema";
 import { PAGE_REGISTRY } from "@/config/page-registry";
+import { NAVIGATION_PERMISSION_MODEL } from "@/config/navigation-permissions";
 import { LIVE_READY_MODE } from "@shared/config/enabled-modules";
 import { useScreenAvailability } from "@/hooks/use-screen-availability";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -21,6 +22,13 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 // every operational-module category is hidden. Reverts automatically if
 // LIVE_READY_MODE is turned off. Keys match ENTITY_CATEGORIES in settings-types.
 const FINANCE_FUNCTION_ENTITY_CATEGORIES = ["finance", "admin"] as const;
+
+// The nav-access editor only exposes the live nav sections (TOP_SECTIONS via
+// NAVIGATION_PERMISSION_MODEL). Derive the badge count + total from that model
+// so "X/Y sections" matches what a COO can actually toggle here — not the
+// larger legacy data-scope section list a role may still carry in storage.
+const NAV_SECTION_KEYS = new Set<string>(NAVIGATION_PERMISSION_MODEL.map((s) => s.key));
+const NAV_SECTION_TOTAL = NAVIGATION_PERMISSION_MODEL.length;
 
 interface RoleDetailPanelProps {
   role: RoleSummary;
@@ -115,7 +123,7 @@ export function RoleDetailPanel({
     return { granted, total, pct: total > 0 ? Math.round((granted / total) * 100) : 0 };
   }, [role, draft, allowedEntityIds]);
 
-  const navCount = ((draft.sections ?? role.sections) || []).filter((s) => !s.startsWith("!")).length;
+  const navCount = ((draft.sections ?? role.sections) || []).filter((s) => !s.startsWith("!") && NAV_SECTION_KEYS.has(s)).length;
 
   const getRoleIcon = () => {
     if (role.protected) return <Lock className="h-4 w-4 text-amber-500" />;
@@ -137,7 +145,7 @@ export function RoleDetailPanel({
   };
 
   const SECTIONS: Array<{ key: SectionKey; label: string; icon: React.ReactNode; badge?: string }> = [
-    { key: "navigation", label: "Navigation Access", icon: <Compass className="h-4 w-4" />, badge: `${navCount}/11 sections` },
+    { key: "navigation", label: "Navigation Access", icon: <Compass className="h-4 w-4" />, badge: `${navCount}/${NAV_SECTION_TOTAL} sections` },
     { key: "permissions", label: "Permissions", icon: <Key className="h-4 w-4" />, badge: `${permStats.granted}/${permStats.total} (${permStats.pct}%)` },
     { key: "authority", label: "Authority Scope", icon: <Shield className="h-4 w-4" /> },
   ];
