@@ -955,6 +955,16 @@ export async function deleteActivityTemplate(id: number): Promise<void> {
   return activityPlanTemplateRepository.softDelete(id);
 }
 
+/** Hand-edit a template's name and/or keyword rules. */
+export async function updateActivityTemplate(
+  id: number,
+  patch: { name?: string; description?: string | null; rules?: ActivityTemplateRule[] },
+): Promise<ActivityTemplateRow> {
+  const updated = await activityPlanTemplateRepository.update(id, patch);
+  if (!updated) throw new MilestoneLinkError("Template not found");
+  return updated;
+}
+
 /** Capture an already-linked project's links as a reusable template. */
 export async function createTemplateFromProject(projectId: number, name: string, description: string | null, userId: number | null): Promise<ActivityTemplateRow> {
   const b = await fetchBundle(projectId);

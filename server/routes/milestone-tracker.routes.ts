@@ -28,6 +28,7 @@ import {
   unlinkTaskDependency,
   listActivityTemplates,
   deleteActivityTemplate,
+  updateActivityTemplate,
   createTemplateFromProject,
   applyTemplateToProject,
   MilestoneLinkError,
@@ -59,6 +60,19 @@ const templateFromProjectSchema = z.object({
 
 const applyTemplateSchema = z.object({
   projectId: z.number().int().positive(),
+});
+
+const templateRuleSchema = z.object({
+  label: z.string().max(160),
+  milestoneKeywords: z.array(z.string().max(80)).max(50),
+  taskKeywords: z.array(z.string().max(80)).max(50),
+  outflowKeywords: z.array(z.string().max(80)).max(50),
+});
+
+const updateTemplateSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  description: z.string().max(500).nullable().optional(),
+  rules: z.array(templateRuleSchema).max(200).optional(),
 });
 
 export function registerMilestoneTrackerRoutes(app: Express) {
@@ -228,6 +242,25 @@ export function registerMilestoneTrackerRoutes(app: Express) {
       const body = applyTemplateSchema.parse(req.body);
       try {
         res.json(await applyTemplateToProject(body.projectId, id, getEffectiveUser(req)?.id ?? null));
+      } catch (e) {
+        if (e instanceof MilestoneLinkError) throw badRequest(e.message);
+        throw e;
+      }
+    },
+  );
+
+  app.patch(
+    "/api/milestone-tracker/templates/:id",
+    jwtAuth,
+    requireAuth,
+    requirePermission("execution_review", "edit"),
+    validateBody(updateTemplateSchema),
+    async (req: Request, res: Response) => {
+      const id = parseIntParam(req.params.id);
+      if (!id || Number.isNaN(id)) throw notFound("Template");
+      const body = updateTemplateSchema.parse(req.body);
+      try {
+        res.json(await updateActivityTemplate(id, body));
       } catch (e) {
         if (e instanceof MilestoneLinkError) throw badRequest(e.message);
         throw e;
