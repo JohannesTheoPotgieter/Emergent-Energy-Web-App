@@ -105,7 +105,7 @@ async function safe<T>(p: Promise<T>, fallback: T, label: string): Promise<T> {
 export interface InstallerSummary {
   count: number;
   primary: string | null;
-  list: Array<{ name: string | null; type: string | null; workPackage: string | null }>;
+  list: Array<{ id: number; counterpartyId: number; name: string | null; type: string | null; role: string | null; workPackage: string | null; scopeDescription: string | null }>;
 }
 
 export interface BoardRow {
@@ -175,7 +175,7 @@ function installerSummary(rows: InstallerRow[]): InstallerSummary {
   return {
     count: rows.length,
     primary: rows[0]?.counterpartyName ?? null,
-    list: rows.map((r) => ({ name: r.counterpartyName, type: r.counterpartyType, workPackage: r.workPackage })),
+    list: rows.map((r) => ({ id: r.id, counterpartyId: r.counterpartyId, name: r.counterpartyName, type: r.counterpartyType, role: r.role, workPackage: r.workPackage, scopeDescription: r.scopeDescription })),
   };
 }
 

@@ -4,7 +4,7 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { paramStr, parseIntParam } from "./lib/req-params";
 import { db } from "./db";
-import { normalizedCostLines, counterparties, projectInfo, invoicePatternRules } from "@shared/schema";
+import { normalizedCostLines, counterparties, projectInfo, invoicePatternRules, SUBCONTRACTOR_ROLES } from "@shared/schema";
 import { encryptField, decryptField } from "./lib/field-encryption";
 import { eq, sql, and, isNull, or } from "drizzle-orm";
 import { softCloseRows, softCloseByCondition, addTemporalColumns, dedupeCostLineInserts } from "./lib/temporal-helpers";
@@ -1091,8 +1091,11 @@ router.get("/api/subcontractor-assignments/project/:projectId", requireAuth, asy
 
 router.post("/api/subcontractor-assignments", requireAuth, requirePermission("procurement", "create"), async (req: Request, res: Response) => {
   try {
-    const { projectId, counterpartyId, workPackage, scopeDescription, ownerUserId, keyDates } = req.body;
+    const { projectId, counterpartyId, role, workPackage, scopeDescription, ownerUserId, keyDates } = req.body;
     if (!projectId || !counterpartyId) return res.status(400).json({ error: "projectId and counterpartyId required" });
+    if (role != null && !SUBCONTRACTOR_ROLES.includes(role)) {
+      return res.status(400).json({ error: `Invalid role. Must be one of: ${SUBCONTRACTOR_ROLES.join(", ")}` });
+    }
 
     const pId = toPositiveInt(projectId);
     const cId = toPositiveInt(counterpartyId);
@@ -1100,8 +1103,8 @@ router.post("/api/subcontractor-assignments", requireAuth, requirePermission("pr
     if (!pId || !cId) return res.status(400).json({ error: "Invalid projectId or counterpartyId" });
 
     const result = await db.execute(sql`
-      INSERT INTO project_subcontractor_assignments (project_id, counterparty_id, work_package, scope_description, owner_user_id, key_dates, status)
-      VALUES (${pId}, ${cId}, ${workPackage || null}, ${scopeDescription || null}, ${oId}, ${keyDates ? JSON.stringify(keyDates) : '[]'}::jsonb, 'active')
+      INSERT INTO project_subcontractor_assignments (project_id, counterparty_id, role, work_package, scope_description, owner_user_id, key_dates, status)
+      VALUES (${pId}, ${cId}, ${role || null}, ${workPackage || null}, ${scopeDescription || null}, ${oId}, ${keyDates ? JSON.stringify(keyDates) : '[]'}::jsonb, 'active')
       RETURNING *
     `);
     const items = Array.isArray(result) ? result : (result as any).rows || [];
@@ -1125,14 +1128,18 @@ router.patch("/api/subcontractor-assignments/:id", requireAuth, requirePermissio
     const id = toPositiveInt(req.params.id);
     if (!id) return res.status(400).json({ error: "Invalid id" });
 
-    const { workPackage, scopeDescription, ownerUserId, status, keyDates, performanceNotes } = req.body;
+    const { role, workPackage, scopeDescription, ownerUserId, status, keyDates, performanceNotes } = req.body;
     const validStatuses = ["active", "completed", "suspended", "terminated"];
     if (status !== undefined && !validStatuses.includes(status)) {
       return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` });
     }
+    if (role != null && !SUBCONTRACTOR_ROLES.includes(role)) {
+      return res.status(400).json({ error: `Invalid role. Must be one of: ${SUBCONTRACTOR_ROLES.join(", ")}` });
+    }
 
     const result = await db.execute(sql`
       UPDATE project_subcontractor_assignments SET
+        role = COALESCE(${role !== undefined ? role : null}, role),
         work_package = COALESCE(${workPackage !== undefined ? workPackage : null}, work_package),
         scope_description = COALESCE(${scopeDescription !== undefined ? scopeDescription : null}, scope_description),
         owner_user_id = CASE WHEN ${ownerUserId !== undefined} THEN ${toPositiveInt(ownerUserId)}::integer ELSE owner_user_id END,

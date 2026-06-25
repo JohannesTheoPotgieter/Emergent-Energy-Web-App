@@ -1,0 +1,1 @@
+ALTER TABLE "project_subcontractor_assignments" ADD COLUMN "role" text;

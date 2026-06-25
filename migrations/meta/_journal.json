@@ -785,6 +785,13 @@
       "when": 1782200000001,
       "tag": "0111_work_item_document_links",
       "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1782372338101,
+      "tag": "0112_subcontractor_assignment_role",
+      "breakpoints": true
     }
   ]
 }
