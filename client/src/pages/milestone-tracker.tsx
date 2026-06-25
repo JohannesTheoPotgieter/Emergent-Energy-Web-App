@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useApiMutation } from "@/hooks/use-api-mutation";
 import { apiRequest } from "@/lib/queryClient";
 import { fmtDate, parseExecDate } from "@/lib/execution-types";
@@ -825,6 +826,56 @@ function OutflowItemsTab({ detail, h }: { detail: ProjectMilestoneDetail; h: Lin
   );
 }
 
+interface TemplateSummary { id: number; name: string; description: string | null }
+interface ApplyResult { milestoneTaskLinks: number; taskCostLinks: number; rulesMatched: number; rulesTotal: number }
+
+/** Build-once / apply link templates: save this project's milestone→task→outflow
+ *  links as keyword rules, or apply a saved template to auto-link this project. */
+function TemplateControls({ projectId, onApplied }: { projectId: number; onApplied: () => void }) {
+  const qc = useQueryClient();
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [name, setName] = useState("");
+  const { data: templates } = useQuery<TemplateSummary[]>({ queryKey: ["/api/milestone-tracker/templates"] });
+
+  const apply = useApiMutation({
+    mutationFn: async (templateId: number): Promise<ApplyResult> => {
+      const res = await apiRequest("POST", `/api/milestone-tracker/templates/${templateId}/apply`, { projectId });
+      return res.json();
+    },
+    successToast: (r: ApplyResult) =>
+      `Template applied — ${r.milestoneTaskLinks} task link(s), ${r.taskCostLinks} outflow link(s) from ${r.rulesMatched}/${r.rulesTotal} rules`,
+    errorToast: "Could not apply template",
+    onSuccess: onApplied,
+  });
+
+  const save = useApiMutation({
+    mutationFn: async () => { await apiRequest("POST", "/api/milestone-tracker/templates/from-project", { projectId, name: name.trim() }); },
+    successToast: "Template saved",
+    errorToast: "Could not save template",
+    onSuccess: () => { setSaveOpen(false); setName(""); qc.invalidateQueries({ queryKey: ["/api/milestone-tracker/templates"] }); },
+  });
+
+  const options = (templates ?? []).map((t) => ({ value: String(t.id), label: t.name }));
+  return (
+    <div className="flex items-center gap-2">
+      <SearchableSelect value="" onValueChange={(v) => { if (v) apply.mutate(Number(v)); }}
+        placeholder={options.length ? "Apply template…" : "No templates yet"} triggerClassName="h-8 w-44 text-xs" options={options} data-testid="apply-template" />
+      <Button size="sm" variant="outline" className="h-8" onClick={() => setSaveOpen(true)} data-testid="save-template">Save as template</Button>
+      <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Save as template</DialogTitle></DialogHeader>
+          <p className="text-xs text-muted-foreground">Captures this project's milestone → task → outflow links as keyword rules. Apply it to a new project to auto-link by matching milestone, task and outflow words.</p>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Template name, e.g. Standard C&I rooftop" data-testid="template-name" />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setSaveOpen(false)}>Cancel</Button>
+            <Button onClick={() => save.mutate()} disabled={save.isPending || !name.trim()} data-testid="template-save-confirm">Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 function ProjectWorkspace({ projectId, onBack }: { projectId: number; onBack: () => void }) {
   const qc = useQueryClient();
   const { data, isLoading, isError, refetch } = useQuery<ProjectMilestoneDetail>({
@@ -884,9 +935,12 @@ function ProjectWorkspace({ projectId, onBack }: { projectId: number; onBack: ()
 
   return (
     <PageShell className="max-w-5xl p-4 md:p-6" data-testid="milestone-project-workspace">
-      <Button variant="ghost" size="sm" className="mb-2 -ml-2 gap-1" onClick={onBack} data-testid="milestone-back">
-        <ArrowLeft className="w-4 h-4" /> All projects
-      </Button>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <Button variant="ghost" size="sm" className="mb-2 -ml-2 gap-1" onClick={onBack} data-testid="milestone-back">
+          <ArrowLeft className="w-4 h-4" /> All projects
+        </Button>
+        <TemplateControls projectId={projectId} onApplied={invalidate} />
+      </div>
       <PageHeader title={data?.project.projectName ?? "Project"} subtitle="Inflow milestones · Project Plan · Outflow line items — wire money-in to the work to money-out, and track completion + dependencies" />
 
       {isLoading ? (

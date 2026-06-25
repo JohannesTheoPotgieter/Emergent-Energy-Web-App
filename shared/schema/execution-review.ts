@@ -10,7 +10,7 @@
 // This is NOT a parallel comms / activity table. It is a deliberate, narrow
 // augmentation surface owned by the Execution review.
 
-import { pgTable, text, integer, timestamp, pgEnum, serial, date, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, pgEnum, serial, date, jsonb, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { users } from "./users";
@@ -122,3 +122,22 @@ export type RevenueMilestoneTaskLink = typeof revenueMilestoneTaskLinks.$inferSe
 export const insertTaskCostLineLinkSchema = createInsertSchema(taskCostLineLinks).omit({ id: true, createdAt: true } as any);
 export type InsertTaskCostLineLink = z.infer<typeof insertTaskCostLineLinkSchema>;
 export type TaskCostLineLink = typeof taskCostLineLinks.$inferSelect;
+
+// ===================== ACTIVITY-PLANNING LINK TEMPLATES =====================
+//
+// A reusable, project-agnostic set of word rules that recreate the inflow→task→
+// outflow links on a new project. Built by saving an already-linked project's
+// links as keyword rules; applied by matching milestone / task / outflow text.
+// `rules` shape (ActivityTemplateRule[]):
+//   { label, milestoneKeywords[], taskKeywords[], outflowKeywords[] }
+export const activityPlanTemplates = pgTable("activity_plan_templates", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  rules: jsonb("rules").notNull().default([]),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+});
+export type ActivityPlanTemplate = typeof activityPlanTemplates.$inferSelect;

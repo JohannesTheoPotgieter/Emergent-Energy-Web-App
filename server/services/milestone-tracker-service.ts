@@ -17,6 +17,11 @@ import {
   type MtPlanTaskRow,
 } from "../repositories/milestone-tracker-repository";
 import { executionBoardRepository } from "../repositories/execution-board-repository";
+import {
+  activityPlanTemplateRepository,
+  type ActivityTemplateRule,
+  type ActivityTemplateRow,
+} from "../repositories/activity-plan-template-repository";
 import { pctTo100 } from "../lib/kpi-formulas";
 
 // ──────────────────────────────── shapes ─────────────────────────────────────
@@ -867,4 +872,132 @@ export async function unlinkTaskDependency(projectId: number, predecessorId: num
   ]);
   if (!predOk || !succOk) throw new MilestoneLinkError("Task not found for this project");
   await milestoneTrackerRepository.removeManualDependency({ predecessorId, successorId });
+}
+
+// ──────────────────────── activity-plan link templates ───────────────────────
+//
+// A template is a set of keyword rules captured from an already-linked project,
+// re-applied to a new project by matching milestone / task / outflow text. Build
+// once, apply per new project. Reuses the existing link writes (idempotent).
+
+const TEMPLATE_STOPWORDS = new Set([
+  "the", "and", "of", "for", "to", "a", "an", "on", "in", "at", "by", "with", "or",
+  "payment", "milestone", "deposit", "stage", "phase", "amp", "inv", "no",
+]);
+
+/** Significant lowercase keywords from a row's text (drops stopwords, pure
+ *  numbers and <3-char tokens). Falls back to the whole phrase if nothing keeps. */
+function templateKeywords(text: string | null | undefined): string[] {
+  if (!text) return [];
+  const toks = text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const kept = toks.filter((t) => t.length >= 3 && !/^\d+$/.test(t) && !TEMPLATE_STOPWORDS.has(t));
+  const uniq = [...new Set(kept)];
+  if (uniq.length > 0) return uniq;
+  const phrase = text.toLowerCase().trim();
+  return phrase ? [phrase] : [];
+}
+
+function matchesAnyKeyword(text: string | null | undefined, keywords: string[]): boolean {
+  if (!text || keywords.length === 0) return false;
+  const t = text.toLowerCase();
+  return keywords.some((k) => k && t.includes(k));
+}
+
+/** Derive template rules from a project's existing links — one rule per milestone
+ *  that has linked tasks, capturing keywords for the milestone, its tasks and
+ *  their outflows. */
+function buildTemplateRulesFromBundle(b: ProjectBundle): ActivityTemplateRule[] {
+  const costByHash = new Map(b.costs.map((c) => [c.rowHash, c]));
+  const costsByTask = new Map<number, string[]>();
+  for (const l of b.tcLinks) {
+    const c = costByHash.get(l.costRowHash);
+    const arr = costsByTask.get(l.workItemId) ?? [];
+    const text = c?.description ?? c?.costCategory;
+    if (text) arr.push(text);
+    costsByTask.set(l.workItemId, arr);
+  }
+  const taskById = new Map(b.tasks.map((t) => [t.id, t]));
+  const tasksByMilestone = new Map<string, number[]>();
+  for (const l of b.rmLinks) {
+    const arr = tasksByMilestone.get(l.revenueRowHash) ?? [];
+    arr.push(l.workItemId);
+    tasksByMilestone.set(l.revenueRowHash, arr);
+  }
+  const milestoneByHash = new Map(b.milestones.map((m) => [m.rowHash, m]));
+  const rules: ActivityTemplateRule[] = [];
+  for (const [rowHash, taskIds] of tasksByMilestone) {
+    const m = milestoneByHash.get(rowHash);
+    if (!m) continue;
+    const mKw = templateKeywords(m.milestoneName);
+    const taskKw = new Set<string>();
+    const outflowKw = new Set<string>();
+    for (const tid of taskIds) {
+      const t = taskById.get(tid);
+      if (t) templateKeywords(t.title).forEach((k) => taskKw.add(k));
+      for (const d of costsByTask.get(tid) ?? []) templateKeywords(d).forEach((k) => outflowKw.add(k));
+    }
+    if (mKw.length === 0 || taskKw.size === 0) continue;
+    rules.push({
+      label: m.milestoneName || m.milestoneNo || "Milestone",
+      milestoneKeywords: mKw,
+      taskKeywords: [...taskKw],
+      outflowKeywords: [...outflowKw],
+    });
+  }
+  return rules;
+}
+
+export async function listActivityTemplates(): Promise<ActivityTemplateRow[]> {
+  return activityPlanTemplateRepository.list();
+}
+
+export async function deleteActivityTemplate(id: number): Promise<void> {
+  return activityPlanTemplateRepository.softDelete(id);
+}
+
+/** Capture an already-linked project's links as a reusable template. */
+export async function createTemplateFromProject(projectId: number, name: string, description: string | null, userId: number | null): Promise<ActivityTemplateRow> {
+  const b = await fetchBundle(projectId);
+  const rules = buildTemplateRulesFromBundle(b);
+  if (rules.length === 0) throw new MilestoneLinkError("This project has no milestone→task links to capture yet — link some first.");
+  return activityPlanTemplateRepository.create({ name, description, rules, createdBy: userId });
+}
+
+export interface ApplyTemplateResult {
+  milestoneTaskLinks: number;
+  taskCostLinks: number;
+  rulesMatched: number;
+  rulesTotal: number;
+}
+
+/** Apply a template's keyword rules to a project, creating the matched links
+ *  (skips links that already exist). */
+export async function applyTemplateToProject(projectId: number, templateId: number, userId: number | null): Promise<ApplyTemplateResult> {
+  const tpl = await activityPlanTemplateRepository.getById(templateId);
+  if (!tpl) throw new MilestoneLinkError("Template not found");
+  const b = await fetchBundle(projectId);
+  const existingMt = new Set(b.rmLinks.map((l) => `${l.revenueRowHash}::${l.workItemId}`));
+  const existingTc = new Set(b.tcLinks.map((l) => `${l.workItemId}::${l.costRowHash}`));
+  const toMt: Array<{ revenueRowHash: string; workItemId: number }> = [];
+  const toTc: Array<{ workItemId: number; costRowHash: string }> = [];
+  let rulesMatched = 0;
+
+  for (const rule of tpl.rules) {
+    const ms = b.milestones.filter((m) => matchesAnyKeyword(m.milestoneName, rule.milestoneKeywords));
+    const ts = b.tasks.filter((t) => matchesAnyKeyword(t.title, rule.taskKeywords));
+    const os = b.costs.filter((c) => matchesAnyKeyword(c.description ?? c.costCategory, rule.outflowKeywords));
+    if (ms.length > 0 && ts.length > 0) rulesMatched++;
+    for (const m of ms) for (const t of ts) {
+      const key = `${m.rowHash}::${t.id}`;
+      if (!existingMt.has(key)) { existingMt.add(key); toMt.push({ revenueRowHash: m.rowHash, workItemId: t.id }); }
+    }
+    for (const t of ts) for (const c of os) {
+      const key = `${t.id}::${c.rowHash}`;
+      if (!existingTc.has(key)) { existingTc.add(key); toTc.push({ workItemId: t.id, costRowHash: c.rowHash }); }
+    }
+  }
+
+  for (const l of toMt) await milestoneTrackerRepository.addMilestoneTaskLink({ projectId, ...l, createdBy: userId });
+  for (const l of toTc) await milestoneTrackerRepository.addTaskCostLink({ projectId, ...l, createdBy: userId });
+  return { milestoneTaskLinks: toMt.length, taskCostLinks: toTc.length, rulesMatched, rulesTotal: tpl.rules.length };
 }
