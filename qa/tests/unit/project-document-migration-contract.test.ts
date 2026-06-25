@@ -36,13 +36,15 @@ describe("project document migration contract", () => {
     const sqliteBootstrap = readRepoFile("server/db.ts");
 
     expect(sqliteBootstrap).toContain("CREATE TABLE IF NOT EXISTS company_sharepoint_roots");
-    expect(sqliteBootstrap).toContain("CREATE TABLE IF NOT EXISTS folder_taxonomy");
-    expect(sqliteBootstrap).toContain("CREATE TABLE IF NOT EXISTS project_folders");
     expect(sqliteBootstrap).toContain("CREATE TABLE IF NOT EXISTS managed_documents");
     expect(sqliteBootstrap).toContain("CREATE TABLE IF NOT EXISTS project_document_links");
     // project_sharepoint_roots was dropped (0086_drop_controlled_documents); it
     // must NOT be re-created in the dev bootstrap.
     expect(sqliteBootstrap).not.toContain("CREATE TABLE IF NOT EXISTS project_sharepoint_roots");
+    // PHASE 5: folder_taxonomy + project_folders were hard-dropped
+    // (0114_phase5_drop_folder_taxonomy); they must NOT be re-created in dev.
+    expect(sqliteBootstrap).not.toContain("CREATE TABLE IF NOT EXISTS folder_taxonomy");
+    expect(sqliteBootstrap).not.toContain("CREATE TABLE IF NOT EXISTS project_folders");
   });
 
   it("loads local environment variables before running database migrations", () => {

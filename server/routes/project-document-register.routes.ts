@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { requireAuth, getEffectiveUser } from "../auth-context";
 import { badRequest, conflict, forbidden, notFound, serverError, ApiError } from "../lib/api-error";
-import { listFoldersForProject } from "../repositories/project-folders-repository";
+import { listDisciplineFoldersForProject } from "../repositories/project-discipline-folders-repository";
 import { upsertManagedDocumentFromGraph } from "../repositories/managed-documents-repository";
 import {
   getProjectDocumentLink,
@@ -28,7 +28,8 @@ const domainSchema = z.enum(PROJECT_DOCUMENT_DOMAINS);
 
 const linkBodySchema = z.object({
   domain: domainSchema,
-  // Canonical project_folders surface (project_sharepoint_roots retired in Stage 3).
+  // Browse-and-bind surface: a project_discipline_folders id (Phase 5 — the
+  // legacy project_folders surface was removed).
   folderId: z.number().int().positive(),
   itemId: z.string().min(1).max(256),
   documentType: z.string().trim().min(1).max(120),
@@ -225,12 +226,12 @@ export function registerProjectDocumentRegisterRoutes(app: Express): void {
       const user = requireRegisterUser(req);
       ensurePermission(user.role, body.data.domain, "link");
 
-      // Resolve the SharePoint drive from the canonical project_folders surface.
-      const folders = await listFoldersForProject(projectId.data);
+      // Resolve the SharePoint drive from the bound discipline folder.
+      const folders = await listDisciplineFoldersForProject(projectId.data);
       const folder = folders.find((f) => f.id === body.data.folderId);
-      if (!folder) throw notFound("Project folder");
+      if (!folder) throw notFound("Project discipline folder");
       if (!folder.driveId) {
-        throw conflict("Project folder is not provisioned to SharePoint yet.");
+        throw conflict("Discipline folder is not bound to SharePoint yet.");
       }
       const driveId = folder.driveId;
 
@@ -247,7 +248,6 @@ export function registerProjectDocumentRegisterRoutes(app: Express): void {
         name: item.name,
         path: item.path,
         createdByUserId: user.id,
-        parentFolderId: null,
       });
 
       const link = await upsertLinkedProjectDocument({

@@ -22,27 +22,19 @@ async function fetchJson<T>(url: string): Promise<T> {
  * runs against:
  *  - "company": a company-wide SharePoint root (company_sharepoint_roots),
  *    served by the /api/documents/company/:rootId/* endpoints.
- *  - "folder": a provisioned project folder (project_folders), served by the
- *    canonical /api/projects/:projectId/folders/:folderId/* endpoints.
  *
- * Project browsing is folder-keyed: there is no single "project root" — each
- * provisioned folder is its own browse anchor. This is the client cutover off
- * the deprecated project_sharepoint_roots table.
+ * Per-project document browsing is now done per discipline via the
+ * browse-and-bind flow (DisciplinePanel / DisciplineFolderBinder), not through
+ * this generic browser.
  */
-export type BrowseTarget =
-  | { kind: "company"; rootId: number }
-  | { kind: "folder"; projectId: number; folderId: number };
+export type BrowseTarget = { kind: "company"; rootId: number };
 
 function targetBase(t: BrowseTarget): string {
-  return t.kind === "company"
-    ? `/api/documents/company/${t.rootId}`
-    : `/api/projects/${t.projectId}/folders/${t.folderId}`;
+  return `/api/documents/company/${t.rootId}`;
 }
 
 function targetKey(t: BrowseTarget): Array<string | number> {
-  return t.kind === "company"
-    ? ["documents", "company", t.rootId]
-    : ["documents", "folder", t.projectId, t.folderId];
+  return ["documents", "company", t.rootId];
 }
 
 /** Authenticated download URL for an item under a browse target. */
@@ -176,10 +168,8 @@ export function useCreateFolder() {
       parentItemId: string | null;
       name: string;
     }) => {
-      // Company roots create subfolders via /folder; project folders via
-      // /subfolder (the canonical folder-keyed verb).
-      const suffix = input.target.kind === "company" ? "folder" : "subfolder";
-      const res = await apiRequest("POST", `${targetBase(input.target)}/${suffix}`, {
+      // Company roots create subfolders via /folder.
+      const res = await apiRequest("POST", `${targetBase(input.target)}/folder`, {
         parentItemId: input.parentItemId,
         name: input.name,
       });

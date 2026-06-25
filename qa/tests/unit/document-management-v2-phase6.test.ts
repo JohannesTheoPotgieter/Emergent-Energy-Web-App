@@ -4,8 +4,9 @@
  * Validates:
  *   1. The readiness service exports computeProjectReadiness and
  *      computePortfolioReadiness, classifies requirements through the
- *      full status set, and walks all four data sources (taxonomy,
- *      project_folders, requirements, managed_documents).
+ *      full status set, and walks the browse-and-bind data sources
+ *      (project_discipline_folders, document_approval_requirements,
+ *      managed_documents).
  *   2. The percent helper weights folder + requirement halves equally.
  *   3. Routes are registered, gated on documents:view, and don't
  *      mutate (no audit logging required).
@@ -67,15 +68,18 @@ describe("D6 Phase 6 — readiness service shape", () => {
     }
   });
 
-  it("touches all four data sources", () => {
-    expect(serviceFile).toMatch(/folderTaxonomy/);
-    expect(serviceFile).toMatch(/projectFolders/);
+  it("touches the browse-and-bind data sources (no retired taxonomy tables)", () => {
+    expect(serviceFile).toMatch(/projectDisciplineFolders/);
     expect(serviceFile).toMatch(/documentApprovalRequirements/);
     expect(serviceFile).toMatch(/managedDocuments/);
+    // The retired taxonomy basis is gone.
+    expect(serviceFile).not.toMatch(/folderTaxonomy/);
+    expect(serviceFile).not.toMatch(/projectFolders[^A-Za-z]/);
   });
 
-  it("treats empty disciplines arrays as 'shared / all' (excluded from per-discipline rollup)", () => {
-    expect(serviceFile).toMatch(/shared\/all|counted at the project level only|ds\.length === 0/);
+  it("drives readiness off discipline-based requirements only (discipline != null)", () => {
+    expect(serviceFile).toMatch(/documentApprovalRequirements\.active/);
+    expect(serviceFile).toMatch(/r\.discipline != null/);
   });
 
   it("equally weights folder + requirement halves in the percent helper", () => {
@@ -86,7 +90,7 @@ describe("D6 Phase 6 — readiness service shape", () => {
 
   it("portfolio function is batch-friendly (one inArray query per table, not N+1)", () => {
     expect(serviceFile).toMatch(/inArray/);
-    expect(serviceFile).toMatch(/loadProjectFoldersForMany/);
+    expect(serviceFile).toMatch(/loadDisciplineFoldersForMany/);
     expect(serviceFile).toMatch(/loadProjectDocumentsForMany/);
   });
 

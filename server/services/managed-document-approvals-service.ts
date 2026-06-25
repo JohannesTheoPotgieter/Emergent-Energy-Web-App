@@ -31,9 +31,6 @@ import { db } from "../db";
 import { approvals, type Approval } from "@shared/schema/collaboration";
 import {
   managedDocuments,
-  documentApprovalRequirements,
-  projectFolders,
-  folderTaxonomy,
   MANAGED_DOCUMENT_APPROVAL_TYPE,
   type ManagedDocument,
   type DocumentApprovalRequirement,
@@ -41,7 +38,6 @@ import {
 import { users, type User } from "@shared/schema/users";
 import { getManagedDocumentById } from "../repositories/managed-documents-repository";
 import {
-  findMatchingRequirement,
   findMatchingRequirementByDiscipline,
 } from "../repositories/document-approval-requirements-repository";
 import { getDisciplineFolderById } from "../repositories/project-discipline-folders-repository";
@@ -195,16 +191,9 @@ async function loadRequirementForDocument(
     }
   }
 
-  // Legacy taxonomy basis: resolve the taxonomy key via
-  // project_folders -> folder_taxonomy.
-  if (doc.parentFolderId) {
-    const [join] = await db
-      .select({ taxonomyKey: projectFolders.taxonomyKey })
-      .from(projectFolders)
-      .where(eq(projectFolders.id, doc.parentFolderId))
-      .limit(1);
-    if (join?.taxonomyKey) return findMatchingRequirement(join.taxonomyKey, doc.name);
-  }
+  // PHASE 5: the legacy taxonomy fallback (parent_folder_id -> project_folders
+  // -> folder_taxonomy) was removed with those tables. Documents not under a
+  // bound discipline folder have no approval requirement.
   return null;
 }
 

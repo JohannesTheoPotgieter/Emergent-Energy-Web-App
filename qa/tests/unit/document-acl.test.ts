@@ -1,151 +1,187 @@
 /**
- * Stage 3 — project-scope document ACL anchoring on the canonical
- * project_folders surface (server/lib/document-acl.ts), replacing the
- * deprecated project_sharepoint_roots path-stripping. Also pins that the
- * route consumers no longer touch the deleted repository.
+ * Phase 5 — project-scope document ACL anchoring on the browse-and-bind
+ * discipline surface (server/lib/document-acl.ts).
+ *
+ * The legacy anchoring chain (project_sharepoint_roots → project_folders →
+ * folder_taxonomy, resolved via `parentFolderId`) was removed with those
+ * tables. `resolveProjectDocAnchor` now takes
+ * `{ projectId, disciplineFolderId, path }` and resolves the document's bound
+ * discipline folder → an ACL prefix via the internal DISCIPLINE_ACL_PREFIX
+ * map, falling back to the document path's first segment. Unknown anchors
+ * resolve to READ_ONLY_FALLBACK in `resolveFolderAcl` — fail safe.
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import type { ProjectFolder } from "@shared/schema/documents";
+import type { ProjectDisciplineFolder } from "@shared/schema/documents";
 
-// Mock the two repositories the lib composes (no DB needed). vi.hoisted keeps
-// the spies addressable from the hoisted vi.mock factories.
-const { listFoldersForProject, getTaxonomyByKey } = vi.hoisted(() => ({
-  listFoldersForProject: vi.fn(),
-  getTaxonomyByKey: vi.fn(),
+// The lib resolves the binding through the discipline-folders repository.
+// Mock it (no DB needed). vi.hoisted keeps the spy addressable from the
+// hoisted vi.mock factory.
+const { getDisciplineFolderById } = vi.hoisted(() => ({
+  getDisciplineFolderById: vi.fn(),
 }));
 
-vi.mock("../../../server/repositories/project-folders-repository", () => ({
-  listFoldersForProject,
-}));
-vi.mock("../../../server/repositories/folder-taxonomy-repository", () => ({
-  getTaxonomyByKey,
+vi.mock("../../../server/repositories/project-discipline-folders-repository", () => ({
+  getDisciplineFolderById,
 }));
 
-import { resolveProjectDocAnchor, folderAclAnchor } from "../../../server/lib/document-acl";
+import { resolveProjectDocAnchor } from "../../../server/lib/document-acl";
 
-function folder(over: Partial<ProjectFolder> = {}): ProjectFolder {
+function binding(over: Partial<ProjectDisciplineFolder> = {}): ProjectDisciplineFolder {
   return {
     id: 1,
     projectId: 7,
-    taxonomyKey: "engineering",
-    sharepointPath: "Projects/ABC/Engineering",
+    discipline: "ENGINEERING",
     driveId: "drv",
     itemId: "itm",
+    sharepointPath: "Projects/ABC/Engineering",
+    webUrl: null,
+    boundByUserId: null,
+    boundAt: null,
+    lastVerifiedAt: null,
+    verifyError: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    deletedAt: null,
     ...over,
-  } as unknown as ProjectFolder;
+  } as unknown as ProjectDisciplineFolder;
 }
 
 beforeEach(() => {
-  listFoldersForProject.mockReset();
-  getTaxonomyByKey.mockReset();
+  getDisciplineFolderById.mockReset();
 });
 
-describe("folderAclAnchor — top-level taxonomy display name", () => {
-  it("walks up parentKey to the top-level display name", async () => {
-    getTaxonomyByKey.mockImplementation(async (key: string) => {
-      if (key === "engineering/drawings")
-        return { internalKey: key, parentKey: "engineering", displayName: "Drawings" };
-      if (key === "engineering")
-        return { internalKey: key, parentKey: null, displayName: "Engineering" };
-      return null;
-    });
-    expect(await folderAclAnchor(folder({ taxonomyKey: "engineering/drawings" }))).toBe("Engineering");
+describe("resolveProjectDocAnchor — discipline-folder anchoring", () => {
+  it("maps a bound discipline to its ACL prefix (ENGINEERING → engineering)", async () => {
+    getDisciplineFolderById.mockResolvedValue(binding({ id: 12, discipline: "ENGINEERING" }));
+    expect(
+      await resolveProjectDocAnchor({ projectId: 7, disciplineFolderId: 12, path: "irrelevant/spec.pdf" }),
+    ).toBe("engineering");
   });
 
-  it("falls back to the first key segment when taxonomy rows are missing", async () => {
-    getTaxonomyByKey.mockResolvedValue(null);
-    expect(await folderAclAnchor(folder({ taxonomyKey: "contracts/nda" }))).toBe("contracts");
+  it("maps CONSTRUCTION onto the engineering ACL prefix", async () => {
+    getDisciplineFolderById.mockResolvedValue(binding({ id: 13, discipline: "CONSTRUCTION" }));
+    expect(
+      await resolveProjectDocAnchor({ projectId: 7, disciplineFolderId: 13, path: "anything" }),
+    ).toBe("engineering");
   });
 
-  it("terminates on a parentKey cycle (does not hang)", async () => {
-    getTaxonomyByKey.mockImplementation(async (key: string) => ({
-      internalKey: key,
-      parentKey: key,
-      displayName: key,
-    }));
-    expect(typeof (await folderAclAnchor(folder({ taxonomyKey: "loop" })))).toBe("string");
-  });
-});
-
-describe("resolveProjectDocAnchor — canonical project_folders anchoring", () => {
-  it("uses parentFolderId (canonical linkage) when set", async () => {
-    listFoldersForProject.mockResolvedValue([
-      folder({ id: 11, taxonomyKey: "engineering", sharepointPath: "Projects/ABC/Engineering" }),
-      folder({ id: 12, taxonomyKey: "contracts", sharepointPath: "Projects/ABC/Contracts" }),
-    ]);
-    getTaxonomyByKey.mockImplementation(async (key: string) => ({
-      internalKey: key,
-      parentKey: null,
-      displayName: key === "contracts" ? "Contracts" : "Engineering",
-    }));
-    expect(await resolveProjectDocAnchor({ projectId: 7, parentFolderId: 12, path: "irrelevant" })).toBe("Contracts");
+  it("maps FINANCE / PROCUREMENT / COMPLIANCE onto the contracts ACL prefix", async () => {
+    for (const discipline of ["FINANCE", "PROCUREMENT", "COMPLIANCE"]) {
+      getDisciplineFolderById.mockResolvedValue(binding({ id: 20, discipline }));
+      expect(
+        await resolveProjectDocAnchor({ projectId: 7, disciplineFolderId: 20, path: "x" }),
+      ).toBe("contracts");
+    }
   });
 
-  it("falls back to the longest sharepointPath prefix for untracked docs", async () => {
-    listFoldersForProject.mockResolvedValue([
-      folder({ id: 11, taxonomyKey: "engineering", sharepointPath: "Projects/ABC/Engineering" }),
-    ]);
-    getTaxonomyByKey.mockResolvedValue({ internalKey: "engineering", parentKey: null, displayName: "Engineering" });
+  it("maps HSE onto the photos ACL prefix", async () => {
+    getDisciplineFolderById.mockResolvedValue(binding({ id: 21, discipline: "HSE" }));
+    expect(
+      await resolveProjectDocAnchor({ projectId: 7, disciplineFolderId: 21, path: "x" }),
+    ).toBe("photos");
+  });
+
+  it("maps PD / KAM onto the 'client docs' ACL prefix", async () => {
+    for (const discipline of ["PD", "KAM"]) {
+      getDisciplineFolderById.mockResolvedValue(binding({ id: 22, discipline }));
+      expect(
+        await resolveProjectDocAnchor({ projectId: 7, disciplineFolderId: 22, path: "x" }),
+      ).toBe("client docs");
+    }
+  });
+
+  it("maps QUALITY / PM / OM / EXCO onto the 'internal docs' ACL prefix", async () => {
+    for (const discipline of ["QUALITY", "PM", "OM", "EXCO"]) {
+      getDisciplineFolderById.mockResolvedValue(binding({ id: 23, discipline }));
+      expect(
+        await resolveProjectDocAnchor({ projectId: 7, disciplineFolderId: 23, path: "x" }),
+      ).toBe("internal docs");
+    }
+  });
+
+  it("resolves by id even when the binding has been soft-unbound (deletedAt set)", async () => {
+    getDisciplineFolderById.mockResolvedValue(
+      binding({ id: 14, discipline: "ENGINEERING", deletedAt: new Date() }),
+    );
+    expect(
+      await resolveProjectDocAnchor({ projectId: 7, disciplineFolderId: 14, path: "irrelevant" }),
+    ).toBe("engineering");
+    expect(getDisciplineFolderById).toHaveBeenCalledWith(14);
+  });
+
+  it("falls back to the document path's first segment when no folder is bound", async () => {
+    // Mirrors the retired root-keyed behaviour: a Contracts doc with no bound
+    // discipline still anchors on "contracts" (restricted ACL) rather than the
+    // everyone-can-read fallback.
+    expect(
+      await resolveProjectDocAnchor({ projectId: 7, disciplineFolderId: null, path: "Contracts/secret.pdf" }),
+    ).toBe("contracts");
+    expect(getDisciplineFolderById).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the path's first segment when the binding has no mapped discipline", async () => {
+    // An unmapped discipline code falls through to the path-segment fallback.
+    getDisciplineFolderById.mockResolvedValue(binding({ id: 15, discipline: "NOT_MAPPED" }));
     expect(
       await resolveProjectDocAnchor({
         projectId: 7,
-        parentFolderId: null,
-        path: "Projects/ABC/Engineering/manual-subfolder/spec.pdf",
+        disciplineFolderId: 15,
+        path: "Projects/ABC/Engineering/spec.pdf",
       }),
-    ).toBe("Engineering");
+    ).toBe("projects");
   });
 
-  it("falls back to the document path's first segment when no folder matches", async () => {
-    listFoldersForProject.mockResolvedValue([
-      folder({ id: 11, taxonomyKey: "engineering", sharepointPath: "Projects/ABC/Engineering" }),
-    ]);
-    // Mirrors the retired mock-mode behaviour: a Contracts doc with no
-    // provisioned project_folders row still anchors on "contracts" (restricted
-    // ACL) rather than the everyone-can-read fallback.
+  it("falls back to the path's first segment when the binding id resolves to nothing", async () => {
+    getDisciplineFolderById.mockResolvedValue(null);
     expect(
-      await resolveProjectDocAnchor({ projectId: 7, parentFolderId: null, path: "Contracts/secret.pdf" }),
-    ).toBe("contracts");
+      await resolveProjectDocAnchor({ projectId: 7, disciplineFolderId: 99, path: "Engineering/file.pdf" }),
+    ).toBe("engineering");
+  });
+
+  it("normalises the path (backslashes, leading slashes, casing) for the fallback", async () => {
+    expect(
+      await resolveProjectDocAnchor({ projectId: 7, disciplineFolderId: null, path: "\\Photos\\site\\img.jpg" }),
+    ).toBe("photos");
   });
 
   it("returns '' (→ READ_ONLY_FALLBACK) for an empty/unanchorable path", async () => {
-    listFoldersForProject.mockResolvedValue([]);
-    expect(await resolveProjectDocAnchor({ projectId: 7, parentFolderId: null, path: "" })).toBe("");
-  });
-
-  it("prefers parentFolderId over a conflicting path prefix", async () => {
-    listFoldersForProject.mockResolvedValue([
-      folder({ id: 11, taxonomyKey: "engineering", sharepointPath: "Projects/ABC/Engineering" }),
-      folder({ id: 12, taxonomyKey: "photos", sharepointPath: "Projects/ABC/Photos" }),
-    ]);
-    getTaxonomyByKey.mockImplementation(async (key: string) => ({
-      internalKey: key,
-      parentKey: null,
-      displayName: key === "photos" ? "Photos" : "Engineering",
-    }));
-    // Path sits under Engineering, but the linkage points at Photos → linkage wins.
-    expect(
-      await resolveProjectDocAnchor({ projectId: 7, parentFolderId: 12, path: "Projects/ABC/Engineering/spec.pdf" }),
-    ).toBe("Photos");
+    expect(await resolveProjectDocAnchor({ projectId: 7, disciplineFolderId: null, path: "" })).toBe("");
   });
 });
 
-describe("Stage 3 — consumers no longer touch the deprecated repository", () => {
-  const read = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), "utf8");
+describe("Phase 5 — the legacy anchoring surface is gone", () => {
+  const repoRoot = path.resolve(__dirname, "..", "..", "..");
+  const read = (rel: string) => fs.readFileSync(path.join(repoRoot, rel), "utf8");
+  const exists = (rel: string) => fs.existsSync(path.join(repoRoot, rel));
 
-  it("the project-sharepoint-roots-repository is deleted", () => {
-    expect(fs.existsSync(path.join(process.cwd(), "server/repositories/project-sharepoint-roots-repository.ts"))).toBe(false);
+  it("the deprecated repositories are deleted", () => {
+    expect(exists("server/repositories/project-sharepoint-roots-repository.ts")).toBe(false);
+    expect(exists("server/repositories/project-folders-repository.ts")).toBe(false);
+    expect(exists("server/repositories/folder-taxonomy-repository.ts")).toBe(false);
   });
 
-  it("document-management + document-comments anchor via the shared lib", () => {
+  it("the ACL lib resolves via the discipline-folders repository (not the retired chain)", () => {
+    const src = read("server/lib/document-acl.ts");
+    expect(src).toContain("project-discipline-folders-repository");
+    expect(src).toContain("DISCIPLINE_ACL_PREFIX");
+    expect(src).toContain("disciplineFolderId");
+    // No live dependency on the retired repositories.
+    expect(src).not.toContain('"../repositories/project-folders-repository"');
+    expect(src).not.toContain('"../repositories/folder-taxonomy-repository"');
+  });
+
+  it("document-management + document-comments anchor via the shared lib using disciplineFolderId", () => {
     for (const f of [
       "server/routes/document-management.routes.ts",
       "server/routes/document-comments.routes.ts",
     ]) {
       const src = read(f);
       expect(src).toContain("resolveProjectDocAnchor");
+      expect(src).toContain("disciplineFolderId");
       expect(src).not.toContain("project-sharepoint-roots-repository");
+      expect(src).not.toContain("parentFolderId");
     }
   });
 

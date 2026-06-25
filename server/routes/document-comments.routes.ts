@@ -71,16 +71,16 @@ function firstSegmentFromPath(path: string): string {
 }
 
 async function assertDocumentAcl(
-  tracked: { rootScope: DocumentRootScope; projectId: number | null; companyRootId: number | null; parentFolderId: number | null; driveId: string; path: string },
+  tracked: { rootScope: DocumentRootScope; projectId: number | null; companyRootId: number | null; disciplineFolderId: number | null; driveId: string; path: string },
   role: string | null | undefined,
   action: DocumentAction,
 ): Promise<void> {
   let segment: string;
   if (tracked.rootScope === "project" && tracked.projectId != null) {
-    // Canonical project_folders anchor (no project_sharepoint_roots).
+    // Bound-discipline-folder anchor (no project_folders / taxonomy).
     segment = await resolveProjectDocAnchor({
       projectId: tracked.projectId,
-      parentFolderId: tracked.parentFolderId,
+      disciplineFolderId: tracked.disciplineFolderId,
       path: tracked.path,
     });
   } else {

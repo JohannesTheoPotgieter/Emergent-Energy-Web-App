@@ -1,8 +1,7 @@
 /**
- * RequirementDialog — create/edit an approval requirement on either basis:
- * browse-and-bind (discipline + optional subfolder) or the legacy taxonomy
- * folder. Extracted from admin-document-management.tsx (file-size split,
- * EE-QA-015).
+ * RequirementDialog — create/edit an approval requirement on the browse-and-bind
+ * basis: a discipline (LIFECYCLE_DEPARTMENTS) + optional subfolder/file pattern.
+ * Extracted from admin-document-management.tsx (file-size split, EE-QA-015).
  */
 
 import { useState } from "react";
@@ -31,21 +30,18 @@ import {
 import {
   COMPANY_ROLES,
   LIFECYCLE_DEPARTMENTS,
-  type FolderTaxonomy,
   type DocumentApprovalRequirement,
 } from "@shared/schema";
 import { Loader2, PowerOff } from "lucide-react";
 
 export function RequirementDialog(props: {
-  taxonomyOptions: FolderTaxonomy[];
   initial?: DocumentApprovalRequirement;
   onClose: () => void;
 }) {
-  const { taxonomyOptions, initial, onClose } = props;
+  const { initial, onClose } = props;
   const isEditing = Boolean(initial);
 
   const [form, setForm] = useState<CreateRequirementPayload>({
-    taxonomyKey: initial?.taxonomyKey ?? "",
     discipline: initial?.discipline ?? null,
     subfolderPattern: initial?.subfolderPattern ?? null,
     fileNamePattern: initial?.fileNamePattern ?? null,
@@ -57,11 +53,6 @@ export function RequirementDialog(props: {
     sortOrder: initial?.sortOrder ?? 0,
     active: initial?.active ?? true,
   });
-  // New rules default to the browse-and-bind (discipline) basis; legacy rows
-  // edit on whichever basis they were created with.
-  const [basis, setBasis] = useState<"discipline" | "taxonomy">(
-    initial?.taxonomyKey ? "taxonomy" : "discipline",
-  );
 
   const create = useCreateRequirement();
   const update = useUpdateRequirement();
@@ -80,20 +71,15 @@ export function RequirementDialog(props: {
   }
 
   async function handleSubmit() {
-    // Exactly one basis; give a friendly message before the server 400s.
-    if (basis === "taxonomy" && !form.taxonomyKey) {
-      toast({ title: "Pick a folder", description: "Choose a taxonomy folder, or switch the basis to discipline.", variant: "destructive" });
-      return;
-    }
-    if (basis === "discipline" && !form.discipline) {
-      toast({ title: "Pick a discipline", description: "Choose a discipline, or switch the basis to taxonomy folder.", variant: "destructive" });
+    if (!form.discipline) {
+      toast({ title: "Pick a discipline", description: "Choose the discipline this rule applies to.", variant: "destructive" });
       return;
     }
     const payload: CreateRequirementPayload = {
       ...form,
-      taxonomyKey: basis === "taxonomy" ? form.taxonomyKey || null : null,
-      discipline: basis === "discipline" ? form.discipline || null : null,
-      subfolderPattern: basis === "discipline" ? form.subfolderPattern || null : null,
+      taxonomyKey: null,
+      discipline: form.discipline || null,
+      subfolderPattern: form.subfolderPattern || null,
     };
     try {
       if (isEditing) {
@@ -134,79 +120,40 @@ export function RequirementDialog(props: {
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit approval requirement" : "Add approval requirement"}</DialogTitle>
           <DialogDescription>
-            When a file matching this rule lands in the target — a bound discipline folder
-            (browse-and-bind) or a legacy taxonomy folder — an approval is triggered using the
-            existing approvals engine.
+            When a file matching this rule lands in the project's bound discipline folder, an
+            approval is triggered using the existing approvals engine.
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1 col-span-2">
-            <Label>Rule basis</Label>
-            <Select value={basis} onValueChange={(v) => setBasis(v as "discipline" | "taxonomy")}>
-              <SelectTrigger data-testid="select-requirement-basis">
-                <SelectValue />
+          <div className="space-y-1">
+            <Label>Discipline</Label>
+            <Select
+              value={form.discipline ?? ""}
+              onValueChange={(v) => setForm((s) => ({ ...s, discipline: v }))}
+            >
+              <SelectTrigger data-testid="select-requirement-discipline">
+                <SelectValue placeholder="Choose a discipline" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="discipline">By discipline (browse-and-bind)</SelectItem>
-                <SelectItem value="taxonomy">By taxonomy folder (legacy)</SelectItem>
+                {LIFECYCLE_DEPARTMENTS.map((d) => (
+                  <SelectItem key={d} value={d}>{d}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
-
-          {basis === "discipline" ? (
-            <>
-              <div className="space-y-1">
-                <Label>Discipline</Label>
-                <Select
-                  value={form.discipline ?? ""}
-                  onValueChange={(v) => setForm((s) => ({ ...s, discipline: v }))}
-                >
-                  <SelectTrigger data-testid="select-requirement-discipline">
-                    <SelectValue placeholder="Choose a discipline" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {LIFECYCLE_DEPARTMENTS.map((d) => (
-                      <SelectItem key={d} value={d}>{d}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label>Subfolder pattern (regex, optional)</Label>
-                <Input
-                  value={form.subfolderPattern ?? ""}
-                  onChange={(e) => setForm((s) => ({ ...s, subfolderPattern: e.target.value || null }))}
-                  placeholder="^IFC"
-                  data-testid="input-requirement-subfolder-pattern"
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  Empty = anywhere in the bound folder.
-                </p>
-              </div>
-            </>
-          ) : (
-            <div className="space-y-1 col-span-2">
-              <Label>Folder (taxonomy key)</Label>
-              <Select
-                value={form.taxonomyKey ?? ""}
-                onValueChange={(v) => setForm((s) => ({ ...s, taxonomyKey: v }))}
-              >
-                <SelectTrigger data-testid="select-requirement-taxonomy">
-                  <SelectValue placeholder="Choose a folder" />
-                </SelectTrigger>
-                <SelectContent>
-                  {taxonomyOptions
-                    .filter((o) => o.active)
-                    .map((o) => (
-                      <SelectItem key={o.internalKey} value={o.internalKey}>
-                        {o.internalKey} — {o.displayName}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+          <div className="space-y-1">
+            <Label>Subfolder pattern (regex, optional)</Label>
+            <Input
+              value={form.subfolderPattern ?? ""}
+              onChange={(e) => setForm((s) => ({ ...s, subfolderPattern: e.target.value || null }))}
+              placeholder="^IFC"
+              data-testid="input-requirement-subfolder-pattern"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Empty = anywhere in the bound folder.
+            </p>
+          </div>
 
           <div className="space-y-1">
             <Label>Display name</Label>

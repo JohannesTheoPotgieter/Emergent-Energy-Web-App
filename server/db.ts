@@ -620,41 +620,8 @@ async function ensureSqliteSchema() {
       )
     `));
 
-    await db.run(sql.raw(`
-      CREATE TABLE IF NOT EXISTS folder_taxonomy (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        internal_key TEXT NOT NULL UNIQUE,
-        display_name TEXT NOT NULL,
-        parent_key TEXT,
-        lifecycle_mode TEXT NOT NULL,
-        stage_code TEXT,
-        disciplines TEXT NOT NULL DEFAULT '[]',
-        description TEXT,
-        sort_order INTEGER NOT NULL DEFAULT 0,
-        active INTEGER NOT NULL DEFAULT 1,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `));
-
-    await db.run(sql.raw(`
-      CREATE TABLE IF NOT EXISTS project_folders (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_id INTEGER NOT NULL,
-        taxonomy_key TEXT NOT NULL,
-        drive_id TEXT,
-        item_id TEXT,
-        sharepoint_path TEXT,
-        web_url TEXT,
-        provisioned_at TEXT,
-        provisioned_by_user_id INTEGER,
-        last_verified_at TEXT,
-        verify_error TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE (project_id, taxonomy_key)
-      )
-    `));
+    // PHASE 5 DECOMMISSION: folder_taxonomy + project_folders were dropped
+    // (browse-and-bind project_discipline_folders is the sole surface now).
 
     await db.run(sql.raw(`
       CREATE TABLE IF NOT EXISTS document_approval_requirements (
@@ -679,7 +646,6 @@ async function ensureSqliteSchema() {
         root_scope TEXT NOT NULL,
         project_id INTEGER,
         company_root_id INTEGER,
-        parent_folder_id INTEGER,
         drive_id TEXT NOT NULL,
         drive_item_id TEXT NOT NULL,
         name TEXT NOT NULL,
@@ -693,12 +659,10 @@ async function ensureSqliteSchema() {
         deleted_at TEXT
       )
     `));
-    try { await db.run(sql.raw(`ALTER TABLE managed_documents ADD COLUMN parent_folder_id INTEGER`)); } catch {}
     await db.run(sql.raw(`CREATE UNIQUE INDEX IF NOT EXISTS managed_documents_drive_item_idx ON managed_documents(drive_id, drive_item_id)`));
     await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS managed_documents_project_idx ON managed_documents(project_id)`));
     await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS managed_documents_company_root_idx ON managed_documents(company_root_id)`));
     await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS managed_documents_owner_idx ON managed_documents(owner_user_id)`));
-    await db.run(sql.raw(`CREATE INDEX IF NOT EXISTS managed_documents_parent_folder_idx ON managed_documents(parent_folder_id)`));
 
     await db.run(sql.raw(`
       CREATE TABLE IF NOT EXISTS document_revisions (

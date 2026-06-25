@@ -1,60 +1,32 @@
 /**
- * D6 Phase 4 — DisciplinePanel.
+ * DisciplinePanel — per-discipline document surface (browse-and-bind model).
  *
- * Shows the slice of a project's folder taxonomy that belongs to one
- * discipline (ENGINEERING, QUALITY, HSE, ...). Drives the per-discipline
+ * Shows the SharePoint folder bound to one discipline (ENGINEERING, QUALITY,
+ * HSE, ...) for a project, plus its live contents. Drives the per-discipline
  * panels on department pages.
  *
- * Joins client-side:
- *   /api/folder-taxonomy           (active rows + disciplines + lifecycle)
- *   /api/projects/:id/folders      (per-project SharePoint pointers)
+ * Reads:
+ *   GET /api/projects/:id/discipline-folders                     (bound folder)
+ *   GET /api/projects/:id/discipline-folders/:discipline/documents (contents)
  *
- * For each taxonomy row whose `disciplines` includes the supplied
- * discipline (or empty disciplines, which means "shared / all"), the
- * panel renders:
- *   - the SharePoint path
- *   - provisioning state (provisioned / not provisioned / verify error)
- *   - lifecycle mode + stage code (when set)
- *   - a deep-link affordance once webUrl is wired in a future phase
- *
- * Empty disciplines arrays on a taxonomy row are treated as "shared"
- * and surfaced in every discipline panel (per the planning conversation:
- * 13_Project Photos is shared across the company).
+ * SharePoint stays the source of truth; this only renders metadata + Graph
+ * deep links. Binding/unbinding lives in DisciplineFolderBinder.
  */
 
-import { useMemo, useState, Fragment } from "react";
+import { useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  usePublicFolderTaxonomy,
-  useProjectFolders,
-} from "@/hooks/use-document-management-admin";
-import { FolderFiles } from "@/components/documents/FolderFiles";
-import type { FolderTaxonomy } from "@shared/schema";
+  useDisciplineFolders,
+  useDisciplineFolderDocuments,
+} from "@/hooks/use-discipline-folders";
 import {
-  CheckCircle2, AlertTriangle, FolderTree, FolderX, ChevronDown, ChevronRight,
+  CheckCircle2, FolderTree, FolderX, ExternalLink, File, Folder,
 } from "lucide-react";
-
-interface ProjectFolder {
-  id: number;
-  taxonomyKey: string;
-  driveId: string | null;
-  itemId: string | null;
-  sharepointPath: string | null;
-  webUrl: string | null;
-  provisionedAt: string | null;
-  verifyError: string | null;
-}
-
-interface JoinedRow {
-  taxonomy: FolderTaxonomy;
-  folder: ProjectFolder | null;
-}
 
 export interface DisciplinePanelProps {
   projectId: number;
@@ -62,7 +34,7 @@ export interface DisciplinePanelProps {
   discipline: string;
   /** Optional title override (defaults to "{discipline} documents"). */
   title?: string;
-  /** When true, also show rows whose `disciplines` array is empty (shared). */
+  /** Retained for API compatibility; no longer used (shared rows are gone). */
   includeShared?: boolean;
 }
 
@@ -70,49 +42,20 @@ export function DisciplinePanel({
   projectId,
   discipline,
   title,
-  includeShared = true,
 }: DisciplinePanelProps) {
-  const taxonomy = usePublicFolderTaxonomy();
-  const folders = useProjectFolders(projectId);
-  const [expandedFolderId, setExpandedFolderId] = useState<number | null>(null);
+  const foldersQuery = useDisciplineFolders(projectId);
 
-  const isLoading = taxonomy.isLoading || folders.isLoading;
-  const hasError = Boolean(taxonomy.error || folders.error);
+  const folder = useMemo(
+    () => (foldersQuery.data?.folders ?? []).find((f) => f.discipline === discipline) ?? null,
+    [foldersQuery.data, discipline],
+  );
 
-  const rows: JoinedRow[] = useMemo(() => {
-    const tax = taxonomy.data?.taxonomy ?? [];
-    const folderMap = new Map(
-      (folders.data?.folders ?? []).map((f) => [f.taxonomyKey, f] as const),
-    );
-    return tax
-      .filter((t) => {
-        if (!t.active) return false;
-        const disciplines = (t.disciplines ?? []) as string[];
-        if (disciplines.includes(discipline)) return true;
-        if (includeShared && disciplines.length === 0) return true;
-        return false;
-      })
-      .sort((a, b) => {
-        // Top-level rows first, then by sort_order, then by displayName.
-        const ap = a.parentKey ? 1 : 0;
-        const bp = b.parentKey ? 1 : 0;
-        if (ap !== bp) return ap - bp;
-        if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
-        return a.displayName.localeCompare(b.displayName);
-      })
-      .map((t) => ({
-        taxonomy: t,
-        folder: folderMap.get(t.internalKey) ?? null,
-      }));
-  }, [taxonomy.data, folders.data, discipline, includeShared]);
+  const docsQuery = useDisciplineFolderDocuments(projectId, discipline, !!folder);
 
-  const summary = useMemo(() => {
-    const total = rows.length;
-    const provisioned = rows.filter((r) => r.folder?.itemId).length;
-    const errors = rows.filter((r) => r.folder?.verifyError).length;
-    return { total, provisioned, errors, missing: total - provisioned };
-  }, [rows]);
+  const isLoading = foldersQuery.isLoading;
+  const hasError = Boolean(foldersQuery.error);
 
+  const items = docsQuery.data?.items ?? [];
   const heading = title ?? `${discipline} documents`;
 
   if (hasError) {
@@ -134,40 +77,46 @@ export function DisciplinePanel({
           <div className="ml-auto flex flex-wrap gap-1">
             {isLoading ? (
               <Skeleton className="h-5 w-32" />
+            ) : folder ? (
+              <Badge
+                variant="outline"
+                className="text-[10px] bg-emerald-50 text-emerald-700"
+                data-testid={`discipline-summary-bound-${discipline}`}
+              >
+                <CheckCircle2 className="h-3 w-3 mr-1" />
+                Folder bound
+              </Badge>
             ) : (
-              <>
-                <Badge
-                  variant="outline"
-                  className="text-[10px] bg-emerald-50 text-emerald-700"
-                  data-testid={`discipline-summary-provisioned-${discipline}`}
-                >
-                  <CheckCircle2 className="h-3 w-3 mr-1" />
-                  {summary.provisioned} provisioned
-                </Badge>
-                {summary.missing > 0 && (
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] bg-amber-50 text-amber-800"
-                    data-testid={`discipline-summary-missing-${discipline}`}
-                  >
-                    <FolderX className="h-3 w-3 mr-1" />
-                    {summary.missing} missing
-                  </Badge>
-                )}
-                {summary.errors > 0 && (
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] bg-rose-50 text-rose-700"
-                    data-testid={`discipline-summary-errors-${discipline}`}
-                  >
-                    <AlertTriangle className="h-3 w-3 mr-1" />
-                    {summary.errors} errors
-                  </Badge>
-                )}
-              </>
+              <Badge
+                variant="outline"
+                className="text-[10px] bg-amber-50 text-amber-800"
+                data-testid={`discipline-summary-unbound-${discipline}`}
+              >
+                <FolderX className="h-3 w-3 mr-1" />
+                No folder bound
+              </Badge>
             )}
           </div>
         </div>
+
+        {folder?.sharepointPath && (
+          <div className="text-xs">
+            {folder.webUrl ? (
+              <a
+                href={folder.webUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 font-mono text-emerald-700 hover:underline"
+                data-testid={`discipline-link-${discipline}`}
+              >
+                <ExternalLink className="h-3 w-3" />
+                {folder.sharepointPath}
+              </a>
+            ) : (
+              <span className="font-mono text-muted-foreground">{folder.sharepointPath}</span>
+            )}
+          </div>
+        )}
 
         {isLoading ? (
           <div className="space-y-2">
@@ -175,128 +124,84 @@ export function DisciplinePanel({
             <Skeleton className="h-8 w-full" />
             <Skeleton className="h-8 w-full" />
           </div>
-        ) : rows.length === 0 ? (
+        ) : !folder ? (
           <div className="rounded-md border p-4 text-sm text-muted-foreground">
-            No folders mapped to <strong>{discipline}</strong> yet. Edit the folder taxonomy under
-            <em> /admin/document-management </em> to assign folders to this discipline.
+            No SharePoint folder bound to <strong>{discipline}</strong> yet. Use the binder above to
+            connect this project's <em>{discipline.toLowerCase()}</em> folder.
+          </div>
+        ) : docsQuery.isLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+          </div>
+        ) : docsQuery.isError ? (
+          <div className="rounded-md border p-4 text-sm text-destructive">
+            Couldn't load this folder's contents.
+          </div>
+        ) : items.length === 0 ? (
+          <div className="rounded-md border p-4 text-sm text-muted-foreground">
+            This folder is empty.
           </div>
         ) : (
           <Table data-testid={`discipline-table-${discipline}`}>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-6"></TableHead>
-                <TableHead>Folder</TableHead>
-                <TableHead>Lifecycle</TableHead>
-                <TableHead>Stage</TableHead>
-                <TableHead>SharePoint path</TableHead>
-                <TableHead className="text-right">Status</TableHead>
+                <TableHead>File</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Open</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map(({ taxonomy: t, folder }) => {
-                const expandable = Boolean(folder?.id && folder.itemId);
-                const isExpanded = expandable && expandedFolderId === folder!.id;
-                return (
-                  <Fragment key={t.internalKey}>
-                    <TableRow data-testid={`discipline-row-${discipline}-${t.internalKey}`}>
-                      <TableCell>
-                        {expandable && (
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-6 w-6"
-                            onClick={() =>
-                              setExpandedFolderId(isExpanded ? null : folder!.id)
-                            }
-                            data-testid={`btn-folder-toggle-${discipline}-${t.internalKey}`}
-                          >
-                            {isExpanded ? (
-                              <ChevronDown className="h-3.5 w-3.5" />
-                            ) : (
-                              <ChevronRight className="h-3.5 w-3.5" />
-                            )}
-                          </Button>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div>
-                          <div className="text-sm font-medium">{t.displayName}</div>
-                          {t.parentKey && (
-                            <div className="text-[10px] font-mono text-muted-foreground">
-                              under {t.parentKey}
-                            </div>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        {t.lifecycleMode === "pre_construction" && "Pre-construction"}
-                        {t.lifecycleMode === "full_lifecycle" && "Full lifecycle"}
-                        {t.lifecycleMode === "both" && "Both"}
-                      </TableCell>
-                      <TableCell className="text-xs font-mono">{t.stageCode ?? "—"}</TableCell>
-                      <TableCell className="text-xs">
-                        {folder?.webUrl ? (
-                          <a
-                            href={folder.webUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="font-mono text-emerald-700 hover:underline"
-                            data-testid={`discipline-link-${discipline}-${t.internalKey}`}
-                          >
-                            {folder.sharepointPath ?? "Open in SharePoint"}
-                          </a>
-                        ) : (
-                          <span className="font-mono text-muted-foreground">
-                            {folder?.sharepointPath ?? "—"}
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <DisciplineFolderStatus folder={folder} />
-                      </TableCell>
-                    </TableRow>
-                    {isExpanded && folder?.id && (
-                      <TableRow data-testid={`discipline-files-row-${discipline}-${t.internalKey}`}>
-                        <TableCell colSpan={6} className="bg-muted/30 p-0">
-                          <FolderFiles
-                            projectId={projectId}
-                            folderId={folder.id}
-                            testIdSuffix={`${discipline}-${t.internalKey}`}
-                          />
-                        </TableCell>
-                      </TableRow>
+              {items.map((item) => (
+                <TableRow
+                  key={item.itemId}
+                  data-testid={`discipline-row-${discipline}-${item.itemId}`}
+                >
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      {item.isFolder ? (
+                        <Folder className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                      ) : (
+                        <File className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      )}
+                      <span className="text-sm truncate" title={item.name}>{item.name}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {item.state ? (
+                      <Badge variant="outline" className="text-[10px] capitalize">
+                        {item.state.replace(/_/g, " ")}
+                      </Badge>
+                    ) : !item.isFolder ? (
+                      <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                        untracked
+                      </Badge>
+                    ) : (
+                      <span className="text-[11px] text-muted-foreground">—</span>
                     )}
-                  </Fragment>
-                );
-              })}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {item.webUrl ? (
+                      <a
+                        href={item.webUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-muted-foreground hover:text-emerald-700"
+                        title="Open in SharePoint"
+                        data-testid={`discipline-file-link-${discipline}-${item.itemId}`}
+                      >
+                        <ExternalLink className="inline-block h-3.5 w-3.5" />
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         )}
       </CardContent>
     </Card>
-  );
-}
-
-function DisciplineFolderStatus({ folder }: { folder: ProjectFolder | null }) {
-  if (!folder || !folder.itemId) {
-    return (
-      <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-800">
-        Not provisioned
-      </Badge>
-    );
-  }
-  if (folder.verifyError) {
-    return (
-      <Badge variant="outline" className="text-[10px] bg-rose-50 text-rose-700">
-        <AlertTriangle className="h-3 w-3 mr-1" />
-        Verify error
-      </Badge>
-    );
-  }
-  return (
-    <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700">
-      <CheckCircle2 className="h-3 w-3 mr-1" />
-      Provisioned
-    </Badge>
   );
 }

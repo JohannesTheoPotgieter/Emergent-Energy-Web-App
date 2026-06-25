@@ -18,13 +18,13 @@ describe("document permission entities — bridge guard", () => {
 
 describe("document migration safety — non-destructive guard", () => {
   // controlled_documents + controlled_document_types + project_sharepoint_roots
-  // were intentionally dropped (see the drop_controlled_documents migration);
-  // this guard protects the CURRENT document tables from accidental drops.
-  const LEGACY_DOC_TABLES = [
+  // (drop_controlled_documents) and folder_taxonomy + project_folders (Phase 5
+  // 0114_phase5_drop_folder_taxonomy) were intentionally dropped; this guard
+  // protects the CURRENT document tables from accidental drops.
+  const CURRENT_DOC_TABLES = [
     "managed_documents",
     "company_sharepoint_roots",
-    "folder_taxonomy",
-    "project_folders",
+    "project_discipline_folders",
     "document_approval_requirements",
   ];
 
@@ -36,7 +36,7 @@ describe("document migration safety — non-destructive guard", () => {
 
     for (const file of files) {
       const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8").toLowerCase();
-      for (const table of LEGACY_DOC_TABLES) {
+      for (const table of CURRENT_DOC_TABLES) {
         const dropRe = new RegExp(`drop\\s+table(?:\\s+if\\s+exists)?\\s+[^;]*\\b${table}\\b`, "i");
         if (dropRe.test(sql)) offenders.push(`${file}:${table}`);
       }

@@ -7,7 +7,7 @@
  *   - the Engineering / Quality document pages (via the `discipline` prop)
  *
  * It always leads with the SharePoint connection status, then the per-
- * discipline folder tree (folder_taxonomy + project_folders) and the
+ * discipline bound-folder tree (project_discipline_folders) and the
  * managed-document approvals waiting on the user. SharePoint stays the
  * source of truth; this only renders metadata + Graph deep links.
  */
@@ -16,10 +16,7 @@ import { useMemo, useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  usePublicFolderTaxonomy,
-  useProjectFolders,
-} from "@/hooks/use-document-management-admin";
+import { useDisciplineFolders } from "@/hooks/use-discipline-folders";
 import { DisciplinePanel } from "@/components/documents/DisciplinePanel";
 import { ManagedDocumentApprovalQueue } from "@/components/documents/ManagedDocumentApprovalQueue";
 import { ProjectReadinessCard } from "@/components/documents/ProjectReadinessCard";
@@ -45,8 +42,7 @@ export function ProjectDocumentsView({
   showReadiness = true,
   showApprovals = true,
 }: ProjectDocumentsViewProps) {
-  const taxonomy = usePublicFolderTaxonomy();
-  const folders = useProjectFolders(projectId);
+  const folders = useDisciplineFolders(projectId);
 
   const initialDiscipline = useMemo(() => {
     if (typeof window === "undefined") return null;
@@ -55,49 +51,35 @@ export function ProjectDocumentsView({
   }, []);
   const [activeTab, setActiveTab] = useState<string | null>(initialDiscipline);
 
-  const disciplinesWithRows = useMemo(() => {
-    const rows = taxonomy.data?.taxonomy ?? [];
-    const present = new Set<string>();
-    for (const r of rows) {
-      if (!r.active) continue;
-      const ds = (r.disciplines ?? []) as string[];
-      for (const d of ds) present.add(d);
-    }
-    return LIFECYCLE_DEPARTMENTS.filter((d) => present.has(d));
-  }, [taxonomy.data]);
+  // Show every discipline that has a bound folder, falling back to the full
+  // department list so users can still see (and bind) every discipline.
+  const boundDisciplines = useMemo(() => {
+    const present = new Set((folders.data?.folders ?? []).map((f) => f.discipline));
+    return present;
+  }, [folders.data]);
 
-  const folderCountByDiscipline = useMemo(() => {
-    const tax = taxonomy.data?.taxonomy ?? [];
-    const out = new Map<string, { total: number; provisioned: number }>();
-    const folderMap = new Map(
-      (folders.data?.folders ?? []).map((f) => [f.taxonomyKey, f] as const),
-    );
-    for (const r of tax) {
-      if (!r.active) continue;
-      const ds = (r.disciplines ?? []) as string[];
-      for (const d of ds) {
-        const stat = out.get(d) ?? { total: 0, provisioned: 0 };
-        stat.total += 1;
-        const f = folderMap.get(r.internalKey);
-        if (f?.itemId) stat.provisioned += 1;
-        out.set(d, stat);
-      }
-    }
-    return out;
-  }, [taxonomy.data, folders.data]);
+  const disciplinesWithRows = useMemo(
+    () => LIFECYCLE_DEPARTMENTS.filter((d) => boundDisciplines.has(d)),
+    [boundDisciplines],
+  );
+
+  const displayDisciplines = useMemo<string[]>(
+    () => (disciplinesWithRows.length > 0 ? disciplinesWithRows : [...LIFECYCLE_DEPARTMENTS]),
+    [disciplinesWithRows],
+  );
 
   useEffect(() => {
     if (discipline) return; // single-discipline mode ignores the tab state
     if (activeTab) return;
     if (
       initialDiscipline &&
-      (disciplinesWithRows as readonly string[]).includes(initialDiscipline)
+      (displayDisciplines as readonly string[]).includes(initialDiscipline)
     ) {
       setActiveTab(initialDiscipline);
       return;
     }
-    setActiveTab(disciplinesWithRows[0] ?? "ALL");
-  }, [activeTab, initialDiscipline, disciplinesWithRows, discipline]);
+    setActiveTab(displayDisciplines[0] ?? "ALL");
+  }, [activeTab, initialDiscipline, displayDisciplines, discipline]);
 
   // ---- Single-discipline mode (Engineering / Quality) ----
   if (discipline) {
@@ -126,30 +108,27 @@ export function ProjectDocumentsView({
           <TabsTrigger value="ALL" data-testid="tab-discipline-ALL">
             All disciplines
           </TabsTrigger>
-          {disciplinesWithRows.map((d) => {
-            const stat = folderCountByDiscipline.get(d);
-            return (
-              <TabsTrigger key={d} value={d} data-testid={`tab-discipline-${d}`} className="gap-2">
-                <span>{d}</span>
-                {stat && (
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] px-1.5 py-0"
-                    data-testid={`tab-discipline-count-${d}`}
-                  >
-                    {stat.provisioned}/{stat.total}
-                  </Badge>
-                )}
-              </TabsTrigger>
-            );
-          })}
+          {displayDisciplines.map((d) => (
+            <TabsTrigger key={d} value={d} data-testid={`tab-discipline-${d}`} className="gap-2">
+              <span>{d}</span>
+              {boundDisciplines.has(d) && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] px-1.5 py-0 bg-emerald-50 text-emerald-700"
+                  data-testid={`tab-discipline-bound-${d}`}
+                >
+                  bound
+                </Badge>
+              )}
+            </TabsTrigger>
+          ))}
         </TabsList>
 
         <TabsContent value="ALL" className="mt-4">
-          <AllDisciplinesView projectId={projectId} disciplines={disciplinesWithRows} />
+          <AllDisciplinesView projectId={projectId} disciplines={displayDisciplines} />
         </TabsContent>
 
-        {disciplinesWithRows.map((d) => (
+        {displayDisciplines.map((d) => (
           <TabsContent key={d} value={d} className="mt-4">
             <DisciplinePanel projectId={projectId} discipline={d} />
           </TabsContent>
