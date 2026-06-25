@@ -631,6 +631,16 @@ export const ENTITY_REGISTRY: EntityRegistryEntry[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
+    entity: 'integration_health',
+    title: "Integration Health",
+    description: "Integration statuses — view connection health & sync runs for QuickBooks, Microsoft 365, Pipedrive (read-only; setup stays admin-only)",
+    category: 'ADMIN',
+    // COO/CEO by default; the COO can grant View to e.g. PROGRAM_FINANCE_MANAGER
+    // so finance can monitor QuickBooks sync health without full admin access.
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
     entity: 'revenue',
     title: "Revenue",
     description: "Revenue — general revenue access & tracking",

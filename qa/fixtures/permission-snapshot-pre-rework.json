@@ -204,6 +204,10 @@
       "view": false,
       "edit": false
     },
+    "integration_health": {
+      "view": false,
+      "edit": false
+    },
     "invoice_patterns": {
       "view": false,
       "edit": false
@@ -682,6 +686,10 @@
       "view": true,
       "edit": false
     },
+    "integration_health": {
+      "view": false,
+      "edit": false
+    },
     "invoice_patterns": {
       "view": false,
       "edit": false
@@ -1157,6 +1165,10 @@
       "edit": true
     },
     "hse_sseg": {
+      "view": true,
+      "edit": true
+    },
+    "integration_health": {
       "view": true,
       "edit": true
     },
@@ -1638,6 +1650,10 @@
       "view": false,
       "edit": false
     },
+    "integration_health": {
+      "view": false,
+      "edit": false
+    },
     "invoice_patterns": {
       "view": true,
       "edit": false
@@ -2116,6 +2132,10 @@
       "view": true,
       "edit": false
     },
+    "integration_health": {
+      "view": false,
+      "edit": false
+    },
     "invoice_patterns": {
       "view": false,
       "edit": false
@@ -2591,6 +2611,10 @@
       "edit": true
     },
     "hse_sseg": {
+      "view": true,
+      "edit": true
+    },
+    "integration_health": {
       "view": true,
       "edit": true
     },
@@ -3072,6 +3096,10 @@
       "view": false,
       "edit": false
     },
+    "integration_health": {
+      "view": false,
+      "edit": false
+    },
     "invoice_patterns": {
       "view": false,
       "edit": false
@@ -3548,6 +3576,10 @@
     },
     "hse_sseg": {
       "view": true,
+      "edit": false
+    },
+    "integration_health": {
+      "view": false,
       "edit": false
     },
     "invoice_patterns": {
@@ -4028,6 +4060,10 @@
       "view": true,
       "edit": true
     },
+    "integration_health": {
+      "view": false,
+      "edit": false
+    },
     "invoice_patterns": {
       "view": false,
       "edit": false
@@ -4503,6 +4539,10 @@
       "edit": false
     },
     "hse_sseg": {
+      "view": false,
+      "edit": false
+    },
+    "integration_health": {
       "view": false,
       "edit": false
     },
@@ -4984,6 +5024,10 @@
       "view": true,
       "edit": false
     },
+    "integration_health": {
+      "view": false,
+      "edit": false
+    },
     "invoice_patterns": {
       "view": true,
       "edit": true
@@ -5462,6 +5506,10 @@
       "view": true,
       "edit": false
     },
+    "integration_health": {
+      "view": false,
+      "edit": false
+    },
     "invoice_patterns": {
       "view": false,
       "edit": false
@@ -5937,6 +5985,10 @@
       "edit": false
     },
     "hse_sseg": {
+      "view": false,
+      "edit": false
+    },
+    "integration_health": {
       "view": false,
       "edit": false
     },
@@ -6418,6 +6470,10 @@
       "view": true,
       "edit": false
     },
+    "integration_health": {
+      "view": false,
+      "edit": false
+    },
     "invoice_patterns": {
       "view": false,
       "edit": false
@@ -6894,6 +6950,10 @@
     },
     "hse_sseg": {
       "view": true,
+      "edit": false
+    },
+    "integration_health": {
+      "view": false,
       "edit": false
     },
     "invoice_patterns": {
@@ -7373,6 +7433,10 @@
     "hse_sseg": {
       "view": true,
       "edit": true
+    },
+    "integration_health": {
+      "view": false,
+      "edit": false
     },
     "invoice_patterns": {
       "view": false,
