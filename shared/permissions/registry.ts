@@ -635,9 +635,12 @@ export const ENTITY_REGISTRY: EntityRegistryEntry[] = [
     title: "Integration Health",
     description: "Integration statuses — view connection health & sync runs for QuickBooks, Microsoft 365, Pipedrive (read-only; setup stays admin-only)",
     category: 'ADMIN',
-    // COO/CEO by default; the COO can grant View to e.g. PROGRAM_FINANCE_MANAGER
-    // so finance can monitor QuickBooks sync health without full admin access.
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    // COO/CEO + PROGRAM_FINANCE_MANAGER by default — finance monitors QuickBooks
+    // sync health without full admin access. View-only: setup/POST stays admin.
+    // (The Settings section itself is unlocked for PFM via ROLE_VISIBLE_SECTIONS;
+    // every other Settings sub-item — Roles & Permissions, Audit Log — stays
+    // COO/CEO-gated, so PFM sees ONLY Integration Statuses there.)
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_FINANCE_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {

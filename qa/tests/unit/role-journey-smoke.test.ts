@@ -86,8 +86,14 @@ describe("cross-role journey smoke coverage", () => {
   it("non-admin roles do not expose Admin/System sections", () => {
     for (const journey of JOURNEYS) {
       const visibleSectionKeys = new Set(ROLE_VISIBLE_SECTIONS[journey.role]);
-      const isAdminRole = journey.role === "COO_ADMIN" || journey.role === "CEO_ADMIN";
-      if (isAdminRole) continue;
+      // COO/CEO get the full Settings section; PROGRAM_FINANCE_MANAGER gets it
+      // scoped to read-only Integration Statuses (item-level gating proven in
+      // role-nav-truth-chain.test.ts). Every other role must see no ADMIN section.
+      const seesSettingsSection =
+        journey.role === "COO_ADMIN" ||
+        journey.role === "CEO_ADMIN" ||
+        journey.role === "PROGRAM_FINANCE_MANAGER";
+      if (seesSettingsSection) continue;
 
       expect(visibleSectionKeys.has("ADMIN"), `${journey.role} should not see ADMIN section`).toBe(false);
       for (const path of ADMIN_PATH_PREFIXES) {

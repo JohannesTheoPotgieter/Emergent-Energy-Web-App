@@ -3,7 +3,11 @@ import { PAGE_REGISTRY, LEGACY_REDIRECTS, ROLE_LANDING_PAGE } from "@/config/pag
 import { ROUTE_COMPONENT_KEYS } from "@/config/route-components";
 import { buildVisibleTopSections, ROLE_VISIBLE_SECTIONS } from "@/config/app-navigation";
 
-const ADMIN_ROLES = ["CEO_ADMIN", "COO_ADMIN"] as const;
+// Roles permitted to see the Settings (ADMIN) top section. COO/CEO get the full
+// section; PROGRAM_FINANCE_MANAGER gets the section shell scoped (by item-level
+// permission gating) to the read-only Integration Statuses page — the item-level
+// proof lives in role-nav-truth-chain.test.ts.
+const ADMIN_SECTION_ROLES = new Set<string>(["CEO_ADMIN", "COO_ADMIN", "PROGRAM_FINANCE_MANAGER"]);
 
 describe("navigation safety cleanup", () => {
   it("maintains routeComponentKey parity with ROUTE_COMPONENTS", () => {
@@ -33,9 +37,9 @@ describe("navigation safety cleanup", () => {
     expect(ROLE_LANDING_PAGE.COO_ADMIN).toBe("/now");
   });
 
-  it("hides Admin top section for non-admin roles", () => {
+  it("hides Admin top section for roles without a Settings grant", () => {
     for (const role of Object.keys(ROLE_VISIBLE_SECTIONS)) {
-      if (ADMIN_ROLES.includes(role as (typeof ADMIN_ROLES)[number])) continue;
+      if (ADMIN_SECTION_ROLES.has(role)) continue;
 
       const visible = buildVisibleTopSections({ companyRole: role, canViewPath: () => true });
       expect(visible.some((section) => section.key === "ADMIN"), `${role} should not see ADMIN`).toBe(false);
