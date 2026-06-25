@@ -1705,7 +1705,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
   app.post(
     "/api/quickbooks/invoice-matches/manual-link",
     requireAuth,
-    requirePermission("financials", "override"),
+    requirePermission("financials", "edit"),
     validateBody(manualLinkBodySchema),
     async (req: Request, res: Response) => {
       try {

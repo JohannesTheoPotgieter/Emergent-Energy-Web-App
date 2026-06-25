@@ -19,7 +19,7 @@ export function registerProofOfPaymentRoutes(app: Express) {
 
   // ===================== UPLOAD PROOF FOR A PAYMENT REQUEST =====================
 
-  app.post("/api/proof-of-payment", jwtAuth, requireAuth, requirePermission("procurement", "create"), async (req: Request, res: Response) => {
+  app.post("/api/proof-of-payment", jwtAuth, requireAuth, requirePermission("procurement", "edit"), async (req: Request, res: Response) => {
     try {
       const user = getEffectiveUser(req);
       if (!user?.id) return res.status(401).json({ error: "Not authenticated" });

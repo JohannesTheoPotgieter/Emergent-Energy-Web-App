@@ -92,7 +92,7 @@ export function registerFinanceAuditExportRoutes(app: Express): void {
   app.get(
     "/api/finance/audit-export/invoices-by-project",
     requireAuth,
-    requirePermission("financials", "approve"),
+    requirePermission("financials", "edit"),
     async (req: Request, res: Response) => {
       try {
         const parsed = fyQuery.safeParse(req.query.fy);
@@ -214,7 +214,7 @@ export function registerFinanceAuditExportRoutes(app: Express): void {
   app.get(
     "/api/finance/audit-export/revenue-milestones",
     requireAuth,
-    requirePermission("financials", "approve"),
+    requirePermission("financials", "edit"),
     async (req: Request, res: Response) => {
       try {
         const parsed = fyQuery.safeParse(req.query.fy);
@@ -310,7 +310,7 @@ export function registerFinanceAuditExportRoutes(app: Express): void {
   app.get(
     "/api/finance/audit-export/period-locks",
     requireAuth,
-    requirePermission("financials", "approve"),
+    requirePermission("financials", "edit"),
     async (req: Request, res: Response) => {
       try {
         const parsed = fyQuery.safeParse(req.query.fy);

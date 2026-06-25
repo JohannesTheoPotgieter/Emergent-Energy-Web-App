@@ -11,7 +11,7 @@ import type { PermissionEntity } from "../schema/users";
 // Types
 // ---------------------------------------------------------------------------
 
-export type PermissionAction = "view" | "create" | "edit" | "approve" | "override" | "delete";
+export type PermissionAction = "view" | "edit";
 
 export interface PermissionCheck {
   entity: PermissionEntity;

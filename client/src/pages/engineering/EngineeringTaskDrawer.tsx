@@ -233,7 +233,7 @@ export function TaskDetailDrawer({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [mappedPathDraft, setMappedPathDraft] = useState("");
   const [fallbackDraft, setFallbackDraft] = useState<"download" | "clipboard">("download");
-  const { allowed: canDelete } = usePermission('eng_tasks', 'delete');
+  const { allowed: canDelete } = usePermission('eng_tasks', 'edit');
 
   const { data: comments = [] } = useQuery<Comment[]>({
     queryKey: ["task-comments", task.id],

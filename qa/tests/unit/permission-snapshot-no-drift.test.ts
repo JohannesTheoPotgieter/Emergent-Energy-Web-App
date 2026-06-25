@@ -18,7 +18,7 @@ import {
 } from "@shared/schema";
 import { evaluatePermissionForRole } from "@shared/permission-resolver";
 
-const ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
+const ACTIONS: PermissionAction[] = ["view", "edit"];
 
 function buildMap() {
   const out: Record<string, Record<string, Record<string, boolean>>> = {};

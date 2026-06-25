@@ -312,7 +312,11 @@ export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'hse' | '
   | 'company_team'
   | 'documents' | 'project_document_register' | 'engineering_documents' | 'quality_documents' | 'sharepoint_sync'
   | 'documents_provision' | 'documents_admin';
-export type PermissionAction = 'view' | 'create' | 'edit' | 'approve' | 'override' | 'delete';
+// Collapsed permission model: every protected resource is governed by a
+// three-state scale — No access / View / Edit. `edit` subsumes every mutating
+// capability (create, update, approve, override, delete). See
+// docs/AGENT_GUARDRAILS.md § 5 and shared/permissions/registry.ts.
+export type PermissionAction = 'view' | 'edit';
 export const AUTHORITY_ACTIONS = [
   'view',
   'create',
@@ -349,11 +353,8 @@ export function normalizeRoleForPermissions(role?: string | null): string {
 export interface EntityPermissionRule {
   entity: PermissionEntity;
   view_roles: string[];
-  create_roles: string[];
-    edit_roles: string[];
-  approve_roles: string[];
-  override_roles: string[];
-  delete_roles: string[];
+  /** Mutating access (create/update/approve/override/delete all collapse here). */
+  edit_roles: string[];
 }
 
 // ENTITY_PERMISSION_DEFAULTS now lives in shared/permissions/registry.ts

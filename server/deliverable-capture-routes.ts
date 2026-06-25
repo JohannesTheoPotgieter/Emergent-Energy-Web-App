@@ -107,7 +107,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
     }
   });
 
-  app.post("/api/deliverable-capture/upload", jwtAuth, requireAuth, requirePermission("deliverables", "create"), deliverableUpload.single("file"), async (req: Request, res: Response) => {
+  app.post("/api/deliverable-capture/upload", jwtAuth, requireAuth, requirePermission("deliverables", "edit"), deliverableUpload.single("file"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       const file = req.file;

@@ -318,7 +318,7 @@ export function registerOperationalTasksRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/operational-tasks/:id", requireAuth, requirePermission('pd_plan', 'delete'), async (req: Request, res: Response) => {
+  app.delete("/api/operational-tasks/:id", requireAuth, requirePermission('pd_plan', 'edit'), async (req: Request, res: Response) => {
     try {
       const id = parseIntParam(req.params.id);
       const task = await storage.getOperationalTask(id);

@@ -43,7 +43,7 @@ export function registerWeeklyReviewRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/weekly-reviews/:projectName", requireAuth, requirePermission('weekly_review_wizard', 'create'), async (req: Request, res: Response) => {
+  app.post("/api/weekly-reviews/:projectName", requireAuth, requirePermission('weekly_review_wizard', 'edit'), async (req: Request, res: Response) => {
     try {
       const { projectName } = req.params;
       const user = getEffectiveUser(req);

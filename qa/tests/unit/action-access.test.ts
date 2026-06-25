@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import { getAvailableQuickCreateActions } from "@/lib/action-access";
 
 describe("quick create access", () => {
-  it("shows only actions allowed by entity create permissions", () => {
+  it("shows only actions allowed by entity edit permissions", () => {
+    // Collapsed model: the create-style quick actions now gate on 'edit'
+    // (which subsumes the former 'create' capability) for their backing entity.
     const actions = getAvailableQuickCreateActions({
       canViewPath: () => false,
       canAccessEntityAction: (entity, action) =>
-        action === "create" && (entity === "pd_tickets" || entity === "eng_tasks"),
+        action === "edit" && (entity === "pd_tickets" || entity === "eng_tasks"),
     });
 
     expect(actions.map((action) => action.id)).toEqual([

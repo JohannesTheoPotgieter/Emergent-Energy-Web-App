@@ -429,7 +429,7 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
   app.put(
     "/api/finance/analysis/tolerance/:projectId",
     requireAuth,
-    requirePermission("cos", "override"),
+    requirePermission("cos", "edit"),
     async (req: Request, res: Response) => {
       try {
         const projectId = positiveInt.parse(req.params.projectId);

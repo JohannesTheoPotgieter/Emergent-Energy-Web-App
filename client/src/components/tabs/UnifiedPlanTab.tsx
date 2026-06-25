@@ -764,7 +764,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
   // name so the rest of the file doesn't churn — it now reads from the
   // permission system rather than role membership.
   const { allowed: canEditPlan } = usePermission("pd_plan", "edit");
-  const { allowed: canDeletePlan } = usePermission("pd_plan", "delete");
+  const { allowed: canDeletePlan } = usePermission("pd_plan", "edit");
   const { isAdmin: isAdminRaw } = useAuth();
   const isAdmin = canEditPlan || isAdminRaw;
   const canDelete = canDeletePlan || isAdminRaw;

@@ -155,7 +155,7 @@ async function approveGateForIncidentStatus(
   }
   if (current.status === newStatus) return true;
 
-  const approval = await evaluatePermissionForRequest(req, "hse_incidents", "approve");
+  const approval = await evaluatePermissionForRequest(req, "hse_incidents", "edit");
   if (!approval.allowed) {
     res.status(403).json({
       error: "forbidden",
@@ -188,7 +188,7 @@ async function approveGateForCorrectiveActionStatus(
   }
   if (current.status === newStatus) return true;
 
-  const approval = await evaluatePermissionForRequest(req, "hse", "approve");
+  const approval = await evaluatePermissionForRequest(req, "hse", "edit");
   if (!approval.allowed) {
     res.status(403).json({
       error: "forbidden",
@@ -239,7 +239,7 @@ router.get(
 router.post(
   "/api/hse/incidents",
   requireAuth,
-  requirePermission("hse_incidents", "create"),
+  requirePermission("hse_incidents", "edit"),
   async (req: Request, res: Response) => {
     try {
       const [parsed, validationError] = parseBody(req.body, createHseIncidentSchema);
@@ -305,7 +305,7 @@ router.patch(
 router.delete(
   "/api/hse/incidents/:id",
   requireAuth,
-  requirePermission("hse_incidents", "delete"),
+  requirePermission("hse_incidents", "edit"),
   async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
@@ -362,7 +362,7 @@ router.get(
 router.post(
   "/api/hse/corrective-actions",
   requireAuth,
-  requirePermission("hse", "create"),
+  requirePermission("hse", "edit"),
   async (req: Request, res: Response) => {
     try {
       const [parsed, validationError] = parseBody(req.body, createCorrectiveActionSchema);
@@ -417,7 +417,7 @@ router.patch(
 router.delete(
   "/api/hse/corrective-actions/:id",
   requireAuth,
-  requirePermission("hse", "delete"),
+  requirePermission("hse", "edit"),
   async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);

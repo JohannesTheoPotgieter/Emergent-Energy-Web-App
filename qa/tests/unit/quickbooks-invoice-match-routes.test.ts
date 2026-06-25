@@ -7,7 +7,8 @@
  *   - All four mutate endpoints require requireAuth.
  *   - Find / payment-status are gated to financials:view.
  *   - Approve / reject are gated to financials:edit.
- *   - Manual link is gated to financials:override (the highest tier).
+ *   - Manual link is gated to financials:edit (mutating tier; under the
+ *     collapsed view/edit model the old `override` tier folds into `edit`).
  *   - Matcher service has no auto-approve path (no insertion into
  *     quickbooks_invoice_links unless triggered by an /approve or
  *     /manual-link route handler).
@@ -46,9 +47,12 @@ describe("invoice-matches route hardening — auth + permissions", () => {
     );
   });
 
-  it("POST /manual-link requires requireAuth + financials:override (highest tier)", () => {
+  it("POST /manual-link requires requireAuth + financials:edit (mutating tier)", () => {
+    // Manual link is a mutating action; in the collapsed model the old
+    // `override` tier collapses into `edit`. It must still be gated above
+    // view — any authenticated read-only user must NOT be able to force a link.
     expect(ROUTES).toMatch(
-      /app\.post\(\s*"\/api\/quickbooks\/invoice-matches\/manual-link"[\s\S]{0,200}requireAuth[\s\S]{0,80}requirePermission\("financials",\s*"override"\)/,
+      /app\.post\(\s*"\/api\/quickbooks\/invoice-matches\/manual-link"[\s\S]{0,200}requireAuth[\s\S]{0,80}requirePermission\("financials",\s*"edit"\)/,
     );
   });
 

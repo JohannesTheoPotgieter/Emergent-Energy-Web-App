@@ -66,7 +66,7 @@ export default function HseDashboardPage() {
   // signal we need is whether the current user can approve status changes,
   // so they know what the "set status" controls will and will not let them do.
   const { canAccessEntityAction } = useAccessMatrix();
-  const canApproveStatus = canAccessEntityAction("hse_incidents", "approve");
+  const canApproveStatus = canAccessEntityAction("hse_incidents", "edit");
   const [tab, setTab] = useState<"incidents" | "corrective_actions">("incidents");
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_FORM });

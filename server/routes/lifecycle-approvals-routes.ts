@@ -114,7 +114,7 @@ app.get("/api/approvals", jwtAuth, requireAuth, requirePermission("stage_gate", 
 
 // ── Approval action ────────────────────────────────────────
 
-app.patch("/api/approvals/:type/:id/action", jwtAuth, requireAuth, requirePermission("stage_gate", "approve"), async (req, res) => {
+app.patch("/api/approvals/:type/:id/action", jwtAuth, requireAuth, requirePermission("stage_gate", "edit"), async (req, res) => {
   try {
     const { type, id } = req.params;
     const { action, comment, delegateToUserId } = req.body;

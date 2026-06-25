@@ -114,7 +114,7 @@ export interface RoleComparisonResult {
   differences: number;
 }
 
-export const ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
+export const ACTIONS: PermissionAction[] = ["view", "edit"];
 
 export const DEPARTMENTS = [
   "Executive", "Engineering", "Finance", "Operations", "Project Development",

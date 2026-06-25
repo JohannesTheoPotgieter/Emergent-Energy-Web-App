@@ -112,7 +112,7 @@ export function registerPaymentBatchRoutes(app: Express) {
 
   // ===================== CREATE BATCH =====================
 
-  app.post("/api/payment-batches", jwtAuth, requireAuth, requirePermission("procurement", "create"), async (req: Request, res: Response) => {
+  app.post("/api/payment-batches", jwtAuth, requireAuth, requirePermission("procurement", "edit"), async (req: Request, res: Response) => {
     try {
       const user = getEffectiveUser(req);
       if (!user?.id) return res.status(401).json({ error: "Not authenticated" });
@@ -231,7 +231,7 @@ export function registerPaymentBatchRoutes(app: Express) {
 
   // ===================== APPROVE BATCH (ManCo) =====================
 
-  app.post("/api/payment-batches/:id/approve", jwtAuth, requireAuth, requirePermission("procurement", "approve"), async (req: Request, res: Response) => {
+  app.post("/api/payment-batches/:id/approve", jwtAuth, requireAuth, requirePermission("procurement", "edit"), async (req: Request, res: Response) => {
     try {
       const user = getEffectiveUser(req);
       if (!user?.id) return res.status(401).json({ error: "Not authenticated" });

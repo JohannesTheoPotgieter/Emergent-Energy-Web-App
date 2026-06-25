@@ -27,9 +27,13 @@ describe("TF-9 — finance audit-prep export routes contract", () => {
     expect(source).toContain('"/api/finance/audit-export/period-locks"');
   });
 
-  it("gates all three endpoints on requirePermission(\"financials\", \"approve\")", () => {
-    // Three call sites (plus the JSDoc reference) — one per export route.
-    const matches = source.match(/requirePermission\("financials", "approve"\)/g) ?? [];
+  it("gates all three endpoints on requirePermission(\"financials\", \"edit\")", () => {
+    // Three call sites — one per export route. Under the collapsed view/edit
+    // permission model the old auditor-export `approve` gate folds into `edit`
+    // (edit subsumes create/approve/override/delete). The export routes remain
+    // mutation-tier gated; only finance roles in financials.edit_roles can pull
+    // the auditor-facing CSVs.
+    const matches = source.match(/requirePermission\("financials", "edit"\)/g) ?? [];
     expect(matches.length).toBeGreaterThanOrEqual(3);
   });
 

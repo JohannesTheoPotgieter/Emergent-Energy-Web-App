@@ -953,7 +953,7 @@ export function ProjectLifecyclePage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { allowed: canCreateClient, loading: clientPermissionLoading } = usePermission("pd_clients", "create");
+  const { allowed: canCreateClient, loading: clientPermissionLoading } = usePermission("pd_clients", "edit");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
   const [newClientName, setNewClientName] = useState("");

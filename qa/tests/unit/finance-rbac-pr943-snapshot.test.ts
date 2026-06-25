@@ -58,20 +58,24 @@ describe("PR #943 RBAC migration — finance route gates pinned", () => {
     assertGate(src, "get", "/api/expenditure/overrides", 'requirePermission("financials", "view")');
   });
 
-  it("finance-legacy-extracted-routes.ts: critical write endpoints (cos:override)", () => {
+  it("finance-legacy-extracted-routes.ts: critical write endpoints (cos:edit)", () => {
     const src = readFile("server/routes/finance-legacy-extracted-routes.ts");
     // The font-color-toggle directly mutates the BLACK/RED realisation
-    // signal per § 3.2. Without cos:override gating, any authenticated user
-    // can flip realisation on any cost line.
-    assertGate(src, "patch", "/api/expenditure/font-color-toggle", 'requirePermission("cos", "override")');
-    assertGate(src, "post", "/api/cos-status-override", 'requirePermission("cos", "override")');
-    assertGate(src, "delete", "/api/cos-status-override/:expenseId", 'requirePermission("cos", "override")');
+    // signal per § 3.2. Without a mutating gate, any authenticated user
+    // could flip realisation on any cost line. Under the collapsed view/edit
+    // model the old `cos:override` tier folds into `cos:edit` — this remains
+    // a mutation-tier gate (NOT downgraded to view).
+    assertGate(src, "patch", "/api/expenditure/font-color-toggle", 'requirePermission("cos", "edit")');
+    assertGate(src, "post", "/api/cos-status-override", 'requirePermission("cos", "edit")');
+    assertGate(src, "delete", "/api/cos-status-override/:expenseId", 'requirePermission("cos", "edit")');
   });
 
-  it("finance-legacy-extracted-routes.ts: override delete endpoints (financials:override)", () => {
+  it("finance-legacy-extracted-routes.ts: override delete endpoints (financials:edit)", () => {
     const src = readFile("server/routes/finance-legacy-extracted-routes.ts");
-    assertGate(src, "delete", "/api/revenue-tracking/overrides/:projectName", "requirePermission('financials', 'override')");
-    assertGate(src, "delete", "/api/expenditure/overrides/:projectName", "requirePermission('financials', 'override')");
+    // Deleting a finance override is a mutating action; the old
+    // `financials:override` tier collapses into `financials:edit`.
+    assertGate(src, "delete", "/api/revenue-tracking/overrides/:projectName", "requirePermission('financials', 'edit')");
+    assertGate(src, "delete", "/api/expenditure/overrides/:projectName", "requirePermission('financials', 'edit')");
   });
 
   it("finance-legacy-extracted-routes.ts: upload endpoint (financials:edit)", () => {
@@ -114,10 +118,12 @@ describe("PR #943 RBAC migration — finance route gates pinned", () => {
     // The deleted hardcoded arrays must not reappear.
     expect(src).not.toMatch(/^const\s+FINANCE_ANALYSIS_ROLES\s*=/m);
     expect(src).not.toMatch(/^const\s+TOLERANCE_WRITE_ROLES\s*=/m);
-    // Spot-check that requirePermission is the gate now.
+    // Spot-check that requirePermission is the gate now. The tolerance write
+    // was `cos:override`; under the collapsed view/edit model it folds into
+    // `cos:edit` (still a mutating-tier gate, above view).
     expect(src).toMatch(/requirePermission\("cashflow",\s*"view"\)/);
     expect(src).toMatch(/requirePermission\("cos",\s*"view"\)/);
-    expect(src).toMatch(/requirePermission\("cos",\s*"override"\)/);
+    expect(src).toMatch(/requirePermission\("cos",\s*"edit"\)/);
   });
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -149,10 +155,12 @@ describe("PR #943 RBAC migration — finance route gates pinned", () => {
     assertGate(src, "post", "/api/quickbooks/invoice-matches/auto-suggest/run", 'requirePermission("financials", "edit")');
   });
 
-  it("quickbooks-invoice-matches.routes.ts: manual-link gated on financials:override", () => {
+  it("quickbooks-invoice-matches.routes.ts: manual-link gated on financials:edit", () => {
     const src = readFile("server/routes/quickbooks-invoice-matches.routes.ts");
-    // Manual link is the override path — should require the strictest gate.
-    assertGate(src, "post", "/api/quickbooks/invoice-matches/manual-link", 'requirePermission("financials", "override")');
+    // Manual link is a mutating action (the old override path). Under the
+    // collapsed view/edit model the `override` tier folds into `edit`; it must
+    // still require a mutation-tier gate, never plain view.
+    assertGate(src, "post", "/api/quickbooks/invoice-matches/manual-link", 'requirePermission("financials", "edit")');
   });
 
   it("finance-lines.routes.ts: all endpoints gated on financials:view", () => {

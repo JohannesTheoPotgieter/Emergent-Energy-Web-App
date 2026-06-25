@@ -215,14 +215,14 @@ export async function hasImportPermission(req: Request): Promise<boolean> {
   // Check user-specific overrides first
   if (user?.id) {
     const overrides = await loadUserOverrides(user.id);
-    const key = "data_import:create";
+    const key = "data_import:edit";
     if (key in overrides) return overrides[key];
   }
 
   const result = evaluatePermissionForRole({
     role,
     entity: "data_import",
-    action: "create",
+    action: "edit",
     roleRecord: buildRoleRecord(role) as Parameters<typeof evaluatePermissionForRole>[0]["roleRecord"],
   });
   return result.allowed;

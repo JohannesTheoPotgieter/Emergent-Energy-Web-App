@@ -133,7 +133,7 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/invoice-captures", jwtAuth, requireAuth, requirePermission("procurement", "create"), upload.single("document"), async (req: Request, res: Response) => {
+  app.post("/api/invoice-captures", jwtAuth, requireAuth, requirePermission("procurement", "edit"), upload.single("document"), async (req: Request, res: Response) => {
     try {
       const user = getEffectiveUser(req);
       const { projectId, supplierId, invoiceNumber, invoiceDate, amount, vatAmount, linkedPoId, linkedProcurementItemId, notes } = req.body;
@@ -342,7 +342,7 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/invoice-captures/:id", jwtAuth, requireAuth, requirePermission("procurement", "delete"), async (req: Request, res: Response) => {
+  app.delete("/api/invoice-captures/:id", jwtAuth, requireAuth, requirePermission("procurement", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });

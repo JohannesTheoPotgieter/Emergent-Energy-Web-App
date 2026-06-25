@@ -765,7 +765,7 @@ export function registerPlanningExtractedRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/project-plan/delete-tasks", requireAuth, requirePermission('pd_plan', 'delete'), async (req, res) => {
+  app.post("/api/project-plan/delete-tasks", requireAuth, requirePermission('pd_plan', 'edit'), async (req, res) => {
     try {
       const { projectName, rowNumbers } = req.body;
       if (!projectName || !Array.isArray(rowNumbers) || rowNumbers.length === 0) {

@@ -3303,7 +3303,7 @@ export function registerLifecycleRoutes(app: Express) {
     '/api/lifecycle-board/projects/:id',
     requireAuth,
     requireExecRole,
-    requirePermission('projects', 'delete'),
+    requirePermission('projects', 'edit'),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseIntParam(req.params.id);

@@ -38,7 +38,7 @@ const STATUS_COLORS: Record<string, string> = {
 export default function FinancialReviewQueuePage() {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { allowed: canApprove } = usePermission("pd_finance", "approve");
+  const { allowed: canApprove } = usePermission("pd_finance", "edit");
   const { data, isLoading, error, refetch, isRefetching } = useQuery<{ items: any[] }>({
     queryKey: ["financial-review-queue"],
     queryFn: loadQueue,

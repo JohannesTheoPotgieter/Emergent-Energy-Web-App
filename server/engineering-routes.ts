@@ -989,7 +989,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/tasks", requireAuth, requirePermission("eng_tasks", "create"), validateBody(engTaskCreateSchema), async (req, res) => {
+  app.post("/api/eng/tasks", requireAuth, requirePermission("eng_tasks", "edit"), validateBody(engTaskCreateSchema), async (req, res) => {
     try {
       const data = req.body || {};
       const rawProjectId = data?.projectId;
@@ -1832,7 +1832,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/eng/tasks/:id", requireAuth, requirePermission('eng_tasks', 'delete'), requireEngTaskOwnership, async (req, res) => {
+  app.delete("/api/eng/tasks/:id", requireAuth, requirePermission('eng_tasks', 'edit'), requireEngTaskOwnership, async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
       const existing = await findEngineeringWorkItem(id);
@@ -2153,7 +2153,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/tasks/:id/subtasks", requireAuth, requirePermission("eng_tasks", "create"), requireEngTaskOwnership, validateBody(engTaskSubtaskSchema), async (req, res) => {
+  app.post("/api/eng/tasks/:id/subtasks", requireAuth, requirePermission("eng_tasks", "edit"), requireEngTaskOwnership, validateBody(engTaskSubtaskSchema), async (req, res) => {
     try {
       const parentId = parseIntParam(req.params.id);
       const parent = await getEngineeringWorkItemById(parentId);
@@ -2259,7 +2259,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/deliverables", requireAuth, requirePermission("deliverables", "create"), validateBody(deliverableCreateSchema), async (req, res) => {
+  app.post("/api/deliverables", requireAuth, requirePermission("deliverables", "edit"), validateBody(deliverableCreateSchema), async (req, res) => {
     try {
       const data = req.body;
       const projectId = Number(data.projectId);
@@ -2509,7 +2509,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/eng/file-pointers/:id", requireAuth, requirePermission("engineering", "delete"), async (req, res) => {
+  app.delete("/api/eng/file-pointers/:id", requireAuth, requirePermission("engineering", "edit"), async (req, res) => {
     try {
       const id = parseIntParam(req.params.id);
       if (isNaN(id)) return sendError(res, badRequest("Invalid ID"));

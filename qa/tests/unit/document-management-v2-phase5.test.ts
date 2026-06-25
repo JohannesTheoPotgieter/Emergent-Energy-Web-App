@@ -107,18 +107,29 @@ describe("D6 Phase 5 — routes wiring", () => {
     expect(indexFile).toMatch(/retired in D6 Phase 5/);
   });
 
-  it("gates request-approval on documents:create", () => {
+  it("gates request-approval on documents:edit (create folded into edit)", () => {
+    // Collapsed model: the old documents:create gate is now documents:edit.
     expect(routesFile).toMatch(
+      /requirePermission\(["']documents["'],\s*["']edit["']\)/,
+    );
+    // No legacy create action may linger on this entity.
+    expect(routesFile).not.toMatch(
       /requirePermission\(["']documents["'],\s*["']create["']\)/,
     );
   });
 
-  it("gates approve + reject on documents:approve", () => {
-    const approveCount = routesFile.match(
-      /requirePermission\(["']documents["'],\s*["']approve["']\)/g,
+  it("gates approve + reject on documents:edit (approve folded into edit)", () => {
+    // Collapsed model: the old documents:approve gate is now documents:edit.
+    // request-approval, approve, and reject are all mutating actions gated on
+    // documents:edit — at least two edit gates exist (approve + reject).
+    const editCount = routesFile.match(
+      /requirePermission\(["']documents["'],\s*["']edit["']\)/g,
     );
-    expect(approveCount).toBeTruthy();
-    expect((approveCount ?? []).length).toBeGreaterThanOrEqual(2);
+    expect(editCount).toBeTruthy();
+    expect((editCount ?? []).length).toBeGreaterThanOrEqual(2);
+    expect(routesFile).not.toMatch(
+      /requirePermission\(["']documents["'],\s*["']approve["']\)/,
+    );
   });
 
   it("audit-logs request_approval, approve, and reject actions", () => {

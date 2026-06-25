@@ -27,8 +27,8 @@ export function DisciplineFolderBinder({
   projectId: number;
   discipline: string;
 }) {
-  const { allowed: canBind } = usePermission("documents_provision", "create");
-  const { allowed: canUnbind } = usePermission("documents_provision", "delete");
+  const { allowed: canBind } = usePermission("documents_provision", "edit");
+  const { allowed: canUnbind } = usePermission("documents_provision", "edit");
   const foldersQuery = useDisciplineFolders(projectId);
   const bind = useBindDisciplineFolder();
   const unbind = useUnbindDisciplineFolder();

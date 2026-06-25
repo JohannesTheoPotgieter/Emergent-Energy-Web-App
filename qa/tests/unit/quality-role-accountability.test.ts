@@ -42,11 +42,13 @@ describe("quality route permission gates", () => {
     expect(line).toMatch(/['"]edit['"]/);
   });
 
-  it("approve route uses requirePermission(quality, approve) without requireAdminOrQm blocking HSE_MANAGER", () => {
+  it("approve route uses requirePermission(quality, edit) without requireAdminOrQm blocking HSE_MANAGER", () => {
+    // Collapsed model: the old quality:approve gate folded into quality:edit.
+    // Intent preserved — the approve action is a mutating action gated on edit.
     const line = routes.split("\n").find((l) => l.includes("/approve") && l.includes("app.post"));
     expect(line).toBeDefined();
     expect(line).toContain("requirePermission");
-    expect(line).toMatch(/['"]approve['"]/);
+    expect(line).toMatch(/['"]edit['"]/);
     // Must NOT have requireAdminOrQm which would block HSE_MANAGER
     expect(line).not.toContain("requireAdminOrQm");
   });
@@ -73,18 +75,18 @@ describe("quality route permission gates", () => {
     expect(line).not.toContain("requireAdminOrQm");
   });
 
-  it("warning acknowledge uses quality:approve (not quality:edit)", () => {
+  it("warning acknowledge uses quality:edit (approve folded into edit)", () => {
+    // Collapsed model: the old quality:approve gate is now quality:edit.
     const line = routes.split("\n").find((l) => l.includes("/acknowledge") && l.includes("app.post"));
     expect(line).toBeDefined();
-    expect(line).toContain('requirePermission("quality", "approve")');
-    expect(line).not.toContain('"edit"');
+    expect(line).toContain('requirePermission("quality", "edit")');
   });
 
-  it("warning resolve uses quality:approve (not quality:edit)", () => {
+  it("warning resolve uses quality:edit (approve folded into edit)", () => {
+    // Collapsed model: the old quality:approve gate is now quality:edit.
     const line = routes.split("\n").find((l) => l.includes("/resolve") && l.includes("app.post"));
     expect(line).toBeDefined();
-    expect(line).toContain('requirePermission("quality", "approve")');
-    expect(line).not.toContain('"edit"');
+    expect(line).toContain('requirePermission("quality", "edit")');
   });
 
   it("SharePoint browse uses quality:edit (not requireAdminOrQm)", () => {
@@ -104,10 +106,10 @@ describe("NCR route permission gates", () => {
     expect(line).toContain('requirePermission("quality", "view")');
   });
 
-  it("NCR create requires quality:create", () => {
+  it("NCR create requires quality:edit (create folded into edit)", () => {
     const line = ncr.split("\n").find((l) => l.includes('"/api/quality/ncrs"') && l.includes("app.post"));
     expect(line).toBeDefined();
-    expect(line).toContain('requirePermission("quality", "create")');
+    expect(line).toContain('requirePermission("quality", "edit")');
   });
 
   it("NCR detail requires quality:view", () => {
@@ -122,10 +124,10 @@ describe("NCR route permission gates", () => {
     expect(line).toContain('requirePermission("quality", "edit")');
   });
 
-  it("NCR delete requires quality:delete", () => {
+  it("NCR delete requires quality:edit (delete folded into edit)", () => {
     const line = ncr.split("\n").find((l) => l.includes('"/api/quality/ncrs/:id"') && l.includes("app.delete"));
     expect(line).toBeDefined();
-    expect(line).toContain('requirePermission("quality", "delete")');
+    expect(line).toContain('requirePermission("quality", "edit")');
   });
 
   it("NCR comment requires quality:edit", () => {
@@ -151,10 +153,10 @@ describe("NCR route permission gates", () => {
 describe("governance views permission gates", () => {
   const gov = read("server/routes/governance-views-routes.ts");
 
-  it("governance quality action requires quality:approve", () => {
+  it("governance quality action requires quality:edit (approve folded into edit)", () => {
     const line = gov.split("\n").find((l) => l.includes("/api/governance/quality/:id/action"));
     expect(line).toBeDefined();
-    expect(line).toContain('requirePermission("quality", "approve")');
+    expect(line).toContain('requirePermission("quality", "edit")');
   });
 
   it("imports requirePermission from permission-middleware", () => {
@@ -166,27 +168,45 @@ describe("permission entity definitions are consistent with route usage", () => 
   // Permission entities used to live in shared/schema/users.ts; they were
   // migrated to shared/permissions/registry.ts. This test points at the
   // current canonical location.
+  //
+  // Collapsed permission model: each entity has ONLY view_roles + edit_roles.
+  // Every mutating action (create/approve/override/delete) folds into edit.
+  // We read the registry programmatically rather than via brittle regex so the
+  // edit_roles set is asserted exactly.
   const registry = read("shared/permissions/registry.ts");
 
-  it("quality entity has correct role separation", () => {
-    // quality:approve must include QUALITY_MANAGER and HSE_MANAGER but not CONSTRUCTION_MANAGER
-    expect(registry).toMatch(/entity: 'quality'[\s\S]*?approve_roles:.*QUALITY_MANAGER/);
-    expect(registry).toMatch(/entity: 'quality'[\s\S]*?approve_roles:.*HSE_MANAGER/);
+  it("quality:edit includes the quality mutators (QM, HSE, CM) — approve folded into edit", () => {
+    // Old model asserted quality:approve ⊇ {QUALITY_MANAGER, HSE_MANAGER} and
+    // EXCLUDED CONSTRUCTION_MANAGER. Under the collapsed model the de-duplicated
+    // union of the old create/edit/approve/override/delete lists became
+    // edit_roles, which now ALSO contains CONSTRUCTION_MANAGER (it held
+    // quality:edit before). That is an intentional broadening, not a bug.
+    expect(registry).toMatch(/entity: 'quality'[\s\S]*?edit_roles:.*QUALITY_MANAGER/);
+    expect(registry).toMatch(/entity: 'quality'[\s\S]*?edit_roles:.*HSE_MANAGER/);
+    expect(registry).toMatch(/entity: 'quality'[\s\S]*?edit_roles:.*CONSTRUCTION_MANAGER/);
   });
 
-  it("pd_quality entity allows CONSTRUCTION_MANAGER to edit but not approve", () => {
+  it("pd_quality:edit includes CONSTRUCTION_MANAGER", () => {
     // pd_quality:edit must include CONSTRUCTION_MANAGER
     expect(registry).toMatch(/entity: 'pd_quality'[\s\S]*?edit_roles:.*CONSTRUCTION_MANAGER/);
   });
 
-  it("quality:delete is restricted to COO_ADMIN and CEO_ADMIN only", () => {
-    // Extract the quality entity block and check delete_roles
-    const qualityBlock = registry.match(/entity: 'quality'[\s\S]*?delete_roles: \[([^\]]+)\]/);
+  it("quality.edit_roles is exactly the approved mutator set (no delete_roles surface remains)", () => {
+    // The old "quality:delete restricted to COO/CEO only" invariant is
+    // meaningless now — delete folded into edit. The equivalent invariant is
+    // the exact edit_roles set for the quality entity. Asserting the whole set
+    // both pins the broadening (CONSTRUCTION_MANAGER, HSE_MANAGER now mutate)
+    // and guarantees no unexpected role slipped in.
+    const qualityBlock = registry.match(/entity: 'quality'[\s\S]*?edit_roles: \[([^\]]+)\]/);
     expect(qualityBlock).toBeTruthy();
-    const deleteRoles = qualityBlock![1];
-    expect(deleteRoles).toContain("COO_ADMIN");
-    expect(deleteRoles).toContain("CEO_ADMIN");
-    expect(deleteRoles).not.toContain("CONSTRUCTION_MANAGER");
-    expect(deleteRoles).not.toContain("QUALITY_MANAGER");
+    const editRoles = qualityBlock![1]
+      .split(",")
+      .map((s) => s.trim().replace(/^['"]|['"]$/g, ""))
+      .filter(Boolean);
+    expect(editRoles.sort()).toEqual(
+      ["COO_ADMIN", "CEO_ADMIN", "QUALITY_MANAGER", "CONSTRUCTION_MANAGER", "HSE_MANAGER"].sort(),
+    );
+    // No legacy delete_roles key may linger on the quality entity.
+    expect(registry).not.toMatch(/entity: 'quality'[\s\S]*?delete_roles:/);
   });
 });

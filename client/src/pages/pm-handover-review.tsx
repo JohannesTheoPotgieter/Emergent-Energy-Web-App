@@ -26,7 +26,7 @@ async function loadQueue() {
 export default function PmHandoverReviewPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { allowed: canApprove } = usePermission("handover", "approve");
+  const { allowed: canApprove } = usePermission("handover", "edit");
   const [rejectTarget, setRejectTarget] = useState<{ projectId: number; projectName: string } | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const { data, isLoading, error, refetch, isRefetching } = useQuery<{ items: any[] }>({

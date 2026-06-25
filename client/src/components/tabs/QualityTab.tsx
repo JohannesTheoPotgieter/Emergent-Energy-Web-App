@@ -248,8 +248,8 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
   // entry and meant new roles (e.g. SSEG_MANAGER) would never get edit
   // access regardless of the DB grant.
   const { allowed: canEdit } = usePermission('pd_quality', 'edit');
-  const { allowed: canApprove } = usePermission('pd_quality', 'approve');
-  const { allowed: canDeleteQc } = usePermission('pd_quality', 'delete');
+  const { allowed: canApprove } = usePermission('pd_quality', 'edit');
+  const { allowed: canDeleteQc } = usePermission('pd_quality', 'edit');
   // Retained as a narrower alias for the few branches that historically
   // required QM/Admin specifically (e.g. forced re-pass after a fail).
   const isQmOrAdmin = canApprove;

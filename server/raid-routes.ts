@@ -189,7 +189,7 @@ export function registerRaidRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/raid/:id", requireAuth, requirePermission('projects', 'delete'), async (req: Request, res: Response) => {
+  app.delete("/api/raid/:id", requireAuth, requirePermission('projects', 'edit'), async (req: Request, res: Response) => {
     try {
       const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });

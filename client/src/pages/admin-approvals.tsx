@@ -166,7 +166,7 @@ async function performApprovalAction(item: ApprovalItem, action: "approve" | "re
 
 export default function AdminApprovalsPage() {
   const { allowed: canView } = usePermission('approvals', 'view');
-  const { allowed: canApprove } = usePermission('approvals', 'approve');
+  const { allowed: canApprove } = usePermission('approvals', 'edit');
   const [location, navigate] = useLocation();
   const [filter, setFilter] = useState<ApprovalType>("all");
   const [showAll, setShowAll] = useState(false);

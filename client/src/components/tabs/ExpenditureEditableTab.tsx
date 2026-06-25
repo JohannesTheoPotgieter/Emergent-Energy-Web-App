@@ -342,7 +342,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
   // COO_ADMIN, CEO_ADMIN, CFO, PROGRAM_FINANCE_MANAGER. The cos entity's
   // `override` action in ENTITY_PERMISSION_DEFAULTS is the closest match —
   // we keep CFO/PFM through the existing role permission matrix.
-  const canOverrideCos = canAccessEntityAction("cos", "override");
+  const canOverrideCos = canAccessEntityAction("cos", "edit");
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const tableContainerRef = useRef<HTMLDivElement>(null);

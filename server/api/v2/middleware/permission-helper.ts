@@ -28,10 +28,10 @@ export async function computeProjectPermissions(
   ] = await Promise.all([
     evaluatePermissionForRequest(req, "projects", "view"),
     evaluatePermissionForRequest(req, "projects", "edit"),
-    evaluatePermissionForRequest(req, "projects", "approve"),
-    evaluatePermissionForRequest(req, "projects", "delete"),
+    evaluatePermissionForRequest(req, "projects", "edit"),
+    evaluatePermissionForRequest(req, "projects", "edit"),
     evaluatePermissionForRequest(req, "admin", "edit"),
-    evaluatePermissionForRequest(req, "financials", "override"),
+    evaluatePermissionForRequest(req, "financials", "edit"),
   ]);
 
   return {

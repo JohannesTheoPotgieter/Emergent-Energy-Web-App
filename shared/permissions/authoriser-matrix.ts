@@ -27,7 +27,7 @@ import { ENTITY_REGISTRY } from "./registry";
 export const AUTHORISER_MATRIX: Readonly<Record<PermissionEntity, readonly CompanyRole[]>> =
   Object.freeze(
     Object.fromEntries(
-      ENTITY_REGISTRY.map((entry) => [entry.entity, Object.freeze([...entry.override_roles])]),
+      ENTITY_REGISTRY.map((entry) => [entry.entity, Object.freeze([...entry.edit_roles])]),
     ),
   ) as Readonly<Record<PermissionEntity, readonly CompanyRole[]>>;
 

@@ -18,7 +18,7 @@ export interface DomainAccessSpec {
   discoverablePaths: string[];
 }
 
-const FULL_OPERATIONAL_ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "delete"];
+const FULL_OPERATIONAL_ACTIONS: PermissionAction[] = ["view", "edit"];
 
 export const COO_OPERATIONAL_ACCESS_MATRIX: DomainAccessSpec[] = [
   {

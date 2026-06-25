@@ -33,7 +33,7 @@ export function registerFinancialReviewRoutes(app: Express): void {
     "/api/projects/:projectId/financial-review",
     jwtAuth,
     requireAuth,
-    requirePermission("pd_finance", "create"),
+    requirePermission("pd_finance", "edit"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseIntParam(req.params.projectId);
@@ -191,7 +191,7 @@ export function registerFinancialReviewRoutes(app: Express): void {
     "/api/projects/:projectId/financial-review/:reviewId/approve",
     jwtAuth,
     requireAuth,
-    requirePermission("pd_finance", "approve"),
+    requirePermission("pd_finance", "edit"),
     async (req: Request, res: Response) => {
       try {
         const reviewId = parseIntParam(req.params.reviewId);

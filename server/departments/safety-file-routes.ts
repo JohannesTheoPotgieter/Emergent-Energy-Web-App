@@ -117,7 +117,7 @@ async function approveGateForSafetyFileStatus(
   }
   if (current.status === newStatus) return true;
 
-  const approval = await evaluatePermissionForRequest(req, "hse_compliance", "approve");
+  const approval = await evaluatePermissionForRequest(req, "hse_compliance", "edit");
   if (!approval.allowed) {
     res.status(403).json({
       error: "forbidden",
@@ -180,7 +180,7 @@ router.get(
 router.post(
   "/api/projects/:projectId/safety-file/items",
   requireAuth,
-  requirePermission("hse_compliance", "create"),
+  requirePermission("hse_compliance", "edit"),
   async (req: Request, res: Response) => {
     try {
       const projectId = Number(req.params.projectId);
@@ -298,7 +298,7 @@ router.patch(
 router.delete(
   "/api/safety-file-items/:id",
   requireAuth,
-  requirePermission("hse_compliance", "delete"),
+  requirePermission("hse_compliance", "edit"),
   async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);

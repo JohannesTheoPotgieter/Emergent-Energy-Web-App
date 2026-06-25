@@ -105,7 +105,7 @@ export function registerMilestoneTrackerRoutes(app: Express) {
     "/api/milestone-tracker/milestone-task-links",
     jwtAuth,
     requireAuth,
-    requirePermission("execution_review", "create"),
+    requirePermission("execution_review", "edit"),
     validateBody(milestoneTaskSchema),
     async (req: Request, res: Response) => {
       const body = milestoneTaskSchema.parse(req.body);
@@ -123,7 +123,7 @@ export function registerMilestoneTrackerRoutes(app: Express) {
     "/api/milestone-tracker/milestone-task-links",
     jwtAuth,
     requireAuth,
-    requirePermission("execution_review", "delete"),
+    requirePermission("execution_review", "edit"),
     validateBody(milestoneTaskSchema),
     async (req: Request, res: Response) => {
       const body = milestoneTaskSchema.parse(req.body);
@@ -137,7 +137,7 @@ export function registerMilestoneTrackerRoutes(app: Express) {
     "/api/milestone-tracker/task-cost-links",
     jwtAuth,
     requireAuth,
-    requirePermission("execution_review", "create"),
+    requirePermission("execution_review", "edit"),
     validateBody(taskCostSchema),
     async (req: Request, res: Response) => {
       const body = taskCostSchema.parse(req.body);
@@ -155,7 +155,7 @@ export function registerMilestoneTrackerRoutes(app: Express) {
     "/api/milestone-tracker/task-cost-links",
     jwtAuth,
     requireAuth,
-    requirePermission("execution_review", "delete"),
+    requirePermission("execution_review", "edit"),
     validateBody(taskCostSchema),
     async (req: Request, res: Response) => {
       const body = taskCostSchema.parse(req.body);
@@ -169,7 +169,7 @@ export function registerMilestoneTrackerRoutes(app: Express) {
     "/api/milestone-tracker/task-dependencies",
     jwtAuth,
     requireAuth,
-    requirePermission("execution_review", "create"),
+    requirePermission("execution_review", "edit"),
     validateBody(taskDependencySchema),
     async (req: Request, res: Response) => {
       const body = taskDependencySchema.parse(req.body);
@@ -187,7 +187,7 @@ export function registerMilestoneTrackerRoutes(app: Express) {
     "/api/milestone-tracker/task-dependencies",
     jwtAuth,
     requireAuth,
-    requirePermission("execution_review", "delete"),
+    requirePermission("execution_review", "edit"),
     validateBody(taskDependencySchema),
     async (req: Request, res: Response) => {
       const body = taskDependencySchema.parse(req.body);
@@ -216,7 +216,7 @@ export function registerMilestoneTrackerRoutes(app: Express) {
     "/api/milestone-tracker/templates/from-project",
     jwtAuth,
     requireAuth,
-    requirePermission("execution_review", "create"),
+    requirePermission("execution_review", "edit"),
     validateBody(templateFromProjectSchema),
     async (req: Request, res: Response) => {
       const body = templateFromProjectSchema.parse(req.body);
@@ -234,7 +234,7 @@ export function registerMilestoneTrackerRoutes(app: Express) {
     "/api/milestone-tracker/templates/:id/apply",
     jwtAuth,
     requireAuth,
-    requirePermission("execution_review", "create"),
+    requirePermission("execution_review", "edit"),
     validateBody(applyTemplateSchema),
     async (req: Request, res: Response) => {
       const id = parseIntParam(req.params.id);
@@ -272,7 +272,7 @@ export function registerMilestoneTrackerRoutes(app: Express) {
     "/api/milestone-tracker/templates/:id",
     jwtAuth,
     requireAuth,
-    requirePermission("execution_review", "delete"),
+    requirePermission("execution_review", "edit"),
     async (req: Request, res: Response) => {
       const id = parseIntParam(req.params.id);
       if (!id || Number.isNaN(id)) throw notFound("Template");

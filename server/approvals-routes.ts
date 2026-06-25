@@ -645,7 +645,7 @@ export function registerApprovalsRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/approvals/general/:id", jwtAuth, requireAuth, requirePermission("approvals", "delete"), async (req: Request, res: Response) => {
+  app.delete("/api/approvals/general/:id", jwtAuth, requireAuth, requirePermission("approvals", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });

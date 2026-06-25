@@ -243,7 +243,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   /** Create a standup schedule */
-  app.post("/api/standups/schedules", requireAuth, requirePermission("standups", "create"), async (req: Request, res: Response) => {
+  app.post("/api/standups/schedules", requireAuth, requirePermission("standups", "edit"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       const { name, teamLabel, projectId, cadence, cadenceDays, anchorDate, deadlineTime, deadlineTimezone } = req.body;
@@ -302,7 +302,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   /** Delete a standup schedule */
-  app.delete("/api/standups/schedules/:id", requireAuth, requirePermission("standups", "delete"), async (req: Request, res: Response) => {
+  app.delete("/api/standups/schedules/:id", requireAuth, requirePermission("standups", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseIntParam(req.params.id);
       await assertScheduleAccess(id, getUser(req));

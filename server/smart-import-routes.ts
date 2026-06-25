@@ -1977,7 +1977,7 @@ router.post("/api/smart-import/:runId/apply-prior-resolutions", requireAuth, req
 });
 
 // POST /api/smart-import/:runId/commit
-router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("smart_import", "approve"), validateBody(commitBodySchema), async (req: Request, res: Response) => {
+router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("smart_import", "edit"), validateBody(commitBodySchema), async (req: Request, res: Response) => {
   try {
     const runId = parseIntParam(req.params.runId);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -3640,7 +3640,7 @@ router.get("/api/smart-import/normalized/:projectName/expenditure", requireAuth,
 });
 
 // POST /api/smart-import/bulk-commit
-router.post("/api/smart-import/bulk-commit", requireAuth, requirePermission("smart_import", "approve"), async (req: Request, res: Response) => {
+router.post("/api/smart-import/bulk-commit", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.id || null;
     const { runIds, acknowledgeManualEdits, forceCommit } = req.body || {};

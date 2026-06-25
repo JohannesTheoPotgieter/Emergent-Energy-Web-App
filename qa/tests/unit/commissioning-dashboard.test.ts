@@ -52,11 +52,16 @@ describe("commissioning dashboard — role access", () => {
     expect(editRoles).not.toContain("CFO");
   });
 
-  it("restricts delete to 2 admin roles", () => {
-    const deleteRoles = rule?.delete_roles || [];
-    expect(deleteRoles).toContain("COO_ADMIN");
-    expect(deleteRoles).toContain("CEO_ADMIN");
-    expect(deleteRoles.length).toBe(2);
+  it("mutating access (incl. the old delete) is gated by edit_roles and includes the admin pair", () => {
+    // Collapsed model: there is no delete_roles surface — delete folded into
+    // edit. The equivalent invariant is that the admin pair retains mutating
+    // access via edit_roles. (edit_roles is broader than the old 2-role delete
+    // set: it also includes PROGRAM_MANAGER, CONSTRUCTION_MANAGER,
+    // PROJECT_MANAGER_SITE, QUALITY_MANAGER — same as the old commissioning:edit.)
+    expect((rule as { delete_roles?: string[] }).delete_roles).toBeUndefined();
+    const editRoles = rule?.edit_roles || [];
+    expect(editRoles).toContain("COO_ADMIN");
+    expect(editRoles).toContain("CEO_ADMIN");
   });
 });
 

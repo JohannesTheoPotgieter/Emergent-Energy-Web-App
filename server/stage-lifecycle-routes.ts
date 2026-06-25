@@ -54,7 +54,7 @@ const STAGE_ADVANCE_DEFAULT_ROLES: ReadonlySet<string> = new Set([
   "COO_ADMIN",
 ]);
 const STAGE_ADVANCE_OVERRIDE_ROLES: ReadonlySet<string> = new Set(
-  findEntityRegistry("stage_gate")?.override_roles ?? [],
+  findEntityRegistry("stage_gate")?.edit_roles ?? [],
 );
 
 function getUser(req: Request): { id: number; role: string } {
@@ -162,7 +162,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stages/initialize",
     jwtAuth,
     requireAuth,
-    requirePermission("stage_lifecycle", "create"),
+    requirePermission("stage_lifecycle", "edit"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -454,7 +454,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stages/:stageCode/requirements/hydrate",
     jwtAuth,
     requireAuth,
-    requirePermission("stage_lifecycle", "create"),
+    requirePermission("stage_lifecycle", "edit"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -519,7 +519,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stages/:stageCode/evidence",
     jwtAuth,
     requireAuth,
-    requirePermission("stage_lifecycle", "create"),
+    requirePermission("stage_lifecycle", "edit"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -594,7 +594,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stage-exceptions",
     jwtAuth,
     requireAuth,
-    requirePermission("stage_exceptions", "create"),
+    requirePermission("stage_exceptions", "edit"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -715,7 +715,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stage-dependencies",
     jwtAuth,
     requireAuth,
-    requirePermission("stage_lifecycle", "create"),
+    requirePermission("stage_lifecycle", "edit"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -811,7 +811,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stage-decisions",
     jwtAuth,
     requireAuth,
-    requirePermission("stage_lifecycle", "create"),
+    requirePermission("stage_lifecycle", "edit"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);

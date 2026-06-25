@@ -21,13 +21,15 @@ describe("finance analysis hardening", () => {
     const source = read("server/routes/finance-analysis.routes.ts");
     const cosPageSource = read("client/src/pages/cos-analysis.tsx");
     // Server side: every endpoint runs through the entity-registry
-    // `requirePermission` gate (cashflow:view, cos:view, cos:override).
-    // The tolerance PUT specifically uses cos:override which the registry
-    // pins to COO / CEO / CFO / PROGRAM_FINANCE_MANAGER — same set as the
-    // legacy hardcoded TOLERANCE_WRITE_ROLES list.
+    // `requirePermission` gate (cashflow:view, cos:view, cos:edit).
+    // The tolerance PUT is a mutating write; under the collapsed view/edit
+    // model the old `cos:override` tier folds into `cos:edit`. The registry
+    // pins cos.edit_roles to COO / CEO / CFO / PROGRAM_FINANCE_MANAGER /
+    // CONSTRUCTION_MANAGER / ACCOUNTANT — a superset of the legacy hardcoded
+    // TOLERANCE_WRITE_ROLES list (see security note in the task report).
     expect(source).toContain('requirePermission("cashflow", "view")');
     expect(source).toContain('requirePermission("cos", "view")');
-    expect(source).toContain('requirePermission("cos", "override")');
+    expect(source).toContain('requirePermission("cos", "edit")');
     // Client side: page-level guard mirrors the registry's cos:override
     // role set so the UI doesn't expose the tolerance edit button to
     // unauthorised users.

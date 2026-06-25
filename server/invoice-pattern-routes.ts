@@ -337,7 +337,7 @@ router.patch("/api/invoice-patterns/:id", requireAuth, requirePermission('procur
   }
 });
 
-router.delete("/api/invoice-patterns/:id", requireAuth, requirePermission('procurement', 'delete'), async (req: Request, res: Response) => {
+router.delete("/api/invoice-patterns/:id", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
     const id = parseIntParam(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
@@ -780,7 +780,7 @@ router.post("/api/procurement-analysis/reset-tags", requireAuth, requirePermissi
 // Prompt 0.1 follow-up: wipe-all-data is strictly larger than clear-all-data
 // in blast radius — symmetrise its gating so a single NODE_ENV misconfiguration
 // can't expose it. Requires both production block AND ALLOW_DESTRUCTIVE_OPS=true.
-router.post("/api/admin/wipe-all-data", requireAuth, requirePermission('admin', 'delete'), blockInProduction("Full database wipe is disabled in production."), requireDestructiveOpsFlag("wipe-all-data requires ALLOW_DESTRUCTIVE_OPS=true"), async (req: Request, res: Response) => {
+router.post("/api/admin/wipe-all-data", requireAuth, requirePermission('admin', 'edit'), blockInProduction("Full database wipe is disabled in production."), requireDestructiveOpsFlag("wipe-all-data requires ALLOW_DESTRUCTIVE_OPS=true"), async (req: Request, res: Response) => {
   try {
     const user = getEffectiveUser(req);
     const userRole = user?.role || "";
@@ -1176,7 +1176,7 @@ router.patch("/api/counterparties/:id/contacts/:contactId", requireAuth, require
   }
 });
 
-router.delete("/api/counterparties/:id", requireAuth, requirePermission('procurement', 'delete'), async (req: Request, res: Response) => {
+router.delete("/api/counterparties/:id", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
     const id = parseIntParam(req.params.id);
     if (isNaN(id)) {

@@ -29,7 +29,7 @@ import {
 } from "@shared/permissions/templates";
 import { invalidateEntityPermCache } from "../permission-middleware";
 
-const ALL_ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
+const ALL_ACTIONS: PermissionAction[] = ["view", "edit"];
 
 /** Boot-time idempotent seeder. */
 export async function seedRoleTemplates(): Promise<{ inserted: number; updated: number }> {

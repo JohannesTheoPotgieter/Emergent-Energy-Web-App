@@ -122,7 +122,7 @@ export function registerProcurementRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/procurement", jwtAuth, requireAuth, requirePermission("procurement", "create"), async (req: Request, res: Response) => {
+  app.post("/api/procurement", jwtAuth, requireAuth, requirePermission("procurement", "edit"), async (req: Request, res: Response) => {
     try {
       const user = getEffectiveUser(req);
       const { projectId, title, description, category, quantity, unit, expectedCost, supplierId, ownerUserId, requiredDate, linkedTaskId, notes, budgetLine, linkedDeliverableId, linkedMilestone, progressPercent, receiptRef, paymentStatus, linkedWorkItemId, leadTimeDays, orderDate } = req.body;
@@ -321,7 +321,7 @@ export function registerProcurementRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/procurement/:id", jwtAuth, requireAuth, requirePermission("procurement", "delete"), async (req: Request, res: Response) => {
+  app.delete("/api/procurement/:id", jwtAuth, requireAuth, requirePermission("procurement", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
