@@ -114,7 +114,7 @@ export function registerCommissioningRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/commissioning", jwtAuth, requireAuth, requirePermission("commissioning", "create"), async (req: Request, res: Response) => {
+  app.post("/api/commissioning", jwtAuth, requireAuth, requirePermission("commissioning", "edit"), async (req: Request, res: Response) => {
     try {
       const parsed = createCommissioningItemSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
@@ -266,7 +266,7 @@ export function registerCommissioningRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/commissioning/:id", jwtAuth, requireAuth, requirePermission("commissioning", "delete"), async (req: Request, res: Response) => {
+  app.delete("/api/commissioning/:id", jwtAuth, requireAuth, requirePermission("commissioning", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });

@@ -525,7 +525,7 @@ export function registerRoleManagementRoutes(app: Express) {
       if (!effectiveRole) return res.status(400).json({ error: "role or userId is required" });
 
       const [roleRecord] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, effectiveRole));
-      const actions: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
+      const actions: PermissionAction[] = ["view", "edit"];
 
       const legacyMatrix = ENTITY_PERMISSION_DEFAULTS.map((entityRule) => {
         const entity = entityRule.entity as PermissionEntity;
@@ -1389,7 +1389,7 @@ export function registerRoleManagementRoutes(app: Express) {
         )
       );
 
-      const ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
+      const ACTIONS: PermissionAction[] = ["view", "edit"];
       const permissions: Array<{
         entity: string;
         action: string;
@@ -1456,7 +1456,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       if (roleRecords.length < 2) return res.status(404).json({ error: "One or more roles not found" });
 
-      const ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
+      const ACTIONS: PermissionAction[] = ["view", "edit"];
 
       const comparison: Array<{
         entity: string;

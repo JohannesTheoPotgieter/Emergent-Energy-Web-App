@@ -55,7 +55,7 @@ export function registerSmartImportReviewRoutes(app: Express): void {
   app.post(
     "/api/smart-import/:runId/reject",
     requireAuth,
-    requirePermission("smart_import", "approve"),
+    requirePermission("smart_import", "edit"),
     async (req: Request, res: Response) => {
       const runId = parseRunId(String(req.params.runId));
       if (runId == null) {

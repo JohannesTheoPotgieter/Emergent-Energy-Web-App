@@ -90,7 +90,7 @@ describe("requireAuthoriserFor", () => {
   });
 
   it("returns 400 when an authorised role omits the reason", () => {
-    const cooRole = findEntityRegistry("financials")!.override_roles[0];
+    const cooRole = findEntityRegistry("financials")!.edit_roles[0];
     mockedGetEffectiveUser.mockReturnValue({
       id: 1,
       email: "coo@example.com",
@@ -113,7 +113,7 @@ describe("requireAuthoriserFor", () => {
   });
 
   it("returns 400 when reason is whitespace-only", () => {
-    const cooRole = findEntityRegistry("financials")!.override_roles[0];
+    const cooRole = findEntityRegistry("financials")!.edit_roles[0];
     mockedGetEffectiveUser.mockReturnValue({
       id: 1,
       email: "coo@example.com",
@@ -132,7 +132,7 @@ describe("requireAuthoriserFor", () => {
   });
 
   it("calls next() and attaches req.authoriser when role + reason are valid", () => {
-    const cooRole = findEntityRegistry("financials")!.override_roles[0];
+    const cooRole = findEntityRegistry("financials")!.edit_roles[0];
     mockedGetEffectiveUser.mockReturnValue({
       id: 42,
       email: "coo@example.com",
@@ -158,7 +158,7 @@ describe("requireAuthoriserFor", () => {
   });
 
   it("honours a custom reasonField option", () => {
-    const cooRole = findEntityRegistry("financials")!.override_roles[0];
+    const cooRole = findEntityRegistry("financials")!.edit_roles[0];
     mockedGetEffectiveUser.mockReturnValue({
       id: 5,
       email: "coo@example.com",
@@ -180,7 +180,7 @@ describe("requireAuthoriserFor", () => {
   });
 
   it("returns 400 when override_reason is a non-string (array, object, number)", () => {
-    const cooRole = findEntityRegistry("financials")!.override_roles[0];
+    const cooRole = findEntityRegistry("financials")!.edit_roles[0];
     mockedGetEffectiveUser.mockReturnValue({
       id: 1,
       email: "coo@example.com",
@@ -200,7 +200,7 @@ describe("requireAuthoriserFor", () => {
   });
 
   it("rejects when custom reasonField is missing", () => {
-    const cooRole = findEntityRegistry("financials")!.override_roles[0];
+    const cooRole = findEntityRegistry("financials")!.edit_roles[0];
     mockedGetEffectiveUser.mockReturnValue({
       id: 5,
       email: "coo@example.com",

@@ -963,7 +963,7 @@ export function registerQualityRoutes(app: Express) {
     "/api/quality/project/:projectName/checklist",
     requireAuth,
     requireQmChallengePassed,
-    requirePermission("quality", "create"),
+    requirePermission("quality", "edit"),
     async (req, res) => {
       try {
         const requestedProjectName = decodeURIComponent(String(req.params.projectName));
@@ -1062,7 +1062,7 @@ export function registerQualityRoutes(app: Express) {
     "/api/quality/project/:projectName/checklist",
     requireAuth,
     requireQmChallengePassed,
-    requirePermission("quality", "delete"),
+    requirePermission("quality", "edit"),
     async (req, res) => {
       try {
         // Guard against a malformed `%XX` in the param (would otherwise 500).
@@ -1428,7 +1428,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/project/:projectName/item/:itemInstanceId/approve", requireAuth, requireQmChallengePassed, requirePermission('quality', 'approve'), validateBody(approveItemSchema), async (req, res) => {
+  app.post("/api/quality/project/:projectName/item/:itemInstanceId/approve", requireAuth, requireQmChallengePassed, requirePermission('quality', 'edit'), validateBody(approveItemSchema), async (req, res) => {
     try {
       const itemId = parseIntParam(req.params.itemInstanceId);
       const { approved, comment } = req.body;
@@ -1781,7 +1781,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/quality/project/:projectName/item/:itemInstanceId", requireAuth, requireQmChallengePassed, requirePermission('pd_quality', 'delete'), async (req, res) => {
+  app.delete("/api/quality/project/:projectName/item/:itemInstanceId", requireAuth, requireQmChallengePassed, requirePermission('pd_quality', 'edit'), async (req, res) => {
     try {
       const pName = decodeURIComponent(String(req.params.projectName));
       const itemId = parseIntParam(req.params.itemInstanceId);
@@ -1959,7 +1959,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/warning/:warningId/acknowledge", requireAuth, requirePermission("quality", "approve"), validateBody(warningEventSchema), async (req, res) => {
+  app.post("/api/quality/warning/:warningId/acknowledge", requireAuth, requirePermission("quality", "edit"), validateBody(warningEventSchema), async (req, res) => {
     try {
       const warningId = parseIntParam(req.params.warningId);
       const { note } = req.body;
@@ -1977,7 +1977,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/warning/:warningId/resolve", requireAuth, requirePermission("quality", "approve"), validateBody(warningEventSchema), async (req, res) => {
+  app.post("/api/quality/warning/:warningId/resolve", requireAuth, requirePermission("quality", "edit"), validateBody(warningEventSchema), async (req, res) => {
     try {
       const warningId = parseIntParam(req.params.warningId);
       const { note } = req.body;

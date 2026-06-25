@@ -115,7 +115,7 @@ export function registerPaymentRequestRoutes(app: Express) {
 
   // ===================== CREATE PAYMENT REQUEST =====================
 
-  app.post("/api/payment-requests", jwtAuth, requireAuth, requirePermission("procurement", "create"), async (req: Request, res: Response) => {
+  app.post("/api/payment-requests", jwtAuth, requireAuth, requirePermission("procurement", "edit"), async (req: Request, res: Response) => {
     try {
       const user = getEffectiveUser(req);
       if (!user?.id) return res.status(401).json({ error: "Not authenticated" });
@@ -235,7 +235,7 @@ export function registerPaymentRequestRoutes(app: Express) {
 
   // ===================== REVIEW PAYMENT REQUEST =====================
 
-  app.post("/api/payment-requests/:id/review", jwtAuth, requireAuth, requirePermission("procurement", "approve"), async (req: Request, res: Response) => {
+  app.post("/api/payment-requests/:id/review", jwtAuth, requireAuth, requirePermission("procurement", "edit"), async (req: Request, res: Response) => {
     try {
       const user = getEffectiveUser(req);
       const id = parseIntParam(req.params.id);

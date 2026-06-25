@@ -271,11 +271,7 @@ function generate(): string {
     lines.push(`    description: ${JSON.stringify(description)},`);
     lines.push(`    category: '${category}',`);
     lines.push(`    view_roles: ${quoteArr(rule.view_roles)},`);
-    lines.push(`    create_roles: ${quoteArr(rule.create_roles)},`);
     lines.push(`    edit_roles: ${quoteArr(rule.edit_roles)},`);
-    lines.push(`    approve_roles: ${quoteArr(rule.approve_roles)},`);
-    lines.push(`    override_roles: ${quoteArr(rule.override_roles)},`);
-    lines.push(`    delete_roles: ${quoteArr(rule.delete_roles)},`);
     lines.push("  },");
   }
   lines.push("];");

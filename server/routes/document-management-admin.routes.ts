@@ -147,7 +147,7 @@ export function registerDocumentManagementAdminRoutes(app: Express): void {
   app.post(
     "/api/admin/document-approval-requirements",
     requireAuth,
-    requirePermission("documents_admin", "create"),
+    requirePermission("documents_admin", "edit"),
     async (req: Request, res: Response) => {
       const parsed = insertDocumentApprovalRequirementSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -203,7 +203,7 @@ export function registerDocumentManagementAdminRoutes(app: Express): void {
   app.delete(
     "/api/admin/document-approval-requirements/:id",
     requireAuth,
-    requirePermission("documents_admin", "delete"),
+    requirePermission("documents_admin", "edit"),
     async (req: Request, res: Response) => {
       const parsedId = requirementIdParam.safeParse(req.params.id);
       if (!parsedId.success) throw badRequest("Invalid requirement id");

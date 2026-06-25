@@ -169,7 +169,7 @@ export function registerExecutionBoardRoutes(app: Express) {
     "/api/execution-review/items",
     jwtAuth,
     requireAuth,
-    requirePermission("execution_review", "create"),
+    requirePermission("execution_review", "edit"),
     validateBody(createItemSchema),
     async (req: Request, res: Response) => {
       const body = createItemSchema.parse(req.body);
@@ -211,7 +211,7 @@ export function registerExecutionBoardRoutes(app: Express) {
     "/api/execution-review/items/:id",
     jwtAuth,
     requireAuth,
-    requirePermission("execution_review", "delete"),
+    requirePermission("execution_review", "edit"),
     async (req: Request, res: Response) => {
       const id = parseIntParam(req.params.id);
       const deleted = await executionReviewRepository.softDelete(id);

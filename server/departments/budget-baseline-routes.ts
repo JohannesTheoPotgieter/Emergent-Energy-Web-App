@@ -28,7 +28,7 @@ router.get("/api/budget-baselines", requireAuth, async (req: Request, res: Respo
   }
 });
 
-router.post("/api/budget-baselines", requireAuth, requirePermission("financials", "create"), async (req: Request, res: Response) => {
+router.post("/api/budget-baselines", requireAuth, requirePermission("financials", "edit"), async (req: Request, res: Response) => {
   try {
     const { projectId } = req.body;
     if (!projectId) return res.status(400).json({ error: "projectId is required" });

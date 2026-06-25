@@ -15,7 +15,8 @@ describe("permission resolver", () => {
   });
 
   it("falls back to defaults when override is missing", () => {
-    const result = evaluatePermissionForRole({ role: "COO_ADMIN", entity: "projects", action: "approve" });
+    // Collapsed model: the former 'approve' capability now folds into 'edit'.
+    const result = evaluatePermissionForRole({ role: "COO_ADMIN", entity: "projects", action: "edit" });
     expect(result.allowed).toBe(true);
     expect(result.source).toBe("default");
   });

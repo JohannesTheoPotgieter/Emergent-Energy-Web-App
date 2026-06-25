@@ -1089,7 +1089,7 @@ router.get("/api/subcontractor-assignments/project/:projectId", requireAuth, asy
   }
 });
 
-router.post("/api/subcontractor-assignments", requireAuth, requirePermission("procurement", "create"), async (req: Request, res: Response) => {
+router.post("/api/subcontractor-assignments", requireAuth, requirePermission("procurement", "edit"), async (req: Request, res: Response) => {
   try {
     const { projectId, counterpartyId, role, workPackage, scopeDescription, ownerUserId, keyDates } = req.body;
     if (!projectId || !counterpartyId) return res.status(400).json({ error: "projectId and counterpartyId required" });
@@ -1166,7 +1166,7 @@ router.patch("/api/subcontractor-assignments/:id", requireAuth, requirePermissio
   }
 });
 
-router.delete("/api/subcontractor-assignments/:id", requireAuth, requirePermission("procurement", "delete"), async (req: Request, res: Response) => {
+router.delete("/api/subcontractor-assignments/:id", requireAuth, requirePermission("procurement", "edit"), async (req: Request, res: Response) => {
   try {
     const id = parseIntParam(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });

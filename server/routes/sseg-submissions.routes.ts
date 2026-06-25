@@ -30,7 +30,7 @@ router.get(
       const [rows, kpis, canCreateResult, canEditResult] = await Promise.all([
         ssegSubmissionsRepository.list({ projectId }),
         ssegSubmissionsRepository.kpis(),
-        evaluatePermissionForRequest(req, "hse_sseg", "create"),
+        evaluatePermissionForRequest(req, "hse_sseg", "edit"),
         evaluatePermissionForRequest(req, "hse_sseg", "edit"),
       ]);
 

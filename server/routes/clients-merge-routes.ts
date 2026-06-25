@@ -334,7 +334,7 @@ export function registerClientsMergeRoutes(app: Express) {
   app.post(
     "/api/pd/clients/:loserId/merge",
     requireAuth,
-    requirePermission("pd_clients", "delete"),
+    requirePermission("pd_clients", "edit"),
     async (req: Request, res: Response) => {
       try {
         const loserId = parseId(req.params.loserId);
@@ -474,7 +474,7 @@ export function registerClientsMergeRoutes(app: Express) {
   app.delete(
     "/api/pd/clients/:id",
     requireAuth,
-    requirePermission("pd_clients", "delete"),
+    requirePermission("pd_clients", "edit"),
     async (req: Request, res: Response) => {
       try {
         const id = parseId(req.params.id);
@@ -530,7 +530,7 @@ export function registerClientsMergeRoutes(app: Express) {
   app.post(
     "/api/pd/clients/:id/restore",
     requireAuth,
-    requirePermission("pd_clients", "delete"),
+    requirePermission("pd_clients", "edit"),
     async (req: Request, res: Response) => {
       try {
         const id = parseId(req.params.id);

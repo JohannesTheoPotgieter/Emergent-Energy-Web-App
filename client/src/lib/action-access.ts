@@ -28,19 +28,19 @@ const QUICK_CREATE_ACTIONS: ActionDefinition[] = [
     id: "pd-ticket",
     label: "New Opportunity",
     path: "/pd/tickets/create",
-    isVisible: ({ canAccessEntityAction }) => canAccessEntityAction("pd_tickets", "create"),
+    isVisible: ({ canAccessEntityAction }) => canAccessEntityAction("pd_tickets", "edit"),
   },
   {
     id: "engineering-request",
     label: "Create Engineering Request",
     path: "/actions/launchpad?action=engineering-request",
-    isVisible: ({ canAccessEntityAction }) => canAccessEntityAction("eng_tasks", "create"),
+    isVisible: ({ canAccessEntityAction }) => canAccessEntityAction("eng_tasks", "edit"),
   },
   {
     id: "task",
     label: "Create Task",
     path: "/actions/launchpad?action=task",
-    isVisible: ({ canAccessEntityAction }) => canAccessEntityAction("eng_tasks", "create"),
+    isVisible: ({ canAccessEntityAction }) => canAccessEntityAction("eng_tasks", "edit"),
   },
   {
     id: "handover",

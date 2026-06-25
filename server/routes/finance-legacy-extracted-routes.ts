@@ -749,7 +749,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/revenue-tracking/overrides/:projectName", requireAuth, requireAdmin, requirePermission('financials', 'override'), async (req, res) => {
+  app.delete("/api/revenue-tracking/overrides/:projectName", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
     try {
       const projectName = req.params.projectName;
       if (!projectName || typeof projectName !== 'string') {
@@ -857,7 +857,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/expenditure/overrides/:projectName", requireAuth, requireAdmin, requirePermission('financials', 'override'), async (req, res) => {
+  app.delete("/api/expenditure/overrides/:projectName", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
     try {
       const projectName = req.params.projectName;
       if (!projectName || typeof projectName !== 'string') {
@@ -1088,7 +1088,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
 
   // ==================== EXPENDITURE BREAKDOWN COMPOSITE API ====================
 
-  app.patch("/api/expenditure/font-color-toggle", requireAuth, requirePermission("cos", "override"), async (req, res) => {
+  app.patch("/api/expenditure/font-color-toggle", requireAuth, requirePermission("cos", "edit"), async (req, res) => {
     try {
       const { projectName, rowNumber, field, color } = req.body;
       if (!projectName || rowNumber == null || !field || !color) {
@@ -1139,7 +1139,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
 
   // ==================== COS STATUS OVERRIDE API ====================
 
-  app.post("/api/cos-status-override", requireAuth, requirePermission("cos", "override"), async (req, res) => {
+  app.post("/api/cos-status-override", requireAuth, requirePermission("cos", "edit"), async (req, res) => {
     try {
       const { expenseId, projectName, rowNumber, originalStatus, overrideStatus, reason } = req.body;
       if (!expenseId || !projectName || !overrideStatus || !reason) {
@@ -1159,7 +1159,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/cos-status-override/:expenseId", requireAuth, requirePermission("cos", "override"), async (req, res) => {
+  app.delete("/api/cos-status-override/:expenseId", requireAuth, requirePermission("cos", "edit"), async (req, res) => {
     try {
       const expenseId = parseIntParam(req.params.expenseId);
 
@@ -1218,7 +1218,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
   }).strict();
 
   // Create a cost line
-  app.post("/api/finance/cost-lines", requireAuth, requirePermission("financials", "create"), async (req: Request, res: Response) => {
+  app.post("/api/finance/cost-lines", requireAuth, requirePermission("financials", "edit"), async (req: Request, res: Response) => {
     try {
       const parsed = costLineSchema.parse(req.body);
       const row = await createCostLine({
@@ -1318,7 +1318,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
   });
 
   // Create a revenue line
-  app.post("/api/finance/revenue-lines", requireAuth, requirePermission("financials", "create"), async (req: Request, res: Response) => {
+  app.post("/api/finance/revenue-lines", requireAuth, requirePermission("financials", "edit"), async (req: Request, res: Response) => {
     try {
       const parsed = revenueLineSchema.parse(req.body);
       const row = await createRevenueLine({
@@ -1536,7 +1536,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
     reason: z.string().min(1, "reason is required"),
   }).strict();
 
-  app.post("/api/finance/revenue-lines/:id/write-off", requireAuth, requirePermission("financials", "approve"), async (req: Request, res: Response) => {
+  app.post("/api/finance/revenue-lines/:id/write-off", requireAuth, requirePermission("financials", "edit"), async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Invalid id" });

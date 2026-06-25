@@ -1285,7 +1285,7 @@ router.get("/api/opportunities/:id/engineering-phase-templates", requireAuth, re
   }
 });
 
-router.post("/api/opportunities/:id/create-engineering-tickets", requireAuth, requirePermission("pd_tickets", "create"), validateBody(engineeringTicketCreateSchema), async (req: Request, res: Response) => {
+router.post("/api/opportunities/:id/create-engineering-tickets", requireAuth, requirePermission("pd_tickets", "edit"), validateBody(engineeringTicketCreateSchema), async (req: Request, res: Response) => {
   try {
     if (!canCreatePdTicket(getUserRole(req))) {
       return res.status(403).json({ error: "Engineering ticket creation authority is limited to Project Development role(s)." });
@@ -1543,7 +1543,7 @@ router.get("/api/opportunities/:id/mapping-context", requireAuth, requirePermiss
   }
 });
 
-router.post("/api/opportunities/:id/resolve-mapping", requireAuth, requirePermission("pd_tickets", "create"), validateBody(mappingResolveSchema), async (req: Request, res: Response) => {
+router.post("/api/opportunities/:id/resolve-mapping", requireAuth, requirePermission("pd_tickets", "edit"), validateBody(mappingResolveSchema), async (req: Request, res: Response) => {
   try {
     if (!canCreatePdTicket(getUserRole(req))) {
       return res.status(403).json({ error: "Mapping authority is limited to Project Development role(s)." });
@@ -2048,7 +2048,7 @@ function normalizeOpportunityNumericFields<T extends {
   };
 }
 
-router.post("/api/opportunities", requireAuth, requirePermission("opportunities", "create"), validateBody(opportunityCreateSchema), async (req: Request, res: Response) => {
+router.post("/api/opportunities", requireAuth, requirePermission("opportunities", "edit"), validateBody(opportunityCreateSchema), async (req: Request, res: Response) => {
   try {
     const parsed = req.body as z.infer<typeof opportunityCreateSchema>;
     // Force `source` to 'internal' on the manual create path — the
@@ -2135,7 +2135,7 @@ router.patch("/api/opportunities/:id", requireAuth, requirePermission("opportuni
   }
 });
 
-router.delete("/api/opportunities/:id", requireAuth, requirePermission("opportunities", "delete"), async (req: Request, res: Response) => {
+router.delete("/api/opportunities/:id", requireAuth, requirePermission("opportunities", "edit"), async (req: Request, res: Response) => {
   try {
     const row = await opportunitiesRepo.softDeleteOpportunity(Number(req.params.id));
     if (!row) return res.status(404).json({ error: "Opportunity not found" });

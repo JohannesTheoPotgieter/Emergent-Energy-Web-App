@@ -1014,7 +1014,7 @@ export function registerPoRoutes(app: Express) {
 
   // ===================== DELETE PO (draft only) =====================
 
-  app.delete("/api/po/:poId", jwtAuth, requireAuth, requirePermission('procurement', 'delete'), async (req: Request, res: Response) => {
+  app.delete("/api/po/:poId", jwtAuth, requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
     try {
       const poIdNum = parseIntParam(req.params.poId);
       if (isNaN(poIdNum)) return res.status(400).json({ error: "Invalid PO ID" });

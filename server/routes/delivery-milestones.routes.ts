@@ -291,7 +291,7 @@ export function registerDeliveryMilestonesRoutes(app: Express) {
     "/api/projects/delivery-milestones/:id",
     jwtAuth,
     requireAuth,
-    requirePermission("pd_delivery_milestones", "delete"),
+    requirePermission("pd_delivery_milestones", "edit"),
     async (req: Request, res: Response) => {
       try {
         const id = parseIntParam(req.params.id);

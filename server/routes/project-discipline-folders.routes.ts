@@ -81,7 +81,7 @@ export function registerProjectDisciplineFoldersRoutes(app: Express): void {
   app.put(
     "/api/projects/:projectId/discipline-folders",
     requireAuth,
-    requirePermission("documents_provision", "create"),
+    requirePermission("documents_provision", "edit"),
     validateBody(disciplineFolderBindSchema),
     async (req: Request, res: Response) => {
       const parsed = projectIdParam.safeParse(req.params.projectId);
@@ -108,7 +108,7 @@ export function registerProjectDisciplineFoldersRoutes(app: Express): void {
   app.delete(
     "/api/projects/:projectId/discipline-folders/:discipline",
     requireAuth,
-    requirePermission("documents_provision", "delete"),
+    requirePermission("documents_provision", "edit"),
     async (req: Request, res: Response) => {
       const parsed = projectIdParam.safeParse(req.params.projectId);
       const disc = disciplineSchema.safeParse(req.params.discipline);

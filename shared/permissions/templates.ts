@@ -4,8 +4,7 @@
 // click in the Roles & Permissions UI. The shape mirrors what the
 // existing role_permissions.entityPermissions JSON expects:
 //
-//   { [entity]: { view: bool, create: bool, edit: bool,
-//                 approve: bool, override: bool, delete: bool } }
+//   { [entity]: { view: bool, edit: bool } }
 //
 // Plain-English `summary` is shown to COO/CEO on the apply screen.
 // Categories drive the "gallery" grouping in the Roles tab.
@@ -18,11 +17,7 @@ export type EntityPermissionMap = Partial<Record<PermissionEntity, Record<Permis
 function emptyActionRow(): Record<PermissionAction, boolean> {
   return {
     view: false,
-    create: false,
     edit: false,
-    approve: false,
-    override: false,
-    delete: false,
   };
 }
 
@@ -39,7 +34,7 @@ export interface RoleTemplateDef {
   permissions: EntityPermissionMap;
 }
 
-const ALL_ACTIONS: PermissionActionKey[] = ["view", "create", "edit", "approve", "override", "delete"];
+const ALL_ACTIONS: PermissionActionKey[] = ["view", "edit"];
 
 /**
  * Snapshot the registry's defaults for a single role into the
@@ -114,11 +109,7 @@ export const ROLE_TEMPLATES: RoleTemplateDef[] = [
         const row = base[entity]!;
         out[entity] = {
           view: row.view,
-          create: false,
           edit: false,
-          approve: false,
-          override: false,
-          delete: false,
         };
       }
       return out;

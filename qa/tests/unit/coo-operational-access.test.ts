@@ -5,7 +5,7 @@ import { PAGE_REGISTRY, LEGACY_REDIRECTS } from "@/config/page-registry";
 import fs from "node:fs";
 
 describe("COO operational access matrix", () => {
-  it("grants COO full operational CRUD+approve access for required domains", () => {
+  it("grants COO full operational view+edit access for required domains", () => {
     for (const domain of COO_OPERATIONAL_ACCESS_MATRIX) {
       for (const entity of domain.entities) {
         for (const action of domain.requiredActions) {
@@ -22,9 +22,12 @@ describe("COO operational access matrix", () => {
   });
 
   it("keeps least privilege for VIEWER on operational write actions", () => {
+    // Collapsed model: 'edit' is the single write action (it subsumes the
+    // former create/approve/override/delete). VIEWER must be denied it
+    // everywhere in the operational matrix.
     for (const domain of COO_OPERATIONAL_ACCESS_MATRIX) {
       for (const entity of domain.entities) {
-        for (const action of ["create", "edit", "approve", "delete"] as const) {
+        for (const action of ["edit"] as const) {
           const result = evaluatePermissionForRole({
             role: "VIEWER",
             entity,
@@ -58,9 +61,10 @@ describe("COO operational access matrix", () => {
   });
 
   it("aligns weekly review API guard with weekly review permission entity", () => {
+    // Collapsed model: read routes guard on 'view', write routes (formerly
+    // create/edit) all guard on 'edit'.
     const source = fs.readFileSync("server/weekly-review-routes.ts", "utf8");
     expect(source).toContain("requirePermission('weekly_review_wizard', 'view')");
-    expect(source).toContain("requirePermission('weekly_review_wizard', 'create')");
     expect(source).toContain("requirePermission('weekly_review_wizard', 'edit')");
   });
 });

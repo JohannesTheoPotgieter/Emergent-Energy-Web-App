@@ -2,12 +2,11 @@ import React, { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Check, ChevronDown, ChevronRight, Eye, Pencil, Plus, Search, ShieldCheck, Trash2, X } from "lucide-react";
-import type { PermissionAction } from "@shared/schema";
+import { ChevronDown, ChevronRight, Search } from "lucide-react";
 import { ENTITY_PERMISSION_DEFAULTS } from "@shared/schema";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { RoleSummary } from "../settings-types";
-import { ACTIONS, ENTITY_CATEGORIES, ENTITY_DESCRIPTIONS, PERM_CATEGORY_TO_NAV_SECTION, formatEntityName } from "../settings-types";
+import { ENTITY_CATEGORIES, ENTITY_DESCRIPTIONS, PERM_CATEGORY_TO_NAV_SECTION, formatEntityName } from "../settings-types";
 
 interface RolePermissionsMatrixProps {
   role: RoleSummary;
@@ -30,14 +29,6 @@ interface RolePermissionsMatrixProps {
   onBulkAuditReason?: (reason: string) => void;
 }
 
-// Calm, security-screen palette (UI/UX audit X4): emerald = granted,
-// one semantic red = explicitly denied, neutral grey otherwise. No blue/amber.
-const CELL_STYLES = {
-  granted: "bg-emerald-100 text-emerald-700 border-emerald-300",
-  denied: "bg-red-50 text-red-600 border-red-200",
-  neutral: "bg-gray-50 text-gray-400 border-gray-200",
-};
-
 interface PendingBulk {
   kind: "global" | "category" | "entity";
   label: string;
@@ -45,14 +36,66 @@ interface PendingBulk {
   value: boolean;
 }
 
-const ACTION_ICONS: Record<string, React.ReactNode> = {
-  view: <Eye className="h-3 w-3" />,
-  create: <Plus className="h-3 w-3" />,
-  edit: <Pencil className="h-3 w-3" />,
-  approve: <Check className="h-3 w-3" />,
-  override: <ShieldCheck className="h-3 w-3" />,
-  delete: <Trash2 className="h-3 w-3" />,
+// Collapsed permission model: every protected resource is governed by one
+// three-state scale. `edit` subsumes every mutating capability (create,
+// update, approve, override, delete); `view` is read-only; `none` clears both.
+type AccessLevel = "none" | "view" | "edit";
+
+const LEVEL_META: Record<AccessLevel, { label: string; selected: string }> = {
+  none: { label: "No access", selected: "bg-gray-200 text-gray-700 border-gray-300" },
+  view: { label: "View", selected: "bg-emerald-50 text-emerald-700 border-emerald-300" },
+  edit: { label: "Edit", selected: "bg-emerald-100 text-emerald-800 border-emerald-400" },
 };
+const LEVEL_ORDER: AccessLevel[] = ["none", "view", "edit"];
+
+function AccessLevelSelect({
+  value,
+  disabled,
+  onChange,
+  entityName,
+  isOverride,
+}: {
+  value: AccessLevel;
+  disabled: boolean;
+  onChange: (level: AccessLevel) => void;
+  entityName: string;
+  isOverride: boolean;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={`${entityName} access level`}
+      className="inline-flex rounded-md border border-gray-200 overflow-hidden bg-white"
+    >
+      {LEVEL_ORDER.map((lvl) => {
+        const active = value === lvl;
+        return (
+          <button
+            key={lvl}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            disabled={disabled}
+            onClick={() => onChange(lvl)}
+            data-testid={`access-${entityName}-${lvl}`}
+            className={`relative px-2.5 py-1 text-[10px] font-medium transition-colors border-r last:border-r-0 border-gray-200 ${
+              disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-gray-50"
+            } ${active ? LEVEL_META[lvl].selected : "bg-white text-gray-400"}`}
+          >
+            {LEVEL_META[lvl].label}
+            {active && isOverride && lvl !== "none" && (
+              <span
+                aria-hidden="true"
+                title="Role-specific override"
+                className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-gray-500 ring-1 ring-white"
+              />
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function getPermissionState(
   entity: string,
@@ -90,26 +133,34 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
   );
   const allEntities = Object.values(ENTITY_CATEGORIES).flatMap((c) => c.entities).filter(isEntityVisible).sort();
 
-  const updateEp = (entity: string, action: string, value: boolean) => {
-    const next = { ...currentEp, [entity]: { ...(currentEp[entity] || {}), [action]: value } };
-    if ((action === "edit" || action === "approve" || action === "delete") && value) next[entity].view = true;
+  // Derive the effective three-state level for an entity from the underlying
+  // view/edit grants (role override layered over registry defaults).
+  const getEntityLevel = (entity: string): { level: AccessLevel; isOverride: boolean } => {
+    const editState = getPermissionState(entity, "edit", currentEp, normalizedRole);
+    const viewState = getPermissionState(entity, "view", currentEp, normalizedRole);
+    if (editState.allowed) return { level: "edit", isOverride: editState.source === "role_override" };
+    if (viewState.allowed) return { level: "view", isOverride: viewState.source === "role_override" };
+    const denied = editState.source === "role_override" || viewState.source === "role_override";
+    return { level: "none", isOverride: denied };
+  };
+
+  // Writes the entity's view/edit booleans to match the chosen level. `edit`
+  // implies `view`; `none` explicitly denies both.
+  const setEntityLevel = (entity: string, level: AccessLevel) => {
+    const view = level === "view" || level === "edit";
+    const edit = level === "edit";
+    const next = { ...currentEp, [entity]: { ...(currentEp[entity] || {}), view, edit } };
     onUpdateDraft({ entityPermissions: next });
   };
 
   // Applies the actual bulk change to the draft (after confirmation).
+  // value=true -> Edit (full mutating access); value=false -> No access.
   const applyBulk = (entities: string[], value: boolean) => {
     const next = { ...currentEp };
     entities.forEach((entity) => {
-      const updated: Record<string, boolean> = {};
-      ACTIONS.forEach((a) => { updated[a] = value; });
-      next[entity] = updated;
+      next[entity] = { ...(next[entity] || {}), view: value, edit: value };
     });
     onUpdateDraft({ entityPermissions: next });
-  };
-
-  // Single-entity all/none toggle stays inline (low blast radius — one entity).
-  const bulkUpdateEntity = (entity: string, value: boolean) => {
-    applyBulk([entity], value);
   };
 
   // Global + category flips must be confirmed with an impact preview + reason.
@@ -161,16 +212,16 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
     })).filter((cat) => cat.entities.length > 0);
   }, [categorizedEntities, permSearch]);
 
+  // Category progress: how many entities have any access (view or edit) granted.
   const categorySummary = useMemo(() => {
     const summary: Record<string, { granted: number; total: number }> = {};
     for (const cat of categorizedEntities) {
       let granted = 0;
-      const total = cat.entities.length * ACTIONS.length;
+      const total = cat.entities.length;
       for (const entity of cat.entities) {
-        for (const action of ACTIONS) {
-          const state = getPermissionState(entity, action, currentEp, normalizedRole);
-          if (state.allowed) granted++;
-        }
+        const viewState = getPermissionState(entity, "view", currentEp, normalizedRole);
+        const editState = getPermissionState(entity, "edit", currentEp, normalizedRole);
+        if (viewState.allowed || editState.allowed) granted++;
       }
       summary[cat.key] = { granted, total };
     }
@@ -188,17 +239,18 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
         </div>
         {canManageRoles && (
           <div className="flex gap-1">
-            <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-emerald-700 border-emerald-200 hover:bg-emerald-50" onClick={() => requestBulk("global", "all workspaces", allEntities, true)} data-testid="button-grant-all-global">Grant All</Button>
+            <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-emerald-700 border-emerald-200 hover:bg-emerald-50" onClick={() => requestBulk("global", "all workspaces", allEntities, true)} data-testid="button-grant-all-global">Grant All (Edit)</Button>
             <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-red-600 border-red-200 hover:bg-red-50" onClick={() => requestBulk("global", "all workspaces", allEntities, false)} data-testid="button-revoke-all-global">Revoke All</Button>
           </div>
         )}
       </div>
 
-      {/* Legend — calm 3-state palette (UI/UX audit X4) */}
+      {/* Legend — the three-state access scale that governs every resource. */}
       <div className="flex items-center gap-3 mb-2 text-[9px] text-muted-foreground px-1">
-        <div className="flex items-center gap-1"><div className="h-2 w-2 rounded border bg-emerald-100 border-emerald-300" /><span>Granted</span></div>
-        <div className="flex items-center gap-1"><div className="h-2 w-2 rounded border bg-red-50 border-red-200" /><span>Denied</span></div>
-        <div className="flex items-center gap-1"><div className="h-2 w-2 rounded border bg-gray-50 border-gray-200" /><span>No access</span></div>
+        <div className="flex items-center gap-1"><div className="h-2 w-2 rounded border bg-gray-200 border-gray-300" /><span>No access</span></div>
+        <div className="flex items-center gap-1"><div className="h-2 w-2 rounded border bg-emerald-50 border-emerald-300" /><span>View (read-only)</span></div>
+        <div className="flex items-center gap-1"><div className="h-2 w-2 rounded border bg-emerald-100 border-emerald-400" /><span>Edit (full — incl. create/approve/delete)</span></div>
+        <div className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-gray-500 inline-block" /><span>Role override</span></div>
       </div>
 
       <div className="border border-gray-200 rounded-lg overflow-hidden max-h-[65vh] overflow-y-auto">
@@ -207,33 +259,23 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
             <thead className="sticky top-0 z-10">
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="text-left pl-3 pr-1 py-1.5 text-[10px] font-semibold text-gray-600 bg-gray-50" style={{ minWidth: 160 }}>ENTITY</th>
-                {ACTIONS.map((a) => (
-                  <th key={a} scope="col" aria-label={`${a} permission`} className="text-center px-0.5 py-1.5 text-[10px] font-semibold text-gray-600 bg-gray-50" style={{ width: 44 }}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="flex items-center justify-center gap-0.5 cursor-default" aria-hidden="true">{ACTION_ICONS[a]}</div>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="text-[10px] capitalize">{a}</TooltipContent>
-                    </Tooltip>
-                  </th>
-                ))}
-                {canManageRoles && <th className="w-[52px] bg-gray-50" />}
+                <th className="text-right pr-3 py-1.5 text-[10px] font-semibold text-gray-600 bg-gray-50" style={{ width: 240 }}>ACCESS LEVEL</th>
               </tr>
             </thead>
             <tbody>
               {filteredCategories.length === 0 && (
-                <tr><td colSpan={ACTIONS.length + (canManageRoles ? 2 : 1)} className="text-center py-6 text-xs text-muted-foreground">No permissions match "{permSearch}"</td></tr>
+                <tr><td colSpan={2} className="text-center py-6 text-xs text-muted-foreground">No permissions match "{permSearch}"</td></tr>
               )}
               {filteredCategories.map((cat) => {
                 const summary = categorySummary[cat.key];
                 const expanded = isExpanded(cat.key);
-                const pct = summary ? Math.round((summary.granted / summary.total) * 100) : 0;
+                const pct = summary && summary.total > 0 ? Math.round((summary.granted / summary.total) * 100) : 0;
                 const navSection = PERM_CATEGORY_TO_NAV_SECTION[cat.key];
                 const navDisabled = navSection ? !enabledNavSections.includes(navSection) : false;
                 return (
                   <React.Fragment key={cat.key}>
                     <tr className={`cursor-pointer ${navDisabled ? "bg-gray-100/60 opacity-60" : "bg-gray-50/80 hover:bg-gray-100/60"}`} onClick={() => toggleCategory(cat.key)}>
-                      <td colSpan={ACTIONS.length + (canManageRoles ? 2 : 1)} className="px-2 py-1">
+                      <td colSpan={2} className="px-2 py-1">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
                             {expanded ? <ChevronDown className="h-3 w-3 text-gray-400" /> : <ChevronRight className="h-3 w-3 text-gray-400" />}
@@ -250,8 +292,8 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
                           </div>
                           {canManageRoles && !navDisabled && (
                             <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                              <button type="button" onClick={() => requestBulk("category", cat.label, cat.entities, true)} className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 font-medium" data-testid={`grant-category-${cat.key}`}>Grant all</button>
-                              <button type="button" onClick={() => requestBulk("category", cat.label, cat.entities, false)} className="text-[9px] px-1.5 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100 font-medium" data-testid={`revoke-category-${cat.key}`}>Revoke all</button>
+                              <button type="button" onClick={() => requestBulk("category", cat.label, cat.entities, true)} className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 font-medium" data-testid={`grant-category-${cat.key}`}>Edit all</button>
+                              <button type="button" onClick={() => requestBulk("category", cat.label, cat.entities, false)} className="text-[9px] px-1.5 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100 font-medium" data-testid={`revoke-category-${cat.key}`}>No access</button>
                             </div>
                           )}
                         </div>
@@ -259,13 +301,14 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
                     </tr>
                     {expanded && navDisabled && (
                       <tr>
-                        <td colSpan={ACTIONS.length + (canManageRoles ? 2 : 1)} className="px-4 py-2 bg-gray-50">
+                        <td colSpan={2} className="px-4 py-2 bg-gray-50">
                           <p className="text-[10px] text-gray-400 italic">Enable this section in Navigation Access first.</p>
                         </td>
                       </tr>
                     )}
                     {expanded && cat.entities.map((entity) => {
                       const desc = ENTITY_DESCRIPTIONS[entity];
+                      const { level, isOverride } = getEntityLevel(entity);
                       return (
                         <tr key={entity} className={`border-t border-gray-100 ${navDisabled ? "opacity-40" : "hover:bg-gray-50/50"}`} data-testid={`perm-row-${entity}`}>
                           <td className="pl-3 pr-1 py-1">
@@ -280,65 +323,17 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
                               )}
                             </Tooltip>
                           </td>
-                          {ACTIONS.map((action) => {
-                            const state = getPermissionState(entity, action, currentEp, normalizedRole);
-                            // Calm 3-state palette (X4): granted / denied / no-access.
-                            const cellColor = navDisabled
-                              ? CELL_STYLES.neutral
-                              : state.allowed
-                                ? CELL_STYLES.granted
-                                : state.source === "role_override"
-                                  ? CELL_STYLES.denied
-                                  : CELL_STYLES.neutral;
-
-                            // Text companion for the cell source — never colour-only (X4).
-                            const sourceLabel = navDisabled
-                              ? "Navigation disabled"
-                              : state.allowed
-                                ? state.source === "role_override" ? "Granted (role override)" : "Granted (default)"
-                                : state.source === "role_override" ? "Denied (role override)" : "No access";
-                            const sourceTag = navDisabled
-                              ? ""
-                              : state.source === "role_override"
-                                ? "override"
-                                : state.source === "default"
-                                  ? "default"
-                                  : "";
-
-                            return (
-                              <td key={action} className="text-center px-0.5 py-1">
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <button type="button" disabled={!canManageRoles || navDisabled} onClick={() => updateEp(entity, action, !state.allowed)}
-                                      aria-label={`${formatEntityName(entity)} ${action}: ${sourceLabel}`}
-                                      className={`relative inline-flex items-center justify-center h-5.5 w-5.5 rounded border transition-all ${!canManageRoles || navDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:scale-110"} ${cellColor}`}
-                                      style={{ height: 22, width: 22 }}
-                                      data-testid={`toggle-${entity}-${action}`}
-                                    >
-                                      {!navDisabled && state.allowed ? <Check className="h-2.5 w-2.5" /> : <X className="h-2.5 w-2.5" />}
-                                      {sourceTag === "override" && (
-                                        <span aria-hidden="true" className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-gray-500 ring-1 ring-white" />
-                                      )}
-                                    </button>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="top" className="text-[10px]">
-                                    <p className="font-medium">{formatEntityName(entity)} · {action}</p>
-                                    <p className="text-muted-foreground">{sourceLabel}</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </td>
-                            );
-                          })}
-                          {canManageRoles && (
-                            <td className="text-center px-0.5 py-1">
-                              {!navDisabled && (
-                                <div className="flex gap-0.5 justify-center">
-                                  <button type="button" onClick={() => bulkUpdateEntity(entity, true)} className="text-[8px] px-1 py-0.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100" title="Grant all" data-testid={`grant-all-${entity}`}>All</button>
-                                  <button type="button" onClick={() => bulkUpdateEntity(entity, false)} className="text-[8px] px-1 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100" title="Revoke all" data-testid={`revoke-all-${entity}`}>None</button>
-                                </div>
-                              )}
-                            </td>
-                          )}
+                          <td className="pr-3 py-1">
+                            <div className="flex justify-end">
+                              <AccessLevelSelect
+                                value={level}
+                                disabled={!canManageRoles || navDisabled}
+                                onChange={(lvl) => setEntityLevel(entity, lvl)}
+                                entityName={formatEntityName(entity)}
+                                isOverride={isOverride}
+                              />
+                            </div>
+                          </td>
                         </tr>
                       );
                     })}
@@ -355,23 +350,23 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
       <ConfirmDialog
         open={!!pendingBulk}
         onOpenChange={(o) => { if (!o) setPendingBulk(null); }}
-        title={pendingBulk?.value ? "Grant all permissions?" : "Revoke all permissions?"}
+        title={pendingBulk?.value ? "Grant Edit on all?" : "Revoke all access?"}
         description={
           pendingBulk
-            ? `This ${pendingBulk.value ? "grants" : "revokes"} every action for ${
+            ? `This sets ${
                 pendingBulk.kind === "global" ? "every workspace" : `the "${pendingBulk.label}" group`
-              } on the ${effectiveRole.label || normalizedRole} role.`
+              } to ${pendingBulk.value ? "Edit (full access)" : "No access"} on the ${effectiveRole.label || normalizedRole} role.`
             : undefined
         }
         variant={pendingBulk?.value ? "default" : "destructive"}
-        confirmLabel={pendingBulk?.value ? "Grant all" : "Revoke all"}
+        confirmLabel={pendingBulk?.value ? "Set all to Edit" : "Set all to No access"}
         impact={
           pendingBulk ? (
             <p>
-              {pendingBulk.value ? "Grant All" : "Revoke All"} will set{" "}
-              <strong>{pendingBulk.entities.length * ACTIONS.length}</strong> permissions across{" "}
+              This will set{" "}
               <strong>{pendingBulk.entities.length}</strong>{" "}
-              {pendingBulk.entities.length === 1 ? "workspace" : "workspaces"} for role{" "}
+              {pendingBulk.entities.length === 1 ? "workspace" : "workspaces"} to{" "}
+              <strong>{pendingBulk.value ? "Edit" : "No access"}</strong> for role{" "}
               <strong>{effectiveRole.label || normalizedRole}</strong>. Every user with this role
               is affected. Save to apply.
             </p>

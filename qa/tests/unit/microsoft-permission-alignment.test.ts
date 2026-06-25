@@ -26,7 +26,10 @@ describe("microsoft permission alignment", () => {
     expect(msSyncRoutesSource).toContain('app.post("/api/ms-objects/:id/create-follow-up", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess()');
     expect(msSyncRoutesSource).toContain('app.get("/api/ms-sync/status", jwtAuth, requireAuth, requireMicrosoftSyncSurfaceAccess()');
     expect(msSyncRoutesSource).toContain('app.get("/api/ms-teams/project-chat/:projectId", jwtAuth, requireAuth, requirePermission("teams_chat", "view")');
-    expect(msSyncRoutesSource).toContain('app.delete("/api/ms-teams/project-chat/:projectId/unlink", jwtAuth, requireAuth, requirePermission("teams_chat", "delete")');
+    // Collapsed model: delete folds into edit, so the unlink route is gated on
+    // teams_chat:edit (was :delete). It remains permission-gated on a mutating
+    // capability — same security intent, retargeted to the surviving action.
+    expect(msSyncRoutesSource).toContain('app.delete("/api/ms-teams/project-chat/:projectId/unlink", jwtAuth, requireAuth, requirePermission("teams_chat", "edit")');
     expect(msSyncRoutesSource).toContain("const visibleMicrosoftItems = await filterMicrosoftItemsForRequest(req, microsoftItems);");
   });
 

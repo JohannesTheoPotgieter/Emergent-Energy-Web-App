@@ -6,6 +6,7 @@ import { runWorkItemsBackfill } from "./backfills/work-items-backfill";
 import { runAssigneeUserIdsBackfill } from "./backfills/assignee-user-ids-backfill";
 import { runIntegrityGuard } from "./backfills/integrity-guard";
 import { runRoleLensBackfill } from "./backfills/role-lens-backfill";
+import { runPermissionActionCollapseBackfill } from "./backfills/permission-action-collapse-backfill";
 import { hasBackfillRun, markBackfillComplete } from "./backfills/backfill-registry";
 
 export async function runStartupBackfills(options: {
@@ -15,6 +16,16 @@ export async function runStartupBackfills(options: {
 }) {
   const { startupBackfillEnabled, allowStartupMutations, log } = options;
   if (!startupBackfillEnabled) return;
+
+  // Permission-model collapse (view|edit). Runs once on its OWN guard key,
+  // BEFORE the umbrella startup_backfills_v1 early-return, so deployments that
+  // already completed the umbrella backfills still migrate their stored grants.
+  if (!(await hasBackfillRun("permission_action_collapse_v1"))) {
+    await runPermissionActionCollapseBackfill(log).catch((err: any) =>
+      log(`[Backfill] permission action collapse error: ${err?.message || err}`, "Startup:Backfill"),
+    );
+    await markBackfillComplete("permission_action_collapse_v1").catch(() => {});
+  }
 
   // One-time guard: skip all startup backfills if they've already completed
   if (await hasBackfillRun("startup_backfills_v1")) return;

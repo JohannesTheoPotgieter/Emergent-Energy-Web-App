@@ -52,7 +52,7 @@ import {
 // with-reason path. See server/lib/quickbooks-mapping-lock-eval.ts.
 const QB_ADMIN_ROLES: ReadonlySet<string> = new Set(["COO_ADMIN", "CEO_ADMIN"]);
 const QB_LOCK_OVERRIDE_ROLES: ReadonlySet<string> = new Set(
-  findEntityRegistry("financials")?.override_roles ?? [],
+  findEntityRegistry("financials")?.edit_roles ?? [],
 );
 import { requirePermission } from "./permission-middleware";
 import { rateLimitPerUser } from "./middleware/rateLimitPerUser";

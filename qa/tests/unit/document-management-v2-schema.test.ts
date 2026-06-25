@@ -153,17 +153,43 @@ describe("D6 permissions — registry entries", () => {
     expect(entities).toContain("documents_admin");
   });
 
-  it("documents_provision defaults to COO/CEO only at create level", () => {
+  it("documents_provision defaults to COO/CEO only at the mutating (edit) level", () => {
+    // Collapsed model: create folded into edit. documents_provision stays
+    // super-user-only — its edit_roles is exactly the admin pair.
     const entry = ENTITY_REGISTRY.find((r) => r.entity === "documents_provision");
     expect(entry).toBeDefined();
-    expect(entry!.create_roles.sort()).toEqual(["CEO_ADMIN", "COO_ADMIN"].sort());
+    expect(entry!.edit_roles.sort()).toEqual(["CEO_ADMIN", "COO_ADMIN"].sort());
+    expect((entry as { create_roles?: string[] }).create_roles).toBeUndefined();
   });
 
-  it("documents has all roles in view, but only super-users can override", () => {
+  it("documents has all roles in view, and edit_roles is the de-duplicated mutator union", () => {
+    // Collapsed model: there is no override_roles surface — override folded
+    // into edit. The old "only super-users can override" invariant no longer
+    // holds: documents:edit is a BROAD set (the de-duplicated union of the old
+    // create/edit/approve/override/delete lists), so most delivery roles can
+    // now mutate documents. Assert the exact edit_roles set so the broadening
+    // is pinned rather than silently widened further.
     const entry = ENTITY_REGISTRY.find((r) => r.entity === "documents");
     expect(entry).toBeDefined();
     expect(entry!.view_roles.length).toBeGreaterThan(8);
-    expect(entry!.override_roles.sort()).toEqual(["CEO_ADMIN", "COO_ADMIN"].sort());
+    expect((entry as { override_roles?: string[] }).override_roles).toBeUndefined();
+    expect(entry!.edit_roles.sort()).toEqual(
+      [
+        "COO_ADMIN",
+        "CEO_ADMIN",
+        "CCO",
+        "PROGRAM_MANAGER",
+        "PROGRAM_FINANCE_MANAGER",
+        "CONSTRUCTION_MANAGER",
+        "QUALITY_MANAGER",
+        "ENGINEERING_MANAGER",
+        "PROJECT_MANAGER_SITE",
+        "PROJECT_DEVELOPER",
+        "HSE_MANAGER",
+        "ENGINEER",
+        "CFO",
+      ].sort(),
+    );
   });
 });
 

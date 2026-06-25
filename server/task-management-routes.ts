@@ -357,7 +357,7 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Create a task */
-  app.post("/api/tasks", requireAuth, requirePermission("task_management", "create"), async (req: Request, res: Response) => {
+  app.post("/api/tasks", requireAuth, requirePermission("task_management", "edit"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       const {
@@ -462,7 +462,7 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Soft-delete a task */
-  app.delete("/api/tasks/:id", requireAuth, requirePermission("task_management", "delete"), async (req: Request, res: Response) => {
+  app.delete("/api/tasks/:id", requireAuth, requirePermission("task_management", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseIntParam(req.params.id);
       if (!Number.isFinite(id) || id <= 0) {
@@ -643,7 +643,7 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Create a tag */
-  app.post("/api/tags", requireAuth, requirePermission("task_management", "create"), async (req: Request, res: Response) => {
+  app.post("/api/tags", requireAuth, requirePermission("task_management", "edit"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       const { name, color, category } = req.body;
@@ -690,7 +690,7 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Delete a tag */
-  app.delete("/api/tags/:id", requireAuth, requirePermission("task_management", "delete"), async (req: Request, res: Response) => {
+  app.delete("/api/tags/:id", requireAuth, requirePermission("task_management", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseIntParam(req.params.id);
       await db.update(taskTags).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(taskTags.id, id)).returning();
@@ -758,7 +758,7 @@ export function registerTaskManagementRoutes(app: Express) {
   // ── Seed Data ──────────────────────────────────────────────────────────────
 
   /** Seed identified bugs/improvements/features as work items */
-  app.post("/api/tasks/seed-identified-items", requireAuth, requirePermission("task_management", "create"), blockInProduction("Task seed route is disabled in production."), async (req: Request, res: Response) => {
+  app.post("/api/tasks/seed-identified-items", requireAuth, requirePermission("task_management", "edit"), blockInProduction("Task seed route is disabled in production."), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
 

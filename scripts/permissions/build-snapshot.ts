@@ -21,7 +21,7 @@ import path from "node:path";
 import { COMPANY_ROLES, ENTITY_PERMISSION_DEFAULTS, type PermissionAction, type PermissionEntity } from "@shared/schema";
 import { evaluatePermissionForRole } from "@shared/permission-resolver";
 
-const ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
+const ACTIONS: PermissionAction[] = ["view", "edit"];
 
 type Snapshot = Record<string, Record<string, Record<PermissionAction, boolean>>>;
 

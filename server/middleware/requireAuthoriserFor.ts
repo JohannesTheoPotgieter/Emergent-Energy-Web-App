@@ -56,13 +56,13 @@ export function requireAuthoriserFor(
     );
   }
   const allowed = new Set(
-    registryEntry.override_roles
+    registryEntry.edit_roles
       .map((r) => normalizeRoleForPermissions(r))
       .filter((r): r is string => Boolean(r)),
   );
   if (allowed.size === 0) {
     throw new Error(
-      `requireAuthoriserFor: entity '${entity}' has no override_roles ` +
+      `requireAuthoriserFor: entity '${entity}' has no edit_roles ` +
         `(or all roles failed normalisation) — every request would 403. ` +
         `Fix shared/permissions/registry.ts before wiring this middleware.`,
     );

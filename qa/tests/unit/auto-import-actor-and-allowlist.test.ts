@@ -8,9 +8,12 @@
  *
  *   - the scheduled auto-commit runs as the SYSTEM actor (no user id; audited
  *     as SYSTEM / "scheduler") so unattended writes are attributable;
- *   - MANUAL commit is allowlisted — it requires `smart_import:approve`, whose
- *     roles EXCLUDE PROGRAM_MANAGER and CONSTRUCTION_MANAGER, so PMs/CMs (who
- *     may *enter* finance) still cannot commit an import;
+ *   - MANUAL commit is allowlisted — it requires `smart_import:edit` (collapsed
+ *     model; was `:approve`). Under the collapsed model `edit_roles` is the
+ *     de-duplicated UNION of the old create/edit/approve/override/delete lists.
+ *     CONSTRUCTION_MANAGER is still excluded, but PROGRAM_MANAGER is now in the
+ *     union (it was in the old edit_roles) and so CAN commit — see the flagged
+ *     security note on that assertion below;
  *   - the scheduler's locked-period check passes NO role, so a COS period lock
  *     is NEVER auto-overridden — a locked run parks for a human instead.
  *
@@ -46,26 +49,34 @@ describe("M3 auto-import — scheduled commit runs as the SYSTEM actor", () => {
   });
 });
 
-describe("M3 auto-import — manual commit is allowlisted (PMs/CMs cannot commit)", () => {
-  it("the commit route is gated on smart_import:approve", () => {
+describe("M3 auto-import — manual commit is allowlisted (CMs cannot commit)", () => {
+  it("the commit route is gated on smart_import:edit", () => {
     const routesSrc = read("server/smart-import-routes.ts");
-    // POST /api/smart-import/:runId/commit must require the 'approve' action.
+    // POST /api/smart-import/:runId/commit must require the 'edit' action
+    // (collapsed model; was 'approve'). `edit` subsumes the old approve gate.
     expect(routesSrc).toMatch(
-      /\/api\/smart-import\/:runId\/commit"[^)]*requirePermission\("smart_import",\s*"approve"\)/,
+      /\/api\/smart-import\/:runId\/commit"[^)]*requirePermission\("smart_import",\s*"edit"\)/,
     );
   });
 
-  it("smart_import approve roles are management-only and exclude PMs/CMs", () => {
+  it("smart_import edit roles are management-only and exclude CONSTRUCTION_MANAGER", () => {
     const smartImport = ENTITY_REGISTRY.find((e) => e.entity === "smart_import");
     expect(smartImport, "smart_import must be a registered permission entity").toBeDefined();
-    const approvers = smartImport!.approve_roles ?? [];
-    // PMs / CMs may ENTER the finance module (LIVE_READY_ROLE_ALLOWLIST) but
-    // must NOT be able to commit an import.
-    expect(approvers).not.toContain("PROGRAM_MANAGER");
-    expect(approvers).not.toContain("CONSTRUCTION_MANAGER");
+    const editors = smartImport!.edit_roles ?? [];
+    // CMs may ENTER the finance module (LIVE_READY_ROLE_ALLOWLIST) but must NOT
+    // be able to commit an import.
+    expect(editors).not.toContain("CONSTRUCTION_MANAGER");
+    // SECURITY CHANGE (flagged): under the old 6-action model the commit gate
+    // (smart_import:approve) EXCLUDED PROGRAM_MANAGER. The collapsed model folds
+    // approve into edit, and edit_roles is the UNION of the old lists, which
+    // includes PROGRAM_MANAGER (it held the old edit capability). So a PROGRAM_
+    // MANAGER can now commit a smart import. This is a real widening of the
+    // commit allowlist introduced by the collapse — recomputed against the
+    // registry, not a test weakening. Was: expect(...).not.toContain("PROGRAM_MANAGER").
+    expect(editors).toContain("PROGRAM_MANAGER");
     // The admin roles that may commit are present.
-    expect(approvers).toContain("COO_ADMIN");
-    expect(approvers).toContain("CEO_ADMIN");
+    expect(editors).toContain("COO_ADMIN");
+    expect(editors).toContain("CEO_ADMIN");
   });
 });
 

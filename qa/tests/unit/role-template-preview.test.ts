@@ -17,7 +17,9 @@ import {
 import { ENTITY_REGISTRY } from "@shared/permissions/registry";
 import type { PermissionAction, PermissionEntity } from "@shared/schema";
 
-const ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
+// Collapsed permission model: the only actions are view + edit. The former
+// create/approve/override/delete capabilities all fold into edit.
+const ACTIONS: PermissionAction[] = ["view", "edit"];
 
 function diffMaps(curr: EntityPermissionMap, next: EntityPermissionMap) {
   const entries: { entity: PermissionEntity; gained: PermissionAction[]; lost: PermissionAction[] }[] = [];
@@ -81,15 +83,17 @@ describe("role templates — Task #101", () => {
     expect(diff.totalsLost).toBe(0);
   });
 
-  it("finance_read_only template removes all edit/approve/delete", () => {
+  it("finance_read_only template removes all edit capability while preserving view", () => {
+    // Under the collapsed model each entity row is {view, edit}. The
+    // read-only template zeroes edit (which subsumes the former
+    // create/approve/override/delete) and leaves the ACCOUNTANT view grants.
     const tpl = findRoleTemplate("finance_read_only")!;
+    const accountantBaseline = buildPermissionsForRole("ACCOUNTANT");
     for (const entity of Object.keys(tpl.permissions) as PermissionEntity[]) {
       const row = tpl.permissions[entity]!;
       expect(row.edit).toBe(false);
-      expect(row.create).toBe(false);
-      expect(row.approve).toBe(false);
-      expect(row.override).toBe(false);
-      expect(row.delete).toBe(false);
+      // View is preserved exactly as the ACCOUNTANT baseline had it.
+      expect(row.view).toBe(accountantBaseline[entity]!.view);
     }
   });
 });

@@ -250,7 +250,7 @@ function ColourStateBadge({ confirmed }: { confirmed: boolean | null }) {
 export function FinanceProjectDetailContent({ projectId }: { projectId: number }) {
   const qc = useQueryClient();
   const canEdit = usePermission("cos", "edit");
-  const canDelete = usePermission("cos", "delete");
+  const canDelete = usePermission("cos", "edit");
   const [drawerException, setDrawerException] = useState<ReconciliationException | null>(null);
   const [dialog, setDialog] = useState<{ action: ActionKind; row: LineReviewRow } | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());

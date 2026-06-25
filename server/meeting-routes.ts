@@ -233,7 +233,7 @@ export function registerMeetingRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/meetings/:id", requireAuth, requirePermission("meetings", "delete"), async (req: Request, res: Response) => {
+  app.delete("/api/meetings/:id", requireAuth, requirePermission("meetings", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseIntParam(req.params.id);
       const [deleted] = await db.update(meetingSummaries).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(meetingSummaries.id, id)).returning();
@@ -419,7 +419,7 @@ export function registerMeetingRoutes(app: Express) {
   });
 
   // ==================== MANUAL MEETING ENTRY ====================
-  app.post("/api/meetings/manual", requireAuth, requirePermission("meetings", "create"), async (req: Request, res: Response) => {
+  app.post("/api/meetings/manual", requireAuth, requirePermission("meetings", "edit"), async (req: Request, res: Response) => {
     try {
       const body = req.body;
       const schema = z.object({

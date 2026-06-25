@@ -430,7 +430,7 @@ export function registerCosLineReviewRoutes(app: Express): void {
   app.post(
     "/api/cos-line-review/:costLineId/remove",
     requireAuth,
-    requirePermission("cos", "delete"),
+    requirePermission("cos", "edit"),
     validateBody(reasonOnlySchema),
     async (req: Request, res: Response) => {
       try {

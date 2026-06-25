@@ -74,12 +74,15 @@ export interface AuthorityEvaluationResult {
   };
 }
 
+// Authority actions map onto the collapsed view|edit permission model: any
+// mutating authority (create/edit/delete/approve/assign/...) requires `edit`;
+// read-only authority (view/export) requires `view`.
 const LEGACY_ACTION_MAP: Partial<Record<AuthorityAction, PermissionAction>> = {
   view: "view",
-  create: "create",
+  create: "edit",
   edit: "edit",
-  delete: "delete",
-  approve: "approve",
+  delete: "edit",
+  approve: "edit",
   assign: "edit",
   reassign: "edit",
   close_complete: "edit",

@@ -101,7 +101,7 @@ app.put("/api/projects/:id/access/:accessId", jwtAuth, requireAuth, requirePermi
 
 // ── Remove project access ──────────────────────────────────
 
-app.delete("/api/projects/:id/access/:accessId", jwtAuth, requireAuth, requirePermission("project_access_mgmt", "delete"), async (req, res) => {
+app.delete("/api/projects/:id/access/:accessId", jwtAuth, requireAuth, requirePermission("project_access_mgmt", "edit"), async (req, res) => {
   try {
     const accessId = Number(req.params.accessId);
     await db.update(schema.projectAccess).set({ deletedAt: new Date(), deletedBy: (req as any).user?.id }).where(eq(schema.projectAccess.id, accessId)).returning();

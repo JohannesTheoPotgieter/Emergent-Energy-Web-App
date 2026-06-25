@@ -258,7 +258,7 @@ export default function QmDashboardPage() {
   const [deleteTarget, setDeleteTarget] = useState<Checklist | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { allowed: canDeleteQualityPerm } = usePermission("quality", "delete");
+  const { allowed: canDeleteQualityPerm } = usePermission("quality", "edit");
   const { isAdmin, isQm } = useAuth();
   // Mirror the backend gate (`requireAdminOrQm` + `requirePermission("quality","delete")`)
   // so users without the right role don't see a delete button that would 403.

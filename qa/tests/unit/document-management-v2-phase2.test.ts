@@ -42,10 +42,13 @@ describe("D6 Phase 2 — admin routes wiring", () => {
     expect(indexFile).toMatch(/registerDocumentManagementAdminRoutes\(app\)/);
   });
 
-  it("gates writes on documents_admin entity (create/edit/delete)", () => {
-    expect(routeFile).toMatch(/requirePermission\(["']documents_admin["'],\s*["']create["']\)/);
+  it("gates all writes on documents_admin:edit (create/edit/delete folded into edit)", () => {
+    // Collapsed model: the three old mutating gates (create/edit/delete) are
+    // all documents_admin:edit now. Assert the mutating gate is present and
+    // that no legacy create/delete actions linger on this entity.
     expect(routeFile).toMatch(/requirePermission\(["']documents_admin["'],\s*["']edit["']\)/);
-    expect(routeFile).toMatch(/requirePermission\(["']documents_admin["'],\s*["']delete["']\)/);
+    expect(routeFile).not.toMatch(/requirePermission\(["']documents_admin["'],\s*["']create["']\)/);
+    expect(routeFile).not.toMatch(/requirePermission\(["']documents_admin["'],\s*["']delete["']\)/);
   });
 
   it("gates public reads on documents:view (so any authed user can read requirements)", () => {

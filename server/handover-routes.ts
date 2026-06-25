@@ -18,7 +18,7 @@ import { evaluateHandoverAcceptDecision } from "./lib/handover-accept-override-e
 
 // Snapshotted at module init from the canonical entity registry. Plan v3 § 2.5 / D.6 #1.
 const HANDOVER_OVERRIDE_ROLES: ReadonlySet<string> = new Set(
-  findEntityRegistry("handover")?.override_roles ?? [],
+  findEntityRegistry("handover")?.edit_roles ?? [],
 );
 import { z } from "zod";
 import { jwtAuth, requireAuth } from "./auth-context";
@@ -311,7 +311,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.post("/api/projects/:id/handover-gates/:gateId/reopen", requireAuth, requirePermission("handover", "override"), async (req: Request, res: Response) => {
+  app.post("/api/projects/:id/handover-gates/:gateId/reopen", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
       const projectId = parseIntParam(req.params.id);
       const gateId = paramStr(req.params.gateId);
@@ -956,7 +956,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.post("/api/pd-pm-handover/:projectId/accept", requireAuth, requirePermission("handover", "approve"), async (req: Request, res: Response) => {
+  app.post("/api/pd-pm-handover/:projectId/accept", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
       const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
@@ -1099,7 +1099,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.post("/api/pd-pm-handover/:projectId/reject", requireAuth, requirePermission("handover", "approve"), async (req: Request, res: Response) => {
+  app.post("/api/pd-pm-handover/:projectId/reject", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
       const projectId = parseIntParam(req.params.projectId);
       const reason = String(req.body?.reason || "").trim();
@@ -1282,7 +1282,7 @@ export function registerHandoverRoutes(app: Express) {
 
   // ===================== PM SIGN-OFF =====================
 
-  app.post("/api/pd-pm-handover/:projectId/pm-sign-off", requireAuth, requirePermission("handover", "approve"), async (req: Request, res: Response) => {
+  app.post("/api/pd-pm-handover/:projectId/pm-sign-off", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
       const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
@@ -1365,7 +1365,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.post("/api/lessons-learnt", requireAuth, requirePermission("handover", "create"), async (req: Request, res: Response) => {
+  app.post("/api/lessons-learnt", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
       const user = (req as any).user as any;
       const body = req.body || {};
@@ -1408,7 +1408,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/lessons-learnt/:id", requireAuth, requirePermission("handover", "delete"), async (req: Request, res: Response) => {
+  app.delete("/api/lessons-learnt/:id", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });

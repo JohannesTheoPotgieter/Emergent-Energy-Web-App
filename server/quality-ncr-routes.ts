@@ -167,7 +167,7 @@ export function registerQualityNcrRoutes(app: Express) {
   });
 
   // Create.
-  app.post("/api/quality/ncrs", requireAuth, requirePermission("quality", "create"), validateBody(createNcrSchema), async (req: Request, res: Response) => {
+  app.post("/api/quality/ncrs", requireAuth, requirePermission("quality", "edit"), validateBody(createNcrSchema), async (req: Request, res: Response) => {
       try {
         const user = getEffectiveUser(req);
         if (!user) return res.status(401).json({ error: "auth_required" });
@@ -358,7 +358,7 @@ export function registerQualityNcrRoutes(app: Express) {
     });
 
   // Delete.
-  app.delete("/api/quality/ncrs/:id", requireAuth, requirePermission("quality", "delete"), async (req: Request, res: Response) => {
+  app.delete("/api/quality/ncrs/:id", requireAuth, requirePermission("quality", "edit"), async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });

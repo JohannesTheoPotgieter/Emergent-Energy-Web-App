@@ -104,7 +104,7 @@ export default function ClientsPage() {
   const [mergeInitialSurvivorId, setMergeInitialSurvivorId] = useState<number | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Client | null>(null);
-  const { allowed: canDeleteClients } = usePermission("pd_clients", "delete");
+  const { allowed: canDeleteClients } = usePermission("pd_clients", "edit");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 

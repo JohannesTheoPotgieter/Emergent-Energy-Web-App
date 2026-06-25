@@ -86,7 +86,7 @@ app.get("/api/governance/quality", jwtAuth, requireAuth, async (req, res) => {
 
 // ── Quality action ─────────────────────────────────────────
 
-app.patch("/api/governance/quality/:id/action", jwtAuth, requireAuth, requirePermission("quality", "approve"), async (req, res) => {
+app.patch("/api/governance/quality/:id/action", jwtAuth, requireAuth, requirePermission("quality", "edit"), async (req, res) => {
   try {
     const itemId = Number(req.params.id);
     const { action, assignToUserId, notes } = req.body;

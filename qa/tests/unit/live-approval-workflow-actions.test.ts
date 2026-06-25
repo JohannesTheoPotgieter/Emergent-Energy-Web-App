@@ -13,7 +13,9 @@ describe("live approval workflow actions", () => {
     expect(financialQueuePage).toContain('/financial-review/${reviewId}/approve');
     expect(financialQueuePage).toContain('outcome: "GO"');
     expect(financialQueuePage).toContain('outcome: "NO_GO"');
-    expect(financialQueuePage).toContain('usePermission("pd_finance", "approve")');
+    // Collapsed model: approve folds into edit, so the approve button now
+    // gates on the entity's 'edit' permission.
+    expect(financialQueuePage).toContain('usePermission("pd_finance", "edit")');
   });
 
   it("wires PM handover review accept and reject actions to existing backend endpoint", () => {
@@ -24,11 +26,11 @@ describe("live approval workflow actions", () => {
     expect(pmHandoverQueuePage).toMatch(/\/api\/(pd|engineering)-pm-handover\/\$\{projectId\}\/\$\{action\}/);
     expect(pmHandoverQueuePage).toContain('action: "accept"');
     expect(pmHandoverQueuePage).toContain('action: "reject"');
-    expect(pmHandoverQueuePage).toContain('usePermission("handover", "approve")');
+    expect(pmHandoverQueuePage).toContain('usePermission("handover", "edit")');
   });
 
   it("keeps PM approvals action buttons hidden for view-only users", () => {
-    expect(approvalsPage).toContain("const { allowed: canApprove } = usePermission('approvals', 'approve');");
+    expect(approvalsPage).toContain("const { allowed: canApprove } = usePermission('approvals', 'edit');");
     expect(approvalsPage).toContain("View only");
     expect(approvalsPage).toContain("Permission required");
   });

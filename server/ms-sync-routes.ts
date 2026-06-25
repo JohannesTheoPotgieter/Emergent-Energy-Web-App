@@ -1312,7 +1312,7 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/ms-teams/project-chat/:projectId/unlink", jwtAuth, requireAuth, requirePermission("teams_chat", "delete"), async (req: Request, res: Response) => {
+  app.delete("/api/ms-teams/project-chat/:projectId/unlink", jwtAuth, requireAuth, requirePermission("teams_chat", "edit"), async (req: Request, res: Response) => {
     try {
       const userId = (req as any).user?.id;
       const userRole = (req as any).user?.role || "";

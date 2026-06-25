@@ -48,108 +48,125 @@ describe("smart-import role-based authorization", () => {
 
   // ── Permission evaluation via ENTITY_PERMISSION_DEFAULTS ──
 
-  describe("smart_import approve permission (commit route)", () => {
+  // Collapsed model: the commit route is now gated on smart_import:edit
+  // (was :approve). `edit` is the de-duplicated union of the old
+  // create/edit/approve/override/delete role lists. Assertions below were
+  // retargeted from :approve → :edit and recomputed against
+  // smart_import.edit_roles = [COO_ADMIN, CEO_ADMIN, PROGRAM_MANAGER,
+  // PROGRAM_FINANCE_MANAGER].
+  describe("smart_import edit permission (commit route)", () => {
     const emptyRoleRecord = { entityPermissions: null, authorityModel: null, canManageUsers: false, canManageRoles: false };
 
-    it("ENGINEER is denied smart_import:approve (cannot commit)", () => {
+    it("ENGINEER is denied smart_import:edit (cannot commit)", () => {
       const result = evaluatePermissionForRole({
         role: "ENGINEER",
         entity: "smart_import",
-        action: "approve",
+        action: "edit",
         roleRecord: emptyRoleRecord,
       });
       expect(result.allowed).toBe(false);
     });
 
-    it("COO_ADMIN is allowed smart_import:approve (can commit)", () => {
+    it("COO_ADMIN is allowed smart_import:edit (can commit)", () => {
       const result = evaluatePermissionForRole({
         role: "COO_ADMIN",
         entity: "smart_import",
-        action: "approve",
+        action: "edit",
         roleRecord: emptyRoleRecord,
       });
       expect(result.allowed).toBe(true);
     });
 
-    it("CEO_ADMIN is allowed smart_import:approve (can commit)", () => {
+    it("CEO_ADMIN is allowed smart_import:edit (can commit)", () => {
       const result = evaluatePermissionForRole({
         role: "CEO_ADMIN",
         entity: "smart_import",
-        action: "approve",
+        action: "edit",
         roleRecord: emptyRoleRecord,
       });
       expect(result.allowed).toBe(true);
     });
 
-    it("PROGRAM_FINANCE_MANAGER is denied smart_import:approve (approve is admin-only)", () => {
+    // SECURITY CHANGE (flagged): under the old 6-action model PROGRAM_FINANCE_MANAGER
+    // was NOT in smart_import.approve_roles, so it was denied commit. In the
+    // collapsed model smart_import.edit_roles is the union of the old lists and
+    // DOES include PROGRAM_FINANCE_MANAGER (it was in the old edit_roles), so it
+    // is now ALLOWED to commit. Expectation flipped to match the registry union.
+    it("PROGRAM_FINANCE_MANAGER is allowed smart_import:edit (now in edit_roles union)", () => {
       const result = evaluatePermissionForRole({
         role: "PROGRAM_FINANCE_MANAGER",
         entity: "smart_import",
-        action: "approve",
+        action: "edit",
         roleRecord: emptyRoleRecord,
       });
-      expect(result.allowed).toBe(false);
+      expect(result.allowed).toBe(true);
     });
   });
 
-  describe("data_import create permission", () => {
+  // Collapsed model: data import mutating access is now gated on
+  // data_import:edit (was :create). Recomputed against
+  // data_import.edit_roles = [COO_ADMIN, CEO_ADMIN, CFO, PROGRAM_FINANCE_MANAGER].
+  describe("data_import edit permission", () => {
     const emptyRoleRecord = { entityPermissions: null, authorityModel: null, canManageUsers: false, canManageRoles: false };
 
-    it("ENGINEER is denied data_import:create", () => {
+    it("ENGINEER is denied data_import:edit", () => {
       const result = evaluatePermissionForRole({
         role: "ENGINEER",
         entity: "data_import",
-        action: "create",
+        action: "edit",
         roleRecord: emptyRoleRecord,
       });
       expect(result.allowed).toBe(false);
     });
 
-    it("CFO is allowed data_import:create", () => {
+    it("CFO is allowed data_import:edit", () => {
       const result = evaluatePermissionForRole({
         role: "CFO",
         entity: "data_import",
-        action: "create",
+        action: "edit",
         roleRecord: emptyRoleRecord,
       });
       expect(result.allowed).toBe(true);
     });
 
-    it("PROGRAM_FINANCE_MANAGER is allowed data_import:create", () => {
+    it("PROGRAM_FINANCE_MANAGER is allowed data_import:edit", () => {
       const result = evaluatePermissionForRole({
         role: "PROGRAM_FINANCE_MANAGER",
         entity: "data_import",
-        action: "create",
+        action: "edit",
         roleRecord: emptyRoleRecord,
       });
       expect(result.allowed).toBe(true);
     });
 
-    it("COO_ADMIN is allowed data_import:approve", () => {
+    // Former data_import:approve cases — approve folds into edit. COO_ADMIN /
+    // PROGRAM_FINANCE_MANAGER remain allowed (both in edit_roles); ENGINEER
+    // remains denied.
+    it("COO_ADMIN is allowed data_import:edit (approve folds into edit)", () => {
       const result = evaluatePermissionForRole({
         role: "COO_ADMIN",
         entity: "data_import",
-        action: "approve",
+        action: "edit",
         roleRecord: emptyRoleRecord,
       });
       expect(result.allowed).toBe(true);
     });
 
-    it("PROGRAM_FINANCE_MANAGER is allowed data_import:approve", () => {
+    it("PROGRAM_FINANCE_MANAGER is allowed data_import:edit (approve folds into edit)", () => {
       const result = evaluatePermissionForRole({
         role: "PROGRAM_FINANCE_MANAGER",
         entity: "data_import",
-        action: "approve",
+        action: "edit",
         roleRecord: emptyRoleRecord,
       });
       expect(result.allowed).toBe(true);
     });
 
-    it("ENGINEER is denied data_import:approve", () => {
+    it("ENGINEER is denied data_import:edit (approve folds into edit)", () => {
       const result = evaluatePermissionForRole({
         role: "ENGINEER",
         entity: "data_import",
-        action: "approve",
+        action: "edit",
         roleRecord: emptyRoleRecord,
       });
       expect(result.allowed).toBe(false);

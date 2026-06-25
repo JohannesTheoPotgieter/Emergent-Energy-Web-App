@@ -74,14 +74,16 @@ describe("priorities sprint 1 hardening", () => {
     expect(source).not.toContain("(isAdmin || isDeptHead) ? (");
   });
 
-  it("keeps company priority create/edit registry defaults aligned with priority admins", () => {
+  it("keeps company priority edit registry defaults aligned with priority admins", () => {
     const companyPriorities = ENTITY_PERMISSION_DEFAULTS.find(
       (entry) => entry.entity === "company_priorities",
     );
 
     expect(companyPriorities).toBeTruthy();
+    // Collapsed model: create folds into edit, so create_roles no longer
+    // exists. The equivalent invariant — every priority admin retains mutating
+    // access to company priorities — is now expressed via edit_roles only.
     for (const role of PRIORITY_ADMIN_ROLES) {
-      expect(companyPriorities?.create_roles).toContain(role);
       expect(companyPriorities?.edit_roles).toContain(role);
     }
   });

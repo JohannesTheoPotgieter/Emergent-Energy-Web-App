@@ -380,7 +380,7 @@ export default function LifecycleBoardPage() {
     queryClient.invalidateQueries({ queryKey: ["/api/lifecycle-board/projects"] });
   };
 
-  const { allowed: canEditRag } = usePermission('projects', 'approve');
+  const { allowed: canEditRag } = usePermission('projects', 'edit');
 
   const openRagModal = async (p: ProjectInfo, e: React.MouseEvent) => {
     e.stopPropagation();

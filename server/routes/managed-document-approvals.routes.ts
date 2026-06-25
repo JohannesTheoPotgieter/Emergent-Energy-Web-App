@@ -78,7 +78,7 @@ export function registerManagedDocumentApprovalRoutes(app: Express): void {
   app.post(
     "/api/managed-documents/:id/request-approval",
     requireAuth,
-    requirePermission("documents", "create"),
+    requirePermission("documents", "edit"),
     async (req: Request, res: Response) => {
       const user = getEffectiveUser(req);
       if (!user) throw unauthorized();
@@ -185,7 +185,7 @@ export function registerManagedDocumentApprovalRoutes(app: Express): void {
   app.post(
     "/api/managed-document-approvals/:id/approve",
     requireAuth,
-    requirePermission("documents", "approve"),
+    requirePermission("documents", "edit"),
     async (req: Request, res: Response) => {
       const user = getEffectiveUser(req);
       if (!user) throw unauthorized();
@@ -222,7 +222,7 @@ export function registerManagedDocumentApprovalRoutes(app: Express): void {
   app.post(
     "/api/managed-document-approvals/:id/reject",
     requireAuth,
-    requirePermission("documents", "approve"),
+    requirePermission("documents", "edit"),
     async (req: Request, res: Response) => {
       const user = getEffectiveUser(req);
       if (!user) throw unauthorized();

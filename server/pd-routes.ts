@@ -241,7 +241,7 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
-  app.post("/api/pd/clients", requireAuth, requirePermission('pd_clients', 'create'), async (req: Request, res: Response) => {
+  app.post("/api/pd/clients", requireAuth, requirePermission('pd_clients', 'edit'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
       // NOTE: the former `isPdRole(role)` double-gate was removed because
@@ -548,7 +548,7 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
-  app.post("/api/pd/tickets", requireAuth, requirePermission('pd_tickets', 'create'), async (req: Request, res: Response) => {
+  app.post("/api/pd/tickets", requireAuth, requirePermission('pd_tickets', 'edit'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
       // NOTE: the former `canCreatePdTicket` double-gate is removed.

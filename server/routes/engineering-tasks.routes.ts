@@ -128,7 +128,7 @@ export function registerEngineeringTasksRoutes(app: Express): void {
   app.post(
     "/api/engineering/tasks",
     requireAuth,
-    requirePermission("eng_tasks", "create"),
+    requirePermission("eng_tasks", "edit"),
     validateBody(createSchema),
     async (req: Request, res: Response) => {
       const body = req.body as z.infer<typeof createSchema>;
@@ -144,7 +144,7 @@ export function registerEngineeringTasksRoutes(app: Express): void {
   app.post(
     "/api/engineering/tasks/bulk",
     requireAuth,
-    requirePermission("eng_tasks", "create"),
+    requirePermission("eng_tasks", "edit"),
     validateBody(bulkCreateSchema),
     async (req: Request, res: Response) => {
       const body = req.body as z.infer<typeof bulkCreateSchema>;
@@ -262,7 +262,7 @@ export function registerEngineeringTasksRoutes(app: Express): void {
   app.post(
     "/api/engineering/tasks/seam",
     requireAuth,
-    requirePermission("eng_tasks", "create"),
+    requirePermission("eng_tasks", "edit"),
     validateBody(seamSchema),
     async (req: Request, res: Response) => {
       const body = req.body as z.infer<typeof seamSchema>;

@@ -27,7 +27,7 @@ export function registerWorkItemsExtractedRoutes(app: Express): void {
 
   // ==================== WORK ITEMS ADMIN ====================
 
-  app.post("/api/work-items/delete", requireAuth, requirePermission('pd_plan', 'delete'), async (req, res) => {
+  app.post("/api/work-items/delete", requireAuth, requirePermission('pd_plan', 'edit'), async (req, res) => {
     try {
       const { ids } = req.body;
       if (!Array.isArray(ids) || ids.length === 0) {

@@ -113,7 +113,7 @@ export function registerChangeControlRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/change-requests", jwtAuth, requireAuth, requirePermission("projects", "create"), async (req: Request, res: Response) => {
+  app.post("/api/change-requests", jwtAuth, requireAuth, requirePermission("projects", "edit"), async (req: Request, res: Response) => {
     try {
       const user = getEffectiveUser(req);
       const parsed = createChangeRequestSchema.safeParse(req.body);
@@ -368,7 +368,7 @@ export function registerChangeControlRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/change-requests/:id", jwtAuth, requireAuth, requirePermission("projects", "delete"), async (req: Request, res: Response) => {
+  app.delete("/api/change-requests/:id", jwtAuth, requireAuth, requirePermission("projects", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });

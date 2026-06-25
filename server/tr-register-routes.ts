@@ -249,7 +249,7 @@ export function registerTrRegisterRoutes(app: Express) {
     }
   });
 
-  app.post("/api/tr-register", requireAuth, requirePermission("tr_register", "create"), async (req: Request, res: Response) => {
+  app.post("/api/tr-register", requireAuth, requirePermission("tr_register", "edit"), async (req: Request, res: Response) => {
     try {
       const userId = getUser(req).id;
 
@@ -383,7 +383,7 @@ export function registerTrRegisterRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/tr-register/:id", requireAuth, requirePermission("tr_register", "delete"), async (req: Request, res: Response) => {
+  app.delete("/api/tr-register/:id", requireAuth, requirePermission("tr_register", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseIntParam(req.params.id);
       const [existing] = await db.select().from(trItems).where(eq(trItems.id, id));
