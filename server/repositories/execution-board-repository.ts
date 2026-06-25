@@ -249,6 +249,7 @@ export class ExecutionBoardRepository {
     for (const r of rows) {
       if (r.projectId == null) continue;
       const task: PlanTask = {
+        id: r.id,
         taskNo: r.wbsCode || r.outlineNumber || `#${r.id}`,
         taskName: r.title,
         phase: r.phase ?? null,

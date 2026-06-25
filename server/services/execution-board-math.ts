@@ -21,6 +21,8 @@ import type {
  * program plan lives there, not in the dead `normalized_plan_tasks` table.
  */
 export interface PlanTask {
+  /** work_items.id — present for delivery promotion (link an order to the task). */
+  id?: number;
   taskNo: string | null;
   taskName: string;
   phase: string | null;
