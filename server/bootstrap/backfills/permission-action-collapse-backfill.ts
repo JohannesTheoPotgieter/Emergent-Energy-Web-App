@@ -62,10 +62,6 @@ export function collapseEntityPermissions(
   return { collapsed: out, changed };
 }
 
-function collapseAction(action: string): "view" | "edit" {
-  return action === "view" ? "view" : "edit";
-}
-
 export async function runPermissionActionCollapseBackfill(
   log: (message: string, source?: string) => void,
 ): Promise<void> {
