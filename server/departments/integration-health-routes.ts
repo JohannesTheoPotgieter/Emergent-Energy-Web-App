@@ -4,8 +4,9 @@
  * Endpoints:
  *   GET  /api/integrations
  *        Returns every registered connector with its derived health
- *        tile (healthy / stale / failing / unknown). Any authenticated
- *        user — we want this on the exec dashboard.
+ *        tile (healthy / stale / failing / unknown). Admin only — it is
+ *        surfaced solely on the COO/CEO Integration Statuses page, so the
+ *        data must not be readable by non-admins (2026-06-24 hardening).
  *   GET  /api/integrations/:name/runs?limit=50
  *        Recent run history for a single connector. Any authenticated
  *        user.
@@ -35,7 +36,7 @@ const router = Router();
 
 // ===================== DASHBOARD =====================
 
-router.get("/api/integrations", requireAuth, async (_req: Request, res: Response) => {
+router.get("/api/integrations", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
   try {
     const health = await getIntegrationHealth();
     res.json(health);

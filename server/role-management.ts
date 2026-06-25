@@ -288,7 +288,20 @@ export async function seedRolePermissions() {
 }
 
 export function registerRoleManagementRoutes(app: Express) {
-  app.get("/api/roles", jwtAuth, requireAuth, async (_req: Request, res: Response) => {
+  // Reading a role's full permission config is admin-only, with one carve-out:
+  // a user may read their OWN role (project pages call GET /api/roles/:role for
+  // the signed-in user's role to compute their own tab visibility). Any OTHER
+  // role — or the full list — requires admin. Self-match is normalized on both
+  // sides so DB-alias vs canonical role keys still line up.
+  const requireSelfRoleOrAdmin = (req: Request, res: Response, next: NextFunction) => {
+    const rawRequested = req.params.role;
+    const requested = normalizeRoleForPermissions(typeof rawRequested === "string" ? rawRequested : null);
+    const own = normalizeRoleForPermissions(getEffectiveUser(req)?.role || null);
+    if (requested && own && requested === own) return next();
+    return requireAdmin(req, res, next);
+  };
+
+  app.get("/api/roles", jwtAuth, requireAuth, requireAdmin, async (_req: Request, res: Response) => {
     try {
       const roles = await ensureRolePermissionsSeeded();
       res.json(roles);
@@ -344,7 +357,7 @@ export function registerRoleManagementRoutes(app: Express) {
     }
   });
 
-  app.get("/api/roles/:role", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/roles/:role", jwtAuth, requireAuth, requireSelfRoleOrAdmin, async (req: Request, res: Response) => {
     try {
       const roleKey = req.params.role as string;
       const [role] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, roleKey));
